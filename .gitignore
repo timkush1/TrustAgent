@@ -1,0 +1,59 @@
+# ========== General ==========
+# Note: Not using git currently, keeping this for future reference
+.DS_Store
+.env
+.env.local
+*.log
+*.pid
+*.swp
+*.swo
+*~
+
+# ========== Go ==========
+backend-go/bin/
+backend-go/*.exe
+backend-go/*.test
+backend-go/*.out
+backend-go/vendor/
+
+# ========== Python ==========
+backend-python/__pycache__/
+backend-python/*.py[cod]
+backend-python/*$py.class
+backend-python/.pytest_cache/
+backend-python/.coverage
+backend-python/htmlcov/
+backend-python/.mypy_cache/
+backend-python/.ruff_cache/
+backend-python/dist/
+backend-python/build/
+backend-python/*.egg-info/
+backend-python/.venv/
+backend-python/venv/
+
+# ========== Node/React ==========
+frontend-react/node_modules/
+frontend-react/dist/
+frontend-react/build/
+frontend-react/.vite/
+frontend-react/.turbo/
+frontend-react/coverage/
+
+# ========== Proto Generated Code ==========
+backend-go/api/audit/
+backend-python/src/truthtable/grpc/pb/*_pb2.py
+backend-python/src/truthtable/grpc/pb/*_pb2.pyi
+backend-python/src/truthtable/grpc/pb/*_pb2_grpc.py
+
+# ========== Docker ==========
+docker-compose.override.yml
+
+# ========== IDE ==========
+.vscode/
+.idea/
+*.iml
+
+# ========== Data ==========
+data/
+*.db
+*.sqlite

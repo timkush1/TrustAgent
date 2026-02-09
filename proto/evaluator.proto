@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package truthtable.audit.v1;
+
+option go_package = "github.com/truthtable/backend-go/api/audit/v1;auditv1";
+// Note: Python package is determined by output directory, not proto option
+
+// AuditService provides hallucination detection for LLM responses
+service AuditService {
+    // SubmitAudit initiates async fact-checking of an LLM response
+    // Returns immediately with audit_id for tracking
+    rpc SubmitAudit(AuditRequest) returns (AuditSubmission);
+    
+    // GetAuditResult retrieves completed audit (polling method)
+    rpc GetAuditResult(AuditResultRequest) returns (AuditResult);
+    
+    // HealthCheck verifies service readiness
+    rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+// ========== Request Messages ==========
+
+message AuditRequest {
+    string request_id = 1;          // UUID for tracing (from proxy)
+    string query = 2;               // Original user question
+    string response = 3;            // LLM-generated answer to verify
+    repeated ContextDocument context = 4;  // RAG retrieved documents
+    string model = 5;               // LLM model used (e.g., "gpt-4")
+    string provider = 6;            // LLM provider (e.g., "openai")
+    int64 timestamp_ms = 7;         // Request timestamp
+    map<string, string> metadata = 8;  // Additional context
+}
+
+message ContextDocument {
+    string id = 1;                  // Document/chunk identifier
+    string content = 2;             // Retrieved text content
+    map<string, string> metadata = 3;  // Source, score, etc.
+    float relevance_score = 4;      // RAG retrieval score (0.0-1.0)
+}
+
+message AuditResultRequest {
+    string audit_id = 1;            // Audit identifier to retrieve
+}
+
+message HealthRequest {}
+
+// ========== Response Messages ==========
+
+message AuditSubmission {
+    string audit_id = 1;            // UUID for tracking this audit
+    string status = 2;              // "queued" | "processing" | "completed"
+    int32 queue_position = 3;       // Position in processing queue
+}
+
+message AuditResult {
+    string audit_id = 1;            // Matches request audit_id
+    string request_id = 2;          // Original request_id from AuditRequest
+    AuditStatus status = 3;         // Processing status
+    
+    // Trust Score (0.0 - 1.0, where 1.0 = fully faithful)
+    float faithfulness_score = 4;
+    TrustGrade grade = 5;           // A/B/C/D/F classification
+    
+    // Detailed verification results
+    repeated ClaimVerification claims = 6;
+    
+    // Metadata
+    string reasoning_trace = 7;     // LLM reasoning for transparency
+    int64 completed_at_ms = 8;      // Completion timestamp
+    int64 processing_time_ms = 9;   // Total processing duration
+}
+
+message ClaimVerification {
+    string claim = 1;               // Atomic statement extracted from response
+    VerificationStatus status = 2;  // Verification outcome
+    float confidence = 3;           // Confidence in verification (0.0-1.0)
+    repeated string evidence = 4;   // Supporting context snippets
+}
+
+message HealthResponse {
+    bool healthy = 1;               // Overall service health
+    string version = 2;             // Service version
+    map<string, bool> dependencies = 3;  // Qdrant, Ollama, Redis status
+}
+
+// ========== Enums ==========
+
+enum AuditStatus {
+    AUDIT_STATUS_UNSPECIFIED = 0;
+    AUDIT_STATUS_QUEUED = 1;
+    AUDIT_STATUS_PROCESSING = 2;
+    AUDIT_STATUS_COMPLETED = 3;
+    AUDIT_STATUS_FAILED = 4;
+}
+
+enum VerificationStatus {
+    VERIFICATION_STATUS_UNSPECIFIED = 0;
+    VERIFICATION_STATUS_SUPPORTED = 1;        // Entailed by context
+    VERIFICATION_STATUS_CONTRADICTED = 2;     // Conflicts with context
+    VERIFICATION_STATUS_UNSUPPORTED = 3;      // No evidence in context
+    VERIFICATION_STATUS_PARTIALLY_SUPPORTED = 4;  // Some evidence exists
+}
+
+enum TrustGrade {
+    TRUST_GRADE_UNSPECIFIED = 0;
+    TRUST_GRADE_A = 1;  // 90-100% faithful
+    TRUST_GRADE_B = 2;  // 75-89% faithful
+    TRUST_GRADE_C = 3;  // 60-74% faithful
+    TRUST_GRADE_D = 4;  // 40-59% faithful
+    TRUST_GRADE_F = 5;  // 0-39% faithful
+}

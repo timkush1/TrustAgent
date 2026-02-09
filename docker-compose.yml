@@ -1,0 +1,213 @@
+services:
+  # ========== Infrastructure Services ==========
+  
+  redis:
+    image: redis:7-alpine
+    container_name: truthtable-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: truthtable-qdrant
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: truthtable-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - truthtable-net
+    # GPU support (uncomment for NVIDIA GPU systems):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: truthtable-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: truthtable-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+
+  # ========== Application Services ==========
+  
+  audit-engine:
+    build:
+      context: ./backend-python
+      dockerfile: Dockerfile
+    container_name: truthtable-audit-engine
+    ports:
+      - "50051:50051"  # gRPC
+      - "8001:8001"    # Metrics
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - GRPC_PORT=50051
+      - METRICS_PORT=8001
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc-health-probe", "-addr=:50051"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+    volumes:
+      - ./backend-python:/app
+    restart: unless-stopped
+
+  proxy:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    container_name: truthtable-proxy
+    ports:
+      - "8080:8080"  # HTTP/WebSocket
+      - "8002:8002"  # Metrics
+    environment:
+      - GIN_MODE=release
+      - REDIS_URL=redis://redis:6379
+      - AUDIT_GRPC_ADDRESS=audit-engine:50051
+      - HTTP_PORT=8080
+      - METRICS_PORT=8002
+      - LOG_LEVEL=info
+      - UPSTREAM_LLM_URL=${UPSTREAM_LLM_URL:-http://ollama:11434}
+    depends_on:
+      redis:
+        condition: service_healthy
+      audit-engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+    volumes:
+      - ./backend-go:/app
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./frontend-react
+      dockerfile: Dockerfile
+    container_name: truthtable-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_WS_URL=ws://localhost:8080/ws
+    depends_on:
+      - proxy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+    restart: unless-stopped
+
+# ========== Networks ==========
+
+networks:
+  truthtable-net:
+    driver: bridge
+
+# ========== Volumes ==========
+
+volumes:
+  redis-data:
+    driver: local
+  qdrant-data:
+    driver: local
+  ollama-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
