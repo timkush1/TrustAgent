@@ -18,7 +18,7 @@ services:
       - truthtable-net
 
   qdrant:
-    image: qdrant/qdrant:v1.7.0
+    image: qdrant/qdrant:v1.16.3
     container_name: truthtable-qdrant
     ports:
       - "6333:6333"  # HTTP API
@@ -36,7 +36,7 @@ services:
       - truthtable-net
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.13
     container_name: truthtable-ollama
     ports:
       - "11434:11434"
@@ -91,7 +91,7 @@ services:
       - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
       - GF_USERS_ALLOW_SIGN_UP=false
     depends_on:
       - prometheus

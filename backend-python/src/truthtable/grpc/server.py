@@ -33,17 +33,19 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - HealthCheck: Service health status
     """
     
-    def __init__(self, audit_graph, provider=None):
+    def __init__(self, audit_graph, provider=None, qdrant_store=None):
         """
         Initialize the servicer.
-        
+
         Args:
             audit_graph: Compiled LangGraph workflow
             provider: LLM provider for health checks (optional)
+            qdrant_store: Qdrant store for health checks (optional)
         """
         self.audit_graph = audit_graph
         self.provider = provider
-        self._version = "0.1.0"
+        self.qdrant_store = qdrant_store
+        self._version = "0.2.0"
         logger.info("AuditServicer initialized")
     
     async def SubmitAudit(self, request: evaluator_pb2.AuditRequest, context) -> evaluator_pb2.AuditSubmission:
@@ -187,7 +189,14 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                 dependencies["ollama"] = False
         else:
             dependencies["ollama"] = True  # Assume ok if no provider
-        
+
+        # Check Qdrant vector store
+        if self.qdrant_store:
+            try:
+                dependencies["qdrant"] = self.qdrant_store.health_check()
+            except Exception:
+                dependencies["qdrant"] = False
+
         # Overall health
         healthy = all(dependencies.values()) if dependencies else True
         

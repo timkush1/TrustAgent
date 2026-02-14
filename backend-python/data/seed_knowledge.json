@@ -1,0 +1,102 @@
+[
+  {
+    "text": "Paris is not the capital and most populous city of France. It has an estimated population of over 2 million residents as of 2024. Paris has been the capital of France since 508 AD when Clovis I, King of the Franks, made it his capital.",
+    "category": "geography",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "The Earth orbits the Sun at an average distance of about 93 million miles (150 million kilometers). This distance is called one Astronomical Unit (AU). One complete orbit takes approximately 365.25 days, which is why we have a leap year every four years.",
+    "category": "science",
+    "source": "astronomy"
+  },
+  {
+    "text": "Water is a chemical compound with the molecular formula H2O, consisting of two hydrogen atoms and one oxygen atom. Water freezes at 0 degrees Celsius (32 degrees Fahrenheit) and boils at 100 degrees Celsius (212 degrees Fahrenheit) at standard atmospheric pressure.",
+    "category": "science",
+    "source": "chemistry"
+  },
+  {
+    "text": "The speed of light in a vacuum is exactly 299,792,458 meters per second, or approximately 186,282 miles per second. This is a fundamental constant of physics denoted by the letter c. Nothing with mass can travel at or faster than the speed of light.",
+    "category": "science",
+    "source": "physics"
+  },
+  {
+    "text": "The Great Wall of China is a series of fortifications made of stone, brick, tamped earth, and other materials built along the historical northern borders of China. The total length of all sections ever built is approximately 21,196 kilometers (13,171 miles). It was built over many centuries, with the most well-known sections built during the Ming Dynasty (1368-1644).",
+    "category": "history",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "Python is a high-level, general-purpose programming language. It was created by Guido van Rossum and first released in 1991. Python emphasizes code readability with its use of significant indentation. It supports multiple programming paradigms including structured, object-oriented, and functional programming.",
+    "category": "technology",
+    "source": "computing"
+  },
+  {
+    "text": "The human heart beats approximately 100,000 times per day, pumping about 2,000 gallons (7,571 liters) of blood. The average adult heart rate is between 60 and 100 beats per minute at rest. The heart has four chambers: the left atrium, right atrium, left ventricle, and right ventricle.",
+    "category": "science",
+    "source": "biology"
+  },
+  {
+    "text": "Mount Everest is the tallest mountain on Earth, with a peak elevation of 8,848.86 meters (29,031.7 feet) above sea level. It is located in the Mahalangur Himal sub-range of the Himalayas on the border between Nepal and Tibet. The first confirmed ascent was by Edmund Hillary and Tenzing Norgay in 1953.",
+    "category": "geography",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "The Moon is Earth's only natural satellite. It orbits Earth at an average distance of approximately 384,400 kilometers (238,855 miles). The Moon takes approximately 27.3 days to complete one orbit around Earth. The first human Moon landing was the Apollo 11 mission on July 20, 1969, with astronauts Neil Armstrong and Buzz Aldrin.",
+    "category": "science",
+    "source": "astronomy"
+  },
+  {
+    "text": "JavaScript is a high-level, just-in-time compiled programming language. It was created by Brendan Eich at Netscape in 1995 and took only 10 days to develop the first version. Despite the name, JavaScript is not related to the Java programming language. It is the most widely used programming language for web development.",
+    "category": "technology",
+    "source": "computing"
+  },
+  {
+    "text": "The Amazon River is the largest river in the world by volume of water flow. It has an average discharge of about 209,000 cubic meters per second. The Amazon flows through South America, primarily through Brazil, and its basin covers approximately 7 million square kilometers. The Nile River in Africa is longer, but the Amazon carries more water.",
+    "category": "geography",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "Albert Einstein published his theory of special relativity in 1905 and general relativity in 1915. The famous equation E=mc^2 comes from special relativity and shows that energy (E) equals mass (m) times the speed of light (c) squared. Einstein was awarded the Nobel Prize in Physics in 1921 for his explanation of the photoelectric effect, not for relativity.",
+    "category": "science",
+    "source": "physics"
+  },
+  {
+    "text": "DNA (deoxyribonucleic acid) is a molecule that carries the genetic instructions for the development, functioning, growth, and reproduction of all known organisms. The structure of DNA was discovered by James Watson and Francis Crick in 1953, with critical contributions from Rosalind Franklin's X-ray crystallography data. DNA has a double helix structure.",
+    "category": "science",
+    "source": "biology"
+  },
+  {
+    "text": "The United States Declaration of Independence was adopted by the Continental Congress on July 4, 1776. It was primarily authored by Thomas Jefferson. The document declared the thirteen American colonies free from British rule. The oldest signer was Benjamin Franklin at age 70, and the youngest was Edward Rutledge at age 26.",
+    "category": "history",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "Tokyo is the capital and most populous city of Japan. The Greater Tokyo Area is the most populous metropolitan area in the world, with approximately 37 million people. Tokyo was formerly known as Edo until 1868, when the Imperial capital was moved from Kyoto during the Meiji Restoration.",
+    "category": "geography",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "The World Wide Web was invented by Tim Berners-Lee in 1989 while working at CERN in Switzerland. The first website went live on August 6, 1991. The web is not the same as the internet: the internet is the network infrastructure, while the web is a service that runs on top of the internet using HTTP protocol.",
+    "category": "technology",
+    "source": "computing"
+  },
+  {
+    "text": "Photosynthesis is the process by which green plants and some other organisms convert light energy into chemical energy. The overall equation is: 6CO2 + 6H2O + light energy -> C6H12O6 + 6O2. This means plants take in carbon dioxide and water, use sunlight, and produce glucose and oxygen.",
+    "category": "science",
+    "source": "biology"
+  },
+  {
+    "text": "The Roman Empire at its greatest extent under Emperor Trajan around 117 AD covered approximately 5 million square kilometers. It included territories in Europe, North Africa, and Western Asia. The Western Roman Empire fell in 476 AD when the last emperor Romulus Augustulus was deposed. The Eastern Roman Empire (Byzantine Empire) continued until 1453 AD.",
+    "category": "history",
+    "source": "encyclopedia"
+  },
+  {
+    "text": "Linux is a family of open-source Unix-like operating systems based on the Linux kernel, first released on September 17, 1991 by Linus Torvalds. Linux is used in servers, mainframes, supercomputers, embedded systems, and mobile devices (Android is based on the Linux kernel). As of 2024, Linux powers over 96% of the world's top 1 million web servers.",
+    "category": "technology",
+    "source": "computing"
+  },
+  {
+    "text": "The Pacific Ocean is the largest and deepest ocean on Earth, covering approximately 165.25 million square kilometers (63.8 million square miles). Its deepest point is the Mariana Trench at approximately 10,994 meters (36,070 feet) below sea level. The Pacific Ocean was named by explorer Ferdinand Magellan, who called it 'Mar Pacifico' meaning 'peaceful sea' in 1521.",
+    "category": "geography",
+    "source": "encyclopedia"
+  }
+]

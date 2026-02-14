@@ -1,13 +1,40 @@
-# ========== General ==========
-# Note: Not using git currently, keeping this for future reference
+# ========== OS / General ==========
 .DS_Store
-.env
-.env.local
+Thumbs.db
+Desktop.ini
+nul
 *.log
 *.pid
 *.swp
 *.swo
 *~
+*.tmp
+*.bak
+
+# ========== Environment & Secrets ==========
+.env
+.env.*
+!.env.example
+
+# ========== Virtual Environments ==========
+.venv/
+venv/
+env/
+
+# ========== Python ==========
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
 
 # ========== Go ==========
 backend-go/bin/
@@ -16,28 +43,15 @@ backend-go/*.test
 backend-go/*.out
 backend-go/vendor/
 
-# ========== Python ==========
-backend-python/__pycache__/
-backend-python/*.py[cod]
-backend-python/*$py.class
-backend-python/.pytest_cache/
-backend-python/.coverage
-backend-python/htmlcov/
-backend-python/.mypy_cache/
-backend-python/.ruff_cache/
-backend-python/dist/
-backend-python/build/
-backend-python/*.egg-info/
-backend-python/.venv/
-backend-python/venv/
-
-# ========== Node/React ==========
-frontend-react/node_modules/
+# ========== Node / React ==========
+node_modules/
 frontend-react/dist/
 frontend-react/build/
 frontend-react/.vite/
 frontend-react/.turbo/
 frontend-react/coverage/
+.next/
+.nuxt/
 
 # ========== Proto Generated Code ==========
 backend-go/api/audit/
@@ -52,8 +66,17 @@ docker-compose.override.yml
 .vscode/
 .idea/
 *.iml
+*.code-workspace
 
-# ========== Data ==========
-data/
+# ========== Data & Databases ==========
 *.db
 *.sqlite
+*.sqlite3
+
+# ========== Prompt / Personal Files ==========
+*.prompt.md
+
+# ========== Test Artifacts ==========
+test-results/
+junit.xml
+*.test.log

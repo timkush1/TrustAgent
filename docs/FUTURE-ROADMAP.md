@@ -1,412 +1,244 @@
 # TruthTable AI Hallucination Detection - Future Roadmap
 
-> **Last Updated:** January 31, 2026  
-> **Current Status:** MVP Complete (Phase 0-2)  
+> **Last Updated:** February 14, 2026
+> **Current Status:** v0.2.1 - RAG Pipeline Active, Security Hardened
 > **Next Milestone:** Production-Ready v1.0
 
 ---
 
-## 📊 Executive Summary
+## Current State Assessment
 
-TruthTable is an AI hallucination detection system that intercepts LLM responses, decomposes them into verifiable claims, and scores their truthfulness. The current MVP demonstrates the core architecture with a Go proxy, Python scoring engine, and React dashboard.
+### What's Complete (v0.2.1)
 
----
-
-## 🎯 Current State Assessment
-
-### ✅ What's Working
 | Component | Status | Details |
 |-----------|--------|---------|
-| Go Proxy Server | ✅ Complete | Intercepts OpenAI-compatible requests on port 8080 |
-| WebSocket Hub | ✅ Complete | Real-time updates to dashboard on port 8081 |
-| Worker Pool | ✅ Complete | 10-worker async job processing |
-| Python LLM Provider | ✅ Complete | Ollama integration with adapter pattern |
-| React Dashboard | ✅ Complete | Real-time audit visualization |
-| Docker Infrastructure | ✅ Complete | Ollama, Redis, Qdrant, Prometheus |
+| Go Proxy Server | Complete | Intercepts OpenAI-compatible requests, port 8080 |
+| WebSocket Hub | Complete | Real-time updates to dashboard, port 8081 |
+| Worker Pool | Complete | 10-worker async job processing |
+| Python Audit Engine | Complete | Full RAG pipeline: decompose -> retrieve -> verify -> score |
+| Vector Store (Qdrant) | Complete | Embedding + semantic search + knowledge seeding |
+| React Dashboard | Complete | Real-time audit visualization with Zustand + WebSocket |
+| Docker Infrastructure | Complete | All 8 services containerized with health checks |
+| gRPC Integration | Complete | Go proxy <-> Python engine communication |
+| Security Hardening | Complete | Non-root containers, pinned versions, security headers |
+| Integration Tests | Complete | 28 Python + 16 Go + 7 RAG integration + E2E |
 
-### ⚠️ Partially Complete
-| Component | Status | Remaining Work |
-|-----------|--------|----------------|
-| Claim Decomposer | 🔶 70% | Needs structured output parsing |
-| Fact Verifier | 🔶 50% | Vector store integration pending |
-| Score Calculator | 🔶 40% | Aggregation logic incomplete |
-| gRPC Integration | 🔶 60% | Python server not yet connected to Go proxy |
+### What's NOT Working Yet
 
-### ❌ Not Started
-| Component | Status | Priority |
-|-----------|--------|----------|
-| OpenAI Provider | ❌ | High - Production use |
-| Anthropic Provider | ❌ | Medium |
-| Streaming Response Audit | ❌ | High - SSE support |
-| Authentication/API Keys | ❌ | Critical for production |
-| Rate Limiting | ❌ | High |
-| Persistent Storage | ❌ | Medium |
+| Component | Status | Impact |
+|-----------|--------|--------|
+| Prometheus metrics | Stub only | Go proxy returns placeholder; Python has no metrics endpoint |
+| Grafana dashboards | Empty | No dashboard definitions provisioned |
+| Authentication | None | All endpoints are open |
+| Persistent audit storage | In-memory only | Results lost on restart |
+| Streaming response audit | Not implemented | SSE/streaming responses not audited |
 
 ---
 
-## 🗺️ Development Phases
+## Phase 5: Observability & Metrics (Next Priority)
 
-### Phase 3: Complete Core Engine (2-3 weeks)
-**Goal:** Finish the Python truthfulness scoring pipeline
+**Goal:** Make Prometheus and Grafana actually work
 
-#### Stage 3.1: Claim Decomposer (3-4 days)
-```
-Priority: 🔴 Critical
-Complexity: Medium
-Dependencies: Ollama Provider ✅
-```
+### 5.1 Python Metrics Endpoint (1-2 days)
+- [ ] Add `prometheus_client` HTTP server on port 8001 in `main.py`
+- [ ] Expose metrics: `audit_requests_total`, `audit_duration_seconds`, `audit_score_histogram`
+- [ ] Add per-node timing: decompose/retrieve/verify/score duration
+- [ ] Track Qdrant query latency and result counts
 
-**Tasks:**
-1. [ ] Implement structured JSON output parsing from LLM
-2. [ ] Create claim extraction prompts with examples
-3. [ ] Add claim categorization (factual, opinion, temporal)
-4. [ ] Handle edge cases (lists, nested claims, quotes)
-5. [ ] Add unit tests with sample responses
+### 5.2 Go Proxy Prometheus Metrics (1-2 days)
+- [ ] Replace stub `/metrics` with `promhttp.Handler()`
+- [ ] Track: `proxy_requests_total`, `proxy_request_duration_seconds`
+- [ ] Track: `proxy_upstream_errors_total`, `websocket_connections_active`
+- [ ] Track: `worker_pool_queue_depth`, `audit_job_duration_seconds`
 
-**Success Criteria:**
-- Given: "Paris is the capital of France, founded in 3rd century BC"
-- Output: `[{"claim": "Paris is the capital of France", "type": "factual"}, {"claim": "Paris was founded in 3rd century BC", "type": "temporal"}]`
-
-#### Stage 3.2: Fact Verifier (4-5 days)
-```
-Priority: 🔴 Critical
-Complexity: High
-Dependencies: Qdrant Vector Store, Claim Decomposer
-```
-
-**Tasks:**
-1. [ ] Implement vector embedding generation (use sentence-transformers)
-2. [ ] Create Qdrant collection for context storage
-3. [ ] Build context retrieval based on claim similarity
-4. [ ] Implement LLM-based verification with retrieved context
-5. [ ] Add confidence scoring (0-1 scale)
-6. [ ] Handle "insufficient context" cases
-
-**Architecture:**
-```
-Claim → Embed → Search Qdrant → Retrieve Context → LLM Verify → Score
-```
-
-#### Stage 3.3: Score Calculator (2-3 days)
-```
-Priority: 🟡 High
-Complexity: Low
-Dependencies: Fact Verifier
-```
-
-**Tasks:**
-1. [ ] Implement weighted aggregation of claim scores
-2. [ ] Add overall response trustworthiness score
-3. [ ] Create scoring breakdown (factual accuracy, source quality)
-4. [ ] Implement score thresholds and categories
-
-**Output Structure:**
-```json
-{
-  "overall_score": 0.82,
-  "category": "mostly_accurate",
-  "claims": [
-    {"text": "...", "score": 0.95, "verified": true},
-    {"text": "...", "score": 0.60, "verified": false, "reason": "Date incorrect"}
-  ]
-}
-```
+### 5.3 Grafana Dashboard Definitions (1 day)
+- [ ] Create `config/grafana/dashboards/truthtable.json` with:
+  - Request rate panel
+  - Audit score distribution histogram
+  - P50/P95/P99 latency panels
+  - Error rate panel
+  - Active WebSocket connections gauge
+- [ ] Create dashboard provisioning YAML in `config/grafana/dashboards/`
 
 ---
 
-### Phase 4: gRPC Integration (1 week)
-**Goal:** Connect Python engine to Go proxy
+## Phase 6: Production Hardening
 
-#### Stage 4.1: Python gRPC Server (2-3 days)
-```
-Priority: 🔴 Critical
-Complexity: Medium
-```
+### 6.1 Authentication & Authorization (3-4 days)
+- [ ] Add API key middleware to Go proxy (`X-API-Key` header)
+- [ ] Create API key management (generate, revoke, list)
+- [ ] Add gRPC interceptor for auth tokens
+- [ ] Restrict CORS to configured origins
+- [ ] Validate WebSocket origin against whitelist
 
-**Tasks:**
-1. [ ] Implement `EvaluatorService` from proto definition
-2. [ ] Wire up decomposer → verifier → scorer pipeline
-3. [ ] Add async request handling
-4. [ ] Implement health checks
-5. [ ] Add timeout handling
+### 6.2 Input Validation & Safety (2 days)
+- [ ] Add request body size limit (10MB) to Go proxy
+- [ ] Validate gRPC request fields (max query/response length)
+- [ ] Add rate limiting (token bucket) to Go proxy
+- [ ] Add Redis-backed rate limiting per API key
 
-#### Stage 4.2: Go-Python Integration (2-3 days)
-```
-Priority: 🔴 Critical
-Complexity: Medium
-```
+### 6.3 Persistent Storage (2-3 days)
+- [ ] Replace in-memory `_audit_results` dict with Redis
+- [ ] Add TTL-based expiration (e.g., 24 hours)
+- [ ] Add PostgreSQL for long-term audit history
+- [ ] Create audit history API endpoint
 
-**Tasks:**
-1. [ ] Test end-to-end gRPC calls from Go → Python
-2. [ ] Handle serialization/deserialization
-3. [ ] Add retry logic with exponential backoff
-4. [ ] Implement circuit breaker pattern
-5. [ ] Add metrics for latency tracking
+### 6.4 Logging & Observability (1-2 days)
+- [ ] Switch to structured JSON logging
+- [ ] Add request tracing (correlation IDs across Go/Python)
+- [ ] Truncate sensitive data in logs (user queries, LLM responses)
+- [ ] Add OpenTelemetry traces for audit pipeline steps
 
 ---
 
-### Phase 5: Production Hardening (2-3 weeks)
-**Goal:** Make the system production-ready
+## Phase 7: LLM Provider Expansion
 
-#### Stage 5.1: Security (3-4 days)
-```
-Priority: 🔴 Critical
-```
+### 7.1 OpenAI Provider (2-3 days)
+- [ ] Create `OpenAIProvider` implementing `LLMProvider` interface
+- [ ] Secure API key management (env var, not hardcoded)
+- [ ] Handle streaming responses (SSE)
+- [ ] Token usage tracking
+- [ ] Rate limit handling with exponential backoff
 
-**Tasks:**
-1. [ ] Add API key authentication to Go proxy
-2. [ ] Implement rate limiting (token bucket algorithm)
-3. [ ] Add request/response logging with PII redaction
-4. [ ] Secure inter-service communication (mTLS or service mesh)
-5. [ ] Add CORS configuration for dashboard
-6. [ ] Environment-based configuration (dev/staging/prod)
+### 7.2 Anthropic Provider (1-2 days)
+- [ ] Create `AnthropicProvider` implementing `LLMProvider`
+- [ ] Handle Claude-specific message format
+- [ ] Support tool use / structured output
 
-**Security Recommendations:**
-```yaml
-# docker-compose.prod.yml changes
-redis:
-  command: redis-server --requirepass ${REDIS_PASSWORD}
-  ports:
-    - "127.0.0.1:6379:6379"  # Bind to localhost only
-
-qdrant:
-  environment:
-    - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
-```
-
-#### Stage 5.2: Reliability (3-4 days)
-```
-Priority: 🟡 High
-```
-
-**Tasks:**
-1. [ ] Add graceful shutdown handling
-2. [ ] Implement request queuing during Python engine restarts
-3. [ ] Add dead letter queue for failed audits
-4. [ ] Create health check aggregation endpoint
-5. [ ] Add structured logging (JSON format)
-6. [ ] Implement request tracing (OpenTelemetry)
-
-#### Stage 5.3: Performance (2-3 days)
-```
-Priority: 🟡 High
-```
-
-**Tasks:**
-1. [ ] Add caching for repeated claims (Redis)
-2. [ ] Implement connection pooling for gRPC
-3. [ ] Add async batch processing for multiple claims
-4. [ ] Profile and optimize hot paths
-5. [ ] Add load testing (k6 or Locust)
-
-**Target Metrics:**
-| Metric | Target |
-|--------|--------|
-| P50 Latency | < 500ms |
-| P99 Latency | < 2s |
-| Throughput | > 100 req/s |
-| Error Rate | < 0.1% |
+### 7.3 Proxy Passthrough Mode (2-3 days)
+- [ ] Forward requests to real cloud LLM APIs
+- [ ] Capture and audit streaming responses
+- [ ] Add request/response correlation tracking
+- [ ] Support model routing (different models for different endpoints)
 
 ---
 
-### Phase 6: OpenAI Integration (1 week)
-**Goal:** Support real OpenAI API calls
+## Phase 8: Dashboard Enhancements
 
-#### Stage 6.1: OpenAI Provider (2-3 days)
-```
-Priority: 🟡 High
-Complexity: Low
-```
+### 8.1 Audit Details View (3-4 days)
+- [ ] Claim breakdown with individual scores and evidence
+- [ ] Color-coded confidence indicators (green/yellow/red)
+- [ ] Processing timeline visualization
+- [ ] Export functionality (JSON/CSV)
 
-**Tasks:**
-1. [ ] Create `OpenAIProvider` implementing `LLMProvider` interface
-2. [ ] Handle API key management securely
-3. [ ] Implement streaming support
-4. [ ] Add token usage tracking
-5. [ ] Handle rate limits gracefully
+### 8.2 Historical Analysis (3-4 days)
+- [ ] Audit history table with filtering and pagination
+- [ ] Trend charts (accuracy over time, by model)
+- [ ] Search functionality across past audits
+- [ ] Model comparison views
 
-#### Stage 6.2: Proxy Passthrough Mode (2-3 days)
-```
-Priority: 🟡 High
-```
-
-**Tasks:**
-1. [ ] Forward requests to real OpenAI API
-2. [ ] Capture responses for auditing
-3. [ ] Handle streaming responses (SSE)
-4. [ ] Add request/response correlation
-5. [ ] Implement timeout handling
+### 8.3 Configuration UI (2-3 days)
+- [ ] Settings page for LLM provider selection
+- [ ] Threshold configuration (what score triggers "hallucination")
+- [ ] Alert configuration (email/Slack on low trust scores)
+- [ ] API key management interface
 
 ---
 
-### Phase 7: Dashboard Enhancements (2 weeks)
-**Goal:** Rich visualization and interaction
+## Phase 9: Advanced Features
 
-#### Stage 7.1: Audit Details View (3-4 days)
-**Tasks:**
-1. [ ] Show claim breakdown with individual scores
-2. [ ] Display evidence/sources used for verification
-3. [ ] Add color-coded confidence indicators
-4. [ ] Show processing timeline
-5. [ ] Add export functionality (JSON/CSV)
+### 9.1 Custom Knowledge Upload
+Allow users to upload their own documents for domain-specific verification:
+- [ ] PDF/Word document parsing and chunking
+- [ ] Per-user/org Qdrant collections
+- [ ] Document management UI (upload, delete, list)
+- [ ] Automatic re-embedding on model updates
 
-#### Stage 7.2: Historical Analysis (3-4 days)
-**Tasks:**
-1. [ ] Store audits in persistent database (PostgreSQL)
-2. [ ] Create audit history table with filtering
-3. [ ] Add trend charts (accuracy over time)
-4. [ ] Implement search functionality
-5. [ ] Add model comparison views
-
-#### Stage 7.3: Configuration UI (2-3 days)
-**Tasks:**
-1. [ ] Settings page for LLM provider selection
-2. [ ] Threshold configuration
-3. [ ] Alert configuration
-4. [ ] API key management
-
----
-
-### Phase 8: Advanced Features (4+ weeks)
-**Goal:** Enterprise-grade capabilities
-
-#### Stage 8.1: Multi-Model Verification
-```
-Complexity: High
-Value: Very High
-```
-
+### 9.2 Multi-Model Verification
 Use multiple LLMs to cross-verify claims:
 ```
-Claim → [Llama, GPT-4, Claude] → Consensus Score
+Claim -> [Llama, GPT-4, Claude] -> Consensus Score
 ```
+- [ ] Multi-provider verification pipeline
+- [ ] Consensus scoring algorithm
+- [ ] Model agreement visualization
 
-#### Stage 8.2: Custom Context Upload
-```
-Complexity: Medium
-Value: High
-```
+### 9.3 Webhook Integrations
+- [ ] Slack notifications for low-trust responses
+- [ ] PagerDuty alerts for critical failures
+- [ ] Custom webhook endpoints
+- [ ] Email digest of daily audit stats
 
-Allow users to upload documents for domain-specific verification:
-- PDF/Word document parsing
-- Chunking and embedding
-- Qdrant collection per user/org
-
-#### Stage 8.3: Webhook Integrations
-```
-Complexity: Low
-Value: High
-```
-
-Send audit results to external systems:
-- Slack notifications for low-trust responses
-- PagerDuty alerts for critical failures
-- Custom webhook endpoints
-
-#### Stage 8.4: SDK Development
-```
-Complexity: Medium
-Value: Very High
-```
-
-Create SDKs for easy integration:
-- Python SDK
-- JavaScript/TypeScript SDK
-- Go SDK
+### 9.4 SDK Development
+- [ ] Python SDK (`pip install truthtable-client`)
+- [ ] JavaScript/TypeScript SDK (`npm install @truthtable/client`)
+- [ ] Go SDK
+- [ ] OpenAI-compatible drop-in replacement client
 
 ---
 
-## 🏗️ Technical Debt Backlog
+## Technical Debt Backlog
 
 | Issue | Priority | Effort | Impact |
 |-------|----------|--------|--------|
 | Add comprehensive error handling | High | 2 days | Reliability |
+| Add Swagger/OpenAPI spec for Go proxy | Medium | 1 day | Documentation |
 | Implement proper logging strategy | High | 1 day | Debugging |
-| Add integration tests | Medium | 3 days | Quality |
-| Refactor config management | Medium | 1 day | Maintainability |
-| Document API endpoints | Medium | 1 day | Usability |
-| Add Swagger/OpenAPI spec | Low | 1 day | Documentation |
-| Containerize Python service | High | 1 day | Deployment |
+| Add CI/CD pipeline (GitHub Actions) | High | 1 day | Automation |
+| Add Dependabot for dependency updates | Low | 30 min | Security |
+| Add Docker image security scanning (Trivy) | Medium | 1 day | Security |
+| Production `docker-compose.prod.yml` | Medium | 1 day | Deployment |
+| Kubernetes Helm chart | Low | 3 days | Enterprise deployment |
 
 ---
 
-## 📅 Suggested Timeline
+## Security Checklist for Production
 
-### Month 1: Core Completion
-- Week 1-2: Phase 3 (Claim Decomposer, Fact Verifier, Score Calculator)
-- Week 3: Phase 4 (gRPC Integration)
-- Week 4: Testing and bug fixes
-
-### Month 2: Production Readiness
-- Week 1: Phase 5 (Security)
-- Week 2: Phase 5 (Reliability, Performance)
-- Week 3: Phase 6 (OpenAI Integration)
-- Week 4: Load testing and optimization
-
-### Month 3: Polish and Deploy
-- Week 1-2: Phase 7 (Dashboard Enhancements)
-- Week 3: Documentation and cleanup
-- Week 4: Beta deployment and monitoring
-
----
-
-## 🎓 Learning Resources
-
-### For Claim Decomposition
-- [LangChain Structured Output](https://python.langchain.com/docs/modules/model_io/output_parsers/)
-- [Few-Shot Prompting](https://www.promptingguide.ai/techniques/fewshot)
-
-### For Vector Search
-- [Qdrant Documentation](https://qdrant.tech/documentation/)
-- [Sentence Transformers](https://www.sbert.net/)
-
-### For Production Go
-- [Effective Go](https://go.dev/doc/effective_go)
-- [Go gRPC Best Practices](https://grpc.io/docs/languages/go/basics/)
-
-### For Observability
-- [OpenTelemetry in Go](https://opentelemetry.io/docs/instrumentation/go/)
-- [Prometheus Best Practices](https://prometheus.io/docs/practices/naming/)
-
----
-
-## 🔐 Security Checklist for Production
-
-- [ ] All secrets in environment variables, not code
+- [x] All secrets in environment variables, not code
+- [x] Non-root Docker containers
+- [x] Pinned Docker image versions
+- [x] Nginx security headers
+- [x] No secrets in git history
 - [ ] API authentication on all endpoints
 - [ ] Rate limiting implemented
 - [ ] HTTPS/TLS for all external traffic
-- [ ] Network isolation between services
+- [ ] CORS restricted to known origins
+- [ ] Redis authentication enabled
+- [ ] Qdrant API key enabled
+- [ ] Network isolation (remove unnecessary port mappings)
 - [ ] Regular dependency updates (Dependabot)
-- [ ] Security scanning in CI/CD (Snyk/Trivy)
-- [ ] Audit logging enabled
+- [ ] Security scanning in CI/CD
 - [ ] Input validation on all endpoints
-- [ ] PII/sensitive data handling policy
+- [ ] PII/sensitive data redaction in logs
 
 ---
 
-## 📞 Quick Start Commands
+## Ideas for What You Can Build With This
 
-```bash
-# Start all infrastructure
-docker-compose up -d
+1. **AI Code Review Tool** - Feed code review outputs through TruthTable to verify the LLM's claims about bugs/improvements
+2. **Medical Information Verifier** - Seed with medical knowledge, verify LLM medical advice
+3. **Legal Document Checker** - Verify LLM-generated legal summaries against actual law
+4. **Education Platform** - Verify LLM tutoring responses for accuracy
+5. **News Fact-Checker** - Verify AI-generated news summaries against known facts
+6. **Customer Support QA** - Audit chatbot responses for accuracy before sending to customers
+7. **Research Paper Validator** - Verify LLM summaries of scientific papers against source material
 
-# Start Go proxy
-cd backend-go && go run ./cmd/proxy
+---
 
-# Start Python engine (when complete)
-cd backend-python && poetry run python -m truthtable.main
+## Quick Start Commands
 
-# Start React dashboard
-cd frontend-react && npm run dev
+```powershell
+# Start infrastructure
+docker-compose up -d redis qdrant ollama prometheus grafana
 
-# Run E2E test
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test" \
-  -d '{"model": "gpt-4", "messages": [{"role": "user", "content": "Test"}], "test_response": "Test response"}'
+# Seed knowledge base (first time only)
+cd backend-python
+.venv\Scripts\activate
+python scripts/seed_knowledge.py
+
+# Start Python engine
+$env:QDRANT_URL="http://localhost:6333"
+$env:OLLAMA_BASE_URL="http://localhost:11434"
+python -m truthtable.main
+
+# Start Go proxy (new terminal)
+cd backend-go
+go run ./cmd/proxy
+
+# Start React dashboard (new terminal)
+cd frontend-react
+npm run dev
+
+# Run E2E test (new terminal, Python engine must be running)
+python test_direct_audit.py
 ```
-
----
-
-**🚀 The foundation is solid. Now it's time to build!**

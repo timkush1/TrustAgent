@@ -16,9 +16,12 @@ langchain-community = "^0.0.10"
 pydantic = "^2.5.0"
 pydantic-settings = "^2.1.0"
 httpx = "^0.26.0"
-qdrant-client = "^1.7.0"
+qdrant-client = "^1.16.0"
 redis = "^5.0.0"
 prometheus-client = "^0.19.0"
+sentence-transformers = ">=5.0.0"
+torch = ">=2.0.0"
+numpy = ">=1.24.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
