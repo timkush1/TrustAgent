@@ -2,7 +2,7 @@
 name = "truthtable"
 version = "0.1.0"
 description = "TruthTable AI Audit Engine - Hallucination Detection Service"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Tim Kushmaro <timk@mail.tau.ac.il>"]
 readme = "README.md"
 packages = [{include = "truthtable", from = "src"}]
 

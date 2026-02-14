@@ -202,6 +202,3 @@ Detailed docs for each component are in the [docs/](docs/) folder:
 - [Phase 3: React Dashboard](docs/PHASE-3-REACT-DASHBOARD.md) - Frontend guide
 - [Future Roadmap](docs/FUTURE-ROADMAP.md) - Planned features
 
-## License
-
-MIT
