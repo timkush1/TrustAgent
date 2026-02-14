@@ -38,6 +38,26 @@ Your App                    TrustAgent                     LLM (Ollama)
 | "London is the capital of France" | 0% | D | HALLUCINATION DETECTED |
 | Speed of light correct + wrong discoverer | 50% | C | Mixed (1 supported, 1 unsupported) |
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/dashboard-empty.png" alt="TruthTable Dashboard - Waiting for Audits" width="100%"/>
+  <br/>
+  <em>Dashboard on startup — connected and waiting for audit events</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/dashboard-audit-feed.png" alt="TruthTable Dashboard - Live Audit Feed" width="100%"/>
+  <br/>
+  <em>Live audit feed showing real-time hallucination detection with trust scores</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/audit-detail-hallucination.png" alt="Audit Detail - Hallucination Detected" width="100%"/>
+  <br/>
+  <em>Audit detail view — hallucination caught: "London is the capital of France" (95% confidence)</em>
+</p>
+
 ## Tech Stack
 
 | Component | Technology | Purpose |
