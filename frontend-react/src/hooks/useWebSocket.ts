@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { WSMessage, ConnectionStatus } from '../types/audit';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8081/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 

@@ -214,25 +214,30 @@ class VerifierNode:
     async def run(self, state: AuditState) -> AuditState:
         """
         Execute claim verification.
-        
+
         Args:
             state: Current graph state
-            
+
         Returns:
             Updated state with claim_verifications populated
         """
+        import time
+        start = time.time()
         logger.info(f"Verifying claims for request {state['request_id']}")
-        
+
         # Verify all claims
         verifications = await verify_all_claims(
             claims=state["claims"],
             context_docs=state["context_docs"],
             provider=self.provider
         )
-        
+
         # Update state
         state["claim_verifications"] = verifications
-        
-        logger.info(f"Verified {len(verifications)} claims")
-        
+        elapsed_ms = int((time.time() - start) * 1000)
+        state.setdefault("step_timings", {})
+        state["step_timings"]["verify_ms"] = elapsed_ms
+
+        logger.info(f"Verified {len(verifications)} claims ({elapsed_ms}ms)")
+
         return state

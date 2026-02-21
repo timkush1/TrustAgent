@@ -87,6 +87,8 @@ class RetrieverNode:
         Returns:
             Updated state with context_docs populated
         """
+        import time
+        start = time.time()
         request_id = state["request_id"]
         claims = state.get("claims") or []
         user_query = state.get("user_query", "")
@@ -135,10 +137,13 @@ class RetrieverNode:
 
         # Update state with retrieved context
         state["context_docs"] = context_docs
+        elapsed_ms = int((time.time() - start) * 1000)
+        state.setdefault("step_timings", {})
+        state["step_timings"]["retrieve_ms"] = elapsed_ms
 
         logger.info(
             f"Retrieved {len(context_docs)} unique context documents "
-            f"for request {request_id}"
+            f"for request {request_id} ({elapsed_ms}ms)"
         )
 
         return state

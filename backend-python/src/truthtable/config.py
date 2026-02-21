@@ -32,9 +32,14 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Log level")
     
-    # Optional: Redis, Qdrant, etc. (for future use)
+    # Optional: Redis, Qdrant, etc.
     redis_url: Optional[str] = Field(default=None, description="Redis connection URL")
     qdrant_url: Optional[str] = Field(default=None, description="Qdrant server URL")
+
+    # LangSmith tracing (optional - set API key to enable)
+    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key")
+    langsmith_project: str = Field(default="trustagent", description="LangSmith project name")
+    langsmith_tracing: bool = Field(default=False, description="Enable LangSmith tracing")
     
     class Config:
         env_file = ".env"

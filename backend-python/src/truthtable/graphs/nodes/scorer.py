@@ -189,33 +189,39 @@ class ScorerNode:
     async def run(self, state: AuditState) -> AuditState:
         """
         Execute score calculation.
-        
+
         Args:
             state: Current graph state
-            
+
         Returns:
             Updated state with final scores and reasoning
         """
+        import time
+        start = time.time()
         logger.info(f"Calculating scores for request {state['request_id']}")
-        
+
         verifications = state["claim_verifications"]
-        
+
         # Calculate faithfulness score
         score = calculate_faithfulness_score(verifications)
-        
+
         # Detect hallucinations
         hallucination = detect_hallucination(verifications)
-        
+
         # Generate reasoning trace
         reasoning = generate_reasoning_trace(verifications, score)
-        
+
         # Update state
         state["faithfulness_score"] = score
         state["hallucination_detected"] = hallucination
         state["reasoning_trace"] = reasoning
-        
+
+        elapsed_ms = int((time.time() - start) * 1000)
+        state.setdefault("step_timings", {})
+        state["step_timings"]["score_ms"] = elapsed_ms
+
         logger.info(
-            f"Audit complete: score={score:.3f}, hallucination={hallucination}"
+            f"Audit complete: score={score:.3f}, hallucination={hallucination} ({elapsed_ms}ms)"
         )
-        
+
         return state

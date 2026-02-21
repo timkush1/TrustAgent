@@ -143,26 +143,31 @@ class DecomposerNode:
     async def run(self, state: AuditState) -> AuditState:
         """
         Execute claim decomposition.
-        
+
         Args:
             state: Current graph state
-            
+
         Returns:
             Updated state with claims populated
         """
+        import time
+        start = time.time()
         logger.info(f"Decomposing claims for request {state['request_id']}")
-        
+
         # Extract claims from the LLM response
         claims = await decompose_claims(
             llm_response=state["llm_response"],
             provider=self.provider
         )
-        
+
         # Update state
         state["claims"] = claims
-        
-        logger.info(f"Decomposed into {len(claims)} claims")
+        elapsed_ms = int((time.time() - start) * 1000)
+        state.setdefault("step_timings", {})
+        state["step_timings"]["decompose_ms"] = elapsed_ms
+
+        logger.info(f"Decomposed into {len(claims)} claims ({elapsed_ms}ms)")
         for i, claim in enumerate(claims, 1):
             logger.debug(f"  Claim {i}: {claim[:100]}...")
-        
+
         return state

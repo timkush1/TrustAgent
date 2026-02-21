@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/truthtable/backend-go/internal/metrics"
 )
 
 var upgrader = websocket.Upgrader{
@@ -41,6 +42,7 @@ type AuditResult struct {
 	Timestamp             string              `json:"timestamp"`
 	Provider              string              `json:"provider,omitempty"`
 	Model                 string              `json:"model,omitempty"`
+	StepTimings           map[string]int64    `json:"step_timings,omitempty"`
 }
 
 // ClaimVerification matches the frontend's claim format
@@ -106,6 +108,7 @@ func (h *Hub) Run() {
 			h.totalConnections++
 			count := len(h.clients)
 			h.mu.Unlock()
+			metrics.WebSocketClients.Inc()
 			log.Printf("WebSocket client connected (id: %s, total: %d)", client.id, count)
 
 			welcome := &AuditEvent{
@@ -125,6 +128,7 @@ func (h *Hub) Run() {
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
+				metrics.WebSocketClients.Dec()
 			}
 			count := len(h.clients)
 			h.mu.Unlock()

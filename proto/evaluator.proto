@@ -16,6 +16,9 @@ service AuditService {
     
     // HealthCheck verifies service readiness
     rpc HealthCheck(HealthRequest) returns (HealthResponse);
+
+    // IngestDocuments adds documents to the RAG knowledge base
+    rpc IngestDocuments(IngestRequest) returns (IngestResponse);
 }
 
 // ========== Request Messages ==========
@@ -56,18 +59,24 @@ message AuditResult {
     string audit_id = 1;            // Matches request audit_id
     string request_id = 2;          // Original request_id from AuditRequest
     AuditStatus status = 3;         // Processing status
-    
+
     // Trust Score (0.0 - 1.0, where 1.0 = fully faithful)
     float faithfulness_score = 4;
     TrustGrade grade = 5;           // A/B/C/D/F classification
-    
+
     // Detailed verification results
     repeated ClaimVerification claims = 6;
-    
+
     // Metadata
     string reasoning_trace = 7;     // LLM reasoning for transparency
     int64 completed_at_ms = 8;      // Completion timestamp
     int64 processing_time_ms = 9;   // Total processing duration
+
+    // Hallucination detection result from scorer
+    bool hallucination_detected = 10;
+
+    // Per-step timing from LangGraph pipeline (e.g., "decompose_ms": 150)
+    map<string, int64> step_timings = 11;
 }
 
 message ClaimVerification {
@@ -81,6 +90,15 @@ message HealthResponse {
     bool healthy = 1;               // Overall service health
     string version = 2;             // Service version
     map<string, bool> dependencies = 3;  // Qdrant, Ollama, Redis status
+}
+
+message IngestRequest {
+    repeated ContextDocument documents = 1;  // Documents to add to knowledge base
+}
+
+message IngestResponse {
+    int32 documents_ingested = 1;   // Number of documents successfully ingested
+    string status = 2;              // "success" or error message
 }
 
 // ========== Enums ==========

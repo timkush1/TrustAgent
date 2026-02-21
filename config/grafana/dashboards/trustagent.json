@@ -1,0 +1,162 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Audit Throughput",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(trustagent_audits_total[5m])",
+          "legendFormat": "Go Proxy - {{status}}"
+        },
+        {
+          "expr": "rate(truthtable_audits_total[5m])",
+          "legendFormat": "Python Engine - {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "title": "Hallucination Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(trustagent_hallucinations_detected_total[5m]) / rate(trustagent_audits_total{status=\"success\"}[5m])",
+          "legendFormat": "Hallucination Rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.2 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Total Audits",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "trustagent_audits_total{status=\"success\"}", "legendFormat": "Total" }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } }
+      }
+    },
+    {
+      "title": "Hallucinations Detected",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "trustagent_hallucinations_detected_total", "legendFormat": "Hallucinations" }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
+      }
+    },
+    {
+      "title": "Active Audits",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "trustagent_active_audits", "legendFormat": "Active" }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "max": 20, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 10 }] } }
+      }
+    },
+    {
+      "title": "WebSocket Clients",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "trustagent_websocket_clients", "legendFormat": "Connected" }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } }
+      }
+    },
+    {
+      "title": "Average Faithfulness Score",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(trustagent_faithfulness_score_bucket[5m]))", "legendFormat": "Median Score" }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "max": 1, "unit": "percentunit", "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.8 }] } }
+      }
+    },
+    {
+      "title": "Claims by Status",
+      "type": "piechart",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "trustagent_claims_total", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "title": "Audit Duration (p50, p90, p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(trustagent_audit_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.90, rate(trustagent_audit_duration_seconds_bucket[5m]))", "legendFormat": "p90" },
+        { "expr": "histogram_quantile(0.99, rate(trustagent_audit_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }
+      }
+    },
+    {
+      "title": "Faithfulness Score Distribution",
+      "type": "histogram",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(trustagent_faithfulness_score_bucket[5m])", "legendFormat": "{{le}}", "format": "heatmap" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    }
+  ],
+  "schemaVersion": 38,
+  "tags": ["trustagent", "hallucination"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "TrustAgent - Hallucination Detection",
+  "uid": "trustagent-main",
+  "version": 1,
+  "refresh": "10s"
+}

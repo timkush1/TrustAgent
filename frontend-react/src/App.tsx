@@ -2,6 +2,8 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { Header } from './components/layout/Header';
 import { MetricsPanel } from './components/dashboard/MetricsPanel';
 import { AuditFeed } from './components/audit/AuditFeed';
+import { QueryInput } from './components/audit/QueryInput';
+import { FileUpload } from './components/upload/FileUpload';
 
 function App() {
   const { status } = useWebSocket();
@@ -24,8 +26,10 @@ function App() {
             borderColor: 'var(--border-color)',
           }}
         >
+          <QueryInput />
+          <FileUpload />
           <MetricsPanel />
-          
+
           {/* Quick Stats */}
           <div className="p-4">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">

@@ -24,6 +24,7 @@ export interface AuditResult {
   timestamp: string;
   provider?: string;
   model?: string;
+  step_timings?: Record<string, number>;
 }
 
 export interface WSMessage {

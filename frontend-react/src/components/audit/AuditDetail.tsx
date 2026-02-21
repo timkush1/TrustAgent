@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { AuditResult } from '../../types/audit';
 import { TrustScoreGauge } from '../dashboard/TrustScoreGauge';
 import { ClaimBreakdown } from './ClaimBreakdown';
+import { PipelineView } from './PipelineView';
 
 interface AuditDetailProps {
   audit: AuditResult;
@@ -51,6 +52,13 @@ export function AuditDetail({ audit, onClose }: AuditDetailProps) {
             {audit.user_query || 'No query captured'}
           </p>
         </div>
+
+        {/* Pipeline Visualization */}
+        {audit.step_timings && Object.keys(audit.step_timings).length > 0 && (
+          <div className="border-b border-gray-700">
+            <PipelineView stepTimings={audit.step_timings} />
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex border-b border-gray-700">

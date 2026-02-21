@@ -118,16 +118,15 @@ services:
       - REDIS_URL=redis://redis:6379
       - QDRANT_URL=http://qdrant:6333
       - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=llama3.2:1b
       - GRPC_PORT=50051
       - METRICS_PORT=8001
       - LOG_LEVEL=INFO
     depends_on:
-      redis:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
+      - redis
+      - qdrant
+      - ollama
     healthcheck:
       test: ["CMD", "grpc-health-probe", "-addr=:50051"]
       interval: 10s
@@ -135,8 +134,8 @@ services:
       retries: 3
     networks:
       - truthtable-net
-    volumes:
-      - ./backend-python:/app
+    # volumes:
+    #   - ./backend-python:/app  # Commented out: volume mount overrides built-in venv
     restart: unless-stopped
 
   proxy:
@@ -150,25 +149,24 @@ services:
     environment:
       - GIN_MODE=release
       - REDIS_URL=redis://redis:6379
-      - AUDIT_GRPC_ADDRESS=audit-engine:50051
+      - TRUTHTABLE_GRPC_ADDRESS=audit-engine:50051
       - HTTP_PORT=8080
       - METRICS_PORT=8002
+      - TRUTHTABLE_WS_PORT=8080
       - LOG_LEVEL=info
       - UPSTREAM_LLM_URL=${UPSTREAM_LLM_URL:-http://ollama:11434}
     depends_on:
-      redis:
-        condition: service_healthy
-      audit-engine:
-        condition: service_healthy
+      - redis
+      - audit-engine
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8080/health"]
       interval: 10s
       timeout: 3s
       retries: 3
     networks:
       - truthtable-net
-    volumes:
-      - ./backend-go:/app
+    # volumes:
+    #   - ./backend-go:/app  # Commented out: use built binary from image
     restart: unless-stopped
 
   dashboard:

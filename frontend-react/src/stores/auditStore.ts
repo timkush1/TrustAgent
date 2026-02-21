@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { AuditResult } from '../types/audit';
 
 const MAX_AUDITS = 100;
@@ -6,12 +7,12 @@ const MAX_AUDITS = 100;
 interface AuditState {
   audits: AuditResult[];
   selectedAudit: AuditResult | null;
-  
+
   // Actions
   addAudit: (audit: AuditResult) => void;
   selectAudit: (auditId: string | null) => void;
   clearAudits: () => void;
-  
+
   // Computed
   getStats: () => {
     total: number;
@@ -21,35 +22,45 @@ interface AuditState {
   };
 }
 
-export const useAuditStore = create<AuditState>((set, get) => ({
-  audits: [],
-  selectedAudit: null,
+export const useAuditStore = create<AuditState>()(
+  persist(
+    (set, get) => ({
+      audits: [],
+      selectedAudit: null,
 
-  addAudit: (audit) =>
-    set((state) => ({
-      audits: [audit, ...state.audits].slice(0, MAX_AUDITS),
-    })),
+      addAudit: (audit) =>
+        set((state) => ({
+          audits: [audit, ...state.audits].slice(0, MAX_AUDITS),
+        })),
 
-  selectAudit: (auditId) =>
-    set((state) => ({
-      selectedAudit: auditId 
-        ? state.audits.find((a) => a.audit_id === auditId) || null 
-        : null,
-    })),
+      selectAudit: (auditId) =>
+        set((state) => ({
+          selectedAudit: auditId
+            ? state.audits.find((a) => a.audit_id === auditId) || null
+            : null,
+        })),
 
-  clearAudits: () => set({ audits: [], selectedAudit: null }),
+      clearAudits: () => set({ audits: [], selectedAudit: null }),
 
-  getStats: () => {
-    const { audits } = get();
-    const total = audits.length;
-    if (total === 0) {
-      return { total: 0, avgScore: 0, hallucinationCount: 0, hallucinationRate: 0 };
+      getStats: () => {
+        const { audits } = get();
+        const total = audits.length;
+        if (total === 0) {
+          return { total: 0, avgScore: 0, hallucinationCount: 0, hallucinationRate: 0 };
+        }
+
+        const avgScore = audits.reduce((sum, a) => sum + a.overall_score, 0) / total;
+        const hallucinationCount = audits.filter((a) => a.hallucination_detected).length;
+        const hallucinationRate = hallucinationCount / total;
+
+        return { total, avgScore, hallucinationCount, hallucinationRate };
+      },
+    }),
+    {
+      name: 'trustagent-audit-storage',
+      partialize: (state) => ({
+        audits: state.audits,
+      }),
     }
-    
-    const avgScore = audits.reduce((sum, a) => sum + a.overall_score, 0) / total;
-    const hallucinationCount = audits.filter((a) => a.hallucination_detected).length;
-    const hallucinationRate = hallucinationCount / total;
-    
-    return { total, avgScore, hallucinationCount, hallucinationRate };
-  },
-}));
+  )
+);

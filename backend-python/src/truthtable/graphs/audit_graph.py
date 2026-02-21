@@ -144,6 +144,7 @@ async def run_audit(
         "faithfulness_score": None,
         "hallucination_detected": None,
         "reasoning_trace": None,
+        "step_timings": {},  # Initialize for pipeline observability
     }
 
     # Execute graph

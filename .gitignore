@@ -80,3 +80,6 @@ docker-compose.override.yml
 test-results/
 junit.xml
 *.test.log
+
+# ========== Internal Planning Docs ==========
+docs-private/

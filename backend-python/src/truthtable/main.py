@@ -13,6 +13,7 @@ This is where everything gets wired together:
 
 import asyncio
 import logging
+import os
 import platform
 import signal
 import sys
@@ -41,6 +42,15 @@ async def main():
     logger = logging.getLogger(__name__)
     logger.info("Starting TruthTable Audit Engine")
     logger.info(f"Provider: {settings.llm_provider}, Model: {settings.llm_model}")
+
+    # Setup LangSmith tracing (optional)
+    if settings.langsmith_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+        os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+        logger.info(f"LangSmith tracing enabled (project: {settings.langsmith_project})")
+    else:
+        logger.info("LangSmith tracing disabled (set LANGSMITH_API_KEY to enable)")
 
     # Initialize LLM provider
     logger.info(f"Initializing {settings.llm_provider} provider...")
@@ -109,12 +119,22 @@ async def main():
     )
     logger.info("Audit graph ready")
 
+    # Start Prometheus metrics HTTP server
+    metrics_port = 8001
+    try:
+        from prometheus_client import start_http_server
+        start_http_server(metrics_port)
+        logger.info(f"Metrics server listening on :{metrics_port}")
+    except Exception as e:
+        logger.warning(f"Failed to start metrics server: {e}")
+
     # Create gRPC server
     logger.info(f"Creating gRPC server on {settings.grpc_host}:{settings.grpc_port}...")
     servicer = AuditServicer(
         audit_graph=audit_graph,
         provider=provider,
         qdrant_store=qdrant_store,
+        embedding_service=embedding_service,
     )
     server = create_server(servicer, host=settings.grpc_host, port=settings.grpc_port)
 

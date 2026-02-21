@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/truthtable/backend-go/internal/grpc"
+	"github.com/truthtable/backend-go/internal/metrics"
 	"github.com/truthtable/backend-go/internal/websocket"
 )
 
@@ -93,6 +94,9 @@ func (p *Pool) processJob(workerID int, job *AuditJob) {
 	startTime := time.Now()
 	log.Printf("[%s] Worker %d processing job", job.RequestID, workerID)
 
+	metrics.ActiveAudits.Inc()
+	defer metrics.ActiveAudits.Dec()
+
 	if p.auditClient == nil {
 		log.Printf("[%s] No audit client available, skipping audit", job.RequestID)
 		return
@@ -101,6 +105,7 @@ func (p *Pool) processJob(workerID int, job *AuditJob) {
 	result, err := p.auditClient.Evaluate(p.ctx, job.RequestID, job.Prompt, job.Response)
 	if err != nil {
 		log.Printf("[%s] Audit failed: %v", job.RequestID, err)
+		metrics.AuditsTotal.WithLabelValues("error").Inc()
 		if p.wsHub != nil {
 			p.wsHub.Broadcast(&websocket.AuditEvent{
 				Type:      "audit_error",
@@ -116,23 +121,35 @@ func (p *Pool) processJob(workerID int, job *AuditJob) {
 	log.Printf("[%s] Audit complete in %v (score: %.2f, claims: %d)",
 		job.RequestID, duration, result.TrustScore, len(result.Claims))
 
+	// Record metrics
+	metrics.AuditsTotal.WithLabelValues("success").Inc()
+	metrics.AuditDuration.Observe(duration.Seconds())
+	metrics.FaithfulnessScore.Observe(result.TrustScore)
+	if result.HallucinationDetected {
+		metrics.HallucinationsDetected.Inc()
+	}
+	for _, c := range result.Claims {
+		metrics.ClaimsTotal.WithLabelValues(c.Verdict).Inc()
+	}
+
 	if p.wsHub != nil {
-		// Create audit result in the format expected by the frontend
+		// Create audit result using actual values from the Python audit engine
 		auditResult := &websocket.AuditResult{
-			AuditID:               job.RequestID, // Use request ID as audit ID for now
+			AuditID:               job.RequestID,
 			RequestID:             job.RequestID,
 			UserQuery:             job.Prompt,
 			LLMResponse:           job.Response,
 			FaithfulnessScore:     result.TrustScore,
-			RelevancyScore:        result.TrustScore, // Same for now
+			RelevancyScore:        result.TrustScore,
 			OverallScore:          result.TrustScore,
-			HallucinationDetected: result.TrustScore < 0.8,
+			HallucinationDetected: result.HallucinationDetected,
 			Claims:                convertClaimsToVerifications(result.Claims),
-			ReasoningTrace:        "",
+			ReasoningTrace:        result.ReasoningTrace,
 			ProcessingTimeMs:      duration.Milliseconds(),
 			Timestamp:             time.Now().Format(time.RFC3339),
 			Provider:              "proxy",
 			Model:                 job.Model,
+			StepTimings:           result.StepTimings,
 		}
 		p.wsHub.BroadcastAuditResult(auditResult)
 	}
@@ -161,18 +178,26 @@ func convertClaimsToVerifications(claims []*grpc.ClaimResult) []websocket.ClaimV
 	result := make([]websocket.ClaimVerification, len(claims))
 	for i, c := range claims {
 		// Map verdict to status (frontend expects uppercase)
-		status := "UNSUPPORTED"
-		if c.Verdict == "supported" {
+		status := "UNKNOWN"
+		switch c.Verdict {
+		case "supported":
 			status = "SUPPORTED"
-		} else if c.Verdict == "partially_supported" {
+		case "unsupported":
+			status = "UNSUPPORTED"
+		case "partially_supported":
 			status = "PARTIALLY_SUPPORTED"
+		}
+
+		evidence := c.Evidence
+		if evidence == nil {
+			evidence = []string{}
 		}
 
 		result[i] = websocket.ClaimVerification{
 			Claim:      c.Text,
 			Status:     status,
 			Confidence: c.Confidence,
-			Evidence:   []string{}, // No evidence for now
+			Evidence:   evidence,
 		}
 	}
 	return result

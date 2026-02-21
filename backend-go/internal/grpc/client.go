@@ -20,12 +20,16 @@ type ClaimResult struct {
 	Text       string
 	Verdict    string
 	Confidence float64
+	Evidence   []string
 }
 
 type AuditResult struct {
-	TrustScore float64
-	Claims     []*ClaimResult
-	Summary    string
+	TrustScore            float64
+	Claims                []*ClaimResult
+	ReasoningTrace        string
+	HallucinationDetected bool
+	ProcessingTimeMs      int64
+	StepTimings           map[string]int64
 }
 
 func NewAuditClient(address string, timeout time.Duration) (*AuditClient, error) {
@@ -82,20 +86,68 @@ func (c *AuditClient) Evaluate(ctx context.Context, requestID, prompt, response 
 		return nil, fmt.Errorf("audit timed out")
 	}
 
+	// Map protobuf VerificationStatus enum to lowercase verdict strings
+	verdictMap := map[pb.VerificationStatus]string{
+		pb.VerificationStatus_VERIFICATION_STATUS_SUPPORTED:           "supported",
+		pb.VerificationStatus_VERIFICATION_STATUS_CONTRADICTED:        "unsupported",
+		pb.VerificationStatus_VERIFICATION_STATUS_UNSUPPORTED:         "unsupported",
+		pb.VerificationStatus_VERIFICATION_STATUS_PARTIALLY_SUPPORTED: "partially_supported",
+		pb.VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED:         "unknown",
+	}
+
 	claims := make([]*ClaimResult, len(auditResult.Claims))
 	for i, claim := range auditResult.Claims {
+		verdict := "unknown"
+		if v, ok := verdictMap[claim.Status]; ok {
+			verdict = v
+		}
 		claims[i] = &ClaimResult{
 			Text:       claim.Claim,
-			Verdict:    claim.Status.String(),
+			Verdict:    verdict,
 			Confidence: float64(claim.Confidence),
+			Evidence:   claim.Evidence,
 		}
 	}
 
 	return &AuditResult{
-		TrustScore: float64(auditResult.FaithfulnessScore),
-		Claims:     claims,
-		Summary:    auditResult.ReasoningTrace,
+		TrustScore:            float64(auditResult.FaithfulnessScore),
+		Claims:                claims,
+		ReasoningTrace:        auditResult.ReasoningTrace,
+		HallucinationDetected: auditResult.HallucinationDetected,
+		ProcessingTimeMs:      auditResult.ProcessingTimeMs,
+		StepTimings:           auditResult.StepTimings,
 	}, nil
+}
+
+// IngestDocument represents a document to ingest into the knowledge base.
+type IngestDocument struct {
+	ID       string
+	Content  string
+	Metadata map[string]string
+}
+
+// IngestDocuments sends documents to the Python engine for embedding and storage.
+func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDocument) (int32, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	pbDocs := make([]*pb.ContextDocument, len(documents))
+	for i, doc := range documents {
+		pbDocs[i] = &pb.ContextDocument{
+			Id:       doc.ID,
+			Content:  doc.Content,
+			Metadata: doc.Metadata,
+		}
+	}
+
+	resp, err := c.client.IngestDocuments(ctx, &pb.IngestRequest{
+		Documents: pbDocs,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("ingest documents failed: %w", err)
+	}
+
+	return resp.DocumentsIngested, nil
 }
 
 func (c *AuditClient) Close() error {

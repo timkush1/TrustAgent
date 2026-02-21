@@ -151,22 +151,102 @@ def run_direct_audit(test_name: str, query: str, response: str) -> dict:
             )
             score = audit.faithfulness_score
             grade = evaluator_pb2.TrustGrade.Name(audit.grade) if audit.grade else "?"
-            detected = score < 0.7
+            hallucination_detected = audit.hallucination_detected
+            reasoning_trace = audit.reasoning_trace
+            step_timings = dict(audit.step_timings)
 
-            print(f"  Score:    {score:.0%} (Grade: {grade}) {'** HALLUCINATION **' if detected else 'PASSED'}")
+            print(f"  Score:    {score:.0%} (Grade: {grade}) {'** HALLUCINATION **' if hallucination_detected else 'PASSED'}")
+            print(f"  Hallucination detected: {hallucination_detected}")
             print(f"  Claims:   {len(audit.claims)} ({elapsed:.1f}s)")
+            print(f"  Reasoning trace: {'present' if reasoning_trace else 'MISSING'} ({len(reasoning_trace)} chars)")
+            print(f"  Step timings: {step_timings or 'MISSING'}")
 
             for i, claim in enumerate(audit.claims, 1):
                 status = evaluator_pb2.VerificationStatus.Name(claim.status)
-                print(f"    {i}. [{status}] (conf={claim.confidence:.0%}) {claim.claim[:70]}")
+                evidence_count = len(claim.evidence)
+                print(f"    {i}. [{status}] (conf={claim.confidence:.0%}) {claim.claim[:60]}... [evidence: {evidence_count}]")
 
             channel.close()
-            return {"ok": True, "score": score, "grade": grade, "claims": len(audit.claims), "detected": detected}
+            return {
+                "ok": True,
+                "score": score,
+                "grade": grade,
+                "claims": len(audit.claims),
+                "hallucination_detected": hallucination_detected,
+                "has_reasoning_trace": bool(reasoning_trace),
+                "has_step_timings": bool(step_timings),
+                "has_evidence": any(len(c.evidence) > 0 for c in audit.claims),
+            }
         else:
             print(f"  Status: {result.status}")
             channel.close()
             return {"ok": False, "status": result.status}
 
+    except Exception as e:
+        print(f"  Error: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def test_direct_audit_endpoint() -> dict:
+    """Test the /api/audit endpoint on the Go proxy."""
+    print("\n  Testing POST /api/audit...")
+
+    body = json.dumps({"query": "What is gravity?", "response": "Gravity is a fundamental force."}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{PROXY_URL}/api/audit",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            request_id = data.get("request_id", "")
+            status = data.get("status", "")
+            print(f"  Response: request_id={request_id}, status={status}")
+            assert request_id, "/api/audit did not return request_id"
+            assert status == "submitted", f"/api/audit status was '{status}', expected 'submitted'"
+            return {"ok": True, "request_id": request_id}
+    except Exception as e:
+        print(f"  Error: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def test_file_upload_endpoint() -> dict:
+    """Test the /api/upload endpoint on the Go proxy."""
+    print("\n  Testing POST /api/upload...")
+
+    docs = [{"content": "E2E test document: the sky is blue.", "metadata": {"source": "test"}}]
+    file_data = json.dumps(docs).encode("utf-8")
+
+    boundary = "----E2ETestBoundary"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="test.json"\r\n'
+        f"Content-Type: application/json\r\n\r\n"
+    ).encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{PROXY_URL}/api/upload",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            count = data.get("documents_ingested", 0)
+            status = data.get("status", "")
+            print(f"  Response: documents_ingested={count}, status={status}")
+            assert count >= 1, f"Expected at least 1 document ingested, got {count}"
+            assert status == "success", f"Upload status was '{status}', expected 'success'"
+            return {"ok": True, "count": count}
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8") if e.fp else ""
+        print(f"  HTTP Error {e.code}: {error_body[:200]}")
+        return {"ok": False, "error": error_body}
     except Exception as e:
         print(f"  Error: {e}")
         return {"ok": False, "error": str(e)}
@@ -240,45 +320,89 @@ def main():
         response="The speed of light is approximately 300,000 km/s. It was discovered by Isaac Newton in 1687.",
     )
 
-    # ── Summary ──
+    # ── Step 4: Test new API endpoints ──
+    print(f"\n{'='*60}")
+    print("[Step 4] Testing new API endpoints...")
+
+    api_audit = test_direct_audit_endpoint()
+    api_upload = test_file_upload_endpoint()
+
+    # ── Summary & Assertions ──
     print(f"\n{'='*60}")
     print("  RESULTS SUMMARY")
     print(f"{'='*60}")
 
+    failures = []
+
     print("\n  Proxy Endpoint (Go -> returns LLM response):")
-    print(f"    Test 1 (true):   {'PASS' if r1.get('ok') else 'FAIL'}")
-    print(f"    Test 2 (false):  {'PASS' if r2.get('ok') else 'FAIL'}")
-    print(f"    Test 3 (mixed):  {'PASS' if r3.get('ok') else 'FAIL'}")
+    for name, result in [("Test 1 (true)", r1), ("Test 2 (false)", r2), ("Test 3 (mixed)", r3)]:
+        ok = result.get("ok")
+        print(f"    {name}: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            failures.append(f"Proxy {name} failed")
 
     print("\n  Audit Pipeline (Python -> verifies claims):")
-    if a1.get("ok"):
-        print(f"    Audit 1 (true):  {a1['score']:.0%} Grade {a1['grade']} - {'PASS' if a1['score'] >= 0.5 else 'UNEXPECTED'}")
-    else:
-        print(f"    Audit 1 (true):  FAIL")
-    if a2.get("ok"):
-        print(f"    Audit 2 (false): {a2['score']:.0%} Grade {a2['grade']} - {'PASS (hallucination caught!)' if a2['detected'] else 'UNEXPECTED'}")
-    else:
-        print(f"    Audit 2 (false): FAIL")
-    if a3.get("ok"):
-        print(f"    Audit 3 (mixed): {a3['score']:.0%} Grade {a3['grade']} - {'PASS' if 0.2 <= a3['score'] <= 0.9 else 'UNEXPECTED'}")
-    else:
-        print(f"    Audit 3 (mixed): FAIL")
+    for name, result, checks in [
+        ("Audit 1 (true claim)", a1, [
+            ("score >= 0.5", lambda r: r["score"] >= 0.5),
+            ("hallucination_detected is False", lambda r: not r["hallucination_detected"]),
+            ("has reasoning_trace", lambda r: r["has_reasoning_trace"]),
+            ("has step_timings", lambda r: r["has_step_timings"]),
+        ]),
+        ("Audit 2 (false claim)", a2, [
+            ("hallucination_detected is True", lambda r: r["hallucination_detected"]),
+            ("has reasoning_trace", lambda r: r["has_reasoning_trace"]),
+            ("has step_timings", lambda r: r["has_step_timings"]),
+        ]),
+        ("Audit 3 (mixed)", a3, [
+            ("score between 0.1 and 0.95", lambda r: 0.1 <= r["score"] <= 0.95),
+            ("has reasoning_trace", lambda r: r["has_reasoning_trace"]),
+            ("has step_timings", lambda r: r["has_step_timings"]),
+        ]),
+    ]:
+        if not result.get("ok"):
+            print(f"    {name}: FAIL (audit did not complete)")
+            failures.append(f"{name} did not complete")
+            continue
 
-    # Overall
-    all_proxy = all(r.get("ok") for r in [r1, r2, r3])
-    all_audit = all(a.get("ok") for a in [a1, a2, a3])
+        score_str = f"{result['score']:.0%}" if "score" in result else "?"
+        print(f"    {name}: score={score_str} grade={result.get('grade', '?')}")
+        for check_name, check_fn in checks:
+            passed = check_fn(result)
+            print(f"      {'PASS' if passed else 'FAIL'}: {check_name}")
+            if not passed:
+                failures.append(f"{name}: {check_name}")
 
+    # Cross-audit assertions
+    if a1.get("ok") and a2.get("ok"):
+        if a1["score"] > a2["score"]:
+            print(f"\n    PASS: True claim scores higher than false claim ({a1['score']:.0%} > {a2['score']:.0%})")
+        else:
+            msg = f"True claim should score higher than false ({a1['score']:.0%} vs {a2['score']:.0%})"
+            print(f"\n    FAIL: {msg}")
+            failures.append(msg)
+
+    print("\n  API Endpoints:")
+    for name, result in [("POST /api/audit", api_audit), ("POST /api/upload", api_upload)]:
+        ok = result.get("ok")
+        print(f"    {name}: {'PASS' if ok else 'FAIL'}")
+        if not ok:
+            failures.append(f"{name} failed: {result.get('error', 'unknown')}")
+
+    # Final verdict
     print(f"\n  {'='*50}")
-    if all_proxy and all_audit:
-        if a1.get("ok") and a2.get("ok") and a1["score"] > a2["score"]:
-            print("  ALL TESTS PASSED! True claims score higher than false claims.")
-        elif all_audit:
-            print("  ALL TESTS COMPLETED. Check scores above.")
+    if not failures:
+        print("  ALL TESTS PASSED!")
         print("\n  The audit pipeline is working end-to-end!")
         print("  Open http://localhost:5173 to see results on the dashboard.")
     else:
-        print("  SOME TESTS FAILED. Check the output above.")
+        print(f"  {len(failures)} ASSERTION(S) FAILED:")
+        for f in failures:
+            print(f"    - {f}")
     print(f"  {'='*50}")
+
+    if failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
