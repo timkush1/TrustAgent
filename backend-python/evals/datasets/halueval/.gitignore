@@ -1,0 +1,3 @@
+# Downloaded benchmark data is reproducible via evals/datasets/download.py
+*
+!.gitignore

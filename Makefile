@@ -82,6 +82,15 @@ test-e2e: ## Run end-to-end tests (requires full stack running: make up-all)
 	cd backend-python && poetry run python ../test_e2e.py
 	cd backend-python && poetry run python ../test_direct_audit.py
 
+# ========== Evaluation ==========
+
+eval-golden: ## Deterministic golden-set eval (the CI regression gate, no model needed)
+	cd backend-python && poetry run python -m evals.run_eval --dataset golden --provider mock --check-baseline
+
+eval-benchmark: ## HaluEval benchmark against local Ollama (requires make up + ollama-pull)
+	cd backend-python && poetry run python -m evals.datasets.download halueval --samples 200
+	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider ollama --model llama3.2 --output eval-report.json
+
 # ========== Linting ==========
 
 lint: ## Run linters for all projects

@@ -107,6 +107,13 @@ jobs:
       - name: pytest (unit)
         run: pytest tests/unit -v --cov=truthtable --cov-report=term
 
+      # Tier-1 eval regression gate: the golden set runs through the real
+      # pipeline with recorded (mock) LLM responses; any change to parsing,
+      # scoring, or thresholds that shifts results fails this step and forces
+      # a deliberate baseline update in the same PR. See docs/EVALUATION.md.
+      - name: Eval regression gate (golden set, mock provider)
+        run: python -m evals.run_eval --dataset golden --provider mock --check-baseline
+
   frontend:
     name: Frontend (dashboard)
     runs-on: ubuntu-latest

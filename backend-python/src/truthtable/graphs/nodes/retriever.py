@@ -94,6 +94,21 @@ class RetrieverNode:
         claims = state.get("claims") or []
         user_query = state.get("user_query", "")
 
+        # Context-injection mode: if the caller already supplied context
+        # documents (e.g. gRPC AuditRequest.context or an eval harness with
+        # ground-truth context), verify against those instead of querying
+        # the knowledge base.
+        provided_context = state.get("context_docs") or []
+        if provided_context:
+            elapsed_ms = int((time.time() - start) * 1000)
+            state.setdefault("step_timings", {})
+            state["step_timings"]["retrieve_ms"] = elapsed_ms
+            logger.info(
+                f"Using {len(provided_context)} caller-provided context documents "
+                f"for request {request_id}; skipping knowledge-base retrieval"
+            )
+            return state
+
         logger.info(
             f"Retrieving context for request {request_id}: " f"{len(claims)} claims + user query"
         )

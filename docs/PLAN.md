@@ -10,7 +10,7 @@
 |---|---|---|---|
 | [0](#phase-0--hygiene--doc-foundation) | Hygiene & doc foundation | 5 | ✅ |
 | [1](#phase-1--cicd) | CI/CD pipelines | 9 | ✅ |
-| [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ⬜ |
+| [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ✅ |
 | [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ⬜ |
 | [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ⬜ |
 | [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ⬜ |
@@ -91,12 +91,14 @@ AUROC on faithfulness score, **ECE calibration** on per-claim confidence, latenc
 Key enabler: retriever uses caller-provided context (already in proto as
 `repeated ContextDocument`) instead of Qdrant when present.
 
-- [ ] `evals/` package: `run_eval.py`, `metrics.py`, `datasets/download.py`, `report.py`, `baselines/`
-- [ ] `MockLLMProvider` + fixture recorder
-- [ ] Context-injection mode in `retriever.py`
-- [ ] Golden set (50 curated examples) + committed baseline
-- [ ] Tier-1 job in CI (blocking); `.github/workflows/eval.yml` for Tier-2
-- [ ] `docs/EVALUATION.md` + benchmark table in README
+- [x] `evals/` package (in `backend-python/evals/`): `run_eval.py`, `metrics.py`,
+      `datasets/download.py`, `build_golden.py`, `baselines/`
+- [x] `MockLLMProvider` (content-matched fixture replay) + generated fixtures
+- [x] Context-injection mode in `retriever.py`
+- [x] Golden set (50 curated examples incl. simulated model errors) + committed baseline
+- [x] Tier-1 step in CI (blocking); `.github/workflows/eval.yml` for Tier-2 (HaluEval)
+- [x] `docs/EVALUATION.md` + benchmark table in README
+- [ ] RAGTruth dataset support (deferred — HaluEval first; revisit in Phase 5)
 
 **Verify**: golden run deterministic across two runs; CI fails when scorer threshold is perturbed.
 

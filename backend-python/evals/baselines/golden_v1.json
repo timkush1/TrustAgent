@@ -1,0 +1,324 @@
+{
+  "dataset": "golden_v1.jsonl",
+  "provider": "mock",
+  "model": "mock",
+  "examples": 50,
+  "metrics": {
+    "total": 50,
+    "positives": 26,
+    "negatives": 24,
+    "true_positives": 24,
+    "false_positives": 3,
+    "true_negatives": 21,
+    "false_negatives": 2,
+    "precision": 0.888889,
+    "recall": 0.923077,
+    "f1": 0.90566,
+    "accuracy": 0.9,
+    "balanced_accuracy": 0.899038,
+    "auroc": 0.907051,
+    "ece": 0.132536
+  },
+  "per_example": [
+    {
+      "id": "geo-paris-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "geo-paris-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "geo-canberra-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "geo-canberra-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "geo-nile-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "geo-nile-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "geo-everest-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "geo-everest-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "geo-tokyo-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "geo-tokyo-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "sci-water-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "sci-water-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "sci-light-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "sci-light-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "sci-dna-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "sci-dna-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "sci-photo-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "sci-photo-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "sci-moon-gravity-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "sci-moon-gravity-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "his-apollo-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "his-apollo-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "his-ww2-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "his-ww2-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "his-press-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "his-press-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "his-rome-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "his-rome-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "tech-python-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "tech-python-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "tech-www-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "tech-www-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "tech-transistor-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "tech-transistor-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "tech-linux-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "tech-linux-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "med-heart-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "med-heart-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "med-penicillin-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "med-penicillin-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "med-insulin-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 0.3
+    },
+    {
+      "id": "med-insulin-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    },
+    {
+      "id": "med-bones-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "med-bones-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "special-eiffel-mixed",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.513514
+    },
+    {
+      "id": "special-shakespeare-mixed",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.513812
+    },
+    {
+      "id": "special-greatwall-partial",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.793103
+    },
+    {
+      "id": "special-bees-boundary",
+      "label_hallucinated": false,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.893617
+    },
+    {
+      "id": "special-jupiter-faithful",
+      "label_hallucinated": false,
+      "predicted_hallucinated": false,
+      "faithfulness_score": 1.0
+    },
+    {
+      "id": "special-mars-hallucinated",
+      "label_hallucinated": true,
+      "predicted_hallucinated": true,
+      "faithfulness_score": 0.0
+    }
+  ]
+}

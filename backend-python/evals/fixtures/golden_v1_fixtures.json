@@ -1,0 +1,700 @@
+[
+  {
+    "match": [
+      "Extract all factual claims",
+      "Paris is the capital of France."
+    ],
+    "response": "[\"Paris is the capital of France.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nParis is the capital of France.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.84, \"evidence\": [\"Paris is the capital and largest city of France.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Lyon is the capital of France."
+    ],
+    "response": "[\"Lyon is the capital of France.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nLyon is the capital of France.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.82, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Canberra is the capital of Australia."
+    ],
+    "response": "[\"Canberra is the capital of Australia.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nCanberra is the capital of Australia.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.93, \"evidence\": [\"Canberra is the capital city of Australia, chosen as a compromise between Sydney and Melbourne.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Sydney is the capital of Australia."
+    ],
+    "response": "[\"Sydney is the capital of Australia.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nSydney is the capital of Australia.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.91, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Nile is regarded as the longest river in the world."
+    ],
+    "response": "[\"The Nile is regarded as the longest river in the world.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Nile is regarded as the longest river in the world.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.89, \"evidence\": [\"The Nile is generally regarded as the longest river in the world, flowing about 6,650 km through northeastern Africa.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Nile flows through South America."
+    ],
+    "response": "[\"The Nile flows through South America.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Nile flows through South America.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.82, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Mount Everest is Earth's highest mountain."
+    ],
+    "response": "[\"Mount Everest is Earth's highest mountain.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nMount Everest is Earth's highest mountain.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.9, \"evidence\": [\"Mount Everest, at 8,849 metres above sea level, is Earth's highest mountain.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Mount Everest is approximately 7,000 metres tall."
+    ],
+    "response": "[\"Mount Everest is approximately 7,000 metres tall.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nMount Everest is approximately 7,000 metres tall.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.79, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Tokyo is the capital of Japan."
+    ],
+    "response": "[\"Tokyo is the capital of Japan.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nTokyo is the capital of Japan.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.97, \"evidence\": [\"Tokyo is the capital of Japan and the most populous metropolitan area in the world.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Kyoto is the current capital of Japan."
+    ],
+    "response": "[\"Kyoto is the current capital of Japan.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nKyoto is the current capital of Japan.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.85, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Water boils at 100 degrees Celsius at standard pressure."
+    ],
+    "response": "[\"Water boils at 100 degrees Celsius at standard pressure.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nWater boils at 100 degrees Celsius at standard pressure.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.83, \"evidence\": [\"Water boils at 100 degrees Celsius at standard atmospheric pressure.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Water boils at 150 degrees Celsius at standard pressure."
+    ],
+    "response": "[\"Water boils at 150 degrees Celsius at standard pressure.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nWater boils at 150 degrees Celsius at standard pressure.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.85, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The speed of light in a vacuum is about 299,792 kilometres per second."
+    ],
+    "response": "[\"The speed of light in a vacuum is about 299,792 kilometres per second.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe speed of light in a vacuum is about 299,792 kilometres per second.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.92, \"evidence\": [\"The speed of light in a vacuum is exactly 299,792,458 metres per second.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The speed of light in a vacuum is about 150,000 kilometres per second."
+    ],
+    "response": "[\"The speed of light in a vacuum is about 150,000 kilometres per second.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe speed of light in a vacuum is about 150,000 kilometres per second.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.89, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "DNA is structured as a double helix."
+    ],
+    "response": "[\"DNA is structured as a double helix.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nDNA is structured as a double helix.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.9, \"evidence\": [\"DNA carries genetic information and is structured as a double helix, as described by Watson and Crick in 1953.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "DNA was first described as a triple helix in 1953."
+    ],
+    "response": "[\"DNA was first described as a triple helix in 1953.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nDNA was first described as a triple helix in 1953.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.93, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Photosynthesis produces oxygen."
+    ],
+    "response": "[\"Photosynthesis produces oxygen.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nPhotosynthesis produces oxygen.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.98, \"evidence\": [\"Photosynthesis converts carbon dioxide and water into glucose and oxygen using light energy.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Photosynthesis consumes oxygen and produces carbon dioxide."
+    ],
+    "response": "[\"Photosynthesis consumes oxygen and produces carbon dioxide.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nPhotosynthesis consumes oxygen and produces carbon dioxide.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.91, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Moon's gravity is about one-sixth of Earth's."
+    ],
+    "response": "[\"The Moon's gravity is about one-sixth of Earth's.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Moon's gravity is about one-sixth of Earth's.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.78, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Moon's gravity is stronger than Earth's."
+    ],
+    "response": "[\"The Moon's gravity is stronger than Earth's.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Moon's gravity is stronger than Earth's.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.87, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Apollo 11 landed humans on the Moon in 1969."
+    ],
+    "response": "[\"Apollo 11 landed humans on the Moon in 1969.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nApollo 11 landed humans on the Moon in 1969.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.97, \"evidence\": [\"Apollo 11 landed the first humans on the Moon on July 20, 1969.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Apollo 11 landed humans on the Moon in 1972."
+    ],
+    "response": "[\"Apollo 11 landed humans on the Moon in 1972.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nApollo 11 landed humans on the Moon in 1972.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.85, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "World War II ended in 1945."
+    ],
+    "response": "[\"World War II ended in 1945.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nWorld War II ended in 1945.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.95, \"evidence\": [\"World War II ended in 1945 with the surrender of Germany in May and Japan in September.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "World War II ended in 1950."
+    ],
+    "response": "[\"World War II ended in 1950.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nWorld War II ended in 1950.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.87, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Gutenberg introduced the movable-type printing press in Europe."
+    ],
+    "response": "[\"Gutenberg introduced the movable-type printing press in Europe.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nGutenberg introduced the movable-type printing press in Europe.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.89, \"evidence\": [\"Johannes Gutenberg introduced the movable-type printing press in Europe around 1440.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Gutenberg invented the telephone in 1440."
+    ],
+    "response": "[\"Gutenberg invented the telephone in 1440.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nGutenberg invented the telephone in 1440.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.83, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Rome was traditionally founded in 753 BC."
+    ],
+    "response": "[\"Rome was traditionally founded in 753 BC.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nRome was traditionally founded in 753 BC.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.94, \"evidence\": [\"According to tradition, the city of Rome was founded in 753 BC.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Rome was founded in 1200 AD."
+    ],
+    "response": "[\"Rome was founded in 1200 AD.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nRome was founded in 1200 AD.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.55, \"evidence\": [\"According to tradition, the city of Rome was founded in 753 BC.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Python was first released in 1991."
+    ],
+    "response": "[\"Python was first released in 1991.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nPython was first released in 1991.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.9, \"evidence\": [\"Python was created by Guido van Rossum and first released in 1991.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Python was created by Linus Torvalds."
+    ],
+    "response": "[\"Python was created by Linus Torvalds.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nPython was created by Linus Torvalds.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.82, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Tim Berners-Lee invented the World Wide Web."
+    ],
+    "response": "[\"Tim Berners-Lee invented the World Wide Web.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nTim Berners-Lee invented the World Wide Web.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.87, \"evidence\": [\"Tim Berners-Lee invented the World Wide Web in 1989 while working at CERN.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The World Wide Web was invented by Bill Gates."
+    ],
+    "response": "[\"The World Wide Web was invented by Bill Gates.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe World Wide Web was invented by Bill Gates.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.9, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The transistor was invented at Bell Labs."
+    ],
+    "response": "[\"The transistor was invented at Bell Labs.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe transistor was invented at Bell Labs.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.87, \"evidence\": [\"The transistor was invented at Bell Labs in 1947.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The transistor was invented by NASA in 1969."
+    ],
+    "response": "[\"The transistor was invented by NASA in 1969.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe transistor was invented by NASA in 1969.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.82, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Linux kernel was first released in 1991."
+    ],
+    "response": "[\"The Linux kernel was first released in 1991.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Linux kernel was first released in 1991.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.8, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Linux kernel was first released by Steve Jobs."
+    ],
+    "response": "[\"The Linux kernel was first released by Steve Jobs.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Linux kernel was first released by Steve Jobs.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.87, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The human heart has four chambers."
+    ],
+    "response": "[\"The human heart has four chambers.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe human heart has four chambers.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.97, \"evidence\": [\"The human heart has four chambers: two atria and two ventricles.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The human heart has six chambers."
+    ],
+    "response": "[\"The human heart has six chambers.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe human heart has six chambers.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.86, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Penicillin was discovered by Alexander Fleming."
+    ],
+    "response": "[\"Penicillin was discovered by Alexander Fleming.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nPenicillin was discovered by Alexander Fleming.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.97, \"evidence\": [\"Alexander Fleming discovered penicillin in 1928.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Penicillin was discovered by Marie Curie."
+    ],
+    "response": "[\"Penicillin was discovered by Marie Curie.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nPenicillin was discovered by Marie Curie.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.96, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Insulin is produced by the pancreas."
+    ],
+    "response": "[\"Insulin is produced by the pancreas.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nInsulin is produced by the pancreas.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNKNOWN\", \"confidence\": 0.0, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Insulin is produced by the liver."
+    ],
+    "response": "[\"Insulin is produced by the liver.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nInsulin is produced by the liver.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.94, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "An adult human skeleton has about 206 bones."
+    ],
+    "response": "[\"An adult human skeleton has about 206 bones.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nAn adult human skeleton has about 206 bones.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.82, \"evidence\": [\"An adult human skeleton typically has 206 bones.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "An adult human skeleton has exactly 500 bones."
+    ],
+    "response": "[\"An adult human skeleton has exactly 500 bones.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nAn adult human skeleton has exactly 500 bones.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.6, \"evidence\": [\"An adult human skeleton typically has 206 bones.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Eiffel Tower is located in Paris. The Eiffel Tower was completed in 1789."
+    ],
+    "response": "[\"The Eiffel Tower is located in Paris.\", \"The Eiffel Tower was completed in 1789.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Eiffel Tower is located in Paris.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.95, \"evidence\": [\"The Eiffel Tower was completed in 1889 in Paris and is about 330 metres tall.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nThe Eiffel Tower was completed in 1789.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.9, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Romeo and Juliet was written by William Shakespeare. Romeo and Juliet was first published in 1850."
+    ],
+    "response": "[\"Romeo and Juliet was written by William Shakespeare.\", \"Romeo and Juliet was first published in 1850.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nRomeo and Juliet was written by William Shakespeare.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.93, \"evidence\": [\"William Shakespeare wrote the tragedy Romeo and Juliet, first published in 1597.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nRomeo and Juliet was first published in 1850.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.88, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "The Great Wall of China is about 21,000 km long including all its branches. The Great Wall of China was built during a single dynasty."
+    ],
+    "response": "[\"The Great Wall of China is about 21,000 km long including all its branches.\", \"The Great Wall of China was built during a single dynasty.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nThe Great Wall of China is about 21,000 km long including all its branches.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.85, \"evidence\": [\"The Great Wall of China, built across many dynasties, measures roughly 21,196 km including all branches.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nThe Great Wall of China was built during a single dynasty.\n</claim>"
+    ],
+    "response": "{\"status\": \"PARTIALLY_SUPPORTED\", \"confidence\": 0.6, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Honey bees live in colonies. Honey bees produce honey from nectar. Honey bee colonies often have several active queens at once."
+    ],
+    "response": "[\"Honey bees live in colonies.\", \"Honey bees produce honey from nectar.\", \"Honey bee colonies often have several active queens at once.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nHoney bees live in colonies.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.95, \"evidence\": [\"Honey bees live in colonies with a single queen, communicate through waggle dances, and produce honey from nectar.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nHoney bees produce honey from nectar.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.9, \"evidence\": [\"Honey bees live in colonies with a single queen, communicate through waggle dances, and produce honey from nectar.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nHoney bee colonies often have several active queens at once.\n</claim>"
+    ],
+    "response": "{\"status\": \"PARTIALLY_SUPPORTED\", \"confidence\": 0.5, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Jupiter is the largest planet in the Solar System. Jupiter is a gas giant. Jupiter has a storm called the Great Red Spot."
+    ],
+    "response": "[\"Jupiter is the largest planet in the Solar System.\", \"Jupiter is a gas giant.\", \"Jupiter has a storm called the Great Red Spot.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nJupiter is the largest planet in the Solar System.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.97, \"evidence\": [\"Jupiter is the largest planet in the Solar System, a gas giant with a prominent storm called the Great Red Spot.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nJupiter is a gas giant.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.94, \"evidence\": [\"Jupiter is the largest planet in the Solar System, a gas giant with a prominent storm called the Great Red Spot.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nJupiter has a storm called the Great Red Spot.\n</claim>"
+    ],
+    "response": "{\"status\": \"SUPPORTED\", \"confidence\": 0.92, \"evidence\": [\"Jupiter is the largest planet in the Solar System, a gas giant with a prominent storm called the Great Red Spot.\"], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "Extract all factual claims",
+      "Mars is the second planet from the Sun. Mars has fifteen moons."
+    ],
+    "response": "[\"Mars is the second planet from the Sun.\", \"Mars has fifteen moons.\"]"
+  },
+  {
+    "match": [
+      "<claim>\nMars is the second planet from the Sun.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.9, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  },
+  {
+    "match": [
+      "<claim>\nMars has fifteen moons.\n</claim>"
+    ],
+    "response": "{\"status\": \"UNSUPPORTED\", \"confidence\": 0.93, \"evidence\": [], \"reasoning\": \"Recorded verdict from the golden fixture set.\"}"
+  }
+]

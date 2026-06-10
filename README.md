@@ -217,6 +217,25 @@ python test_e2e.py
 | "London is the capital of France" | 0% | D | HALLUCINATION DETECTED |
 | Mixed (speed of light correct + wrong discoverer) | 50% | C | 1 supported, 1 unsupported |
 
+## Evaluation
+
+The detector is measured with a two-tier evaluation framework
+(full methodology: [docs/EVALUATION.md](docs/EVALUATION.md)):
+
+- **Tier 1 — CI regression gate**: a 50-example golden set runs through the
+  real pipeline with recorded model responses on every PR; results are compared
+  bit-exactly against a committed baseline. Any change to parsing, scoring, or
+  thresholds that shifts a single prediction fails CI.
+- **Tier 2 — public benchmarks**: weekly scheduled runs against
+  [HaluEval QA](https://github.com/RUCAIBox/HaluEval) with a live model
+  (`.github/workflows/eval.yml`, or locally via `make eval-benchmark`).
+
+Golden-tier metrics (pipeline + recorded imperfect verifier — by design not all 1.0):
+
+| Precision | Recall | F1 | AUROC | ECE |
+|---|---|---|---|---|
+| 0.889 | 0.923 | 0.906 | 0.907 | 0.133 |
+
 ## Configuration
 
 ### Environment Variables (Python)
