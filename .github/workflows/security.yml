@@ -1,0 +1,103 @@
+name: Security
+
+# Scanners start as non-blocking (continue-on-error) while existing findings
+# are triaged; they flip to blocking at the end of the security-hardening
+# phase (see docs/PLAN.md, Phase 3).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gosec:
+    name: gosec (Go SAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate gRPC stubs
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          protoc --proto_path=proto \
+            --go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
+            --go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
+            proto/evaluator.proto
+
+      - name: Run gosec
+        working-directory: backend-go
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -exclude-dir=api ./...
+
+  bandit:
+    name: bandit (Python SAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run bandit
+        run: |
+          pip install bandit
+          bandit -r backend-python/src -x backend-python/src/truthtable/grpc/pb
+
+  npm-audit:
+    name: npm audit (frontend deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run npm audit
+        working-directory: frontend-react
+        run: npm audit --audit-level=high
+
+  trivy:
+    name: Trivy (filesystem scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true

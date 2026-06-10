@@ -53,10 +53,7 @@ class EmbeddingService:
         logger.info(f"Loading embedding model: {model_name}")
         self._model = SentenceTransformer(model_name)
         self._dimension = self._model.get_sentence_embedding_dimension()
-        logger.info(
-            f"Embedding model loaded: {model_name} "
-            f"(dimension={self._dimension})"
-        )
+        logger.info(f"Embedding model loaded: {model_name} " f"(dimension={self._dimension})")
 
     @property
     def dimension(self) -> int:

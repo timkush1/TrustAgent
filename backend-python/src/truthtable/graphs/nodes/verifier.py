@@ -46,20 +46,17 @@ Output format (JSON only, no markdown):
 def create_verifier_prompt(claim: str, context_docs: List[str]) -> str:
     """
     Create the verification prompt.
-    
+
     Args:
         claim: The claim to verify
         context_docs: List of context documents
-        
+
     Returns:
         Formatted prompt
     """
     # Combine context docs
-    context_text = "\n\n".join([
-        f"[Document {i+1}]\n{doc}"
-        for i, doc in enumerate(context_docs)
-    ])
-    
+    context_text = "\n\n".join([f"[Document {i+1}]\n{doc}" for i, doc in enumerate(context_docs)])
+
     return f"""Verify this claim against the context:
 
 <claim>
@@ -74,18 +71,16 @@ Return ONLY the JSON object, nothing else."""
 
 
 async def verify_claim(
-    claim: str,
-    context_docs: List[str],
-    provider: LLMProvider
+    claim: str, context_docs: List[str], provider: LLMProvider
 ) -> ClaimVerification:
     """
     Verify a single claim against context.
-    
+
     Args:
         claim: The claim to verify
         context_docs: Context documents to verify against
         provider: LLM provider
-        
+
     Returns:
         ClaimVerification with results
     """
@@ -94,78 +89,76 @@ async def verify_claim(
         request = CompletionRequest(
             messages=provider.create_messages(
                 system_prompt=VERIFIER_SYSTEM_PROMPT,
-                user_message=create_verifier_prompt(claim, context_docs)
+                user_message=create_verifier_prompt(claim, context_docs),
             ),
             model=provider.model,
             temperature=0.0,  # Deterministic
-            max_tokens=512
+            max_tokens=512,
         )
-        
+
         # Get verification from LLM
         response = await provider.complete(request)
-        
+
         # Parse JSON response
         result = json.loads(response.content.strip())
-        
+
         # Map status string to enum
         status_str = result["status"].upper()
         status = VerificationStatus[status_str]
-        
+
         # Build verification object
         verification: ClaimVerification = {
             "claim": claim,
             "status": status,
             "confidence": float(result.get("confidence", 0.5)),
-            "evidence": result.get("evidence", [])
+            "evidence": result.get("evidence", []),
         }
-        
+
         logger.debug(
             f"Verified claim: {claim[:50]}... -> {status.value} "
             f"(confidence: {verification['confidence']:.2f})"
         )
-        
+
         return verification
-        
+
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         logger.error(f"Failed to parse verification result: {e}")
         logger.error(f"LLM output was: {response.content}")
-        
+
         # Fallback: mark as unknown with low confidence
         return {
             "claim": claim,
             "status": VerificationStatus.UNKNOWN,
             "confidence": 0.0,
-            "evidence": []
+            "evidence": [],
         }
-    
+
     except Exception as e:
         logger.error(f"Verification failed for claim '{claim[:50]}...': {e}")
         return {
             "claim": claim,
             "status": VerificationStatus.UNKNOWN,
             "confidence": 0.0,
-            "evidence": []
+            "evidence": [],
         }
 
 
 async def verify_all_claims(
-    claims: List[str],
-    context_docs: List[str],
-    provider: LLMProvider
+    claims: List[str], context_docs: List[str], provider: LLMProvider
 ) -> List[ClaimVerification]:
     """
     Verify all claims against context.
-    
+
     Args:
         claims: List of claims to verify
         context_docs: Context documents
         provider: LLM provider
-        
+
     Returns:
         List of ClaimVerification results
     """
     logger.info(f"Verifying {len(claims)} claims against {len(context_docs)} context docs")
-    
+
     # Verify each claim
     # Note: In production, you might want to batch these or use asyncio.gather
     # for parallel processing, but sequential is simpler and avoids rate limits
@@ -174,43 +167,43 @@ async def verify_all_claims(
         logger.debug(f"Verifying claim {i}/{len(claims)}")
         verification = await verify_claim(claim, context_docs, provider)
         verifications.append(verification)
-    
+
     # Log summary
     supported = sum(1 for v in verifications if v["status"] == VerificationStatus.SUPPORTED)
     unsupported = sum(1 for v in verifications if v["status"] == VerificationStatus.UNSUPPORTED)
     partial = sum(1 for v in verifications if v["status"] == VerificationStatus.PARTIALLY_SUPPORTED)
-    
+
     logger.info(
         f"Verification complete: {supported} supported, {unsupported} unsupported, "
         f"{partial} partially supported"
     )
-    
+
     return verifications
 
 
 class VerifierNode:
     """
     LangGraph node for claim verification.
-    
+
     This node:
     1. Takes claims and context_docs from state
     2. Verifies each claim using NLI
     3. Updates state.claim_verifications with results
-    
+
     Usage in graph:
         node = VerifierNode(provider=ollama_provider)
         graph.add_node("verify", node.run)
     """
-    
+
     def __init__(self, provider: LLMProvider):
         """
         Initialize the verifier node.
-        
+
         Args:
             provider: LLM provider for verification
         """
         self.provider = provider
-    
+
     async def run(self, state: AuditState) -> AuditState:
         """
         Execute claim verification.
@@ -222,14 +215,13 @@ class VerifierNode:
             Updated state with claim_verifications populated
         """
         import time
+
         start = time.time()
         logger.info(f"Verifying claims for request {state['request_id']}")
 
         # Verify all claims
         verifications = await verify_all_claims(
-            claims=state["claims"],
-            context_docs=state["context_docs"],
-            provider=self.provider
+            claims=state["claims"], context_docs=state["context_docs"], provider=self.provider
         )
 
         # Update state

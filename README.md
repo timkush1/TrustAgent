@@ -1,5 +1,9 @@
 # TrustAgent - AI Hallucination Detection System
 
+[![CI](https://github.com/timkush1/TrustAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci.yml)
+[![Security](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
+
 > A real-time proxy that intercepts LLM responses, verifies factual claims against a knowledge base, and reports hallucinations on a live dashboard.
 
 ```

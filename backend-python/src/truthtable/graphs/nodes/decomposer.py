@@ -43,10 +43,10 @@ No explanations, no markdown, just the JSON array."""
 def create_decomposer_prompt(response: str) -> str:
     """
     Create the user message for claim decomposition.
-    
+
     Args:
         response: The LLM response to decompose
-        
+
     Returns:
         Formatted prompt for the decomposer
     """
@@ -59,20 +59,17 @@ def create_decomposer_prompt(response: str) -> str:
 Remember: Return ONLY the JSON array of claims, nothing else."""
 
 
-async def decompose_claims(
-    llm_response: str,
-    provider: LLMProvider
-) -> List[str]:
+async def decompose_claims(llm_response: str, provider: LLMProvider) -> List[str]:
     """
     Decompose an LLM response into atomic claims.
-    
+
     Args:
         llm_response: The text to decompose
         provider: LLM provider to use for extraction
-        
+
     Returns:
         List of extracted claims
-        
+
     Raises:
         RuntimeError: If decomposition fails
     """
@@ -81,37 +78,38 @@ async def decompose_claims(
         request = CompletionRequest(
             messages=provider.create_messages(
                 system_prompt=DECOMPOSER_SYSTEM_PROMPT,
-                user_message=create_decomposer_prompt(llm_response)
+                user_message=create_decomposer_prompt(llm_response),
             ),
             model=provider.model,
             temperature=0.0,  # Deterministic for consistency
-            max_tokens=1024
+            max_tokens=1024,
         )
-        
+
         # Get the LLM to extract claims
         response = await provider.complete(request)
-        
+
         # Parse the JSON array from response
         import json
+
         claims = json.loads(response.content.strip())
-        
+
         if not isinstance(claims, list):
             raise ValueError("Expected JSON array of claims")
-        
+
         # Filter out empty or very short claims
         claims = [c for c in claims if c and len(c.strip()) > 5]
-        
+
         logger.info(f"Extracted {len(claims)} claims from response")
         return claims
-        
+
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse claims as JSON: {e}")
         logger.error(f"LLM output was: {response.content}")
-        
+
         # Fallback: treat the whole response as one claim
         logger.warning("Falling back to treating entire response as single claim")
         return [llm_response]
-    
+
     except Exception as e:
         logger.error(f"Claim decomposition failed: {e}")
         raise RuntimeError(f"Failed to decompose claims: {e}") from e
@@ -120,26 +118,26 @@ async def decompose_claims(
 class DecomposerNode:
     """
     LangGraph node for claim decomposition.
-    
+
     This node:
     1. Takes the llm_response from state
     2. Uses an LLM to extract atomic claims
     3. Updates state.claims with the results
-    
+
     Usage in graph:
         node = DecomposerNode(provider=ollama_provider)
         graph.add_node("decompose", node.run)
     """
-    
+
     def __init__(self, provider: LLMProvider):
         """
         Initialize the decomposer node.
-        
+
         Args:
             provider: LLM provider for claim extraction
         """
         self.provider = provider
-    
+
     async def run(self, state: AuditState) -> AuditState:
         """
         Execute claim decomposition.
@@ -151,14 +149,12 @@ class DecomposerNode:
             Updated state with claims populated
         """
         import time
+
         start = time.time()
         logger.info(f"Decomposing claims for request {state['request_id']}")
 
         # Extract claims from the LLM response
-        claims = await decompose_claims(
-            llm_response=state["llm_response"],
-            provider=self.provider
-        )
+        claims = await decompose_claims(llm_response=state["llm_response"], provider=self.provider)
 
         # Update state
         state["claims"] = claims

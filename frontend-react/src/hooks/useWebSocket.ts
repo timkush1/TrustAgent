@@ -11,6 +11,9 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Indirection so the onclose handler can schedule a reconnect without
+  // referencing `connect` before its declaration.
+  const connectRef = useRef<(() => void) | null>(null);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -34,7 +37,7 @@ export function useWebSocket() {
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           reconnectAttempts.current++;
           console.log(`[WS] Reconnecting in ${RECONNECT_DELAY}ms (attempt ${reconnectAttempts.current})`);
-          reconnectTimeout.current = setTimeout(connect, RECONNECT_DELAY);
+          reconnectTimeout.current = setTimeout(() => connectRef.current?.(), RECONNECT_DELAY);
         } else {
           setStatus((prev) => ({ 
             ...prev, 
@@ -60,8 +63,9 @@ export function useWebSocket() {
 
       wsRef.current = ws;
     } catch (err) {
+      // Construction only throws on an invalid URL (a config bug); connection
+      // failures are reported asynchronously via onerror/onclose.
       console.error('[WS] Failed to connect:', err);
-      setStatus({ connected: false, error: 'Failed to connect' });
     }
   }, []);
 
@@ -82,6 +86,7 @@ export function useWebSocket() {
   }, []);
 
   useEffect(() => {
+    connectRef.current = connect;
     connect();
     return () => disconnect();
   }, [connect, disconnect]);

@@ -151,8 +151,7 @@ async def run_audit(
     final_state = await graph.ainvoke(initial_state)
 
     logger.info(
-        f"Audit complete for {request_id}: "
-        f"score={final_state['faithfulness_score']:.3f}"
+        f"Audit complete for {request_id}: " f"score={final_state['faithfulness_score']:.3f}"
     )
 
     return final_state

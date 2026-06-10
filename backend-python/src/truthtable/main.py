@@ -94,10 +94,7 @@ async def main():
             logger.info(f"Qdrant connected. Knowledge base has {doc_count} documents.")
 
             if doc_count == 0:
-                logger.warning(
-                    "Knowledge base is empty! "
-                    "Run: python scripts/seed_knowledge.py"
-                )
+                logger.warning("Knowledge base is empty! " "Run: python scripts/seed_knowledge.py")
 
         except Exception as e:
             logger.error(f"Failed to initialize RAG components: {e}")
@@ -123,6 +120,7 @@ async def main():
     metrics_port = 8001
     try:
         from prometheus_client import start_http_server
+
         start_http_server(metrics_port)
         logger.info(f"Metrics server listening on :{metrics_port}")
     except Exception as e:
@@ -154,9 +152,7 @@ async def main():
     if platform.system() != "Windows":
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(
-                sig, lambda s=sig: asyncio.create_task(shutdown(s.name))
-            )
+            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s.name)))
     else:
         logger.info("Running on Windows - using KeyboardInterrupt for shutdown")
 

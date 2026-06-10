@@ -88,14 +88,14 @@ class RetrieverNode:
             Updated state with context_docs populated
         """
         import time
+
         start = time.time()
         request_id = state["request_id"]
         claims = state.get("claims") or []
         user_query = state.get("user_query", "")
 
         logger.info(
-            f"Retrieving context for request {request_id}: "
-            f"{len(claims)} claims + user query"
+            f"Retrieving context for request {request_id}: " f"{len(claims)} claims + user query"
         )
 
         # Collect all search queries: user_query + each claim

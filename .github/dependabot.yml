@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /backend-go
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ['*']
+
+  - package-ecosystem: pip
+    directory: /backend-python
+    schedule:
+      interval: weekly
+    groups:
+      python-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /frontend-react
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories:
+      - /backend-go
+      - /backend-python
+      - /frontend-react
+    schedule:
+      interval: weekly

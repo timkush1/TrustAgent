@@ -98,7 +98,7 @@ lint: ## Run linters for all projects
 fmt: ## Format all code
 	cd backend-python && poetry run black .
 	cd backend-go && go fmt ./...
-	cd frontend-react && npm run format
+	cd frontend-react && npm run lint -- --fix
 
 # ========== Ollama ==========
 

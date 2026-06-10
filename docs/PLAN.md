@@ -8,8 +8,8 @@
 
 | Phase | Goal | Est. hours | Status |
 |---|---|---|---|
-| [0](#phase-0--hygiene--doc-foundation) | Hygiene & doc foundation | 5 | 🟨 |
-| [1](#phase-1--cicd) | CI/CD pipelines | 9 | ⬜ |
+| [0](#phase-0--hygiene--doc-foundation) | Hygiene & doc foundation | 5 | ✅ |
+| [1](#phase-1--cicd) | CI/CD pipelines | 9 | ✅ |
 | [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ⬜ |
 | [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ⬜ |
 | [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ⬜ |
@@ -46,10 +46,10 @@ Docker network isolation).
 - [x] Align all versions to `0.4.0`; add root `VERSION` file as source of truth
       (`backend-python/pyproject.toml`, `frontend-react/package.json`,
       `backend-go/internal/version/version.go`, `truthtable/__init__.py`)
-- [ ] Create `docs/PLAN.md` (this file), `docs/progress/PHASE-0.md`, `CLAUDE.md`
-- [ ] Promote `docs-private/GETTING-STARTED.md` → `docs/GETTING-STARTED.md`
-- [ ] Move VERITAS research artifact → `docs/research/`
-- [ ] Wire `test_e2e.py` / `test_direct_audit.py` into Makefile (`make test-e2e`)
+- [x] Create `docs/PLAN.md` (this file), `docs/progress/PHASE-0.md`, `CLAUDE.md`
+- [x] Promote `docs-private/GETTING-STARTED.md` → `docs/GETTING-STARTED.md`
+- [x] Move VERITAS research artifact → `docs/research/`
+- [x] Wire `test_e2e.py` / `test_direct_audit.py` into Makefile (`make test-e2e`)
 
 **Verify**: `make test` passes; Go builds; no orphan files at root.
 
@@ -57,17 +57,17 @@ Docker network isolation).
 
 **Goal**: every push lint+test+scan-gated across all three languages.
 
-- [ ] `.github/workflows/ci.yml` — parallel jobs:
+- [x] `.github/workflows/ci.yml` — parallel jobs:
   - **go**: gofmt check, `go vet`, `go test -race -coverprofile` in `backend-go/`
   - **python**: `ruff check`, `black --check`, `pytest --cov` (unit only, CPU-only torch)
   - **frontend**: `npm ci`, `eslint`, `tsc -b`, `vitest run`
-  - **docker**: `docker compose build` with cache
-- [ ] `.github/workflows/security.yml` — gosec, bandit, `npm audit`, Trivy
+  - **docker**: build all three images with GHA layer cache
+- [x] `.github/workflows/security.yml` — gosec, bandit, `npm audit`, Trivy
       (non-blocking initially; flipped to blocking at end of Phase 3)
-- [ ] Frontend test toolchain: vitest + @testing-library/react; first tests for
+- [x] Frontend test toolchain: vitest + @testing-library/react; first tests for
       `auditStore.ts` and `useWebSocket.ts`
-- [ ] `.github/dependabot.yml` (gomod, pip, npm, actions, docker)
-- [ ] README badges (build, version)
+- [x] `.github/dependabot.yml` (gomod, pip, npm, actions, docker)
+- [x] README badges (build, security, version)
 
 **Verify**: green checks on a test push; a deliberately broken test fails the pipeline.
 

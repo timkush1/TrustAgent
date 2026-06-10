@@ -12,26 +12,23 @@ from typing import Optional
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
-    
+
     All settings can be overridden via environment variables.
     Example: export OLLAMA_BASE_URL="http://localhost:11434"
     """
-    
+
     # LLM Provider Settings
     llm_provider: str = Field(default="ollama", description="LLM provider to use")
     llm_model: str = Field(default="llama3.2", description="Model name")
-    ollama_base_url: str = Field(
-        default="http://localhost:11434",
-        description="Ollama server URL"
-    )
-    
+    ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama server URL")
+
     # gRPC Server Settings
     grpc_port: int = Field(default=50051, description="gRPC server port")
     grpc_host: str = Field(default="0.0.0.0", description="gRPC server host")
-    
+
     # Logging
     log_level: str = Field(default="INFO", description="Log level")
-    
+
     # Optional: Redis, Qdrant, etc.
     redis_url: Optional[str] = Field(default=None, description="Redis connection URL")
     qdrant_url: Optional[str] = Field(default=None, description="Qdrant server URL")
@@ -40,7 +37,7 @@ class Settings(BaseSettings):
     langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key")
     langsmith_project: str = Field(default="trustagent", description="LangSmith project name")
     langsmith_tracing: bool = Field(default=False, description="Enable LangSmith tracing")
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
