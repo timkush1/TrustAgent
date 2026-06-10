@@ -14,9 +14,24 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	// Deny browser cross-origin handshakes until ConfigureUpgrader is called
+	// with an allowlist (CSWSH defense). Non-browser clients send no Origin
+	// header and are allowed; they are covered by API-key auth instead.
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return r.Header.Get("Origin") == ""
 	},
+}
+
+// ConfigureUpgrader installs the CORS/WS origin allowlist for handshakes.
+func ConfigureUpgrader(allowedOrigins []string) {
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		allowed[origin] = true
+	}
+	upgrader.CheckOrigin = func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		return origin == "" || allowed[origin]
+	}
 }
 
 // WSMessage is the wrapper format expected by the frontend

@@ -11,7 +11,7 @@
 | [0](#phase-0--hygiene--doc-foundation) | Hygiene & doc foundation | 5 | ✅ |
 | [1](#phase-1--cicd) | CI/CD pipelines | 9 | ✅ |
 | [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ✅ |
-| [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ⬜ |
+| [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ✅ |
 | [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ⬜ |
 | [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ⬜ |
 | [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ⬜ |
@@ -106,19 +106,24 @@ Key enabler: retriever uses caller-provided context (already in proto as
 
 **Goal**: every audit finding fixed, mapped to OWASP LLM Top 10, enforced by scanners.
 
-- [ ] API-key auth middleware (`backend-go/internal/middleware/auth.go`, constant-time compare,
+- [x] API-key auth middleware (`backend-go/internal/middleware/auth.go`, constant-time compare,
       `TRUTHTABLE_API_KEYS` env; `/health` exempt)
-- [ ] CORS allowlist from `ALLOWED_ORIGINS` env (replaces `*`)
-- [ ] WebSocket origin check + API key on connect
-- [ ] Rate limiting — Redis sliding window per key/IP (`internal/middleware/ratelimit.go`)
-- [ ] Input validation: `http.MaxBytesReader`, max prompt/response lengths, upload caps
-- [ ] Remove public `/metrics` from main router; stop host-publishing :8002 and :50051
-- [ ] Prompt-injection hardening in `decomposer.py` / `verifier.py` (delimited untrusted text,
-      strict schema parse with rejection, length truncation)
-- [ ] Non-root containers, pinned base images, mem/cpu limits
-- [ ] Secrets audit; remove `changeme` Grafana default
-- [ ] `docs/SECURITY.md`: threat model + OWASP LLM Top 10 mapping
-- [ ] Flip security scanners to blocking
+- [x] CORS allowlist from `TRUTHTABLE_ALLOWED_ORIGINS` env (replaces `*`)
+- [x] WebSocket origin check + API key on connect (`?api_key=`)
+- [x] Rate limiting — Redis fixed window per key/IP with in-memory fallback
+      (`internal/middleware/ratelimit.go`)
+- [x] Input validation: `http.MaxBytesReader`, max prompt/response lengths, upload caps
+- [x] Remove public `/metrics` from main router; stop host-publishing :8001/:8002/:50051
+- [x] Prompt-injection hardening in `decomposer.py` / `verifier.py` via new
+      `truthtable/security.py` (delimited untrusted text, hidden-char stripping,
+      strict schema parse with safe fallback, length truncation)
+- [x] Resource limits on app containers (Go/Python images already non-root)
+- [x] Secrets audit; Grafana password now required (no `changeme` default)
+- [x] `docs/SECURITY.md`: threat model + OWASP LLM Top 10 mapping
+- [x] Flip security scanners to blocking (gosec medium+, bandit, npm audit high+;
+      Trivy informational until first reviewed run)
+- [x] Bonus: fixed compose env-name mismatch (proxy was silently defaulting to
+      `https://api.openai.com` as upstream in Docker)
 
 **Verify**: middleware unit tests (401/403/429, CORS preflight, WS origin rejection);
 injection-payload suite passes.

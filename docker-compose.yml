@@ -91,7 +91,8 @@ services:
       - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      # No default on purpose: copy .env.example to .env and set a password.
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env (see .env.example)}
       - GF_USERS_ALLOW_SIGN_UP=false
     depends_on:
       - prometheus
@@ -110,9 +111,16 @@ services:
       context: ./backend-python
       dockerfile: Dockerfile
     container_name: truthtable-audit-engine
-    ports:
-      - "50051:50051"  # gRPC
-      - "8001:8001"    # Metrics
+    # No host-published ports: gRPC (:50051) and metrics (:8001) are reachable
+    # only on the internal network (proxy and prometheus respectively).
+    expose:
+      - "50051"
+      - "8001"
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "2.0"
     environment:
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379
@@ -145,16 +153,23 @@ services:
     container_name: truthtable-proxy
     ports:
       - "8080:8080"  # HTTP/WebSocket
-      - "8002:8002"  # Metrics
+    # Metrics (:8002) stays internal; Prometheus scrapes proxy:8002.
+    expose:
+      - "8002"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
     environment:
       - GIN_MODE=release
       - REDIS_URL=redis://redis:6379
       - TRUTHTABLE_GRPC_ADDRESS=audit-engine:50051
-      - HTTP_PORT=8080
-      - METRICS_PORT=8002
-      - TRUTHTABLE_WS_PORT=8080
-      - LOG_LEVEL=info
-      - UPSTREAM_LLM_URL=${UPSTREAM_LLM_URL:-http://ollama:11434}
+      - TRUTHTABLE_PORT=8080
+      - TRUTHTABLE_LOG_LEVEL=info
+      - TRUTHTABLE_UPSTREAM_URL=${UPSTREAM_LLM_URL:-http://ollama:11434}
+      - TRUTHTABLE_API_KEYS=${TRUTHTABLE_API_KEYS:-}
+      - TRUTHTABLE_ALLOWED_ORIGINS=${TRUTHTABLE_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
     depends_on:
       - redis
       - audit-engine
@@ -176,6 +191,11 @@ services:
     container_name: truthtable-dashboard
     ports:
       - "3000:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
     environment:
       - VITE_API_URL=http://localhost:8080
       - VITE_WS_URL=ws://localhost:8080/ws

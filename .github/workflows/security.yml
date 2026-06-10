@@ -1,8 +1,8 @@
 name: Security
 
-# Scanners start as non-blocking (continue-on-error) while existing findings
-# are triaged; they flip to blocking at the end of the security-hardening
-# phase (see docs/PLAN.md, Phase 3).
+# gosec (medium+), bandit, and npm audit (high+) are BLOCKING — the codebase
+# was triaged clean in Phase 3 (see docs/SECURITY.md). Trivy remains
+# informational until a full scheduled run has been reviewed.
 
 on:
   push:
@@ -23,7 +23,6 @@ jobs:
     name: gosec (Go SAST)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -46,17 +45,18 @@ jobs:
             --go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
             proto/evaluator.proto
 
+      # Blocking at medium+ severity; LOW-severity G104 (unhandled errors on
+      # best-effort writes/closes) is accepted and tracked in docs/SECURITY.md.
       - name: Run gosec
         working-directory: backend-go
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -exclude-dir=api ./...
+          gosec -exclude-dir=api -severity medium ./...
 
   bandit:
     name: bandit (Python SAST)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +73,6 @@ jobs:
     name: npm audit (frontend deps)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -89,7 +88,7 @@ jobs:
     name: Trivy (filesystem scan)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
+    continue-on-error: true # informational until a full scheduled run is reviewed
     steps:
       - uses: actions/checkout@v4
 

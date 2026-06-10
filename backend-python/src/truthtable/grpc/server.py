@@ -289,7 +289,12 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
 
 def create_server(
-    servicer: AuditServicer, host: str = "0.0.0.0", port: int = 50051, max_workers: int = 10
+    # 0.0.0.0 is intentional: reachable only on the internal Docker network,
+    # not published to the host (see docker-compose.yml).
+    servicer: AuditServicer,
+    host: str = "0.0.0.0",  # nosec B104
+    port: int = 50051,
+    max_workers: int = 10,
 ) -> aio.Server:
     """
     Create and configure the gRPC server.

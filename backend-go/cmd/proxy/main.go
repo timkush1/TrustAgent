@@ -18,6 +18,7 @@ import (
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
 	_ "github.com/truthtable/backend-go/internal/metrics" // Register Prometheus metrics
+	"github.com/truthtable/backend-go/internal/middleware"
 	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/version"
 	"github.com/truthtable/backend-go/internal/websocket"
@@ -54,10 +55,31 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// Security wiring
+	if len(cfg.APIKeys) == 0 {
+		log.Printf("⚠️  TRUTHTABLE_API_KEYS not set — API authentication is DISABLED (dev mode)")
+	} else {
+		log.Printf("✓ API-key auth enabled (%d keys)", len(cfg.APIKeys))
+	}
+	websocket.ConfigureUpgrader(cfg.AllowedOrigins)
+
+	var limiter middleware.Limiter
+	if cfg.RedisURL != "" {
+		if redisLimiter, err := middleware.NewRedisLimiter(cfg.RedisURL); err == nil {
+			limiter = redisLimiter
+			log.Printf("✓ Rate limiting backed by Redis")
+		} else {
+			log.Printf("⚠️  Redis unavailable (%v) — using in-memory rate limiter", err)
+		}
+	}
+	if limiter == nil {
+		limiter = middleware.NewMemoryLimiter()
+	}
+
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(loggingMiddleware())
-	router.Use(corsMiddleware())
+	router.Use(middleware.CORS(cfg.AllowedOrigins))
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -67,25 +89,37 @@ func main() {
 		})
 	})
 
-	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	// NOTE: /metrics is intentionally NOT on this router. Prometheus scrapes
+	// the internal metrics server on :8002, which is not published to the host.
+
+	auth := middleware.APIKeyAuth(cfg.APIKeys)
+	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute)
+	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute)
+	bodyLimit := middleware.BodyLimit(cfg.MaxBodyBytes)
 
 	// Main LLM API endpoints (intercept and audit)
-	router.POST("/v1/chat/completions", proxyHandler.HandleChatCompletion)
-	router.POST("/v1/completions", proxyHandler.HandleCompletion)
+	router.POST("/v1/chat/completions", auth, rateLimit, bodyLimit, proxyHandler.HandleChatCompletion)
+	router.POST("/v1/completions", auth, rateLimit, bodyLimit, proxyHandler.HandleCompletion)
 
 	// Direct audit endpoint (submit query + response for auditing from the dashboard)
-	router.POST("/api/audit", handleDirectAudit(workerPool))
+	router.POST("/api/audit", auth, rateLimit, bodyLimit, handleDirectAudit(workerPool, cfg.MaxTextChars))
 
 	// File upload endpoint (ingest documents into RAG knowledge base)
-	router.POST("/api/upload", handleFileUpload(auditClient))
+	router.POST("/api/upload", auth, uploadRateLimit, middleware.BodyLimit(cfg.MaxUploadBytes),
+		handleFileUpload(auditClient, cfg.MaxUploadBytes))
 
 	// Other v1 endpoints - forward as-is without auditing
-	router.Any("/v1/models", proxyHandler.HandleGeneric)
-	router.Any("/v1/models/*model", proxyHandler.HandleGeneric)
-	router.Any("/v1/embeddings", proxyHandler.HandleGeneric)
+	router.Any("/v1/models", auth, rateLimit, proxyHandler.HandleGeneric)
+	router.Any("/v1/models/*model", auth, rateLimit, proxyHandler.HandleGeneric)
+	router.Any("/v1/embeddings", auth, rateLimit, bodyLimit, proxyHandler.HandleGeneric)
 
-	// WebSocket endpoint on the same HTTP server
+	// WebSocket endpoint. Browsers cannot set headers on the WS handshake,
+	// so when auth is enabled the key is accepted via ?api_key= instead.
 	router.GET("/ws", func(c *gin.Context) {
+		if len(cfg.APIKeys) > 0 && !middleware.KeyAllowed(cfg.APIKeys, c.Query("api_key")) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid API key"})
+			return
+		}
 		websocket.ServeWS(wsHub, c.Writer, c.Request)
 	})
 
@@ -107,7 +141,11 @@ func main() {
 	metricsPort := 8002
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
-	metricsServer := &http.Server{Addr: fmt.Sprintf(":%d", metricsPort), Handler: metricsMux}
+	metricsServer := &http.Server{
+		Addr:              fmt.Sprintf(":%d", metricsPort),
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second, // Slowloris defense (gosec G112)
+	}
 	go func() {
 		log.Printf("📊 Metrics server listening on :%d", metricsPort)
 		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -155,7 +193,7 @@ func loggingMiddleware() gin.HandlerFunc {
 }
 
 // handleDirectAudit returns a handler that accepts a query + response for auditing.
-func handleDirectAudit(pool *worker.Pool) gin.HandlerFunc {
+func handleDirectAudit(pool *worker.Pool, maxTextChars int) gin.HandlerFunc {
 	type directAuditRequest struct {
 		Query    string `json:"query" binding:"required"`
 		Response string `json:"response" binding:"required"`
@@ -166,6 +204,17 @@ func handleDirectAudit(pool *worker.Pool) gin.HandlerFunc {
 		var req directAuditRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Both 'query' and 'response' fields are required"})
+			return
+		}
+
+		if len(req.Query) > maxTextChars || len(req.Response) > maxTextChars {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("'query' and 'response' must each be at most %d characters", maxTextChars),
+			})
+			return
+		}
+		if len(req.Model) > 200 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "'model' name too long"})
 			return
 		}
 
@@ -190,11 +239,13 @@ func handleDirectAudit(pool *worker.Pool) gin.HandlerFunc {
 }
 
 // handleFileUpload returns a handler that accepts JSON document uploads for RAG ingestion.
-func handleFileUpload(auditClient *grpc.AuditClient) gin.HandlerFunc {
+func handleFileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.HandlerFunc {
 	type uploadDocument struct {
 		Content  string            `json:"content"`
 		Metadata map[string]string `json:"metadata"`
 	}
+	const maxDocuments = 1000
+	const maxDocumentChars = 50000
 
 	return func(c *gin.Context) {
 		if auditClient == nil {
@@ -209,15 +260,22 @@ func handleFileUpload(auditClient *grpc.AuditClient) gin.HandlerFunc {
 		}
 		defer file.Close()
 
-		// Limit to 10MB
-		if header.Size > 10*1024*1024 {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "File too large (max 10MB)"})
+		if header.Size > maxUploadBytes {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("File too large (max %d bytes)", maxUploadBytes),
+			})
 			return
 		}
 
-		data, err := io.ReadAll(file)
+		data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read file"})
+			return
+		}
+		if int64(len(data)) > maxUploadBytes {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("File too large (max %d bytes)", maxUploadBytes),
+			})
 			return
 		}
 
@@ -230,6 +288,26 @@ func handleFileUpload(auditClient *grpc.AuditClient) gin.HandlerFunc {
 		if len(docs) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "No documents in file"})
 			return
+		}
+		if len(docs) > maxDocuments {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("Too many documents (max %d per upload)", maxDocuments),
+			})
+			return
+		}
+		for i, doc := range docs {
+			if len(doc.Content) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Document %d has empty 'content'", i),
+				})
+				return
+			}
+			if len(doc.Content) > maxDocumentChars {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error": fmt.Sprintf("Document %d exceeds %d characters", i, maxDocumentChars),
+				})
+				return
+			}
 		}
 
 		// Convert to gRPC IngestDocument format
@@ -252,18 +330,5 @@ func handleFileUpload(auditClient *grpc.AuditClient) gin.HandlerFunc {
 			"documents_ingested": count,
 			"status":             "success",
 		})
-	}
-}
-
-func corsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-		c.Next()
 	}
 }
