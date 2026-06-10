@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "truthtable"
-version = "0.1.0"
+version = "0.4.0"
 description = "TruthTable AI Audit Engine - Hallucination Detection Service"
 authors = ["Tim Kushmaro <timk@mail.tau.ac.il>"]
 readme = "README.md"

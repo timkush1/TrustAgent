@@ -19,6 +19,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc"
 	_ "github.com/truthtable/backend-go/internal/metrics" // Register Prometheus metrics
 	"github.com/truthtable/backend-go/internal/proxy"
+	"github.com/truthtable/backend-go/internal/version"
 	"github.com/truthtable/backend-go/internal/websocket"
 	"github.com/truthtable/backend-go/internal/worker"
 )
@@ -61,7 +62,7 @@ func main() {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":       "healthy",
-			"version":      "0.1.0",
+			"version":      version.Version,
 			"audit_engine": auditClient != nil,
 		})
 	})

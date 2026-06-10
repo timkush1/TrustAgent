@@ -161,10 +161,18 @@ trustAgent/
 ├── proto/               # Shared gRPC definitions (evaluator.proto)
 ├── config/              # Prometheus + Grafana config
 │   └── grafana/dashboards/  # Pre-configured TrustAgent dashboard
+├── docs/                # Documentation (roadmap, guides, research, progress logs)
 ├── docker-compose.yml   # All infrastructure services
 ├── test_e2e.py          # End-to-end system tests
 └── test_direct_audit.py # Direct gRPC audit test
 ```
+
+## Documentation
+
+- [Getting Started Guide](docs/GETTING-STARTED.md) — zero-to-running walkthrough with troubleshooting
+- [Roadmap / Master Plan](docs/PLAN.md) — phased plan to v1.0.0 with per-phase progress logs in [docs/progress/](docs/progress/)
+- [Research](docs/research/VERITAS-claim-graph-research.md) — verified claim-graph architecture research informing the knowledge-base design
+- Component deep-dives: [backend-go/README.md](backend-go/README.md), [backend-python/README.md](backend-python/README.md), [frontend-react/README.md](frontend-react/README.md)
 
 ## Service Ports Reference
 

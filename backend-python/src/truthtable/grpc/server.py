@@ -12,6 +12,7 @@ from typing import Dict, Any
 import grpc
 from grpc import aio
 
+from .. import __version__
 from .pb import evaluator_pb2
 from .pb import evaluator_pb2_grpc
 from ..graphs.audit_graph import run_audit
@@ -51,7 +52,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         self.provider = provider
         self.qdrant_store = qdrant_store
         self.embedding_service = embedding_service
-        self._version = "0.3.0"
+        self._version = __version__
         logger.info("AuditServicer initialized")
     
     async def SubmitAudit(self, request: evaluator_pb2.AuditRequest, context) -> evaluator_pb2.AuditSubmission:

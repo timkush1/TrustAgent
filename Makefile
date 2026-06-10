@@ -1,4 +1,4 @@
-.PHONY: help install proto up down clean test
+.PHONY: help install proto up down clean test test-e2e
 
 help: ## Show this help message
 	@echo "TruthTable - Available Commands:"
@@ -77,6 +77,10 @@ test-go: ## Run Go tests only
 
 test-react: ## Run React tests only
 	cd frontend-react && npm test
+
+test-e2e: ## Run end-to-end tests (requires full stack running: make up-all)
+	cd backend-python && poetry run python ../test_e2e.py
+	cd backend-python && poetry run python ../test_direct_audit.py
 
 # ========== Linting ==========
 

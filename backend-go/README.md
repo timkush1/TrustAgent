@@ -228,7 +228,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "audit_engine": true
 }
 ```
