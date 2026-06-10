@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     grpc_port: int = Field(default=50051, description="gRPC server port")
     # 0.0.0.0 is intentional: other containers must reach the engine on the
     # internal Docker network; the port is NOT published to the host (compose).
-    grpc_host: str = Field(default="0.0.0.0", description="gRPC server host")
+    grpc_host: str = Field(default="0.0.0.0", description="gRPC server host")  # nosec B104
 
     # Logging
     log_level: str = Field(default="INFO", description="Log level")
