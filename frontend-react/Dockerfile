@@ -23,7 +23,7 @@ COPY . .
 RUN npm run build
 
 # --- Stage 2: Serve ---
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 # Copy built assets to nginx's default serving directory
 COPY --from=builder /app/dist /usr/share/nginx/html
