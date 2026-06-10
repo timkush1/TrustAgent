@@ -1,12 +1,17 @@
+import { useState } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Header } from './components/layout/Header';
 import { MetricsPanel } from './components/dashboard/MetricsPanel';
 import { AuditFeed } from './components/audit/AuditFeed';
 import { QueryInput } from './components/audit/QueryInput';
 import { FileUpload } from './components/upload/FileUpload';
+import { HistoryView } from './components/history/HistoryView';
+
+type View = 'live' | 'history';
 
 function App() {
   const { status } = useWebSocket();
+  const [view, setView] = useState<View>('live');
 
   return (
     <div 
@@ -43,15 +48,46 @@ function App() {
           </div>
         </aside>
 
-        {/* Main - Audit Feed */}
-        <main 
+        {/* Main - Live Feed / History */}
+        <main
           className="flex-1"
           style={{ backgroundColor: 'var(--bg-primary)' }}
         >
-          <AuditFeed />
+          <div
+            className="flex gap-1 px-6 pt-4"
+            role="tablist"
+            aria-label="Audit views"
+          >
+            <ViewTab label="Live Feed" active={view === 'live'} onClick={() => setView('live')} />
+            <ViewTab label="History" active={view === 'history'} onClick={() => setView('history')} />
+          </div>
+          {view === 'live' ? <AuditFeed /> : <HistoryView />}
         </main>
       </div>
     </div>
+  );
+}
+
+interface ViewTabProps {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}
+
+function ViewTab({ label, active, onClick }: ViewTabProps) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`px-4 py-2 text-sm rounded-t border-b-2 transition-colors ${
+        active
+          ? 'border-cyan-400 text-cyan-300'
+          : 'border-transparent text-gray-500 hover:text-gray-300'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

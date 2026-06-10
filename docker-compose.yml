@@ -145,8 +145,11 @@ services:
       - REDIS_URL=redis://redis:6379
       - QDRANT_URL=http://qdrant:6333
       - OLLAMA_BASE_URL=http://ollama:11434
-      - LLM_PROVIDER=ollama
-      - LLM_MODEL=llama3.2:1b
+      # Provider selection: ollama (default, local) | openai | anthropic
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-llama3.2:1b}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GRPC_PORT=50051
       - METRICS_PORT=8001
       - LOG_LEVEL=INFO

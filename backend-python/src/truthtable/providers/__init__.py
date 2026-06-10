@@ -2,18 +2,20 @@
 
 from .registry import register_provider
 from .ollama import OllamaProvider
+from .openai import OpenAIProvider
+from .anthropic import AnthropicProvider
 from .mock import MockLLMProvider
 
 # Register providers
 register_provider("ollama", OllamaProvider)
+register_provider("openai", OpenAIProvider)
+register_provider("anthropic", AnthropicProvider)
 register_provider("mock", MockLLMProvider)
-
-# Future providers can be registered here:
-# register_provider("openai", OpenAIProvider)
-# register_provider("anthropic", AnthropicProvider)
 
 __all__ = [
     "OllamaProvider",
+    "OpenAIProvider",
+    "AnthropicProvider",
     "MockLLMProvider",
     "register_provider",
 ]

@@ -91,6 +91,13 @@ eval-benchmark: ## HaluEval benchmark against local Ollama (requires make up + o
 	cd backend-python && poetry run python -m evals.datasets.download halueval --samples 200
 	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider ollama --model llama3.2 --output eval-report.json
 
+eval-compare: ## Judge-model comparison on HaluEval (needs OPENAI_API_KEY + ANTHROPIC_API_KEY; ~$$1-5 of usage)
+	cd backend-python && poetry run python -m evals.datasets.download halueval --samples 100
+	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider ollama --model llama3.2 --output eval-ollama.json
+	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider openai --model gpt-4o-mini --output eval-openai.json
+	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider anthropic --model claude-haiku-4-5-20251001 --output eval-anthropic.json
+	@echo "Reports written: backend-python/eval-{ollama,openai,anthropic}.json"
+
 # ========== Linting ==========
 
 lint: ## Run linters for all projects

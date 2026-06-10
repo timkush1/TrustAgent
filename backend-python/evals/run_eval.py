@@ -26,7 +26,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from truthtable.graphs.audit_graph import build_audit_graph, run_audit
-from truthtable.providers import MockLLMProvider, OllamaProvider
+from truthtable.providers import (
+    AnthropicProvider,
+    MockLLMProvider,
+    OllamaProvider,
+    OpenAIProvider,
+)
 
 from .metrics import compute_metrics
 
@@ -76,6 +81,10 @@ def build_provider(args: argparse.Namespace):
         return MockLLMProvider(fixtures_path=args.fixtures or GOLDEN_FIXTURES)
     if args.provider == "ollama":
         return OllamaProvider(model=args.model, base_url=args.ollama_url)
+    if args.provider == "openai":
+        return OpenAIProvider(model=args.model)  # key from OPENAI_API_KEY
+    if args.provider == "anthropic":
+        return AnthropicProvider(model=args.model)  # key from ANTHROPIC_API_KEY
     sys.exit(f"Unknown provider {args.provider!r}")
 
 
@@ -197,7 +206,9 @@ def check_baseline(report: Dict[str, Any], baseline_path: Path) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the TrustAgent evaluation harness")
     parser.add_argument("--dataset", default="golden", help="golden | halueval | path to .jsonl")
-    parser.add_argument("--provider", default="mock", choices=["mock", "ollama"])
+    parser.add_argument(
+        "--provider", default="mock", choices=["mock", "ollama", "openai", "anthropic"]
+    )
     parser.add_argument("--model", default="llama3.2", help="Model name (live providers)")
     parser.add_argument("--ollama-url", default="http://localhost:11434")
     parser.add_argument("--fixtures", default=None, help="Fixture file for the mock provider")

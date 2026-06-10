@@ -16,7 +16,7 @@ verify via NLI → score faithfulness). Results stream to a React dashboard over
 
 | Path | What |
 |---|---|
-| `backend-go/` | Go 1.24 proxy (gin): HTTP interception, worker pool, WebSocket hub, gRPC client |
+| `backend-go/` | Go 1.25 proxy (gin): HTTP interception, worker pool, WebSocket hub, gRPC client |
 | `backend-python/` | Python 3.11 audit engine (Poetry): LangGraph pipeline, providers, Qdrant store, gRPC server |
 | `frontend-react/` | React 19 + TypeScript + Vite + Zustand + Tailwind dashboard |
 | `proto/evaluator.proto` | Single source of truth for the Go↔Python gRPC contract |

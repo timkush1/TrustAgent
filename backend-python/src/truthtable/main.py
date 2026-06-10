@@ -52,13 +52,14 @@ async def main():
     else:
         logger.info("LangSmith tracing disabled (set LANGSMITH_API_KEY to enable)")
 
-    # Initialize LLM provider
+    # Initialize LLM provider. Only Ollama takes a base_url from settings;
+    # cloud providers use their own defaults and read API keys from env
+    # (OPENAI_API_KEY / ANTHROPIC_API_KEY).
     logger.info(f"Initializing {settings.llm_provider} provider...")
-    provider = get_provider(
-        settings.llm_provider,
-        model=settings.llm_model,
-        base_url=settings.ollama_base_url,
-    )
+    provider_kwargs = {"model": settings.llm_model}
+    if settings.llm_provider == "ollama":
+        provider_kwargs["base_url"] = settings.ollama_base_url
+    provider = get_provider(settings.llm_provider, **provider_kwargs)
 
     # Health check
     logger.info("Performing provider health check...")

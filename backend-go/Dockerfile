@@ -9,7 +9,8 @@
 # can be extremely small (~20MB) compared to the builder (~1GB).
 
 # --- Stage 1: Build ---
-FROM golang:1.24-alpine AS builder
+# Must satisfy the `go` directive in go.mod (currently 1.25, pulled up by pgx v5.10)
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git
 

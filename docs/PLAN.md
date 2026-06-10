@@ -13,7 +13,7 @@
 | [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ✅ |
 | [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ✅ |
 | [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ✅ |
-| [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ⬜ |
+| [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ✅ |
 | [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ⬜ |
 | [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | ⬜ |
 
@@ -145,10 +145,14 @@ writer = Go worker pool.
 
 ## Phase 5 — Multi-provider + dashboard history
 
-- [ ] `providers/openai.py`, `providers/anthropic.py` mirroring `ollama.py`; mocked-HTTP unit tests
-- [ ] Tier-2 eval with frontier judge models → README comparison table (approved budget ~$5–20)
-- [ ] Dashboard history page consuming `GET /api/audits` (filterable table, sparkline)
-- [ ] Frontend tests for history view + store hydration (stores/hooks ≥ 70% coverage)
+- [x] `providers/openai.py`, `providers/anthropic.py` mirroring `ollama.py`; mocked-HTTP
+      unit tests; registered + selectable via `LLM_PROVIDER` env (keys from env, never logged)
+- [x] `run_eval` supports openai/anthropic judges; `make eval-compare` runs the
+      three-judge HaluEval comparison (needs user API keys — README table pending the run)
+- [x] Dashboard history page consuming `GET /api/audits`: filterable (grade/flagged),
+      paginated, expandable claim detail; Live/History tab toggle in App
+- [x] Frontend tests for history view (9 new; 24 total)
+- [ ] Run `make eval-compare` with real keys and publish the comparison table (user action)
 
 ## Phase 6 — VERITAS-lite verified knowledge base
 

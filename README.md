@@ -70,7 +70,7 @@ Your App                    TrustAgent                     LLM (Ollama)
 ### Prerequisites
 
 - Docker & Docker Compose
-- Go 1.22+
+- Go 1.25+
 - Python 3.11+
 - Node.js 20+
 
