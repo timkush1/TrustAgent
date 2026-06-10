@@ -10,7 +10,7 @@
 # This makes the final image much smaller and more secure.
 
 # --- Stage 1: Dependencies ---
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 # Install system dependencies needed for building Python packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -44,7 +44,7 @@ RUN python -m venv /app/.venv && \
         numpy>=1.24.0
 
 # --- Stage 2: Application ---
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
