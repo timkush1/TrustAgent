@@ -12,7 +12,7 @@
 | [1](#phase-1--cicd) | CI/CD pipelines | 9 | ✅ |
 | [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ✅ |
 | [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ✅ |
-| [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ⬜ |
+| [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ✅ |
 | [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ⬜ |
 | [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ⬜ |
 | [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | ⬜ |
@@ -133,12 +133,15 @@ injection-payload suite passes.
 **Goal**: audit history survives restarts. **Postgres** (ADR in `docs/DECISIONS.md`); single
 writer = Go worker pool.
 
-- [ ] `postgres:16-alpine` in compose; migrations in `backend-go/migrations/` (golang-migrate)
-- [ ] Schema: `audits` + `audit_claims`
-- [ ] `backend-go/internal/store/postgres.go` (pgx); persist after broadcast
-- [ ] `GET /api/audits` (paginated, filterable) + `GET /api/audits/:id`
-- [ ] Redis cache for result lookups; retire Python in-memory dict
-- [ ] Store integration tests
+- [x] `postgres:16-alpine` in compose; embedded migrations in
+      `backend-go/internal/store/migrations/` (minimal runner — ADR-003)
+- [x] Schema: `audits` + `audit_claims`
+- [x] `backend-go/internal/store/postgres.go` (pgx); worker persists after broadcast,
+      best-effort (ADR-004)
+- [x] `GET /api/audits` (paginated, filterable by grade/flagged) + `GET /api/audits/:id`
+- [x] Store integration tests (Postgres service container in CI; verified locally)
+- [ ] Redis cache for result lookups / retire Python in-memory dict
+      (deferred to Phase 5 alongside the dashboard-history wiring)
 
 ## Phase 5 — Multi-provider + dashboard history
 

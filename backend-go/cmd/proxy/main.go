@@ -20,6 +20,7 @@ import (
 	_ "github.com/truthtable/backend-go/internal/metrics" // Register Prometheus metrics
 	"github.com/truthtable/backend-go/internal/middleware"
 	"github.com/truthtable/backend-go/internal/proxy"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
 	"github.com/truthtable/backend-go/internal/websocket"
 	"github.com/truthtable/backend-go/internal/worker"
@@ -44,7 +45,25 @@ func main() {
 	go wsHub.Run()
 	log.Printf("✓ WebSocket hub started")
 
+	// Audit persistence (optional: enabled when TRUTHTABLE_DATABASE_URL is set)
+	var auditStore store.Store
+	if cfg.DatabaseURL != "" {
+		pgStore, err := store.NewPostgresStore(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			log.Printf("⚠️  Audit persistence disabled: %v", err)
+		} else {
+			auditStore = pgStore
+			defer pgStore.Close()
+			log.Printf("✓ Audit persistence enabled (Postgres)")
+		}
+	} else {
+		log.Printf("⚠️  TRUTHTABLE_DATABASE_URL not set — audit history will not be persisted")
+	}
+
 	workerPool := worker.NewPool(cfg.WorkerCount, cfg.QueueSize, auditClient, wsHub)
+	if auditStore != nil {
+		workerPool.AttachStore(auditStore)
+	}
 	go workerPool.Start()
 	log.Printf("✓ Worker pool started (%d workers, queue size %d)", cfg.WorkerCount, cfg.QueueSize)
 
@@ -107,6 +126,10 @@ func main() {
 	// File upload endpoint (ingest documents into RAG knowledge base)
 	router.POST("/api/upload", auth, uploadRateLimit, middleware.BodyLimit(cfg.MaxUploadBytes),
 		handleFileUpload(auditClient, cfg.MaxUploadBytes))
+
+	// Audit history (requires persistence; 503 when disabled)
+	router.GET("/api/audits", auth, rateLimit, handleListAudits(auditStore))
+	router.GET("/api/audits/:id", auth, rateLimit, handleGetAudit(auditStore))
 
 	// Other v1 endpoints - forward as-is without auditing
 	router.Any("/v1/models", auth, rateLimit, proxyHandler.HandleGeneric)

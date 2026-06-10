@@ -24,6 +24,7 @@ type Config struct {
 	APIKeys            []string // empty = auth disabled (dev mode)
 	AllowedOrigins     []string // CORS + WebSocket origin allowlist
 	RedisURL           string   // rate-limiter backend; empty = in-memory
+	DatabaseURL        string   // audit persistence; empty = disabled
 	RateLimitPerMinute int      // per client (IP or API key)
 	UploadLimitPerMin  int      // stricter limit for /api/upload
 	MaxBodyBytes       int64    // request body cap (non-upload routes)
@@ -51,6 +52,7 @@ func Load() *Config {
 			"http://localhost:3000",
 		}),
 		RedisURL:           getEnv("REDIS_URL", ""),
+		DatabaseURL:        getEnv("TRUTHTABLE_DATABASE_URL", ""),
 		RateLimitPerMinute: getEnvInt("TRUTHTABLE_RATE_LIMIT_PER_MINUTE", 120),
 		UploadLimitPerMin:  getEnvInt("TRUTHTABLE_UPLOAD_LIMIT_PER_MINUTE", 10),
 		MaxBodyBytes:       int64(getEnvInt("TRUTHTABLE_MAX_BODY_BYTES", 1<<20)),    // 1 MiB

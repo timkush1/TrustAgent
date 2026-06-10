@@ -17,6 +17,22 @@ jobs:
     name: Go (proxy)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: truthtable
+          POSTGRES_PASSWORD: ci-test
+          POSTGRES_DB: truthtable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U truthtable"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://truthtable:ci-test@localhost:5432/truthtable
     steps:
       - uses: actions/checkout@v4
 

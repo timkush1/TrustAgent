@@ -17,6 +17,25 @@ services:
     networks:
       - truthtable-net
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: truthtable-postgres
+    ports:
+      - "5432:5432"  # published for hybrid local dev (proxy on host)
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=truthtable
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-truthtable-dev}
+      - POSTGRES_DB=truthtable
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U truthtable"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - truthtable-net
+
   qdrant:
     image: qdrant/qdrant:v1.16.3
     container_name: truthtable-qdrant
@@ -170,8 +189,10 @@ services:
       - TRUTHTABLE_UPSTREAM_URL=${UPSTREAM_LLM_URL:-http://ollama:11434}
       - TRUTHTABLE_API_KEYS=${TRUTHTABLE_API_KEYS:-}
       - TRUTHTABLE_ALLOWED_ORIGINS=${TRUTHTABLE_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      - TRUTHTABLE_DATABASE_URL=postgres://truthtable:${POSTGRES_PASSWORD:-truthtable-dev}@postgres:5432/truthtable
     depends_on:
       - redis
+      - postgres
       - audit-engine
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8080/health"]
@@ -220,6 +241,8 @@ networks:
 
 volumes:
   redis-data:
+    driver: local
+  postgres-data:
     driver: local
   qdrant-data:
     driver: local

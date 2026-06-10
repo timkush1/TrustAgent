@@ -8,6 +8,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/metrics"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/websocket"
 )
 
@@ -26,9 +27,16 @@ type Pool struct {
 	queue       chan *AuditJob
 	auditClient *grpc.AuditClient
 	wsHub       *websocket.Hub
+	store       store.Store
 	wg          sync.WaitGroup
 	ctx         context.Context
 	cancel      context.CancelFunc
+}
+
+// AttachStore enables persistence of completed audits. Must be called before
+// Start; a nil store (the default) disables persistence.
+func (p *Pool) AttachStore(s store.Store) {
+	p.store = s
 }
 
 func NewPool(numWorkers, queueSize int, client *grpc.AuditClient, hub *websocket.Hub) *Pool {
@@ -152,6 +160,64 @@ func (p *Pool) processJob(workerID int, job *AuditJob) {
 			StepTimings:           result.StepTimings,
 		}
 		p.wsHub.BroadcastAuditResult(auditResult)
+	}
+
+	if p.store != nil {
+		p.persistAudit(job, result, duration)
+	}
+}
+
+// persistAudit writes the completed audit to the store. Persistence is
+// best-effort relative to the live broadcast: a failed write is logged but
+// never blocks or fails the audit pipeline.
+func (p *Pool) persistAudit(job *AuditJob, result *grpc.AuditResult, duration time.Duration) {
+	claims := make([]store.ClaimRecord, len(result.Claims))
+	for i, c := range result.Claims {
+		evidence := c.Evidence
+		if evidence == nil {
+			evidence = []string{}
+		}
+		claims[i] = store.ClaimRecord{
+			Claim:      c.Text,
+			Status:     normalizeStatus(c.Verdict),
+			Confidence: c.Confidence,
+			Evidence:   evidence,
+		}
+	}
+
+	record := &store.AuditRecord{
+		AuditID:               job.RequestID,
+		RequestID:             job.RequestID,
+		UserQuery:             job.Prompt,
+		LLMResponse:           job.Response,
+		Model:                 job.Model,
+		FaithfulnessScore:     result.TrustScore,
+		Grade:                 store.GradeForScore(result.TrustScore),
+		HallucinationDetected: result.HallucinationDetected,
+		ReasoningTrace:        result.ReasoningTrace,
+		ProcessingTimeMs:      duration.Milliseconds(),
+		StepTimings:           result.StepTimings,
+		CreatedAt:             time.Now().UTC(),
+		Claims:                claims,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.store.SaveAudit(ctx, record); err != nil {
+		log.Printf("[%s] Failed to persist audit: %v", job.RequestID, err)
+	}
+}
+
+func normalizeStatus(verdict string) string {
+	switch verdict {
+	case "supported":
+		return "SUPPORTED"
+	case "unsupported":
+		return "UNSUPPORTED"
+	case "partially_supported":
+		return "PARTIALLY_SUPPORTED"
+	default:
+		return "UNKNOWN"
 	}
 }
 
