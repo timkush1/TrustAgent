@@ -53,6 +53,7 @@ class RetrieverNode:
         qdrant_store: QdrantStore,
         top_k_per_claim: int = 3,
         score_threshold: float = 0.3,
+        hybrid_retriever=None,
     ):
         """
         Initialize the retriever node.
@@ -65,11 +66,15 @@ class RetrieverNode:
                            Lower = more results but less relevant.
                            Higher = fewer results but more relevant.
                            0.3 is a good starting point for MiniLM.
+            hybrid_retriever: Optional HybridClaimRetriever; when set, claim
+                           searches use BM25+dense RRF fusion over accepted
+                           KB claims instead of plain dense search.
         """
         self.embedding_service = embedding_service
         self.qdrant_store = qdrant_store
         self.top_k_per_claim = top_k_per_claim
         self.score_threshold = score_threshold
+        self.hybrid_retriever = hybrid_retriever
 
     async def run(self, state: AuditState) -> AuditState:
         """
@@ -124,31 +129,38 @@ class RetrieverNode:
             state["context_docs"] = []
             return state
 
-        # Generate embeddings for all search texts at once (batch is faster)
-        vectors = self.embedding_service.embed(search_texts)
-
-        # Search Qdrant for each vector, collecting unique documents
         seen_texts: Set[str] = set()
         context_docs: List[str] = []
 
-        for i, (text, vector) in enumerate(zip(search_texts, vectors)):
-            label = "query" if i == 0 and user_query else f"claim {i}"
+        if self.hybrid_retriever is not None:
+            # Hybrid mode: BM25 + dense with RRF fusion over accepted KB claims.
+            for text in search_texts:
+                for doc_text in self.hybrid_retriever.retrieve(text, top_k=self.top_k_per_claim):
+                    if doc_text not in seen_texts:
+                        seen_texts.add(doc_text)
+                        context_docs.append(doc_text)
+        else:
+            # Dense-only mode (legacy chunk store).
+            vectors = self.embedding_service.embed(search_texts)
 
-            results = self.qdrant_store.search(
-                query_vector=vector,
-                top_k=self.top_k_per_claim,
-                score_threshold=self.score_threshold,
-            )
+            for i, (text, vector) in enumerate(zip(search_texts, vectors)):
+                label = "query" if i == 0 and user_query else f"claim {i}"
 
-            for result in results:
-                doc_text = result["text"]
-                if doc_text not in seen_texts:
-                    seen_texts.add(doc_text)
-                    context_docs.append(doc_text)
-                    logger.debug(
-                        f"  Retrieved for {label} (score={result['score']:.3f}): "
-                        f"{doc_text[:60]}..."
-                    )
+                results = self.qdrant_store.search(
+                    query_vector=vector,
+                    top_k=self.top_k_per_claim,
+                    score_threshold=self.score_threshold,
+                )
+
+                for result in results:
+                    doc_text = result["text"]
+                    if doc_text not in seen_texts:
+                        seen_texts.add(doc_text)
+                        context_docs.append(doc_text)
+                        logger.debug(
+                            f"  Retrieved for {label} (score={result['score']:.3f}): "
+                            f"{doc_text[:60]}..."
+                        )
 
         # Update state with retrieved context
         state["context_docs"] = context_docs

@@ -31,6 +31,13 @@ logger = logging.getLogger(__name__)
 # In-memory storage for audit results (for demo - use Redis in production)
 _audit_results: Dict[str, AuditState] = {}
 
+# KB claim status <-> proto enum mapping
+_KB_STATUS_TO_PROTO = {
+    "accepted": evaluator_pb2.KB_CLAIM_STATUS_ACCEPTED,
+    "quarantined": evaluator_pb2.KB_CLAIM_STATUS_QUARANTINED,
+}
+_PROTO_TO_KB_STATUS = {v: k for k, v in _KB_STATUS_TO_PROTO.items()}
+
 
 class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     """
@@ -42,7 +49,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - HealthCheck: Service health status
     """
 
-    def __init__(self, audit_graph, provider=None, qdrant_store=None, embedding_service=None):
+    def __init__(
+        self, audit_graph, provider=None, qdrant_store=None, embedding_service=None, ingestor=None
+    ):
         """
         Initialize the servicer.
 
@@ -51,11 +60,14 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             provider: LLM provider for health checks (optional)
             qdrant_store: Qdrant store for health checks (optional)
             embedding_service: Embedding service for document ingestion (optional)
+            ingestor: ClaimIngestor for claim-level (Gate-1 gated) ingestion;
+                      None falls back to legacy chunk ingestion
         """
         self.audit_graph = audit_graph
         self.provider = provider
         self.qdrant_store = qdrant_store
         self.embedding_service = embedding_service
+        self.ingestor = ingestor
         self._version = __version__
         logger.info("AuditServicer initialized")
 
@@ -248,7 +260,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         self, request: evaluator_pb2.IngestRequest, context
     ) -> evaluator_pb2.IngestResponse:
         """
-        Ingest documents into the RAG knowledge base.
+        Ingest documents into the knowledge base.
+
+        With a ClaimIngestor configured (the default when RAG is enabled),
+        documents are decomposed into atomic claims that must pass the Gate-1
+        entailment check; otherwise falls back to legacy chunk ingestion.
         """
         logger.info(f"Ingesting {len(request.documents)} documents")
 
@@ -261,6 +277,43 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             )
 
         try:
+            self.qdrant_store.ensure_collection()
+
+            if self.ingestor is not None:
+                documents = []
+                for doc in request.documents:
+                    meta = dict(doc.metadata) if doc.metadata else {}
+                    if doc.id:
+                        meta["doc_id"] = doc.id
+                    documents.append({"content": doc.content, "metadata": meta})
+
+                report = await self.ingestor.ingest_documents(documents)
+
+                claim_results = [
+                    evaluator_pb2.ClaimIngestResult(
+                        claim_id=r.claim_id,
+                        claim=r.claim,
+                        source_doc_id=r.source_doc_id,
+                        status=_KB_STATUS_TO_PROTO[r.status],
+                        entailment_score=r.entailment_score,
+                        conflicts_with=r.conflicts_with,
+                    )
+                    for r in report.claim_results
+                ]
+                logger.info(
+                    f"Claim-level ingest: {report.accepted} accepted, "
+                    f"{report.quarantined} quarantined, {report.conflicts_detected} conflicts"
+                )
+                return evaluator_pb2.IngestResponse(
+                    documents_ingested=report.documents,
+                    status="success",
+                    claim_results=claim_results,
+                    claims_accepted=report.accepted,
+                    claims_quarantined=report.quarantined,
+                    conflicts_detected=report.conflicts_detected,
+                )
+
+            # Legacy chunk-level ingestion (no LLM available for Gate-1).
             texts = [doc.content for doc in request.documents]
             metadata = []
             for doc in request.documents:
@@ -269,23 +322,118 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     meta["doc_id"] = doc.id
                 metadata.append(meta)
 
-            # Embed the documents
             vectors = self.embedding_service.embed(texts)
-
-            # Store in Qdrant
-            self.qdrant_store.ensure_collection()
             count = self.qdrant_store.upsert_documents(
-                texts=texts,
-                vectors=vectors,
-                metadata=metadata,
+                texts=texts, vectors=vectors, metadata=metadata
             )
 
-            logger.info(f"Successfully ingested {count} documents")
+            logger.info(f"Successfully ingested {count} documents (legacy chunk mode)")
             return evaluator_pb2.IngestResponse(documents_ingested=count, status="success")
 
         except Exception as e:
             logger.error(f"Document ingestion failed: {e}", exc_info=True)
             return evaluator_pb2.IngestResponse(documents_ingested=0, status=f"error: {str(e)}")
+
+    # ------------------------------------------------------------------
+    # Knowledge-base queries (VERITAS-lite)
+    # ------------------------------------------------------------------
+
+    def _kb_claims(self) -> list:
+        """All claim points from the store, newest first."""
+        points = self.qdrant_store.scroll_points(must={"kind": "claim"})
+        points.sort(key=lambda p: p.get("ingested_at_ms", 0), reverse=True)
+        return points
+
+    @staticmethod
+    def _to_kb_claim(point: Dict) -> evaluator_pb2.KBClaim:
+        return evaluator_pb2.KBClaim(
+            claim_id=point["id"],
+            claim=point.get("text", ""),
+            source_doc_id=str(point.get("source_doc_id", "")),
+            source_excerpt=point.get("source_excerpt", ""),
+            status=_KB_STATUS_TO_PROTO.get(
+                point.get("kb_status", ""), evaluator_pb2.KB_CLAIM_STATUS_UNSPECIFIED
+            ),
+            entailment_score=float(point.get("entailment_score", 0.0)),
+            conflicts_with=[str(c) for c in point.get("conflicts_with", [])],
+            ingested_at_ms=int(point.get("ingested_at_ms", 0)),
+        )
+
+    async def ListKBClaims(
+        self, request: evaluator_pb2.ListKBClaimsRequest, context
+    ) -> evaluator_pb2.ListKBClaimsResponse:
+        if not self.qdrant_store:
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
+            context.set_details("Vector store not configured")
+            return evaluator_pb2.ListKBClaimsResponse()
+
+        points = self._kb_claims()
+        if request.status_filter != evaluator_pb2.KB_CLAIM_STATUS_UNSPECIFIED:
+            wanted = _PROTO_TO_KB_STATUS[request.status_filter]
+            points = [p for p in points if p.get("kb_status") == wanted]
+
+        total = len(points)
+        limit = min(request.limit or 50, 200)
+        offset = max(request.offset, 0)
+        page = points[offset : offset + limit]
+
+        return evaluator_pb2.ListKBClaimsResponse(
+            claims=[self._to_kb_claim(p) for p in page], total=total
+        )
+
+    async def ListConflicts(
+        self, request: evaluator_pb2.ListConflictsRequest, context
+    ) -> evaluator_pb2.ListConflictsResponse:
+        if not self.qdrant_store:
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
+            context.set_details("Vector store not configured")
+            return evaluator_pb2.ListConflictsResponse()
+
+        points = {p["id"]: p for p in self._kb_claims()}
+        seen: set = set()
+        pairs = []
+        for point in points.values():
+            for other_id in point.get("conflicts_with", []):
+                key = tuple(sorted((point["id"], str(other_id))))
+                if key in seen or str(other_id) not in points:
+                    continue
+                seen.add(key)
+                pairs.append(
+                    evaluator_pb2.ConflictPair(
+                        claim_a=self._to_kb_claim(point),
+                        claim_b=self._to_kb_claim(points[str(other_id)]),
+                    )
+                )
+
+        total = len(pairs)
+        limit = min(request.limit or 50, 200)
+        return evaluator_pb2.ListConflictsResponse(conflicts=pairs[:limit], total=total)
+
+    async def GetKBStats(
+        self, request: evaluator_pb2.KBStatsRequest, context
+    ) -> evaluator_pb2.KBStatsResponse:
+        if not self.qdrant_store:
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
+            context.set_details("Vector store not configured")
+            return evaluator_pb2.KBStatsResponse()
+
+        points = self._kb_claims()
+        accepted = sum(1 for p in points if p.get("kb_status") == "accepted")
+        quarantined = sum(1 for p in points if p.get("kb_status") == "quarantined")
+
+        seen: set = set()
+        ids = {p["id"] for p in points}
+        for point in points:
+            for other_id in point.get("conflicts_with", []):
+                if str(other_id) in ids:
+                    seen.add(tuple(sorted((point["id"], str(other_id)))))
+
+        return evaluator_pb2.KBStatsResponse(
+            total_claims=len(points),
+            accepted=accepted,
+            quarantined=quarantined,
+            conflict_pairs=len(seen),
+        )
 
 
 def create_server(

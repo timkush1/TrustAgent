@@ -6,8 +6,9 @@ import { AuditFeed } from './components/audit/AuditFeed';
 import { QueryInput } from './components/audit/QueryInput';
 import { FileUpload } from './components/upload/FileUpload';
 import { HistoryView } from './components/history/HistoryView';
+import { KnowledgeBaseView } from './components/kb/KnowledgeBaseView';
 
-type View = 'live' | 'history';
+type View = 'live' | 'history' | 'kb';
 
 function App() {
   const { status } = useWebSocket();
@@ -60,8 +61,11 @@ function App() {
           >
             <ViewTab label="Live Feed" active={view === 'live'} onClick={() => setView('live')} />
             <ViewTab label="History" active={view === 'history'} onClick={() => setView('history')} />
+            <ViewTab label="Knowledge Base" active={view === 'kb'} onClick={() => setView('kb')} />
           </div>
-          {view === 'live' ? <AuditFeed /> : <HistoryView />}
+          {view === 'live' && <AuditFeed />}
+          {view === 'history' && <HistoryView />}
+          {view === 'kb' && <KnowledgeBaseView />}
         </main>
       </div>
     </div>

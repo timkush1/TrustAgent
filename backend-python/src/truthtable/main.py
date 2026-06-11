@@ -108,12 +108,34 @@ async def main():
             "Set QDRANT_URL=http://localhost:6333 to enable."
         )
 
+    # Knowledge-base components (VERITAS-lite): claim-level ingestion with
+    # the Gate-1 entailment check, contradiction detection, and hybrid
+    # (BM25 + dense RRF) retrieval. Requires both the LLM and the vector store.
+    ingestor = None
+    hybrid_retriever = None
+    if embedding_service is not None and qdrant_store is not None:
+        from truthtable.kb import ClaimIngestor, ContradictionDetector
+        from truthtable.kb.hybrid import HybridClaimRetriever
+
+        hybrid_retriever = HybridClaimRetriever(
+            embedding_service=embedding_service, qdrant_store=qdrant_store
+        )
+        ingestor = ClaimIngestor(
+            provider=provider,
+            embedding_service=embedding_service,
+            qdrant_store=qdrant_store,
+            detector=ContradictionDetector(provider=provider),
+            on_change=hybrid_retriever.mark_dirty,
+        )
+        logger.info("Knowledge base enabled: Gate-1 ingestion + hybrid retrieval")
+
     # Build audit graph (with or without retrieval)
     logger.info("Building audit graph...")
     audit_graph = build_audit_graph(
         provider=provider,
         embedding_service=embedding_service,
         qdrant_store=qdrant_store,
+        hybrid_retriever=hybrid_retriever,
     )
     logger.info("Audit graph ready")
 
@@ -134,6 +156,7 @@ async def main():
         provider=provider,
         qdrant_store=qdrant_store,
         embedding_service=embedding_service,
+        ingestor=ingestor,
     )
     server = create_server(servicer, host=settings.grpc_host, port=settings.grpc_port)
 

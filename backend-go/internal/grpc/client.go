@@ -126,9 +126,35 @@ type IngestDocument struct {
 	Metadata map[string]string
 }
 
-// IngestDocuments sends documents to the Python engine for embedding and storage.
-func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDocument) (int32, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+// ClaimIngest is the per-claim outcome of claim-level (Gate-1 gated) ingestion.
+type ClaimIngest struct {
+	ClaimID         string   `json:"claim_id"`
+	Claim           string   `json:"claim"`
+	SourceDocID     string   `json:"source_doc_id"`
+	Status          string   `json:"status"` // "accepted" | "quarantined"
+	EntailmentScore float64  `json:"entailment_score"`
+	ConflictsWith   []string `json:"conflicts_with"`
+}
+
+// IngestResult summarizes one ingest call.
+type IngestResult struct {
+	DocumentsIngested int32         `json:"documents_ingested"`
+	ClaimsAccepted    int32         `json:"claims_accepted"`
+	ClaimsQuarantined int32         `json:"claims_quarantined"`
+	ConflictsDetected int32         `json:"conflicts_detected"`
+	ClaimResults      []ClaimIngest `json:"claim_results"`
+}
+
+var kbStatusNames = map[pb.KBClaimStatus]string{
+	pb.KBClaimStatus_KB_CLAIM_STATUS_ACCEPTED:    "accepted",
+	pb.KBClaimStatus_KB_CLAIM_STATUS_QUARANTINED: "quarantined",
+}
+
+// IngestDocuments sends documents to the Python engine for claim-level ingestion.
+func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDocument) (*IngestResult, error) {
+	// Claim-level ingestion makes multiple LLM calls per document, so allow
+	// a longer window than the standard audit timeout.
+	ctx, cancel := context.WithTimeout(ctx, 4*c.timeout)
 	defer cancel()
 
 	pbDocs := make([]*pb.ContextDocument, len(documents))
@@ -144,10 +170,144 @@ func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDoc
 		Documents: pbDocs,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("ingest documents failed: %w", err)
+		return nil, fmt.Errorf("ingest documents failed: %w", err)
 	}
 
-	return resp.DocumentsIngested, nil
+	result := &IngestResult{
+		DocumentsIngested: resp.DocumentsIngested,
+		ClaimsAccepted:    resp.ClaimsAccepted,
+		ClaimsQuarantined: resp.ClaimsQuarantined,
+		ConflictsDetected: resp.ConflictsDetected,
+		ClaimResults:      make([]ClaimIngest, len(resp.ClaimResults)),
+	}
+	for i, claim := range resp.ClaimResults {
+		result.ClaimResults[i] = claimIngestFromProto(claim)
+	}
+	return result, nil
+}
+
+func claimIngestFromProto(claim *pb.ClaimIngestResult) ClaimIngest {
+	conflicts := claim.ConflictsWith
+	if conflicts == nil {
+		conflicts = []string{}
+	}
+	return ClaimIngest{
+		ClaimID:         claim.ClaimId,
+		Claim:           claim.Claim,
+		SourceDocID:     claim.SourceDocId,
+		Status:          kbStatusNames[claim.Status],
+		EntailmentScore: float64(claim.EntailmentScore),
+		ConflictsWith:   conflicts,
+	}
+}
+
+// KBClaim is a stored knowledge-base claim.
+type KBClaim struct {
+	ClaimID         string   `json:"claim_id"`
+	Claim           string   `json:"claim"`
+	SourceDocID     string   `json:"source_doc_id"`
+	SourceExcerpt   string   `json:"source_excerpt"`
+	Status          string   `json:"status"`
+	EntailmentScore float64  `json:"entailment_score"`
+	ConflictsWith   []string `json:"conflicts_with"`
+	IngestedAtMs    int64    `json:"ingested_at_ms"`
+}
+
+func kbClaimFromProto(claim *pb.KBClaim) KBClaim {
+	conflicts := claim.ConflictsWith
+	if conflicts == nil {
+		conflicts = []string{}
+	}
+	return KBClaim{
+		ClaimID:         claim.ClaimId,
+		Claim:           claim.Claim,
+		SourceDocID:     claim.SourceDocId,
+		SourceExcerpt:   claim.SourceExcerpt,
+		Status:          kbStatusNames[claim.Status],
+		EntailmentScore: float64(claim.EntailmentScore),
+		ConflictsWith:   conflicts,
+		IngestedAtMs:    claim.IngestedAtMs,
+	}
+}
+
+// ListKBClaims pages through stored claims. status: "", "accepted", "quarantined".
+func (c *AuditClient) ListKBClaims(ctx context.Context, limit, offset int, status string) ([]KBClaim, int32, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	statusFilter := pb.KBClaimStatus_KB_CLAIM_STATUS_UNSPECIFIED
+	switch status {
+	case "accepted":
+		statusFilter = pb.KBClaimStatus_KB_CLAIM_STATUS_ACCEPTED
+	case "quarantined":
+		statusFilter = pb.KBClaimStatus_KB_CLAIM_STATUS_QUARANTINED
+	}
+
+	resp, err := c.client.ListKBClaims(ctx, &pb.ListKBClaimsRequest{
+		Limit:        int32(limit),
+		Offset:       int32(offset),
+		StatusFilter: statusFilter,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list KB claims failed: %w", err)
+	}
+
+	claims := make([]KBClaim, len(resp.Claims))
+	for i, claim := range resp.Claims {
+		claims[i] = kbClaimFromProto(claim)
+	}
+	return claims, resp.Total, nil
+}
+
+// ConflictPair is two claims that contradict each other.
+type ConflictPair struct {
+	ClaimA KBClaim `json:"claim_a"`
+	ClaimB KBClaim `json:"claim_b"`
+}
+
+// ListConflicts returns contradiction pairs detected at ingest time.
+func (c *AuditClient) ListConflicts(ctx context.Context, limit int) ([]ConflictPair, int32, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	resp, err := c.client.ListConflicts(ctx, &pb.ListConflictsRequest{Limit: int32(limit)})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list conflicts failed: %w", err)
+	}
+
+	pairs := make([]ConflictPair, len(resp.Conflicts))
+	for i, pair := range resp.Conflicts {
+		pairs[i] = ConflictPair{
+			ClaimA: kbClaimFromProto(pair.ClaimA),
+			ClaimB: kbClaimFromProto(pair.ClaimB),
+		}
+	}
+	return pairs, resp.Total, nil
+}
+
+// KBStats summarizes the knowledge base.
+type KBStats struct {
+	TotalClaims   int32 `json:"total_claims"`
+	Accepted      int32 `json:"accepted"`
+	Quarantined   int32 `json:"quarantined"`
+	ConflictPairs int32 `json:"conflict_pairs"`
+}
+
+// GetKBStats returns knowledge-base counters.
+func (c *AuditClient) GetKBStats(ctx context.Context) (*KBStats, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	resp, err := c.client.GetKBStats(ctx, &pb.KBStatsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("get KB stats failed: %w", err)
+	}
+	return &KBStats{
+		TotalClaims:   resp.TotalClaims,
+		Accepted:      resp.Accepted,
+		Quarantined:   resp.Quarantined,
+		ConflictPairs: resp.ConflictPairs,
+	}, nil
 }
 
 func (c *AuditClient) Close() error {

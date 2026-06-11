@@ -208,6 +208,88 @@ class QdrantStore:
         logger.debug(f"Search returned {len(docs)} results (threshold={score_threshold})")
         return docs
 
+    # ------------------------------------------------------------------
+    # Knowledge-base (claim-level) operations — see docs/KB-DESIGN.md
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_filter(
+        must: Optional[Dict[str, Any]] = None, must_not: Optional[Dict[str, Any]] = None
+    ) -> Optional[qdrant_models.Filter]:
+        def conditions(spec: Dict[str, Any]) -> List[qdrant_models.FieldCondition]:
+            return [
+                qdrant_models.FieldCondition(key=key, match=qdrant_models.MatchValue(value=value))
+                for key, value in spec.items()
+            ]
+
+        if not must and not must_not:
+            return None
+        return qdrant_models.Filter(
+            must=conditions(must) if must else None,
+            must_not=conditions(must_not) if must_not else None,
+        )
+
+    def upsert_points(
+        self, ids: List[str], vectors: List[List[float]], payloads: List[Dict[str, Any]]
+    ) -> None:
+        """Upsert points with explicit ids and full payloads (KB claims)."""
+        points = [
+            qdrant_models.PointStruct(id=point_id, vector=vector, payload=payload)
+            for point_id, vector, payload in zip(ids, vectors, payloads)
+        ]
+        self._client.upsert(collection_name=self.collection_name, points=points)
+
+    def search_filtered(
+        self,
+        query_vector: List[float],
+        top_k: int = 5,
+        score_threshold: float = 0.3,
+        must: Optional[Dict[str, Any]] = None,
+        must_not: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Vector search constrained by payload equality filters."""
+        results = self._client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            limit=top_k,
+            score_threshold=score_threshold,
+            query_filter=self._build_filter(must, must_not),
+        )
+        docs = []
+        for point in results.points:
+            doc = {"id": str(point.id), "score": point.score}
+            doc.update(point.payload or {})
+            docs.append(doc)
+        return docs
+
+    def scroll_points(
+        self,
+        must: Optional[Dict[str, Any]] = None,
+        limit: int = 10000,
+    ) -> List[Dict[str, Any]]:
+        """Return points matching the filter (payloads only, no vectors)."""
+        records, _ = self._client.scroll(
+            collection_name=self.collection_name,
+            scroll_filter=self._build_filter(must),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        points = []
+        for record in records:
+            point = {"id": str(record.id)}
+            point.update(record.payload or {})
+            points.append(point)
+        return points
+
+    def set_payload(self, point_id: str, payload: Dict[str, Any]) -> None:
+        """Merge payload fields into an existing point."""
+        self._client.set_payload(
+            collection_name=self.collection_name,
+            payload=payload,
+            points=[point_id],
+        )
+
     def count(self) -> int:
         """Get the number of documents in the collection."""
         try:

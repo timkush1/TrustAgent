@@ -17,8 +17,22 @@ service AuditService {
     // HealthCheck verifies service readiness
     rpc HealthCheck(HealthRequest) returns (HealthResponse);
 
-    // IngestDocuments adds documents to the RAG knowledge base
+    // IngestDocuments adds documents to the RAG knowledge base.
+    // Documents are decomposed into atomic claims; each claim must pass the
+    // Gate-1 entailment check against its own source to be admitted
+    // (below-threshold claims are stored as quarantined and excluded from
+    // retrieval). Accepted claims are checked for contradictions against
+    // existing knowledge.
     rpc IngestDocuments(IngestRequest) returns (IngestResponse);
+
+    // ListKBClaims pages through stored knowledge-base claims.
+    rpc ListKBClaims(ListKBClaimsRequest) returns (ListKBClaimsResponse);
+
+    // ListConflicts returns contradiction pairs detected at ingest time.
+    rpc ListConflicts(ListConflictsRequest) returns (ListConflictsResponse);
+
+    // GetKBStats returns knowledge-base counters.
+    rpc GetKBStats(KBStatsRequest) returns (KBStatsResponse);
 }
 
 // ========== Request Messages ==========
@@ -99,6 +113,74 @@ message IngestRequest {
 message IngestResponse {
     int32 documents_ingested = 1;   // Number of documents successfully ingested
     string status = 2;              // "success" or error message
+
+    // Claim-level ingestion results (VERITAS-lite, see docs/KB-DESIGN.md)
+    repeated ClaimIngestResult claim_results = 3;
+    int32 claims_accepted = 4;      // Passed the Gate-1 entailment check
+    int32 claims_quarantined = 5;   // Failed Gate-1; stored but not retrievable
+    int32 conflicts_detected = 6;   // CONTRADICTS pairs found during this ingest
+}
+
+// ========== Knowledge Base (VERITAS-lite) ==========
+
+message ClaimIngestResult {
+    string claim_id = 1;            // Stable id of the stored claim
+    string claim = 2;               // Atomic claim text
+    string source_doc_id = 3;       // Document the claim was extracted from
+    KBClaimStatus status = 4;       // ACCEPTED or QUARANTINED
+    float entailment_score = 5;     // Gate-1 confidence that source entails claim
+    repeated string conflicts_with = 6;  // claim_ids this claim contradicts
+}
+
+message KBClaim {
+    string claim_id = 1;
+    string claim = 2;
+    string source_doc_id = 3;
+    string source_excerpt = 4;      // Span of the source the claim came from
+    KBClaimStatus status = 5;
+    float entailment_score = 6;
+    repeated string conflicts_with = 7;
+    int64 ingested_at_ms = 8;
+}
+
+message ListKBClaimsRequest {
+    int32 limit = 1;                // Default 50, max 200
+    int32 offset = 2;
+    KBClaimStatus status_filter = 3;  // UNSPECIFIED = all
+}
+
+message ListKBClaimsResponse {
+    repeated KBClaim claims = 1;
+    int32 total = 2;
+}
+
+message ListConflictsRequest {
+    int32 limit = 1;                // Default 50, max 200
+}
+
+message ConflictPair {
+    KBClaim claim_a = 1;
+    KBClaim claim_b = 2;
+}
+
+message ListConflictsResponse {
+    repeated ConflictPair conflicts = 1;
+    int32 total = 2;
+}
+
+message KBStatsRequest {}
+
+message KBStatsResponse {
+    int32 total_claims = 1;
+    int32 accepted = 2;
+    int32 quarantined = 3;
+    int32 conflict_pairs = 4;
+}
+
+enum KBClaimStatus {
+    KB_CLAIM_STATUS_UNSPECIFIED = 0;
+    KB_CLAIM_STATUS_ACCEPTED = 1;
+    KB_CLAIM_STATUS_QUARANTINED = 2;
 }
 
 // ========== Enums ==========

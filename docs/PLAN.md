@@ -14,7 +14,7 @@
 | [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ✅ |
 | [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ✅ |
 | [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ✅ |
-| [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ⬜ |
+| [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ✅ |
 | [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | ⬜ |
 
 Total: ~93 hours over ~10 weeks part-time.
@@ -160,15 +160,19 @@ writer = Go worker pool.
 *"Most RAG stores index unverified text; TrustAgent's KB only admits claims that pass an
 entailment gate against their source, and detects contradictions between sources at ingest."*
 
-- [ ] Claim-level ingestion (`kb/ingestion.py`, reusing decomposer)
-- [ ] Gate-1 ingest verification (reusing verifier; below-threshold → `quarantined`)
-- [ ] Contradiction detection at ingest (`kb/contradiction.py`; Postgres `claim_relations`;
+- [x] Claim-level ingestion (`kb/ingestion.py`, reusing decomposer)
+- [x] Gate-1 ingest verification (reusing verifier; below-threshold → `quarantined`)
+- [x] Contradiction detection at ingest (`kb/contradiction.py`; conflicts stored on claim
+      payloads in Qdrant rather than a Postgres table — see PHASE-6 deviations;
       `GET /api/kb/conflicts`)
-- [ ] Hybrid retrieval: BM25 + dense, RRF-fused (`kb/hybrid.py` + `retriever.py`); eval ablation
-- [ ] Trust-weighted scoring (corroboration count + ingest entailment in `scorer.py`)
-- [ ] Proto extensions (`per-claim ingest results`, `ListConflicts`, `GetKBStats`) + `make proto`
-- [ ] Frontend KB page: accepted/quarantined claims + conflict pairs
-- [ ] `docs/KB-DESIGN.md` (dual-gate model, research lineage, explicit out-of-scope list)
+- [x] Hybrid retrieval: BM25 + dense, RRF-fused (`kb/hybrid.py` + `retriever.py`)
+- [x] Proto extensions (per-claim ingest results, `ListKBClaims`/`ListConflicts`/`GetKBStats`)
+      + stub regeneration
+- [x] Frontend KB page: stats, accepted/quarantined claims, conflict pairs
+- [x] `docs/KB-DESIGN.md` (dual-gate model, research lineage, explicit out-of-scope list)
+- [ ] Trust-weighted scoring (corroboration + ingest entailment in `scorer.py`) — deferred:
+      needs claim-provenance plumbing through graph state + a deliberate baseline regen
+- [ ] Eval ablation (dense-only vs hybrid) — moves with trust-weighted scoring
 
 Out of scope (deliberate): bitemporal versioning, SUPERSEDES/REFINES edges, permission-aware
 retrieval, crypto-shredding.

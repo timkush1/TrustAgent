@@ -131,6 +131,11 @@ func main() {
 	router.GET("/api/audits", auth, rateLimit, handleListAudits(auditStore))
 	router.GET("/api/audits/:id", auth, rateLimit, handleGetAudit(auditStore))
 
+	// Knowledge base (VERITAS-lite): claims, conflicts, stats
+	router.GET("/api/kb/claims", auth, rateLimit, handleListKBClaims(auditClient))
+	router.GET("/api/kb/conflicts", auth, rateLimit, handleListConflicts(auditClient))
+	router.GET("/api/kb/stats", auth, rateLimit, handleKBStats(auditClient))
+
 	// Other v1 endpoints - forward as-is without auditing
 	router.Any("/v1/models", auth, rateLimit, proxyHandler.HandleGeneric)
 	router.Any("/v1/models/*model", auth, rateLimit, proxyHandler.HandleGeneric)
@@ -342,7 +347,7 @@ func handleFileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.H
 			}
 		}
 
-		count, err := auditClient.IngestDocuments(c.Request.Context(), ingestDocs)
+		result, err := auditClient.IngestDocuments(c.Request.Context(), ingestDocs)
 		if err != nil {
 			log.Printf("Document ingestion failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to ingest documents"})
@@ -350,7 +355,11 @@ func handleFileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.H
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"documents_ingested": count,
+			"documents_ingested": result.DocumentsIngested,
+			"claims_accepted":    result.ClaimsAccepted,
+			"claims_quarantined": result.ClaimsQuarantined,
+			"conflicts_detected": result.ConflictsDetected,
+			"claim_results":      result.ClaimResults,
 			"status":             "success",
 		})
 	}

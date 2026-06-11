@@ -35,6 +35,7 @@ def build_audit_graph(
     provider: LLMProvider,
     embedding_service: Optional[EmbeddingService] = None,
     qdrant_store: Optional[QdrantStore] = None,
+    hybrid_retriever=None,
 ) -> StateGraph:
     """
     Build the audit workflow graph.
@@ -78,6 +79,7 @@ def build_audit_graph(
         retriever = RetrieverNode(
             embedding_service=embedding_service,
             qdrant_store=qdrant_store,
+            hybrid_retriever=hybrid_retriever,
         )
         workflow.add_node("retrieve", retriever.run)
 
