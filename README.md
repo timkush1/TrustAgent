@@ -2,9 +2,11 @@
 
 [![CI](https://github.com/timkush1/TrustAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci.yml)
 [![Security](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml)
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 
-> A real-time proxy that intercepts LLM responses, verifies factual claims against a knowledge base, and reports hallucinations on a live dashboard.
+> A real-time proxy that intercepts LLM responses, verifies factual claims against a knowledge base, and reports hallucinations on a live dashboard — with **zero added latency** for the client.
+
+**The 30-second pitch.** Drop TrustAgent between your app and any LLM API. Responses pass through untouched while every answer is asynchronously decomposed into atomic claims and verified against a knowledge base that *itself* only admits entailment-verified claims (the dual-gate model — see [docs/KB-DESIGN.md](docs/KB-DESIGN.md)). Detector quality is measured against public benchmarks with a deterministic regression gate blocking every PR, and every security control maps to the OWASP LLM Top 10 with blocking scanners in CI.
 
 ```
 Your App                    TrustAgent                     LLM (Ollama)
@@ -29,7 +31,10 @@ Your App                    TrustAgent                     LLM (Ollama)
 - **LangGraph Pipeline** - 4-stage workflow orchestrates claim decomposition → context retrieval → NLI verification → faithfulness scoring
 - **Live Dashboard** - React UI with WebSocket updates, trust scores (A-F grading), claim breakdowns, and evidence display
 - **Manual Auditing** - Submit query+response pairs directly from dashboard for ad-hoc fact-checking
-- **Knowledge Base Upload** - Drag-and-drop JSON files to dynamically expand RAG context without restarting services
+- **Verified Knowledge Base (VERITAS-lite)** - Uploads are decomposed into atomic claims; each must pass a Gate-1 entailment check against its own source or be quarantined; contradictions between sources are detected at ingest and surfaced as a review queue
+- **Hybrid Retrieval** - BM25 + dense vector search fused with Reciprocal Rank Fusion over accepted claims
+- **Audit History** - Every audit persists to Postgres; filterable history view in the dashboard
+- **Multi-Provider** - Ollama (local, default), OpenAI, and Anthropic as audit judges via a provider registry
 - **Production Observability** - Prometheus metrics + Grafana dashboards for monitoring hallucination rates and audit latency
 - **Pipeline Visibility** - Per-step timing breakdowns (decompose/retrieve/verify/score) displayed in real-time
 
@@ -173,10 +178,13 @@ trustAgent/
 
 ## Documentation
 
-- [Getting Started Guide](docs/GETTING-STARTED.md) — zero-to-running walkthrough with troubleshooting
+- [Architecture](docs/ARCHITECTURE.md) — system diagrams, the zero-latency tee design, decisions & trade-offs
+- [Knowledge-Base Design](docs/KB-DESIGN.md) — the dual-gate (VERITAS-lite) model and its research lineage
 - [Evaluation Framework](docs/EVALUATION.md) — benchmark methodology, metrics, CI regression gates
 - [Security](docs/SECURITY.md) — threat model, controls mapped to the OWASP LLM Top 10, scanner policy
-- [Roadmap / Master Plan](docs/PLAN.md) — phased plan to v1.0.0 with per-phase progress logs in [docs/progress/](docs/progress/)
+- [Decision Records](docs/DECISIONS.md) — lightweight ADRs
+- [Getting Started Guide](docs/GETTING-STARTED.md) — zero-to-running walkthrough with troubleshooting
+- [Roadmap / Master Plan](docs/PLAN.md) — the phased plan that built v1.0.0, with per-phase progress logs in [docs/progress/](docs/progress/)
 - [Research](docs/research/VERITAS-claim-graph-research.md) — verified claim-graph architecture research informing the knowledge-base design
 - Component deep-dives: [backend-go/README.md](backend-go/README.md), [backend-python/README.md](backend-python/README.md), [frontend-react/README.md](frontend-react/README.md)
 
@@ -375,6 +383,32 @@ Dashboard displays:
 - **WebSocket hook** for real-time updates with automatic reconnection
 - **Responsive Tailwind UI** with dark theme and color-coded trust scores
 - **Manual audit submission** + **file upload** components for interactive use
+
+## Honest Limitations
+
+- **Detector quality is bounded by the judge model.** A local 1B model is a weak
+  verifier; the eval framework exists precisely to quantify this per model
+  (`make eval-compare` runs the local-vs-frontier comparison).
+- **Gate-1 verifies claims against their source, not against reality.** A
+  consistently wrong document still poisons the KB; the mitigations are
+  contradiction detection, upload auth/rate limits, and (future) cross-source
+  authority weighting.
+- **Golden-tier metrics characterize the pipeline, not a live model** — they use
+  recorded model outputs by design ([docs/EVALUATION.md](docs/EVALUATION.md)).
+- **Single-tenant by design**: no per-user data isolation or permission-aware
+  retrieval; deliberate scope cuts are listed in [docs/PLAN.md](docs/PLAN.md).
+- Streaming responses are passed through but audited as a whole, not
+  incrementally.
+
+## Performance
+
+The proxy adds work only on the request path (parse, tee, enqueue) — audits are
+fully async. Measure on your hardware with the included k6 scenario:
+
+```bash
+make up-all
+make load-test   # 20 VUs sustained; threshold: p95 < 100ms added overhead
+```
 
 ## Author
 

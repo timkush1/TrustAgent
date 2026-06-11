@@ -15,7 +15,7 @@
 | [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ✅ |
 | [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ✅ |
 | [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ✅ |
-| [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | ⬜ |
+| [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | ✅ |
 
 Total: ~93 hours over ~10 weeks part-time.
 
@@ -179,12 +179,15 @@ retrieval, crypto-shredding.
 
 ## Phase 7 — Portfolio polish & v1.0.0
 
-- [ ] `docs/ARCHITECTURE.md`: mermaid diagrams + design decisions & trade-offs
-- [ ] README overhaul: 30-second pitch, benchmark + ablation tables, demo GIF, security posture,
-      honest limitations
-- [ ] Load test (`scripts/load/`): proxy overhead p95 under concurrency
-- [ ] Stretch: OpenTelemetry tracing Go→gRPC→Python
-- [ ] Tag `v1.0.0` + GitHub release with changelog
+- [x] `docs/ARCHITECTURE.md`: mermaid diagrams + design decisions & trade-offs
+- [x] README overhaul: 30-second pitch, evaluation table, security posture,
+      honest limitations (demo GIF = owner action, steps in PHASE-7.md)
+- [x] Load test (`scripts/load/proxy-overhead.js` + `make load-test`): proxy overhead
+      p95 budget under concurrency, dockerized k6
+- [x] `CHANGELOG.md` + version 1.0.0 across all mirrors
+- [ ] Stretch (not taken): OpenTelemetry tracing Go→gRPC→Python
+- [ ] Owner: tag `v1.0.0` + GitHub release with changelog; optional demo GIF +
+      `make eval-compare` judge table
 
 ---
 

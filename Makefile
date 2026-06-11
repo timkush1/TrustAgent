@@ -98,6 +98,11 @@ eval-compare: ## Judge-model comparison on HaluEval (needs OPENAI_API_KEY + ANTH
 	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider anthropic --model claude-haiku-4-5-20251001 --output eval-anthropic.json
 	@echo "Reports written: backend-python/eval-{ollama,openai,anthropic}.json"
 
+# ========== Load testing ==========
+
+load-test: ## Measure proxy overhead under load (requires stack: make up-all; uses dockerized k6)
+	docker run --rm -i --network host grafana/k6 run - < scripts/load/proxy-overhead.js
+
 # ========== Linting ==========
 
 lint: ## Run linters for all projects
