@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
@@ -150,6 +151,18 @@ var kbStatusNames = map[pb.KBClaimStatus]string{
 	pb.KBClaimStatus_KB_CLAIM_STATUS_QUARANTINED: "quarantined",
 }
 
+// clampInt32 bounds an int before int32 conversion (gosec G115). Handlers
+// already validate ranges; this keeps the conversion provably safe.
+func clampInt32(v int) int32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
+}
+
 // IngestDocuments sends documents to the Python engine for claim-level ingestion.
 func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDocument) (*IngestResult, error) {
 	// Claim-level ingestion makes multiple LLM calls per document, so allow
@@ -244,8 +257,8 @@ func (c *AuditClient) ListKBClaims(ctx context.Context, limit, offset int, statu
 	}
 
 	resp, err := c.client.ListKBClaims(ctx, &pb.ListKBClaimsRequest{
-		Limit:        int32(limit),
-		Offset:       int32(offset),
+		Limit:        clampInt32(limit),
+		Offset:       clampInt32(offset),
 		StatusFilter: statusFilter,
 	})
 	if err != nil {
@@ -270,7 +283,7 @@ func (c *AuditClient) ListConflicts(ctx context.Context, limit int) ([]ConflictP
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	resp, err := c.client.ListConflicts(ctx, &pb.ListConflictsRequest{Limit: int32(limit)})
+	resp, err := c.client.ListConflicts(ctx, &pb.ListConflictsRequest{Limit: clampInt32(limit)})
 	if err != nil {
 		return nil, 0, fmt.Errorf("list conflicts failed: %w", err)
 	}
