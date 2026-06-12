@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     ./cmd/proxy
 
 # --- Stage 2: Runtime ---
-FROM alpine:3.19
+FROM alpine:3.24
 
 # Install CA certificates (needed for HTTPS upstream calls)
 RUN apk add --no-cache ca-certificates wget
