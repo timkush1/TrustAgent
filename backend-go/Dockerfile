@@ -10,7 +10,7 @@
 
 # --- Stage 1: Build ---
 # Must satisfy the `go` directive in go.mod (currently 1.25, pulled up by pgx v5.10)
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 RUN apk add --no-cache git
 
