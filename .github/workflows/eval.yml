@@ -32,7 +32,7 @@ jobs:
       SAMPLES: ${{ inputs.samples || '50' }}
       MODEL: ${{ inputs.model || 'llama3.2:1b' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
