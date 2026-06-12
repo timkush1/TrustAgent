@@ -184,6 +184,7 @@ trustAgent/
 - [Security](docs/SECURITY.md) — threat model, controls mapped to the OWASP LLM Top 10, scanner policy
 - [Decision Records](docs/DECISIONS.md) — lightweight ADRs
 - [Getting Started Guide](docs/GETTING-STARTED.md) — zero-to-running walkthrough with troubleshooting
+- [Live Demo Runbook](docs/DEMO.md) — run the stack locally and expose it on a free public URL (Cloudflare Tunnel)
 - [Roadmap / Master Plan](docs/PLAN.md) — the phased plan that built v1.0.0, with per-phase progress logs in [docs/progress/](docs/progress/)
 - [Research](docs/research/VERITAS-claim-graph-research.md) — verified claim-graph architecture research informing the knowledge-base design
 - Component deep-dives: [backend-go/README.md](backend-go/README.md), [backend-python/README.md](backend-python/README.md), [frontend-react/README.md](frontend-react/README.md)
