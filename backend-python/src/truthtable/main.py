@@ -68,6 +68,32 @@ async def main():
     else:
         logger.warning("Provider health check failed - continuing anyway")
 
+    # Warm-up: Ollama loads the model into memory on the first completion,
+    # which can take long enough to time out the first real audit. Pay that
+    # cost here instead, before we accept traffic.
+    if settings.llm_provider == "ollama":
+        import time
+
+        from truthtable.providers.base import CompletionRequest
+
+        logger.info("Warming up the judge model (first load can take a while)...")
+        try:
+            start = time.time()
+            await provider.complete(
+                CompletionRequest(
+                    messages=provider.create_messages(
+                        system_prompt="Reply with the single word: OK",
+                        user_message="OK?",
+                    ),
+                    model=provider.model,
+                    temperature=0.0,
+                    max_tokens=4,
+                )
+            )
+            logger.info(f"Judge model warmed up in {time.time() - start:.1f}s")
+        except Exception as exc:  # warm-up is best-effort
+            logger.warning(f"Model warm-up failed (continuing anyway): {exc}")
+
     # Initialize RAG components (if Qdrant URL is configured)
     embedding_service = None
     qdrant_store = None

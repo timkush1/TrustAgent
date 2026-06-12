@@ -235,7 +235,9 @@ def test_file_upload_endpoint() -> dict:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        # Gate-1 ingestion runs LLM decomposition + entailment per claim; on a
+        # CPU-only judge this is the slowest call in the suite.
+        with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             count = data.get("documents_ingested", 0)
             status = data.get("status", "")
@@ -295,7 +297,7 @@ def main():
     r3 = send_proxy_request(
         "Proxy Test 3: Mixed claims",
         messages=[{"role": "user", "content": "Tell me about physics"}],
-        test_response="The speed of light is approximately 300,000 km/s. It was discovered by Isaac Newton in 1687.",
+        test_response="The speed of light in a vacuum is 299,792,458 meters per second. It was discovered by Isaac Newton in 1687.",
     )
 
     # ── Step 3: Test audit pipeline directly (see actual scores) ──
@@ -317,7 +319,7 @@ def main():
     a3 = run_direct_audit(
         "Audit 3: Mixed claims (expect MEDIUM score)",
         query="Tell me about physics",
-        response="The speed of light is approximately 300,000 km/s. It was discovered by Isaac Newton in 1687.",
+        response="The speed of light in a vacuum is 299,792,458 meters per second. It was discovered by Isaac Newton in 1687.",
     )
 
     # ── Step 4: Test new API endpoints ──

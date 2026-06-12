@@ -45,7 +45,13 @@ class OllamaProvider(LLMProvider):
     """
 
     def __init__(
-        self, model: str, base_url: str = "http://localhost:11434", timeout: float = 60.0, **kwargs
+        # Generous default: a cold model must be loaded into memory before the
+        # first token, and CPU inference on a 3B judge can exceed 60s.
+        self,
+        model: str,
+        base_url: str = "http://localhost:11434",
+        timeout: float = 180.0,
+        **kwargs,
     ):
         """Initialize Ollama provider."""
         super().__init__(model=model, **kwargs)

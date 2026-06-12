@@ -47,7 +47,9 @@ services:
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/healthz"]
+      # The qdrant image ships no wget/curl; bash's /dev/tcp gives a TCP
+      # connect check against the HTTP port instead.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -64,7 +66,8 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      # The ollama image ships no curl; the CLI hits the same HTTP API.
+      test: ["CMD", "ollama", "ls"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -18,7 +18,7 @@ class TestOllamaProvider:
 
         assert provider.model == "llama3.2"
         assert provider.base_url == "http://localhost:11434"
-        assert provider.timeout == 60.0
+        assert provider.timeout == 180.0
 
     @pytest.mark.asyncio
     async def test_complete_success(self):
