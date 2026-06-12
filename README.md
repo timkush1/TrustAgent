@@ -178,6 +178,7 @@ trustAgent/
 
 ## Documentation
 
+- [**Complete Walkthrough**](docs/WALKTHROUGH.md) — guided tour of the whole system for newcomers: logic, DevOps, security, tests, CI (start here)
 - [Architecture](docs/ARCHITECTURE.md) — system diagrams, the zero-latency tee design, decisions & trade-offs
 - [Knowledge-Base Design](docs/KB-DESIGN.md) — the dual-gate (VERITAS-lite) model and its research lineage
 - [Evaluation Framework](docs/EVALUATION.md) — benchmark methodology, metrics, CI regression gates
