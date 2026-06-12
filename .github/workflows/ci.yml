@@ -197,7 +197,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build proxy image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: backend-go
           push: false
@@ -205,7 +205,7 @@ jobs:
           cache-to: type=gha,scope=proxy,mode=max
 
       - name: Build dashboard image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: frontend-react
           push: false
@@ -213,7 +213,7 @@ jobs:
           cache-to: type=gha,scope=dashboard,mode=max
 
       - name: Build audit-engine image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: backend-python
           push: false
