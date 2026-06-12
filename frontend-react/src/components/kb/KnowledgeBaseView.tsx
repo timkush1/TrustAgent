@@ -39,6 +39,9 @@ export function KnowledgeBaseView() {
   }, [statusFilter]);
 
   useEffect(() => {
+    // Standard fetch-on-mount / refetch-on-filter-change. The setState calls
+    // happen after the fetch resolves, not in a render cascade.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
