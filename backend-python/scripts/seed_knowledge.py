@@ -18,8 +18,10 @@ Prerequisites:
 
 import json
 import logging
+import os
 import sys
 import time
+import uuid
 from pathlib import Path
 
 # Setup path so we can import from our project
@@ -85,24 +87,49 @@ def main():
 
     # 4. Store in Qdrant
     print("[4/4] Storing in Qdrant...")
-    qdrant_url = "http://localhost:6333"
+    qdrant_url = os.environ.get("QDRANT_URL", "http://localhost:6333")
     store = QdrantStore(url=qdrant_url, vector_dimension=embed_service.dimension)
 
     # Create collection (idempotent - safe to call multiple times)
     store.ensure_collection()
 
-    # Upsert documents
-    count = store.upsert_documents(texts=texts, vectors=vectors, metadata=metadata)
+    # Seed facts are curated and trusted, so they enter the KB as accepted
+    # claims directly (deliberately bypassing Gate-1 entailment, which exists
+    # to vet *untrusted* uploads). The payload mirrors kb/ingestion.py so the
+    # hybrid retriever (which only indexes kind=claim, kb_status=accepted)
+    # can see them. Deterministic ids make re-seeding idempotent.
+    now_ms = int(time.time() * 1000)
+    ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"truthtable-seed:{text}")) for text in texts]
+    payloads = [
+        {
+            "text": text,
+            "kind": "claim",
+            "kb_status": "accepted",
+            "source_doc_id": "seed_knowledge",
+            "source_excerpt": text,
+            "entailment_score": 1.0,
+            "conflicts_with": [],
+            "ingested_at_ms": now_ms,
+            **meta,
+        }
+        for text, meta in zip(texts, metadata)
+    ]
+    store.upsert_points(ids=ids, vectors=[list(v) for v in vectors], payloads=payloads)
     total = store.count()
-    print(f"       Stored {count} documents (total in collection: {total})")
+    print(f"       Stored {len(ids)} accepted seed claims (total points in collection: {total})")
     print()
 
-    # Verification: test a search
+    # Verification: test a search over accepted claims (same filter the
+    # hybrid retriever uses for its dense side).
     print("=" * 60)
     print("Verification: Testing search...")
     test_query = "What is the capital of France?"
     query_vector = embed_service.embed_single(test_query)
-    results = store.search(query_vector=query_vector, top_k=3)
+    results = store.search_filtered(
+        query_vector=list(query_vector),
+        top_k=3,
+        must={"kind": "claim", "kb_status": "accepted"},
+    )
 
     print(f"  Query: '{test_query}'")
     print(f"  Top {len(results)} results:")

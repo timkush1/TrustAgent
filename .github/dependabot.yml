@@ -23,6 +23,12 @@ updates:
     groups:
       npm-deps:
         patterns: ['*']
+        update-types: ['minor', 'patch']
+    # Major bumps of the frontend toolchain (vite, typescript, eslint) are
+    # real migrations, not routine updates; handle them deliberately.
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
