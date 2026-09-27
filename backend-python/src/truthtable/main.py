@@ -19,9 +19,13 @@ import signal
 import sys
 
 from truthtable.config import get_settings
+from truthtable.contracts import DEMO_SCENARIOS, contract_path
 from truthtable.providers.registry import get_provider
 from truthtable.graphs.audit_graph import build_audit_graph
 from truthtable.grpc.server import AuditServicer, create_server
+
+# Reported model of the mock judge unless LLM_MODEL names one.
+MOCK_JUDGE_MODEL = "mock"
 
 
 def setup_logging(level: str = "INFO"):
@@ -38,6 +42,10 @@ async def init_provider(settings, logger):
     cloud provider is unavailable (missing API key or failed health check), so
     the engine always comes up.
 
+    LLM_PROVIDER=mock (the zero-key demo and e2e stacks) is the exception: the
+    mock judge answers from the contracts scenario pack (AuditOptions.mock_scenario)
+    and never falls back; if the pack is missing the engine does not start.
+
     Returns:
         (provider, effective_provider_name)
     """
@@ -51,7 +59,18 @@ async def init_provider(settings, logger):
             kwargs["api_key"] = settings.anthropic_api_key
         elif provider_name == "openai" and settings.openai_api_key:
             kwargs["api_key"] = settings.openai_api_key
+        elif provider_name == "mock":
+            kwargs["scenarios_path"] = contract_path(DEMO_SCENARIOS)
         return get_provider(provider_name, **kwargs)
+
+    if name == "mock":
+        explicit_model = "llm_model" in getattr(settings, "model_fields_set", set())
+        provider = _build("mock", settings.llm_model if explicit_model else MOCK_JUDGE_MODEL)
+        logger.info(
+            f"Using the mock judge (scenario fixtures from {DEMO_SCENARIOS}); "
+            "audit verdicts are simulated"
+        )
+        return provider, "mock"
 
     try:
         logger.info(f"Initializing {name} provider (model: {settings.llm_model})...")
