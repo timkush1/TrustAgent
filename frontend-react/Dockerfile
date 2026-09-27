@@ -10,7 +10,7 @@
 # (all routes serve index.html, React Router handles the rest).
 
 # --- Stage 1: Build ---
-# Node 22 LTS — matches the version CI tests against (.github/workflows/ci.yml).
+# Node 22 LTS — matches the version CI tests against (.github/workflows/ci-web.yml).
 FROM node:22-alpine AS builder
 
 WORKDIR /app

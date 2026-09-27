@@ -17,7 +17,7 @@ Mixing these gives flaky CI and meaningless numbers, so they're separated:
 
 | | Tier 1 — Regression gate | Tier 2 — Benchmark |
 |---|---|---|
-| Runs | Every PR (blocking, in `ci.yml`) | Weekly + on demand (`eval.yml`, `make eval-benchmark`) |
+| Runs | Every PR (blocking, in `ci-python.yml`) | Weekly + on demand (`eval.yml`, `make eval-benchmark`) |
 | Model | None — recorded responses via `MockLLMProvider` | Live Ollama model (or cloud providers, Phase 5) |
 | Dataset | Golden set, 50 hand-curated examples | HaluEval QA (sampled, balanced) |
 | Measures | Pipeline behavior given fixed model outputs | Real end-to-end detector quality |

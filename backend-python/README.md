@@ -414,7 +414,7 @@ curl http://localhost:11434/api/tags
 docker-compose up ollama
 
 # Pull the model
-docker exec -it truthtable-ollama ollama pull llama3.2
+docker compose exec ollama ollama pull llama3.2
 ```
 
 ### Qdrant Connection Errors

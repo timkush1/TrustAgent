@@ -5,7 +5,7 @@ results over WebSocket and renders trust scores, claim breakdowns, the knowledge
 
 ## Stack
 
-React 19 · TypeScript · Vite 5 · **Zustand** (state) · **Tailwind v4** (config-less — styles in
+React 19.3 · TypeScript 6 · Vite 8 · **Zustand** (state) · **Tailwind v4** (config-less — styles in
 `src/index.css` via `@import "tailwindcss"`, no `tailwind.config.js`) · Vitest + Testing Library.
 
 ## Scripts

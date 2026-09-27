@@ -37,6 +37,14 @@ jobs:
       - name: Forbidden identifiers (SPEC Appendix A)
         run: node scripts/check-forbidden.mjs
 
-      - name: make contracts-check
+      - uses: actions/setup-go@v6
         if: hashFiles('contracts/**') != ''
-        run: make contracts-check
+        with:
+          go-version-file: contracts/go.mod
+          cache: false   # the contracts module has no dependencies (no go.sum)
+
+      # Schemas + cross-file checks, the validator's own tests, and the Go embed
+      # module (RE2 portability of every rule/schema regex).
+      - name: make contracts-check contracts-test contracts-go
+        if: hashFiles('contracts/**') != ''
+        run: make contracts-check contracts-test contracts-go

@@ -57,7 +57,7 @@ Docker network isolation).
 
 **Goal**: every push lint+test+scan-gated across all three languages.
 
-- [x] `.github/workflows/ci.yml` — parallel jobs:
+- [x] `.github/workflows/ci.yml` (split into `ci-{go,python,web,docker,contracts,e2e}.yml` in v2 P0.5) — parallel jobs:
   - **go**: gofmt check, `go vet`, `go test -race -coverprofile` in `backend-go/`
   - **python**: `ruff check`, `black --check`, `pytest --cov` (unit only, CPU-only torch)
   - **frontend**: `npm ci`, `eslint`, `tsc -b`, `vitest run`

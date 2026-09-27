@@ -708,7 +708,7 @@ You know GitLab CI; here's the dictionary:
 
 | GitLab | GitHub Actions | Notes |
 |---|---|---|
-| `.gitlab-ci.yml` (one file) | `.github/workflows/*.yml` (one file **per workflow**) | We have three: ci, security, eval |
+| `.gitlab-ci.yml` (one file) | `.github/workflows/*.yml` (one file **per workflow**) | Since v2: `ci-go`, `ci-python`, `ci-web`, `ci-docker`, `ci-contracts`, `ci-e2e`, plus security and eval |
 | pipeline | workflow **run** | |
 | job | job | Same idea; jobs run in parallel by default in both |
 | `script:` lines | `steps:` with `run:` | |
@@ -721,7 +721,7 @@ You know GitLab CI; here's the dictionary:
 
 ### Our three workflows
 
-**[ci.yml](../.github/workflows/ci.yml)** — on every push to main + every PR. Four parallel jobs:
+**[ci-go.yml](../.github/workflows/ci-go.yml), [ci-python.yml](../.github/workflows/ci-python.yml), [ci-web.yml](../.github/workflows/ci-web.yml), [ci-docker.yml](../.github/workflows/ci-docker.yml)** — on every push to main + every PR (split from the original single `ci.yml` in v2). The jobs:
 
 - **Go**: spins up a Postgres 16 *service container*, regenerates proto stubs, `gofmt`
   check, `go vet`, `go test -race` (the race detector catches concurrent-memory bugs —
@@ -830,7 +830,7 @@ cp .env.example .env          # set GRAFANA_ADMIN_PASSWORD=<anything>
 # 1) infrastructure
 docker compose up -d redis postgres qdrant ollama prometheus grafana
 docker compose ps             # wait until all healthy
-docker exec truthtable-ollama ollama pull llama3.2:3b   # one-time, ~2 GB
+docker compose exec ollama ollama pull llama3.2:3b   # one-time, ~2 GB
 
 # 2) knowledge base (idempotent)
 cd backend-python && .venv/Scripts/python scripts/seed_knowledge.py && cd ..

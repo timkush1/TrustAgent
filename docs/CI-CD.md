@@ -16,19 +16,24 @@ job — and the workflow — goes red. On a pull request, red checks mean "don't
 dependencies on a weekly schedule. Every Dependabot PR triggers the same CI/Security checks as a
 human PR — which is exactly the point: an update that breaks the build gets caught *before* merge.
 
-This repo has **three workflows**:
+CI is split into one workflow per stream (v2, P0.5), plus security and eval:
 
 | Workflow | File | Runs on | Purpose |
 |---|---|---|---|
-| **CI** | `ci.yml` | every push to `main` + every PR | build + lint + test all three services, build the Docker images |
+| **CI — Go** | `ci-go.yml` | every push to `main` + every PR | gofmt, vet, `go test -race` against Postgres, govulncheck (informational) |
+| **CI — Python** | `ci-python.yml` | every push to `main` + every PR | ruff, black, unit tests, golden eval gate |
+| **CI — Web** | `ci-web.yml` | every push to `main` + every PR | eslint, `tsc -b`, vitest, production build |
+| **CI — Docker** | `ci-docker.yml` | every push to `main` + every PR | build all three images (replaced by compose e2e from phase S0) |
+| **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability) + forbidden-identifier scan |
+| **E2E** | `ci-e2e.yml` | manual (enabled in phase S0) | compose stack + Playwright |
 | **Security** | `security.yml` | every push/PR + weekly Mondays | static security scanners (gosec, bandit, npm audit, Trivy) |
 | **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a live model |
 
 ## What each workflow does
 
-### CI (`.github/workflows/ci.yml`) — "does everything still work?"
+### CI (`.github/workflows/ci-*.yml`) — "does everything still work?"
 
-Four parallel jobs:
+One workflow per stream (the job ids `go`, `python`, `frontend`, `docker` are unchanged so branch protection keeps working):
 
 - **Go (proxy)** — spins up a real Postgres service container, regenerates the gRPC stubs from
   `proto/evaluator.proto` (they're gitignored, so every job regenerates them), then runs
@@ -110,8 +115,8 @@ PR and apply the same bumps locally.
 ### 3. ❌ "Security" workflow failing on `main` (and on every PR)
 
 The blocking `npm audit --audit-level=high` job found **two HIGH advisories in `undici`** — a
-transitive dev dependency — plus HIGH advisories in Vite itself (dev-server-only, fix requires a
-breaking Vite 5→8 major). Because Security runs on `main`, every PR, *and* a weekly schedule,
+transitive dev dependency — plus HIGH advisories in Vite itself (dev-server-only; fixed in v2 P0.5 by
+upgrading to Vite 8). Because Security runs on `main`, every PR, *and* a weekly schedule,
 one advisory turned the whole repo's checks red everywhere at once.
 
 **Resolution (done):** `npm audit fix` cleared the undici advisories (non-breaking, verified:

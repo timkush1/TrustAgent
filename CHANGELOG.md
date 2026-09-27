@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased — 2.0.0 "Jev gateway" (in progress)
+
+TrustAgent 2.0 turns the async auditor into a **hallucination gateway**: a fast
+Jev decision check on every answer, per-route policies, pluggable evidence (no
+RAG by default), Evaluator Studio, and a redesigned dashboard. The full
+specification is [docs/v2/SPEC.md](docs/v2/SPEC.md); progress is tracked by
+phase (P0 → P7).
+
+### Added (so far)
+- **v2 specification and design notes** (`docs/v2/`), plus recorded baseline
+  test results.
+- **`contracts/`** — the cross-language source of truth: JSON Schemas (2020-12),
+  the configuration-key registry, pricing and cost assumptions, labelled
+  value claims, UI outcomes/copy/glossary, 11 built-in evaluator templates,
+  question sets, detector/secret/evidence rules, and draft golden vectors;
+  `make contracts-check`, `contracts-test`, `contracts-go`.
+- **gRPC contract v2** (additive): `Evaluate`, `GetEngineInfo`,
+  `RetrieveContext`, `ApplyRuntimeConfig`, `DraftEvaluator`; verdicts
+  `UNKNOWN=5` and `NOT_CHECKED=6`; v2.1 field numbers reserved. New RPCs return
+  `UNIMPLEMENTED` until their phase lands.
+- **Postgres migration 0002** (`traces` and related tables, backfill of legacy
+  audits) with a runner that takes an advisory lock and applies each migration
+  in one transaction; `internal/storetest` gives every test its own schema.
+- **Typed API contract** (`frontend-react/src/types/api.ts` +
+  `contracts/schema/api.v1.schema.json`, drift-tested) and the owner guide
+  [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md).
+- `scripts/check-forbidden.mjs` enforces the superseded-identifier list.
+
+### Changed
+- CI split into `ci-go`, `ci-python`, `ci-web`, `ci-docker`, `ci-contracts`
+  and `ci-e2e` workflows (job ids unchanged for branch protection).
+- Makefile split into `mk/*.mk` fragments; `make check`; WSL-aware URL opener;
+  `make up` also starts Postgres and waits for health.
+- Frontend toolchain: Vite 8, TypeScript 6, React 19.3 (pinned).
+- Go toolchain pinned to `go1.25.11`; pytest deselects `e2e`/`integration`
+  by default; `.gitattributes` and per-service `.dockerignore` files.
+- `SubmitAudit`/`GetAuditResult` are deprecated in favour of `Evaluate`.
+
+### Fixed
+- **B4 — duplicate ids corrupted audit history**: trace/audit ids are now
+  server-generated UUIDv7; a client `X-Request-ID` is stored only as a
+  non-unique `client_request_id`, and a repeated id can no longer append claims
+  to an existing audit.
+
+### Migration notes
+- **No downgrade after migration 0002**: v1 binaries cannot scan the nullable
+  score columns 0002 introduces. Back up the database before upgrading.
+- Compose services no longer set `container_name`; use
+  `docker compose exec <service> …` instead of `docker exec truthtable-<service> …`.
+
 ## Unreleased — hardening & audit-quality pass
 
 Foundation work making the system demo-ready and accurate before the Playground

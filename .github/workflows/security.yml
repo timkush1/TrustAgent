@@ -82,12 +82,10 @@ jobs:
         with:
           node-version: '22'
 
-      # Audit PRODUCTION dependencies only (--omit=dev). The shipped bundle is
-      # react/react-dom/zustand; the build toolchain (Vite/esbuild) is dev-only
-      # and its remaining HIGH advisories are dev-server issues that never ship
-      # and are only fixable by a breaking Vite major (deliberately deferred —
-      # see .github/dependabot.yml and docs/CI-CD.md). Real HIGH advisories in
-      # shipped code still fail this gate.
+      # Audit PRODUCTION dependencies only (--omit=dev): real HIGH advisories in
+      # shipped code fail this gate. Since the v2 toolchain upgrade (Vite 8) the
+      # full tree, dev deps included, is also clean; dev-only advisories are
+      # tracked by Dependabot rather than blocking every PR.
       - name: Run npm audit (production deps)
         working-directory: frontend-react
         run: npm audit --omit=dev --audit-level=high

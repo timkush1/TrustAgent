@@ -12,7 +12,7 @@ Usage (from the backend-python directory):
     .venv/Scripts/python scripts/seed_knowledge.py
 
 Prerequisites:
-    - Qdrant must be running: docker start truthtable-qdrant
+    - Qdrant must be running: docker compose up -d qdrant
     - The seed data file must exist at data/seed_knowledge.json
 """
 

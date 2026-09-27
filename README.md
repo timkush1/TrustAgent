@@ -6,7 +6,9 @@
 
 **Drop it between your app and any LLM. Responses pass through with zero added latency while every claim is fact-checked against a verified knowledge base — live, on a dashboard.**
 
-[![CI](https://github.com/timkush1/TrustAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci.yml)
+[![Go](https://github.com/timkush1/TrustAgent/actions/workflows/ci-go.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-go.yml)
+[![Python](https://github.com/timkush1/TrustAgent/actions/workflows/ci-python.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-python.yml)
+[![Web](https://github.com/timkush1/TrustAgent/actions/workflows/ci-web.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-web.yml)
 [![Security](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)

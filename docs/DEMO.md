@@ -9,7 +9,7 @@ dashboard. Total cost: $0.
 ```bash
 # one-time: .env with at least GRAFANA_ADMIN_PASSWORD set (see .env.example)
 docker compose up -d redis postgres qdrant ollama prometheus grafana
-docker exec truthtable-ollama ollama pull llama3.2:1b   # one-time, ~1.3 GB
+docker compose exec ollama ollama pull llama3.2:1b   # one-time, ~1.3 GB (or: make ollama-pull)
 
 # seed the knowledge base (one-time, idempotent)
 cd backend-python && .venv/Scripts/python scripts/seed_knowledge.py
@@ -101,5 +101,5 @@ Keep Grafana, Prometheus, and the metrics ports un-tunneled. Stop the
 - **Judge model ceiling**: `llama3.2:1b` reliably separates clearly true vs.
   false claims but can misjudge subtle ones (see Limitations in the README).
   `llama3.2:3b` is a noticeably better free judge if you have ~4 GB RAM to
-  spare: `docker exec truthtable-ollama ollama pull llama3.2:3b` and set
+  spare: `docker compose exec ollama ollama pull llama3.2:3b` and set
   `LLM_MODEL=llama3.2:3b`.
