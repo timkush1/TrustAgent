@@ -1,3 +1,11 @@
+// Go proxy <-> Python audit engine contract, v2 ("Jev gateway";
+// docs/v2/SPEC.md section 2.2). Single source of truth for the generated Go
+// and Python stubs (`make proto`).
+//
+// Changes are strictly additive: every v1 message, field number, enum value and
+// RPC is kept, so legacy callers keep working. Fields and messages marked
+// "v2.1" reserve their numbering now and are left unset by 2.0 components.
+
 syntax = "proto3";
 
 package truthtable.audit.v1;
@@ -5,24 +13,35 @@ package truthtable.audit.v1;
 option go_package = "github.com/truthtable/backend-go/api/audit/v1;auditv1";
 // Note: Python package is determined by output directory, not proto option
 
-// AuditService provides hallucination detection for LLM responses
+// AuditService is the Go proxy <-> Python audit engine contract.
+//
+// Every RPC carries metadata `x-trustagent-internal: <token>`
+// (TRUTHTABLE_INTERNAL_TOKEN[_FILE]). The engine refuses to listen on a
+// non-loopback address without a token.
 service AuditService {
-    // SubmitAudit initiates async fact-checking of an LLM response
-    // Returns immediately with audit_id for tracking
-    rpc SubmitAudit(AuditRequest) returns (AuditSubmission);
-    
-    // GetAuditResult retrieves completed audit (polling method)
-    rpc GetAuditResult(AuditResultRequest) returns (AuditResult);
-    
+    // SubmitAudit runs an audit and stores the result for GetAuditResult.
+    // Kept for external legacy callers through 2.x; the Go proxy calls Evaluate.
+    // The legacy pair maps DEGRADED->COMPLETED, UNKNOWN/NOT_CHECKED->UNSPECIFIED
+    // and NOT_ASSESSED->COMPLETED with score 0.
+    rpc SubmitAudit(AuditRequest) returns (AuditSubmission) {
+        option deprecated = true;
+    }
+
+    // GetAuditResult retrieves a result stored by SubmitAudit (legacy polling).
+    rpc GetAuditResult(AuditResultRequest) returns (AuditResult) {
+        option deprecated = true;
+    }
+
     // HealthCheck verifies service readiness
     rpc HealthCheck(HealthRequest) returns (HealthResponse);
 
-    // IngestDocuments adds documents to the RAG knowledge base.
+    // IngestDocuments adds documents to the knowledge base.
     // Documents are decomposed into atomic claims; each claim must pass the
     // Gate-1 entailment check against its own source to be admitted
     // (below-threshold claims are stored as quarantined and excluded from
     // retrieval). Accepted claims are checked for contradictions against
     // existing knowledge.
+    // Returns FAILED_PRECONDITION "knowledge_disabled" when the add-on is off.
     rpc IngestDocuments(IngestRequest) returns (IngestResponse);
 
     // ListKBClaims pages through stored knowledge-base claims.
@@ -33,26 +52,108 @@ service AuditService {
 
     // GetKBStats returns knowledge-base counters.
     rpc GetKBStats(KBStatsRequest) returns (KBStatsResponse);
+
+    // Evaluate runs the deep audit and returns the result directly.
+    // Go's only audit call (no Submit+Get fallback).
+    rpc Evaluate(AuditRequest) returns (AuditResult);
+
+    // GetEngineInfo reports the engine's judge, knowledge and scoring setup.
+    rpc GetEngineInfo(EngineInfoRequest) returns (EngineInfo);
+
+    // RetrieveContext queries the knowledge base (knowledge profile only).
+    rpc RetrieveContext(RetrieveContextRequest) returns (RetrieveContextResponse);
+
+    // ApplyRuntimeConfig pushes the judge credential/model from the Go settings.
+    rpc ApplyRuntimeConfig(RuntimeConfig) returns (ApplyRuntimeConfigResponse);
+
+    // DraftEvaluator drafts an evaluator spec from an English description (Studio).
+    rpc DraftEvaluator(DraftEvaluatorRequest) returns (DraftEvaluatorResponse);
 }
+
+// v2.1 (not in 2.0): Go-hosted `service DecisionService { rpc Decide(...) }`
+// used by the engine cascade and KB gates.
 
 // ========== Request Messages ==========
 
 message AuditRequest {
-    string request_id = 1;          // UUID for tracing (from proxy)
-    string query = 2;               // Original user question
-    string response = 3;            // LLM-generated answer to verify
-    repeated ContextDocument context = 4;  // RAG retrieved documents
-    string model = 5;               // LLM model used (e.g., "gpt-4")
-    string provider = 6;            // LLM provider (e.g., "openai")
-    int64 timestamp_ms = 7;         // Request timestamp
-    map<string, string> metadata = 8;  // Additional context
+    string request_id = 1;          // == trace_id
+    string query = 2;               // Last user turn text only
+    string response = 3;            // ORIGINAL upstream text (never fallback/block text)
+    // Request-derived evidence, full (pre-packing), <=20 docs x <=20,000 chars
+    repeated ContextDocument context = 4;
+    string model = 5;               // Upstream model name (e.g., "gpt-4o")
+    // API format: openai_chat|openai_completions|anthropic_messages|direct
+    string provider = 6;
+    int64 timestamp_ms = 7;         // Request timestamp (unix ms)
+    map<string, string> metadata = 8;  // Informational only; never control flow
+    GateDecision gate = 9;
+    AuditOptions options = 10;
+    EvidenceSummary evidence_summary = 11;
+    string trace_id = 12;
+    string audit_id = 13;           // Go-generated UUIDv7; echoed
+    string route = 14;
+    string source = 15;             // proxy|direct|playground|test|trafficgen
+    string priority = 16;           // high|low
 }
 
 message ContextDocument {
     string id = 1;                  // Document/chunk identifier
-    string content = 2;             // Retrieved text content
+    string content = 2;             // Evidence text content
     map<string, string> metadata = 3;  // Source, score, etc.
-    float relevance_score = 4;      // RAG retrieval score (0.0-1.0)
+    float relevance_score = 4;      // Retrieval score (0.0-1.0)
+    // request_system|request_context|tool_results|extension|knowledge|upload
+    string source = 5;
+    string label = 6;
+    bool truncated = 7;
+}
+
+message EvidenceSourceCount {
+    string source = 1;
+    int32 items = 2;
+    repeated string labels = 3;
+    int32 tokens = 4;
+}
+
+message EvidenceSummary {
+    repeated string configured = 1;
+    repeated EvidenceSourceCount used = 2;
+    repeated string empty = 3;
+    string knowledge = 4;           // not_requested|disabled|used|no_hits|timeout|error
+    bool truncated = 5;
+    int32 tokens = 6;
+}
+
+message AuditOptions {
+    string verifier = 1;            // ""|auto|llm (jev|cascade reserved for v2.1)
+    bool explain_all = 2;
+    string unsupported_policy = 3;  // ""|auto|hallucination|unverifiable
+    bool return_context = 4;
+    bool decision_model_disabled = 5;  // v2.1
+    bool knowledge_enabled = 6;
+    bool extract_claims_without_evidence = 7;
+    bool llm_budget_exhausted = 8;  // Engine skips optional retries/explanations
+    bool uniform_sample = 9;        // Forces verifier=llm
+    // Honoured only by LLM_PROVIDER=mock (scenario-keyed fixtures)
+    string mock_scenario = 10;
+}
+
+message GateDecision {
+    string action = 1;
+    string mode = 2;
+    string route = 3;
+    string would_action = 4;
+    string status = 5;
+    string verdict = 6;
+    optional float max_risk = 7;
+    repeated string reasons = 8;
+    string decision_model_snapshot = 9;
+    string backend = 10;
+    int64 latency_ms = 11;
+    double cost_usd = 12;
+    string calibration = 13;
+    string delivered = 14;          // original|fallback|blocked
+    bytes decision_json = 15;       // Canonical decision/v1 (JCS)
+    int64 policy_version = 16;
 }
 
 message AuditResultRequest {
@@ -74,9 +175,9 @@ message AuditResult {
     string request_id = 2;          // Original request_id from AuditRequest
     AuditStatus status = 3;         // Processing status
 
-    // Trust Score (0.0 - 1.0, where 1.0 = fully faithful)
+    // LEGACY = scores.trust_score, or 0 if absent
     float faithfulness_score = 4;
-    TrustGrade grade = 5;           // A/B/C/D/F classification
+    TrustGrade grade = 5;           // UNSPECIFIED when trust_score is absent
 
     // Detailed verification results
     repeated ClaimVerification claims = 6;
@@ -89,8 +190,43 @@ message AuditResult {
     // Hallucination detection result from scorer
     bool hallucination_detected = 10;
 
-    // Per-step timing from LangGraph pipeline (e.g., "decompose_ms": 150)
+    // Per-step timing: decompose_ms, retrieve_ms, verify_ms, score_ms, total_ms
     map<string, int64> step_timings = 11;
+
+    AuditVerdict verdict = 12;
+    string not_assessed_reason = 13;  // no_evidence|knowledge_no_hits|no_judge|too_long
+    AuditScores scores = 14;
+    // decomposer_fallback|unknown_claims|context_trimmed|judge_retry_exhausted
+    repeated string degraded_reasons = 15;
+    string error = 16;
+    // judge_unavailable|decomposer_failed|timeout|no_judge|mock_fixture_missing|internal
+    string error_kind = 17;
+    CascadeStats cascade = 18;      // v2.1 (unset in 2.0)
+    GateDecision gate = 19;
+    JudgeInfo judge = 20;
+    DecisionModelRef decision_model = 21;  // v2.1
+    EvidenceSummary evidence_summary = 22;
+    repeated ContextDocument context_used = 23;
+    string unsupported_policy = 24;
+    string scoring_version = 25;    // "v2"
+    repeated CostRecord costs = 26;
+    string trace_id = 27;
+}
+
+// Scores are absent when not computable. UNKNOWN and NOT_CHECKED claims are
+// excluded from every aggregate.
+message AuditScores {
+    optional float trust_score = 1;
+    optional float faithfulness = 2;
+    optional float contradiction_rate = 3;
+    optional float unverified_rate = 4;
+    optional float coverage = 5;
+    optional float accuracy_addressed = 6;
+    optional float max_contradiction = 7;
+    optional float p_hallucinated = 8;
+    int32 claims_total = 9;
+    int32 claims_decided = 10;
+    int32 claims_unknown = 11;
 }
 
 message ClaimVerification {
@@ -98,13 +234,234 @@ message ClaimVerification {
     VerificationStatus status = 2;  // Verification outcome
     float confidence = 3;           // Confidence in verification (0.0-1.0)
     repeated string evidence = 4;   // Supporting context snippets
+    string reasoning = 5;
+    string decided_by = 6;          // 2.0: llm|rule|none (v2.1 adds jev|jev>llm|jev>llm_failed)
+    map<string, float> verdict_probabilities = 7;
+    string probability_source = 8;
+    // 9-16: v2.1 (per-claim Jev cascade; unset in 2.0)
+    VerificationStatus jev_verdict = 9;
+    map<string, float> jev_probabilities = 10;
+    optional float jev_confidence = 11;
+    string jev_snapshot = 12;
+    VerificationStatus llm_verdict = 13;
+    optional float llm_confidence = 14;
+    string escalation_reason = 15;
+    bool shadow = 16;
+    // Span into AuditRequest.response: UTF-16 code units, half-open; -1 = unaligned
+    int32 span_start = 17;
+    int32 span_end = 18;
+    string span_method = 19;
+    string quote = 20;
+    repeated EvidenceSpan evidence_spans = 21;
+    int32 index = 22;
+}
+
+message EvidenceSpan {
+    int32 doc_index = 1;
+    string doc_id = 2;
+    int32 start = 3;
+    int32 end = 4;
+    string text = 5;
+    string kind = 6;
+}
+
+// v2.1 (unset in 2.0)
+message CascadeStats {
+    int32 claims_total = 1;
+    int32 decided_by_jev = 2;
+    int32 escalated = 3;
+    map<string, int32> escalation_reasons = 4;
+    int32 jev_calls = 5;
+    int64 jev_input_tokens = 6;
+    double jev_cost_usd = 7;
+    int64 jev_latency_ms = 8;
+    int32 llm_calls = 9;
+    int64 llm_input_tokens = 10;
+    int64 llm_output_tokens = 11;
+    double llm_cost_usd = 12;
+    int32 shadow_checked = 13;
+    int32 shadow_agreed = 14;
+}
+
+message JudgeInfo {
+    string configured_provider = 1;
+    string effective_provider = 2;
+    string model = 3;
+    bool fallback_active = 4;
+    string fallback_reason = 5;
+    bool structured_outputs = 6;
+    bool healthy = 7;
+    string credential_source = 8;   // env|dashboard|none
+}
+
+message DecisionModelRef {
+    string backend = 1;
+    string model_requested = 2;
+    string snapshot = 3;
+    string calibration = 4;
+}
+
+message CostRecord {
+    // gate|deep_audit_decompose|deep_audit_verify|studio_draft|studio_test|dry_run|probe|playground|kb_ingest
+    string component = 1;
+    string kind = 2;                // decision|llm
+    string provider = 3;
+    string model = 4;
+    int64 input_tokens = 5;
+    int64 output_tokens = 6;
+    double cost_usd = 7;
+    string cost_source = 8;         // reported|computed|free_local|simulated|unknown
+    int64 latency_ms = 9;
+    string status = 10;
+    int32 questions = 11;
 }
 
 message HealthResponse {
     bool healthy = 1;               // Overall service health
     string version = 2;             // Service version
-    map<string, bool> dependencies = 3;  // Qdrant, Ollama, Redis status
+    // Keys: judge, qdrant (knowledge on). The "ollama" key is removed.
+    map<string, bool> dependencies = 3;
+    string judge_provider = 4;
+    string judge_model = 5;
+    bool judge_fallback_active = 6;
+    bool knowledge_enabled = 7;
+    int64 kb_claims = 8;
+    int64 runtime_config_version = 9;
+    string runtime_config_epoch = 10;
 }
+
+// ========== Engine Info ==========
+
+message EngineInfoRequest {}
+
+message EngineInfo {
+    string version = 1;
+    JudgeInfo judge = 2;
+    DecisionModelInfo decision_model = 3;
+    KnowledgeInfo knowledge = 4;
+    string verifier_configured = 5;
+    string verifier_effective = 6;
+    string verifier_reason = 7;
+    ScoringInfo scoring = 8;
+    repeated string warnings = 9;
+    string calibration_version = 10;
+    repeated string question_sets = 11;
+    int64 runtime_config_version = 12;
+    int32 max_audits = 13;          // ENGINE_MAX_AUDITS
+    int32 max_rpcs = 14;            // ENGINE_MAX_RPCS
+}
+
+// v2.1 (unset in 2.0)
+message DecisionModelInfo {
+    DecisionModelRef ref = 1;
+    bool enabled = 2;
+    string breaker_state = 3;
+    string last_error_kind = 4;
+    string last_error_hint = 5;
+    int64 last_ok_unix_ms = 6;
+    int32 rpm_limit = 7;
+    double cost_usd_total = 8;
+    string credential_source = 9;
+}
+
+message KnowledgeInfo {
+    bool enabled = 1;
+    bool qdrant_reachable = 2;
+    string embedding_model = 3;
+    int64 kb_claims = 4;
+    string reason = 5;
+}
+
+message ScoringInfo {
+    float partial_weight = 1;
+    float contradiction_flag = 2;
+    float unsupported_flag = 3;
+    float unsupported_fraction_flag = 4;
+    float min_coverage = 5;
+    float max_unknown_fraction = 6;
+    repeated float grade_cutoffs = 7;
+    string unsupported_policy = 8;
+    bool calibrated = 9;
+}
+
+// ========== Knowledge Retrieval ==========
+
+message RetrieveContextRequest {
+    string query = 1;
+    string response = 2;
+    int32 top_k = 3;
+    int32 max_chars = 4;
+    float min_score = 5;
+}
+
+message RetrieveContextResponse {
+    repeated ContextDocument documents = 1;
+    int64 latency_ms = 2;
+    string index_state = 3;         // ready|empty|disabled|error
+}
+
+// ========== Runtime Configuration ==========
+
+message Credential {
+    string provider = 1;
+    string secret = 2;
+    string fingerprint = 3;
+}
+
+message JudgeConfig {
+    string provider = 1;
+    string model = 2;
+    string base_url = 3;
+    string credential = 4;
+}
+
+// v2.1 (unset in 2.0)
+message DecisionConfig {
+    string backend = 1;
+    string model = 2;
+    string base_url = 3;
+    string path = 4;
+    string credential = 5;
+}
+
+message RuntimeConfig {
+    int64 version = 1;
+    map<string, Credential> credentials = 2;
+    JudgeConfig judge = 3;
+    bytes price_table_json = 4;
+    DecisionConfig decision = 5;
+    // Go settings epoch; the engine accepts any push with a new epoch, else
+    // only version > applied
+    string epoch = 6;
+}
+
+message ApplyRuntimeConfigResponse {
+    int64 applied_version = 1;
+    string judge_status = 2;
+    string decision_status = 3;
+    repeated string warnings = 4;
+    string applied_epoch = 5;
+}
+
+// ========== Evaluator Studio ==========
+
+message DraftEvaluatorRequest {
+    string description = 1;
+    string route_name = 2;
+    string route_description = 3;
+    repeated string existing_ids = 4;
+    string model_override = 5;
+}
+
+message DraftEvaluatorResponse {
+    string spec_json = 1;
+    repeated string schema_errors = 2;
+    CostRecord cost = 3;
+    string model = 4;
+    int32 attempts = 5;
+}
+
+// ========== Knowledge Base (VERITAS-lite) ==========
 
 message IngestRequest {
     repeated ContextDocument documents = 1;  // Documents to add to knowledge base
@@ -119,9 +476,10 @@ message IngestResponse {
     int32 claims_accepted = 4;      // Passed the Gate-1 entailment check
     int32 claims_quarantined = 5;   // Failed Gate-1; stored but not retrievable
     int32 conflicts_detected = 6;   // CONTRADICTS pairs found during this ingest
+    int32 documents_quarantined_injection = 7;
+    repeated CostRecord costs = 8;
+    repeated string warnings = 9;
 }
-
-// ========== Knowledge Base (VERITAS-lite) ==========
 
 message ClaimIngestResult {
     string claim_id = 1;            // Stable id of the stored claim
@@ -130,6 +488,10 @@ message ClaimIngestResult {
     KBClaimStatus status = 4;       // ACCEPTED or QUARANTINED
     float entailment_score = 5;     // Gate-1 confidence that source entails claim
     repeated string conflicts_with = 6;  // claim_ids this claim contradicts
+    // 7-9: v2.1 Jev fields; 2.0 sets decided_by="llm"
+    string decided_by = 7;
+    string quarantine_reason = 8;
+    optional float injection_risk = 9;
 }
 
 message KBClaim {
@@ -141,6 +503,8 @@ message KBClaim {
     float entailment_score = 6;
     repeated string conflicts_with = 7;
     int64 ingested_at_ms = 8;
+    string quarantine_reason = 9;
+    string decided_by = 10;
 }
 
 message ListKBClaimsRequest {
@@ -189,8 +553,11 @@ enum AuditStatus {
     AUDIT_STATUS_UNSPECIFIED = 0;
     AUDIT_STATUS_QUEUED = 1;
     AUDIT_STATUS_PROCESSING = 2;
-    AUDIT_STATUS_COMPLETED = 3;
+    AUDIT_STATUS_COMPLETED = 3;     // Includes NO_CLAIMS and NOT_ASSESSED
+    // Exception, or unknown/(total - not_checked) >= SCORING_MAX_UNKNOWN_FRACTION;
+    // error_kind is set and scores are absent
     AUDIT_STATUS_FAILED = 4;
+    AUDIT_STATUS_DEGRADED = 5;      // UNKNOWN claims present or degraded_reasons non-empty
 }
 
 enum VerificationStatus {
@@ -199,13 +566,27 @@ enum VerificationStatus {
     VERIFICATION_STATUS_CONTRADICTED = 2;     // Conflicts with context
     VERIFICATION_STATUS_UNSUPPORTED = 3;      // No evidence in context
     VERIFICATION_STATUS_PARTIALLY_SUPPORTED = 4;  // Some evidence exists
+    VERIFICATION_STATUS_UNKNOWN = 5;          // Judge/parse failure
+    // Claim extracted but no evidence to check against; excluded from all aggregates
+    VERIFICATION_STATUS_NOT_CHECKED = 6;
 }
 
+enum AuditVerdict {
+    AUDIT_VERDICT_UNSPECIFIED = 0;
+    AUDIT_VERDICT_GROUNDED = 1;
+    AUDIT_VERDICT_HALLUCINATED = 2;
+    AUDIT_VERDICT_UNVERIFIABLE = 3;
+    AUDIT_VERDICT_NO_CLAIMS = 4;
+    AUDIT_VERDICT_NOT_ASSESSED = 5;
+}
+
+// Letter grade of scores.trust_score (the engine computes it; Go persists the
+// wire value).
 enum TrustGrade {
-    TRUST_GRADE_UNSPECIFIED = 0;
-    TRUST_GRADE_A = 1;  // 90-100% faithful
-    TRUST_GRADE_B = 2;  // 75-89% faithful
-    TRUST_GRADE_C = 3;  // 60-74% faithful
-    TRUST_GRADE_D = 4;  // 40-59% faithful
-    TRUST_GRADE_F = 5;  // 0-39% faithful
+    TRUST_GRADE_UNSPECIFIED = 0;    // trust_score absent
+    TRUST_GRADE_A = 1;  // trust_score >= 0.9
+    TRUST_GRADE_B = 2;  // trust_score >= 0.7
+    TRUST_GRADE_C = 3;  // trust_score >= 0.5
+    TRUST_GRADE_D = 4;  // trust_score >= 0.3
+    TRUST_GRADE_F = 5;  // trust_score < 0.3
 }
