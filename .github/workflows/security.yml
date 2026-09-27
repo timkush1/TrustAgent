@@ -38,8 +38,8 @@ jobs:
 
       - name: Generate gRPC stubs
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
           protoc --proto_path=proto \
             --go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
             --go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
@@ -47,10 +47,12 @@ jobs:
 
       # Blocking at medium+ severity; LOW-severity G104 (unhandled errors on
       # best-effort writes/closes) is accepted and tracked in docs/SECURITY.md.
+      # gosec is version-pinned so a scanner release can't turn a green run red
+      # without a deliberate bump.
       - name: Run gosec
         working-directory: backend-go
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
           gosec -exclude-dir=api -severity medium ./...
 
   bandit:
@@ -66,7 +68,7 @@ jobs:
 
       - name: Run bandit
         run: |
-          pip install bandit
+          pip install bandit==1.9.4
           bandit -r backend-python/src -x backend-python/src/truthtable/grpc/pb
 
   npm-audit:
@@ -80,9 +82,15 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Run npm audit
+      # Audit PRODUCTION dependencies only (--omit=dev). The shipped bundle is
+      # react/react-dom/zustand; the build toolchain (Vite/esbuild) is dev-only
+      # and its remaining HIGH advisories are dev-server issues that never ship
+      # and are only fixable by a breaking Vite major (deliberately deferred —
+      # see .github/dependabot.yml and docs/CI-CD.md). Real HIGH advisories in
+      # shipped code still fail this gate.
+      - name: Run npm audit (production deps)
         working-directory: frontend-react
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
   trivy:
     name: Trivy (filesystem scan)

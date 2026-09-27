@@ -24,7 +24,7 @@ make dev-react    # dashboard     (:5173)
 > knowledge base while the engine is running, restart the engine (uploads via
 > `/api/upload` refresh the index automatically; direct seeding does not).
 
-Sanity check: `python test_e2e.py` from the repo root, then open
+Sanity check: `make test-e2e` from the repo root, then open
 <http://localhost:5173> and watch audits stream in live.
 
 ### Demo script (90 seconds)

@@ -48,8 +48,8 @@ jobs:
 
       - name: Install protoc Go plugins
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 
       # Generated stubs are gitignored; regenerate them for the build.
       - name: Generate gRPC stubs
@@ -182,8 +182,8 @@ jobs:
       # Images need the gitignored generated stubs in the build context.
       - name: Generate gRPC stubs
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
           protoc --proto_path=proto \
             --go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
             --go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \

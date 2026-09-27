@@ -2,7 +2,7 @@
 
 > Roadmap to take TrustAgent from a working demo (v0.2.x) to a top-tier, production-credible
 > portfolio project (v1.0.0). Each phase lands as a reviewed change with tests, and gets a
-> progress log in [docs/progress/](progress/).
+> progress log in [docs/archive/progress/](archive/progress/).
 
 **Status legend**: ⬜ not started · 🟨 in progress · ✅ done
 
@@ -46,9 +46,9 @@ Docker network isolation).
 - [x] Align all versions to `0.4.0`; add root `VERSION` file as source of truth
       (`backend-python/pyproject.toml`, `frontend-react/package.json`,
       `backend-go/internal/version/version.go`, `truthtable/__init__.py`)
-- [x] Create `docs/PLAN.md` (this file), `docs/progress/PHASE-0.md`, `CLAUDE.md`
+- [x] Create `docs/PLAN.md` (this file), `docs/archive/progress/PHASE-0.md`, `CLAUDE.md`
 - [x] Promote `docs-private/GETTING-STARTED.md` → `docs/GETTING-STARTED.md`
-- [x] Move VERITAS research artifact → `docs/research/`
+- [x] Move VERITAS research artifact → `docs/archive/research/`
 - [x] Wire `test_e2e.py` / `test_direct_audit.py` into Makefile (`make test-e2e`)
 
 **Verify**: `make test` passes; Go builds; no orphan files at root.
@@ -194,7 +194,7 @@ retrieval, crypto-shredding.
 ## Verification strategy
 
 - Every phase lands with green CI (from Phase 1 onward).
-- Each `docs/progress/PHASE-N.md` records verification evidence (test output, screenshots).
+- Each `docs/archive/progress/PHASE-N.md` records verification evidence (test output, screenshots).
 - Full-system checks after Phases 4 and 6: `docker compose up`, `make test-e2e`, manual
   dashboard walkthrough (live audit, history page, KB upload with conflicting documents).
 - If time pressure hits: cut from the bottom of Phase 6 (hybrid retrieval drops first);

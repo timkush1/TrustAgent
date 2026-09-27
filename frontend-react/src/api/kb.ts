@@ -30,10 +30,10 @@ export interface KBStats {
   conflict_pairs: number;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+import { getApiBase, fetchWithAuth } from './client';
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetchWithAuth(`${getApiBase()}${path}`);
   if (res.status === 503) {
     throw new Error('Knowledge base is not available (audit engine not connected)');
   }

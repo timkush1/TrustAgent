@@ -141,14 +141,15 @@ func (p *Pool) processJob(workerID int, job *AuditJob) {
 	}
 
 	if p.wsHub != nil {
-		// Create audit result using actual values from the Python audit engine
+		// Create audit result using actual values from the Python audit engine.
+		// faithfulness is the one real score the pipeline computes; overall
+		// mirrors it (no separate relevancy metric is fabricated).
 		auditResult := &websocket.AuditResult{
 			AuditID:               job.RequestID,
 			RequestID:             job.RequestID,
 			UserQuery:             job.Prompt,
 			LLMResponse:           job.Response,
 			FaithfulnessScore:     result.TrustScore,
-			RelevancyScore:        result.TrustScore,
 			OverallScore:          result.TrustScore,
 			HallucinationDetected: result.HallucinationDetected,
 			Claims:                convertClaimsToVerifications(result.Claims),
@@ -212,6 +213,8 @@ func normalizeStatus(verdict string) string {
 	switch verdict {
 	case "supported":
 		return "SUPPORTED"
+	case "contradicted":
+		return "CONTRADICTED"
 	case "unsupported":
 		return "UNSUPPORTED"
 	case "partially_supported":
@@ -221,39 +224,9 @@ func normalizeStatus(verdict string) string {
 	}
 }
 
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
-
-func convertClaims(claims []*grpc.ClaimResult) []websocket.ClaimInfo {
-	result := make([]websocket.ClaimInfo, len(claims))
-	for i, c := range claims {
-		result[i] = websocket.ClaimInfo{
-			Text:       c.Text,
-			Verdict:    c.Verdict,
-			Confidence: c.Confidence,
-		}
-	}
-	return result
-}
-
 func convertClaimsToVerifications(claims []*grpc.ClaimResult) []websocket.ClaimVerification {
 	result := make([]websocket.ClaimVerification, len(claims))
 	for i, c := range claims {
-		// Map verdict to status (frontend expects uppercase)
-		status := "UNKNOWN"
-		switch c.Verdict {
-		case "supported":
-			status = "SUPPORTED"
-		case "unsupported":
-			status = "UNSUPPORTED"
-		case "partially_supported":
-			status = "PARTIALLY_SUPPORTED"
-		}
-
 		evidence := c.Evidence
 		if evidence == nil {
 			evidence = []string{}
@@ -261,7 +234,7 @@ func convertClaimsToVerifications(claims []*grpc.ClaimResult) []websocket.ClaimV
 
 		result[i] = websocket.ClaimVerification{
 			Claim:      c.Text,
-			Status:     status,
+			Status:     normalizeStatus(c.Verdict),
 			Confidence: c.Confidence,
 			Evidence:   evidence,
 		}

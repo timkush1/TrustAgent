@@ -133,7 +133,7 @@ The full ADRs live in [DECISIONS.md](DECISIONS.md); the headlines:
 |---|---|
 | Pipeline logic | Golden-set regression gate: 50 examples through the real graph with recorded model output, compared per-example against a committed baseline (blocking in CI) |
 | Detector quality | Scheduled HaluEval benchmarks with live models (`eval.yml`, `make eval-benchmark`) |
-| Unit behavior | 77 Python / 30 frontend / 6 Go package suites, incl. prompt-injection and planted-contradiction cases |
+| Unit behavior | 85 Python unit / 30 frontend / 6 Go package suites, incl. prompt-injection and planted-contradiction cases |
 | Cross-language contract | CI regenerates gRPC stubs from the proto and builds both sides + all Docker images |
 | Persistence | Store integration tests against a real Postgres service container on every PR |
 | Security posture | Blocking gosec (medium+), bandit, npm audit; Trivy informational |

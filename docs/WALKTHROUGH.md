@@ -514,7 +514,7 @@ understanding:
 | `make dev-python` / `dev-go` / `dev-react` | run each app natively (hybrid mode) |
 | `make proto` | regenerate gRPC stubs from the proto file |
 | `make test` | all three unit suites |
-| `make test-e2e` | `python test_e2e.py` against the running stack |
+| `make test-e2e` | `make test-e2e` against the running stack |
 | `make eval-golden` | the deterministic regression eval (§12) |
 | `make ollama-pull` | download the judge model into the Ollama container |
 | `make lint` / `make fmt` | ruff+black, gofmt+vet, eslint / auto-format |
@@ -676,7 +676,7 @@ Five layers, from milliseconds to minutes:
 | Python unit | [tests/unit/](../backend-python/tests/unit/) | 77 | nothing (LLM is mocked) | decomposition parsing, scoring math, provider adapters, KB logic, injection handling |
 | Frontend unit | `src/**/*.test.ts(x)` | 30 | nothing (jsdom) | store updates, WS hook reconnect/parsing, view rendering |
 | **Golden eval gate** | [evals/](../backend-python/evals/) | 50 examples | nothing (mock provider) | *the pipeline's judgment quality* — see below |
-| E2E | [test_e2e.py](../test_e2e.py) | 1 script | full stack running | wiring: proxy→gRPC→graph→WS→Postgres, real model behavior |
+| E2E | [e2e tests](../backend-python/tests/e2e/) | 1 script | full stack running | wiring: proxy→gRPC→graph→WS→Postgres, real model behavior |
 
 **The golden eval gate is the clever one.** Unit tests check code; this checks
 *decisions*. 50 hand-labeled examples (true/false claims with context) run through the
@@ -697,7 +697,7 @@ How to run everything yourself:
 ```bash
 make test                              # all three unit suites
 cd backend-python && python -m evals.run_eval --dataset golden --provider mock --check-baseline
-python test_e2e.py                     # full stack must be up (§16)
+make test-e2e                     # full stack must be up (§16)
 ```
 
 ---
@@ -843,7 +843,7 @@ cd backend-go && go run ./cmd/proxy                                   # → "lis
 cd frontend-react && npm run dev                                      # → :5173
 
 # 4) prove it works
-python test_e2e.py
+make test-e2e
 ```
 
 **Validation checklist** — what to look at and what you should see:
@@ -857,7 +857,7 @@ python test_e2e.py
 | Metrics flowing | <http://localhost:9090/targets> | `go-proxy` and `python-audit-engine` jobs UP |
 | Grafana | <http://localhost:3001> — admin / `$GRAFANA_ADMIN_PASSWORD` | TrustAgent dashboard with moving panels |
 | History persisted | <http://localhost:8080/api/audits?limit=5> | JSON with your recent audits |
-| Full E2E | `python test_e2e.py` | true→Grade A, false→Grade D + hallucination, mixed→Grade C |
+| Full E2E | `make test-e2e` | true→Grade A, false→Grade D + hallucination, mixed→Grade C |
 
 **Troubleshooting quick refs:** all claims UNSUPPORTED → KB not seeded or engine started
 before seeding (restart engine). Dashboard frozen → check the WS connection in browser

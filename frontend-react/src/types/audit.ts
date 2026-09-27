@@ -1,6 +1,11 @@
 // Audit-related types matching the gRPC/WebSocket messages
 
-export type VerificationStatus = 'UNKNOWN' | 'SUPPORTED' | 'UNSUPPORTED' | 'PARTIALLY_SUPPORTED';
+export type VerificationStatus =
+  | 'UNKNOWN'
+  | 'SUPPORTED'
+  | 'CONTRADICTED'
+  | 'UNSUPPORTED'
+  | 'PARTIALLY_SUPPORTED';
 
 export interface ClaimVerification {
   claim: string;
@@ -15,7 +20,6 @@ export interface AuditResult {
   user_query: string;
   llm_response: string;
   faithfulness_score: number;
-  relevancy_score: number;
   overall_score: number;
   hallucination_detected: boolean;
   claims: ClaimVerification[];

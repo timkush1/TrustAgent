@@ -33,6 +33,53 @@ def setup_logging(level: str = "INFO"):
     )
 
 
+async def init_provider(settings, logger):
+    """Build the configured LLM provider, falling back to local Ollama when a
+    cloud provider is unavailable (missing API key or failed health check), so
+    the engine always comes up.
+
+    Returns:
+        (provider, effective_provider_name)
+    """
+    name = (settings.llm_provider or "ollama").lower()
+
+    def _build(provider_name: str, model: str):
+        kwargs = {"model": model}
+        if provider_name == "ollama":
+            kwargs["base_url"] = settings.ollama_base_url
+        elif provider_name == "anthropic" and settings.anthropic_api_key:
+            kwargs["api_key"] = settings.anthropic_api_key
+        elif provider_name == "openai" and settings.openai_api_key:
+            kwargs["api_key"] = settings.openai_api_key
+        return get_provider(provider_name, **kwargs)
+
+    try:
+        logger.info(f"Initializing {name} provider (model: {settings.llm_model})...")
+        provider = _build(name, settings.llm_model)
+        if await provider.health_check():
+            logger.info(f"Provider '{name}' is healthy")
+            return provider, name
+        logger.warning(f"Provider '{name}' health check failed")
+    except Exception as exc:  # missing key, bad config, network, etc.
+        logger.warning(f"Provider '{name}' could not be initialized: {exc}")
+
+    if name == "ollama":
+        # Already local; nothing better to fall back to — continue regardless.
+        logger.warning("Continuing with Ollama despite a failed health check")
+        return _build("ollama", settings.llm_model), "ollama"
+
+    logger.warning(
+        f"Falling back to local Ollama (model: {settings.ollama_fallback_model}). "
+        f"Set a valid {name.upper()}_API_KEY to use {name} for higher-quality audits."
+    )
+    fallback = _build("ollama", settings.ollama_fallback_model)
+    if await fallback.health_check():
+        logger.info("Ollama fallback is healthy")
+    else:
+        logger.warning("Ollama fallback health check failed - continuing anyway")
+    return fallback, "ollama"
+
+
 async def main():
     """Main application entry point."""
     # Load settings
@@ -40,8 +87,8 @@ async def main():
     setup_logging(settings.log_level)
 
     logger = logging.getLogger(__name__)
-    logger.info("Starting TruthTable Audit Engine")
-    logger.info(f"Provider: {settings.llm_provider}, Model: {settings.llm_model}")
+    logger.info("Starting TrustAgent Audit Engine")
+    logger.info(f"Configured provider: {settings.llm_provider}, model: {settings.llm_model}")
 
     # Setup LangSmith tracing (optional)
     if settings.langsmith_api_key:
@@ -52,26 +99,14 @@ async def main():
     else:
         logger.info("LangSmith tracing disabled (set LANGSMITH_API_KEY to enable)")
 
-    # Initialize LLM provider. Only Ollama takes a base_url from settings;
-    # cloud providers use their own defaults and read API keys from env
-    # (OPENAI_API_KEY / ANTHROPIC_API_KEY).
-    logger.info(f"Initializing {settings.llm_provider} provider...")
-    provider_kwargs = {"model": settings.llm_model}
-    if settings.llm_provider == "ollama":
-        provider_kwargs["base_url"] = settings.ollama_base_url
-    provider = get_provider(settings.llm_provider, **provider_kwargs)
-
-    # Health check
-    logger.info("Performing provider health check...")
-    if await provider.health_check():
-        logger.info("Provider is healthy")
-    else:
-        logger.warning("Provider health check failed - continuing anyway")
+    # Initialize the LLM provider with automatic fallback to local Ollama when a
+    # cloud provider is unavailable (missing key / failed health check).
+    provider, effective_provider = await init_provider(settings, logger)
 
     # Warm-up: Ollama loads the model into memory on the first completion,
     # which can take long enough to time out the first real audit. Pay that
     # cost here instead, before we accept traffic.
-    if settings.llm_provider == "ollama":
+    if effective_provider == "ollama":
         import time
 
         from truthtable.providers.base import CompletionRequest
@@ -98,7 +133,7 @@ async def main():
     embedding_service = None
     qdrant_store = None
 
-    if settings.qdrant_url:
+    if settings.qdrant_url and settings.rag_enabled:
         logger.info("Initializing RAG components...")
         try:
             from truthtable.vectorstore.embeddings import EmbeddingService
@@ -128,6 +163,8 @@ async def main():
             logger.warning("Continuing without knowledge retrieval")
             embedding_service = None
             qdrant_store = None
+    elif settings.qdrant_url and not settings.rag_enabled:
+        logger.info("RAG disabled (rag_enabled=false). Running without knowledge retrieval.")
     else:
         logger.warning(
             "QDRANT_URL not set. Running without knowledge retrieval. "
@@ -162,6 +199,7 @@ async def main():
         embedding_service=embedding_service,
         qdrant_store=qdrant_store,
         hybrid_retriever=hybrid_retriever,
+        verifier_concurrency=settings.verifier_concurrency,
     )
     logger.info("Audit graph ready")
 
@@ -189,7 +227,7 @@ async def main():
     # Start server
     await server.start()
     logger.info(f"gRPC server listening on {settings.grpc_host}:{settings.grpc_port}")
-    logger.info("TruthTable Audit Engine is ready!")
+    logger.info("TrustAgent Audit Engine is ready!")
 
     # Setup graceful shutdown (cross-platform)
     # WHY: loop.add_signal_handler() only works on Unix, not Windows.

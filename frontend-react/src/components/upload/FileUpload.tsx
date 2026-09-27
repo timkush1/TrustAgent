@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react';
+import { getApiBase, fetchWithAuth } from '../../api/client';
 
 interface FileUploadProps {
   apiBaseUrl?: string;
 }
 
-export function FileUpload({ apiBaseUrl = 'http://localhost:8080' }: FileUploadProps) {
+export function FileUpload({ apiBaseUrl }: FileUploadProps) {
+  const base = apiBaseUrl ?? getApiBase();
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -28,7 +30,7 @@ export function FileUpload({ apiBaseUrl = 'http://localhost:8080' }: FileUploadP
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch(`${apiBaseUrl}/api/upload`, {
+      const res = await fetchWithAuth(`${base}/api/upload`, {
         method: 'POST',
         body: formData,
       });

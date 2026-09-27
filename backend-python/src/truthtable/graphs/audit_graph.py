@@ -36,6 +36,7 @@ def build_audit_graph(
     embedding_service: Optional[EmbeddingService] = None,
     qdrant_store: Optional[QdrantStore] = None,
     hybrid_retriever=None,
+    verifier_concurrency: int = 5,
 ) -> StateGraph:
     """
     Build the audit workflow graph.
@@ -61,7 +62,7 @@ def build_audit_graph(
 
     # Create nodes
     decomposer = DecomposerNode(provider=provider)
-    verifier = VerifierNode(provider=provider)
+    verifier = VerifierNode(provider=provider, concurrency=verifier_concurrency)
     scorer = ScorerNode()
 
     # Initialize graph with state schema

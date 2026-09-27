@@ -9,7 +9,6 @@ function makeAudit(overrides: Partial<AuditResult> = {}): AuditResult {
     user_query: 'What is the capital of France?',
     llm_response: 'Paris is the capital of France.',
     faithfulness_score: 1,
-    relevancy_score: 1,
     overall_score: 1,
     hallucination_detected: false,
     claims: [],

@@ -1,22 +1,13 @@
-import { useEffect } from 'react';
 import { useAuditStore } from '../../stores/auditStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocketContext } from '../../context/websocketContext';
 import { AuditRow } from './AuditRow';
 import { AuditDetail } from './AuditDetail';
-import type { AuditResult } from '../../types/audit';
 
 export function AuditFeed() {
-  const { audits, selectedAudit, addAudit, selectAudit } = useAuditStore();
-  const { status, lastMessage } = useWebSocket();
-
-  // Process incoming WebSocket messages
-  useEffect(() => {
-    console.log('[AuditFeed] lastMessage:', lastMessage);
-    if (lastMessage?.type === 'audit_result' && lastMessage.data) {
-      console.log('[AuditFeed] Adding audit:', lastMessage.data);
-      addAudit(lastMessage.data as AuditResult);
-    }
-  }, [lastMessage, addAudit]);
+  const { audits, selectedAudit, selectAudit } = useAuditStore();
+  // Connection status only; incoming audit_result messages are dispatched to
+  // the store centrally by WebSocketProvider (single source of truth).
+  const { status } = useWebSocketContext();
 
   return (
     <div className="h-full flex flex-col">

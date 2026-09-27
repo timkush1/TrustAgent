@@ -37,7 +37,7 @@ export interface AuditListFilter {
   flagged?: boolean;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+import { getApiBase, fetchWithAuth } from './client';
 
 export async function fetchAudits(filter: AuditListFilter = {}): Promise<AuditListResponse> {
   const params = new URLSearchParams();
@@ -47,7 +47,7 @@ export async function fetchAudits(filter: AuditListFilter = {}): Promise<AuditLi
   if (filter.flagged !== undefined) params.set('flagged', String(filter.flagged));
 
   const query = params.toString();
-  const res = await fetch(`${API_BASE}/api/audits${query ? `?${query}` : ''}`);
+  const res = await fetchWithAuth(`${getApiBase()}/api/audits${query ? `?${query}` : ''}`);
   if (res.status === 503) {
     throw new Error('Audit history is not available (persistence not configured)');
   }
@@ -58,7 +58,7 @@ export async function fetchAudits(filter: AuditListFilter = {}): Promise<AuditLi
 }
 
 export async function fetchAudit(auditId: string): Promise<HistoryAudit> {
-  const res = await fetch(`${API_BASE}/api/audits/${encodeURIComponent(auditId)}`);
+  const res = await fetchWithAuth(`${getApiBase()}/api/audits/${encodeURIComponent(auditId)}`);
   if (!res.ok) {
     throw new Error(`Failed to load audit ${auditId} (${res.status})`);
   }

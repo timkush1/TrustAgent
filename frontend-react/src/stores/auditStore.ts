@@ -29,9 +29,14 @@ export const useAuditStore = create<AuditState>()(
       selectedAudit: null,
 
       addAudit: (audit) =>
-        set((state) => ({
-          audits: [audit, ...state.audits].slice(0, MAX_AUDITS),
-        })),
+        set((state) => {
+          // Idempotent by audit_id: React StrictMode double-invokes effects and
+          // a reconnect can re-deliver, so dedupe rather than show duplicates.
+          if (state.audits.some((a) => a.audit_id === audit.audit_id)) {
+            return state;
+          }
+          return { audits: [audit, ...state.audits].slice(0, MAX_AUDITS) };
+        }),
 
       selectAudit: (auditId) =>
         set((state) => ({

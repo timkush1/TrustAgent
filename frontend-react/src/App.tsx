@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useWebSocketContext } from './context/websocketContext';
+import { useHealth } from './hooks/useHealth';
 import { Header } from './components/layout/Header';
 import { MetricsPanel } from './components/dashboard/MetricsPanel';
 import { AuditFeed } from './components/audit/AuditFeed';
@@ -11,7 +12,8 @@ import { KnowledgeBaseView } from './components/kb/KnowledgeBaseView';
 type View = 'live' | 'history' | 'kb';
 
 function App() {
-  const { status } = useWebSocket();
+  const { status } = useWebSocketContext();
+  const health = useHealth();
   const [view, setView] = useState<View>('live');
 
   return (
@@ -42,9 +44,13 @@ function App() {
               System Status
             </h3>
             <div className="space-y-2 text-sm">
-              <StatusRow label="Proxy" status="running" port="8080" />
-              <StatusRow label="WebSocket" status={status.connected ? 'connected' : 'disconnected'} port="8081" />
-              <StatusRow label="Python Engine" status="running" port="50051" />
+              <StatusRow label="Proxy" status={health.proxyUp ? 'running' : 'down'} port="8080" />
+              <StatusRow
+                label="WebSocket"
+                status={status.connected ? 'connected' : 'disconnected'}
+                port="8080"
+              />
+              <StatusRow label="Audit Engine" status={health.auditEngine ? 'running' : 'down'} port="50051" />
             </div>
           </div>
         </aside>

@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { getApiBase, fetchWithAuth } from '../../api/client';
 
 interface QueryInputProps {
   apiBaseUrl?: string;
 }
 
-export function QueryInput({ apiBaseUrl = 'http://localhost:8080' }: QueryInputProps) {
+export function QueryInput({ apiBaseUrl }: QueryInputProps) {
+  const base = apiBaseUrl ?? getApiBase();
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState('');
   const [model, setModel] = useState('');
@@ -19,7 +21,7 @@ export function QueryInput({ apiBaseUrl = 'http://localhost:8080' }: QueryInputP
     setFeedback(null);
 
     try {
-      const res = await fetch(`${apiBaseUrl}/api/audit`, {
+      const res = await fetchWithAuth(`${base}/api/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

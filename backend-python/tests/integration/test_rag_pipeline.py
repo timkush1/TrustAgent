@@ -18,6 +18,9 @@ import numpy as np
 from truthtable.vectorstore.embeddings import EmbeddingService
 from truthtable.vectorstore.qdrant_store import QdrantStore
 
+# Opt-in: requires a live Qdrant (excluded from the default `pytest` run).
+pytestmark = pytest.mark.integration
+
 # Use a separate test collection so we don't pollute production data
 TEST_COLLECTION = "truthtable_test"
 

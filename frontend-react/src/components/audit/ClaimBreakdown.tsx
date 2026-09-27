@@ -5,8 +5,11 @@ interface ClaimBreakdownProps {
 }
 
 const statusConfig: Record<VerificationStatus, { color: string; label: string; icon: string }> = {
-  SUPPORTED: { color: '#00ff88', label: 'Verified', icon: '✓' },
-  UNSUPPORTED: { color: '#ff3366', label: 'Hallucination', icon: '✗' },
+  SUPPORTED: { color: '#00ff88', label: 'Supported', icon: '✓' },
+  // CONTRADICTED: retrieved context directly conflicts with the claim (a
+  // confident hallucination). UNSUPPORTED: no evidence either way (unverifiable).
+  CONTRADICTED: { color: '#ff3366', label: 'Contradicted', icon: '✕' },
+  UNSUPPORTED: { color: '#ff9933', label: 'Unsupported', icon: '✗' },
   PARTIALLY_SUPPORTED: { color: '#ffcc00', label: 'Partial', icon: '~' },
   UNKNOWN: { color: '#888', label: 'Unknown', icon: '?' },
 };

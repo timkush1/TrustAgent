@@ -12,10 +12,11 @@ from enum import Enum
 class VerificationStatus(str, Enum):
     """Status of a claim verification."""
 
-    SUPPORTED = "supported"  # Claim is backed by context
-    UNSUPPORTED = "unsupported"  # Claim contradicts or lacks evidence
+    SUPPORTED = "supported"  # A relevant document backs the claim
+    CONTRADICTED = "contradicted"  # A relevant document conflicts with the claim
+    UNSUPPORTED = "unsupported"  # No document addresses the claim (unverifiable)
     PARTIALLY_SUPPORTED = "partially_supported"  # Some evidence exists
-    UNKNOWN = "unknown"  # Not yet verified
+    UNKNOWN = "unknown"  # Not yet verified / parse failure
 
 
 class ClaimVerification(TypedDict):

@@ -11,6 +11,7 @@ Possible answers:
 - NEUTRAL: Can't determine (claim not addressed in context)
 """
 
+import asyncio
 import logging
 from typing import List
 
@@ -35,9 +36,14 @@ Your task:
 3. Find specific evidence (quotes) that support your determination
 
 Classification:
-- SUPPORTED: At least one document backs the claim (unrelated documents do not matter)
-- UNSUPPORTED: A relevant document contradicts the claim, OR no document addresses it
+- SUPPORTED: At least one relevant document backs the claim (unrelated documents do not matter)
+- CONTRADICTED: A relevant document directly conflicts with the claim (the claim is wrong per the context)
+- UNSUPPORTED: No document addresses the claim, so it cannot be verified either way
 - PARTIALLY_SUPPORTED: Some aspects are supported, others are not
+
+CONTRADICTED vs UNSUPPORTED is important: use CONTRADICTED only when a relevant
+document says something incompatible with the claim; use UNSUPPORTED when the
+context simply does not mention the claim.
 
 Numbers count as matching when they agree after rounding or unit conversion
 (e.g. "299,792,458 meters per second" supports "about 300,000 km per second").
@@ -50,7 +56,7 @@ the claim follows from the context.
 
 Output format (JSON only, no markdown):
 {
-  "status": "SUPPORTED" | "UNSUPPORTED" | "PARTIALLY_SUPPORTED",
+  "status": "SUPPORTED" | "CONTRADICTED" | "UNSUPPORTED" | "PARTIALLY_SUPPORTED",
   "confidence": 0.95,
   "evidence": ["quote from context 1", "quote from context 2"],
   "reasoning": "Brief explanation"
@@ -61,7 +67,7 @@ sentence of reasoning. The response must be a single complete JSON object."""
 
 # Statuses the verifier LLM may legally return (UNKNOWN is reserved for
 # parse/validation failures and may not be claimed by the model).
-_ALLOWED_STATUSES = {"SUPPORTED", "UNSUPPORTED", "PARTIALLY_SUPPORTED"}
+_ALLOWED_STATUSES = {"SUPPORTED", "CONTRADICTED", "UNSUPPORTED", "PARTIALLY_SUPPORTED"}
 
 
 def create_verifier_prompt(claim: str, context_docs: List[str]) -> str:
@@ -171,7 +177,10 @@ async def verify_claim(
 
 
 async def verify_all_claims(
-    claims: List[str], context_docs: List[str], provider: LLMProvider
+    claims: List[str],
+    context_docs: List[str],
+    provider: LLMProvider,
+    concurrency: int = 5,
 ) -> List[ClaimVerification]:
     """
     Verify all claims against context.
@@ -180,20 +189,25 @@ async def verify_all_claims(
         claims: List of claims to verify
         context_docs: Context documents
         provider: LLM provider
+        concurrency: Max claims verified in parallel
 
     Returns:
-        List of ClaimVerification results
+        List of ClaimVerification results (same order as ``claims``)
     """
     logger.info(f"Verifying {len(claims)} claims against {len(context_docs)} context docs")
 
-    # Verify each claim
-    # Note: In production, you might want to batch these or use asyncio.gather
-    # for parallel processing, but sequential is simpler and avoids rate limits
-    verifications = []
-    for i, claim in enumerate(claims, 1):
-        logger.debug(f"Verifying claim {i}/{len(claims)}")
-        verification = await verify_claim(claim, context_docs, provider)
-        verifications.append(verification)
+    # Bounded concurrency: a fast cloud judge (e.g. Claude Haiku) verifies claims
+    # in parallel, cutting per-request latency from O(n) to O(n / concurrency).
+    # The semaphore caps in-flight requests to respect provider rate limits;
+    # asyncio.gather preserves input order, and verify_claim already degrades to
+    # UNKNOWN on any error, so one bad claim cannot poison the batch.
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
+    async def _verify(claim: str) -> ClaimVerification:
+        async with semaphore:
+            return await verify_claim(claim, context_docs, provider)
+
+    verifications = await asyncio.gather(*(_verify(claim) for claim in claims))
 
     # Log summary
     supported = sum(1 for v in verifications if v["status"] == VerificationStatus.SUPPORTED)
@@ -222,14 +236,16 @@ class VerifierNode:
         graph.add_node("verify", node.run)
     """
 
-    def __init__(self, provider: LLMProvider):
+    def __init__(self, provider: LLMProvider, concurrency: int = 5):
         """
         Initialize the verifier node.
 
         Args:
             provider: LLM provider for verification
+            concurrency: Max claims verified in parallel
         """
         self.provider = provider
+        self.concurrency = concurrency
 
     async def run(self, state: AuditState) -> AuditState:
         """
@@ -248,7 +264,10 @@ class VerifierNode:
 
         # Verify all claims
         verifications = await verify_all_claims(
-            claims=state["claims"], context_docs=state["context_docs"], provider=self.provider
+            claims=state["claims"],
+            context_docs=state["context_docs"],
+            provider=self.provider,
+            concurrency=self.concurrency,
         )
 
         # Update state

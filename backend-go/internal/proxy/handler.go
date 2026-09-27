@@ -88,17 +88,6 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// AuditJob represents a job to be processed by the worker pool
-type AuditJob struct {
-	RequestID   string
-	Prompt      string
-	Response    string
-	Model       string
-	Timestamp   time.Time
-	UserID      string
-	RequestPath string
-}
-
 // HandleChatCompletion intercepts chat completion requests
 func (h *Handler) HandleChatCompletion(c *gin.Context) {
 	requestID := c.GetHeader("X-Request-ID")

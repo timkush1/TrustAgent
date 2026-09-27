@@ -23,7 +23,8 @@ def calculate_faithfulness_score(verifications: List[ClaimVerification]) -> floa
     Scoring logic:
     - SUPPORTED claim: 1.0 points
     - PARTIALLY_SUPPORTED: 0.5 points
-    - UNSUPPORTED: 0.0 points
+    - CONTRADICTED: 0.0 points (context disproves the claim)
+    - UNSUPPORTED: 0.0 points (no evidence either way)
     - UNKNOWN: 0.3 points (conservative estimate)
 
     Final score is the weighted average, taking into account confidence levels.
@@ -42,6 +43,7 @@ def calculate_faithfulness_score(verifications: List[ClaimVerification]) -> floa
     score_map = {
         VerificationStatus.SUPPORTED: 1.0,
         VerificationStatus.PARTIALLY_SUPPORTED: 0.5,
+        VerificationStatus.CONTRADICTED: 0.0,
         VerificationStatus.UNSUPPORTED: 0.0,
         VerificationStatus.UNKNOWN: 0.3,
     }
@@ -79,8 +81,8 @@ def detect_hallucination(verifications: List[ClaimVerification]) -> bool:
     Determine if hallucination is detected.
 
     We consider it a hallucination if:
-    - Any claim is UNSUPPORTED with high confidence (>0.7), OR
-    - More than 30% of claims are UNSUPPORTED or PARTIALLY_SUPPORTED
+    - Any claim is CONTRADICTED or UNSUPPORTED with high confidence (>0.7), OR
+    - More than 30% of claims are CONTRADICTED, UNSUPPORTED or PARTIALLY_SUPPORTED
 
     Args:
         verifications: List of claim verifications
@@ -91,14 +93,16 @@ def detect_hallucination(verifications: List[ClaimVerification]) -> bool:
     if not verifications:
         return False
 
-    # Check for high-confidence unsupported claims
+    # A confident CONTRADICTED or UNSUPPORTED claim is a hallucination. (A
+    # CONTRADICTED claim is the strongest signal: the context disproves it.)
     for verification in verifications:
         if (
-            verification["status"] == VerificationStatus.UNSUPPORTED
+            verification["status"]
+            in (VerificationStatus.CONTRADICTED, VerificationStatus.UNSUPPORTED)
             and verification["confidence"] > 0.7
         ):
             logger.info(
-                f"Hallucination detected: High-confidence unsupported claim: "
+                f"Hallucination detected: high-confidence {verification['status'].value} claim: "
                 f"{verification['claim'][:50]}..."
             )
             return True
@@ -107,7 +111,12 @@ def detect_hallucination(verifications: List[ClaimVerification]) -> bool:
     problematic = sum(
         1
         for v in verifications
-        if v["status"] in [VerificationStatus.UNSUPPORTED, VerificationStatus.PARTIALLY_SUPPORTED]
+        if v["status"]
+        in [
+            VerificationStatus.CONTRADICTED,
+            VerificationStatus.UNSUPPORTED,
+            VerificationStatus.PARTIALLY_SUPPORTED,
+        ]
     )
 
     problematic_ratio = problematic / len(verifications)
@@ -133,10 +142,12 @@ def generate_reasoning_trace(verifications: List[ClaimVerification], score: floa
     Returns:
         Reasoning trace as formatted string
     """
-    # Count by status
+    # Count by status (every VerificationStatus must be a key here, or the
+    # increment below raises KeyError for that status).
     status_counts = {
         VerificationStatus.SUPPORTED: 0,
         VerificationStatus.PARTIALLY_SUPPORTED: 0,
+        VerificationStatus.CONTRADICTED: 0,
         VerificationStatus.UNSUPPORTED: 0,
         VerificationStatus.UNKNOWN: 0,
     }
@@ -153,20 +164,28 @@ def generate_reasoning_trace(verifications: List[ClaimVerification], score: floa
         f"Total Claims Analyzed: {total}",
         f"  ✓ Supported: {status_counts[VerificationStatus.SUPPORTED]} ({status_counts[VerificationStatus.SUPPORTED]/total*100:.1f}%)",
         f"  ⚠ Partially Supported: {status_counts[VerificationStatus.PARTIALLY_SUPPORTED]} ({status_counts[VerificationStatus.PARTIALLY_SUPPORTED]/total*100:.1f}%)",
+        f"  ✕ Contradicted: {status_counts[VerificationStatus.CONTRADICTED]} ({status_counts[VerificationStatus.CONTRADICTED]/total*100:.1f}%)",
         f"  ✗ Unsupported: {status_counts[VerificationStatus.UNSUPPORTED]} ({status_counts[VerificationStatus.UNSUPPORTED]/total*100:.1f}%)",
         f"  ? Unknown: {status_counts[VerificationStatus.UNKNOWN]} ({status_counts[VerificationStatus.UNKNOWN]/total*100:.1f}%)",
         "",
     ]
 
-    # Add details for problematic claims
-    unsupported_claims = [v for v in verifications if v["status"] == VerificationStatus.UNSUPPORTED]
-    if unsupported_claims:
-        trace_lines.append("Unsupported Claims:")
-        for i, v in enumerate(unsupported_claims[:5], 1):  # Show max 5
-            trace_lines.append(f"  {i}. {v['claim'][:100]}...")
+    # Add details for problematic claims (contradicted first — strongest signal)
+    problem_claims = [
+        v
+        for v in verifications
+        if v["status"] in (VerificationStatus.CONTRADICTED, VerificationStatus.UNSUPPORTED)
+    ]
+    if problem_claims:
+        trace_lines.append("Problematic Claims:")
+        for i, v in enumerate(problem_claims[:5], 1):  # Show max 5
+            label = (
+                "contradicted" if v["status"] == VerificationStatus.CONTRADICTED else "unsupported"
+            )
+            trace_lines.append(f"  {i}. [{label}] {v['claim'][:100]}...")
 
-        if len(unsupported_claims) > 5:
-            trace_lines.append(f"  ... and {len(unsupported_claims) - 5} more")
+        if len(problem_claims) > 5:
+            trace_lines.append(f"  ... and {len(problem_claims) - 5} more")
         trace_lines.append("")
 
     return "\n".join(trace_lines)

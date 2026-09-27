@@ -42,3 +42,10 @@ updates:
       - /frontend-react
     schedule:
       interval: weekly
+    ignore:
+      # torch / sentence-transformers publish no wheels for a brand-new Python
+      # major for months, so a python:3.x-slim major bump makes the audit-engine
+      # image fall back to a source build that fails. Bump the Python base image
+      # deliberately once the ML wheels catch up.
+      - dependency-name: 'python'
+        update-types: ['version-update:semver-major']

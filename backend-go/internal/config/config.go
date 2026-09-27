@@ -15,7 +15,6 @@ type Config struct {
 	UpstreamURL     string
 	GRPCAddress     string
 	GRPCTimeout     time.Duration
-	WSPort          int
 	WorkerCount     int
 	QueueSize       int
 	LogLevel        string
@@ -34,17 +33,24 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		ServerPort:      getEnvInt("TRUTHTABLE_PORT", 8080),
-		ReadTimeout:     getEnvDuration("TRUTHTABLE_READ_TIMEOUT", 30*time.Second),
-		WriteTimeout:    getEnvDuration("TRUTHTABLE_WRITE_TIMEOUT", 120*time.Second),
+		ServerPort:  getEnvInt("TRUTHTABLE_PORT", 8080),
+		ReadTimeout: getEnvDuration("TRUTHTABLE_READ_TIMEOUT", 30*time.Second),
+		// The write deadline must cover the slowest responses the proxy serves:
+		// streamed LLM completions and /api/upload (Gate-1 ingestion runs LLM
+		// decomposition + entailment per claim — minutes on a slow local judge;
+		// the ingest gRPC call itself is allowed 4x GRPCTimeout). 120s cut those
+		// off mid-flight even when the backend succeeded.
+		WriteTimeout:    getEnvDuration("TRUTHTABLE_WRITE_TIMEOUT", 8*time.Minute),
 		ShutdownTimeout: getEnvDuration("TRUTHTABLE_SHUTDOWN_TIMEOUT", 10*time.Second),
 		UpstreamURL:     getEnv("TRUTHTABLE_UPSTREAM_URL", "https://api.openai.com"),
 		GRPCAddress:     getEnv("TRUTHTABLE_GRPC_ADDRESS", "localhost:50051"),
-		GRPCTimeout:     getEnvDuration("TRUTHTABLE_GRPC_TIMEOUT", 30*time.Second),
-		WSPort:          getEnvInt("TRUTHTABLE_WS_PORT", 8081),
-		WorkerCount:     getEnvInt("TRUTHTABLE_WORKER_COUNT", 10),
-		QueueSize:       getEnvInt("TRUTHTABLE_QUEUE_SIZE", 1000),
-		LogLevel:        getEnv("TRUTHTABLE_LOG_LEVEL", "info"),
+		// Audits run the full LangGraph pipeline (decompose + per-claim verify +
+		// score). A slow local judge with several claims can exceed 30s, so the
+		// default is generous; a fast cloud judge (Claude Haiku) finishes in ~1-3s.
+		GRPCTimeout: getEnvDuration("TRUTHTABLE_GRPC_TIMEOUT", 120*time.Second),
+		WorkerCount: getEnvInt("TRUTHTABLE_WORKER_COUNT", 10),
+		QueueSize:   getEnvInt("TRUTHTABLE_QUEUE_SIZE", 1000),
+		LogLevel:    getEnv("TRUTHTABLE_LOG_LEVEL", "info"),
 
 		APIKeys: getEnvList("TRUTHTABLE_API_KEYS", nil),
 		AllowedOrigins: getEnvList("TRUTHTABLE_ALLOWED_ORIGINS", []string{

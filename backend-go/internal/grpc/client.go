@@ -34,8 +34,9 @@ type AuditResult struct {
 }
 
 func NewAuditClient(address string, timeout time.Duration) (*AuditClient, error) {
-	// Non-blocking dial - connection happens lazily on first RPC
-	conn, err := grpc.Dial(address,
+	// grpc.NewClient creates the client lazily; the connection is established on
+	// the first RPC (replaces the deprecated grpc.Dial).
+	conn, err := grpc.NewClient(address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
@@ -87,10 +88,12 @@ func (c *AuditClient) Evaluate(ctx context.Context, requestID, prompt, response 
 		return nil, fmt.Errorf("audit timed out")
 	}
 
-	// Map protobuf VerificationStatus enum to lowercase verdict strings
+	// Map protobuf VerificationStatus enum to lowercase verdict strings.
+	// CONTRADICTED (context disproves the claim) is kept distinct from
+	// UNSUPPORTED (no evidence either way) end-to-end.
 	verdictMap := map[pb.VerificationStatus]string{
 		pb.VerificationStatus_VERIFICATION_STATUS_SUPPORTED:           "supported",
-		pb.VerificationStatus_VERIFICATION_STATUS_CONTRADICTED:        "unsupported",
+		pb.VerificationStatus_VERIFICATION_STATUS_CONTRADICTED:        "contradicted",
 		pb.VerificationStatus_VERIFICATION_STATUS_UNSUPPORTED:         "unsupported",
 		pb.VerificationStatus_VERIFICATION_STATUS_PARTIALLY_SUPPORTED: "partially_supported",
 		pb.VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED:         "unknown",

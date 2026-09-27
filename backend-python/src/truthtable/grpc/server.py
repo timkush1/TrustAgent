@@ -7,6 +7,7 @@ Implements the AuditService defined in evaluator.proto
 import logging
 import uuid
 import time
+from collections import OrderedDict
 from typing import Dict
 
 import grpc
@@ -28,8 +29,20 @@ from ..metrics import (
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage for audit results (for demo - use Redis in production)
-_audit_results: Dict[str, AuditState] = {}
+# In-memory storage for audit results. Results are written by SubmitAudit and
+# read once by the Go proxy's immediately-following GetAuditResult, so they are
+# short-lived. Bounded (LRU: evict oldest) to prevent unbounded growth; a
+# Redis-backed store is the multi-replica production upgrade.
+_MAX_STORED_RESULTS = 1000
+_audit_results: "OrderedDict[str, AuditState]" = OrderedDict()
+
+
+def _store_result(audit_id: str, result: AuditState) -> None:
+    _audit_results[audit_id] = result
+    _audit_results.move_to_end(audit_id)
+    while len(_audit_results) > _MAX_STORED_RESULTS:
+        _audit_results.popitem(last=False)  # evict oldest
+
 
 # KB claim status <-> proto enum mapping
 _KB_STATUS_TO_PROTO = {
@@ -103,7 +116,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             result["audit_id"] = audit_id
             duration = time.time() - start_time
             result["processing_time_ms"] = int(duration * 1000)
-            _audit_results[audit_id] = result
+            _store_result(audit_id, result)
 
             # Record metrics
             score = result.get("faithfulness_score", 0.0)
@@ -128,7 +141,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             logger.error(f"Audit failed: {e}", exc_info=True)
             AUDITS_TOTAL.labels(status="error").inc()
             # Store error result
-            _audit_results[audit_id] = {"error": str(e), "request_id": request.request_id}
+            _store_result(audit_id, {"error": str(e), "request_id": request.request_id})
             return evaluator_pb2.AuditSubmission(
                 audit_id=audit_id, status="failed", queue_position=0
             )
@@ -163,10 +176,12 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         # Map VerificationStatus to proto enum
         status_map = {
             VerificationStatus.SUPPORTED: evaluator_pb2.VERIFICATION_STATUS_SUPPORTED,
+            VerificationStatus.CONTRADICTED: evaluator_pb2.VERIFICATION_STATUS_CONTRADICTED,
             VerificationStatus.UNSUPPORTED: evaluator_pb2.VERIFICATION_STATUS_UNSUPPORTED,
             VerificationStatus.PARTIALLY_SUPPORTED: evaluator_pb2.VERIFICATION_STATUS_PARTIALLY_SUPPORTED,
             VerificationStatus.UNKNOWN: evaluator_pb2.VERIFICATION_STATUS_UNSPECIFIED,
             "supported": evaluator_pb2.VERIFICATION_STATUS_SUPPORTED,
+            "contradicted": evaluator_pb2.VERIFICATION_STATUS_CONTRADICTED,
             "unsupported": evaluator_pb2.VERIFICATION_STATUS_UNSUPPORTED,
             "partially_supported": evaluator_pb2.VERIFICATION_STATUS_PARTIALLY_SUPPORTED,
             "unknown": evaluator_pb2.VERIFICATION_STATUS_UNSPECIFIED,
@@ -191,16 +206,20 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     )
                 )
 
-        # Determine grade based on score
+        # Determine grade based on score. Thresholds must match the Go proxy's
+        # store.GradeForScore (A>=.9, B>=.7, C>=.5, D>=.3, F<.3) so the grade is
+        # consistent whether it comes over the wire or is derived on persistence.
         score = result.get("faithfulness_score", 0.0)
         if score >= 0.9:
-            grade = evaluator_pb2.TRUST_GRADE_A if hasattr(evaluator_pb2, "TRUST_GRADE_A") else 1
+            grade = evaluator_pb2.TRUST_GRADE_A
         elif score >= 0.7:
-            grade = evaluator_pb2.TRUST_GRADE_B if hasattr(evaluator_pb2, "TRUST_GRADE_B") else 2
+            grade = evaluator_pb2.TRUST_GRADE_B
         elif score >= 0.5:
-            grade = evaluator_pb2.TRUST_GRADE_C if hasattr(evaluator_pb2, "TRUST_GRADE_C") else 3
+            grade = evaluator_pb2.TRUST_GRADE_C
+        elif score >= 0.3:
+            grade = evaluator_pb2.TRUST_GRADE_D
         else:
-            grade = evaluator_pb2.TRUST_GRADE_D if hasattr(evaluator_pb2, "TRUST_GRADE_D") else 4
+            grade = evaluator_pb2.TRUST_GRADE_F
 
         # Convert step_timings to map<string, int64>
         step_timings = {}

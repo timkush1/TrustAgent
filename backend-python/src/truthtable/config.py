@@ -17,10 +17,31 @@ class Settings(BaseSettings):
     Example: export OLLAMA_BASE_URL="http://localhost:11434"
     """
 
-    # LLM Provider Settings
-    llm_provider: str = Field(default="ollama", description="LLM provider to use")
-    llm_model: str = Field(default="llama3.2", description="Model name")
+    # LLM Provider Settings. Default is Anthropic Claude Haiku for high-quality
+    # NLI verification; the engine automatically falls back to local Ollama when
+    # no ANTHROPIC_API_KEY is set or the provider is unreachable (see main.py).
+    llm_provider: str = Field(
+        default="anthropic", description="LLM provider: anthropic | openai | ollama"
+    )
+    llm_model: str = Field(
+        default="claude-haiku-4-5", description="Model for the configured provider"
+    )
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama server URL")
+    ollama_fallback_model: str = Field(
+        default="llama3.2:1b",
+        description="Ollama model for the free local fallback (1B fits ~2GB RAM)",
+    )
+
+    # Cloud provider API keys (read from env; never logged). Leaving these unset
+    # with a cloud llm_provider triggers the automatic Ollama fallback.
+    anthropic_api_key: Optional[str] = Field(default=None, description="ANTHROPIC_API_KEY")
+    openai_api_key: Optional[str] = Field(default=None, description="OPENAI_API_KEY")
+
+    # Audit pipeline tuning
+    verifier_concurrency: int = Field(default=5, description="Max concurrent claim verifications")
+    rag_enabled: bool = Field(
+        default=True, description="Enable Qdrant retrieval when QDRANT_URL set"
+    )
 
     # gRPC Server Settings
     grpc_port: int = Field(default=50051, description="gRPC server port")

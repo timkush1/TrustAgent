@@ -186,7 +186,7 @@ Expected output:
 ```
 🚀 Starting TruthTable Proxy
    Server Port: 8080
-   WebSocket Port: 8081
+   WebSocket: shares 8080 (path /ws)
 ✓ Connected to audit engine at localhost:50051
 ✅ TruthTable Proxy is ready!
 ```
@@ -356,7 +356,7 @@ python -m truthtable.main
 **Solution**:
 ```bash
 # Check if Go proxy is running
-lsof -i:8081
+lsof -i:8080
 
 # Restart if needed
 cd backend-go && go run ./cmd/proxy

@@ -46,28 +46,6 @@ func TestAuditJob(t *testing.T) {
 	}
 }
 
-func TestTruncateString(t *testing.T) {
-	tests := []struct {
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{"Hello", 10, "Hello"},
-		{"Hello World", 8, "Hello..."},
-		{"Short", 5, "Short"},
-		{"Exactly10!", 10, "Exactly10!"},
-		{"TooLong!!!", 6, "Too..."},
-	}
-
-	for _, tc := range tests {
-		result := truncateString(tc.input, tc.maxLen)
-		if result != tc.expected {
-			t.Errorf("truncateString(%q, %d) = %q, expected %q",
-				tc.input, tc.maxLen, result, tc.expected)
-		}
-	}
-}
-
 func TestPoolSubmitWithNoClient(t *testing.T) {
 	pool := NewPool(1, 10, nil, nil)
 	go pool.Start()

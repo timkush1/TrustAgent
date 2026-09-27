@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { WSMessage, ConnectionStatus } from '../types/audit';
+import { getWsUrl } from '../api/client';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
@@ -21,51 +21,45 @@ export function useWebSocket() {
     }
 
     try {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(getWsUrl());
 
       ws.onopen = () => {
-        console.log('[WS] Connected to', WS_URL);
         setStatus({ connected: true, lastConnected: new Date() });
         reconnectAttempts.current = 0;
       };
 
-      ws.onclose = (event) => {
-        console.log('[WS] Disconnected:', event.code, event.reason);
+      ws.onclose = () => {
         setStatus((prev) => ({ ...prev, connected: false }));
-        
+
         // Auto-reconnect
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           reconnectAttempts.current++;
-          console.log(`[WS] Reconnecting in ${RECONNECT_DELAY}ms (attempt ${reconnectAttempts.current})`);
           reconnectTimeout.current = setTimeout(() => connectRef.current?.(), RECONNECT_DELAY);
         } else {
-          setStatus((prev) => ({ 
-            ...prev, 
-            error: 'Max reconnection attempts reached' 
+          setStatus((prev) => ({
+            ...prev,
+            error: 'Max reconnection attempts reached',
           }));
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('[WS] Error:', error);
+      ws.onerror = () => {
         setStatus((prev) => ({ ...prev, error: 'Connection error' }));
       };
 
       ws.onmessage = (event) => {
         try {
           const message: WSMessage = JSON.parse(event.data);
-          console.log('[WS] Received message:', message.type, message);
           setLastMessage(message);
-        } catch (err) {
-          console.error('[WS] Failed to parse message:', err, event.data);
+        } catch {
+          // Ignore malformed frames; a well-behaved server never sends them.
         }
       };
 
       wsRef.current = ws;
-    } catch (err) {
+    } catch {
       // Construction only throws on an invalid URL (a config bug); connection
       // failures are reported asynchronously via onerror/onclose.
-      console.error('[WS] Failed to connect:', err);
     }
   }, []);
 

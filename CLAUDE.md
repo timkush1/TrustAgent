@@ -4,13 +4,17 @@ Guidance for AI-assisted development in this repository.
 
 ## What this project is
 
-TrustAgent (internal name: TruthTable) is an AI Hallucination Control Plane: a Go reverse proxy
-intercepts LLM API calls, returns responses to the client immediately, and asynchronously audits
-them through a Python LangGraph pipeline (decompose claims → retrieve context from Qdrant →
+TrustAgent (internal package name: `truthtable`) is an AI Hallucination Control Plane: a Go reverse
+proxy intercepts LLM API calls, returns responses to the client immediately, and asynchronously
+audits them through a Python LangGraph pipeline (decompose claims → retrieve context from Qdrant →
 verify via NLI → score faithfulness). Results stream to a React dashboard over WebSocket.
 
+- **Naming**: user-facing surfaces (README, docs, dashboard UI) say **TrustAgent**; the Go module,
+  Python package, and container prefix stay `truthtable` (renaming is high-churn, low-value).
+- **Audit judge**: defaults to Anthropic Claude Haiku (`claude-haiku-4-5`); auto-falls-back to local
+  Ollama (`llama3.2:1b`) when `ANTHROPIC_API_KEY` is unset. See `main.py::init_provider`.
 - Master roadmap: [docs/PLAN.md](docs/PLAN.md) — check phase status before starting work.
-- Per-phase progress logs: [docs/progress/](docs/progress/)
+- Docs index: [docs/README.md](docs/README.md); historical logs in [docs/archive/](docs/archive/).
 
 ## Layout
 
@@ -39,8 +43,10 @@ make fmt            # auto-format everything
 ```
 
 Per-project:
-- Python: `cd backend-python && poetry run pytest -v` (asyncio_mode=auto; tests in `tests/unit`, `tests/integration`)
-- Go: `cd backend-go && go test ./...`
+- Python: `cd backend-python && poetry run pytest` (asyncio_mode=auto). Tests live in `tests/unit`,
+  `tests/integration`, and `tests/e2e`. The `integration` and `e2e` markers are **opt-in** and
+  excluded from the default run; run e2e via `make test-e2e` (needs the full stack up).
+- Go: `cd backend-go && go test ./...` (Postgres store tests skip unless `TEST_DATABASE_URL` is set)
 - React: `cd frontend-react && npm test` (vitest)
 
 ## Conventions
@@ -53,15 +59,19 @@ Per-project:
   (`TRUTHTABLE_*` prefix); new HTTP middleware lives in `internal/middleware/`.
 - **Frontend**: state in Zustand stores (`src/stores/`), shared types in `src/types/audit.ts`;
   components grouped by domain (`audit/`, `dashboard/`, `layout/`, `upload/`).
+- **Verdicts**: the pipeline emits SUPPORTED / CONTRADICTED / UNSUPPORTED / PARTIALLY_SUPPORTED
+  (plus UNKNOWN on parse failure). CONTRADICTED (context disproves the claim) is distinct from
+  UNSUPPORTED (nothing addresses it) end-to-end — keep both live across proto, Python, Go, and the UI.
+- **Metrics**: both services use the unified `trustagent_*` Prometheus namespace.
 - **Versioning**: bump `VERSION` and all four mirrors together.
-- **Docs discipline**: every roadmap phase updates its `docs/progress/PHASE-N.md` with what was
-  done, decisions/deviations, and verification evidence.
 
 ## Gotchas
 
-- The pipeline needs Ollama running with the model pulled (`make ollama-pull`) — unit tests mock
-  LLM calls, but integration/E2E tests need the real stack.
+- Unit tests mock LLM calls; integration/E2E tests need the real stack (`make up` + `make ollama-pull`).
+- The audit judge auto-falls-back to Ollama when no cloud key is set — a **weak local model produces
+  poor verdicts** (expected; the eval suite quantifies it). Set `ANTHROPIC_API_KEY` for real quality.
 - Qdrant is optional at startup: if `QDRANT_URL` is unset/unreachable the engine degrades to
-  no-context verification (claims will come back UNSUPPORTED).
-- `docs-private/` is historical build-journal material; the curated public docs live in `docs/`.
-- Windows dev environment: prefer cross-platform commands in Makefile/scripts.
+  no-context verification (claims come back UNSUPPORTED).
+- Generated gRPC stubs are gitignored; run `make proto-tools` once, then `make proto` on a fresh clone.
+- Curated public docs live in `docs/`; historical build-journal material is under `docs/archive/`.
+- Windows/WSL dev environment: prefer cross-platform commands in Makefile/scripts.

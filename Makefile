@@ -7,7 +7,7 @@ help: ## Show this help message
 
 # ========== Setup ==========
 
-install: ## Install all dependencies
+install: proto-tools ## Install all dependencies (incl. protoc Go plugins)
 	@echo "Installing Go dependencies..."
 	cd backend-go && go mod download
 	@echo "Installing Python dependencies..."
@@ -16,11 +16,21 @@ install: ## Install all dependencies
 	cd frontend-react && npm install
 	@echo "✅ All dependencies installed"
 
-proto: ## Generate code from protobuf definitions
+proto-tools: ## Install the protoc Go plugins (protoc-gen-go, protoc-gen-go-grpc)
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+proto: ## Generate code from protobuf definitions (mirrors CI; run `make proto-tools` first on a fresh clone)
 	@echo "Generating Go protobuf code..."
-	cd proto && protoc --go_out=../backend-go/api/audit/v1 --go-grpc_out=../backend-go/api/audit/v1 evaluator.proto
+	PATH="$$(go env GOPATH)/bin:$$PATH" protoc --proto_path=proto \
+		--go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
+		--go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
+		proto/evaluator.proto
 	@echo "Generating Python protobuf code..."
-	cd proto && python -m grpc_tools.protoc -I. --python_out=../backend-python/src/truthtable/grpc/pb --grpc_python_out=../backend-python/src/truthtable/grpc/pb evaluator.proto
+	cd backend-python && poetry run python -m grpc_tools.protoc -I../proto \
+		--python_out=src/truthtable/grpc/pb \
+		--grpc_python_out=src/truthtable/grpc/pb \
+		../proto/evaluator.proto
 	@echo "✅ Protobuf code generated"
 
 # ========== Docker ==========
@@ -60,17 +70,17 @@ dev-react: ## Run React dashboard in development mode
 
 # ========== Testing ==========
 
-test: ## Run all tests
+test: ## Run all unit tests (excludes opt-in e2e/integration; safe on a bare box)
 	@echo "Running Python tests..."
-	cd backend-python && poetry run pytest
+	cd backend-python && poetry run pytest -m "not e2e and not integration"
 	@echo "Running Go tests..."
 	cd backend-go && go test ./...
 	@echo "Running React tests..."
 	cd frontend-react && npm test
 	@echo "✅ All tests passed"
 
-test-python: ## Run Python tests only
-	cd backend-python && poetry run pytest -v
+test-python: ## Run Python unit tests only
+	cd backend-python && poetry run pytest -m "not e2e and not integration" -v
 
 test-go: ## Run Go tests only
 	cd backend-go && go test -v ./...
@@ -79,8 +89,7 @@ test-react: ## Run React tests only
 	cd frontend-react && npm test
 
 test-e2e: ## Run end-to-end tests (requires full stack running: make up-all)
-	cd backend-python && poetry run python ../test_e2e.py
-	cd backend-python && poetry run python ../test_direct_audit.py
+	cd backend-python && poetry run pytest -m e2e -v
 
 # ========== Evaluation ==========
 
@@ -123,9 +132,9 @@ fmt: ## Format all code
 
 # ========== Ollama ==========
 
-ollama-pull: ## Pull the default Ollama model
-	docker exec -it truthtable-ollama ollama pull llama3.2
-	@echo "✅ Llama 3.2 model downloaded"
+ollama-pull: ## Pull the default Ollama fallback model (1B; fits ~2GB RAM)
+	docker exec -it truthtable-ollama ollama pull llama3.2:1b
+	@echo "✅ llama3.2:1b model downloaded"
 
 ollama-list: ## List available Ollama models
 	docker exec -it truthtable-ollama ollama list

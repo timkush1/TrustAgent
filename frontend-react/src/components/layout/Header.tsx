@@ -1,4 +1,5 @@
 import type { ConnectionStatus } from '../../types/audit';
+import { getWsBase } from '../../api/client';
 
 interface HeaderProps {
   connectionStatus: ConnectionStatus;
@@ -33,7 +34,7 @@ export function Header({ connectionStatus }: HeaderProps) {
               WebkitTextFillColor: 'transparent',
             }}
           >
-            TruthTable
+            TrustAgent
           </h1>
           <p className="text-xs text-gray-500">AI Hallucination Control Plane</p>
         </div>
@@ -61,7 +62,7 @@ export function Header({ connectionStatus }: HeaderProps) {
         )}
 
         <div className="text-xs text-gray-600 font-mono">
-          ws://localhost:8081
+          {getWsBase()}
         </div>
       </div>
     </header>

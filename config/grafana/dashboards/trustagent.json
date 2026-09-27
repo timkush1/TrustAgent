@@ -17,7 +17,7 @@
           "legendFormat": "Go Proxy - {{status}}"
         },
         {
-          "expr": "rate(truthtable_audits_total[5m])",
+          "expr": "rate(trustagent_audits_total[5m])",
           "legendFormat": "Python Engine - {{status}}"
         }
       ],

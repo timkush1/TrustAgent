@@ -48,7 +48,6 @@ type AuditResult struct {
 	UserQuery             string              `json:"user_query"`
 	LLMResponse           string              `json:"llm_response"`
 	FaithfulnessScore     float64             `json:"faithfulness_score"`
-	RelevancyScore        float64             `json:"relevancy_score"`
 	OverallScore          float64             `json:"overall_score"`
 	HallucinationDetected bool                `json:"hallucination_detected"`
 	Claims                []ClaimVerification `json:"claims"`
