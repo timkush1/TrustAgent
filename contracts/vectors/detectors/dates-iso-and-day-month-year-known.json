@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-iso-and-day-month-year-known",
+  "status": "draft",
+  "description": "\"1 April 2026\" (d Month yyyy) is 2026-04-01 and \"2026-04-30\" is ISO; the evidence states both as \"April 1, 2026\" and \"April 30, 2026\". Formats differ but the normalized dates match: does not fire. \"1 April 2026\" is one date (the overlapping \"April 2026\" is ignored).",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "The sale runs from 1 April 2026 to 2026-04-30.",
+    "evidence": [
+      {
+        "id": "promo",
+        "source": "request_system",
+        "text": "Spring sale: April 1, 2026 through April 30, 2026."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

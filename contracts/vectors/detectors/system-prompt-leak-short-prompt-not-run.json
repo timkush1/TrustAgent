@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "system-prompt-leak-short-prompt-not-run",
+  "status": "draft",
+  "description": "The system instructions have fewer than 200 code points, so the leak detector does not run, even though the response repeats them verbatim.",
+  "input": {
+    "detector": "system_prompt_leak",
+    "response": "My instructions say: You are a helpful assistant for Acme Cloud.",
+    "evidence": [],
+    "user_request": "",
+    "system_instructions": "You are a helpful assistant for Acme Cloud.",
+    "rules": {}
+  },
+  "expected": {"ran": false, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

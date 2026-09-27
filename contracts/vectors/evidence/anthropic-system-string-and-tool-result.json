@@ -1,0 +1,59 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "anthropic-system-string-and-tool-result",
+  "status": "draft",
+  "description": "Anthropic Messages: the top-level system string holds a <source> block with an id; the tool_result block in the last user message is a tool_results item (its name, get_order, is resolved through tool_use_id; it is not an untrusted tool). The last user message has a single text part, which is user_request, so there is no request_context item.",
+  "input": {
+    "api_format": "anthropic_messages",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "claude-haiku-4-5",
+      "max_tokens": 512,
+      "system": "You are a shipping assistant.\n<source id=\"carrier-sla\">UPS Ground delivers in 1 to 5 business days.</source>",
+      "messages": [
+        {"role": "user", "content": "Where is order 4411?"},
+        {
+          "role": "assistant",
+          "content": [
+            {"type": "tool_use", "id": "toolu_01", "name": "get_order", "input": {"order_id": "4411"}}
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01",
+              "content": "{\"status\":\"shipped\",\"shipped_on\":\"2026-03-02\"}"
+            },
+            {"type": "text", "text": "And when will it arrive?"}
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "carrier-sla",
+        "source": "request_system",
+        "text": "UPS Ground delivers in 1 to 5 business days."
+      },
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "{\"status\":\"shipped\",\"shipped_on\":\"2026-03-02\"}"
+      }
+    ],
+    "system_instructions": "You are a shipping assistant.",
+    "user_request": "And when will it arrive?"
+  },
+  "tolerance": 1e-9
+}

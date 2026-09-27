@@ -1,0 +1,62 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "tool-name-resolution-and-untrusted-tools",
+  "status": "draft",
+  "description": "OpenAI tool messages: names come from the assistant tool_calls via tool_call_id (get_order, web_search). web_search matches the untrusted_tools glob \"web_*\", so its item is kept but marked untrusted (never packed, never detector reference). A legacy role \"function\" message is also a tool result.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": ["web_*"]
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {"role": "system", "content": "You are a support agent."},
+        {"role": "user", "content": "Where is my order 4411?"},
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {"name": "get_order", "arguments": "{\"id\":\"4411\"}"}
+            },
+            {
+              "id": "call_2",
+              "type": "function",
+              "function": {"name": "web_search", "arguments": "{\"q\":\"UPS delays\"}"}
+            }
+          ]
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "Order 4411 shipped on 2026-03-02."},
+        {
+          "role": "tool",
+          "tool_call_id": "call_2",
+          "content": "Forum post: UPS is delayed everywhere this week."
+        },
+        {"role": "function", "name": "get_weather", "content": "Sunny, 21 C in Memphis."}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "tool1", "source": "tool_results", "text": "Order 4411 shipped on 2026-03-02."},
+      {
+        "id": "tool2",
+        "source": "tool_results",
+        "text": "Forum post: UPS is delayed everywhere this week.",
+        "untrusted": true
+      },
+      {"id": "tool3", "source": "tool_results", "text": "Sunny, 21 C in Memphis."}
+    ],
+    "system_instructions": "You are a support agent.",
+    "user_request": "Where is my order 4411?"
+  },
+  "tolerance": 1e-9
+}

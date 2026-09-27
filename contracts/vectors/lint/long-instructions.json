@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "long-instructions",
+  "status": "draft",
+  "description": "Instructions of 659 characters exceed the 600-character limit: long_instructions (move detail into the option descriptions). The text has no digits, counting words or double negatives.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "noul",
+        "instructions": "Read `user_request` and `assistant_response` carefully and decide whether the reply treats the customer with respect. Respectful replies greet the customer by name when the name is known, acknowledge the problem the customer describes, explain what the company will do next, and close with an offer of further help. Disrespectful replies blame the customer for the problem, mock the way the question was asked, use sarcasm, lecture the customer about reading the documentation, or end the conversation abruptly. Ignore spelling mistakes and formatting in both texts, and judge only the attitude the reply shows toward the customer and the problem they raised.",
+        "criteria": {
+          "true": "`assistant_response` is disrespectful toward the customer",
+          "false": "`assistant_response` is respectful toward the customer"
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": [], "lints": ["long_instructions"]},
+  "tolerance": 1e-9
+}

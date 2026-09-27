@@ -1,0 +1,24 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "completions-prompt-is-user-request",
+  "status": "draft",
+  "description": "For /v1/completions (api_format openai_completions) there are no messages: user_request is the prompt, and with no system, tool or extension content there is no evidence.",
+  "input": {
+    "api_format": "openai_completions",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {"model": "gpt-3.5-turbo-instruct", "prompt": "Write a short thank-you note for a refund."}
+  },
+  "expected": {
+    "items": [],
+    "user_request": "Write a short thank-you note for a refund.",
+    "system_instructions": ""
+  },
+  "tolerance": 1e-9
+}

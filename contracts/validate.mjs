@@ -68,7 +68,7 @@ const RULES = [
 ];
 
 // Files in contracts/ that are not contract data.
-const NOT_DATA = /^(README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|(^|\/)\.gitkeep$/;
+const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|(^|\/)\.gitkeep$/;
 
 const EXTERNAL = [
   { file: 'config/policies.yaml', schema: 'policy.v1' },
@@ -708,7 +708,7 @@ if (superseded) {
   }
   // Contracts themselves must never use a superseded identifier.
   const scanned = [...docs].filter(([rel]) => rel !== REL).map(([rel, d]) => [rel, d.text]);
-  for (const name of ['README.md', 'go.mod', 'embed.go', 'embed_test.go', 'package.json', 'validate.mjs', 'validate.test.mjs']) {
+  for (const name of ['README.md', 'vectors/README.md', 'go.mod', 'embed.go', 'embed_test.go', 'package.json', 'validate.mjs', 'validate.test.mjs']) {
     if (existsSync(join(ROOT, name))) scanned.push([name, readFileSync(join(ROOT, name), 'utf8')]);
   }
   for (const [rel, text] of scanned) {

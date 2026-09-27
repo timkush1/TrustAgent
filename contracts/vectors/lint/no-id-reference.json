@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "no-id-reference",
+  "status": "draft",
+  "description": "The false criterion mentions another question by its question id (groundedness__v1). Questions are independent, so question ids must never appear in question text: hard-rule error no_id_reference.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "noul",
+        "instructions": "Does `assistant_response` promise a delivery date?",
+        "criteria": {
+          "true": "`assistant_response` promises a specific delivery date",
+          "false": "No date is promised, or the answer to groundedness__v1 covers it"
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": ["no_id_reference"], "lints": []},
+  "tolerance": 1e-9
+}

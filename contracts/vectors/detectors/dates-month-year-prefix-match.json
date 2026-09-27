@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-month-year-prefix-match",
+  "status": "draft",
+  "description": "\"June 2025\" normalizes to 2025-06, a prefix of the evidence date 2025-06-18: known. \"July 2026\" (2026-07) matches no reference date: fires on it only.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "The feature launched in June 2025 and will be retired in July 2026.",
+    "evidence": [
+      {"id": "changelog", "source": "request_system", "text": "Smart search was released on 2025-06-18."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "July 2026", "start": 57, "end": 66}]},
+  "tolerance": 1e-9
+}

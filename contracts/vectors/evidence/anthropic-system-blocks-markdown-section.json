@@ -1,0 +1,40 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "anthropic-system-blocks-markdown-section",
+  "status": "draft",
+  "description": "Anthropic system given as text blocks. The \"## Context\" markdown section runs to the next heading of the same level (\"## Rules\") and becomes one request_system item (heading line excluded). The \"## Rules\" section is not an evidence heading, so it stays in system_instructions.",
+  "input": {
+    "api_format": "anthropic_messages",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "claude-haiku-4-5",
+      "max_tokens": 512,
+      "system": [
+        {
+          "type": "text",
+          "text": "You are a billing assistant.\n\n## Context\nInvoices are issued on the 1st of each month.\nLate fees are 2% per month.\n\n## Rules\nNever promise a waiver."
+        }
+      ],
+      "messages": [{"role": "user", "content": "Why was I charged a late fee?"}]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "sys1",
+        "source": "request_system",
+        "text": "Invoices are issued on the 1st of each month.\nLate fees are 2% per month."
+      }
+    ],
+    "system_instructions": "You are a billing assistant.\n\n## Rules\nNever promise a waiver.",
+    "user_request": "Why was I charged a late fee?"
+  },
+  "tolerance": 1e-9
+}

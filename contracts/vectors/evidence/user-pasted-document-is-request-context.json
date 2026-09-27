@@ -1,0 +1,32 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "user-pasted-document-is-request-context",
+  "status": "draft",
+  "description": "A <document> block pasted into the user message is a request_context item (user-supplied, shown as not verified as app-supplied), not request_system evidence. user_request is the final text part with the block removed.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "user",
+          "content": "<document>Refunds are available for 365 days.</document>\nCan I get a refund after 200 days?"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "items": [{"id": "ctx1", "source": "request_context", "text": "Refunds are available for 365 days."}],
+    "system_instructions": "",
+    "user_request": "Can I get a refund after 200 days?"
+  },
+  "tolerance": 1e-9
+}

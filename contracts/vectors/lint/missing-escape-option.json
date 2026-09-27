@@ -1,0 +1,48 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "missing-escape-option",
+  "status": "draft",
+  "description": "A choice question with three options and no escape: no key starts with no_, nothing_, not_, too_short or too_generic, and no option description mentions a greeting, \"too short\", \"nothing to\", \"not about\" or \"no ... subject/facts/content\". Fires missing_escape_option.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "choice",
+        "instructions": "Which products does `assistant_response` recommend to the user?",
+        "criteria": {
+          "mentions_competitor": {
+            "what": "Recommends or praises a competing product",
+            "not_for": "Neutral comparisons the user asked for"
+          },
+          "mentions_own_product": {
+            "what": "Recommends one of our own plans or add-ons",
+            "not_for": "Replies that only mention a competitor"
+          },
+          "mentions_both": {
+            "what": "Compares one of our plans with a competing product",
+            "not_for": "Replies about a single product"
+          }
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"risk_weights": {"mentions_competitor": 1}},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": [], "lints": ["missing_escape_option"]},
+  "tolerance": 1e-9
+}

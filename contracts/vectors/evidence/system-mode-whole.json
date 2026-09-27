@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "system-mode-whole",
+  "status": "draft",
+  "description": "With evidence.system_mode whole, the entire system text is a single request_system item, even without any document markup.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "whole",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are Acme support. Refunds: annual plans within 30 days of purchase. Monthly plans are non-refundable."
+        },
+        {"role": "user", "content": "Can I get a refund on a monthly plan?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "sys1",
+        "source": "request_system",
+        "text": "You are Acme support. Refunds: annual plans within 30 days of purchase. Monthly plans are non-refundable."
+      }
+    ],
+    "user_request": "Can I get a refund on a monthly plan?"
+  },
+  "tolerance": 1e-9
+}

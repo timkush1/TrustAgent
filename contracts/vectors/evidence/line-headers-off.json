@@ -1,0 +1,33 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "line-headers-off",
+  "status": "draft",
+  "description": "The same untagged prompt with evidence.line_headers false: no tag, marker or markdown block exists, so there is no evidence and the whole system text is system_instructions.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": false,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a travel assistant.\nContext:\nCheck-in opens 24 hours before departure.\nBags up to 23 kg are free.\nQuestion: answer the user using only the context above."
+        },
+        {"role": "user", "content": "Is my bag free?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [],
+    "system_instructions": "You are a travel assistant.\nContext:\nCheck-in opens 24 hours before departure.\nBags up to 23 kg are free.\nQuestion: answer the user using only the context above.",
+    "pre_dedup_items": 0
+  },
+  "tolerance": 1e-9
+}

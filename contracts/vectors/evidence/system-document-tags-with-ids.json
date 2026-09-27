@@ -1,0 +1,42 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "system-document-tags-with-ids",
+  "status": "draft",
+  "description": "Two <document> blocks in an OpenAI system message. The first has a valid id attribute, which becomes the item id; the second only has a title, so it gets the fallback sys2 (second request_system item). system_instructions is the system text without the blocks; the resulting run of 7 newlines collapses to 2.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are Acme support. Answer from the documents below.\n\n<document id=\"refund-policy\">Annual plans can be refunded within 30 days of purchase.</document>\n\n\n<document title=\"Shipping\">Orders ship within 2 business days.</document>\n\nBe brief."
+        },
+        {"role": "user", "content": "Can I get a refund?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "refund-policy",
+        "source": "request_system",
+        "text": "Annual plans can be refunded within 30 days of purchase."
+      },
+      {"id": "sys2", "source": "request_system", "text": "Orders ship within 2 business days."}
+    ],
+    "system_instructions": "You are Acme support. Answer from the documents below.\n\nBe brief.",
+    "user_request": "Can I get a refund?",
+    "pre_dedup_items": 2,
+    "max_marker": 0
+  },
+  "tolerance": 1e-9
+}
