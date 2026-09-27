@@ -305,8 +305,11 @@ services:
       TRUTHTABLE_INTERNAL_TOKEN_FILE: /var/lib/trustagent-internal/internal.token
       TRUTHTABLE_CONTRACTS_DIR: /app/contracts
       OLLAMA_BASE_URL: http://ollama:11434
-      # Used only when TRUTHTABLE_KNOWLEDGE_ENABLED=true (profile knowledge).
-      QDRANT_URL: http://qdrant:6333
+      # The qdrant service (profile knowledge), only when
+      # TRUTHTABLE_KNOWLEDGE_ENABLED is set; empty otherwise. The engine starts
+      # its retrieval stack (embedding model download, Qdrant connection)
+      # whenever QDRANT_URL is set, which the default and demo stacks must not do.
+      QDRANT_URL: ${TRUTHTABLE_KNOWLEDGE_ENABLED:+http://qdrant:6333}
     volumes:
       - trustagent-internal:/var/lib/trustagent-internal:ro
     depends_on:

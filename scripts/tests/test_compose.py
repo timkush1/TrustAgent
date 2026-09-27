@@ -141,6 +141,14 @@ class ComposeTest(unittest.TestCase):
             self.assertIn(f"      {key}: ${{{key}:-{default}}}", COMPOSE)
             self.assertIn(f'{key}="{default}"', dockerfile)
 
+    def test_engine_gets_qdrant_only_with_knowledge(self) -> None:
+        # A set QDRANT_URL starts the engine's retrieval stack (model download,
+        # Qdrant connection); qdrant only runs in the knowledge profile.
+        self.assertIn(
+            "      QDRANT_URL: ${TRUTHTABLE_KNOWLEDGE_ENABLED:+http://qdrant:6333}\n", COMPOSE
+        )
+        self.assertEqual(COMPOSE.count("QDRANT_URL:"), 1)
+
     def test_demo_removes_every_vendor_key_doctor_checks(self) -> None:
         for key in doctor.VENDOR_KEYS:
             self.assertIn(key, KEYS)
