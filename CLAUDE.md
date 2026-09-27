@@ -24,7 +24,9 @@ verify via NLI → score faithfulness). Results stream to a React dashboard over
 | `backend-python/` | Python 3.11 audit engine (Poetry): LangGraph pipeline, providers, Qdrant store, gRPC server |
 | `frontend-react/` | React 19 + TypeScript + Vite + Zustand + Tailwind dashboard |
 | `proto/evaluator.proto` | Single source of truth for the Go↔Python gRPC contract |
-| `docker-compose.yml` | Full stack: redis, qdrant, ollama, prometheus, grafana, engine, proxy, dashboard |
+| `docker-compose.yml` | Full stack: redis, postgres, qdrant, ollama, prometheus, grafana, engine, proxy, dashboard (no fixed container names: use `docker compose exec <service>`) |
+| `Makefile`, `mk/*.mk` | Thin root Makefile (`help`, aggregate targets) that includes every `mk/*.mk`, one fragment per stream (`go`, `py`, `web`, `dx`, later `contracts`) |
+| `.github/workflows/` | `ci-{go,python,web,contracts,docker,e2e}.yml` (job names are branch-protection checks: keep them stable), `security.yml`, `eval.yml` |
 | `VERSION` | Single source of truth for the project version (mirror into pyproject.toml, package.json, `backend-go/internal/version/version.go`, `truthtable/__init__.py`) |
 
 ## Commands
@@ -32,20 +34,23 @@ verify via NLI → score faithfulness). Results stream to a React dashboard over
 ```bash
 make install        # deps for all three projects
 make proto          # regenerate Go + Python gRPC stubs after editing proto/evaluator.proto
-make up             # start infrastructure containers (redis, qdrant, ollama, prometheus, grafana)
+make help           # list every target (root Makefile + mk/*.mk)
+make up             # start infrastructure containers (redis, postgres, qdrant, ollama, prometheus, grafana)
 make dev-python     # run audit engine locally (gRPC :50051, metrics :8001)
 make dev-go         # run proxy locally (HTTP+WS :8080, metrics :8002)
 make dev-react      # run dashboard (Vite :5173)
 make test           # all unit tests (Python, Go, React)
 make test-e2e       # end-to-end tests (requires full stack running)
-make lint           # ruff+black (py), go fmt+vet, eslint
+make lint           # ruff+black (py), gofmt check + go vet, eslint
 make fmt            # auto-format everything
+make check          # lint + unit tests (the local gate; later phases add more)
 ```
 
 Per-project:
 - Python: `cd backend-python && poetry run pytest` (asyncio_mode=auto). Tests live in `tests/unit`,
-  `tests/integration`, and `tests/e2e`. The `integration` and `e2e` markers are **opt-in** and
-  excluded from the default run; run e2e via `make test-e2e` (needs the full stack up).
+  `tests/integration`, and `tests/e2e`. The `integration` and `e2e` markers are **opt-in**: `addopts`
+  in `pyproject.toml` deselects them from every plain run, and an explicit `-m` overrides it; run e2e
+  via `make test-e2e` (needs the full stack up).
 - Go: `cd backend-go && go test ./...` (Postgres store tests skip unless `TEST_DATABASE_URL` is set)
 - React: `cd frontend-react && npm test` (vitest)
 
