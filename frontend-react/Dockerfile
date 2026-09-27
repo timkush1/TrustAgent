@@ -11,6 +11,8 @@
 
 # --- Stage 1: Build ---
 # Node 22 LTS — matches the version CI tests against (.github/workflows/ci.yml).
+# Vite 8 (Rolldown) needs Node >= 22.12 (see package.json "engines"); the
+# floating 22-alpine tag tracks the latest 22.x release, which satisfies it.
 FROM node:22-alpine AS builder
 
 WORKDIR /app
