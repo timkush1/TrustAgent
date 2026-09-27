@@ -16,6 +16,7 @@ Start with the [project README](../README.md) for the overview and quick start. 
 |---|---|
 | [GETTING-STARTED.md](GETTING-STARTED.md) | Zero-to-running walkthrough with troubleshooting |
 | [DEMO.md](DEMO.md) | Live-demo runbook (incl. exposing the stack on a public URL) |
+| [JEV-ACCESS.md](JEV-ACCESS.md) | Getting Jev access for the v2 fast check: OpenRouter key and credits, costs, settings, errors and fixes |
 | [CI-CD.md](CI-CD.md) | The GitHub Actions pipelines (CI, Security, Eval) and Dependabot — what each job does and how to read a failure |
 
 ## Quality & safety
