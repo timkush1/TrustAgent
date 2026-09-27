@@ -20,7 +20,7 @@ the `cost` vectors.
 | `cascade/` | v2.1 cascade question sets and the startup `probe.v1.json` | parse-only for now |
 | `policies/presets.v1.json` | Presets offered on the Policies page | `presets.v1` |
 | `policies/*.yaml` | Example policies; `example.policies.yaml` is the SPEC §2.7 example | `policy.v1` |
-| `rules/` | Detector, secret and evidence-extraction rules (`{pattern, flags}`, RE2- and JS-compatible) | parse-only for now |
+| `rules/` | Detector, secret and evidence-extraction rules (`{pattern, flags}`, RE2- and JS-compatible), pinned by the `detectors` and `evidence` vectors | no schema yet; every pattern is compiled in JS and Go |
 | `prompts/` | LLM prompts, e.g. the Studio evaluator drafter | parse-only for now |
 | `pricing/prices.v1.json` | Price table (USD per million tokens) | `pricing.v1` |
 | `pricing/assumptions.v1.json` | The assumptions behind every cost estimate, as checkable arithmetic | `pricing-assumptions.v1` |
@@ -32,7 +32,7 @@ the `cost` vectors.
 | `ui/glossary.v1.json` | Plain-language definitions for `<Term id>` tooltips | `ui-glossary.v1` |
 | `ui/commands.v1.json` | Every copyable command | `ui-commands.v1` |
 | `fixtures/api/`, `fixtures/vendor/` | Golden REST/WS bodies (checked against `api.v1`) and sanitized vendor captures | parse-only here |
-| `vectors/<kind>/<name>.json` | Golden vectors | `vector.v1` |
+| `vectors/<kind>/<name>.json` | Golden vectors; the input and expected shape of each kind is in [`vectors/README.md`](vectors/README.md) | `vector.v1` |
 | `superseded.v1.json` | SPEC Appendix A as data, for `scripts/check-forbidden.mjs` | `superseded.v1` |
 | `go.mod`, `embed.go` | Go module `github.com/truthtable/contracts` exposing `contracts.FS` | |
 | `validate.mjs`, `package.json` | The validator (`make contracts-check`) | |
@@ -109,7 +109,9 @@ fails every runner.
    A frozen vector never changes. A behaviour change adds a new vector (and, if needed, a new evaluator
    or schema version).
 
-`decide` vector inputs are validated against `decide-input.v1`.
+`decide` vector inputs are validated against `decide-input.v1`, and `lint` vector specs against `evaluator.v1`.
+The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
+[`vectors/README.md`](vectors/README.md).
 
 ## Validation
 
@@ -138,7 +140,11 @@ and then runs the cross-file checks JSON Schema cannot express:
   key;
 - the key registry: unique names and aliases, valid defaults per kind, no secret defaults, `VITE_*`
   keys exactly the build keys and never secret, at most 15 non-advanced keys (`.env.example`);
-- vectors: known kind, kind matches the directory, name matches the file;
+- vectors: known kind, kind matches the directory, name matches the file; `decide` inputs match
+  `decide-input.v1`; `lint` specs match `evaluator.v1` and `expected` lists known codes, sorted;
+- rules: every `{pattern, flags}` in `rules/` (and every policy `tag_patterns` entry) compiles in JS, uses
+  only the flags `i`, `m` and `s`, and has no lookaround, backreference or inline flags (`go test` compiles
+  the same patterns, and every schema `pattern`, with Go's RE2);
 - UI: every outcome is reachable and the last rule is a catch-all; glossary `see_also`, `{command:}` and
   `{claim:}` references resolve; commands name real compose services and profiles;
 - `superseded.v1.json` has the shape `scripts/check-forbidden.mjs` accepts, and no contract file uses one of

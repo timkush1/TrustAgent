@@ -65,11 +65,34 @@ describe('validate.mjs', () => {
     assert.match(r.out, /contracts: OK/);
   });
 
+  test('the committed contracts have no warnings (--strict passes)', () => {
+    const r = run(HERE, '--strict');
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /WARN/);
+  });
+
   test('strict mode fails on warnings', () => {
     const sb = sandbox();
-    const r = run(sb.root, '--strict');
-    const warned = /WARN/.test(r.out);
-    assert.equal(r.code, warned ? 1 : 0, r.out);
+    sb.edit('config/keys.v1.json', (k) => { k.groups.push({ id: 'unused_group', title: 'Unused' }); });
+    const lenient = run(sb.root);
+    assert.equal(lenient.code, 0, lenient.out);
+    assert.match(lenient.out, /WARN .*group unused_group has no keys/);
+    const strict = run(sb.root, '--strict');
+    assert.equal(strict.code, 1, strict.out);
+    assert.match(strict.out, /FAILED with 0 error\(s\), 1 warning\(s\)/);
+  });
+
+  test('the committed built-in templates are SPEC §2.8 verbatim', { skip: !existsSync(SPEC) }, () => {
+    const templates = specTemplates();
+    const files = readdirSync(join(HERE, 'evaluators')).filter((f) => f.endsWith('.json')).sort();
+    assert.deepEqual(files, templates.map((t) => `${t.id}.v1.json`).sort());
+    for (const t of templates) {
+      const committed = JSON.parse(readFileSync(join(HERE, 'evaluators', `${t.id}.v1.json`), 'utf8'));
+      assert.deepEqual(committed, t, `evaluators/${t.id}.v1.json differs from SPEC §2.8`);
+      if (t.question.type === 'choice') {
+        assert.deepEqual(Object.keys(committed.question.criteria), Object.keys(t.question.criteria), `${t.id}: option order`);
+      }
+    }
   });
 
   test('the SPEC §2.8 templates pass the schema and hard rules, and resolve policy refs', { skip: !existsSync(SPEC) }, () => {
@@ -114,6 +137,17 @@ describe('validate.mjs', () => {
     const r = run(sb.root);
     assert.equal(r.code, 1);
     assert.match(r.out, /config\/keys\.v1\.json: \/keys\/0\/kind .*\[keys\.v1\]/);
+  });
+
+  test('exactly the SPEC §2.7 .env.example keys are not advanced', { skip: !existsSync(SPEC) }, () => {
+    const text = readFileSync(SPEC, 'utf8');
+    const start = text.indexOf('contains exactly:**');
+    assert.ok(start > 0, 'SPEC §2.7 .env.example list not found');
+    const list = text.slice(start, text.indexOf('`. ', start) + 1);
+    const expected = [...list.matchAll(/`([A-Z][A-Z0-9_]+)`/g)].map((m) => m[1]).sort();
+    assert.equal(expected.length, 15);
+    const registry = JSON.parse(readFileSync(join(HERE, 'config', 'keys.v1.json'), 'utf8'));
+    assert.deepEqual(registry.keys.filter((k) => !k.advanced).map((k) => k.name).sort(), expected);
   });
 
   test('config key registry rules', () => {
@@ -244,6 +278,41 @@ describe('validate.mjs', () => {
     assert.match(r.out, /"abc": flags are only valid with kind regex/);
     assert.match(r.out, /"x\*" matches the empty string/);
     assert.match(r.out, /"\(" is not a valid RegExp/);
+  });
+
+  test('rule patterns must be portable between RE2 and JavaScript', () => {
+    const sb = sandbox();
+    sb.edit('rules/secrets.v1.json', (r) => {
+      r.patterns.push({ id: 'lookbehind', pattern: '(?<=key=)[a-z]+', flags: '' });
+      r.patterns.push({ id: 'backref', pattern: '(a)\\1', flags: '' });
+      r.patterns.push({ id: 'inline', pattern: '(?i)abc', flags: '' });
+      r.patterns.push({ id: 'badflags', pattern: 'abc', flags: 'gu' });
+      r.patterns.push({ id: 'broken', pattern: '[a-', flags: '' });
+    });
+    const yaml = readFileSync(join(sb.root, 'policies/example.policies.yaml'), 'utf8')
+      .replace('    line_headers: true\n', '    line_headers: true\n    tag_patterns: [{pattern: "(?=x)y"}]\n');
+    sb.write('policies/example.policies.yaml', yaml);
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /rules\/secrets\.v1\.json: patterns\[\d+\]\.pattern: "\(\?<=key=\)\[a-z\]\+" uses a lookbehind/);
+    assert.match(r.out, /uses a backreference/);
+    assert.match(r.out, /"\(\?i\)abc" uses inline flags/);
+    assert.match(r.out, /flags "gu" must be a subset of "ims"/);
+    assert.match(r.out, /"\[a-" does not compile/);
+    assert.match(r.out, /policies\/example\.policies\.yaml: defaults: evidence\.tag_patterns\[0\].* uses a lookahead/);
+  });
+
+  test('lint vectors: the spec is schema-valid and expected lists known codes, sorted', () => {
+    const sb = sandbox();
+    sb.edit('vectors/lint/double-negative-instructions.json', (v) => {
+      v.input.spec.category = 'not_a_category';
+      v.expected.lints = ['long_instructions', 'double_negative', 'made_up_lint'];
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /double-negative-instructions\.json \(input\.spec\): \/category must be equal to one of the allowed values/);
+    assert.match(r.out, /expected\.lints: unknown code "made_up_lint"/);
+    assert.match(r.out, /expected\.lints must be sorted and distinct/);
   });
 
   test('every outcome is defined and reachable', () => {

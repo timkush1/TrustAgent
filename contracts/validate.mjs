@@ -328,6 +328,9 @@ function checkRouteSettings(rel, where, s) {
   if (s.hedge_after_ms && !(s.hedge_after_ms < s.deadline_ms)) {
     error(rel, `${where}: hedge_after_ms ${s.hedge_after_ms} must be 0 or below deadline_ms ${s.deadline_ms}`);
   }
+  (s.evidence?.tag_patterns ?? []).forEach((t, i) => {
+    checkPortableRegex(rel, `${where}: evidence.tag_patterns[${i}]`, t.pattern, t.flags ?? '');
+  });
   const ids = new Set();
   const paramOwner = new Map();
   for (const e of s.evaluators ?? []) {
@@ -586,6 +589,77 @@ for (const [rel, doc] of docs) {
   if (v.name !== file.replace(/\.json$/, '')) error(rel, `name "${v.name}" must equal the file name without .json`);
   // decide() inputs have a schema of their own; expected may be a subset of decision/v1, so it is not checked.
   if (v.kind === 'decide') validate(`${rel} (input)`, v.input, 'decide-input.v1');
+  if (v.kind === 'lint') checkLintVector(rel, v);
+}
+
+// lint vectors: input.spec is a schema-valid evaluator (it may break a hard rule); expected is
+// {errors, lints}, each a sorted list of distinct codes from SPEC §2.8.
+function checkLintVector(rel, v) {
+  validate(`${rel} (input.spec)`, v.input?.spec, 'evaluator.v1');
+  const codes = {
+    errors: ['unresolved_state_reference', 'no_id_reference'],
+    lints: ['missing_escape_option', 'non_descriptive_key', 'double_negative', 'counting_or_arithmetic',
+      'near_duplicate_options', 'numeric_only_score_levels', 'long_instructions', 'score_used_for_policy'],
+  };
+  for (const [key, known] of Object.entries(codes)) {
+    const list = v.expected?.[key];
+    if (!Array.isArray(list)) {
+      error(rel, `expected.${key} must be a list of codes`);
+      continue;
+    }
+    for (const c of list) if (!known.includes(c)) error(rel, `expected.${key}: unknown code ${JSON.stringify(c)}`);
+    if (list.join('\n') !== [...new Set(list)].sort().join('\n')) error(rel, `expected.${key} must be sorted and distinct`);
+  }
+}
+
+// ------------------------------------------------------------------------------------------ rules
+
+// rules/*.json have no schema yet, but Go (RE2) and TypeScript both compile every {pattern, flags} in them,
+// so each must compile in JS, use only the flags i, m and s, and avoid constructs RE2 lacks. Go compiles the
+// same patterns in embed_test.go. Route tag_patterns in policies follow the same rule.
+function nonPortableRegex(src) {
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === '\\') {
+      if (/[1-9]/.test(src[i + 1] ?? '')) return 'a backreference';
+      if (src[i + 1] === 'k' && src[i + 2] === '<') return 'a named backreference';
+      i++;
+    } else if (src[i] === '(' && src[i + 1] === '?') {
+      const rest = src.slice(i + 2);
+      if (/^[=!]/.test(rest)) return 'a lookahead';
+      if (/^<[=!]/.test(rest)) return 'a lookbehind';
+      if (/^[a-zA-Z-]+[:)]/.test(rest)) return 'inline flags';
+    }
+  }
+  return null;
+}
+
+function checkPortableRegex(rel, where, pattern, flags = '') {
+  if (!/^[ims]*$/.test(flags)) error(rel, `${where}: flags ${JSON.stringify(flags)} must be a subset of "ims"`);
+  const bad = nonPortableRegex(pattern);
+  if (bad) error(rel, `${where}: ${JSON.stringify(pattern)} uses ${bad}, which RE2 does not support`);
+  try {
+    new RegExp(pattern, `${flags.replace(/[^ims]/g, '')}g`);
+  } catch (e) {
+    error(rel, `${where}: ${JSON.stringify(pattern)} does not compile: ${e.message}`);
+  }
+}
+
+function eachPattern(v, path, fn) {
+  if (Array.isArray(v)) v.forEach((x, i) => eachPattern(x, `${path}[${i}]`, fn));
+  else if (isObj(v)) {
+    if (typeof v.pattern === 'string') fn(`${path}.pattern`, v.pattern, typeof v.flags === 'string' ? v.flags : '');
+    for (const [k, x] of Object.entries(v)) if (k !== 'pattern') eachPattern(x, `${path}.${k}`, fn);
+  }
+}
+
+for (const [rel, doc] of docs) {
+  if (!rel.startsWith('rules/') || doc.data === undefined) continue;
+  let n = 0;
+  eachPattern(doc.data, '', (where, pattern, flags) => {
+    n++;
+    checkPortableRegex(rel, where.slice(1), pattern, flags);
+  });
+  if (n === 0) error(rel, 'contains no {pattern, flags} rules');
 }
 
 // ------------------------------------------------------------------------------------------ scenarios

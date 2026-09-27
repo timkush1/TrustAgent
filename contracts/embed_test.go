@@ -2,8 +2,10 @@ package contracts
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -102,5 +104,65 @@ func TestKeyRegistry(t *testing.T) {
 	}
 	if basic > 15 {
 		t.Errorf(".env.example would list %d keys, want at most 15", basic)
+	}
+}
+
+// TestPatternsCompileInRE2 checks that the regular expressions the Go reference compiles at runtime are
+// RE2 syntax (validate.mjs checks the same patterns in JavaScript): every {pattern, flags} rule in rules/,
+// compiled as "(?flags)" + pattern, and every string "pattern" keyword in the JSON Schemas.
+func TestPatternsCompileInRE2(t *testing.T) {
+	for _, dir := range []string{"rules", "schema"} {
+		entries, err := fs.ReadDir(FS, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, e := range entries {
+			if path.Ext(e.Name()) != ".json" {
+				continue
+			}
+			b, err := FS.ReadFile(dir + "/" + e.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc any
+			if err := json.Unmarshal(b, &doc); err != nil {
+				t.Fatalf("%s/%s: %v", dir, e.Name(), err)
+			}
+			walkPatterns(doc, "", func(where, pattern, flags string) {
+				n++
+				src := pattern
+				if flags != "" {
+					src = "(?" + flags + ")" + pattern
+				}
+				if _, err := regexp.Compile(src); err != nil {
+					t.Errorf("%s/%s %s: %v", dir, e.Name(), where, err)
+				}
+			})
+		}
+		if n == 0 {
+			t.Errorf("%s: no patterns found", dir)
+		}
+	}
+}
+
+// walkPatterns calls fn for every object with a string "pattern" member, passing its string "flags"
+// member (or "").
+func walkPatterns(v any, where string, fn func(where, pattern, flags string)) {
+	switch x := v.(type) {
+	case map[string]any:
+		if p, ok := x["pattern"].(string); ok {
+			flags, _ := x["flags"].(string)
+			fn(where+"/pattern", p, flags)
+		}
+		for k, c := range x {
+			if k != "pattern" {
+				walkPatterns(c, where+"/"+k, fn)
+			}
+		}
+	case []any:
+		for i, c := range x {
+			walkPatterns(c, fmt.Sprintf("%s[%d]", where, i), fn)
+		}
 	}
 }
