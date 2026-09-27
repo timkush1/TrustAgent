@@ -518,12 +518,22 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
       response: 'You can get a full refund within 60 days of purchase.',
       mock_answers: { contradiction__v1: { type: 'noul', noul: 0.97 }, groundedness__v1: { type: 'noul', noul: 0.96 } },
       judge: { claims: [{ claim: 'Refunds are available within 60 days of purchase.', verdict: 'CONTRADICTED', confidence: 0.95 }] },
-      expect: { action: 'flag', status: 'ok', verdict: 'contradicted', reasons: ['contradiction:critical'] },
+      expect: {
+        mode: 'flag', action: 'flag', would_action: 'block', status: 'ok', verdict: 'contradicted', max_risk: 0.97,
+        reasons: ['contradiction:critical'], checked_against: 'extension:1', deep_audit: 'high', audit: 'queued',
+        audit_verdict: 'HALLUCINATED', outcome: 'flagged',
+      },
     };
     const doc = { schema: 'trustagent.scenarios/v1', scenarios: [scenario] };
+    const withExpect = (x) => ({ ...doc, scenarios: [{ ...scenario, expect: { ...scenario.expect, ...x } }] });
     assert.equal(check('scenarios.v1', doc), null);
     const { response, ...noResponse } = scenario;
     assert.equal(check('scenarios.v1', { ...doc, scenarios: [{ ...noResponse, answer_source: 'generated' }] }), null);
     assert.notEqual(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, mock_answers: { 'groundedness@1': {} } }] }), null);
+    assert.equal(check('scenarios.v1', withExpect({ checked_against: 'request_system:2,tool_results:1' })), null);
+    assert.equal(check('scenarios.v1', withExpect({ checked_against: 'none', max_risk: null })), null);
+    assert.notEqual(check('scenarios.v1', withExpect({ checked_against: 'system:1' })), null);
+    assert.notEqual(check('scenarios.v1', withExpect({ outcome: 'held' })), null);
+    assert.notEqual(check('scenarios.v1', withExpect({ deep_audit: 'low' })), null);
   });
 });
