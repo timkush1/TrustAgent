@@ -2,7 +2,7 @@ name: Eval (benchmark)
 
 # Tier-2 evaluation: runs the detector against HaluEval QA with a live model
 # (Ollama in a service container). Slow and model-dependent by design — the
-# fast deterministic gate lives in ci.yml. See docs/EVALUATION.md.
+# fast deterministic gate lives in ci-python.yml. See docs/EVALUATION.md.
 
 on:
   schedule:
@@ -25,7 +25,10 @@ jobs:
     timeout-minutes: 90
     services:
       ollama:
-        image: ollama/ollama:latest
+        # Pinned to the same tag as docker-compose.yml so the benchmark judge
+        # and the local stack cannot drift apart. Bump both together:
+        # Dependabot tracks the compose file, not workflow service images.
+        image: ollama/ollama:0.5.13
         ports:
           - 11434:11434
     env:

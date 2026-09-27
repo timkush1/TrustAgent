@@ -1,0 +1,85 @@
+name: CI (Docker)
+
+# Builds the three service images (no push) so Dockerfile breakage fails the
+# PR. Split out of the former ci.yml (P0.5); the job id and name are unchanged
+# so branch protection keeps matching "Docker builds". It lives in its own
+# workflow because ci-e2e.yml stays manual-only until S0; the compose e2e job
+# (which builds the same images) and release-images.yml supersede it later.
+# No path filters on purpose: a required check that never reports would block
+# merges.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    name: Docker builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend-go/go.mod
+          cache: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Images need the gitignored generated stubs in the build context
+      # (the per-service .dockerignore files keep them in).
+      - name: Generate gRPC stubs
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+          protoc --proto_path=proto \
+            --go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
+            --go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
+            proto/evaluator.proto
+          pip install grpcio-tools
+          python -m grpc_tools.protoc -Iproto \
+            --python_out=backend-python/src/truthtable/grpc/pb \
+            --grpc_python_out=backend-python/src/truthtable/grpc/pb \
+            proto/evaluator.proto
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build proxy image
+        uses: docker/build-push-action@v7
+        with:
+          context: backend-go
+          push: false
+          cache-from: type=gha,scope=proxy
+          cache-to: type=gha,scope=proxy,mode=max
+
+      - name: Build dashboard image
+        uses: docker/build-push-action@v7
+        with:
+          context: frontend-react
+          push: false
+          cache-from: type=gha,scope=dashboard
+          cache-to: type=gha,scope=dashboard,mode=max
+
+      - name: Build engine image
+        uses: docker/build-push-action@v7
+        with:
+          context: backend-python
+          push: false
+          cache-from: type=gha,scope=engine
+          cache-to: type=gha,scope=engine,mode=max

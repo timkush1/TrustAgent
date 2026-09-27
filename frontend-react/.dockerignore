@@ -1,0 +1,34 @@
+# Build context for frontend-react/Dockerfile (compose/CI build with context
+# ./frontend-react). The image runs `npm ci` from package.json and
+# package-lock.json, then `npm run build` (tsc -b + vite build) over index.html,
+# src/, public/ (if any), vite.config.ts, the tsconfig*.json files and
+# nginx.conf, so none of those may be excluded here.
+
+# VCS, editor and OS noise
+.git
+.gitignore
+.idea/
+.vscode/
+**/.DS_Store
+
+# Secrets and local config never enter an image (Vite would read .env* at build)
+.env
+.env.*
+
+# Dependencies and build output are recreated inside the image
+node_modules/
+dist/
+dist-*/
+.vite/
+*.tsbuildinfo
+
+# Tests and their artifacts
+e2e/
+coverage/
+playwright-report/
+test-results/
+
+# Docs and Docker metadata
+*.md
+Dockerfile
+.dockerignore
