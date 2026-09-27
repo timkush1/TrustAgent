@@ -77,9 +77,9 @@ three Dockerfiles' base images. Two deliberate policies:
    updates; they're done by hand.
 2. **`python` base-image majors are ignored** — see failure #1 below for why.
 
-## Why the jobs in the screenshots failed — case by case
+## Past CI failures and how they were resolved
 
-These are the actual failures that were visible on the repo, each now understood and addressed:
+These failures were visible on the repo in mid-2026; each is understood and addressed:
 
 ### 1. ❌ "Bump python from 3.11-slim to 3.14-slim" (Dependabot docker PR #9)
 
@@ -105,7 +105,7 @@ Two compounding causes:
 
 **Resolution path:** regenerate the lockfile locally (`npm install`), verify
 `npm ci && npm run lint && npx tsc -b && npm test`, and push that to the PR branch — or close the
-PR and apply the same bumps locally. (Per your instruction I haven't touched the remote.)
+PR and apply the same bumps locally.
 
 ### 3. ❌ "Security" workflow failing on `main` (and on every PR)
 
