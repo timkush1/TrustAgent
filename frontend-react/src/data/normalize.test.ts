@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { audit, flaggedTrace, frame, hb, iso, trace } from '@/test/fixtures';
+import { audit, decision, flaggedTrace, frame, hb, hello, iso, trace } from '@/test/fixtures';
+import { ApiError } from './errors';
 import {
   applyAuditStatus,
   applyAuditToTrace,
@@ -7,6 +8,8 @@ import {
   mergeTraceSummary,
   normalizeClaimVerdict,
   normalizeHealth,
+  normalizeObject,
+  normalizePage,
   parseWsFrame,
 } from './normalize';
 
@@ -29,6 +32,80 @@ describe('parseWsFrame', () => {
     [JSON.stringify({ v: 2, type: 'retired_event', seq: 1, epoch: 'e', ts: iso(), data: {} }), 'unknown_type'],
   ])('rejects %s as %s', (data, reason) => {
     expect(parseWsFrame(data)).toEqual({ ok: false, reason });
+  });
+
+  const env = (type: string, data: unknown) => JSON.stringify({ v: 2, type, seq: 3, epoch: 'e', ts: iso(), data });
+  const { evaluators: _evaluators, ...noEvaluators } = decision();
+
+  it.each([
+    ['a hello without epoch', env('hello', { ...hello(), epoch: undefined })],
+    ['a hello with a fractional last_seq', env('hello', { ...hello(), last_seq: 2.5 })],
+    ['a gap without to_seq', env('gap', { from_seq: 1, reason: 'slow_consumer' })],
+    ['a trace without its audit block', env('trace_started', { trace: { ...trace(), audit: null } })],
+    ['a trace without an id', env('trace_started', { trace: { ...trace(), trace_id: 7 } })],
+    ['a decision without evaluators', env('gate_decision', { trace: flaggedTrace(), decision: noEvaluators })],
+    ['an audit whose claims are not a list', env('audit_completed', { audit: { ...audit(), claims: {} } })],
+    ['an audit_queued without audit_id', env('audit_queued', { lane: 'high', queue_depth: 1 })],
+    ['a status without state', env('status', { component: 'engine' })],
+  ])('rejects %s as bad_data', (_what, data) => {
+    expect(parseWsFrame(data)).toEqual({ ok: false, reason: 'bad_data', type: JSON.parse(data).type });
+  });
+
+  it('reads a list sent as null (a Go nil slice) as empty', () => {
+    const r = parseWsFrame(env('gate_decision', { trace: { ...flaggedTrace(), reasons: null }, decision: { ...decision(), detectors: null } }));
+    expect(r).toMatchObject({ ok: true, event: { data: { trace: { reasons: [] }, decision: { detectors: [] } } } });
+    const { claims: _claims, ...noClaims } = audit();
+    expect(parseWsFrame(env('audit_completed', { audit: noClaims }))).toMatchObject({ ok: true, event: { data: { audit: { claims: [] } } } });
+  });
+
+  it('accepts the event data the dashboard can use', () => {
+    expect(parseWsFrame(env('hello', hello()))).toMatchObject({ ok: true });
+    expect(parseWsFrame(env('gate_decision', { trace: flaggedTrace(), decision: decision() }))).toMatchObject({ ok: true });
+    expect(parseWsFrame(env('audit_completed', { audit: audit() }))).toMatchObject({ ok: true });
+    expect(parseWsFrame(env('audit_dropped', { audit_id: null, reason: 'queue_full' }))).toMatchObject({ ok: true });
+    // Refresh-only events are not inspected.
+    expect(parseWsFrame(env('policy_updated', {}))).toMatchObject({ ok: true });
+  });
+});
+
+describe('normalizePage and normalizeObject', () => {
+  it('passes a v2 page through and reads an empty cursor as the end', () => {
+    const page = { items: [trace(), flaggedTrace()], next_cursor: 'c2' };
+    expect(normalizePage(page, 'GET /api/traces', 'trace')).toEqual(page);
+    expect(normalizePage({ items: [], next_cursor: '' }, 'GET /api/traces', 'trace')).toEqual({ items: [], next_cursor: null });
+    expect(normalizePage({ items: [audit()] }, 'GET /api/audits', 'auditSummary')).toMatchObject({ next_cursor: null });
+  });
+
+  it.each([
+    ['the pre-v2 audit list', { audits: [audit()], total: 1, limit: 50, offset: 0 }],
+    ['an HTML fallback page', '<!doctype html><html></html>'],
+    ['an empty body', undefined],
+    ['a numeric cursor', { items: [], next_cursor: 5 }],
+    ['an item without the ids it is keyed on', { items: [{ ...audit(), trace_id: undefined }], next_cursor: null }],
+  ])('rejects %s as an invalid_response ApiError', (_what, body) => {
+    const err = (() => {
+      try {
+        normalizePage(body, 'GET /api/audits', 'auditSummary');
+      } catch (e) {
+        return e;
+      }
+      return null;
+    })();
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ kind: 'invalid_response', code: 'invalid_response', transient: false });
+    expect((err as ApiError).message).toContain('GET /api/audits');
+  });
+
+  it('reads null lists as empty in pages too', () => {
+    const page = normalizePage({ items: [{ ...trace(), reasons: null }], next_cursor: null }, 'GET /api/traces', 'trace');
+    expect(page.items[0].reasons).toEqual([]);
+  });
+
+  it('checks single objects the same way', () => {
+    expect(normalizeObject(audit(), 'GET /api/audits/:id', 'auditDetail')).toEqual(audit());
+    // The pre-v2 audit record has no trace_id and no claims array.
+    expect(() => normalizeObject({ id: 'a1', trust_score: 80 }, 'GET /api/audits/:id', 'auditDetail')).toThrow(ApiError);
+    expect(() => normalizeObject({ ...trace(), timings: null }, 'GET /api/traces/:id', 'traceDetail')).toThrow(/older version/);
   });
 });
 

@@ -68,6 +68,14 @@ describe('summarizeHealth', () => {
     expect(s.checks.find((c) => c.id === 'engine')?.state).toBe('issue');
   });
 
+  it('falls back to /health when hello carries no status summary', () => {
+    const bare = { ...hello(), status: undefined } as unknown as ReturnType<typeof hello>;
+    const s = summarizeHealth(inputs({ hello: bare }));
+    expect(s.checks.find((c) => c.id === 'engine')).toMatchObject({ state: 'ok', detail: 'Reachable' });
+    expect(s.checks.find((c) => c.id === 'fast_check')).toMatchObject({ state: 'unknown' });
+    expect(s.checks.find((c) => c.id === 'judge')).toMatchObject({ state: 'unknown' });
+  });
+
   it('notes a missing database without calling it an issue', () => {
     const s = summarizeHealth(
       inputs({ status: systemStatus({ persistence: { state: 'disabled', configured: false, migration: null } }) }),

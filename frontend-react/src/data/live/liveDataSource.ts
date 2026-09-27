@@ -13,7 +13,7 @@ import type {
   TraceSummary,
 } from '@/types/api';
 import { createHttpClient, type HttpClient, type Query } from '../http';
-import { normalizeHealth } from '../normalize';
+import { normalizeHealth, normalizeObject, normalizePage } from '../normalize';
 import type {
   AuditListParams,
   DataSource,
@@ -55,28 +55,33 @@ export class LiveDataSource implements DataSource {
     return normalizeHealth(await this.http.get<unknown>('/health', { signal, timeoutMs: 5000 }));
   }
 
-  getStatus(signal?: AbortSignal): Promise<SystemStatus> {
-    return this.http.get<SystemStatus>('/api/status', { signal });
+  async getStatus(signal?: AbortSignal): Promise<SystemStatus> {
+    return normalizeObject(await this.http.get<unknown>('/api/status', { signal }), 'GET /api/status', 'systemStatus');
   }
 
-  listTraces(params: TraceListParams, signal?: AbortSignal): Promise<Page<TraceSummary>> {
-    return this.http.get('/api/traces', { query: params as Query, signal });
+  async listTraces(params: TraceListParams, signal?: AbortSignal): Promise<Page<TraceSummary>> {
+    const raw = await this.http.get<unknown>('/api/traces', { query: params as Query, signal });
+    return normalizePage(raw, 'GET /api/traces', 'trace');
   }
 
-  getTrace(id: string, signal?: AbortSignal): Promise<TraceDetail> {
-    return this.http.get(`/api/traces/${enc(id)}`, { signal });
+  async getTrace(id: string, signal?: AbortSignal): Promise<TraceDetail> {
+    const raw = await this.http.get<unknown>(`/api/traces/${enc(id)}`, { signal });
+    return normalizeObject(raw, 'GET /api/traces/:id', 'traceDetail');
   }
 
-  listDecisions(params: DecisionListParams, signal?: AbortSignal): Promise<Page<GateDecisionRow>> {
-    return this.http.get('/api/gate/decisions', { query: params as Query, signal });
+  async listDecisions(params: DecisionListParams, signal?: AbortSignal): Promise<Page<GateDecisionRow>> {
+    const raw = await this.http.get<unknown>('/api/gate/decisions', { query: params as Query, signal });
+    return normalizePage(raw, 'GET /api/gate/decisions', 'decisionRow');
   }
 
-  listAudits(params: AuditListParams, signal?: AbortSignal): Promise<Page<AuditSummary>> {
-    return this.http.get('/api/audits', { query: params as Query, signal });
+  async listAudits(params: AuditListParams, signal?: AbortSignal): Promise<Page<AuditSummary>> {
+    const raw = await this.http.get<unknown>('/api/audits', { query: params as Query, signal });
+    return normalizePage(raw, 'GET /api/audits', 'auditSummary');
   }
 
-  getAudit(id: string, signal?: AbortSignal): Promise<AuditDetail> {
-    return this.http.get(`/api/audits/${enc(id)}`, { signal });
+  async getAudit(id: string, signal?: AbortSignal): Promise<AuditDetail> {
+    const raw = await this.http.get<unknown>(`/api/audits/${enc(id)}`, { signal });
+    return normalizeObject(raw, 'GET /api/audits/:id', 'auditDetail');
   }
 
   subscribe(sink: StreamSink): LiveControl {

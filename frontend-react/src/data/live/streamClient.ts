@@ -58,6 +58,8 @@ export interface StreamClientOptions {
   silenceMs?: number;
   /** How far before the last event a resync starts. Default 5 s. */
   resyncOverlapMs?: number;
+  /** Reports the first ignored frame of each kind (default console.warn). */
+  warn?: (message: string) => void;
 }
 
 const CONNECTING = 0;
@@ -115,6 +117,7 @@ export class StreamClient {
   private queuedResync: ResyncReason | null = null;
   private resyncAttempt = 0;
   private unlisten: (() => void)[] = [];
+  private readonly warned = new Set<string>();
 
   private state: ConnectionState = INITIAL_CONNECTION;
   readonly stats: StreamStats = { malformed: 0, duplicates: 0, resyncs: 0, resyncFailures: 0 };
@@ -274,6 +277,7 @@ export class StreamClient {
     const parsed = parseWsFrame(data);
     if (!parsed.ok) {
       this.stats.malformed += 1;
+      this.warnOnce(parsed.reason === 'bad_data' ? `${parsed.type} with unusable data` : parsed.reason);
       this.armSilence();
       return;
     }
@@ -388,6 +392,14 @@ export class StreamClient {
       this.timers.clearTimeout(this[name]);
       this[name] = null;
     }
+  }
+
+  /** One console line per kind of ignored frame, so a proxy that is off-contract is visible. */
+  private warnOnce(kind: string): void {
+    if (this.warned.has(kind)) return;
+    this.warned.add(kind);
+    const warn = this.opts.warn ?? ((m: string) => console.warn(m));
+    warn(`[TrustAgent] Ignored a live-update frame (${kind}); the proxy may not speak WS protocol v2 as this dashboard expects. Later frames like it are only counted.`);
   }
 
   private setState(next: ConnectionState): void {

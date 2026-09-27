@@ -89,10 +89,13 @@ export function summarizeHealth(inputs: HealthInputs): HealthSummary {
   const { status, hello, components } = inputs;
   const checks: HealthCheck[] = [proxyCheck(inputs.health), liveCheck(inputs.connection)];
 
+  // `hello.status` is read defensively: a hub that omits it must not take the shell down.
+  const lite: Partial<WsHello['status']> = hello?.status ?? {};
+
   // Fast check (decision model): full status, else the hello summary.
   const dmState = (components.decision_model?.state as DecisionModelStatus['state'] | undefined) ??
     status?.decision_model.state ??
-    hello?.status.decision_model;
+    lite.decision_model;
   const dm = dmState ? decisionModelWords[dmState] : undefined;
   checks.push({
     id: 'fast_check',
@@ -102,7 +105,7 @@ export function summarizeHealth(inputs: HealthInputs): HealthSummary {
   });
 
   // Deep audit engine: a status transition, the full status, hello, then /health's ping.
-  const engineState = components.engine?.state ?? status?.engine.state ?? hello?.status.engine;
+  const engineState = components.engine?.state ?? status?.engine.state ?? lite.engine;
   if (engineState) {
     checks.push({ id: 'engine', label: `${TIER.deep_audit} engine`, ...componentState(engineState, 'The engine') });
   } else if (inputs.health.data && !inputs.health.error) {
@@ -116,7 +119,7 @@ export function summarizeHealth(inputs: HealthInputs): HealthSummary {
     checks.push({ id: 'engine', label: `${TIER.deep_audit} engine`, state: 'unknown', detail: 'Unknown (status not available)' });
   }
 
-  const judgeState = components.judge?.state ?? status?.judge.state ?? hello?.status.judge;
+  const judgeState = components.judge?.state ?? status?.judge.state ?? lite.judge;
   checks.push({ id: 'judge', label: `${TIER.deep_audit} judge`, ...componentState(judgeState, 'The judge') });
 
   if (status) {

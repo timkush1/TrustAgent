@@ -9,6 +9,7 @@ function setup(opts: { random?: () => number; resync?: (since: string, reason: R
   const lifecycle = fakeLifecycle();
   const events: StreamEvent[] = [];
   const phases: string[] = [];
+  const warn = vi.fn();
   const resync = vi.fn(
     opts.resync ??
       (async (since: string, reason: ResyncReason): Promise<ResyncEvent> => ({
@@ -30,8 +31,9 @@ function setup(opts: { random?: () => number; resync?: (since: string, reason: R
     lifecycle: lifecycle.source,
     random: opts.random ?? (() => 0.5),
     now: () => Date.now(),
+    warn,
   });
-  return { client, sockets, lifecycle, events, phases, resync };
+  return { client, sockets, lifecycle, events, phases, resync, warn };
 }
 
 /** Opens the current socket and sends `hello`. */
@@ -90,6 +92,37 @@ describe('StreamClient handshake and framing', () => {
     ws.message({ v: 2, type: 'mystery', seq: 11, epoch: 'epoch-a', ts: iso(), data: {} });
     expect(s.events.map((e) => e.type)).toEqual(['hello']);
     expect(s.client.stats.malformed).toBe(4);
+  });
+
+  it('drops an event whose data it could not use, without moving the cursor', () => {
+    const s = setup();
+    s.client.start();
+    connect(s);
+    const ws = s.sockets.last;
+    // A decision without evaluators, and a trace without its audit block.
+    const { evaluators: _evaluators, ...noEvaluators } = decision();
+    ws.message({ ...frame({ type: 'gate_decision', data: { trace: flaggedTrace(), decision: decision() } }, 11), data: { trace: flaggedTrace(), decision: noEvaluators } });
+    const { audit: _audit, ...noAudit } = trace();
+    ws.message({ ...frame({ type: 'trace_started', data: { trace: trace() } }, 11), data: { trace: noAudit } });
+    ws.message(frame({ type: 'trace_started', data: { trace: trace() } }, 11));
+    expect(s.events.map((e) => e.type)).toEqual(['hello', 'trace_started']);
+    expect(s.client.stats.malformed).toBe(2);
+    expect(s.client.cursor.lastSeq).toBe(11);
+    // Said once per kind, then only counted.
+    expect(s.warn.mock.calls.map(([m]) => String(m).match(/\((.+?)\)/)?.[1])).toEqual([
+      'gate_decision with unusable data',
+      'trace_started with unusable data',
+    ]);
+  });
+
+  it('refuses a hello without a usable replay cursor', () => {
+    const s = setup();
+    s.client.start();
+    s.sockets.last.open();
+    s.sockets.last.message({ v: 2, type: 'hello', seq: 0, epoch: 'epoch-a', ts: iso(), data: { protocol: 2, demo: true } });
+    expect(s.events).toEqual([]);
+    expect(s.client.cursor).toEqual({ epoch: null, lastSeq: null, lastEventTs: null });
+    expect(s.client.stats.malformed).toBe(1);
   });
 
   it('never delivers hb frames', () => {

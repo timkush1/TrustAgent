@@ -147,7 +147,8 @@ export function orderedClaims(audit: AuditDetail | null): ClaimView[] {
 }
 
 function claimCounts(audit: AuditDetail): { total: number; supported: number; contradicted: number } {
-  const c = audit.verdict_counts;
+  // Read defensively: an engine that sends no counts must not break the Claims section.
+  const c: Partial<AuditDetail['verdict_counts']> = audit.verdict_counts ?? {};
   // NOT_CHECKED is excluded from every aggregate (src/types/api.ts).
   const counted: ClaimVerdict[] = ['SUPPORTED', 'PARTIALLY_SUPPORTED', 'CONTRADICTED', 'UNSUPPORTED', 'UNKNOWN'];
   const total = counted.reduce((n, v) => n + (c[v] ?? 0), 0);
