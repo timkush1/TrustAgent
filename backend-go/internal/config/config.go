@@ -52,8 +52,34 @@ type Config struct {
 	UniformAuditsPerDay      int           // TRUTHTABLE_UNIFORM_AUDITS_PER_DAY
 	Jev                      JevConfig
 
+	// Server, persistence, engine link and WebSocket
+	ReadHeaderTimeout      time.Duration // TRUTHTABLE_READ_HEADER_TIMEOUT
+	MetricsPort            int           // TRUTHTABLE_METRICS_PORT
+	ShutdownDrainTimeout   time.Duration // TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT (M6)
+	PublicRead             bool          // TRUTHTABLE_PUBLIC_READ: /api reads and /ws without a key
+	Readonly               bool          // TRUTHTABLE_READONLY
+	InternalToken          string        // TRUTHTABLE_INTERNAL_TOKEN (metadata x-trustagent-internal)
+	TraceFlush             string        // TRUTHTABLE_TRACE_FLUSH: async | sync
+	BodyRetention          time.Duration // TRUTHTABLE_BODY_RETENTION
+	BodyMaxBytes           int           // TRUTHTABLE_BODY_MAX_BYTES
+	AuditQueueHigh         int           // TRUTHTABLE_AUDIT_QUEUE_HIGH (QueueSize is the low lane)
+	AuditHighPerMin        int           // TRUTHTABLE_AUDIT_HIGH_PER_MIN
+	EngineHealthInterval   time.Duration // TRUTHTABLE_ENGINE_HEALTH_INTERVAL (M4)
+	SpendCapDecisionUSDDay float64       // TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY (seed)
+	SpendCapLLMUSDDay      float64       // TRUTHTABLE_SPEND_CAP_LLM_USD_DAY (seed)
+	WS                     WSConfig
+
 	// Warnings lists invalid values that fell back to their defaults.
 	Warnings []string
+}
+
+// WSConfig is the WebSocket hub configuration (group websocket).
+type WSConfig struct {
+	MaxClients     int           // TRUTHTABLE_WS_MAX_CLIENTS
+	MaxPerIP       int           // TRUTHTABLE_WS_MAX_PER_IP
+	ReplayBuffer   int           // TRUTHTABLE_WS_REPLAY_BUFFER
+	ReplayMaxBytes int64         // TRUTHTABLE_WS_REPLAY_MAX_BYTES
+	Heartbeat      time.Duration // TRUTHTABLE_WS_HEARTBEAT
 }
 
 // APIKey is one TRUTHTABLE_API_KEYS entry.
@@ -157,6 +183,28 @@ func Load() *Config {
 			MockFixtures:        RepoPath(getEnv("TRUTHTABLE_JEV_MOCK_FIXTURES", "")),
 			MockSeed:            l.int64("TRUTHTABLE_JEV_MOCK_SEED", 42),
 			MockLatency:         l.duration("TRUTHTABLE_JEV_MOCK_LATENCY", 40*time.Millisecond),
+		},
+
+		ReadHeaderTimeout:      l.duration("TRUTHTABLE_READ_HEADER_TIMEOUT", 10*time.Second),
+		MetricsPort:            l.int("TRUTHTABLE_METRICS_PORT", 8002),
+		ShutdownDrainTimeout:   l.duration("TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT", 20*time.Second),
+		PublicRead:             l.bool("TRUTHTABLE_PUBLIC_READ", false),
+		Readonly:               l.bool("TRUTHTABLE_READONLY", false),
+		InternalToken:          strings.TrimSpace(os.Getenv("TRUTHTABLE_INTERNAL_TOKEN")),
+		TraceFlush:             l.enum("TRUTHTABLE_TRACE_FLUSH", "async", "async", "sync"),
+		BodyRetention:          l.duration("TRUTHTABLE_BODY_RETENTION", 168*time.Hour),
+		BodyMaxBytes:           l.int("TRUTHTABLE_BODY_MAX_BYTES", 262144),
+		AuditQueueHigh:         l.int("TRUTHTABLE_AUDIT_QUEUE_HIGH", 200),
+		AuditHighPerMin:        l.int("TRUTHTABLE_AUDIT_HIGH_PER_MIN", 30),
+		EngineHealthInterval:   l.duration("TRUTHTABLE_ENGINE_HEALTH_INTERVAL", 10*time.Second),
+		SpendCapDecisionUSDDay: l.float("TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY", 2.00),
+		SpendCapLLMUSDDay:      l.float("TRUTHTABLE_SPEND_CAP_LLM_USD_DAY", 5.00),
+		WS: WSConfig{
+			MaxClients:     l.int("TRUTHTABLE_WS_MAX_CLIENTS", 200),
+			MaxPerIP:       l.int("TRUTHTABLE_WS_MAX_PER_IP", 10),
+			ReplayBuffer:   l.int("TRUTHTABLE_WS_REPLAY_BUFFER", 2000),
+			ReplayMaxBytes: l.int64("TRUTHTABLE_WS_REPLAY_MAX_BYTES", 64<<20),
+			Heartbeat:      l.duration("TRUTHTABLE_WS_HEARTBEAT", 20*time.Second),
 		},
 	}
 	c.Warnings = l.warnings

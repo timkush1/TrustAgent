@@ -133,3 +133,36 @@ func TestUpstreamURL(t *testing.T) {
 		t.Errorf("ollama shorthand uses OLLAMA_BASE_URL: %s", got)
 	}
 }
+
+func TestPersistenceWorkerAndWebSocketKeys(t *testing.T) {
+	clearEnv(t)
+	c := Load()
+	want := WSConfig{MaxClients: 200, MaxPerIP: 10, ReplayBuffer: 2000, ReplayMaxBytes: 64 << 20, Heartbeat: 20 * time.Second}
+	if c.WS != want {
+		t.Errorf("ws defaults %+v, want %+v", c.WS, want)
+	}
+	if c.TraceFlush != "async" || c.BodyRetention != 168*time.Hour || c.BodyMaxBytes != 262144 || c.PublicRead || c.Readonly {
+		t.Errorf("persistence defaults %+v", c)
+	}
+	if c.AuditQueueHigh != 200 || c.AuditHighPerMin != 30 || c.EngineHealthInterval != 10*time.Second ||
+		c.ShutdownDrainTimeout != 20*time.Second || c.MetricsPort != 8002 || c.ReadHeaderTimeout != 10*time.Second {
+		t.Errorf("worker and server defaults %+v", c)
+	}
+	if c.SpendCapDecisionUSDDay != 2 || c.SpendCapLLMUSDDay != 5 || c.InternalToken != "" {
+		t.Errorf("budget and token defaults %+v", c)
+	}
+
+	t.Setenv("TRUTHTABLE_TRACE_FLUSH", "sync")
+	t.Setenv("TRUTHTABLE_PUBLIC_READ", "true")
+	t.Setenv("TRUTHTABLE_WS_MAX_PER_IP", "3")
+	t.Setenv("TRUTHTABLE_WS_HEARTBEAT", "5s")
+	t.Setenv("TRUTHTABLE_INTERNAL_TOKEN", " tok ")
+	t.Setenv("TRUTHTABLE_AUDIT_QUEUE_HIGH", "many")
+	c = Load()
+	if c.TraceFlush != "sync" || !c.PublicRead || c.WS.MaxPerIP != 3 || c.WS.Heartbeat != 5*time.Second || c.InternalToken != "tok" {
+		t.Errorf("parsed %+v", c)
+	}
+	if c.AuditQueueHigh != 200 || len(c.Warnings) != 1 {
+		t.Errorf("an invalid queue size falls back with a warning: %d %v", c.AuditQueueHigh, c.Warnings)
+	}
+}
