@@ -11,6 +11,10 @@ const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 const contractsDir = fromHere('../contracts')
 const benchDir = fromHere('../docs/benchmarks')
 
+// The proxy the dev server forwards to: the local stack's published proxy port
+// (PROXY_HOST_PORT, contracts/config/keys.v1.json; default 8080).
+const devProxyTarget = `http://localhost:${process.env.PROXY_HOST_PORT || '8080'}`
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -25,6 +29,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['src/test/setup.ts'],
   },
   server: {
     fs: {
@@ -32,16 +38,12 @@ export default defineConfig({
       // and add only the two aliased directories that live outside it.
       allow: [searchForWorkspaceRoot(fromHere('.')), contractsDir, benchDir],
     },
+    // Same paths as production (no rewrite): /api/*, /v1/*, /health* and /ws live on the proxy.
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-      '/ws': {
-        target: 'ws://localhost:8080',
-        ws: true,
-      },
+      '/api': { target: devProxyTarget, changeOrigin: true },
+      '/v1': { target: devProxyTarget, changeOrigin: true },
+      '/health': { target: devProxyTarget, changeOrigin: true },
+      '/ws': { target: devProxyTarget.replace(/^http/, 'ws'), ws: true },
     },
   },
 })
