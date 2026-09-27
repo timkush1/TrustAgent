@@ -11,6 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.20.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/truthtable/contracts v0.0.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
