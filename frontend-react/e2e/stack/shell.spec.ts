@@ -2,8 +2,8 @@
  * The app shell on a running stack: navigation, placeholders, Health pill, theme, and no serious
  * accessibility violations on any route in either theme. Needs no traffic.
  */
-import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { seriousViolations } from './stack';
 
 const ROUTES = [
   { path: '/app/overview', title: 'Overview' },
@@ -13,15 +13,6 @@ const ROUTES = [
   { path: '/app/playground', title: 'Playground' },
   { path: '/app/settings/connections', title: 'Settings' },
 ];
-
-async function seriousViolations(page: Page) {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
-    .analyze();
-  return results.violations
-    .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-    .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
-}
 
 test.describe('shell', () => {
   test('opens on Overview with the six navigation items', async ({ page }) => {

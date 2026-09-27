@@ -52,7 +52,9 @@ src/
 │   ├── ui/                  Button, Popover, Tooltip, Skeleton (over Base UI)
 │   ├── layout/              AppShell, NavRail, TopBar, HealthPill, Banner, PhasePlaceholder
 │   ├── common/              Empty, Error and Loading states, QueryState, Term, DisabledReason
-│   └── outcome/             OutcomePill, VerdictBadge, AuditState
+│   ├── outcome/             OutcomePill, VerdictBadge, AuditState, RiskBar
+│   ├── traffic/             Traffic list: rows model, virtualized table, filters, Live toggle
+│   └── trace/               Trace detail: outcome card, answer, Checks, Claims, Details
 └── types/api.ts             REST and WS v2 wire types (contract-owned; see the file header)
 ```
 
@@ -68,8 +70,11 @@ src/
 4. Events go into a 5,000-slot ring buffer. The Flusher commits them to `streamStore` at most
    once per 100 ms (rAF), or once per second on a hidden tab. It also updates the TanStack Query
    cache: audit details, trace-detail invalidation, and a list refresh after hello or resync.
-5. Pages read REST through `useQuery(tracesQuery(ds, params))` and friends. They merge live rows
-   with `mergeTraceLists` and render every enum through `presentation.ts`.
+5. Pages read REST through `useQuery(traceQuery(ds, id))` and friends and render every enum
+   through `presentation.ts`. Traffic combines `GET /api/traces` pages with the live traces
+   (`components/traffic/trafficRows.ts`) and hands REST rows to `streamStore`, so later events
+   update them in place. The trace detail merges `GET /api/traces/:id`, the stream and, when
+   needed, `GET /api/audits/:id`, and only moves forward (pending → decided → audited).
 
 ## Configuration
 
@@ -95,11 +100,26 @@ No key or secret is ever compiled into the bundle.
 
 ## End-to-end
 
-`playwright.config.ts` defines the `stack` project. It points at the dashboard of a running stack,
-`http://localhost:${DASHBOARD_HOST_PORT:-3000}`. `e2e/stack/shell.spec.ts` checks the shell, the
-Health pill, the theme toggle, and axe in both themes on every route:
+`playwright.config.ts` defines two projects:
+
+- `stack` runs `e2e/stack/*.spec.ts` against the dashboard of a running stack:
+  `PLAYWRIGHT_BASE_URL`, else `http://localhost:${DASHBOARD_HOST_PORT:-3000}`.
+  - `skeleton.spec.ts` is the S0 exit gate. It waits for the demo's scripted requests (Passed,
+    Flagged and checked against `refund-policy.md`, Not checked), opens the flagged one and waits
+    up to 60 s for the deep audit's Contradicted claim, and runs axe on Traffic and the request.
+    With no stack answering it is skipped with the reason; in CI it fails instead.
+  - `shell.spec.ts` checks the shell, the Health pill, the theme toggle, and axe in both themes on
+    every route. It needs only the dashboard (it also passes against `vite preview`).
+- `static` is for the GitHub Pages build (`vite preview`, recorded traffic). Its specs arrive in
+  P5; it holds one pending placeholder until then.
 
 ```bash
 make demo
-cd frontend-react && npx playwright install chromium && npx playwright test --project=stack
+make playwright-install                              # once per machine
+make test-e2e-web PLAYWRIGHT_ARGS="-g skeleton"      # or: npx playwright test --project=stack
 ```
+
+Component tests (`npm test`) cover the same pages without a stack: `src/test/renderLive.tsx`
+renders the app over LiveDataSource with msw (`src/test/apiHandlers.ts`) and a fake WebSocket,
+and `src/test/scenarios.ts` builds the wire objects of the three S0 demo scenarios from
+`contracts/demo/scenarios.v1.json`.
