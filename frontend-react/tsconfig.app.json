@@ -15,6 +15,14 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "resolveJsonModule": true,
+
+    /* Path aliases: keep in sync with resolve.alias in vite.config.ts */
+    "paths": {
+      "@/*": ["./src/*"],
+      "@contracts/*": ["../contracts/*"],
+      "@bench/*": ["../docs/benchmarks/*"]
+    },
 
     /* Linting */
     "strict": true,
