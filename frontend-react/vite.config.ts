@@ -3,6 +3,7 @@ import { searchForWorkspaceRoot } from 'vite'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
 const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
@@ -17,7 +18,29 @@ const devProxyTarget = `http://localhost:${process.env.PROXY_HOST_PORT || '8080'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // VITE_BASE_PATH: "/" for the dashboard image, "/TrustAgent/" for GitHub Pages.
+  base: process.env.VITE_BASE_PATH ?? '/',
+  plugins: [
+    // File routes under src/routes; generates src/routeTree.gen.ts (committed, because
+    // `tsc -b` runs before `vite build`). Must come before react().
+    tanstackRouter({ target: 'react', autoCodeSplitting: true, quoteStyle: 'single' }),
+    react(),
+    tailwindcss(),
+  ],
+  build: {
+    rolldownOptions: {
+      output: {
+        // Framework code changes far less often than the app: separate chunks stay cached
+        // across deploys.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'tanstack', test: /node_modules[\\/]@tanstack[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   resolve: {
     // Keep in sync with compilerOptions.paths in tsconfig.app.json.
     alias: {

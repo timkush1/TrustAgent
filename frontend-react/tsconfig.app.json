@@ -32,5 +32,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Node-side tests (they drive ESLint) are type-checked by tsconfig.node.json. */
+  "exclude": ["src/test/lint"]
 }
