@@ -14,9 +14,11 @@
  *   node scripts/check-forbidden.mjs --root <dir>    scan another git checkout
  *
  * Exit codes
- *   0  no error-level hits, or the identifier list does not exist yet (a note is printed)
+ *   0  no error-level hits, or the default identifier list does not exist yet (a note
+ *      is printed)
  *   1  at least one error-level hit, or a self-test assertion failed
- *   2  usage or configuration error (invalid list, invalid regex, not a git checkout)
+ *   2  usage or configuration error (invalid list, invalid regex, a --spec file that
+ *      does not exist, not a git checkout)
  *
  * Identifier list format (contracts/superseded.v1.json)
  *
@@ -78,7 +80,7 @@ import {
   lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -319,6 +321,16 @@ function repoRoot(start) {
   }
 }
 
+/** `path` with symlinks resolved, also for a path that does not exist (yet). */
+function realPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realPath(parent), basename(path));
+  }
+}
+
 function trackedFiles(root) {
   const out = execFileSync('git', ['ls-files', '-z'], {
     cwd: root,
@@ -345,10 +357,13 @@ function readScannable(root, path) {
 
 /**
  * Scan the checkout at `root` against `specPath`; returns the process exit code.
+ * A missing list passes with a note (the contracts stream has not authored it yet)
+ * unless `required` (an explicit --spec), where it is a configuration error.
  * `log` and `env` are injectable for the self-test.
  */
-export function run({ root, specPath, log = console.log, env = process.env }) {
-  const specRelative = relative(root, specPath).split('\\').join('/');
+export function run({ root, specPath, required = false, log = console.log, env = process.env }) {
+  // Compare real paths: `root` comes from git (symlinks resolved), `specPath` may not.
+  const specRelative = relative(realPath(root), realPath(specPath)).split('\\').join('/');
   const specDisplay = specRelative === '' || specRelative.startsWith('..') || isAbsolute(specRelative)
     ? specPath
     : specRelative;
@@ -357,6 +372,7 @@ export function run({ root, specPath, log = console.log, env = process.env }) {
     raw = readFileSync(specPath, 'utf8');
   } catch (err) {
     if (err.code === 'ENOENT') {
+      if (required) throw new SpecError([`${specDisplay}: not found`]);
       log(`check-forbidden: ${specDisplay} not found; nothing to check yet.`);
       return 0;
     }
@@ -482,9 +498,9 @@ function selfTestRun(check) {
     git('add', '-A');
     unlinkSync(join(dir, 'gone.go')); // tracked but deleted in the working tree
 
-    const scan = (specPath, env = {}) => {
+    const scan = (specPath, env = {}, required = false) => {
       const out = [];
-      const code = run({ root: dir, specPath, log: (line) => out.push(line), env });
+      const code = run({ root: dir, specPath, required, log: (line) => out.push(line), env });
       return { code, out };
     };
 
@@ -517,11 +533,33 @@ function selfTestRun(check) {
     check('run: --spec file is not scanned', !warnRun.out.some((l) => l.startsWith('extra/list.json')),
       `got ${JSON.stringify(warnRun.out)}`);
     check('run: no annotations outside GitHub Actions', !warnRun.out.some((l) => l.startsWith('::')));
+    if (symlinked) {
+      // The same list reached through a symlinked directory is still recognised.
+      const alias = `${dir}-alias`;
+      symlinkSync(dir, alias, 'dir');
+      try {
+        const aliasRun = scan(join(alias, 'extra/list.json'));
+        check('run: --spec via a symlinked path is not scanned',
+          aliasRun.code === 0 && !aliasRun.out.some((l) => l.startsWith('extra/list.json')),
+          `got ${JSON.stringify(aliasRun.out)}`);
+      } finally {
+        unlinkSync(alias);
+      }
+    }
 
     const missing = scan(join(dir, 'contracts/none.json'));
     const note = 'check-forbidden: contracts/none.json not found; nothing to check yet.';
     check('run: missing list exits 0 with a note', missing.code === 0 && missing.out.join('\n') === note,
       `got ${missing.code} ${JSON.stringify(missing.out)}`);
+    let missingError;
+    try {
+      scan(join(dir, 'contracts/none.json'), {}, true);
+    } catch (err) {
+      missingError = err;
+    }
+    check('run: a missing explicit --spec is a SpecError',
+      missingError instanceof SpecError && /contracts\/none\.json: not found/.test(missingError.message),
+      missingError ? missingError.message : 'no error thrown');
 
     writeFileSync(join(dir, 'extra/bad.json'), '{ not json');
     let error;
@@ -666,7 +704,7 @@ function main(argv) {
     const scriptDir = dirname(fileURLToPath(import.meta.url));
     const root = repoRoot(args.root ? resolve(args.root) : scriptDir);
     const specPath = args.spec ? resolve(args.spec) : join(root, SPEC_PATH);
-    return run({ root, specPath });
+    return run({ root, specPath, required: Boolean(args.spec) });
   } catch (err) {
     if (err instanceof SpecError) {
       for (const problem of err.problems) console.error(`check-forbidden: ${problem}`);
