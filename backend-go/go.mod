@@ -11,6 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.20.0
+	github.com/truthtable/contracts v0.0.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -54,3 +55,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// contracts/ is the Go module github.com/truthtable/contracts (embedded schemas, templates,
+// golden vectors). It is read from the repository, so image builds need the repository root as
+// their context.
+replace github.com/truthtable/contracts => ../contracts
