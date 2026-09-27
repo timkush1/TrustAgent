@@ -63,6 +63,9 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.pytest.ini_options]
+# e2e/integration tests need live services and are opt-in: a plain `pytest` run
+# deselects them, and a later `-m e2e` (as in `make test-e2e`) overrides this.
+addopts = "-m 'not e2e and not integration'"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
