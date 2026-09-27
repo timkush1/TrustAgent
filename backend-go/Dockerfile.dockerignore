@@ -21,12 +21,15 @@ contracts/node_modules/
 backend-go/api/
 
 # Build, test and coverage output; tests are not compiled into the image.
+# Coverage patterns name output files only: a source file such as
+# coverage.go or a contract such as vectors/coverage.v1.json must stay in.
 backend-go/bin/
 backend-go/vendor/
 **/*.exe
 **/*.test
 **/*.out
-**/coverage*
+**/coverage.html
+**/coverage/
 **/*_test.go
 **/testdata/
 
