@@ -1,0 +1,26 @@
+# Normalize line endings: text files are stored and checked out with LF on
+# every platform, so Windows/WSL checkouts never break shell entrypoints,
+# Makefiles or YAML.
+* text=auto eol=lf
+
+# Must stay LF even if detection ever guesses wrong.
+*.sh     text eol=lf
+Makefile text eol=lf
+*.mk     text eol=lf
+
+# Binary assets: no line-ending conversion, no textual diffs or merges.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.mp4   binary
+*.webm  binary
+*.zip   binary
+*.gz    binary
