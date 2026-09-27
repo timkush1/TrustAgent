@@ -1,0 +1,70 @@
+{
+  "version": "1",
+  "description": "Evidence extraction rules (SPEC §2.10), implemented in Go (reference) and TypeScript and pinned by contracts/vectors/evidence. Patterns are RE2- and ECMAScript-compatible, flags passed separately, no inline flags. [\\t\\n\\f\\r ] stands for RE2's \\s; in the line-oriented patterns (headings, line headers) the SPEC's \\s is narrowed to [\\t\\f\\r ] so a header never spans two lines. CRLF and lone CR are converted to LF before any pattern runs.",
+  "tag_blocks": {
+    "description": "One pattern per tag, because RE2 has no backreferences. Group 1 holds the attributes and group 2 the block text (trimmed). The label comes from the first present attribute in label_attributes; a valid id attribute also becomes the item id.",
+    "patterns": [
+      {"tag": "document", "pattern": "<document([\\t\\n\\f\\r ][^>]*)?>(.*?)</document>", "flags": "is"},
+      {"tag": "documents", "pattern": "<documents([\\t\\n\\f\\r ][^>]*)?>(.*?)</documents>", "flags": "is"},
+      {"tag": "doc", "pattern": "<doc([\\t\\n\\f\\r ][^>]*)?>(.*?)</doc>", "flags": "is"},
+      {"tag": "context", "pattern": "<context([\\t\\n\\f\\r ][^>]*)?>(.*?)</context>", "flags": "is"},
+      {"tag": "source", "pattern": "<source([\\t\\n\\f\\r ][^>]*)?>(.*?)</source>", "flags": "is"},
+      {"tag": "sources", "pattern": "<sources([\\t\\n\\f\\r ][^>]*)?>(.*?)</sources>", "flags": "is"},
+      {"tag": "retrieved", "pattern": "<retrieved([\\t\\n\\f\\r ][^>]*)?>(.*?)</retrieved>", "flags": "is"},
+      {
+        "tag": "search_results",
+        "pattern": "<search_results([\\t\\n\\f\\r ][^>]*)?>(.*?)</search_results>",
+        "flags": "is"
+      },
+      {"tag": "kb", "pattern": "<kb([\\t\\n\\f\\r ][^>]*)?>(.*?)</kb>", "flags": "is"}
+    ],
+    "attribute": {
+      "pattern": "(?:^|[\\t\\n\\f\\r ])(id|title|name)[\\t\\n\\f\\r ]*=[\\t\\n\\f\\r ]*(?:\"([^\"]*)\"|'([^']*)')",
+      "flags": "i"
+    },
+    "label_attributes": ["id", "title", "name"]
+  },
+  "route_tag_patterns": "Route evidence.tag_patterns ({pattern, flags}, RE2, flags within ims) are extra block patterns, applied after the built-in tag blocks. Each match is one block; its text is the last capture group that participated in the match (trimmed), or the whole match when the pattern has no capture group. Such blocks have no id attribute.",
+  "marker_blocks": {
+    "description": "Each marker starts a block that runs to the next marker or the end of the message; the block text is what follows the marker (trimmed). The marker number feeds citation_out_of_range.",
+    "pattern": "^\\[(?:Document|Doc|Source) ([0-9]+)\\]",
+    "flags": "m"
+  },
+  "markdown_sections": {
+    "description": "A matching heading starts a block that runs to the next markdown heading of the same or a higher level (fewer or equal #) or the end of the message; the block text excludes the heading line (trimmed).",
+    "pattern": "^(#{1,6})[\\t\\f\\r ]*(Context|Sources|Documents|References?)[\\t\\f\\r ]*$",
+    "flags": "mi",
+    "heading": {"pattern": "^(#{1,6})[\\t\\f\\r ]", "flags": "m"}
+  },
+  "line_headers": {
+    "description": "Only with evidence.line_headers: true. A line matching start begins a block; the block ends before the next line matching end, the next markdown heading, or the end of the message. The block text excludes the header line (trimmed).",
+    "start": {
+      "pattern": "^(context|sources|documents|references?|knowledge)[\\t\\f\\r ]*:[\\t\\f\\r ]*$",
+      "flags": "mi"
+    },
+    "end": {"pattern": "^(question|query|user|answer|instructions?|task)[\\t\\f\\r ]*:", "flags": "mi"},
+    "heading": {"pattern": "^#{1,6}[\\t\\f\\r ]", "flags": "m"}
+  },
+  "order": "In each message, built-in tag blocks, route tag_patterns blocks, marker blocks, markdown sections and line-header blocks are found in that order; a block that overlaps one already found is ignored. Items from one message are emitted in text order.",
+  "ids": {
+    "valid": {"pattern": "^[A-Za-z0-9._:-]{1,64}$", "flags": ""},
+    "fallback_prefix": {
+      "request_system": "sys",
+      "request_context": "ctx",
+      "tool_results": "tool",
+      "extension": "ext",
+      "knowledge": "kb"
+    },
+    "description": "A valid id attribute (tag blocks) or context id (extension) is kept; every other item, and one whose id is invalid, gets <prefix><n>, where n is the 1-based position of the item among the items its source extracted, counted before dedup."
+  },
+  "dedup": "By sha256 of the text with every whitespace run collapsed to one space and trimmed; the first occurrence wins, in route source order (evidence.sources) and then message order. The item count before dedup (configured sources only, untrusted items included) and the highest marker number feed citation_out_of_range.",
+  "sources": {
+    "request_system": "Blocks from system and developer messages and from the Anthropic top-level system (a string or text blocks), in message order. With system_mode: whole, each system text is one item. system_instructions is the system text with the blocks removed (the remainders of several system messages joined with a blank line), runs of three or more newlines collapsed to two, trimmed.",
+    "request_context": "Blocks in user messages, plus every non-final text part of the last user message taken whole. Shown as \"user message (not verified as app-supplied)\". When request_context is not a route source, these items are dropped, but the blocks are still removed from user_request.",
+    "tool_results": "One item per role \"tool\" message (name resolved through tool_call_id to the assistant tool_calls[].function.name), legacy role \"function\" message (name from its name field), and Anthropic tool_result block (name through tool_use_id to the tool_use block), in message order; tool results are not scanned for blocks. A tool whose name matches an untrusted_tools glob (* and ? wildcards) gives an item marked untrusted: true, which is never packed and never detector reference.",
+    "extension": "trustagent.context[] from the request body, in order. The trustagent field is removed from the body forwarded upstream; every other field is forwarded unchanged.",
+    "knowledge": "RetrieveContext results (knowledge add-on)."
+  },
+  "user_request": "The final text part of the last user message with blocks removed, trimmed; for /v1/completions, the prompt.",
+  "content_parts": "Message content may be a string or an array of parts; only parts of type text or input_text are read, others are ignored. Where one text is needed (a system message, a tool result), the text parts are joined with a newline. A parse failure never returns 400."
+}
