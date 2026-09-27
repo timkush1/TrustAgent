@@ -61,11 +61,15 @@ LABEL org.opencontainers.image.title="truthtable-engine" \
 # uid/gid 1001 is shared with the proxy image: the proxy writes the internal
 # token into the trustagent-internal volume (mounted read-only here) and the
 # engine reads it. The directory exists in the image with that owner so an
-# empty volume mounted there keeps it.
+# empty volume mounted there keeps it. The user has no home directory, so
+# library caches (the knowledge add-on's embedding model: Hugging Face,
+# sentence-transformers, torch) go to /var/cache/trustagent via
+# XDG_CACHE_HOME / HF_HOME below.
 RUN groupadd --system --gid 1001 trustagent \
  && useradd --system --uid 1001 --gid 1001 --no-create-home --home-dir /nonexistent \
       --shell /usr/sbin/nologin trustagent \
- && install -d -o 1001 -g 1001 -m 0750 /var/lib/trustagent-internal
+ && install -d -o 1001 -g 1001 -m 0750 /var/lib/trustagent-internal \
+ && install -d -o 1001 -g 1001 -m 0750 /var/cache/trustagent
 
 WORKDIR /app
 
@@ -81,7 +85,9 @@ COPY contracts/ /app/contracts/
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONPATH="/app/src" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    XDG_CACHE_HOME=/var/cache/trustagent \
+    HF_HOME=/var/cache/trustagent/huggingface
 
 USER 1001:1001
 
