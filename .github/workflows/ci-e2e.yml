@@ -128,10 +128,12 @@ jobs:
         working-directory: frontend-react
         run: npx playwright install --with-deps chromium
 
+      # playwright.config.ts points the stack project at
+      # http://localhost:${DASHBOARD_HOST_PORT}, the port make demo published.
       - name: Playwright (stack skeleton)
         working-directory: frontend-react
         env:
-          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          DASHBOARD_HOST_PORT: '3000'
         run: npx playwright test --project=stack -g skeleton
 
       - name: Collect logs
