@@ -11,13 +11,13 @@ export function AuditState({ audit, className }: { audit: Pick<TraceSummary['aud
     <span
       style={{ '--tone': `var(${toneVar(view.tone)})` } as CSSProperties}
       className={cn(
-        'inline-flex items-center gap-1 text-xs',
+        'inline-flex min-w-0 items-center gap-1 text-xs',
         view.tone === 'neutral' ? 'text-fg-muted' : 'font-medium text-(--tone)',
         className,
       )}
     >
       <Icon aria-hidden="true" className={cn('size-3.5 shrink-0', view.pending && 'animate-spin')} />
-      {view.label}
+      <span className="truncate">{view.label}</span>
     </span>
   );
 }

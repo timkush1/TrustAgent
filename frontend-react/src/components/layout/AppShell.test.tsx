@@ -74,7 +74,7 @@ describe('app shell and routes', () => {
 
   it('drops invalid Traffic search params instead of failing', async () => {
     const { router } = renderApp('/app/traffic?live=1&outcome=bogus&route=support-bot');
-    await screen.findByText(/Arrives in S0/);
+    expect(await screen.findByText('No requests match these filters')).toBeInTheDocument();
     expect(router.state.location.search).toEqual({ live: 1, route: 'support-bot' });
   });
 });
