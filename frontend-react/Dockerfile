@@ -52,7 +52,8 @@ LABEL org.opencontainers.image.title="truthtable-dashboard" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${VERSION}"
 
-# Container settings (SPEC §2.7, dashboard keys). The entrypoint renders
+# Container settings (SPEC §2.7, dashboard keys). The entrypoint first checks
+# and normalises them (nginx/entrypoint.d/12-dashboard-env.envsh), then renders
 # /etc/nginx/templates/*.template with envsubst, restricted by
 # NGINX_ENVSUBST_FILTER to these keys plus the resolver list, so nginx's own
 # $variables are left alone. The local-resolvers hook exports

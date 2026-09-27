@@ -6,7 +6,10 @@
 # Only non-secret settings go here; the file is public:
 #   apiBase  <- DASHBOARD_API_BASE  ("" = same origin, the default)
 #   wsUrl    <- DASHBOARD_WS_URL    ("" = derived from the page origin)
-# A cross-origin value also needs DASHBOARD_CONNECT_SRC for the CSP.
+# Each is empty, an absolute URL, or an absolute path on the dashboard's origin
+# (e.g. /trustagent behind another reverse proxy), the forms
+# src/config/runtime.ts accepts. A cross-origin URL also needs
+# DASHBOARD_CONNECT_SRC for the CSP.
 #
 # An invalid value stops the container, so a typo is visible at start instead
 # of as a dashboard that cannot reach the API.
@@ -27,8 +30,9 @@ fail() {
     exit 1
 }
 
-# check_url NAME VALUE SCHEMES: VALUE is empty, or an absolute URL with one of
-# SCHEMES and none of the characters that would need escaping in JSON.
+# check_url NAME VALUE SCHEMES: VALUE is empty, an absolute path, or an
+# absolute URL with one of SCHEMES, with none of the characters that would need
+# escaping in JSON.
 check_url() {
     name=$1
     value=$2
@@ -37,10 +41,14 @@ check_url() {
     case "$value" in
         *[![:graph:]]* | *\"* | *\\*)
             fail "$name must be a URL without spaces, quotes or backslashes" ;;
+        //*)
+            fail "$name must be an absolute URL ($schemes) or a path starting with a single /, got: $value" ;;
+        /*)
+            return 0 ;;
     esac
     scheme=${value%%://*}
     if [ "$scheme" = "$value" ] || [ -z "${value#*://}" ]; then
-        fail "$name must be an absolute URL ($schemes), got: $value"
+        fail "$name must be an absolute URL ($schemes) or an absolute path, got: $value"
     fi
     for allowed in $schemes; do
         if [ "$scheme" = "$allowed" ]; then
