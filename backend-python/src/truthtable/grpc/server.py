@@ -60,6 +60,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - SubmitAudit: Start async audit (returns immediately)
     - GetAuditResult: Retrieve completed audit results
     - HealthCheck: Service health status
+    - IngestDocuments, ListKBClaims, ListConflicts, GetKBStats: knowledge base
+
+    The v2 RPCs (Evaluate, GetEngineInfo, RetrieveContext, ApplyRuntimeConfig,
+    DraftEvaluator) are not overridden yet, so they inherit the generated
+    handlers and return UNIMPLEMENTED until their phase lands.
     """
 
     def __init__(
@@ -173,7 +178,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                 reasoning_trace=f"Error: {result['error']}",
             )
 
-        # Map VerificationStatus to proto enum
+        # Map VerificationStatus to proto enum. This is the legacy (v1) mapping
+        # for SubmitAudit/GetAuditResult pollers: UNKNOWN (and any status they
+        # don't know, e.g. v2 "not_checked") is sent as UNSPECIFIED, never as
+        # the v2-only VERIFICATION_STATUS_UNKNOWN/NOT_CHECKED values.
         status_map = {
             VerificationStatus.SUPPORTED: evaluator_pb2.VERIFICATION_STATUS_SUPPORTED,
             VerificationStatus.CONTRADICTED: evaluator_pb2.VERIFICATION_STATUS_CONTRADICTED,
@@ -206,9 +214,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     )
                 )
 
-        # Determine grade based on score. Thresholds must match the Go proxy's
-        # store.GradeForScore (A>=.9, B>=.7, C>=.5, D>=.3, F<.3) so the grade is
-        # consistent whether it comes over the wire or is derived on persistence.
+        # Determine grade based on score. Thresholds (A>=.9, B>=.7, C>=.5, D>=.3,
+        # F<.3) must match the TrustGrade comments in proto/evaluator.proto and
+        # the Go proxy's store.GradeForScore so the grade is consistent whether
+        # it comes over the wire or is derived on persistence.
         score = result.get("faithfulness_score", 0.0)
         if score >= 0.9:
             grade = evaluator_pb2.TRUST_GRADE_A
