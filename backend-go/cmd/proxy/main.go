@@ -15,12 +15,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/evaluators"
+	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/grpc"
+	"github.com/truthtable/backend-go/internal/jev"
 	_ "github.com/truthtable/backend-go/internal/metrics" // Register Prometheus metrics
 	"github.com/truthtable/backend-go/internal/middleware"
+	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/store"
+	"github.com/truthtable/backend-go/internal/upstream"
 	"github.com/truthtable/backend-go/internal/version"
 	"github.com/truthtable/backend-go/internal/websocket"
 	"github.com/truthtable/backend-go/internal/worker"
@@ -67,18 +74,22 @@ func main() {
 	go workerPool.Start()
 	log.Printf("✓ Worker pool started (%d workers, queue size %d)", cfg.WorkerCount, cfg.QueueSize)
 
-	proxyHandler := proxy.NewHandler(cfg.UpstreamURL, workerPool)
-	log.Printf("✓ Proxy handler ready")
+	gateway, err := newGateway(cfg, gate.NopSink{})
+	if err != nil {
+		log.Fatalf("TrustAgent gateway: %v", err)
+	}
+	log.Printf("✓ Gateway ready")
 
 	if cfg.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	// Security wiring
-	if len(cfg.APIKeys) == 0 {
-		log.Printf("⚠️  TRUTHTABLE_API_KEYS not set — API authentication is DISABLED (dev mode)")
+	apiKeys := cfg.APIKeySecrets()
+	if len(apiKeys) == 0 {
+		log.Printf("⚠️  TRUTHTABLE_API_KEYS not set — /api authentication is DISABLED (dev mode)")
 	} else {
-		log.Printf("✓ API-key auth enabled (%d keys)", len(cfg.APIKeys))
+		log.Printf("✓ API-key auth enabled (%d keys)", len(apiKeys))
 	}
 	websocket.ConfigureUpgrader(cfg.AllowedOrigins)
 
@@ -111,14 +122,22 @@ func main() {
 	// NOTE: /metrics is intentionally NOT on this router. Prometheus scrapes
 	// the internal metrics server on :8002, which is not published to the host.
 
-	auth := middleware.APIKeyAuth(cfg.APIKeys)
+	auth := middleware.APIKeyAuth(apiKeys)
 	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute)
 	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute)
 	bodyLimit := middleware.BodyLimit(cfg.MaxBodyBytes)
 
-	// Main LLM API endpoints (intercept and audit)
-	router.POST("/v1/chat/completions", auth, rateLimit, bodyLimit, proxyHandler.HandleChatCompletion)
-	router.POST("/v1/completions", auth, rateLimit, bodyLimit, proxyHandler.HandleCompletion)
+	// LLM API (SPEC §2.12): every /v1 response carries the trace id; ingest auth reads
+	// X-TrustAgent-Key only, so Authorization stays the client's upstream credential (B1).
+	v1 := router.Group("/v1", gateway.handler.TraceIDs(), gateway.auth.Ingest(proxy.Deny), rateLimit)
+	v1.POST("/chat/completions", bodyLimit, gateway.handler.ChatCompletions)
+	// Proxied but not gated yet: completions are gated in P3; /v1/responses stays ungated.
+	v1.POST("/completions", bodyLimit, gateway.handler.Passthrough(proxy.StatusSkippedUnsupportedAPI))
+	v1.Any("/responses", bodyLimit, gateway.handler.Passthrough(proxy.StatusSkippedUnsupportedAPI))
+	v1.Any("/responses/*rest", bodyLimit, gateway.handler.Passthrough(proxy.StatusSkippedUnsupportedAPI))
+	v1.Any("/models", gateway.handler.Passthrough(""))
+	v1.Any("/models/*model", gateway.handler.Passthrough(""))
+	v1.Any("/embeddings", bodyLimit, gateway.handler.Passthrough(""))
 
 	// Direct audit endpoint (submit query + response for auditing from the dashboard)
 	router.POST("/api/audit", auth, rateLimit, bodyLimit, handleDirectAudit(workerPool, cfg.MaxTextChars))
@@ -136,15 +155,10 @@ func main() {
 	router.GET("/api/kb/conflicts", auth, rateLimit, handleListConflicts(auditClient))
 	router.GET("/api/kb/stats", auth, rateLimit, handleKBStats(auditClient))
 
-	// Other v1 endpoints - forward as-is without auditing
-	router.Any("/v1/models", auth, rateLimit, proxyHandler.HandleGeneric)
-	router.Any("/v1/models/*model", auth, rateLimit, proxyHandler.HandleGeneric)
-	router.Any("/v1/embeddings", auth, rateLimit, bodyLimit, proxyHandler.HandleGeneric)
-
 	// WebSocket endpoint. Browsers cannot set headers on the WS handshake,
 	// so when auth is enabled the key is accepted via ?api_key= instead.
 	router.GET("/ws", func(c *gin.Context) {
-		if len(cfg.APIKeys) > 0 && !middleware.KeyAllowed(cfg.APIKeys, c.Query("api_key")) {
+		if len(apiKeys) > 0 && !middleware.KeyAllowed(apiKeys, c.Query("api_key")) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid API key"})
 			return
 		}
@@ -200,6 +214,9 @@ func main() {
 	if err := metricsServer.Shutdown(ctx); err != nil {
 		log.Printf("Metrics server shutdown error: %v", err)
 	}
+	if err := gateway.handler.Drain(ctx); err != nil {
+		log.Printf("Observe-mode gates still running at shutdown: %v", err)
+	}
 
 	workerPool.Stop()
 	if auditClient != nil {
@@ -207,6 +224,95 @@ func main() {
 	}
 
 	log.Println("✅ Servers stopped gracefully")
+}
+
+// gatewayParts are the /v1 components main wires into the router.
+type gatewayParts struct {
+	handler *proxy.Handler
+	auth    *authz.Authenticator
+}
+
+// newGateway builds the gate hot path: ingest auth, the policy, the decision-model client, the
+// gate and the /v1 handler. The sink persists and broadcasts traces and decisions and submits
+// deep audits.
+func newGateway(cfg *config.Config, sink gate.Sink) (*gatewayParts, error) {
+	for _, w := range cfg.Warnings {
+		log.Printf("⚠️  config: %s", w)
+	}
+
+	keys := make([]authz.Key, 0, len(cfg.APIKeys))
+	for _, k := range cfg.APIKeys {
+		keys = append(keys, authz.Key{Label: k.Label, Secret: k.Key, Scopes: authz.APIKeyScopes})
+	}
+	auth := authz.New(keys, cfg.IngestAuth)
+	switch {
+	case auth.IngestMode() == authz.IngestOpen:
+		log.Printf("⚠️  TRUTHTABLE_INGEST_AUTH=open: /v1 accepts requests without an ingest key")
+	case !auth.HasIngestKeys():
+		log.Printf("⚠️  No ingest keys: /v1 answers 401 until TRUTHTABLE_API_KEYS (label=key) is set, or TRUTHTABLE_INGEST_AUTH=open")
+	default:
+		log.Printf("✓ /v1 ingest auth: X-TrustAgent-Key (%d keys)", len(keys))
+	}
+
+	registry, err := evaluators.Builtins()
+	if err != nil {
+		return nil, fmt.Errorf("evaluator templates: %w", err)
+	}
+	pol, err := policy.LoadFile(cfg.PolicyFile, policy.Seeds{
+		Mode: cfg.GateDefaultMode, Fail: cfg.GateFailMode, MaxResponseTokens: cfg.Jev.MaxResponseTokens,
+	}, registry)
+	if err != nil {
+		return nil, err
+	}
+	if pol.Source == policy.SourceBuiltin {
+		log.Printf("⚠️  Policy file %s not found: gating every request on the built-in defaults (%s mode)", cfg.PolicyFile, pol.Default.Mode)
+	} else {
+		log.Printf("✓ Policy %s: %d route(s) plus default (%s mode)", pol.Path, len(pol.Routes), pol.Default.Mode)
+	}
+
+	jevClient, err := jev.New(jev.Config{
+		Backend: cfg.Jev.Backend, Model: cfg.Jev.Model, DemoMode: cfg.DemoMode,
+		OpenRouterKey: cfg.Jev.OpenRouterKey, TypeSafeKey: cfg.Jev.TypeSafeKey, JevAPIKey: cfg.Jev.APIKey, BaseURL: cfg.Jev.BaseURL,
+		Mock: jev.MockConfig{
+			Mode: cfg.Jev.MockMode, Strict: cfg.Jev.MockStrict, FixturesPath: cfg.Jev.MockFixtures,
+			Seed: cfg.Jev.MockSeed, Latency: cfg.Jev.MockLatency,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	info := jevClient.Info()
+	log.Printf("✓ Decision model: %s (%s)", info.Backend, info.Reason)
+
+	g, err := gate.New(gate.Config{
+		Jev: jevClient, Evaluators: registry,
+		Budget: decision.Budget{
+			Tokens: cfg.Jev.TokenBudget, CPT: cfg.Jev.CharsPerToken, MaxQuestions: cfg.Jev.MaxQuestionsPerCall,
+			Overhead: decision.Overhead, MaxResponseTokens: cfg.Jev.MaxResponseTokens, EvidenceMaxTokens: 8000,
+		},
+		AttemptTimeout: cfg.Jev.AttemptTimeout, AsyncDeadline: cfg.Jev.AsyncDeadline,
+		UniformAuditsPerDay: cfg.UniformAuditsPerDay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	up, err := upstream.New(upstream.Config{
+		BaseURL: cfg.UpstreamURL, HeaderTimeout: cfg.UpstreamHeaderTimeout, Timeout: cfg.UpstreamTimeout,
+	}, auth.IsProxyKey)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("✓ Upstream: %s (passthrough credentials)", up.Base())
+	if cfg.TestMode {
+		log.Printf("⚠️  TRUTHTABLE_TEST_MODE: test_response and X-TrustAgent-Scenario are honoured")
+	}
+
+	h := proxy.New(proxy.Options{
+		Upstream: up, Policy: pol, Gate: g, Sink: sink, TestMode: cfg.TestMode,
+		MaxUpstreamResponseBytes: cfg.MaxUpstreamResponseBytes, GateMaxConcurrency: cfg.GateMaxConcurrency,
+	})
+	return &gatewayParts{handler: h, auth: auth}, nil
 }
 
 func loggingMiddleware() gin.HandlerFunc {

@@ -105,6 +105,18 @@ func TestCORSAllowsListedOrigin(t *testing.T) {
 	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
 		t.Errorf("expected reflected origin, got %q", got)
 	}
+	exposed := w.Header().Get("Access-Control-Expose-Headers")
+	for _, h := range []string{"X-TrustAgent-Trace-Id", "X-TrustAgent-Action", "X-TrustAgent-Audit", "X-Request-ID", "ETag"} {
+		if !strings.Contains(exposed, h) {
+			t.Errorf("Access-Control-Expose-Headers %q lacks %s", exposed, h)
+		}
+	}
+	if strings.Contains(exposed, "*") {
+		t.Error("exposed headers are listed explicitly, never *")
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-TrustAgent-Key") {
+		t.Errorf("allowed headers %q lack X-TrustAgent-Key", got)
+	}
 }
 
 func TestCORSIgnoresUnlistedOrigin(t *testing.T) {
