@@ -31,8 +31,8 @@ var Kinds = map[string]Kind{
 	"calibration_apply": {Mechanical: true, run: runCalibrationApply},
 	"decide":            {run: runDecide},
 	"calibrate_fit":     {Mechanical: true, Skip: "calibration fitting (PAV, Platt, Wilson) lands in the P2 decision package"},
-	"detectors":         {Skip: "the Tier-0 detectors land in the P2 decision package"},
-	"evidence":          {Skip: "evidence extraction lands in the P2 evidence package"},
+	"detectors":         {run: runDetectors},
+	"evidence":          {Skip: "run by internal/evidence (TestEvidenceVectors) until the anthropic_messages and openai_completions formats land (P2)"},
 	"lint":              {Skip: "evaluator validation and lints land in the P2 decision package"},
 	"cost":              {Mechanical: true, Skip: "the cost calculator lands with internal/costs in P4"},
 	"pkce":              {Skip: "PKCE vectors are TypeScript-only (SPEC §7.6: no Go runner)"},
@@ -286,6 +286,45 @@ func runCalibrationApply(in json.RawMessage, _ fs.FS) (any, error) {
 		return nil, err
 	}
 	return map[string]any{"y": decision.ApplyCalibration(x.Table, x.X)}, nil
+}
+
+// detectors: {detector, response, evidence, user_request, system_instructions, rules, evidence_meta?, config?}
+// -> {ran, fired, findings}
+func runDetectors(in json.RawMessage, _ fs.FS) (any, error) {
+	var x struct {
+		Detector           string                  `json:"detector"`
+		Response           string                  `json:"response"`
+		Evidence           []decision.EvidenceItem `json:"evidence"`
+		UserRequest        string                  `json:"user_request"`
+		SystemInstructions string                  `json:"system_instructions"`
+		Rules              map[string]string       `json:"rules"`
+		EvidenceMeta       *struct {
+			PreDedupItems int `json:"pre_dedup_items"`
+			MaxMarker     int `json:"max_marker"`
+		} `json:"evidence_meta,omitempty"`
+		Config *struct {
+			MinInteger int `json:"min_integer"`
+		} `json:"config,omitempty"`
+	}
+	if err := strictUnmarshal(in, &x); err != nil {
+		return nil, err
+	}
+	d := &decision.DetectorInput{
+		Response: x.Response, Evidence: x.Evidence, UserRequest: x.UserRequest,
+		SystemInstructions: x.SystemInstructions, Rules: x.Rules,
+		PreDedupItems: len(x.Evidence), MinInteger: decision.DefaultMinInteger,
+	}
+	if x.EvidenceMeta != nil {
+		d.PreDedupItems, d.MaxMarker = x.EvidenceMeta.PreDedupItems, x.EvidenceMeta.MaxMarker
+	}
+	if x.Config != nil {
+		d.MinInteger = x.Config.MinInteger
+	}
+	r, err := decision.DetectOne(x.Detector, d)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"ran": r.Ran, "fired": r.Fired, "findings": r.Findings}, nil
 }
 
 // decide: decide-input.v1 -> the decision/v1 core
