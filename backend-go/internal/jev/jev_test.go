@@ -27,7 +27,7 @@ func TestResolve(t *testing.T) {
 		{"auto typesafe", Config{TypeSafeKey: "k"}, BackendOff, "typesafe backend"},
 		{"auto compatible", Config{BaseURL: "https://x", JevAPIKey: "k", OpenRouterKey: "k"}, BackendOff, "compatible backend"},
 		{"explicit http backend", Config{Backend: BackendOpenRouterSystemOne}, BackendOff, "lands in P2"},
-		{"unknown", Config{Backend: "custom-thing"}, BackendOff, "unknown TRUTHTABLE_JEV_BACKEND"},
+		{"unknown", Config{Backend: "bogus-backend"}, BackendOff, "unknown TRUTHTABLE_JEV_BACKEND"},
 	}
 	for _, c := range cases {
 		cl, err := New(c.cfg)

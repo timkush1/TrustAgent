@@ -220,7 +220,9 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 	if parseErr != nil {
 		x.SkipReason = gate.SkipUnparseableRequest
 	}
-	h.sink.TraceStarted(c.Request.Context(), x.Trace)
+	// The record outlives the client: a client that goes away still gets its trace written.
+	record := context.WithoutCancel(c.Request.Context())
+	h.sink.TraceStarted(record, x.Trace)
 
 	ans, err := h.answer(c, req, x, forward, start)
 	if err != nil {
@@ -238,7 +240,7 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 	}
 	res := h.gate.Evaluate(c.Request.Context(), x)
 	h.finish(res, ans, start, h.now())
-	audit := h.sink.GateDecided(c.Request.Context(), res)
+	audit := h.sink.GateDecided(record, res)
 	upstream.CopyResponseHeaders(c.Writer.Header(), ans.header)
 	setDecisionHeaders(c.Writer.Header(), res, audit)
 	ans.write(c.Writer, h.log)
