@@ -79,9 +79,14 @@ server {
         proxy_pass $trustagent_upstream;
     }
 
+    # The proxy enforces the real per-route deadlines (TRUTHTABLE_WRITE_TIMEOUT
+    # =0: /api gets the upstream timeout + 30 s, a knowledge upload the ingest
+    # timeout + 30 s, 5.5 and 6.5 minutes by default), so nginx must not give
+    # up earlier and turn a slow answer into a 504.
     location /api/ {
         include /etc/nginx/conf.d/snippets/proxy.conf;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
         proxy_pass $trustagent_upstream;
     }
 
