@@ -44,8 +44,20 @@ updates:
       interval: weekly
     ignore:
       # torch / sentence-transformers publish no wheels for a brand-new Python
-      # major for months, so a python:3.x-slim major bump makes the audit-engine
+      # major for months, so a python:3.x-slim major bump makes the engine
       # image fall back to a source build that fails. Bump the Python base image
       # deliberately once the ML wheels catch up.
       - dependency-name: 'python'
+        update-types: ['version-update:semver-major']
+
+  # Image pins in docker-compose.yml (SPEC §3.4). Keep ollama in step with the
+  # service image pinned in .github/workflows/eval.yml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The schema targets Postgres 16 (SPEC §2.3: ≥14, compose pins 16);
+      # a major bump needs a deliberate data-directory upgrade.
+      - dependency-name: 'postgres'
         update-types: ['version-update:semver-major']

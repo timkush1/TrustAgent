@@ -1,0 +1,33 @@
+name: CI (E2E)
+
+# Compose end-to-end suite (SPEC §3.4): demo stack up --wait, doctor,
+# trafficgen --expect, Playwright (stack + static), logs uploaded on failure.
+#
+# SKELETON: enabled in phase S0 (SPEC §4.2). Until then it is manual-only and
+# the job just records that there is nothing to run, so it can never fail.
+# S0 replaces the placeholder step with the real suite and adds push /
+# pull_request triggers.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (compose stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Placeholder (enabled in phase S0)
+        run: |
+          echo "::notice title=E2E skeleton::The compose e2e suite is enabled in phase S0 (docs/v2/SPEC.md §3.4, §4.2); nothing runs yet."
+          {
+            echo "## E2E (compose stack)"
+            echo "Skeleton only: the compose e2e suite is enabled in phase S0."
+          } >> "$GITHUB_STEP_SUMMARY"

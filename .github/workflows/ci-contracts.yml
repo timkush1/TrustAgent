@@ -1,0 +1,42 @@
+name: CI (Contracts)
+
+# Cross-stream contracts (SPEC §3.4, §7.6): the superseded-identifier check
+# (SPEC Appendix A, scripts/check-forbidden.mjs) and, once contracts/ exists,
+# `make contracts-check` (schemas, fixtures, template coverage, ...), which is
+# defined in mk/contracts.mk by the contracts stream. No path filters on
+# purpose: a required check that never reports would block merges.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Forbidden-identifier checker (self-test)
+        run: node scripts/check-forbidden.mjs --self-test
+
+      # Passes with a note while contracts/superseded.v1.json does not exist yet.
+      - name: Forbidden identifiers (SPEC Appendix A)
+        run: node scripts/check-forbidden.mjs
+
+      - name: make contracts-check
+        if: hashFiles('contracts/**') != ''
+        run: make contracts-check

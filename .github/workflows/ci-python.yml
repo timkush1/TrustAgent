@@ -1,0 +1,72 @@
+name: CI (Python)
+
+# Audit engine (backend-python/): ruff, black, unit tests and the golden-set
+# eval regression gate. Split out of the former ci.yml (SPEC §3.4, P0.5); the
+# job id and name are unchanged so branch protection keeps matching
+# "Python (audit engine)". No path filters on purpose: a required check that
+# never reports would block merges.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-python-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (audit engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend-python
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend-python/pyproject.toml
+
+      # CPU-only torch keeps the install small and fast (the default PyPI
+      # wheels bundle CUDA and weigh in at multiple GB).
+      - name: Install CPU-only torch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install package and dev tools
+        run: |
+          pip install .
+          pip install pytest==7.4.4 pytest-asyncio==0.23.8 pytest-cov \
+            ruff==0.1.15 black==23.12.1
+
+      # Generated stubs are gitignored; regenerate them for the test run.
+      - name: Generate gRPC stubs
+        run: |
+          python -m grpc_tools.protoc -I../proto \
+            --python_out=src/truthtable/grpc/pb \
+            --grpc_python_out=src/truthtable/grpc/pb \
+            ../proto/evaluator.proto
+
+      - name: ruff
+        run: ruff check .
+
+      - name: black
+        run: black --check .
+
+      # e2e/integration tests are also deselected by pyproject `addopts`.
+      - name: pytest (unit)
+        run: pytest tests/unit -v --cov=truthtable --cov-report=term
+
+      # Tier-1 eval regression gate: the golden set runs through the real
+      # pipeline with recorded (mock) LLM responses; any change to parsing,
+      # scoring, or thresholds that shifts results fails this step and forces
+      # a deliberate baseline update in the same PR. See docs/EVALUATION.md.
+      - name: Eval regression gate (golden set, mock provider)
+        run: python -m evals.run_eval --dataset golden --provider mock --check-baseline
