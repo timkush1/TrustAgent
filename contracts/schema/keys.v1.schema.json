@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/keys.v1.schema.json",
+  "title": "ConfigKeyRegistry",
+  "description": "contracts/config/keys.v1.json: the single configuration registry (SPEC §2.7). The Go loader, the Python loader and scripts/gen_config_docs.py read it; docs/CONFIGURATION.md and .env.example (only keys with advanced=false) are generated from it. Boot precedence: default < .env < process env. Runtime precedence (runtime: settable|seed): built-in < env seed < settings row, except that a non-empty env var always wins (env_managed).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "groups", "keys"],
+  "properties": {
+    "version": {"const": "1"},
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"},
+          "title": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1}
+        }
+      },
+      "description": "Display order of groups in generated docs and Settings -> All configuration."
+    },
+    "keys": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ConfigKey"}}
+  },
+  "$defs": {
+    "ConfigKey": {
+      "title": "ConfigKey",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "aliases",
+        "services",
+        "kind",
+        "default",
+        "secret",
+        "advanced",
+        "restart",
+        "group",
+        "description"
+      ],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*[A-Z0-9]$"},
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*[A-Z0-9]$"},
+          "description": "Accepted alternative names; the canonical name wins when both are set."
+        },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["proxy", "engine", "compose", "dashboard", "build", "tools"]},
+          "description": "Who reads the key: proxy (Go, G), engine (Python, P), compose (compose/Make, C), dashboard (container, D), build (frontend build, B), tools (trafficgen, doctor, configure, T)."
+        },
+        "kind": {
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "bool",
+            "duration",
+            "bytes",
+            "url",
+            "enum",
+            "list",
+            "path",
+            "key_list"
+          ],
+          "description": "Value syntax. int/float: decimal. bool: true|false. duration: Go syntax (800ms, 5m, 2160h) in both services; 0 is allowed. bytes: non-negative integer byte count. url: absolute http(s) URL. enum: one of enum. list: comma-separated values (each in enum when enum is given). path: filesystem path. key_list: comma-separated label=key pairs."
+        },
+        "default": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "description": "The built-in default in env-var syntax. \"\" means unset/empty; null means there is no static default (generated, derived or backend-specific; see default_note)."
+        },
+        "default_note": {"type": "string", "minLength": 1, "maxLength": 300},
+        "compose_default": {
+          "type": "string",
+          "description": "The value the shipped docker-compose.yml or container image sets."
+        },
+        "enum": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "min": {"type": "number"},
+        "max": {"type": "number"},
+        "shorthands": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "description": "Accepted shorthand values and what they expand to."
+        },
+        "secret": {
+          "type": "boolean",
+          "description": "Never logged, never returned to the browser, masked in the UI, skipped by configure unless --with-secrets."
+        },
+        "advanced": {"type": "boolean", "description": "false = listed in .env.example (at most 15 keys)."},
+        "restart": {
+          "type": "boolean",
+          "description": "Changing the value needs a restart (or a rebuild for build keys)."
+        },
+        "runtime": {
+          "enum": ["settable", "seed"],
+          "description": "settable (R): also editable at runtime through the settings row. seed: seeds a runtime/policy value that is then edited in the dashboard or policy file."
+        },
+        "group": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"},
+        "description": {"type": "string", "minLength": 1, "maxLength": 600}
+      },
+      "$comment": "Cross-field rules (kind enum requires enum; a secret has no default; build keys are VITE_* and never secret) are checked by validate.mjs."
+    }
+  }
+}

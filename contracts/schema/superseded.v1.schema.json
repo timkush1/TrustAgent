@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/superseded.v1.schema.json",
+  "title": "SupersededIdentifiers",
+  "description": "contracts/superseded.v1.json: SPEC Appendix A as data, consumed by scripts/check-forbidden.mjs (which scans code only, excluding docs/archive/** and this file). A literal pattern matches as a plain substring; a regex pattern is an ECMAScript RegExp source compiled without flags. Items that cannot be matched reliably by text are listed under unenforced for review.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "identifiers"],
+  "properties": {
+    "version": {"const": "1"},
+    "identifiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["area", "pattern", "kind", "note"],
+        "properties": {
+          "area": {"enum": ["gateway", "engine", "frontend", "dx", "canonical_contract"]},
+          "pattern": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["literal", "regex"]},
+          "note": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unenforced": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["area", "item", "note"],
+        "properties": {
+          "area": {"enum": ["gateway", "engine", "frontend", "dx", "canonical_contract"]},
+          "item": {"type": "string", "minLength": 1},
+          "note": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

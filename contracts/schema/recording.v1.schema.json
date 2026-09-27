@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/recording.v1.schema.json",
+  "title": "Recording",
+  "description": "trustagent.recording/v1: manifest.json of a replayable recording (SPEC §2.13), produced only by Go export-replay or GET /api/export/replay. traces/<id>.json hold full TraceDetail bodies (api.v1). kind \"recorded\" is allowed only when the decision backend is not mock/off, the judge is not a fallback, and every trace has answer_source != null. roi and traces[] are checked structurally here; their full shapes (RoiSummary, TraceSummary) live in api.v1.schema.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "label",
+    "recorded_at",
+    "git_sha",
+    "trustagent_version",
+    "decision_model",
+    "judge",
+    "calibration_state",
+    "answer_sources",
+    "totals",
+    "roi",
+    "traces",
+    "events"
+  ],
+  "properties": {
+    "schema": {"const": "trustagent.recording/v1"},
+    "kind": {"enum": ["recorded", "mock"]},
+    "label": {"type": "string", "minLength": 1, "maxLength": 300},
+    "recorded_at": {"$ref": "common.v1.schema.json#/$defs/ISODateTime"},
+    "git_sha": {"$ref": "common.v1.schema.json#/$defs/GitSha"},
+    "trustagent_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?$"},
+    "decision_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "snapshot"],
+      "properties": {
+        "backend": {"$ref": "common.v1.schema.json#/$defs/DecisionBackend"},
+        "snapshot": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+      }
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "fallback_active"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "fallback_active": {"type": "boolean"}
+      }
+    },
+    "calibration_state": {"$ref": "common.v1.schema.json#/$defs/CalibrationState"},
+    "answer_sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scripted", "generated"],
+      "properties": {
+        "scripted": {"type": "integer", "minimum": 0},
+        "generated": {"type": "integer", "minimum": 0}
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traces", "decision_usd", "llm_usd"],
+      "properties": {
+        "traces": {"type": "integer", "minimum": 0},
+        "decision_usd": {"$ref": "common.v1.schema.json#/$defs/Usd"},
+        "llm_usd": {"$ref": "common.v1.schema.json#/$defs/Usd"}
+      }
+    },
+    "roi": {
+      "type": "object",
+      "required": ["window", "gated_responses", "simulated"],
+      "properties": {
+        "window": {"enum": ["15m", "1h", "24h", "7d", "30d"]},
+        "gated_responses": {"type": "integer", "minimum": 0},
+        "simulated": {"type": "boolean"}
+      },
+      "description": "RoiSummary (api.v1)."
+    },
+    "traces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trace_id", "created_at", "answer_source"],
+        "properties": {
+          "trace_id": {"$ref": "common.v1.schema.json#/$defs/Uuid"},
+          "created_at": {"$ref": "common.v1.schema.json#/$defs/ISODateTime"},
+          "answer_source": {
+            "anyOf": [{"$ref": "common.v1.schema.json#/$defs/AnswerSource"}, {"type": "null"}]
+          }
+        },
+        "description": "TraceSummary (api.v1)."
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["t_ms", "type", "data"],
+        "properties": {
+          "t_ms": {"$ref": "common.v1.schema.json#/$defs/Ms"},
+          "type": {"$ref": "common.v1.schema.json#/$defs/WsEventType"},
+          "trace_id": {"$ref": "common.v1.schema.json#/$defs/Uuid"},
+          "data": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "recorded"}}},
+      "then": {
+        "properties": {
+          "decision_model": {"properties": {"backend": {"not": {"enum": ["mock", "off"]}}}},
+          "judge": {"properties": {"fallback_active": {"const": false}}},
+          "traces": {
+            "items": {"properties": {"answer_source": {"$ref": "common.v1.schema.json#/$defs/AnswerSource"}}}
+          },
+          "label": {"pattern": "^Recorded .+ · replayed, not live$"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "mock"}}},
+      "then": {"properties": {"label": {"const": "Simulated (mock checks + mock judge): not model output"}}}
+    }
+  ]
+}

@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/evaluator.v1.schema.json",
+  "title": "EvaluatorSpec",
+  "description": "A versioned evaluator (decision spec): one independent Jev question plus how its answer becomes a risk level (SPEC §2.8). Copied verbatim from the spec; titles and descriptions are the only additions. Hard rules that JSON Schema cannot express (risk_weights keys are option keys, risk_levels < criteria count, escalate_from < warn_at <= critical_at, backticked references resolve, no question ids in text) are enforced by the Go/TS validators and, for committed files, by validate.mjs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec_version",
+    "id",
+    "version",
+    "name",
+    "category",
+    "state_fields",
+    "question",
+    "evidence",
+    "signal",
+    "outcomes"
+  ],
+  "properties": {
+    "spec_version": {"const": "evaluator/v1"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+    "version": {"type": "integer", "minimum": 1},
+    "name": {"type": "string", "minLength": 1, "maxLength": 80},
+    "description": {"type": "string", "maxLength": 600},
+    "category": {"enum": ["grounding", "safety", "compliance", "quality", "security", "custom"]},
+    "builtin": {"type": "boolean", "default": false},
+    "verdict_role": {"enum": ["unsupported", "contradicted"]},
+    "state_fields": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["user_request", "assistant_response", "evidence", "system_instructions", "rules"]}
+    },
+    "params": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,31}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["default"],
+        "properties": {
+          "default": {"type": "string", "maxLength": 2000},
+          "label": {"type": "string", "maxLength": 80},
+          "help": {"type": "string", "maxLength": 300}
+        }
+      }
+    },
+    "question": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions", "criteria"],
+          "properties": {
+            "type": {"const": "noul"},
+            "instructions": {"$ref": "#/$defs/text"},
+            "criteria": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["true", "false"],
+              "properties": {"true": {"$ref": "#/$defs/text"}, "false": {"$ref": "#/$defs/text"}}
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions", "criteria"],
+          "properties": {
+            "type": {"const": "choice"},
+            "instructions": {"$ref": "#/$defs/text"},
+            "criteria": {
+              "type": "object",
+              "minProperties": 2,
+              "maxProperties": 255,
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{2,63}$",
+                "not": {"enum": ["yes", "no", "other", "unknown", "none", "option1"]}
+              },
+              "additionalProperties": {
+                "anyOf": [{"type": "null"}, {"$ref": "#/$defs/option"}, {"$ref": "#/$defs/text"}]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions", "criteria"],
+          "properties": {
+            "type": {"const": "score"},
+            "instructions": {"$ref": "#/$defs/text"},
+            "criteria": {"type": "array", "minItems": 2, "maxItems": 10, "items": {"$ref": "#/$defs/text"}}
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requires"],
+      "properties": {
+        "requires": {"enum": ["required", "optional", "none"]},
+        "min_chars": {"type": "integer", "minimum": 0, "default": 40}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "invert": {"type": "boolean", "default": false},
+        "risk_weights": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "risk_levels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 0, "maximum": 9}
+        }
+      }
+    },
+    "outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warn_at"],
+      "properties": {
+        "warn_at": {"type": "number", "minimum": 0, "maximum": 1},
+        "critical_at": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "default": null},
+        "min_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "default": null},
+        "block_eligible": {"type": "boolean", "default": false},
+        "requires_corroboration": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^([a-z][a-z0-9_]{1,47}|det:[a-z_]+)$"},
+          "default": []
+        },
+        "implies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+          "default": []
+        }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "escalate_from": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "default": null},
+        "numeric_or_date": {"type": "boolean", "default": false},
+        "on_error": {"enum": ["escalate", "ignore"], "default": "escalate"}
+      }
+    },
+    "threshold_basis": {"type": "string", "maxLength": 400},
+    "tags": {"type": "array", "items": {"type": "string", "maxLength": 32}, "maxItems": 10},
+    "parent": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]{1,47}@[0-9]+$"},
+    "changelog": {"type": "string", "maxLength": 2000}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"question": {"properties": {"type": {"const": "choice"}}}}},
+      "then": {"properties": {"signal": {"required": ["risk_weights"]}}}
+    },
+    {
+      "if": {"properties": {"question": {"properties": {"type": {"const": "score"}}}}},
+      "then": {"properties": {"signal": {"required": ["risk_levels"]}}}
+    },
+    {
+      "if": {"properties": {"question": {"properties": {"type": {"const": "noul"}}}}},
+      "then": {
+        "properties": {
+          "signal": {"not": {"anyOf": [{"required": ["risk_weights"]}, {"required": ["risk_levels"]}]}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"evidence": {"properties": {"requires": {"enum": ["required", "optional"]}}}}},
+      "then": {"properties": {"state_fields": {"contains": {"const": "evidence"}}}}
+    }
+  ],
+  "$defs": {
+    "text": {
+      "title": "EvaluatorText",
+      "anyOf": [
+        {"type": "string", "minLength": 1, "maxLength": 4000},
+        {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/text"}},
+        {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": {"pattern": "^[\\x20-\\x7e]{1,64}$"},
+          "additionalProperties": {"$ref": "#/$defs/text"}
+        }
+      ]
+    },
+    "option": {
+      "title": "EvaluatorOption",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["what"],
+      "properties": {
+        "what": {"type": "string", "maxLength": 600},
+        "not_for": {"type": "string", "maxLength": 600},
+        "examples": {"type": "array", "items": {"type": "string", "maxLength": 300}, "maxItems": 2}
+      }
+    }
+  }
+}

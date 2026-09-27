@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/ui-glossary.v1.schema.json",
+  "title": "UiGlossary",
+  "description": "contracts/ui/glossary.v1.json: plain-language definitions rendered by <Term id> on the landing page and in the app (SPEC §3.3). avoid_in_primary_ui lists words that must not appear above the fold or in primary UI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "terms", "avoid_in_primary_ui"],
+  "properties": {
+    "version": {"const": "1"},
+    "terms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "term", "short"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+          "term": {"type": "string", "minLength": 1},
+          "short": {"type": "string", "minLength": 1, "maxLength": 240, "description": "Tooltip text."},
+          "long": {"type": "string", "minLength": 1, "maxLength": 800},
+          "aliases": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "see_also": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"}
+          },
+          "primary_ui": {
+            "type": "boolean",
+            "default": true,
+            "description": "false = the term itself stays out of primary UI; the definition exists for docs and tooltips in Details."
+          }
+        }
+      }
+    },
+    "avoid_in_primary_ui": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/evaluator-draft.v1.schema.json",
+  "title": "EvaluatorDraft",
+  "description": "An LLM-drafted evaluator from Studio (SPEC §2.8): evaluator.v1 without id, version, builtin, parent and changelog, plus rationale, split_suggestions and exactly 6 test samples. Field schemas are referenced from evaluator.v1 so the two cannot drift; the cross-field rules are repeated here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec_version",
+    "name",
+    "category",
+    "state_fields",
+    "question",
+    "evidence",
+    "signal",
+    "outcomes",
+    "rationale",
+    "test_samples"
+  ],
+  "properties": {
+    "spec_version": {"$ref": "evaluator.v1.schema.json#/properties/spec_version"},
+    "name": {"$ref": "evaluator.v1.schema.json#/properties/name"},
+    "description": {"$ref": "evaluator.v1.schema.json#/properties/description"},
+    "category": {"$ref": "evaluator.v1.schema.json#/properties/category"},
+    "verdict_role": {"$ref": "evaluator.v1.schema.json#/properties/verdict_role"},
+    "state_fields": {"$ref": "evaluator.v1.schema.json#/properties/state_fields"},
+    "params": {"$ref": "evaluator.v1.schema.json#/properties/params"},
+    "question": {"$ref": "evaluator.v1.schema.json#/properties/question"},
+    "evidence": {"$ref": "evaluator.v1.schema.json#/properties/evidence"},
+    "signal": {"$ref": "evaluator.v1.schema.json#/properties/signal"},
+    "outcomes": {"$ref": "evaluator.v1.schema.json#/properties/outcomes"},
+    "escalation": {"$ref": "evaluator.v1.schema.json#/properties/escalation"},
+    "threshold_basis": {"$ref": "evaluator.v1.schema.json#/properties/threshold_basis"},
+    "tags": {"$ref": "evaluator.v1.schema.json#/properties/tags"},
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "Why the drafter chose this question shape (shown in Studio)."
+    },
+    "split_suggestions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {"type": "string", "minLength": 1, "maxLength": 600},
+      "description": "Suggestions to split an over-broad check into narrower evaluators."
+    },
+    "test_samples": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assistant_response", "should_fire"],
+        "properties": {
+          "user_request": {"type": "string", "maxLength": 4000},
+          "assistant_response": {"type": "string", "minLength": 1, "maxLength": 8000},
+          "evidence": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {"type": "string", "minLength": 1, "maxLength": 8000}
+          },
+          "should_fire": {"type": "boolean"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"question": {"properties": {"type": {"const": "choice"}}}}},
+      "then": {"properties": {"signal": {"required": ["risk_weights"]}}}
+    },
+    {
+      "if": {"properties": {"question": {"properties": {"type": {"const": "score"}}}}},
+      "then": {"properties": {"signal": {"required": ["risk_levels"]}}}
+    },
+    {
+      "if": {"properties": {"question": {"properties": {"type": {"const": "noul"}}}}},
+      "then": {
+        "properties": {
+          "signal": {"not": {"anyOf": [{"required": ["risk_weights"]}, {"required": ["risk_levels"]}]}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"evidence": {"properties": {"requires": {"enum": ["required", "optional"]}}}}},
+      "then": {"properties": {"state_fields": {"contains": {"const": "evidence"}}}}
+    }
+  ]
+}

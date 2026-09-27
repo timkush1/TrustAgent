@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/calibration.v1.schema.json",
+  "title": "CalibrationFile",
+  "description": "trustagent.calibration/v1, the \"thresholds JSON\" (SPEC §2.11). quality is re-derived by the server on import: measured = human/public-dataset labels only with n >= 200, n_pos >= 30, n_neg >= 30; provisional = below that or a family fallback; proxy = any uniform-audit or judge labels; mock = snapshot mock/* (only honoured with the mock backend in demo mode).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "created_at", "generated_by", "decision_model", "entries", "warnings"],
+  "properties": {
+    "schema": {"const": "trustagent.calibration/v1"},
+    "created_at": {"$ref": "common.v1.schema.json#/$defs/ISODateTime"},
+    "generated_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "e.g. \"cmd/calibrate@<git_sha>\" or \"api/calibration/fit\"."
+    },
+    "decision_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "snapshot", "family"],
+      "properties": {
+        "backend": {"$ref": "common.v1.schema.json#/$defs/DecisionBackend"},
+        "snapshot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "e.g. typesafe/jev-1.13-20260917 or mock/jev-heuristic-v1."
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Snapshot minus the -YYYYMMDD suffix."
+        }
+      }
+    },
+    "entries": {"type": "array", "items": {"$ref": "#/$defs/CalibrationEntry"}},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "CalibrationEntry": {
+      "title": "CalibrationEntry",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "fit_context",
+        "method",
+        "table",
+        "platt",
+        "quality",
+        "n",
+        "n_pos",
+        "n_neg",
+        "label_source",
+        "datasets",
+        "metrics",
+        "reliability",
+        "recommended"
+      ],
+      "properties": {
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "evaluator_id", "evaluator_version", "calibration_key", "params_sha256"],
+          "properties": {
+            "kind": {"const": "evaluator", "description": "Other target kinds are reserved for v2.1."},
+            "evaluator_id": {"$ref": "common.v1.schema.json#/$defs/EvaluatorId"},
+            "evaluator_version": {"type": "integer", "minimum": 1},
+            "calibration_key": {
+              "$ref": "common.v1.schema.json#/$defs/Sha256Hex",
+              "description": "sha256(JCS({question, signal}))."
+            },
+            "params_sha256": {
+              "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Sha256Hex"}, {"type": "null"}],
+              "description": "sha256(JCS(resolved route params)) for evaluators with params, else null."
+            }
+          }
+        },
+        "fit_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state_fields", "partition", "question_set_sha256"],
+          "properties": {
+            "state_fields": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "common.v1.schema.json#/$defs/StateField"}
+            },
+            "partition": {"const": "single"},
+            "question_set_sha256": {"$ref": "common.v1.schema.json#/$defs/Sha256Hex"}
+          }
+        },
+        "method": {
+          "enum": ["isotonic", "platt"],
+          "description": "PAV isotonic when n >= 500, otherwise Platt; \"auto\" at fit time records the method it picked."
+        },
+        "table": {
+          "$ref": "common.v1.schema.json#/$defs/CalibrationTable",
+          "description": "Authoritative 101-point mapping."
+        },
+        "platt": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["a", "b"],
+              "properties": {"a": {"type": "number"}, "b": {"type": "number"}}
+            },
+            {"type": "null"}
+          ]
+        },
+        "quality": {"$ref": "common.v1.schema.json#/$defs/CalibrationQuality"},
+        "n": {"type": "integer", "minimum": 0},
+        "n_pos": {"type": "integer", "minimum": 0},
+        "n_neg": {"type": "integer", "minimum": 0},
+        "label_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["human", "public_dataset", "uniform_audit"],
+          "properties": {
+            "human": {"type": "integer", "minimum": 0},
+            "public_dataset": {"type": "integer", "minimum": 0},
+            "uniform_audit": {"type": "integer", "minimum": 0},
+            "judge": {"type": "integer", "minimum": 0}
+          }
+        },
+        "datasets": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ece_before", "ece_after", "brier_before", "brier_after", "auroc"],
+          "properties": {
+            "ece_before": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            "ece_after": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            "brier_before": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            "brier_after": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            "auroc": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]}
+          }
+        },
+        "reliability": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["lo", "hi", "n", "mean_pred", "frac_pos"],
+            "properties": {
+              "lo": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+              "hi": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+              "n": {"type": "integer", "minimum": 0},
+              "mean_pred": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+              "frac_pos": {"$ref": "common.v1.schema.json#/$defs/Probability"}
+            }
+          }
+        },
+        "recommended": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["space", "warn_at", "critical_at", "critical_null_reason"],
+          "properties": {
+            "space": {"const": "calibrated"},
+            "warn_at": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["value", "precision", "recall"],
+                  "properties": {
+                    "value": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+                    "precision": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+                    "recall": {"$ref": "common.v1.schema.json#/$defs/Probability"}
+                  }
+                },
+                {"type": "null"}
+              ]
+            },
+            "critical_at": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["value", "precision_lb95", "predicted_pos"],
+                  "properties": {
+                    "value": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+                    "precision_lb95": {
+                      "$ref": "common.v1.schema.json#/$defs/Probability",
+                      "description": "Wilson 95% lower bound of precision."
+                    },
+                    "predicted_pos": {"type": "integer", "minimum": 0}
+                  }
+                },
+                {"type": "null"}
+              ]
+            },
+            "critical_null_reason": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
+          }
+        }
+      }
+    }
+  }
+}

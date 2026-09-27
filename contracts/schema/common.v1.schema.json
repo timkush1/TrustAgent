@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/common.v1.schema.json",
+  "title": "TrustAgent common definitions",
+  "description": "Shared enums and primitives (SPEC §2.1, §2.6). Other schemas reference these $defs; this schema validates no document on its own.",
+  "$defs": {
+    "ISODateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339 (nano precision allowed) in UTC with a trailing Z (SPEC §2.1)."
+    },
+    "Date": {"type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "Sha256Hex": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "GitSha": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
+    "Uuid": {"type": "string", "format": "uuid"},
+    "Probability": {"type": "number", "minimum": 0, "maximum": 1},
+    "Usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "US dollars as a JSON float64 (fields named *_usd, SPEC §2.1)."
+    },
+    "Ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Duration in integer milliseconds (fields named *_ms)."
+    },
+    "EvaluatorId": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+    "EvaluatorRef": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,47}@[0-9]+$",
+      "description": "\"<id>@<version>\". \"@latest\" is forbidden (SPEC §2.7)."
+    },
+    "QuestionId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,47}__v[0-9]+$",
+      "description": "\"<id>__v<version>\" (SPEC §2.9 compile step 5)."
+    },
+    "RouteName": {"type": "string", "pattern": "^[a-z0-9-]{1,48}$"},
+    "StateField": {"enum": ["user_request", "assistant_response", "evidence", "system_instructions", "rules"]},
+    "EvidenceSource": {
+      "enum": ["request_system", "request_context", "tool_results", "extension", "knowledge"]
+    },
+    "DecisionBackend": {
+      "enum": ["openrouter-decisions", "openrouter-systemone", "typesafe", "compatible", "mock", "off"]
+    },
+    "PolicyMode": {"enum": ["observe", "flag", "block", "fallback"]},
+    "FailMode": {"enum": ["open", "closed"]},
+    "GateAction": {"enum": ["observe", "pass", "flag", "block", "fallback"]},
+    "WouldAction": {"enum": ["pass", "flag", "block"]},
+    "GateStatus": {"enum": ["ok", "partial", "not_assessed", "skipped", "timeout", "error"]},
+    "GateVerdict": {"enum": ["supported", "unsupported", "contradicted", "not_assessed", "unknown"]},
+    "EvaluatorLevel": {"enum": ["ok", "warn", "critical"]},
+    "EvaluatorResultStatus": {"enum": ["assessed", "not_assessed", "error"]},
+    "EvaluatorStage": {"enum": ["active", "shadow"]},
+    "ThresholdSpace": {"enum": ["raw", "calibrated"]},
+    "SkipReason": {
+      "enum": [
+        "unparseable_request",
+        "upstream_error",
+        "no_text",
+        "too_long",
+        "sampled_out",
+        "overload",
+        "budget",
+        "decision_model_off",
+        "breaker_open",
+        "rate_limited",
+        "client_disconnected",
+        "undecodable",
+        "unsupported_api",
+        "multi_choice",
+        "credentials_unavailable",
+        "legacy"
+      ]
+    },
+    "Degraded": {
+      "enum": ["uncalibrated", "budget", "breaker", "rate_limited", "timeout", "error", "overload", "off"]
+    },
+    "ExclusionReason": {
+      "enum": ["too_long", "no_evidence", "evidence_too_short", "evidence_packed_away"],
+      "description": "Why compile() excluded an evaluator (SPEC §2.9 compile steps 1, 2, 7)."
+    },
+    "DeepAuditClass": {"enum": ["high", "sample", "sample_error", "none"]},
+    "DetectorId": {
+      "enum": [
+        "numbers_not_in_evidence",
+        "dates_not_in_evidence",
+        "urls_not_in_evidence",
+        "quotes_not_in_evidence",
+        "citation_out_of_range",
+        "secret_pattern",
+        "system_prompt_leak"
+      ]
+    },
+    "CalibrationQuality": {"enum": ["measured", "provisional", "proxy", "mock"]},
+    "CalibrationState": {"enum": ["measured", "provisional", "proxy", "mock", "family", "none"]},
+    "CalibrationTable": {
+      "type": "array",
+      "minItems": 101,
+      "maxItems": 101,
+      "items": {"$ref": "#/$defs/Probability"},
+      "description": "Exactly 101 non-decreasing values in [0,1]; t[i] = calibrated(i/100). Monotonicity is checked by validate.mjs."
+    },
+    "ValueLabel": {"enum": ["measured", "estimate", "third_party", "vendor", "simulated"]},
+    "CostSource": {"enum": ["reported", "computed", "free_local", "simulated", "unknown"]},
+    "ClaimVerdict": {
+      "enum": ["SUPPORTED", "PARTIALLY_SUPPORTED", "CONTRADICTED", "UNSUPPORTED", "UNKNOWN", "NOT_CHECKED"]
+    },
+    "AuditVerdict": {"enum": ["GROUNDED", "HALLUCINATED", "UNVERIFIABLE", "NO_CLAIMS", "NOT_ASSESSED"]},
+    "TraceAuditStatus": {
+      "enum": [
+        "none",
+        "queued",
+        "sampled_out",
+        "dropped",
+        "disabled",
+        "running",
+        "completed",
+        "degraded",
+        "failed",
+        "not_assessed"
+      ]
+    },
+    "ApiFormat": {"enum": ["openai_chat", "openai_completions", "anthropic_messages", "direct"]},
+    "TraceSource": {"enum": ["proxy", "direct", "playground", "test", "trafficgen"]},
+    "AnswerSource": {"enum": ["scripted", "generated", "live"]},
+    "WsEventType": {
+      "enum": [
+        "hello",
+        "hb",
+        "trace_started",
+        "gate_decision",
+        "audit_queued",
+        "audit_started",
+        "audit_completed",
+        "audit_failed",
+        "audit_dropped",
+        "gap",
+        "policy_updated",
+        "policy_error",
+        "evaluator_updated",
+        "calibration_updated",
+        "decision_model_changed",
+        "status",
+        "credentials_changed",
+        "settings_updated"
+      ]
+    },
+    "QuestionType": {"enum": ["noul", "choice", "score"]},
+    "RawAnswer": {
+      "type": "object",
+      "description": "A vendor answer as received (SPEC §2.6 RawAnswer). Deliberately lenient: normalize() owns range and consistency checks, so out-of-range or foreign values must stay representable.",
+      "required": ["type"],
+      "properties": {
+        "type": {"$ref": "#/$defs/QuestionType"},
+        "noul": {"type": "number"},
+        "choice": {"type": "string"},
+        "score": {"type": "number"},
+        "confidence": {"type": "number"},
+        "probabilities": {"type": "object", "additionalProperties": {"type": "number"}},
+        "legend": {"type": "object"}
+      }
+    }
+  }
+}

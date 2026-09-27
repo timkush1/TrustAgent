@@ -1,0 +1,207 @@
+{
+  "version": "1",
+  "copy": {
+    "product": {
+      "name": "TrustAgent",
+      "tagline": "Catch hallucinations before your users do.",
+      "subhead": "An open-source gateway that checks every LLM answer against the documents your app already sent — in {claim:fast_check_latency_approx}, for {claim:fast_check_cost_per_1k} [estimate] — and sends only the risky ones to a full LLM audit."
+    },
+    "tiers": {
+      "instant_checks": "Instant checks",
+      "fast_check": "Fast check (Jev)",
+      "deep_audit": "Deep audit"
+    },
+    "value_labels": {
+      "measured": "Measured",
+      "estimate": "Estimate",
+      "third_party": "Third-party",
+      "vendor": "Vendor",
+      "simulated": "Simulated"
+    },
+    "evidence_sources": {
+      "request_system": "System prompt documents",
+      "request_context": "User message (not verified as app-supplied)",
+      "tool_results": "Tool results",
+      "extension": "Attached context (trustagent.context)",
+      "knowledge": "Knowledge base",
+      "none": "No documents"
+    },
+    "banners": {
+      "demo": {
+        "title": "Demo stack",
+        "body": "Mock checks and a mock judge: every number here is simulated.",
+        "action": "To use your own keys: {command:demo_to_own_keys}"
+      },
+      "readonly": {
+        "title": "Read-only instance",
+        "body": "You can explore traces and settings, but nothing can be changed here."
+      },
+      "budget_exhausted": {
+        "title": "Today's fast-check budget is used up",
+        "body": "Observe and flag routes skip the fast check for the rest of the day; enforcing routes follow their fail mode.",
+        "action": "Raise the daily cap in Settings → Budgets."
+      },
+      "unauthorized": {
+        "title": "The fast-check key was rejected",
+        "body": "OpenRouter refused the key, so answers pass unchecked.",
+        "action": "Reconnect in Settings → Connections."
+      },
+      "no_credits": {
+        "title": "Your OpenRouter account has no credits",
+        "body": "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"
+      },
+      "breaker_open": {
+        "title": "Fast check paused after repeated errors",
+        "body": "Route {route} enforces decisions; until the fast check recovers it follows its fail mode ({fail}).",
+        "action": "See Settings → Models for the last error."
+      }
+    },
+    "health": {
+      "pill_ok": "All systems ready",
+      "pill_issues": "{count} issues",
+      "checklist_title": "System health"
+    },
+    "states": {
+      "loading": "Loading…",
+      "retry": "Retry",
+      "error": "Couldn't load this: {message}",
+      "empty_traffic": "No requests yet. Send one with the curl snippet or try the Playground.",
+      "applies_until_restart": "Applies until restart (no database configured)"
+    },
+    "disabled_reasons": {
+      "readonly": "Not available on a read-only instance",
+      "demo": "Not available on the demo stack",
+      "needs_admin": "Needs an admin key",
+      "needs_database": "Needs a database to save",
+      "needs_connection": "Connect OpenRouter first",
+      "env_managed": "Set by an environment variable; change it there"
+    },
+    "setup": {
+      "step_secure": {
+        "title": "Secure this dashboard",
+        "no_token": "Find the setup token in the proxy logs, or print a fresh setup URL:",
+        "paste_token": "Paste the setup token",
+        "save_admin_key": "Copy your admin key now. It is shown only once.",
+        "saved_confirm": "I saved it"
+      },
+      "step_connect": {
+        "title": "Connect OpenRouter",
+        "primary": "Connect OpenRouter",
+        "paste_key": "Paste a key instead",
+        "simulated": "Explore with simulated checks (mock, labelled)",
+        "privacy": "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out.",
+        "probe_ready": "Ready · {latency_ms} ms · {cost}",
+        "no_credits": "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"
+      },
+      "step_see_it_work": {
+        "title": "See it work",
+        "body": "Try a refund question whose answer says 60 days while the policy says 30. No upstream key needed."
+      }
+    },
+    "connect_app": {
+      "title": "Connect your app",
+      "waiting": "Waiting for your first request…",
+      "received": "First request received",
+      "demo_stack": "This is the demo stack: mock checks, $0. To use your own keys: {command:demo_to_own_keys}."
+    },
+    "playground_static": {
+      "consent": [
+        "Your OpenRouter key stays in this browser tab and is sent only to openrouter.ai.",
+        "Checks are billed to your OpenRouter account; your account needs credits.",
+        "Forget the key here at any time, or revoke it at openrouter.ai/settings/keys."
+      ],
+      "forget_key": "Forget key",
+      "running_cost": "Spent so far: {cost}",
+      "cap_reached": "This demo stops after {max_calls} calls. Run it yourself for more."
+    },
+    "trace": {
+      "checked_against": "Checked against: {sources}",
+      "was_this_right": "Was this right?",
+      "correct": "Correct",
+      "false_alarm": "False alarm",
+      "open_evaluator": "Open evaluator",
+      "adjust_threshold": "Adjust threshold",
+      "checks": "Checks",
+      "claims": "Claims",
+      "claims_pending": "Deep audit running… usually 5–20 s",
+      "not_checked_no_documents": "Not checked — no documents",
+      "watching": "Watching (not affecting responses)",
+      "claim_not_located": "not located in text",
+      "claims_summary": "{supported} of {total} claims supported · {contradicted} contradicted",
+      "disagreement": "Fast check passed it; deep audit found {count} contradicted claim(s).",
+      "details": "Details",
+      "show_jev_request": "Show exact Jev request",
+      "jev_request_summary": "{calls} Jev call · {questions} questions · {latency_ms} ms · {cost} · {snapshot}",
+      "recompile_match": "Matches a recompile of this request",
+      "recompile_mismatch": "Differs from a recompile of this request"
+    },
+    "overview": {
+      "hero_chart": "Requests by outcome",
+      "what_was_caught": "What was caught",
+      "evidence_coverage": "Groundedness checked on {rate} of requests",
+      "why_not": "Why not?",
+      "hallucination_rate_needs_samples": "Needs {min_n} unbiased samples (have {n})",
+      "audited_share_basis": "among audited answers (selected by risk; not a traffic rate)",
+      "performance": "Performance"
+    },
+    "savings": {
+      "headline": "Your cost: {total_per_1k} per 1,000 answers (fast check {fast_check} + deep audit {deep_audit})",
+      "early_data": "So far: {n} answers checked for {cost}. Asking an LLM the same questions would have cost ≈ {counterfactual} (estimate).",
+      "caption": "The fast check triages; deep audits add claim-level explanations.",
+      "calculator_footnote": "The fast check triages; it doesn't replace claim-level audit.",
+      "stopped": "Stopped before users saw them",
+      "flagged": "Flagged to your app",
+      "uniform_paused": "Uniform sampling paused at {time} (daily cap {cap})",
+      "llm_cap_hit": "Deep-audit budget reached at {time}",
+      "not_measured": "not measured"
+    },
+    "policies": {
+      "acting_as": "{mode} → currently acting as {effective_mode}",
+      "preview_impact": "Preview impact (free — replays past answers)",
+      "preset_block_note": "Starts as Flag until calibrated",
+      "buffer_streams": "Buffer streams",
+      "label_more": "Label {n} more responses",
+      "allow_uncalibrated": "Allow uncalibrated blocking",
+      "diverged_file": "policies.yaml changed at {file_time} and replaced your dashboard edit from {edit_time}",
+      "view_diff": "View diff",
+      "restore_edit": "Restore my edit",
+      "adopt_file": "Adopt file"
+    },
+    "downgrades": {
+      "stream_not_buffered": "Streams pass straight through, so this route can only flag. Buffer streams to block.",
+      "uncalibrated": "Blocking stays off until every blocking check is calibrated for the current snapshot.",
+      "snapshot_changed": "The fast-check version changed; blocking pauses until its checks are re-calibrated.",
+      "budget": "Today's fast-check budget is used up.",
+      "breaker_open": "The fast check is paused after repeated errors.",
+      "decision_model_off": "The fast check is turned off.",
+      "trusts_user_context": "This route treats text pasted by users as documents; a user could make a false answer look supported."
+    },
+    "evaluators": {
+      "calibration_progress": "Labels {n}/{needed} ({correct} correct, {false_alarms} false alarms)",
+      "label_queue": "Label queue",
+      "calibrate_now": "Calibrate now",
+      "reliability_caption": "agreement with labels, not ground truth",
+      "adopt_calibration": "Adopt calibration",
+      "benchmarks_empty": "No measured benchmark runs yet. Run {command:bench_lite} to create one."
+    },
+    "studio": {
+      "describe": "Describe a check in plain English",
+      "test_on_samples": "Test on samples",
+      "dry_run": "Test on past traffic (paid)",
+      "dry_run_result": "Would have fired {fired} times ({rate}, 95% CI {lo}–{hi}) on the last {window}; this test cost {cost}.",
+      "save_and_watch": "Save and watch on route {route}",
+      "make_active": "Make active"
+    },
+    "recording": {
+      "recorded": "Recorded {date} · {snapshot} + {judge} · {answer_source} answers · replayed, not live",
+      "mock": "Simulated (mock checks + mock judge): not model output"
+    },
+    "limits": [
+      "Jev launched on 2026-09-15 on an alpha endpoint with no published calibration, so thresholds are calibrated locally per version.",
+      "Weak on numbers, dates and negation; instant checks and the deep audit cover them.",
+      "Needs documents for groundedness; otherwise the answer is marked not checked.",
+      "English-first.",
+      "Not a security boundary."
+    ]
+  }
+}
