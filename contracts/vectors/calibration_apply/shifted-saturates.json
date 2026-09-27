@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "shifted-saturates",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The shifted table reaches 1 at i = 98: x = 0.99 maps to 1.",
   "input": {

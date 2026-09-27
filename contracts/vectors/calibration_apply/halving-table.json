@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "halving-table",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Table t[i] = i/200 halves the risk: x = 0.96 maps to 0.48 (the decide vector calibration-active-but-not-adopted uses it).",
   "input": {

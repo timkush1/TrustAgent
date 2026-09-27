@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-negative-clipped",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A negative probability is clipped to 0 before summing: the sum is 1.0 without it.",
   "input": {

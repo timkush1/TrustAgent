@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "flat-table",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A flat table (0.3 everywhere, non-decreasing) maps every x to 0.3.",
   "input": {

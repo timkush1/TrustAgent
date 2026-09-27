@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "shifted-exact-point",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Table t[i] = min(1, (i+2)/100) (the decide vectors' measured table) at x = 0.95: f = t[95] = 0.97.",
   "input": {

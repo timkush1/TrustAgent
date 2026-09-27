@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "client-rules-honoured-when-on",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Same request with overrides.client_rules true: the request's allowed_commitments replaces the route value. Rules for params no attached evaluator declares are ignored.",
   "input": {

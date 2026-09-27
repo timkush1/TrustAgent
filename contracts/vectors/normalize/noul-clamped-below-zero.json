@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "noul-clamped-below-zero",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A negative noul is clamped to 0.",
   "input": {"template": "groundedness@1", "answer": {"type": "noul", "noul": -0.05}},

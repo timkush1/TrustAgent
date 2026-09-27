@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-tie-smallest-key",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Same distribution, but the vendor choice clearly_off_voice is not tied for the maximum: the lexicographically smallest tied key, matches_brand_voice, is top.",
   "input": {

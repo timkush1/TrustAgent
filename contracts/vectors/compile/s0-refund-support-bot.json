@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "s0-refund-support-bot",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "S0 scenario refund-contradiction-flag on the support-bot route (groundedness@1 and contradiction@1): one request whose state is {assistant_response, evidence} with refund-policy.md.",
   "input": {

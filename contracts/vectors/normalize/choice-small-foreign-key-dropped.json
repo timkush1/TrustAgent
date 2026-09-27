@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-small-foreign-key-dropped",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A foreign key with exactly 0.01 (not above 0.01) is dropped; the remaining options sum to 0.99 and are renormalized.",
   "input": {

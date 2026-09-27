@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "convex-table-interpolated",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Table t[i] = (i/100)^2 at x = 0.255: i = 25, f = 0.0625 + (0.0676 - 0.0625)*0.5 = 0.06505.",
   "input": {

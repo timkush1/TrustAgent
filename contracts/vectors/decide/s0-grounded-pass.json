@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "s0-grounded-pass",
-  "status": "draft",
+  "status": "frozen",
   "description": "S0 scenario grounded-pass (contracts/demo/scenarios.v1.json) on support-bot: flag mode, groundedness@1 and contradiction@1, mock backend, no calibration. groundedness 0.06 and contradiction 0.03 are below warn_at and escalate_from; no detector fired (30 is in the evidence). would pass, flag maps pass to pass; verdict supported; max_risk 0.06; no reasons; evidence present and no grounding trigger: deep_audit sample.",
   "input": {
     "policy": {

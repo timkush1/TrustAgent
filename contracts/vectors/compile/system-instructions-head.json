@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "system-instructions-head",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "At cpt 2.5 system_instructions keeps only its first 800*cpt = 2000 code points (no marker); unsafe_policy reads it.",
   "input": {

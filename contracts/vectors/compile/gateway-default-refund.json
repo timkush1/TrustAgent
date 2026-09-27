@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "gateway-default-refund",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The SPEC §2.8 example: the gateway-default set on the refund exchange. One request with state {assistant_response, evidence, user_request} (the union of the four templates' fields) and questions contradiction__v1, groundedness__v1, pii_secret_leak__v1 and refusal__v1.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "params-route-override-and-default",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "commitments@1 with a route override of allowed_commitments, and off_brand_tone@1 with its default brand_voice: state.rules = {allowed_commitments: <override>, brand_voice: <default>}.",
   "input": {

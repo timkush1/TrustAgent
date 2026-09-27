@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-sum-0.90-anomaly",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "refusal probabilities sum to 0.90: |s - 1| = 0.10 is within the 0.10 tolerance (compared as > tol + EPS), so the answer is renormalized, and |s - 1| > 0.02 records the sum_out_of_range anomaly.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "null-answer-is-missing",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "No answer at all (null) is missing_answer.",
   "input": {"template": "groundedness@1", "answer": null},

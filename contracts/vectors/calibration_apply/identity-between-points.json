@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "identity-between-points",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Identity table at x = 0.3333: u = 33.33, i = 33, f = 0.33 + 0.01*0.33 = 0.3333.",
   "input": {

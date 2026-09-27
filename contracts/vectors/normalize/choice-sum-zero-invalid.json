@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-sum-zero-invalid",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Every probability is 0 (sum 0): invalid_distribution.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "below-u3000-is-narrow",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Accented Latin, Greek, the em dash (U+2014), the ellipsis (U+2026) and the n-ary sum (U+2211) are all below U+3000, so they count as narrow code points.",
   "input": {"value": "café αβ — … ∑", "cpt": 4},

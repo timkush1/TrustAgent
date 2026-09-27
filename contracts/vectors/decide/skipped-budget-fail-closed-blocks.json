@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "skipped-budget-fail-closed-blocks",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, fail closed; the decision budget was exhausted, so Jev was never called (skip_reason budget, no request sent). Every evaluator is error with reason budget; status skipped counts as failing. Fail closed in block mode: action block, degraded budget, reason fail_closed. deep_audit sample_error.",
   "input": {
     "policy": {

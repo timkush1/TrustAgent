@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "long-user-request-head-and-tail",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "At cpt 2.5 a user_request above 1,000 tokens (here ceil(2773/2.5) = 1,110) keeps its first 600*cpt = 1500 code points and its last 400*cpt = 1000, joined by \" … \" (space, U+2026, space).",
   "input": {

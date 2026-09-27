@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-missing-options-filled",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Only two of pii_secret_leak's five options are present: the missing ones are 0 in probabilities. exposes_secret carries weight 1: risk 0.25.",
   "input": {

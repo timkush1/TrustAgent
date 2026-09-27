@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-missing-confidence",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Probabilities without a confidence: vendor_confidence null and confidence_source fallback_top_prob (display only).",
   "input": {

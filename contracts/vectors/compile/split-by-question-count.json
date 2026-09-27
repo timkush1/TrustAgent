@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "split-by-question-count",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "gateway-default with max_questions 2: the four questions are split first-fit-decreasing by est(q) (pii_secret_leak 275, refusal 177, groundedness 107, contradiction 99) into two requests that share one state: {pii_secret_leak, refusal} and {groundedness, contradiction}.",
   "input": {

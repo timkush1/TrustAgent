@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "number-negative-zero",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "-0 is written 0.",
   "input": {"value": -0},

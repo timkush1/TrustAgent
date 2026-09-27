@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "evidence-too-short",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The only evidence is 17 code points, under groundedness's min_chars 40: evidence_too_short. pii_secret_leak (optional, min_chars 0) is asked and receives the item.",
   "input": {

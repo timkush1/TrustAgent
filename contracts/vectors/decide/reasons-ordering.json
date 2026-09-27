@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "reasons-ordering",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route streamed without buffering (effective flag). contradiction 0.97 critical (uncorroborated) with groundedness 0.30 ok: disagreement and needs_second_signal. refusal 0.85 and pii_secret_leak 0.80 are warn. quotes and URL detectors fired (flag_on). Order: levels (critical first, then risk desc: refusal 0.85 before pii 0.80), detectors by id, disagreement, needs_second_signal, then the fixed-order flags (stream_not_buffered).",
   "input": {
     "policy": {

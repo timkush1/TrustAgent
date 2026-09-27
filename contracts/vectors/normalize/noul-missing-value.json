@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "noul-missing-value",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A noul answer without its noul value is missing_answer.",
   "input": {"template": "groundedness@1", "answer": {"type": "noul"}},

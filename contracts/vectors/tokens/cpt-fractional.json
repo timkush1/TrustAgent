@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "cpt-fractional",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A fractional cpt (3.7): n_narrow/cpt is a float and the ceiling is taken of the sum with the wide count.",
   "input": {"value": "Monthly plans are non-refundable.", "cpt": 3.7},

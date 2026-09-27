@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "only-untrusted-evidence-is-no-evidence",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The only evidence item is untrusted, so there is no evidence: groundedness and contradiction are excluded as no_evidence and nothing is compiled.",
   "input": {

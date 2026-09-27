@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "score-probabilities-missing",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A score answer with only the fractional score and no probabilities: probabilities_missing.",
   "input": {

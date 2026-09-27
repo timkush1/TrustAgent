@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "clean-pass-is-sampled",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route, every evaluator ok (groundedness 0.10 below escalate_from), no detector fired: action pass, verdict supported, deep_audit sample (the pass_sample_rate lane).",
   "input": {
     "policy": {

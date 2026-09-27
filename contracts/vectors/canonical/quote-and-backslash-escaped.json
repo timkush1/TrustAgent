@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "quote-and-backslash-escaped",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The quotation mark and the reverse solidus are the only printable characters that are escaped.",
   "input": {"value": "say \"hi\" \\ then /leave/"},

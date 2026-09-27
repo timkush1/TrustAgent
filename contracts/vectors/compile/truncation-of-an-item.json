@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "truncation-of-an-item",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "evidence_max_tokens 300. sys-1 (31 tokens) fits; handbook.md does not, but 300 - 31 = 269 >= 200 is left, so it is cut to its first floor((269 - est({id, source, text: \"\"}))*cpt) = floor((269 - 14)*4) = 1020 code points and listed in truncated_ids.",
   "input": {

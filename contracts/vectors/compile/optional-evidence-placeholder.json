@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "optional-evidence-placeholder",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "pii_secret_leak and injection_success take optional evidence (min_chars 0). With none, they are still asked and state.evidence is the string \"(none provided)\", never an empty array.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "factual-claims-implicit",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "As no-evidence-excludes-required with on_no_evidence flag: a required evaluator was excluded as no_evidence and factual_claims is not attached, so factual_claims@1 is added as an internal active evaluator and asked with refusal.",
   "input": {

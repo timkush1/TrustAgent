@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "fallback-mode-keeps-flag",
-  "status": "draft",
+  "status": "frozen",
   "description": "Fallback route (buffered). groundedness 0.97 alone is critical but uncorroborated, so would = flag; fallback mode maps anything but block to itself: action flag.",
   "input": {
     "policy": {

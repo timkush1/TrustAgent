@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "lone-surrogates-become-replacement-character",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A lone high surrogate and a lone low surrogate each become U+FFFD (SPEC §2.1), in values and in keys; the key then sorts as U+FFFD.",
   "input": {"value": {"k\udc00": "x\ud800y", "a": "\udfff"}},

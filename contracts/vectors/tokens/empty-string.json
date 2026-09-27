@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "empty-string",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The empty string is two quote characters: ceil(2/4) = 1 token.",
   "input": {"value": "", "cpt": 4},

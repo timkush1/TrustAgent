@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "score-rekeyed-levels",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A 4-level score with probabilities keyed \"3\", \"0\", \"2\" in any order and level \"1\" absent: re-keyed to levels \"0\"..\"3\" (missing level 0). risk = P(0) + P(1) = 0.10 (risk_levels [0, 1]); top \"2\". The fractional score and the legend are never used.",
   "input": {

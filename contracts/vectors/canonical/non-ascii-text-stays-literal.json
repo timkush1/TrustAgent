@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "non-ascii-text-stays-literal",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Non-ASCII text below U+FFFF (an accent, CJK, a no-break space, a replacement character, an ellipsis) is written as literal UTF-8.",
   "input": {"value": "Caf\u00e9 \u9000\u6b3e\u00a0\ufffd \u2026"},

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "split-by-token-budget",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Token budget 800 for four rubric questions (regulated_advice 231, off_topic 194, unsafe_policy 189, refusal 177 tokens) with a shared state of 87 and overhead 275: all four need 1153. First-fit-decreasing: regulated_advice and off_topic fill request 0 (787); unsafe_policy opens request 1 (551); refusal does not fit request 0 but fits request 1 (728).",
   "input": {

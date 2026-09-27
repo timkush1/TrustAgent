@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "shadow-and-disabled-evaluators",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "groundedness active, contradiction shadow (asked like any other), refusal enabled: false (skipped entirely: not in evaluators, excluded or the state, whose user_request field only refusal needed).",
   "input": {

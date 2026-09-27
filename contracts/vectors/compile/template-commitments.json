@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "template-commitments",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The built-in commitments@1 alone on a route, with the SPEC §2.8 refund exchange (refund-policy.md in the system prompt). The state holds exactly the template's state_fields; params take their defaults; the one question is the template's question verbatim under commitments__v1.",
   "input": {

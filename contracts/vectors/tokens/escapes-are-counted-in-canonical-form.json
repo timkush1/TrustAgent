@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "escapes-are-counted-in-canonical-form",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The estimate runs over the canonical JSON text: a line feed counts as the two characters of its escape and U+2028 as the six of its escape.",
   "input": {"value": "line\nbreak sep", "cpt": 4},

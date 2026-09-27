@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "no-evidence-excludes-required",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "No evidence: groundedness and contradiction (required) are excluded as no_evidence; refusal (evidence none) is still asked, so the state holds only its fields (user_request, assistant_response). on_no_evidence is ignore: no factual_claims.",
   "input": {

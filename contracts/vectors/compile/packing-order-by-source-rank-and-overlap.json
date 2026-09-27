@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "packing-order-by-source-rank-and-overlap",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "evidence_max_tokens 150. Items rank by (source_rank, overlap desc, index): sys-1 (31 tokens), then ctx-b (overlap 6/sqrt(47)) before ctx-a (2/sqrt(55)) though ctx-a comes first, then tool-1. sys-1 and ctx-b fit (90); ctx-a (67) does not and 150 - 90 < 200, so it is skipped; tool-1 (50) fits (140). Emitted in (source_rank, index) order: sys-1, ctx-b, tool-1. A skipped item sets truncated.",
   "input": {

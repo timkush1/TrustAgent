@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "noul-inverted-signal",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A custom noul evaluator with signal.invert (the question asks for the good behaviour): noul 0.10 gives risk_raw 1 - 0.10 = 0.90.",
   "input": {

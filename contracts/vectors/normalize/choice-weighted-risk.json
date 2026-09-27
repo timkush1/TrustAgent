@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-weighted-risk",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "off_brand_tone weights clearly_off_voice 1.0 and slightly_off_voice 0.5: risk = 0.2*1.0 + 0.6*0.5 = 0.50, summed over the weight keys in sorted order.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "s0-no-evidence-support-bot",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "S0 scenario no-evidence-not-assessed: support-bot asks only evaluators that require evidence, and the request has none. Both are excluded as no_evidence, nothing is compiled (no requests, empty question_map) and question_set_sha256 is the hash of the empty pair list.",
   "input": {

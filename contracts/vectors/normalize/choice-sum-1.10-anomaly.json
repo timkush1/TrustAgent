@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-sum-1.10-anomaly",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "refusal probabilities sum to 1.10: within the tolerance at its edge, renormalized with the sum_out_of_range anomaly.",
   "input": {

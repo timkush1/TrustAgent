@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "pack-to-zero-evidence-packed-away",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "evidence_max_tokens 30 is below the only item's 38 tokens and leaves less than 200 to truncate into, so the item is skipped. The packed text (0 code points) is under min_chars 40: groundedness and contradiction are excluded as evidence_packed_away after packing, refusal is still asked, and the state has no evidence. truncated is true.",
   "input": {

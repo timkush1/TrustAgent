@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "s0-refund-contradiction-flag",
-  "status": "draft",
+  "status": "frozen",
   "description": "S0 scenario refund-contradiction-flag on support-bot (flag). groundedness 0.96 and contradiction 0.98 are critical and list each other as corroborators: both in the block set, would block. Flag mode maps block to flag; the calibration cap only applies to block/fallback actions, so degraded stays null. numbers_not_in_evidence fired (60): not in flag_on, but it corroborated a block-set member, so det:numbers_not_in_evidence follows the levels; both evaluators escalate numeric_or_date_unverified. Verdict contradicted, deep_audit high.",
   "input": {
     "policy": {

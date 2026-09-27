@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "above-one-clamped",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "x = 1.4 is clamped to 1 before the lookup: f = t[100] = 0.5 on the halving table.",
   "input": {

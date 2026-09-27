@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "number-zero-point-one",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "0.1 is written with the shortest round-trip digits: 0.1.",
   "input": {"value": 0.1},

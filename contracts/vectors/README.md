@@ -19,13 +19,13 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 
 | Kind | Count | Status | Go runner |
 |---|---|---|---|
-| `canonical` | 16 | draft, generated | `internal/decision` |
-| `tokens` | 14 | draft, generated | `internal/decision` |
-| `question_hash` | 11 | draft, generated | `internal/decision` |
-| `normalize` | 29 | draft, generated | `internal/decision` |
-| `compile` | 34 | draft, generated | `internal/decision` |
-| `calibration_apply` | 13 | draft, generated | `internal/decision` |
-| `decide` | 55 | draft, hand-authored | `internal/decision` |
+| `canonical` | 16 | frozen, generated | `internal/decision` |
+| `tokens` | 14 | frozen, generated | `internal/decision` |
+| `question_hash` | 11 | frozen, generated | `internal/decision` |
+| `normalize` | 29 | frozen, generated | `internal/decision` |
+| `compile` | 34 | frozen, generated | `internal/decision` |
+| `calibration_apply` | 13 | frozen, generated | `internal/decision` |
+| `decide` | 55 | frozen, hand-authored | `internal/decision` |
 | `detectors` | 23 | draft, hand-authored | P2 (skipped) |
 | `evidence` | 14 | draft, hand-authored | P2 (skipped) |
 | `lint` | 19 | draft, hand-authored | P2 (skipped) |

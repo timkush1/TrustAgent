@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "score-foreign-level-key",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A 4-level score with a probability on level \"4\" (0.3 > 0.01): as for choice, unexpected_option.",
   "input": {

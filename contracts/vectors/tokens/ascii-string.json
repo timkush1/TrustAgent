@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "ascii-string",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "est(\"Hello, world\") at cpt 4: the canonical form carries the quotes, 14 narrow code points, ceil(14/4) = 4.",
   "input": {"value": "Hello, world", "cpt": 4},

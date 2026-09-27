@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "key-order-utf16-code-units",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Object keys sort by UTF-16 code units: the empty key, B (U+0042), a (U+0061), U+00E9, the emoji (surrogates D83D DE00) and the fullwidth A (U+FF21). UTF-8 byte order would put U+FF21 before the emoji.",
   "input": {"value": {"\uff21": 1, "\ud83d\ude00": 2, "\u00e9": 3, "a": 4, "B": 5, "": 6}},

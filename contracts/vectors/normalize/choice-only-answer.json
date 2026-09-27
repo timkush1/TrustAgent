@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-only-answer",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "No probabilities, and choice is an option: {declines_or_deflects: 1} with confidence_source choice_only, risk 1. vendor_confidence stays null.",
   "input": {"template": "refusal@1", "answer": {"type": "choice", "choice": "declines_or_deflects"}},

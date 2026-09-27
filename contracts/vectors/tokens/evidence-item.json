@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "evidence-item",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A compiled evidence item as packing estimates it: est({id, source, text}).",
   "input": {

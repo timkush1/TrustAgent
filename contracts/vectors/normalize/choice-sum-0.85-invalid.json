@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-sum-0.85-invalid",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "refusal probabilities sum to 0.85: |s - 1| = 0.15 > max(0.10, 0.005*4), so invalid_distribution.",
   "input": {

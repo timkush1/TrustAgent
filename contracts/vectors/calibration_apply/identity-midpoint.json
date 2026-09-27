@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "identity-midpoint",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Identity table t[i] = i/100 at x = 0.5: u = 50, i = 50, f = t[50] = 0.5.",
   "input": {

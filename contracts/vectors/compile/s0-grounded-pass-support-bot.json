@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "s0-grounded-pass-support-bot",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "S0 scenario grounded-pass on the support-bot route: the same request shape as s0-refund-support-bot with the grounded answer.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "evidence-packed-away-not-assessed-is-sampled",
-  "status": "draft",
+  "status": "frozen",
   "description": "block-contradictions preset: the request had evidence, but packing left less than min_chars, so both evaluators were excluded as evidence_packed_away and nothing was sent. Status not_assessed, action pass. Evidence was present, so deep_audit is not none; with no grounding trigger it is sample.",
   "input": {
     "policy": {

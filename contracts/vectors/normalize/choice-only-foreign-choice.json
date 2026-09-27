@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-only-foreign-choice",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "No probabilities and a choice that is not an option: the implied {maybe: 1} is a foreign key above 0.01, so unexpected_option.",
   "input": {"template": "refusal@1", "answer": {"type": "choice", "choice": "maybe"}},

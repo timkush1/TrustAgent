@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "cpt-maximum",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The text of cpt-minimum at the maximum cpt 6: ceil(100/6) = 17.",
   "input": {

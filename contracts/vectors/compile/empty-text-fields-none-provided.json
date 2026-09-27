@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "empty-text-fields-none-provided",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Empty user_request and system_instructions become \"(none provided)\" in the state (refusal reads user_request, unsafe_policy reads system_instructions).",
   "input": {

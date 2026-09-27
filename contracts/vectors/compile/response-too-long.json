@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "response-too-long",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "est(assistant_response) = 14 exceeds max_response_tokens 12: every evaluator is excluded as too_long and no request is compiled.",
   "input": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "untrusted-tool-never-enters",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A tool result from an untrusted_tools tool (untrusted: true) never enters the state and does not count as evidence; the system document is packed alone.",
   "input": {

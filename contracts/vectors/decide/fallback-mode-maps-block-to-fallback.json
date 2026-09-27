@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "fallback-mode-maps-block-to-fallback",
-  "status": "draft",
+  "status": "frozen",
   "description": "Fallback route (buffered), calibration not required. groundedness 0.96 and contradiction 0.98 corroborate each other: would = block, which fallback mode maps to action fallback.",
   "input": {
     "policy": {

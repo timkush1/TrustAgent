@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "score-sum-renormalized",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A score distribution summing to 0.98 is renormalized like a choice (within 0.02: no anomaly). risk = (0.2 + 0.3)/0.98.",
   "input": {

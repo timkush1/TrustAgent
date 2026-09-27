@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "tokens",
   "name": "cpt-minimum",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A 98-character text (100 code points with its quotes) at the minimum cpt 2.5: ceil(100/2.5) = 40.",
   "input": {

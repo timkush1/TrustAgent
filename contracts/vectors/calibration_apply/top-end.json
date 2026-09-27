@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "calibration_apply",
   "name": "top-end",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "x = 1: u = 100, i = min(100, 99) = 99, f = t[99] + (t[100] - t[99])*1 = t[100].",
   "input": {

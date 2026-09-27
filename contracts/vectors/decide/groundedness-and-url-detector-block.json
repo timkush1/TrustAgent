@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "groundedness-and-url-detector-block",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required. groundedness 0.97 is critical and det:urls_not_in_evidence (fired) is one of its corroborators, so it is in the block set: action block. The URL detector is in flag_on, so it is listed in reasons after the evaluator levels.",
   "input": {
     "policy": {

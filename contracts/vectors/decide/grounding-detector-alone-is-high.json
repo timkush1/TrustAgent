@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "grounding-detector-alone-is-high",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route, every evaluator ok, but the quotes detector (flag_on, a grounding detector) fired: det_flag gives action flag, and a fired grounding detector in flag_on is a grounding trigger: deep_audit high.",
   "input": {
     "policy": {

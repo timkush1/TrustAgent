@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-no-probabilities-no-choice",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A choice answer with neither probabilities nor choice is missing_answer.",
   "input": {"template": "refusal@1", "answer": {"type": "choice", "confidence": 0.9}},

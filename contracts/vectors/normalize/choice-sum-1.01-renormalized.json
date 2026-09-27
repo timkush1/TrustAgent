@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-sum-1.01-renormalized",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "refusal probabilities sum to 1.01: divided by 1.01, no anomaly.",
   "input": {

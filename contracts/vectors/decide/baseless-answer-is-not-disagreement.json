@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "baseless-answer-is-not-disagreement",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. An answer the evidence neither supports nor contradicts: groundedness 0.97 critical, contradiction 0.02 ok. Only contradiction implies groundedness (not the reverse), so groundedness critical with contradiction ok is not a disagreement; the uncorroborated critical adds needs_second_signal instead.",
   "input": {
     "policy": {

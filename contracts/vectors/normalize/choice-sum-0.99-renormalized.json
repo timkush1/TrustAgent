@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "choice-sum-0.99-renormalized",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "refusal probabilities sum to 0.99 (within max(0.10, 0.005*4) and within 0.02, so no anomaly): each option is divided by 0.99; declines_or_deflects 0.695 becomes 0.70202...",
   "input": {

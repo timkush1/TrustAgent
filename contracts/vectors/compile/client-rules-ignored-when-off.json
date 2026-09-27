@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "compile",
   "name": "client-rules-ignored-when-off",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "The request carries trustagent.rules, but overrides.client_rules is false: state.rules keeps the route value.",
   "input": {

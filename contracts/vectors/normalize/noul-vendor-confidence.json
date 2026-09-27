@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "normalize",
   "name": "noul-vendor-confidence",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "A noul answer with a confidence: vendor_confidence is echoed (display only) with confidence_source vendor; the risk is the noul.",
   "input": {

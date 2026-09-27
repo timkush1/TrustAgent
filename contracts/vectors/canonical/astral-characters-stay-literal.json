@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "canonical",
   "name": "astral-characters-stay-literal",
-  "status": "draft",
+  "status": "frozen",
   "generated_by": "cmd/vectorgen@dd3b61dd79ea",
   "description": "Characters above U+FFFF (an emoji and a musical symbol, given as surrogate-pair escapes) are written as literal UTF-8, never escaped.",
   "input": {"value": "smile \ud83d\ude00 clef \ud834\udd1e"},

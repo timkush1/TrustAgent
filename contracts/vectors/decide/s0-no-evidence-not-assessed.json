@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "s0-no-evidence-not-assessed",
-  "status": "draft",
+  "status": "frozen",
   "description": "S0 scenario no-evidence-not-assessed on support-bot (flag): the request carries no documents, so compile excluded both evaluators as no_evidence and sent nothing (answers null, empty question_map and request_status; the evidence detectors did not run). Every active evaluator is not_assessed: status and verdict not_assessed, would pass, action pass, max_risk null, no reasons. No evidence at all: deep_audit none.",
   "input": {
     "policy": {
