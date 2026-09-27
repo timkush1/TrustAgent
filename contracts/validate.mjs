@@ -690,30 +690,63 @@ for (const [label, ext] of external) {
 
 // ------------------------------------------------------------------------------------------ superseded identifiers
 
+// Path globs as scripts/check-forbidden.mjs reads them: "**/" is zero or more directories, "**" crosses
+// directories, "*" and "?" do not.
+function globToRegExp(glob) {
+  let src = '';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '*' && glob[i + 1] === '*') {
+      if (glob[i + 2] === '/') {
+        src += '(?:.*/)?';
+        i += 2;
+      } else {
+        src += '.*';
+        i += 1;
+      }
+    } else if (c === '*') src += '[^/]*';
+    else if (c === '?') src += '[^/]';
+    else src += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${src}$`);
+}
+
 const superseded = get('superseded.v1.json');
 if (superseded) {
   const REL = 'superseded.v1.json';
   const matchers = [];
-  for (const it of superseded.identifiers) {
+  for (const [i, it] of superseded.identifiers.entries()) {
+    const at = `identifiers[${i}] ${JSON.stringify(it.pattern)}`;
+    const allow = (it.allow ?? []).map(globToRegExp);
     if (it.kind === 'regex') {
+      let re;
       try {
-        const re = new RegExp(it.pattern);
-        matchers.push({ it, test: (t) => re.test(t) });
+        re = new RegExp(it.pattern, it.flags ?? '');
       } catch (e) {
-        error(REL, `pattern ${JSON.stringify(it.pattern)} is not a valid RegExp: ${e.message}`);
+        error(REL, `${at} is not a valid RegExp: ${e.message}`);
+        continue;
       }
+      // check-forbidden rejects a pattern that matches the empty string (it would flag every line).
+      if (re.test('')) error(REL, `${at} matches the empty string`);
+      else matchers.push({ it, allow, test: (line) => re.test(line) });
     } else {
-      matchers.push({ it, test: (t) => t.includes(it.pattern) });
+      if (it.flags !== undefined) error(REL, `${at}: flags are only valid with kind regex`);
+      matchers.push({ it, allow, test: (line) => line.includes(it.pattern) });
     }
   }
-  // Contracts themselves must never use a superseded identifier.
+  // Contracts themselves must never use a superseded identifier, whatever its level. As in check-forbidden,
+  // lines are matched one at a time, allow globs are repo-relative, and *.md prose is not scanned (the
+  // READMEs name superseded identifiers to explain them).
   const scanned = [...docs].filter(([rel]) => rel !== REL).map(([rel, d]) => [rel, d.text]);
-  for (const name of ['README.md', 'vectors/README.md', 'go.mod', 'embed.go', 'embed_test.go', 'package.json', 'validate.mjs', 'validate.test.mjs']) {
+  for (const name of ['go.mod', 'embed.go', 'embed_test.go', 'package.json', 'validate.mjs', 'validate.test.mjs']) {
     if (existsSync(join(ROOT, name))) scanned.push([name, readFileSync(join(ROOT, name), 'utf8')]);
   }
   for (const [rel, text] of scanned) {
-    for (const { it, test } of matchers) {
-      if (test(text)) error(rel, `uses superseded identifier ${JSON.stringify(it.pattern)} (${it.area}): ${it.note}`);
+    const lines = text.split(/\r?\n/);
+    for (const { it, allow, test } of matchers) {
+      if (allow.some((re) => re.test(`contracts/${rel}`))) continue;
+      const n = lines.findIndex(test);
+      if (n >= 0) error(`${rel}:${n + 1}`, `uses superseded identifier ${JSON.stringify(it.pattern)} (${it.area}): ${it.note}`);
     }
   }
 }

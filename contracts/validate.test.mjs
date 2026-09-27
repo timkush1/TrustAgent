@@ -197,7 +197,53 @@ describe('validate.mjs', () => {
     sb.edit('ui/copy.v1.json', (c) => { c.copy.trace.details = `See ${literal}`; });
     const r = run(sb.root);
     assert.equal(r.code, 1);
-    assert.ok(r.out.includes(`ui/copy.v1.json: uses superseded identifier ${JSON.stringify(literal)}`), r.out);
+    assert.match(r.out, /ui\/copy\.v1\.json:\d+: uses superseded identifier/);
+    assert.ok(r.out.includes(`uses superseded identifier ${JSON.stringify(literal)}`), r.out);
+  });
+
+  test('regex identifiers honour their flags and allow globs', () => {
+    const sb = sandbox();
+    // A header identifier with flag i must also catch the lowercase spelling, which is built here from the
+    // pattern so this file never spells a superseded header.
+    const header = sb.read('superseded.v1.json').identifiers.find((i) => i.kind === 'regex' && i.flags === 'i');
+    const spelled = header.pattern.replace(/\\b$/, '').replace(/\(\?![^)]*\)$/, '').toLowerCase();
+    sb.edit('ui/copy.v1.json', (c) => { c.copy.trace.details = `Header ${spelled}: x`; });
+    let r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.ok(r.out.includes(`uses superseded identifier ${JSON.stringify(header.pattern)}`), r.out);
+    sb.edit('superseded.v1.json', (s) => {
+      s.identifiers.find((i) => i.pattern === header.pattern).allow = ['contracts/ui/*.json'];
+    });
+    r = run(sb.root);
+    assert.equal(r.code, 0, r.out);
+  });
+
+  test('superseded.v1.json keeps the shape scripts/check-forbidden.mjs accepts', () => {
+    const sb = sandbox();
+    sb.edit('superseded.v1.json', (s) => {
+      s.unenforced = [];
+      s.identifiers[0].typo = 'x';
+      s.identifiers.push({ area: 'dx', pattern: 'abc', kind: 'regex', level: 'info', note: 'unknown level' });
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /superseded\.v1\.json: \/ must NOT have additional properties .*"unenforced"/);
+    assert.match(r.out, /\/identifiers\/0 must NOT have additional properties .*"typo"/);
+    assert.match(r.out, /\/identifiers\/\d+\/level must be equal to one of the allowed values/);
+  });
+
+  test('superseded regex and flag rules are enforced', () => {
+    const sb = sandbox();
+    sb.edit('superseded.v1.json', (s) => {
+      s.identifiers.push({ area: 'dx', pattern: 'abc', kind: 'literal', flags: 'i', note: 'literal with flags' });
+      s.identifiers.push({ area: 'dx', pattern: 'x*', kind: 'regex', note: 'matches the empty string' });
+      s.identifiers.push({ area: 'dx', pattern: '(', kind: 'regex', note: 'invalid' });
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /"abc": flags are only valid with kind regex/);
+    assert.match(r.out, /"x\*" matches the empty string/);
+    assert.match(r.out, /"\(" is not a valid RegExp/);
   });
 
   test('every outcome is defined and reachable', () => {

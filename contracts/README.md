@@ -141,7 +141,8 @@ and then runs the cross-file checks JSON Schema cannot express:
 - vectors: known kind, kind matches the directory, name matches the file;
 - UI: every outcome is reachable and the last rule is a catch-all; glossary `see_also`, `{command:}` and
   `{claim:}` references resolve; commands name real compose services and profiles;
-- no contract file uses a superseded identifier from `superseded.v1.json`.
+- `superseded.v1.json` has the shape `scripts/check-forbidden.mjs` accepts, and no contract file uses one of
+  its identifiers.
 
 Repository files that follow a contract are validated too when present: `config/policies.yaml`
 (`policy.v1`), `config/calibration/*.json` (`calibration.v1`, plus a non-decreasing table and quality
@@ -153,7 +154,32 @@ rules) and `docs/benchmarks/results/*.json` (`benchmark-run.v1`).
 (SPEC §4.1). Each contract PR updates the affected vectors and fixtures, and the Go and TS runners must
 be green. Service worktrees read contracts; they do not edit them.
 
-`superseded.v1.json` lists identifiers that must never be implemented. `scripts/check-forbidden.mjs`
-scans code for them (excluding `docs/archive/**` and `superseded.v1.json` itself). A `literal` pattern is
-a plain substring; a `regex` pattern is an ECMAScript RegExp source compiled without flags. Items that
-cannot be matched reliably by text are listed under `unenforced` for review.
+## Superseded identifiers
+
+`superseded.v1.json` lists identifiers that must never be implemented (SPEC Appendix A).
+`scripts/check-forbidden.mjs` scans tracked code for them line by line (not `*.md` prose, `docs/archive/**`,
+`docs/v2/**` or the list itself) and rejects unknown keys, so the file keeps exactly its format:
+`{version: "1", description?, identifiers: [{area, pattern, kind, note, flags?, allow?, level?}]}`. A `literal`
+pattern is a case-sensitive substring; a `regex` pattern is an ECMAScript RegExp source compiled with `flags`
+(header names use `i`). `allow` lists repo-relative path globs where an identifier is permitted.
+
+`level: "warn"` marks an identifier that legacy code still uses at P1, so the CI check reports it without
+failing until the stream that owns that code removes it; that PR flips it to `error`. Today: `?api_key=`
+(`backend-go/cmd/proxy/main.go`, `frontend-react/src/api/client.ts`), `VITE_TRUTHTABLE_API_KEY`
+(`frontend-react/src/api/client.ts`) and the `audit-engine` compose service (`docker-compose.yml`,
+`config/prometheus.yml`).
+
+Appendix A items that plain text matching cannot catch reliably, and what covers them instead:
+
+| Area | Item | Covered by |
+|---|---|---|
+| gateway | `enforcement` values `audit` and `enforce` | too generic to match; the `enforcement:` field pattern |
+| engine | Python Jev client in 2.0 | partly the `truthtable.decisions` pattern; review engine changes for direct Jev HTTP calls |
+| frontend | `X-API-Key` on `/v1` | `X-API-Key` stays valid on `/api/*`; `/v1` auth tests (it accepts `X-TrustAgent-Key`) |
+| frontend | code-point spans | UTF-16 offsets (SPEC §2.1), pinned by the `detectors` and `evidence` vectors |
+| frontend | 409 on duplicate `X-Request-ID` | API tests: duplicates are stored as non-unique `client_request_id` |
+| frontend | A–F grades in lists | review of list components (grades appear only in trace details) |
+| canonical contract | `question_sha256` as the calibration key | `calibration.v1` (targets use `calibration_key`); `question_sha256` stays valid on evaluator versions |
+| canonical contract | Evaluate→Submit fallback | worker tests (Go calls Evaluate only) |
+| canonical contract | `auth_mode` flip on the admin key | authz tests (auth mode derives from ingest and read keys) |
+| canonical contract | `quality=measured` from deep-audit labels | quality re-derived on import (`calibration.v1`, `calibrate_fit` vectors) |

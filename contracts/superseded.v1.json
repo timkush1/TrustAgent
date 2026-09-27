@@ -1,34 +1,40 @@
 {
   "version": "1",
+  "description": "SPEC Appendix A as data, read by scripts/check-forbidden.mjs, which scans tracked code (not *.md prose, docs/archive/**, docs/v2/** or this file) line by line and fails on an error-level hit. literal = case-sensitive substring; regex = ECMAScript RegExp source compiled with flags. level warn marks an identifier that legacy code still uses until the stream that owns that code removes it; flip it to error in the same PR. Appendix A items that plain text matching cannot catch reliably are listed in contracts/README.md.",
   "identifiers": [
     {
       "area": "gateway",
-      "pattern": "X-TrustAgent-Band",
-      "kind": "literal",
+      "pattern": "X-TrustAgent-Band\\b",
+      "kind": "regex",
+      "flags": "i",
       "note": "Superseded header; see SPEC §2.12 for the header set."
     },
     {
       "area": "gateway",
-      "pattern": "X-TrustAgent-Grounded",
-      "kind": "literal",
+      "pattern": "X-TrustAgent-Grounded\\b",
+      "kind": "regex",
+      "flags": "i",
       "note": "Superseded header; use X-TrustAgent-Verdict."
     },
     {
       "area": "gateway",
-      "pattern": "X-TrustAgent-Decided-By",
-      "kind": "literal",
+      "pattern": "X-TrustAgent-Decided-By\\b",
+      "kind": "regex",
+      "flags": "i",
       "note": "Superseded header."
     },
     {
       "area": "gateway",
       "pattern": "X-TrustAgent-Gate(?![-A-Za-z0-9_])",
       "kind": "regex",
+      "flags": "i",
       "note": "Superseded header; use X-TrustAgent-Action / -Status. X-TrustAgent-Gate-Ms stays valid."
     },
     {
       "area": "gateway",
-      "pattern": "X-TrustAgent-Policy",
-      "kind": "literal",
+      "pattern": "X-TrustAgent-Policy\\b",
+      "kind": "regex",
+      "flags": "i",
       "note": "Superseded header; use X-TrustAgent-Route (<route>@v<version>)."
     },
     {
@@ -191,7 +197,8 @@
       "area": "frontend",
       "pattern": "?api_key=",
       "kind": "literal",
-      "note": "Keys never go in URLs."
+      "note": "Keys never go in URLs. warn until the legacy WebSocket query-key auth is removed (backend-go/cmd/proxy/main.go, frontend-react/src/api/client.ts: WS tickets, P2); then error.",
+      "level": "warn"
     },
     {
       "area": "frontend",
@@ -209,7 +216,8 @@
       "area": "frontend",
       "pattern": "\\bVITE_TRUTHTABLE_API_KEY\\b",
       "kind": "regex",
-      "note": "Removed (breaking): no key in the bundle."
+      "note": "Removed (breaking): no key in the bundle. warn until the legacy dashboard client drops it (frontend-react/src/api/client.ts, P2 web); then error.",
+      "level": "warn"
     },
     {
       "area": "frontend",
@@ -365,7 +373,8 @@
       "area": "dx",
       "pattern": "\\baudit-engine\\b",
       "kind": "regex",
-      "note": "The compose service is named engine."
+      "note": "The compose service is named engine. warn until docker-compose.yml and config/prometheus.yml rename the legacy audit-engine service; then error.",
+      "level": "warn"
     },
     {
       "area": "dx",
@@ -444,58 +453,6 @@
       "pattern": "\\bshadow_sample\\b",
       "kind": "regex",
       "note": "Superseded ROI method; use uniform_sample."
-    }
-  ],
-  "unenforced": [
-    {
-      "area": "gateway",
-      "item": "enforcement values audit | enforce",
-      "note": "Too generic to match by text; covered by the enforcement: pattern."
-    },
-    {
-      "area": "engine",
-      "item": "Python Jev client in 2.0",
-      "note": "Partly covered by the truthtable.decisions pattern; review engine changes for direct Jev HTTP calls."
-    },
-    {
-      "area": "frontend",
-      "item": "X-API-Key on /v1",
-      "note": "X-API-Key stays valid on /api/*, so the header name alone cannot be matched; /v1 accepts X-TrustAgent-Key (covered by auth tests)."
-    },
-    {
-      "area": "frontend",
-      "item": "Code-point spans",
-      "note": "Offsets are UTF-16 code units (SPEC §2.1); enforced by detector and evidence vectors."
-    },
-    {
-      "area": "frontend",
-      "item": "409 on duplicate X-Request-ID",
-      "note": "Duplicate client ids are stored as client_request_id (non-unique); covered by API tests."
-    },
-    {
-      "area": "frontend",
-      "item": "A–F grades in lists",
-      "note": "Grades appear only in trace details; review list components."
-    },
-    {
-      "area": "canonical_contract",
-      "item": "question_sha256 as the calibration key",
-      "note": "question_sha256 stays valid on evaluator versions; calibration targets use calibration_key (schema-enforced in calibration.v1)."
-    },
-    {
-      "area": "canonical_contract",
-      "item": "Evaluate→Submit fallback",
-      "note": "Go calls Evaluate only; covered by worker tests."
-    },
-    {
-      "area": "canonical_contract",
-      "item": "auth_mode flip on admin key",
-      "note": "Auth mode derives from ingest and read keys only; covered by authz tests."
-    },
-    {
-      "area": "canonical_contract",
-      "item": "quality=measured from deep-audit labels",
-      "note": "Quality is re-derived on import (calibration.v1, calibrate_fit vectors)."
     }
   ]
 }
