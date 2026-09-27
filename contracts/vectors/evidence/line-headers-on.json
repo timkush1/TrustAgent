@@ -3,7 +3,7 @@
   "kind": "evidence",
   "name": "line-headers-on",
   "status": "draft",
-  "description": "Untagged prompt with evidence.line_headers true: the \"Context:\" line starts a block that ends before the \"Question:\" line. The block (header excluded) is a request_system item; the header and question lines outside it stay in system_instructions, minus the block.",
+  "description": "Untagged prompt with evidence.line_headers true: the \"Context:\" line starts a block that ends before the \"Question:\" line. The block text (header line excluded) is a request_system item. The whole block span, header line included, is removed from system_instructions; the first line and the \"Question:\" line stay.",
   "input": {
     "api_format": "openai_chat",
     "settings": {
