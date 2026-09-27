@@ -4,13 +4,11 @@
 // purely TrustAgent's added work on the request path (parse, tee, enqueue),
 // which is the number that matters: audits are async by design.
 //
-// Run (stack up, e.g. `make up-all`):
-//   k6 run scripts/load/proxy-overhead.js
-// or without installing k6:
-//   docker run --rm -i --network host grafana/k6 run - < scripts/load/proxy-overhead.js
-//
-// With auth enabled, pass the key:
+// test_response needs TRUTHTABLE_TEST_MODE, which the demo stack turns on.
+// Run (demo stack up: `make demo`; the key is TRAFFICGEN_API_KEY in .env):
 //   k6 run -e API_KEY=<key> scripts/load/proxy-overhead.js
+// or without installing k6 (`make load-test` passes TRAFFICGEN_API_KEY):
+//   docker run --rm -i --network host -e API_KEY=<key> grafana/k6 run - < scripts/load/proxy-overhead.js
 
 import http from 'k6/http';
 import { check } from 'k6';
@@ -32,7 +30,8 @@ const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 export default function () {
   const headers = { 'Content-Type': 'application/json' };
   if (__ENV.API_KEY) {
-    headers['Authorization'] = `Bearer ${__ENV.API_KEY}`;
+    // The proxy's own key; Authorization is the upstream's (SPEC §2.4, §2.12).
+    headers['X-TrustAgent-Key'] = __ENV.API_KEY;
   }
 
   const payload = JSON.stringify({
