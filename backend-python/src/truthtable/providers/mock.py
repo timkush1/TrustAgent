@@ -10,7 +10,8 @@ trustagent.scenarios/v1), keyed by the scenario id that the proxy sends as
 AuditOptions.mock_scenario. The engine opens a `mock_judge_scope(scenario)`
 around each audit; within it:
 
-- a decomposition prompt for the scenario's `response` is answered with the
+- a decomposition prompt whose audited text is the scenario's `response`
+  (compared whitespace-normalised, never as a substring) is answered with the
   scenario's `judge.claims[].claim`, in order;
 - a verification prompt (`<claim>` block) is answered with that claim's
   `verdict`, `confidence`, `evidence` and `reasoning` (an UNKNOWN verdict is
@@ -59,6 +60,10 @@ _CLAIM_VERDICTS = _JUDGED_VERDICTS | {_UNKNOWN_VERDICT, "NOT_CHECKED"}
 # The verifier renders the claim as "<claim>\n{claim}\n</claim>". Requiring the
 # newlines skips the literal "<claim></claim>" in the verifier system prompt.
 _CLAIM_BLOCK = re.compile(r"<claim>\n(.*?)\n</claim>", re.DOTALL)
+
+# The decomposer renders the audited answer as "<text>\n{response}\n</text>".
+# Greedy, so an answer that itself contains "</text>" is still read whole.
+_TEXT_BLOCK = re.compile(r"<text>\n(.*)\n</text>", re.DOTALL)
 
 # What the mock "judge" says when a fixture replays a judge failure (UNKNOWN):
 # deliberately not JSON, so the verifier's strict parser rejects it.
@@ -265,7 +270,14 @@ class MockLLMProvider(LLMProvider):
         if claim_block is not None:
             return self._verdict_for(scenario, _normalize(claim_block.group(1)))
 
-        if scenario.response.strip() and _normalize(scenario.response) in _normalize(user_text):
+        # Exact (whitespace-normalised) text, not containment: an answer with
+        # extra sentences is a different answer, and a strict miss.
+        text_block = _TEXT_BLOCK.search(user_text)
+        if (
+            text_block is not None
+            and scenario.response.strip()
+            and _normalize(text_block.group(1)) == _normalize(scenario.response)
+        ):
             return json.dumps([judge_claim.claim for judge_claim in scenario.claims])
 
         raise FixtureNotFoundError(

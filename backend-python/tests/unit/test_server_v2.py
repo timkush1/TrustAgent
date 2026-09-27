@@ -745,12 +745,21 @@ async def test_evaluate_unknown_mock_scenario_fails_as_fixture_missing(
     assert result.audit_id == request.audit_id
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        "Refunds are available for 90 days on every plan.",
+        # The scenario's answer plus an extra (unaudited) sentence is not its answer.
+        _scenario("grounded-pass")["response"] + " Refunds are paid in cash.",
+    ],
+    ids=["other-answer", "extra-sentence"],
+)
 async def test_evaluate_answer_outside_the_scenario_fails_as_fixture_missing(
-    judge_stub: pb_grpc.AuditServiceStub,
+    judge_stub: pb_grpc.AuditServiceStub, response: str
 ) -> None:
     # The mock judge only decomposes the scenario's own response.
     request = _scenario_request(_scenario("grounded-pass"))
-    request.response = "Refunds are available for 90 days on every plan."
+    request.response = response
 
     result = await judge_stub.Evaluate(request, timeout=RPC_TIMEOUT_S)
 

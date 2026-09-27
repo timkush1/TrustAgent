@@ -185,9 +185,19 @@ async def test_scenario_unknown_verdict_replays_a_judge_failure():
         ("no-such-scenario", _decompose_request, "not in the scenario pack"),
         ("silent", lambda: _decompose_request("Nothing to see."), "judge is null"),
         ("refund", lambda: _decompose_request("A different answer."), "neither"),
+        # The scenario's response inside a longer answer is a different answer.
+        ("refund", lambda: _decompose_request(f"{RESPONSE} Refunds are instant."), "neither"),
+        ("refund", lambda: _decompose_request(f"Hello. {RESPONSE}"), "neither"),
         ("refund", lambda: _verify_request("An unknown claim."), "no judge verdict"),
     ],
-    ids=["unknown-scenario", "judge-null", "other-response", "other-claim"],
+    ids=[
+        "unknown-scenario",
+        "judge-null",
+        "other-response",
+        "extra-suffix",
+        "extra-prefix",
+        "other-claim",
+    ],
 )
 async def test_scenario_strict_miss_raises_and_is_recorded(
     scenario_judge: MockLLMProvider, scenario: str, request_factory: Any, message: str
