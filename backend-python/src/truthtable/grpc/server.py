@@ -5,6 +5,7 @@ Implements the AuditService defined in proto/evaluator.proto (docs/v2/SPEC.md
 section 2.2).
 """
 
+import asyncio
 import logging
 import uuid
 import time
@@ -42,6 +43,13 @@ logger = logging.getLogger(__name__)
 # Evaluate results carry the v1 scorer's numbers until scoring v2 lands (SPEC
 # section 3.2, scoring/aggregate.py); scoring_version tells consumers which.
 SCORING_VERSION = "v1"
+
+# HealthCheck asks whether the engine is serving; the judge's health is only
+# reported. Its probe is bounded so a slow or unreachable judge (a provider
+# health check may wait up to 10 s) shows as judge=False instead of running the
+# RPC past the deadline of `python -m truthtable.healthcheck` (3 s by default)
+# and marking a serving engine unhealthy.
+JUDGE_HEALTH_TIMEOUT_S = 2.0
 
 # TrustGrade cutoffs (D18): A>=0.9, B>=0.7, C>=0.5, D>=0.3, F<0.3. They must
 # match the TrustGrade comments in proto/evaluator.proto.
@@ -487,8 +495,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         # Check the audit judge (whichever provider it is; the v1 key was "ollama")
         if self.provider:
             try:
-                dependencies["judge"] = await self.provider.health_check()
-            except Exception:
+                dependencies["judge"] = bool(
+                    await asyncio.wait_for(self.provider.health_check(), JUDGE_HEALTH_TIMEOUT_S)
+                )
+            except Exception:  # includes the probe timing out
                 dependencies["judge"] = False
         else:
             dependencies["judge"] = True  # Assume ok if no provider

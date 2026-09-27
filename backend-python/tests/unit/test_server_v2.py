@@ -18,6 +18,7 @@ the servicer inherits the generated UNIMPLEMENTED handlers, and the phases that
 implement them replace the corresponding cases here with behaviour tests.
 """
 
+import asyncio
 import json
 import re
 from collections import OrderedDict
@@ -350,6 +351,23 @@ async def test_health_check_reports_unhealthy_provider() -> None:
     servicer = AuditServicer(audit_graph=None, provider=UnhealthyProvider())
     async with serving(servicer) as audit_stub:
         response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=RPC_TIMEOUT_S)
+
+    assert response.healthy is False
+    assert dict(response.dependencies) == {"judge": False}
+
+
+async def test_health_check_bounds_a_hanging_judge_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A judge that never answers its health probe shows as judge=False; the RPC
+    # still answers well inside its deadline (the compose healthcheck's 3 s).
+    class HangingProvider:
+        async def health_check(self) -> bool:
+            await asyncio.sleep(RPC_TIMEOUT_S * 2)
+            return True
+
+    monkeypatch.setattr(server_mod, "JUDGE_HEALTH_TIMEOUT_S", 0.05)
+    servicer = AuditServicer(audit_graph=None, provider=HangingProvider())
+    async with serving(servicer) as audit_stub:
+        response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=1.0)
 
     assert response.healthy is False
     assert dict(response.dependencies) == {"judge": False}
