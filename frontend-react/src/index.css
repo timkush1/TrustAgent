@@ -9,7 +9,10 @@
  * - Contrast: every text token is >= 4.5:1 on surface and on its own tint (values in DESIGN.md).
  * - `--color-*: initial` removes Tailwind's palette, so `bg-red-500` and friends do not exist here.
  */
-@import 'tailwindcss';
+/* Scan only the app sources for class names (not docs, tests or build output). */
+@import 'tailwindcss' source('.');
+@source not './**/*.test.{ts,tsx}';
+@source not './test';
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
