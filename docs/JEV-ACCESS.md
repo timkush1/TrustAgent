@@ -4,10 +4,11 @@ This guide is for whoever runs TrustAgent. It covers how to get access to **Jev*
 classifier behind TrustAgent's per-answer "fast check", what it costs, which settings matter and
 what to do when something goes wrong.
 
-> **Where this stands.** TrustAgent 2.0 is being built in phases (see [docs/v2/SPEC.md §4](v2/SPEC.md)).
-> Everything on the OpenRouter side of this guide works today. TrustAgent features carry the phase
-> that ships them: *(from S0)*, *(from P2)*, *(from P3)* or *(from P4)*. Anything tagged is not on
-> this branch yet.
+> **Where this stands.** TrustAgent 2.0 is being built in phases (see
+> [docs/v2/SPEC.md §4](v2/SPEC.md#4-implementation-sequence)). Everything on the OpenRouter side of
+> this guide works today. TrustAgent features carry the phase that ships them: *(from S0)*,
+> *(from P2)*, *(from P3)* or *(from P4)*. A tagged feature is not available until that phase has
+> landed.
 
 ## TL;DR
 
@@ -59,13 +60,14 @@ In order of ease:
 | 1 | **Dashboard → Connect OpenRouter** | OpenRouter creates a key for you (PKCE sign-in). TrustAgent stores it encrypted and uses it for both the fast check and the judge. **Then open [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) and set a credit limit on the new key (for example $2)**, because keys created this way have no limit. | *(from P4)* |
 | 2 | **Paste a key** in Settings → Connections | Works for OpenRouter, TypeSafe, Anthropic or OpenAI keys. Stored encrypted; never sent back to the browser. | *(from P4)* |
 | 3 | **Environment:** `OPENROUTER_API_KEY=…` in `.env`, then `docker compose up -d` | An environment value always wins and shows as read-only in the dashboard. | Put the key there now; TrustAgent reads it *(from P2)* |
-| 4 | **Headless:** `make configure --with-secrets` | Writes the configuration without opening the dashboard. | *(from P2)* |
+| 4 | **Headless:** `python3 scripts/configure.py --with-secrets` | Writes the configuration, secrets included, without opening the dashboard. (Without `--with-secrets` it writes only the non-secret settings.) | *(from P2)* |
 
 ## Backends
 
-Set with `TRUTHTABLE_JEV_BACKEND` *(from P2)*. The default is `auto`, which uses your OpenRouter key
-when one is set. With no key at all the fast check is off, and the proxy's startup log points to
-this guide.
+Set with `TRUTHTABLE_JEV_BACKEND` *(from P2)*. The default is `auto`, which picks the first match:
+demo mode uses `mock`; `TRUTHTABLE_JEV_BASE_URL` plus `TRUTHTABLE_JEV_API_KEY` selects `compatible`;
+an OpenRouter key selects `openrouter-decisions`; a TypeSafe key selects `typesafe`. With no key at
+all the fast check is `off`.
 
 | Backend | Use it when | Model |
 |---|---|---|
@@ -84,9 +86,9 @@ come from the environment or from the policy file `config/policies.yaml` *(from 
 | Setting | Default | Effect | Environment or policy key |
 |---|---|---|---|
 | Route mode | observe | Measures only and never changes an answer. Move to flag, then to block when the checks are calibrated. | `TRUTHTABLE_GATE_DEFAULT_MODE`; per route `mode` |
-| Daily caps | Fast checks $2, deep audits $5 | Past a cap, fast checks pass answers through unchecked and deep audits pause. A banner says so. Observe and flag routes stop at 75% of the fast-check cap, which keeps the rest for routes that block. | `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY`, `TRUTHTABLE_SPEND_CAP_LLM_USD_DAY` (0 = unlimited) |
+| Daily caps | Fast checks $2, deep audits $5 | Past a cap, fast checks pass answers through unchecked and deep audits pause. A banner says so. The exception is a block route set to fail closed (`fail: closed`): it blocks instead. Observe and flag routes stop at 75% of the fast-check cap, which keeps the rest for routes that block or fall back. | `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY`, `TRUTHTABLE_SPEND_CAP_LLM_USD_DAY` (0 = unlimited) |
 | Model pin | — (routes use `TRUTHTABLE_JEV_MODEL`, which is `typesafe/jev-1.13` on OpenRouter) | Which Jev snapshot answers. Can be pinned per route. | `TRUTHTABLE_JEV_MODEL`; per route `decision.model` |
-| Sampling | Deep audit on grounding-flagged answers, plus 2% of passes, plus 1% uniform | Decides which answers get the expensive LLM audit. The uniform 1% is what makes the headline hallucination rate unbiased. | Per route `deep_audit.pass_sample_rate` (0.02), `uniform_sample_rate` (0.01) |
+| Sampling | Deep audit on grounding-flagged answers, plus 2% of passes, plus 1% uniform | Decides which answers get the expensive LLM audit. The uniform 1% is what makes the headline hallucination rate unbiased. | Per route `deep_audit.pass_sample_rate` (0.02), `deep_audit.uniform_sample_rate` (0.01) |
 
 ## Costs [estimate]
 
@@ -111,7 +113,7 @@ OpenRouter side apply today.
 
 | You see | What it means | What to do |
 |---|---|---|
-| 401 or 403, "Key rejected" | The key is invalid or was revoked | Reconnect, or paste a new key |
+| 401 or 403, "Key rejected" | The key is invalid or was revoked | Reconnect or paste a new key *(from P4)*, or replace `OPENROUTER_API_KEY` in `.env` and restart |
 | 402, "no credits" | The account is empty or the key's credit limit is reached | Add credits at [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits), or raise the key's limit at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | 404, "No endpoints found" or a mention of data policy | Your privacy settings exclude the only provider that serves Jev | Check [openrouter.ai/settings/privacy](https://openrouter.ai/settings/privacy), or unset `TRUTHTABLE_JEV_ZDR` |
 | 200 with an HTML page, "got a web page" | Wrong base URL (OpenRouter API URLs end in `/api`) | Fix `TRUTHTABLE_JEV_BASE_URL`, or leave it empty |
@@ -137,7 +139,7 @@ OpenRouter side apply today.
 
 | Check | What it tells you | Available |
 |---|---|---|
-| `make doctor` | Which backend is active and why it was chosen, the Jev snapshot, latency and cost | *(from S0)*; the full checks arrive by P5 |
+| `make doctor` (or `python3 scripts/doctor.py`) | Which backend is active and why it was chosen, the Jev snapshot, latency and cost | *(from S0)*; the full checks arrive by P5 |
 | Dashboard → Settings → Test | Sends one probe (about $0.00001) and shows the backend, snapshot, latency and any error with its fix | *(from P4)* |
 
 **Today**, before either exists, you can confirm that the key works and see its limit with a free
@@ -145,9 +147,10 @@ call that makes no model request:
 
 ```bash
 curl -sS -w '\nHTTP %{http_code}\n' https://openrouter.ai/api/v1/key \
-  -H "Authorization: Bearer $(grep -m1 '^OPENROUTER_API_KEY=' .env | cut -d= -f2-)"
+  -H "Authorization: Bearer $(grep -m1 '^OPENROUTER_API_KEY=' .env | cut -d= -f2- | tr -d '\r"')"
 ```
 
 `HTTP 200` with a JSON description of the key (including its usage and limit) means the key is
 good; `HTTP 401` means it is not. Run the command from the repository root: it reads the key from
-`.env`, so the key itself never appears in your shell history.
+`.env` (dropping any quotes or Windows line ending), so the key itself never appears in your shell
+history.
