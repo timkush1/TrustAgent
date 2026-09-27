@@ -25,7 +25,7 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `normalize` | 29 | draft, generated | `internal/decision` |
 | `compile` | 34 | draft, generated | `internal/decision` |
 | `calibration_apply` | 13 | draft, generated | `internal/decision` |
-| `decide` | 52 | draft, hand-authored | `internal/decision` |
+| `decide` | 55 | draft, hand-authored | `internal/decision` |
 | `detectors` | 23 | draft, hand-authored | P2 (skipped) |
 | `evidence` | 14 | draft, hand-authored | P2 (skipped) |
 | `lint` | 19 | draft, hand-authored | P2 (skipped) |
@@ -157,6 +157,8 @@ templates are immutable, so the `question_hash` vectors also pin the template fi
     `missing_answer`. A failed request's status (`timeout`, `error:<kind>`) is the evaluator's `reason`.
   - With the no-evidence rule applied, the calibration cap treats a missing or non-assessed
     `factual_claims` as uncalibrated.
+- The `s0-*` vectors are the three S0 demo scenarios (`../demo/scenarios.v1.json`) on the `support-bot`
+  route of `config/policies.yaml`.
 
 ### `detectors`
 
