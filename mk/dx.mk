@@ -25,7 +25,7 @@ up: ## Start infrastructure services (redis, postgres, qdrant, ollama, prometheu
 	$(COMPOSE) up -d --wait redis postgres qdrant ollama prometheus grafana
 	@echo "✅ Infrastructure services running"
 	@echo "Redis:      redis://localhost:6379"
-	@echo "Postgres:   postgres://truthtable@localhost:5432/truthtable (password: POSTGRES_PASSWORD in .env)"
+	@echo "Postgres:   postgres://truthtable@localhost:5432/truthtable (password: POSTGRES_PASSWORD in .env; compose uses truthtable-dev when it is empty or unset)"
 	@echo "Qdrant:     http://localhost:6333"
 	@echo "Ollama:     http://localhost:11434"
 	@echo "Prometheus: http://localhost:9090"
