@@ -60,12 +60,13 @@ func tableExists(t *testing.T, ctx context.Context, pool *pgxpool.Pool, table st
 func TestMigrateEmptyDatabase(t *testing.T) {
 	ctx := context.Background()
 	schema := storetest.New(t)
-	pool := schema.Pool(t)
+	pool := taggedPool(t, schema)
 	migrations := mustLoadMigrations(t)
 
 	if err := Migrate(ctx, pool); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
+	requireLockReleased(t, ctx, pool, schema.Name)
 
 	if got, want := appliedNames(t, ctx, pool), migrationNames(migrations); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("schema_migrations = %v, want %v", got, want)
@@ -148,7 +149,7 @@ func TestMigrateEmptyDatabase(t *testing.T) {
 func TestMigrateRerunIsNoOp(t *testing.T) {
 	ctx := context.Background()
 	schema := storetest.New(t)
-	pool := schema.Pool(t)
+	pool := taggedPool(t, schema)
 
 	appliedAt := func() []time.Time {
 		t.Helper()
@@ -172,6 +173,7 @@ func TestMigrateRerunIsNoOp(t *testing.T) {
 			t.Fatalf("re-run %d: %v", i+1, err)
 		}
 	}
+	requireLockReleased(t, ctx, pool, schema.Name)
 	after := appliedAt()
 	if len(after) != len(before) {
 		t.Fatalf("re-run changed schema_migrations: %d rows -> %d", len(before), len(after))
@@ -219,8 +221,8 @@ func TestMigrateEachFileTwiceIsNoOp(t *testing.T) {
 	}
 }
 
-// snapshot renders the schema's catalog (columns, indexes, constraints) and a
-// digest of every table's rows.
+// snapshot renders the schema's catalog (columns, indexes, constraints,
+// functions, triggers, views) and a digest of every table's rows.
 func snapshot(t *testing.T, ctx context.Context, tx pgx.Tx) string {
 	t.Helper()
 	var b strings.Builder
@@ -245,6 +247,17 @@ func snapshot(t *testing.T, ctx context.Context, tx pgx.Tx) string {
 		SELECT concat_ws(' ', conrelid::regclass::text, conname, pg_get_constraintdef(oid))
 		FROM pg_constraint WHERE connamespace = to_regnamespace(current_schema())
 		ORDER BY conrelid::regclass::text, conname`)
+	// Functions, triggers and views: later files (0003) use CREATE OR REPLACE
+	// FUNCTION and DROP/CREATE TRIGGER, which must converge as well.
+	collect("functions", `
+		SELECT pg_get_functiondef(p.oid) FROM pg_proc p
+		WHERE p.pronamespace = to_regnamespace(current_schema()) ORDER BY 1`)
+	collect("triggers", `
+		SELECT pg_get_triggerdef(tg.oid) FROM pg_trigger tg JOIN pg_class c ON c.oid = tg.tgrelid
+		WHERE c.relnamespace = to_regnamespace(current_schema()) AND NOT tg.tgisinternal ORDER BY 1`)
+	collect("views", `
+		SELECT viewname || ' ' || definition FROM pg_views
+		WHERE schemaname = current_schema() ORDER BY 1`)
 
 	rows, err := tx.Query(ctx, `
 		SELECT table_name::text FROM information_schema.tables
@@ -328,12 +341,13 @@ func seedLegacyAudits(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 func TestBackfillSeeded0001Database(t *testing.T) {
 	ctx := context.Background()
 	schema := storetest.New(t)
-	pool := schema.Pool(t)
+	pool := taggedPool(t, schema)
 	migrations := mustLoadMigrations(t)
 
 	if err := applyMigrations(ctx, pool, migrations[:1]); err != nil {
 		t.Fatalf("apply 0001: %v", err)
 	}
+	requireLockReleased(t, ctx, pool, schema.Name)
 	seedLegacyAudits(t, ctx, pool)
 
 	s, err := NewPostgresStore(ctx, schema.URL) // runs the remaining migrations
@@ -497,13 +511,14 @@ func TestMigrateFailedFileRollsBack(t *testing.T) {
 		t.Run(label, func(t *testing.T) {
 			ctx := context.Background()
 			schema := storetest.New(t)
-			pool := schema.Pool(t)
+			pool := taggedPool(t, schema)
 			migrations := mustLoadMigrations(t)
 
 			err := applyMigrations(ctx, pool, []migration{migrations[0], {name: name, sql: sql}})
 			if err == nil || !strings.Contains(err.Error(), name) {
 				t.Fatalf("expected an error naming %s, got %v", name, err)
 			}
+			requireLockReleased(t, ctx, pool, schema.Name)
 			if tableExists(t, ctx, pool, "must_not_exist") {
 				t.Error("DDL of the failed file was not rolled back")
 			}
@@ -525,22 +540,29 @@ func TestMigrateFailedFileRollsBack(t *testing.T) {
 	}
 }
 
-// The advisory lock is taken before schema_migrations is created or read: a
-// runner started while another session holds the lock must not touch the
-// schema until the lock is released.
-func TestMigrateWaitsForAdvisoryLock(t *testing.T) {
-	ctx := context.Background()
-	schema := storetest.New(t)
-	pool := schema.Pool(t)
-
-	// Opened first so it is closed last: Close waits for the runner's
-	// connection, which is only freed once the lock below is released.
-	runnerPool, err := pgxpool.New(ctx, schema.URL)
+// taggedPool opens a pool on the schema whose sessions carry application_name
+// = schema.Name, so pg_locks / pg_stat_activity can be narrowed to the runner
+// under test even when other processes share the database (and its advisory
+// lock). It is closed during cleanup, before the schema is dropped.
+func taggedPool(t *testing.T, schema *storetest.Schema) *pgxpool.Pool {
+	t.Helper()
+	cfg, err := pgxpool.ParseConfig(schema.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer runnerPool.Close()
+	cfg.ConnConfig.RuntimeParams["application_name"] = schema.Name
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
 
+// holdMigrationLock takes the migration lock on a connection of pool and
+// returns an idempotent release, also registered as a cleanup.
+func holdMigrationLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (release func()) {
+	t.Helper()
 	holder, err := pool.Acquire(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -549,41 +571,92 @@ func TestMigrateWaitsForAdvisoryLock(t *testing.T) {
 		holder.Release()
 		t.Fatal(err)
 	}
-	released := false
-	release := func() {
-		if released {
-			return
-		}
-		released = true
-		if _, err := holder.Exec(ctx, `SELECT pg_advisory_unlock($1)`, migrationLockID); err != nil {
-			t.Errorf("unlock: %v", err)
-		}
-		holder.Release()
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			if _, err := holder.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationLockID); err != nil {
+				t.Errorf("unlock: %v", err)
+			}
+			holder.Release()
+		})
 	}
-	defer release()
+	t.Cleanup(release)
+	return release
+}
+
+// migrationLockSessions counts sessions tagged app (see taggedPool) that hold
+// (granted) or are queued on (!granted) the migration lock in the current
+// database.
+func migrationLockSessions(t *testing.T, ctx context.Context, pool *pgxpool.Pool, app string, granted bool) int {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+		WHERE l.locktype = 'advisory' AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+		  AND l.classid = 0 AND l.objid::bigint = $1 AND l.objsubid = 1 AND l.granted = $2
+		  AND a.application_name = $3`,
+		migrationLockID, granted, app).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func migrationLockWaiters(t *testing.T, ctx context.Context, pool *pgxpool.Pool, app string) int {
+	t.Helper()
+	return migrationLockSessions(t, ctx, pool, app, false)
+}
+
+// requireLockReleased fails t when a session tagged app still holds the
+// migration lock, e.g. a pooled connection returned without unlocking.
+func requireLockReleased(t *testing.T, ctx context.Context, pool *pgxpool.Pool, app string) {
+	t.Helper()
+	if n := migrationLockSessions(t, ctx, pool, app, true); n != 0 {
+		t.Fatalf("migration lock still held by %d session(s) after the runner returned", n)
+	}
+}
+
+// waitUntil polls cond every 20 ms and fails t when it is still false after
+// timeout.
+func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %v waiting until %s", timeout, what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// requireMigrateSoon fails t unless a fresh Migrate on pool succeeds within
+// 30 s, i.e. nothing is left holding the migration lock.
+func requireMigrateSoon(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatalf("Migrate after the earlier run: %v (is the migration lock still held?)", err)
+	}
+}
+
+// The advisory lock is taken before schema_migrations is created or read: a
+// runner started while another session holds the lock must not touch the
+// schema until the lock is released.
+func TestMigrateWaitsForAdvisoryLock(t *testing.T) {
+	ctx := context.Background()
+	schema := storetest.New(t)
+	pool := schema.Pool(t)
+	runnerPool := taggedPool(t, schema)
+	release := holdMigrationLock(t, ctx, pool)
 
 	done := make(chan error, 1)
 	go func() { done <- Migrate(ctx, runnerPool) }()
 
-	// Wait until some session queues on the migration lock, then give the
-	// runner time it would need to create schema_migrations were it unguarded.
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var waiting int
-		if err := pool.QueryRow(ctx, `
-			SELECT count(*) FROM pg_locks
-			WHERE locktype = 'advisory' AND classid = 0 AND objid::bigint = $1 AND objsubid = 1 AND NOT granted`,
-			migrationLockID).Scan(&waiting); err != nil {
-			t.Fatal(err)
-		}
-		if waiting > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("runner never waited on the migration lock")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	// Wait until the runner queues on the migration lock, then give it the
+	// time it would need to create schema_migrations were it unguarded.
+	waitUntil(t, 10*time.Second, "the runner waits on the migration lock", func() bool {
+		return migrationLockWaiters(t, ctx, pool, schema.Name) > 0
+	})
 	time.Sleep(300 * time.Millisecond)
 
 	select {
@@ -607,6 +680,96 @@ func TestMigrateWaitsForAdvisoryLock(t *testing.T) {
 	if !tableExists(t, ctx, pool, "traces") {
 		t.Error("migrations not applied after the lock was released")
 	}
+}
+
+// A cancelled run leaves neither the lock nor a partial migration behind,
+// whether it is cancelled while queued on the lock or while holding it in the
+// middle of a file: its server-side session stops waiting or rolls back, and
+// the next runner proceeds.
+func TestMigrateCancelledRunReleasesLock(t *testing.T) {
+	t.Run("while applying a file", func(t *testing.T) {
+		ctx := context.Background()
+		schema := storetest.New(t)
+		pool := schema.Pool(t)
+		runnerPool := taggedPool(t, schema)
+		migrations := mustLoadMigrations(t)
+		const name = "0001_zz_slow.up.sql"
+		slow := migration{name: name, sql: "CREATE TABLE must_not_exist (id INT); SELECT pg_sleep(60);"}
+
+		runCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- applyMigrations(runCtx, runnerPool, []migration{migrations[0], slow}) }()
+
+		waitUntil(t, 30*time.Second, "the slow file is running", func() bool {
+			var running bool
+			if err := pool.QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+				               WHERE application_name = $1 AND state = 'active' AND query LIKE '%pg_sleep(60)%')`,
+				schema.Name).Scan(&running); err != nil {
+				t.Fatal(err)
+			}
+			return running
+		})
+		cancel()
+
+		select {
+		case err := <-done:
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("expected the cancelled file to fail, got %v", err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("cancelling the context did not stop the running migration")
+		}
+
+		requireMigrateSoon(t, pool)
+		if tableExists(t, ctx, pool, "must_not_exist") {
+			t.Error("DDL of the cancelled file was not rolled back")
+		}
+		for _, applied := range appliedNames(t, ctx, pool) {
+			if applied == name {
+				t.Errorf("the cancelled file %s was recorded as applied", name)
+			}
+		}
+	})
+
+	t.Run("while waiting for the lock", func(t *testing.T) {
+		ctx := context.Background()
+		schema := storetest.New(t)
+		pool := schema.Pool(t)
+		runnerPool := taggedPool(t, schema)
+		release := holdMigrationLock(t, ctx, pool)
+
+		runCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- Migrate(runCtx, runnerPool) }()
+
+		waitUntil(t, 10*time.Second, "the runner waits on the migration lock", func() bool {
+			return migrationLockWaiters(t, ctx, pool, schema.Name) > 0
+		})
+		cancel()
+
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Fatal("Migrate succeeded although it was cancelled while the lock was held elsewhere")
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("cancelling the context did not stop the lock wait")
+		}
+		// The server-side wait must end too: a session left queued would take
+		// the lock as soon as it is released.
+		waitUntil(t, 10*time.Second, "the cancelled runner leaves the lock queue", func() bool {
+			return migrationLockWaiters(t, ctx, pool, schema.Name) == 0
+		})
+		if tableExists(t, ctx, pool, "schema_migrations") {
+			t.Error("a cancelled runner that never got the lock created schema_migrations")
+		}
+
+		release()
+		requireMigrateSoon(t, pool)
+	})
 }
 
 // Concurrent runners (separate pools, as separate processes would be) are

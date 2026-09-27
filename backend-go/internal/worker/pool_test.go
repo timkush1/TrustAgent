@@ -190,4 +190,7 @@ func TestPersistAuditRepeatedClientID(t *testing.T) {
 	job := &AuditJob{RequestID: "same"}
 	assignIDs(job)
 	pool.persistAudit(job, &grpc.AuditResult{}, 0) // must only log
+	if len(fake.records) != 3 || fake.records[2].AuditID != job.AuditID {
+		t.Fatalf("the audit was not handed to the store: %+v", fake.records)
+	}
 }

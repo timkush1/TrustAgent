@@ -203,6 +203,8 @@ func TestSaveAuditClientRequestIDRule(t *testing.T) {
 		{"too long", ptr(strings.Repeat("a", 129)), nil},
 		{"space", ptr("has space"), nil},
 		{"newline", ptr("abc\ndef"), nil},
+		{"trailing newline", ptr("abc\n"), nil},
+		{"nul byte", ptr("a\x00b"), nil}, // would also be rejected by a TEXT column
 		{"slash", ptr("a/b"), nil},
 		{"non-ascii", ptr("réq"), nil},
 	}
@@ -371,6 +373,44 @@ func TestListAuditsPaginationAndFilters(t *testing.T) {
 	}
 }
 
+// Audits that share created_at are ordered by audit_id, so offset pages
+// neither repeat nor skip a row.
+func TestListAuditsStableOrder(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+
+	at := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	ids := []string{NewID(), NewID(), NewID()} // ascending
+	for _, id := range ids {
+		record := sampleAudit(id, 0.9, false)
+		record.CreatedAt = at
+		if err := s.SaveAudit(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	later := sampleAudit(NewID(), 0.9, false)
+	later.CreatedAt = at.Add(time.Second)
+	if err := s.SaveAudit(ctx, later); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{later.AuditID, ids[2], ids[1], ids[0]}
+	var got []string
+	for offset := 0; offset < len(want); offset++ {
+		page, total, err := s.ListAudits(ctx, ListFilter{Limit: 1, Offset: offset})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if total != len(want) || len(page) != 1 {
+			t.Fatalf("offset %d: total=%d len=%d", offset, total, len(page))
+		}
+		got = append(got, page[0].AuditID)
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("paged order = %v, want %v (created_at DESC, audit_id DESC)", got, want)
+	}
+}
+
 func TestGradeForScore(t *testing.T) {
 	cases := []struct {
 		score float64
@@ -414,6 +454,9 @@ func TestClientRequestID(t *testing.T) {
 		"with space":              false,
 		"tab\t":                   false,
 		"line\nbreak":             false,
+		"trailing-newline\n":      false, // RE2 $ never matches before a final \n
+		"\nleading-newline":       false,
+		"nul\x00byte":             false,
 		"semi;colon":              false,
 		"slash/":                  false,
 		"ünïcode":                 false,
