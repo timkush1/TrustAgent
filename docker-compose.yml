@@ -344,7 +344,10 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U truthtable -d truthtable"]
+      # Over TCP on purpose: while the entrypoint initialises a new volume it
+      # runs a temporary server on the Unix socket only (listen_addresses=''),
+      # which a socket check would report as ready just before it restarts.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U truthtable -d truthtable"]
       interval: 5s
       timeout: 3s
       retries: 10
