@@ -6,7 +6,6 @@ import {
   clearLegacyStorage,
   LEGACY_STORAGE_KEY,
   MAX_TRACES,
-  mergeTraceLists,
   selectVisibleTraces,
   useStreamStore,
 } from './streamStore';
@@ -140,20 +139,6 @@ describe('streamStore order, pause and bounds', () => {
     expect(store().order).toHaveLength(MAX_TRACES);
     expect(store().traces.t0).toBeUndefined();
     expect(store().traces[`t${MAX_TRACES + 4}`]).toBeDefined();
-  });
-});
-
-describe('mergeTraceLists', () => {
-  it('prepends newer live traces and prefers live versions of listed ones', () => {
-    const rest = [trace({ trace_id: 'b', created_at: iso(2000) }), trace({ trace_id: 'a', created_at: iso(1000) })];
-    const live = [
-      trace({ trace_id: 'c', created_at: iso(3000) }),
-      flaggedTrace({ trace_id: 'a', created_at: iso(1000), updated_at: iso(5000) }),
-      trace({ trace_id: 'old', created_at: iso(500) }),
-    ];
-    const merged = mergeTraceLists(live, rest);
-    expect(merged.map((t) => t.trace_id)).toEqual(['c', 'b', 'a']);
-    expect(merged[2].action).toBe('flag');
   });
 });
 

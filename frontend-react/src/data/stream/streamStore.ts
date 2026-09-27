@@ -379,19 +379,3 @@ export function selectVisibleTraces(s: StreamState): TraceSummary[] {
   }
   return out;
 }
-
-/**
- * Combines a REST page with live traces: live versions win per trace_id (merged), live-only
- * traces newer than the page's newest row are prepended. Pure; the caller memoizes.
- */
-export function mergeTraceLists(live: readonly TraceSummary[], rest: readonly TraceSummary[]): TraceSummary[] {
-  const liveById = new Map(live.map((t) => [t.trace_id, t]));
-  const newestRest = rest.reduce((max, t) => Math.max(max, createdAt(t)), 0);
-  const restIds = new Set(rest.map((t) => t.trace_id));
-  const head = live.filter((t) => !restIds.has(t.trace_id) && createdAt(t) >= newestRest);
-  const body = rest.map((t) => {
-    const l = liveById.get(t.trace_id);
-    return l ? mergeTraceSummary(t, l) : t;
-  });
-  return [...head, ...body];
-}
