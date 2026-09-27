@@ -14,15 +14,21 @@ import addFormats from 'ajv-formats';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPEC = join(HERE, '..', 'docs', 'v2', 'SPEC.md');
+const POLICY = join(HERE, '..', 'config', 'policies.yaml');
 const temps = [];
 after(() => temps.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
-// A throwaway repo root holding a copy of contracts/ (without node_modules).
+// A throwaway repo root holding a copy of contracts/ (without node_modules) and of config/policies.yaml,
+// the policy the scenario checks resolve routes against.
 function sandbox() {
   const repo = mkdtempSync(join(tmpdir(), 'contracts-'));
   temps.push(repo);
   const root = join(repo, 'contracts');
   cpSync(HERE, root, { recursive: true, filter: (src) => !src.includes('node_modules') });
+  if (existsSync(POLICY)) {
+    mkdirSync(join(repo, 'config'));
+    cpSync(POLICY, join(repo, 'config', 'policies.yaml'));
+  }
   const read = (rel) => JSON.parse(readFileSync(join(root, rel), 'utf8'));
   const write = (rel, data, base = root) => {
     mkdirSync(dirname(join(base, rel)), { recursive: true });
@@ -187,6 +193,53 @@ describe('validate.mjs', () => {
     assert.match(r.out, /OPENROUTER_API_KEY: a secret cannot ship a default/);
     assert.match(r.out, /no-response: a scripted scenario needs response/);
     assert.match(r.out, /WARN .*no-response: route unknown-route is not defined/);
+  });
+
+  test('scenario judge fixtures and expectations agree with each other', () => {
+    const sb = sandbox();
+    sb.edit('demo/scenarios.v1.json', (d) => {
+      const [pass, flag, none] = d.scenarios;
+      pass.judge.claims[0].quote = 'a sentence the answer never says';
+      pass.judge.claims[1].evidence = ['Monthly plans can be refunded at any time.'];
+      pass.expect.outcome = 'flagged';
+      flag.expect.mode = 'observe';
+      flag.judge = null;
+      none.judge = { claims: [] };
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /grounded-pass: judge\.claims\[0\]\.quote "a sentence the answer never says" is not a verbatim part of response/);
+    assert.match(r.out, /grounded-pass: judge\.claims\[1\]\.evidence "Monthly plans can be refunded at any time\." does not occur in request/);
+    assert.match(r.out, /grounded-pass: expect\.outcome flagged, but ui\/outcomes\.v1\.json gives passed/);
+    assert.match(r.out, /refund-contradiction-flag: action flag is impossible in observe mode/);
+    assert.match(r.out, /refund-contradiction-flag: observe routes answer with X-TrustAgent-Status deferred, not ok/);
+    assert.match(r.out, /refund-contradiction-flag: expect\.mode observe, but route support-bot runs in flag mode/);
+    assert.match(r.out, /refund-contradiction-flag: audit_verdict HALLUCINATED needs judge claims/);
+    assert.match(r.out, /no-evidence-not-assessed: audit_verdict NOT_ASSESSED makes no LLM call, so judge must be null/);
+  });
+
+  test('scenario mock answers and routes follow config/policies.yaml', { skip: !existsSync(POLICY) }, () => {
+    const sb = sandbox();
+    sb.edit('demo/scenarios.v1.json', (d) => {
+      const [, flag, none] = d.scenarios;
+      flag.mock_answers.refusal__v1 = { type: 'choice', choice: 'answers_request' };
+      flag.mock_answers.groundedness__v1.type = 'choice';
+      none.headers = { 'X-TrustAgent-Route': 'billing' };
+    });
+    let r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /refund-contradiction-flag: mock_answers\.refusal__v1 is not asked on route support-bot \(config\/policies\.yaml\)/);
+    assert.match(r.out, /refund-contradiction-flag: mock_answers\.groundedness__v1 is a choice answer to a noul question/);
+    assert.match(r.out, /no-evidence-not-assessed: the request lands on route default in config\/policies\.yaml, not support-bot/);
+
+    // A route that also asks an evidence-free evaluator always sends it, so it cannot be not_assessed.
+    const other = sandbox();
+    const yaml = readFileSync(POLICY, 'utf8').replace('      - ref: contradiction@1\n', '      - ref: contradiction@1\n      - ref: refusal@1\n');
+    other.write('config/policies.yaml', yaml, other.repo);
+    r = run(other.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /grounded-pass: refusal@1 needs no evidence, so it is always asked on route support-bot, but mock_answers has no refusal__v1/);
+    assert.match(r.out, /no-evidence-not-assessed: status not_assessed is impossible on route support-bot: refusal@1 needs no evidence/);
   });
 
   test('pricing figures and value claims cannot drift from the arithmetic', () => {

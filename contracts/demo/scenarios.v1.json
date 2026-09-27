@@ -1,0 +1,152 @@
+{
+  "schema": "trustagent.scenarios/v1",
+  "scenarios": [
+    {
+      "id": "grounded-pass",
+      "title": "Grounded answer passes",
+      "description": "support-bot (flag). The system prompt carries refund-policy.md as a <document> block and the answer restates it. groundedness 0.06 and contradiction 0.03 are ok and below escalate_from; the answer's 30 is in the evidence, so no detector fires. would pass, action pass, verdict supported, max_risk 0.06, deep_audit sample; support-bot audits every pass (pass_sample_rate 1.0), so the audit is queued. Judge: two SUPPORTED claims, audit GROUNDED.",
+      "sets": ["s0", "demo", "e2e"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+          },
+          {"role": "user", "content": "How long do I have to get a refund on an annual plan?"}
+        ]
+      },
+      "response": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.06},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "judge": {
+        "claims": [
+          {
+            "claim": "Annual plans can be refunded within 30 days of purchase.",
+            "quote": "You can get a refund on an annual plan within 30 days of purchase",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": ["Annual plans can be refunded within 30 days of purchase."],
+            "reasoning": "The refund policy gives the same 30-day window for annual plans."
+          },
+          {
+            "claim": "Monthly plans are non-refundable.",
+            "quote": "Monthly plans are non-refundable",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": ["Monthly plans are non-refundable."],
+            "reasoning": "The refund policy states that monthly plans are non-refundable."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "ok",
+        "verdict": "supported",
+        "max_risk": 0.06,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "passed"
+      }
+    },
+    {
+      "id": "refund-contradiction-flag",
+      "title": "Refund window: 60 days vs 30 days",
+      "description": "The SPEC §2.8 compiled-request example on support-bot (flag). The answer says 60 days; refund-policy.md says 30. groundedness 0.96 and contradiction 0.98 are critical and corroborate each other, and numbers_not_in_evidence fires on 60, so both are in the block set: would block, flag mode acts flag. Reasons: both levels (risk desc), then det:numbers_not_in_evidence (it corroborates a block-set member). Verdict contradicted, deep_audit high. Judge: one CONTRADICTED claim quoting \"60 days\", audit HALLUCINATED.",
+      "sets": ["s0", "demo", "e2e"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+          },
+          {"role": "user", "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."}
+        ]
+      },
+      "response": "You can get a full refund within 60 days of purchase.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.96},
+        "contradiction__v1": {"type": "noul", "noul": 0.98}
+      },
+      "judge": {
+        "claims": [
+          {
+            "claim": "A full refund is available within 60 days of purchase.",
+            "quote": "60 days",
+            "verdict": "CONTRADICTED",
+            "confidence": 0.96,
+            "evidence": ["Annual plans can be refunded within 30 days of purchase."],
+            "reasoning": "The refund policy allows refunds within 30 days of purchase, not 60 days."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "flag",
+        "would_action": "block",
+        "status": "ok",
+        "verdict": "contradicted",
+        "max_risk": 0.98,
+        "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+        "checked_against": "request_system:1",
+        "deep_audit": "high",
+        "audit": "queued",
+        "audit_verdict": "HALLUCINATED",
+        "outcome": "flagged"
+      }
+    },
+    {
+      "id": "no-evidence-not-assessed",
+      "title": "No documents: not checked",
+      "description": "support-bot (flag) with no documents anywhere in the request. compile excludes groundedness and contradiction as no_evidence, so nothing is sent (no mock answers) and every active evaluator is not_assessed: status and verdict not_assessed, action pass, Checked-Against none; on_no_evidence is ignore. No evidence at all gives deep_audit none: Go submits no audit and the trace's audit is NOT_ASSESSED with zero LLM calls (the engine preflight answers the same if asked), hence judge null.",
+      "sets": ["s0", "demo", "e2e"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {"role": "system", "content": "You are the Acme support assistant. Answer billing questions briefly and politely."},
+          {"role": "user", "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."}
+        ]
+      },
+      "response": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+      "mock_answers": {},
+      "judge": null,
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "not_assessed",
+        "verdict": "not_assessed",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "none",
+        "deep_audit": "none",
+        "audit": "not_assessed",
+        "audit_verdict": "NOT_ASSESSED",
+        "outcome": "not_checked"
+      }
+    }
+  ]
+}
