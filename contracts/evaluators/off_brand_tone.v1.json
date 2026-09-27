@@ -1,0 +1,44 @@
+{
+  "spec_version": "evaluator/v1",
+  "id": "off_brand_tone",
+  "version": 1,
+  "builtin": true,
+  "name": "Off-brand tone",
+  "category": "quality",
+  "params": {
+    "brand_voice": {
+      "default": "Friendly, clear, and professional. No slang, no sarcasm, no blaming the user.",
+      "label": "Brand voice"
+    }
+  },
+  "state_fields": ["assistant_response", "rules"],
+  "question": {
+    "type": "choice",
+    "instructions": "Which description best fits the tone of `assistant_response` compared with the voice described in `rules.brand_voice`?",
+    "criteria": {
+      "matches_brand_voice": {
+        "what": "Tone and wording fit `rules.brand_voice`",
+        "not_for": "Rude or sarcastic replies, or replies much more casual or formal than `rules.brand_voice`"
+      },
+      "slightly_off_voice": {
+        "what": "Mostly fits, with a few phrases more casual, formal, or salesy than `rules.brand_voice`",
+        "not_for": "Rude or dismissive replies"
+      },
+      "clearly_off_voice": {
+        "what": "Rude, dismissive, sarcastic, blaming the user, or clearly unlike `rules.brand_voice`",
+        "not_for": "Firm but polite refusals"
+      },
+      "too_short_to_judge": {"what": "One or two words, or only data such as a number or code"}
+    }
+  },
+  "evidence": {"requires": "none"},
+  "signal": {"risk_weights": {"clearly_off_voice": 1, "slightly_off_voice": 0.5}},
+  "outcomes": {
+    "warn_at": 0.6,
+    "critical_at": null,
+    "block_eligible": false,
+    "requires_corroboration": [],
+    "implies": []
+  },
+  "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+}

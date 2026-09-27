@@ -1,0 +1,39 @@
+{
+  "spec_version": "evaluator/v1",
+  "id": "refusal",
+  "version": 1,
+  "builtin": true,
+  "name": "Refusal",
+  "category": "quality",
+  "description": "Flags answers that decline or deflect a real request.",
+  "state_fields": ["user_request", "assistant_response"],
+  "question": {
+    "type": "choice",
+    "instructions": "How does `assistant_response` respond to what `user_request` asks?",
+    "criteria": {
+      "answers_request": {
+        "what": "Gives the requested information or does the requested task, fully or partly",
+        "not_for": "Replies that only decline or say they cannot help"
+      },
+      "declines_or_deflects": {
+        "what": "Declines, says it cannot help, or points the user elsewhere without answering",
+        "not_for": "Answers that add a caveat or safety note but still answer"
+      },
+      "asks_clarifying_question": {
+        "what": "Asks the user for details before answering",
+        "not_for": "Answers that end with an optional follow-up question"
+      },
+      "nothing_to_answer": {"what": "`user_request` is a greeting, thanks, or small talk with no request"}
+    }
+  },
+  "evidence": {"requires": "none"},
+  "signal": {"risk_weights": {"declines_or_deflects": 1}},
+  "outcomes": {
+    "warn_at": 0.7,
+    "critical_at": null,
+    "block_eligible": false,
+    "requires_corroboration": [],
+    "implies": []
+  },
+  "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+}

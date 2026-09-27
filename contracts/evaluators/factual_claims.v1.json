@@ -1,0 +1,29 @@
+{
+  "spec_version": "evaluator/v1",
+  "id": "factual_claims",
+  "version": 1,
+  "builtin": true,
+  "name": "Makes factual claims",
+  "category": "grounding",
+  "tags": ["internal"],
+  "description": "Detects answers that state checkable facts. Added automatically when a route sets on_no_evidence and no documents were supplied.",
+  "state_fields": ["assistant_response"],
+  "question": {
+    "type": "noul",
+    "instructions": "Does `assistant_response` state specific facts that could be checked, such as names, figures, prices, dates, policies, or events?",
+    "criteria": {
+      "true": "`assistant_response` states at least one specific, checkable fact",
+      "false": "`assistant_response` only greets, asks, refuses, gives opinions, or gives generic advice with no checkable facts"
+    }
+  },
+  "evidence": {"requires": "none"},
+  "signal": {"invert": false},
+  "outcomes": {
+    "warn_at": 0.6,
+    "critical_at": null,
+    "block_eligible": false,
+    "requires_corroboration": [],
+    "implies": []
+  },
+  "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+}
