@@ -15,7 +15,7 @@ GO ?= go
 # Stamp npm writes on every install; it is older than package-lock.json when dependencies changed.
 CONTRACTS_NODE_STAMP := $(CONTRACTS_DIR)/node_modules/.package-lock.json
 
-.PHONY: contracts-install contracts-check contracts-test contracts-go vectors check
+.PHONY: contracts-install contracts-check contracts-test contracts-go vectors install check
 
 contracts-install: ## Install the contracts validator dependencies (npm ci)
 	cd "$(CONTRACTS_DIR)" && $(NPM) ci --no-audit --no-fund
@@ -36,8 +36,8 @@ vectors: ## Generate golden vectors (placeholder: Go cmd/vectorgen lands in S0)
 	@echo "vectors: nothing to generate yet. Go cmd/vectorgen lands in S0 and will write the mechanical"
 	@echo "expected values under contracts/vectors/<kind>/ (status draft until reviewed, then frozen)."
 
-# Hook into the aggregate target. A prerequisite-only rule appends to a single-colon `check:` rule
-# defined elsewhere (with or without a recipe) and also works when no other `check` rule exists.
-# If the root Makefile declares `check::` (double-colon), change this line to `check:: contracts-check`.
-CHECK_TARGETS += contracts-check contracts-test contracts-go
+# Hook into the aggregate targets. A prerequisite-only rule appends to a single-colon rule defined
+# elsewhere (with or without a recipe) and also works when no other rule for the target exists.
+# If the root Makefile ever declares them `::` (double-colon), these lines must become `::` too.
+install: contracts-install
 check: contracts-check contracts-test contracts-go
