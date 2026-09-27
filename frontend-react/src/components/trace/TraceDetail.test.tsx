@@ -2,7 +2,7 @@
  * The trace detail page against the real data layer (msw + a fake WebSocket), following the S0
  * demo scenarios from the gate decision to the completed deep audit.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,9 @@ import { REFUND_DOC, auditIdOf, s0Audit, s0Decision, s0Detail, s0Trace, scenario
 
 installMswServer();
 afterEach(stopLive);
+// The first render of a file loads the lazily split route modules; under a parallel run that can
+// take longer than the 1 s default.
+configure({ asyncUtilTimeout: 5000 });
 
 const REFUND = 'refund-contradiction-flag' as const;
 const NO_EVIDENCE = 'no-evidence-not-assessed' as const;

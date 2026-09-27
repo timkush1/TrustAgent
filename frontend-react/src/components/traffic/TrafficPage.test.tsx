@@ -2,7 +2,7 @@
  * The Traffic list against the real data layer: LiveDataSource over msw (REST) and StreamClient
  * over a fake WebSocket (WS v2).
  */
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,6 +15,9 @@ import { trace } from '@/test/fixtures';
 
 installMswServer();
 afterEach(stopLive);
+// The first render of a file loads the lazily split route modules; under a parallel run that can
+// take longer than the 1 s default.
+configure({ asyncUtilTimeout: 5000 });
 
 const REFUND = 'refund-contradiction-flag' as const;
 
