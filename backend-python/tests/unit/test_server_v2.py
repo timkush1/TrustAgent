@@ -722,6 +722,8 @@ async def test_evaluate_s0_scenario(
     assert [c.confidence for c in result.claims] == pytest.approx([c["confidence"] for c in claims])
     assert [list(c.evidence) for c in result.claims] == [c["evidence"] for c in claims]
     assert {c.decided_by for c in result.claims} == {"llm"}
+    # S0 does not locate claims in the answer: every span is unaligned (-1, SPEC 2.1).
+    assert {(c.span_start, c.span_end, c.span_method) for c in result.claims} == {(-1, -1, "")}
     assert result.hallucination_detected is (expect["audit_verdict"] == "HALLUCINATED")
     assert result.unsupported_policy == "hallucination"  # the evidence came from the request
     assert result.scores.claims_total == result.scores.claims_decided == len(claims)
@@ -965,6 +967,7 @@ async def test_evaluate_maps_every_claim_status(
     ]
     assert pb.VERIFICATION_STATUS_UNKNOWN == 5 and pb.VERIFICATION_STATUS_NOT_CHECKED == 6
     assert [c.decided_by for c in result.claims] == ["llm"] * 4 + ["none"] * 3
+    assert {(c.span_start, c.span_end) for c in result.claims} == {(-1, -1)}
     assert list(result.claims[1].evidence) == ["ev-c"]
     assert result.status == pb.AUDIT_STATUS_DEGRADED
     assert result.verdict == pb.AUDIT_VERDICT_GROUNDED

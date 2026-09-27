@@ -89,6 +89,11 @@ _AUDIT_VERDICT: Dict[AuditVerdict, int] = {
     AuditVerdict.NOT_ASSESSED: evaluator_pb2.AUDIT_VERDICT_NOT_ASSESSED,
 }
 
+# Claim span offsets for a claim not located in the answer (SPEC section 2.1:
+# "-1 means unaligned"). The S0 decomposer does not align claims; spans arrive
+# with decomposer v2 (text/spans.py).
+UNALIGNED_SPAN = -1
+
 # Verdicts that come with a trust score (NO_CLAIMS and NOT_ASSESSED have none).
 _SCORED_VERDICTS = frozenset(
     {AuditVerdict.GROUNDED, AuditVerdict.HALLUCINATED, AuditVerdict.UNVERIFIABLE}
@@ -144,6 +149,8 @@ def _v2_claim(index: int, cv: ClaimVerification) -> evaluator_pb2.ClaimVerificat
         reasoning=str(extras.get("reasoning") or ""),
         quote=str(extras.get("quote") or ""),
         decided_by="llm" if status in DECIDED_STATUSES else "none",
+        span_start=UNALIGNED_SPAN,
+        span_end=UNALIGNED_SPAN,
     )
 
 
