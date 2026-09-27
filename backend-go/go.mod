@@ -2,6 +2,8 @@ module github.com/truthtable/backend-go
 
 go 1.25.0
 
+toolchain go1.25.11
+
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.6.0
