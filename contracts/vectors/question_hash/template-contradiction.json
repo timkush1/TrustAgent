@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-contradiction",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template contradiction@1 (contracts/evaluators/contradiction.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "contradiction@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "f7a9348355836141b1be60633888a3d069c2ff77c3791198ff9679e10925ac1e",
+    "question_id": "contradiction__v1",
+    "question_sha256": "8386348cc31bacdebf1a49b33a29b53dacd72ed355d3c13272602e3513f783fc",
+    "question_tokens": 99,
+    "spec_sha256": "c5dd97c7ffc64ffa3ed588ac5088c1824263065cb91d8546a2bfea2c1b43d9b4"
+  }
+}

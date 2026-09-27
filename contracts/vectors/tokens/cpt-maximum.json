@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "cpt-maximum",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The text of cpt-minimum at the maximum cpt 6: ceil(100/6) = 17.",
+  "input": {
+    "value": "The refund window for annual plans is thirty days from purchase; monthly plans cannot be refunded.",
+    "cpt": 6
+  },
+  "expected": {"est": 17, "narrow": 100, "wide": 0}
+}

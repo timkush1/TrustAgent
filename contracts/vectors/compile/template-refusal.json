@@ -1,0 +1,60 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "template-refusal",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in refusal@1 alone on a route, with the SPEC §2.8 refund exchange (refund-policy.md in the system prompt). The state holds exactly the template's state_fields; params take their defaults; the one question is the template's question verbatim under refusal__v1.",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "refusal@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [
+        {
+          "id": "refund-policy.md",
+          "source": "request_system",
+          "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+        }
+      ],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [510],
+    "evaluators": [{"internal": false, "ref": "refusal@1", "stage": "active"}],
+    "excluded": [],
+    "packed_ids": [],
+    "qid_request": {"refusal__v1": 0},
+    "question_map": {"refusal__v1": "refusal@1"},
+    "question_set_sha256": "f565c8b905e430bf45a9834dca29f669ddb6c7ed9d53c63c6437bfb9e2ff9664",
+    "request_sha256": ["137fa15bcb7526ba8e67940f1326684edf592c0ef5e2890e9726f1ae9ff0323e"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "whitespace-removed-and-nested-keys-sorted",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Insignificant whitespace is removed, nested objects are sorted too, and array order is kept.",
+  "input": {"value": { "b" : [ 3 , { "d" : true , "c" : null } , 1 ] , "a" : "x" , "aa" : { } , "ab" : [ ] }},
+  "expected": {
+    "jcs": "{\"a\":\"x\",\"aa\":{},\"ab\":[],\"b\":[3,{\"c\":null,\"d\":true},1]}",
+    "sha256": "0d28bc397d4937a0d08a49d4e117537e9bc9dda7527c949b2067dd604fe84862"
+  }
+}

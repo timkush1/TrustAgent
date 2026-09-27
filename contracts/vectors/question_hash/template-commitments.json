@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-commitments",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template commitments@1 (contracts/evaluators/commitments.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "commitments@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "ef531de0f821dffd20f8a2af45eb1ea319e5ee4605de235c669a669d1c48bd09",
+    "question_id": "commitments__v1",
+    "question_sha256": "cd5cc403a3699f31a29158fdce5f355d273f567f7448d3c2b78a938f41e1c9e2",
+    "question_tokens": 214,
+    "spec_sha256": "fa1f0d24a45bfbef2d18f5e4a68482ec7fc912e3a5a71309bf1375fe1c5b629b"
+  }
+}

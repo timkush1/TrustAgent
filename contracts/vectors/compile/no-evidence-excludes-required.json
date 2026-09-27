@@ -1,0 +1,61 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "no-evidence-excludes-required",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "No evidence: groundedness and contradiction (required) are excluded as no_evidence; refusal (evidence none) is still asked, so the state holds only its fields (user_request, assistant_response). on_no_evidence is ignore: no factual_claims.",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "groundedness@1"}, {"ref": "contradiction@1"}, {"ref": "refusal@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+      "system_instructions": "You are the Acme support assistant. Answer billing questions briefly and politely.",
+      "evidence": [],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [525],
+    "evaluators": [
+      {"internal": false, "ref": "groundedness@1", "stage": "active"},
+      {"internal": false, "ref": "contradiction@1", "stage": "active"},
+      {"internal": false, "ref": "refusal@1", "stage": "active"}
+    ],
+    "excluded": [
+      {"reason": "no_evidence", "ref": "groundedness@1"},
+      {"reason": "no_evidence", "ref": "contradiction@1"}
+    ],
+    "packed_ids": [],
+    "qid_request": {"refusal__v1": 0},
+    "question_map": {"refusal__v1": "refusal@1"},
+    "question_set_sha256": "f565c8b905e430bf45a9834dca29f669ddb6c7ed9d53c63c6437bfb9e2ff9664",
+    "request_sha256": ["1dfeb597d22375c310d4fd8f2f34a50df4897e877165700294eefd4b51fd5c8e"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+          "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}

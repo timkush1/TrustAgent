@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-regulated-advice",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template regulated_advice@1 (contracts/evaluators/regulated_advice.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "regulated_advice@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "ec4b599ad4b9f487c3d4c810affa850713b159462c1772f13051b22debc3e882",
+    "question_id": "regulated_advice__v1",
+    "question_sha256": "8c2b741a369728360603ef8d6af30cc94adadfabca01bd965ac64e136f6eed8d",
+    "question_tokens": 231,
+    "spec_sha256": "0f5d218cb30fd8266de91a1ed8d5d0c3ffb952e87973f3783c2db8320bf1f426"
+  }
+}

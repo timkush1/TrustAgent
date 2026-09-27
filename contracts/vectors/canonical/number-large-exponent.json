@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "number-large-exponent",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "1e21 is not below 1e21, so ES6 uses exponent notation with an explicit sign: 1e+21.",
+  "input": {"value": 1e21},
+  "expected": {
+    "jcs": "1e+21",
+    "sha256": "241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "control-characters-escaped",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Control characters: backspace, tab, line feed, form feed and carriage return use the short escapes, the other code points below U+0020 use lowercase \\u00xx, and DEL (U+007F) stays literal, as ES6 JSON.stringify does.",
+  "input": {"value": "\u0000\u0001\b\t\n\u000b\f\r\u001e\u001f\u007f"},
+  "expected": {
+    "jcs": "\"\\u0000\\u0001\\b\\t\\n\\u000b\\f\\r\\u001e\\u001f\"",
+    "sha256": "b908a5f5bcf6ff7d4cfa5569e5daa88686c8e3c23c4222f461d6232bd0b84db7"
+  }
+}

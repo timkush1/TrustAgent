@@ -1,0 +1,18 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "noul-risk-is-the-answer",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "groundedness (noul, not inverted): risk_raw = noul = 0.96. No probabilities, top or confidence for noul; confidence_source null without a vendor confidence.",
+  "input": {"template": "groundedness@1", "answer": {"type": "noul", "noul": 0.96}},
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": null,
+    "probabilities": null,
+    "risk_raw": 0.96,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "gateway-default-refund",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The SPEC §2.8 example: the gateway-default set on the refund exchange. One request with state {assistant_response, evidence, user_request} (the union of the four templates' fields) and questions contradiction__v1, groundedness__v1, pii_secret_leak__v1 and refusal__v1.",
+  "input": {
+    "route": {
+      "evaluators": [
+        {"ref": "groundedness@1"},
+        {"ref": "contradiction@1"},
+        {"ref": "refusal@1"},
+        {"ref": "pii_secret_leak@1"}
+      ],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [
+        {
+          "id": "refund-policy.md",
+          "source": "request_system",
+          "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+        }
+      ],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [1048],
+    "evaluators": [
+      {"internal": false, "ref": "groundedness@1", "stage": "active"},
+      {"internal": false, "ref": "contradiction@1", "stage": "active"},
+      {"internal": false, "ref": "refusal@1", "stage": "active"},
+      {"internal": false, "ref": "pii_secret_leak@1", "stage": "active"}
+    ],
+    "excluded": [],
+    "packed_ids": ["refund-policy.md"],
+    "qid_request": {
+      "contradiction__v1": 0,
+      "groundedness__v1": 0,
+      "pii_secret_leak__v1": 0,
+      "refusal__v1": 0
+    },
+    "question_map": {
+      "contradiction__v1": "contradiction@1",
+      "groundedness__v1": "groundedness@1",
+      "pii_secret_leak__v1": "pii_secret_leak@1",
+      "refusal__v1": "refusal@1"
+    },
+    "question_set_sha256": "b3d74a4b28def035a0194be4a31c768d28633dfb2d2b437cbb600c2332f9d314",
+    "request_sha256": ["202474684c70dd0b5e49df0eb6ad3ad4b2c4daa1e7d33cc94171d6e0341d220b"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "evidence": [
+            {
+              "id": "refund-policy.md",
+              "source": "request_system",
+              "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+            }
+          ],
+          "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}

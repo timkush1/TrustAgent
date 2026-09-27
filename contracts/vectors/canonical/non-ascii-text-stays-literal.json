@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "non-ascii-text-stays-literal",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Non-ASCII text below U+FFFF (an accent, CJK, a no-break space, a replacement character, an ellipsis) is written as literal UTF-8.",
+  "input": {"value": "Caf\u00e9 \u9000\u6b3e\u00a0\ufffd \u2026"},
+  "expected": {
+    "jcs": "\"Café 退款 � …\"",
+    "sha256": "c5881dacf9b1e60f64db93ef33c9cc957276eb5fd2f2e36df6cb8253e665898a"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "noul-clamped-above-one",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A noul above 1 is clamped to 1.",
+  "input": {"template": "groundedness@1", "answer": {"type": "noul", "noul": 1.2}},
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": null,
+    "probabilities": null,
+    "risk_raw": 1,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

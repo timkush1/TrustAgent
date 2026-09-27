@@ -1,0 +1,47 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "noul-inverted-signal",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A custom noul evaluator with signal.invert (the question asks for the good behaviour): noul 0.10 gives risk_raw 1 - 0.10 = 0.90.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "cites_evidence",
+      "version": 1,
+      "builtin": false,
+      "name": "Cites evidence",
+      "category": "custom",
+      "state_fields": ["assistant_response", "evidence"],
+      "question": {
+        "type": "noul",
+        "instructions": "Does `assistant_response` name the `evidence` item that supports each of its main statements?",
+        "criteria": {
+          "true": "`assistant_response` names a supporting `evidence` item for each main statement",
+          "false": "`assistant_response` makes main statements without naming a supporting `evidence` item"
+        }
+      },
+      "evidence": {"requires": "required", "min_chars": 40},
+      "signal": {"invert": true},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    },
+    "answer": {"type": "noul", "noul": 0.1}
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": null,
+    "probabilities": null,
+    "risk_raw": 0.9,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

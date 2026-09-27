@@ -1,0 +1,10 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "object-canonical-form",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "An object is estimated in canonical form: sorted keys, no whitespace, 2.50 written as 2.5 and 1.0 as 1.",
+  "input": {"value": {"b": "x", "a": [1.0, 2.5, true, null]}, "cpt": 4},
+  "expected": {"est": 8, "narrow": 31, "wide": 0}
+}

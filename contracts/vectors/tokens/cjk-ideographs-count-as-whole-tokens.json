@@ -1,0 +1,10 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "cjk-ideographs-count-as-whole-tokens",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Eight CJK ideographs (all at or above U+3000) count one token each; only the two quotes are narrow: ceil(2/4 + 8) = 9.",
+  "input": {"value": "退款政策是三十天", "cpt": 4},
+  "expected": {"est": 9, "narrow": 2, "wide": 8}
+}

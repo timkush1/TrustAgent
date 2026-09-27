@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-groundedness",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template groundedness@1 (contracts/evaluators/groundedness.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "groundedness@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "f2dbed2a689d6d3dfda4fe750dd157851f40e585d26aff1c50e8c0a19b14eddf",
+    "question_id": "groundedness__v1",
+    "question_sha256": "c51d1120e2d4944f5e1e96c7619eb8323a6f8f43299df58ed7b541ba18997ff4",
+    "question_tokens": 107,
+    "spec_sha256": "05c7c1a4542ac8fe275fe926f142c1762a277ec45a5dd5be67f39ea3889fcb92"
+  }
+}

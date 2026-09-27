@@ -1,0 +1,76 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "truncation-of-an-item",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "evidence_max_tokens 300. sys-1 (31 tokens) fits; handbook.md does not, but 300 - 31 = 269 >= 200 is left, so it is cut to its first floor((269 - est({id, source, text: \"\"}))*cpt) = floor((269 - 14)*4) = 1020 code points and listed in truncated_ids.",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "groundedness@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "Annual plans can be refunded within 30 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [
+        {
+          "id": "sys-1",
+          "source": "request_system",
+          "text": "Refund summary: annual plans are refundable for 30 days after purchase."
+        },
+        {
+          "id": "handbook.md",
+          "source": "request_system",
+          "text": "Section 1. Annual plans can be refunded within 30 days of purchase; the refund goes to the original payment method. Section 2. Monthly plans are non-refundable, but they can be cancelled at any time and stay active until the end of the paid month. Section 3. Upgrades from monthly to annual are charged pro rata; the 30-day refund window starts on the day of the upgrade. Section 4. Downgrades take effect at the next renewal date and never create a refund or a credit for the unused time. Section 5. Refund requests are made from the billing page or by email to billing@example.com and are answered within two business days. Section 6. Accounts closed for abuse of the terms of service are not eligible for any refund, whatever the plan or the purchase date. Section 7. Taxes collected on a refunded purchase are refunded as well; currency conversion fees charged by the bank are not. Section 8. Gift subscriptions can be refunded to the buyer within 30 days, as long as the recipient has not activated them yet. Section 9. Enterprise contracts follow the refund terms in the signed order form, which take precedence over this handbook. Section 10. These terms were last updated in March and apply to every purchase made after that date. Section 11. Questions about these terms can be sent to support, who will pass them to the billing team when needed. Section 12. Refunds approved by the billing team are processed within five business days of the approval."
+        }
+      ],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 300
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [724],
+    "evaluators": [{"internal": false, "ref": "groundedness@1", "stage": "active"}],
+    "excluded": [],
+    "packed_ids": ["sys-1", "handbook.md"],
+    "qid_request": {"groundedness__v1": 0},
+    "question_map": {"groundedness__v1": "groundedness@1"},
+    "question_set_sha256": "024d95c6bf5354b4d45e47334578785b7f3c5515d252eb3d3fdb19bb6c851cf4",
+    "request_sha256": ["09c8635549f6a8ce13ad737f12fc75963fb8ca64134bb924cd795e6a5e975a47"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "Annual plans can be refunded within 30 days of purchase.",
+          "evidence": [
+            {
+              "id": "sys-1",
+              "source": "request_system",
+              "text": "Refund summary: annual plans are refundable for 30 days after purchase."
+            },
+            {
+              "id": "handbook.md",
+              "source": "request_system",
+              "text": "Section 1. Annual plans can be refunded within 30 days of purchase; the refund goes to the original payment method. Section 2. Monthly plans are non-refundable, but they can be cancelled at any time and stay active until the end of the paid month. Section 3. Upgrades from monthly to annual are charged pro rata; the 30-day refund window starts on the day of the upgrade. Section 4. Downgrades take effect at the next renewal date and never create a refund or a credit for the unused time. Section 5. Refund requests are made from the billing page or by email to billing@example.com and are answered within two business days. Section 6. Accounts closed for abuse of the terms of service are not eligible for any refund, whatever the plan or the purchase date. Section 7. Taxes collected on a refunded purchase are refunded as well; currency conversion fees charged by the bank are not. Section 8. Gift subscriptions can be refunded to the buyer within 30 days, as long as the recipient has not activated them yet. Sectio"
+            }
+          ]
+        }
+      }
+    ],
+    "truncated": true,
+    "truncated_ids": ["handbook.md"]
+  }
+}

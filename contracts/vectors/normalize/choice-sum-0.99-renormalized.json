@@ -1,0 +1,35 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-sum-0.99-renormalized",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "refusal probabilities sum to 0.99 (within max(0.10, 0.005*4) and within 0.02, so no anomaly): each option is divided by 0.99; declines_or_deflects 0.695 becomes 0.70202...",
+  "input": {
+    "template": "refusal@1",
+    "answer": {
+      "type": "choice",
+      "choice": "declines_or_deflects",
+      "confidence": 0.7,
+      "probabilities": {
+        "answers_request": 0.285,
+        "declines_or_deflects": 0.695,
+        "asks_clarifying_question": 0.01
+      }
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "vendor",
+    "error": null,
+    "probabilities": {
+      "answers_request": 0.28787878787878785,
+      "asks_clarifying_question": 0.010101010101010102,
+      "declines_or_deflects": 0.702020202020202,
+      "nothing_to_answer": 0
+    },
+    "risk_raw": 0.702020202020202,
+    "top": "declines_or_deflects",
+    "vendor_confidence": 0.7
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "packing-order-by-source-rank-and-overlap",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "evidence_max_tokens 150. Items rank by (source_rank, overlap desc, index): sys-1 (31 tokens), then ctx-b (overlap 6/sqrt(47)) before ctx-a (2/sqrt(55)) though ctx-a comes first, then tool-1. sys-1 and ctx-b fit (90); ctx-a (67) does not and 150 - 90 < 200, so it is skipped; tool-1 (50) fits (140). Emitted in (source_rank, index) order: sys-1, ctx-b, tool-1. A skipped item sets truncated.",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "groundedness@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I get my money back?",
+      "assistant_response": "Annual plans can be refunded within 30 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [
+        {
+          "id": "sys-1",
+          "source": "request_system",
+          "text": "Refund summary: annual plans are refundable for 30 days after purchase."
+        },
+        {
+          "id": "ctx-a",
+          "source": "request_context",
+          "text": "Shipping: orders ship within two business days from our Rotterdam warehouse. Tracking numbers arrive by email once the parcel leaves the building, and international orders can take up to ten business days to arrive."
+        },
+        {
+          "id": "ctx-b",
+          "source": "request_context",
+          "text": "Refunds for annual plans: an annual plan can be refunded within 30 days of purchase. After those 30 days the annual plan stays active until the end of its term and cannot be refunded."
+        },
+        {
+          "id": "tool-1",
+          "source": "tool_results",
+          "text": "Billing lookup: the customer bought an annual plan 45 days ago and has not asked for a refund before. The plan renews next year on the purchase date."
+        }
+      ],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 150
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [563],
+    "evaluators": [{"internal": false, "ref": "groundedness@1", "stage": "active"}],
+    "excluded": [],
+    "packed_ids": ["sys-1", "ctx-b", "tool-1"],
+    "qid_request": {"groundedness__v1": 0},
+    "question_map": {"groundedness__v1": "groundedness@1"},
+    "question_set_sha256": "024d95c6bf5354b4d45e47334578785b7f3c5515d252eb3d3fdb19bb6c851cf4",
+    "request_sha256": ["b700da2ed8567749cf79026616da4df41c384d9eeea0a4b94cc88e0c95b8c5e9"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "Annual plans can be refunded within 30 days of purchase.",
+          "evidence": [
+            {
+              "id": "sys-1",
+              "source": "request_system",
+              "text": "Refund summary: annual plans are refundable for 30 days after purchase."
+            },
+            {
+              "id": "ctx-b",
+              "source": "request_context",
+              "text": "Refunds for annual plans: an annual plan can be refunded within 30 days of purchase. After those 30 days the annual plan stays active until the end of its term and cannot be refunded."
+            },
+            {
+              "id": "tool-1",
+              "source": "tool_results",
+              "text": "Billing lookup: the customer bought an annual plan 45 days ago and has not asked for a refund before. The plan renews next year on the purchase date."
+            }
+          ]
+        }
+      }
+    ],
+    "truncated": true,
+    "truncated_ids": []
+  }
+}

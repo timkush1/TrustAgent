@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "number-small-exponent",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "1e-7 is below 1e-6, so ES6 uses exponent notation without a leading zero in the exponent: 1e-7 (Go strconv would write 1e-07).",
+  "input": {"value": 1e-7},
+  "expected": {
+    "jcs": "1e-7",
+    "sha256": "5b33e02f2c5103a05d32f6ba9cb058294452bfbf393967f68bb30c1bdcbbab22"
+  }
+}

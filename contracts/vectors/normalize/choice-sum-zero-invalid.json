@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-sum-zero-invalid",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Every probability is 0 (sum 0): invalid_distribution.",
+  "input": {
+    "template": "refusal@1",
+    "answer": {
+      "type": "choice",
+      "choice": "answers_request",
+      "probabilities": {"answers_request": 0, "declines_or_deflects": 0}
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": "invalid_distribution",
+    "probabilities": null,
+    "risk_raw": null,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-missing-confidence",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Probabilities without a confidence: vendor_confidence null and confidence_source fallback_top_prob (display only).",
+  "input": {
+    "template": "pii_secret_leak@1",
+    "answer": {
+      "type": "choice",
+      "choice": "no_sensitive_data",
+      "probabilities": {"no_sensitive_data": 0.9, "repeats_users_own_data": 0.1}
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "fallback_top_prob",
+    "error": null,
+    "probabilities": {
+      "exposes_personal_data": 0,
+      "exposes_secret": 0,
+      "no_sensitive_data": 0.9,
+      "repeats_data_from_evidence": 0,
+      "repeats_users_own_data": 0.1
+    },
+    "risk_raw": 0,
+    "top": "no_sensitive_data",
+    "vendor_confidence": null
+  }
+}

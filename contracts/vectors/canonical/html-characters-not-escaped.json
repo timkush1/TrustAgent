@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "html-characters-not-escaped",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "No HTML escaping: <, > and & are written literally (Go encoding/json would write \\u003c, \\u003e and \\u0026). The solidus is not escaped either.",
+  "input": {"value": "<a href=\"https://example.com/?a=1&b=2\">x</a> </script>"},
+  "expected": {
+    "jcs": "\"<a href=\\\"https://example.com/?a=1&b=2\\\">x</a> </script>\"",
+    "sha256": "533a793bc2ea16ba0f737bc667a36963713aca22ef0c925187a81517571638e0"
+  }
+}

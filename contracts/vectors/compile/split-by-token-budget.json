@@ -1,0 +1,88 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "split-by-token-budget",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Token budget 800 for four rubric questions (regulated_advice 231, off_topic 194, unsafe_policy 189, refusal 177 tokens) with a shared state of 87 and overhead 275: all four need 1153. First-fit-decreasing: regulated_advice and off_topic fill request 0 (787); unsafe_policy opens request 1 (551); refusal does not fit request 0 but fits request 1 (728).",
+  "input": {
+    "route": {
+      "evaluators": [
+        {"ref": "refusal@1"},
+        {"ref": "unsafe_policy@1"},
+        {"ref": "regulated_advice@1"},
+        {"ref": "off_topic@1"}
+      ],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 800,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [809, 749],
+    "evaluators": [
+      {"internal": false, "ref": "refusal@1", "stage": "active"},
+      {"internal": false, "ref": "unsafe_policy@1", "stage": "active"},
+      {"internal": false, "ref": "regulated_advice@1", "stage": "active"},
+      {"internal": false, "ref": "off_topic@1", "stage": "active"}
+    ],
+    "excluded": [],
+    "packed_ids": [],
+    "qid_request": {
+      "off_topic__v1": 0,
+      "refusal__v1": 1,
+      "regulated_advice__v1": 0,
+      "unsafe_policy__v1": 1
+    },
+    "question_map": {
+      "off_topic__v1": "off_topic@1",
+      "refusal__v1": "refusal@1",
+      "regulated_advice__v1": "regulated_advice@1",
+      "unsafe_policy__v1": "unsafe_policy@1"
+    },
+    "question_set_sha256": "2e618412ca14c07a1cd748bb4231d2096394d163709916add816fdd784359eaf",
+    "request_sha256": [
+      "34cc51666cf283c0d280b04e540bbd28df446e50cdb948287b6ed8cca8b976e5",
+      "d151fb1953e032e69962595cbc08112d1cf0278c30c9771335740934b23c5133"
+    ],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "rules": {"allowed_scope": "Any subject"},
+          "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+          "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        }
+      },
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "rules": {"allowed_scope": "Any subject"},
+          "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+          "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}

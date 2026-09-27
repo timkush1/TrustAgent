@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-off-topic",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template off_topic@1 (contracts/evaluators/off_topic.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "off_topic@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "f42552cf81cdf09b6de8866a31a932ae565c25f103bf7c53b15854209f13a149",
+    "question_id": "off_topic__v1",
+    "question_sha256": "54674512b2f938f476a202658e236559fa50dd33886333817f844f4d83f2dec2",
+    "question_tokens": 194,
+    "spec_sha256": "d0e772dfd039b75e6a172806b46bd6116ea9d930ceddc5bd4db6c987499bfa2f"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-off-brand-tone",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template off_brand_tone@1 (contracts/evaluators/off_brand_tone.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "off_brand_tone@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "9330aca9c58cfb9550d9009c86b382191453ef2ee31e06d21bd8ee51bf447361",
+    "question_id": "off_brand_tone__v1",
+    "question_sha256": "138218ac8aaf65ddf121d04bc3c37f5a7648c0ce9b7a036576597fd7b751a5bc",
+    "question_tokens": 186,
+    "spec_sha256": "efa0ec75914d185569b28bf13c2d01961097cba33163a7bbae6dd9a7db30bc27"
+  }
+}

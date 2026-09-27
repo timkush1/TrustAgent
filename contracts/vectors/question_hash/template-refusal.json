@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-refusal",
+  "status": "draft",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template refusal@1 (contracts/evaluators/refusal.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "refusal@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "413691d99192cbf0e6450ce94b7320aa75bf38134744d366d65710a5ba1e5dea",
+    "question_id": "refusal__v1",
+    "question_sha256": "dfb5c249f523163c0005d7d90459f8406f696ba88d764d4eca2bcd845c45395d",
+    "question_tokens": 177,
+    "spec_sha256": "942771f2d861181fb7acf15704bd0af54c1e6ecd1ed2a1d1d07b76913df93557"
+  }
+}
