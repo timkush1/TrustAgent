@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=../contracts/schema/policy.v1.schema.json
+#
+# The gateway policy (schema policy/v1, SPEC §2.7). The proxy reads TRUTHTABLE_POLICY_FILE, which defaults to
+# this file; compose mounts ./config read-only at /etc/trustagent, so containers read
+# /etc/trustagent/policies.yaml. `make demo` uses this file unchanged. make contracts-check validates it.
+#
+# contracts/policies/example.policies.yaml is the full SPEC example (block and fallback routes, rules
+# parameters, shadow evaluators) to copy routes from.
+#
+# The demo scenarios (contracts/demo/scenarios.v1.json) run on the support-bot route. Their expected
+# outcomes depend on its settings, so change them together (make contracts-check cross-checks both).
+version: 1
+defaults:
+  # No mode here: the default route takes the TRUTHTABLE_GATE_DEFAULT_MODE seed (observe).
+  deadline_ms: 600
+  sample_rate: 1.0
+  require_calibration: true
+  on_no_evidence: ignore
+  streaming: passthrough
+  headers: full
+  evidence:
+    sources: [request_system, request_context, tool_results, extension]
+    system_mode: documents_only
+    line_headers: true
+    max_tokens: 8000
+  evaluators: # question set gateway-default
+    - ref: groundedness@1
+    - ref: contradiction@1
+    - ref: refusal@1
+    - ref: pii_secret_leak@1
+  deep_audit: {enabled: true, pass_sample_rate: 0.02, uniform_sample_rate: 0.01, error_sample_rate: 0.1, verifier: auto}
+  store_bodies: sampled
+  block: {style: message, message: "I can't provide a verified answer to that right now."}
+overrides: {client_mode: none, client_rules: false}
+routes:
+  - name: support-bot
+    description: >-
+      Demo support assistant that answers from the policy documents in its system prompt. Flags answers
+      that the documents contradict or do not contain; says "not checked" when a request has no documents.
+    match: {headers: {X-TrustAgent-Route: support-bot}}
+    mode: flag
+    # Only the two evidence checks, so a request without documents sends nothing and the gate reports
+    # not_assessed. Rubric checks such as refusal@1 and pii_secret_leak@1 run without documents.
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    # Deterministic demo and e2e runs: every passed answer gets a deep audit, and no uniform draw turns a
+    # no-evidence trace into a queued audit.
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    # Keep every body, so trace details show the answer for passed traces too.
+    store_bodies: all
