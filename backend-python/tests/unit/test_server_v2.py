@@ -811,6 +811,18 @@ async def test_evaluate_zero_claims_is_no_claims() -> None:
     assert result.hallucination_detected is False
 
 
+async def test_evaluate_blank_evidence_is_not_assessed_without_llm_calls() -> None:
+    judge = ScriptedJudge(claims=["Paris is the capital of France."])
+
+    result = await _evaluate(judge, _request(documents=("", " \n ")))
+
+    assert judge.calls == 0
+    assert result.status == pb.AUDIT_STATUS_COMPLETED
+    assert result.verdict == pb.AUDIT_VERDICT_NOT_ASSESSED
+    assert result.not_assessed_reason == "no_evidence"
+    assert not result.HasField("scores")
+
+
 async def test_evaluate_judge_outage_fails_with_judge_unavailable() -> None:
     claims = ["Paris is the capital of France.", "Paris is in Europe."]
     judge = ScriptedJudge(claims, {claim: ConnectionError("judge down") for claim in claims})

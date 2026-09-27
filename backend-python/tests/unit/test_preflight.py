@@ -23,10 +23,11 @@ _CLAIM_BLOCK = re.compile(r"<claim>\n(.*?)\n</claim>", re.DOTALL)
 
 
 class SpyJudge(LLMProvider):
-    """Decomposes into one claim and supports it, recording every call."""
+    """Decomposes into `claims` (one claim by default) and supports each, recording every call."""
 
-    def __init__(self) -> None:
+    def __init__(self, claims: Sequence[str] = (CLAIM,)) -> None:
         super().__init__(model="spy")
+        self.claims = list(claims)
         self.prompts: List[str] = []
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
@@ -35,7 +36,7 @@ class SpyJudge(LLMProvider):
         if _CLAIM_BLOCK.search(prompt):
             answer: Any = {"status": "SUPPORTED", "confidence": 0.9, "evidence": [CLAIM]}
         else:
-            answer = [CLAIM]
+            answer = self.claims
         return CompletionResponse(
             content=json.dumps(answer), model=self.model, finish_reason="stop"
         )
@@ -106,6 +107,41 @@ async def test_no_evidence_is_not_assessed_with_zero_llm_calls(knowledge_enabled
     assert state["step_timings"] == {}
 
 
+@pytest.mark.parametrize("blank", ["", "  \n\t "])
+async def test_blank_documents_are_not_evidence(blank: str) -> None:
+    judge = SpyJudge()
+
+    state = await _audit(
+        build_audit_graph(provider=judge),
+        context_docs=[blank, blank],
+        context_sources=["request_system", "request_system"],
+    )
+
+    assert judge.prompts == []
+    _assert_not_assessed(state, "no_evidence")
+    assert state["context_docs"] == []
+
+
+async def test_blank_documents_are_dropped_before_verification() -> None:
+    judge = SpyJudge()
+
+    state = await _audit(
+        build_audit_graph(provider=judge),
+        context_docs=["", "Paris is in France.", " "],
+        context_sources=["request_system", "knowledge", "request_context"],
+    )
+
+    assert state["verdict"] == "GROUNDED"
+    assert state["context_docs"] == ["Paris is in France."]
+    # Sources stay aligned with the documents they describe: only knowledge is
+    # left, so auto resolves to unverifiable.
+    assert state["context_sources"] == ["knowledge"]
+    assert state["unsupported_policy"] == "unverifiable"
+    verify_prompt = judge.prompts[-1]
+    assert "[Document 1]\nParis is in France." in verify_prompt
+    assert "[Document 2]" not in verify_prompt
+
+
 async def test_evidence_runs_the_full_audit() -> None:
     judge = SpyJudge()
 
@@ -159,6 +195,22 @@ async def test_knowledge_without_hits_is_not_assessed_and_claims_not_checked() -
     _assert_not_assessed(state, "knowledge_no_hits")
     assert [cv["status"] for cv in state["claim_verifications"]] == [VerificationStatus.NOT_CHECKED]
     assert "verify_ms" not in state["step_timings"]
+
+
+async def test_knowledge_is_not_searched_for_an_answer_without_claims() -> None:
+    judge, knowledge = SpyJudge(claims=[]), FakeKnowledgeBase(hits=[])
+    graph = build_audit_graph(
+        provider=judge, embedding_service=FakeEmbeddings(), qdrant_store=knowledge
+    )
+
+    state = await _audit(graph, knowledge_enabled=True)
+
+    assert len(judge.prompts) == 1  # the decomposition only
+    assert knowledge.searches == 0
+    # Nothing to check is NO_CLAIMS, not NOT_ASSESSED (knowledge_no_hits).
+    assert state["verdict"] == "NO_CLAIMS"
+    assert state["not_assessed_reason"] is None
+    assert state["claim_verifications"] == []
 
 
 @pytest.mark.parametrize(

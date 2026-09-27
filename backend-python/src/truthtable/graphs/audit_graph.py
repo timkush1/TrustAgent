@@ -11,8 +11,9 @@ The graph orchestrates five nodes in sequence:
 5. Score     -> Calculate the faithfulness score and classify the audit
 
 Preflight short-circuits an audit with no evidence (no evidence documents and
-knowledge off) to NOT_ASSESSED(no_evidence) with zero LLM calls, instead of
-verifying every claim against empty context and reporting it UNSUPPORTED.
+knowledge off; blank documents do not count) to NOT_ASSESSED(no_evidence) with
+zero LLM calls, instead of verifying every claim against empty context and
+reporting it UNSUPPORTED.
 Skipping happens inside the nodes rather than through conditional edges, so
 routing stays uniform: once an audit is NOT_ASSESSED every later node returns
 the state unchanged.
@@ -139,7 +140,23 @@ class PreflightNode:
         self.retrieval_available = retrieval_available
 
     async def run(self, state: AuditState) -> AuditState:
-        documents = state.get("context_docs") or []
+        documents = list(state.get("context_docs") or [])
+        evidence = [i for i, doc in enumerate(documents) if doc and doc.strip()]
+        if len(evidence) < len(documents):
+            # A blank document is not evidence: verifying against it would call
+            # the judge with empty context and report every claim UNSUPPORTED.
+            logger.info(
+                f"Audit {state['request_id']}: ignoring "
+                f"{len(documents) - len(evidence)} blank evidence document(s)"
+            )
+            sources = state.get("context_sources") or []
+            documents = [documents[i] for i in evidence]
+            state["context_docs"] = documents
+            if sources:
+                state["context_sources"] = [
+                    sources[i] if i < len(sources) else "" for i in evidence
+                ]
+
         state["unsupported_policy"] = resolve_unsupported_policy(
             state.get("unsupported_policy") or "",
             state.get("context_sources") or [],
@@ -186,6 +203,8 @@ class KnowledgeRetrieveNode:
     Knowledge retrieval, skipped inside the node unless the caller enabled
     knowledge. A retrieval that yields no documents ends the audit as
     NOT_ASSESSED (knowledge_no_hits) rather than verifying against nothing.
+    An answer without claims skips retrieval: there is nothing to check, and the
+    scorer reports NO_CLAIMS whatever the knowledge base holds.
     """
 
     def __init__(self, retriever: Any):
@@ -193,6 +212,8 @@ class KnowledgeRetrieveNode:
 
     async def run(self, state: AuditState) -> AuditState:
         if is_not_assessed(state) or not state.get("knowledge_enabled"):
+            return state
+        if not state.get("claims"):
             return state
 
         state = await self.retriever.run(state)
