@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -52,14 +53,14 @@ class EnsureTest(unittest.TestCase):
         return env, result
 
     def test_new_env_is_created_from_example_with_every_generated_value(self) -> None:
-        volumes = FakeVolumes(True)
+        volumes = FakeVolumes(False)
         env, result = self.run_ensure(volumes)
         self.assertTrue(result.created)
         self.assertEqual(
             result.generated,
             ["POSTGRES_PASSWORD", "GRAFANA_ADMIN_PASSWORD", "TRAFFICGEN_API_KEY"],
         )
-        self.assertEqual(volumes.calls, [], "a new .env never asks docker")
+        self.assertEqual(result.warnings, [])
         self.assertEqual(env.lines[:3], EXAMPLE.splitlines())
         values = env.values()
         self.assertRegex(values["POSTGRES_PASSWORD"], r"^[0-9a-f]{48}$")
@@ -71,6 +72,17 @@ class EnsureTest(unittest.TestCase):
         self.assertTrue(
             any(line.startswith("# --- added by scripts/configure.py") for line in env.lines)
         )
+
+    def test_new_env_next_to_an_old_postgres_volume_warns(self) -> None:
+        # A new .env always gets a password (SPEC §3.4), whatever docker says,
+        # but a volume created under an earlier .env keeps its own password.
+        for answer in (True, None):
+            with self.subTest(volume_exists=answer):
+                env, result = self.run_ensure(FakeVolumes(answer))
+                self.assertIn("POSTGRES_PASSWORD", result.generated)
+                self.assertRegex(env.get("POSTGRES_PASSWORD") or "", r"^[0-9a-f]{48}$")
+                warned = any("earlier .env" in w for w in result.warnings)
+                self.assertEqual(warned, answer is True)
 
     def test_second_run_changes_nothing(self) -> None:
         env, _ = self.run_ensure()
@@ -191,6 +203,11 @@ class MainTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         (self.dir / ".env.example").write_text(EXAMPLE, encoding="utf-8")
+        # No Docker in unit tests: main() looks the probe up at call time.
+        self.volumes = FakeVolumes(False)
+        patcher = mock.patch.object(configure, "docker_volume_exists", self.volumes)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.args = [
             "--env-file",
             str(self.dir / ".env"),
@@ -226,6 +243,7 @@ class MainTest(unittest.TestCase):
         for secret in ("POSTGRES_PASSWORD", "GRAFANA_ADMIN_PASSWORD", "TRAFFICGEN_API_KEY"):
             self.assertNotIn(values[secret], out + err)
         self.assertIn("created", out)
+        self.assertEqual(len(self.volumes.calls), 1, "one docker volume query")
         if os.name == "posix":
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         code, out, _ = self.call("--ensure")

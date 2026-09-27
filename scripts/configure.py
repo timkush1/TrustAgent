@@ -7,7 +7,8 @@ needs but nobody should have to invent (SPEC §3.4):
 
 - ``POSTGRES_PASSWORD``: only when ``.env`` is new or no postgres volume exists
   yet. A postgres volume keeps the password it was created with, so changing it
-  later would lock the proxy out.
+  later would lock the proxy out; a new ``.env`` next to an existing volume
+  (``.env`` deleted, volume kept) gets a password and a warning saying so.
 - ``GRAFANA_ADMIN_PASSWORD`` (observability profile).
 - ``TRAFFICGEN_API_KEY`` and a matching ``trafficgen=<key>`` entry in
   ``TRUTHTABLE_API_KEYS``: the ingest key of the demo traffic generator.
@@ -140,10 +141,20 @@ def ensure(
             or DEFAULT_PROJECT
         )
         volumes = postgres_volumes(project)
+        exists = volume_exists(volumes)
         if result.created:
+            # A new .env always gets one (SPEC §3.4); an old volume cannot use it.
             fill("POSTGRES_PASSWORD", generate_secret())
+            if exists is True:
+                result.warnings.append(
+                    "generated a new POSTGRES_PASSWORD, but a postgres volume from an "
+                    "earlier .env already exists (one of: "
+                    + ", ".join(volumes)
+                    + ") and keeps the password it was created with. Put that password in "
+                    ".env as POSTGRES_PASSWORD, or delete the volume (make clean-data / "
+                    "make demo-clean) before starting the stack."
+                )
         else:
-            exists = volume_exists(volumes)
             if exists is False:
                 fill("POSTGRES_PASSWORD", generate_secret())
             elif exists is True:
@@ -258,7 +269,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"configure.py: cannot read {args.env_file}: {exc}", file=sys.stderr)
         return 2
 
-    result = ensure(env, args.example)
+    result = ensure(env, args.example, volume_exists=docker_volume_exists)
     name = _display(args.env_file)
     for warning in result.warnings:
         print(f"configure.py: warning: {warning}", file=sys.stderr)
