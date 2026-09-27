@@ -1,0 +1,4882 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/api.v1.schema.json",
+  "title": "TrustAgent API v1 payloads (REST and WebSocket v2)",
+  "description": "Contract-owned JSON Schema for the TrustAgent REST and WebSocket v2 payloads (docs/v2/SPEC.md sections 2.1, 2.4, 2.5 and 2.6). Every $defs entry has the name, fields and enum values of the same type in frontend-react/src/types/api.ts; Go handler tests and the golden fixtures in contracts/fixtures/api/ validate against 'api.v1.schema.json#/$defs/<TypeName>'. This is the S0 core subset: health and status, traces (list and detail), gate decisions, audits with claims and UTF-16 spans, the WebSocket v2 envelope and events, and the error body.",
+  "$comment": "Generated from api.ts with ts-json-schema-generator 2.9.0 (--type '*' --expose export --jsDoc extended, plus a scratch type instantiating Page<TraceSummary>, Page<GateDecisionRow> and Page<AuditSummary>), converted from draft-07 to 2020-12 (definitions -> $defs; array-form items -> prefixItems) and pruned to the roots named in the description plus everything they reference. Page<T> keeps the generator's name, percent-encoded in $ref. Regenerate instead of hand-editing whenever api.ts changes.",
+  "$defs": {
+    "ApiErrorBody": {
+      "additionalProperties": false,
+      "description": "REST error body for every `/api/*` error (`/v1/*` errors use the upstream API's shape).",
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "details": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "field_errors": {
+              "items": {
+                "$ref": "#/$defs/FieldError"
+              },
+              "type": "array"
+            },
+            "message": {
+              "type": "string"
+            },
+            "retry_after_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "trace_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
+    "ApiFormat": {
+      "enum": [
+        "openai_chat",
+        "openai_completions",
+        "anthropic_messages",
+        "direct"
+      ],
+      "type": "string"
+    },
+    "AuditDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "audit_id": {
+          "type": "string"
+        },
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/ClaimView"
+          },
+          "type": "array"
+        },
+        "context_used": {
+          "items": {
+            "$ref": "#/$defs/EvidenceItem"
+          },
+          "type": "array"
+        },
+        "costs": {
+          "items": {
+            "$ref": "#/$defs/CostRecord"
+          },
+          "type": "array"
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "degraded_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence_summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "#/$defs/GateAction"
+                },
+                "delivered": {
+                  "enum": [
+                    "original",
+                    "fallback",
+                    "blocked"
+                  ],
+                  "type": "string"
+                },
+                "max_risk": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "verdict": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/GateVerdict"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "would_action": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/WouldAction"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "action",
+                "would_action",
+                "verdict",
+                "max_risk",
+                "delivered"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gate_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grade"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hallucination_detected": {
+          "type": "boolean"
+        },
+        "inclusion_prob": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "judge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JudgeInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "llm_response": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_assessed_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "processing_ms": {
+          "type": "number"
+        },
+        "query_preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_trace": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scores": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditScores"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scoring_version": {
+          "type": "string"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/TraceSource"
+        },
+        "status": {
+          "$ref": "#/$defs/AuditStatus"
+        },
+        "step_timings": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "trust_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unsupported_policy": {
+          "enum": [
+            "hallucination",
+            "unverifiable",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user_query": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict_counts": {
+          "additionalProperties": false,
+          "properties": {
+            "CONTRADICTED": {
+              "type": "number"
+            },
+            "NOT_CHECKED": {
+              "type": "number"
+            },
+            "PARTIALLY_SUPPORTED": {
+              "type": "number"
+            },
+            "SUPPORTED": {
+              "type": "number"
+            },
+            "UNKNOWN": {
+              "type": "number"
+            },
+            "UNSUPPORTED": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "SUPPORTED",
+            "PARTIALLY_SUPPORTED",
+            "CONTRADICTED",
+            "UNSUPPORTED",
+            "UNKNOWN",
+            "NOT_CHECKED"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "audit_id",
+        "claims",
+        "context_used",
+        "costs",
+        "created_at",
+        "degraded_reasons",
+        "error",
+        "evidence_summary",
+        "gate",
+        "gate_action",
+        "grade",
+        "hallucination_detected",
+        "inclusion_prob",
+        "judge",
+        "llm_response",
+        "model",
+        "not_assessed_reason",
+        "processing_ms",
+        "query_preview",
+        "reasoning_trace",
+        "redacted",
+        "route",
+        "scores",
+        "scoring_version",
+        "selection",
+        "source",
+        "status",
+        "step_timings",
+        "trace_id",
+        "trust_score",
+        "unsupported_policy",
+        "user_query",
+        "verdict",
+        "verdict_counts"
+      ],
+      "type": "object"
+    },
+    "AuditScores": {
+      "additionalProperties": false,
+      "properties": {
+        "accuracy_addressed": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "claims_decided": {
+          "type": "number"
+        },
+        "claims_total": {
+          "type": "number"
+        },
+        "claims_unknown": {
+          "type": "number"
+        },
+        "contradiction_rate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coverage": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "faithfulness": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_contradiction": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p_hallucinated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "trust_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unverified_rate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "trust_score",
+        "faithfulness",
+        "contradiction_rate",
+        "unverified_rate",
+        "coverage",
+        "accuracy_addressed",
+        "max_contradiction",
+        "p_hallucinated",
+        "claims_total",
+        "claims_decided",
+        "claims_unknown"
+      ],
+      "type": "object"
+    },
+    "AuditSelection": {
+      "enum": [
+        "high",
+        "sample",
+        "error_sample",
+        "uniform",
+        "direct",
+        "playground",
+        "studio"
+      ],
+      "type": "string"
+    },
+    "AuditStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "degraded",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "AuditSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "audit_id": {
+          "type": "string"
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "gate_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "grade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Grade"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hallucination_detected": {
+          "type": "boolean"
+        },
+        "inclusion_prob": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "judge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JudgeInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_assessed_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "processing_ms": {
+          "type": "number"
+        },
+        "query_preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/TraceSource"
+        },
+        "status": {
+          "$ref": "#/$defs/AuditStatus"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "trust_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict_counts": {
+          "additionalProperties": false,
+          "properties": {
+            "CONTRADICTED": {
+              "type": "number"
+            },
+            "NOT_CHECKED": {
+              "type": "number"
+            },
+            "PARTIALLY_SUPPORTED": {
+              "type": "number"
+            },
+            "SUPPORTED": {
+              "type": "number"
+            },
+            "UNKNOWN": {
+              "type": "number"
+            },
+            "UNSUPPORTED": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "SUPPORTED",
+            "PARTIALLY_SUPPORTED",
+            "CONTRADICTED",
+            "UNSUPPORTED",
+            "UNKNOWN",
+            "NOT_CHECKED"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "audit_id",
+        "trace_id",
+        "created_at",
+        "route",
+        "source",
+        "model",
+        "status",
+        "verdict",
+        "not_assessed_reason",
+        "trust_score",
+        "grade",
+        "hallucination_detected",
+        "verdict_counts",
+        "processing_ms",
+        "judge",
+        "gate_action",
+        "selection",
+        "inclusion_prob",
+        "query_preview",
+        "redacted"
+      ],
+      "type": "object"
+    },
+    "AuditVerdict": {
+      "description": "Response-level audit verdict (proto-mirrored, UPPER_SNAKE).",
+      "enum": [
+        "GROUNDED",
+        "HALLUCINATED",
+        "UNVERIFIABLE",
+        "NO_CLAIMS",
+        "NOT_ASSESSED"
+      ],
+      "type": "string"
+    },
+    "CalibrationState": {
+      "enum": [
+        "measured",
+        "provisional",
+        "proxy",
+        "mock",
+        "family",
+        "none"
+      ],
+      "type": "string"
+    },
+    "ChatMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "system",
+            "developer",
+            "user",
+            "assistant",
+            "tool"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "type": "object"
+    },
+    "ClaimVerdict": {
+      "description": "Claim verdict (proto-mirrored, UPPER_SNAKE). NOT_CHECKED is excluded from all aggregates.",
+      "enum": [
+        "SUPPORTED",
+        "PARTIALLY_SUPPORTED",
+        "CONTRADICTED",
+        "UNSUPPORTED",
+        "UNKNOWN",
+        "NOT_CHECKED"
+      ],
+      "type": "string"
+    },
+    "ClaimView": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "decided_by": {
+          "$ref": "#/$defs/DecidedBy"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence_spans": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          },
+          "type": "array"
+        },
+        "index": {
+          "type": "number"
+        },
+        "probability_source": {
+          "enum": [
+            "llm_confidence",
+            "llm_calibrated",
+            "rule",
+            "jev",
+            "jev_calibrated"
+          ],
+          "type": "string"
+        },
+        "quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "end": {
+                  "type": "number"
+                },
+                "method": {
+                  "enum": [
+                    "exact",
+                    "normalized",
+                    "fuzzy"
+                  ],
+                  "type": "string"
+                },
+                "start": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "method"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Claim location in the answer text: UTF-16 code units, half-open; null when unaligned."
+        },
+        "status": {
+          "$ref": "#/$defs/ClaimVerdict"
+        },
+        "verdict_probabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "contradicted": {
+              "type": "number"
+            },
+            "partially_supported": {
+              "type": "number"
+            },
+            "supported": {
+              "type": "number"
+            },
+            "unsupported": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "index",
+        "claim",
+        "status",
+        "confidence",
+        "evidence",
+        "reasoning",
+        "decided_by",
+        "verdict_probabilities",
+        "probability_source",
+        "span",
+        "quote",
+        "evidence_spans"
+      ],
+      "type": "object"
+    },
+    "CompileInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "cpt": {
+          "type": "number"
+        },
+        "est_tokens": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "packed_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question_set_sha256": {
+          "type": "string"
+        },
+        "request_sha256": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requests": {
+          "type": "number"
+        },
+        "truncated_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cpt",
+        "requests",
+        "question_set_sha256",
+        "request_sha256",
+        "packed_evidence_ids",
+        "truncated_ids",
+        "est_tokens"
+      ],
+      "type": "object"
+    },
+    "ComponentStateName": {
+      "enum": [
+        "up",
+        "degraded",
+        "down",
+        "disabled",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "CostRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "type": "string"
+        },
+        "cost_source": {
+          "enum": [
+            "reported",
+            "computed",
+            "free_local",
+            "simulated",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "input_tokens": {
+          "type": "number"
+        },
+        "kind": {
+          "enum": [
+            "decision",
+            "llm"
+          ],
+          "type": "string"
+        },
+        "latency_ms": {
+          "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output_tokens": {
+          "type": "number"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "questions": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "kind",
+        "provider",
+        "model",
+        "input_tokens",
+        "output_tokens",
+        "cost_usd",
+        "cost_source",
+        "latency_ms",
+        "status",
+        "questions"
+      ],
+      "type": "object"
+    },
+    "DecidedBy": {
+      "enum": [
+        "llm",
+        "rule",
+        "none",
+        "jev",
+        "jev>llm",
+        "jev>llm_failed"
+      ],
+      "type": "string"
+    },
+    "DecisionBackend": {
+      "enum": [
+        "openrouter-decisions",
+        "openrouter-systemone",
+        "typesafe",
+        "compatible",
+        "mock",
+        "off"
+      ],
+      "type": "string"
+    },
+    "DecisionModelStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/DecisionBackend"
+        },
+        "backend_reason": {
+          "type": "string"
+        },
+        "breaker": {
+          "enum": [
+            "closed",
+            "open",
+            "half_open"
+          ],
+          "type": "string"
+        },
+        "calibrated_targets": {
+          "type": "number"
+        },
+        "calibration_state": {
+          "$ref": "#/$defs/CalibrationState"
+        },
+        "calls_24h": {
+          "type": "number"
+        },
+        "cost_24h_usd": {
+          "type": "number"
+        },
+        "credential": {
+          "additionalProperties": false,
+          "properties": {
+            "masked": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "enum": [
+                "env",
+                "dashboard",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "name",
+            "masked"
+          ],
+          "type": "object"
+        },
+        "endpoint_host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "$ref": "#/$defs/ISODateTime"
+                },
+                "hint": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "message",
+                "hint",
+                "at"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model_requested": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "provider": {
+          "const": "jev",
+          "type": "string"
+        },
+        "rpm_limit": {
+          "type": "number"
+        },
+        "rpm_used": {
+          "type": "number"
+        },
+        "snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "off",
+            "mock",
+            "checking",
+            "ready",
+            "degraded",
+            "breaker_open",
+            "unauthorized",
+            "no_credits",
+            "budget_exhausted",
+            "misconfigured",
+            "unreachable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "backend",
+        "backend_reason",
+        "endpoint_host",
+        "model_requested",
+        "snapshot",
+        "credential",
+        "state",
+        "breaker",
+        "last_error",
+        "calibration_state",
+        "calibrated_targets",
+        "p50_ms",
+        "p95_ms",
+        "calls_24h",
+        "cost_24h_usd",
+        "rpm_limit",
+        "rpm_used"
+      ],
+      "type": "object"
+    },
+    "DecisionModelUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "type": "number"
+        },
+        "backend": {
+          "$ref": "#/$defs/DecisionBackend"
+        },
+        "calls": {
+          "type": "number"
+        },
+        "connect_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost_source": {
+          "enum": [
+            "reported",
+            "computed",
+            "free_local",
+            "simulated",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hedged": {
+          "type": "boolean"
+        },
+        "input_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "model_requested": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "backend",
+        "model_requested",
+        "snapshot",
+        "calls",
+        "attempts",
+        "hedged",
+        "latency_ms",
+        "connect_ms",
+        "input_tokens",
+        "cost_usd",
+        "cost_source"
+      ],
+      "type": "object"
+    },
+    "Degraded": {
+      "enum": [
+        "uncalibrated",
+        "budget",
+        "breaker",
+        "rate_limited",
+        "timeout",
+        "error",
+        "overload",
+        "off"
+      ],
+      "type": "string"
+    },
+    "DetectorFinding": {
+      "additionalProperties": false,
+      "description": "Detector hit in the answer text: UTF-16 code units, half-open; -1 means unaligned.",
+      "properties": {
+        "end": {
+          "type": "number"
+        },
+        "start": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "DetectorId": {
+      "enum": [
+        "numbers_not_in_evidence",
+        "dates_not_in_evidence",
+        "urls_not_in_evidence",
+        "quotes_not_in_evidence",
+        "citation_out_of_range",
+        "secret_pattern",
+        "system_prompt_leak"
+      ],
+      "type": "string"
+    },
+    "DetectorResult": {
+      "additionalProperties": false,
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/DetectorFinding"
+          },
+          "type": "array"
+        },
+        "fired": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/DetectorId"
+        },
+        "ran": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "ran",
+        "fired",
+        "findings"
+      ],
+      "type": "object"
+    },
+    "DirectAuditRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "response": {
+          "type": "string"
+        },
+        "route": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "response"
+      ],
+      "type": "object"
+    },
+    "EvaluatorLevel": {
+      "enum": [
+        "ok",
+        "warn",
+        "critical"
+      ],
+      "type": "string"
+    },
+    "EvaluatorResult": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RawAnswer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "block_eligible": {
+          "type": "boolean"
+        },
+        "calibrated": {
+          "type": "boolean"
+        },
+        "calibration_state": {
+          "$ref": "#/$defs/CalibrationState"
+        },
+        "calibration_warning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capped": {
+          "enum": [
+            "evidence_truncated",
+            "knowledge_only",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence_source": {
+          "enum": [
+            "vendor",
+            "fallback_top_prob",
+            "choice_only",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "corroborated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "escalate": {
+          "enum": [
+            "uncertain",
+            "numeric_or_date_unverified",
+            "error",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "internal": {
+          "type": "boolean"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluatorLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "probabilities": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "risk": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "risk_raw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stage": {
+          "enum": [
+            "active",
+            "shadow"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/EvaluatorResultStatus"
+        },
+        "threshold_space": {
+          "enum": [
+            "raw",
+            "calibrated"
+          ],
+          "type": "string"
+        },
+        "thresholds": {
+          "additionalProperties": false,
+          "properties": {
+            "critical_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "escalate_from": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "warn_at": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "warn_at",
+            "critical_at",
+            "escalate_from"
+          ],
+          "type": "object"
+        },
+        "top": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "enum": [
+            "noul",
+            "choice",
+            "score",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vendor_confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "stage",
+        "internal",
+        "status",
+        "reason",
+        "type",
+        "answer",
+        "probabilities",
+        "risk_raw",
+        "risk",
+        "threshold_space",
+        "calibrated",
+        "calibration_state",
+        "calibration_warning",
+        "level",
+        "capped",
+        "top",
+        "vendor_confidence",
+        "confidence_source",
+        "escalate",
+        "corroborated",
+        "block_eligible",
+        "thresholds"
+      ],
+      "type": "object"
+    },
+    "EvaluatorResultStatus": {
+      "enum": [
+        "assessed",
+        "not_assessed",
+        "error"
+      ],
+      "type": "string"
+    },
+    "EvidenceItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/EvidenceSource"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "untrusted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "label",
+        "text",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "EvidenceSource": {
+      "enum": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension",
+        "knowledge"
+      ],
+      "type": "string"
+    },
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "description": "Where a claim's support sits in evidence document `doc_index`; UTF-16 code units, half-open.",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "doc_index": {
+          "type": "number"
+        },
+        "end": {
+          "type": "number"
+        },
+        "kind": {
+          "enum": [
+            "quote_verified",
+            "quote_unverified",
+            "retrieved"
+          ],
+          "type": "string"
+        },
+        "start": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_index",
+        "doc_id",
+        "start",
+        "end",
+        "text",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "EvidenceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSource"
+          },
+          "type": "array"
+        },
+        "empty": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSource"
+          },
+          "type": "array"
+        },
+        "knowledge": {
+          "enum": [
+            "not_requested",
+            "disabled",
+            "used",
+            "no_hits",
+            "timeout",
+            "error"
+          ],
+          "type": "string"
+        },
+        "tokens": {
+          "type": "number"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "used": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "type": "number"
+              },
+              "labels": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "source": {
+                "$ref": "#/$defs/EvidenceSource"
+              },
+              "tokens": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "source",
+              "items",
+              "labels",
+              "tokens"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "configured",
+        "used",
+        "empty",
+        "knowledge",
+        "truncated",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "FieldError": {
+      "additionalProperties": false,
+      "properties": {
+        "col": {
+          "type": "number"
+        },
+        "line": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "message"
+      ],
+      "type": "object"
+    },
+    "GateAction": {
+      "enum": [
+        "observe",
+        "pass",
+        "flag",
+        "block",
+        "fallback"
+      ],
+      "type": "string"
+    },
+    "GateDecisionRow": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/GateAction"
+        },
+        "audit_verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "decision_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "decision_snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effective_mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "evaluator_levels": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/EvaluatorLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        "late": {
+          "type": "boolean"
+        },
+        "max_risk": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "route": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/GateStatus"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "would_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WouldAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "trace_id",
+        "created_at",
+        "route",
+        "mode",
+        "effective_mode",
+        "action",
+        "would_action",
+        "status",
+        "verdict",
+        "max_risk",
+        "reasons",
+        "late",
+        "decision_snapshot",
+        "decision_ms",
+        "cost_usd",
+        "audit_verdict",
+        "evaluator_levels"
+      ],
+      "type": "object"
+    },
+    "GateDecisionView": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/GateAction"
+        },
+        "attempt": {
+          "enum": [
+            0,
+            1
+          ],
+          "type": "number"
+        },
+        "calibration": {
+          "enum": [
+            "all",
+            "partial",
+            "none"
+          ],
+          "type": "string"
+        },
+        "compile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompileInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "decision_model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecisionModelUsage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deep_audit": {
+          "enum": [
+            "high",
+            "sample",
+            "sample_error",
+            "none"
+          ],
+          "type": "string"
+        },
+        "degraded": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Degraded"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detectors": {
+          "items": {
+            "$ref": "#/$defs/DetectorResult"
+          },
+          "type": "array"
+        },
+        "disagreement": {
+          "type": "boolean"
+        },
+        "effective_mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "enforced": {
+          "type": "boolean"
+        },
+        "evaluators": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EvaluatorResult"
+          },
+          "type": "object"
+        },
+        "evidence_summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excluded": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "fail": {
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "type": "string"
+        },
+        "gate_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "late": {
+          "type": "boolean"
+        },
+        "max_risk": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "policy_version": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "route": {
+          "type": "string"
+        },
+        "skip_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkipReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spec": {
+          "const": "decision/v1",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/GateStatus"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "would_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WouldAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "spec",
+        "trace_id",
+        "attempt",
+        "created_at",
+        "route",
+        "policy_version",
+        "mode",
+        "effective_mode",
+        "fail",
+        "status",
+        "skip_reason",
+        "action",
+        "would_action",
+        "enforced",
+        "verdict",
+        "max_risk",
+        "calibration",
+        "degraded",
+        "disagreement",
+        "deep_audit",
+        "reasons",
+        "evaluators",
+        "detectors",
+        "excluded",
+        "decision_model",
+        "compile",
+        "evidence_summary",
+        "late",
+        "gate_ms"
+      ],
+      "type": "object"
+    },
+    "GateStatus": {
+      "enum": [
+        "ok",
+        "partial",
+        "not_assessed",
+        "skipped",
+        "timeout",
+        "error"
+      ],
+      "type": "string"
+    },
+    "GateVerdict": {
+      "enum": [
+        "supported",
+        "unsupported",
+        "contradicted",
+        "not_assessed",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Grade": {
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F"
+      ],
+      "type": "string"
+    },
+    "HealthStatus": {
+      "additionalProperties": false,
+      "description": "GET /health (SPEC §2.4 endpoint 1): public liveness. `audit_engine` is the cached result of the real engine ping, not merely \"a client exists\". SPEC §2.6 leaves this shape unnamed; the name is added here so the schema can describe it.",
+      "properties": {
+        "audit_engine": {
+          "type": "boolean"
+        },
+        "demo": {
+          "type": "boolean"
+        },
+        "status": {
+          "const": "ok",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "version",
+        "demo",
+        "audit_engine"
+      ],
+      "type": "object"
+    },
+    "ISODateTime": {
+      "description": "RFC3339Nano timestamp in UTC.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "JudgeInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "configured_provider": {
+          "type": "string"
+        },
+        "credential_source": {
+          "enum": [
+            "env",
+            "dashboard",
+            "none"
+          ],
+          "type": "string"
+        },
+        "effective_provider": {
+          "type": "string"
+        },
+        "fallback_active": {
+          "type": "boolean"
+        },
+        "fallback_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "healthy": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string"
+        },
+        "structured_outputs": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "configured_provider",
+        "effective_provider",
+        "model",
+        "fallback_active",
+        "fallback_reason",
+        "structured_outputs",
+        "healthy",
+        "credential_source"
+      ],
+      "type": "object"
+    },
+    "LabelView": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labeled_by": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "label",
+        "labeled_by",
+        "created_at",
+        "note"
+      ],
+      "type": "object"
+    },
+    "Page<AuditSummary>": {
+      "additionalProperties": false,
+      "description": "Keyset page (`limit` 1-200, default 50, plus `cursor`); `next_cursor` is null at the end.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AuditSummary"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "type": "object"
+    },
+    "Page<GateDecisionRow>": {
+      "additionalProperties": false,
+      "description": "Keyset page (`limit` 1-200, default 50, plus `cursor`); `next_cursor` is null at the end.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/GateDecisionRow"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "type": "object"
+    },
+    "Page<TraceSummary>": {
+      "additionalProperties": false,
+      "description": "Keyset page (`limit` 1-200, default 50, plus `cursor`); `next_cursor` is null at the end.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TraceSummary"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "type": "object"
+    },
+    "PolicyMode": {
+      "enum": [
+        "observe",
+        "flag",
+        "block",
+        "fallback"
+      ],
+      "type": "string"
+    },
+    "RawAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "choice": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "legend": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "noul": {
+          "type": "number"
+        },
+        "probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "score": {
+          "type": "number"
+        },
+        "type": {
+          "enum": [
+            "noul",
+            "choice",
+            "score"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "ReadyStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "additionalProperties": false,
+          "properties": {
+            "database": {
+              "type": "string"
+            },
+            "decision_model": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "judge": {
+              "type": "string"
+            },
+            "knowledge": {
+              "type": "string"
+            },
+            "policy": {
+              "type": "string"
+            },
+            "proxy": {
+              "type": "string"
+            },
+            "redis": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "proxy",
+            "policy",
+            "database",
+            "engine",
+            "judge",
+            "decision_model",
+            "knowledge",
+            "redis"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "degraded",
+            "not_ready"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "components"
+      ],
+      "type": "object"
+    },
+    "Scope": {
+      "enum": [
+        "ingest",
+        "read",
+        "content",
+        "admin"
+      ],
+      "type": "string"
+    },
+    "SkipReason": {
+      "enum": [
+        "unparseable_request",
+        "upstream_error",
+        "no_text",
+        "too_long",
+        "sampled_out",
+        "overload",
+        "budget",
+        "decision_model_off",
+        "breaker_open",
+        "rate_limited",
+        "client_disconnected",
+        "undecodable",
+        "unsupported_api",
+        "multi_choice",
+        "credentials_unavailable",
+        "legacy"
+      ],
+      "type": "string"
+    },
+    "SystemStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "auth": {
+          "additionalProperties": false,
+          "properties": {
+            "caller_scopes": {
+              "items": {
+                "$ref": "#/$defs/Scope"
+              },
+              "type": "array"
+            },
+            "ingest": {
+              "enum": [
+                "keys",
+                "open"
+              ],
+              "type": "string"
+            },
+            "read": {
+              "enum": [
+                "keys",
+                "public"
+              ],
+              "type": "string"
+            },
+            "setup_required": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ingest",
+            "read",
+            "setup_required",
+            "caller_scopes"
+          ],
+          "type": "object"
+        },
+        "budgets": {
+          "additionalProperties": false,
+          "properties": {
+            "decision_exhausted": {
+              "type": "boolean"
+            },
+            "decision_reserve_only": {
+              "type": "boolean"
+            },
+            "decision_spent_today_usd": {
+              "type": "number"
+            },
+            "decision_usd_day": {
+              "type": "number"
+            },
+            "llm_exhausted": {
+              "type": "boolean"
+            },
+            "llm_spent_today_usd": {
+              "type": "number"
+            },
+            "llm_usd_day": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "decision_usd_day",
+            "decision_spent_today_usd",
+            "llm_usd_day",
+            "llm_spent_today_usd",
+            "decision_exhausted",
+            "decision_reserve_only",
+            "llm_exhausted"
+          ],
+          "type": "object"
+        },
+        "build_sha": {
+          "type": "string"
+        },
+        "credentials": {
+          "additionalProperties": false,
+          "properties": {
+            "store": {
+              "enum": [
+                "ready",
+                "unavailable",
+                "no_database"
+              ],
+              "type": "string"
+            },
+            "undecryptable": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "store",
+            "undecryptable"
+          ],
+          "type": "object"
+        },
+        "decision_model": {
+          "$ref": "#/$defs/DecisionModelStatus"
+        },
+        "demo": {
+          "type": "boolean"
+        },
+        "engine": {
+          "additionalProperties": false,
+          "properties": {
+            "checked_at": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "latency_ms": {
+              "type": "number"
+            },
+            "max_audits": {
+              "type": "number"
+            },
+            "runtime_config_version": {
+              "type": "number"
+            },
+            "state": {
+              "$ref": "#/$defs/ComponentStateName"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        },
+        "internal_rpc": {
+          "enum": [
+            "token",
+            "loopback"
+          ],
+          "type": "string"
+        },
+        "judge": {
+          "additionalProperties": false,
+          "properties": {
+            "credential_source": {
+              "enum": [
+                "env",
+                "dashboard",
+                "none"
+              ],
+              "type": "string"
+            },
+            "fallback_active": {
+              "type": "boolean"
+            },
+            "fallback_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "state": {
+              "$ref": "#/$defs/ComponentStateName"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "state",
+            "provider",
+            "model",
+            "credential_source",
+            "fallback_active",
+            "fallback_reason",
+            "warnings"
+          ],
+          "type": "object"
+        },
+        "knowledge": {
+          "additionalProperties": false,
+          "properties": {
+            "checked_at": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "embedding_model": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "kb_claims": {
+              "type": "number"
+            },
+            "latency_ms": {
+              "type": "number"
+            },
+            "state": {
+              "$ref": "#/$defs/ComponentStateName"
+            }
+          },
+          "required": [
+            "enabled",
+            "state"
+          ],
+          "type": "object"
+        },
+        "limits": {
+          "additionalProperties": false,
+          "properties": {
+            "max_body_bytes": {
+              "type": "number"
+            },
+            "max_text_chars": {
+              "type": "number"
+            },
+            "max_upload_bytes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "max_text_chars",
+            "max_upload_bytes",
+            "max_body_bytes"
+          ],
+          "type": "object"
+        },
+        "persistence": {
+          "additionalProperties": false,
+          "properties": {
+            "checked_at": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "configured": {
+              "type": "boolean"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "latency_ms": {
+              "type": "number"
+            },
+            "migration": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "state": {
+              "$ref": "#/$defs/ComponentStateName"
+            }
+          },
+          "required": [
+            "configured",
+            "migration",
+            "state"
+          ],
+          "type": "object"
+        },
+        "policy": {
+          "additionalProperties": false,
+          "properties": {
+            "editable": {
+              "type": "boolean"
+            },
+            "file_error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "file_status": {
+              "enum": [
+                "ok",
+                "missing",
+                "invalid",
+                "diverged"
+              ],
+              "type": "string"
+            },
+            "locked": {
+              "type": "boolean"
+            },
+            "persisted": {
+              "type": "boolean"
+            },
+            "source": {
+              "enum": [
+                "file",
+                "dashboard",
+                "rollback",
+                "bootstrap",
+                "adopt_file",
+                "builtin"
+              ],
+              "type": "string"
+            },
+            "version": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "version",
+            "source",
+            "locked",
+            "persisted",
+            "editable",
+            "file_status",
+            "file_error"
+          ],
+          "type": "object"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "redis": {
+          "additionalProperties": false,
+          "properties": {
+            "checked_at": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "configured": {
+              "type": "boolean"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "latency_ms": {
+              "type": "number"
+            },
+            "state": {
+              "$ref": "#/$defs/ComponentStateName"
+            }
+          },
+          "required": [
+            "configured",
+            "state"
+          ],
+          "type": "object"
+        },
+        "test_mode": {
+          "type": "boolean"
+        },
+        "verifier": {
+          "additionalProperties": false,
+          "properties": {
+            "configured": {
+              "type": "string"
+            },
+            "effective": {
+              "enum": [
+                "llm",
+                "off"
+              ],
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "configured",
+            "effective",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "version": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "version",
+        "build_sha",
+        "demo",
+        "readonly",
+        "test_mode",
+        "auth",
+        "internal_rpc",
+        "limits",
+        "persistence",
+        "engine",
+        "judge",
+        "verifier",
+        "decision_model",
+        "knowledge",
+        "policy",
+        "budgets",
+        "credentials",
+        "redis",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "SystemStatusLite": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_model": {
+          "enum": [
+            "off",
+            "mock",
+            "checking",
+            "ready",
+            "degraded",
+            "breaker_open",
+            "unauthorized",
+            "no_credits",
+            "budget_exhausted",
+            "misconfigured",
+            "unreachable"
+          ],
+          "type": "string"
+        },
+        "demo": {
+          "type": "boolean"
+        },
+        "engine": {
+          "$ref": "#/$defs/ComponentStateName"
+        },
+        "judge": {
+          "$ref": "#/$defs/ComponentStateName"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision_model",
+        "demo",
+        "engine",
+        "judge",
+        "readonly",
+        "version"
+      ],
+      "type": "object"
+    },
+    "TraceAuditStatus": {
+      "enum": [
+        "none",
+        "queued",
+        "sampled_out",
+        "dropped",
+        "disabled",
+        "running",
+        "completed",
+        "degraded",
+        "failed",
+        "not_assessed"
+      ],
+      "type": "string"
+    },
+    "TraceDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answer_source": {
+          "enum": [
+            "scripted",
+            "generated",
+            "live",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "api_format": {
+          "$ref": "#/$defs/ApiFormat"
+        },
+        "audit": {
+          "additionalProperties": false,
+          "properties": {
+            "audit_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "grade": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Grade"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lane": {
+              "enum": [
+                "high",
+                "low",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "selection": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AuditSelection"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "$ref": "#/$defs/TraceAuditStatus"
+            },
+            "trust_score": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "verdict": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AuditVerdict"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verdict_counts": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "CONTRADICTED": {
+                      "type": "number"
+                    },
+                    "NOT_CHECKED": {
+                      "type": "number"
+                    },
+                    "PARTIALLY_SUPPORTED": {
+                      "type": "number"
+                    },
+                    "SUPPORTED": {
+                      "type": "number"
+                    },
+                    "UNKNOWN": {
+                      "type": "number"
+                    },
+                    "UNSUPPORTED": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "SUPPORTED",
+                    "PARTIALLY_SUPPORTED",
+                    "CONTRADICTED",
+                    "UNSUPPORTED",
+                    "UNKNOWN",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "audit_id",
+            "status",
+            "lane",
+            "selection",
+            "verdict",
+            "trust_score",
+            "grade",
+            "verdict_counts"
+          ],
+          "type": "object"
+        },
+        "audit_detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditDetail"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "additionalProperties": false,
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/EvidenceItem"
+              },
+              "type": "array"
+            },
+            "final_response_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "messages": {
+              "items": {
+                "$ref": "#/$defs/ChatMessage"
+              },
+              "type": "array"
+            },
+            "response_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rules": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "system_instructions": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "unavailable_reason": {
+              "enum": [
+                "expired",
+                "not_stored",
+                "scope",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "user_request": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "available",
+            "unavailable_reason",
+            "messages",
+            "user_request",
+            "system_instructions",
+            "response_text",
+            "final_response_text",
+            "evidence",
+            "rules",
+            "truncated"
+          ],
+          "type": "object"
+        },
+        "checked_against": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "client_request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "decision_model": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "backend": {
+                  "$ref": "#/$defs/DecisionBackend"
+                },
+                "cost_usd": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "snapshot": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "backend",
+                "snapshot",
+                "cost_usd"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/GateDecisionView"
+          },
+          "type": "array"
+        },
+        "effective_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolicyMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gate_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateStatus"
+            },
+            {
+              "const": "pending",
+              "type": "string"
+            }
+          ]
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/$defs/LabelView"
+          },
+          "type": "array"
+        },
+        "max_risk": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "policy_version": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "question_preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "response_preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "route": {
+          "type": "string"
+        },
+        "skip_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkipReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/TraceSource"
+        },
+        "stream": {
+          "type": "boolean"
+        },
+        "timings": {
+          "additionalProperties": false,
+          "properties": {
+            "gate_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "overhead_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "total_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "ttft_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "upstream_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "upstream_ms",
+            "ttft_ms",
+            "gate_ms",
+            "overhead_ms",
+            "total_ms"
+          ],
+          "type": "object"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "upstream_status": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "would_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WouldAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "answer_source",
+        "api_format",
+        "audit",
+        "audit_detail",
+        "body",
+        "checked_against",
+        "client_request_id",
+        "created_at",
+        "decision_model",
+        "decisions",
+        "effective_mode",
+        "flags",
+        "gate_status",
+        "labels",
+        "max_risk",
+        "mode",
+        "model",
+        "policy_version",
+        "question_preview",
+        "reasons",
+        "redacted",
+        "response_preview",
+        "route",
+        "skip_reason",
+        "source",
+        "stream",
+        "timings",
+        "trace_id",
+        "updated_at",
+        "upstream_status",
+        "verdict",
+        "would_action"
+      ],
+      "type": "object"
+    },
+    "TraceId": {
+      "description": "Server-generated UUIDv7. Legacy rows keep trace_id = audit_id.",
+      "type": "string"
+    },
+    "TraceSource": {
+      "enum": [
+        "proxy",
+        "direct",
+        "playground",
+        "test",
+        "trafficgen"
+      ],
+      "type": "string"
+    },
+    "TraceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answer_source": {
+          "enum": [
+            "scripted",
+            "generated",
+            "live",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "api_format": {
+          "$ref": "#/$defs/ApiFormat"
+        },
+        "audit": {
+          "additionalProperties": false,
+          "properties": {
+            "audit_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "grade": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Grade"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lane": {
+              "enum": [
+                "high",
+                "low",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "selection": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AuditSelection"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "$ref": "#/$defs/TraceAuditStatus"
+            },
+            "trust_score": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "verdict": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AuditVerdict"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verdict_counts": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "CONTRADICTED": {
+                      "type": "number"
+                    },
+                    "NOT_CHECKED": {
+                      "type": "number"
+                    },
+                    "PARTIALLY_SUPPORTED": {
+                      "type": "number"
+                    },
+                    "SUPPORTED": {
+                      "type": "number"
+                    },
+                    "UNKNOWN": {
+                      "type": "number"
+                    },
+                    "UNSUPPORTED": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "SUPPORTED",
+                    "PARTIALLY_SUPPORTED",
+                    "CONTRADICTED",
+                    "UNSUPPORTED",
+                    "UNKNOWN",
+                    "NOT_CHECKED"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "audit_id",
+            "status",
+            "lane",
+            "selection",
+            "verdict",
+            "trust_score",
+            "grade",
+            "verdict_counts"
+          ],
+          "type": "object"
+        },
+        "checked_against": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "client_request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "decision_model": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "backend": {
+                  "$ref": "#/$defs/DecisionBackend"
+                },
+                "cost_usd": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "snapshot": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "backend",
+                "snapshot",
+                "cost_usd"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolicyMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gate_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateStatus"
+            },
+            {
+              "const": "pending",
+              "type": "string"
+            }
+          ]
+        },
+        "max_risk": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "policy_version": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "question_preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "response_preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "route": {
+          "type": "string"
+        },
+        "skip_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkipReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/TraceSource"
+        },
+        "stream": {
+          "type": "boolean"
+        },
+        "timings": {
+          "additionalProperties": false,
+          "properties": {
+            "gate_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "overhead_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "total_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "ttft_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "upstream_ms": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "upstream_ms",
+            "ttft_ms",
+            "gate_ms",
+            "overhead_ms",
+            "total_ms"
+          ],
+          "type": "object"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "upstream_status": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "would_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WouldAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "trace_id",
+        "client_request_id",
+        "created_at",
+        "updated_at",
+        "source",
+        "api_format",
+        "route",
+        "policy_version",
+        "mode",
+        "effective_mode",
+        "model",
+        "stream",
+        "upstream_status",
+        "answer_source",
+        "action",
+        "would_action",
+        "gate_status",
+        "skip_reason",
+        "verdict",
+        "max_risk",
+        "reasons",
+        "checked_against",
+        "timings",
+        "decision_model",
+        "audit",
+        "question_preview",
+        "response_preview",
+        "redacted",
+        "flags"
+      ],
+      "type": "object"
+    },
+    "WouldAction": {
+      "enum": [
+        "pass",
+        "flag",
+        "block"
+      ],
+      "type": "string"
+    },
+    "WsEvent": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "$ref": "#/$defs/WsHello"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "hello",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "hb",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "type",
+            "ts"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "trace": {
+                  "$ref": "#/$defs/TraceSummary"
+                }
+              },
+              "required": [
+                "trace"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "trace_started",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "decision": {
+                  "$ref": "#/$defs/GateDecisionView"
+                },
+                "trace": {
+                  "$ref": "#/$defs/TraceSummary"
+                }
+              },
+              "required": [
+                "trace",
+                "decision"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "gate_decision",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "audit_id": {
+                  "type": "string"
+                },
+                "lane": {
+                  "enum": [
+                    "high",
+                    "low"
+                  ],
+                  "type": "string"
+                },
+                "queue_depth": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "audit_id",
+                "lane",
+                "queue_depth"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "audit_queued",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "audit_id": {
+                  "type": "string"
+                },
+                "queue_wait_ms": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "audit_id",
+                "queue_wait_ms"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "audit_started",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "audit": {
+                  "$ref": "#/$defs/AuditDetail"
+                }
+              },
+              "required": [
+                "audit"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "audit_completed",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "audit_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "engine_unavailable",
+                    "timeout",
+                    "judge_unavailable",
+                    "decomposer_failed",
+                    "internal"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "audit_id",
+                "kind",
+                "message",
+                "retryable"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "audit_failed",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "audit_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "enum": [
+                    "queue_full",
+                    "stopped",
+                    "no_engine",
+                    "llm_budget"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "audit_id",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "audit_dropped",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "from_seq": {
+                  "type": "number"
+                },
+                "reason": {
+                  "enum": [
+                    "slow_consumer",
+                    "buffer_evicted",
+                    "epoch_changed",
+                    "hub_overflow"
+                  ],
+                  "type": "string"
+                },
+                "resync": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "audits": {
+                      "type": "string"
+                    },
+                    "decisions": {
+                      "type": "string"
+                    },
+                    "traces": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "traces",
+                    "decisions",
+                    "audits"
+                  ],
+                  "type": "object"
+                },
+                "to_seq": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "from_seq",
+                "to_seq",
+                "reason",
+                "resync"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "gap",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "author": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "version",
+                "source",
+                "author",
+                "message"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "policy_updated",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "errors": {
+                  "items": {
+                    "$ref": "#/$defs/FieldError"
+                  },
+                  "type": "array"
+                },
+                "source": {
+                  "enum": [
+                    "file",
+                    "database"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "errors"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "policy_error",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "origin": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "origin"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "evaluator_updated",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "imported": {
+                  "type": "number"
+                },
+                "snapshot": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "snapshot",
+                "imported"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "calibration_updated",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "backend": {
+                  "$ref": "#/$defs/DecisionBackend"
+                },
+                "calibration": {
+                  "$ref": "#/$defs/CalibrationState"
+                },
+                "previous_snapshot": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "snapshot": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "backend",
+                "previous_snapshot",
+                "snapshot",
+                "calibration"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "decision_model_changed",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "component": {
+                  "enum": [
+                    "engine",
+                    "judge",
+                    "decision_model",
+                    "database",
+                    "knowledge",
+                    "policy",
+                    "budget",
+                    "redis"
+                  ],
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "component",
+                "state"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "status",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "put",
+                    "delete",
+                    "rotated"
+                  ],
+                  "type": "string"
+                },
+                "fingerprint": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "action",
+                "fingerprint"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "credentials_changed",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "additionalProperties": false,
+              "properties": {
+                "keys": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "version": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "version",
+                "keys"
+              ],
+              "type": "object"
+            },
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "number"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            },
+            "ts": {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            "type": {
+              "const": "settings_updated",
+              "type": "string"
+            },
+            "v": {
+              "const": 2,
+              "type": "number"
+            }
+          },
+          "required": [
+            "v",
+            "seq",
+            "epoch",
+            "type",
+            "ts",
+            "data"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "One WS v2 text frame (one JSON object per frame; negotiate with `GET /ws?protocol=2`). `seq` is assigned by the hub and is only comparable within one `epoch`. `hb` frames carry no `seq` and no `data`."
+    },
+    "WsHello": {
+      "additionalProperties": false,
+      "properties": {
+        "demo": {
+          "type": "boolean"
+        },
+        "epoch": {
+          "type": "string"
+        },
+        "last_seq": {
+          "type": "number"
+        },
+        "protocol": {
+          "const": 2,
+          "type": "number"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "replayed_from": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "server_version": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SystemStatusLite"
+        }
+      },
+      "required": [
+        "protocol",
+        "server_version",
+        "epoch",
+        "last_seq",
+        "replayed_from",
+        "demo",
+        "readonly",
+        "status"
+      ],
+      "type": "object"
+    }
+  }
+}
