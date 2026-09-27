@@ -1,14 +1,17 @@
 name: CI (E2E)
 
-# Compose end-to-end suite (SPEC §3.4): demo stack up --wait, doctor,
-# trafficgen --expect, Playwright (stack + static), logs uploaded on failure.
-#
-# SKELETON: enabled in phase S0 (SPEC §4.2). Until then it is manual-only and
-# the job just records that there is nothing to run, so it can never fail.
-# S0 replaces the placeholder step with the real suite and adds push /
-# pull_request triggers.
+# Compose end-to-end suite (SPEC §3.4) running the S0 exit gate (SPEC §4.2):
+# the zero-key demo stack (make demo), doctor --expect demo, trafficgen
+# --expect over the s0 scenarios and the Playwright stack skeleton, with the
+# compose logs uploaded on failure. The scripts job lints and unit-tests the
+# setup scripts the suite relies on and validates every compose profile.
+# No path filters on purpose: a required check that never reports would block
+# merges.
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -18,16 +21,141 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  NO_COLOR: '1'
+
 jobs:
+  scripts:
+    name: DX scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      # Same pins as ci-python.yml; the settings come from the engine's pyproject.
+      - name: Install linters
+        run: pip install ruff==0.1.15 black==23.12.1
+
+      - name: ruff
+        run: ruff check --config backend-python/pyproject.toml scripts
+
+      - name: black
+        run: black --check --config backend-python/pyproject.toml scripts
+
+      - name: Unit tests (scripts/tests)
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Compose files (every profile and the demo override)
+        run: make compose-check
+
   e2e:
     name: E2E (compose stack)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 45
     steps:
-      - name: Placeholder (enabled in phase S0)
+      - uses: actions/checkout@v6
+
+      # docker-compose.yml tags the app images with TRUSTAGENT_VERSION (make
+      # exports the contents of VERSION the same way).
+      - name: Image tag
+        run: echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Build the three images with the tags and build args docker-compose.yml
+      # uses, into the runner's docker, with a GitHub Actions layer cache; make
+      # demo then starts them without rebuilding (DEMO_BUILD=).
+      - name: Build proxy image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend-go/Dockerfile
+          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          tags: ghcr.io/timkush1/truthtable-proxy:${{ env.TRUSTAGENT_VERSION }}
+          load: true
+          cache-from: type=gha,scope=proxy
+          cache-to: type=gha,scope=proxy,mode=max
+
+      - name: Build engine image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend-python/Dockerfile
+          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          tags: ghcr.io/timkush1/truthtable-engine:${{ env.TRUSTAGENT_VERSION }}
+          load: true
+          cache-from: type=gha,scope=engine
+          cache-to: type=gha,scope=engine,mode=max
+
+      - name: Build dashboard image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend-react/Dockerfile
+          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          tags: ghcr.io/timkush1/truthtable-dashboard:${{ env.TRUSTAGENT_VERSION }}
+          load: true
+          cache-from: type=gha,scope=dashboard
+          cache-to: type=gha,scope=dashboard,mode=max
+
+      # configure.py --ensure writes a fresh .env (generated passwords and the
+      # trafficgen key), then the demo stack starts and every service must turn
+      # healthy. OPEN=0: print the dashboard URL, no browser.
+      - name: make demo
+        run: make demo DEMO_BUILD= OPEN=0
+
+      - name: Doctor (--expect demo)
+        run: python3 scripts/doctor.py --target docker --no-probe --expect demo
+
+      - name: Trafficgen --expect (s0 scenarios)
+        run: docker compose -p truthtable-demo exec -T proxy /trafficgen --once --expect --scenarios s0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend-react/package-lock.json
+
+      - name: Install dashboard dependencies
+        working-directory: frontend-react
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: frontend-react
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright (stack skeleton)
+        working-directory: frontend-react
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+        run: npx playwright test --project=stack -g skeleton
+
+      - name: Collect logs
+        if: failure()
         run: |
-          echo "::notice title=E2E skeleton::The compose e2e suite is enabled in phase S0 (docs/v2/SPEC.md §3.4, §4.2); nothing runs yet."
-          {
-            echo "## E2E (compose stack)"
-            echo "Skeleton only: the compose e2e suite is enabled in phase S0."
-          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p e2e-artifacts
+          compose="docker compose -p truthtable-demo -f docker-compose.yml -f docker-compose.demo.yml --profile demo"
+          $compose ps --all > e2e-artifacts/compose-ps.txt 2>&1 || true
+          $compose logs --no-color --timestamps > e2e-artifacts/compose.log 2>&1 || true
+          python3 scripts/doctor.py --target docker --expect demo --wait 0 --json \
+            > e2e-artifacts/doctor.json 2>&1 || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            e2e-artifacts/
+            frontend-react/playwright-report/
+            frontend-react/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: make demo-clean
