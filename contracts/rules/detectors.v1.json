@@ -1,0 +1,143 @@
+{
+  "version": "1",
+  "description": "Deterministic detector rules (SPEC §2.10), implemented in Go (reference) and TypeScript and pinned by contracts/vectors/detectors. Patterns are RE2- and ECMAScript-compatible, with no lookaround, no backreferences and no inline flags; flags are passed separately (Go compiles \"(?flags)\" + pattern when flags is non-empty, JS compiles new RegExp(pattern, flags + \"g\")). Where the SPEC writes \\s, these files write [\\t\\n\\f\\r ], which is exactly RE2's \\s, so both engines match the same text. Offsets in findings are UTF-16 code units, half-open.",
+  "reference_text": {
+    "description": "The reference for numbers, dates, URLs and quotes: the text of every pre-packing, pre-dedup evidence item except untrusted ones, user_request, system_instructions, and every value of rules. Each part is scanned on its own, so a token never spans two parts; for quotes the normalized parts are joined with \"\\n\".",
+    "parts": ["evidence", "user_request", "system_instructions", "rules"]
+  },
+  "text_normalization": {
+    "description": "Used by quotes_not_in_evidence and system_prompt_leak: map curly quotes to straight ones, lowercase ASCII letters only (A-Z), collapse every whitespace run to one space, trim. Works on code points.",
+    "quote_map": {"“": "\"", "”": "\"", "‘": "'", "’": "'"},
+    "whitespace": {"pattern": "[\\t\\n\\f\\r ]+", "flags": ""}
+  },
+  "detectors": {
+    "numbers_not_in_evidence": {
+      "runs_when": "evidence_or_rules",
+      "number": {"pattern": "[0-9][0-9,]*(?:\\.[0-9]+)?%?", "flags": ""},
+      "normalize": {
+        "description": "Remove every \",\" and \"%\", then remove a trailing zero fraction (1,299.00 -> 1299, 30% -> 30, 4.50 stays 4.50).",
+        "remove_chars": [",", "%"],
+        "strip_suffix": {"pattern": "\\.0+$", "flags": ""}
+      },
+      "skip_list_markers": {
+        "description": "A response number that starts inside a match of this pattern is a list marker and is skipped.",
+        "pattern": "^[\\t\\n\\f\\r ]*[0-9]+[.)][\\t\\n\\f\\r ]",
+        "flags": "m"
+      },
+      "small_integers": {
+        "description": "A response number whose normalized form has no \".\" and whose value is <= min_integer is skipped, unless its raw token ends in \"%\", the code unit just before it is one of currency_prefix, or one of the next window_tokens matches of window_token after it matches unit (case-insensitive).",
+        "min_integer_default": 10,
+        "currency_prefix": ["$", "€", "£"],
+        "window_tokens": 2,
+        "window_token": {"pattern": "[A-Za-z]+|[0-9][0-9,]*(?:\\.[0-9]+)?%?|%", "flags": ""},
+        "unit": {
+          "pattern": "^(day|days|week|weeks|month|months|year|years|hour|hours|%|percent)$",
+          "flags": "i"
+        }
+      },
+      "fires_when": "Some response number that is not skipped has a normalized form that is not in the set of normalized numbers found in the reference text (no skips apply to the reference).",
+      "finding": "The raw number token as it appears in the response."
+    },
+    "dates_not_in_evidence": {
+      "runs_when": "evidence_or_rules",
+      "patterns": [
+        {
+          "id": "iso",
+          "pattern": "\\b([0-9]{4})-([0-9]{2})-([0-9]{2})\\b",
+          "flags": "",
+          "groups": {"year": 1, "month": 2, "day": 3}
+        },
+        {
+          "id": "month_day_year",
+          "pattern": "\\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\\.? ([0-9]{1,2}),? ([0-9]{4})\\b",
+          "flags": "i",
+          "groups": {"month": 1, "day": 2, "year": 3}
+        },
+        {
+          "id": "day_month_year",
+          "pattern": "\\b([0-9]{1,2}) (January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\\.? ([0-9]{4})\\b",
+          "flags": "i",
+          "groups": {"day": 1, "month": 2, "year": 3}
+        },
+        {
+          "id": "month_year",
+          "pattern": "\\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\\.? ([0-9]{4})\\b",
+          "flags": "i",
+          "groups": {"month": 1, "year": 2}
+        }
+      ],
+      "months": {
+        "january": 1,
+        "jan": 1,
+        "february": 2,
+        "feb": 2,
+        "march": 3,
+        "mar": 3,
+        "april": 4,
+        "apr": 4,
+        "may": 5,
+        "june": 6,
+        "jun": 6,
+        "july": 7,
+        "jul": 7,
+        "august": 8,
+        "aug": 8,
+        "september": 9,
+        "sept": 9,
+        "sep": 9,
+        "october": 10,
+        "oct": 10,
+        "november": 11,
+        "nov": 11,
+        "december": 12,
+        "dec": 12
+      },
+      "overlap": "Patterns are applied in the order listed; a match that overlaps a date already found in the same text is ignored (so \"15 March 2026\" is one date, not also \"March 2026\").",
+      "normalize": "YYYY-MM-DD, or YYYY-MM for month_year, zero-padded. A match whose month is not 1-12 or whose day is not 1-31 is ignored.",
+      "fires_when": "Some response date is known neither exactly nor by prefix: a response YYYY-MM-DD needs the same date in the reference; a response YYYY-MM needs a reference date equal to it or starting with it plus \"-\".",
+      "finding": "The raw date text as it appears in the response."
+    },
+    "urls_not_in_evidence": {
+      "runs_when": "evidence",
+      "url": {"pattern": "https?://[^\\t\\n\\f\\r <>\"')\\]]+", "flags": "i"},
+      "normalize": {
+        "description": "Repeatedly strip a trailing character in strip_trailing, then lowercase the scheme and the authority (the text between \"://\" and the first \"/\", \"?\" or \"#\").",
+        "strip_trailing": ".,;:!?/"
+      },
+      "fires_when": "Some normalized response URL is not in the set of normalized URLs found in the reference text.",
+      "finding": "The response URL after trailing characters are stripped (original case)."
+    },
+    "quotes_not_in_evidence": {
+      "runs_when": "evidence",
+      "quotes": [{"pattern": "\"([^\"]+)\"", "flags": ""}, {"pattern": "“([^”]+)”", "flags": ""}],
+      "min_words": 4,
+      "normalize": "text_normalization, then strip leading and trailing characters in strip_edges.",
+      "strip_edges": ".,;:!?…",
+      "fires_when": "Some quote (capture group 1) with at least min_words whitespace-separated words after normalization is not a substring of the normalized reference text.",
+      "finding": "The text between the quote marks."
+    },
+    "citation_out_of_range": {
+      "runs_when": "evidence",
+      "citations": [
+        {"pattern": "\\[([0-9]{1,3})\\]", "flags": ""},
+        {"pattern": "\\[\\^([0-9]{1,3})\\]", "flags": ""}
+      ],
+      "fires_when": "Some citation number n is 0 or greater than max(highest [Document N] / [Doc N] / [Source N] marker number in the extracted evidence, number of evidence items before dedup).",
+      "finding": "The whole citation, brackets included."
+    },
+    "secret_pattern": {
+      "runs_when": "always",
+      "patterns_file": "rules/secrets.v1.json",
+      "fires_when": "Some pattern match in the response does not occur verbatim in user_request.",
+      "finding": "The span of the match; the matched text itself must be masked before it is stored or displayed."
+    },
+    "system_prompt_leak": {
+      "runs_when": "system_instructions_min_length",
+      "min_code_points": 200,
+      "window_code_points": 200,
+      "stride_code_points": 50,
+      "fires_when": "After text_normalization of system_instructions (S) and the response (R), S has at least min_code_points code points and some window S[i, i+200) with i = 0, 50, 100, ... plus the final window S[len-200, len) occurs in R. Implementations use a rolling hash over R's 200-code-point windows and confirm every hash hit by comparing the text.",
+      "finding": "Unaligned (start and end -1): offsets refer to normalized text."
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "builtin-groundedness-is-clean",
+  "status": "draft",
+  "description": "The shipped groundedness@1 template (SPEC §2.8) passes the hard rules and fires no lint; built-ins must stay lint-clean in CI.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "groundedness",
+      "version": 1,
+      "builtin": true,
+      "name": "Groundedness",
+      "category": "grounding",
+      "verdict_role": "unsupported",
+      "description": "Flags answers that state facts the evidence does not contain.",
+      "state_fields": ["assistant_response", "evidence"],
+      "question": {
+        "type": "noul",
+        "instructions": "Does `assistant_response` state any fact that is not stated in or directly implied by `evidence`?",
+        "criteria": {
+          "true": "At least one factual statement in `assistant_response` is missing from `evidence` or goes beyond what `evidence` says",
+          "false": "Every factual statement in `assistant_response` is stated in or directly implied by `evidence`, or `assistant_response` makes no factual statements"
+        }
+      },
+      "evidence": {"requires": "required", "min_chars": 40},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.8,
+        "critical_at": 0.95,
+        "min_confidence": null,
+        "block_eligible": true,
+        "implies": [],
+        "requires_corroboration": [
+          "contradiction", "det:numbers_not_in_evidence", "det:dates_not_in_evidence",
+          "det:urls_not_in_evidence", "det:quotes_not_in_evidence", "det:citation_out_of_range"
+        ]
+      },
+      "escalation": {"escalate_from": 0.4, "numeric_or_date": true, "on_error": "escalate"},
+      "threshold_basis": "Starting point. Arize RAGTruth tuned a 0.80 cutoff on a differently framed question (87% vs 76% at 0.5) [third-party; not directly transferable]. Recalibrate per snapshot."
+    }
+  },
+  "expected": {"errors": [], "lints": []},
+  "tolerance": 1e-9
+}

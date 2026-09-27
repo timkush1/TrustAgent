@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "citation-out-of-range",
+  "status": "draft",
+  "description": "Two evidence items before dedup and no [Document N] markers: the valid range is 1..2. [1] is fine; [3] is above 2 and [^0] is 0: fires with both, in text order.",
+  "input": {
+    "detector": "citation_out_of_range",
+    "response": "Refunds take 5 days [1][3]. See also [^0].",
+    "evidence": [
+      {"id": "sys1", "source": "request_system", "text": "Refunds take 5 days."},
+      {"id": "sys2", "source": "request_system", "text": "Exchanges take 10 days."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {},
+    "evidence_meta": {"pre_dedup_items": 2, "max_marker": 0}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "[3]", "start": 23, "end": 26}, {"text": "[^0]", "start": 37, "end": 41}]
+  },
+  "tolerance": 1e-9
+}

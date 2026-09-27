@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "unresolved-state-reference",
+  "status": "draft",
+  "description": "The instructions reference `evidence` and `rules.tone`, but state_fields declares neither evidence nor rules (and there is no tone param): hard-rule error unresolved_state_reference.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "noul",
+        "instructions": "Does `assistant_response` contradict `evidence` or ignore the tone in `rules.tone`?",
+        "criteria": {
+          "true": "`assistant_response` contradicts the documents or ignores the tone",
+          "false": "`assistant_response` follows both"
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": ["unresolved_state_reference"], "lints": []},
+  "tolerance": 1e-9
+}

@@ -1,0 +1,229 @@
+{
+  "version": "1",
+  "terms": [
+    {
+      "id": "jev",
+      "term": "Jev",
+      "short": "A fast, cheap classifier from TypeSafe AI that answers yes/no and multiple-choice checks with probabilities — it doesn't write text.",
+      "see_also": ["fast_check", "snapshot"]
+    },
+    {
+      "id": "fast_check",
+      "term": "Fast check (Jev)",
+      "short": "One quick call that asks every check on a route about an answer at once, with probabilities, before or while the answer reaches your user.",
+      "aliases": ["gate"],
+      "see_also": ["jev", "deep_audit"]
+    },
+    {
+      "id": "deep_audit",
+      "term": "Deep audit",
+      "short": "An LLM judge that splits an answer into claims and checks each one against your documents. It runs after delivery, on flagged answers and a small sample.",
+      "aliases": ["audit"],
+      "see_also": ["fast_check", "uniform_sample"]
+    },
+    {
+      "id": "instant_checks",
+      "term": "Instant checks",
+      "short": "Deterministic rules that run without a model call, such as a number, date or link in the answer that isn't in your documents.",
+      "aliases": ["detectors"],
+      "see_also": ["evidence"]
+    },
+    {
+      "id": "evidence",
+      "term": "Evidence",
+      "short": "The documents your app already gave the model: system-prompt documents, attached context, tool results.",
+      "aliases": ["documents"],
+      "see_also": ["groundedness", "not_checked"]
+    },
+    {
+      "id": "groundedness",
+      "term": "Groundedness",
+      "short": "Whether every fact in the answer is stated in, or directly implied by, your documents.",
+      "see_also": ["contradiction", "evidence"]
+    },
+    {
+      "id": "contradiction",
+      "term": "Contradiction",
+      "short": "Your documents say something in the answer is false — stronger than a fact your documents simply don’t mention.",
+      "see_also": ["groundedness"]
+    },
+    {
+      "id": "not_checked",
+      "term": "Not checked",
+      "short": "We only judge facts against your documents. None were found, so we didn't guess.",
+      "see_also": ["evidence"]
+    },
+    {
+      "id": "evaluator",
+      "term": "Evaluator",
+      "short": "One check, such as groundedness or refusal, written as a question the fast check answers on every request.",
+      "aliases": ["check"],
+      "see_also": ["route", "shadow"]
+    },
+    {
+      "id": "route",
+      "term": "Route",
+      "short": "A group of requests, matched by header, path, model or key, that share one policy.",
+      "see_also": ["policy"]
+    },
+    {
+      "id": "policy",
+      "term": "Policy",
+      "short": "The per-route rules that decide what happens to a risky answer: observe, flag, block or fallback.",
+      "see_also": ["observe", "flag", "block", "fallback"]
+    },
+    {
+      "id": "observe",
+      "term": "Observe",
+      "short": "Check answers and record what would have happened, without changing any response.",
+      "see_also": ["policy"]
+    },
+    {
+      "id": "flag",
+      "term": "Flag",
+      "short": "Deliver the answer and tell your app it looks risky, through X-TrustAgent-* response headers.",
+      "see_also": ["policy", "block"]
+    },
+    {
+      "id": "block",
+      "term": "Block",
+      "short": "Replace a risky answer with a safe message before your user sees it. Blocking needs two checks to agree.",
+      "see_also": ["second_signal", "calibration"]
+    },
+    {
+      "id": "fallback",
+      "term": "Fallback",
+      "short": "Ask the model again with only your documents, check the new answer, and deliver it if it passes.",
+      "see_also": ["block"]
+    },
+    {
+      "id": "fail_mode",
+      "term": "Fail open / fail closed",
+      "short": "What happens when a check can't finish: fail open delivers the answer unchecked; fail closed blocks it.",
+      "see_also": ["policy"]
+    },
+    {
+      "id": "effective_mode",
+      "term": "Acting as",
+      "short": "The mode a route really runs in right now. A Block route acts as Flag until blocking is possible, for example until its checks are calibrated or its streams are buffered.",
+      "aliases": ["effective mode"],
+      "see_also": ["calibration"]
+    },
+    {
+      "id": "second_signal",
+      "term": "Second signal",
+      "short": "Blocking needs two checks to agree, so one noisy check can't block an answer.",
+      "see_also": ["block"]
+    },
+    {
+      "id": "risk",
+      "term": "Risk",
+      "short": "A number from 0 to 1 where higher means riskier. Shown as Low, Elevated or High risk.",
+      "see_also": ["calibration"]
+    },
+    {
+      "id": "calibration",
+      "term": "Calibration",
+      "short": "Tuning thresholds on your own labelled traffic so 'risk 0.9' really means about 9 in 10.",
+      "see_also": ["label", "snapshot"]
+    },
+    {
+      "id": "label",
+      "term": "Label",
+      "short": "Your verdict on an answer — Correct or False alarm — used to calibrate checks.",
+      "see_also": ["calibration"]
+    },
+    {
+      "id": "snapshot",
+      "term": "Snapshot",
+      "short": "The exact Jev version that answered. A new version can shift scores, so blocking pauses until you re-check.",
+      "see_also": ["calibration", "jev"]
+    },
+    {
+      "id": "shadow",
+      "term": "Watching (shadow)",
+      "short": "A check in shadow runs on every request and shows up in traces, but never changes what your user receives.",
+      "aliases": ["shadow"],
+      "see_also": ["evaluator"]
+    },
+    {
+      "id": "uniform_sample",
+      "term": "Uniform sample",
+      "short": "A small random share of all answers that always gets a deep audit, so the hallucination rate isn't skewed by what was flagged.",
+      "see_also": ["hallucination_rate", "deep_audit"]
+    },
+    {
+      "id": "hallucination_rate",
+      "term": "Hallucination rate",
+      "short": "The share of uniformly sampled answers in which the deep audit found unsupported or contradicted claims. Shown with a confidence interval once enough samples exist.",
+      "see_also": ["uniform_sample"]
+    },
+    {
+      "id": "knowledge_base",
+      "term": "Knowledge base",
+      "short": "An optional add-on that searches documents you uploaded when a request carries none of its own.",
+      "see_also": ["evidence"]
+    },
+    {
+      "id": "measured",
+      "term": "Measured",
+      "short": "Produced by our own benchmark runs or your own traffic.",
+      "see_also": ["estimate"]
+    },
+    {
+      "id": "estimate",
+      "term": "Estimate",
+      "short": "Our arithmetic from stated assumptions, not a measurement.",
+      "see_also": ["measured"]
+    },
+    {
+      "id": "third_party",
+      "term": "Third-party",
+      "short": "Published by an independent source; linked and dated.",
+      "see_also": ["vendor"]
+    },
+    {
+      "id": "vendor",
+      "term": "Vendor",
+      "short": "Published by the model's maker or distributor; linked and dated.",
+      "see_also": ["third_party"]
+    },
+    {
+      "id": "simulated",
+      "term": "Simulated",
+      "short": "Produced by mock checks and a mock judge, not by a real model.",
+      "see_also": ["measured"]
+    },
+    {
+      "id": "noul",
+      "term": "Yes/no question (noul)",
+      "short": "A question the fast check answers with one probability that the statement is true.",
+      "primary_ui": false,
+      "see_also": ["choice", "score"]
+    },
+    {
+      "id": "choice",
+      "term": "Pick-one question (choice)",
+      "short": "A question the fast check answers with a probability for each option.",
+      "primary_ui": false,
+      "see_also": ["noul", "score"]
+    },
+    {
+      "id": "score",
+      "term": "Scale question (score)",
+      "short": "A question the fast check answers with a probability for each level of a scale.",
+      "primary_ui": false,
+      "see_also": ["noul", "choice"]
+    }
+  ],
+  "avoid_in_primary_ui": [
+    "noul",
+    "Tier-0",
+    "Tier-1",
+    "Tier-2",
+    "LangGraph",
+    "Qdrant",
+    "cascade",
+    "decision model"
+  ]
+}

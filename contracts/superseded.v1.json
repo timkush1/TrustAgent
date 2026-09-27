@@ -1,0 +1,458 @@
+{
+  "version": "1",
+  "description": "SPEC Appendix A as data, read by scripts/check-forbidden.mjs, which scans tracked code (not *.md prose, docs/archive/**, docs/v2/** or this file) line by line and fails on an error-level hit. literal = case-sensitive substring; regex = ECMAScript RegExp source compiled with flags. level warn marks an identifier that legacy code still uses until the stream that owns that code removes it; flip it to error in the same PR. Appendix A items that plain text matching cannot catch reliably are listed in contracts/README.md.",
+  "identifiers": [
+    {
+      "area": "gateway",
+      "pattern": "X-TrustAgent-Band\\b",
+      "kind": "regex",
+      "flags": "i",
+      "note": "Superseded header; see SPEC §2.12 for the header set."
+    },
+    {
+      "area": "gateway",
+      "pattern": "X-TrustAgent-Grounded\\b",
+      "kind": "regex",
+      "flags": "i",
+      "note": "Superseded header; use X-TrustAgent-Verdict."
+    },
+    {
+      "area": "gateway",
+      "pattern": "X-TrustAgent-Decided-By\\b",
+      "kind": "regex",
+      "flags": "i",
+      "note": "Superseded header."
+    },
+    {
+      "area": "gateway",
+      "pattern": "X-TrustAgent-Gate(?![-A-Za-z0-9_])",
+      "kind": "regex",
+      "flags": "i",
+      "note": "Superseded header; use X-TrustAgent-Action / -Status. X-TrustAgent-Gate-Ms stays valid."
+    },
+    {
+      "area": "gateway",
+      "pattern": "X-TrustAgent-Policy\\b",
+      "kind": "regex",
+      "flags": "i",
+      "note": "Superseded header; use X-TrustAgent-Route (<route>@v<version>)."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\benforcement:|[\"'`]enforcement[\"'`]",
+      "kind": "regex",
+      "note": "Superseded policy field; use mode (observe|flag|block|fallback)."
+    },
+    {
+      "area": "gateway",
+      "pattern": "enforce_ignore_errors",
+      "kind": "literal",
+      "note": "Superseded enforcement value; use mode plus fail."
+    },
+    {
+      "area": "gateway",
+      "pattern": "(JEV_BACKEND|[Bb]ackend)[\"']?\\s*[:=]\\s*[\"']?custom\\b",
+      "kind": "regex",
+      "note": "Backend id \"custom\" is superseded; use compatible."
+    },
+    {
+      "area": "gateway",
+      "pattern": "/api/jev/",
+      "kind": "literal",
+      "note": "Superseded endpoints; see SPEC §2.4."
+    },
+    {
+      "area": "gateway",
+      "pattern": "/api/engine\\b",
+      "kind": "regex",
+      "note": "Superseded endpoint; engine state is in GET /api/status."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\bTRUTHTABLE_JEV_RPM\\b",
+      "kind": "regex",
+      "note": "Superseded key; use TRUTHTABLE_GATE_JEV_RPM."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\bTRUTHTABLE_DEMO_READONLY\\b",
+      "kind": "regex",
+      "note": "Superseded key; use TRUTHTABLE_DEMO_MODE and TRUTHTABLE_READONLY."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\bTRUTHTABLE_STORE_BODIES\\b",
+      "kind": "regex",
+      "note": "Superseded key; use the policy field store_bodies."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\brpc\\s+Audit\\s*\\(",
+      "kind": "regex",
+      "note": "Superseded RPC; Go calls Evaluate."
+    },
+    {
+      "area": "gateway",
+      "pattern": "/truthtable.audit.v1.AuditService/Audit\"",
+      "kind": "literal",
+      "note": "Superseded RPC full method name; Go calls Evaluate."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\bGateSummary\\b",
+      "kind": "regex",
+      "note": "Superseded type; use decision/v1 (GateDecisionView)."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\bgate-(nc-)?v1\\b",
+      "kind": "regex",
+      "note": "Superseded question sets and bands; use gateway-default.v1 / rubric-only.v1."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\brag_blocks\\b",
+      "kind": "regex",
+      "note": "Superseded evidence source; use tag_patterns within request_system / request_context."
+    },
+    {
+      "area": "gateway",
+      "pattern": "no_context:",
+      "kind": "literal",
+      "note": "Superseded policy field; use on_no_evidence."
+    },
+    {
+      "area": "gateway",
+      "pattern": "tier0.escalate_on",
+      "kind": "literal",
+      "note": "Superseded policy field; detectors.flag_on / block_on and escalation.numeric_or_date replace it."
+    },
+    {
+      "area": "gateway",
+      "pattern": "\\bescalate_on\\b",
+      "kind": "regex",
+      "note": "Superseded policy field (tier0.escalate_on)."
+    },
+    {
+      "area": "engine",
+      "pattern": "config/jev/thresholds.json",
+      "kind": "literal",
+      "note": "Superseded file; use trustagent.calibration/v1 files in config/calibration/."
+    },
+    {
+      "area": "engine",
+      "pattern": "\\bTRUTHTABLE_THRESHOLDS_FILE\\b",
+      "kind": "regex",
+      "note": "Superseded key; use TRUTHTABLE_CALIBRATION_DIR."
+    },
+    {
+      "area": "engine",
+      "pattern": "(CASCADE_LAYOUT|[Ll]ayout)[\"']?\\s*[:=]\\s*[\"']?batched_state_path",
+      "kind": "regex",
+      "note": "batched_state_path must not be a (default) layout; the cascade is v2.1 and defaults to per_claim."
+    },
+    {
+      "area": "engine",
+      "pattern": "\\btrustagent_(jev|cascade)_",
+      "kind": "regex",
+      "note": "Metric names need the service prefix: trustagent_engine_* or trustagent_gateway_*."
+    },
+    {
+      "area": "engine",
+      "pattern": "\\bContextSource\\b",
+      "kind": "regex",
+      "note": "Superseded enum; use EvidenceSource."
+    },
+    {
+      "area": "engine",
+      "pattern": "\\bCONTEXT_SOURCE_[A-Z]",
+      "kind": "regex",
+      "note": "Superseded proto enum values; use EvidenceSource strings."
+    },
+    {
+      "area": "engine",
+      "pattern": "ENGINE_JEV_RPM\\b",
+      "kind": "regex",
+      "note": "No engine Jev client in 2.0."
+    },
+    {
+      "area": "engine",
+      "pattern": "\\btruthtable\\.decisions\\b",
+      "kind": "regex",
+      "note": "No Python Jev client in 2.0; Go owns every decision call."
+    },
+    {
+      "area": "engine",
+      "pattern": "llm_fallback\\s*(:\\s*str\\s*)?=\\s*(Field\\(\\s*(default\\s*=\\s*)?)?[\"']ollama[\"']",
+      "kind": "regex",
+      "note": "The Ollama judge fallback must not be a default; LLM_FALLBACK defaults to none (explicit opt-in)."
+    },
+    {
+      "area": "frontend",
+      "pattern": "[\"'`]bearer\\.",
+      "kind": "regex",
+      "note": "Superseded WebSocket subprotocol; use WS tickets."
+    },
+    {
+      "area": "frontend",
+      "pattern": "?api_key=",
+      "kind": "literal",
+      "note": "Keys never go in URLs. warn until the legacy WebSocket query-key auth is removed (backend-go/cmd/proxy/main.go, frontend-react/src/api/client.ts: WS tickets, P2); then error.",
+      "level": "warn"
+    },
+    {
+      "area": "frontend",
+      "pattern": "\\bopenrouter_(decisions|systemone)\\b",
+      "kind": "regex",
+      "note": "Backend ids use hyphens: openrouter-decisions, openrouter-systemone."
+    },
+    {
+      "area": "frontend",
+      "pattern": "\\bVITE_DEMO\\b",
+      "kind": "regex",
+      "note": "Superseded build key; use VITE_APP_MODE and VITE_DEMO_DATASET."
+    },
+    {
+      "area": "frontend",
+      "pattern": "\\bVITE_TRUTHTABLE_API_KEY\\b",
+      "kind": "regex",
+      "note": "Removed (breaking): no key in the bundle. warn until the legacy dashboard client drops it (frontend-react/src/api/client.ts, P2 web); then error.",
+      "level": "warn"
+    },
+    {
+      "area": "frontend",
+      "pattern": "\\bTRUSTAGENT_API_BASE\\b",
+      "kind": "regex",
+      "note": "Superseded; the dashboard reads apiBase from /config.json (DASHBOARD_API_BASE)."
+    },
+    {
+      "area": "frontend",
+      "pattern": "/api/system/status",
+      "kind": "literal",
+      "note": "Superseded endpoint; use GET /api/status."
+    },
+    {
+      "area": "frontend",
+      "pattern": "/api/stats/overview",
+      "kind": "literal",
+      "note": "Superseded endpoint; use GET /api/overview."
+    },
+    {
+      "area": "frontend",
+      "pattern": "/api/gate/policies",
+      "kind": "literal",
+      "note": "Superseded endpoint; use /api/policies."
+    },
+    {
+      "area": "frontend",
+      "pattern": "GateAction\\s*=[^;\\n]*[\"'](pending|not_assessed)[\"']",
+      "kind": "regex",
+      "note": "GateAction never contains pending or not_assessed; those are gate statuses."
+    },
+    {
+      "area": "frontend",
+      "pattern": "/app/(gateway|live)\\b",
+      "kind": "regex",
+      "note": "Superseded primary routes; use /app/traffic."
+    },
+    {
+      "area": "frontend",
+      "pattern": "/app/audits(?![-/A-Za-z0-9_$])",
+      "kind": "regex",
+      "note": "Superseded primary route; only /app/audits/$id remains, as a redirect."
+    },
+    {
+      "area": "frontend",
+      "pattern": "_gallery",
+      "kind": "literal",
+      "note": "The component gallery is cut."
+    },
+    {
+      "area": "frontend",
+      "pattern": "⌘K",
+      "kind": "literal",
+      "note": "The command palette is cut."
+    },
+    {
+      "area": "frontend",
+      "pattern": "@visx/",
+      "kind": "literal",
+      "note": "visx is not used; recharts is the only charting library."
+    },
+    {
+      "area": "frontend",
+      "pattern": "[\"']cmdk[\"']",
+      "kind": "regex",
+      "note": "cmdk is not used."
+    },
+    {
+      "area": "frontend",
+      "pattern": "@tanstack/(react-)?table",
+      "kind": "regex",
+      "note": "TanStack Table is not used."
+    },
+    {
+      "area": "frontend",
+      "pattern": "Without Qdrant, claims come back UNSUPPORTED",
+      "kind": "literal",
+      "note": "Superseded copy; answers without documents are \"not checked\"."
+    },
+    {
+      "area": "dx",
+      "pattern": "docs/JEV.md",
+      "kind": "literal",
+      "note": "Superseded doc; use docs/JEV-ACCESS.md."
+    },
+    {
+      "area": "dx",
+      "pattern": "docs/GATEWAY-POLICIES.md",
+      "kind": "literal",
+      "note": "Superseded doc."
+    },
+    {
+      "area": "dx",
+      "pattern": "/api/admin/(?!audit-log)",
+      "kind": "regex",
+      "note": "Only /api/admin/audit-log remains under /api/admin."
+    },
+    {
+      "area": "dx",
+      "pattern": "\\bjev_spend\\b",
+      "kind": "regex",
+      "note": "Superseded table; use cost_events."
+    },
+    {
+      "area": "dx",
+      "pattern": "\\bTRUTHTABLE_JEV_MONTHLY_BUDGET_USD\\b",
+      "kind": "regex",
+      "note": "Superseded key; use TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY."
+    },
+    {
+      "area": "dx",
+      "pattern": "\\bTRUTHTABLE_JEV_MAX_RPS\\b",
+      "kind": "regex",
+      "note": "Superseded key; use TRUTHTABLE_GATE_JEV_RPM."
+    },
+    {
+      "area": "dx",
+      "pattern": "env-only secrets",
+      "kind": "literal",
+      "note": "Superseded ADR; credentials are also stored encrypted in the dashboard."
+    },
+    {
+      "area": "dx",
+      "pattern": "scripts/traffic.py",
+      "kind": "literal",
+      "note": "Superseded; use Go cmd/trafficgen."
+    },
+    {
+      "area": "dx",
+      "pattern": "runtime-config.js",
+      "kind": "literal",
+      "note": "Superseded; the dashboard loads /config.json."
+    },
+    {
+      "area": "dx",
+      "pattern": "static-demo",
+      "kind": "literal",
+      "note": "Superseded VITE_APP_MODE value; use static."
+    },
+    {
+      "area": "dx",
+      "pattern": "\\bopen[-_]admin\\b",
+      "kind": "regex",
+      "note": "There is no open-admin dev mode."
+    },
+    {
+      "area": "dx",
+      "pattern": "container_name",
+      "kind": "literal",
+      "note": "Compose services have no container_name (project isolation)."
+    },
+    {
+      "area": "dx",
+      "pattern": "\\baudit-engine\\b",
+      "kind": "regex",
+      "note": "The compose service is named engine. warn until docker-compose.yml and config/prometheus.yml rename the legacy audit-engine service; then error.",
+      "level": "warn"
+    },
+    {
+      "area": "dx",
+      "pattern": "\\btrustagent-demo\\b",
+      "kind": "regex",
+      "note": "The demo compose project is truthtable-demo."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "[Ee]scalation\\??\\.[Bb]and\\b",
+      "kind": "regex",
+      "note": "escalation has no band; use escalation.escalate_from."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "(?<![A-Za-z]:)[\"']numeric_or_date[\"'](?!\\s*:)",
+      "kind": "regex",
+      "note": "The escalate value is numeric_or_date_unverified (escalation.numeric_or_date stays a spec field)."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bhas_numeric_or_date\\b",
+      "kind": "regex",
+      "note": "Superseded meta field; detectors report numbers/dates."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bdryrun_jobs\\b",
+      "kind": "regex",
+      "note": "Async dry-run jobs are cut; the dry-run is synchronous SSE."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bdryrun_(progress|completed)\\b",
+      "kind": "regex",
+      "note": "Superseded WS events; the dry-run streams over SSE."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "pass_sample_rate[\"']?\\s*[:=]\\s*0?\\.20*(?![0-9])",
+      "kind": "regex",
+      "note": "The default pass_sample_rate is 0.02."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "uniform_sample_rate[\"']?\\s*[:=]\\s*0?\\.050*(?![0-9])",
+      "kind": "regex",
+      "note": "The default uniform_sample_rate is 0.01."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bgate_inputs\\b",
+      "kind": "regex",
+      "note": "Superseded table."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\broute_versions\\b",
+      "kind": "regex",
+      "note": "Superseded table; policy versions are whole documents."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bevaluators\\.calibration\\b",
+      "kind": "regex",
+      "note": "Superseded column; calibrations live in their own table."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bby_evidence\\b",
+      "kind": "regex",
+      "note": "decision.partition by_evidence is cut from 2.0."
+    },
+    {
+      "area": "canonical_contract",
+      "pattern": "\\bshadow_sample\\b",
+      "kind": "regex",
+      "note": "Superseded ROI method; use uniform_sample."
+    }
+  ]
+}

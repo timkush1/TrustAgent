@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-exact-and-short-quotes-pass",
+  "status": "draft",
+  "description": "The first quote (\"annual plans can be refunded within 30 days\", 8 words) matches the evidence case-insensitively as a substring. \"simple\" has fewer than 4 words and is not checked. Does not fire.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "The docs say \"annual plans can be refunded within 30 days\" and call the process \"simple\".",
+    "evidence": [
+      {
+        "id": "refund-policy",
+        "source": "request_system",
+        "text": "Annual plans can be refunded within 30 days of purchase."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

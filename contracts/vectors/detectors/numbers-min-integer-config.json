@@ -1,0 +1,18 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-min-integer-config",
+  "status": "draft",
+  "description": "Route setting min_integer 20: 12 is an integer <= 20 with no unit (\"seats\" is not one) and no currency sign, so it is skipped even though it is unknown. 15% ends in \"%\": checked, and unknown (reference has 10). Fires on 15% only.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "15% off applies to 12 seats.",
+    "evidence": [{"id": "promo", "source": "request_system", "text": "Annual plans get 10% off for teams."}],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {},
+    "config": {"min_integer": 20}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "15%", "start": 0, "end": 3}]},
+  "tolerance": 1e-9
+}

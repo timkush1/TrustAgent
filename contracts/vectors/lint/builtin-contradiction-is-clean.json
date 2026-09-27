@@ -1,0 +1,42 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "builtin-contradiction-is-clean",
+  "status": "draft",
+  "description": "The shipped contradiction@1 template (SPEC §2.8) passes the hard rules and fires no lint; built-ins must stay lint-clean in CI.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "contradiction",
+      "version": 1,
+      "builtin": true,
+      "name": "Contradiction",
+      "category": "grounding",
+      "verdict_role": "contradicted",
+      "description": "Flags answers that the evidence says are false.",
+      "state_fields": ["assistant_response", "evidence"],
+      "question": {
+        "type": "noul",
+        "instructions": "Does `evidence` say that something stated in `assistant_response` is false?",
+        "criteria": {
+          "true": "`evidence` states the opposite of at least one statement in `assistant_response`, or gives a different value for the same fact",
+          "false": "Nothing in `assistant_response` is contradicted by `evidence`. Statements that `evidence` does not mention are not contradicted."
+        }
+      },
+      "evidence": {"requires": "required", "min_chars": 40},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.7,
+        "critical_at": 0.95,
+        "min_confidence": null,
+        "block_eligible": true,
+        "implies": ["groundedness"],
+        "requires_corroboration": ["groundedness", "det:numbers_not_in_evidence", "det:dates_not_in_evidence"]
+      },
+      "escalation": {"escalate_from": 0.4, "numeric_or_date": true, "on_error": "escalate"},
+      "threshold_basis": "TypeSafe RAG-passage cookbook uses contradicts > 0.70 [vendor]. Recalibrate per snapshot."
+    }
+  },
+  "expected": {"errors": [], "lints": []},
+  "tolerance": 1e-9
+}

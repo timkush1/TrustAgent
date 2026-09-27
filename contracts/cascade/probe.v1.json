@@ -1,0 +1,10 @@
+{
+  "state": {"note": "TrustAgent connectivity probe"},
+  "questions": {
+    "probe": {
+      "type": "noul",
+      "instructions": "Does `note` describe a connectivity probe?",
+      "criteria": {"true": "`note` says it is a connectivity probe", "false": "`note` is about something else"}
+    }
+  }
+}

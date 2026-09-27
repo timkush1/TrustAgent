@@ -1,0 +1,6 @@
+{
+  "id": "rubric-only",
+  "version": 1,
+  "description": "Checks that need no documents (SPEC §2.8): refusal, unsafe content or operator-rule violations, PII or secret leaks, and prompt-injection success. For routes whose requests carry no evidence.",
+  "evaluators": ["refusal@1", "unsafe_policy@1", "pii_secret_leak@1", "injection_success@1"]
+}

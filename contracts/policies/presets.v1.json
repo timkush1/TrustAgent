@@ -1,0 +1,28 @@
+{
+  "version": "1",
+  "presets": [
+    {
+      "id": "observe-all",
+      "name": "Observe everything",
+      "description": "Check every answer and record what would have happened, without changing any response.",
+      "settings": {"mode": "observe", "sample_rate": 1}
+    },
+    {
+      "id": "flag-risky",
+      "name": "Flag risky answers",
+      "description": "Deliver every answer and tell your app which ones look risky, through X-TrustAgent-* response headers.",
+      "settings": {"mode": "flag"}
+    },
+    {
+      "id": "block-contradictions",
+      "name": "Block contradictions",
+      "description": "Block answers that your documents contradict or do not support, when two signals agree. Streams are buffered so a block can replace the answer.",
+      "ui_note": "Starts as Flag until calibrated",
+      "settings": {
+        "mode": "block",
+        "streaming": "buffer",
+        "evaluators": [{"ref": "groundedness@1"}, {"ref": "contradiction@1"}]
+      }
+    }
+  ]
+}

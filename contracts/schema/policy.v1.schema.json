@@ -1,0 +1,443 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/policy.v1.schema.json",
+  "title": "PolicyDoc",
+  "description": "config/policies.yaml, schema policy/v1 (SPEC §2.7). Parsed with yaml.v3 KnownFields(true). routes[] merge over defaults: nested objects merge key by key, arrays replace. The first matching route wins; every matcher given in a route must match; with no match, defaults apply as route \"default\". Cross-field rules that need the merged route (hedge_after_ms < deadline_ms, unique evaluator ids, param names unique across the route and declared by the evaluator, escalate_from < warn_at <= critical_at, evidence_sources a subset of evidence.sources, knowledge only with the add-on) are enforced by the Go loader.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": {"const": 1},
+    "defaults": {"$ref": "#/$defs/RouteSettings"},
+    "overrides": {"$ref": "#/$defs/Overrides"},
+    "routes": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/Route"}}
+  },
+  "$defs": {
+    "Overrides": {
+      "title": "PolicyOverrides",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_mode": {
+          "enum": ["none", "stricter_only", "any"],
+          "default": "none",
+          "description": "Whether the X-TrustAgent-Mode request header may change the mode. stricter_only allows observe -> flag -> block/fallback only."
+        },
+        "client_rules": {
+          "type": "boolean",
+          "default": false,
+          "description": "Honour the request body trustagent.rules object. Off by default: end users must not rewrite rules."
+        }
+      }
+    },
+    "Route": {
+      "title": "PolicyRoute",
+      "description": "A route: name, match and any RouteSettings field (merged over defaults).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "match"],
+      "properties": {
+        "name": {
+          "allOf": [{"$ref": "common.v1.schema.json#/$defs/RouteName"}, {"not": {"const": "default"}}],
+          "description": "\"default\" is reserved for the defaults route."
+        },
+        "description": {"type": "string", "maxLength": 600},
+        "match": {"$ref": "#/$defs/RouteMatch"},
+        "mode": {"$ref": "#/$defs/RouteSettings/properties/mode"},
+        "fail": {"$ref": "#/$defs/RouteSettings/properties/fail"},
+        "deadline_ms": {"$ref": "#/$defs/RouteSettings/properties/deadline_ms"},
+        "hedge_after_ms": {"$ref": "#/$defs/RouteSettings/properties/hedge_after_ms"},
+        "sample_rate": {"$ref": "#/$defs/RouteSettings/properties/sample_rate"},
+        "require_calibration": {"$ref": "#/$defs/RouteSettings/properties/require_calibration"},
+        "on_no_evidence": {"$ref": "#/$defs/RouteSettings/properties/on_no_evidence"},
+        "streaming": {"$ref": "#/$defs/RouteSettings/properties/streaming"},
+        "stream_annotations": {"$ref": "#/$defs/RouteSettings/properties/stream_annotations"},
+        "buffer_keepalive_s": {"$ref": "#/$defs/RouteSettings/properties/buffer_keepalive_s"},
+        "headers": {"$ref": "#/$defs/RouteSettings/properties/headers"},
+        "evidence": {"$ref": "#/$defs/RouteSettings/properties/evidence"},
+        "evaluators": {"$ref": "#/$defs/RouteSettings/properties/evaluators"},
+        "detectors": {"$ref": "#/$defs/RouteSettings/properties/detectors"},
+        "decision": {"$ref": "#/$defs/RouteSettings/properties/decision"},
+        "deep_audit": {"$ref": "#/$defs/RouteSettings/properties/deep_audit"},
+        "block": {"$ref": "#/$defs/RouteSettings/properties/block"},
+        "fallback": {"$ref": "#/$defs/RouteSettings/properties/fallback"},
+        "store_bodies": {"$ref": "#/$defs/RouteSettings/properties/store_bodies"},
+        "body_sample_rate_pass": {"$ref": "#/$defs/RouteSettings/properties/body_sample_rate_pass"}
+      }
+    },
+    "RouteMatch": {
+      "title": "RouteMatch",
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Every matcher given must match.",
+      "properties": {
+        "headers": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {"pattern": "^[A-Za-z0-9-]{1,64}$"},
+          "additionalProperties": {"type": "string", "maxLength": 256},
+          "description": "Header name (case-insensitive) -> exact value, e.g. {X-TrustAgent-Route: support-bot}."
+        },
+        "paths": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/", "maxLength": 256},
+          "description": "Request path globs."
+        },
+        "models": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256},
+          "description": "Model name globs."
+        },
+        "key_labels": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 64},
+          "description": "API key labels."
+        }
+      }
+    },
+    "RouteSettings": {
+      "title": "RouteSettings",
+      "description": "The fields shared by defaults and routes (SPEC §2.7 RouteSettings). Every field is optional in a route and merged over defaults.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "common.v1.schema.json#/$defs/PolicyMode",
+          "description": "Default comes from the TRUTHTABLE_GATE_DEFAULT_MODE seed (observe)."
+        },
+        "fail": {
+          "$ref": "common.v1.schema.json#/$defs/FailMode",
+          "default": "open",
+          "description": "\"closed\" only matters in block and fallback modes."
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000,
+          "default": 600,
+          "description": "Synchronous gate budget, excluding the upstream call."
+        },
+        "hedge_after_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4999,
+          "not": {"minimum": 1, "maximum": 99},
+          "default": 0,
+          "description": "0 (no hedge) or [100, deadline_ms)."
+        },
+        "sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1,
+          "description": "Observe routes only: share of requests sent to the fast check. Detectors always run."
+        },
+        "require_calibration": {
+          "type": "boolean",
+          "default": true,
+          "description": "Caps block/fallback at flag unless every block-set evaluator is calibrated."
+        },
+        "on_no_evidence": {
+          "enum": ["ignore", "flag", "block"],
+          "default": "ignore",
+          "description": "SPEC §2.9 no-evidence rule."
+        },
+        "streaming": {
+          "enum": ["passthrough", "buffer"],
+          "default": "passthrough",
+          "description": "Block/fallback with passthrough become effective flag (stream_not_buffered)."
+        },
+        "stream_annotations": {
+          "enum": ["comment", "none"],
+          "default": "comment",
+          "description": "Write \": trustagent {...}\" before the terminal SSE event."
+        },
+        "buffer_keepalive_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60,
+          "default": 15,
+          "description": "Buffer mode SSE keepalive interval; 0 = none."
+        },
+        "headers": {
+          "enum": ["full", "action_only"],
+          "default": "full",
+          "description": "action_only sends only Trace-Id, Request-ID and Action."
+        },
+        "evidence": {"$ref": "#/$defs/EvidenceSettings"},
+        "evaluators": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/RouteEvaluatorRef"},
+          "default": [
+            {"ref": "groundedness@1"},
+            {"ref": "contradiction@1"},
+            {"ref": "refusal@1"},
+            {"ref": "pii_secret_leak@1"}
+          ],
+          "description": "Replaces (does not merge) the defaults list. Default: question set gateway-default. Unique ids; param names unique across the route."
+        },
+        "detectors": {"$ref": "#/$defs/DetectorSettings"},
+        "decision": {"$ref": "#/$defs/DecisionSettings"},
+        "deep_audit": {"$ref": "#/$defs/DeepAuditSettings"},
+        "block": {"$ref": "#/$defs/BlockSettings"},
+        "fallback": {"$ref": "#/$defs/FallbackSettings"},
+        "store_bodies": {"enum": ["all", "sampled", "none"], "default": "sampled"},
+        "body_sample_rate_pass": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.2,
+          "description": "With store_bodies: sampled, the share of passed traces whose bodies are kept."
+        }
+      }
+    },
+    "EvidenceSettings": {
+      "title": "EvidenceSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "common.v1.schema.json#/$defs/EvidenceSource"},
+          "default": ["request_system", "request_context", "tool_results", "extension"],
+          "description": "Priority order. knowledge needs the knowledge add-on."
+        },
+        "system_mode": {"enum": ["off", "documents_only", "whole"], "default": "documents_only"},
+        "line_headers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Treat \"Context:\" style line headers as block starts (SPEC §2.10)."
+        },
+        "tag_patterns": {
+          "type": "array",
+          "maxItems": 16,
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pattern"],
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "RE2 syntax, no inline flags."
+              },
+              "flags": {
+                "type": "string",
+                "pattern": "^[ims]{0,3}$",
+                "default": "",
+                "description": "Subset of \"ims\"."
+              }
+            }
+          }
+        },
+        "max_tokens": {"type": "integer", "minimum": 500, "maximum": 20000, "default": 8000},
+        "untrusted_tools": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "default": [],
+          "items": {"type": "string", "minLength": 1, "maxLength": 128},
+          "description": "Tool-name globs excluded from evidence and marked untrusted."
+        },
+        "knowledge": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {"when": "fallback", "top_k": 5, "deadline_ms": 150, "min_score": 0.3},
+          "properties": {
+            "when": {
+              "enum": ["fallback", "always"],
+              "default": "fallback",
+              "description": "fallback: only when the request sources are empty."
+            },
+            "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
+            "deadline_ms": {"type": "integer", "minimum": 1, "maximum": 5000, "default": 150},
+            "min_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.3}
+          }
+        }
+      }
+    },
+    "DetectorSettings": {
+      "title": "DetectorSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "flag_on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "common.v1.schema.json#/$defs/DetectorId"},
+          "default": [
+            "urls_not_in_evidence",
+            "quotes_not_in_evidence",
+            "citation_out_of_range",
+            "secret_pattern",
+            "system_prompt_leak"
+          ],
+          "description": "Numbers and dates never flag alone."
+        },
+        "block_on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "common.v1.schema.json#/$defs/DetectorId"},
+          "default": []
+        },
+        "min_integer": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 10,
+          "description": "Integers above min_integer are always checked; unit-adjacent integers are always checked."
+        }
+      }
+    },
+    "DecisionSettings": {
+      "title": "DecisionSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Per-route model pin. Default: TRUTHTABLE_JEV_MODEL."
+        },
+        "max_response_tokens": {"type": "integer", "minimum": 500, "maximum": 12000, "default": 6000}
+      }
+    },
+    "DeepAuditSettings": {
+      "title": "DeepAuditSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "default": {
+        "enabled": true,
+        "pass_sample_rate": 0.02,
+        "uniform_sample_rate": 0.01,
+        "error_sample_rate": 0.1,
+        "verifier": "auto"
+      },
+      "properties": {
+        "enabled": {"type": "boolean", "default": true},
+        "pass_sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.02,
+          "description": "Share of passes sent to the deep audit (lane \"sample\")."
+        },
+        "uniform_sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.01,
+          "description": "Pre-gate Bernoulli over all gated traces; the unbiased hallucination rate (capped by TRUTHTABLE_UNIFORM_AUDITS_PER_DAY)."
+        },
+        "error_sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.1,
+          "description": "Share of skipped/timeout/error gates sent to the deep audit (lane \"sample_error\")."
+        },
+        "verifier": {"enum": ["auto", "llm"], "default": "auto", "description": "auto = llm in 2.0."}
+      }
+    },
+    "BlockSettings": {
+      "title": "BlockSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "style": {
+          "enum": ["message", "error"],
+          "default": "message",
+          "description": "message: HTTP 200 with finish_reason content_filter; error: HTTP block.status."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "default": "I can't provide a verified answer to that right now."
+        },
+        "status": {
+          "enum": [400, 403, 409, 422, 451],
+          "default": 422,
+          "description": "Error style only; never 429 or 5xx."
+        },
+        "anthropic_stop_reason": {"enum": ["refusal", "end_turn"], "default": "refusal"}
+      }
+    },
+    "FallbackSettings": {
+      "title": "FallbackSettings",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "upstream": {
+          "enum": ["same", "fallback"],
+          "default": "same",
+          "description": "Never a URL (prevents SSRF and key exfiltration)."
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128,
+          "default": "",
+          "description": "Empty = the original model."
+        },
+        "system_prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "default": "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT."
+        },
+        "on_fail": {"enum": ["block", "flag", "original"], "default": "block"}
+      }
+    },
+    "RouteEvaluatorRef": {
+      "title": "RouteEvaluatorRef",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+        "stage": {
+          "$ref": "common.v1.schema.json#/$defs/EvaluatorStage",
+          "default": "active",
+          "description": "YAML default active; the API and Studio default to shadow. Shadow evaluators are asked but never enforced."
+        },
+        "params": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,31}$"},
+          "additionalProperties": {"type": "string", "maxLength": 2000}
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "space": {
+              "$ref": "common.v1.schema.json#/$defs/ThresholdSpace",
+              "default": "raw",
+              "description": "raw until a calibration is adopted, so activating a calibration never silently changes decisions."
+            },
+            "warn_at": {"type": "number", "minimum": 0, "maximum": 1},
+            "critical_at": {"anyOf": [{"type": "number", "minimum": 0, "maximum": 1}, {"type": "null"}]},
+            "escalate_from": {"anyOf": [{"type": "number", "minimum": 0, "maximum": 1}, {"type": "null"}]}
+          }
+        },
+        "enabled": {"type": "boolean", "default": true},
+        "evidence_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "common.v1.schema.json#/$defs/EvidenceSource"},
+          "description": "Narrows (never widens) the route evidence.sources."
+        }
+      }
+    }
+  }
+}

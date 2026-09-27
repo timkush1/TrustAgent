@@ -1,0 +1,21 @@
+{
+  "name": "@trustagent/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TrustAgent contract validator: JSON Schemas plus cross-file checks for everything in contracts/.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "check": "node validate.mjs",
+    "check:strict": "node validate.mjs --strict",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.9.1"
+  }
+}

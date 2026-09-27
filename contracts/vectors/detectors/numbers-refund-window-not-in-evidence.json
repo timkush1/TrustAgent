@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-refund-window-not-in-evidence",
+  "status": "draft",
+  "description": "The refund scenario: the response says 60 days; the reference (evidence plus user_request) contains 30 and 45 only. 60 is above min_integer, so it is always checked, and it is unknown: fires with one finding.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "You can get a full refund within 60 days of purchase.",
+    "evidence": [
+      {
+        "id": "refund-policy",
+        "source": "request_system",
+        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+      }
+    ],
+    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "60", "start": 33, "end": 35}]},
+  "tolerance": 1e-9
+}

@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/scenarios.v1.schema.json",
+  "title": "ScenarioPack",
+  "description": "contracts/demo/scenarios.v1.json: the single source of demo and e2e traffic (SPEC §7.6). Go cmd/trafficgen sends each request with X-TrustAgent-Scenario (test mode); the mock decision backend answers from mock_answers and the mock judge from judge. --expect asserts expect against the response headers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "scenarios"],
+  "properties": {
+    "schema": {"const": "trustagent.scenarios/v1"},
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "title": "Scenario",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "sets",
+          "route",
+          "stream",
+          "answer_source",
+          "request",
+          "mock_answers",
+          "expect"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "description": "Sent as X-TrustAgent-Scenario."
+          },
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "description": {"type": "string", "maxLength": 600},
+          "sets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
+            "description": "Selection tags for trafficgen --scenarios (e.g. s0, demo, e2e, generated, untagged)."
+          },
+          "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
+          "api_format": {
+            "enum": ["openai_chat", "openai_completions", "anthropic_messages"],
+            "default": "openai_chat"
+          },
+          "stream": {"type": "boolean"},
+          "answer_source": {
+            "enum": ["scripted", "generated"],
+            "description": "scripted: the upstream answer is response (test_response). generated: the answer is produced by the real upstream when recording (record-demo); response is then only the mock-mode stand-in."
+          },
+          "request": {
+            "type": "object",
+            "description": "The request body sent by trafficgen (minus test_response). Unknown fields pass through to the upstream.",
+            "properties": {
+              "model": {"type": "string"},
+              "messages": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["role", "content"],
+                  "description": "An OpenAI-style message. content may be a string or content parts (to exercise tolerant parsing, B3). Other fields (tool_call_id, tool_calls, name) pass through to the upstream request.",
+                  "properties": {
+                    "role": {"enum": ["system", "developer", "user", "assistant", "tool", "function"]},
+                    "content": {
+                      "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "object"}},
+                        {"type": "null"}
+                      ]
+                    },
+                    "name": {"type": "string"},
+                    "tool_call_id": {"type": "string"},
+                    "tool_calls": {"type": "array", "items": {"type": "object"}}
+                  }
+                }
+              },
+              "system": {
+                "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "object"}}],
+                "description": "Anthropic top-level system."
+              },
+              "prompt": {"type": "string", "description": "/v1/completions only."},
+              "trustagent": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
+                  "context": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["text"],
+                      "properties": {
+                        "id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+                        "text": {"type": "string", "minLength": 1},
+                        "source": {"type": "string"}
+                      }
+                    }
+                  },
+                  "rules": {"type": "object", "additionalProperties": {"type": "string"}}
+                }
+              }
+            }
+          },
+          "headers": {
+            "type": "object",
+            "propertyNames": {"pattern": "^[A-Za-z0-9-]{1,64}$"},
+            "additionalProperties": {"type": "string"},
+            "description": "Extra request headers, e.g. X-TrustAgent-Route."
+          },
+          "response": {
+            "type": "string",
+            "description": "Scripted assistant text returned by the upstream in test mode."
+          },
+          "mock_answers": {
+            "type": "object",
+            "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+            "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
+            "description": "Answers the mock decision backend returns for this scenario, keyed by question id."
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["claims"],
+                "description": "Mock judge fixture (LLM_PROVIDER=mock, AuditOptions.mock_scenario).",
+                "properties": {
+                  "claims": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["claim", "verdict", "confidence"],
+                      "properties": {
+                        "claim": {"type": "string", "minLength": 1},
+                        "verdict": {"$ref": "common.v1.schema.json#/$defs/ClaimVerdict"},
+                        "confidence": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+                        "reasoning": {"type": "string"},
+                        "quote": {"type": "string"},
+                        "evidence": {"type": "array", "items": {"type": "string"}}
+                      }
+                    }
+                  }
+                }
+              },
+              {"type": "null"}
+            ]
+          },
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action"],
+            "description": "What trafficgen --expect asserts. reasons must all be present (subset match).",
+            "properties": {
+              "action": {"$ref": "common.v1.schema.json#/$defs/GateAction"},
+              "would_action": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/WouldAction"}, {"type": "null"}]
+              },
+              "status": {
+                "type": "string",
+                "pattern": "^(ok|partial|not_assessed|skipped:[a-z_]+|timeout|error:[a-z0-9_]+|deferred)$",
+                "description": "X-TrustAgent-Status value."
+              },
+              "verdict": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}]},
+              "reasons": {"type": "array", "items": {"type": "string"}},
+              "audit": {
+                "enum": ["queued", "sampled_out", "dropped", "disabled", "not_assessed"],
+                "description": "X-TrustAgent-Audit value."
+              },
+              "audit_verdict": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/AuditVerdict"}, {"type": "null"}]
+              }
+            }
+          }
+        },
+        "$comment": "A scripted scenario needs response (checked by validate.mjs)."
+      }
+    }
+  }
+}

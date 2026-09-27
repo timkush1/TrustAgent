@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/pricing.v1.schema.json",
+  "title": "PricingTable",
+  "description": "contracts/pricing/prices.v1.json, overridable by TRUTHTABLE_PRICE_TABLE_FILE and Settings -> Pricing (SPEC §7.4). Cost is usage.cost when the provider reports it, otherwise tokens x the first matching entry (provider equal, model matched against the glob in match). A note starting with \"[A]\" marks a price that must be re-verified before bench-publish.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "currency", "entries"],
+  "properties": {
+    "version": {"type": "string", "minLength": 1, "maxLength": 32},
+    "currency": {"const": "USD"},
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "title": "PriceEntry",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match", "provider", "input_per_mtok", "output_per_mtok"],
+        "properties": {
+          "match": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Model glob; * matches any run of characters."
+          },
+          "provider": {"type": "string", "pattern": "^[a-z0-9_-]{1,32}$"},
+          "input_per_mtok": {"type": "number", "minimum": 0, "description": "USD per million input tokens."},
+          "output_per_mtok": {"type": "number", "minimum": 0, "description": "USD per million output tokens."},
+          "source": {"type": "string", "minLength": 1, "maxLength": 300},
+          "label": {"enum": ["vendor_price", "override"]},
+          "as_of": {"$ref": "common.v1.schema.json#/$defs/Date"},
+          "note": {"type": "string", "maxLength": 300}
+        }
+      }
+    }
+  }
+}

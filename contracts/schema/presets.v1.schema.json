@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/presets.v1.schema.json",
+  "title": "PolicyPresets",
+  "description": "contracts/policies/presets.v1.json: route-settings presets offered by the Policies page (SPEC §2.7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "presets"],
+  "properties": {
+    "version": {"const": "1"},
+    "presets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "description", "settings"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 80},
+          "description": {"type": "string", "minLength": 1, "maxLength": 400},
+          "ui_note": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Short caveat shown next to the preset."
+          },
+          "settings": {"$ref": "policy.v1.schema.json#/$defs/RouteSettings"}
+        }
+      }
+    }
+  }
+}

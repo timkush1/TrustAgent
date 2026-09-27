@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-not-run-without-evidence",
+  "status": "draft",
+  "description": "The URL detector runs only when evidence is present. Here there is none (only rules), so it does not run even though the response has a URL.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "Read more at https://example.com/blog.",
+    "evidence": [],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {"brand_voice": "Friendly and clear."}
+  },
+  "expected": {"ran": false, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

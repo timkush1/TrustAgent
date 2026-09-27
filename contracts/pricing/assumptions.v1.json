@@ -1,0 +1,154 @@
+{
+  "version": "1",
+  "as_of": "2026-09-27",
+  "currency": "USD",
+  "label": "estimate",
+  "description": "Assumptions behind every [estimate] cost figure in the README, landing page and Savings panel. Figures are per 1,000 answers. Change an input or a price and validate.mjs recomputes every figure; the stated per_1k_usd must stay within tolerance, so copy and arithmetic cannot drift apart.",
+  "prices": {
+    "decision_model": {"provider": "openrouter", "match": "typesafe/jev-1.13*"},
+    "judge": {"provider": "anthropic", "match": "claude-haiku-4-5*"}
+  },
+  "inputs": {
+    "fast_check_input_tokens": {
+      "value": 5000,
+      "unit": "tokens",
+      "basis": "Typical fast-check request with the default question set: about 275 overhead + about 600 for 4 questions + prompt, answer and evidence (4-6k typical; 24k worst case)."
+    },
+    "same_checks_input_tokens": {
+      "value": 5000,
+      "unit": "tokens",
+      "basis": "The same state and questions sent to an LLM judge."
+    },
+    "same_checks_output_tokens": {
+      "value": 150,
+      "unit": "tokens",
+      "basis": "A short structured answer for 4 questions."
+    },
+    "claims_per_answer": {
+      "value": 8,
+      "unit": "count",
+      "basis": "Claims decomposed from a typical support or RAG answer."
+    },
+    "decompose_input_tokens": {
+      "value": 1000,
+      "unit": "tokens",
+      "basis": "Decomposer prompt plus the question and answer."
+    },
+    "decompose_output_tokens": {"value": 300, "unit": "tokens", "basis": "8 claims as JSON."},
+    "evidence_context_tokens": {
+      "value": 3000,
+      "unit": "tokens",
+      "basis": "Evidence sent with each claim verification."
+    },
+    "verifier_prompt_tokens": {"value": 450, "unit": "tokens", "basis": "Verifier system prompt."},
+    "claim_tokens": {"value": 75, "unit": "tokens", "basis": "The claim and the user question framing it."},
+    "verify_output_tokens": {
+      "value": 120,
+      "unit": "tokens",
+      "basis": "Verdict, confidence, reasoning and quote per claim."
+    },
+    "grounding_flag_rate": {
+      "value": 0.05,
+      "unit": "fraction",
+      "basis": "Assumed share of answers with a grounding trigger (deep audit lane high)."
+    },
+    "pass_sample_rate": {
+      "value": 0.02,
+      "unit": "fraction",
+      "basis": "Shipped default deep_audit.pass_sample_rate."
+    },
+    "uniform_sample_rate": {
+      "value": 0.01,
+      "unit": "fraction",
+      "basis": "Shipped default deep_audit.uniform_sample_rate."
+    }
+  },
+  "token_model": {
+    "prompt_overhead_tokens": 400,
+    "output_tokens_per_question": 40,
+    "formula": "llm_same_checks = sum over gated answers of (jev_input_tokens + 400) x judge input price + 40 x questions x judge output price"
+  },
+  "figures": [
+    {
+      "id": "fast_check_per_1k",
+      "title": "Fast check on every answer",
+      "formula": "5,000 input tokens x $0.042/M (output free) = $0.00021 per answer",
+      "per_1k_usd": 0.21,
+      "terms": [
+        {
+          "label": "fast check",
+          "price": "decision_model",
+          "calls": 1,
+          "input_tokens": "fast_check_input_tokens",
+          "output_tokens": 0
+        }
+      ]
+    },
+    {
+      "id": "llm_same_checks_per_1k",
+      "title": "The same checks asked of Claude Haiku",
+      "formula": "5,000 input tokens x $1/M + 150 output tokens x $5/M = $0.00575 per answer",
+      "per_1k_usd": 5.75,
+      "terms": [
+        {
+          "label": "LLM judge, same questions",
+          "price": "judge",
+          "calls": 1,
+          "input_tokens": "same_checks_input_tokens",
+          "output_tokens": "same_checks_output_tokens"
+        }
+      ]
+    },
+    {
+      "id": "llm_full_audit_per_1k",
+      "title": "Full claim-level LLM audit of every answer",
+      "formula": "decompose (1,000 in + 300 out) + 8 claims x ((3,000 evidence + 450 prompt + 75 claim) in + 120 out), Haiku $1/$5 per M = $0.0025 + $0.033 = $0.0355 per answer",
+      "per_1k_usd": 35.5,
+      "terms": [
+        {
+          "label": "decompose",
+          "price": "judge",
+          "calls": 1,
+          "input_tokens": "decompose_input_tokens",
+          "output_tokens": "decompose_output_tokens"
+        },
+        {
+          "label": "verify each claim",
+          "price": "judge",
+          "calls": "claims_per_answer",
+          "input_tokens": {"sum": ["evidence_context_tokens", "verifier_prompt_tokens", "claim_tokens"]},
+          "output_tokens": "verify_output_tokens"
+        }
+      ]
+    },
+    {
+      "id": "default_total_per_1k",
+      "title": "Total with shipped defaults",
+      "formula": "fast check on all + full audit x (5% grounding-flagged + 2% of the other 95% + 1% uniform) = $0.21 + 0.079 x $35.5 = $3.01",
+      "per_1k_usd": 3,
+      "tolerance": 0.05,
+      "terms": [
+        {"label": "fast check on every answer", "figure": "fast_check_per_1k", "weight": 1},
+        {
+          "label": "deep audits",
+          "figure": "llm_full_audit_per_1k",
+          "weight": {
+            "sum": [
+              "grounding_flag_rate",
+              {"product": [{"complement": "grounding_flag_rate"}, "pass_sample_rate"]},
+              "uniform_sample_rate"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "same_checks_vs_fast_check",
+      "title": "Same checks asked of an LLM judge vs the fast check",
+      "formula": "$5.75 / $0.21 = 27.4×",
+      "ratio": {"numerator": "llm_same_checks_per_1k", "denominator": "fast_check_per_1k"},
+      "value": 27,
+      "tolerance": 0.5
+    }
+  ]
+}

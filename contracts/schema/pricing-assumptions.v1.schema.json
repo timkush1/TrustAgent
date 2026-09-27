@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/pricing-assumptions.v1.schema.json",
+  "title": "PricingAssumptions",
+  "description": "contracts/pricing/assumptions.v1.json: the stated assumptions behind every [estimate] cost figure (SPEC §1 cost story, §7.4 counterfactuals). Each figure is recomputed by validate.mjs from its terms and the price table and must match its stated value within tolerance, so copy cannot drift from the arithmetic. Cost per answer = sum over terms; a call term costs calls x (input_tokens x input_per_mtok + output_tokens x output_per_mtok) / 1e6; a figure term costs weight x (that figure per answer). per_1k_usd = 1000 x cost per answer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "as_of",
+    "currency",
+    "label",
+    "description",
+    "prices",
+    "inputs",
+    "token_model",
+    "figures"
+  ],
+  "properties": {
+    "version": {"const": "1"},
+    "as_of": {"$ref": "common.v1.schema.json#/$defs/Date"},
+    "currency": {"const": "USD"},
+    "label": {"const": "estimate"},
+    "description": {"type": "string", "minLength": 1},
+    "prices": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,31}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "match"],
+        "properties": {
+          "provider": {"type": "string", "minLength": 1},
+          "match": {"type": "string", "minLength": 1}
+        }
+      },
+      "description": "Aliases for price-table entries (resolved by exact provider and match)."
+    },
+    "inputs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,63}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "unit", "basis"],
+        "properties": {
+          "value": {"type": "number", "minimum": 0},
+          "unit": {"enum": ["tokens", "calls", "fraction", "count"]},
+          "basis": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "token_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt_overhead_tokens", "output_tokens_per_question", "formula"],
+      "description": "Runtime counterfactual llm_same_checks (SPEC §7.4): sum over gated answers of (jev_input_tokens + prompt_overhead_tokens) x p_in + output_tokens_per_question x questions x p_out at the judge price.",
+      "properties": {
+        "prompt_overhead_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens_per_question": {"type": "integer", "minimum": 0},
+        "formula": {"type": "string", "minLength": 1}
+      }
+    },
+    "figures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"oneOf": [{"$ref": "#/$defs/CostFigure"}, {"$ref": "#/$defs/RatioFigure"}]}
+    }
+  },
+  "$defs": {
+    "CostFigure": {
+      "title": "CostFigure",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "formula", "per_1k_usd", "terms"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+        "title": {"type": "string", "minLength": 1},
+        "formula": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable arithmetic, shown next to the figure."
+        },
+        "per_1k_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Stated USD per 1,000 answers (rounded as quoted in copy)."
+        },
+        "terms": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/Term"}},
+        "tolerance": {"type": "number", "minimum": 0, "default": 0.005}
+      }
+    },
+    "RatioFigure": {
+      "title": "RatioFigure",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "formula", "ratio", "value"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+        "title": {"type": "string", "minLength": 1},
+        "formula": {"type": "string", "minLength": 1},
+        "ratio": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["numerator", "denominator"],
+          "properties": {
+            "numerator": {"type": "string", "minLength": 1},
+            "denominator": {"type": "string", "minLength": 1}
+          }
+        },
+        "value": {"type": "number", "minimum": 0, "description": "Stated value of the ratio."},
+        "tolerance": {"type": "number", "minimum": 0, "default": 0.005}
+      }
+    },
+    "Quantity": {
+      "title": "Quantity",
+      "description": "A number, an input name, or {sum|product: [Quantity]} / {complement: Quantity} (= 1 - q).",
+      "anyOf": [
+        {"type": "number", "minimum": 0},
+        {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sum"],
+          "properties": {"sum": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/Quantity"}}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["product"],
+          "properties": {"product": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/Quantity"}}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["complement"],
+          "properties": {"complement": {"$ref": "#/$defs/Quantity"}}
+        }
+      ]
+    },
+    "Term": {
+      "title": "Term",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["price", "calls", "input_tokens", "output_tokens"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "price": {"type": "string", "description": "A key of prices."},
+            "calls": {"$ref": "#/$defs/Quantity"},
+            "input_tokens": {"$ref": "#/$defs/Quantity"},
+            "output_tokens": {"$ref": "#/$defs/Quantity"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["figure", "weight"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "figure": {"type": "string", "minLength": 1},
+            "weight": {"$ref": "#/$defs/Quantity"}
+          }
+        }
+      ]
+    }
+  }
+}
