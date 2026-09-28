@@ -26,8 +26,8 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `compile` | 34 | frozen, generated | `internal/decision` |
 | `calibration_apply` | 13 | frozen, generated | `internal/decision` |
 | `decide` | 55 | frozen, hand-authored | `internal/decision` |
-| `detectors` | 23 | draft, hand-authored | P2 (skipped) |
-| `evidence` | 14 | draft, hand-authored | P2 (skipped) |
+| `detectors` | 23 | draft, hand-authored | `internal/decision` |
+| `evidence` | 14 | draft, hand-authored | `internal/evidence` (`TestEvidenceVectors`, S0 formats) |
 | `lint` | 19 | draft, hand-authored | P2 (skipped) |
 
 `calibrate_fit` and `cost` vectors come with the Go calibration fitter (P2) and cost calculator (P4);

@@ -103,7 +103,7 @@ fails every runner.
 1. **draft**: hand-authored semantic vectors, and new cases, start as `draft`. `expected` may be a
    subset of the output. Numbers compare as parsed values within `tolerance` (default `1e-9`); strings
    and arrays compare exactly.
-2. **generated**: Go `cmd/vectorgen` (lands in S0; `make vectors`) fills in mechanical `expected` values
+2. **generated**: Go `cmd/vectorgen` (`make vectors`) fills in mechanical `expected` values
    and records `generated_by`. A person reviews the diff.
 3. **frozen**: once the Go reference passes the vector and the review is done, `status` becomes `frozen`.
    A frozen vector never changes. A behaviour change adds a new vector (and, if needed, a new evaluator
@@ -149,7 +149,7 @@ mode, with `refund-policy.md` as a `<document>` block in the system prompt when 
 make contracts-check     # npm ci when needed, then node validate.mjs
 make contracts-test      # the validator's own tests (node --test)
 make contracts-go        # go vet + go test for the embed module
-make vectors             # placeholder until cmd/vectorgen lands in S0
+make vectors             # Go cmd/vectorgen fills mechanical expected values (VECTORGEN_FLAGS=-check: fail on stale)
 ```
 
 Without the root Makefile targets: `make -f mk/contracts.mk contracts-check`, or

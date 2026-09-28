@@ -373,8 +373,7 @@
       "area": "dx",
       "pattern": "\\baudit-engine\\b",
       "kind": "regex",
-      "note": "The compose service is named engine. warn until docker-compose.yml and config/prometheus.yml rename the legacy audit-engine service; then error.",
-      "level": "warn"
+      "note": "The compose service is named engine (docker-compose.yml and config/prometheus.yml renamed it in S0)."
     },
     {
       "area": "dx",
