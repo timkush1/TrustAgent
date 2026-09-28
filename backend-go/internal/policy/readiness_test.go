@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/truthtable/contracts"
+
 	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/decision"
 )
@@ -269,4 +271,30 @@ routes:
 		t.Fatal(err)
 	}
 	contractstest.ValidateJSON(t, "policy.v1.schema.json#/$defs/RouteSettings", b)
+}
+
+// TestDowngradeMessagesMatchCopy: the downgrade messages are contracts/ui/copy.v1.json's, and
+// every code has one.
+func TestDowngradeMessagesMatchCopy(t *testing.T) {
+	b, err := contracts.FS.ReadFile("ui/copy.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Copy struct {
+			Downgrades map[string]string `json:"downgrades"`
+		} `json:"copy"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(doc.Copy.Downgrades, downgradeMessages) {
+		t.Errorf("downgrade messages differ from contracts/ui/copy.v1.json:\ncopy: %v\ncode: %v", doc.Copy.Downgrades, downgradeMessages)
+	}
+	for _, code := range []string{DowngradeStreamNotBuffered, DowngradeUncalibrated, DowngradeSnapshotChanged, DowngradeBudget,
+		DowngradeBreakerOpen, DowngradeDecisionModelOff, DowngradeTrustsUserContext} {
+		if downgradeMessages[code] == "" {
+			t.Errorf("no message for %s", code)
+		}
+	}
 }
