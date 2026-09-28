@@ -79,6 +79,45 @@ def test_a_rotated_file_is_picked_up(tmp_path: Path) -> None:
     assert source.current() == "second-token"
 
 
+def test_a_same_size_token_replaced_by_rename_is_picked_up(tmp_path: Path) -> None:
+    # Tokens have a fixed length; an atomic rewrite (write + rename) changes the
+    # inode even when size and mtime granularity would not show the change.
+    path = tmp_path / "internal.token"
+    path.write_text("token-aaaa", encoding="utf-8")
+    source = InternalTokenSource(path=path, clock=FakeClock())
+    assert source.current() == "token-aaaa"
+
+    staged = tmp_path / "internal.token.tmp"
+    staged.write_text("token-bbbb", encoding="utf-8")
+    staged.replace(path)
+    assert source.matches("token-bbbb")
+
+
+@pytest.mark.parametrize("change", ["deleted", "emptied"])
+def test_a_known_token_survives_a_missing_or_empty_file(tmp_path: Path, change: str) -> None:
+    # Fail closed: once the engine has a token it never goes back to accepting
+    # unauthenticated calls (e.g. the file caught mid-rewrite, or a lost volume).
+    path = tmp_path / "internal.token"
+    path.write_text(TOKEN, encoding="utf-8")
+    clock = FakeClock()
+    source = InternalTokenSource(path=path, clock=clock)
+    assert source.current() == TOKEN
+
+    if change == "deleted":
+        path.unlink()
+    else:
+        path.write_text("   \n", encoding="utf-8")
+    clock.now += 1.5
+    assert source.current() == TOKEN
+    assert source.refresh() == TOKEN
+    assert source.matches(TOKEN)
+    assert not source.matches("")
+
+    path.write_text("rotated-token", encoding="utf-8")  # the proxy writes a new one
+    clock.now += 1.5
+    assert source.current() == "rotated-token"
+
+
 def test_matches_rechecks_the_file_immediately(tmp_path: Path) -> None:
     path = tmp_path / "internal.token"
     path.write_text("first", encoding="utf-8")
@@ -156,6 +195,18 @@ async def test_non_loopback_bind_without_a_token_is_refused(tmp_path: Path) -> N
     assert sum(sleeps) == pytest.approx(30.0)  # waited the full 30 s
 
 
+async def test_non_loopback_bind_without_a_token_file_is_refused_at_once() -> None:
+    # No token and no token file configured: there is nothing to wait for.
+    sleeps: List[float] = []
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    with pytest.raises(InternalTokenError, match="refusing to listen on 0.0.0.0"):
+        await check_bind("0.0.0.0", token_source("", ""), sleep=sleep)
+    assert sleeps == []
+
+
 # ---------------------------------------------------------------------------
 # Interceptor over a real in-process server
 # ---------------------------------------------------------------------------
@@ -214,6 +265,20 @@ async def test_every_rpc_is_guarded(guarded_target: str) -> None:
             with pytest.raises(aio.AioRpcError) as exc_info:
                 await call(message, timeout=RPC_TIMEOUT_S)
             assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+async def test_a_deleted_token_file_keeps_rpcs_guarded(tmp_path: Path) -> None:
+    path = tmp_path / "internal.token"
+    path.write_text(TOKEN, encoding="utf-8")
+    source = token_source("", str(path))
+    async for target in _serve(source):
+        assert (await _health(target, TOKEN)).version
+        path.unlink()
+        source.refresh()  # the file check the interceptor makes at most once a second
+        with pytest.raises(aio.AioRpcError) as exc_info:
+            await _health(target, None)
+        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert (await _health(target, TOKEN)).version
 
 
 async def test_without_a_token_every_rpc_is_accepted(tmp_path: Path) -> None:

@@ -14,7 +14,10 @@ engine mounts read-only).
   to 30 s for the token file first, because the proxy may start after the
   engine and write it then.
 - The file is re-read when it changes, so a token the proxy rotates is picked
-  up without restarting the engine.
+  up without restarting the engine. Once a token is known the engine keeps
+  requiring one: a token file that disappears or reads empty (e.g. caught
+  mid-rewrite) keeps the last token instead of opening the engine to
+  unauthenticated calls.
 
 Token values are never logged.
 """
@@ -32,13 +35,22 @@ from grpc import aio
 
 logger = logging.getLogger(__name__)
 
-INTERNAL_TOKEN_METADATA = "x-trustagent-internal"
-DEFAULT_TOKEN_FILE = "/var/lib/trustagent-internal/internal.token"
+INTERNAL_TOKEN_METADATA = "x-trustagent-internal"  # nosec B105 - a metadata key, not a secret
+DEFAULT_TOKEN_FILE = (  # nosec B105 - where the token lives, not the token
+    "/var/lib/trustagent-internal/internal.token"
+)
 TOKEN_WAIT_S = 30.0
 TOKEN_POLL_S = 0.5
 
 # A changed token file is noticed within this many seconds.
 _FILE_RECHECK_S = 1.0
+
+# "No token configured".
+_NO_TOKEN = ""  # nosec B105 - the absence of a token, not a secret
+
+# What identifies one version of the token file: inode (an atomic rename
+# replaces it), modification time and size.
+_FileStamp = Tuple[int, int, int]
 
 
 class InternalTokenError(RuntimeError):
@@ -59,34 +71,46 @@ def is_loopback_host(host: str) -> bool:
 class InternalTokenSource:
     """
     The current internal token: the explicit token, else the token file's
-    contents (re-read when the file changes). "" when there is none.
+    contents (re-read when the file changes). "" when there is none yet.
+
+    Once the file has yielded a token, a missing or empty file keeps that
+    token: the engine never drops back to accepting unauthenticated calls
+    while it runs (it may be listening on a non-loopback address).
     """
 
     def __init__(
         self,
-        token: str = "",
+        token: str = _NO_TOKEN,
         path: Optional[Path] = None,
         clock: Callable[[], float] = time.monotonic,
     ):
         self._token = token.strip()
         self.path = path
         self._clock = clock
-        self._file_token = ""
-        self._file_stamp: Optional[Tuple[int, int]] = None
+        self._file_token = _NO_TOKEN
+        self._file_stamp: Optional[_FileStamp] = None
         self._checked_at: Optional[float] = None
 
     @property
     def from_env(self) -> bool:
         return bool(self._token)
 
-    def _stamp(self) -> Optional[Tuple[int, int]]:
+    def _stamp(self) -> Optional[_FileStamp]:
         if self.path is None:
             return None
         try:
             stat = self.path.stat()
         except OSError:
             return None
-        return (stat.st_mtime_ns, stat.st_size)
+        return (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+    def _read_file(self) -> str:
+        if self.path is None:
+            return _NO_TOKEN
+        try:
+            return self.path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return _NO_TOKEN
 
     def refresh(self) -> str:
         """Re-read the token file now if it changed; return the current token."""
@@ -94,18 +118,22 @@ class InternalTokenSource:
             return self._token
         self._checked_at = self._clock()
         stamp = self._stamp()
-        if stamp != self._file_stamp:
-            self._file_stamp = stamp
-            token = ""
-            if stamp is not None and self.path is not None:
-                try:
-                    token = self.path.read_text(encoding="utf-8").strip()
-                except OSError:
-                    token = ""
+        if stamp == self._file_stamp:
+            return self._file_token
+        self._file_stamp = stamp
+        token = self._read_file() if stamp is not None else _NO_TOKEN
+        if token:
             if token != self._file_token:
-                if token:
-                    logger.info(f"Internal token loaded from {self.path}")
+                replaced = bool(self._file_token)
+                logger.info(
+                    f"Internal token {'reloaded' if replaced else 'loaded'} from {self.path}"
+                )
                 self._file_token = token
+        elif self._file_token:
+            logger.warning(
+                f"Internal token file {self.path} is missing or empty; "
+                "keeping the last token (RPCs still need it)"
+            )
         return self._file_token
 
     def current(self) -> str:
@@ -158,6 +186,12 @@ async def check_bind(
             f"No internal token configured; accepting unauthenticated RPCs on loopback {host}"
         )
         return
+    if source.path is None:
+        raise InternalTokenError(
+            f"refusing to listen on {host} without an internal token: set "
+            "TRUTHTABLE_INTERNAL_TOKEN or TRUTHTABLE_INTERNAL_TOKEN_FILE, or bind "
+            "GRPC_HOST=127.0.0.1"
+        )
     logger.info(
         f"Waiting up to {wait_s:g}s for the internal token file {source.path} "
         f"(needed to listen on {host})"
