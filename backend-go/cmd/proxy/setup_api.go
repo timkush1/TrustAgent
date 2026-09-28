@@ -13,6 +13,10 @@ import (
 // recoveryCommand mints a recovery setup token while an admin credential exists (SPEC §7.5).
 const recoveryCommand = "docker compose exec proxy /proxy -new-setup-token -force"
 
+// setupAnnounceTimeout bounds the boot-time setup check and token mint: a database that hangs must
+// not keep the proxy from starting (the token can be minted later with -new-setup-token).
+var setupAnnounceTimeout = 10 * time.Second
+
 // setupStatusBody is api.ts SetupStatus (GET /api/setup/status, public).
 type setupStatusBody struct {
 	SetupRequired   bool   `json:"setup_required"`
@@ -44,6 +48,8 @@ func (h *authzAPI) setupStatus(c *gin.Context) {
 // admin credential exists (SPEC §7.5: printed at every proxy start). Only the stdout line carries
 // the token; the log says where to look.
 func (s *server) announceSetup(ctx context.Context, out io.Writer) {
+	ctx, cancel := context.WithTimeout(ctx, setupAnnounceTimeout)
+	defer cancel()
 	setup := s.gateway.auth.Setup()
 	if !s.gateway.auth.HasStore() {
 		if required, _ := setup.Required(ctx); required {
@@ -54,7 +60,7 @@ func (s *server) announceSetup(ctx context.Context, out io.Writer) {
 	printed, exp, err := setup.Announce(ctx, out, s.cfg.Auth.SetupToken)
 	switch {
 	case err != nil:
-		s.log.Error("the setup token could not be created", "err", err)
+		s.log.Error("the setup token could not be created; mint one later with -new-setup-token (make setup-url)", "err", err)
 	case printed:
 		s.log.Warn("dashboard setup required: open the SETUP URL printed on stdout (docker compose logs proxy | grep -m1 SETUP)",
 			"expires_at", exp.UTC().Format(time.RFC3339), "new_url", "make setup-url")

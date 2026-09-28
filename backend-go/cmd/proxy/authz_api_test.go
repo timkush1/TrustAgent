@@ -20,6 +20,7 @@ import (
 	"github.com/truthtable/backend-go/internal/authz/authztest"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/contractstest"
+	"github.com/truthtable/backend-go/internal/store"
 )
 
 // Keys of the authz endpoint tests (testKey, label trafficgen, is the harness's ingest key).
@@ -67,6 +68,8 @@ type authzEnv struct {
 type authzEnvOpts struct {
 	noStore bool
 	mutate  func(*config.Config)
+	// wrap replaces the store the server sees (for example to simulate a hanging database).
+	wrap func(*authzStore) store.Store
 }
 
 // newAuthzEnv starts a proxy without an audit engine, with env keys (ingest: testKey; read:
@@ -86,6 +89,9 @@ func newAuthzEnv(t *testing.T, o authzEnvOpts) *authzEnv {
 	if !o.noStore {
 		env.st = &authzStore{memStore: newMemStore(), Store: authztest.New()}
 		d.store = env.st
+		if o.wrap != nil {
+			d.store = o.wrap(env.st)
+		}
 	}
 	srv, err := newServer(d)
 	if err != nil {
@@ -288,6 +294,39 @@ func TestSetupAPIWithoutPersistence(t *testing.T) {
 	}
 	if resp, body := env.call(http.MethodGet, "/api/keys", nil, nil, authz.HeaderKey, testKey); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("keys need admin: %d %s", resp.StatusCode, body)
+	}
+}
+
+// hangingAdminStore is a database whose admin-key check hangs until the caller gives up.
+type hangingAdminStore struct{ *authzStore }
+
+func (hangingAdminStore) AdminKeyExists(ctx context.Context) (bool, error) {
+	<-ctx.Done()
+	return false, ctx.Err()
+}
+
+// TestAnnounceSetupIsBounded: a database that hangs at boot does not keep the proxy from starting.
+func TestAnnounceSetupIsBounded(t *testing.T) {
+	prev := setupAnnounceTimeout
+	setupAnnounceTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { setupAnnounceTimeout = prev })
+	env := newAuthzEnv(t, authzEnvOpts{
+		mutate: func(c *config.Config) { c.Auth.AdminKeys = nil },
+		wrap:   func(s *authzStore) store.Store { return hangingAdminStore{s} },
+	})
+	var out bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		env.srv.announceSetup(context.Background(), &out)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("announceSetup blocked on a hanging database")
+	}
+	if out.Len() != 0 || !strings.Contains(env.logs.String(), "the setup token could not be created") {
+		t.Errorf("no SETUP line; the failure is logged: %q\n%s", out.String(), env.logs.String())
 	}
 }
 
