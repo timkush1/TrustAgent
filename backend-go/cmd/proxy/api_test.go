@@ -326,6 +326,11 @@ func TestHealthAndStatus(t *testing.T) {
 		st.Persistence.Migration == nil || st.Policy.FileStatus != "ok" || strings.Join(st.Auth.CallerScopes, ",") != "ingest,read,content" {
 		t.Errorf("status %+v", st)
 	}
+	// The fake engine, like the S0 engine, reports a healthy judge dependency without naming the
+	// judge: the judge is up and the verifier runs.
+	if st.Judge.State != stateUp || st.Verifier.Effective != "llm" {
+		t.Errorf("judge %+v, verifier %+v", st.Judge, st.Verifier)
+	}
 	if code, _ := env.get("/api/status", ""); code != http.StatusUnauthorized {
 		t.Errorf("status without a key: HTTP %d", code)
 	}

@@ -322,7 +322,9 @@ func engineComponent(h grpc.EngineHealth) componentState {
 	return cs
 }
 
-// judgeState is the deep-audit judge's state as the engine reports it.
+// judgeState is the deep-audit judge's state as the engine reports it. judge_provider "none" means
+// the engine runs without a judge; an engine that leaves judge_provider empty (it does not name its
+// judge, like the S0 engine) is judged by its judge dependency alone.
 func judgeState(h grpc.EngineHealth) string {
 	r := h.Response
 	switch {
@@ -330,7 +332,7 @@ func judgeState(h grpc.EngineHealth) string {
 		return stateDisabled
 	case r == nil:
 		return stateUnknown
-	case r.GetJudgeProvider() == "" || r.GetJudgeProvider() == "none":
+	case r.GetJudgeProvider() == "none":
 		return stateDisabled
 	}
 	ok, known := r.GetDependencies()["judge"]
