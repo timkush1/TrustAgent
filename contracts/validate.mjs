@@ -77,7 +77,8 @@ function apiFixtureName(rel) {
 }
 
 // Files in contracts/ that are not contract data.
-const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|(^|\/)\.gitkeep$/;
+// tools/ holds generators (contracts/tools/api-schema), not contract data.
+const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|^tools\/|(^|\/)\.gitkeep$/;
 
 const EXTERNAL = [
   { file: 'config/policies.yaml', schema: 'policy.v1' },
