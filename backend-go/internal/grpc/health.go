@@ -24,7 +24,8 @@ type HealthChecker interface {
 }
 
 // EngineInfoSource is the optional GetEngineInfo RPC; the pinger fetches it when the engine
-// (re)appears or changes version, since what it describes only changes with a restart.
+// (re)appears or its health answer shows a different setup (version, judge, knowledge, runtime
+// configuration), since what it describes only changes with a restart or a runtime update.
 type EngineInfoSource interface {
 	EngineInfo(ctx context.Context) (*pb.EngineInfo, error)
 }
@@ -125,14 +126,14 @@ func (p *Pinger) Check(ctx context.Context) EngineHealth {
 	return h
 }
 
-// engineInfo keeps the cached GetEngineInfo answer while the same engine version stays reachable,
-// and asks again when the engine (re)appears, changes version, or was never asked successfully.
+// engineInfo keeps the cached GetEngineInfo answer while the same engine stays reachable, and asks
+// again when the engine (re)appears, was never asked successfully, or reports a different setup.
 func (p *Pinger) engineInfo(ctx context.Context, prev EngineHealth, resp *pb.HealthResponse) *pb.EngineInfo {
 	src, ok := p.client.(EngineInfoSource)
 	if !ok {
 		return nil
 	}
-	if prev.Info != nil && prev.Reachable() && prev.Response.GetVersion() == resp.GetVersion() {
+	if prev.Info != nil && prev.Reachable() && sameEngineSetup(prev.Response, resp) {
 		return prev.Info
 	}
 	info, err := src.EngineInfo(ctx)
@@ -140,6 +141,18 @@ func (p *Pinger) engineInfo(ctx context.Context, prev EngineHealth, resp *pb.Hea
 		return nil
 	}
 	return info
+}
+
+// sameEngineSetup reports whether two health answers describe the same engine setup: its version,
+// judge, knowledge and runtime configuration. An engine restarted within one ping interval (after
+// adding a judge key, say) is never seen down, so its version alone would keep the old
+// GetEngineInfo answer: the old judge's credential source and a stale "no judge configured"
+// warning next to a judge that is now up.
+func sameEngineSetup(a, b *pb.HealthResponse) bool {
+	return a.GetVersion() == b.GetVersion() &&
+		a.GetJudgeProvider() == b.GetJudgeProvider() && a.GetJudgeModel() == b.GetJudgeModel() &&
+		a.GetJudgeFallbackActive() == b.GetJudgeFallbackActive() && a.GetKnowledgeEnabled() == b.GetKnowledgeEnabled() &&
+		a.GetRuntimeConfigVersion() == b.GetRuntimeConfigVersion() && a.GetRuntimeConfigEpoch() == b.GetRuntimeConfigEpoch()
 }
 
 // judgeOnlyMissing reports an unhealthy answer whose only failing dependency is a judge the engine

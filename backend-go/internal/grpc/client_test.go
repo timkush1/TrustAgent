@@ -145,6 +145,41 @@ func TestPingerCachesEngineInfoPerEngineVersion(t *testing.T) {
 	}
 }
 
+func TestPingerAsksEngineInfoAgainWhenTheJudgeChanges(t *testing.T) {
+	// The owner adds a judge key and restarts the engine within one ping interval: same version,
+	// never seen down, but a different judge.
+	health := &pb.HealthResponse{Healthy: false, Version: "2.0.0", JudgeProvider: "none", Dependencies: map[string]bool{"judge": false}}
+	calls := 0
+	eng := enginetest.Start(t, &enginetest.Engine{
+		HealthFunc: func(context.Context) (*pb.HealthResponse, error) { return health, nil },
+		EngineInfoFunc: func(context.Context) (*pb.EngineInfo, error) {
+			calls++
+			info := &pb.EngineInfo{Version: "2.0.0", Judge: &pb.JudgeInfo{EffectiveProvider: health.GetJudgeProvider(), CredentialSource: "none"}}
+			if health.GetJudgeProvider() == "none" {
+				info.Warnings = []string{"no judge configured"}
+			} else {
+				info.Judge.CredentialSource = "env"
+			}
+			return info, nil
+		},
+	})
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	ctx := context.Background()
+	if h := p.Check(ctx); calls != 1 || len(h.Info.GetWarnings()) != 1 {
+		t.Fatalf("no judge: calls %d info %v", calls, h.Info)
+	}
+	health = &pb.HealthResponse{Healthy: true, Version: "2.0.0", JudgeProvider: "anthropic", JudgeModel: "claude-haiku-4-5",
+		Dependencies: map[string]bool{"judge": true}}
+	h := p.Check(ctx)
+	if calls != 2 || len(h.Info.GetWarnings()) != 0 || h.Info.GetJudge().GetCredentialSource() != "env" {
+		t.Errorf("a new judge is asked again: calls %d info %v", calls, h.Info)
+	}
+	p.Check(ctx)
+	if calls != 2 {
+		t.Errorf("the same setup is asked once: calls %d", calls)
+	}
+}
+
 func TestPingerWithoutEngineInfoKeepsHealth(t *testing.T) {
 	eng := enginetest.Start(t, &enginetest.Engine{}) // GetEngineInfo is UNIMPLEMENTED
 	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
