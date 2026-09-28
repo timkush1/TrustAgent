@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { INITIAL_CONNECTION } from '@/data/stream/types';
 import { hello } from '@/test/fixtures';
 import { systemStatus } from '@/test/status';
-import { summarizeHealth, type HealthInputs } from './health';
+import { NO_JUDGE_DETAIL, summarizeHealth, type HealthInputs } from './health';
 
 const healthy = { status: 'ok' as const, version: '2.0.0', demo: true, audit_engine: true };
 const open = { ...INITIAL_CONNECTION, phase: 'open' as const };
@@ -82,5 +82,22 @@ describe('summarizeHealth', () => {
     );
     expect(s.checks.find((c) => c.id === 'database')).toMatchObject({ state: 'info' });
     expect(s.issues).toBe(0);
+  });
+
+  it('reads an engine without a judge as a note, not an outage', () => {
+    const base = systemStatus();
+    const s = summarizeHealth(
+      inputs({
+        status: systemStatus({ judge: { ...base.judge, state: 'disabled', provider: 'none', model: null } }),
+      }),
+    );
+    expect(s.checks.find((c) => c.id === 'judge')).toMatchObject({ state: 'info', detail: NO_JUDGE_DETAIL });
+    expect(s.checks.find((c) => c.id === 'engine')).toMatchObject({ state: 'ok' });
+    expect(s.issues).toBe(0);
+    expect(s.label).toBe('All systems ready');
+
+    // The hello summary alone says the same through the judge state.
+    const lite = summarizeHealth(inputs({ hello: { ...hello(), status: { ...hello().status, judge: 'disabled' } } }));
+    expect(lite.checks.find((c) => c.id === 'judge')).toMatchObject({ state: 'info', detail: NO_JUDGE_DETAIL });
   });
 });

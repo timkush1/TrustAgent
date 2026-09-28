@@ -62,6 +62,9 @@ const decisionModelWords: Record<DecisionModelStatus['state'], { state: CheckSta
   unreachable: { state: 'issue', detail: 'Unreachable' },
 };
 
+/** The judge check's words when the engine runs without a judge. */
+export const NO_JUDGE_DETAIL = 'No judge configured: deep audits come back "Not assessed"';
+
 function proxyCheck(h: HealthInputs['health']): HealthCheck {
   const label = 'Proxy';
   // The latest poll wins: a proxy that answered earlier but fails now is unreachable.
@@ -119,8 +122,15 @@ export function summarizeHealth(inputs: HealthInputs): HealthSummary {
     checks.push({ id: 'engine', label: `${TIER.deep_audit} engine`, state: 'unknown', detail: 'Unknown (status not available)' });
   }
 
+  // An engine started without a judge (judge_provider "none", reported as disabled) is up and
+  // answers every audit "Not assessed": that is a configuration note, not an outage.
   const judgeState = components.judge?.state ?? status?.judge.state ?? lite.judge;
-  checks.push({ id: 'judge', label: `${TIER.deep_audit} judge`, ...componentState(judgeState, 'The judge') });
+  const noJudge = status?.judge.provider === 'none' || (judgeState === 'disabled' && engineState !== 'disabled');
+  checks.push(
+    noJudge
+      ? { id: 'judge', label: `${TIER.deep_audit} judge`, state: 'info', detail: NO_JUDGE_DETAIL }
+      : { id: 'judge', label: `${TIER.deep_audit} judge`, ...componentState(judgeState, 'The judge') },
+  );
 
   if (status) {
     const p = status.persistence;
