@@ -43,13 +43,13 @@ from truthtable.providers.mock import MockLLMProvider, parse_scenario_pack
 RPC_TIMEOUT_S = 5
 
 # New in v2 and implemented (SPEC section 4): Evaluate in S0, GetEngineInfo in
-# P2 (behaviour tests in test_engine_info.py).
-IMPLEMENTED_V2_RPCS = {"Evaluate", "GetEngineInfo"}
+# P2 (behaviour tests in test_engine_info.py), RetrieveContext in P3 (behaviour
+# tests in test_retrieve_context.py).
+IMPLEMENTED_V2_RPCS = {"Evaluate", "GetEngineInfo", "RetrieveContext"}
 
-# New in v2; implemented in later phases (SPEC section 4): RetrieveContext
-# (knowledge profile) in P3, ApplyRuntimeConfig and DraftEvaluator in P4.
+# New in v2; implemented in later phases (SPEC section 4): ApplyRuntimeConfig
+# and DraftEvaluator in P4.
 NEW_RPCS: Dict[str, Any] = {
-    "RetrieveContext": pb.RetrieveContextRequest(query="q", top_k=3, max_chars=2000),
     "ApplyRuntimeConfig": pb.RuntimeConfig(version=1, epoch="epoch-1"),
     "DraftEvaluator": pb.DraftEvaluatorRequest(description="Flags refund promises"),
 }
