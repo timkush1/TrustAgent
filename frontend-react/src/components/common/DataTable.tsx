@@ -2,7 +2,8 @@
  * DataTable: the foundation for long lists (label queue, knowledge claims, keys, benchmark runs).
  * Rows are virtualized with @tanstack/react-virtual inside a scroll viewport, the header stays
  * put while the body scrolls, and the loading, error and empty states of the page contract take
- * the body's place under the header.
+ * the body's place under the header. A later page that fails shows its error under the rows, so
+ * the list never just stops growing.
  *
  * Keyboard: the table is one tab stop. Arrow Up/Down move between rows, Page Up/Down by a screen,
  * Home/End to the first and last row, Enter or Space opens the row (`onRowActivate`). The focused
@@ -47,7 +48,10 @@ export interface DataTableProps<Row> {
   onEndReached?: () => void;
   /** First load in flight: shows the loading state after 200 ms (page contract). */
   isLoading?: boolean;
-  /** A load failed: shows the server's message with Retry. */
+  /**
+   * A load failed: shows the server's message with Retry, in place of the body when there are no
+   * rows yet, or under the rows when a later page failed.
+   */
   error?: unknown;
   onRetry?: () => void;
   /** Shown when there are no rows (default: a plain empty state). */
@@ -113,7 +117,10 @@ export function DataTable<Row>({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan,
+    // Rows start under the sticky header, and a row scrolled to the top must stop below it, never
+    // behind it (WCAG 2.4.11: a focused row is never hidden).
     scrollMargin: HEADER_HEIGHT,
+    scrollPaddingStart: HEADER_HEIGHT,
     getItemKey: (i) => getRowId(rows[i], i),
     rangeExtractor,
   });
@@ -190,10 +197,11 @@ export function DataTable<Row>({
   const gridTemplateColumns = columns.map((c) => c.width ?? 'minmax(0,1fr)').join(' ');
   const rowCount = (totalRows ?? count) < 0 ? -1 : (totalRows ?? count) + 1;
 
+  const failed = error !== undefined && error !== null;
   let state: ReactNode = null;
-  if (count === 0) {
-    if (error !== undefined && error !== null) state = <ErrorState error={error} onRetry={onRetry} className="m-3" />;
-    else if (isLoading) state = showLoading ? <LoadingState rows={4} className="p-3" /> : null;
+  if (failed) state = <ErrorState error={error} onRetry={onRetry} className="m-3" />;
+  else if (count === 0) {
+    if (isLoading) state = showLoading ? <LoadingState rows={4} className="p-3" /> : null;
     else state = empty ?? <EmptyState title="Nothing to show yet" className="m-3" />;
   }
 

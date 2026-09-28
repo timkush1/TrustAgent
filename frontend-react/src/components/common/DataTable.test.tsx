@@ -23,7 +23,7 @@ function renderTable(props: Partial<Parameters<typeof DataTable<Claim>>[0]> = {}
 }
 
 // jsdom has no layout: give every element a 400px-tall box so the virtualizer has a viewport
-// (10 rows of 40px), and a scrollTo that moves scrollTop.
+// (10 rows of 40px), and a scrollTo that moves scrollTop and fires the scroll event.
 const saved = {
   offsetHeight: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight'),
   offsetWidth: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth'),
@@ -36,6 +36,7 @@ beforeAll(() => {
     configurable: true,
     value(this: Element, options: ScrollToOptions | number, y?: number) {
       this.scrollTop = typeof options === 'number' ? (y ?? 0) : (options.top ?? this.scrollTop);
+      this.dispatchEvent(new Event('scroll'));
     },
   });
 });
@@ -140,6 +141,36 @@ describe('DataTable', () => {
     expect(onEndReached).toHaveBeenCalledOnce();
     rerender(<DataTable<Claim> aria-label="Claims" columns={columns} rows={claims.slice(0, 8)} getRowId={(c) => c.id} totalRows={-1} onEndReached={onEndReached} />);
     expect(onEndReached).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a later page's failure under the rows, with Retry", async () => {
+    const onRetry = vi.fn();
+    renderTable({
+      rows: claims.slice(0, 5),
+      totalRows: -1,
+      error: new ApiError({ kind: 'http', status: 503, code: 'unavailable', message: 'Knowledge base is starting' }),
+      onRetry,
+    });
+    expect(rowAt(2)).toHaveTextContent('Claim 0');
+    expect(screen.getByRole('alert')).toHaveTextContent('Knowledge base is starting');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('scrolls a row above the view to just under the sticky header, never behind it', async () => {
+    renderTable();
+    const viewport = screen.getByRole('grid').parentElement as HTMLElement;
+    // A 36px header plus 100 rows of 40px, seen through the 400px viewport.
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, get: () => 36 + claims.length * 40 });
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, get: () => 400 });
+    await userEvent.tab();
+    await userEvent.keyboard('{End}');
+    await waitFor(() => expect(rowAt(101)).toHaveFocus());
+    expect(viewport.scrollTop).toBe(36 + claims.length * 40 - 400);
+    await userEvent.keyboard('{Home}');
+    await waitFor(() => expect(rowAt(2)).toHaveFocus());
+    // The first row sits right under the 36px header, so the list is scrolled to its very top.
+    expect(viewport.scrollTop).toBe(0);
   });
 
   it('pages by a screen of rows with Page Down and Page Up', async () => {
