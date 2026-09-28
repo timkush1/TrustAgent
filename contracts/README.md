@@ -104,14 +104,15 @@ fails every runner.
 1. **draft**: hand-authored semantic vectors, and new cases, start as `draft`. `expected` may be a
    subset of the output. Numbers compare as parsed values within `tolerance` (default `1e-9`); strings
    and arrays compare exactly.
-2. **generated**: Go `cmd/vectorgen` (`make vectors`) fills in mechanical `expected` values and records
-   `generated_by`, and checks the hand-written kinds it can run. A person reviews the diff.
+2. **generated**: Go `cmd/vectorgen` (`make vectors`) fills in mechanical `expected` values
+   and records `generated_by`. A person reviews the diff.
 3. **frozen**: once the Go reference passes the vector and the review is done, `status` becomes `frozen`.
    A frozen vector never changes. A behaviour change adds a new vector (and, if needed, a new evaluator
    or schema version).
 
 `decide` vector inputs are validated against `decide-input.v1`, and `lint` vector specs against `evaluator.v1`.
-The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
+`make vectors` also checks the hand-written kinds that have a Go runner (`decide`, `detectors`) against the
+reference, but never writes their `expected`. The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
 [`vectors/README.md`](vectors/README.md).
 
 ## Presets
@@ -212,7 +213,7 @@ contract PR.
 make contracts-check     # npm ci when needed, then node validate.mjs
 make contracts-test      # the validator's own tests (node --test)
 make contracts-go        # go vet + go test for the embed module
-make vectors             # Go cmd/vectorgen: generate mechanical expected values, check the rest
+make vectors             # Go cmd/vectorgen fills mechanical expected values (VECTORGEN_FLAGS=-check: fail on stale)
 ```
 
 Without the root Makefile targets: `make -f mk/contracts.mk contracts-check`, or
