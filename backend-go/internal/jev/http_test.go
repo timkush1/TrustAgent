@@ -1186,3 +1186,29 @@ func TestCloseStopsKeepWarmForGood(t *testing.T) {
 		t.Error("keep-warm runs after Close")
 	}
 }
+
+func TestBudgetRefusalsTakeNoRateTokens(t *testing.T) {
+	h := newHarness(t, mockupstream.Config{})
+	req := testRequest("")
+	count, _ := decision.CountTokens(map[string]any{"model": DefaultTypeSafeModel, "state": req.State, "questions": req.Questions}, decision.DefaultCPT)
+	estUSD := float64(decision.Overhead+count.Est) * 1000 / 1e6
+	clk := newFakeClock()
+	cl := h.client(BackendTypeSafe, func(c *Config) {
+		c.HTTP.PricePerMTok, c.HTTP.SpendCapUSDDay, c.HTTP.EnforcingReserve = 1000, 2.2*estUSD, 0.5
+		c.HTTP.RPM, c.HTTP.Now = 60, clk.Now // a 10-token bucket that never refills
+	})
+	if _, err := decide(t, cl, req, CallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 15 { // past the soft cap: flag traffic keeps coming
+		if reason, _ := SkipReason(func() error { _, err := decide(t, cl, req, CallOptions{}); return err }()); reason != "budget" {
+			t.Fatalf("call %d: skip %q, want budget", i, reason)
+		}
+	}
+	if _, err := decide(t, cl, req, CallOptions{Enforcing: true}); err != nil {
+		t.Fatalf("an enforcing route still gets its reserve and a rate token: %v", err)
+	}
+	if st := cl.Status(); st.RPMUsed != 2 {
+		t.Errorf("rpm_used %d, want the 2 calls that went out", st.RPMUsed)
+	}
+}

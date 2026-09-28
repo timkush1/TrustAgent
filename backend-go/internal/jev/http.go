@@ -477,7 +477,9 @@ func backoff(e *Error, n int) time.Duration {
 }
 
 // launch admits and starts one attempt. Admission checks the credential, the breaker, the
-// limiter and the budget, in that order, and fails without a vendor request.
+// budget and the limiter, in that order, and fails without a vendor request. The budget goes
+// before the limiter so that calls refused for spend take no rate token: past the soft cap,
+// observe and flag traffic would otherwise drain the bucket that enforcing routes still need.
 func (cl *call) launch(ctx context.Context, hedge bool) *Error {
 	c := cl.c
 	key, e := c.keys.get(ctx)
@@ -493,17 +495,17 @@ func (cl *call) launch(ctx context.Context, hedge bool) *Error {
 		}
 		return &Error{Kind: KindBreakerOpen, Message: msg, Hint: Hint(KindBreakerOpen)}
 	}
+	res, err := c.budget.Reserve(SpendRequest{USD: cl.price.usd(cl.estTokens), Enforcing: cl.opt.Enforcing, KeyLabel: cl.opt.KeyLabel})
+	if err != nil {
+		c.breaker.record(effectNeutral, trial, "")
+		return &Error{Kind: KindBudget, Message: err.Error(), Err: err, Hint: Hint(KindBudget)}
+	}
 	release, kind := c.limiter.acquire(cl.opt.Class)
 	if kind != "" {
+		res.Settle(0)
 		c.breaker.record(effectNeutral, trial, "")
 		metrics.JevRateLimited.WithLabelValues(cl.opt.Class.String()).Inc()
 		return &Error{Kind: kind, Message: "refused by the gateway limiter", Hint: Hint(kind)}
-	}
-	res, err := c.budget.Reserve(SpendRequest{USD: cl.price.usd(cl.estTokens), Enforcing: cl.opt.Enforcing, KeyLabel: cl.opt.KeyLabel})
-	if err != nil {
-		release()
-		c.breaker.record(effectNeutral, trial, "")
-		return &Error{Kind: KindBudget, Message: err.Error(), Err: err, Hint: Hint(KindBudget)}
 	}
 	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.cfg.AttemptTimeout)
 	a := &attempt{n: len(cl.attempts), hedge: hedge, trial: trial, release: release, reservation: res, cancel: cancel, start: time.Now()}
