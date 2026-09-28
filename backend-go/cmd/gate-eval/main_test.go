@@ -446,6 +446,7 @@ func TestPaidBackendNeedsACap(t *testing.T) {
 		{"--concurrency", "0"}, {"--max-cost-usd", "-1"}, {"extra"},
 		{"--backend", "mock", "--policy", repoPolicy, "--route", "nope"},
 		{"--backend", "mock", "--policy", repoPolicy, "--evaluators", "nope@1"},
+		{"--backend", "mock", "--policy", repoPolicy, "--evaluators", "groundedness@1,groundedness@1"},
 		{"--backend", "mock", "--policy", repoPolicy, "--mode", "enforce"},
 	} {
 		if code, _, _ := runCLI(t, "", env(), args...); code != exitUsage {

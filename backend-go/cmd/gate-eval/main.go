@@ -218,6 +218,9 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 			if _, ok := specs[ref]; !ok {
 				return nil, fmt.Errorf("%w: unknown evaluator %q", errUsage, ref)
 			}
+			if slices.ContainsFunc(rc.Evaluators, func(e policy.EvaluatorRef) bool { return e.Ref == ref }) {
+				return nil, fmt.Errorf("%w: --evaluators lists %s twice", errUsage, ref)
+			}
 			rc.Evaluators = append(rc.Evaluators, policy.EvaluatorRef{Ref: ref})
 		}
 	}
