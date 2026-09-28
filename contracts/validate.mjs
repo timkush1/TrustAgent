@@ -62,10 +62,19 @@ const RULES = [
   { re: /^ui\/copy\.v1\.json$/, schema: 'ui-copy.v1' },
   { re: /^ui\/glossary\.v1\.json$/, schema: 'ui-glossary.v1' },
   { re: /^ui\/commands\.v1\.json$/, schema: 'ui-commands.v1' },
-  { re: /^fixtures\/(api|vendor)\/[A-Za-z0-9._-]+\.json$/, schema: null },
+  { re: /^fixtures\/api\/[^/]+\.json$/, schema: 'api.v1', apiFixture: true },
+  { re: /^fixtures\/vendor\/[A-Za-z0-9._-]+\.json$/, schema: null },
   { re: /^vectors\/[^/]+\/[^/]+\.json$/, schema: 'vector.v1' },
   { re: /^superseded\.v1\.json$/, schema: 'superseded.v1' },
 ];
+
+// fixtures/api/<Type>.<case>.json is validated against api.v1.schema.json#/$defs/<Type>. A generic
+// instance such as Page<TraceSummary> is spelled Page-TraceSummary in the file name.
+const API_FIXTURE = /^fixtures\/api\/([A-Z][A-Za-z0-9]*(?:-[A-Z][A-Za-z0-9]*)?)\.([a-z0-9][a-z0-9_-]*(?:\.[a-z0-9][a-z0-9_-]*)*)\.json$/;
+function apiFixtureName(rel) {
+  const m = rel.match(API_FIXTURE);
+  return m && { def: m[1].replace(/^([A-Za-z0-9]+)-([A-Za-z0-9]+)$/, '$1<$2>'), variant: m[2] };
+}
 
 // Files in contracts/ that are not contract data.
 const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|(^|\/)\.gitkeep$/;
@@ -112,7 +121,7 @@ const ajv = new Ajv2020({
 });
 addFormats(ajv);
 
-const docs = new Map(); // rel -> { data, text, schema }
+const docs = new Map(); // rel -> { data, text, schema, fixture? }
 const schemaNames = new Set();
 let parseOnly = 0;
 
@@ -124,9 +133,14 @@ for (const full of walk(ROOT)) {
     error(rel, 'no schema mapping for this path; add a rule to RULES in validate.mjs (or fix the file name)');
     continue;
   }
+  const fixture = rule.apiFixture ? apiFixtureName(rel) : undefined;
+  if (fixture === null) {
+    error(rel, 'an API fixture is named <Type>.<case>.json after the api.v1 definition it holds (Page<T> as Page-T), e.g. TraceDetail.flagged.json');
+    continue;
+  }
   const { data, text } = parse(full, rel);
   if (data === undefined) continue;
-  docs.set(rel, { data, text, schema: rule.schema });
+  docs.set(rel, { data, text, schema: rule.schema, fixture });
   if (rule.schema === '$schema') {
     const name = basename(rel).replace(/\.schema\.json$/, '');
     if (data.$id !== `${SCHEMA_BASE}${basename(rel)}`) error(rel, `$id must be ${SCHEMA_BASE}${basename(rel)}`);
@@ -150,22 +164,32 @@ for (const name of schemaNames) {
   }
 }
 
-function validate(rel, data, schemaName) {
+// validate checks data against a schema, or against one of its $defs when def is given.
+function validate(rel, data, schemaName, def) {
   if (!schemaNames.has(schemaName)) {
     error(rel, `schema ${schemaName} is missing`);
     return false;
   }
+  const label = def ? `${schemaName}#/$defs/${def}` : schemaName;
+  if (def && !Object.hasOwn(docs.get(`schema/${schemaName}.schema.json`)?.data?.$defs ?? {}, def)) {
+    error(rel, `${schemaName}.schema.json has no definition ${def}`);
+    return false;
+  }
   let fn;
   try {
-    fn = ajv.getSchema(`${SCHEMA_BASE}${schemaName}.schema.json`);
+    fn = ajv.getSchema(`${SCHEMA_BASE}${schemaName}.schema.json${def ? `#/$defs/${encodeURIComponent(def)}` : ''}`);
   } catch {
     return false; // compile error already reported
+  }
+  if (!fn) {
+    error(rel, `cannot resolve ${label}`);
+    return false;
   }
   if (fn(data)) return true;
   for (const e of fn.errors.slice(0, 20)) {
     const where = e.instancePath || '/';
     const extra = e.params && Object.keys(e.params).length ? ` ${JSON.stringify(e.params)}` : '';
-    error(rel, `${where} ${e.message}${extra} [${schemaName}]`);
+    error(rel, `${where} ${e.message}${extra} [${label}]`);
   }
   if (fn.errors.length > 20) error(rel, `…and ${fn.errors.length - 20} more schema errors`);
   return false;
@@ -176,7 +200,7 @@ const valid = new Map(); // rel -> data, only documents that passed their schema
 for (const [rel, doc] of docs) {
   if (!doc.schema || doc.schema === '$schema') continue;
   validated++;
-  if (validate(rel, doc.data, doc.schema)) valid.set(rel, doc.data);
+  if (validate(rel, doc.data, doc.schema, doc.fixture?.def)) valid.set(rel, doc.data);
 }
 
 const external = new Map(); // repo-relative path -> { data, schema }
@@ -590,6 +614,38 @@ for (const [rel, doc] of docs) {
   // decide() inputs have a schema of their own; expected may be a subset of decision/v1, so it is not checked.
   if (v.kind === 'decide') validate(`${rel} (input)`, v.input, 'decide-input.v1');
   if (v.kind === 'lint') checkLintVector(rel, v);
+  if (v.kind === 'detectors') checkDetectorVector(rel, v);
+  if (v.kind === 'evidence') {
+    for (const [i, t] of (v.input?.settings?.tag_patterns ?? []).entries()) {
+      checkPortableRegex(rel, `input.settings.tag_patterns[${i}]`, t.pattern, t.flags ?? '');
+    }
+  }
+}
+
+// detectors vectors: an aligned finding that pins its text selects exactly that text of the response
+// (UTF-16 offsets, which JavaScript string indices are).
+function checkDetectorVector(rel, v) {
+  const response = v.input?.response;
+  if (typeof response !== 'string') {
+    error(rel, 'input.response must be a string');
+    return;
+  }
+  for (const [i, f] of (v.expected?.findings ?? []).entries()) {
+    if (!isObj(f) || f.start === -1) continue;
+    checkSpan(rel, `expected.findings[${i}]`, response, f.start, f.end, f.text);
+  }
+}
+
+// checkSpan checks a half-open UTF-16 span [start, end) of text and, when want is a string, that it
+// selects want.
+function checkSpan(rel, where, text, start, end, want) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > text.length) {
+    error(rel, `${where}: [${start}, ${end}) is not a span of a ${text.length}-code-unit text`);
+    return;
+  }
+  if (typeof want === 'string' && text.slice(start, end) !== want) {
+    error(rel, `${where}: [${start}, ${end}) selects ${JSON.stringify(text.slice(start, end))}, not ${JSON.stringify(want)}`);
+  }
 }
 
 // lint vectors: input.spec is a schema-valid evaluator (it may break a hard rule); expected is
@@ -610,6 +666,101 @@ function checkLintVector(rel, v) {
     for (const c of list) if (!known.includes(c)) error(rel, `expected.${key}: unknown code ${JSON.stringify(c)}`);
     if (list.join('\n') !== [...new Set(list)].sort().join('\n')) error(rel, `expected.${key} must be sorted and distinct`);
   }
+}
+
+// ------------------------------------------------------------------------------------------ api fixtures
+
+// fixtures/api holds one golden body per REST response type and WebSocket event (SPEC §2.4, §2.5); msw
+// handlers and Go handler tests start from them. Beyond their api.v1 definition: every required type has
+// a fixture, a WsEvent fixture is named WsEvent.<type>[.<variant>].json, the parts of one trace carry its
+// trace id, gate decisions are decision.v1 documents, and aligned UTF-16 spans (claim spans, verified
+// evidence spans, detector findings) select the text they claim to.
+const REQUIRED_API_FIXTURES = [
+  'HealthStatus', 'ReadyStatus', 'SystemStatus', 'Page<TraceSummary>', 'TraceDetail', 'Page<AuditSummary>', 'AuditDetail',
+  'Page<GateDecisionRow>', 'ApiErrorBody', 'WsEvent',
+];
+const REQUIRED_WS_EVENTS = [
+  'hello', 'hb', 'trace_started', 'gate_decision', 'audit_queued', 'audit_started', 'audit_completed', 'audit_failed',
+  'audit_dropped', 'gap',
+];
+
+const fixtureTypes = new Set();
+const wsEvents = new Set();
+for (const [rel, doc] of docs) {
+  if (!doc.fixture) continue;
+  const { def, variant } = doc.fixture;
+  fixtureTypes.add(def);
+  const f = valid.get(rel);
+  if (!f) continue;
+  if (def === 'TraceDetail') checkTraceDetail(rel, '', f);
+  if (def === 'AuditDetail') checkAudit(rel, '', f);
+  if (def === 'WsEvent') {
+    wsEvents.add(f.type);
+    if (variant.split('.')[0] !== f.type) error(rel, `a WsEvent fixture is named WsEvent.${f.type}[.<variant>].json after its event type`);
+    checkWsEvent(rel, f);
+  }
+}
+for (const def of REQUIRED_API_FIXTURES) {
+  if (!fixtureTypes.has(def)) error('fixtures/api', `no fixture for ${def} (${def.replace(/<(.+)>$/, '-$1')}.<case>.json)`);
+}
+for (const type of REQUIRED_WS_EVENTS) {
+  if (!wsEvents.has(type)) error('fixtures/api', `no fixture for the WebSocket event ${type} (WsEvent.${type}.json)`);
+}
+
+function checkTraceDetail(rel, at, t) {
+  for (const [i, d] of (t.decisions ?? []).entries()) {
+    if (d.trace_id !== t.trace_id) error(rel, `${at}decisions[${i}].trace_id is not the trace's ${t.trace_id}`);
+    checkDecision(rel, `${at}decisions[${i}]`, d, t.body?.response_text);
+  }
+  if (t.audit_detail) {
+    if (t.audit_detail.trace_id !== t.trace_id) error(rel, `${at}audit_detail.trace_id is not the trace's ${t.trace_id}`);
+    if (t.audit.audit_id !== t.audit_detail.audit_id) error(rel, `${at}audit.audit_id is not audit_detail.audit_id`);
+    checkAudit(rel, `${at}audit_detail.`, t.audit_detail);
+  }
+}
+
+// A gate decision view is the stored decision/v1 document; detector findings are offsets into the gated
+// response text (secret findings are masked, so only their span is checked).
+function checkDecision(rel, where, d, responseText) {
+  validate(`${rel} (${where})`, d, 'decision.v1');
+  if (typeof responseText !== 'string') return;
+  for (const det of d.detectors ?? []) {
+    for (const [i, f] of (det.findings ?? []).entries()) {
+      if (f.start === -1) continue;
+      checkSpan(rel, `${where}.detectors[${det.id}].findings[${i}]`, responseText, f.start, f.end,
+        det.id === 'secret_pattern' ? undefined : f.text);
+    }
+  }
+}
+
+function checkAudit(rel, at, a) {
+  for (const [i, c] of (a.claims ?? []).entries()) {
+    const where = `${at}claims[${i}]`;
+    if (c.span && typeof a.llm_response === 'string') {
+      checkSpan(rel, `${where}.span`, a.llm_response, c.span.start, c.span.end, c.span.method === 'exact' ? c.quote ?? undefined : undefined);
+    }
+    for (const [j, s] of (c.evidence_spans ?? []).entries()) {
+      const doc = a.context_used?.[s.doc_index];
+      if (!doc) {
+        if (a.context_used?.length) error(rel, `${where}.evidence_spans[${j}]: doc_index ${s.doc_index} is not in context_used`);
+        continue;
+      }
+      if (doc.id !== s.doc_id) error(rel, `${where}.evidence_spans[${j}]: doc_id ${s.doc_id} is not context_used[${s.doc_index}].id ${doc.id}`);
+      if (typeof doc.text === 'string') {
+        checkSpan(rel, `${where}.evidence_spans[${j}]`, doc.text, s.start, s.end, s.kind === 'quote_verified' && s.text !== null ? s.text : undefined);
+      }
+    }
+  }
+}
+
+function checkWsEvent(rel, e) {
+  const d = e.data ?? {};
+  if (e.type === 'hello' && d.epoch !== e.epoch) error(rel, 'data.epoch is not the envelope epoch');
+  for (const [key, value] of [['trace', d.trace], ['decision', d.decision], ['audit', d.audit]]) {
+    if (value && value.trace_id !== e.trace_id) error(rel, `data.${key}.trace_id is not the envelope trace_id ${e.trace_id}`);
+  }
+  if (e.type === 'gate_decision') checkDecision(rel, 'data.decision', d.decision);
+  if (e.type === 'audit_completed') checkAudit(rel, 'data.audit.', d.audit);
 }
 
 // ------------------------------------------------------------------------------------------ rules

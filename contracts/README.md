@@ -31,7 +31,8 @@ the `cost` vectors.
 | `ui/copy.v1.json` | User-facing strings (banners, wizard, trace detail, savings, limits) | `ui-copy.v1` |
 | `ui/glossary.v1.json` | Plain-language definitions for `<Term id>` tooltips | `ui-glossary.v1` |
 | `ui/commands.v1.json` | Every copyable command | `ui-commands.v1` |
-| `fixtures/api/`, `fixtures/vendor/` | Golden REST/WS bodies (checked against `api.v1`) and sanitized vendor captures | parse-only here |
+| `fixtures/api/<Type>.<case>.json` | One golden REST body or WebSocket event per `api.v1` type (`Page<T>` is spelled `Page-T`); msw handlers and Go handler tests start from them | `api.v1#/$defs/<Type>` |
+| `fixtures/vendor/` | Sanitized vendor captures (P1g) | parse-only |
 | `vectors/<kind>/<name>.json` | Golden vectors; the input and expected shape of each kind is in [`vectors/README.md`](vectors/README.md) | `vector.v1` |
 | `superseded.v1.json` | SPEC Appendix A as data, for `scripts/check-forbidden.mjs` | `superseded.v1` |
 | `go.mod`, `embed.go` | Go module `github.com/truthtable/contracts` exposing `contracts.FS` | |
@@ -103,8 +104,8 @@ fails every runner.
 1. **draft**: hand-authored semantic vectors, and new cases, start as `draft`. `expected` may be a
    subset of the output. Numbers compare as parsed values within `tolerance` (default `1e-9`); strings
    and arrays compare exactly.
-2. **generated**: Go `cmd/vectorgen` (lands in S0; `make vectors`) fills in mechanical `expected` values
-   and records `generated_by`. A person reviews the diff.
+2. **generated**: Go `cmd/vectorgen` (`make vectors`) fills in mechanical `expected` values and records
+   `generated_by`, and checks the hand-written kinds it can run. A person reviews the diff.
 3. **frozen**: once the Go reference passes the vector and the review is done, `status` becomes `frozen`.
    A frozen vector never changes. A behaviour change adds a new vector (and, if needed, a new evaluator
    or schema version).
@@ -143,13 +144,33 @@ mode, with `refund-policy.md` as a `<document>` block in the system prompt when 
 | `refund-contradiction-flag` | groundedness 0.96, contradiction 0.98; `numbers_not_in_evidence` fires on 60 | flag (would block), `ok`, contradicted, reasons `contradiction:critical`, `groundedness:critical`, `det:numbers_not_in_evidence` | high lane: HALLUCINATED, 1 CONTRADICTED claim quoting "60 days" | flagged |
 | `no-evidence-not-assessed` | nothing sent | pass, `not_assessed`, `none` | not_assessed: NOT_ASSESSED, no LLM call | not checked |
 
+## API fixtures
+
+`fixtures/api/<Type>.<case>.json` holds one golden body per REST response type and WebSocket event of the
+`api.v1` core subset (SPEC §2.4, §2.5). `<Type>` is the `api.v1` definition the body validates against
+(`Page<T>` is written `Page-T`); WebSocket fixtures are `WsEvent.<type>[.<variant>].json`. msw handlers and
+Go handler tests start from them, so they tell one consistent, production-like story:
+
+- the three S0 demo scenarios on `support-bot` (flag mode) as live proxy traffic, gated by Jev 1.13 through
+  OpenRouter (`typesafe/jev-1.13-20260917`) and audited by Claude Haiku: a grounded pass, the flagged 60-day
+  refund answer with its gate decision and deep audit, and a trace with no evidence that was not checked;
+- a direct audit whose answer starts with emoji, so its claim spans differ between UTF-16 code units and code
+  points;
+- the WebSocket lifecycle of the flagged trace (`trace_started` to `audit_completed`), plus `hello`, `hb`,
+  `audit_failed`, `audit_dropped` and `gap`, and the error body for 400, 401, 404 and 503.
+
+Ids are UUIDv7 whose time matches `created_at`; hashes, token counts and detector findings come from the Go
+reference (the frozen `s0-*` compile vectors), costs from `pricing/prices.v1.json`, and audit scores from the
+scoring v2 formulas (SPEC §3.2). When `api.ts` changes, regenerate `api.v1` and update the fixtures in the same
+contract PR.
+
 ## Validation
 
 ```bash
 make contracts-check     # npm ci when needed, then node validate.mjs
 make contracts-test      # the validator's own tests (node --test)
 make contracts-go        # go vet + go test for the embed module
-make vectors             # placeholder until cmd/vectorgen lands in S0
+make vectors             # Go cmd/vectorgen: generate mechanical expected values, check the rest
 ```
 
 Without the root Makefile targets: `make -f mk/contracts.mk contracts-check`, or
@@ -171,7 +192,12 @@ and then runs the cross-file checks JSON Schema cannot express:
 - the key registry: unique names and aliases, valid defaults per kind, no secret defaults, `VITE_*`
   keys exactly the build keys and never secret, at most 15 non-advanced keys (`.env.example`);
 - vectors: known kind, kind matches the directory, name matches the file; `decide` inputs match
-  `decide-input.v1`; `lint` specs match `evaluator.v1` and `expected` lists known codes, sorted;
+  `decide-input.v1`; `lint` specs match `evaluator.v1` and `expected` lists known codes, sorted; pinned
+  `detectors` findings select their text (UTF-16 offsets); `evidence` tag patterns are portable;
+- API fixtures: the file name names an `api.v1` definition (`WsEvent.<type>[.<variant>].json` for events)
+  and the fixture validates against it; every core response type and WebSocket event has a fixture; the
+  parts of a trace carry its id; gate decisions also validate against `decision.v1`; claim spans, verified
+  evidence spans and detector findings select the text they claim to (UTF-16 offsets);
 - rules: every `{pattern, flags}` in `rules/` (and every policy `tag_patterns` entry) compiles in JS, uses
   only the flags `i`, `m` and `s`, and has no lookaround, backreference or inline flags (`go test` compiles
   the same patterns, and every schema `pattern`, with Go's RE2);

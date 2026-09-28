@@ -3,7 +3,7 @@
 // accept a realistic document and reject broken ones. Run with `npm test` (node --test).
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -366,6 +366,66 @@ describe('validate.mjs', () => {
     assert.match(r.out, /double-negative-instructions\.json \(input\.spec\): \/category must be equal to one of the allowed values/);
     assert.match(r.out, /expected\.lints: unknown code "made_up_lint"/);
     assert.match(r.out, /expected\.lints must be sorted and distinct/);
+  });
+
+  test('detector vector findings select their text; evidence tag patterns are portable', () => {
+    const sb = sandbox();
+    sb.edit('vectors/detectors/numbers-utf16-offsets-after-emoji.json', (v) => {
+      v.expected.findings[0].start -= 2; // two code units early
+    });
+    sb.edit('vectors/detectors/quotes-misquoted-policy.json', (v) => { v.expected.findings[0].end = 999; });
+    sb.edit('vectors/evidence/route-tag-patterns-and-crlf.json', (v) => { v.input.settings.tag_patterns[0].flags = 'g'; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /numbers-utf16-offsets-after-emoji\.json: expected\.findings\[0\]: \[31, 34\) selects "n 7", not "7"/);
+    assert.match(r.out, /quotes-misquoted-policy\.json: expected\.findings\[0\]: \[17, 999\) is not a span/);
+    assert.match(r.out, /route-tag-patterns-and-crlf\.json: input\.settings\.tag_patterns\[0\]: flags "g" must be a subset of "ims"/);
+  });
+
+  test('API fixtures are named after their api.v1 type and cover the core responses and events', () => {
+    const sb = sandbox();
+    const api = (name) => join(sb.root, 'fixtures', 'api', name);
+    renameSync(api('HealthStatus.ok.json'), api('health.json'));
+    renameSync(api('WsEvent.gap.json'), api('WsEvent.hb.slow-consumer.json'));
+    rmSync(api('WsEvent.audit_dropped.json'));
+    sb.write('fixtures/api/NoSuchType.example.json', {});
+    sb.edit('fixtures/api/Page-TraceSummary.recent.json', (p) => { p.items[0].gate_status = 'thinking'; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /fixtures\/api\/health\.json: an API fixture is named <Type>\.<case>\.json/);
+    assert.match(r.out, /fixtures\/api: no fixture for HealthStatus \(HealthStatus\.<case>\.json\)/);
+    assert.match(r.out, /WsEvent\.hb\.slow-consumer\.json: a WsEvent fixture is named WsEvent\.gap\[\.<variant>\]\.json/);
+    assert.match(r.out, /fixtures\/api: no fixture for the WebSocket event audit_dropped \(WsEvent\.audit_dropped\.json\)/);
+    assert.match(r.out, /NoSuchType\.example\.json: api\.v1\.schema\.json has no definition NoSuchType/);
+    assert.match(r.out, /Page-TraceSummary\.recent\.json: \/items\/0\/gate_status .*\[api\.v1#\/\$defs\/Page<TraceSummary>\]/);
+  });
+
+  test('API fixtures keep trace ids, decision.v1 and UTF-16 spans consistent', () => {
+    const sb = sandbox();
+    sb.edit('fixtures/api/TraceDetail.refund-contradiction-flag.json', (t) => {
+      t.audit_detail.claims[0].span.start -= 3;
+      t.audit_detail.claims[0].evidence_spans[0].end += 1;
+      t.decisions[0].detectors[0].findings[0].end += 1;
+      t.decisions[0].reasons.push('made_up_reason');
+      t.audit_detail.trace_id = t.decisions[0].trace_id.replace(/.$/, '0');
+    });
+    sb.edit('fixtures/api/AuditDetail.direct-astral-utf16-spans.json', (a) => {
+      // Code-point offsets instead of UTF-16 ones: the two-unit emoji is counted once.
+      a.claims[0].span = { ...a.claims[0].span, start: a.claims[0].span.start - 1, end: a.claims[0].span.end - 1 };
+      a.claims[1].evidence_spans[0].doc_id = 'another-doc';
+    });
+    sb.edit('fixtures/api/WsEvent.audit_completed.json', (e) => { e.data.audit.trace_id = e.data.audit.audit_id; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    const t = /TraceDetail\.refund-contradiction-flag\.json/.source;
+    assert.match(r.out, new RegExp(`${t}: audit_detail\\.claims\\[0\\]\\.span: \\[30, 40\\) selects "in 60 days", not "60 days"`));
+    assert.match(r.out, new RegExp(`${t}: audit_detail\\.claims\\[0\\]\\.evidence_spans\\[0\\]: \\[0, 57\\) selects`));
+    assert.match(r.out, new RegExp(`${t}: decisions\\[0\\]\\.detectors\\[numbers_not_in_evidence\\]\\.findings\\[0\\]: \\[33, 36\\) selects "60 "`));
+    assert.match(r.out, new RegExp(`${t} \\(decisions\\[0\\]\\): /reasons/3 must match pattern .*\\[decision\\.v1\\]`));
+    assert.match(r.out, new RegExp(`${t}: audit_detail\\.trace_id is not the trace's`));
+    assert.match(r.out, /AuditDetail\.direct-astral-utf16-spans\.json: claims\[0\]\.span: \[7, 24\) selects " We ship to Canad", not "We ship to Canada"/);
+    assert.match(r.out, /claims\[1\]\.evidence_spans\[0\]: doc_id another-doc is not context_used\[0\]\.id shipping\.md/);
+    assert.match(r.out, /WsEvent\.audit_completed\.json: data\.audit\.trace_id is not the envelope trace_id/);
   });
 
   test('every outcome is defined and reachable', () => {

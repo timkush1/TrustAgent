@@ -1,0 +1,9 @@
+{
+  "v": 2,
+  "seq": 825,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "audit_dropped",
+  "ts": "2026-09-28T10:17:14.88Z",
+  "trace_id": "01a0e784-545c-75e1-9b7c-0a4f28d63b0e",
+  "data": {"audit_id": null, "reason": "llm_budget"}
+}
