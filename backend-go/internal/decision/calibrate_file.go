@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // The calibration.v1 file ("thresholds JSON", SPEC §2.11, contracts/schema/calibration.v1.schema.json)
@@ -232,6 +233,9 @@ func NewCalibrationEntry(target CalibrationTarget, ctx FitContext, fit *Fit, src
 	fields := slices.Clone(ctx.StateFields)
 	slices.Sort(fields)
 	ctx.StateFields = slices.Compact(fields)
+	if ctx.StateFields == nil {
+		ctx.StateFields = []string{}
+	}
 	if ctx.Partition == "" {
 		ctx.Partition = CalibrationPartitionSingle
 	}
@@ -279,7 +283,8 @@ func (f *CalibrationFile) Upsert(e CalibrationFileEntry) bool {
 }
 
 // ParseCalibrationFile decodes a calibration file strictly (unknown members are errors) and checks
-// it with Check.
+// it with Check. The gateway has no JSON Schema validator at run time, so an imported file is
+// accepted only through this function.
 func ParseCalibrationFile(b []byte) (*CalibrationFile, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
@@ -296,22 +301,41 @@ func ParseCalibrationFile(b []byte) (*CalibrationFile, error) {
 	return &f, nil
 }
 
-// Check reports what the schema cannot: the family matches the snapshot, each table is a valid
-// calibration table, Platt parameters are present exactly for Platt entries, the counts agree
-// (n = n_pos + n_neg = label_source total), target keys are unique, and each entry's quality is
-// the one DeriveQuality gives. Importers re-derive quality instead of trusting it; Check fails on
-// a mismatch so that a file never claims more than its labels support.
+// Check validates a calibration file as contracts/schema/calibration.v1.schema.json does, and
+// what the schema cannot: the family matches the snapshot, each table is a valid calibration
+// table, Platt parameters are present exactly for Platt entries, the counts agree
+// (n = n_pos + n_neg = label_source total), target keys are unique, the recommended warn_at is not
+// above critical_at (the SPEC §2.8 rule warn_at <= critical_at an adopted pair must meet), and
+// each entry's quality is the one DeriveQuality gives. Importers re-derive quality instead of
+// trusting it; Check fails on a mismatch so that a file never claims more than its labels support.
+// A member a strict decode leaves at its zero value (a missing array, target kind or partition)
+// fails the check as the schema's required rule would.
 func (f *CalibrationFile) Check() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 	if f.Schema != CalibrationSchemaID {
 		add("schema is %q, want %q", f.Schema, CalibrationSchemaID)
 	}
-	if f.DecisionModel.Snapshot == "" {
-		add("decision_model.snapshot is empty")
+	if f.CreatedAt.IsZero() {
+		add("created_at is missing")
+	}
+	if n := utf8.RuneCountInString(f.GeneratedBy); n < 1 || n > 200 {
+		add("generated_by has %d characters, want 1 to 200", n)
+	}
+	if !slices.Contains(calibrationBackends, f.DecisionModel.Backend) {
+		add("decision_model.backend %q, want one of %s", f.DecisionModel.Backend, strings.Join(calibrationBackends, ", "))
+	}
+	if n := utf8.RuneCountInString(f.DecisionModel.Snapshot); n < 1 || n > 200 {
+		add("decision_model.snapshot has %d characters, want 1 to 200", n)
 	}
 	if want := SnapshotFamily(f.DecisionModel.Snapshot); f.DecisionModel.Family != want {
 		add("decision_model.family is %q, want %q", f.DecisionModel.Family, want)
+	}
+	if f.Entries == nil {
+		add("entries is missing")
+	}
+	if f.Warnings == nil {
+		add("warnings is missing")
 	}
 	seen := map[string]bool{}
 	for i, e := range f.Entries {
@@ -321,19 +345,8 @@ func (f *CalibrationFile) Check() error {
 		} else {
 			seen[key] = true
 		}
-		if err := CheckCalibrationTable(e.Table); err != nil {
-			add("%s: %v", at, err)
-		}
-		switch {
-		case e.Method == MethodPlatt && e.Platt == nil:
-			add("%s: a platt entry needs platt parameters", at)
-		case e.Method == MethodIsotonic && e.Platt != nil:
-			add("%s: an isotonic entry has platt parameters", at)
-		case e.Method != MethodPlatt && e.Method != MethodIsotonic:
-			add("%s: method %q, want isotonic or platt", at, e.Method)
-		}
-		if e.N != e.NPos+e.NNeg || e.N != e.LabelSource.Total() {
-			add("%s: n = %d, but n_pos + n_neg = %d and label_source counts %d", at, e.N, e.NPos+e.NNeg, e.LabelSource.Total())
+		for _, p := range e.check() {
+			add("%s: %s", at, p)
 		}
 		if want := DeriveQuality(f.DecisionModel.Snapshot, e.LabelSource, e.NPos, e.NNeg, false); e.Quality != want {
 			add("%s: quality %q, but its labels support %q", at, e.Quality, want)
@@ -343,4 +356,114 @@ func (f *CalibrationFile) Check() error {
 		return errors.New("calibration file: " + strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// calibrationBackends are the DecisionBackend values (common.v1).
+var calibrationBackends = []string{"openrouter-decisions", "openrouter-systemone", "typesafe", "compatible", "mock", "off"}
+
+// stateFieldNames are the StateField values (common.v1).
+var stateFieldNames = []string{FieldUserRequest, FieldAssistantResponse, FieldEvidence, FieldSystemInstructions, FieldRules}
+
+// sha256HexPattern is common.v1 Sha256Hex.
+var sha256HexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// isProbability reports a value in [0,1] (NaN is not).
+func isProbability(x float64) bool { return x >= 0 && x <= 1 }
+
+// check returns the problems of one entry that do not depend on the file around it.
+func (e *CalibrationFileEntry) check() []string {
+	var problems []string
+	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
+
+	t := e.Target
+	if t.Kind != CalibrationTargetEvaluator {
+		add("target.kind %q, want %q", t.Kind, CalibrationTargetEvaluator)
+	}
+	if !evaluatorIDPattern.MatchString(t.EvaluatorID) {
+		add("target.evaluator_id %q is not an evaluator id", t.EvaluatorID)
+	}
+	if t.EvaluatorVersion < 1 {
+		add("target.evaluator_version %d, want at least 1", t.EvaluatorVersion)
+	}
+	if !sha256HexPattern.MatchString(t.CalibrationKey) {
+		add("target.calibration_key is not a sha256 hex digest")
+	}
+	if t.ParamsSHA256 != nil && !sha256HexPattern.MatchString(*t.ParamsSHA256) {
+		add("target.params_sha256 is not a sha256 hex digest")
+	}
+
+	c := e.FitContext
+	if c.StateFields == nil {
+		add("fit_context.state_fields is missing")
+	}
+	for i, field := range c.StateFields {
+		if !slices.Contains(stateFieldNames, field) {
+			add("fit_context.state_fields[%d] %q is not a state field", i, field)
+		} else if slices.Index(c.StateFields, field) != i {
+			add("fit_context.state_fields lists %q twice", field)
+		}
+	}
+	if c.Partition != CalibrationPartitionSingle {
+		add("fit_context.partition %q, want %q", c.Partition, CalibrationPartitionSingle)
+	}
+	if !sha256HexPattern.MatchString(c.QuestionSetSHA256) {
+		add("fit_context.question_set_sha256 is not a sha256 hex digest")
+	}
+
+	if err := CheckCalibrationTable(e.Table); err != nil {
+		add("%v", err)
+	}
+	switch {
+	case e.Method == MethodPlatt && e.Platt == nil:
+		add("a platt entry needs platt parameters")
+	case e.Method == MethodIsotonic && e.Platt != nil:
+		add("an isotonic entry has platt parameters")
+	case e.Method != MethodPlatt && e.Method != MethodIsotonic:
+		add("method %q, want isotonic or platt", e.Method)
+	}
+
+	src := e.LabelSource
+	if e.NPos < 0 || e.NNeg < 0 || src.Human < 0 || src.PublicDataset < 0 || src.UniformAudit < 0 || src.Judge < 0 {
+		add("label counts must not be negative")
+	}
+	if e.N != e.NPos+e.NNeg || e.N != src.Total() {
+		add("n = %d, but n_pos + n_neg = %d and label_source counts %d", e.N, e.NPos+e.NNeg, src.Total())
+	}
+	if e.Datasets == nil {
+		add("datasets is missing")
+	}
+	for i, d := range e.Datasets {
+		if d == "" {
+			add("datasets[%d] is empty", i)
+		}
+	}
+	if a := e.Metrics.AUROC; a != nil && !isProbability(*a) {
+		add("metrics.auroc %v, want a value in [0,1]", *a)
+	}
+	if e.Reliability == nil {
+		add("reliability is missing")
+	}
+	for i, b := range e.Reliability {
+		if !isProbability(b.Lo) || !isProbability(b.Hi) || !isProbability(b.MeanPred) || !isProbability(b.FracPos) || b.N < 0 {
+			add("reliability[%d] has a bound, mean or share outside [0,1] or a negative count", i)
+		}
+	}
+
+	r := e.Recommended
+	if r.Space != SpaceCalibrated {
+		add("recommended.space %q, want %q", r.Space, SpaceCalibrated)
+	}
+	if w := r.WarnAt; w != nil && (!isProbability(w.Value) || !isProbability(w.Precision) || !isProbability(w.Recall)) {
+		add("recommended.warn_at has a value, precision or recall outside [0,1]")
+	}
+	if c := r.CriticalAt; c != nil && (!isProbability(c.Value) || !isProbability(c.PrecisionLB95) || c.PredictedPos < 0) {
+		add("recommended.critical_at has a value or bound outside [0,1] or a negative count")
+	}
+	if w, c := r.WarnAt, r.CriticalAt; w != nil && c != nil && w.Value > c.Value {
+		add("recommended.warn_at %v is above critical_at %v", w.Value, c.Value)
+	}
+	if r.CriticalNullReason != nil && *r.CriticalNullReason == "" {
+		add("recommended.critical_null_reason is empty")
+	}
+	return problems
 }

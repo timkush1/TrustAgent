@@ -1,12 +1,14 @@
 package decision_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"math/rand/v2"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/truthtable/contracts"
 
 	"github.com/truthtable/backend-go/internal/contractstest"
@@ -190,5 +192,155 @@ func TestCalibrationFileRoundTrip(t *testing.T) {
 	}
 	if _, err := decision.ParseCalibrationFile(append(b, '{', '}')); err == nil {
 		t.Error("ParseCalibrationFile accepted trailing data")
+	}
+}
+
+// validFileJSON is a schema-valid calibration file with one Platt entry that recommends a warn_at.
+func validFileJSON(t *testing.T) []byte {
+	t.Helper()
+	g := template(t, "groundedness@1")
+	target, err := decision.EvaluatorTarget(g, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qs, _ := decision.SoloQuestionSetSHA256(g)
+	fit := fitFor(t, 240)
+	if fit.Recommended.WarnAt == nil {
+		t.Fatal("the base fit recommends no warn_at")
+	}
+	snapshot := "typesafe/jev-1.13-20260917"
+	e, err := decision.NewCalibrationEntry(target, decision.FitContext{StateFields: g.StateFields, QuestionSetSHA256: qs}, fit,
+		decision.LabelSourceCounts{PublicDataset: 240}, []string{"ragtruth:qa@abc"}, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := decision.NewCalibrationFile("openrouter-decisions", snapshot, "cmd/calibrate@abc1234", time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC))
+	f.Upsert(*e)
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractstest.ValidateJSON(t, "calibration.v1.schema.json", b)
+	if _, err := decision.ParseCalibrationFile(b); err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// TestParseCalibrationFileRejectsWhatTheSchemaRejects mutates a valid file one member at a time.
+// The schema rejects every mutation, and so must ParseCalibrationFile: the gateway has no schema
+// validator at run time, so it is the only check an imported file gets.
+func TestParseCalibrationFileRejectsWhatTheSchemaRejects(t *testing.T) {
+	valid := validFileJSON(t)
+	schema := contractstest.Schema(t, "calibration.v1.schema.json")
+	type obj = map[string]any
+	entry := func(m obj) obj { return m["entries"].([]any)[0].(obj) }
+	member := func(m obj, path ...string) obj {
+		o := entry(m)
+		for _, p := range path {
+			o = o[p].(obj)
+		}
+		return o
+	}
+	for name, mutate := range map[string]func(obj){
+		"created_at missing":    func(m obj) { delete(m, "created_at") },
+		"generated_by empty":    func(m obj) { m["generated_by"] = "" },
+		"generated_by too long": func(m obj) { m["generated_by"] = strings.Repeat("x", 201) },
+		"unknown backend":       func(m obj) { m["decision_model"].(obj)["backend"] = "gpt-4o" },
+		"entries missing":       func(m obj) { delete(m, "entries") },
+		"warnings missing":      func(m obj) { delete(m, "warnings") },
+		"target kind":           func(m obj) { member(m, "target")["kind"] = "kb" },
+		"evaluator id":          func(m obj) { member(m, "target")["evaluator_id"] = "Groundedness" },
+		"evaluator version":     func(m obj) { member(m, "target")["evaluator_version"] = 0 },
+		"calibration key":       func(m obj) { member(m, "target")["calibration_key"] = "abc" },
+		"params sha256":         func(m obj) { member(m, "target")["params_sha256"] = strings.Repeat("G", 64) },
+		"unknown state field":   func(m obj) { member(m, "fit_context")["state_fields"] = []any{"answer"} },
+		"state field twice":     func(m obj) { member(m, "fit_context")["state_fields"] = []any{"evidence", "evidence"} },
+		"state fields missing":  func(m obj) { delete(member(m, "fit_context"), "state_fields") },
+		"partition":             func(m obj) { member(m, "fit_context")["partition"] = "by_evidence" },
+		"question set sha256":   func(m obj) { member(m, "fit_context")["question_set_sha256"] = "" },
+		"negative n_pos":        func(m obj) { e := entry(m); e["n_pos"], e["n_neg"] = -1, e["n"] },
+		"negative label source": func(m obj) { member(m, "label_source")["human"], member(m, "label_source")["public_dataset"] = -1, 241 },
+		"datasets missing":      func(m obj) { delete(entry(m), "datasets") },
+		"empty dataset":         func(m obj) { entry(m)["datasets"] = []any{""} },
+		"auroc above 1":         func(m obj) { member(m, "metrics")["auroc"] = 1.5 },
+		"reliability missing":   func(m obj) { delete(entry(m), "reliability") },
+		"reliability share":     func(m obj) { entry(m)["reliability"].([]any)[0].(obj)["frac_pos"] = 2 },
+		"recommended space":     func(m obj) { member(m, "recommended")["space"] = "raw" },
+		"warn_at precision":     func(m obj) { member(m, "recommended", "warn_at")["precision"] = 1.2 },
+		"critical_at bound": func(m obj) {
+			member(m, "recommended")["critical_at"] = obj{"value": 0.99, "precision_lb95": 1.5, "predicted_pos": 60}
+		},
+		"critical_at count": func(m obj) {
+			member(m, "recommended")["critical_at"] = obj{"value": 0.99, "precision_lb95": 0.96, "predicted_pos": -1}
+		},
+		"empty critical_null_reason": func(m obj) { member(m, "recommended")["critical_null_reason"] = "" },
+	} {
+		var m obj
+		if err := json.Unmarshal(valid, &m); err != nil {
+			t.Fatal(err)
+		}
+		mutate(m)
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if schema.Validate(inst) == nil {
+			t.Errorf("%s: the schema accepts the mutation, so it tests nothing", name)
+		}
+		if _, err := decision.ParseCalibrationFile(b); err == nil {
+			t.Errorf("%s: ParseCalibrationFile accepted a file the schema rejects", name)
+		}
+	}
+
+	// Beyond the schema: a recommended warn_at above critical_at cannot be adopted (SPEC §2.8).
+	var m obj
+	if err := json.Unmarshal(valid, &m); err != nil {
+		t.Fatal(err)
+	}
+	rec := member(m, "recommended")
+	rec["critical_at"], rec["critical_null_reason"] = obj{"value": 0.01, "precision_lb95": 0.96, "predicted_pos": 60}, nil
+	b, _ := json.Marshal(m)
+	if _, err := decision.ParseCalibrationFile(b); err == nil || !strings.Contains(err.Error(), "is above critical_at") {
+		t.Errorf("warn_at above critical_at: %v", err)
+	}
+}
+
+// TestFittedFilesPassCheck: every entry the fitter produces is one Check accepts, whatever the
+// labels and method.
+func TestFittedFilesPassCheck(t *testing.T) {
+	g := template(t, "groundedness@1")
+	target, _ := decision.EvaluatorTarget(g, nil)
+	qs, _ := decision.SoloQuestionSetSHA256(g)
+	r := rand.New(rand.NewPCG(5, 6))
+	for i := range 40 {
+		n := 8 + r.IntN(700)
+		s := make([]decision.LabeledScore, n)
+		for j := range s {
+			x := float64(r.IntN(101)) / 100
+			s[j] = decision.LabeledScore{Risk: x, Fire: r.Float64() < x*x}
+		}
+		s[0].Fire, s[1].Fire, s[2].Fire, s[3].Fire, s[4].Fire, s[5].Fire = true, true, true, false, false, false
+		method := []string{decision.MethodAuto, decision.MethodIsotonic, decision.MethodPlatt}[i%3]
+		fit, err := decision.FitCalibration(s, decision.FitOptions{Method: method})
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := decision.LabelSourceCounts{Human: n / 2, PublicDataset: n - n/2}
+		e, err := decision.NewCalibrationEntry(target, decision.FitContext{QuestionSetSHA256: qs}, fit, src, nil, "typesafe/jev-1.13-20260917")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := decision.NewCalibrationFile("typesafe", "typesafe/jev-1.13-20260917", "test", time.Now())
+		f.Upsert(*e)
+		if err := f.Check(); err != nil {
+			t.Fatalf("fit %d (%s, n=%d): %v", i, method, n, err)
+		}
+		b, _ := json.Marshal(f)
+		contractstest.ValidateJSON(t, "calibration.v1.schema.json", b)
 	}
 }
