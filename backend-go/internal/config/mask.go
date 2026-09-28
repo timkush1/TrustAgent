@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -82,12 +83,17 @@ func (c *Config) Secrets() []string {
 }
 
 // secretPatterns are credential shapes masked wherever they appear (SPEC §7.5 redaction), plus
-// TrustAgent's own minted keys.
+// TrustAgent's own credentials as a request dump shows them (gin's panic recovery prints the
+// request line and headers): minted keys, the X-TrustAgent-Key header, the ta_session cookie and
+// a WebSocket ?ticket=.
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`sk-[A-Za-z0-9_-]{8,}`),
 	regexp.MustCompile(`(?i)(bearer\s+)\S+`),
 	regexp.MustCompile(`(?i)(x-api-key:\s*)\S+`),
 	regexp.MustCompile(`ta_[A-Za-z0-9_-]{43}`),
+	regexp.MustCompile(`(?i)(x-trustagent-key:\s*)\S+`),
+	regexp.MustCompile(`(ta_session=)[^;\s]+`),
+	regexp.MustCompile(`([?&]ticket=)[^&\s#]+`),
 }
 
 // Redactor masks loaded secrets and credential patterns in text and log records. It is safe for
@@ -139,6 +145,24 @@ func (r *Redactor) Redact(s string) string {
 		}
 	}
 	return s
+}
+
+// Writer returns an io.Writer that redacts everything written through it before passing it on to
+// w, for loggers outside slog: gin.DefaultErrorWriter, where gin's panic recovery dumps the request
+// headers (it masks only Authorization). Each Write is redacted on its own; the loggers it serves
+// write whole records at once.
+func (r *Redactor) Writer(w io.Writer) io.Writer { return redactingWriter{w: w, r: r} }
+
+type redactingWriter struct {
+	w io.Writer
+	r *Redactor
+}
+
+func (rw redactingWriter) Write(p []byte) (int, error) {
+	if _, err := io.WriteString(rw.w, rw.r.Redact(string(p))); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 // ReplaceAttr is a slog.HandlerOptions.ReplaceAttr that redacts the message and every string,

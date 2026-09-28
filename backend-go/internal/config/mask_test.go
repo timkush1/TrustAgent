@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestMaskSecretAndDisplayValue(t *testing.T) {
@@ -178,5 +182,49 @@ func TestDumpSpec(t *testing.T) {
 	}
 	if !bytes.HasSuffix(b, []byte("}\n")) || !strings.Contains(string(b), `"field": null`) {
 		t.Error("indented JSON ending in a newline, with null fields for unbound keys")
+	}
+}
+
+// TestRedactingWriterMasksGinRecoveryDumps: gin's panic recovery dumps the request line and
+// headers (masking only Authorization) in debug mode (TRUTHTABLE_LOG_LEVEL=debug) and on a broken
+// pipe; through Redactor.Writer no TrustAgent credential survives.
+func TestRedactingWriterMasksGinRecoveryDumps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() { gin.SetMode(gin.TestMode) })
+	c := LoadWith(LoadOptions{Environ: []string{"TRUTHTABLE_API_KEYS=app=ta-app-secret-0001"}})
+	var buf bytes.Buffer
+	r := gin.New()
+	r.Use(gin.RecoveryWithWriter(c.Redactor().Writer(&buf)))
+	r.GET("/ws", func(*gin.Context) { panic("boom") })
+
+	minted := "ta_" + strings.Repeat("Q", 43)
+	unknownKey := "not-a-configured-key-9f8e7d"
+	session := "eyJzaWQiOiJhYmMifQ.c2lnbmF0dXJlLXZhbHVl"
+	ticket := "tkt-0123456789abcdefghij"
+	req := httptest.NewRequest(http.MethodGet, "/ws?protocol=2&ticket="+ticket, nil)
+	req.Header.Set("X-TrustAgent-Key", unknownKey)
+	req.Header.Set("X-API-Key", "ta-app-secret-0001")
+	req.Header.Set("X-Other", minted)
+	req.Header.Set("Cookie", "theme=dark; ta_session="+session+"; lang=en")
+	gin.SetMode(gin.DebugMode) // the header dump
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	gin.SetMode(gin.TestMode)
+
+	out := buf.String()
+	if !strings.Contains(out, "panic recovered") || !strings.Contains(out, "theme=dark") || !strings.Contains(out, "protocol=2") {
+		t.Fatalf("the dump is still useful:\n%s", out)
+	}
+	for name, secret := range map[string]string{
+		"X-TrustAgent-Key": unknownKey, "env key": "ta-app-secret-0001", "minted key": minted,
+		"session cookie": session, "ticket": ticket,
+	} {
+		if strings.Contains(out, secret) {
+			t.Errorf("the %s survives the recovery dump:\n%s", name, out)
+		}
+	}
+	if w := NewRedactor().Writer(&buf); w == nil {
+		t.Fatal("writer")
+	} else if n, err := w.Write([]byte("Bearer abc")); err != nil || n != len("Bearer abc") {
+		t.Errorf("Write reports the input length: %d %v", n, err)
 	}
 }

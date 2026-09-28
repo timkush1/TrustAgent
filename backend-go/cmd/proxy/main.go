@@ -31,8 +31,12 @@ func main() {
 	if exit {
 		os.Exit(code)
 	}
-	log := newLogger(cfg.LogLevel, cfg.Redactor())
+	redactor := cfg.Redactor()
+	log := newLogger(cfg.LogLevel, redactor)
 	slog.SetDefault(log)
+	// gin's panic recovery dumps request headers (keys, the session cookie) in debug mode and on a
+	// broken pipe; it captures this writer when the router is built.
+	gin.DefaultErrorWriter = redactor.Writer(os.Stderr)
 	if err := run(cfg, log); err != nil {
 		log.Error("TrustAgent proxy stopped", "err", err)
 		os.Exit(1)
