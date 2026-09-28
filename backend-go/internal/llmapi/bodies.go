@@ -126,6 +126,24 @@ func SyntheticChatCompletion(traceID, model string, created int64, text string) 
 	})
 }
 
+// SyntheticResponse is the test-mode answer of any format: SyntheticChatCompletion for
+// openai_chat, a text_completion for openai_completions and a msg_trustagent_<trace32> message
+// (stop_reason end_turn) for anthropic_messages. A streaming test request gets
+// SynthesizeStream(format, SynthStream{TraceID, Created, Model, Text}) instead.
+func SyntheticResponse(format, traceID, model string, created int64, text string) []byte {
+	switch format {
+	case FormatOpenAICompletions:
+		return openAIObject(format, BlockTarget{TraceID: traceID, Created: created}, model, text, FinishReasonStop)
+	case FormatAnthropicMessages:
+		stop := StopReasonEndTurn
+		return marshal(anthropicMessage{
+			ID: SyntheticIDFor(format, traceID), Type: "message", Role: "assistant", Model: model,
+			Content: []anthropicText{{Type: blockText, Text: text}}, StopReason: &stop,
+		})
+	}
+	return SyntheticChatCompletion(traceID, model, created, text)
+}
+
 // marshal encodes v without HTML escaping (SPEC §2.1) and without the encoder's trailing newline.
 // The values are built here from strings, numbers and raw JSON the package validated, so encoding
 // cannot fail.

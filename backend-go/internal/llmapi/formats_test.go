@@ -256,3 +256,28 @@ func TestErrorBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestSyntheticResponse(t *testing.T) {
+	for _, format := range []string{FormatOpenAIChat, FormatOpenAICompletions, FormatAnthropicMessages} {
+		body := SyntheticResponse(format, testTrace, "m", testCreated, "Scripted <answer> & more.")
+		r, err := ParseResponse(format, body)
+		if err != nil {
+			t.Fatalf("%s: %v", format, err)
+		}
+		c, _ := r.Gated()
+		wantFinish := FinishReasonStop
+		if IsAnthropic(format) {
+			wantFinish = StopReasonEndTurn
+		}
+		if c.Text != "Scripted <answer> & more." || c.FinishReason != wantFinish || r.ID != SyntheticIDFor(format, testTrace) || r.Model != "m" {
+			t.Errorf("%s: %s", format, body)
+		}
+	}
+	if string(SyntheticResponse(FormatOpenAIChat, "t", "m", 1, "x")) != string(SyntheticChatCompletion("t", "m", 1, "x")) {
+		t.Error("the chat answer is the S0 one")
+	}
+	if got := string(SyntheticResponse(FormatAnthropicMessages, testTrace, "claude", 1, "Hi")); got !=
+		`{"id":"msg_trustagent_`+testTrace32+`","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"Hi"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}` {
+		t.Errorf("anthropic %s", got)
+	}
+}
