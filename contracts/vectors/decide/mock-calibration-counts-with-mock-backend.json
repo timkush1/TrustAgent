@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "mock-calibration-counts-with-mock-backend",
-  "status": "draft",
+  "status": "frozen",
   "description": "Demo setup: backend mock with a mock-quality identity calibration in calibrated space. Mock quality is usable only because the backend is mock, so both evaluators are calibrated; groundedness 0.97 and contradiction 0.98 block without the uncalibrated cap.",
   "input": {
     "policy": {

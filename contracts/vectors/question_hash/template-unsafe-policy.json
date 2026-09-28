@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-unsafe-policy",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template unsafe_policy@1 (contracts/evaluators/unsafe_policy.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "unsafe_policy@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "be2492b3820cc3c57a02dc4ec8b950e968895f1db0aef17ef7a962cdc8f74d15",
+    "question_id": "unsafe_policy__v1",
+    "question_sha256": "608773cf00870580bf8747942a395022df3312e646ea90352a52925ee23ee2e5",
+    "question_tokens": 189,
+    "spec_sha256": "f420a668678d5439beeb11e5ede7b142624a7298e629370e41b69bb6d7da8de3"
+  }
+}

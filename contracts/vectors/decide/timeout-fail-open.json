@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "timeout-fail-open",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route, fail open. The single request timed out: every evaluator is error with reason timeout; groundedness, contradiction and pii_secret_leak (on_error escalate) get escalate error, refusal (on_error ignore) none. Every request failed and one by timeout: status timeout. Nothing assessed and no detector fired: would = pass, action pass. Fail open records degraded timeout. deep_audit sample_error.",
   "input": {
     "policy": {

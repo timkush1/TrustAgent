@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "number-formatting-edges",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Plain notation from 1e-6 up to (not including) 1e21, exponent notation outside it; shortest round-trip digits; integers above 2^53 round to the nearest double (9007199254740993 becomes 9007199254740992).",
+  "input": {"value": [0.000001, 1.5e-7, 123456789012345680000, 1e20, 9007199254740993, -2.5e+300, 5e-324, 0.30000000000000004, 4.35, 100, -1.25e-10]},
+  "expected": {
+    "jcs": "[0.000001,1.5e-7,123456789012345680000,100000000000000000000,9007199254740992,-2.5e+300,5e-324,0.30000000000000004,4.35,100,-1.25e-10]",
+    "sha256": "7c62214057766691cf890f502f44def5d81cb9ada1aad6e7842ede3443440907"
+  }
+}

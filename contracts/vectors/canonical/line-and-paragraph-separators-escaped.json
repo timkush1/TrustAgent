@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "line-and-paragraph-separators-escaped",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "U+2028 and U+2029 are written as the six-character escapes \\u2028 and \\u2029 (SPEC §2.1 addition to RFC 8785, which would write them raw). expected.jcs is the canonical text and expected.sha256 its SHA-256.",
+  "input": {"value": "a\u2028b\u2029c"},
+  "expected": {
+    "jcs": "\"a\\u2028b\\u2029c\"",
+    "sha256": "24f86ea030d13aa0ad7f530c4f0cfdbfd3eb38b9ed526a9eebbebfd37f7b661f"
+  }
+}

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "numeric-or-date-unverified-escalates-without-flagging",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route; the numbers detector fired (numbers and dates never flag alone: not in flag_on). contradiction 0.10 is below escalate_from and has numeric_or_date: escalate numeric_or_date_unverified. groundedness 0.50 is inside its uncertainty band, which takes precedence: uncertain. refusal has no numeric_or_date: null. Nothing flags: pass; the escalations make deep_audit high. The detector corroborates no block-set member, so it is not a reason.",
   "input": {
     "policy": {

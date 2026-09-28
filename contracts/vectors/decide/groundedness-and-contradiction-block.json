@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "groundedness-and-contradiction-block",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required. groundedness 0.96 and contradiction 0.98 are both critical; each lists the other in requires_corroboration, so both are corroborated and form the block set: would = block, action block. Reasons: critical first, then risk desc (contradiction 0.98 before groundedness 0.96). contradiction implies groundedness, but groundedness is not ok, so no disagreement.",
   "input": {
     "policy": {

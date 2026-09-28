@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "cpt-minimum",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A 98-character text (100 code points with its quotes) at the minimum cpt 2.5: ceil(100/2.5) = 40.",
+  "input": {
+    "value": "The refund window for annual plans is thirty days from purchase; monthly plans cannot be refunded.",
+    "cpt": 2.5
+  },
+  "expected": {"est": 40, "narrow": 100, "wide": 0}
+}

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "contradiction-critical-groundedness-ok-is-disagreement",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. contradiction 0.97 is critical while groundedness 0.30 is assessed ok; contradiction implies groundedness, so this is a disagreement. contradiction is not corroborated (groundedness not critical, numbers/dates detectors silent), so needs_second_signal too. groundedness 0.30 is below escalate_from 0.40: no escalation.",
   "input": {
     "policy": {

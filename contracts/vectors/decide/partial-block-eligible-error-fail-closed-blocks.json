@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "partial-block-eligible-error-fail-closed-blocks",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, fail closed, calibration not required. The groundedness answer has no noul value: normalize error missing_answer, escalate error. The other three are ok, so status partial. partial with a block-eligible evaluator in error is failing, so fail closed gives action block with degraded error (partial maps to error). Verdict unknown (a role-bearing evaluator errored, none at warn). deep_audit high because groundedness escalated.",
   "input": {
     "policy": {

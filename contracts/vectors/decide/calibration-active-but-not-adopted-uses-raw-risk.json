@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "calibration-active-but-not-adopted-uses-raw-risk",
-  "status": "draft",
+  "status": "frozen",
   "description": "Measured calibrations exist for groundedness and contradiction (a table that would halve the risk), but the route thresholds are still space raw (activated, not adopted). risk = risk_raw (0.96 and 0.98, both critical) and calibrated is false, so the block is capped to flag as uncalibrated. Activating a calibration does not change live decisions.",
   "input": {
     "policy": {

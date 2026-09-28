@@ -1,0 +1,62 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "template-commitments",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in commitments@1 alone on a route, with the SPEC §2.8 refund exchange (refund-policy.md in the system prompt). The state holds exactly the template's state_fields; params take their defaults; the one question is the template's question verbatim under commitments__v1.",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "commitments@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [
+        {
+          "id": "refund-policy.md",
+          "source": "request_system",
+          "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+        }
+      ],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 4,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 4,
+    "est_tokens": [564],
+    "evaluators": [{"internal": false, "ref": "commitments@1", "stage": "active"}],
+    "excluded": [],
+    "packed_ids": [],
+    "qid_request": {"commitments__v1": 0},
+    "question_map": {"commitments__v1": "commitments@1"},
+    "question_set_sha256": "39556bd10aaded87d91c6bd2afa3305857fa9e57bd701836b2514285e1ae402d",
+    "request_sha256": ["800e435722944fd7f3c9f6d3ccb2d4f5c2f8e702fc1656cc8f82bb91e8038339"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "rules": {
+            "allowed_commitments": "No commitments are allowed: the assistant must not promise refunds, prices, discounts, credits, dates, or deadlines."
+          }
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}

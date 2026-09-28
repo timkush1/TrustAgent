@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "threshold-edge-escalate-from-override",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. groundedness override escalate_from 0.50 with risk exactly 0.50: ok and escalate uncertain (risk >= escalate_from - EPS and < warn_at). contradiction override escalate_from null with the same risk 0.50: no uncertainty band, and no numbers/dates detector fired, so no escalation. Nothing at warn: pass; the escalation alone makes deep_audit high.",
   "input": {
     "policy": {

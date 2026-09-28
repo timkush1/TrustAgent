@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "missing-choice-confidence",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. The pii_secret_leak answer has probabilities but no confidence: vendor_confidence null and confidence_source fallback_top_prob (display only; the decision is unaffected). no_sensitive_data 0.90 + repeats_users_own_data 0.10 carry no risk weight: risk 0, ok. The refusal answer has a confidence: confidence_source vendor. Everything is ok: pass.",
   "input": {
     "policy": {

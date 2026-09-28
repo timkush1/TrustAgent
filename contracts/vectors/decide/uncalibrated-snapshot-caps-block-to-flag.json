@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "uncalibrated-snapshot-caps-block-to-flag",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, require_calibration true, no calibration for the snapshot. groundedness 0.96 and contradiction 0.98 form the block set, so block mode gives block; neither block-set member is calibrated and no detector blocks, so the cap lowers the action to flag with degraded uncalibrated and reason uncalibrated_snapshot. would_action keeps block.",
   "input": {
     "policy": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "on-error-ignore-vs-escalate",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route, fail open. refusal put 0.40 on a key that is not one of its options: unexpected_option error; refusal has on_error ignore, so no escalation. pii_secret_leak has a question error (missing_answer) and on_error escalate: escalate error. Status partial; pii_secret_leak is block-eligible, so failing and degraded error (fail open). groundedness and contradiction are ok: action pass, verdict supported, and no role-bearing evaluator escalated: deep_audit sample.",
   "input": {
     "policy": {

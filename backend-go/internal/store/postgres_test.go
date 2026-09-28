@@ -290,22 +290,22 @@ func TestSaveAuditNullableColumns(t *testing.T) {
 		t.Error("created_at should default to now")
 	}
 
-	body, err := json.Marshal(got)
+	body, err := json.Marshal(got.Detail())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{`"faithfulness_score":null`, `"grade":null`, `"user_query":null`, `"claim":null`} {
+	for _, field := range []string{`"trust_score":null`, `"grade":null`, `"user_query":null`, `"claim":null`} {
 		if !strings.Contains(string(body), field) {
 			t.Errorf("JSON missing %s: %s", field, body)
 		}
 	}
 
-	list, total, err := s.ListAudits(ctx, ListFilter{Limit: 10})
+	list, next, err := s.ListAudits(ctx, AuditFilter{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListAudits: %v", err)
 	}
-	if total != 1 || len(list) != 1 || list[0].FaithfulnessScore != nil {
-		t.Errorf("unexpected list: total=%d %+v", total, list)
+	if next != "" || len(list) != 1 || list[0].FaithfulnessScore != nil || list[0].Counts["NOT_CHECKED"] != 1 {
+		t.Errorf("unexpected list: next=%q %+v", next, list)
 	}
 }
 
@@ -313,8 +313,8 @@ func TestGetAuditNotFound(t *testing.T) {
 	s, _ := newTestStore(t)
 
 	_, err := s.GetAudit(context.Background(), "does-not-exist")
-	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Errorf("expected pgx.ErrNoRows, got %v", err)
+	if !errors.Is(err, ErrNotFound) || !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("expected ErrNotFound (pgx.ErrNoRows), got %v", err)
 	}
 }
 
@@ -334,46 +334,57 @@ func TestListAuditsPaginationAndFilters(t *testing.T) {
 		}
 	}
 
-	all, total, err := s.ListAudits(ctx, ListFilter{Limit: 10})
+	all, next, err := s.ListAudits(ctx, AuditFilter{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListAudits failed: %v", err)
 	}
-	if total != 5 || len(all) != 5 {
-		t.Errorf("expected 5 audits, got total=%d len=%d", total, len(all))
+	if next != "" || len(all) != 5 {
+		t.Errorf("expected 5 audits and no next page, got len=%d next=%q", len(all), next)
 	}
 	for _, a := range all {
 		if a.TraceID != a.AuditID {
 			t.Errorf("list: trace_id %q should equal audit_id %q", a.TraceID, a.AuditID)
 		}
+		if a.Counts["SUPPORTED"] != 2 {
+			t.Errorf("list: verdict counts %v", a.Counts)
+		}
 	}
 
-	page, total, err := s.ListAudits(ctx, ListFilter{Limit: 2, Offset: 2})
+	page, next, err := s.ListAudits(ctx, AuditFilter{Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 5 || len(page) != 2 {
-		t.Errorf("pagination: expected total=5 len=2, got total=%d len=%d", total, len(page))
+	if len(page) != 2 || next == "" {
+		t.Fatalf("first page: len=%d next=%q", len(page), next)
 	}
-
-	flagged := true
-	flaggedOnly, total, err := s.ListAudits(ctx, ListFilter{Limit: 10, Flagged: &flagged})
+	rest, last, err := s.ListAudits(ctx, AuditFilter{Limit: 10, Cursor: next})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 2 || len(flaggedOnly) != 2 {
-		t.Errorf("flagged filter: expected 2, got total=%d len=%d", total, len(flaggedOnly))
+	if len(rest) != 3 || last != "" {
+		t.Errorf("second page: len=%d next=%q", len(rest), last)
 	}
 
-	aGrade, total, err := s.ListAudits(ctx, ListFilter{Limit: 10, Grade: "A"})
+	completed, _, err := s.ListAudits(ctx, AuditFilter{Limit: 10, Status: AuditCompleted, Source: "proxy"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 3 || len(aGrade) != 3 {
-		t.Errorf("grade filter: expected 3, got total=%d len=%d", total, len(aGrade))
+	if len(completed) != 5 {
+		t.Errorf("status filter: expected 5, got %d", len(completed))
+	}
+	none, _, err := s.ListAudits(ctx, AuditFilter{Limit: 10, Verdict: VerdictHallucinated})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(none) != 0 {
+		t.Errorf("verdict filter: legacy-shaped audits have no verdict, got %d", len(none))
+	}
+	if _, _, err := s.ListAudits(ctx, AuditFilter{Cursor: "not a cursor"}); !errors.Is(err, ErrBadCursor) {
+		t.Errorf("a foreign cursor must be rejected, got %v", err)
 	}
 }
 
-// Audits that share created_at are ordered by audit_id, so offset pages
+// Audits that share created_at are ordered by audit_id, so keyset pages
 // neither repeat nor skip a row.
 func TestListAuditsStableOrder(t *testing.T) {
 	s, _ := newTestStore(t)
@@ -396,15 +407,17 @@ func TestListAuditsStableOrder(t *testing.T) {
 
 	want := []string{later.AuditID, ids[2], ids[1], ids[0]}
 	var got []string
-	for offset := 0; offset < len(want); offset++ {
-		page, total, err := s.ListAudits(ctx, ListFilter{Limit: 1, Offset: offset})
+	cursor := ""
+	for i := range want {
+		page, next, err := s.ListAudits(ctx, AuditFilter{Limit: 1, Cursor: cursor})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if total != len(want) || len(page) != 1 {
-			t.Fatalf("offset %d: total=%d len=%d", offset, total, len(page))
+		if len(page) != 1 || (next == "") != (i == len(want)-1) {
+			t.Fatalf("page %d: len=%d next=%q", i, len(page), next)
 		}
 		got = append(got, page[0].AuditID)
+		cursor = next
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("paged order = %v, want %v (created_at DESC, audit_id DESC)", got, want)
