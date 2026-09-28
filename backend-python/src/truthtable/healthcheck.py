@@ -26,8 +26,10 @@ from truthtable.grpc.pb import evaluator_pb2, evaluator_pb2_grpc
 
 DEFAULT_PORT = 50051
 DEFAULT_TIMEOUT_S = 3.0
-INTERNAL_TOKEN_METADATA = "x-trustagent-internal"
-DEFAULT_INTERNAL_TOKEN_FILE = "/var/lib/trustagent-internal/internal.token"
+INTERNAL_TOKEN_METADATA = "x-trustagent-internal"  # nosec B105 - a metadata key, not a secret
+DEFAULT_INTERNAL_TOKEN_FILE = (  # nosec B105 - where the token lives, not the token
+    "/var/lib/trustagent-internal/internal.token"
+)
 
 _WILDCARD_HOSTS = {"", "0.0.0.0", "::", "[::]"}  # nosec B104 - bind addresses, never dialled
 
@@ -55,7 +57,9 @@ def internal_token(environ: Mapping[str, str]) -> str:
         return ""
 
 
-def check(target: str, timeout: float, token: str = "") -> evaluator_pb2.HealthResponse:
+def check(  # nosec B107 - "" means no token is sent
+    target: str, timeout: float, token: str = ""
+) -> evaluator_pb2.HealthResponse:
     """
     Call HealthCheck on `target`.
 
