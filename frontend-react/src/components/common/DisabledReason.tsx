@@ -1,25 +1,117 @@
 /**
- * Why an action is unavailable, next to it, with a link to the fix when there is one
- * (SPEC §3.3 page contract: no dead buttons).
+ * Why an action is unavailable, next to it, with the fix when there is one (SPEC §3.3 page
+ * contract: no dead buttons). Reasons come from `copy.disabled_reasons`; a page-specific reason
+ * ("Label 157 more responses first") passes its own text and fix.
+ *
+ * <DisabledAction> wires it up: the control is disabled but stays focusable, and it is described
+ * by the reason, so keyboard and screen-reader users hear why as well as see it.
  */
 import { Link } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
-import { copy } from '@/domain/presentation';
+import { useId, type ReactNode } from 'react';
+import { commandText, copy, fillTemplate, splitCommands } from '@/domain/presentation';
+import { cn } from '@/lib/cn';
 
 export type DisabledReasonId = keyof typeof copy.disabled_reasons;
 
-export function DisabledReason({ reason, id }: { reason: DisabledReasonId; id?: string }) {
-  const fix =
-    reason === 'needs_connection' ? (
-      <Link to="/app/settings/$section" params={{ section: 'connections' }} className="underline underline-offset-2 hover:text-fg">
-        Open Connections
-      </Link>
-    ) : null;
+/** A reason that is not in the contract copy: its words and, when there is one, the fix. */
+export interface CustomReason {
+  text: string;
+  fix?: ReactNode;
+}
+
+export type Reason = DisabledReasonId | CustomReason;
+
+const linkClass = 'font-medium text-fg underline underline-offset-2';
+
+function SettingsLink({ section, children }: { section: 'connections' | 'access' | 'all'; children: ReactNode }) {
   return (
-    <p id={id} className="inline-flex items-center gap-1 text-xs text-fg-muted">
-      <Lock aria-hidden="true" className="size-3" />
-      {copy.disabled_reasons[reason]}
-      {fix ? <> · {fix}</> : null}
-    </p>
+    <Link to="/app/settings/$section" params={{ section }} className={linkClass}>
+      {children}
+    </Link>
+  );
+}
+
+/** "To use your own keys: `make demo-down && make up`" with the command as code. */
+function DemoFix() {
+  const text = fillTemplate(copy.banners.demo.action, {});
+  if (!commandText('demo_to_own_keys')) return null;
+  return (
+    <>
+      {splitCommands(text).map((part, i) =>
+        part.command ? (
+          <code key={i} className="rounded-sm bg-surface-sunken px-1 font-mono text-2xs text-fg">
+            {part.text}
+          </code>
+        ) : (
+          <span key={i}>{part.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function contractFix(reason: DisabledReasonId): ReactNode {
+  switch (reason) {
+    case 'needs_connection':
+      return <SettingsLink section="connections">Open Connections</SettingsLink>;
+    case 'needs_admin':
+      return <SettingsLink section="access">Open Access</SettingsLink>;
+    case 'env_managed':
+      return <SettingsLink section="all">See where it is set</SettingsLink>;
+    case 'demo':
+      return <DemoFix />;
+    // Read-only and database-less instances are the operator's choice: the reason is the answer.
+    case 'readonly':
+    case 'needs_database':
+      return null;
+    default: {
+      const unhandled: never = reason;
+      return unhandled;
+    }
+  }
+}
+
+export function DisabledReason({ reason, id, className }: { reason: Reason; id?: string; className?: string }) {
+  const text = typeof reason === 'string' ? copy.disabled_reasons[reason] : reason.text;
+  const fix = typeof reason === 'string' ? contractFix(reason) : reason.fix;
+  return (
+    <span id={id} className={cn('inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-fg-muted', className)}>
+      <Lock aria-hidden="true" className="size-3 shrink-0" />
+      <span>{text}</span>
+      {fix ? (
+        <>
+          <span aria-hidden="true">·</span>
+          {fix}
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+export interface DisabledActionProps {
+  /** Why the action is unavailable; null (or false) when it is available. */
+  reason: Reason | null | undefined | false;
+  /** Renders the control with the props that disable and describe it. */
+  children: (props: { disabled: boolean; 'aria-describedby'?: string }) => ReactNode;
+  /** Reason beside the control (`inline`, default) or under it (`stacked`). */
+  layout?: 'inline' | 'stacked';
+  className?: string;
+}
+
+export function DisabledAction({ reason, children, layout = 'inline', className }: DisabledActionProps) {
+  const id = useId();
+  if (!reason) return <>{children({ disabled: false })}</>;
+  return (
+    <span
+      className={cn(
+        'inline-flex gap-2',
+        layout === 'stacked' ? 'flex-col items-start gap-1' : 'flex-wrap items-center',
+        className,
+      )}
+    >
+      {children({ disabled: true, 'aria-describedby': id })}
+      <DisabledReason id={id} reason={reason} />
+    </span>
   );
 }

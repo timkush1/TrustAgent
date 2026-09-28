@@ -23,7 +23,7 @@ export function PopoverContent({ className, side = 'bottom', align = 'center', s
         <BasePopover.Popup
           className={cn(
             'max-w-[min(24rem,calc(100vw-2rem))] origin-(--transform-origin) rounded-lg border border-border bg-surface-raised p-3 text-sm text-fg shadow-popup outline-none',
-            'transition-[transform,opacity] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0',
+            'transition-[scale,opacity] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0',
             className,
           )}
           {...props}
