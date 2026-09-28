@@ -930,6 +930,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         except Exception as e:
             logger.error(f"Document ingestion failed: {e}", exc_info=True)
             return evaluator_pb2.IngestResponse(documents_ingested=0, status=f"error: {str(e)}")
+        finally:
+            # The knowledge base may have changed (even by a partial ingest):
+            # RetrieveContext must not keep serving results cached before it.
+            if self.knowledge_retriever is not None:
+                self.knowledge_retriever.invalidate()
 
     # ------------------------------------------------------------------
     # Knowledge-base queries (VERITAS-lite)

@@ -10,6 +10,7 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import grpc
@@ -389,6 +390,65 @@ async def test_results_expire_and_invalidate_drops_them() -> None:
     retriever.invalidate()
     assert not (await retriever.retrieve(query)).cached
     assert len(store.searches) == 3
+
+
+class IngestingStore(FakeStore):
+    """A FakeStore that IngestDocuments can write to."""
+
+    async def aensure_collection(self) -> None:
+        return None
+
+
+class FakeIngestor:
+    """Adds each ingested document to the store as an accepted claim."""
+
+    def __init__(self, store: FakeStore) -> None:
+        self.store = store
+
+    async def ingest_documents(self, documents: List[Dict[str, Any]]) -> Any:
+        for number, document in enumerate(documents):
+            self.store.points.append(
+                {
+                    "id": f"new{number}",
+                    "text": document["content"],
+                    "score": 0.99,
+                    "kind": "claim",
+                    "kb_status": "accepted",
+                }
+            )
+        return SimpleNamespace(
+            documents=len(documents),
+            accepted=len(documents),
+            quarantined=0,
+            conflicts_detected=0,
+            claim_results=[],
+        )
+
+
+async def test_an_ingest_drops_the_cached_results() -> None:
+    # A knowledge-base change through IngestDocuments must be visible to the
+    # next RetrieveContext at once, not after the 60 s result cache expires.
+    store = IngestingStore(POINTS)
+    servicer = AuditServicer(
+        audit_graph=None,
+        embedding_service=FakeEmbedder(),
+        qdrant_store=store,
+        ingestor=FakeIngestor(store),
+    )
+    request = pb.RetrieveContextRequest(query="How long is the refund window?")
+
+    async with serving(servicer) as stub:
+        before = await stub.RetrieveContext(request, timeout=RPC_TIMEOUT_S)
+        ingested = await stub.IngestDocuments(
+            pb.IngestRequest(documents=[pb.ContextDocument(id="d9", content="Refunds: 45 days.")]),
+            timeout=RPC_TIMEOUT_S,
+        )
+        after = await stub.RetrieveContext(request, timeout=RPC_TIMEOUT_S)
+
+    assert ingested.status == "success"
+    assert [doc.id for doc in before.documents] == ["c1", "c2"]
+    assert [doc.id for doc in after.documents] == ["c1", "c2", "new0"]
+    assert len(store.searches) == 2
 
 
 async def test_errors_are_not_cached() -> None:
