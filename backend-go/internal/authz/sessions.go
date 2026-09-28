@@ -132,6 +132,8 @@ func (s *Sessions) Cookie(value string, exp time.Time) *http.Cookie {
 	if maxAge < 1 {
 		maxAge = 1
 	}
+	// #nosec G124 -- Secure follows the public URL (SPEC §7.5): a plain-http deployment (LAN, localhost)
+	// could not keep a Secure cookie. HttpOnly and SameSite=Strict are always set.
 	return &http.Cookie{
 		Name: CookieName, Value: value, Path: "/", Expires: exp.UTC(), MaxAge: maxAge,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.secure,
@@ -140,6 +142,7 @@ func (s *Sessions) Cookie(value string, exp time.Time) *http.Cookie {
 
 // ClearCookie is the Set-Cookie that deletes the session cookie.
 func (s *Sessions) ClearCookie() *http.Cookie {
+	// #nosec G124 -- a deletion cookie; Secure follows the public URL as for the session cookie.
 	return &http.Cookie{
 		Name: CookieName, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(0, 0).UTC(),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: s.secure,
@@ -151,6 +154,7 @@ func (a *Authenticator) ClearCookie() *http.Cookie {
 	if a.sessions != nil {
 		return a.sessions.ClearCookie()
 	}
+	// #nosec G124 -- a deletion cookie carries no session.
 	return &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode}
 }
 

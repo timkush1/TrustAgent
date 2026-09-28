@@ -35,7 +35,7 @@ type AdminAuditEntry struct {
 	Diff   any
 }
 
-const apiKeyColumns = `id, label, scopes, sha256, prefix, created_by, created_at, last_used_at, revoked_at`
+const apiKeyColumns = `id, label, scopes, sha256, prefix, created_by, created_at, last_used_at, revoked_at` // #nosec G101 -- column names, not a credential
 
 func scanAPIKey(row pgx.Row) (*APIKeyRecord, error) {
 	var k APIKeyRecord
