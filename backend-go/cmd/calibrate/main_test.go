@@ -228,6 +228,7 @@ func TestInputErrors(t *testing.T) {
 		{"unknown source", `{"risk_raw":0.5,"label":true,"label_source":"crowd"}`, []string{"--evaluator", "groundedness@1"}, exitFailed, "unknown label source"},
 		{"too few labels", flatLabels(5, 1, ""), []string{"--evaluator", "groundedness@1", "--label-source", "human", "--snapshot", snapshot, "--backend", "typesafe"}, exitFailed, "not enough labels"},
 		{"bad param", flatLabels(20, 1, ""), []string{"--evaluator", "groundedness@1", "--label-source", "human", "--snapshot", snapshot, "--backend", "typesafe", "--param", "x"}, exitUsage, "name=value"},
+		{"spec redefines a template", "", []string{"--evaluator", "groundedness@1", "--spec", builtinSpecFile(t, "groundedness@1")}, exitUsage, "already defined"},
 	} {
 		code, _, stderr := runCLI(t, c.stdin, testEnv(), c.args...)
 		if code != c.code || !strings.Contains(stderr, c.want) {
@@ -342,4 +343,18 @@ func TestSourceAPI(t *testing.T) {
 	if code != exitFailed || !strings.Contains(stderr, "fitted groundedness@1, not contradiction@1") {
 		t.Errorf("wrong target: exit %d %s", code, stderr)
 	}
+}
+
+// builtinSpecFile writes a built-in template to a spec file.
+func builtinSpecFile(t *testing.T, ref string) string {
+	t.Helper()
+	b, err := json.Marshal(mustSpec(t, ref))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "spec.json")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

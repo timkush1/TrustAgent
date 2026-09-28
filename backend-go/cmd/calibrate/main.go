@@ -236,6 +236,10 @@ func loadSpecs(files []string) (map[string]*decision.Spec, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
+		// A version is immutable: a file cannot redefine a built-in template or another file's spec.
+		if _, dup := specs[s.Ref()]; dup {
+			return nil, fmt.Errorf("%w: %s: %s is already defined", errUsage, path, s.Ref())
+		}
 		specs[s.Ref()] = s
 	}
 	return specs, nil
