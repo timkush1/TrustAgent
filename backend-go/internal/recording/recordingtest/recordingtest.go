@@ -5,7 +5,7 @@ package recordingtest
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
+	"path"
 	"testing"
 	"time"
 
@@ -131,14 +131,19 @@ func ValidateManifest(t testing.TB, b []byte) map[string]any {
 // the manifest lists. It returns the decoded manifest.
 func ValidateDir(t testing.TB, dir string) map[string]any {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	root, err := os.OpenRoot(dir) // every read stays inside the recording
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	b, err := root.ReadFile("manifest.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := ValidateManifest(t, b)
 	for _, tr := range m["traces"].([]any) {
 		id := tr.(map[string]any)["trace_id"].(string)
-		tb, err := os.ReadFile(filepath.Join(dir, "traces", id+".json"))
+		tb, err := root.ReadFile(path.Join("traces", id+".json"))
 		if err != nil {
 			t.Fatal(err)
 		}
