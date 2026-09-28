@@ -1,5 +1,5 @@
 /**
- * The control-plane endpoints over HTTP (SPEC §2.4 #9, #17-#29, #47, #50-#51, #61-#65). Every body
+ * The control-plane endpoints over HTTP (SPEC §2.4 #3-#6, #9, #17-#29, #47, #50-#51, #61-#65). Every body
  * passes through the single normalizer (normalize.ts) before a page sees it. LiveDataSource extends
  * this class, so pages reach these methods through the one DataSource they already have.
  */
@@ -21,6 +21,8 @@ import type {
   PolicyVersionMeta,
   ReliabilityResponse,
   RoiSummary,
+  SessionInfo,
+  SetupStatus,
   TimeWindow,
   ValidateResult,
   GateDecisionView,
@@ -37,6 +39,7 @@ import type {
   PolicyInput,
   PolicySaveRequest,
   ReliabilityParams,
+  SessionRequest,
 } from '../controlPlane';
 import { ApiError, apiErrorFromResponse } from '../errors';
 import type { HttpClient, Query } from '../http';
@@ -46,6 +49,8 @@ import type { PageParams } from '../source';
 
 /** What each response must carry (see normalizeShaped). */
 export const CONTROL_SHAPES = {
+  setupStatus: { strings: ['public_url', 'recovery_command'] },
+  session: { strings: ['actor', 'expires_at'], lists: ['scopes'] },
   overview: {
     strings: ['window', 'from', 'to'],
     records: ['totals', 'hallucination_rate', 'audited_hallucination_share', 'evidence_coverage', 'latency_ms', 'stage_latency_ms'],
@@ -114,6 +119,25 @@ export class LiveControlPlane implements ControlPlane {
 
   constructor(http: HttpClient) {
     this.api = http;
+  }
+
+  async getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
+    const raw = await this.api.get<unknown>('/api/setup/status', { signal });
+    return normalizeShaped(raw, 'GET /api/setup/status', CONTROL_SHAPES.setupStatus);
+  }
+
+  async getSession(signal?: AbortSignal): Promise<SessionInfo> {
+    const raw = await this.api.get<unknown>('/api/session', { signal });
+    return normalizeShaped(raw, 'GET /api/session', CONTROL_SHAPES.session);
+  }
+
+  async createSession(request: SessionRequest): Promise<SessionInfo> {
+    const raw = await this.api.request<unknown>('/api/session', { method: 'POST', body: request });
+    return normalizeShaped(raw, 'POST /api/session', CONTROL_SHAPES.session);
+  }
+
+  async deleteSession(): Promise<void> {
+    await this.api.request<unknown>('/api/session', { method: 'DELETE' });
   }
 
   async getOverview(params: OverviewParams, signal?: AbortSignal): Promise<OverviewStats> {

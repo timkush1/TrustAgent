@@ -31,6 +31,8 @@ import type {
   PolicyVersionMeta,
   ReliabilityResponse,
   RoiSummary,
+  SessionInfo,
+  SetupStatus,
   TimeWindow,
   ValidateResult,
 } from '@/types/api';
@@ -104,7 +106,19 @@ export interface PlaygroundStreamHandlers {
   onComment?: (text: string) => void;
 }
 
+/** POST /api/session (#4): the one-time setup token from the proxy's SETUP line, or a key. */
+export type SessionRequest = { setup_token: string; key?: never } | { key: string; setup_token?: never };
+
 export interface ControlPlane {
+  /** GET /api/setup/status (#3, public): whether an admin still has to be created. */
+  getSetupStatus(signal?: AbortSignal): Promise<SetupStatus>;
+  /** GET /api/session (#5): the caller's session; a 401 ApiError when there is none. */
+  getSession(signal?: AbortSignal): Promise<SessionInfo>;
+  /** POST /api/session (#4): claims the setup token or signs in with a key, and sets the session cookie. */
+  createSession(request: SessionRequest): Promise<SessionInfo>;
+  /** DELETE /api/session (#6): signs out. */
+  deleteSession(): Promise<void>;
+
   getOverview(params: OverviewParams, signal?: AbortSignal): Promise<OverviewStats>;
   getRoiSummary(window: TimeWindow, signal?: AbortSignal): Promise<RoiSummary>;
   getEvidenceCoverage(params: EvidenceParams, signal?: AbortSignal): Promise<EvidenceCoverage>;
@@ -143,6 +157,10 @@ export interface ControlPlane {
 export function unavailableControlPlane(message = 'Not available in this build.'): ControlPlane {
   const reject = () => Promise.reject(new ApiError({ kind: 'http', status: 404, code: 'not_found', message }));
   return {
+    getSetupStatus: reject,
+    getSession: reject,
+    createSession: reject,
+    deleteSession: reject,
     getOverview: reject,
     getRoiSummary: reject,
     getEvidenceCoverage: reject,

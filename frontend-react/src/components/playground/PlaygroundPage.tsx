@@ -6,7 +6,9 @@
  *
  * Page contract: Run needs an admin on a writable instance and says so otherwise; errors show the
  * server's message with what to do (rate limit with its wait, missing connection with the link);
- * the routes list degrades to free text when the policy cannot be read.
+ * the routes list degrades to free text when the policy cannot be read. A proxy that does not
+ * serve runs yet (404/501) gets a degraded state instead of an error, Run says why it is off, and
+ * the curl command still sends the same request through the gateway.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -15,6 +17,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useDataSource } from '@/app/services';
 import { useGatewayOrigin } from '@/components/common/useGatewayOrigin';
 import { CodeBlock } from '@/components/common/CodeBlock';
+import { DegradedState } from '@/components/common/DegradedState';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { describeError } from '@/components/common/describeError';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -23,7 +26,7 @@ import { NAV_ITEMS } from '@/components/layout/nav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { isApiError } from '@/data/errors';
-import { policiesQuery } from '@/data/queries';
+import { isNotServed, policiesQuery } from '@/data/queries';
 import { useAppMode, useSystemStatus } from '@/data/useSystem';
 import { playgroundCurl } from '@/domain/snippets';
 import type { GateDecisionView, PlaygroundResult } from '@/types/api';
@@ -42,6 +45,24 @@ interface RunState {
 }
 
 const IDLE: RunState = { running: false, tokens: '', decision: null, result: null, error: null, mode: 'chat' };
+
+/** Run is off once this proxy has said it does not serve POST /api/playground/run. */
+const NOT_SERVED_REASON: Reason = { text: 'This proxy does not run Playground requests yet (arrives with the P3 gateway handler)' };
+
+function RunNotServed() {
+  return (
+    <DegradedState
+      title="This proxy does not run Playground requests yet"
+      reason="POST /api/playground/run arrives with the P3 gateway handler work (block and fallback answers, streaming)."
+      stillWorks="The curl command below sends the same request through the gateway; its checks and deep audit appear in Traffic."
+      action={
+        <Link to="/app/traffic" className="text-sm font-medium text-fg underline underline-offset-2">
+          Open Traffic
+        </Link>
+      }
+    />
+  );
+}
 
 
 /** The server's message plus what the viewer can do about it. */
@@ -81,6 +102,8 @@ export function PlaygroundPage() {
   const ds = useDataSource();
   const origin = useGatewayOrigin();
   const form = usePlaygroundStore((s) => s.form);
+  const runUnavailable = usePlaygroundStore((s) => s.runUnavailable);
+  const setRunUnavailable = usePlaygroundStore((s) => s.setRunUnavailable);
   const { status } = useSystemStatus();
   const { demo } = useAppMode();
   const writeReason = useWriteReason('admin');
@@ -96,7 +119,7 @@ export function PlaygroundPage() {
   // Mock checks on a demo or test-mode stack answer an unedited example with its scripted answers.
   const scripted = demo || status?.test_mode === true;
   const request = buildRequest(form, { scenario: scripted });
-  const runReason: Reason | null = writeReason ?? (problem ? { text: problem } : null);
+  const runReason: Reason | null = runUnavailable ? NOT_SERVED_REASON : (writeReason ?? (problem ? { text: problem } : null));
 
   const start = async () => {
     abort.current?.abort();
@@ -118,6 +141,9 @@ export function PlaygroundPage() {
     } catch (error) {
       if (controller.signal.aborted) {
         setRun((r) => ({ ...r, running: false }));
+      } else if (isNotServed(error)) {
+        setRunUnavailable(true);
+        setRun(IDLE);
       } else {
         setRun((r) => ({ ...r, running: false, error }));
       }
@@ -161,8 +187,9 @@ export function PlaygroundPage() {
           <Card>
             <CardHeader level={2} title="What happened" description={started ? undefined : 'Run the request to see each step here.'} />
             <CardContent aria-live="polite" aria-busy={run.running}>
+              {runUnavailable ? <RunNotServed /> : null}
               {run.error ? <RunError error={run.error} /> : null}
-              {started ? (
+              {runUnavailable ? null : started ? (
                 <div className={run.error ? 'mt-4' : undefined}>
                   <ResultTimeline state={{ mode: run.mode, tokens: run.tokens, decision: run.decision, result: run.result, running: run.running }} />
                 </div>

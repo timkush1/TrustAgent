@@ -17,6 +17,7 @@ import { Route as AppOverviewRouteImport } from './routes/app/overview'
 import { Route as AppPlaygroundRouteImport } from './routes/app/playground'
 import { Route as AppPoliciesRouteImport } from './routes/app/policies'
 import { Route as AppSavingsRouteImport } from './routes/app/savings'
+import { Route as AppSetupRouteImport } from './routes/app/setup'
 import { Route as AppAuditsIdRouteImport } from './routes/app/audits/$id'
 import { Route as AppEvaluatorsIndexRouteImport } from './routes/app/evaluators/index'
 import { Route as AppEvaluatorsIdRouteImport } from './routes/app/evaluators/$id'
@@ -64,6 +65,11 @@ const AppPoliciesRoute = AppPoliciesRouteImport.update({
 const AppSavingsRoute = AppSavingsRouteImport.update({
   id: '/savings',
   path: '/savings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSetupRoute = AppSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAuditsIdRoute = AppAuditsIdRouteImport.update({
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/app/playground': typeof AppPlaygroundRoute
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
+  '/app/setup': typeof AppSetupRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
   '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
@@ -132,6 +139,7 @@ export interface FileRoutesByTo {
   '/app/playground': typeof AppPlaygroundRoute
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
+  '/app/setup': typeof AppSetupRoute
   '/app': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
   '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
@@ -151,6 +159,7 @@ export interface FileRoutesById {
   '/app/playground': typeof AppPlaygroundRoute
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
+  '/app/setup': typeof AppSetupRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
   '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/app/playground'
     | '/app/policies'
     | '/app/savings'
+    | '/app/setup'
     | '/app/'
     | '/app/audits/$id'
     | '/app/evaluators/$id'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/app/playground'
     | '/app/policies'
     | '/app/savings'
+    | '/app/setup'
     | '/app'
     | '/app/audits/$id'
     | '/app/evaluators/$id'
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | '/app/playground'
     | '/app/policies'
     | '/app/savings'
+    | '/app/setup'
     | '/app/'
     | '/app/audits/$id'
     | '/app/evaluators/$id'
@@ -280,6 +292,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSavingsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/setup': {
+      id: '/app/setup'
+      path: '/setup'
+      fullPath: '/app/setup'
+      preLoaderRoute: typeof AppSetupRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/audits/$id': {
       id: '/app/audits/$id'
       path: '/audits/$id'
@@ -345,6 +364,7 @@ interface AppRouteChildren {
   AppPlaygroundRoute: typeof AppPlaygroundRoute
   AppPoliciesRoute: typeof AppPoliciesRoute
   AppSavingsRoute: typeof AppSavingsRoute
+  AppSetupRoute: typeof AppSetupRoute
   AppIndexRoute: typeof AppIndexRoute
   AppAuditsIdRoute: typeof AppAuditsIdRoute
   AppEvaluatorsIdRoute: typeof AppEvaluatorsIdRoute
@@ -362,6 +382,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPlaygroundRoute: AppPlaygroundRoute,
   AppPoliciesRoute: AppPoliciesRoute,
   AppSavingsRoute: AppSavingsRoute,
+  AppSetupRoute: AppSetupRoute,
   AppIndexRoute: AppIndexRoute,
   AppAuditsIdRoute: AppAuditsIdRoute,
   AppEvaluatorsIdRoute: AppEvaluatorsIdRoute,

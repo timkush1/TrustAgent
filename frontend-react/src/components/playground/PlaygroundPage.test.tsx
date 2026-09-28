@@ -13,7 +13,10 @@ import { buildRequest, EXAMPLES, formProblem, INITIAL_FORM } from './playgroundM
 import { usePlaygroundStore } from './playgroundStore';
 
 installMswServer();
-beforeEach(() => usePlaygroundStore.getState().reset());
+beforeEach(() => {
+  usePlaygroundStore.getState().reset();
+  usePlaygroundStore.getState().setRunUnavailable(false);
+});
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 
@@ -241,6 +244,22 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await fillChat(user);
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
     expect(await screen.findByRole('link', { name: 'Open Connections' })).toBeInTheDocument();
+  });
+
+  it('degrades when this proxy does not serve runs, and says why Run is then off', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ playground: errorReply(404, 'not_found', 'No endpoint here: POST /api/playground/run.') });
+    renderPage('/app/playground', { control });
+    await fillChat(user);
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    expect(await screen.findByText('This proxy does not run Playground requests yet')).toBeInTheDocument();
+    expect(screen.queryByText(/The run failed/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Traffic' })).toHaveAttribute('href', '/app/traffic');
+    const run = screen.getByRole('button', { name: 'Send the request' });
+    expect(run).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText(/does not run Playground requests yet \(arrives with the P3 gateway handler\)/)).toBeInTheDocument();
+    // The curl equivalent still works through the gateway.
+    expect(screen.getByRole('region', { name: 'The same request with curl' }).textContent).toContain('/v1/chat/completions');
   });
 
   it('says why Run is unavailable', async () => {

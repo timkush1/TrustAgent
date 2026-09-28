@@ -330,7 +330,15 @@ SPEC §3.3 is the page list; these notes record how each page applies the rules 
   and words; the deep audit keeps updating from the live stream. The curl equivalent is always
   shown and follows the form. An unedited example keeps its demo scenario id and sends it only to a
   demo or test-mode stack, whose mock checks answer it as trafficgen's scripted run (labelled
-  simulated); editing the example drops it.
+  simulated); editing the example drops it. A proxy that answers 404/501 to a run gets a degraded
+  state (what is missing, that the curl command still works, a link to Traffic) and Run stays off
+  with that reason for the rest of the session.
+- **Sign in** (`components/setup/`, `/app/setup`). The target of the proxy's one-time
+  `SETUP: open …/app/setup#token=…` line. The token is read once from the fragment and removed from
+  the address bar; claiming it is an explicit button (never on page load). The created admin key
+  is shown once with a copy button and stays on screen even when the browser keeps no session
+  (a cross-origin dashboard). Sign-in with a key is the fix every `needs_admin` reason links to;
+  key management in Settings → Access arrives in P4.
 - **Evaluators** (`components/evaluators/`). Library cards, checks that run on a route first.
   Calibration progress uses the contract copy and one meter per requirement. Writes that arrive
   in P4 (label queue, calibrate, adopt, Studio) are shown disabled with one shared reason. The

@@ -56,7 +56,13 @@ function contractFix(reason: DisabledReasonId): ReactNode {
     case 'needs_connection':
       return <SettingsLink section="connections">Open Connections</SettingsLink>;
     case 'needs_admin':
-      return <SettingsLink section="access">Open Access</SettingsLink>;
+      // Signing in with an admin key (or claiming the setup link) is the fix today; key management
+      // in Settings → Access arrives in P4.
+      return (
+        <Link to="/app/setup" className={linkClass}>
+          Sign in as an admin
+        </Link>
+      );
     case 'env_managed':
       return <SettingsLink section="all">See where it is set</SettingsLink>;
     case 'demo':

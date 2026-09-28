@@ -18,6 +18,9 @@ interface PlaygroundStore {
   removeDoc: (index: number) => void;
   load: (form: PlaygroundForm) => void;
   reset: () => void;
+  /** This proxy answered 404/501 to a run: it does not serve POST /api/playground/run yet. */
+  runUnavailable: boolean;
+  setRunUnavailable: (value: boolean) => void;
 }
 
 /** Fields a scenario scripts: editing one makes the form the viewer's own, not the example. */
@@ -45,4 +48,6 @@ export const usePlaygroundStore = create<PlaygroundStore>((set) => ({
   removeDoc: (index) => set((s) => edited(s.form, { evidence: s.form.evidence.filter((_, i) => i !== index) })),
   load: (form) => set({ form: structuredClone(form) }),
   reset: () => set({ form: structuredClone(INITIAL_FORM) }),
+  runUnavailable: false,
+  setRunUnavailable: (value) => set({ runUnavailable: value }),
 }));

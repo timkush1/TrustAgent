@@ -12,6 +12,8 @@ import type { StreamEvent } from './stream/types';
 export const qk = {
   health: ['health'] as const,
   status: ['status'] as const,
+  setupStatus: ['setup-status'] as const,
+  session: ['session'] as const,
   traces: {
     all: ['traces'] as const,
     lists: () => ['traces', 'list'] as const,
@@ -56,6 +58,16 @@ export function statusQuery(ds: DataSource) {
     retry: false,
     staleTime: 10_000,
   });
+}
+
+/** GET /api/setup/status (public): whether the one-time setup link can still create the admin. */
+export function setupStatusQuery(ds: DataSource) {
+  return queryOptions({ queryKey: qk.setupStatus, queryFn: ({ signal }) => ds.getSetupStatus(signal), retry: false });
+}
+
+/** GET /api/session: who the dashboard is signed in as; a 401 means not signed in. */
+export function sessionQuery(ds: DataSource) {
+  return queryOptions({ queryKey: qk.session, queryFn: ({ signal }) => ds.getSession(signal), retry: false });
 }
 
 export function isStatusUnavailable(err: unknown): boolean {
