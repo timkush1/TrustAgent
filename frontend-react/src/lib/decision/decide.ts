@@ -86,8 +86,9 @@ interface EvalState {
 const atLeastWarn = (e: EvalState) => e.level === 'warn' || e.level === 'critical';
 
 /**
- * Computes the gate decision. Throws DecideError only for a structurally invalid input. Each
- * evaluator spec is read with parseSpec (a Spec may be passed where a document is expected).
+ * Computes the gate decision. Each evaluator carries its spec document as written (decide-input.v1),
+ * read with parseSpec. Throws DecideError for a structurally invalid input and SpecError for a spec
+ * that does not parse.
  */
 export function decide(input: DecideInput): DecisionCore {
   checkInput(input);
