@@ -179,8 +179,12 @@ describe('Policies page', { timeout: 20_000 }, () => {
     await card('support-bot');
     await user.click(screen.getByRole('button', { name: 'Presets' }));
     const dialog = await screen.findByRole('dialog', { name: 'Start from a preset' });
-    expect(within(dialog).getByText(/Starts as Flag until calibrated/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('radio', { name: 'Block contradictions' }));
+    // Each blocking preset says it starts as Flag until calibrated (the block preset and, since the
+    // policy presets grew, the payments one).
+    const blockPreset = within(dialog).getByRole('radio', { name: 'Block contradictions' });
+    expect(blockPreset).toHaveAccessibleDescription(/Starts as Flag until calibrated/);
+    expect(within(dialog).getAllByText(/Starts as Flag until calibrated/).length).toBeGreaterThanOrEqual(1);
+    await user.click(blockPreset);
     await user.click(within(dialog).getByRole('button', { name: 'Apply to draft' }));
     const support = await card('support-bot');
     expect(await within(support).findByText(/Unsaved: Flag → Block/)).toBeInTheDocument();
