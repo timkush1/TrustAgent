@@ -32,7 +32,10 @@ describe('Select', () => {
 
   it('shows the placeholder when nothing is chosen and takes an aria-label outside a Field', () => {
     render(<Select aria-label="Page size" options={[{ value: '50', label: '50 per page' }]} placeholder="Choose a size" />);
-    expect(screen.getByRole('combobox', { name: 'Page size' })).toHaveTextContent('Choose a size');
+    const trigger = screen.getByRole('combobox', { name: 'Page size' });
+    expect(trigger).toHaveTextContent('Choose a size');
+    // A button matches :read-only, so the trigger must not be styled by it.
+    expect(trigger.className).not.toContain('read-only:');
   });
 
   it('marks the chosen option as selected', async () => {

@@ -11,7 +11,7 @@ import { fieldControlClass } from './control-styles';
 export type InputProps = Omit<ComponentProps<typeof BaseInput>, 'className'> & { className?: string };
 
 export function Input({ className, ...props }: InputProps) {
-  return <BaseInput className={cn(fieldControlClass, 'h-8', className)} {...props} />;
+  return <BaseInput className={cn(fieldControlClass, 'h-8 read-only:bg-surface-sunken', className)} {...props} />;
 }
 
 type TextareaOwnProps = Pick<
@@ -37,7 +37,7 @@ export function Textarea({
 }: TextareaProps) {
   return (
     <BaseField.Control
-      className={cn(fieldControlClass, 'min-h-16 resize-y py-1.5', mono && 'font-mono text-xs', className)}
+      className={cn(fieldControlClass, 'min-h-16 resize-y py-1.5 read-only:bg-surface-sunken', mono && 'font-mono text-xs', className)}
       render={
         <textarea
           rows={rows}

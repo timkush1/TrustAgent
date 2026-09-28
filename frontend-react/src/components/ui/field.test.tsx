@@ -54,6 +54,15 @@ describe('Field with Input', () => {
     expect(onValueChange).toHaveBeenLastCalledWith('gpt', expect.anything());
   });
 
+  it('shades a read-only input', () => {
+    render(
+      <Field label="Base URL">
+        <Input readOnly defaultValue="https://openrouter.ai/api/v1" />
+      </Field>,
+    );
+    expect(screen.getByRole('textbox', { name: 'Base URL' }).className).toContain('read-only:bg-surface-sunken');
+  });
+
   it('disables the control from the field', () => {
     render(
       <Field label="Base URL" disabled>

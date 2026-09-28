@@ -12,7 +12,8 @@ export const fieldControlClass = [
   'placeholder:text-fg-subtle',
   'data-disabled:cursor-not-allowed data-disabled:opacity-50',
   'data-invalid:border-tone-danger',
-  'read-only:bg-surface-sunken',
+  // Base UI marks read-only controls; the :read-only pseudo-class would also match buttons.
+  'data-readonly:bg-surface-sunken',
 ].join(' ');
 
 /** Floating lists (select, combobox, menu). */
