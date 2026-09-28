@@ -33,6 +33,15 @@ from ..graphs.state import (
 from ..providers.costs import CallCost, cost_ledger
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
 from ..scoring.aggregate import SCORING_VERSION
+from .retrieve import (
+    DEFAULT_MIN_SCORE,
+    INDEX_DISABLED,
+    KNOWLEDGE_DISABLED,
+    KNOWLEDGE_SOURCE,
+    KnowledgeRetriever,
+    RetrieveOutcome,
+    knowledge_retriever_for,
+)
 from ..metrics import (
     AUDITS_TOTAL,
     AUDIT_DURATION,
@@ -289,10 +298,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - IngestDocuments, ListKBClaims, ListConflicts, GetKBStats: knowledge base
 
     - GetEngineInfo: What the engine runs with (judge, knowledge, limits)
+    - RetrieveContext: Knowledge-base evidence for the gate (knowledge add-on only)
 
-    The other v2 RPCs (RetrieveContext, ApplyRuntimeConfig, DraftEvaluator)
-    are not overridden yet, so they inherit the generated handlers and return
-    UNIMPLEMENTED until their phase lands.
+    The other v2 RPCs (ApplyRuntimeConfig, DraftEvaluator) are not overridden
+    yet, so they inherit the generated handlers and return UNIMPLEMENTED until
+    their phase lands.
     """
 
     def __init__(
@@ -305,6 +315,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         *,
         engine: Optional[EngineContext] = None,
         max_audits: Optional[int] = None,
+        knowledge_retriever: Optional[KnowledgeRetriever] = None,
     ):
         """
         Initialize the servicer.
@@ -320,6 +331,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     resolved judge, settings, knowledge state). Without it the
                     servicer reports built-in defaults.
             max_audits: Concurrent audits (default: engine.max_audits, else 16)
+            knowledge_retriever: RetrieveContext's retriever; by default one
+                    over embedding_service and qdrant_store (None, i.e.
+                    knowledge_disabled, without them)
         """
         self.audit_graph = audit_graph
         self.provider = provider
@@ -334,6 +348,15 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         # Audits beyond max_audits queue here instead of loading the judge (C-H13).
         self._audit_slots = asyncio.Semaphore(max_audits)
         self._judge_healthy: Optional[bool] = engine.judge.healthy if engine else None
+        if knowledge_retriever is None:
+            knowledge_retriever = knowledge_retriever_for(
+                embedding_service,
+                qdrant_store,
+                default_min_score=(
+                    engine.settings.retriever_score_threshold if engine else DEFAULT_MIN_SCORE
+                ),
+            )
+        self.knowledge_retriever = knowledge_retriever
         logger.info(f"AuditServicer initialized (max {max_audits} concurrent audits)")
 
     @property
@@ -794,6 +817,41 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             info.max_rpcs = DEFAULT_MAX_RPCS
         return info
 
+    async def RetrieveContext(
+        self, request: evaluator_pb2.RetrieveContextRequest, context: Any
+    ) -> evaluator_pb2.RetrieveContextResponse:
+        """
+        Knowledge-base evidence for the gate (SPEC sections 2.2 and 7.1; C-M24).
+
+        FAILED_PRECONDITION `knowledge_disabled` when the knowledge add-on is
+        off, INVALID_ARGUMENT `query_required` without a query or response. A
+        search error is a normal response with index_state `error`; see
+        grpc/retrieve.py for the executor, caches and budget.
+        """
+        started = time.monotonic()
+        retriever = self.knowledge_retriever
+        if retriever is None:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details(KNOWLEDGE_DISABLED)
+            return evaluator_pb2.RetrieveContextResponse(index_state=INDEX_DISABLED)
+        try:
+            query = retriever.build_query(
+                request.query, request.response, request.top_k, request.max_chars, request.min_score
+            )
+        except ValueError as exc:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(str(exc))
+            return evaluator_pb2.RetrieveContextResponse()
+        time_remaining = getattr(context, "time_remaining", None)
+        timeout_s = time_remaining() if callable(time_remaining) else None
+        try:
+            outcome = await retriever.retrieve(query, timeout_s=timeout_s)
+        except TimeoutError:
+            context.set_code(grpc.StatusCode.DEADLINE_EXCEEDED)
+            context.set_details("knowledge retrieval did not finish before the deadline")
+            return evaluator_pb2.RetrieveContextResponse()
+        return _retrieve_response(outcome, int((time.monotonic() - started) * 1000))
+
     async def IngestDocuments(
         self, request: evaluator_pb2.IngestRequest, context
     ) -> evaluator_pb2.IngestResponse:
@@ -872,6 +930,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         except Exception as e:
             logger.error(f"Document ingestion failed: {e}", exc_info=True)
             return evaluator_pb2.IngestResponse(documents_ingested=0, status=f"error: {str(e)}")
+        finally:
+            # The knowledge base may have changed (even by a partial ingest):
+            # RetrieveContext must not keep serving results cached before it.
+            if self.knowledge_retriever is not None:
+                self.knowledge_retriever.invalidate()
 
     # ------------------------------------------------------------------
     # Knowledge-base queries (VERITAS-lite)
@@ -975,6 +1038,28 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             quarantined=quarantined,
             conflict_pairs=len(seen),
         )
+
+
+def _retrieve_response(
+    outcome: RetrieveOutcome, latency_ms: int
+) -> evaluator_pb2.RetrieveContextResponse:
+    """RetrieveContextResponse of a retrieval (documents are evidence source `knowledge`)."""
+    return evaluator_pb2.RetrieveContextResponse(
+        documents=[
+            evaluator_pb2.ContextDocument(
+                id=document.id,
+                content=document.content,
+                metadata=dict(document.metadata),
+                relevance_score=document.score,
+                source=KNOWLEDGE_SOURCE,
+                label=document.label,
+                truncated=document.truncated,
+            )
+            for document in outcome.documents
+        ],
+        latency_ms=latency_ms,
+        index_state=outcome.index_state,
+    )
 
 
 def create_server(

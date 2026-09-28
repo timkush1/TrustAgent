@@ -18,6 +18,13 @@ v2 (SPEC section 3.2; D7):
   never defaulted.
 - The judge is never called without context: a claim with no evidence to check
   against is NOT_CHECKED (excluded from scoring), not UNSUPPORTED.
+- Per-claim context (D13, C-M26; TRUTHTABLE_VERIFY_CONTEXT_SCOPE, default
+  per_claim): evidence small enough to send whole (at most 3,000 estimated
+  tokens) goes to every claim; larger evidence is ranked with BM25 for each
+  claim and the claim is judged against its best 3 documents. A claim with no
+  BM25 hit falls back to all documents (never "UNSUPPORTED by rule"); with no
+  documents at all it is NOT_CHECKED. Scope `all` sends every document to
+  every claim.
 - A provider exception makes the claim UNKNOWN with `error=true`; when the
   provider's own retries were exhausted the audit records
   `judge_retry_exhausted`.
@@ -58,6 +65,7 @@ from ...scoring.aggregate import (
     llm_distribution,
 )
 from ...security import parse_json_strict, sanitize_text
+from ...text.bm25 import BM25
 from ..state import AuditState, ClaimVerification, VerificationStatus, add_degraded_reason
 from .decomposer import claim_records
 
@@ -82,6 +90,24 @@ MAX_REASONING_CHARS = 1000
 
 # How much of a rejected answer is echoed back in a repair turn.
 MAX_REPAIR_ECHO_CHARS = 2000
+
+# Per-claim context (SPEC section 3.2; D13, C-M26). The scope is
+# TRUTHTABLE_VERIFY_CONTEXT_SCOPE: per_claim (default) or all.
+CONTEXT_SCOPE_PER_CLAIM = "per_claim"
+CONTEXT_SCOPES = (CONTEXT_SCOPE_PER_CLAIM, "all")
+# Evidence of at most this many estimated tokens is sent whole to every claim:
+# narrowing it saves little and risks hiding the supporting document.
+SMALL_EVIDENCE_TOKENS = 3000
+# Documents a claim is judged against when the evidence is larger.
+PER_CLAIM_TOP_K = 3
+# Characters per token of the estimate (English prose averages about four).
+CHARS_PER_TOKEN = 4
+
+# How a claim's evidence was chosen (ClaimContext.method).
+CONTEXT_ALL = "all"  # scope all, or evidence small enough to send whole
+CONTEXT_BM25 = "bm25"  # the claim's best BM25 documents
+CONTEXT_FALLBACK_ALL = "fallback_all"  # no BM25 hit: every document
+CONTEXT_NONE = "none"  # no documents: the claim is NOT_CHECKED
 
 # decided_by values (proto ClaimVerification.decided_by).
 DECIDED_BY_LLM = "llm"
@@ -234,6 +260,74 @@ def prepare_context(
     too_long = any(len(_sanitized(doc)) > max_doc_chars for doc in kept)
     trimmed = bool(kept) and (dropped > 0 or too_long or upstream_truncated)
     return PreparedContext(documents=kept, trimmed=trimmed, dropped=dropped)
+
+
+@dataclass(frozen=True)
+class ClaimContext:
+    """The evidence one claim is judged against."""
+
+    documents: Tuple[str, ...]  # In evidence order
+    doc_indices: Tuple[int, ...]  # Positions in the audit's prepared documents
+    method: str  # CONTEXT_ALL | CONTEXT_BM25 | CONTEXT_FALLBACK_ALL | CONTEXT_NONE
+
+
+def estimate_tokens(text: str) -> int:
+    """A rough token count of `text` (CHARS_PER_TOKEN characters per token)."""
+    return math.ceil(len(text) / CHARS_PER_TOKEN)
+
+
+def select_claim_contexts(
+    claims: Sequence[str],
+    documents: Sequence[str],
+    *,
+    scope: str = CONTEXT_SCOPE_PER_CLAIM,
+    top_k: int = PER_CLAIM_TOP_K,
+    small_evidence_tokens: int = SMALL_EVIDENCE_TOKENS,
+    max_doc_chars: int = MAX_CONTEXT_DOC_CHARS,
+) -> List[ClaimContext]:
+    """
+    Choose the evidence of each claim (D13, C-M26; see the module docstring).
+
+    Args:
+        claims: The claims, in order.
+        documents: The audit's evidence (prepare_context: non-blank, capped).
+        scope: per_claim, or all (every document for every claim).
+        top_k: Documents kept per claim when the evidence is ranked.
+        small_evidence_tokens: Evidence up to this estimate is sent whole.
+        max_doc_chars: The prompt's per-document cap (counted in the estimate).
+
+    Returns:
+        One ClaimContext per claim, in claim order. Its documents are empty
+        only when `documents` is (the claim is then NOT_CHECKED); a claim
+        without a BM25 hit gets every document, never none.
+
+    Raises:
+        ValueError: For an unknown scope.
+    """
+    if scope not in CONTEXT_SCOPES:
+        raise ValueError(f"context scope must be one of {', '.join(CONTEXT_SCOPES)}")
+    docs = tuple(documents)
+    if not docs:
+        return [ClaimContext((), (), CONTEXT_NONE) for _ in claims]
+
+    every = ClaimContext(docs, tuple(range(len(docs))), CONTEXT_ALL)
+    sanitized = [_sanitized(doc) for doc in docs]
+    evidence_tokens = sum(estimate_tokens(doc[:max_doc_chars]) for doc in sanitized)
+    if scope != CONTEXT_SCOPE_PER_CLAIM or evidence_tokens <= small_evidence_tokens:
+        return [every for _ in claims]
+
+    index = BM25(sanitized)
+    fallback = ClaimContext(docs, every.doc_indices, CONTEXT_FALLBACK_ALL)
+    contexts: List[ClaimContext] = []
+    for claim in claims:
+        hits = index.top(claim, top_k)
+        if not hits:
+            # A BM25 miss is not evidence of absence: judge against everything.
+            contexts.append(fallback)
+            continue
+        chosen = tuple(sorted(position for position, _ in hits))
+        contexts.append(ClaimContext(tuple(docs[i] for i in chosen), chosen, CONTEXT_BM25))
+    return contexts
 
 
 @dataclass(frozen=True)
@@ -471,9 +565,20 @@ async def check_all_claims(
     provider: LLMProvider,
     concurrency: int = 5,
     *,
+    contexts: Optional[Sequence[Sequence[str]]] = None,
     optional_retries: bool = True,
 ) -> List[ClaimCheck]:
-    """Verify every claim, at most `concurrency` at once, in claim order."""
+    """
+    Verify every claim, at most `concurrency` at once, in claim order.
+
+    Every claim is checked against `context_docs`, unless `contexts` gives each
+    claim its own documents (select_claim_contexts).
+
+    Raises:
+        ValueError: If `contexts` does not have one entry per claim.
+    """
+    if contexts is not None and len(contexts) != len(claims):
+        raise ValueError("contexts must have one entry per claim")
     # Bounded concurrency: a fast cloud judge (e.g. Claude Haiku) verifies claims
     # in parallel, cutting per-request latency from O(n) to O(n / concurrency).
     # The semaphore caps in-flight requests to respect provider rate limits;
@@ -481,13 +586,14 @@ async def check_all_claims(
     # UNKNOWN on any error, so one bad claim cannot poison the batch.
     semaphore = asyncio.Semaphore(max(1, concurrency))
 
-    async def _check(claim: str) -> ClaimCheck:
+    async def _check(position: int, claim: str) -> ClaimCheck:
+        documents = context_docs if contexts is None else contexts[position]
         async with semaphore:
-            return await check_claim(
-                claim, context_docs, provider, optional_retries=optional_retries
-            )
+            return await check_claim(claim, documents, provider, optional_retries=optional_retries)
 
-    return list(await asyncio.gather(*(_check(claim) for claim in claims)))
+    return list(
+        await asyncio.gather(*(_check(position, claim) for position, claim in enumerate(claims)))
+    )
 
 
 async def verify_all_claims(
@@ -510,6 +616,13 @@ async def verify_all_claims(
     """
     checks = await check_all_claims(claims, context_docs, provider, concurrency)
     return [check.verification for check in checks]
+
+
+def _method_counts(contexts: Sequence[ClaimContext]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for claim_context in contexts:
+        counts[claim_context.method] = counts.get(claim_context.method, 0) + 1
+    return counts
 
 
 def _status_counts(verifications: Sequence[ClaimVerification]) -> Dict[str, int]:
@@ -542,6 +655,7 @@ class VerifierNode:
         concurrency: int = 5,
         max_context_docs: int = MAX_CONTEXT_DOCS,
         max_context_doc_chars: int = MAX_CONTEXT_DOC_CHARS,
+        context_scope: str = CONTEXT_SCOPE_PER_CLAIM,
     ):
         """
         Initialize the verifier node.
@@ -551,11 +665,20 @@ class VerifierNode:
             concurrency: Max claims verified in parallel
             max_context_docs: Most evidence documents sent to the judge
             max_context_doc_chars: Longest evidence document sent whole
+            context_scope: Evidence per claim: per_claim (BM25 over the
+                documents, with the fallbacks of select_claim_contexts) or all
+                (TRUTHTABLE_VERIFY_CONTEXT_SCOPE)
+
+        Raises:
+            ValueError: For an unknown context scope.
         """
+        if context_scope not in CONTEXT_SCOPES:
+            raise ValueError(f"context_scope must be one of {', '.join(CONTEXT_SCOPES)}")
         self.provider = provider
         self.concurrency = concurrency
         self.max_context_docs = max_context_docs
         self.max_context_doc_chars = max_context_doc_chars
+        self.context_scope = context_scope
 
     async def run(self, state: AuditState) -> AuditState:
         """
@@ -586,11 +709,18 @@ class VerifierNode:
             state["context_trimmed"] = True
             add_degraded_reason(state, CONTEXT_TRIMMED)
 
+        claim_contexts = select_claim_contexts(
+            claims,
+            context.documents,
+            scope=self.context_scope,
+            max_doc_chars=self.max_context_doc_chars,
+        )
         checks = await check_all_claims(
             claims,
             context.documents,
             self.provider,
             concurrency=self.concurrency,
+            contexts=[claim_context.documents for claim_context in claim_contexts],
             optional_retries=not state.get("llm_budget_exhausted"),
         )
         if any(check.retry_exhausted for check in checks):
@@ -618,7 +748,8 @@ class VerifierNode:
         logger.info(
             f"Verified {len(verifications)} claims against {len(context.documents)} "
             f"document(s): {_status_counts(verifications)} "
-            f"({sum(check.calls for check in checks)} judge call(s), {elapsed_ms}ms)"
+            f"(context: {_method_counts(claim_contexts)}; "
+            f"{sum(check.calls for check in checks)} judge call(s), {elapsed_ms}ms)"
         )
 
         return state

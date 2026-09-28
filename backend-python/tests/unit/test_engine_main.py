@@ -160,6 +160,7 @@ async def test_main_builds_the_audit_graph_from_the_settings(
     monkeypatch.setenv("TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE", "true")
     monkeypatch.setenv("TRUTHTABLE_RETRIEVER_TOP_K", "4")
     monkeypatch.setenv("VERIFIER_CONCURRENCY", "2")
+    monkeypatch.setenv("TRUTHTABLE_VERIFY_CONTEXT_SCOPE", "all")
     captured: Dict[str, Any] = {}
 
     def fake_build_audit_graph(**kwargs: Any) -> None:
@@ -179,6 +180,7 @@ async def test_main_builds_the_audit_graph_from_the_settings(
     assert captured["extract_claims_without_evidence"] is True
     assert captured["retriever_top_k"] == 4
     assert captured["verifier_concurrency"] == 2
+    assert captured["verify_context_scope"] == "all"
 
 
 # ---------------------------------------------------------------------------
