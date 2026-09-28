@@ -57,7 +57,7 @@
     {
       "id": "replace-unverified",
       "name": "Replace unverified answers",
-      "description": "For payments and policy answers: when two signals agree that an answer is contradicted or unsupported, or it links or cites something your documents do not contain, answer again from your documents only, and block if that fails too. End users cannot supply documents.",
+      "description": "For payments and policy answers, keeping the route's checks: when two signals agree that an answer is contradicted or unsupported, or it links or cites something your documents do not contain, answer again from your documents only, and block if that fails too. End users cannot supply documents.",
       "ui_note": "Starts as Flag until calibrated; blocks whenever the check cannot run",
       "settings": {
         "mode": "fallback",
@@ -67,7 +67,6 @@
         "deadline_ms": 1500,
         "hedge_after_ms": 400,
         "evidence": {"sources": ["request_system", "tool_results", "extension"]},
-        "evaluators": [{"ref": "groundedness@1"}, {"ref": "contradiction@1"}],
         "detectors": {"block_on": ["urls_not_in_evidence", "citation_out_of_range"]},
         "fallback": {"upstream": "same", "on_fail": "block"}
       }

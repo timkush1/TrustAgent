@@ -131,7 +131,7 @@ question set).
 | `block-contradictions` | block | groundedness and contradiction, buffered streams, `require_calibration`; starts as Flag until calibrated |
 | `support-bot` | flag | groundedness, contradiction and commitments, with off-brand tone in shadow; fill in the two params |
 | `rubric-only` | flag | the `rubric-only` set (refusal, unsafe policy, PII or secret leak, injection success) for apps without documents |
-| `replace-unverified` | fallback | payments-style strictness: fail closed, buffered, 1.5 s deadline with a 400 ms hedge, no `request_context` evidence, URL and citation detectors block, fallback answer from documents only, then block |
+| `replace-unverified` | fallback | the `payments-faq` settings, keeping the route's evaluators: fail closed, buffered, 1.5 s deadline with a 400 ms hedge, no `request_context` evidence, URL and citation detectors block, fallback answer from documents only, then block |
 
 ## Prompts
 
