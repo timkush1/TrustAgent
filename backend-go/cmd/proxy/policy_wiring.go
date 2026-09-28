@@ -71,6 +71,10 @@ type policyWiring struct {
 	// enforcing accepts block and fallback modes. Keep it false until the /v1 handler enforces
 	// them (P3 handler pipeline).
 	enforcing bool
+	// onPolicy, when set, receives each newly active policy after a save, rollback, adoption or
+	// reload (not the one active at startup), for state derived from it such as the decision
+	// model's keep-warm. It runs on the goroutine that activated the version.
+	onPolicy func(*policy.Policy)
 	// channel overrides the NOTIFY channel (tests); getenv overrides os.Getenv (tests).
 	channel string
 	getenv  func(string) string
@@ -98,6 +102,7 @@ type policyServices struct {
 	reload time.Duration
 	// evalTrigger asks run to reload the evaluators (an evaluator notification arrived).
 	evalTrigger chan struct{}
+	onPolicy    func(*policy.Policy)
 	log         *slog.Logger
 }
 
@@ -116,7 +121,7 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 	for _, warning := range penv.Warnings {
 		log.Warn("config: " + warning)
 	}
-	ps := &policyServices{hub: w.hub, reload: penv.ReloadInterval, evalTrigger: make(chan struct{}, 1), log: log}
+	ps := &policyServices{hub: w.hub, reload: penv.ReloadInterval, evalTrigger: make(chan struct{}, 1), onPolicy: w.onPolicy, log: log}
 
 	regCfg := evaluators.Config{Dir: penv.EvaluatorsDir, Channel: w.channel, Logger: log}
 	var versions policy.VersionStore
@@ -247,6 +252,9 @@ func (ps *policyServices) reloadEvaluators(ctx context.Context) {
 func (ps *policyServices) policyUpdated(u policy.Update) {
 	metrics.PolicyVersion.Set(float64(u.Version))
 	ps.publish("policy_updated", u)
+	if ps.onPolicy != nil && ps.Engine != nil {
+		ps.onPolicy(ps.Engine.Current())
+	}
 }
 
 func (ps *policyServices) policyFailed(e policy.PolicyError) {

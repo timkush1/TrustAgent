@@ -600,7 +600,10 @@ func TestPolicyServicesPostgres(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "policies.yaml")
 	writePolicy(t, file, apiPolicyYAML)
 	cfg := &config.Config{PolicyFile: file, GateDefaultMode: "observe", GateFailMode: "open", Jev: config.JevConfig{MaxResponseTokens: 6000}}
+	var seenMu sync.Mutex
+	var seen []int64 // versions handed to onPolicy, by either replica
 	wiring := policyWiring{cfg: cfg, pg: pg, channel: store.ScopedConfigChannel(schema.Name), log: quietLog,
+		onPolicy: func(p *policy.Policy) { seenMu.Lock(); seen = append(seen, p.Version); seenMu.Unlock() },
 		getenv: func(k string) string {
 			if k == "TRUTHTABLE_POLICY_RELOAD_INTERVAL" {
 				return "0" // notifications only
@@ -623,6 +626,11 @@ func TestPolicyServicesPostgres(t *testing.T) {
 
 	st := checkState(t, p.do(t, "PUT", "/api/policies", adminKey, `{"yaml":"version: 1\ndefaults: {mode: flag}\n"}`, "If-Match", `"v1"`))
 	waitFor(t, "policy on the replica", func() bool { return b.Engine.State().Version.ID == st.ID })
+	waitFor(t, "onPolicy on both replicas", func() bool {
+		seenMu.Lock()
+		defer seenMu.Unlock()
+		return len(seen) == 2 && seen[0] == st.ID && seen[1] == st.ID
+	})
 
 	doc := []byte(strings.Replace(strings.Replace(toneSpecJSON, "%V", "1", 1), "%W", "it", 1))
 	spec, err := decision.ParseSpec(doc)
