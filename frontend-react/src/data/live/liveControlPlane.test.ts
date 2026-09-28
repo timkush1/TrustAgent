@@ -115,6 +115,15 @@ describe('LiveControlPlane', () => {
     expect(result.audit_status).toBe('queued');
   });
 
+  it('reports a 200 that is neither a stream nor JSON as invalid_response', async () => {
+    server.use(http.post(`${API}/api/playground/run`, () => new HttpResponse('<html>proxy error</html>', { headers: { 'Content-Type': 'text/html' } })));
+    const err = await plane()
+      .streamPlayground({ mode: 'chat', messages: [], stream: true }, {})
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ code: 'invalid_response' });
+  });
+
   it('fails a stream that ends without a result', async () => {
     const api = createControlApi({ playgroundStream: 'event: token\ndata: {"text":"x"}\n\n' });
     server.use(...api.handlers);

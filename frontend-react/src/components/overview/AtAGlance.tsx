@@ -56,7 +56,8 @@ export function AtAGlance({ stats, label }: { stats: OverviewStats; label: Value
         }
       >
         <span className="text-xl font-semibold text-fg tabular">
-          {formatPercent(stats.evidence_coverage.rate ?? share(stats.evidence_coverage.groundedness_assessed, t.requests))}
+          {/* The same share the evidence coverage card headlines ("Groundedness checked on 12% of requests"). */}
+          {formatPercent(share(stats.evidence_coverage.groundedness_assessed, t.requests))}
         </span>
       </Item>
       <Item

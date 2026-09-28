@@ -127,7 +127,7 @@ export function ReviewSaveDialog({
   const serverFieldErrors = isApiError(save.error) ? save.error.fieldErrors : [];
   const stale = isApiError(save.error) && (save.error.status === 412 || save.error.code === 'stale_version');
   const notReady = Object.entries(validation.data?.block_readiness ?? {}).flatMap(([route, items]) =>
-    items.filter((b) => !b.ready).map((b) => ({ route, ...b })),
+    (items ?? []).filter((b) => !b.ready).map((b) => ({ route, ...b })),
   );
 
   let saveReason: Reason | null = writeReason;

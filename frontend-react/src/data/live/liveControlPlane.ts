@@ -230,7 +230,13 @@ export class LiveControlPlane implements ControlPlane {
     });
     // A proxy may answer a stream request with one JSON result (no upstream stream to relay).
     if (!(res.headers.get('content-type') ?? '').includes('text/event-stream') || !res.body) {
-      const raw = (await res.json()) as unknown;
+      let raw: unknown;
+      try {
+        raw = (await res.json()) as unknown;
+      } catch {
+        // Not JSON either (an HTML error page, say): the shape check reports it as invalid_response.
+        raw = undefined;
+      }
       return normalizeShaped(raw, what, CONTROL_SHAPES.playground);
     }
     for await (const item of readSse(res.body, signal)) {
