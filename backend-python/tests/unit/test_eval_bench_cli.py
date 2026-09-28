@@ -18,7 +18,7 @@ from evals.report import schema_errors
 from truthtable.contracts import contract_path
 from truthtable.providers.base import CompletionRequest, LLMProvider
 
-from bench_fakes import FakeGateEval, ScriptedJudge, decision, example
+from bench_fakes import FakeGateEval, ScriptedJudge, example, gate_line
 
 RESPONSES = {
     "Lyon is the capital of France.": ("CONTRADICTED", True),
@@ -113,7 +113,7 @@ def _gate(tmp_path: Path, backend: str = "openrouter-decisions") -> FakeGateEval
     for i, (response, (_, hallucinated)) in enumerate(list(RESPONSES.items()) * 3):
         fake.answer(
             f"ex{i}",
-            decision=decision(
+            **gate_line(
                 groundedness=0.92 if hallucinated else 0.08,
                 verdict="unsupported" if hallucinated else "supported",
                 deep_audit="high" if i % 3 == 0 else "sample",
@@ -121,7 +121,6 @@ def _gate(tmp_path: Path, backend: str = "openrouter-decisions") -> FakeGateEval
                 cost_usd=0.0 if backend == "mock" else 0.00004,
                 cost_source="simulated" if backend == "mock" else "reported",
             ),
-            error=None,
         )
     return fake
 

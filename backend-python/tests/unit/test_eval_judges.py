@@ -36,7 +36,7 @@ from evals.judges import (
     describe_cascade,
     load_evaluators,
     meter_scope,
-    parse_gate_decision,
+    parse_gate_result,
     same_checks_prompt,
     same_checks_state,
 )
@@ -45,7 +45,7 @@ from truthtable.providers.base import CompletionRequest, CompletionResponse
 from truthtable.providers.errors import ProviderError
 from truthtable.providers.mock import MockLLMProvider
 
-from bench_fakes import FakeGateEval, ScriptedJudge, decision, example
+from bench_fakes import FakeGateEval, ScriptedJudge, example, gate_line
 
 # ---------------------------------------------------------------------------
 # gate
@@ -62,13 +62,14 @@ def _gate(fake: FakeGateEval, **config: Any) -> GateJudge:
 
 
 async def test_gate_reads_the_decision(gate_eval: FakeGateEval, tmp_path: Path) -> None:
-    gate_eval.answer("e1", decision=decision(groundedness=0.91, contradiction=0.3), error=None)
+    gate_eval.answer("e1", **gate_line(groundedness=0.91, contradiction=0.3))
     budget = CostBudget(1.0, ledger_path=tmp_path / "ledger.jsonl")
 
     record = await _gate(gate_eval).judge(example("e1"), budget)
 
     assert record.status == OK and record.system == GATE
     assert record.predicted is True and record.score == pytest.approx(0.91)
+    # The latency is the example's whole gate pipeline, calls included.
     assert record.latency_ms == 180 and record.calls == 1
     assert record.cost_usd == pytest.approx(0.00004) and record.cost_source == "reported"
     assert record.mock is False
@@ -77,16 +78,20 @@ async def test_gate_reads_the_decision(gate_eval: FakeGateEval, tmp_path: Path) 
     assert record.details["snapshot"] == "typesafe/jev-1.13-20260917"
     assert record.details["contradiction"] == pytest.approx(0.3)
     assert budget.spent_usd == pytest.approx(0.00004) and budget.reserved_usd == 0
-    # The reservation is the per-call cap passed to gate-eval.
+    # The reservation is the per-call cap passed to gate-eval, with the evaluators.
     (argv,) = gate_eval.argv()
-    assert argv[:2] == ["--max-cost-usd", "0.002000"] and gate_eval.arg in argv
+    assert argv[:4] == [
+        "--max-cost-usd",
+        "0.002500",
+        "--evaluators",
+        "groundedness@1,contradiction@1",
+    ]
+    assert gate_eval.arg in argv and "--route" not in argv
     (sent,) = gate_eval.inputs()
     assert sent == {
         "id": "e1",
-        "route": "bench",
-        "evaluators": ["groundedness@1", "contradiction@1"],
-        "user_request": "What is the capital of France?",
-        "assistant_response": "Lyon is the capital of France.",
+        "query": "What is the capital of France?",
+        "response": "Lyon is the capital of France.",
         "evidence": [
             {
                 "id": "doc1",
@@ -99,10 +104,17 @@ async def test_gate_reads_the_decision(gate_eval: FakeGateEval, tmp_path: Path) 
     assert ledger[0]["system"] == GATE and ledger[0]["example_id"] == "e1"
 
 
+async def test_gate_route_is_passed_when_configured(gate_eval: FakeGateEval) -> None:
+    gate_eval.default(**gate_line())
+
+    await _gate(gate_eval, route="support").judge(example("r1"), CostBudget(1.0))
+
+    (argv,) = gate_eval.argv()
+    assert argv[argv.index("--route") + 1] == "support"
+
+
 async def test_gate_passing_answer(gate_eval: FakeGateEval) -> None:
-    gate_eval.default(
-        decision=decision(groundedness=0.12, verdict="supported", deep_audit="sample"), error=None
-    )
+    gate_eval.default(**gate_line(groundedness=0.12, verdict="supported", deep_audit="sample"))
 
     record = await _gate(gate_eval).judge(example("e2", hallucinated=False), CostBudget(1.0))
 
@@ -111,60 +123,76 @@ async def test_gate_passing_answer(gate_eval: FakeGateEval) -> None:
 
 
 async def test_gate_mock_backend_is_simulated(gate_eval: FakeGateEval) -> None:
-    gate_eval.default(
-        decision=decision(backend="mock", cost_usd=0.0, cost_source="simulated"), error=None
-    )
+    gate_eval.default(**gate_line(backend="mock", cost_usd=0.0, cost_source="simulated"))
 
     record = await _gate(gate_eval).judge(example("e3"), CostBudget(1.0))
 
     assert record.status == OK and record.mock is True
 
 
-async def test_gate_cost_cap_exit_is_over_budget(gate_eval: FakeGateEval) -> None:
-    gate_eval.set(exit=3, stderr="cost cap reached")
+async def test_gate_simulated_line_is_mock_whatever_the_usage_says(
+    gate_eval: FakeGateEval,
+) -> None:
+    gate_eval.default(**{**gate_line(), "simulated": True})
+
+    record = await _gate(gate_eval).judge(example("e3b"), CostBudget(1.0))
+
+    assert record.mock is True
+
+
+async def test_gate_skipped_over_budget_is_excluded_and_the_run_goes_on(
+    gate_eval: FakeGateEval,
+) -> None:
+    # gate-eval refused the example's only call (it did not fit this example's
+    # ceiling): nothing was billed, and the run's own cap is not reached.
+    skipped = {**gate_line(decision_model=False), "skipped": "over_budget", "decision": None}
+    gate_eval.set(exit_after=3)
+    gate_eval.default(**skipped)
     budget = CostBudget(1.0)
 
     record = await _gate(gate_eval).judge(example("e4"), budget)
 
     assert record.status == OVER_BUDGET and record.error_kind == "gate_eval_cost_cap"
-    # The per-example ceiling stopped it, not the run's cap: the run carries on,
-    # and the reservation is charged (calls before the stop may have been billed).
     assert not budget.exhausted
-    assert budget.spent_usd == pytest.approx(0.002) and budget.reserved_usd == 0
+    assert budget.spent_usd == 0 and budget.reserved_usd == 0
 
 
-async def test_gate_budget_error_line_is_over_budget(gate_eval: FakeGateEval) -> None:
-    gate_eval.default(decision=None, error={"kind": "budget", "message": "cap"})
+async def test_gate_cost_cap_exit_without_a_line_charges_the_reservation(
+    gate_eval: FakeGateEval,
+) -> None:
+    gate_eval.set(exit=3, stderr="cost cap reached")
     budget = CostBudget(1.0)
 
     record = await _gate(gate_eval).judge(example("e5"), budget)
 
     assert record.status == OVER_BUDGET and not budget.exhausted
+    assert budget.spent_usd == pytest.approx(0.0025) and budget.reserved_usd == 0
 
 
 async def test_gate_decision_skipped_for_budget_is_over_budget(gate_eval: FakeGateEval) -> None:
-    skipped = {
-        **decision(status="skipped", groundedness=None, contradiction=None, verdict=None),
-        "skip_reason": "budget",
-        "degraded": "budget",
-    }
-    gate_eval.default(decision=skipped, error=None)
+    gate_eval.default(
+        **gate_line(
+            status="skipped",
+            groundedness=None,
+            contradiction=None,
+            verdict=None,
+            skip_reason="budget",
+            decision_model=False,
+        )
+    )
     budget = CostBudget(1.0)
 
     record = await _gate(gate_eval).judge(example("e7"), budget)
 
     assert record.status == OVER_BUDGET and record.predicted is None
-    assert budget.spent_usd == pytest.approx(0.002) and not budget.exhausted
+    assert not budget.exhausted
 
 
 async def test_gate_undecided_verdict_is_failed_not_negative(gate_eval: FakeGateEval) -> None:
     # partial: groundedness errored and contradiction stayed under warn, so the
     # gate's verdict is unknown; that must not count as "not hallucinated".
     gate_eval.default(
-        decision=decision(
-            status="partial", groundedness=None, contradiction=0.2, verdict="unknown"
-        ),
-        error=None,
+        **gate_line(status="partial", groundedness=None, contradiction=0.2, verdict="unknown")
     )
 
     record = await _gate(gate_eval).judge(example("e8"), CostBudget(1.0))
@@ -180,17 +208,20 @@ async def test_gate_refuses_to_start_past_the_cap(gate_eval: FakeGateEval) -> No
 
 
 async def test_gate_failures_are_recorded(gate_eval: FakeGateEval, tmp_path: Path) -> None:
-    gate_eval.set(exit=1, stderr="config: unknown route bench")
+    gate_eval.set(exit=1, stderr='gate-eval: no route "bench" in config/policies.yaml')
     failed = await _gate(gate_eval).judge(example("f1"), CostBudget(1.0))
     assert failed.status == FAILED and failed.error_kind == "gate_eval_exit_1"
-    assert "unknown route" in failed.details["stderr"]
+    assert "no route" in failed.details["stderr"]
 
     gate_eval.set(exit=0)
-    gate_eval.default(decision=None, error={"kind": "too_large", "message": "413"})
-    in_band = await _gate(gate_eval).judge(example("f2"), CostBudget(1.0))
-    assert in_band.status == FAILED and in_band.error_kind == "too_large"
+    gate_eval.default(**{**gate_line(), "error": "compile: too large", "decision": None})
+    budget = CostBudget(1.0)
+    in_band = await _gate(gate_eval).judge(example("f2"), budget)
+    assert in_band.status == FAILED and in_band.error_kind == "gate_eval_error"
+    assert in_band.details["error"] == "compile: too large"
+    assert budget.reserved_usd == 0
 
-    gate_eval.default(decision=decision(status="timeout", groundedness=None), error=None)
+    gate_eval.default(**gate_line(status="timeout", groundedness=None))
     timed_out = await _gate(gate_eval).judge(example("f3"), CostBudget(1.0))
     assert timed_out.status == FAILED and timed_out.error_kind == "gate_timeout:error"
 
@@ -205,6 +236,18 @@ async def test_gate_failures_are_recorded(gate_eval: FakeGateEval, tmp_path: Pat
     assert str(unavailable.error_kind).startswith("gate_eval_unavailable")
 
 
+async def test_gate_sends_only_members_gate_eval_reads(gate_eval: FakeGateEval) -> None:
+    # The fake rejects unknown members like backend-go/cmd/gate-eval does, so a
+    # harness that drifted from the Go input format would fail here.
+    gate_eval.default(**gate_line())
+
+    record = await _gate(gate_eval).judge(example("m1", query=""), CostBudget(1.0))
+
+    assert record.status == OK, record.details
+    (sent,) = gate_eval.inputs()
+    assert sent["query"] == ""
+
+
 async def test_gate_timeout_kills_the_process(gate_eval: FakeGateEval) -> None:
     gate_eval.set(sleep=5)
     budget = CostBudget(1.0)
@@ -212,7 +255,7 @@ async def test_gate_timeout_kills_the_process(gate_eval: FakeGateEval) -> None:
     record = await _gate(gate_eval, timeout_s=0.5).judge(example("t1"), budget)
 
     assert record.status == FAILED and record.error_kind == "timeout"
-    assert budget.spent_usd == pytest.approx(0.002)  # the reservation is charged
+    assert budget.spent_usd == pytest.approx(0.0025)  # the reservation is charged
 
 
 async def test_a_cancelled_gate_call_charges_its_reservation(gate_eval: FakeGateEval) -> None:
@@ -222,24 +265,27 @@ async def test_a_cancelled_gate_call_charges_its_reservation(gate_eval: FakeGate
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(_gate(gate_eval).judge(example("t2"), budget), 0.3)
 
-    assert budget.spent_usd == pytest.approx(0.002) and budget.reserved_usd == 0
+    assert budget.spent_usd == pytest.approx(0.0025) and budget.reserved_usd == 0
 
 
-def test_parse_gate_decision_fallbacks() -> None:
+def test_parse_gate_result_fallbacks() -> None:
     config = GateEvalConfig(binary=Path("/bin/true"))
 
-    no_verdict = parse_gate_decision(decision(verdict=None, would_action="pass"), config)
+    no_verdict = parse_gate_result(gate_line(verdict=None, would_action="pass"), config)
     assert no_verdict.predicted is False
 
-    no_groundedness = decision(groundedness=None, contradiction=0.6, max_risk=0.6)
-    fallback = parse_gate_decision(no_groundedness, config)
+    no_groundedness = gate_line(groundedness=None, contradiction=0.6, max_risk=0.6)
+    fallback = parse_gate_result(no_groundedness, config)
     assert fallback.ok and fallback.score == pytest.approx(0.6)
 
-    no_signal = parse_gate_decision({"status": "ok", "evaluators": {}}, config)
+    no_signal = parse_gate_result({"decision": {"status": "ok", "evaluators": {}}}, config)
     assert not no_signal.ok and no_signal.error_kind == "gate_no_signal"
 
-    no_model = parse_gate_decision({**decision(latency_ms=None), "decision_model": None}, config)
-    assert no_model.latency_ms == 190 and no_model.cost_usd is None and no_model.calls == 0
+    no_line_latency = parse_gate_result({**gate_line(), "latency_ms": None}, config)
+    assert no_line_latency.latency_ms == 150  # the decision-model call's latency
+
+    no_model = parse_gate_result(gate_line(decision_model=False), config)
+    assert no_model.calls == 0 and no_model.cost_usd == 0.0 and no_model.backend is None
 
 
 def test_gate_fingerprint_tracks_the_binary(gate_eval: FakeGateEval) -> None:
@@ -248,7 +294,7 @@ def test_gate_fingerprint_tracks_the_binary(gate_eval: FakeGateEval) -> None:
     gate_eval.binary.write_text(gate_eval.binary.read_text() + "\n# rebuilt\n")
 
     assert judge.fingerprint()["binary_sha256"] != before["binary_sha256"]
-    assert before["protocol"] == "gate-eval/v1"
+    assert before["protocol"] == "gate-eval/jsonl-1"
 
 
 def test_gate_description_uses_the_common_snapshot() -> None:

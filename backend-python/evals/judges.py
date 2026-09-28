@@ -30,32 +30,36 @@ failed with an error status releases its reservation; one that may still have
 been billed (a timeout, a cancellation, an unreadable 2xx answer) is charged
 its reservation, with its cost unknown.
 
-gate-eval protocol (gate-eval/v1; implemented by backend-go/cmd/gate-eval):
+gate-eval protocol (backend-go/cmd/gate-eval, the Go CLI of SPEC section 3.1;
+the harness speaks the format that CLI implements):
 
-    gate-eval --max-cost-usd <usd> [extra args]    # JSON Lines on stdin and stdout
+    gate-eval --max-cost-usd <usd> --evaluators groundedness@1,contradiction@1
+              [--route <name>] [extra args]      # one JSON line on stdin, one on stdout
 
-    in:  {"id": "...", "route": "bench", "evaluators": ["groundedness@1", ...],
-          "user_request": "...", "assistant_response": "...",
+    in:  {"id": "...", "query": "...", "response": "...",
           "evidence": [{"id": "doc1", "source": "request_context", "text": "..."}]}
-    out: {"id": "...", "decision": <decision/v1> | null,
-          "error": null | {"kind": "...", "message": "..."}}
+    out: {"id": "...", "line": 1, "error": null | "<message>",
+          "skipped": null | "over_budget", "simulated": false,
+          "decision": <decision/v1 core> | null, "decision_model": <usage> | null,
+          "cost_usd": 0.00004, "latency_ms": 180, ...}
 
-    Exit 0 when every line was answered (per-line errors in-band), 3 when the
-    --max-cost-usd cap stopped it (an in-band error kind "budget", or a
-    decision skipped with skip_reason "budget", means the same), any other
-    code on a fatal error (stderr explains). The harness reads the decision's
-    `status`, `skip_reason`, `verdict`, `would_action`, `deep_audit`,
-    `max_risk`, `gate_ms`, `evaluators[ref].{status, risk_raw}` and
-    `decision_model.{backend, snapshot, latency_ms, cost_usd, cost_source,
-    calls}`.
+    Unknown input members are an error for that line (so a misspelt field
+    cannot silently drop evidence). Exit 0 when every line was written
+    (per-line errors in-band), 3 when the --max-cost-usd cap skipped an
+    example (its line says skipped: over_budget; no decision-model call was
+    made for it), any other code on a fatal error (stderr explains). The
+    harness reads `error`, `skipped`, `simulated`, `cost_usd`, `latency_ms`
+    (the example's gate pipeline, calls included), the decision's `status`,
+    `skip_reason`, `verdict`, `would_action`, `deep_audit`, `max_risk`,
+    `degraded` and `evaluators[ref].{status, risk_raw}`, and
+    `decision_model.{backend, snapshot, calls, latency_ms, cost_source}`.
 
     The harness runs one example per invocation and passes that example's
-    reservation as --max-cost-usd, so a budget stop is a per-example ceiling:
-    the example is excluded as over budget and charged its reservation (calls
-    made before the stop may have been billed), and the run carries on under
-    its own cap. A decision whose verdict is `unknown` or `not_assessed` (an
-    evaluator errored, or nothing was assessed) is a gate failure, never a
-    "not hallucinated" prediction.
+    reservation as --max-cost-usd (gate-eval reserves twice a call's estimated
+    cost), so a budget stop is a per-example ceiling: the example is excluded
+    as over budget and the run carries on under its own cap. A decision whose
+    verdict is `unknown` or `not_assessed` (an evaluator errored, or nothing
+    was assessed) is a gate failure, never a "not hallucinated" prediction.
 """
 
 import asyncio
@@ -139,14 +143,16 @@ DEFAULT_EVALUATORS = ("groundedness@1", "contradiction@1")
 # Whose risk is the score (P(hallucinated)): groundedness covers contradictions too.
 SCORE_EVALUATOR = "groundedness@1"
 
-GATE_EVAL_PROTOCOL = "gate-eval/v1"
+GATE_EVAL_PROTOCOL = "gate-eval/jsonl-1"
 GATE_EVAL_EXIT_BUDGET = 3
-GATE_EVAL_BUDGET_KIND = "budget"
-# Per-example reservation of a gate call: a full 24,000-token Jev request costs
-# about $0.001 at $0.042 per million input tokens; twice that covers a split.
-GATE_RESERVE_USD = 0.002
+GATE_EVAL_SKIPPED_BUDGET = "over_budget"  # An output line's `skipped`
+GATE_EVAL_BUDGET_KIND = "budget"  # decision/v1 skip_reason of a budget stop
+# Per-example reservation of a gate call, passed as --max-cost-usd. gate-eval
+# reserves twice a call's estimated cost; a full 24,000-token Jev request is
+# about $0.001 at $0.042 per million input tokens, so $0.0025 admits it with
+# room for the estimate. Examples over MAX_EXAMPLE_TOKENS are excluded earlier.
+GATE_RESERVE_USD = 0.0025
 GATE_TIMEOUT_S = 60.0
-BENCH_ROUTE = "bench"
 
 # Reservation estimate of an LLM call: characters per input token (low, so the
 # estimate is high) and a per-message overhead; output at the request's max_tokens.
@@ -574,28 +580,40 @@ class GateEvalConfig:
     binary: Path
     evaluators: Tuple[str, ...] = DEFAULT_EVALUATORS
     score_evaluator: str = SCORE_EVALUATOR
-    route: str = BENCH_ROUTE
+    route: Optional[str] = None  # None: gate-eval's default route
     extra_args: Tuple[str, ...] = ()
     timeout_s: float = GATE_TIMEOUT_S
     reserve_usd: float = GATE_RESERVE_USD
     env: Mapping[str, str] = field(default_factory=dict)
 
 
-def gate_eval_input(example: BenchExample, config: GateEvalConfig) -> Dict[str, Any]:
-    """The gate-eval/v1 input line of an example."""
+def gate_eval_input(example: BenchExample) -> Dict[str, Any]:
+    """The gate-eval input line of an example (see the module docstring)."""
     return {
         "id": example.id,
-        "route": config.route,
-        "evaluators": list(config.evaluators),
-        "user_request": example.query,
-        "assistant_response": example.response,
+        "query": example.query,
+        "response": example.response,
         "evidence": _evidence_items(example),
     }
 
 
+def gate_eval_args(config: GateEvalConfig, max_cost_usd: float) -> List[str]:
+    """The gate-eval command line (binary first)."""
+    args = [
+        str(config.binary),
+        "--max-cost-usd",
+        f"{max_cost_usd:.6f}",
+        "--evaluators",
+        ",".join(config.evaluators),
+    ]
+    if config.route:
+        args += ["--route", config.route]
+    return args + list(config.extra_args)
+
+
 @dataclass(frozen=True)
 class GateOutcome:
-    """What the harness reads from one decision/v1."""
+    """What the harness reads from one gate-eval output line."""
 
     ok: bool
     error_kind: Optional[str]
@@ -610,6 +628,7 @@ class GateOutcome:
     cost_source: str
     calls: int
     status: str
+    simulated: bool
 
 
 def _risk_raw(evaluators: Mapping[str, Any], ref: str) -> Optional[float]:
@@ -619,8 +638,17 @@ def _risk_raw(evaluators: Mapping[str, Any], ref: str) -> Optional[float]:
     return _clamp01(result.get("risk_raw"))
 
 
-def parse_gate_decision(decision: Mapping[str, Any], config: GateEvalConfig) -> GateOutcome:
-    """Read a decision/v1 (see the module docstring for the fields used)."""
+def _number(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def parse_gate_result(line: Mapping[str, Any], config: GateEvalConfig) -> GateOutcome:
+    """Read a gate-eval output line that carries a decision (see the module docstring)."""
+    decision = line.get("decision")
+    decision = decision if isinstance(decision, Mapping) else {}
     status = str(decision.get("status") or "")
     evaluators = decision.get("evaluators")
     evaluators = evaluators if isinstance(evaluators, Mapping) else {}
@@ -634,12 +662,13 @@ def parse_gate_decision(decision: Mapping[str, Any], config: GateEvalConfig) -> 
         predicted: Optional[bool] = str(verdict) in HALLUCINATION_VERDICTS
     else:
         predicted = str(decision.get("would_action") or "") in FLAGGING_ACTIONS
-    model = decision.get("decision_model")
-    model = model if isinstance(model, Mapping) else {}
-    latency = model.get("latency_ms")
-    if not isinstance(latency, (int, float)) or isinstance(latency, bool):
-        latency = decision.get("gate_ms")
-    cost = model.get("cost_usd")
+    usage = line.get("decision_model")
+    usage = usage if isinstance(usage, Mapping) else {}
+    latency = _number(line.get("latency_ms"))
+    if latency is None:
+        latency = _number(usage.get("latency_ms"))
+    cost = _number(line.get("cost_usd"))
+    calls = usage.get("calls")
     undecided = verdict is not None and str(verdict) in UNDECIDED_VERDICTS
     ok = status in ("ok", "partial") and score is not None and not undecided
     error_kind = None
@@ -648,7 +677,8 @@ def parse_gate_decision(decision: Mapping[str, Any], config: GateEvalConfig) -> 
         error_kind = f"gate_{status or 'unknown'}" + (f":{degraded}" if degraded else "")
         if status in ("ok", "partial"):
             error_kind = "gate_no_signal" if score is None else f"gate_verdict_{verdict}"
-    calls = model.get("calls")
+    backend = str(usage["backend"]) if usage.get("backend") else None
+    cost_source = str(usage.get("cost_source") or UNKNOWN)
     return GateOutcome(
         ok=ok,
         error_kind=error_kind,
@@ -656,25 +686,35 @@ def parse_gate_decision(decision: Mapping[str, Any], config: GateEvalConfig) -> 
         score=score,
         contradiction=_risk_raw(evaluators, "contradiction@1"),
         escalate=decision.get("deep_audit") == "high",
-        backend=str(model["backend"]) if model.get("backend") else None,
-        snapshot=str(model["snapshot"]) if model.get("snapshot") else None,
-        latency_ms=float(latency) if isinstance(latency, (int, float)) else None,
-        cost_usd=float(cost) if isinstance(cost, (int, float)) and cost >= 0 else None,
-        cost_source=str(model.get("cost_source") or UNKNOWN),
-        calls=int(calls) if isinstance(calls, int) else (1 if model else 0),
+        backend=backend,
+        snapshot=str(usage["snapshot"]) if usage.get("snapshot") else None,
+        latency_ms=latency,
+        cost_usd=cost if cost is not None and cost >= 0 else None,
+        cost_source=cost_source,
+        calls=calls if isinstance(calls, int) and not isinstance(calls, bool) else 0,
         status=status,
+        simulated=line.get("simulated") is True or backend == "mock" or cost_source == SIMULATED,
     )
 
 
 def _budget_stop(answer: Optional[Mapping[str, Any]]) -> bool:
-    """Whether a gate-eval answer says its --max-cost-usd cap stopped the example."""
+    """Whether a gate-eval line says the --max-cost-usd cap skipped the example."""
     if answer is None:
         return False
-    error = answer.get("error")
-    if isinstance(error, Mapping) and error.get("kind") == GATE_EVAL_BUDGET_KIND:
+    if answer.get("skipped") == GATE_EVAL_SKIPPED_BUDGET:
         return True
     decision = answer.get("decision")
     return isinstance(decision, Mapping) and decision.get("skip_reason") == GATE_EVAL_BUDGET_KIND
+
+
+def _line_error(answer: Mapping[str, Any]) -> Optional[str]:
+    """The in-band error of a gate-eval line, if any."""
+    error = answer.get("error")
+    if error is None or error == "":
+        return None
+    if isinstance(error, Mapping):
+        return str(error.get("kind") or error.get("message") or "error")
+    return str(error)
 
 
 class GateJudge:
@@ -719,10 +759,7 @@ class GateJudge:
     async def _run(self, line: str, max_cost_usd: float) -> Tuple[int, bytes, bytes]:
         env = {**os.environ, **self.config.env}
         process = await asyncio.create_subprocess_exec(
-            str(self.config.binary),
-            "--max-cost-usd",
-            f"{max_cost_usd:.6f}",
-            *self.config.extra_args,
+            *gate_eval_args(self.config, max_cost_usd),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -745,7 +782,7 @@ class GateJudge:
         except BudgetExhausted:
             return self._record(example, OVER_BUDGET, error_kind="cost_cap")
         started = time.monotonic()
-        line = json.dumps(gate_eval_input(example, self.config), ensure_ascii=False)
+        line = json.dumps(gate_eval_input(example), ensure_ascii=False)
         try:
             code, stdout, stderr = await self._run(line, reservation.usd)
         except TimeoutError:
@@ -762,11 +799,15 @@ class GateJudge:
         wall_ms = (time.monotonic() - started) * 1000
 
         answer = self._answer(example.id, stdout)
-        if code == GATE_EVAL_EXIT_BUDGET or _budget_stop(answer):
-            # This example's ceiling (--max-cost-usd = its reservation) stopped
-            # gate-eval, not the run's cap: exclude the example and carry on.
-            # Calls made before the stop may have been billed, so the
-            # reservation is charged (cost unknown).
+        if _budget_stop(answer):
+            # This example's ceiling (--max-cost-usd = its reservation) skipped
+            # it before any decision-model call: nothing was billed. The run's
+            # own cap is not reached, so the run carries on.
+            budget.release(reservation)
+            return self._record(example, OVER_BUDGET, error_kind="gate_eval_cost_cap")
+        if code == GATE_EVAL_EXIT_BUDGET:
+            # A budget stop without the line that says so: calls may have been
+            # made, so the reservation is charged (cost unknown).
             budget.settle(reservation, None, system=self.system, example_id=example.id)
             return self._record(example, OVER_BUDGET, error_kind="gate_eval_cost_cap")
         if code != 0 or answer is None:
@@ -774,14 +815,22 @@ class GateJudge:
             tail = stderr.decode("utf-8", "replace").strip()[-300:]
             kind = f"gate_eval_exit_{code}" if code != 0 else "gate_eval_no_answer"
             return self._record(example, FAILED, error_kind=kind, calls=1, details={"stderr": tail})
-        error = answer.get("error")
-        decision = answer.get("decision")
-        if error or not isinstance(decision, Mapping):
-            budget.settle(reservation, None, system=self.system, example_id=example.id)
-            kind = str((error or {}).get("kind") or "gate_eval_no_decision")
-            return self._record(example, FAILED, error_kind=kind, calls=1)
+        error = _line_error(answer)
+        if error is not None or not isinstance(answer.get("decision"), Mapping):
+            # An invalid example or a compile failure: no decision-model call.
+            cost = _number(answer.get("cost_usd"))
+            charged = budget.settle(
+                reservation, cost if cost is not None else 0.0, system=self.system
+            )
+            return self._record(
+                example,
+                FAILED,
+                error_kind="gate_eval_error" if error is not None else "gate_eval_no_decision",
+                cost_usd=charged,
+                details={"error": (error or "")[:300]},
+            )
 
-        outcome = parse_gate_decision(decision, self.config)
+        outcome = parse_gate_result(answer, self.config)
         charged = budget.settle(
             reservation,
             outcome.cost_usd,
@@ -795,16 +844,15 @@ class GateJudge:
             "gate_status": outcome.status,
             "escalate": outcome.escalate,
             "contradiction": outcome.contradiction,
-            "verdict": decision.get("verdict"),
-            "action": decision.get("action"),
+            "verdict": answer["decision"].get("verdict"),
+            "action": answer["decision"].get("action"),
         }
-        mock = outcome.backend == "mock" or outcome.cost_source == SIMULATED
         common: Dict[str, Any] = {
             "latency_ms": outcome.latency_ms if outcome.latency_ms is not None else wall_ms,
             "cost_usd": charged if outcome.cost_usd is not None else None,
             "cost_source": outcome.cost_source,
             "calls": outcome.calls,
-            "mock": mock,
+            "mock": outcome.simulated,
             "details": details,
         }
         if not outcome.ok:

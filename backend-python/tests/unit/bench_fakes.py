@@ -1,11 +1,14 @@
 """
 Fakes for the benchmark harness tests (evals/): a fake gate-eval executable,
-decision/v1 fixtures, a scripted priced judge, and example builders.
+gate-eval output lines, a scripted priced judge, and example builders.
 
 The fake gate-eval is a real executable Python script, so GateJudge's
 subprocess plumbing (stdin/stdout JSON Lines, exit codes, stderr, timeouts)
 runs for real without Go, Jev or the network. It reads its behaviour from the
-JSON file named by its `--fake-config=<path>` argument.
+JSON file named by its `--fake-config=<path>` argument, and it checks each
+input line the way backend-go/cmd/gate-eval does (unknown members are an error
+for that line; a response is required), so the harness cannot drift from the
+Go CLI's input format unnoticed.
 """
 
 import json
@@ -38,17 +41,39 @@ if config.get("sleep"):
 if config.get("exit"):
     sys.stderr.write(config.get("stderr", "fatal"))
     sys.exit(config["exit"])
+# The members backend-go/cmd/gate-eval reads (example.go exampleLine).
+MEMBERS = {{
+    "id", "query", "user_request", "response", "answer", "system_instructions", "context",
+    "evidence", "rules", "max_marker", "scenario", "labels", "label_hallucinated",
+    "label_source", "domain", "meta",
+}}
+EVIDENCE_MEMBERS = {{"id", "source", "text", "untrusted"}}
+number = 0
 for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
+    number += 1
     item = json.loads(line)
     with open(config["input_log"], "a", encoding="utf-8") as f:
         f.write(line + "\\n")
+    unknown = sorted(set(item) - MEMBERS)
+    for evidence in item.get("evidence") or []:
+        if isinstance(evidence, dict):
+            unknown += sorted(set(evidence) - EVIDENCE_MEMBERS)
+    if unknown or ("response" not in item and "answer" not in item):
+        error = "invalid example: " + (
+            f"unknown field {{unknown[0]!r}}" if unknown else "response is required"
+        )
+        sys.stdout.write(json.dumps({{"id": item.get("id"), "line": number, "error": error,
+                                     "skipped": None, "decision": None}}) + "\\n")
+        continue
     answer = config["answers"].get(item["id"], config.get("default"))
     if answer is None:
         continue
-    sys.stdout.write(json.dumps(dict(id=item["id"], **answer)) + "\\n")
+    sys.stdout.write(json.dumps(dict(id=item["id"], line=number, **answer)) + "\\n")
+if config.get("exit_after"):
+    sys.exit(config["exit_after"])
 """
 
 
@@ -101,7 +126,7 @@ class FakeGateEval:
         return [json.loads(line) for line in self.input_log.read_text().splitlines()]
 
 
-def decision(
+def gate_line(
     *,
     groundedness: Optional[float] = 0.9,
     contradiction: Optional[float] = 0.2,
@@ -112,12 +137,18 @@ def decision(
     backend: str = "openrouter-decisions",
     snapshot: Optional[str] = "typesafe/jev-1.13-20260917",
     latency_ms: Optional[float] = 180,
-    gate_ms: Optional[float] = 190,
-    cost_usd: Optional[float] = 0.00004,
+    call_latency_ms: Optional[float] = 150,
+    cost_usd: float = 0.00004,
     cost_source: str = "reported",
     max_risk: Optional[float] = None,
+    skip_reason: Optional[str] = None,
+    decision_model: bool = True,
 ) -> Dict[str, Any]:
-    """The decision/v1 fields the harness reads (a real decision has more)."""
+    """
+    A gate-eval output line (backend-go/cmd/gate-eval result) with the fields
+    the harness reads; `id` and `line` are added by the fake. A real line has
+    more (detectors, excluded, compile, ...).
+    """
 
     def evaluator(risk: Optional[float]) -> Dict[str, Any]:
         if risk is None:
@@ -129,30 +160,46 @@ def decision(
         evaluators["groundedness@1"] = evaluator(groundedness)
     evaluators["contradiction@1"] = evaluator(contradiction)
     known = [value for value in (groundedness, contradiction) if value is not None]
+    usage = {
+        "backend": backend,
+        "model_requested": "typesafe/jev-1.13",
+        "snapshot": snapshot,
+        "calls": 1,
+        "attempts": 1,
+        "hedged": False,
+        "latency_ms": call_latency_ms,
+        "input_tokens": 950,
+        "cost_usd": cost_usd,
+        "cost_source": cost_source,
+    }
     return {
-        "spec": "decision/v1",
-        "status": status,
-        "action": "observe",
-        "would_action": would_action,
-        "verdict": verdict,
-        "deep_audit": deep_audit,
-        "max_risk": max_risk if max_risk is not None else (max(known) if known else None),
-        "gate_ms": gate_ms,
-        "degraded": None if status == "ok" else "error",
-        "evaluators": evaluators,
-        "decision_model": {
-            "backend": backend,
-            "model_requested": "typesafe/jev-1.13",
-            "snapshot": snapshot,
-            "calls": 1,
-            "attempts": 1,
-            "hedged": False,
-            "latency_ms": latency_ms,
-            "connect_ms": None,
-            "input_tokens": 950,
-            "cost_usd": cost_usd,
-            "cost_source": cost_source,
+        "error": None,
+        "skipped": None,
+        "simulated": backend == "mock",
+        "route": "default",
+        "mode": "flag",
+        "decision": {
+            "status": status,
+            "skip_reason": skip_reason,
+            "effective_mode": "flag",
+            "action": "flag" if would_action != "pass" else "pass",
+            "would_action": would_action,
+            "enforced": True,
+            "verdict": verdict,
+            "max_risk": max_risk if max_risk is not None else (max(known) if known else None),
+            "calibration": "none",
+            "degraded": None if status == "ok" else "error",
+            "disagreement": False,
+            "deep_audit": deep_audit,
+            "reasons": [],
+            "evaluators": evaluators,
         },
+        "detectors": [],
+        "excluded": [],
+        "compile": None,
+        "decision_model": usage if decision_model else None,
+        "cost_usd": cost_usd if decision_model else 0.0,
+        "latency_ms": latency_ms,
     }
 
 
