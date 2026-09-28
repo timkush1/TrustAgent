@@ -300,6 +300,45 @@ async def test_metered_calls_reserve_settle_and_release() -> None:
     assert budget.spent_usd == pytest.approx(0.00125) and budget.reserved_usd == 0
 
 
+async def test_a_metered_call_that_may_have_been_billed_is_charged() -> None:
+    # A timeout (or an unreadable 2xx answer) may have been billed: the
+    # reservation is charged so the cap stays hard, and the cost is unknown.
+    answers: List[Any] = [ProviderError("slow", kind="timeout", provider="x")]
+    budget = CostBudget(1.0)
+    provider = MeteredProvider(ScriptedJudge(lambda request: answers.pop(0)), budget)
+    request = CompletionRequest(messages=provider.create_messages("s", "u"), model=provider.model)
+    reservation = provider.reserve_usd(request)
+
+    with meter_scope() as meter:
+        with pytest.raises(ProviderError):
+            await provider.complete(request)
+
+    assert budget.spent_usd == pytest.approx(reservation) and budget.reserved_usd == 0
+    assert meter.calls == 1 and meter.unknown_cost and meter.cost_source == "unknown"
+
+
+async def test_a_cancelled_metered_call_is_charged() -> None:
+    started = asyncio.Event()
+
+    class Hanging(ScriptedJudge):
+        async def complete(self, request: CompletionRequest) -> CompletionResponse:
+            started.set()
+            await asyncio.sleep(10)
+            raise AssertionError("not reached")
+
+    budget = CostBudget(1.0)
+    provider = MeteredProvider(Hanging(lambda request: "{}"), budget)
+    request = CompletionRequest(messages=provider.create_messages("s", "u"), model=provider.model)
+    task = asyncio.create_task(provider.complete(request))
+    await started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert budget.spent_usd == pytest.approx(provider.reserve_usd(request))
+    assert budget.reserved_usd == 0
+
+
 async def test_metered_call_past_the_cap_is_not_made() -> None:
     judge = ScriptedJudge(lambda request: "{}")
     provider = MeteredProvider(judge, CostBudget(0.0001))

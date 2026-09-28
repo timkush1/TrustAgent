@@ -25,7 +25,10 @@ Brier and reliability), latency, cost and whether the output was simulated.
 Every paid call goes through the run's CostBudget (budget.py): LLM calls via
 MeteredProvider, gate-eval calls via a per-example reservation that is also
 passed to the binary as --max-cost-usd. An example that hits the cap is
-recorded `over_budget` (excluded and counted, never scored).
+recorded `over_budget` (excluded and counted, never scored). A call that
+failed with an error status releases its reservation; one that may still have
+been billed (a timeout, a cancellation, an unreadable 2xx answer) is charged
+its reservation, with its cost unknown.
 
 gate-eval protocol (gate-eval/v1; implemented by backend-go/cmd/gate-eval):
 
@@ -92,7 +95,18 @@ from truthtable.providers.base import (
     Message,
     MessageRole,
 )
-from truthtable.providers.errors import ProviderError
+from truthtable.providers.errors import (
+    AUTH,
+    CREDITS,
+    HTTP_ERROR,
+    INVALID,
+    NOT_FOUND,
+    OVERLOADED,
+    RATE_LIMITED,
+    TOO_LARGE,
+    UNAVAILABLE,
+    ProviderError,
+)
 from truthtable.providers.pricing import (
     COMPUTED,
     LOCAL_PROVIDERS,
@@ -105,7 +119,7 @@ from truthtable.providers.pricing import (
 from truthtable.scoring.aggregate import PARTIAL_KEY, SUPPORTED_KEY
 from truthtable.security import parse_json_strict
 
-from .budget import BudgetExhausted, CostBudget
+from .budget import BudgetExhausted, CostBudget, Reservation
 from .examples import LEVEL_CLAIM, BenchExample
 
 # benchmark-run.v1 system ids.
@@ -158,6 +172,25 @@ HALLUCINATION_VERDICTS = frozenset({"unsupported", "contradicted"})
 # nothing assessed).
 UNDECIDED_VERDICTS = frozenset({"unknown", "not_assessed"})
 FLAGGING_ACTIONS = frozenset({"flag", "block"})
+
+
+# Provider errors that come from an error status (HTTP 4xx/5xx): the call was
+# not billed, so its reservation is released. Any other failure (a timeout, a
+# dropped connection, a 2xx answer that could not be read, a cancellation) may
+# have been billed and is charged at its reservation, so the cap stays hard.
+UNBILLED_ERROR_KINDS = frozenset(
+    {
+        RATE_LIMITED,
+        OVERLOADED,
+        UNAVAILABLE,
+        CREDITS,
+        AUTH,
+        INVALID,
+        NOT_FOUND,
+        TOO_LARGE,
+        HTTP_ERROR,
+    }
+)
 
 
 class UnpricedModelError(ValueError):
@@ -365,9 +398,16 @@ class MeteredProvider(LLMProvider):
             raise
         try:
             response = await self.inner.complete(request)
+        except ProviderError as exc:
+            if exc.kind in UNBILLED_ERROR_KINDS:
+                # The provider answered with an error status: nothing was billed.
+                self.budget.release(reservation)
+            else:
+                self._charge_unknown(reservation, meter)
+            raise
         except BaseException:
-            # A failed call is assumed unbilled (errors carry no usage).
-            self.budget.release(reservation)
+            # Cancelled or broken mid-call: the provider may have billed it.
+            self._charge_unknown(reservation, meter)
             raise
         charged = self.budget.settle(
             reservation,
@@ -385,6 +425,15 @@ class MeteredProvider(LLMProvider):
             if response.model:
                 meter.models.add(response.model)
         return response
+
+    def _charge_unknown(self, reservation: Reservation, meter: Optional[CallMeter]) -> None:
+        """Charge a call that may have been billed at its reservation (cost unknown)."""
+        charged = self.budget.settle(reservation, None, system=self.system, cost_source=UNKNOWN)
+        if meter is not None:
+            meter.calls += 1
+            meter.cost_usd += charged
+            meter.unknown_cost = True
+            meter.cost_sources.add(UNKNOWN)
 
     async def health_check(self) -> bool:
         return await self.inner.health_check()
