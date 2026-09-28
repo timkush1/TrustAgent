@@ -125,7 +125,8 @@ def anthropic_schema(schema: Mapping[str, Any]) -> JsonSchema:
     Property names that happen to equal a keyword are kept.
     """
     result = _anthropic_node(dict(schema))
-    assert isinstance(result, dict)
+    if not isinstance(result, dict):  # a dict node always maps to a dict
+        raise TypeError("a JSON schema must be an object")
     return result
 
 
