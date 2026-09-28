@@ -27,6 +27,26 @@ clean-react: ## Remove node_modules, build output and Playwright results
 	@echo "Cleaning Node cache..."
 	cd frontend-react && rm -rf node_modules dist .vite playwright-report test-results
 
+# ---------- Contract types and golden vectors (SPEC §2.6, §7.6) ----------
+# types.gen.ts is generated from contracts/schema and committed; the vitest drift test fails when it
+# is stale. api.v1.schema.json is generated the other way round, from src/types/api.ts, by the tool in
+# contracts/tools/api-schema (its own package, installed on first use).
+
+gen-types: ## Regenerate src/lib/contracts/types.gen.ts from contracts/schema (commit the result)
+	cd frontend-react && node scripts/gen-types.ts
+
+gen-types-check: ## Fail when src/lib/contracts/types.gen.ts is stale
+	cd frontend-react && node scripts/gen-types.ts --check
+
+gen-api-schema: ## Regenerate contracts/schema/api.v1.schema.json from src/types/api.ts (commit the result)
+	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs
+
+gen-api-schema-check: ## Fail when contracts/schema/api.v1.schema.json is stale
+	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs --check
+
+vectors-ts: ## Run the golden vectors against the TypeScript decision core (src/lib/decision)
+	cd frontend-react && npx vitest run src/lib/decision/vectors --maxWorkers=2
+
 # ---------- End-to-end (Playwright) ----------
 # The `stack` project runs against a running stack's dashboard: start one with `make demo`.
 # PLAYWRIGHT_BASE_URL overrides the address (default http://localhost:${DASHBOARD_HOST_PORT:-3000}).
