@@ -327,7 +327,9 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	v := cb.Query()
 	v.Set("code", code)
 	cb.RawQuery = v.Encode()
-	http.Redirect(w, r, cb.String(), http.StatusFound)
+	// The mock plays openrouter.ai/auth, whose job is to redirect to the caller's callback (checked
+	// above to be an absolute http(s) URL); it is a test double that never serves real users.
+	http.Redirect(w, r, cb.String(), http.StatusFound) // #nosec G710 -- the PKCE callback redirect is the endpoint's purpose
 }
 
 // handleAuthKeys serves POST /api/v1/auth/keys: it exchanges a code issued by /auth for a key

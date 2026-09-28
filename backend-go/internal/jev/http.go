@@ -473,7 +473,7 @@ func backoff(e *Error, n int) time.Duration {
 		return e.RetryAfter
 	}
 	d := min(50*time.Millisecond<<min(n, 5), time.Second)
-	return d/2 + rand.N(d/2+1)
+	return d/2 + rand.N(d/2+1) // #nosec G404 -- retry jitter spreads load; it guards nothing
 }
 
 // launch admits and starts one attempt. Admission checks the credential, the breaker, the

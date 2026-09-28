@@ -348,7 +348,7 @@ func (l *loader) secretFile(key string) string {
 	if path == "" {
 		return ""
 	}
-	b, err := os.ReadFile(path) // #nosec G304 -- the operator names the credential file (a registry *_FILE key)
+	b, err := os.ReadFile(path) // #nosec G304 G703 -- the operator names the credential file (a registry *_FILE key)
 	if err != nil {
 		l.warnings = append(l.warnings, fmt.Sprintf("%s: the file %q cannot be read; no credential loaded", key, path))
 		return ""

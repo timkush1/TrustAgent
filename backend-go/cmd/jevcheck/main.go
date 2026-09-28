@@ -367,7 +367,7 @@ func configFromEnv(getenv func(string) string) (jev.Config, []string) {
 	}
 	if cfg.JevAPIKey == "" {
 		if path := getenv("TRUTHTABLE_JEV_API_KEY_FILE"); path != "" {
-			if b, err := os.ReadFile(path); err != nil {
+			if b, err := os.ReadFile(path); err != nil { // #nosec G304 G703 -- the operator names the key file (TRUTHTABLE_JEV_API_KEY_FILE)
 				warnings = append(warnings, "TRUTHTABLE_JEV_API_KEY_FILE cannot be read: "+err.Error())
 			} else {
 				cfg.JevAPIKey = strings.TrimSpace(string(b))
