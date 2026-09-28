@@ -11,6 +11,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/truthtable/contracts"
+
+	"github.com/truthtable/backend-go/internal/store"
 )
 
 // Recordings are published (SPEC §2.13: "sanitized (keys, hosts and emails scrubbed)"). The
@@ -21,8 +23,11 @@ import (
 // UTF-16 offsets (detector findings, claim and evidence spans) that must still point at the same
 // text. Scrubbing covers:
 //
-//   - credentials matching contracts/rules/secrets.v1.json: all but the first four characters
-//     become '*';
+//   - credentials: all but the first four characters become '*'. The patterns are those of
+//     contracts/rules/secrets.v1.json plus a few the detector does not need but a published file
+//     must not carry: the whole PEM private-key block (the detector matches only its BEGIN line;
+//     the key material follows it, and its line breaks are kept), JSON Web Tokens, bearer tokens,
+//     Google API keys and Stripe-style keys;
 //   - email addresses, hosts in URLs (with any user info), bare hostnames under private suffixes
 //     (.internal, .local, .lan, .corp, .home, .intranet), and IPv4 and bracketed IPv6 literals:
 //     letters and digits become 'x', punctuation stays.
@@ -39,6 +44,18 @@ var (
 	privateHostPattern = regexp.MustCompile(`(?i)\b(?:[a-z0-9-]+\.)+(?:internal|local|lan|corp|home|intranet)\b`)
 	ipv4Pattern        = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
 	ipv6Pattern        = regexp.MustCompile(`\[[0-9A-Fa-f:.]{2,45}\]`)
+
+	// pemKeyPattern is a PEM private-key block through its END line, or to the end of the string
+	// when the block is cut off.
+	pemKeyPattern = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\z)`)
+	// extraSecretPatterns are credentials outside the detector's list.
+	extraSecretPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), // JSON Web Token
+		regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}`),                                      // Google API key
+		regexp.MustCompile(`\b(?:sk|rk|pk)_(?:live|test)_[0-9A-Za-z]{16,}`),                // Stripe-style key
+	}
+	// bearerPattern is an Authorization-style bearer token; only the token is masked.
+	bearerPattern = regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}`)
 )
 
 // Sanitizer scrubs strings; it is safe for concurrent use after construction.
@@ -79,9 +96,20 @@ func NewSanitizer() (*Sanitizer, error) {
 
 // String scrubs one string.
 func (s *Sanitizer) String(v string) string {
+	v = pemKeyPattern.ReplaceAllStringFunc(v, func(m string) string {
+		r := []rune(m)
+		return string(r[:4]) + maskRunes(r[4:], '*', func(x rune) bool { return !unicode.IsSpace(x) })
+	})
 	for _, re := range s.secrets {
 		v = re.ReplaceAllStringFunc(v, maskSecret)
 	}
+	for _, re := range extraSecretPatterns {
+		v = re.ReplaceAllStringFunc(v, maskSecret)
+	}
+	v = bearerPattern.ReplaceAllStringFunc(v, func(m string) string {
+		i := strings.LastIndexFunc(m, unicode.IsSpace) + 1 // the token holds no space
+		return m[:i] + maskSecret(m[i:])
+	})
 	v = emailPattern.ReplaceAllStringFunc(v, func(m string) string {
 		at := strings.LastIndexByte(m, '@')
 		if reservedHost(m[at+1:]) {
@@ -193,6 +221,14 @@ func (s *Sanitizer) Value(v any) any {
 		return x
 	}
 	return v
+}
+
+// Detail returns traces/<id>.json for a trace detail: the detail as a recording publishes it,
+// scrubbed like JSON. Human labels are left out: who labelled a trace, and their notes, stay in the
+// gateway.
+func (s *Sanitizer) Detail(d store.TraceDetail) ([]byte, error) {
+	d.Labels = []store.LabelView{}
+	return s.JSON(d)
 }
 
 // JSON marshals v, scrubs every string in it and returns the indented document. Numbers keep

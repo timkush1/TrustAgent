@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/recording"
 	"github.com/truthtable/backend-go/internal/recording/recordingtest"
 	"github.com/truthtable/backend-go/internal/store"
@@ -21,17 +22,21 @@ func TestSanitizer(t *testing.T) {
 		t.Fatal(err)
 	}
 	for in, want := range map[string]string{
-		"key sk-or-v1-" + strings.Repeat("ab", 20) + " leaked":       "key sk-o" + strings.Repeat("*", 45) + " leaked",
-		"AKIAABCDEFGHIJKLMNOP":                                       "AKIA****************",
-		"mail jane.doe@acme-corp.com now":                            "mail xxxx.xxx@xxxx-xxxx.xxx now",
-		"write to help@support.example.com":                          "write to help@support.example.com",
-		"see https://api.acme-corp.com:8443/v1?x=1":                  "see https://xxx.xxxx-xxxx.xxx:8443/v1?x=1",
-		"see https://docs.example/refunds and http://x.test/a":       "see https://docs.example/refunds and http://x.test/a",
-		"https://user:pw@example.com/p":                              "https://xxxx:xx@example.com/p",
-		"db at pg-1.db.internal:5432":                                "db at xx-x.xx.xxxxxxxx:5432",
-		"from 10.0.12.7 and [2001:db8::1] via http://localhost:8080": "from xx.x.xx.x and [xxxx:xxx::x] via http://localhost:8080",
-		"version 999.1.1.1 stays":                                    "version 999.1.1.1 stays",
-		"héllo 😀 https://café.acme.io/x":                             "héllo 😀 https://xxxx.xxxx.xx/x",
+		"key sk-or-v1-" + strings.Repeat("ab", 20) + " leaked":                   "key sk-o" + strings.Repeat("*", 45) + " leaked",
+		"AKIAABCDEFGHIJKLMNOP":                                                   "AKIA****************",
+		"mail jane.doe@acme-corp.com now":                                        "mail xxxx.xxx@xxxx-xxxx.xxx now",
+		"write to help@support.example.com":                                      "write to help@support.example.com",
+		"see https://api.acme-corp.com:8443/v1?x=1":                              "see https://xxx.xxxx-xxxx.xxx:8443/v1?x=1",
+		"see https://docs.example/refunds and http://x.test/a":                   "see https://docs.example/refunds and http://x.test/a",
+		"https://user:pw@example.com/p":                                          "https://xxxx:xx@example.com/p",
+		"db at pg-1.db.internal:5432":                                            "db at xx-x.xx.xxxxxxxx:5432",
+		"from 10.0.12.7 and [2001:db8::1] via http://localhost:8080":             "from xx.x.xx.x and [xxxx:xxx::x] via http://localhost:8080",
+		"version 999.1.1.1 stays":                                                "version 999.1.1.1 stays",
+		"héllo 😀 https://café.acme.io/x":                                         "héllo 😀 https://xxxx.xxxx.xx/x",
+		"jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fw done": "jwt eyJh" + strings.Repeat("*", 57) + " done",
+		"Authorization: Bearer abcdefghijklmnop1234":                             "Authorization: Bearer abcd" + strings.Repeat("*", 16),
+		"google AIza" + strings.Repeat("B", 35):                                  "google AIza" + strings.Repeat("*", 35),
+		"stripe sk_live_" + strings.Repeat("9", 24) + ".":                        "stripe sk_l" + strings.Repeat("*", 28) + ".",
 	} {
 		got := san.String(in)
 		if got != want {
@@ -39,6 +44,21 @@ func TestSanitizer(t *testing.T) {
 		}
 		if utf16Len(got) != utf16Len(in) {
 			t.Errorf("sanitize(%q) changed the UTF-16 length", in)
+		}
+	}
+	// A PEM private key is masked whole, not just its BEGIN line (the detector's pattern); line
+	// breaks stay. A block cut off before its END line is masked to the end.
+	for _, in := range []string{
+		"key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\nq1w2e3r4==\n-----END RSA PRIVATE KEY-----\nthanks",
+		"-----BEGIN PRIVATE KEY-----\r\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC",
+	} {
+		got := san.String(in)
+		if strings.Contains(got, "MIIE") || strings.Contains(got, "q1w2") || strings.Contains(got, "PRIVATE") ||
+			strings.Count(got, "\n") != strings.Count(in, "\n") || utf16Len(got) != utf16Len(in) {
+			t.Errorf("sanitize(%q) = %q", in, got)
+		}
+		if strings.HasPrefix(in, "key:") && (!strings.HasPrefix(got, "key:\n----*") || !strings.HasSuffix(got, "\nthanks")) {
+			t.Errorf("sanitize(%q) = %q, want the text around the block kept", in, got)
 		}
 	}
 	// Astral characters inside a masked host keep their two code units.
@@ -51,6 +71,27 @@ func TestSanitizer(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"n": 0.000025704`) || !strings.Contains(string(b), `"k<&>": "x@x.xx"`) || strings.Contains(string(b), "b.co") {
 		t.Errorf("JSON = %s", b)
+	}
+}
+
+func TestDetailLeavesOutLabels(t *testing.T) {
+	san, err := recording.NewSanitizer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := recordingtest.Set(t)[0].Detail
+	note := "called the customer at 555-0100"
+	d.Labels = []store.LabelView{{Target: "groundedness@1", Label: "should_fire", LabeledBy: "jane.doe", CreatedAt: d.CreatedAt, Note: &note}}
+	b, err := san.Detail(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractstest.ValidateJSON(t, recordingtest.SchemaTraceDetail, b)
+	if strings.Contains(string(b), "jane.doe") || strings.Contains(string(b), "555-0100") || !strings.Contains(string(b), `"labels": []`) {
+		t.Errorf("the published detail keeps its labels:\n%s", b)
+	}
+	if len(d.Labels) != 1 {
+		t.Error("Detail changed the caller's labels")
 	}
 }
 

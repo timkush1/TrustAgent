@@ -49,6 +49,24 @@ func TestWriteRecording(t *testing.T) {
 		t.Errorf("--force left %d trace files", len(entries))
 	}
 	recordingtest.ValidateDir(t, dir)
+
+	// Trace files an interrupted export left behind (no manifest) are not mixed into a new one.
+	partial := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(partial, "traces"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partial, "traces", "stale.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRecording(partial, one, traces[:1], san, false); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("stale trace files without --force: %v", err)
+	}
+	if err := writeRecording(partial, one, traces[:1], san, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(partial, "traces", "stale.json")); !os.IsNotExist(err) {
+		t.Errorf("--force kept a stale trace file: %v", err)
+	}
 }
 
 func TestRunAgainstTheAPI(t *testing.T) {
@@ -88,6 +106,8 @@ func TestRunAgainstTheAPI(t *testing.T) {
 		if scopeless {
 			d.Body = store.UnavailableBody(store.BodyScope)
 		}
+		// The API serves human labels; a published recording must not.
+		d.Labels = []store.LabelView{{Target: "groundedness@1", Label: "should_fire", LabeledBy: "jane.doe", CreatedAt: d.CreatedAt}}
 		_ = json.NewEncoder(w).Encode(d)
 	}))
 	defer srv.Close()
@@ -107,6 +127,11 @@ func TestRunAgainstTheAPI(t *testing.T) {
 		t.Errorf("queries = %q", queries)
 	}
 	m := recordingtest.ValidateDir(t, dir)
+	for _, tr := range traces {
+		if b, err := os.ReadFile(filepath.Join(dir, "traces", tr.Detail.TraceID+".json")); err != nil || strings.Contains(string(b), "jane.doe") {
+			t.Errorf("trace file %s keeps its labels (%v)", tr.Detail.TraceID, err)
+		}
+	}
 	if m["kind"] != "recorded" || m["git_sha"] != "0123abcd" || !strings.Contains(out.String(), "Wrote a recorded recording of 3 traces") {
 		t.Errorf("manifest kind %v sha %v; %s", m["kind"], m["git_sha"], out.String())
 	}

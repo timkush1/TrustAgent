@@ -10,8 +10,9 @@
 // {scripted|generated} answers · replayed, not live") needs a real decision backend, a judge that
 // is neither a fallback nor the mock, and an answer_source on every trace; the mock decision
 // backend gives kind mock ("Simulated (mock checks + mock judge): not model output"). Anything else
-// is refused. Every string is sanitized before it is written: credentials, emails and hosts are
-// masked in place, keeping UTF-16 offsets valid.
+// is refused. Every string is sanitized before it is written: credentials (whole PEM private-key
+// blocks included), emails and hosts are masked in place, keeping UTF-16 offsets valid. Human
+// labels are left out of the trace files.
 //
 //	export-replay --out frontend-react/public/demo/recorded --since 2026-10-05T10:00:00Z --source trafficgen
 //	export-replay --api http://127.0.0.1:8080 --api-key-file admin.key --out /tmp/rec --route support-bot
@@ -222,11 +223,14 @@ func openSource(ctx context.Context, d deps, databaseURL, api, apiKeyFile string
 }
 
 // writeRecording writes manifest.json and traces/<id>.json under dir, sanitized. An existing
-// recording is replaced only with force; other files in dir are left alone.
+// recording (a manifest, or trace files an interrupted export left) is replaced only with force;
+// other files in dir are left alone.
 func writeRecording(dir string, rec *recording.Recording, traces []recording.Trace, san *recording.Sanitizer, force bool) error {
 	manifest := filepath.Join(dir, "manifest.json")
 	tracesDir := filepath.Join(dir, "traces")
-	if _, err := os.Stat(manifest); err == nil {
+	_, statErr := os.Stat(manifest)
+	existing, readErr := os.ReadDir(tracesDir)
+	if statErr == nil || (readErr == nil && len(existing) > 0) {
 		if !force {
 			return fmt.Errorf("%s already holds a recording: pass --force to replace it", dir)
 		}
@@ -238,7 +242,7 @@ func writeRecording(dir string, rec *recording.Recording, traces []recording.Tra
 		return err
 	}
 	for _, t := range traces {
-		b, err := san.JSON(t.Detail)
+		b, err := san.Detail(t.Detail)
 		if err != nil {
 			return err
 		}
