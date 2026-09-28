@@ -28,8 +28,8 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `calibrate_fit` | 38 (38 + 0) | 10 | generated | `internal/decision` |
 | `decide` | 55 (55 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
-| `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (`openai_chat` only) |
-| `lint` | 19 (0 + 19) | 14 | hand-authored | P2 (skipped) |
+| `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
+| `lint` | 19 (0 + 19) | 14 | hand-authored | P4 (skipped; TypeScript runs them) |
 
 `cost` vectors come with the cost calculator
 (`internal/costs`, P4, which also defines their input); `pkce` vectors are TypeScript-only.
@@ -37,9 +37,11 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
 `github.com/truthtable/contracts` module): kinds with a Go runner must pass in full, draft and frozen alike;
 the others are skipped with the reason listed in `backend-go/internal/decision/vectors/kinds.go`. The
-`evidence` vectors run in `TestEvidenceVectors` (`backend-go/internal/evidence`) instead: the `openai_chat`
-ones must pass there and are frozen; the `anthropic_messages` and `openai_completions` ones stay draft until
-those formats are extracted (P2).
+`evidence` vectors run in `TestEvidenceVectors` (`backend-go/internal/evidence`) instead, each request read
+through `llmapi.ParseRequest` for its `api_format`; all of them must pass there. The `openai_chat` ones are
+frozen; the `anthropic_messages` and `openai_completions` ones pass too and stay draft until they are
+reviewed and frozen by hand. The TypeScript port runs every kind with a Go runner (`make vectors-ts`), so
+both sides hold the same frozen set.
 
 A vector becomes frozen only once the Go reference passes it and its `expected` value has been reviewed
 against the SPEC (SPEC §4.1). The section [SPEC §7.6 coverage](#spec-76-coverage) maps every required case

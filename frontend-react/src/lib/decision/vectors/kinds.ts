@@ -4,6 +4,32 @@
  * documented in contracts/vectors/README.md.
  */
 import type { DecideInput, EvaluatorSpec } from '@/lib/contracts/types.gen';
+import {
+  CRITICAL_MIN_PRECISION_LB,
+  CRITICAL_MIN_PREDICTED_POS,
+  CRITICAL_NULL_REASON,
+  deriveQuality,
+  f1Of,
+  fitCalibration,
+  fitIsotonic,
+  fitPlatt,
+  isotonicTable,
+  maxF1Threshold,
+  minThresholdAtPrecision,
+  OBJECTIVE_MAX_F1,
+  OBJECTIVE_MIN_THRESHOLD_AT_PRECISION,
+  plattTable,
+  precisionOf,
+  QUICK_DEFAULT_TARGET_PRECISION,
+  quickCalibrate,
+  recallOf,
+  WILSON_Z95,
+  wilsonCriticalAt,
+  wilsonInterval,
+  type LabeledScore,
+  type LabelSourceCounts,
+  type QuickCalibrationRequest,
+} from '../calibrate';
 import { applyCalibration, checkCalibrationTable } from '../calibration';
 import { compile, defaultBudget, FACTUAL_CLAIMS_REF, type Budget, type CompileInputs, type CompileRoute } from '../compile';
 import { decide } from '../decide';
@@ -163,6 +189,82 @@ function runDecide(input: unknown) {
   return decide(input as DecideInput);
 }
 
+/** The labels of a calibrate_fit input: samples as written, or groups expanded in order (positives, then negatives). */
+function labelSet(x: Obj): LabeledScore[] {
+  if (x.samples !== undefined && x.groups !== undefined) throw new Error('give either samples or groups, not both');
+  if (x.samples !== undefined) return x.samples as LabeledScore[];
+  if (x.groups === undefined) throw new Error('missing samples or groups');
+  const out: LabeledScore[] = [];
+  (x.groups as { risk_raw: number; pos: number; neg: number }[]).forEach((g, i) => {
+    if (g.pos < 0 || g.neg < 0) throw new Error(`groups[${i}]: negative count`);
+    for (let k = 0; k < g.pos; k++) out.push({ risk_raw: g.risk_raw, label: true });
+    for (let k = 0; k < g.neg; k++) out.push({ risk_raw: g.risk_raw, label: false });
+  });
+  return out;
+}
+
+/** calibrate_fit: {op, ...} -> the op's output (contracts/vectors/README.md "calibrate_fit"). */
+function runCalibrateFit(input: unknown) {
+  const op = (input as Obj | null)?.op;
+  switch (op) {
+    case 'wilson': {
+      const x = fields(input, ['op', 'k', 'n']);
+      const [lo, hi] = wilsonInterval(x.k as number, x.n as number, WILSON_Z95);
+      return { lo, hi };
+    }
+    case 'isotonic': {
+      const labels = labelSet(fields(input, ['op', 'samples', 'groups']));
+      if (labels.length === 0) throw new Error('isotonic needs at least one label');
+      const blocks = fitIsotonic(labels);
+      return { blocks, table: isotonicTable(blocks) };
+    }
+    case 'platt': {
+      const labels = labelSet(fields(input, ['op', 'samples', 'groups']));
+      if (labels.length === 0) throw new Error('platt needs at least one label');
+      const [platt, warnings] = fitPlatt(labels);
+      return { platt, table: plattTable(platt), warnings };
+    }
+    case 'threshold': {
+      const x = fields(input, ['op', 'samples', 'groups', 'objective', 'min_precision']);
+      const labels = labelSet(x);
+      const min = x.min_precision as number | undefined;
+      let c;
+      if (x.objective === OBJECTIVE_MAX_F1) c = maxF1Threshold(labels, min ?? 0);
+      else if (x.objective === OBJECTIVE_MIN_THRESHOLD_AT_PRECISION) c = minThresholdAtPrecision(labels, min ?? QUICK_DEFAULT_TARGET_PRECISION);
+      else throw new Error(`unknown objective ${JSON.stringify(x.objective)}`);
+      if (c === null) return { result: null };
+      return {
+        result: { threshold: c.threshold, tp: c.tp, fp: c.fp, tn: c.tn, fn: c.fn, precision: precisionOf(c), recall: recallOf(c), f1: f1Of(c) },
+      };
+    }
+    case 'critical_at': {
+      const x = fields(input, ['op', 'samples', 'groups', 'min_predicted_pos', 'min_precision_lb']);
+      const c = wilsonCriticalAt(
+        labelSet(x),
+        (x.min_predicted_pos as number | undefined) ?? CRITICAL_MIN_PREDICTED_POS,
+        (x.min_precision_lb as number | undefined) ?? CRITICAL_MIN_PRECISION_LB,
+      );
+      return c === null ? { critical_at: null, critical_null_reason: CRITICAL_NULL_REASON } : { critical_at: c, critical_null_reason: null };
+    }
+    case 'quality': {
+      const x = fields(input, ['op', 'snapshot', 'label_source', 'n_pos', 'n_neg', 'family']);
+      return {
+        quality: deriveQuality(x.snapshot as string, x.label_source as LabelSourceCounts, x.n_pos as number, x.n_neg as number, x.family === true),
+      };
+    }
+    case 'quick': {
+      const x = fields(input, ['op', 'labeled', 'objective', 'target_precision', 'current']);
+      const { message: _message, ...rest } = quickCalibrate(x as unknown as QuickCalibrationRequest);
+      return rest;
+    }
+    case 'fit': {
+      const x = fields(input, ['op', 'samples', 'groups', 'method']);
+      return fitCalibration(labelSet(x), (x.method as string | undefined) ?? '');
+    }
+  }
+  throw new Error(`unknown calibrate_fit op ${JSON.stringify(op)}`);
+}
+
 /**
  * Every kind of contracts/schema/vector.v1.schema.json. A vector of any other kind fails the run.
  * `go` records what the Go reference runs (backend-go/internal/decision/vectors/kinds.go,
@@ -177,12 +279,9 @@ export const KINDS: Readonly<Record<string, VectorKind>> = {
   calibration_apply: { run: runCalibrationApply, go: 'all' },
   decide: { run: runDecide, go: 'all' },
   detectors: { run: runDetectors, go: 'all' },
-  evidence: { run: runEvidence, go: 'openai_chat only (anthropic_messages and openai_completions land with llmapi in P2)' },
-  lint: { run: runLint, go: 'none (evaluator validation and lints land in the P2 decision package)' },
-  calibrate_fit: {
-    skip: 'calibration fitting (PAV, Platt, Wilson) lands with the Go fitter in P2; the TS port follows its vectors',
-    go: 'none (P2)',
-  },
+  evidence: { run: runEvidence, go: 'all (internal/evidence, every api_format through llmapi.ParseRequest)' },
+  lint: { run: runLint, go: 'none (the Go evaluator lints join with the Studio, P4)' },
+  calibrate_fit: { run: runCalibrateFit, go: 'all' },
   cost: { skip: 'the cost calculator lands with internal/costs and the Savings panel in P4', go: 'none (P4)' },
   pkce: { skip: 'PKCE (src/lib/openrouter/pkce.ts) lands with Connect OpenRouter in P4', go: 'none (TS-only kind)' },
 };
