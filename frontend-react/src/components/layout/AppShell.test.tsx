@@ -24,9 +24,10 @@ describe('app shell and routes', () => {
   });
 
   it('renders an honest placeholder that names the phase and only links to real pages', async () => {
-    renderApp('/app/policies');
-    expect(await screen.findByText(/Arrives in P3/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('What does each route do with a risky answer?');
+    // Settings is still a placeholder until P4 (Policies, Overview, Playground and Evaluators are built).
+    renderApp('/app/settings/connections');
+    expect(await screen.findByText(/Arrives in P4/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Connected, and within budget?');
     const main = screen.getByRole('main');
     expect(within(main).queryAllByRole('button').filter((b) => !b.hasAttribute('aria-haspopup') && !b.getAttribute('aria-expanded'))).toHaveLength(0);
   });

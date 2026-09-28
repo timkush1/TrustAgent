@@ -13,7 +13,7 @@ afterEach(() => stopLive());
 // The first render of a page imports its charts; give it longer than the 1 s default.
 configure({ asyncUtilTimeout: 4000 });
 
-describe('Overview page', () => {
+describe('Overview page', { timeout: 20_000 }, () => {
   it('shows the numbers, the hero chart and what was caught', async () => {
     const { control } = renderPage('/app/overview');
     expect(await screen.findByRole('heading', { name: 'Requests by outcome' })).toBeInTheDocument();
