@@ -12,6 +12,8 @@
 #   observability  prometheus + grafana
 #   redis          redis (also set REDIS_URL=redis://redis:6379)
 #   demo           trafficgen (used by docker-compose.demo.yml / make demo)
+#   e2e, load      mock-upstream, a fake of every vendor API (used by
+#                  docker-compose.e2e.yml / make e2e-up, and by load tests)
 #
 # Conventions:
 # - Every published port binds ${BIND_ADDR:-127.0.0.1}; set BIND_ADDR=0.0.0.0
@@ -421,6 +423,39 @@ services:
         condition: service_healthy
       engine:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.25"
+    restart: unless-stopped
+
+  # ========== Profiles: e2e, load ==========
+
+  # A fake of every vendor the gateway calls (cmd/mock-upstream): OpenAI and
+  # Anthropic JSON and SSE answering with the demo scenarios' scripted answers,
+  # OpenRouter's decision, key and PKCE endpoints, and the TypeSafe-shaped
+  # /v1/systemone the e2e stack's compatible decision backend calls, with
+  # scenario-keyed faults. docker-compose.e2e.yml points the proxy at it. Same
+  # image as the proxy, built by the proxy service; reachable on the compose
+  # network only.
+  mock-upstream:
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}
+    pull_policy: never
+    profiles: [e2e, load]
+    command: ["/mock-upstream"]
+    environment:
+      MOCK_UPSTREAM_ADDR: ":8090"
+    expose:
+      - "8090"
+    # The image's HEALTHCHECK probes the proxy port; this service listens on 8090.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+      start_interval: 1s
     deploy:
       resources:
         limits:
