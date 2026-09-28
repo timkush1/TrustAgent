@@ -178,8 +178,8 @@ async def _close(provider: Optional[LLMProvider]) -> None:
     if provider is not None:
         try:
             await provider.close()
-        except Exception:  # best effort; nothing depends on it
-            pass
+        except Exception as exc:  # best effort; nothing depends on it
+            logger.debug(f"Closing the unused {provider.provider_name} judge failed: {exc}")
 
 
 async def resolve_judge(
@@ -222,7 +222,8 @@ async def resolve_judge(
         candidate = next((p for p in KEYED_PROVIDERS if provider_key(settings, p)), None)
         if candidate is None:
             ollama = build_provider(settings, OLLAMA, judge_model(settings, OLLAMA), options)
-            assert isinstance(ollama, OllamaProvider)
+            if not isinstance(ollama, OllamaProvider):
+                raise TypeError(f"the ollama provider is a {type(ollama).__name__}")
             if probe and await ollama.reachable():
                 candidate, reachable_ollama = OLLAMA, ollama
             else:

@@ -591,7 +591,8 @@ def load_settings(files: Optional[Sequence[Path]] = None) -> LoadedSettings:
                 progressed = True
             if not progressed:
                 raise
-    assert settings is not None
+    if settings is None:  # every attempt replaced a bad value and failed again
+        raise RuntimeError("engine settings could not be loaded")
 
     registry = registry_keys()
     if registry is not None:

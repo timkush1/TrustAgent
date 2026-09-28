@@ -70,3 +70,18 @@ jobs:
       # a deliberate baseline update in the same PR. See docs/EVALUATION.md.
       - name: Eval regression gate (golden set, mock provider)
         run: python -m evals.run_eval --dataset golden --provider mock --check-baseline
+
+      # The SPEC P2 gate: golden_v2 (CONTRADICTED, baseless, NO_CLAIMS, outage
+      # and span cases) against its scoring v2 baseline (ADR-001).
+      - name: Eval regression gate (golden_v2, mock provider)
+        run: python -m evals.run_eval --dataset golden_v2 --provider mock --check-baseline
+
+      # The default install has no `knowledge` extra: the engine must import
+      # without torch, sentence-transformers or qdrant-client (SPEC 3.2
+      # test_lazy_imports). A throwaway venv, so the tools above stay out.
+      - name: Import without the knowledge extra
+        run: |
+          python -m venv "$RUNNER_TEMP/nox"
+          "$RUNNER_TEMP/nox/bin/pip" install --quiet .
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nox/bin/python" -c "import sys, truthtable.main; heavy = [m for m in ('torch', 'sentence_transformers', 'qdrant_client') if m in sys.modules]; assert not heavy, heavy; print('truthtable.main imports without the knowledge extra')"

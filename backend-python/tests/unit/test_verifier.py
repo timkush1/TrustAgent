@@ -213,6 +213,27 @@ async def test_missing_confidence_twice_is_unknown_never_a_default() -> None:
     assert len(provider.requests) == 2
 
 
+async def test_exhausted_llm_budget_skips_the_repair_turn() -> None:
+    # AuditOptions.llm_budget_exhausted: an unusable answer is UNKNOWN at once.
+    provider = QueueProvider(verdict(confidence=None), verdict())
+
+    check = await check_claim("A claim.", ["Some context."], provider, optional_retries=False)
+
+    assert check.calls == 1 and len(provider.requests) == 1
+    assert check.verification["status"] is VerificationStatus.UNKNOWN
+    assert check.verification["error_kind"] == "invalid_output"
+
+
+async def test_exhausted_llm_budget_skips_the_truncation_retry() -> None:
+    cut = CompletionResponse(content='{"status": "SUPP', model="scripted", finish_reason="length")
+    provider = QueueProvider(cut, verdict())
+
+    check = await check_claim("A claim.", ["Some context."], provider, optional_retries=False)
+
+    assert len(provider.requests) == 1
+    assert check.verification["status"] is VerificationStatus.UNKNOWN
+
+
 async def test_truncated_answer_is_retried_with_a_larger_budget() -> None:
     cut = CompletionResponse(content='{"status": "SUPP', model="m", finish_reason="length")
     provider = QueueProvider(cut, verdict("SUPPORTED", 0.8))
@@ -409,6 +430,18 @@ async def test_node_honours_upstream_truncation() -> None:
     )
 
     assert state["context_trimmed"] is True
+
+
+async def test_node_reads_the_exhausted_budget_from_the_state() -> None:
+    provider = QueueProvider(verdict(confidence=None), verdict())
+    state = _state(["Paris is the capital of France."], ["Paris is in France."])
+    state["llm_budget_exhausted"] = True
+
+    state = await VerifierNode(provider=provider).run(state)
+
+    assert len(provider.requests) == 1
+    (record,) = state["claim_verifications"] or []
+    assert record["status"] is VerificationStatus.UNKNOWN
 
 
 async def test_node_without_claims_records_nothing() -> None:

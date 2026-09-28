@@ -240,6 +240,29 @@ async def test_truncation_then_invalid_then_fallback() -> None:
     assert "cut off by the token limit" in provider.requests[2].messages[3].content
 
 
+async def test_exhausted_llm_budget_skips_the_optional_retries() -> None:
+    # AuditOptions.llm_budget_exhausted: one call, then straight to the fallback.
+    provider = QueueProvider([truncated()])
+    response = "The store opens at 9am on weekdays."
+
+    result = await decompose(response, provider, optional_retries=False)
+
+    assert result.llm_calls == 1 and len(provider.requests) == 1
+    assert (result.truncation_retries, result.repair_retries) == (0, 0)
+    assert result.fallback and result.texts == [response]
+
+
+async def test_node_reads_the_exhausted_budget_from_the_state() -> None:
+    provider = QueueProvider(["not json"])
+    state = _state("The whole answer is one claim.")
+    state["llm_budget_exhausted"] = True
+
+    state = await DecomposerNode(provider=provider).run(state)
+
+    assert len(provider.requests) == 1  # no repair turn
+    assert state["degraded_reasons"] == ["decomposer_fallback"]
+
+
 async def test_fallback_claim_is_capped_and_sanitized() -> None:
     response = "Hidden​ text. " + "word " * 1000
     provider = QueueProvider(["nope", "nope"])

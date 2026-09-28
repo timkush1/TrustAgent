@@ -31,6 +31,11 @@ v2:
   are dropped.
 - Each claim's quote is located in the answer (text/spans.py): UTF-16 offsets,
   half-open, -1 when unaligned, with the method (exact, normalized, fuzzy).
+- When the proxy says the LLM budget is exhausted (AuditOptions
+  llm_budget_exhausted) the optional truncation and repair retries are
+  skipped: an unusable answer goes straight to the fallback.
+- Every judge call is recorded in the audit's cost ledger
+  (deep_audit_decompose; providers/costs.py).
 """
 
 import asyncio
@@ -46,6 +51,7 @@ from ...providers.base import (
     Message,
     MessageRole,
 )
+from ...providers.costs import DEEP_AUDIT_DECOMPOSE, complete_recorded
 from ...scoring.aggregate import DECOMPOSER_FALLBACK
 from ...security import parse_json_strict, sanitize_text
 from ...text.spans import QuoteAligner, Span, UNALIGNED_SPAN, utf16_offsets
@@ -278,26 +284,33 @@ def _fallback_pairs(text: str) -> Tuple[Tuple[str, str], ...]:
     return ((claim, claim),)
 
 
-async def _decompose_window(text: str, question: str, provider: LLMProvider) -> _WindowResult:
+async def _complete(provider: LLMProvider, request: CompletionRequest) -> CompletionResponse:
+    return await complete_recorded(provider, request, DEEP_AUDIT_DECOMPOSE)
+
+
+async def _decompose_window(
+    text: str, question: str, provider: LLMProvider, optional_retries: bool = True
+) -> _WindowResult:
     """
     Decompose one window: one call, one truncation retry, one repair turn, then
-    the whole-window fallback. Provider exceptions propagate.
+    the whole-window fallback (without `optional_retries`, the call and then
+    the fallback). Provider exceptions propagate.
     """
     messages = provider.create_messages(
         system_prompt=DECOMPOSER_SYSTEM_PROMPT,
         user_message=create_decomposer_prompt(text, question),
     )
     calls, truncation_retries, repair_retries = 1, 0, 0
-    response = await provider.complete(_request(provider, messages, DECOMPOSER_MAX_TOKENS))
-    if response.truncated:
+    response = await _complete(provider, _request(provider, messages, DECOMPOSER_MAX_TOKENS))
+    if response.truncated and optional_retries:
         logger.warning("Decomposition was cut off by max_tokens; retrying with a larger budget")
         calls, truncation_retries = calls + 1, 1
-        response = await provider.complete(
-            _request(provider, messages, DECOMPOSER_RETRY_MAX_TOKENS)
+        response = await _complete(
+            provider, _request(provider, messages, DECOMPOSER_RETRY_MAX_TOKENS)
         )
 
     pairs, problem = _parse_answer(response)
-    if pairs is None:
+    if pairs is None and optional_retries:
         logger.warning(f"Decomposition rejected ({problem}); asking the judge to repair it")
         calls, repair_retries = calls + 1, 1
         repair = [
@@ -308,13 +321,16 @@ async def _decompose_window(text: str, question: str, provider: LLMProvider) -> 
             ),
             Message(role=MessageRole.USER, content=REPAIR_PROMPT.format(problem=problem)),
         ]
-        response = await provider.complete(_request(provider, repair, DECOMPOSER_RETRY_MAX_TOKENS))
+        response = await _complete(
+            provider, _request(provider, repair, DECOMPOSER_RETRY_MAX_TOKENS)
+        )
         pairs, problem = _parse_answer(response)
 
     if pairs is None:
         logger.error(
-            f"Decomposition failed after a repair turn ({problem}); "
-            "falling back to the whole text as a single claim"
+            f"Decomposition failed ({problem}"
+            + ("" if optional_retries else "; no retry: the LLM budget is exhausted")
+            + "); falling back to the whole text as a single claim"
         )
         return _WindowResult(_fallback_pairs(text), True, calls, truncation_retries, repair_retries)
     return _WindowResult(tuple(pairs), False, calls, truncation_retries, repair_retries)
@@ -327,6 +343,7 @@ async def decompose(
     question: str = "",
     max_claims: int = DEFAULT_MAX_CLAIMS,
     window_chars: int = DEFAULT_WINDOW_CHARS,
+    optional_retries: bool = True,
 ) -> Decomposition:
     """
     Decompose an answer into located claims (decomposer v2).
@@ -337,6 +354,8 @@ async def decompose(
         question: The user's question (makes claims self-contained)
         max_claims: Most claims kept (TRUTHTABLE_MAX_CLAIMS)
         window_chars: Longest window decomposed in one call
+        optional_retries: Make the truncation and repair retries (off when the
+            LLM budget is exhausted)
 
     Raises:
         Exception: Whatever the provider raised (the audit fails).
@@ -349,7 +368,7 @@ async def decompose(
 
     async def run(window: Window) -> _WindowResult:
         async with semaphore:
-            return await _decompose_window(window.text, question, provider)
+            return await _decompose_window(window.text, question, provider, optional_retries)
 
     results = await asyncio.gather(*(run(window) for window in windows))
 
@@ -467,6 +486,7 @@ class DecomposerNode:
                 question=state.get("user_query") or "",
                 max_claims=self.max_claims,
                 window_chars=self.window_chars,
+                optional_retries=not state.get("llm_budget_exhausted"),
             )
         except Exception as e:
             logger.error(f"Claim decomposition failed: {e}")

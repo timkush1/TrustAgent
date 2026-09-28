@@ -12,7 +12,8 @@ around each audit; within it:
 
 - a decomposition prompt whose audited text is the scenario's `response`
   (compared whitespace-normalised, never as a substring) is answered with the
-  scenario's `judge.claims[].claim`, in order;
+  scenario's `judge.claims[]` as `{"claims": [{"claim", "quote"}]}`, in order
+  (decomposer v2; the quote locates the claim in the answer);
 - a verification prompt (`<claim>` block) is answered with that claim's
   `verdict`, `confidence`, `evidence` and `reasoning` (an UNKNOWN verdict is
   replayed as an unparseable judge answer, i.e. a judge failure);
@@ -286,7 +287,16 @@ class MockLLMProvider(LLMProvider):
             and scenario.response.strip()
             and _normalize(text_block.group(1)) == _normalize(scenario.response)
         ):
-            return json.dumps([judge_claim.claim for judge_claim in scenario.claims])
+            # Decomposer v2 shape: each claim with the scenario's quote, so the
+            # demo's claims are located in the answer like a real judge's.
+            return json.dumps(
+                {
+                    "claims": [
+                        {"claim": judge_claim.claim, "quote": judge_claim.quote}
+                        for judge_claim in scenario.claims
+                    ]
+                }
+            )
 
         raise FixtureNotFoundError(
             f"mock scenario {scenario_id!r}: the prompt is neither a verification of one of "

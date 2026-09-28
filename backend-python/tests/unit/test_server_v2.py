@@ -21,6 +21,7 @@ implement them replace the corresponding cases here with behaviour tests.
 import asyncio
 import json
 import re
+import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Sequence, Union
@@ -39,6 +40,7 @@ from truthtable.grpc.pb import evaluator_pb2_grpc as pb_grpc
 from truthtable.grpc.server import AuditServicer
 from truthtable.providers.base import CompletionRequest, CompletionResponse, LLMProvider
 from truthtable.providers.mock import MockLLMProvider, parse_scenario_pack
+from truthtable.scoring import ScoringConfig
 
 RPC_TIMEOUT_S = 5
 
@@ -372,6 +374,34 @@ async def test_health_check_bounds_a_hanging_judge_probe(monkeypatch: pytest.Mon
     assert dict(response.dependencies) == {"judge": False}
 
 
+async def test_health_check_probes_the_judge_and_qdrant_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Both probes hang to their bounds; run one after the other they would
+    # outlast the deadline, so the check must run them at the same time.
+    class HangingProvider:
+        async def health_check(self) -> bool:
+            await asyncio.sleep(RPC_TIMEOUT_S * 2)
+            return True
+
+    class HangingQdrant:
+        def health_check(self) -> bool:
+            time.sleep(1.2)
+            return True
+
+    # One after the other: 0.8 s + 0.8 s, past the 1.3 s deadline; together 0.8 s.
+    monkeypatch.setattr(server_mod, "JUDGE_HEALTH_TIMEOUT_S", 0.8)
+    monkeypatch.setattr(server_mod, "QDRANT_PROBE_TIMEOUT_S", 0.8)
+    servicer = AuditServicer(
+        audit_graph=None, provider=HangingProvider(), qdrant_store=HangingQdrant()
+    )
+    async with serving(servicer) as audit_stub:
+        response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=1.3)
+
+    assert dict(response.dependencies) == {"judge": False, "qdrant": False}
+    assert response.healthy is False
+
+
 async def test_legacy_submit_and_get_keep_v1_mapping(
     stub: pb_grpc.AuditServiceStub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -696,13 +726,14 @@ async def test_evaluate_s0_scenario(
     assert result.error_kind == "" and result.error == ""
     assert result.gate == request.gate
     assert result.evidence_summary == request.evidence_summary
-    assert result.scoring_version == "v1"
+    assert result.scoring_version == "v2"
     assert result.completed_at_ms > 0
     assert result.step_timings["total_ms"] == result.processing_time_ms
 
     if judge is None:
         # Preflight: no evidence, knowledge off -> NOT_ASSESSED with zero LLM calls.
         assert mock_judge.calls == 0
+        assert not result.costs
         assert result.not_assessed_reason == "no_evidence"
         assert not result.claims
         assert not result.HasField("scores")
@@ -714,6 +745,14 @@ async def test_evaluate_s0_scenario(
 
     claims = judge["claims"]
     assert mock_judge.calls == 1 + len(claims)  # one decomposition, one verification per claim
+    # One CostRecord per judge call, labelled simulated (the mock judge costs nothing).
+    assert sorted(c.component for c in result.costs) == sorted(
+        ["deep_audit_decompose"] + ["deep_audit_verify"] * len(claims)
+    )
+    assert {(c.kind, c.provider, c.cost_source, c.status) for c in result.costs} == {
+        ("llm", "mock", "simulated", "ok")
+    }
+    assert sum(c.cost_usd for c in result.costs) == 0.0
     assert result.not_assessed_reason == ""
     assert [c.index for c in result.claims] == list(range(len(claims)))
     assert [c.claim for c in result.claims] == [c["claim"] for c in claims]
@@ -721,13 +760,36 @@ async def test_evaluate_s0_scenario(
     assert [c.confidence for c in result.claims] == pytest.approx([c["confidence"] for c in claims])
     assert [list(c.evidence) for c in result.claims] == [c["evidence"] for c in claims]
     assert {c.decided_by for c in result.claims} == {"llm"}
-    # S0 does not locate claims in the answer: every span is unaligned (-1, SPEC 2.1).
-    assert {(c.span_start, c.span_end, c.span_method) for c in result.claims} == {(-1, -1, "")}
+    # Decomposer v2 locates each claim's quote in the answer (UTF-16, half-open;
+    # the demo answers are ASCII, so code units are characters).
+    assert [(c.quote, c.span_start, c.span_end, c.span_method) for c in result.claims] == [
+        (
+            c["quote"],
+            request.response.index(c["quote"]),
+            request.response.index(c["quote"]) + len(c["quote"]),
+            "exact",
+        )
+        for c in claims
+    ]
+    for claim in result.claims:
+        # Scoring v2's per-claim distribution: P(verdict) = confidence.
+        assert claim.probability_source == "llm_confidence"
+        assert set(claim.verdict_probabilities) == {
+            "supported",
+            "partially_supported",
+            "contradicted",
+            "unsupported",
+        }
+        assert sum(claim.verdict_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
+        assert claim.verdict_probabilities[
+            pb.VerificationStatus.Name(claim.status).removeprefix("VERIFICATION_STATUS_").lower()
+        ] == pytest.approx(claim.confidence)
     assert result.hallucination_detected is (expect["audit_verdict"] == "HALLUCINATED")
     assert result.unsupported_policy == "hallucination"  # the evidence came from the request
     assert result.scores.claims_total == result.scores.claims_decided == len(claims)
     assert result.scores.claims_unknown == 0
-    assert result.scores.HasField("trust_score")
+    for name in ("trust_score", "faithfulness", "contradiction_rate", "coverage", "p_hallucinated"):
+        assert result.scores.HasField(name), name
     assert result.faithfulness_score == pytest.approx(result.scores.trust_score)
     assert result.grade == server_mod.grade_for_score(result.scores.trust_score)
     assert {"decompose_ms", "verify_ms", "score_ms", "total_ms"} <= set(result.step_timings)
@@ -843,6 +905,12 @@ async def test_evaluate_judge_outage_fails_with_judge_unavailable() -> None:
     assert "2 of 2" in result.error
     assert [c.status for c in result.claims] == [pb.VERIFICATION_STATUS_UNKNOWN] * 2
     assert {c.decided_by for c in result.claims} == {"none"}
+    # A failed audit still reports every judge call it made.
+    assert sorted((c.component, c.status) for c in result.costs) == [
+        ("deep_audit_decompose", "ok"),
+        ("deep_audit_verify", "error"),
+        ("deep_audit_verify", "error"),
+    ]
 
 
 async def test_evaluate_some_unknown_claims_is_degraded() -> None:
@@ -923,6 +991,87 @@ async def test_evaluate_unsupported_policy(
     assert result.unsupported_policy == resolved
 
 
+async def test_evaluate_leaves_an_uncomputable_trust_score_absent() -> None:
+    # Knowledge-only evidence (unverifiable policy) that addresses nothing: the
+    # scorer has no accuracy_addressed, so there is no trust score and no grade,
+    # never a made-up 0.0 graded F.
+    claim = "Paris is the capital of France."
+    judge = ScriptedJudge([claim], {claim: _verdict("UNSUPPORTED", 1.0)})
+
+    result = await _evaluate(judge, _request(source="knowledge"))
+
+    assert result.status == pb.AUDIT_STATUS_COMPLETED
+    assert result.verdict == pb.AUDIT_VERDICT_UNVERIFIABLE
+    assert result.unsupported_policy == "unverifiable"
+    assert not result.scores.HasField("trust_score")
+    assert not result.scores.HasField("accuracy_addressed")
+    assert result.scores.coverage == pytest.approx(0.0)
+    assert result.faithfulness_score == 0.0
+    assert result.grade == pb.TRUST_GRADE_UNSPECIFIED
+
+
+@pytest.mark.parametrize("where", ["document", "summary"])
+async def test_evaluate_truncated_evidence_is_context_trimmed(where: str) -> None:
+    claim = "Paris is the capital of France."
+    judge = ScriptedJudge([claim], {claim: _verdict("UNSUPPORTED")})
+    request = _request()
+    if where == "document":
+        request.context[0].truncated = True
+    else:
+        request.evidence_summary.truncated = True
+
+    result = await _evaluate(judge, request)
+
+    # The judge may not have seen the support: UNSUPPORTED counts as unverifiable.
+    assert result.status == pb.AUDIT_STATUS_DEGRADED
+    assert list(result.degraded_reasons) == ["context_trimmed"]
+    assert result.unsupported_policy == "unverifiable"
+    assert result.verdict == pb.AUDIT_VERDICT_UNVERIFIABLE
+
+
+async def test_evaluate_grades_with_the_configured_cutoffs() -> None:
+    claim = "Paris is the capital of France."
+    judge = ScriptedJudge([claim], {claim: _verdict("SUPPORTED", 0.9)})
+    scoring = ScoringConfig(grade_cutoffs=(0.99, 0.98, 0.97, 0.96))
+    servicer = AuditServicer(
+        audit_graph=build_audit_graph(provider=judge, scoring=scoring), provider=judge
+    )
+
+    async with serving(servicer) as audit_stub:
+        result = await audit_stub.Evaluate(_request(), timeout=RPC_TIMEOUT_S)
+
+    # About 0.88: graded B by the default cutoffs, F below every configured one.
+    assert 0.7 <= result.scores.trust_score < 0.96
+    assert result.grade == pb.TRUST_GRADE_F
+
+
+async def test_evaluate_extracts_claims_without_evidence_when_asked() -> None:
+    claim = "Paris is the capital of France."
+    judge = ScriptedJudge([claim])
+
+    result = await _evaluate(judge, _request(documents=(), extract_claims_without_evidence=True))
+
+    assert judge.calls == 1  # the decomposition; nothing is verified
+    assert result.status == pb.AUDIT_STATUS_COMPLETED
+    assert result.verdict == pb.AUDIT_VERDICT_NOT_ASSESSED
+    assert result.not_assessed_reason == "no_evidence"
+    assert [c.status for c in result.claims] == [pb.VERIFICATION_STATUS_NOT_CHECKED]
+    assert result.claims[0].decided_by == "none"
+    assert not result.HasField("scores")
+
+
+async def test_evaluate_with_an_exhausted_llm_budget_skips_optional_retries() -> None:
+    claim = "Paris is the capital of France."
+    unusable = {"status": "SUPPORTED", "evidence": [], "reasoning": "no confidence"}
+    judge = ScriptedJudge([claim], {claim: unusable})
+
+    result = await _evaluate(judge, _request(llm_budget_exhausted=True))
+
+    assert judge.calls == 2  # decomposition + one verification, no repair turn
+    assert [c.status for c in result.claims] == [pb.VERIFICATION_STATUS_UNKNOWN]
+    _assert_failed(result, "judge_unavailable")
+
+
 async def test_evaluate_maps_every_claim_status(
     stub: pb_grpc.AuditServiceStub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -936,6 +1085,21 @@ async def test_evaluate_maps_every_claim_status(
             "audit_status": "degraded",
             "degraded_reasons": ["unknown_claims"],
             "faithfulness_score": 0.8,
+            "scores": {
+                "trust_score": 0.8,
+                "faithfulness": 0.85,
+                "contradiction_rate": 0.05,
+                "unverified_rate": None,
+                "coverage": None,
+                "accuracy_addressed": None,
+                "max_contradiction": 0.2,
+                "p_hallucinated": 0.3,
+                "claims_total": 7,
+                "claims_decided": 4,
+                "claims_unknown": 2,
+            },
+            "grade": "B",
+            "scoring_version": "v2",
             "unsupported_policy": "hallucination",
             "claim_verifications": [
                 claim("s", VerificationStatus.SUPPORTED),
@@ -973,7 +1137,12 @@ async def test_evaluate_maps_every_claim_status(
     assert (result.scores.claims_total, result.scores.claims_decided) == (7, 4)
     assert result.scores.claims_unknown == 2
     assert result.scores.trust_score == pytest.approx(0.8)
+    assert result.scores.faithfulness == pytest.approx(0.85)
+    # A score the scorer could not compute stays absent on the wire.
+    assert not result.scores.HasField("coverage")
+    assert not result.scores.HasField("unverified_rate")
     assert result.grade == pb.TRUST_GRADE_B
+    assert result.scoring_version == "v2"
     # The server fills in ids the proxy left empty.
     assert result.audit_id and result.trace_id == result.request_id == "req-map"
 
