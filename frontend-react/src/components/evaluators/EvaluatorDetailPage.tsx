@@ -88,8 +88,13 @@ function Reliability({ detail }: { detail: EvaluatorDetail }) {
             ]}
           />
           <EvidenceBadge
-            label={demo ? 'simulated' : 'measured'}
-            basis={`Labels on your own traffic for fast-check version ${q.data.snapshot ?? 'unknown'}: agreement with labels, not ground truth.`}
+            // Human labels measure agreement; deep-audit (judge) labels are a weaker, proxy signal.
+            label={demo ? 'simulated' : labels === 'human' ? 'measured' : 'estimate'}
+            basis={
+              labels === 'human'
+                ? `Your labels on your own traffic for fast-check version ${q.data.snapshot ?? 'unknown'}: agreement with labels, not ground truth.`
+                : `Includes deep-audit (LLM judge) labels on a uniform sample for fast-check version ${q.data.snapshot ?? 'unknown'}: a proxy for your own labels, not ground truth.`
+            }
             subject="Reliability"
           />
         </div>

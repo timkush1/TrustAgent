@@ -26,6 +26,8 @@ describe('Overview page', { timeout: 20_000 }, () => {
     expect(within(glance).getByText(/212 ms/)).toBeInTheDocument();
     // The hallucination rate waits for 30 unbiased samples.
     expect(within(glance).getByText('Needs 30 unbiased samples (have 12)')).toBeInTheDocument();
+    // The fast check's latency carries its value label like the counts.
+    expect(within(glance).getByRole('button', { name: /Measured: how “Fast check \(Jev\) latency” was produced/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What was caught' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Contradicts your documents: show all 21 requests' })).toHaveAttribute(
       'href',
@@ -97,6 +99,14 @@ describe('Overview page', { timeout: 20_000 }, () => {
     expect(await screen.findByText('4.1%')).toBeInTheDocument();
     expect(screen.getByText('95% CI 2.9–5.6%')).toBeInTheDocument();
     expect(screen.getByText('n = 212')).toBeInTheDocument();
+  });
+
+  it('does not call risk-selected audits unbiased samples', async () => {
+    const control = createControlApi({ overview: overviewStats({ audited_hallucination_share: labelledRate({ value: null, n: 7 }) }) });
+    renderPage('/app/overview', { control });
+    const section = (await screen.findByRole('heading', { name: 'Hallucinations among audited answers' })).closest('section') as HTMLElement;
+    expect(within(section).getByText('Needs 30 audited answers (have 7)')).toBeInTheDocument();
+    expect(within(section).queryByText(/unbiased/)).not.toBeInTheDocument();
   });
 
   it('changes the time window through the URL', async () => {

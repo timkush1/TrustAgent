@@ -94,9 +94,14 @@ export function UploadCard({ writeReason, maxBytes, simulated }: { writeReason: 
           <section aria-label="Upload result" className="space-y-2">
             <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
               {formatCount(result.documents_ingested)} documents · {formatCount(result.claims_accepted)} claims accepted ·{' '}
-              {formatCount(result.claims_quarantined)} quarantined · {formatCount(result.conflicts_detected)} conflicts · cost{' '}
-              {formatUsd(result.cost_usd)}
-              <EvidenceBadge label={simulated ? 'simulated' : 'measured'} subject="Upload cost" basis="Reported by the judge that extracted and checked the claims." />
+              {formatCount(result.claims_quarantined)} quarantined · {formatCount(result.conflicts_detected)} conflicts
+              {/* Only a cost the proxy reported is shown (older proxies send none): no badge on a missing number. */}
+              {typeof result.cost_usd === 'number' ? (
+                <>
+                  {' '}· cost {formatUsd(result.cost_usd)}
+                  <EvidenceBadge label={simulated ? 'simulated' : 'measured'} subject="Upload cost" basis="Reported by the judge that extracted and checked the claims." />
+                </>
+              ) : null}
             </p>
             {result.warnings.length > 0 ? (
               <ul className="list-disc space-y-0.5 pl-5 text-sm text-fg-muted">

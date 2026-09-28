@@ -117,7 +117,11 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
               The <Term id="deep_audit">deep audit</Term> mostly sees risky answers, so this share is not your traffic’s{' '}
               <Term id="hallucination_rate">hallucination rate</Term>: {copy.overview.audited_share_basis}.
             </p>
-            <LabelledRateView rate={stats.audited_hallucination_share} subject="Hallucinations among audited answers" />
+            <LabelledRateView
+              rate={stats.audited_hallucination_share}
+              subject="Hallucinations among audited answers"
+              needsTemplate="Needs {min_n} audited answers (have {n})"
+            />
           </section>
           <PerformanceSection stats={stats} />
           <ConnectAnotherApp origin={origin} demo={demo} received={received} />

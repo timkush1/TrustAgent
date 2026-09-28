@@ -119,6 +119,17 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     expect(screen.getByRole('table', { name: /Reliability of groundedness@1/ })).toBeInTheDocument();
   });
 
+  it('labels reliability from deep-audit labels as an estimate, not a measurement', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/groundedness');
+    await screen.findByRole('heading', { name: 'Reliability' });
+    expect(await screen.findByRole('button', { name: /^Measured: how “Reliability” was produced/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: 'Labels from' }));
+    await user.click(await screen.findByRole('option', { name: 'Deep-audit sample' }));
+    await waitFor(() => expect(control.callsTo('/api/gate/reliability').at(-1)?.query.get('labels')).toBe('uniform_audit'));
+    expect(await screen.findByRole('button', { name: /^Estimate: how “Reliability” was produced/ })).toBeInTheDocument();
+  });
+
   it('says so when there are no labelled answers yet', async () => {
     const control = createControlApi({ reliability: reliability({ n: 0, bins: [], ece: null, n_by_source: {} }) });
     renderPage('/app/evaluators/groundedness', { control });

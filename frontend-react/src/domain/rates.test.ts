@@ -49,4 +49,8 @@ describe('rates', () => {
       'Needs 30 unbiased samples (have 0)',
     );
   });
+  it('words the missing-samples sentence with a caller template', () => {
+    const r = rateReadout({ value: null, label: 'measured', basis: '', n: 7, ci95: null, min_n: 30 }, 'Needs {min_n} audited answers (have {n})');
+    expect(r.needs).toBe('Needs 30 audited answers (have 7)');
+  });
 });

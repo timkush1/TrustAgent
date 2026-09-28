@@ -56,14 +56,18 @@ export interface RateReadout {
   progress: number;
 }
 
-export function rateReadout(rate: LabelledRate): RateReadout {
+/**
+ * `needsTemplate` words the "not enough samples" sentence ({min_n}, {n}); the default says the
+ * samples are unbiased, which only a uniform sample is (a share among risk-selected audits is not).
+ */
+export function rateReadout(rate: LabelledRate, needsTemplate: string = copy.overview.hallucination_rate_needs_samples): RateReadout {
   const enough = rate.value !== null && rate.n >= rate.min_n;
   const interval = formatInterval(rate.ci95);
   return {
     enough,
     value: enough ? formatPercent(rate.value) : null,
     interval: enough && interval ? `95% CI ${interval}` : null,
-    needs: enough ? null : fillTemplate(copy.overview.hallucination_rate_needs_samples, { min_n: rate.min_n, n: rate.n }),
+    needs: enough ? null : fillTemplate(needsTemplate, { min_n: rate.min_n, n: rate.n }),
     progress: rate.min_n > 0 ? Math.min(1, Math.max(0, rate.n / rate.min_n)) : 1,
   };
 }

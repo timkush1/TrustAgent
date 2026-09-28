@@ -2,7 +2,7 @@ import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { kbClaim } from '@/test/control/fixtures';
+import { ingestResult, kbClaim } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
@@ -69,6 +69,18 @@ describe('Knowledge page', { timeout: 20_000 }, () => {
     expect(within(result).getByText('Refunds take 60 days.')).toBeInTheDocument();
     expect(within(result).getByText('Conflicts with an accepted claim')).toBeInTheDocument();
     expect(control.callsTo('/api/kb/documents', 'POST')).toHaveLength(1);
+  });
+
+  it('shows no cost, and no value label, when the proxy reports none', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ kbUpload: { ...ingestResult(), cost_usd: undefined as unknown as number, warnings: undefined as unknown as string[] } });
+    renderPage('/app/knowledge', { status: enabled, control });
+    await user.upload(await screen.findByLabelText('File'), new File(['[{"content":"Refunds within 30 days."}]'], 'docs.json', { type: 'application/json' }));
+    await user.click(screen.getByRole('button', { name: 'Upload' }));
+    const result = await screen.findByRole('region', { name: 'Upload result' });
+    expect(within(result).getByText(/2 documents · 5 claims accepted · 1 quarantined · 1 conflicts$/)).toBeInTheDocument();
+    expect(within(result).queryByText(/cost/)).not.toBeInTheDocument();
+    expect(within(result).queryByRole('button', { name: /Upload cost/ })).not.toBeInTheDocument();
   });
 
   it('refuses a file over the upload limit before sending it', async () => {

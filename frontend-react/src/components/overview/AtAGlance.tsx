@@ -59,7 +59,15 @@ export function AtAGlance({ stats, label }: { stats: OverviewStats; label: Value
           {formatPercent(stats.evidence_coverage.rate ?? share(stats.evidence_coverage.groundedness_assessed, t.requests))}
         </span>
       </Item>
-      <Item label={`${copy.tiers.fast_check} p50 / p95`} note="Time the fast check added before the answer was released">
+      <Item
+        label={`${copy.tiers.fast_check} p50 / p95`}
+        note={
+          <>
+            Time the fast check added before the answer was released{' '}
+            <EvidenceBadge label={label} subject={`${copy.tiers.fast_check} latency`} />
+          </>
+        }
+      >
         <span className="text-xl font-semibold text-fg tabular">
           {formatDurationMs(gate.p50)} <span className="text-fg-subtle">/</span> {formatDurationMs(gate.p95)}
         </span>

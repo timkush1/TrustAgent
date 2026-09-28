@@ -15,12 +15,17 @@ export interface LabelledRateViewProps {
   subject: string;
   /** Show the server's basis sentence under the value. */
   showBasis?: boolean;
+  /**
+   * The sentence below `min_n` ({min_n}, {n}); defaults to "Needs 30 unbiased samples (have 12)",
+   * which fits only a uniform sample.
+   */
+  needsTemplate?: string;
   size?: 'md' | 'lg';
   className?: string;
 }
 
-export function LabelledRateView({ rate, subject, showBasis = false, size = 'md', className }: LabelledRateViewProps) {
-  const r = rateReadout(rate);
+export function LabelledRateView({ rate, subject, showBasis = false, needsTemplate, size = 'md', className }: LabelledRateViewProps) {
+  const r = rateReadout(rate, needsTemplate);
   if (!r.enough) {
     return (
       <div className={cn('space-y-1.5', className)}>
