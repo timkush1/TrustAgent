@@ -30,8 +30,9 @@ NOT_ASSESSED (no_evidence) with the claims located in the answer.
 
 `build_audit_graph` takes the engine settings that shape an audit: the scoring
 thresholds (TRUTHTABLE_SCORING_*), TRUTHTABLE_MAX_CLAIMS, the engine's default
-TRUTHTABLE_UNSUPPORTED_POLICY (used when the request does not name one) and the
-knowledge retriever's top-k and score threshold.
+TRUTHTABLE_UNSUPPORTED_POLICY (used when the request does not name one), the
+knowledge retriever's top-k and score threshold, and
+TRUTHTABLE_VERIFY_CONTEXT_SCOPE (per-claim evidence for the verifier).
 """
 
 import logging
@@ -50,6 +51,7 @@ from .state import (
 )
 from .nodes import DecomposerNode, VerifierNode, ScorerNode
 from .nodes.decomposer import DEFAULT_MAX_CLAIMS, claim_records
+from .nodes.verifier import CONTEXT_SCOPE_PER_CLAIM
 from ..providers.base import LLMProvider
 from ..scoring.aggregate import DEFAULT_SCORING, ScoringConfig
 from ..scoring.aggregate import resolve_unsupported_policy as resolve_policy
@@ -280,6 +282,7 @@ def build_audit_graph(
     extract_claims_without_evidence: bool = False,
     retriever_top_k: int = 3,
     retriever_score_threshold: float = 0.3,
+    verify_context_scope: str = CONTEXT_SCOPE_PER_CLAIM,
 ) -> Any:
     """
     Build the audit workflow graph.
@@ -308,6 +311,9 @@ def build_audit_graph(
         retriever_top_k: Knowledge documents per search (TRUTHTABLE_RETRIEVER_TOP_K)
         retriever_score_threshold: Lowest dense score kept
             (TRUTHTABLE_RETRIEVER_SCORE_THRESHOLD)
+        verify_context_scope: Evidence each claim is verified against:
+            per_claim (BM25 over large evidence) or all
+            (TRUTHTABLE_VERIFY_CONTEXT_SCOPE)
 
     Returns:
         Compiled StateGraph ready to execute
@@ -323,7 +329,11 @@ def build_audit_graph(
         extract_claims_without_evidence=extract_claims_without_evidence,
     )
     decomposer = DecomposerNode(provider=provider, max_claims=max_claims)
-    verifier = VerifierNode(provider=provider, concurrency=verifier_concurrency)
+    verifier = VerifierNode(
+        provider=provider,
+        concurrency=verifier_concurrency,
+        context_scope=verify_context_scope,
+    )
     scorer = ScorerNode(config=scoring)
 
     # Initialize graph with state schema

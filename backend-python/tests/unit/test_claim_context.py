@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 
 import pytest
 
+from truthtable.graphs.audit_graph import build_audit_graph
 from truthtable.graphs.nodes.verifier import (
     CONTEXT_ALL,
     CONTEXT_BM25,
@@ -191,6 +192,13 @@ def test_unknown_scope_is_rejected() -> None:
         select_claim_contexts(["x"], ["y"], scope="nearest")
     with pytest.raises(ValueError, match="context_scope"):
         VerifierNode(RecordingJudge(), context_scope="nearest")
+
+
+def test_the_graph_passes_its_scope_to_the_verifier() -> None:
+    # TRUTHTABLE_VERIFY_CONTEXT_SCOPE reaches the verifier through build_audit_graph.
+    assert build_audit_graph(provider=RecordingJudge(), verify_context_scope="all") is not None
+    with pytest.raises(ValueError, match="context_scope"):
+        build_audit_graph(provider=RecordingJudge(), verify_context_scope="nearest")
 
 
 # ---------------------------------------------------------------------------

@@ -291,6 +291,7 @@ async def main() -> None:
             extract_claims_without_evidence=settings.audit_extract_claims_without_evidence,
             retriever_top_k=settings.retriever_top_k,
             retriever_score_threshold=settings.retriever_score_threshold,
+            verify_context_scope=settings.verify_context_scope,
         )
         logger.info("Audit graph ready")
     else:
