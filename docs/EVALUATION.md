@@ -106,6 +106,30 @@ hallucinated):
   verbalized confidence is known to be poorly calibrated; we report
   calibration instead of trusting it.
 
+## Tier 3 — the gateway against LLM judges (v2 harness)
+
+The v2 harness (`backend-python/evals/bench.py`) scores several systems on the
+same examples: the gateway's fast check itself (`gate`, through the Go
+`gate-eval` tool), an LLM asked the same questions (`llm_same_checks`), a full
+claim-level LLM audit, and the fast check escalating to the audit (cascade).
+Every paid run has a hard cost cap, checks everything that could fail before the
+first paid call, and is resumable; mock output is labelled simulated and can
+never be published.
+
+```
+make gate-eval        # build backend-go/bin/gate-eval (the fast check over a JSONL file)
+make bench-lite       # RAGTruth-QA: 200 gate + same-checks, 50 full audits; hard cap $5
+make bench-publish    # the latest measured run -> docs/benchmarks/ and contracts/claims/measured.json
+make eval-live        # RAGTruth-QA 400 + LLM-AggreFact 600; caps $40 + $20 (owner key)
+make calibrate EVALUATOR=groundedness@1 IN=<gate-eval output with labels> LABEL_SOURCE=public_dataset
+```
+
+`make calibrate` fits the fast check's calibration (isotonic, or Platt below
+500 labels, with Wilson bounds for `critical_at`) from labelled risks; without
+`WRITE=1` it only prints the summary. Numbers from these runs replace the
+estimates on the landing page and in the dashboard only through
+`bench-publish`.
+
 ## Honest limitations
 
 - Golden-tier numbers measure the pipeline against *recorded* verdicts; they
@@ -130,3 +154,7 @@ hallucinated):
 | `backend-python/evals/baselines/golden_v1.json` | Committed regression baseline |
 | `backend-python/src/truthtable/providers/mock.py` | Fixture-replay provider |
 | `.github/workflows/eval.yml` | Tier-2 scheduled benchmark |
+| `backend-python/evals/bench.py` | Tier-3 harness: `run` and `publish` (bench-lite, eval-live) |
+| `backend-python/evals/judges.py` | The systems compared (gate, LLM same checks, full audit, cascade) |
+| `backend-go/cmd/gate-eval` | The fast check over a JSONL file, with a hard cost cap |
+| `backend-go/cmd/calibrate` | Calibration fitting (`trustagent.calibration/v1` files) |

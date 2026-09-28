@@ -77,6 +77,45 @@ phase (P0 → P7).
 - **Configuration reference**: [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and
   `.env.example` are generated from the key registry (`make config-docs`;
   `make config-docs-check` and ci-contracts fail on drift).
+- **Configuration loader**: every proxy setting is read through the key registry
+  (`.env` then process env, aliases and shorthands, validation with typo hints,
+  secrets masked in logs and gin's panic dumps). `proxy -check-config`,
+  `proxy -dump-config-spec`, and `TRUTHTABLE_STRICT_CONFIG=true` (exit 2 on any
+  warning).
+- **Access control**: scopes ingest / read / content / admin; env keys,
+  `api_keys` rows and dashboard sessions (signed cookie, CSRF, sliding expiry,
+  revoke-all); single-use WebSocket tickets; a one-time setup token printed at
+  start as `SETUP: open …/app/setup#token=…` (`make setup-url` prints a new one)
+  that creates the first admin key; `GET/POST/DELETE /api/keys`. The dashboard's
+  new sign-in page claims the setup link or signs in with a key.
+- **Policies and evaluators**: versioned policies (file, dashboard, rollback,
+  adopt-file) with validation, block readiness, hot reload across replicas
+  (NOTIFY plus polling), `TRUTHTABLE_CONFIG_LOCK`, a diverged-file state and a
+  free "Preview impact" replay of stored answers; the evaluator registry
+  (built-in, file and stored versions); `/api/policies*` and `/api/evaluators*`.
+  The gate reads the policy in effect on every request, so a saved or reloaded
+  version applies without a restart.
+- **Overview numbers**: `GET /api/overview`, `/api/roi/summary` and
+  `/api/evidence/coverage`, counted from stored traces, decisions, audits and
+  cost rows; every figure says whether it is measured, an estimate or simulated,
+  and mock traffic is left out unless asked for (the demo includes it).
+- **LLM API library** (`internal/llmapi`): OpenAI chat and completions and
+  Anthropic messages, tolerant parsing, an SSE reader and writer with held-back
+  terminal events and annotations, block and fallback bodies and synthesized
+  streams. The /v1 handler adopts it in the P3 handler work.
+- **Measurement tools**: `make calibrate` (isotonic or Platt fits with Wilson
+  bounds, `trustagent.calibration/v1` files), `make gate-eval` (the fast check
+  over a JSONL file, with a hard cost cap), `make export-replay` (sanitized
+  demo recordings), and the eval harness v2 (`make bench-lite`,
+  `make bench-publish`, `make eval-live`: RAGTruth and LLM-AggreFact loaders,
+  judges including the gateway itself, cost caps, a benchmark report).
+- **Engine**: `RetrieveContext` for the knowledge add-on; per-claim evidence
+  context (`TRUTHTABLE_VERIFY_CONTEXT_SCOPE`).
+- **Dashboard pages**: Overview (setup checklist, outcomes over time, what was
+  caught, evidence coverage with "Why not?", the cost strip), Policies (route
+  cards, presets, a YAML editor with schema checks, review with diff and preview
+  impact, versions and rollback), Playground, Evaluators (library, detail,
+  reliability) and Knowledge.
 
 ### Changed
 - **Scoring v2** (ADR-001 in [docs/DECISIONS.md](docs/DECISIONS.md)): per-claim
@@ -104,6 +143,13 @@ phase (P0 → P7).
 - Go toolchain pinned to `go1.25.11`; pytest deselects `e2e`/`integration`
   by default; `.gitattributes` and per-service `.dockerignore` files.
 - `SubmitAudit`/`GetAuditResult` are deprecated in favour of `Evaluate`.
+- Registry defaults now apply where the walking skeleton hard-coded others:
+  `TRUTHTABLE_WRITE_TIMEOUT=0` (per-route deadlines) and
+  `TRUTHTABLE_SHUTDOWN_TIMEOUT=30s`.
+- Rate limits are counted per key, or per session for dashboard sign-ins, before
+  falling back to the client IP.
+- Knowledge-base endpoints answer 409 `knowledge_disabled` while the add-on is
+  off; `POST /api/kb/documents` (admin) is the upload's v2 path.
 
 ### Fixed
 - **B4 — duplicate ids corrupted audit history**: trace/audit ids are now
@@ -121,6 +167,11 @@ phase (P0 → P7).
 - A v1 `.env` may still set `LLM_MODEL` (for example `claude-haiku-4-5`). Under
   `LLM_PROVIDER=auto` it goes to whichever judge auto picks; clear it or set
   `LLM_PROVIDER` explicitly.
+- Dashboard writes (saving a policy, Playground runs) need an admin: claim the
+  `SETUP: open …` link the proxy prints at first start, or sign in at
+  `/app/setup` with a key from `TRUTHTABLE_ADMIN_KEYS`. Keep
+  `TRUTHTABLE_DATA_DIR` on a persistent volume (compose does), or sessions end
+  at every restart.
 
 ## Unreleased — hardening & audit-quality pass
 

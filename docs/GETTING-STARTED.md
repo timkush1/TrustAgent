@@ -153,9 +153,8 @@ check (Jev) and the deep-audit judge.
    screenshot. Every other setting in `.env` is optional; [CONFIGURATION.md](CONFIGURATION.md)
    explains each of them.
 
-   **Let the dashboard read your traffic.** Signing in to the dashboard arrives *(from P4)*.
-   Until then, add this line to `.env` as well, so the dashboard can list traces without a
-   key:
+   **Optional: let the dashboard read traffic without signing in.** Add this line to `.env` as
+   well:
 
    ```bash
    TRUTHTABLE_PUBLIC_READ=true
@@ -163,7 +162,7 @@ check (Jev) and the deep-audit judge.
 
    This is safe on your laptop because TrustAgent only listens on 127.0.0.1 (`BIND_ADDR`);
    remove the line before you ever set `BIND_ADDR=0.0.0.0`. Without a key the dashboard shows
-   outcomes and reasons but hides the prompts and answers.
+   outcomes and reasons but hides the prompts and answers. Signing in (next steps) shows them.
 4. **Start TrustAgent:**
 
    ```bash
@@ -172,7 +171,12 @@ check (Jev) and the deep-audit judge.
 
    This starts the proxy, the engine, the database and the dashboard (no traffic generator) and
    opens the dashboard. Traffic stays empty until your app sends requests.
-5. **Check the connection** *(from P2)*: `make doctor` shows which fast-check backend is active,
+5. **Sign in as the admin.** At its first start the proxy prints a one-time line such as
+   `SETUP: open http://localhost:3000/app/setup#token=…`. Find it with `make logs SERVICE=proxy`,
+   or print a new one with `make setup-url`. Open the link and click **Create the admin key**:
+   the dashboard shows your admin key once (keep it in your password manager) and signs this
+   browser in, so you can edit policies. Later, sign in at `/app/setup` with that key.
+6. **Check the connection** *(from P2)*: `make doctor` shows which fast-check backend is active,
    why it was chosen, and its latency and cost.
 
 **Send a first request** *(from P2)*. Point your app at the proxy instead of the LLM provider:

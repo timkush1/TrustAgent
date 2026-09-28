@@ -7,6 +7,7 @@ Start with the [project README](../README.md) for the overview and quick start. 
 | Doc | What's inside |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System + sequence diagrams, the zero-latency tee design, component boundaries, key trade-offs |
+| [WALKTHROUGH.md](WALKTHROUGH.md) | A guided tour of the whole project for an engineer: product logic, every service, DevOps, security, tests and CI |
 | [KB-DESIGN.md](KB-DESIGN.md) | The dual-gate (VERITAS-lite) knowledge base: entailment gating, quarantine, contradiction detection, hybrid retrieval |
 | [DECISIONS.md](DECISIONS.md) | Architecture Decision Records (ADRs) — why the notable choices were made |
 
@@ -14,17 +15,17 @@ Start with the [project README](../README.md) for the overview and quick start. 
 
 | Doc | What's inside |
 |---|---|
-| [GETTING-STARTED.md](GETTING-STARTED.md) | Running TrustAgent locally on WSL: the zero-key `make demo`, real mode with your keys, memory, troubleshooting |
+| [GETTING-STARTED.md](GETTING-STARTED.md) | Running TrustAgent locally on WSL: the zero-key `make demo`, real mode with your keys, signing in with the one-time setup link, memory, troubleshooting |
 | [DEMO.md](DEMO.md) | Live-demo runbook (incl. exposing the stack on a public URL) |
 | [JEV-ACCESS.md](JEV-ACCESS.md) | Getting Jev access for the v2 fast check: OpenRouter key and credits, costs, settings, errors and fixes |
-| [CONFIGURATION.md](CONFIGURATION.md) | Every configuration key with its default, who reads it, whether it is secret and whether it needs a restart (generated from the key registry) |
+| [CONFIGURATION.md](CONFIGURATION.md) | Every configuration key with its default, who reads it, whether it is secret and whether it needs a restart (generated from the key registry; `proxy -check-config` checks a configuration against it) |
 | [CI-CD.md](CI-CD.md) | The GitHub Actions pipelines (CI, Security, Eval) and Dependabot — what each job does and how to read a failure |
 
 ## Quality & safety
 
 | Doc | What's inside |
 |---|---|
-| [EVALUATION.md](EVALUATION.md) | Two-tier evaluation methodology, metrics, and the CI regression gate |
+| [EVALUATION.md](EVALUATION.md) | Evaluation methodology, metrics, the CI regression gate, and the v2 benchmark harness (`make bench-lite`, `bench-publish`, `eval-live`, `calibrate`) |
 | [SECURITY.md](SECURITY.md) | Threat model, controls mapped to the OWASP LLM Top 10, scanner policy |
 
 ## Contracts & design (v2)
