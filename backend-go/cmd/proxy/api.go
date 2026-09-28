@@ -55,14 +55,15 @@ func badParam(c *gin.Context, name, message string) {
 		fieldError{Path: name, Message: message})
 }
 
-// apiAuth authenticates /api and /ws callers (SPEC §2.4 auth sources and scopes) until the P2
-// authz core adds sessions, cookies, tickets and api_keys rows:
+// apiAuth authenticates /api and /ws callers through the authz core (SPEC §2.4 auth sources and
+// scopes; see authz.Resolve):
 //
-//   - a key in X-TrustAgent-Key, or on /api also Authorization: Bearer or X-API-Key, grants the
-//     scopes of that key (TRUTHTABLE_API_KEYS keys hold ingest, read and content); a key that is
-//     presented but unknown is refused;
-//   - without a key, reads are allowed when TRUTHTABLE_PUBLIC_READ is set (scope read; in demo
-//     mode, whose data is scripted, also content), and ingest when TRUTHTABLE_INGEST_AUTH=open.
+//   - a credential (X-TrustAgent-Key; on /api also Authorization: Bearer or X-API-Key; the
+//     ta_session cookie, whose writes need the CSRF header; on /ws a ?ticket=) grants its scopes; a
+//     credential that is presented but refused is refused, never downgraded to public access;
+//   - without one, reads are allowed when TRUTHTABLE_PUBLIC_READ is set (scope read; in demo mode,
+//     whose data is scripted, also content), and ingest when TRUTHTABLE_INGEST_AUTH=open is in
+//     effect.
 type apiAuth struct {
 	keys       *authz.Authenticator
 	publicRead bool
@@ -75,33 +76,24 @@ const publicLabel = "public"
 // apiIdentityKey is the gin context key of the authenticated /api identity.
 const apiIdentityKey = "trustagent.api_identity"
 
-// presentedKey returns the key a request presents, and whether one was presented. bearer allows
-// the /api-only sources (Authorization: Bearer, X-API-Key).
-func presentedKey(r *http.Request, bearer bool) (string, bool) {
-	if k := r.Header.Get(authz.HeaderKey); k != "" {
-		return k, true
-	}
-	if !bearer {
-		return "", false
-	}
-	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer "), true
-	}
-	if k := r.Header.Get("X-API-Key"); k != "" {
-		return k, true
-	}
-	return "", false
+// identify returns the caller's identity for scope, or an error code and message. bearer selects
+// the /api sources (Bearer, X-API-Key); otherwise the request path decides (/ws accepts tickets).
+func (a *apiAuth) identify(r *http.Request, scope authz.Scope, bearer bool) (*authz.Identity, int, string, string) {
+	return a.decide(a.resolve(r, bearer), scope)
 }
 
-// identify returns the caller's identity for scope, or an error code and message.
-func (a *apiAuth) identify(r *http.Request, scope authz.Scope, bearer bool) (*authz.Identity, int, string, string) {
-	if secret, ok := presentedKey(r, bearer); ok {
-		id, ok := a.keys.Authenticate(secret)
-		if !ok {
-			return nil, http.StatusUnauthorized, codeUnauthorized, "The presented key is not valid."
-		}
+// decide applies scope to a resolved request.
+func (a *apiAuth) decide(res authz.Result, scope authz.Scope) (*authz.Identity, int, string, string) {
+	if res.Err != nil {
+		return nil, res.Err.Status, res.Err.Code, res.Err.Message
+	}
+	if id := res.Identity; id != nil {
 		if !id.Has(scope) {
-			return nil, http.StatusForbidden, codeForbidden, "This key does not have the " + string(scope) + " scope."
+			who := "key"
+			if id.Kind == authz.KindSession || id.Kind == authz.KindTicket {
+				who = "session"
+			}
+			return nil, http.StatusForbidden, codeForbidden, "This " + who + " does not have the " + string(scope) + " scope."
 		}
 		return id, 0, "", ""
 	}
@@ -111,19 +103,27 @@ func (a *apiAuth) identify(r *http.Request, scope authz.Scope, bearer bool) (*au
 		if a.demo {
 			scopes = append(scopes, authz.ScopeContent)
 		}
-		return &authz.Identity{Label: publicLabel, Scopes: scopes}, 0, "", ""
+		return &authz.Identity{Label: publicLabel, Scopes: scopes, Kind: authz.KindPublic}, 0, "", ""
 	case scope == authz.ScopeIngest && a.keys.IngestMode() == authz.IngestOpen:
-		return &authz.Identity{Label: publicLabel, Scopes: []authz.Scope{authz.ScopeIngest}}, 0, "", ""
+		return &authz.Identity{Label: publicLabel, Scopes: []authz.Scope{authz.ScopeIngest}, Kind: authz.KindPublic}, 0, "", ""
 	}
 	return nil, http.StatusUnauthorized, codeUnauthorized,
-		"Authentication required: send a key in " + authz.HeaderKey + " (or set TRUTHTABLE_PUBLIC_READ=true for keyless reads)."
+		"Authentication required: send a key in " + authz.HeaderKey + " or sign in (or set TRUTHTABLE_PUBLIC_READ=true for keyless reads)."
 }
 
-// require returns middleware that admits callers holding scope and stores their identity.
+// require returns middleware that admits callers holding scope and stores their identity. It
+// renews a sliding session cookie and clears a stale one it refuses.
 func (a *apiAuth) require(scope authz.Scope) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, status, code, msg := a.identify(c.Request, scope, true)
+		res := a.resolve(c.Request, true)
+		if res.Refresh != nil {
+			http.SetCookie(c.Writer, res.Refresh)
+		}
+		id, status, code, msg := a.decide(res, scope)
 		if id == nil {
+			if res.StaleCookie {
+				http.SetCookie(c.Writer, a.keys.ClearCookie())
+			}
 			abortAPI(c, status, code, msg)
 			return
 		}

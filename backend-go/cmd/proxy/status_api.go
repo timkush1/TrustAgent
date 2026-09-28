@@ -274,6 +274,7 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 	if s.auth.publicRead {
 		st.Auth.Read = "public"
 	}
+	st.Auth.SetupRequired = s.auth.setupRequired(ctx)
 	if cfg.InternalToken != "" {
 		st.InternalRPC = "token"
 	}
