@@ -567,22 +567,6 @@ func TestEvaluatorVersionDiff(t *testing.T) {
 	}
 }
 
-func TestLoadPolicyEnv(t *testing.T) {
-	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
-	e := loadPolicyEnv(env(nil))
-	if e.ReloadInterval != 5*time.Second || e.ConfigLock || !strings.HasSuffix(e.EvaluatorsDir, "evaluators") || len(e.Warnings) != 0 {
-		t.Errorf("defaults %+v", e)
-	}
-	e = loadPolicyEnv(env(map[string]string{"TRUTHTABLE_POLICY_RELOAD_INTERVAL": "0", "TRUTHTABLE_CONFIG_LOCK": "true", "TRUTHTABLE_EVALUATORS_DIR": "/etc/x"}))
-	if e.ReloadInterval != 0 || !e.ConfigLock || e.EvaluatorsDir != "/etc/x" {
-		t.Errorf("set %+v", e)
-	}
-	e = loadPolicyEnv(env(map[string]string{"TRUTHTABLE_POLICY_RELOAD_INTERVAL": "soon", "TRUTHTABLE_CONFIG_LOCK": "maybe"}))
-	if e.ReloadInterval != 5*time.Second || e.ConfigLock || len(e.Warnings) != 2 {
-		t.Errorf("invalid %+v", e)
-	}
-}
-
 // TestPolicyServicesPostgres wires the services on Postgres: a save on one replica reaches the
 // other through NOTIFY, an evaluator version stored by another writer joins the registry, and
 // the dry-run reads recorded decisions.
@@ -599,17 +583,12 @@ func TestPolicyServicesPostgres(t *testing.T) {
 	t.Cleanup(pg.Close)
 	file := filepath.Join(t.TempDir(), "policies.yaml")
 	writePolicy(t, file, apiPolicyYAML)
+	// PolicyReloadInterval 0: notifications only.
 	cfg := &config.Config{PolicyFile: file, GateDefaultMode: "observe", GateFailMode: "open", Jev: config.JevConfig{MaxResponseTokens: 6000}}
 	var seenMu sync.Mutex
 	var seen []int64 // versions handed to onPolicy, by either replica
 	wiring := policyWiring{cfg: cfg, pg: pg, channel: store.ScopedConfigChannel(schema.Name), log: quietLog,
-		onPolicy: func(p *policy.Policy) { seenMu.Lock(); seen = append(seen, p.Version); seenMu.Unlock() },
-		getenv: func(k string) string {
-			if k == "TRUTHTABLE_POLICY_RELOAD_INTERVAL" {
-				return "0" // notifications only
-			}
-			return ""
-		}}
+		onPolicy: func(p *policy.Policy) { seenMu.Lock(); seen = append(seen, p.Version); seenMu.Unlock() }}
 	a, err := newPolicyServices(ctx, wiring)
 	if err != nil {
 		t.Fatal(err)
@@ -682,7 +661,7 @@ func TestPolicyServicesPostgres(t *testing.T) {
 		t.Errorf("progress %s", d["calibration_progress"])
 	}
 	// File-managed services without a database.
-	fm, err := newPolicyServices(ctx, policyWiring{cfg: cfg, log: quietLog, getenv: func(string) string { return "" }})
+	fm, err := newPolicyServices(ctx, policyWiring{cfg: cfg, log: quietLog})
 	if err != nil {
 		t.Fatal(err)
 	}

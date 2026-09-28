@@ -71,6 +71,11 @@ type Config struct {
 	UniformAuditsPerDay      int           `env:"TRUTHTABLE_UNIFORM_AUDITS_PER_DAY"`
 	Jev                      JevConfig
 
+	// Policy engine: hot reload, the file lock and the custom evaluator files (SPEC §2.7, §7.2).
+	PolicyReloadInterval time.Duration `env:"TRUTHTABLE_POLICY_RELOAD_INTERVAL"` // 0 disables polling
+	ConfigLock           bool          `env:"TRUTHTABLE_CONFIG_LOCK"`            // the file is the only authority
+	EvaluatorsDir        string        `env:"TRUTHTABLE_EVALUATORS_DIR,repopath"`
+
 	// Server, persistence, engine link and WebSocket
 	ReadHeaderTimeout      time.Duration `env:"TRUTHTABLE_READ_HEADER_TIMEOUT"`
 	MetricsPort            int           `env:"TRUTHTABLE_METRICS_PORT"`

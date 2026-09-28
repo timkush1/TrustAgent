@@ -254,3 +254,28 @@ func TestDecisionModelKeysOutOfRangeFallBack(t *testing.T) {
 		}
 	}
 }
+
+func TestPolicyEngineKeys(t *testing.T) {
+	clearEnv(t)
+	c := Load()
+	if c.PolicyReloadInterval != 5*time.Second || c.ConfigLock {
+		t.Errorf("policy defaults: reload %s lock %v", c.PolicyReloadInterval, c.ConfigLock)
+	}
+	if !strings.HasSuffix(c.EvaluatorsDir, filepath.Join("config", "evaluators")) {
+		t.Errorf("evaluators dir %q", c.EvaluatorsDir)
+	}
+
+	t.Setenv("TRUTHTABLE_POLICY_RELOAD_INTERVAL", "0")
+	t.Setenv("TRUTHTABLE_CONFIG_LOCK", "true")
+	t.Setenv("TRUTHTABLE_EVALUATORS_DIR", "/etc/trustagent/evaluators")
+	c = Load()
+	if c.PolicyReloadInterval != 0 || !c.ConfigLock || c.EvaluatorsDir != "/etc/trustagent/evaluators" {
+		t.Errorf("policy keys: reload %s lock %v dir %q", c.PolicyReloadInterval, c.ConfigLock, c.EvaluatorsDir)
+	}
+
+	t.Setenv("TRUTHTABLE_POLICY_RELOAD_INTERVAL", "soon")
+	c = Load()
+	if c.PolicyReloadInterval != 5*time.Second || len(c.Warnings) != 1 {
+		t.Errorf("an invalid interval falls back with a warning: %s %v", c.PolicyReloadInterval, c.Warnings)
+	}
+}

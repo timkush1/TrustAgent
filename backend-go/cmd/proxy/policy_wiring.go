@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,43 +18,9 @@ import (
 	"github.com/truthtable/backend-go/internal/websocket"
 )
 
-// Wiring of the policy engine, the evaluator registry and their REST APIs. The lead connects it
-// to the gateway after the wave-2 merge (see policyServices): the /v1 handler and the gate must
-// read ps.Engine.Current() and ps.Registry instead of a policy loaded once at startup.
-
-// policyEnv are the policy keys of contracts/config/keys.v1.json that config.Config does not
-// load yet (the registry-driven loader of P2 replaces this).
-type policyEnv struct {
-	ReloadInterval time.Duration // TRUTHTABLE_POLICY_RELOAD_INTERVAL (5s; 0 disables polling)
-	ConfigLock     bool          // TRUTHTABLE_CONFIG_LOCK (false)
-	EvaluatorsDir  string        // TRUTHTABLE_EVALUATORS_DIR (config/evaluators)
-	Warnings       []string
-}
-
-// loadPolicyEnv reads the policy keys with their registry defaults.
-func loadPolicyEnv(getenv func(string) string) policyEnv {
-	e := policyEnv{ReloadInterval: 5 * time.Second, EvaluatorsDir: "config/evaluators"}
-	if raw := strings.TrimSpace(getenv("TRUTHTABLE_POLICY_RELOAD_INTERVAL")); raw != "" {
-		d, err := time.ParseDuration(raw)
-		if err != nil || d < 0 {
-			e.Warnings = append(e.Warnings, fmt.Sprintf("TRUTHTABLE_POLICY_RELOAD_INTERVAL=%q is not a duration such as 5s; using 5s", raw))
-		} else {
-			e.ReloadInterval = d
-		}
-	}
-	if raw := strings.TrimSpace(getenv("TRUTHTABLE_CONFIG_LOCK")); raw != "" {
-		b, err := strconv.ParseBool(raw)
-		if err != nil {
-			e.Warnings = append(e.Warnings, fmt.Sprintf("TRUTHTABLE_CONFIG_LOCK=%q is not true or false; using false", raw))
-		}
-		e.ConfigLock = b
-	}
-	if raw := strings.TrimSpace(getenv("TRUTHTABLE_EVALUATORS_DIR")); raw != "" {
-		e.EvaluatorsDir = raw
-	}
-	e.EvaluatorsDir = config.RepoPath(e.EvaluatorsDir)
-	return e
-}
+// Wiring of the policy engine, the evaluator registry and their REST APIs (newServer): the /v1
+// handler and the gate read ps.Engine.Current() and ps.Registry per request, so a saved, rolled
+// back or hot-reloaded version reaches the gate without a restart.
 
 // policyWiring are the inputs of the policy services.
 type policyWiring struct {
@@ -75,23 +38,15 @@ type policyWiring struct {
 	// reload (not the one active at startup), for state derived from it such as the decision
 	// model's keep-warm. It runs on the goroutine that activated the version.
 	onPolicy func(*policy.Policy)
-	// channel overrides the NOTIFY channel (tests); getenv overrides os.Getenv (tests).
+	// channel overrides the NOTIFY channel (tests).
 	channel string
-	getenv  func(string) string
 	log     *slog.Logger
 }
 
 // policyServices are the policy engine, the evaluator registry and their REST APIs.
 //
-// Wiring for the lead (cmd/proxy), in order:
-//
-//	ps, err := newPolicyServices(ctx, policyWiring{cfg: cfg, pg: pg, hub: s.hub, runtime: rt, log: log})
-//	// newGateway: use ps.Registry instead of evaluators.Builtins(), and give the /v1 handler
-//	// ps.Engine.Current (per request) instead of the policy.LoadFile result;
-//	// statusReporter.policyStatus: return ps.Engine.Status().
-//	ps.mount(api, apiGuards{read: read, admin: s.auth.require(authz.ScopeAdmin), writable: writable,
-//	    rateLimit: rateLimit, dryRunLimit: middleware.RateLimit(limiter, 6, time.Minute, apiDeny), bodyLimit: bodyLimit})
-//	go ps.run(ctx) // in server.start, joined before the store closes
+// newServer builds them before the gateway (which reads ps.Registry and ps.Engine.Current), mounts
+// their routes on /api, and server.start runs the reload loop until shutdown.
 type policyServices struct {
 	Registry *evaluators.Registry
 	Engine   *policy.Engine
@@ -113,17 +68,9 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 	if log == nil {
 		log = slog.Default()
 	}
-	getenv := w.getenv
-	if getenv == nil {
-		getenv = os.Getenv
-	}
-	penv := loadPolicyEnv(getenv)
-	for _, warning := range penv.Warnings {
-		log.Warn("config: " + warning)
-	}
-	ps := &policyServices{hub: w.hub, reload: penv.ReloadInterval, evalTrigger: make(chan struct{}, 1), onPolicy: w.onPolicy, log: log}
+	ps := &policyServices{hub: w.hub, reload: w.cfg.PolicyReloadInterval, evalTrigger: make(chan struct{}, 1), onPolicy: w.onPolicy, log: log}
 
-	regCfg := evaluators.Config{Dir: penv.EvaluatorsDir, Channel: w.channel, Logger: log}
+	regCfg := evaluators.Config{Dir: w.cfg.EvaluatorsDir, Channel: w.channel, Logger: log}
 	var versions policy.VersionStore
 	var replay policy.ReplaySource
 	var labels labelCounter
@@ -143,7 +90,7 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 			Specs:     reg,
 			Enforcing: w.enforcing,
 		},
-		Store: versions, Lock: penv.ConfigLock, ReloadInterval: penv.ReloadInterval, Channel: w.channel,
+		Store: versions, Lock: w.cfg.ConfigLock, ReloadInterval: w.cfg.PolicyReloadInterval, Channel: w.channel,
 		Runtime: w.runtime, OnUpdate: ps.policyUpdated, OnError: ps.policyFailed, OnNotify: ps.notified, Logger: log,
 	})
 	if err != nil {
