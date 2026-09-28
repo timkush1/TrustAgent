@@ -36,15 +36,20 @@ func (a *Authenticator) CheckCSRF(r *http.Request) error {
 	return nil
 }
 
-// CheckLoginCSRF checks a request that establishes a session (POST /api/session): the CSRF header
-// is required, and an Origin, when present, must be allow-listed. Non-browser clients send no
-// Origin.
+// CheckLoginCSRF checks a request that establishes a session (POST /api/session). A browser always
+// sends an Origin on a POST: it must be allow-listed, which is what defeats login CSRF (a cross-site
+// page cannot claim an allowed Origin). A request without an Origin (a non-browser client) needs
+// the CSRF header instead. A cross-origin dashboard (DASHBOARD_API_BASE), whose fetch client sends
+// no CSRF header, is admitted by its allow-listed Origin, so its setup claim works.
 func (a *Authenticator) CheckLoginCSRF(r *http.Request) error {
+	if o := r.Header.Get("Origin"); o != "" {
+		if !a.AllowsOrigin(o) {
+			return ErrCSRFOrigin
+		}
+		return nil
+	}
 	if r.Header.Get(HeaderCSRF) != "1" {
 		return ErrCSRFHeader
-	}
-	if o := r.Header.Get("Origin"); o != "" && !a.AllowsOrigin(o) {
-		return ErrCSRFOrigin
 	}
 	return nil
 }

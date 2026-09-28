@@ -330,6 +330,29 @@ func TestAnnounceSetupIsBounded(t *testing.T) {
 	}
 }
 
+// TestCrossOriginDashboardClaim: a cross-origin dashboard (DASHBOARD_API_BASE) sends no CSRF header
+// and no cookies; its allow-listed Origin admits the setup claim, which returns the admin key it
+// then sends as a key header. A foreign Origin is refused.
+func TestCrossOriginDashboardClaim(t *testing.T) {
+	env := newAuthzEnv(t, authzEnvOpts{mutate: func(c *config.Config) { c.Auth.AdminKeys = nil }})
+	var out bytes.Buffer
+	env.srv.announceSetup(context.Background(), &out)
+	token := strings.TrimSpace(out.String()[strings.Index(out.String(), "#token=")+len("#token="):])
+	const dashboard = "http://localhost:5173" // TRUTHTABLE_ALLOWED_ORIGINS in newAuthzEnv
+	if resp, body := env.call(http.MethodPost, "/api/session", map[string]string{"setup_token": token}, nil, "Origin", "http://localhost:8888"); resp.StatusCode != http.StatusForbidden || errorCode(t, body) != "csrf_failed" {
+		t.Fatalf("a foreign Origin: %d %s", resp.StatusCode, body)
+	}
+	resp, body := env.call(http.MethodPost, "/api/session", map[string]string{"setup_token": token}, nil, "Origin", dashboard)
+	var info sessionInfo
+	strictDecode(t, body, &info)
+	if resp.StatusCode != http.StatusOK || info.CreatedAdminKey == "" {
+		t.Fatalf("cross-origin claim: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := env.call(http.MethodGet, "/api/keys", nil, nil, authz.HeaderKey, info.CreatedAdminKey, "Origin", dashboard); resp.StatusCode != http.StatusOK {
+		t.Errorf("the created key works as a key header: %d %s", resp.StatusCode, body)
+	}
+}
+
 // TestSessionAPI: sign in with a key, use the cookie, CSRF on writes, sign out, and end every
 // session with ?all=true.
 func TestSessionAPI(t *testing.T) {

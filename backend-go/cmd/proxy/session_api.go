@@ -192,7 +192,7 @@ func noStore(c *gin.Context) { c.Header("Cache-Control", "no-store") }
 // read scope. Either way the ta_session cookie is set.
 func (h *authzAPI) createSession(c *gin.Context) {
 	if err := h.auth.CheckLoginCSRF(c.Request); err != nil {
-		abortAPI(c, http.StatusForbidden, codeCSRFFailed, "Signing in needs the "+authz.HeaderCSRF+": 1 header, from an allowed Origin.")
+		abortAPI(c, http.StatusForbidden, codeCSRFFailed, "Signing in needs an allowed Origin (TRUTHTABLE_ALLOWED_ORIGINS or TRUTHTABLE_PUBLIC_URL), or the "+authz.HeaderCSRF+": 1 header from a client that sends no Origin.")
 		return
 	}
 	var body struct {

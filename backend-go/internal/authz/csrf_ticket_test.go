@@ -50,15 +50,19 @@ func TestCSRF(t *testing.T) {
 		t.Errorf("a key header needs no CSRF: %+v", res)
 	}
 
-	// Login: the header is required; an Origin, when present, must be allowed.
+	// Login: an Origin, when present, must be allowed (a cross-origin dashboard sends no CSRF
+	// header); without an Origin the header is required.
 	for name, c := range map[string]struct {
 		headers []string
 		ok      bool
 	}{
-		"no header":           {nil, false},
-		"header, no Origin":   {[]string{HeaderCSRF, "1"}, true},
-		"header, good Origin": {[]string{HeaderCSRF, "1", "Origin", "http://localhost:3000"}, true},
-		"header, bad Origin":  {[]string{HeaderCSRF, "1", "Origin", "http://evil.example"}, false},
+		"no header, no Origin":   {nil, false},
+		"header, no Origin":      {[]string{HeaderCSRF, "1"}, true},
+		"header, good Origin":    {[]string{HeaderCSRF, "1", "Origin", "http://localhost:3000"}, true},
+		"header, bad Origin":     {[]string{HeaderCSRF, "1", "Origin", "http://evil.example"}, false},
+		"no header, good Origin": {[]string{"Origin", "http://localhost:5173"}, true},
+		"no header, bad Origin":  {[]string{"Origin", "http://localhost:8888"}, false},
+		"null Origin":            {[]string{HeaderCSRF, "1", "Origin", "null"}, false},
 	} {
 		err := f.a.CheckLoginCSRF(request(http.MethodPost, "/api/session", "", c.headers...))
 		if (err == nil) != c.ok {
