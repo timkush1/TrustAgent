@@ -5,7 +5,7 @@ Defines the state schema for the audit workflow.
 LangGraph uses TypedDict to define what data flows through the graph.
 """
 
-from typing import TypedDict, List, Dict, Optional
+from typing import Any, TypedDict, List, Dict, NotRequired, Optional
 from enum import Enum
 
 
@@ -79,6 +79,29 @@ class ClaimVerification(TypedDict):
     status: VerificationStatus  # Verification outcome
     confidence: float  # Confidence score (0.0-1.0)
     evidence: List[str]  # Supporting/refuting snippets
+    reasoning: NotRequired[str]  # The judge's one-sentence explanation, when it gave one
+    # v2 per-claim record (SPEC section 2.2 ClaimVerification); absent on v1 records.
+    index: NotRequired[int]  # Position in the audit's claim list
+    quote: NotRequired[str]  # The answer's words that assert the claim (decomposer)
+    span_start: NotRequired[int]  # UTF-16 code units, half-open; -1 when unaligned
+    span_end: NotRequired[int]
+    span_method: NotRequired[str]  # exact|normalized|fuzzy|none
+    decided_by: NotRequired[str]  # llm (a verdict) or none (UNKNOWN, NOT_CHECKED)
+    # {supported, partially_supported, contradicted, unsupported} -> probability
+    verdict_probabilities: NotRequired[Dict[str, float]]
+    probability_source: NotRequired[str]  # llm_confidence for the LLM default
+    error: NotRequired[bool]  # UNKNOWN because the judge call raised
+    error_kind: NotRequired[str]  # e.g. rate_limited, invalid_output
+
+
+class ExtractedClaim(TypedDict):
+    """A claim as the decomposer extracted it, located in the answer."""
+
+    claim: str
+    quote: str
+    span_start: int  # UTF-16 code units, half-open; -1 when unaligned
+    span_end: int
+    span_method: str  # exact|normalized|fuzzy|none
 
 
 class AuditState(TypedDict):
@@ -105,14 +128,22 @@ class AuditState(TypedDict):
         claim_verifications: Verification results per claim
 
     Output fields (final results):
-        faithfulness_score: How much is supported (0.0-1.0; the v1 score)
-        hallucination_detected: The v1 hallucination rule over all claims
+        faithfulness_score: Legacy score: scores.trust_score, or 0.0 when absent
+        hallucination_detected: Whether the verdict is HALLUCINATED
         reasoning_trace: Explanation of findings
         verdict: AuditVerdict value
         not_assessed_reason: NotAssessedReason value when verdict is NOT_ASSESSED
         audit_status: AuditOutcome value
         degraded_reasons: Why a completed audit is DEGRADED (e.g. unknown_claims)
         error_kind: Why the audit failed (for example judge_unavailable)
+
+    v2 fields (scoring v2, decomposer v2):
+        extracted_claims: Quote and UTF-16 span of each claim, parallel to claims
+        context_truncated: Input flag: the caller truncated evidence documents
+        context_trimmed: The verifier capped the evidence it sent the judge
+        scores: The AuditScores of the audit (None when it has none)
+        grade: Letter grade of scores.trust_score (None without one)
+        scoring_version: "v2"; faithfulness_score then carries trust_score (0 when absent)
     """
 
     # Input
@@ -140,3 +171,21 @@ class AuditState(TypedDict):
 
     # Pipeline observability
     step_timings: Optional[Dict[str, int]]
+
+    # v2 (not set by v1 callers)
+    extracted_claims: NotRequired[List[ExtractedClaim]]  # Parallel to claims (decomposer)
+    context_truncated: NotRequired[
+        bool
+    ]  # Input: the caller cut evidence (ContextDocument.truncated)
+    context_trimmed: NotRequired[bool]  # The verifier capped the evidence it sent the judge
+    scores: NotRequired[Optional[Dict[str, Any]]]  # scoring.AuditScores.to_dict(); None when absent
+    grade: NotRequired[Optional[str]]  # A-F from scores.trust_score; None without one
+    scoring_version: NotRequired[str]  # "v2"
+
+
+def add_degraded_reason(state: AuditState, reason: str) -> None:
+    """Record why an audit is DEGRADED (once per reason)."""
+    reasons = list(state.get("degraded_reasons") or [])
+    if reason not in reasons:
+        reasons.append(reason)
+    state["degraded_reasons"] = reasons
