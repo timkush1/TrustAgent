@@ -791,7 +791,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             )
 
         try:
-            self.qdrant_store.ensure_collection()
+            await self.qdrant_store.aensure_collection()
 
             if self.ingestor is not None:
                 documents = []
@@ -836,8 +836,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     meta["doc_id"] = doc.id
                 metadata.append(meta)
 
-            vectors = self.embedding_service.embed(texts)
-            count = self.qdrant_store.upsert_documents(
+            # Off the event loop (D8): encoding and the Qdrant upsert block.
+            vectors = await self.embedding_service.aembed(texts)
+            count = await self.qdrant_store.aupsert_documents(
                 texts=texts, vectors=vectors, metadata=metadata
             )
 
@@ -852,9 +853,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     # Knowledge-base queries (VERITAS-lite)
     # ------------------------------------------------------------------
 
-    def _kb_claims(self) -> list:
-        """All claim points from the store, newest first."""
-        points = self.qdrant_store.scroll_points(must={"kind": "claim"})
+    async def _kb_claims(self) -> List[Dict[str, Any]]:
+        """All claim points from the store, newest first (paged, off the event loop; D8, D9)."""
+        points: List[Dict[str, Any]] = await self.qdrant_store.ascroll_points(
+            must={"kind": "claim"}
+        )
         points.sort(key=lambda p: p.get("ingested_at_ms", 0), reverse=True)
         return points
 
@@ -881,7 +884,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             context.set_details("Vector store not configured")
             return evaluator_pb2.ListKBClaimsResponse()
 
-        points = self._kb_claims()
+        points = await self._kb_claims()
         if request.status_filter != evaluator_pb2.KB_CLAIM_STATUS_UNSPECIFIED:
             wanted = _PROTO_TO_KB_STATUS[request.status_filter]
             points = [p for p in points if p.get("kb_status") == wanted]
@@ -903,7 +906,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             context.set_details("Vector store not configured")
             return evaluator_pb2.ListConflictsResponse()
 
-        points = {p["id"]: p for p in self._kb_claims()}
+        points = {p["id"]: p for p in await self._kb_claims()}
         seen: set = set()
         pairs = []
         for point in points.values():
@@ -931,7 +934,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             context.set_details("Vector store not configured")
             return evaluator_pb2.KBStatsResponse()
 
-        points = self._kb_claims()
+        points = await self._kb_claims()
         accepted = sum(1 for p in points if p.get("kb_status") == "accepted")
         quarantined = sum(1 for p in points if p.get("kb_status") == "quarantined")
 

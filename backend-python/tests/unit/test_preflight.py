@@ -46,23 +46,37 @@ class SpyJudge(LLMProvider):
 
 
 class FakeEmbeddings:
+    """Stands in for EmbeddingService; retrieval must use the async form (D8)."""
+
     dimension = 3
 
     def embed(self, texts: Sequence[str]) -> List[List[float]]:
+        raise AssertionError("retrieval must not encode on the event loop (use aembed)")
+
+    async def aembed(self, texts: Sequence[str]) -> List[List[float]]:
         return [[0.1, 0.2, 0.3] for _ in texts]
 
 
 class FakeKnowledgeBase:
-    """Stands in for QdrantStore.search: returns `hits` for every query."""
+    """Stands in for QdrantStore.asearch: returns `hits` for every query."""
 
     def __init__(self, hits: Sequence[str]):
         self.hits = list(hits)
         self.searches = 0
+        self.top_k: List[int] = []
+        self.thresholds: List[float] = []
 
     def search(
         self, query_vector: List[float], top_k: int, score_threshold: float
     ) -> List[Dict[str, Any]]:
+        raise AssertionError("retrieval must not call Qdrant on the event loop (use asearch)")
+
+    async def asearch(
+        self, query_vector: List[float], top_k: int, score_threshold: float
+    ) -> List[Dict[str, Any]]:
         self.searches += 1
+        self.top_k.append(top_k)
+        self.thresholds.append(score_threshold)
         return [{"text": text, "score": 0.9} for text in self.hits]
 
 
@@ -183,6 +197,22 @@ async def test_knowledge_hits_are_verified_as_unverifiable_policy() -> None:
     # auto: knowledge-base evidence only, so UNSUPPORTED would mean unverifiable.
     assert state["unsupported_policy"] == "unverifiable"
     assert "retrieve_ms" in state["step_timings"]
+
+
+async def test_retriever_settings_reach_the_knowledge_search() -> None:
+    judge, knowledge = SpyJudge(), FakeKnowledgeBase(hits=["Paris is the capital of France."])
+    graph = build_audit_graph(
+        provider=judge,
+        embedding_service=FakeEmbeddings(),
+        qdrant_store=knowledge,
+        retriever_top_k=7,
+        retriever_score_threshold=0.55,
+    )
+
+    await _audit(graph, knowledge_enabled=True)
+
+    assert set(knowledge.top_k) == {7}
+    assert set(knowledge.thresholds) == {0.55}
 
 
 async def test_knowledge_without_hits_is_not_assessed_and_claims_not_checked() -> None:
