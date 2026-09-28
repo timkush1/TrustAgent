@@ -21,7 +21,8 @@
 // --max-cost-usd is a hard cap: no decision-model call starts unless twice its estimated cost fits
 // in what is left, and once a call is refused every remaining example is written as
 // skipped: over_budget (the benchmark's excluded_over_budget) and the exit status is 3. A paid
-// backend requires the cap. The backend and model resolve as the proxy's do
+// backend requires the cap and a price above 0 to reserve with; the cap and the price must be
+// finite. The backend and model resolve as the proxy's do
 // (TRUTHTABLE_JEV_BACKEND, TRUTHTABLE_JEV_MODEL, OPENROUTER_API_KEY, TYPESAFE_API_KEY,
 // TRUTHTABLE_JEV_API_KEY, TRUTHTABLE_JEV_BASE_URL); --backend and --model override them.
 //
@@ -38,6 +39,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"slices"
@@ -116,8 +118,18 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return exitUsage
 	}
 	o.specFiles = specs
-	if fl.NArg() > 0 || o.concurrency < 1 || o.timeout <= 0 || o.maxCostUSD < 0 || o.pricePerMTok < 0 {
+	if fl.NArg() > 0 || o.concurrency < 1 || o.timeout <= 0 {
 		fl.Usage()
+		return exitUsage
+	}
+	// NaN and infinities compare false against every bound, so they would switch the cap off.
+	if !finiteNonNegative(o.maxCostUSD) || !finiteNonNegative(o.pricePerMTok) {
+		fmt.Fprintf(stderr, "gate-eval: --max-cost-usd (%v) and --price-per-mtok or TRUTHTABLE_JEV_PRICE_PER_MTOK (%v) must be finite and not negative\n",
+			o.maxCostUSD, o.pricePerMTok)
+		return exitUsage
+	}
+	if err := distinctFiles(o.in, o.out); err != nil {
+		fmt.Fprintf(stderr, "gate-eval: %v\n", err)
 		return exitUsage
 	}
 
@@ -217,7 +229,7 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 		mode = o.mode
 	}
 
-	client, err := jev.New(jev.Config{
+	client, err := newJevClient(jev.Config{
 		Backend: o.backend, Model: o.model,
 		OpenRouterKey: getenv("OPENROUTER_API_KEY"), TypeSafeKey: getenv("TYPESAFE_API_KEY"),
 		JevAPIKey: getenv("TRUTHTABLE_JEV_API_KEY"), BaseURL: getenv("TRUTHTABLE_JEV_BASE_URL"),
@@ -234,8 +246,15 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 	if info.Backend == jev.BackendOff {
 		return nil, fmt.Errorf("%w: %s", errNoDecisionModel, info.Reason)
 	}
-	if info.Backend != jev.BackendMock && o.maxCostUSD <= 0 {
-		return nil, fmt.Errorf("%w: the %s backend is paid: set --max-cost-usd", errUsage, info.Backend)
+	if info.Backend != jev.BackendMock {
+		if o.maxCostUSD <= 0 {
+			return nil, fmt.Errorf("%w: the %s backend is paid: set --max-cost-usd", errUsage, info.Backend)
+		}
+		// Reservations are priced from the token estimate; at price 0 they are free and the cap
+		// could only stop the run after the spend had already passed it.
+		if o.pricePerMTok <= 0 {
+			return nil, fmt.Errorf("%w: the %s backend is paid: --price-per-mtok must be above 0 for --max-cost-usd to be enforced", errUsage, info.Backend)
+		}
 	}
 	model := o.model
 	if model == "" {
@@ -254,6 +273,28 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 		client: client, route: &rc, mode: mode, model: model, specs: specs, budget: budget,
 		pricePerMTok: o.pricePerMTok, callTimeout: o.timeout, spend: &spend{cap: o.maxCostUSD}, now: time.Now,
 	}, nil
+}
+
+// newJevClient builds the decision-model client; tests replace it with a fake paid backend.
+var newJevClient = jev.New
+
+// finiteNonNegative reports whether x is a finite number >= 0.
+func finiteNonNegative(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) && x >= 0 }
+
+// distinctFiles refuses an output file that is the input file: opening the output truncates it
+// before the examples are read.
+func distinctFiles(in, out string) error {
+	if in == "-" || out == "-" {
+		return nil
+	}
+	a, err := os.Stat(in)
+	if err != nil {
+		return nil // openInput reports it
+	}
+	if b, err := os.Stat(out); err == nil && os.SameFile(a, b) {
+		return fmt.Errorf("--out %s is the --in file: writing it would erase the examples", out)
+	}
+	return nil
 }
 
 // specResolver resolves refs for policy validation.

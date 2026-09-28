@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -450,6 +451,53 @@ func TestPaidBackendNeedsACap(t *testing.T) {
 		if code, _, _ := runCLI(t, "", env(), args...); code != exitUsage {
 			t.Errorf("%v: exit %d, want %d", args, code, exitUsage)
 		}
+	}
+}
+
+func TestPaidBackendCapIsEnforceable(t *testing.T) {
+	// A fake paid backend stands in for the HTTP backends this build resolves to off.
+	orig := newJevClient
+	t.Cleanup(func() { newJevClient = orig })
+	newJevClient = func(jev.Config) (jev.Client, error) { return &fakeClient{noul: 0.1}, nil }
+
+	line := fmt.Sprintf(`{"id":"x","query":"Refund window?","response":"Refunds within 30 days.","context":[%q]}`, refundDoc) + "\n"
+	base := []string{"--policy", repoPolicy, "--backend", "openrouter-decisions"}
+	for _, c := range []struct {
+		name string
+		env  func(string) string
+		args []string
+		want string
+	}{
+		{"no cap", env(), nil, "set --max-cost-usd"},
+		{"NaN cap", env(), []string{"--max-cost-usd", "NaN"}, "must be finite"},
+		{"infinite cap", env(), []string{"--max-cost-usd", "+Inf"}, "must be finite"},
+		{"NaN price", env("TRUTHTABLE_JEV_PRICE_PER_MTOK", "NaN"), []string{"--max-cost-usd", "1"}, "must be finite"},
+		{"infinite price", env(), []string{"--max-cost-usd", "1", "--price-per-mtok", "Inf"}, "must be finite"},
+		{"zero price", env(), []string{"--max-cost-usd", "1", "--price-per-mtok", "0"}, "--price-per-mtok must be above 0"},
+	} {
+		code, _, stderr := runCLI(t, line, c.env, append(slices.Clone(base), c.args...)...)
+		if code != exitUsage || !strings.Contains(stderr, c.want) {
+			t.Errorf("%s: exit %d, want %d with %q:\n%s", c.name, code, exitUsage, c.want, stderr)
+		}
+	}
+	code, lines, stderr := runCLI(t, line, env(), append(slices.Clone(base), "--max-cost-usd", "1", "--evaluators", "groundedness@1")...)
+	if code != exitOK || len(lines) != 1 || lines[0]["simulated"] != false || dig(lines[0], "decision", "status") != "ok" ||
+		dig(lines[0], "decision_model", "cost_source") != "computed" {
+		t.Errorf("capped paid run: exit %d, %v\n%s", code, lines, stderr)
+	}
+}
+
+func TestOutputMustNotBeTheInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "examples.jsonl")
+	if err := os.WriteFile(path, []byte(examples(2)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runCLI(t, "", env(), "--backend", "mock", "--policy", repoPolicy, "--in", path, "--out", path)
+	if code != exitUsage || !strings.Contains(stderr, "is the --in file") {
+		t.Errorf("exit %d: %s", code, stderr)
+	}
+	if b, _ := os.ReadFile(path); string(b) != examples(2) {
+		t.Errorf("the examples file was changed:\n%s", b)
 	}
 }
 
