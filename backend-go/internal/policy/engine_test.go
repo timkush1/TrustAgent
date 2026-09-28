@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -554,19 +555,70 @@ func TestEngineInvalidStoredVersions(t *testing.T) {
 		if _, errs := f.ev.counts(); errs != 1 || f.ev.errs[0].Source != ErrorSourceDatabase || f.ev.errs[0].Errors[0].Path != "defaults.evaluators[0].ref" {
 			t.Fatalf("errors %+v", f.ev.errs)
 		}
+		bad := good + 1
+		if st := e.State(); st.HeadID != bad || st.ETag() != fmt.Sprintf(`"v%d"`, bad) || len(st.Warnings) != 1 ||
+			!strings.Contains(st.Warnings[0], "no longer validates") {
+			t.Errorf("running state %+v %s %v", st.Version, st.ETag(), st.Warnings)
+		}
 		// A restart runs the newest valid version and says why.
 		restarted := f.engine(t)
 		st := restarted.State()
-		if st.Version.ID != good || len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "no longer validates") {
+		if st.Version.ID != good || len(st.Warnings) != 1 || !strings.Contains(st.Warnings[0], "no longer validates") || st.HeadID != bad {
 			t.Errorf("restart %+v %v", st.Version, st.Warnings)
 		}
-		// A valid version after it is picked up.
-		insertVersion(t, b, dashY, "sha-dash")
-		if err := restarted.Reload(ctx); err != nil {
+		// The served ETag names the newest stored version, so a save can replace the bad one.
+		saved, err := restarted.Save(ctx, SaveRequest{Source: Source{YAML: dashY}, IfMatch: st.ETag(), Author: "admin"})
+		if err != nil {
+			t.Fatalf("save over the invalid version: %v", err)
+		}
+		if saved.Version.ID != bad+1 || saved.HeadID != bad+1 || len(saved.Warnings) != 0 || restarted.Current().Default.Mode != "observe" {
+			t.Errorf("after the save %+v %v", saved.Version, saved.Warnings)
+		}
+		// Another replica picks the valid version up.
+		if err := e.Reload(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if st := restarted.State(); st.Policy.Default.Mode != "observe" || len(st.Warnings) != 0 {
+		if st := e.State(); st.Version.ID != bad+1 || len(st.Warnings) != 0 || st.ETag() != fmt.Sprintf(`"v%d"`, bad+1) {
 			t.Errorf("after a valid version %+v %v", st.Version, st.Warnings)
+		}
+	})
+}
+
+// TestEngineSaveMatchingDivergedFile: a dashboard save whose content equals a diverged file
+// records that file on top of it; the save answers with that newest version, once.
+func TestEngineSaveMatchingDivergedFile(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		ctx := context.Background()
+		f := newFixture(t, b, fileA)
+		e := f.engine(t)
+		if _, err := e.Save(ctx, SaveRequest{Source: Source{YAML: dashY}, IfMatch: e.State().ETag(), Author: "admin"}); err != nil {
+			t.Fatal(err)
+		}
+		f.write(t, fileB)
+		if err := e.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if e.State().File.Status != FileDiverged {
+			t.Fatalf("not diverged %+v", e.State().File)
+		}
+		updates, _ := f.ev.counts()
+		st, err := e.Save(ctx, SaveRequest{Source: Source{YAML: fileB}, IfMatch: e.State().ETag(), Author: "admin"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		vs := versions(t, e)
+		if len(vs) != 4 || vs[0].Source != SourceFile || vs[1].Source != SourceDashboard {
+			t.Fatalf("versions %+v", vs)
+		}
+		if st.Version.ID != vs[0].ID || st.ETag() != fmt.Sprintf(`"v%d"`, vs[0].ID) || st.File.Status != FileOK || e.Current().Default.DeadlineMs != 900 {
+			t.Errorf("save answered %+v %s %+v", st.Version, st.ETag(), st.File)
+		}
+		if u, _ := f.ev.counts(); u != updates+1 {
+			t.Errorf("%d policy updates for one save", u-updates)
+		}
+		// The answered ETag is current: the next save needs no reload.
+		if _, err := e.Save(ctx, SaveRequest{Source: Source{YAML: dashY}, IfMatch: st.ETag(), Author: "admin"}); err != nil {
+			t.Errorf("next save: %v", err)
 		}
 	})
 }

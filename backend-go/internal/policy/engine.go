@@ -143,10 +143,16 @@ type State struct {
 	File      FileState
 	// Warnings are operational warnings (a newest version that no longer validates).
 	Warnings []string
+	// HeadID is the id of the newest stored version (0 without a database). It is newer than
+	// Version.ID only while that newest version does not validate.
+	HeadID int64
 }
 
-// ETag is the version's entity tag: "v<id>".
-func (s *State) ETag() string { return `"v` + strconv.FormatInt(s.Version.ID, 10) + `"` }
+// ETag is the entity tag a save names in If-Match: "v<id>" of the newest stored version, which
+// is the active version unless a newer one does not validate (a save then replaces it).
+func (s *State) ETag() string {
+	return `"v` + strconv.FormatInt(max(s.Version.ID, s.HeadID), 10) + `"`
+}
 
 // fileSnapshot is the last read of the policy file.
 type fileSnapshot struct {
@@ -288,7 +294,7 @@ func (e *Engine) storeFileManaged(p *Policy) {
 }
 
 func (e *Engine) bootPersisted(ctx context.Context) error {
-	status, err := e.syncFile(ctx)
+	status, _, err := e.syncFile(ctx)
 	if err != nil {
 		return err
 	}
@@ -301,7 +307,7 @@ func (e *Engine) bootPersisted(ctx context.Context) error {
 		e.emitError(ErrorSourceFile, e.file.errorsOf())
 	}
 	p, errs := e.load(head)
-	st := &State{Persisted: true, Locked: e.cfg.Lock, File: e.fileState(status)}
+	st := &State{Persisted: true, Locked: e.cfg.Lock, File: e.fileState(status), HeadID: head.ID}
 	if p == nil {
 		e.badHead = head.ID
 		e.log.Error("policy: the newest version no longer validates; looking for an older one", "version", head.ID, "errors", errs)
@@ -310,8 +316,7 @@ func (e *Engine) bootPersisted(ctx context.Context) error {
 		if p, rec, err = e.newestValid(ctx); err != nil {
 			return err
 		}
-		st.Warnings = append(st.Warnings, fmt.Sprintf("the newest policy version v%d no longer validates (%s); running v%d until a valid version is saved",
-			head.ID, summarize(errs), rec.ID))
+		st.Warnings = append(st.Warnings, badHeadWarning(head.ID, errs, rec.ID))
 		head = rec
 	}
 	st.Policy, st.Version = p, versionOf(head)
@@ -338,6 +343,12 @@ func (e *Engine) newestValid(ctx context.Context) (*Policy, *store.PolicyVersion
 		cursor = next
 	}
 	return nil, nil, errors.New("policy: no recent policy version validates; fix the evaluators it references or the policy file")
+}
+
+// badHeadWarning is the State warning of a newest version that does not validate.
+func badHeadWarning(bad int64, errs []FieldError, active int64) string {
+	return fmt.Sprintf("the newest policy version v%d no longer validates (%s); running v%d until a valid version is saved",
+		bad, summarize(errs), active)
 }
 
 func summarize(errs []FieldError) string {
@@ -372,10 +383,12 @@ func versionOf(v *store.PolicyVersionRecord) Version {
 	}
 }
 
-// syncFile records the file as a version when it changed (SPEC §7.2) and returns its status.
-// It runs at boot and whenever the file or the newest version changes.
-func (e *Engine) syncFile(ctx context.Context) (string, error) {
+// syncFile records the file as a version when it changed (SPEC §7.2) and returns its status and
+// the version it inserted, if any. It runs at boot, after writes and whenever the file or the
+// newest version changes.
+func (e *Engine) syncFile(ctx context.Context) (string, *store.PolicyVersionRecord, error) {
 	status := e.fileStatus()
+	var inserted *store.PolicyVersionRecord
 	err := e.cfg.Store.WithPolicyLock(ctx, e.cfg.Channel, func(tx store.PolicyTx) error {
 		head, err := tx.Head(ctx)
 		if err != nil {
@@ -396,7 +409,8 @@ func (e *Engine) syncFile(ctx context.Context) (string, error) {
 			if res.Policy == nil {
 				return res.Err()
 			}
-			return tx.Insert(ctx, record(res.Policy, store.PolicySourceBootstrap, "system", "Built-in defaults (no policy file)", nil, nil))
+			inserted = record(res.Policy, store.PolicySourceBootstrap, "system", "Built-in defaults (no policy file)", nil, nil)
+			return tx.Insert(ctx, inserted)
 		}
 		last, err := tx.LastFileVersion(ctx)
 		if err != nil {
@@ -426,12 +440,13 @@ func (e *Engine) syncFile(ctx context.Context) (string, error) {
 		if head != nil {
 			parent = &head.ID
 		}
-		return tx.Insert(ctx, record(p, store.PolicySourceFile, "file", "Synced from "+e.cfg.File, &sha, parent))
+		inserted = record(p, store.PolicySourceFile, "file", "Synced from "+e.cfg.File, &sha, parent)
+		return tx.Insert(ctx, inserted)
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return status, nil
+	return status, inserted, nil
 }
 
 // record builds a policy_versions row from a validated policy.
@@ -513,7 +528,7 @@ func (e *Engine) Reload(ctx context.Context) error {
 		if !fileChanged && (headID == cur.Version.ID || headID == e.badHead) {
 			return nil
 		}
-		status, err := e.syncFile(ctx)
+		status, _, err := e.syncFile(ctx)
 		if err != nil {
 			return err
 		}
@@ -523,10 +538,12 @@ func (e *Engine) Reload(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("policy reload: %w", err)
 		}
+		next.HeadID = head.ID
 		if head.ID > cur.Version.ID && head.ID != e.badHead {
 			p, errs := e.load(head)
 			if p == nil {
 				dbErr, e.badHead = errs, head.ID
+				next.Warnings = []string{badHeadWarning(head.ID, errs, cur.Version.ID)}
 			} else {
 				next.Policy, next.Version, next.Warnings = p, versionOf(head), nil
 				updated = &next
@@ -825,15 +842,29 @@ func (e *Engine) write(ctx context.Context, build func(store.PolicyTx, *store.Po
 	e.mu.Lock()
 	cur := e.state.Load()
 	next := *cur
-	if rec.ID > cur.Version.ID {
+	next.HeadID = max(next.HeadID, rec.ID)
+	// A notification may have activated rec (or a newer version) already.
+	activated := rec.ID > cur.Version.ID
+	if activated {
 		next.Policy, next.Version, next.Warnings = pol, versionOf(rec), nil
 	}
-	if status, err := e.syncFile(ctx); err == nil {
+	if status, synced, err := e.syncFile(ctx); err == nil {
 		next.File = e.fileState(status)
+		// A file with the same content as rec is recorded on top of it (clearing diverged);
+		// that file version is then the newest one.
+		if synced != nil && synced.ID > next.Version.ID {
+			next.HeadID = max(next.HeadID, synced.ID)
+			if p, _ := e.load(synced); p != nil {
+				next.Policy, next.Version, next.Warnings = p, versionOf(synced), nil
+				activated = true
+			}
+		}
 	}
 	e.state.Store(&next)
 	e.mu.Unlock()
-	e.emitUpdate(&next)
+	if activated {
+		e.emitUpdate(&next)
+	}
 	return &next, nil
 }
 
