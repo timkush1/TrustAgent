@@ -175,6 +175,15 @@ func (s *StreamWriter) WriteEvent(ev Event) error {
 	return s.write(ev.Bytes())
 }
 
+// Write writes p as is and flushes it: the rest of a stream that is no longer read event by event
+// goes out through it, io.Copy(sw, reader.Rest()).
+func (s *StreamWriter) Write(p []byte) (int, error) {
+	if err := s.write(p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 // WriteEvents writes a collected or built stream (a buffered answer, a block or a synthesized
 // stream), putting the annotation comment, when given, just before the terminal event of format,
 // or at the end when the stream has none. With an annotation the stream is complete, so an

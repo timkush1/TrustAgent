@@ -534,3 +534,92 @@ func TestWriteEventsKeepsAnUnterminatedTailLast(t *testing.T) {
 		t.Errorf("a tail after a failed write: %v", err)
 	}
 }
+
+func TestOversizeStreamsStillReachTheClientWhole(t *testing.T) {
+	src := fixture(t, "openai_chat_basic.sse")
+
+	// Passthrough: past the assembler's limit the answer is not gated, but every byte is relayed,
+	// the terminal event is still held, and the annotation goes before it.
+	for _, format := range []string{FormatOpenAIChat, FormatAnthropicMessages} {
+		file := map[string]string{FormatOpenAIChat: "openai_chat_basic.sse", FormatAnthropicMessages: "anthropic_basic.sse"}[format]
+		src := fixture(t, file)
+		rec := httptest.NewRecorder()
+		sw := NewStreamWriter(rec)
+		asm, _ := NewStreamAssembler(format)
+		asm.SetMaxBytes(300)
+		res := Relay(NewReader(bytes.NewReader(src)), asm, sw)
+		if !res.Held || !asm.TooLarge() || !asm.Terminated() || res.Bytes != int64(len(src)) {
+			t.Fatalf("%s: %+v too large %v", format, res, asm.TooLarge())
+		}
+		if _, ok := asm.Response().Gated(); ok {
+			t.Errorf("%s: an answer past the limit has nothing to gate", format)
+		}
+		ann := Annotation{TraceID: "t", Action: "pass", WouldAction: "pass", Status: "skipped:upstream_error"}
+		if err := sw.Finish(&ann, nil); err != nil {
+			t.Fatal(err)
+		}
+		evs := clientEvents(t, rec.Body.Bytes())
+		if n := len(evs); n < 2 || !IsTerminal(format, evs[n-1]) || len(evs[n-2].Comments) != 1 {
+			t.Errorf("%s: stream tail %q", format, tail(rec.Body.String(), 200))
+		}
+		client, _ := assemble(t, format, rec.Body.Bytes())
+		upstream, _ := assemble(t, format, src)
+		c1, _ := client.Response().Gated()
+		c2, _ := upstream.Response().Gated()
+		if c1 != c2 {
+			t.Errorf("%s: the client saw %+v, the upstream sent %+v", format, c1, c2)
+		}
+	}
+	// Under the limit (or with none) nothing changes.
+	asm, _ := NewStreamAssembler(FormatOpenAIChat)
+	asm.SetMaxBytes(int64(len(src)))
+	if Relay(NewReader(bytes.NewReader(src)), asm, NewStreamWriter(httptest.NewRecorder())); asm.TooLarge() {
+		t.Error("a stream of exactly the limit is not too large")
+	}
+	asm, _ = NewStreamAssembler(FormatOpenAIChat)
+	asm.SetMaxBytes(-1)
+	asm.Add(DataEvent("", bytes.Repeat([]byte("x"), 1<<10)))
+	if asm.TooLarge() {
+		t.Error("a negative limit is no limit")
+	}
+
+	// An event over the Reader's size limit ends the relay; the rest goes out as is.
+	rec := httptest.NewRecorder()
+	sw := NewStreamWriter(rec)
+	r := NewReader(&chunked{src: src, sizes: []int{9, 2, 30}})
+	r.SetMaxEventBytes(64)
+	asm, _ = NewStreamAssembler(FormatOpenAIChat)
+	res := Relay(r, asm, sw)
+	if !errors.Is(res.UpstreamErr, ErrEventTooLarge) {
+		t.Fatalf("%+v", res)
+	}
+	if _, err := io.Copy(sw, r.Rest()); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), src) {
+		t.Errorf("relayed %q", rec.Body.String())
+	}
+
+	// Buffer mode over MaxBytes: the collected events, then the rest as is.
+	rec = httptest.NewRecorder()
+	sw = NewStreamWriter(rec)
+	r = NewReader(bytes.NewReader(src))
+	asm, _ = NewStreamAssembler(FormatOpenAIChat)
+	col := Collect(r, asm, CollectOptions{MaxBytes: 200})
+	if !col.TooLarge {
+		t.Fatalf("%+v", col)
+	}
+	if err := sw.WriteEvents(FormatOpenAIChat, col.Events, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(sw, r.Rest()); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), src) {
+		t.Errorf("buffered then copied %q", rec.Body.String())
+	}
+	// Write is io.Writer: a gone client fails it.
+	if n, err := NewStreamWriter(&brokenWriter{header: http.Header{}, failAt: 1}).Write([]byte("x")); n != 0 || !errors.Is(err, errClientGone) {
+		t.Errorf("write %d %v", n, err)
+	}
+}

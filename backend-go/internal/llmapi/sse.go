@@ -297,6 +297,33 @@ func (r *Reader) parseLine(ev *Event, data *bytes.Buffer, line []byte) {
 	}
 }
 
+// ErrRestTaken is returned by Next once Rest has handed the rest of the stream to the caller.
+var ErrRestTaken = errors.New("llmapi: the rest of the stream was taken with Rest")
+
+// Rest hands over the rest of the stream as bytes, for a caller that stops reading events and
+// forwards the remainder as is: after ErrEventTooLarge, or once a buffered answer outgrew
+// MAX_UPSTREAM_RESPONSE_BYTES, the stream still reaches the client whole and ungated
+// (skipped:upstream_error, SPEC §2.12). The returned reader yields the bytes read but returned in
+// no event, then what the source still holds, and ends with the source's read error if it failed.
+// From then on the Reader is done: Next returns ErrRestTaken.
+func (r *Reader) Rest() io.Reader {
+	parts := []io.Reader{bytes.NewReader(bytes.Clone(r.buf[r.start:r.end]))}
+	switch {
+	case r.err == nil:
+		parts = append(parts, r.src)
+	case !errors.Is(r.err, io.EOF) && !errors.Is(r.err, ErrRestTaken):
+		parts = append(parts, errReader{r.err})
+	}
+	r.start, r.end, r.skipLF = 0, 0, false
+	r.err = ErrRestTaken
+	return io.MultiReader(parts...)
+}
+
+// errReader fails every read with err.
+type errReader struct{ err error }
+
+func (e errReader) Read([]byte) (int, error) { return 0, e.err }
+
 // fill reads more input after the buffered bytes, first moving the current event to the front of
 // the buffer. It returns ErrEventTooLarge once the event would outgrow the limit; a read error is
 // kept for Next to act on once the buffered bytes are used up.

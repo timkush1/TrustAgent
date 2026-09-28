@@ -17,15 +17,17 @@ type RelayResult struct {
 	// then gated unenforced and audited with the client_disconnected flag when the assembler saw
 	// the finish reason (Finished), and skipped otherwise (SPEC §2.12).
 	ClientErr error
-	// UpstreamErr is the read error that ended the relay, other than a clean end of stream
-	// (ErrEventTooLarge included).
+	// UpstreamErr is the read error that ended the relay, other than a clean end of stream. After
+	// ErrEventTooLarge the stream is not broken, only no longer readable event by event:
+	// io.Copy(dst, src.Rest()) forwards the rest as is (skipped:upstream_error).
 	UpstreamErr error
 }
 
 // Relay is the passthrough streaming loop: it reads the upstream stream event by event, feeds
 // each event to asm and forwards it to the client at once, except the terminal event, which it
 // hands to dst.Hold and returns on. The caller then waits for the decision (or the deadline) and
-// calls dst.Finish with the annotation and the trailers.
+// calls dst.Finish with the annotation and the trailers. Bound asm with SetMaxBytes
+// (MAX_UPSTREAM_RESPONSE_BYTES): an answer past it is still relayed whole, but not gated.
 //
 // Relay returns at the terminal event, at the end of the upstream stream (Held false: there is
 // nothing to hold, Finish still writes the annotation), on a read error, or on the first failed
@@ -76,7 +78,8 @@ type CollectResult struct {
 	// Terminated is set when the terminal event was read.
 	Terminated bool
 	// TooLarge is set when MaxBytes was exceeded; Events holds what was read so far and the
-	// Reader can go on from there.
+	// Reader can go on from there: write Events, then io.Copy(writer, reader.Rest()) forwards the
+	// rest ungated (skipped:upstream_error).
 	TooLarge bool
 	// Keepalives counts the keepalive comments written.
 	Keepalives int

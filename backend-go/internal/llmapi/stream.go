@@ -109,6 +109,10 @@ type StreamAssembler struct {
 	terminated bool
 	err        *StreamError
 	malformed  int
+	// maxBytes bounds the event bytes read (0: no limit); nread counts them, and tooLarge is set
+	// once they went past the limit.
+	maxBytes, nread int64
+	tooLarge        bool
 }
 
 type choiceAcc struct {
@@ -145,20 +149,55 @@ func (a *StreamAssembler) Err() *StreamError { return a.err }
 // Malformed counts the events that could not be parsed.
 func (a *StreamAssembler) Malformed() int { return a.malformed }
 
+// SetMaxBytes bounds what the assembler reads to n bytes of events (their wire bytes; n <= 0: no
+// limit, the default). Past the limit it drops what it assembled and stops reading events, except
+// that it still reports the terminal event: a passthrough relay goes on forwarding the stream,
+// holds the terminal event and annotates it, while the answer is not gated (TooLarge;
+// skipped:upstream_error, SPEC §2.12, TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES). Without a limit a
+// streamed answer is kept whole in memory, however long the upstream makes it.
+func (a *StreamAssembler) SetMaxBytes(n int64) { a.maxBytes = max(n, 0) }
+
+// TooLarge reports whether the events went past the SetMaxBytes limit: the response is then
+// incomplete and must not be gated.
+func (a *StreamAssembler) TooLarge() bool { return a.tooLarge }
+
 // Add reads one event and reports its kind.
 func (a *StreamAssembler) Add(ev Event) EventKind {
+	if a.maxBytes > 0 && !a.tooLarge {
+		n := len(ev.Raw)
+		if n == 0 {
+			n = len(ev.Data)
+		}
+		a.nread += int64(n)
+		if a.nread > a.maxBytes {
+			a.tooLarge = true
+			clear(a.choices)
+			clear(a.blocks)
+		}
+	}
+	if a.tooLarge {
+		if IsTerminal(a.format, ev) {
+			a.terminated = true
+			return EventTerminal
+		}
+		return EventOther
+	}
 	if IsAnthropic(a.format) {
 		return a.addAnthropic(&ev)
 	}
 	return a.addOpenAI(&ev)
 }
 
-// Response returns what the stream said so far, choices ordered by index.
+// Response returns what the stream said so far, choices ordered by index. Once TooLarge it has
+// no choices: there is nothing to gate.
 func (a *StreamAssembler) Response() *ChatResponse {
 	r := &ChatResponse{Format: a.format, ID: a.id, Model: a.model, Created: a.created, RawUsage: bytes.Clone(a.rawUsage)}
 	if a.usage != nil {
 		u := *a.usage
 		r.Usage = &u
+	}
+	if a.tooLarge {
+		return r
 	}
 	if IsAnthropic(a.format) {
 		var text bytes.Buffer

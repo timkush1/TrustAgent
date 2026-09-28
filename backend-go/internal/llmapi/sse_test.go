@@ -311,3 +311,55 @@ func TestEventType(t *testing.T) {
 		}
 	}
 }
+
+func TestReaderRestHandsOverTheUnreadBytes(t *testing.T) {
+	big := "data: " + strings.Repeat("x", 100) + "\n\n"
+	src := "data: a\n\n" + big + "data: b\r\n\r\n"
+	for name, mk := range map[string]func() io.Reader{
+		"whole":    func() io.Reader { return strings.NewReader(src) },
+		"one byte": func() io.Reader { return iotest.OneByteReader(strings.NewReader(src)) },
+		"chunks":   func() io.Reader { return &chunked{src: []byte(src), sizes: []int{5, 40, 2}} },
+	} {
+		r := NewReader(mk())
+		r.SetMaxEventBytes(32)
+		first, err := r.Next()
+		if err != nil || string(first.Data) != "a" {
+			t.Fatalf("%s: %+v %v", name, first, err)
+		}
+		if _, err := r.Next(); !errors.Is(err, ErrEventTooLarge) {
+			t.Fatalf("%s: err %v, want ErrEventTooLarge", name, err)
+		}
+		rest, err := io.ReadAll(r.Rest())
+		if err != nil || string(first.Raw)+string(rest) != src {
+			t.Errorf("%s: rest %q %v", name, rest, err)
+		}
+		if _, err := r.Next(); !errors.Is(err, ErrRestTaken) {
+			t.Errorf("%s: Next after Rest: %v", name, err)
+		}
+		if b, err := io.ReadAll(r.Rest()); len(b) != 0 || err != nil {
+			t.Errorf("%s: a second Rest %q %v", name, b, err)
+		}
+	}
+
+	// A source that already failed: the buffered bytes, then its error.
+	boom := errors.New("reset")
+	r := NewReader(&failAfter{data: []byte("data: a\n\ndata: {\"trunc"), err: boom})
+	r.SetMaxEventBytes(8)
+	if _, err := r.Next(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Next(); !errors.Is(err, ErrEventTooLarge) {
+		t.Fatalf("err %v", err)
+	}
+	rest, err := io.ReadAll(r.Rest())
+	if string(rest) != "data: {\"trunc" || !errors.Is(err, boom) {
+		t.Errorf("rest %q %v", rest, err)
+	}
+
+	// At the end of a stream there is nothing left.
+	r = NewReader(strings.NewReader("data: a\n\n"))
+	readAll(t, r)
+	if rest, err := io.ReadAll(r.Rest()); len(rest) != 0 || err != nil {
+		t.Errorf("rest at EOF %q %v", rest, err)
+	}
+}
