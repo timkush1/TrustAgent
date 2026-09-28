@@ -217,7 +217,7 @@ The fast check (Jev). Go only in 2.0.
 | `TRUTHTABLE_JEV_BASE_URL` | *empty*<br>per backend | proxy | yes | no | no | Decision endpoint base URL; https only (http for localhost). Used for compatible, or for vendor backends when set explicitly.<br>URL. Also editable while running in dashboard Settings *(from P4)*. |
 | `TRUTHTABLE_JEV_PATH` | *empty*<br>per backend | proxy | yes | no | no | Decision endpoint path appended to the base URL.<br>Text. Also editable while running in dashboard Settings *(from P4)*. |
 | `TRUTHTABLE_OPENROUTER_BASE_URL` | `https://openrouter.ai` | proxy, engine | yes | no | yes | OpenRouter base for PKCE, key checks, backends and the judge; tests point it at mock-upstream.<br>URL. |
-| `TRUTHTABLE_JEV_ATTEMPT_TIMEOUT` | `3s` | proxy | yes | no | yes | Per-attempt timeout (synchronous: min of this and the remaining deadline).<br>Duration (Go syntax, e.g. `30s`, `5m`). |
+| `TRUTHTABLE_JEV_ATTEMPT_TIMEOUT` | `3s` | proxy | yes | no | yes | Per-attempt timeout. Each attempt runs detached with this timeout; a synchronous gate stops waiting at the route deadline, and an attempt still running then may finish as a late decision (never enforced).<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_JEV_ASYNC_DEADLINE` | `10s` | proxy | yes | no | yes | Deadline for observe gates and late decisions.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_JEV_MAX_RETRIES` | `1` | proxy | yes | no | yes | Retries of a synchronous decision call.<br>Integer, at least 0. |
 | `TRUTHTABLE_JEV_MAX_RETRIES_ASYNC` | `2` | proxy | yes | no | yes | Retries of an asynchronous decision call.<br>Integer, at least 0. |
