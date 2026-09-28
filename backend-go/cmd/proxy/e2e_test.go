@@ -126,7 +126,7 @@ func TestTrafficgenExpectAgainstPostgres(t *testing.T) {
 	}
 	_, body = env.get("/api/status", testKey)
 	contractstest.ValidateJSON(t, schemaStatus, body)
-	if !strings.Contains(string(body), `"migration":"0002_traces.up.sql"`) {
+	if !strings.Contains(string(body), `"migration":"0004_security_costs.up.sql"`) { // the newest embedded migration
 		t.Errorf("status %s", body)
 	}
 }
