@@ -1,6 +1,6 @@
 # ============================================================================
-# mk/dx.mk - Compose stacks (default and demo), setup tools, generated
-# configuration docs, local models, load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
+# mk/dx.mk - Compose stacks (default and demo), setup tools, local models,
+# load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
 # root Makefile; targets are declared .PHONY there.
 #
 # Services are addressed by compose service name (`$(COMPOSE) exec ollama ...`);
@@ -136,4 +136,5 @@ dashboards: ## Open the Grafana dashboards (profile observability; WSL/macOS/Lin
 # ---------- Aggregate hooks (see the root Makefile) ----------
 test: test-scripts
 lint: lint-scripts
-check: compose-check config-docs-check
+check: compose-check
+check: config-docs-check
