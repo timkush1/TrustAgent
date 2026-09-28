@@ -169,6 +169,15 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 		_ = r.SetTrustedProxies(nil)
 	}
 	r.Use(gin.Recovery(), requestLog(s.log), middleware.CORS(cfg.AllowedOrigins))
+	if cfg.WriteTimeout == 0 {
+		// TRUTHTABLE_WRITE_TIMEOUT=0: the server has no write timeout; each route family gets
+		// its own deadline instead (SPEC M12).
+		ingest := time.Duration(0)
+		if d.engine != nil {
+			ingest = d.engine.IngestTimeout()
+		}
+		r.Use(middleware.WriteDeadline(func(c *gin.Context) time.Duration { return writeDeadline(cfg, c.Request.URL.Path, ingest) }))
+	}
 
 	limiter := d.limiter
 	if limiter == nil {
@@ -240,6 +249,30 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 		abortAPI(c, http.StatusNotFound, codeNotFound, "No endpoint here: "+c.Request.Method+" "+c.Request.URL.Path+".")
 	})
 	return r
+}
+
+// apiWriteDeadline is the write deadline of /api, /health and unknown paths when
+// TRUTHTABLE_WRITE_TIMEOUT=0 (SPEC M12).
+const apiWriteDeadline = 60 * time.Second
+
+// writeDeadline is the per-route write deadline of path (SPEC M12): /v1 the upstream timeout plus
+// 30 s (the gate and the trace write follow the answer; none when the upstream timeout is off),
+// the knowledge upload the ingest call's bound plus 30 s, /ws none (the hub sets a deadline per
+// frame), everything else 60 s. Handlers that stream longer extend it with
+// http.ResponseController. 0 means no deadline.
+func writeDeadline(cfg *config.Config, path string, ingest time.Duration) time.Duration {
+	switch {
+	case path == "/ws":
+		return 0
+	case path == "/v1" || strings.HasPrefix(path, "/v1/"):
+		if cfg.UpstreamTimeout <= 0 {
+			return 0
+		}
+		return cfg.UpstreamTimeout + 30*time.Second
+	case (path == "/api/kb/documents" || path == "/api/upload") && ingest > 0:
+		return ingest + 30*time.Second
+	}
+	return apiWriteDeadline
 }
 
 // rateKey is the rate-limit bucket of the authenticated caller: the /api identity apiAuth stored,

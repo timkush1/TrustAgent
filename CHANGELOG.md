@@ -144,7 +144,9 @@ phase (P0 → P7).
   by default; `.gitattributes` and per-service `.dockerignore` files.
 - `SubmitAudit`/`GetAuditResult` are deprecated in favour of `Evaluate`.
 - Registry defaults now apply where the walking skeleton hard-coded others:
-  `TRUTHTABLE_WRITE_TIMEOUT=0` (per-route deadlines) and
+  `TRUTHTABLE_WRITE_TIMEOUT=0` (per-route write deadlines instead of one server
+  timeout: 60 s for `/api`, the upstream timeout + 30 s for `/v1`, the ingest
+  call's bound + 30 s for the knowledge upload) and
   `TRUTHTABLE_SHUTDOWN_TIMEOUT=30s`.
 - Rate limits are counted per key, or per session for dashboard sign-ins, before
   falling back to the client IP.

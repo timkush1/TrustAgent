@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/storetest"
@@ -111,5 +113,35 @@ func TestKnowledgeEndpointsWhileTheAddOnIsOff(t *testing.T) {
 		if code != http.StatusServiceUnavailable || !strings.Contains(string(body), `"code":"persistence_disabled"`) {
 			t.Errorf("%s without a database: HTTP %d %s", path, code, body)
 		}
+	}
+}
+
+// TestWriteDeadlinePerRoute: with TRUTHTABLE_WRITE_TIMEOUT=0 each route family gets its own write
+// deadline (SPEC M12): /v1 the upstream timeout + 30 s, the knowledge upload the ingest call's
+// bound + 30 s, /ws none, and everything else 60 s.
+func TestWriteDeadlinePerRoute(t *testing.T) {
+	cfg := &config.Config{UpstreamTimeout: 5 * time.Minute}
+	ingest := 8 * time.Minute
+	for _, tc := range []struct {
+		path   string
+		ingest time.Duration
+		want   time.Duration
+	}{
+		{"/v1/chat/completions", ingest, 5*time.Minute + 30*time.Second},
+		{"/v1", ingest, 5*time.Minute + 30*time.Second},
+		{"/v1beta", ingest, apiWriteDeadline},
+		{"/api/kb/documents", ingest, 8*time.Minute + 30*time.Second},
+		{"/api/upload", ingest, 8*time.Minute + 30*time.Second},
+		{"/api/upload", 0, apiWriteDeadline}, // no engine: the upload answers 503 at once
+		{"/api/policies/dry-run", ingest, apiWriteDeadline},
+		{"/health", ingest, apiWriteDeadline},
+		{"/ws", ingest, 0},
+	} {
+		if got := writeDeadline(cfg, tc.path, tc.ingest); got != tc.want {
+			t.Errorf("%s: %s, want %s", tc.path, got, tc.want)
+		}
+	}
+	if got := writeDeadline(&config.Config{}, "/v1/chat/completions", ingest); got != 0 {
+		t.Errorf("an upstream timeout of 0 sets no /v1 deadline, got %s", got)
 	}
 }
