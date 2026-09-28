@@ -13,7 +13,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
-import { useDataSource, useRuntimeConfig } from '@/app/services';
+import { useDataSource } from '@/app/services';
+import { useGatewayOrigin } from '@/components/common/useGatewayOrigin';
 import { OutcomeTimeSeries } from '@/components/charts/OutcomeTimeSeries';
 import { DegradedState } from '@/components/common/DegradedState';
 import { LabelledRateView } from '@/components/common/LabelledRate';
@@ -46,13 +47,6 @@ export interface OverviewSearchParams {
   window?: TimeWindow;
 }
 
-/** Where the gateway is, for the snippets: the API base when it is absolute, else this origin. */
-function useGatewayOrigin(): string {
-  const config = useRuntimeConfig();
-  if (/^https?:\/\//i.test(config.apiBase)) return config.apiBase.replace(/\/+$/, '');
-  const origin = typeof window === 'undefined' ? 'http://localhost:3000' : window.location.origin;
-  return `${origin}${config.apiBase}`;
-}
 
 function OverviewSkeleton() {
   return (
