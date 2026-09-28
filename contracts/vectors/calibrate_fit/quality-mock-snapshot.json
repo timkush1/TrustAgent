@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quality-mock-snapshot",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "A mock/* snapshot is always quality mock, even with enough human labels; it counts only with the mock backend in demo mode.",
+  "input": {
+    "op": "quality",
+    "snapshot": "mock/jev-heuristic-v1",
+    "label_source": {"human": 400, "public_dataset": 0, "uniform_audit": 0},
+    "n_pos": 200,
+    "n_neg": 200
+  },
+  "expected": {"quality": "mock"}
+}

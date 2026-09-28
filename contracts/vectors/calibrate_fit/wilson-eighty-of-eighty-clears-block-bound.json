@@ -1,0 +1,14 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "wilson-eighty-of-eighty-clears-block-bound",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "80/80 is the smallest all-positive count above 73 used by the critical_at vectors: lower bound 80/(80 + z²) = 0.95418 >= 0.95.",
+  "input": {
+    "op": "wilson",
+    "k": 80,
+    "n": 80
+  },
+  "expected": {"hi": 1, "lo": 0.9541818704644728}
+}

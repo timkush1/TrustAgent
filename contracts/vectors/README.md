@@ -25,12 +25,13 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `normalize` | 29 (29 + 0) | 18 | generated | `internal/decision` |
 | `compile` | 34 (34 + 0) | 1 per template + 12 (23) | generated | `internal/decision` |
 | `calibration_apply` | 13 (13 + 0) | 10 | generated | `internal/decision` |
+| `calibrate_fit` | 37 (37 + 0) | 10 | generated | `internal/decision` |
 | `decide` | 55 (55 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (`openai_chat` only) |
 | `lint` | 19 (0 + 19) | 14 | hand-authored | P2 (skipped) |
 
-`calibrate_fit` vectors come with the Go calibration fitter (P2) and `cost` vectors with the cost calculator
+`cost` vectors come with the cost calculator
 (`internal/costs`, P4, which also defines their input); `pkce` vectors are TypeScript-only.
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
@@ -46,7 +47,8 @@ to its vectors.
 
 ## Generating and freezing vectors
 
-The mechanical kinds (`canonical`, `tokens`, `question_hash`, `normalize`, `compile`, `calibration_apply`)
+The mechanical kinds (`canonical`, `tokens`, `question_hash`, `normalize`, `compile`, `calibration_apply`,
+`calibrate_fit`)
 have `expected` values that the Go reference computes. To add one:
 
 1. Write `<kind>/<name>.json` with `status: "draft"`, a `description`, the `input`, and `"expected": null`.
@@ -148,6 +150,58 @@ templates are immutable, so the `question_hash` vectors also pin the template fi
 - `input`: `{table, x}`: a 101-point table and a raw risk (clamped to [0,1] first).
 - `expected`: `{y}`, the interpolated calibrated risk (SPEC §2.9 calibration apply).
 
+### `calibrate_fit`
+
+The calibration fitter (SPEC §2.11, §7.3; `backend-go/internal/decision/calibrate*.go`). `input.op` selects
+what is run; labels are given either as `samples: [{risk_raw, label}]` (`label: true` = the evaluator should
+fire) or as `groups: [{risk_raw, pos, neg}]`, which expand in order to `pos` positives then `neg` negatives
+at that risk. Input order matters: every sum runs in input order.
+
+| `op` | Other input | `expected` |
+|---|---|---|
+| `wilson` | `k, n` | `{lo, hi}`: the Wilson score interval at z = 1.959963984540054 |
+| `isotonic` | labels | `{blocks: [{x_lo, x_hi, value, n}], table}` |
+| `platt` | labels | `{platt: {a, b}, table, warnings}` |
+| `threshold` | labels, `objective` (`max_f1` \| `min_threshold_at_precision`), `min_precision?` | `{result: null \| {threshold, tp, fp, tn, fn, precision, recall, f1}}` |
+| `critical_at` | labels, `min_predicted_pos?` (50), `min_precision_lb?` (0.95) | `{critical_at: null \| {value, precision_lb95, predicted_pos}, critical_null_reason}` |
+| `quality` | `snapshot, label_source, n_pos, n_neg, family?` | `{quality}` |
+| `quick` | a `QuickCalibrationRequest` (`labeled, objective?, target_precision?, current?`) | the `QuickCalibration` without `message` (UI copy is not pinned) |
+| `fit` | labels, `method?` (`auto` \| `isotonic` \| `platt`) | `{method, table, platt, n, n_pos, n_neg, metrics, reliability, recommended, cv_brier, warnings}` |
+
+- Readings of SPEC §2.11 and §7.3 these vectors pin:
+  - An answer fires at threshold t when `risk >= t - EPS`. Candidate thresholds are the distinct risks; risks
+    within EPS of their sorted neighbour form one candidate (its smallest risk) and one isotonic group.
+  - Max-F1 compares F1 exactly (integer cross-multiplication); a tie goes to the higher threshold. It needs a
+    true positive. `min_threshold_at_precision` is the smallest candidate with precision `>= target - EPS`.
+  - `critical_at` is the smallest candidate t such that every candidate `t' >= t` with at least
+    `min_predicted_pos` predicted positives has a Wilson lower bound `>= 0.95 - EPS`; candidates with fewer
+    predicted positives are not judged. Otherwise `null` with `"insufficient evidence to block"`.
+  - PAV pools adjacent blocks while the earlier share of positives is `>=` the later one (compared exactly), so
+    blocks are maximal and strictly increasing. The table interpolates linearly between block ends and clips
+    outside them.
+  - Platt is `calibrated(x) = 1/(1 + exp(-(a·x + b)))` on the raw risk, fitted by Newton's method on Platt's
+    smoothed targets (N+ + 1)/(N+ + 2) and 1/(N- + 2) from `a = 0, b = log((N+ + 1)/(N- + 1))`, to
+    convergence. A negative slope, or risks all within 1e-9, give the flat `a = 0, b = logit(mean target)`
+    with a warning. `a` and `b` are R6-rounded (`floor(x·1e6 + 0.5)/1e6`) and the table is computed from the
+    rounded parameters.
+  - Every table is R6-rounded; Platt vectors carry `tolerance: 1e-6` for `exp`/`log` differences between
+    runtimes.
+  - `fit`: at least 8 labels with 3 of each class. `auto` uses Platt below 500 labels; from 500 it compares
+    5-fold cross-validated Brier scores (folds by rank mod 5 after a stable sort by risk, then label) and keeps
+    the lower (isotonic on a tie). Metrics are in-sample: ECE (10 equal-width bins, bin
+    `min(floor(10p), 9)`) and Brier before (raw risk) and after (the table applied as decide() applies it),
+    AUROC of the raw risk with ties counting one half. `reliability` lists the non-empty bins of the
+    calibrated predictions. Recommended thresholds are in calibrated space: `warn_at` is max-F1 with precision
+    `>= 0.8`, `critical_at` as above.
+  - `quick`: needs `n >= 8` with 3 of each class (else `enough: false` and only counts and the grid). The
+    threshold is raw-space; `precision` and `recall` carry Wilson intervals; `loo_range` is the range of
+    thresholds the same objective picks with each label left out; `unstable` when an interval is wider than
+    `0.4 + EPS` or the range exceeds `0.15 + EPS`. `mapping` is Platt from 30 labels and isotonic from 50 with
+    15 of each class. `grid` has a row per candidate plus `current` when it is not a candidate.
+  - Quality: `mock` for a `mock/*` snapshot; `proxy` with any uniform-audit or judge label; `provisional` for a
+    family fallback; `measured` with human and public-dataset labels only and `n >= 200`, `n_pos >= 30`,
+    `n_neg >= 30`; `provisional` otherwise.
+
 ### `decide`
 
 - `input`: a `decide()` input, validated against `../schema/decide-input.v1.schema.json` by
@@ -242,6 +296,23 @@ Every case SPEC §7.6 requires, and the vectors that pin it.
   `client_rules` off `client-rules-ignored-when-off`; `factual_claims` implicit `factual-claims-implicit`;
   untrusted tool `untrusted-tool-never-enters`.
 - **calibration_apply** (10): 13 vectors, from `zero` and `top-end` to interpolation inside a step.
+- **calibrate_fit** (10): PAV `isotonic-pools-violators`, `isotonic-monotone-labels-keep-their-blocks`,
+  `isotonic-equal-shares-merge-into-one-block`, `isotonic-risks-within-eps-pool-first`,
+  `isotonic-decreasing-labels-pool-to-the-base-rate`; Platt `platt-symmetric-labels`,
+  `platt-anticorrelated-slope-clamped`, `platt-one-risk-is-flat`, `platt-separable-labels-stay-finite`;
+  max-F1 tie-break `threshold-max-f1-tie-goes-to-higher-threshold`, plus `threshold-max-f1-precision-floor`,
+  `threshold-min-at-precision`, `threshold-none-without-positives`; Wilson `wilson-eight-of-ten`,
+  `wilson-zero-successes`, `wilson-all-successes`, `wilson-no-trials`,
+  `wilson-eighty-of-eighty-clears-block-bound`; LOO `quick-max-f1-with-loo-range-unstable`,
+  `quick-min-threshold-at-precision-with-current`, with `quick-not-enough-labels`,
+  `quick-platt-mapping-from-30-labels`, `quick-isotonic-mapping-from-50-labels`; Wilson-LB `critical_at`
+  `critical-at-every-higher-threshold-must-pass`, `critical-at-extends-down-while-bound-holds`,
+  `critical-at-null-with-too-few-predicted-positives`, `critical-at-null-when-highest-judgeable-fails`,
+  `fit-isotonic-recommends-wilson-critical-at`; quality derivation `quality-measured-public-dataset`,
+  `quality-provisional-below-class-minimum`, `quality-proxy-with-one-judge-label`,
+  `quality-proxy-with-uniform-audit-labels`, `quality-mock-snapshot`, `quality-family-fallback-is-provisional`;
+  the full fit `fit-auto-below-500-uses-platt`, `fit-isotonic-below-500-warns`,
+  `fit-auto-at-500-compares-cv-brier`.
 - **decide** (40 required cases):
 
   | Required case | Vectors |

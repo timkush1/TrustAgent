@@ -1,0 +1,37 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quick-max-f1-with-loo-range-unstable",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "F1 at 0.1, 0.3, 0.6, 0.9 is 12/18, 12/15, 10/12, 6/9: threshold 0.6, precision and recall 5/6 with Wilson intervals wider than 0.4. Leaving out one negative at 0.3 moves the max-F1 threshold to 0.3 (F1 12/14), so loo_range = [0.3, 0.6]: unstable. Below 30 labels there is no mapping.",
+  "input": {
+    "op": "quick",
+    "labeled": [
+      {"risk_raw": 0.1, "label": false}, {"risk_raw": 0.1, "label": false},
+      {"risk_raw": 0.1, "label": false}, {"risk_raw": 0.3, "label": true},
+      {"risk_raw": 0.3, "label": false}, {"risk_raw": 0.3, "label": false},
+      {"risk_raw": 0.6, "label": true}, {"risk_raw": 0.6, "label": true},
+      {"risk_raw": 0.6, "label": false}, {"risk_raw": 0.9, "label": true},
+      {"risk_raw": 0.9, "label": true}, {"risk_raw": 0.9, "label": true}
+    ]
+  },
+  "expected": {
+    "enough": true,
+    "grid": [
+      {"fn": 0, "fp": 6, "threshold": 0.1, "tn": 0, "tp": 6},
+      {"fn": 0, "fp": 3, "threshold": 0.3, "tn": 3, "tp": 6},
+      {"fn": 1, "fp": 1, "threshold": 0.6, "tn": 5, "tp": 5},
+      {"fn": 3, "fp": 0, "threshold": 0.9, "tn": 6, "tp": 3}
+    ],
+    "loo_range": [0.3, 0.6],
+    "mapping": {"method": null, "platt": null, "table": null},
+    "n": 12,
+    "n_neg": 6,
+    "n_pos": 6,
+    "precision": {"ci95": [0.43649717781352987, 0.9699466302516935], "point": 0.8333333333333334},
+    "recall": {"ci95": [0.43649717781352987, 0.9699466302516935], "point": 0.8333333333333334},
+    "threshold": 0.6,
+    "unstable": true
+  }
+}
