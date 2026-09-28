@@ -106,6 +106,7 @@ type statusEngine struct {
 	componentState
 	Version              string `json:"version,omitempty"`
 	RuntimeConfigVersion *int64 `json:"runtime_config_version,omitempty"`
+	MaxAudits            *int32 `json:"max_audits,omitempty"`
 }
 
 type statusJudge struct {
@@ -162,8 +163,9 @@ type decisionModelStatus struct {
 
 type statusKnowledge struct {
 	componentState
-	Enabled  bool   `json:"enabled"`
-	KBClaims *int64 `json:"kb_claims,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	KBClaims       *int64 `json:"kb_claims,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty"`
 }
 
 type statusPolicy struct {
@@ -287,6 +289,15 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 			st.Engine.RuntimeConfigVersion = &v
 		}
 	}
+	if info := eng.Info; info != nil {
+		if n := info.GetMaxAudits(); n > 0 {
+			st.Engine.MaxAudits = &n
+		}
+		// The engine's own configuration notes (a judge fallback, an unknown key, a missing extra).
+		for _, w := range info.GetWarnings() {
+			st.Warnings = append(st.Warnings, "Engine: "+w)
+		}
+	}
 	return st
 }
 
@@ -366,14 +377,28 @@ func judgeStatus(h grpc.EngineHealth) statusJudge {
 		reason := "the configured judge is unavailable; the engine uses its fallback judge"
 		j.FallbackReason = &reason
 	}
+	// GetEngineInfo says how the judge was chosen: where its key came from and why a fallback runs.
+	if ji := h.Info.GetJudge(); ji != nil {
+		if src := ji.GetCredentialSource(); src != "" {
+			j.CredentialSource = src
+		}
+		if why := ji.GetFallbackReason(); why != "" && j.FallbackActive {
+			j.FallbackReason = &why
+		}
+	}
 	return j
 }
 
 // verifierStatus is SystemStatus.verifier: 2.0 verifies claims with the LLM judge only.
 func verifierStatus(h grpc.EngineHealth) statusVerifier {
 	v := statusVerifier{Configured: "auto", Effective: "llm", Reason: "deep audits verify claims with the LLM judge"}
+	if c := h.Info.GetVerifierConfigured(); c != "" {
+		v.Configured = c
+	}
 	if st := judgeState(h); st == stateDown || st == stateDisabled {
 		v.Effective, v.Reason = "off", "no deep-audit judge is available"
+	} else if why := h.Info.GetVerifierReason(); why != "" && h.Info.GetVerifierEffective() == "llm" {
+		v.Reason = why
 	}
 	return v
 }
@@ -386,6 +411,7 @@ func knowledgeStatus(h grpc.EngineHealth) statusKnowledge {
 	}
 	k.Enabled = true
 	k.State = stateUp
+	k.EmbeddingModel = h.Info.GetKnowledge().GetEmbeddingModel()
 	if ok, known := r.GetDependencies()["qdrant"]; known && !ok {
 		k.State, k.Detail = stateDown, "the engine cannot reach its Qdrant store"
 	}

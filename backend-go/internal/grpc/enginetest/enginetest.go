@@ -24,6 +24,8 @@ type Engine struct {
 
 	EvaluateFunc func(ctx context.Context, req *pb.AuditRequest) (*pb.AuditResult, error)
 	HealthFunc   func(ctx context.Context) (*pb.HealthResponse, error)
+	// EngineInfoFunc answers GetEngineInfo; nil answers UNIMPLEMENTED (an engine without the RPC).
+	EngineInfoFunc func(ctx context.Context) (*pb.EngineInfo, error)
 
 	mu       sync.Mutex
 	requests []*pb.AuditRequest
@@ -46,6 +48,14 @@ func (e *Engine) Evaluate(ctx context.Context, req *pb.AuditRequest) (*pb.AuditR
 	}
 	return &pb.AuditResult{AuditId: req.GetAuditId(), TraceId: req.GetTraceId(), Status: pb.AuditStatus_AUDIT_STATUS_COMPLETED,
 		Verdict: pb.AuditVerdict_AUDIT_VERDICT_NO_CLAIMS, ScoringVersion: "v2"}, nil
+}
+
+// GetEngineInfo implements AuditService.GetEngineInfo.
+func (e *Engine) GetEngineInfo(ctx context.Context, req *pb.EngineInfoRequest) (*pb.EngineInfo, error) {
+	if e.EngineInfoFunc != nil {
+		return e.EngineInfoFunc(ctx)
+	}
+	return e.UnimplementedAuditServiceServer.GetEngineInfo(ctx, req)
 }
 
 // HealthCheck implements AuditService.HealthCheck.

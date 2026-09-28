@@ -119,6 +119,40 @@ func TestPingerReadsAnEngineWithoutAJudgeAsUp(t *testing.T) {
 	}
 }
 
+func TestPingerCachesEngineInfoPerEngineVersion(t *testing.T) {
+	version, calls := "2.0.0", 0
+	eng := enginetest.Start(t, &enginetest.Engine{
+		HealthFunc: func(context.Context) (*pb.HealthResponse, error) {
+			return &pb.HealthResponse{Healthy: true, Version: version, Dependencies: map[string]bool{"judge": true}}, nil
+		},
+		EngineInfoFunc: func(context.Context) (*pb.EngineInfo, error) {
+			calls++
+			return &pb.EngineInfo{Version: version, MaxAudits: 16, Warnings: []string{"w"}}, nil
+		},
+	})
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	ctx := context.Background()
+	if h := p.Check(ctx); h.Info.GetMaxAudits() != 16 || calls != 1 {
+		t.Fatalf("first check: info %v calls %d", h.Info, calls)
+	}
+	p.Check(ctx)
+	if calls != 1 || p.Health().Info.GetVersion() != "2.0.0" {
+		t.Errorf("the same engine is asked once: calls %d", calls)
+	}
+	version = "2.0.1" // a restarted engine
+	if h := p.Check(ctx); calls != 2 || h.Info.GetVersion() != "2.0.1" {
+		t.Errorf("a new engine version is asked again: calls %d info %v", calls, h.Info)
+	}
+}
+
+func TestPingerWithoutEngineInfoKeepsHealth(t *testing.T) {
+	eng := enginetest.Start(t, &enginetest.Engine{}) // GetEngineInfo is UNIMPLEMENTED
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	if h := p.Check(context.Background()); h.State != grpc.StateUp || h.Info != nil {
+		t.Errorf("health %+v", h)
+	}
+}
+
 func TestPingerRunStopsWithTheContext(t *testing.T) {
 	eng := enginetest.Start(t, &enginetest.Engine{})
 	p := grpc.NewPinger(client(t, eng, time.Second, ""), 5*time.Millisecond, nil)

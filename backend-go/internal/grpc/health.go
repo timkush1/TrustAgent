@@ -23,6 +23,12 @@ type HealthChecker interface {
 	Health(ctx context.Context) (*pb.HealthResponse, error)
 }
 
+// EngineInfoSource is the optional GetEngineInfo RPC; the pinger fetches it when the engine
+// (re)appears or changes version, since what it describes only changes with a restart.
+type EngineInfoSource interface {
+	EngineInfo(ctx context.Context) (*pb.EngineInfo, error)
+}
+
 // EngineHealth is the cached result of the latest engine health check.
 type EngineHealth struct {
 	// State is unknown before the first check, up when the engine reports healthy, degraded when
@@ -34,6 +40,9 @@ type EngineHealth struct {
 	LatencyMs int64
 	// Response is the last health answer; nil when the engine did not answer.
 	Response *pb.HealthResponse
+	// Info is the engine's GetEngineInfo answer since it last came up; nil when unknown (an
+	// engine without the RPC, or not reachable yet).
+	Info *pb.EngineInfo
 }
 
 // Reachable reports whether the engine answered the last check (GET /health audit_engine).
@@ -100,6 +109,12 @@ func (p *Pinger) Check(ctx context.Context) EngineHealth {
 			}
 		}
 	}
+	p.mu.RLock()
+	prev := p.state
+	p.mu.RUnlock()
+	if h.Reachable() {
+		h.Info = p.engineInfo(ctx, prev, resp)
+	}
 	p.mu.Lock()
 	changed := p.state.State != h.State
 	p.state = h
@@ -108,6 +123,23 @@ func (p *Pinger) Check(ctx context.Context) EngineHealth {
 		p.onChange(h)
 	}
 	return h
+}
+
+// engineInfo keeps the cached GetEngineInfo answer while the same engine version stays reachable,
+// and asks again when the engine (re)appears, changes version, or was never asked successfully.
+func (p *Pinger) engineInfo(ctx context.Context, prev EngineHealth, resp *pb.HealthResponse) *pb.EngineInfo {
+	src, ok := p.client.(EngineInfoSource)
+	if !ok {
+		return nil
+	}
+	if prev.Info != nil && prev.Reachable() && prev.Response.GetVersion() == resp.GetVersion() {
+		return prev.Info
+	}
+	info, err := src.EngineInfo(ctx)
+	if err != nil {
+		return nil
+	}
+	return info
 }
 
 // judgeOnlyMissing reports an unhealthy answer whose only failing dependency is a judge the engine

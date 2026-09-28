@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/policy"
 )
 
 func TestJudgeStateFromEngineHealth(t *testing.T) {
@@ -84,3 +87,34 @@ func TestDecisionModelStatusIsLive(t *testing.T) {
 		t.Errorf("off %+v", d)
 	}
 }
+
+func TestStatusUsesEngineInfo(t *testing.T) {
+	h := grpc.EngineHealth{State: grpc.StateUp,
+		Response: &pb.HealthResponse{Healthy: true, JudgeProvider: "ollama", JudgeModel: "llama3.2:1b", JudgeFallbackActive: true,
+			KnowledgeEnabled: true, Dependencies: map[string]bool{"judge": true, "qdrant": true}},
+		Info: &pb.EngineInfo{MaxAudits: 16, Warnings: []string{"LLM_MODEL is ignored under auto"},
+			Judge:              &pb.JudgeInfo{EffectiveProvider: "ollama", CredentialSource: "none", FallbackActive: true, FallbackReason: "no ANTHROPIC_API_KEY"},
+			VerifierConfigured: "auto", VerifierEffective: "llm", VerifierReason: "2.0 verifies with the LLM judge",
+			Knowledge: &pb.KnowledgeInfo{Enabled: true, EmbeddingModel: "all-MiniLM-L6-v2"}},
+	}
+	j := judgeStatus(h)
+	if j.CredentialSource != "none" || j.FallbackReason == nil || *j.FallbackReason != "no ANTHROPIC_API_KEY" {
+		t.Errorf("judge %+v", j)
+	}
+	if v := verifierStatus(h); v.Configured != "auto" || v.Reason != "2.0 verifies with the LLM judge" {
+		t.Errorf("verifier %+v", v)
+	}
+	if k := knowledgeStatus(h); k.EmbeddingModel != "all-MiniLM-L6-v2" {
+		t.Errorf("knowledge %+v", k)
+	}
+	s := &statusReporter{cfg: &config.Config{}, engine: fixedHealth{h}, jev: jev.Info{Backend: jev.BackendMock}, now: time.Now,
+		policy: &policy.Policy{Source: policy.SourceBuiltin}, auth: &apiAuth{keys: authz.New(nil, "keys")}}
+	st := s.system(context.Background())
+	if st.Engine.MaxAudits == nil || *st.Engine.MaxAudits != 16 || len(st.Warnings) != 1 || st.Warnings[0] != "Engine: LLM_MODEL is ignored under auto" {
+		t.Errorf("engine %+v warnings %v", st.Engine, st.Warnings)
+	}
+}
+
+type fixedHealth struct{ h grpc.EngineHealth }
+
+func (f fixedHealth) Health() grpc.EngineHealth { return f.h }
