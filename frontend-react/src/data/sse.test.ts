@@ -68,6 +68,39 @@ describe('SSE parser', () => {
     expect(items).toEqual([{ kind: 'message', message: { event: 'message', data: 'café' } }]);
   });
 
+  it('cancels the body when the reader stops before the stream ends', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('event: done\ndata: {}\n\nevent: token\ndata: {}\n\n'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    for await (const item of readSse(stream)) {
+      if (item.kind === 'message' && item.message.event === 'done') break;
+    }
+    expect(cancelled).toBe(true);
+  });
+
+  it('does not cancel a stream that ended on its own', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('data: 1\n\n'));
+        c.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const items: SseItem[] = [];
+    for await (const item of readSse(stream)) items.push(item);
+    expect(items).toHaveLength(1);
+    expect(cancelled).toBe(false);
+  });
+
   it('stops reading when the signal aborts', async () => {
     const controller = new AbortController();
     const stream = new ReadableStream<Uint8Array>({

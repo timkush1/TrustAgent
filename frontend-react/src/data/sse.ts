@@ -98,13 +98,18 @@ export class SseParser {
   }
 }
 
-/** Reads a response body as SSE items until it ends or `signal` aborts. */
+/**
+ * Reads a response body as SSE items until it ends or `signal` aborts. A consumer that stops early
+ * (it returns on the `done` event, or throws on `error`) cancels the body, which closes the
+ * connection instead of leaving it open until the server hangs up.
+ */
 export async function* readSse(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<SseItem> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const parser = new SseParser();
   const onAbort = () => void reader.cancel().catch(() => {});
   signal?.addEventListener('abort', onAbort, { once: true });
+  let ended = false;
   try {
     for (;;) {
       if (signal?.aborted) return;
@@ -112,10 +117,12 @@ export async function* readSse(body: ReadableStream<Uint8Array>, signal?: AbortS
       if (done) break;
       yield* parser.push(decoder.decode(value, { stream: true }));
     }
+    ended = true;
     yield* parser.push(decoder.decode());
     yield* parser.end();
   } finally {
     signal?.removeEventListener('abort', onAbort);
+    if (!ended) void reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
