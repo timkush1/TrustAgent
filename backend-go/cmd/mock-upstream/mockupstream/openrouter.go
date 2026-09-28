@@ -83,7 +83,8 @@ func (s *Server) decisions(env envelope, openRouter bool) http.HandlerFunc {
 		sum := sha256.Sum256(body)
 		resp := map[string]any{"id": "dec_mock_" + hex.EncodeToString(sum[:8]), "model": s.snapshotFor(req.Model, r), "answers": answers, "usage": usage}
 		if openRouter {
-			usage["cost"] = float64(in) * jevPricePerMTok / 1e6
+			// In exact integer steps (tokens × 42 / 1e9), so the JSON has no float noise.
+			usage["cost"] = float64(in) * (jevPricePerMTok * 1e3) / 1e9
 			resp["provider"] = "TypeSafe"
 		}
 		writeJSON(w, http.StatusOK, resp)

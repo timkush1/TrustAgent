@@ -238,6 +238,17 @@ func TestDecisions(t *testing.T) {
 	if m["model"] != DefaultSnapshot || m["provider"] != "TypeSafe" || usage["input_tokens"].(float64) <= requestOverhead || usage["cost"] == nil {
 		t.Errorf("decision %s", b)
 	}
+	// usage.cost is input_tokens × $0.042/M, written without float noise.
+	var raw struct {
+		Usage struct {
+			InputTokens int             `json:"input_tokens"`
+			Cost        json.RawMessage `json:"cost"`
+		} `json:"usage"`
+	}
+	_ = json.Unmarshal(b, &raw)
+	if want, _ := json.Marshal(float64(raw.Usage.InputTokens*42) / 1e9); string(raw.Usage.Cost) != string(want) || len(raw.Usage.Cost) > 12 {
+		t.Errorf("usage.cost %s, want %s", raw.Usage.Cost, want)
+	}
 	answers := m["answers"].(map[string]any)
 	noul := answers["groundedness__v1"].(map[string]any)
 	if p := noul["noul"].(float64); p < 0 || p > 1 || p != math.Round(p*100)/100 || noul["type"] != "noul" {

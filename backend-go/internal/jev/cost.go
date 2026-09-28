@@ -2,6 +2,7 @@ package jev
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +70,17 @@ type price struct {
 	version string
 }
 
-func (p price) usd(tokens int) float64 { return float64(tokens) * p.perMTok / 1e6 }
+// usd is the cost of tokens input tokens. Prices with at most six decimals per million tokens
+// (all of the price table) are applied in exact integer steps: tokens × micro-dollars is an exact
+// integer and one division by 1e12 rounds correctly, so the cost is the double nearest its decimal
+// value and serializes as 2.3772e-05 rather than 0.000023772000000000002.
+func (p price) usd(tokens int) float64 {
+	micro := math.Round(p.perMTok * 1e6)
+	if exact := float64(tokens) * micro; math.Abs(micro-p.perMTok*1e6) < 1e-6 && exact < 1<<53 {
+		return exact / 1e12
+	}
+	return float64(tokens) * p.perMTok / 1e6
+}
 
 // priceFor picks the input price of model on backend: the TRUTHTABLE_JEV_PRICE_PER_MTOK override,
 // else the first matching entry of contracts/pricing/prices.v1.json, else the $0.042/M list price.

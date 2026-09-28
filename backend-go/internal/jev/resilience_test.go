@@ -1,6 +1,7 @@
 package jev
 
 import (
+	"encoding/json"
 	"math"
 	"sync"
 	"testing"
@@ -346,6 +347,15 @@ func TestPriceFor(t *testing.T) {
 	}
 	if got := (price{perMTok: 0.042}).usd(1_000_000); math.Abs(got-0.042) > 1e-12 {
 		t.Errorf("usd %v", got)
+	}
+	// No float noise in the JSON of a computed cost.
+	for tokens, want := range map[int]string{566: "0.000023772", 1: "4.2e-8", 24275: "0.00101955", 0: "0"} {
+		if b, _ := json.Marshal((price{perMTok: 0.042}).usd(tokens)); string(b) != want {
+			t.Errorf("usd(%d) = %s, want %s", tokens, b, want)
+		}
+	}
+	if got := (price{perMTok: 0.0421234567}).usd(1000); math.Abs(got-0.0421234567e-3) > 1e-15 {
+		t.Errorf("a finer price keeps the plain formula: %v", got)
 	}
 }
 
