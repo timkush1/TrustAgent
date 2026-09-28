@@ -24,7 +24,7 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `question_hash` | 11 (11 + 0) | 1 per template (11) | generated | `internal/decision` |
 | `normalize` | 29 (29 + 0) | 18 | generated | `internal/decision` |
 | `compile` | 34 (34 + 0) | 1 per template + 12 (23) | generated | `internal/decision` |
-| `calibration_apply` | 13 (13 + 0) | 10 | generated | `internal/decision` |
+| `calibration_apply` | 15 (15 + 0) | 10 | generated | `internal/decision` |
 | `calibrate_fit` | 38 (38 + 0) | 10 | generated | `internal/decision` |
 | `decide` | 55 (55 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
@@ -296,7 +296,8 @@ Every case SPEC §7.6 requires, and the vectors that pin it.
   `split-by-token-budget` and by count `split-by-question-count`; params `params-route-override-and-default`;
   `client_rules` off `client-rules-ignored-when-off`; `factual_claims` implicit `factual-claims-implicit`;
   untrusted tool `untrusted-tool-never-enters`.
-- **calibration_apply** (10): 13 vectors, from `zero` and `top-end` to interpolation inside a step.
+- **calibration_apply** (10): 15 vectors, from `zero` and `top-end` to interpolation inside a step, plus
+  `fitted-platt-table-at-the-midpoint` and `fitted-isotonic-table-between-points` on tables the fitter produced.
 - **calibrate_fit** (10): PAV `isotonic-pools-violators`, `isotonic-monotone-labels-keep-their-blocks`,
   `isotonic-equal-shares-merge-into-one-block`, `isotonic-risks-within-eps-pool-first`,
   `isotonic-decreasing-labels-pool-to-the-base-rate`; Platt `platt-symmetric-labels`,
