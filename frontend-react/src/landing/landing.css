@@ -54,8 +54,8 @@
     background-color: transparent;
     color: inherit;
     transition:
-      text-decoration-color 320ms var(--ease-out),
-      background-color 320ms var(--ease-out);
+      text-decoration-color 200ms var(--ease-out),
+      background-color 200ms var(--ease-out);
   }
   .hero-mark[data-on] {
     text-decoration-color: var(--v-contradicted);
@@ -67,8 +67,8 @@
     opacity: 0;
     transform: translateY(4px);
     transition:
-      opacity 280ms var(--ease-out),
-      transform 280ms var(--ease-out);
+      opacity 200ms var(--ease-out),
+      transform 200ms var(--ease-out);
   }
   .beat[data-on] {
     opacity: 1;

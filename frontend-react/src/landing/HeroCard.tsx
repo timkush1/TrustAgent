@@ -92,7 +92,7 @@ export function HeroCard() {
           <span className="truncate font-mono text-xs text-fg-muted">
             {REFUND.route} · {REFUND.model}
           </span>
-          <span className="text-xs text-fg-subtle">Illustration</span>
+          <span className="text-xs text-fg-muted">Illustration</span>
         </div>
 
         <div aria-hidden="true" className="space-y-5 px-5 py-5 max-sm:px-4">

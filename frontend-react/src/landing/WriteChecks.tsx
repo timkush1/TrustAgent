@@ -24,6 +24,17 @@ function Ticked({ text }: { text: string }) {
   );
 }
 
+/** Words of `text` in lines of at most `width` characters (a YAML `>-` scalar joins them with spaces). */
+function fold(text: string, width: number): string[] {
+  const lines: string[] = [];
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && last.length + 1 + word.length <= width) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  return lines;
+}
+
 /** The support-bot route of contracts/policies/example.policies.yaml attaching this check. */
 const ROUTE_SNIPPET = `routes:
   - name: support-bot
@@ -31,7 +42,9 @@ const ROUTE_SNIPPET = `routes:
       - ref: ${COMMITMENTS.ref}
         params:
           allowed_commitments: >-
-            ${COMMITMENTS.exampleAllowed}`;
+${fold(COMMITMENTS.exampleAllowed, 38)
+  .map((line) => `            ${line}`)
+  .join('\n')}`;
 
 export function WriteChecks() {
   return (

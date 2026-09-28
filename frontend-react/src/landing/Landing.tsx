@@ -97,7 +97,7 @@ function Footer() {
                 </p>
                 <p className="mt-0.5 text-fg-muted">{c.basis}</p>
                 {c.caveat ? <p className="mt-0.5 text-fg-muted">{c.caveat}</p> : null}
-                <p className="mt-0.5 text-xs text-fg-subtle">
+                <p className="mt-0.5 text-xs text-fg-muted">
                   {c.sourceUrl ? (
                     <a href={c.sourceUrl} className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-fg" rel="noreferrer">
                       Source
@@ -127,7 +127,20 @@ function Footer() {
   );
 }
 
+/**
+ * A link into a section from another page (the replay's "Run it yourself" opens #self-host): the
+ * browser looks for the anchor before React has rendered it, so scroll there once the page is up.
+ */
+function useScrollToHashOnLoad() {
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id || id.startsWith('source-')) return;
+    document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }, []);
+}
+
 export function Landing() {
+  useScrollToHashOnLoad();
   return (
     <div id="top" className="min-h-dvh bg-bg text-fg">
       <a

@@ -13,7 +13,8 @@ import { copy } from '@/domain/presentation';
 import type { OverviewStats } from '@/types/api';
 import { caughtRows, windowLong } from './overviewModel';
 
-export function WhatWasCaught({ stats }: { stats: OverviewStats }) {
+/** `span` replaces the window words (the static replay says "over the recorded traffic"). */
+export function WhatWasCaught({ stats, span }: { stats: OverviewStats; span?: string }) {
   const rows = caughtRows(stats);
   return (
     <Card>
@@ -29,7 +30,7 @@ export function WhatWasCaught({ stats }: { stats: OverviewStats }) {
           <>
             <BarChart
               title={copy.overview.what_was_caught}
-              description={`Requests per reason, ${windowLong(stats.window)}`}
+              description={`Requests per reason, ${span ?? windowLong(stats.window)}`}
               valueLabel="Requests"
               data={rows.map((r) => ({ key: r.key, label: r.label, value: r.count }))}
               labelWidth={200}

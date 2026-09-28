@@ -108,7 +108,7 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
             </CardContent>
           </Card>
           <div className="grid items-start gap-4 lg:grid-cols-2">
-            <WhatWasCaught stats={stats} />
+            <WhatWasCaught stats={stats} span={replay ? 'over the recorded traffic' : undefined} />
             <EvidenceCoverageCard stats={stats} timeWindow={timeWindow} />
           </div>
           <SavingsStrip timeWindow={timeWindow} />

@@ -60,7 +60,7 @@ export function Command({ command, note, className }: { command: string; note?: 
   return (
     <div className={clsx('inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-surface-sunken py-1 pr-1 pl-3', className)}>
       <code className="min-w-0 truncate font-mono text-sm text-fg">
-        <span aria-hidden="true" className="mr-2 text-fg-subtle select-none">
+        <span aria-hidden="true" className="mr-2 text-fg-muted select-none">
           $
         </span>
         {command}

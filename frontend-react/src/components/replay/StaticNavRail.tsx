@@ -20,7 +20,7 @@ function Item({ label, icon: Icon, active, hint, children }: { label: string; ic
     <>
       <Icon aria-hidden="true" className="size-4 shrink-0" />
       <span className="max-lg:sr-only">{label}</span>
-      {hint ? <span className="ml-auto text-2xs font-normal text-fg-subtle max-lg:hidden">{hint}</span> : null}
+      {hint ? <span className="ml-auto text-2xs font-normal text-fg-muted max-lg:hidden">{hint}</span> : null}
     </>
   );
   return (

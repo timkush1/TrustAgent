@@ -53,7 +53,7 @@ function PathDiagram() {
           <ol className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
             {[copy.tiers.instant_checks, copy.tiers.fast_check, 'Your policy'].map((t, i) => (
               <li key={t} className="rounded-md border border-border bg-surface-sunken px-2.5 py-2 text-fg">
-                <span className="mr-1.5 font-mono text-xs text-fg-subtle">{i + 1}</span>
+                <span className="mr-1.5 font-mono text-xs text-fg-muted">{i + 1}</span>
                 {t}
               </li>
             ))}

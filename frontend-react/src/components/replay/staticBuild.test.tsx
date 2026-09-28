@@ -85,9 +85,9 @@ describe('static build', () => {
     const { container } = await renderStatic('/app/traffic');
     await waitFor(() => expect(container.querySelectorAll('[data-banner]')).toHaveLength(1));
     const banner = container.querySelector('[data-banner="replay"]') as HTMLElement;
-    expect(within(banner).getByText('Simulated demo.')).toBeInTheDocument();
+    expect(within(banner).getByText('Replay of recorded traffic.')).toBeInTheDocument();
     expect(within(banner).getByText(MOCK_LABEL)).toBeInTheDocument();
-    expect(within(banner).getByText(/nothing here is live/)).toBeInTheDocument();
+    expect(banner).toHaveTextContent(/recorded 28 Sept? 2026 on the zero-key demo stack/);
     expect(within(banner).getByRole('link', { name: 'Run it yourself' })).toHaveAttribute('href', '/TrustAgent/#self-host');
     // No Health pill or demo badge for a gateway that is not there.
     expect(screen.queryByRole('button', { name: /System health/ })).toBeNull();
