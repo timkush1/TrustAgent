@@ -22,9 +22,12 @@ type Status struct {
 	RPMLimit, RPMUsed, InFlight int
 	// CPT is the runtime chars-per-token estimate.
 	CPT float64
-	// Calls, Attempts and CostUSD count since start.
+	// Calls, Attempts and CostUSD count since start; Calls24h and Cost24hUSD cover the last 24
+	// hours (hourly buckets, so up to an hour more), for DecisionModelStatus.calls_24h/cost_24h_usd.
 	Calls, Attempts int64
 	CostUSD         float64
+	Calls24h        int64
+	Cost24hUSD      float64
 	Spend           *SpendStatus
 	KeepWarm        bool
 }
@@ -47,11 +50,41 @@ type statusTracker struct {
 	transient       bool
 	calls, attempts int64
 	costUSD         float64
+	day             window24h
+}
+
+// window24h counts calls and cost in hourly buckets over the last 24 hours.
+type window24h struct {
+	hour  [24]int64 // the hour (Unix hours) each bucket holds
+	calls [24]int64
+	cost  [24]float64
+}
+
+func (w *window24h) bucket(at time.Time) int {
+	h := at.Unix() / 3600
+	i := int(h % 24)
+	if w.hour[i] != h {
+		w.hour[i], w.calls[i], w.cost[i] = h, 0, 0
+	}
+	return i
+}
+
+// totals sums the buckets of the 24 hours up to now.
+func (w *window24h) totals(now time.Time) (calls int64, cost float64) {
+	h := now.Unix() / 3600
+	for i := range w.hour {
+		if w.hour[i] > h-24 && w.hour[i] <= h {
+			calls += w.calls[i]
+			cost += w.cost[i]
+		}
+	}
+	return calls, cost
 }
 
 func (s *statusTracker) call() {
 	s.mu.Lock()
 	s.calls++
+	s.day.calls[s.day.bucket(time.Now())]++
 	s.mu.Unlock()
 }
 
@@ -62,6 +95,7 @@ func (s *statusTracker) attempt(at time.Time, costUSD float64, err *Error, neutr
 	defer s.mu.Unlock()
 	s.attempts++
 	s.costUSD += costUSD
+	s.day.cost[s.day.bucket(at)] += costUSD
 	switch {
 	case neutral:
 	case err == nil:
@@ -90,6 +124,7 @@ func (s *statusTracker) fill(st *Status, b breakerView, spend *SpendStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st.Calls, st.Attempts, st.CostUSD = s.calls, s.attempts, s.costUSD
+	st.Calls24h, st.Cost24hUSD = s.day.totals(time.Now())
 	if !s.lastOK.IsZero() {
 		t := s.lastOK
 		st.LastOK = &t

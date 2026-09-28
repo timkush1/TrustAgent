@@ -434,15 +434,16 @@ func (s *statusReporter) jevStatus() jev.Status {
 }
 
 // decisionModel is SystemStatus.decision_model, from the client's live status: state, breaker,
-// last error with its hint, snapshot, rate use and the endpoint's host. Latency percentiles and
-// 24-hour totals come from the cost ledger (P4); until then calls and cost count since start.
+// last error with its hint, snapshot, rate use, the endpoint's host and the last 24 hours' calls and
+// cost (held in memory, so they restart with the proxy). Latency percentiles come with the cost
+// ledger (P4).
 func (s *statusReporter) decisionModel() decisionModelStatus {
 	st := s.jevStatus()
 	d := decisionModelStatus{
 		Provider: "jev", Backend: st.Backend, BackendReason: st.Reason, ModelRequested: nonEmpty(st.Model),
 		Snapshot: nonEmpty(st.Snapshot), Credential: decisionCredential{Source: defaultString(st.CredentialSource, "none")},
 		State: st.State, Breaker: defaultString(st.Breaker, jev.BreakerClosed), CalibrationState: "none",
-		Calls24h: int(st.Calls), Cost24hUSD: st.CostUSD, RPMLimit: st.RPMLimit, RPMUsed: st.RPMUsed,
+		Calls24h: int(st.Calls24h), Cost24hUSD: st.Cost24hUSD, RPMLimit: st.RPMLimit, RPMUsed: st.RPMUsed,
 	}
 	if d.State == "" {
 		d.State = "off"

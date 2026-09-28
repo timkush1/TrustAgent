@@ -60,7 +60,7 @@ func TestDecisionModelStatusIsLive(t *testing.T) {
 			Endpoint: "https://openrouter.ai/api/alpha/decisions", CredentialSource: "env"},
 		Snapshot: "typesafe/jev-1.13-20260917", State: "unauthorized", Breaker: jev.BreakerOpen,
 		LastError: &jev.StatusError{Kind: jev.KindAuth, Message: "User not found.", Hint: "check the key", Status: 401, At: at},
-		RPMLimit:  1000, RPMUsed: 7, Calls: 12, CostUSD: 0.0003,
+		RPMLimit:  1000, RPMUsed: 7, Calls: 40, CostUSD: 0.001, Calls24h: 12, Cost24hUSD: 0.0003,
 		Spend: &jev.SpendStatus{SpentUSD: 1.6, ReservedUSD: 0, CapUSD: 2, SoftCapUSD: 1.5},
 	}
 	cfg := &config.Config{SpendCapDecisionUSDDay: 2, SpendCapLLMUSDDay: 5}
