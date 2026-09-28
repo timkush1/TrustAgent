@@ -41,16 +41,18 @@ that. Tailwind's palette is removed (`--color-*: initial`), so only these names 
 | `border` / `border-strong` | 0.91 / 0.80 | 0.27 / 0.36 | Hairlines (1px) |
 
 **Verdict hues.** Contrast is given on the surface, then on the verdict's own 10% (light) or 16%
-(dark) tint. Every value is at least 4.5:1.
+(dark) tint over the surface, composited in sRGB as browsers do (the contrast test's method).
+Every value is at least 4.5:1 except `v-not-checked` on its dark tint (4.4:1), so grey verdict
+text is never drawn on a tint: the neutral tint badge uses `fg-muted`.
 
 | Verdict | Light | Dark | Contrast (light / dark) |
 |---|---|---|---|
-| `v-supported` | oklch(0.50 0.10 165) | oklch(0.80 0.13 165) | 5.7, 4.9 / 10.4, 8.0 |
-| `v-contradicted` | oklch(0.50 0.17 27) | oklch(0.72 0.16 25) | 6.6, 5.6 / 7.0, 5.6 |
-| `v-unsupported` | oklch(0.50 0.11 62) | oklch(0.82 0.14 80) | 6.2, 5.4 / 10.4, 8.0 |
-| `v-partial` | oklch(0.48 0.12 252) | oklch(0.76 0.11 250) | 6.6, 5.6 / 8.7, 6.8 |
-| `v-unknown` | oklch(0.50 0.012 265) | oklch(0.72 0.01 265) | 6.0, 5.2 / 7.4, 6.0 |
-| `v-not-checked` | oklch(0.52 0.005 265) | oklch(0.64 0.005 265) | 5.5, 4.8 / 5.5, 4.6 |
+| `v-supported` | oklch(0.50 0.10 165) | oklch(0.80 0.13 165) | 5.7, 4.9 / 10.4, 7.5 |
+| `v-contradicted` | oklch(0.50 0.17 27) | oklch(0.72 0.16 25) | 6.6, 5.6 / 7.0, 5.5 |
+| `v-unsupported` | oklch(0.50 0.11 62) | oklch(0.82 0.14 80) | 6.2, 5.4 / 10.4, 7.5 |
+| `v-partial` | oklch(0.48 0.12 252) | oklch(0.76 0.11 250) | 6.6, 5.6 / 8.7, 6.5 |
+| `v-unknown` | oklch(0.50 0.012 265) | oklch(0.72 0.01 265) | 6.0, 5.2 / 7.4, 5.7 |
+| `v-not-checked` | oklch(0.52 0.005 265) | oklch(0.64 0.005 265) | 5.5, 4.8 / 5.5, 4.4 |
 
 **Outcome tones** (the `tone` of `contracts/ui/outcomes.v1.json`) reuse the verdict hues:
 `success` = supported, `danger` = contradicted, `warning` = unsupported, `info` = partial,
@@ -248,7 +250,7 @@ message and code.
 | `CopyButton` | Copying ids, keys, commands | Clipboard API with an `execCommand` fallback; announces "Copied", or how to copy by hand |
 | `CodeBlock` | Commands, snippets, JSON | Mono, copy button, a focusable scroll region named by its label. Mask secrets before passing them in (`copyValue` may differ from what is shown) |
 | `KeyValueList` | Ids, timings, costs | Missing values are an em dash; `mono` for ids, `numeric` for numbers, `copy` for a copy button |
-| `DataTable` | Long lists | Virtualized rows (`@tanstack/react-virtual`) in a scroll viewport with a sticky header; one tab stop, arrows/Page/Home/End move the row focus, Enter or a click opens the row. Loading, error and empty take the body's place. Cells hold text and pills, not their own buttons |
+| `DataTable` | Long lists | Virtualized rows (`@tanstack/react-virtual`) in a scroll viewport with a sticky header that never hides the focused row; one tab stop, arrows/Page/Home/End move the row focus, Enter or a click opens the row. Loading, error and empty take the body's place; a later page's error shows under the rows. `onEndReached` asks once per list end. Cells hold text and pills, not their own buttons |
 | `Pagination` | Server lists with a total | The range is written and announced; the end buttons say why they are disabled |
 
 ## 12. Charts
