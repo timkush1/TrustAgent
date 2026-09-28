@@ -123,8 +123,10 @@ func Build(traces []Trace, opt Options) (*Recording, error) {
 		return strings.Compare(a.Detail.TraceID, b.Detail.TraceID)
 	})
 	for _, t := range traces {
-		if _, err := uuid.Parse(t.Detail.TraceID); err != nil {
-			return nil, fmt.Errorf("%w: trace %q has a legacy (non-UUID) id", ErrNotRecordable, t.Detail.TraceID)
+		// The id names traces/<id>.json: only the canonical lowercase form (uuid.Parse also takes
+		// braces, a urn:uuid: prefix and bare hex) is a plain, portable file name.
+		if u, err := uuid.Parse(t.Detail.TraceID); err != nil || u.String() != t.Detail.TraceID {
+			return nil, fmt.Errorf("%w: trace %q does not have a canonical UUID id (legacy traces cannot be recorded)", ErrNotRecordable, t.Detail.TraceID)
 		}
 	}
 	model, err := decisionModel(traces)

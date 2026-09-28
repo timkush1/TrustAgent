@@ -192,7 +192,10 @@ func TestBuildRefusesMislabelling(t *testing.T) {
 		"mixed judges": {set(func(ts []recording.Trace) {
 			ts[0].Detail.AuditDetail.Judge = json.RawMessage(`{"effective_provider":"openrouter","model":"anthropic/claude-haiku-4.5"}`)
 		}), recording.Options{}, "mix judges"},
-		"legacy id":         {set(func(ts []recording.Trace) { ts[1].Detail.TraceID = "legacy-1" }), recording.Options{}, "non-UUID"},
+		"legacy id": {set(func(ts []recording.Trace) { ts[1].Detail.TraceID = "legacy-1" }), recording.Options{}, "canonical UUID"},
+		"urn id": {set(func(ts []recording.Trace) {
+			ts[1].Detail.TraceID = "urn:uuid:" + ts[1].Detail.TraceID
+		}), recording.Options{}, "canonical UUID"},
 		"no decision model": {noEvidence(), recording.Options{Judge: &recording.Judge{Provider: "anthropic", Model: "claude-haiku-4-5"}}, "no trace was checked"},
 		"no judge":          {noEvidence(), recording.Options{}, "--judge-provider"},
 		"judge flag clash":  {recordingtest.Set(t), recording.Options{Judge: &recording.Judge{Provider: "openai", Model: "gpt-4o"}}, "were judged by anthropic"},
