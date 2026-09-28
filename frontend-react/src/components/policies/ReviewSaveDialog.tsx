@@ -95,7 +95,7 @@ export function ReviewSaveDialog({
   const [previewWindow, setPreviewWindow] = useState<TimeWindow>('7d');
 
   const validation = useQuery({
-    queryKey: [...qkc.policies.all, 'validate', draftYaml],
+    queryKey: qkc.policyReview.validate(draftYaml),
     queryFn: ({ signal }) => ds.validatePolicy({ yaml: draftYaml }, signal),
     enabled: open && !postReason,
     retry: false,
@@ -103,7 +103,7 @@ export function ReviewSaveDialog({
   });
 
   const preview = useQuery({
-    queryKey: [...qkc.policies.all, 'dry-run', previewWindow, draftYaml],
+    queryKey: qkc.policyReview.dryRun(previewWindow, draftYaml),
     queryFn: ({ signal }) => ds.dryRunPolicy({ yaml: draftYaml, window: previewWindow }, signal),
     enabled: open && !postReason,
     retry: false,

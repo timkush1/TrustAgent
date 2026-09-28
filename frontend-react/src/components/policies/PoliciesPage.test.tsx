@@ -108,6 +108,24 @@ describe('Policies page', { timeout: 20_000 }, () => {
     expect(control.state.policies).toMatchObject({ id: 4, message: 'Edited elsewhere' });
   });
 
+  it('does not replay past answers again when the live stream reconnects during a review', async () => {
+    const user = userEvent.setup();
+    const { control, ws } = renderPage('/app/policies');
+    await card('support-bot');
+    await chooseMode(user, 'support-bot', 'Observe');
+    await user.click(screen.getByRole('button', { name: 'Review and save' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review and save a new policy version' });
+    await within(dialog).findByTestId('preview-impact');
+    expect(control.callsTo('/api/policies/dry-run', 'POST')).toHaveLength(1);
+
+    const reads = control.callsTo('/api/policies', 'GET').length;
+    ws.connect();
+    // The hello refreshes the policy itself, but neither the validation nor the preview.
+    await waitFor(() => expect(control.callsTo('/api/policies', 'GET').length).toBeGreaterThan(reads));
+    expect(control.callsTo('/api/policies/dry-run', 'POST')).toHaveLength(1);
+    expect(control.callsTo('/api/policies/validate', 'POST')).toHaveLength(1);
+  });
+
   it('shows server validation errors and blocks the save', async () => {
     const user = userEvent.setup();
     const control = createControlApi({

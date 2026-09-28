@@ -142,6 +142,15 @@ export const qkc = {
     versions: ['policies', 'versions'] as const,
     version: (id: number) => ['policies', 'version', id] as const,
   },
+  /**
+   * The review of a policy draft (validate and "Preview impact"): keyed by the draft text and kept
+   * apart from `policies`, so the stream's invalidations (every reconnect's `hello`) never re-run a
+   * rate-limited replay of past answers while the review is open.
+   */
+  policyReview: {
+    validate: (yaml: string) => ['policy-review', 'validate', yaml] as const,
+    dryRun: (window: TimeWindow, yaml: string) => ['policy-review', 'dry-run', window, yaml] as const,
+  },
   evaluators: {
     all: ['evaluators'] as const,
     list: (includeArchived: boolean) => ['evaluators', 'list', includeArchived] as const,
