@@ -59,6 +59,10 @@ type Config struct {
 	Logger      *slog.Logger
 }
 
+// maxFaultKeys bounds the counters of counted fault specs: a load run with a counted default fault
+// and a fresh session_id per request would otherwise grow them without limit.
+const maxFaultKeys = 100_000
+
 // Faults are the fault names a spec may use.
 var Faults = []string{
 	"hang", "html200", "402_inflight", "402_credits", "429", "529", "413",
@@ -273,6 +277,9 @@ func (s *Server) fault(r *http.Request, countKey string) string {
 	defer s.mu.Unlock()
 	if s.counts[key] >= times {
 		return ""
+	}
+	if len(s.counts) >= maxFaultKeys {
+		clear(s.counts) // long finished calls; a load run keys every request anew
 	}
 	s.counts[key]++
 	return name

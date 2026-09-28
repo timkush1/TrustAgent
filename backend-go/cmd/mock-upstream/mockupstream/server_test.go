@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -419,6 +420,28 @@ func TestFaultSelection(t *testing.T) {
 		if _, _, err := parseFault(bad); err == nil {
 			t.Errorf("parseFault(%q) must fail", bad)
 		}
+	}
+}
+
+func TestFaultCountersAreBounded(t *testing.T) {
+	s, srv := newTestServer(t, Config{})
+	s.mu.Lock()
+	for i := range maxFaultKeys {
+		s.counts["503@1|old-"+strconv.Itoa(i)] = 1
+	}
+	s.mu.Unlock()
+	h := map[string]string{"Authorization": "Bearer k", "X-Mock-Fault": "503@1", "X-Mock-Key": "fresh"}
+	if resp, _ := do(t, srv, call{path: "/api/alpha/decisions", header: h, body: decisionBody("m", "s")}); resp.StatusCode != 503 {
+		t.Fatalf("counted fault on a full table: %d", resp.StatusCode)
+	}
+	s.mu.Lock()
+	n := len(s.counts)
+	s.mu.Unlock()
+	if n != 1 {
+		t.Errorf("%d fault counters kept, want the table cleared to the new call's one", n)
+	}
+	if resp, _ := do(t, srv, call{path: "/api/alpha/decisions", header: h, body: decisionBody("m", "s")}); resp.StatusCode != 200 {
+		t.Errorf("the new call's counter survives the clear: %d", resp.StatusCode)
 	}
 }
 
