@@ -44,13 +44,12 @@ function ClaimMark({ segment, idPrefix }: { segment: AnswerSegment; idPrefix: st
         <a
           href={`#${target}`}
           onClick={(e) => jumpToClaim(e, target)}
+          // The name starts with the visible words (WCAG 2.5.3) and adds what only the style shows.
+          aria-label={`${segment.text}, ${view.label.toLowerCase()} claim${others > 0 ? ` and ${others} more` : ''}${segment.fuzzy ? ', approximate location' : ''}`}
           className="rounded-[2px] text-inherit no-underline"
         >
           {segment.text}
           <Icon aria-hidden="true" className="ms-0.5 inline size-3.5 align-[-0.15em] text-(--vc)" />
-          <span className="sr-only">
-            {`, ${view.label.toLowerCase()} claim${others > 0 ? ` and ${others} more` : ''}${segment.fuzzy ? ', approximate location' : ''}`}
-          </span>
         </a>
       </Tooltip>
     </mark>

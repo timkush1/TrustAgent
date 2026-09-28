@@ -76,10 +76,8 @@ describe('Trace detail', () => {
     const answer = region('Answer');
     const mark = within(answer).getByRole('link', { name: '60 days, contradicted claim' });
     expect(mark.closest('mark')).toHaveAttribute('data-v', 'contradicted');
-    // The marked answer still reads as the model's text (the verdict is screen-reader-only text).
-    expect(within(answer).getByTestId('answer-marked').textContent?.replace(', contradicted claim', '')).toBe(
-      scenario(REFUND).response,
-    );
+    // The marked answer still reads as the model's text.
+    expect(within(answer).getByTestId('answer-marked')).toHaveTextContent(scenario(REFUND).response);
     await userEvent.click(mark);
     expect(claim).toHaveFocus();
     expect(within(answer).queryByText(/not located in text/)).toBeNull();
