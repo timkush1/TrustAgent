@@ -12,8 +12,9 @@
 // follow SPEC §2.1: probabilities are summed in sorted-key order, thresholds compare with EPS, and
 // language round() is never used (see R2).
 //
-// S0 scope: canonical JSON, tokens, question hashes, compile, normalize, calibration apply,
-// decide() and the Tier-0 detectors (their patterns are read from the embedded contracts rules
-// files). Lint and validation, calibration fitting and the cost calculator join the package in P2;
-// evidence extraction lives in internal/evidence.
+// Scope: canonical JSON, tokens, question hashes, spec parsing, compile, normalize, calibration
+// apply and fitting (calibrate*.go: isotonic, Platt, Wilson bounds, the calibration.v1 file
+// checks), decide() and the Tier-0 detectors (their patterns are read from the embedded contracts
+// rules files). The evaluator lints join with the Studio (P4); evidence extraction lives in
+// internal/evidence.
 package decision
