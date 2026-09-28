@@ -23,6 +23,7 @@ import type {
   TraceSummary,
 } from '@/types/api';
 import type { OutcomeId } from '@/domain/contracts';
+import type { ControlPlane } from './controlPlane';
 import type { ConnectionState, StreamEvent } from './stream/types';
 
 export interface PageParams {
@@ -84,7 +85,8 @@ export interface LiveControl {
   stop(): void;
 }
 
-export interface DataSource {
+/** Stream-backed reads plus the control plane (controlPlane.ts: overview, policies, evaluators, …). */
+export interface DataSource extends ControlPlane {
   readonly kind: 'live' | 'replay';
   getHealth(signal?: AbortSignal): Promise<HealthStatus>;
   getStatus(signal?: AbortSignal): Promise<SystemStatus>;

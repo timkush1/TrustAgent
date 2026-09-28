@@ -206,3 +206,22 @@ describe('audit folding', () => {
     expect(t).toMatchObject({ gate_status: 'ok', action: 'pass', max_risk: 0.06 });
   });
 });
+
+describe('normalizeShaped (control-plane objects)', () => {
+  it('reads nested nil lists as empty and rejects a missing required field', async () => {
+    const { normalizeShaped, normalizeShapedPage } = await import('./normalize');
+    const shape = { strings: ['id'], lists: ['items'], each: { items: { lists: ['tags'] } }, inner: { meta: { lists: ['notes'] } } };
+    expect(normalizeShaped({ id: 'x', items: [{ tags: null }], meta: { notes: null } }, 'GET /x', shape)).toEqual({
+      id: 'x',
+      items: [{ tags: [] }],
+      meta: { notes: [] },
+    });
+    expect(() => normalizeShaped({ items: [] }, 'GET /x', shape)).toThrow(/GET \/x/);
+    expect(() => normalizeShaped({ id: 'x', items: [{ tags: 'no' }] }, 'GET /x', shape)).toThrow();
+    expect(normalizeShapedPage({ items: [{ id: 'a' }], next_cursor: '' }, 'GET /p', { strings: ['id'] })).toEqual({
+      items: [{ id: 'a' }],
+      next_cursor: null,
+    });
+    expect(() => normalizeShapedPage({ items: [{}] }, 'GET /p', { strings: ['id'] })).toThrow();
+  });
+});
