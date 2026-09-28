@@ -215,6 +215,9 @@ func (s *Store) Listen(ctx context.Context, _ string, ready func(), fn func(stri
 	}
 }
 
+// Notify delivers payload to the listeners, as another writer's NOTIFY would.
+func (s *Store) Notify(payload string) { s.notify(payload) }
+
 func (s *Store) notify(payload string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

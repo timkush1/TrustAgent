@@ -101,6 +101,9 @@ type EngineConfig struct {
 	// the engine's lock). Either may be nil.
 	OnUpdate func(Update)
 	OnError  func(PolicyError)
+	// OnNotify receives the other config notifications ("evaluator_versions:<ref>", ...) the
+	// engine's listener sees, so one connection serves every config consumer. May be nil.
+	OnNotify func(payload string)
 	Logger   *slog.Logger
 	Now      func() time.Time
 }
@@ -581,8 +584,11 @@ func (e *Engine) listen(ctx context.Context, l Listener) {
 			backoff = time.Second
 			e.Trigger() // catch up on anything missed while not listening
 		}, func(payload string) {
-			if strings.HasPrefix(payload, "policy_versions:") {
+			switch {
+			case strings.HasPrefix(payload, "policy_versions:"):
 				e.Trigger()
+			case e.cfg.OnNotify != nil:
+				e.cfg.OnNotify(payload)
 			}
 		})
 		if ctx.Err() != nil {

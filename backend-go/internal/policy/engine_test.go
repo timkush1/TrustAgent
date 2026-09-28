@@ -661,3 +661,30 @@ func TestUnifiedDiff(t *testing.T) {
 		t.Errorf("no newline %q", got)
 	}
 }
+
+// TestEngineForwardsOtherNotifications: the engine's listener hands non-policy payloads to
+// OnNotify, so one connection serves every config consumer.
+func TestEngineForwardsOtherNotifications(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mem := policytest.New()
+	f := newFixture(t, backend{store: mem}, fileA)
+	got := make(chan string, 4)
+	e := f.engine(t, func(c *EngineConfig) { c.OnNotify = func(p string) { got <- p } })
+	go e.Run(ctx)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mem.Notify("evaluator_versions:tone@2")
+		select {
+		case p := <-got:
+			if p != "evaluator_versions:tone@2" {
+				t.Fatalf("payload %q", p)
+			}
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no notification forwarded")
+		}
+	}
+}
