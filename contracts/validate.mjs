@@ -477,11 +477,41 @@ for (const [label, ext] of external) if (ext.schema === 'policy.v1') checkPolicy
 const presets = get('policies/presets.v1.json');
 if (presets) {
   checkUnique('policies/presets.v1.json', presets.presets, 'id', 'preset id');
+  checkUnique('policies/presets.v1.json', presets.presets, 'name', 'preset name');
   for (const p of presets.presets) {
-    checkRouteSettings('policies/presets.v1.json', `preset ${p.id}`, merge(ROUTE_DEFAULTS, p.settings));
+    const settings = merge(ROUTE_DEFAULTS, p.settings);
+    checkRouteSettings('policies/presets.v1.json', `preset ${p.id}`, settings);
+    checkPresetReadiness('policies/presets.v1.json', p, settings);
   }
 }
 
+// A block or fallback preset must be able to enforce once calibrated (SPEC §7.2 block readiness, §2.9):
+// streams are buffered (passthrough makes the route act as flag), something can block (a block-eligible
+// active evaluator or a detectors.block_on entry), every block-eligible active evaluator has a corroborator
+// the preset attaches (a detector, an active evaluator, or none required), and, while require_calibration
+// holds, ui_note tells the user that the preset starts as Flag.
+function checkPresetReadiness(rel, preset, s) {
+  const mode = s.mode;
+  if (mode !== 'block' && mode !== 'fallback') return;
+  const where = `preset ${preset.id}`;
+  if (s.streaming !== 'buffer') error(rel, `${where}: ${mode} mode needs streaming: buffer, or streamed answers can only be flagged`);
+  if (s.require_calibration !== false && !/flag/i.test(preset.ui_note ?? '')) {
+    error(rel, `${where}: with require_calibration it acts as Flag until its checks are calibrated; ui_note must say so`);
+  }
+  const active = (s.evaluators ?? []).filter((e) => e.enabled !== false && (e.stage ?? 'active') === 'active');
+  const activeIds = new Set(active.map((e) => e.ref.split('@')[0]));
+  let canBlock = (s.detectors?.block_on ?? []).length > 0;
+  for (const e of active) {
+    const spec = registry.get(e.ref);
+    if (!spec?.outcomes.block_eligible) continue;
+    canBlock = true;
+    const req = spec.outcomes.requires_corroboration ?? [];
+    if (req.length && !req.some((x) => x.startsWith('det:') || activeIds.has(x))) {
+      error(rel, `${where}: ${e.ref} can block only when one of ${req.join(', ')} agrees, and the preset attaches none of them`);
+    }
+  }
+  if (!canBlock) error(rel, `${where}: ${mode} mode, but no active evaluator is block-eligible and detectors.block_on is empty`);
+}
 
 // ------------------------------------------------------------------------------------------ pricing
 

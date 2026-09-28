@@ -380,6 +380,33 @@ describe('validate.mjs', () => {
     assert.match(r.out, /evaluators\/refusal\.v1\.json: counting_or_arithmetic: .*\(built-in templates must be lint-clean\)/);
   });
 
+  test('block and fallback presets must be ready to enforce once calibrated', () => {
+    const sb = sandbox();
+    // A block-eligible template whose only corroborator is another evaluator.
+    sb.write('evaluators/brand_claims.v1.json', {
+      ...sb.read('evaluators/refusal.v1.json'),
+      id: 'brand_claims', name: 'Brand claims',
+      outcomes: { warn_at: 0.7, critical_at: 0.9, block_eligible: true, requires_corroboration: ['contradiction'], implies: [] },
+    });
+    sb.edit('policies/presets.v1.json', (p) => {
+      const byId = Object.fromEntries(p.presets.map((x) => [x.id, x]));
+      byId['block-contradictions'].settings.streaming = 'passthrough';
+      delete byId['block-contradictions'].ui_note;
+      byId['replace-unverified'].settings.evaluators = [{ ref: 'brand_claims@1' }, { ref: 'contradiction@1', stage: 'shadow' }];
+      byId['replace-unverified'].settings.detectors = { block_on: [] };
+      byId['flag-risky'].settings = { mode: 'block', streaming: 'buffer', require_calibration: false, evaluators: [{ ref: 'refusal@1' }] };
+      byId['observe-all'].name = byId['support-bot'].name;
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /preset block-contradictions: block mode needs streaming: buffer/);
+    assert.match(r.out, /preset block-contradictions: with require_calibration it acts as Flag .* ui_note must say so/);
+    assert.match(r.out, /preset replace-unverified: brand_claims@1 can block only when one of contradiction agrees, and the preset attaches none of them/);
+    assert.match(r.out, /preset flag-risky: block mode, but no active evaluator is block-eligible and detectors\.block_on is empty/);
+    assert.match(r.out, /duplicate preset name "Support bot"/);
+    assert.doesNotMatch(r.out, /preset flag-risky: .*ui_note/); // require_calibration: false needs no note
+  });
+
   test('detector vector findings select their text; evidence tag patterns are portable', () => {
     const sb = sandbox();
     sb.edit('vectors/detectors/numbers-utf16-offsets-after-emoji.json', (v) => {
