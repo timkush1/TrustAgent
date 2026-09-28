@@ -85,6 +85,11 @@ func (p *Pinger) Check(ctx context.Context) EngineHealth {
 		h.State, h.Detail, h.Response = StateDown, "the audit engine did not answer its health check", nil
 	case resp.GetHealthy():
 		h.State = StateUp
+	case judgeOnlyMissing(resp):
+		// Started without a judge (judge_provider "none"): the engine serves every RPC and answers
+		// audits NOT_ASSESSED(no_judge). That is a configuration state, not an outage; the judge's
+		// own status says "disabled".
+		h.State, h.Detail = StateUp, "no deep-audit judge is configured: audits come back not assessed"
 	default:
 		h.State, h.Detail = StateDegraded, "the audit engine reports an unhealthy dependency"
 		deps := resp.GetDependencies()
@@ -103,6 +108,20 @@ func (p *Pinger) Check(ctx context.Context) EngineHealth {
 		p.onChange(h)
 	}
 	return h
+}
+
+// judgeOnlyMissing reports an unhealthy answer whose only failing dependency is a judge the engine
+// was started without.
+func judgeOnlyMissing(resp *pb.HealthResponse) bool {
+	if resp.GetJudgeProvider() != "none" {
+		return false
+	}
+	for name, ok := range resp.GetDependencies() {
+		if !ok && name != "judge" {
+			return false
+		}
+	}
+	return true
 }
 
 // Health returns the cached state.

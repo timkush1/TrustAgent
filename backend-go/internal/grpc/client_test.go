@@ -3,6 +3,7 @@ package grpc_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,22 @@ func TestPingerStates(t *testing.T) {
 	}
 	if got := len(changes); got != 3 || changes[0] != grpc.StateUp || changes[2] != grpc.StateDown {
 		t.Errorf("transitions %v", changes)
+	}
+}
+
+func TestPingerReadsAnEngineWithoutAJudgeAsUp(t *testing.T) {
+	deps := map[string]bool{"judge": false}
+	eng := enginetest.Start(t, &enginetest.Engine{HealthFunc: func(context.Context) (*pb.HealthResponse, error) {
+		return &pb.HealthResponse{Healthy: false, JudgeProvider: "none", Dependencies: deps}, nil
+	}})
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	if h := p.Check(context.Background()); h.State != grpc.StateUp || !strings.Contains(h.Detail, "no deep-audit judge") {
+		t.Errorf("no judge: %+v", h)
+	}
+	// Another failing dependency still degrades the engine.
+	deps["qdrant"] = false
+	if h := p.Check(context.Background()); h.State != grpc.StateDegraded {
+		t.Errorf("no judge and Qdrant down: %+v", h)
 	}
 }
 
