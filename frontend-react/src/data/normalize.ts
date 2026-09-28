@@ -366,3 +366,64 @@ export function applyDecisionRow(trace: TraceSummary, row: GateDecisionRow): Tra
     reasons: row.reasons,
   };
 }
+
+// ------------------------------------------------------------------- control-plane objects (P3)
+
+/**
+ * The shape check for control-plane responses (overview, policies, evaluators, playground,
+ * knowledge): the same rules as the stream objects above, plus nesting. `each` checks the objects
+ * of a list field and `inner` the object of a record field, so a Go nil slice deep inside a policy
+ * state (`downgrades: null`) reads as an empty list instead of crashing a card.
+ */
+export interface NestedShape {
+  strings?: readonly string[];
+  lists?: readonly string[];
+  records?: readonly string[];
+  each?: Readonly<Record<string, NestedShape>>;
+  inner?: Readonly<Record<string, NestedShape>>;
+}
+
+function conformNested(v: unknown, s: NestedShape): Record<string, unknown> | null {
+  if (!isRecord(v)) return null;
+  if (!(s.strings ?? []).every((k) => typeof v[k] === 'string')) return null;
+  if (!(s.records ?? []).every((k) => isRecord(v[k]))) return null;
+  const out: Record<string, unknown> = { ...v };
+  for (const k of s.lists ?? []) {
+    if (Array.isArray(v[k])) continue;
+    if (v[k] !== null && v[k] !== undefined) return null;
+    out[k] = [];
+  }
+  for (const [k, itemShape] of Object.entries(s.each ?? {})) {
+    const list = out[k];
+    if (!Array.isArray(list)) continue;
+    const items: unknown[] = [];
+    for (const item of list) {
+      const ok = conformNested(item, itemShape);
+      if (!ok) return null;
+      items.push(ok);
+    }
+    out[k] = items;
+  }
+  for (const [k, innerShape] of Object.entries(s.inner ?? {})) {
+    if (!isRecord(out[k])) continue;
+    const ok = conformNested(out[k], innerShape);
+    if (!ok) return null;
+    out[k] = ok;
+  }
+  return out;
+}
+
+/** One control-plane object checked against `shape`; throws an `invalid_response` ApiError otherwise. */
+export function normalizeShaped<T>(raw: unknown, what: string, shape: NestedShape): T {
+  const ok = conformNested(raw, shape);
+  if (!ok) throw unexpectedShape(what);
+  return ok as unknown as T;
+}
+
+/** A keyset page whose items are checked against `item`. */
+export function normalizeShapedPage<T>(raw: unknown, what: string, item: NestedShape): Page<T> {
+  const page = normalizeShaped<{ items: T[]; next_cursor?: unknown }>(raw, what, { lists: ['items'], each: { items: item } });
+  const next = page.next_cursor;
+  if (next !== null && next !== undefined && typeof next !== 'string') throw unexpectedShape(what);
+  return { items: page.items, next_cursor: typeof next === 'string' && next !== '' ? next : null };
+}

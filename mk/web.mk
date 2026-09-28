@@ -38,6 +38,12 @@ gen-types: ## Regenerate src/lib/contracts/types.gen.ts from contracts/schema (c
 gen-types-check: ## Fail when src/lib/contracts/types.gen.ts is stale
 	cd frontend-react && node scripts/gen-types.ts --check
 
+gen-policy-validator: ## Regenerate src/lib/policy/policyValidator.gen.ts (policy.v1 compiled by ajv, CSP-safe; commit the result)
+	cd frontend-react && node scripts/gen-policy-validator.ts
+
+gen-policy-validator-check: ## Fail when src/lib/policy/policyValidator.gen.ts is stale
+	cd frontend-react && node scripts/gen-policy-validator.ts --check
+
 gen-api-schema: ## Regenerate contracts/schema/api.v1.schema.json from src/types/api.ts (commit the result)
 	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs
 

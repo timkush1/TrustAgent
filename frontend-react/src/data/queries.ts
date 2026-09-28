@@ -3,8 +3,11 @@
  * `useQuery(tracesQuery(ds, params))`; the stream side effects in liveStream.ts use the same keys.
  */
 import { QueryClient, queryOptions } from '@tanstack/react-query';
+import type { TimeWindow } from '@/types/api';
+import type { EvidenceParams, KbClaimsParams, OverviewParams, ReliabilityParams } from './controlPlane';
 import { isApiError } from './errors';
 import type { AuditListParams, DataSource, DecisionListParams, TraceListParams } from './source';
+import type { StreamEvent } from './stream/types';
 
 export const qk = {
   health: ['health'] as const,
@@ -117,4 +120,200 @@ export function createQueryClient(): QueryClient {
       },
     },
   });
+}
+
+// ------------------------------------------------------------- control plane (P3 pages)
+
+/** Query keys of the control-plane endpoints (controlPlane.ts). */
+export const qkc = {
+  overview: {
+    all: ['overview'] as const,
+    stats: (params: OverviewParams) => ['overview', 'stats', params] as const,
+    roi: (window: TimeWindow) => ['overview', 'roi', window] as const,
+  },
+  evidence: {
+    all: ['evidence'] as const,
+    coverage: (params: EvidenceParams) => ['evidence', 'coverage', params] as const,
+    suggestions: (params: EvidenceParams) => ['evidence', 'suggestions', params] as const,
+  },
+  policies: {
+    all: ['policies'] as const,
+    state: ['policies', 'state'] as const,
+    versions: ['policies', 'versions'] as const,
+    version: (id: number) => ['policies', 'version', id] as const,
+  },
+  /**
+   * The review of a policy draft (validate and "Preview impact"): keyed by the draft text and kept
+   * apart from `policies`, so the stream's invalidations (every reconnect's `hello`) never re-run a
+   * rate-limited replay of past answers while the review is open.
+   */
+  policyReview: {
+    validate: (yaml: string) => ['policy-review', 'validate', yaml] as const,
+    dryRun: (window: TimeWindow, yaml: string) => ['policy-review', 'dry-run', window, yaml] as const,
+  },
+  evaluators: {
+    all: ['evaluators'] as const,
+    list: (includeArchived: boolean) => ['evaluators', 'list', includeArchived] as const,
+    detail: (id: string) => ['evaluators', 'detail', id] as const,
+    version: (id: string, version: number) => ['evaluators', 'version', id, version] as const,
+    reliability: (params: ReliabilityParams) => ['evaluators', 'reliability', params] as const,
+  },
+  kb: {
+    all: ['kb'] as const,
+    stats: ['kb', 'stats'] as const,
+    claims: (params: KbClaimsParams) => ['kb', 'claims', params] as const,
+    conflicts: ['kb', 'conflicts'] as const,
+  },
+};
+
+/** Overview numbers move with traffic; the stream's `hello` and resyncs refresh them too. */
+export const OVERVIEW_POLL_MS = 30_000;
+
+/** A missing endpoint (older proxy, or an add-on that is off) is a state, not an error to retry. */
+export function isNotServed(err: unknown): boolean {
+  return isApiError(err) && (err.status === 404 || err.status === 501);
+}
+
+export function overviewQuery(ds: DataSource, params: OverviewParams) {
+  return queryOptions({
+    queryKey: qkc.overview.stats(params),
+    queryFn: ({ signal }) => ds.getOverview(params, signal),
+    refetchInterval: OVERVIEW_POLL_MS,
+  });
+}
+
+export function roiSummaryQuery(ds: DataSource, window: TimeWindow) {
+  return queryOptions({
+    queryKey: qkc.overview.roi(window),
+    queryFn: ({ signal }) => ds.getRoiSummary(window, signal),
+    refetchInterval: OVERVIEW_POLL_MS,
+  });
+}
+
+export function evidenceCoverageQuery(ds: DataSource, params: EvidenceParams) {
+  return queryOptions({
+    queryKey: qkc.evidence.coverage(params),
+    queryFn: ({ signal }) => ds.getEvidenceCoverage(params, signal),
+  });
+}
+
+/** Admin-only and new in P4: a 401/403/404 is an expected answer, so it is not retried. */
+export function evidenceSuggestionsQuery(ds: DataSource, params: EvidenceParams) {
+  return queryOptions({
+    queryKey: qkc.evidence.suggestions(params),
+    queryFn: ({ signal }) => ds.getEvidenceSuggestions(params, signal),
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function policiesQuery(ds: DataSource) {
+  return queryOptions({
+    queryKey: qkc.policies.state,
+    queryFn: ({ signal }) => ds.getPolicies(signal),
+  });
+}
+
+export function policyVersionQuery(ds: DataSource, id: number) {
+  return queryOptions({
+    queryKey: qkc.policies.version(id),
+    queryFn: ({ signal }) => ds.getPolicyVersion(id, signal),
+    // A stored version never changes.
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function evaluatorsQuery(ds: DataSource, includeArchived = false) {
+  return queryOptions({
+    queryKey: qkc.evaluators.list(includeArchived),
+    queryFn: ({ signal }) => ds.listEvaluators({ include_archived: includeArchived || undefined }, signal),
+  });
+}
+
+export function evaluatorQuery(ds: DataSource, id: string) {
+  return queryOptions({
+    queryKey: qkc.evaluators.detail(id),
+    queryFn: ({ signal }) => ds.getEvaluator(id, signal),
+  });
+}
+
+export function evaluatorVersionQuery(ds: DataSource, id: string, version: number) {
+  return queryOptions({
+    queryKey: qkc.evaluators.version(id, version),
+    queryFn: ({ signal }) => ds.getEvaluatorVersion(id, version, signal),
+    // Evaluator versions are immutable (SPEC §2.8).
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function reliabilityQuery(ds: DataSource, params: ReliabilityParams) {
+  return queryOptions({
+    queryKey: qkc.evaluators.reliability(params),
+    queryFn: ({ signal }) => ds.getReliability(params, signal),
+  });
+}
+
+export function kbStatsQuery(ds: DataSource) {
+  return queryOptions({
+    queryKey: qkc.kb.stats,
+    queryFn: ({ signal }) => ds.getKbStats(signal),
+    retry: (count, err) => !isKnowledgeDisabled(err) && shouldRetry(count, err),
+  });
+}
+
+export function kbClaimsQuery(ds: DataSource, params: KbClaimsParams) {
+  return queryOptions({
+    queryKey: qkc.kb.claims(params),
+    queryFn: ({ signal }) => ds.listKbClaims(params, signal),
+    retry: (count, err) => !isKnowledgeDisabled(err) && shouldRetry(count, err),
+  });
+}
+
+export function kbConflictsQuery(ds: DataSource) {
+  return queryOptions({
+    queryKey: qkc.kb.conflicts,
+    queryFn: ({ signal }) => ds.listKbConflicts({ limit: 50 }, signal),
+    retry: (count, err) => !isKnowledgeDisabled(err) && shouldRetry(count, err),
+  });
+}
+
+/** 409 `knowledge_disabled`: the knowledge add-on is off (SPEC §2.4 #62-65). */
+export function isKnowledgeDisabled(err: unknown): boolean {
+  return isApiError(err) && err.code === 'knowledge_disabled';
+}
+
+/**
+ * Keeps control-plane queries in step with the live stream (called from liveStream.ts for every
+ * committed batch): policy and evaluator changes refetch their pages; (re)connects and resyncs
+ * refresh the overview.
+ */
+export function applyControlSideEffects(queryClient: QueryClient, batch: readonly StreamEvent[]): void {
+  let overview = false;
+  let policies = false;
+  let evaluators = false;
+  for (const ev of batch) {
+    switch (ev.type) {
+      case 'hello':
+      case 'resync':
+        overview = true;
+        policies = true;
+        break;
+      case 'policy_updated':
+      case 'policy_error':
+        policies = true;
+        evaluators = true; // attached routes and stages follow the policy
+        break;
+      case 'evaluator_updated':
+      case 'calibration_updated':
+      case 'decision_model_changed':
+        evaluators = true;
+        policies = true; // block readiness depends on calibration and the snapshot
+        break;
+      default:
+        break;
+    }
+  }
+  if (overview) void queryClient.invalidateQueries({ queryKey: qkc.overview.all, refetchType: 'active' });
+  if (policies) void queryClient.invalidateQueries({ queryKey: qkc.policies.all, refetchType: 'active' });
+  if (evaluators) void queryClient.invalidateQueries({ queryKey: qkc.evaluators.all, refetchType: 'active' });
 }

@@ -15,7 +15,7 @@ export type Query = Record<string, QueryValue>;
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Query;
-  /** Serialized as JSON. */
+  /** Serialized as JSON; a FormData body (a file upload) is sent as multipart, as is. */
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -26,6 +26,12 @@ export interface RequestOptions {
 export interface HttpClient {
   request<T>(path: string, options?: RequestOptions): Promise<T>;
   get<T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>): Promise<T>;
+  /**
+   * A request whose successful response is read by the caller (a `text/event-stream`, say): it
+   * resolves with the Response once the headers arrive, and rejects with an ApiError otherwise.
+   * `timeoutMs` bounds the wait for the headers only; the caller's signal still cancels the body.
+   */
+  stream(path: string, options?: RequestOptions): Promise<Response>;
   /** Absolute or origin-relative URL for a REST path, with the query appended. */
   url(path: string, query?: Query): string;
 }
@@ -86,25 +92,27 @@ export function createHttpClient(
 
   const url = (path: string, query?: Query) => `${config.apiBase}${path}${buildQuery(query)}`;
 
-  async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  function prepare(options: RequestOptions, accept: string) {
     const method = options.method ?? 'GET';
-    const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
-    let body: string | undefined;
-    if (options.body !== undefined) {
+    const headers: Record<string, string> = { Accept: accept, ...options.headers };
+    let body: string | FormData | undefined;
+    if (options.body instanceof FormData) {
+      // The browser writes the multipart Content-Type with its boundary.
+      body = options.body;
+    } else if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(options.body);
     }
     if (method !== 'GET' && !config.crossOrigin) headers['X-TrustAgent-CSRF'] = '1';
+    return { method, headers, body, credentials: (config.crossOrigin ? 'omit' : 'same-origin') as RequestCredentials };
+  }
+
+  async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    const { method, headers, body, credentials } = prepare(options, 'application/json');
 
     const link = linkedSignal(options.signal, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     try {
-      const res = await doFetch(url(path, options.query), {
-        method,
-        headers,
-        body,
-        credentials: config.crossOrigin ? 'omit' : 'same-origin',
-        signal: link.signal,
-      });
+      const res = await doFetch(url(path, options.query), { method, headers, body, credentials, signal: link.signal });
       let parsed: unknown;
       try {
         parsed = await readBody(res);
@@ -132,9 +140,47 @@ export function createHttpClient(
     }
   }
 
+  async function stream(path: string, options: RequestOptions = {}): Promise<Response> {
+    const { method, headers, body, credentials } = prepare(options, 'text/event-stream, application/json');
+    // Unlike linkedSignal, the caller's signal stays linked after the headers arrive, so it can
+    // cancel reading the body; only the header timeout is cleared.
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const outer = options.signal;
+    if (outer?.aborted) controller.abort(outer.reason);
+    else outer?.addEventListener('abort', () => controller.abort(outer.reason), { once: true });
+    try {
+      const res = await doFetch(url(path, options.query), { method, headers, body, credentials, signal: controller.signal });
+      if (!res.ok) {
+        let parsed: unknown;
+        try {
+          parsed = await readBody(res);
+        } catch {
+          parsed = undefined;
+        }
+        throw apiErrorFromResponse(res.status, parsed, res.headers.get('retry-after'));
+      }
+      return res;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      if (timedOut) throw toApiError(err, true);
+      if (outer?.aborted) {
+        throw new ApiError({ kind: 'aborted', status: 0, code: 'aborted', message: 'The request was cancelled.', cause: err });
+      }
+      throw toApiError(err);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   return {
     request,
     get: (path, options) => request(path, { ...options, method: 'GET' }),
+    stream,
     url,
   };
 }

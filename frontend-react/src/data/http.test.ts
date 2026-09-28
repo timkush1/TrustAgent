@@ -85,6 +85,51 @@ describe('http client', () => {
   });
 });
 
+describe('http client stream()', () => {
+  it('resolves with the response so the caller can read the body', async () => {
+    let accept: string | null = null;
+    server.use(
+      http.post(`${API}/api/playground/run`, ({ request }) => {
+        accept = request.headers.get('accept');
+        return new HttpResponse('data: 1\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+      }),
+    );
+    const res = await client().stream('/api/playground/run', { method: 'POST', body: { stream: true } });
+    expect(await res.text()).toBe('data: 1\n\n');
+    expect(accept).toContain('text/event-stream');
+  });
+
+  it('turns an error status into an ApiError with the server message', async () => {
+    server.use(
+      http.post(`${API}/api/playground/run`, () =>
+        HttpResponse.json({ error: { code: 'rate_limited', message: 'Slow down.' } }, { status: 429, headers: { 'Retry-After': '6' } }),
+      ),
+    );
+    await expect(client().stream('/api/playground/run', { method: 'POST', body: {} })).rejects.toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+      message: 'Slow down.',
+      retryAfterMs: 6000,
+    });
+  });
+
+  it('times out waiting for headers, and reports network failures and aborts', async () => {
+    server.use(
+      http.post(`${API}/slow`, async () => {
+        await delay(200);
+        return new HttpResponse('');
+      }),
+      http.post(`${API}/down`, () => HttpResponse.error()),
+    );
+    await expect(client().stream('/slow', { method: 'POST', timeoutMs: 20 })).rejects.toMatchObject({ kind: 'timeout' });
+    await expect(client().stream('/down', { method: 'POST' })).rejects.toMatchObject({ kind: 'network' });
+    const ac = new AbortController();
+    const p = client().stream('/slow', { method: 'POST', signal: ac.signal });
+    ac.abort();
+    await expect(p).rejects.toMatchObject({ kind: 'aborted' });
+  });
+});
+
 describe('errors helpers', () => {
   it('maps statuses to codes when the body has none', () => {
     expect(apiErrorFromResponse(429, undefined).code).toBe('rate_limited');

@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as AppKnowledgeRouteImport } from './routes/app/knowledge'
 import { Route as AppOverviewRouteImport } from './routes/app/overview'
 import { Route as AppPlaygroundRouteImport } from './routes/app/playground'
 import { Route as AppPoliciesRouteImport } from './routes/app/policies'
 import { Route as AppSavingsRouteImport } from './routes/app/savings'
 import { Route as AppAuditsIdRouteImport } from './routes/app/audits/$id'
 import { Route as AppEvaluatorsIndexRouteImport } from './routes/app/evaluators/index'
+import { Route as AppEvaluatorsIdRouteImport } from './routes/app/evaluators/$id'
 import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
 import { Route as AppSettingsSectionRouteImport } from './routes/app/settings/$section'
 import { Route as AppTracesIdRouteImport } from './routes/app/traces/$id'
@@ -37,6 +39,11 @@ const AppRoute = AppRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppKnowledgeRoute = AppKnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOverviewRoute = AppOverviewRouteImport.update({
@@ -69,6 +76,11 @@ const AppEvaluatorsIndexRoute = AppEvaluatorsIndexRouteImport.update({
   path: '/evaluators/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEvaluatorsIdRoute = AppEvaluatorsIdRouteImport.update({
+  id: '/evaluators/$id',
+  path: '/evaluators/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
@@ -98,12 +110,14 @@ const AppTrafficTraceIdRoute = AppTrafficTraceIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/knowledge': typeof AppKnowledgeRoute
   '/app/overview': typeof AppOverviewRoute
   '/app/playground': typeof AppPlaygroundRoute
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
+  '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
@@ -113,12 +127,14 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app/knowledge': typeof AppKnowledgeRoute
   '/app/overview': typeof AppOverviewRoute
   '/app/playground': typeof AppPlaygroundRoute
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
   '/app': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
+  '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
@@ -130,12 +146,14 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/knowledge': typeof AppKnowledgeRoute
   '/app/overview': typeof AppOverviewRoute
   '/app/playground': typeof AppPlaygroundRoute
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
+  '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
@@ -148,12 +166,14 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/knowledge'
     | '/app/overview'
     | '/app/playground'
     | '/app/policies'
     | '/app/savings'
     | '/app/'
     | '/app/audits/$id'
+    | '/app/evaluators/$id'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
@@ -163,12 +183,14 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/app/knowledge'
     | '/app/overview'
     | '/app/playground'
     | '/app/policies'
     | '/app/savings'
     | '/app'
     | '/app/audits/$id'
+    | '/app/evaluators/$id'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
@@ -179,12 +201,14 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/app/knowledge'
     | '/app/overview'
     | '/app/playground'
     | '/app/policies'
     | '/app/savings'
     | '/app/'
     | '/app/audits/$id'
+    | '/app/evaluators/$id'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
@@ -219,6 +243,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/app/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/knowledge': {
+      id: '/app/knowledge'
+      path: '/knowledge'
+      fullPath: '/app/knowledge'
+      preLoaderRoute: typeof AppKnowledgeRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/overview': {
@@ -263,6 +294,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEvaluatorsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/evaluators/$id': {
+      id: '/app/evaluators/$id'
+      path: '/evaluators/$id'
+      fullPath: '/app/evaluators/$id'
+      preLoaderRoute: typeof AppEvaluatorsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/settings/': {
       id: '/app/settings/'
       path: '/settings'
@@ -302,12 +340,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppKnowledgeRoute: typeof AppKnowledgeRoute
   AppOverviewRoute: typeof AppOverviewRoute
   AppPlaygroundRoute: typeof AppPlaygroundRoute
   AppPoliciesRoute: typeof AppPoliciesRoute
   AppSavingsRoute: typeof AppSavingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppAuditsIdRoute: typeof AppAuditsIdRoute
+  AppEvaluatorsIdRoute: typeof AppEvaluatorsIdRoute
   AppSettingsSectionRoute: typeof AppSettingsSectionRoute
   AppTracesIdRoute: typeof AppTracesIdRoute
   AppTrafficTraceIdRoute: typeof AppTrafficTraceIdRoute
@@ -317,12 +357,14 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppKnowledgeRoute: AppKnowledgeRoute,
   AppOverviewRoute: AppOverviewRoute,
   AppPlaygroundRoute: AppPlaygroundRoute,
   AppPoliciesRoute: AppPoliciesRoute,
   AppSavingsRoute: AppSavingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppAuditsIdRoute: AppAuditsIdRoute,
+  AppEvaluatorsIdRoute: AppEvaluatorsIdRoute,
   AppSettingsSectionRoute: AppSettingsSectionRoute,
   AppTracesIdRoute: AppTracesIdRoute,
   AppTrafficTraceIdRoute: AppTrafficTraceIdRoute,
