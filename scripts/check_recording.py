@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a static-demo recording before it is published (SPEC §2.13, §0 row 19, risk 19).
+"""Check a static demo recording before it is published (SPEC §2.13, §0 row 19, risk 19).
 
     python3 scripts/check_recording.py frontend-react/public/demo/recorded
     python3 scripts/check_recording.py DIR --require-recorded   # the P6 launch gate: refuse mock
