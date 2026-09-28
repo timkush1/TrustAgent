@@ -1,0 +1,33 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quick-not-enough-labels",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "Quick calibration needs n >= 8 with >= 3 of each class. 7 labels (3 should fire, 4 should not): enough is false, no threshold, intervals, range or mapping; the grid is still returned.",
+  "input": {
+    "op": "quick",
+    "labeled": [
+      {"risk_raw": 0.2, "label": true}, {"risk_raw": 0.2, "label": false},
+      {"risk_raw": 0.2, "label": false}, {"risk_raw": 0.2, "label": false},
+      {"risk_raw": 0.8, "label": true}, {"risk_raw": 0.8, "label": true},
+      {"risk_raw": 0.8, "label": false}
+    ]
+  },
+  "expected": {
+    "enough": false,
+    "grid": [
+      {"fn": 0, "fp": 4, "threshold": 0.2, "tn": 0, "tp": 3},
+      {"fn": 1, "fp": 1, "threshold": 0.8, "tn": 3, "tp": 2}
+    ],
+    "loo_range": null,
+    "mapping": {"method": null, "platt": null, "table": null},
+    "n": 7,
+    "n_neg": 4,
+    "n_pos": 3,
+    "precision": null,
+    "recall": null,
+    "threshold": null,
+    "unstable": false
+  }
+}

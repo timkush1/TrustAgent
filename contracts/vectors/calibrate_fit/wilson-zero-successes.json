@@ -1,0 +1,14 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "wilson-zero-successes",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "k = 0: the lower bound is exactly 0 (not a rounding residue); the upper bound is z²/n/(1 + z²/n) = 0.27753 for n = 10.",
+  "input": {
+    "op": "wilson",
+    "k": 0,
+    "n": 10
+  },
+  "expected": {"hi": 0.2775327998628892, "lo": 0}
+}

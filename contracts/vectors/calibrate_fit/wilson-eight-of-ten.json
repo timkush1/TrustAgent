@@ -1,0 +1,14 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "wilson-eight-of-ten",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "Wilson score interval of 8/10 at z = 1.959963984540054: center = (0.8 + z²/20)/(1 + z²/10), half = z·sqrt(0.016 + z²/400)/(1 + z²/10), giving [0.4902, 0.9433] (the textbook 95% interval).",
+  "input": {
+    "op": "wilson",
+    "k": 8,
+    "n": 10
+  },
+  "expected": {"hi": 0.9433178485456247, "lo": 0.49016247153664183}
+}

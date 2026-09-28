@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "critical-at-extends-down-while-bound-holds",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "0.9 (80/80, LB 0.9542) and 0.6 (180/180, LB 180/(180 + z²) = 0.9791) pass; 0.2 adds 50 negatives (LB of 180/230 fails). The smallest passing threshold is 0.6 with 180 predicted positives.",
+  "input": {
+    "op": "critical_at",
+    "groups": [
+      {"risk_raw": 0.2, "pos": 0, "neg": 50}, {"risk_raw": 0.6, "pos": 100, "neg": 0},
+      {"risk_raw": 0.9, "pos": 80, "neg": 0}
+    ]
+  },
+  "expected": {
+    "critical_at": {"precision_lb95": 0.9791045020783868, "predicted_pos": 180, "value": 0.6},
+    "critical_null_reason": null
+  }
+}

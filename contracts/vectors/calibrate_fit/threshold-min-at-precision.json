@@ -1,0 +1,29 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "threshold-min-at-precision",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "min_threshold_at_precision 0.75: the smallest candidate with precision >= 0.75 is 0.2 (6/8), which also has full recall.",
+  "input": {
+    "op": "threshold",
+    "groups": [
+      {"risk_raw": 0.2, "pos": 3, "neg": 1}, {"risk_raw": 0.6, "pos": 1, "neg": 1},
+      {"risk_raw": 0.8, "pos": 2, "neg": 0}
+    ],
+    "objective": "min_threshold_at_precision",
+    "min_precision": 0.75
+  },
+  "expected": {
+    "result": {
+      "f1": 0.8571428571428571,
+      "fn": 0,
+      "fp": 2,
+      "precision": 0.75,
+      "recall": 1,
+      "threshold": 0.2,
+      "tn": 0,
+      "tp": 6
+    }
+  }
+}

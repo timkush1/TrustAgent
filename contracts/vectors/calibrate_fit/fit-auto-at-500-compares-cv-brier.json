@@ -1,0 +1,64 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "fit-auto-at-500-compares-cv-brier",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "auto with 520 labels compares 5-fold cross-validated Brier scores (folds by rank mod 5 after sorting by risk, then label) of isotonic and Platt, records both in cv_brier, and keeps the lower one (isotonic on a tie).",
+  "input": {
+    "op": "fit",
+    "groups": [
+      {"risk_raw": 0.05, "pos": 4, "neg": 96}, {"risk_raw": 0.25, "pos": 10, "neg": 90},
+      {"risk_raw": 0.45, "pos": 30, "neg": 70}, {"risk_raw": 0.65, "pos": 45, "neg": 55},
+      {"risk_raw": 0.85, "pos": 60, "neg": 30}, {"risk_raw": 0.95, "pos": 20, "neg": 10}
+    ],
+    "method": "auto"
+  },
+  "expected": {
+    "cv_brier": {"isotonic": 0.16399839743592373, "platt": 0.164973206675469},
+    "method": "isotonic",
+    "metrics": {
+      "auroc": 0.8002410694718387,
+      "brier_after": 0.16395512820515393,
+      "brier_before": 0.19076923076922994,
+      "ece_after": 7.69230770704719e-8,
+      "ece_before": 0.146153846153846
+    },
+    "n": 520,
+    "n_neg": 351,
+    "n_pos": 169,
+    "platt": null,
+    "recommended": {
+      "critical_at": null,
+      "critical_null_reason": "insufficient evidence to block",
+      "space": "calibrated",
+      "warn_at": null
+    },
+    "reliability": [
+      {"frac_pos": 0.04, "hi": 0.1, "lo": 0, "mean_pred": 0.04000000000000003, "n": 100},
+      {"frac_pos": 0.1, "hi": 0.2, "lo": 0.1, "mean_pred": 0.09999999999999981, "n": 100},
+      {"frac_pos": 0.3, "hi": 0.4, "lo": 0.3, "mean_pred": 0.3000000000000005, "n": 100},
+      {"frac_pos": 0.45, "hi": 0.5, "lo": 0.4, "mean_pred": 0.4500000000000004, "n": 100},
+      {
+        "frac_pos": 0.6666666666666666,
+        "hi": 0.7,
+        "lo": 0.6,
+        "mean_pred": 0.6666669999999997,
+        "n": 120
+      }
+    ],
+    "table": [
+      0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.043, 0.046, 0.049, 0.052, 0.055, 0.058, 0.061, 0.064,
+      0.067, 0.07, 0.073, 0.076, 0.079, 0.082, 0.085, 0.088, 0.091, 0.094, 0.097, 0.1, 0.11, 0.12,
+      0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28,
+      0.29, 0.3, 0.3075, 0.315, 0.3225, 0.33, 0.3375, 0.345, 0.3525, 0.36, 0.3675, 0.375, 0.3825,
+      0.39, 0.3975, 0.405, 0.4125, 0.42, 0.4275, 0.435, 0.4425, 0.45, 0.460833, 0.471667, 0.4825,
+      0.493333, 0.504167, 0.515, 0.525833, 0.536667, 0.5475, 0.558333, 0.569167, 0.58, 0.590833,
+      0.601667, 0.6125, 0.623333, 0.634167, 0.645, 0.655833, 0.666667, 0.666667, 0.666667, 0.666667,
+      0.666667, 0.666667, 0.666667, 0.666667, 0.666667, 0.666667, 0.666667, 0.666667, 0.666667,
+      0.666667, 0.666667, 0.666667
+    ],
+    "warnings": ["no threshold reaches precision 0.8, so there is no recommended warn_at"]
+  },
+  "tolerance": 1e-06
+}
