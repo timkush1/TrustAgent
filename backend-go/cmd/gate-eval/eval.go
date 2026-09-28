@@ -199,7 +199,9 @@ func (e *evaluator) evaluate(ctx context.Context, line int, ex *example) *result
 	if err != nil {
 		return fail(r, "compile: %v", err)
 	}
-	r.Excluded = compiled.Excluded
+	if compiled.Excluded != nil {
+		r.Excluded = compiled.Excluded
+	}
 	r.Compile = &compileInfo{
 		Requests: len(compiled.Requests), EstTokens: nonNilInts(compiled.EstTokens), CPT: compiled.CPT,
 		QuestionSetSHA256: compiled.QuestionSetSHA256, RequestSHA256: nonNilStrings(compiled.RequestSHA256),

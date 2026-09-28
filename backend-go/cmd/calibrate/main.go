@@ -38,7 +38,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/evaluators"
 )
@@ -104,7 +103,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fl.Var(&o.specFiles, "spec", "custom evaluator spec file (evaluator/v1 JSON); repeatable")
 	fl.Var(&o.stateFields, "state-fields", "state fields the risks were scored with (default: from gate-eval lines, else the evaluator's)")
 	fl.StringVar(&o.questionSet, "question-set-sha256", "", "question set the risks were scored with (default: from gate-eval lines, else the evaluator alone)")
-	fl.StringVar(&o.out, "out", "config/calibration", "calibration directory")
+	fl.StringVar(&o.out, "out", "", "calibration directory (default: config/calibration at the repository root)")
 	fl.BoolVar(&o.write, "write", false, "write the calibration file (default: print the summary only)")
 	fl.StringVar(&o.api, "api", "http://127.0.0.1:8080", "gateway base URL for --source api")
 	fl.StringVar(&o.apiKeyFile, "api-key-file", "", "file holding an admin API key for --source api")
@@ -189,8 +188,34 @@ func calibrate(ctx context.Context, o *options, stdin io.Reader, e env) (*outcom
 	if err != nil {
 		return nil, err
 	}
-	res.path = filepath.Join(config.RepoPath(o.out), name)
+	res.path = filepath.Join(outDir(o.out), name)
 	return res, merge(res)
+}
+
+// defaultOutDir is where committed calibrations live (TRUTHTABLE_CALIBRATION_DIR's default).
+const defaultOutDir = "config/calibration"
+
+// outDir resolves --out: as given when set, else config/calibration under the repository root
+// (the nearest parent holding VERSION), so the command writes to the same place from backend-go/
+// or the root.
+func outDir(out string) string {
+	if out != "" {
+		return out
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return defaultOutDir
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "VERSION")); err == nil {
+			return filepath.Join(dir, defaultOutDir)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return defaultOutDir
+		}
+		dir = parent
+	}
 }
 
 func loadSpecs(files []string) (map[string]*decision.Spec, error) {

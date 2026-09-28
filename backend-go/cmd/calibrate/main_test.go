@@ -242,6 +242,20 @@ func TestInputErrors(t *testing.T) {
 	}
 }
 
+func TestDefaultOutDirIsTheRepositoryConfig(t *testing.T) {
+	got := outDir("")
+	root, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(root, "config", "calibration") {
+		t.Errorf("outDir(\"\") = %s, want %s/config/calibration", got, root)
+	}
+	if outDir("x/y") != "x/y" {
+		t.Error("an explicit --out was rewritten")
+	}
+}
+
 func TestParamsHash(t *testing.T) {
 	dir := t.TempDir()
 	code, _, stderr := runCLI(t, flatLabels(40, 10, ""), testEnv(), "--evaluator", "commitments@1", "--label-source", "human",
