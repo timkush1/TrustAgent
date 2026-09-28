@@ -91,6 +91,24 @@ describe('extractEvidence', () => {
     expect(whole.system_instructions).toBe('Intro.\n<document>D</document>');
   });
 
+  it('reads a part with a null text as an empty part, like the Go reference', () => {
+    const ex = extractEvidence('openai_chat', {
+      messages: [
+        { role: 'system', content: [{ type: 'text', text: 'Sys' }, { type: 'text', text: null }] },
+        { role: 'user', content: [{ type: 'text', text: '<doc id="a">Alpha beta</doc> Q1?' }, { type: 'text', text: null }] },
+        { role: 'tool', content: [{ type: 'text', text: null }, { type: 'text', text: 'tool out' }, { type: 'text' }] },
+      ],
+    });
+    // The empty part is the final one, so the earlier part is pasted context taken whole and there
+    // is no user_request text.
+    expect(ex.user_request).toBe('');
+    expect(ex.items.map(({ id, source, text }) => ({ id, source, text }))).toEqual([
+      { id: 'ctx1', source: 'request_context', text: '<doc id="a">Alpha beta</doc> Q1?' },
+      { id: 'tool1', source: 'tool_results', text: 'tool out' },
+    ]);
+    expect(ex.system_instructions).toBe('Sys');
+  });
+
   it('tolerates malformed members and rejects a body that is not an object', () => {
     const ex = extractEvidence('openai_chat', { messages: [null, 3, { role: 7, content: { text: 'x' } }, { role: 'user', content: 'ok' }], trustagent: 'nope' });
     expect(ex.user_request).toBe('ok');

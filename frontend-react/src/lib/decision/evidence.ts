@@ -93,12 +93,20 @@ interface Request {
 
 const message = (role: string, parts: string[]): Message => ({ role, parts, name: '', toolCallId: '', toolCalls: [], toolResults: [] });
 
-/** Content parts: a string is one part; a list contributes its text and input_text parts. */
+/**
+ * Content parts: a string is one part; a list contributes its text and input_text parts. A part
+ * whose text is null is an empty part, as Go's decoder reads it (llmapi.ContentParts): it still
+ * counts, so it can be the final part of the last user message and leave user_request empty.
+ */
 function contentParts(content: unknown): string[] {
   if (typeof content === 'string') return [toWellFormed(content)];
-  return list(content)
-    .filter((p): p is Obj => isObj(p) && (p.type === 'text' || p.type === 'input_text') && typeof p.text === 'string')
-    .map((p) => toWellFormed(p.text as string));
+  const parts: string[] = [];
+  for (const p of list(content)) {
+    if (!isObj(p) || (p.type !== 'text' && p.type !== 'input_text')) continue;
+    if (typeof p.text === 'string') parts.push(toWellFormed(p.text));
+    else if (p.text === null) parts.push('');
+  }
+  return parts;
 }
 
 function parseOpenAIMessage(raw: Obj): Message {
