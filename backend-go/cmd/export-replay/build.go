@@ -366,7 +366,7 @@ func events(traces []traceData) []event {
 		}
 		if len(d.Decisions) > 0 {
 			out = append(out, event{TMs: decided, Type: "gate_decision", TraceID: s.TraceID,
-				Data: map[string]any{"trace": s, "decision": d.Decisions[0]}})
+				Data: map[string]any{"trace": decidedSummary(s), "decision": d.Decisions[0]}})
 		}
 		if s.Audit.AuditID != nil && s.Audit.Lane != nil {
 			out = append(out, event{TMs: decided, Type: "audit_queued", TraceID: s.TraceID,
@@ -411,6 +411,16 @@ func pendingSummary(s store.TraceSummary) store.TraceSummary {
 	p.Audit = store.TraceAudit{Status: store.TraceAuditNone}
 	p.ResponsePreview = nil
 	return p
+}
+
+// decidedSummary is the summary as gate_decision showed it: decided, with a planned deep audit
+// still queued (its verdict arrives with audit_completed).
+func decidedSummary(s store.TraceSummary) store.TraceSummary {
+	switch s.Audit.Status {
+	case "running", "completed", "degraded", "failed":
+		s.Audit = store.TraceAudit{AuditID: s.Audit.AuditID, Status: "queued", Lane: s.Audit.Lane, Selection: s.Audit.Selection}
+	}
+	return s
 }
 
 func keys(m map[string]bool) []string {

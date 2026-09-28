@@ -197,6 +197,13 @@ func TestBuildRecorded(t *testing.T) {
 	if started := rec.Events[0].Data.(map[string]any)["trace"].(store.TraceSummary); started.GateStatus != "pending" || started.Action != nil || started.Audit.Status != "none" {
 		t.Errorf("trace_started carries the decided summary: %+v", started)
 	}
+	if decided := rec.Events[3].Data.(map[string]any)["trace"].(store.TraceSummary); rec.Events[3].Type != "gate_decision" ||
+		decided.Audit.Status != "queued" || decided.Audit.Verdict != nil || decided.Action == nil {
+		t.Errorf("gate_decision shows the audit outcome early: %+v", decided)
+	}
+	if final := rec.Traces[1]; final.Audit.Status != "completed" || final.Audit.Verdict == nil {
+		t.Errorf("the manifest trace list lost the audit outcome: %+v", final.Audit)
+	}
 
 	dir := t.TempDir()
 	san, _ := newSanitizer()
