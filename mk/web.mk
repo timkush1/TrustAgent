@@ -44,8 +44,10 @@ gen-api-schema: ## Regenerate contracts/schema/api.v1.schema.json from src/types
 gen-api-schema-check: ## Fail when contracts/schema/api.v1.schema.json is stale
 	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs --check
 
+# --reporter=default keeps the per-kind conformance report visible: Vitest otherwise picks its
+# minimal reporter in some environments, which hides the console output of passing tests.
 vectors-ts: ## Run the golden vectors against the TypeScript decision core (src/lib/decision)
-	cd frontend-react && npx vitest run src/lib/decision/vectors --maxWorkers=2
+	cd frontend-react && npx vitest run src/lib/decision/vectors --maxWorkers=2 --reporter=default
 
 # ---------- End-to-end (Playwright) ----------
 # The `stack` project runs against a running stack's dashboard: start one with `make demo`.

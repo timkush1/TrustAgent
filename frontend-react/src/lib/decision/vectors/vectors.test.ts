@@ -82,5 +82,11 @@ afterAll(() => {
     const ts = r.skipped === null ? `${r.passed}/${r.total} passed` : `skipped: ${r.skipped}`;
     return `  ${kind.padEnd(18)} ${String(r.total).padStart(3)} vectors (${r.frozen} frozen)  TS ${ts}  | Go: ${go}`;
   });
+  // Kinds without a vector directory yet are reported too, so every skip reason is visible.
+  for (const [kind, k] of Object.entries(KINDS).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (report.has(kind)) continue;
+    const ts = k.run === undefined ? `skipped: ${k.skip ?? ''}` : 'runner ready, no vectors yet';
+    rows.push(`  ${kind.padEnd(18)}   0 vectors  TS ${ts}  | Go: ${k.go}`);
+  }
   console.info(`golden vectors, TypeScript port:\n${rows.join('\n')}`);
 });
