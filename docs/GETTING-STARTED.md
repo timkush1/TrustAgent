@@ -108,7 +108,8 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
 python3 scripts/doctor.py --expect demo
 ```
 
-Every check should say `PASS` (a `SKIP` is fine). A `FAIL` comes with a command that fixes it.
+Every check should say `PASS` (a `SKIP` is fine). A `WARN` such as "still starting" usually
+clears when you run it again a minute later. A `FAIL` comes with a command that fixes it.
 
 ## 4. Stop the demo
 
@@ -124,6 +125,12 @@ Other handy commands: `make demo-logs SERVICE=engine` follows one part's log (le
 
 In real mode TrustAgent checks your own app's answers. One OpenRouter key runs both the fast
 check (Jev) and the deep-audit judge.
+
+> **Where real mode stands.** The OpenRouter fast check and the OpenRouter judge arrive
+> *(from P2)*. Before that, `make up` runs, but the fast check is off: answers pass through
+> unchecked and show as **Not checked** (`X-TrustAgent-Status: skipped:decision_model_off`),
+> and deep audits need an `ANTHROPIC_API_KEY` in `.env` (or the heavy `local-llm` add-on). The
+> demo shows the whole flow today.
 
 1. **Get the key.** Follow the TL;DR at the top of [JEV-ACCESS.md](JEV-ACCESS.md): sign in at
    OpenRouter, add $5 of credit and create a key with a **$2 credit limit**.
@@ -141,9 +148,22 @@ check (Jev) and the deep-audit judge.
    OPENROUTER_API_KEY=sk-or-v1-...
    ```
 
-   `.env` is never committed. Never paste the key into a chat, an issue, a commit or a
+   If your `.env` has no such line (it was made before TrustAgent 2.0), add the line at the
+   end. `.env` is never committed. Never paste the key into a chat, an issue, a commit or a
    screenshot. Every other setting in `.env` is optional; [CONFIGURATION.md](CONFIGURATION.md)
    explains each of them.
+
+   **Let the dashboard read your traffic.** Signing in to the dashboard arrives *(from P4)*.
+   Until then, add this line to `.env` as well, so the dashboard can list traces without a
+   key:
+
+   ```bash
+   TRUTHTABLE_PUBLIC_READ=true
+   ```
+
+   This is safe on your laptop because TrustAgent only listens on 127.0.0.1 (`BIND_ADDR`);
+   remove the line before you ever set `BIND_ADDR=0.0.0.0`. Without a key the dashboard shows
+   outcomes and reasons but hides the prompts and answers.
 4. **Start TrustAgent:**
 
    ```bash
@@ -177,9 +197,10 @@ curl -sS -D - http://localhost:8080/v1/chat/completions \
 
 The response is the normal LLM answer, plus `X-TrustAgent-*` headers that say what TrustAgent
 did; the same request then appears in Traffic. This test borrows the traffic generator's key. For
-your own app, add its own `label=key` entry to `TRUTHTABLE_API_KEYS` in `.env` (for example
-`myapp=` followed by a long random string) and restart with `make up`. The LLM call itself is
-billed by OpenRouter as usual; TrustAgent's own costs are in
+your own app, add its own `label=key` entry to `TRUTHTABLE_API_KEYS` in `.env`, separated by a
+comma (for example `myapp=` followed by a long random string, which
+`python3 -c "import secrets; print(secrets.token_hex(32))"` prints), and restart with
+`make up`. The LLM call itself is billed by OpenRouter as usual; TrustAgent's own costs are in
 [JEV-ACCESS.md](JEV-ACCESS.md#costs-estimate).
 
 **Stop:** `make down` (keeps your data). `make clean-data` deletes all of it.
@@ -212,15 +233,18 @@ time with `docker stats --no-stream`.
   | `local-llm` (Ollama judge) | 2–3 GB, plus a 1.3 GB download | Not recommended; use the OpenRouter judge |
 
 **How much can Docker use?** In WSL, `free -h` shows the memory Linux and Docker share. By default
-WSL 2 takes up to half of the laptop's RAM. To change that limit, create
-`C:\Users\<you>\.wslconfig` with a value that still leaves Windows at least 4 GB:
+WSL 2 takes up to half of the laptop's RAM: about 4 GB on an 8 GB laptop, which is enough for
+the demo and the default stack. If builds get killed (exit code 137) or you turn on the
+`knowledge` add-on, raise the limit a little, keeping at least 3 GB for Windows. On an 8 GB
+laptop, create `C:\Users\<you>\.wslconfig` with:
 
 ```ini
 [wsl2]
-memory=6GB
+memory=5GB
 ```
 
-then run `wsl --shutdown` in PowerShell and start Docker Desktop again.
+then run `wsl --shutdown` in PowerShell and start Docker Desktop again. Close heavy Windows
+apps (extra browser windows, for example) while TrustAgent builds.
 
 ## 7. Troubleshooting
 
