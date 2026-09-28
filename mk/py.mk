@@ -72,14 +72,17 @@ EVAL_LIVE_AGGREFACT_MAX_USD ?= 20
 AGGREFACT_FILE ?=
 HF_TOKEN_FILE ?=
 RUN ?=
+# The recipes run in backend-python/: paths given relative to the repository
+# root (GATE_EVAL_BIN, RUN, AGGREFACT_FILE, HF_TOKEN_FILE) are made absolute.
+GATE_EVAL_PATH = $(abspath $(GATE_EVAL_BIN))
 
 BENCH_RUN = cd backend-python && $(POETRY) run python -m evals.bench run \
-	--seed $(BENCH_SEED) --gate-eval-bin "$(GATE_EVAL_BIN)" --judge-provider $(BENCH_JUDGE_PROVIDER) \
+	--seed $(BENCH_SEED) --gate-eval-bin "$(GATE_EVAL_PATH)" --judge-provider $(BENCH_JUDGE_PROVIDER) \
 	--concurrency $(BENCH_CONCURRENCY) --region $(BENCH_REGION)
 
 define require_gate_eval
-	@test -x "$(GATE_EVAL_BIN)" || { \
-		echo "$(1) needs the Go gate-eval binary at $(GATE_EVAL_BIN):"; \
+	@test -x "$(GATE_EVAL_PATH)" || { \
+		echo "$(1) needs the Go gate-eval binary at $(GATE_EVAL_PATH):"; \
 		echo "  go -C backend-go build -o bin/gate-eval ./cmd/gate-eval   (or pass GATE_EVAL_BIN=...)"; \
 		exit 2; }
 endef
@@ -93,7 +96,7 @@ bench-lite: ## RAGTruth-QA bench-lite: gate + LLM same checks (200), full audit 
 		--max-cost-usd $(BENCH_MAX_COST_USD) --full-audit-n $(BENCH_FULL_AUDIT_N)
 
 bench-publish: ## Publish the latest measured bench run (or RUN=<run.json>) to docs/benchmarks and measured.json; refuses mock output
-	cd backend-python && $(POETRY) run python -m evals.bench publish $(if $(RUN),--run "$(RUN)",--latest)
+	cd backend-python && $(POETRY) run python -m evals.bench publish $(if $(RUN),--run "$(abspath $(RUN))",--latest)
 
 eval-live: ## Full eval: RAGTruth-QA 400 + LLM-AggreFact 600 (AGGREFACT_FILE or HF_TOKEN_FILE); hard caps USD 40 + 20 (owner key)
 	$(call require_gate_eval,eval-live)
@@ -104,7 +107,7 @@ eval-live: ## Full eval: RAGTruth-QA 400 + LLM-AggreFact 600 (AGGREFACT_FILE or 
 		--max-cost-usd $(EVAL_LIVE_RAGTRUTH_MAX_USD) --full-audit-n 0
 	cd backend-python && $(POETRY) run python -m evals.datasets.aggrefact --split test \
 		--n $(EVAL_LIVE_AGGREFACT_N) --seed $(BENCH_SEED) --out evals/datasets/aggrefact/eval-live.jsonl \
-		$(if $(AGGREFACT_FILE),--from-file "$(AGGREFACT_FILE)") $(if $(HF_TOKEN_FILE),--hf-token-file "$(HF_TOKEN_FILE)")
+		$(if $(AGGREFACT_FILE),--from-file "$(abspath $(AGGREFACT_FILE))") $(if $(HF_TOKEN_FILE),--hf-token-file "$(abspath $(HF_TOKEN_FILE))")
 	$(BENCH_RUN) --tier full --dataset evals/datasets/aggrefact/eval-live.jsonl \
 		--max-cost-usd $(EVAL_LIVE_AGGREFACT_MAX_USD) --full-audit-n 0
 
