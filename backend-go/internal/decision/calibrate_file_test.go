@@ -257,7 +257,7 @@ func TestParseCalibrationFileRejectsWhatTheSchemaRejects(t *testing.T) {
 		"unknown state field":   func(m obj) { member(m, "fit_context")["state_fields"] = []any{"answer"} },
 		"state field twice":     func(m obj) { member(m, "fit_context")["state_fields"] = []any{"evidence", "evidence"} },
 		"state fields missing":  func(m obj) { delete(member(m, "fit_context"), "state_fields") },
-		"partition":             func(m obj) { member(m, "fit_context")["partition"] = "by_evidence" },
+		"partition":             func(m obj) { member(m, "fit_context")["partition"] = "per_item" },
 		"question set sha256":   func(m obj) { member(m, "fit_context")["question_set_sha256"] = "" },
 		"negative n_pos":        func(m obj) { e := entry(m); e["n_pos"], e["n_neg"] = -1, e["n"] },
 		"negative label source": func(m obj) { member(m, "label_source")["human"], member(m, "label_source")["public_dataset"] = -1, 241 },
