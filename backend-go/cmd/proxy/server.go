@@ -145,7 +145,7 @@ func newServer(d serverDeps) (*server, error) {
 	s.auth = &apiAuth{keys: gw.auth, publicRead: cfg.PublicRead, demo: cfg.DemoMode}
 	s.status.auth = s.auth
 	if d.pg != nil {
-		s.stats = d.pg
+		s.stats, s.status.figures = d.pg, d.pg
 	}
 
 	traces := &tracesAPI{now: time.Now, log: log}

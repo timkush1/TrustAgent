@@ -650,3 +650,26 @@ func (s *PostgresStore) UniformToday(ctx context.Context, now time.Time, limit i
 	at = at.UTC()
 	return n, &at, nil
 }
+
+// StatusFigures are the /api/status numbers read from stored rows: the decision model's latency
+// over the last 24 hours and today's deep-audit (LLM) spend (UTC day).
+type StatusFigures struct {
+	DecisionLatency  Percentiles
+	LLMSpentTodayUSD float64
+}
+
+// StatusFigures reads the status numbers at now.
+func (s *PostgresStore) StatusFigures(ctx context.Context, now time.Time) (StatusFigures, error) {
+	var f StatusFigures
+	now = now.UTC()
+	if err := s.pool.QueryRow(ctx, `SELECT `+pctSQL("decision_ms", "")+` FROM gate_decisions
+		WHERE created_at >= $1 AND decision_ms IS NOT NULL`, now.Add(-24*time.Hour)).Scan(
+		&f.DecisionLatency.P50, &f.DecisionLatency.P95); err != nil {
+		return f, fmt.Errorf("decision latency: %w", err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(sum(cost_usd), 0)::FLOAT8 FROM cost_events
+		WHERE occurred_at >= $1 AND kind <> 'decision'`, now.Truncate(24*time.Hour)).Scan(&f.LLMSpentTodayUSD); err != nil {
+		return f, fmt.Errorf("llm spend today: %w", err)
+	}
+	return f, nil
+}

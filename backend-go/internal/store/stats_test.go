@@ -169,6 +169,14 @@ func TestEvidenceCoverageAndRoi(t *testing.T) {
 		t.Errorf("gate latency %+v", r.GateLatency)
 	}
 
+	sf, err := s.StatusFigures(ctx, now)
+	if err != nil || sf.DecisionLatency.P50 == nil || *sf.DecisionLatency.P50 != 30 {
+		t.Errorf("status figures %+v %v", sf, err)
+	}
+	if now.Add(-9*time.Minute).Truncate(24*time.Hour) == now.Truncate(24*time.Hour) && math.Abs(sf.LLMSpentTodayUSD-0.01) > 1e-9 {
+		t.Errorf("llm spend today %v", sf.LLMSpentTodayUSD)
+	}
+
 	if now.Add(-10*time.Minute).Truncate(24*time.Hour) != now.Truncate(24*time.Hour) {
 		return // the uniform trace was drawn yesterday (UTC)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
 )
 
@@ -32,6 +33,11 @@ type dbStatus interface {
 	Migration(ctx context.Context) (string, error)
 }
 
+// statusFigures reads the status numbers kept in the database (store.PostgresStore).
+type statusFigures interface {
+	StatusFigures(ctx context.Context, now time.Time) (store.StatusFigures, error)
+}
+
 // engineHealth is the cached engine health (grpc.Pinger).
 type engineHealth interface {
 	Health() grpc.EngineHealth
@@ -48,7 +54,9 @@ type statusReporter struct {
 	jevClient jev.Client
 	// policies is the policy engine (the version in effect and the file's state).
 	policies *policy.Engine
-	auth     *apiAuth
+	// figures reads the decision latency and today's LLM spend; nil without a database.
+	figures statusFigures
+	auth    *apiAuth
 	// redisState is the rate limiter's backend state at startup (up, down or disabled).
 	redisState string
 	now        func() time.Time
@@ -285,6 +293,15 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 	if s.db == nil {
 		st.Credentials.Store = "no_database"
 	}
+	if s.figures != nil {
+		// Latency percentiles and today's judge spend come from the stored rows (the decision
+		// model's own counters restart with the proxy).
+		if f, err := s.figures.StatusFigures(ctx, s.now()); err == nil {
+			st.DecisionModel.P50Ms, st.DecisionModel.P95Ms = f.DecisionLatency.P50, f.DecisionLatency.P95
+			st.Budgets.LLMSpentTodayUSD = f.LLMSpentTodayUSD
+			st.Budgets.LLMExhausted = cfg.SpendCapLLMUSDDay > 0 && f.LLMSpentTodayUSD >= cfg.SpendCapLLMUSDDay
+		}
+	}
 	if r := eng.Response; r != nil {
 		st.Engine.Version = r.GetVersion()
 		if v := r.GetRuntimeConfigVersion(); v != 0 {
@@ -462,8 +479,8 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 }
 
 // budgets is SystemStatus.budgets: the decision cap and today's spend from the decision-model
-// client's budget (in memory until the persisted ledger, P4); the LLM cap is enforced by the
-// engine, so its spend reads 0 here until the ledger lands.
+// client's budget (in memory until the persisted ledger, P4). The LLM cap is enforced by the
+// engine; its spend today is read from cost_events when there is a database (system).
 func (s *statusReporter) budgets() statusBudgets {
 	b := statusBudgets{DecisionUSDDay: s.cfg.SpendCapDecisionUSDDay, LLMUSDDay: s.cfg.SpendCapLLMUSDDay}
 	if sp := s.jevStatus().Spend; sp != nil {
