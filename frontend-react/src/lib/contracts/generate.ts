@@ -5,7 +5,8 @@
  * The generator is pure: it takes a reader for the schema files and returns the file text, so the
  * same code runs from the command line (scripts/gen-types.ts, `make gen-types`) and from the drift
  * test (types.gen.test.ts). Nothing here touches the file system; `$ref`s between schemas are
- * resolved through the reader.
+ * resolved through the reader. It is build tooling (json-schema-to-typescript needs Node): app code
+ * imports types.gen.ts, never this module.
  *
  * Naming: schema titles become type names (EvaluatorSpec, PolicyDoc, RouteSettings, ...). The shared
  * definitions of common.v1 carry no titles, so each is named after its `$defs` key (PolicyMode,
