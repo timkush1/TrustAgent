@@ -73,8 +73,7 @@ export function evidenceNeedLabel(requires: string | undefined): string {
 
 /** The P4 actions this page shows but cannot run yet (no dead buttons: they say why). */
 export const P4_REASONS = {
-  labelQueue: { text: 'The label queue arrives in P4.' },
-  calibrate: { text: 'Calibration from labels arrives in P4.' },
+  labelling: { text: 'The label queue and calibration from labels arrive in P4.' },
   adopt: { text: 'Adopting a calibration arrives in P4 (it runs Preview impact first).' },
   studio: { text: 'Studio arrives in P4.' },
 } satisfies Record<string, CustomReason>;

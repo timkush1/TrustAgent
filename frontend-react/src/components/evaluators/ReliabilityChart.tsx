@@ -16,8 +16,8 @@ import { copy } from '@/domain/presentation';
 import { formatPercent } from '@/domain/rates';
 import type { ReliabilityResponse } from '@/types/api';
 
-const W = 360;
-const H = 240;
+const W = 480;
+const H = 260;
 const M = { top: 12, right: 12, bottom: 32, left: 40 };
 const PW = W - M.left - M.right;
 const PH = H - M.top - M.bottom;
@@ -57,6 +57,10 @@ export function ReliabilityChart({ data, className }: { data: ReliabilityRespons
 
   return (
     <ChartFrame
+      legend={[
+        { key: 'bars', label: 'Share labelled a problem', color: ink },
+        { key: 'diagonal', label: 'Where a calibrated check would be', color: 'var(--fg-subtle)', mark: 'line' },
+      ]}
       title="Reliability"
       description={`${copy.evaluators.reliability_caption.charAt(0).toUpperCase()}${copy.evaluators.reliability_caption.slice(1)}`}
       table={table}
@@ -90,7 +94,8 @@ export function ReliabilityChart({ data, className }: { data: ReliabilityRespons
         onBlur={() => setActive(null)}
         className="relative rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fg"
       >
-        <svg aria-hidden="true" viewBox={`0 0 ${W} ${H}`} className="w-full max-w-xl tabular">
+        {/* Drawn at its own size (never scaled up), so 11px ticks stay 11px. */}
+        <svg aria-hidden="true" viewBox={`0 0 ${W} ${H}`} className="h-auto w-full max-w-[30rem] tabular">
           {TICKS.map((t) => (
             <g key={t}>
               <line x1={x(0)} x2={x(1)} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeWidth={1} />
@@ -108,8 +113,9 @@ export function ReliabilityChart({ data, className }: { data: ReliabilityRespons
           <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(1)} stroke="var(--fg-subtle)" strokeWidth={1} strokeDasharray="4 4" />
           {data.bins.map((b, i) => {
             if (b.n === 0) return null;
-            const bx = x(b.lo) + 2;
-            const bw = Math.max(2, x(b.hi) - x(b.lo) - 4);
+            // Bars stay at most 24px thick (DESIGN.md), centred on their bin.
+            const bw = Math.max(2, Math.min(24, x(b.hi) - x(b.lo) - 4));
+            const bx = (x(b.lo) + x(b.hi)) / 2 - bw / 2;
             const top = y(b.frac_pos);
             const h = Math.max(1, y(0) - top);
             return (

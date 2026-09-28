@@ -131,7 +131,8 @@ export function PlaygroundPage() {
           <CardHeader level={2} title="Request" description="Kept here between runs." />
           <CardContent className="space-y-5">
             <PlaygroundFormView routes={routes} maxChars={maxChars} busy={run.running} />
-            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            {/* Stays in view at the bottom of a long form. */}
+            <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-2 rounded-b-lg border-t border-border bg-surface px-4 py-3">
               {run.running ? (
                 <Button onClick={() => abort.current?.abort()}>
                   <Square aria-hidden="true" />

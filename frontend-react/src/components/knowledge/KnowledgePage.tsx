@@ -184,7 +184,7 @@ export function KnowledgePage() {
           ))}
         </dl>
         <UploadCard writeReason={writeReason} maxBytes={status?.limits.max_upload_bytes ?? null} simulated={demo} />
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid items-start gap-4 xl:grid-cols-2">
           <Claims />
           <Conflicts />
         </div>

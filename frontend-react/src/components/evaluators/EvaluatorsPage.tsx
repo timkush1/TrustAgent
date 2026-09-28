@@ -40,8 +40,12 @@ export function EvaluatorsPage() {
   const details = useQueries({ queries: items.map((e) => ({ ...evaluatorQuery(ds, e.id), retry: false })) });
 
   const categories = useMemo(() => [...new Set(items.map((e) => e.category))].sort(), [items]);
+  // Checks that run on a route first (active before watching), then the rest, by name.
+  const rank = (m: (typeof items)[number]) =>
+    m.attached_routes.some((r) => r.stage === 'active') ? 0 : m.attached_routes.length > 0 ? 1 : 2;
   const visible = items
     .map((meta, i) => ({ meta, detail: details[i] }))
+    .sort((a, b) => rank(a.meta) - rank(b.meta) || a.meta.name.localeCompare(b.meta.name))
     .filter(({ meta }) => {
       const q = query.trim().toLowerCase();
       if (q && !meta.name.toLowerCase().includes(q) && !meta.id.includes(q)) return false;

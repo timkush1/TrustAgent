@@ -73,22 +73,26 @@ function Reliability({ detail }: { detail: EvaluatorDetail }) {
       </EmptyState>
     );
   } else {
-    const sources = Object.entries(q.data.n_by_source)
-      .filter(([, n]) => n > 0)
-      .map(([s, n]) => `${formatCount(n)} ${s === 'human' ? 'human labels' : s === 'uniform_audit' ? 'deep-audit labels' : s}`)
-      .join(' · ');
+    const n = q.data.n_by_source;
     body = (
-      <div className="space-y-2">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
         <ReliabilityChart data={q.data} />
-        <p className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-          <span>{sources}</span>
-          {q.data.ece !== null ? <span className="tabular">· Expected calibration error {formatRisk(q.data.ece)}</span> : null}
+        <div className="space-y-3">
+          <KeyValueList
+            items={[
+              { label: 'Labelled answers', value: formatCount(q.data.n), numeric: true },
+              { label: 'From your labels', value: formatCount(n.human ?? 0), numeric: true },
+              { label: 'From the deep-audit sample', value: formatCount(n.uniform_audit ?? 0), numeric: true, hint: 'judge labels, a weaker signal' },
+              { label: 'Calibration error', value: q.data.ece !== null ? formatRisk(q.data.ece) : null, numeric: true, hint: 'ECE, lower is better' },
+              { label: 'Fast-check version', value: q.data.snapshot, mono: true },
+            ]}
+          />
           <EvidenceBadge
             label={demo ? 'simulated' : 'measured'}
-            basis={`Labels on your traffic, fast-check version ${q.data.snapshot ?? 'unknown'}; agreement with labels, not ground truth.`}
+            basis={`Labels on your own traffic for fast-check version ${q.data.snapshot ?? 'unknown'}: agreement with labels, not ground truth.`}
             subject="Reliability"
           />
-        </p>
+        </div>
       </div>
     );
   }

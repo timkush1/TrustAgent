@@ -26,7 +26,10 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(within(g).getByText(/Needs 157 more labels, 18 more false alarms/)).toBeInTheDocument();
     // P4 actions say why they are not here yet.
     expect(within(g).getByRole('button', { name: 'Label queue' })).toHaveAttribute('aria-disabled', 'true');
-    expect(within(g).getByText('The label queue arrives in P4.')).toBeInTheDocument();
+    expect(within(g).getByText('The label queue and calibration from labels arrive in P4.')).toBeInTheDocument();
+    // Checks that run somewhere come first.
+    const names = screen.getAllByRole('article').map((a) => a.getAttribute('aria-labelledby') && a.querySelector('h3')?.textContent);
+    expect(names.slice(0, 4)).toEqual(['Contradiction', 'Groundedness', 'Unapproved commitments', 'Off-brand tone']);
     const tone = await card('Off-brand tone');
     expect(within(tone).getByText(/Watching/)).toBeInTheDocument();
   });
@@ -103,7 +106,9 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     const { control } = renderPage('/app/evaluators/groundedness');
     expect(await screen.findByRole('heading', { name: 'Reliability' })).toBeInTheDocument();
     expect(screen.getByText('Agreement with labels, not ground truth')).toBeInTheDocument();
-    expect(screen.getByText(/31 human labels · 12 deep-audit labels/)).toBeInTheDocument();
+    expect(screen.getByText('From your labels').nextElementSibling?.textContent).toContain('31');
+    expect(screen.getByText('From the deep-audit sample').nextElementSibling?.textContent).toContain('12');
+    expect(screen.getByText('Calibration error').nextElementSibling?.textContent).toContain('0.06');
     const call = control.callsTo('/api/gate/reliability')[0].query;
     expect([call.get('evaluator'), call.get('window'), call.get('labels')]).toEqual(['groundedness@1', '7d', 'human']);
     const chart = screen.getByRole('application', { name: /Reliability of groundedness@1/ });

@@ -190,7 +190,6 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
 export function RouteCard({ route, draftMode, names, progress, writeReason, onModeChange, onFix }: RouteCardProps) {
   const headingId = useId();
   const mode = modeView(route.mode);
-  const ModeIcon = mode.icon;
   const acting = actingAsText(route.mode, route.effective_mode);
   const shownMode = draftMode ?? route.mode;
   const enforcing = shownMode === 'block' || shownMode === 'fallback' || route.block_readiness.length > 0;
@@ -200,11 +199,8 @@ export function RouteCard({ route, draftMode, names, progress, writeReason, onMo
       <article aria-labelledby={headingId} className="flex flex-1 flex-col gap-4 p-4">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
-            <h3 id={headingId} className="flex items-center gap-2 text-base font-semibold text-fg">
-              <span className={cn(!isDefaultRoute(route.name) && 'font-mono text-sm')}>{routeTitle(route.name)}</span>
-              <Badge icon={ModeIcon} emphasis="quiet" size="sm">
-                {mode.label}
-              </Badge>
+            <h3 id={headingId} className={cn('text-base font-semibold text-fg', !isDefaultRoute(route.name) && 'font-mono text-sm')}>
+              {routeTitle(route.name)}
             </h3>
             <ul className="space-y-0.5 text-xs text-fg-muted">
               {matchSummary(route.name, route.match).map((m) => (
@@ -267,7 +263,9 @@ export function RouteCard({ route, draftMode, names, progress, writeReason, onMo
           <section aria-label={`Block readiness for ${routeTitle(route.name)}`} className="space-y-2">
             <h4 className="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
               <ListChecks aria-hidden="true" className="size-3.5" />
-              Ready to <Term id="block">block</Term>?
+              <span>
+                Ready to <Term id="block">block</Term>?
+              </span>
             </h4>
             <Readiness items={route.block_readiness} names={names} />
           </section>

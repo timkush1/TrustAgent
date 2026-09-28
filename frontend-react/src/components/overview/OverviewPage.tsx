@@ -104,7 +104,7 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
               />
             </CardContent>
           </Card>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <WhatWasCaught stats={stats} />
             <EvidenceCoverageCard stats={stats} timeWindow={timeWindow} />
           </div>

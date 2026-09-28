@@ -156,7 +156,7 @@ export function PlaygroundFormView({ routes, maxChars, busy }: PlaygroundFormPro
             <h3 className="text-sm font-semibold text-fg">
               <Term id="evidence">Documents</Term> to check against
             </h3>
-            <p className="text-xs text-fg-muted">Sent as trustagent.context. Documents in the system prompt count too.</p>
+            <p className="text-xs text-fg-muted">Sent as trustagent.context, next to any documents in the system prompt.</p>
           </div>
           <Button size="sm" variant="ghost" onClick={addDoc}>
             <FilePlus2 aria-hidden="true" />
@@ -164,7 +164,10 @@ export function PlaygroundFormView({ routes, maxChars, busy }: PlaygroundFormPro
           </Button>
         </div>
         {form.evidence.length === 0 ? (
-          <p className="text-sm text-fg-muted">None added. Without documents, groundedness is marked not checked instead of guessed.</p>
+          <p className="text-sm text-fg-muted">
+            None added here. Documents in the system prompt still count; with none at all, groundedness is marked not checked
+            instead of guessed.
+          </p>
         ) : (
           <ol className="space-y-3">
             {form.evidence.map((d, i) => (

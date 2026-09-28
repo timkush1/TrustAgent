@@ -2,9 +2,10 @@
  * Calibration progress for one evaluator (SPEC §3.3 Evaluators): "Labels 43/200 (31 correct,
  * 12 false alarms)" with a meter per requirement (200 labels, 30 of each kind), the calibration
  * state, what is still missing, and the Label queue / Calibrate now actions, which arrive in P4
- * and say so.
+ * and say so once for both.
  */
-import { DisabledAction } from '@/components/common/DisabledReason';
+import { useId } from 'react';
+import { DisabledReason } from '@/components/common/DisabledReason';
 import { Term } from '@/components/common/Term';
 import { Button } from '@/components/ui/button';
 import { formatCount } from '@/domain/format';
@@ -47,6 +48,7 @@ export function CalibrationMeter({
   className?: string;
 }) {
   const parts = progressParts(progress);
+  const reasonId = useId();
   return (
     <div className={cn('space-y-2', className)}>
       <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
@@ -62,21 +64,15 @@ export function CalibrationMeter({
       </div>
       {parts.missing ? <p className="text-xs text-fg-muted">{parts.missing}</p> : <p className="text-xs text-fg-muted">Enough labels to calibrate for blocking.</p>}
       {showActions ? (
-        <div className="flex flex-wrap items-start gap-2">
-          <DisabledAction reason={P4_REASONS.labelQueue} layout="stacked">
-            {(p) => (
-              <Button size="sm" {...p}>
-                {copy.evaluators.label_queue}
-              </Button>
-            )}
-          </DisabledAction>
-          <DisabledAction reason={P4_REASONS.calibrate} layout="stacked">
-            {(p) => (
-              <Button size="sm" {...p}>
-                {copy.evaluators.calibrate_now}
-              </Button>
-            )}
-          </DisabledAction>
+        // Both actions arrive together in P4: one reason, referenced by both buttons.
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" disabled aria-describedby={reasonId}>
+            {copy.evaluators.label_queue}
+          </Button>
+          <Button size="sm" disabled aria-describedby={reasonId}>
+            {copy.evaluators.calibrate_now}
+          </Button>
+          <DisabledReason id={reasonId} reason={P4_REASONS.labelling} />
         </div>
       ) : null}
     </div>
