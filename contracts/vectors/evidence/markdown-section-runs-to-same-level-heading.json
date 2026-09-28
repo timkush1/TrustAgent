@@ -1,0 +1,40 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "markdown-section-runs-to-same-level-heading",
+  "status": "frozen",
+  "description": "The \"## Context\" section runs to the next heading of the same or a higher level: the deeper \"### Exclusions\" stays inside, \"## Question style\" ends it. The block text excludes the heading line. The section, heading included, is removed from system_instructions; the text before it and the \"## Question style\" section stay.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer briefly.\n\n## Context\nWarranty covers parts for 2 years.\n### Exclusions\nWater damage is not covered.\n## Question style\nBe brief."
+        },
+        {"role": "user", "content": "Is water damage covered?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "sys1",
+        "source": "request_system",
+        "text": "Warranty covers parts for 2 years.\n### Exclusions\nWater damage is not covered."
+      }
+    ],
+    "system_instructions": "Answer briefly.\n\n## Question style\nBe brief.",
+    "user_request": "Is water damage covered?",
+    "pre_dedup_items": 1
+  },
+  "tolerance": 1e-9
+}

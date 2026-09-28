@@ -141,6 +141,11 @@ export function checkRows(decision: GateDecisionView | null): CheckRow[] {
 
 // -------------------------------------------------------------------------------------- claims
 
+/** The id of a claim's row in the Claims section; the answer's claim marks link to it. */
+export function claimRowId(prefix: string, index: number): string {
+  return `${prefix}claim-${index}`;
+}
+
 /** Claims in the order the audit found them. */
 export function orderedClaims(audit: AuditDetail | null): ClaimView[] {
   return audit ? [...audit.claims].sort((a, b) => a.index - b.index) : [];

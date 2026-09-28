@@ -15,6 +15,8 @@
 # Contracts: the Go module embeds the JSON/YAML files; the npm validator's
 # dependencies are not needed.
 contracts/node_modules/
+# Build tooling (the api.v1 schema generator and its node_modules) is not an image input.
+contracts/tools/
 
 # Stubs are generated inside the image from proto/ (the proto stage); a stale
 # local copy must not shadow them.

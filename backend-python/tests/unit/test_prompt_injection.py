@@ -169,7 +169,7 @@ async def test_decomposer_caps_claim_flooding():
 
     claims = await decompose_claims("text", provider)
 
-    assert len(claims) <= 20
+    assert len(claims) <= 25  # TRUTHTABLE_MAX_CLAIMS
 
 
 # ---------------------------------------------------------------------------

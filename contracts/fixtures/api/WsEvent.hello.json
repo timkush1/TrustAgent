@@ -1,0 +1,24 @@
+{
+  "v": 2,
+  "seq": 812,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "hello",
+  "ts": "2026-09-28T10:12:30.004Z",
+  "data": {
+    "protocol": 2,
+    "server_version": "1.0.0",
+    "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+    "last_seq": 812,
+    "replayed_from": null,
+    "demo": false,
+    "readonly": false,
+    "status": {
+      "version": "1.0.0",
+      "demo": false,
+      "readonly": false,
+      "engine": "up",
+      "decision_model": "ready",
+      "judge": "up"
+    }
+  }
+}

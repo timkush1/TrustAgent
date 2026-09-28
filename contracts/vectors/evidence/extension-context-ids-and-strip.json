@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "extension-context-ids-and-strip",
-  "status": "draft",
+  "status": "frozen",
   "description": "trustagent.context items become extension items: a valid id is kept, an invalid one (spaces) falls back to ext2. The trustagent extension is removed from the body forwarded upstream; every other field is unchanged.",
   "input": {
     "api_format": "openai_chat",

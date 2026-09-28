@@ -41,23 +41,41 @@ that. Tailwind's palette is removed (`--color-*: initial`), so only these names 
 | `border` / `border-strong` | 0.91 / 0.80 | 0.27 / 0.36 | Hairlines (1px) |
 
 **Verdict hues.** Contrast is given on the surface, then on the verdict's own 10% (light) or 16%
-(dark) tint. Every value is at least 4.5:1.
+(dark) tint over the surface, composited in sRGB as browsers do (the contrast test's method).
+Every value is at least 4.5:1 except `v-not-checked` on its dark tint (4.4:1), so grey verdict
+text is never drawn on a tint: the neutral tint badge uses `fg-muted`.
 
 | Verdict | Light | Dark | Contrast (light / dark) |
 |---|---|---|---|
-| `v-supported` | oklch(0.50 0.10 165) | oklch(0.80 0.13 165) | 5.7, 4.9 / 10.4, 8.0 |
-| `v-contradicted` | oklch(0.50 0.17 27) | oklch(0.72 0.16 25) | 6.6, 5.6 / 7.0, 5.6 |
-| `v-unsupported` | oklch(0.50 0.11 62) | oklch(0.82 0.14 80) | 6.2, 5.4 / 10.4, 8.0 |
-| `v-partial` | oklch(0.48 0.12 252) | oklch(0.76 0.11 250) | 6.6, 5.6 / 8.7, 6.8 |
-| `v-unknown` | oklch(0.50 0.012 265) | oklch(0.72 0.01 265) | 6.0, 5.2 / 7.4, 6.0 |
-| `v-not-checked` | oklch(0.52 0.005 265) | oklch(0.64 0.005 265) | 5.5, 4.8 / 5.5, 4.6 |
+| `v-supported` | oklch(0.50 0.10 165) | oklch(0.80 0.13 165) | 5.7, 4.9 / 10.4, 7.5 |
+| `v-contradicted` | oklch(0.50 0.17 27) | oklch(0.72 0.16 25) | 6.6, 5.6 / 7.0, 5.5 |
+| `v-unsupported` | oklch(0.50 0.11 62) | oklch(0.82 0.14 80) | 6.2, 5.4 / 10.4, 7.5 |
+| `v-partial` | oklch(0.48 0.12 252) | oklch(0.76 0.11 250) | 6.6, 5.6 / 8.7, 6.5 |
+| `v-unknown` | oklch(0.50 0.012 265) | oklch(0.72 0.01 265) | 6.0, 5.2 / 7.4, 5.7 |
+| `v-not-checked` | oklch(0.52 0.005 265) | oklch(0.64 0.005 265) | 5.5, 4.8 / 5.5, 4.4 |
 
 **Outcome tones** (the `tone` of `contracts/ui/outcomes.v1.json`) reuse the verdict hues:
 `success` = supported, `danger` = contradicted, `warning` = unsupported, `info` = partial,
 `neutral` = not checked.
 
+**Derived colors** (no new tokens, computed from the ones above):
+
+- **Control boundary**: `fg-subtle` at 80% (`border-fg-subtle/80`, `CONTROL_BORDER` in
+  `src/components/ui/control-styles.ts`), about 3.2:1 on the surface in both themes. Inputs,
+  selects, checkboxes, radios and switches use it, because a control's edge is how it is
+  recognised (WCAG 1.4.11). The `border-strong` hairline (about 1.8:1) is for decoration only.
+- **Chart light shade**: a tone mixed 70% toward the surface (`palette.ts`), at least 3:1 on the
+  surface in both themes. It separates two series of the same tone.
+- **Neutral tint badge**: grey text on a grey tint misses 4.5:1 in the dark theme, so a neutral
+  `tint` badge uses `fg-muted` text.
+
+`src/components/charts/tokenContrast.test.ts` reads these tokens from `index.css` and checks every
+pair the kit uses, in both themes: text 4.5:1, control edges, focus ring and chart marks 3:1.
+Colors at partial alpha are composited in sRGB, as browsers do, so a tint may measure slightly
+lower than an OKLab mix would suggest.
+
 To add a token: define it once with `light-dark()` in `:root`, expose it in `@theme inline`,
-check both sides for 4.5:1 on `surface`, and add a row here.
+check both sides for 4.5:1 on `surface`, add a row here, and add its pairs to the contrast test.
 
 ## 3. Verdict encoding (never color alone)
 
@@ -77,8 +95,9 @@ underline, which a unit test enforces.
 
 ## 4. Outcome encoding
 
-Every trace has one outcome (SPEC §2.9, `outcomeOf()`). It is shown as `<OutcomePill>`, which
-combines icon, label, tone and shape:
+Every trace has one outcome (SPEC §2.9, `outcomeOf()`). It is shown as `<OutcomePill>` (drawn by
+the shared `<Badge>`, so any other pill uses the same shapes), which combines icon, label, tone
+and shape:
 
 | Outcome | Shape | Icon |
 |---|---|---|
@@ -134,11 +153,12 @@ Every page defines these states:
 | Empty | `<EmptyState>`: what is missing, then the next step as a real link or a command |
 | Loading | `<QueryState>` / `useDelayedLoading`: nothing for 200 ms, then a skeleton shown for ≥ 400 ms. The router's pending UI uses the same timing |
 | Error | `<ErrorState>`: the server's own message, its code, and **Retry** |
-| Degraded | The Health pill checklist, plus the banner when users are affected |
+| Degraded | The Health pill checklist, plus the banner when users are affected; in place, `<DegradedState>` says what is missing, what still works and the fix |
 | Demo | The top-bar badge and demo banner; writes explain themselves with `<DisabledReason reason="demo">` |
 | Read-only | The badge and banner; writes use `<DisabledReason reason="readonly">` |
 
-**No dead buttons.** A disabled action always says why, next to it, and links to the fix. A page
+**No dead buttons.** A disabled action always says why, next to it, and links to the fix
+(`<DisabledAction reason>` wires the reason to the control). A page
 that is not built yet renders `<PhasePlaceholder>`, which states what the page will show and the
 phase it arrives in, and contains only real links.
 
@@ -156,7 +176,124 @@ phase it arrives in, and contains only real links.
   for anything a reader must not miss, such as glossary infotips. A Tooltip is only a visual
   label that repeats an `aria-label`.
 
-## 11. Accessibility
+## 11. Components
+
+Import each part from its own file (`@/components/ui/select`, not a barrel), so a page only
+ships what it uses. `ui/` holds Base UI parts styled with the tokens and knows nothing about the
+data layer; `common/` composes them with the page contract and `src/domain`; `charts/` holds the
+data displays. There is no gallery route: `src/components/ui/kit.a11y.test.tsx` renders the whole
+kit on one page and runs axe over it, closed and with each popup open.
+
+### Actions (`ui/`)
+
+| Component | Use it for | Rules |
+|---|---|---|
+| `Button` (`button.tsx`, classes in `button-variants.ts`) | Any action | `secondary` by default; `primary` (inverted fg) for the page's main action, one per view; `ghost` in toolbars; `danger` only on the confirm step of `ConfirmDialog`. Disabled buttons stay focusable. `pending` shows a spinner and ignores presses. Style a `<Link>` as a button with `buttonVariants()` |
+| `IconButton` | Icon-only actions | `aria-label` is required and is repeated as the tooltip. Never put new information in the tooltip |
+| `Menu`, `MenuItem`, `MenuCheckboxItem`, `MenuRadioItem`, `MenuLinkItem` | A few secondary actions behind one button | A disabled item carries `disabledReason`, shown under its label. Destructive items open a `ConfirmDialog` |
+| `Kbd` | Keyboard hints ("C", `keys={['Shift','?']}`) | A hint only: every shortcut also has a visible control |
+
+**The danger-confirm pattern** (`common/ConfirmDialog.tsx`). A destructive or risky action starts
+from an ordinary secondary button (with an icon) and happens only in an alert dialog: the title
+asks the question, the body says what will happen, Cancel has focus first, a click outside does
+not close it, and the confirm button names the action ("Remove key") in the danger fill. Actions
+that are hard to undo or that change what users receive ("Allow uncalibrated blocking") add
+`confirmationText`: the viewer types the route or key name, and the instruction describes the
+disabled button until it matches. A failing `onConfirm` keeps the dialog open with the server's
+message and code.
+
+### Form controls (`ui/`)
+
+| Component | Use it for | Rules |
+|---|---|---|
+| `Field` | Label, description and error around any control | Fields are required unless marked `optional`. `error` takes the server's message and marks the control invalid. `hideLabel` keeps the label for screen readers only |
+| `Input`, `Textarea` | Text | `Textarea mono` for JSON, YAML and code (spell check off) |
+| `Select` | One value from a short, fixed list | Inside a `Field`, or with `aria-label`. Options may have a second line |
+| `Combobox` | One value from a long or searchable list | Says so when nothing matches (`emptyText`) |
+| `Checkbox` | A choice confirmed by a form submit | The label wraps the box; clicking the words toggles it |
+| `Switch` | A setting that applies at once | Same layout as Checkbox |
+| `RadioGroup` | One of a few options that each need a sentence | Group label and per-option descriptions are announced |
+| `SegmentedControl` | Two to five short, equal options (time window, Chart / Table) | A radio group: one option is always selected, arrow keys move it |
+| `Slider` | Thresholds (`warn_at`, `critical_at`) | One or two thumbs (`thumbLabels` names each), the value written beside the label, `marks` for reference points ("Now", "Suggested"); a thumb on a mark says the mark's name. Save in `onValueCommitted` |
+| `Tabs`, `TabsList`, `Tab`, `TabPanel` | Views of the same subject | Manual activation: arrows move, Enter opens |
+
+### Overlays (`ui/`)
+
+| Component | Use it for | Rules |
+|---|---|---|
+| `Tooltip` | A visual repeat of an `aria-label` | Never the only place for information |
+| `Popover` | Content a reader must not miss (glossary infotips, the Health checklist) | Opens on click and focus; `<Term>` opens it on hover too |
+| `Dialog`, `DialogContent`, `DialogFooter` | A modal task (review a diff, edit a key) | Title names it, description describes it; Escape and the corner button close it; focus returns to the trigger |
+| `Sheet`, `SheetContent` | A side panel that keeps the page in view (label queue, versions) | A dialog at the right edge; header and footer stay put, the body scrolls |
+| `Toaster` (`toast.tsx`) + `notify` (`common/notify.ts`) | Confirming what the viewer just did; background failures | Mount `<Toaster>` once at the root. `notify.error(title, error)` shows the server's message and code and stays until dismissed. A toast is never the only copy of something the viewer must act on |
+
+### Display (`ui/`)
+
+| Component | Use it for | Rules |
+|---|---|---|
+| `Badge` | Any pill: tone + emphasis (`solid`, `tint`, `outline`, `quiet`) | Always with an icon or words that carry the same meaning. `OutcomePill` is a Badge |
+| `Chip` | A value the viewer chose (a filter, "Used for" entries) | Achromatic; `onRemove` needs `removeLabel` ("Remove filter: Blocked") |
+| `OutcomePill`, `VerdictBadge`, `AuditState` (`outcome/`) | Server outcomes, verdicts and audit states | Words, icons and tones come from `presentation.ts` |
+| `Spinner` | Work in progress | With `label` it is a polite status; without one the text beside it must say what is happening |
+| `Skeleton` | Loading placeholders | Decorative; pair with a status text (`LoadingState` does) |
+| `Card`, `CardHeader`, `CardContent`, `CardFooter` | A surface with a hairline | Card titles are h3 under a section |
+| `Section` | A titled region of a page | Its heading is an h2; `collapsible` turns it into a disclosure whose heading stays navigable |
+
+### Page-level composites (`common/`)
+
+| Component | Use it for | Rules |
+|---|---|---|
+| `PageHeader` | The top of a page's content | Never an h1 (the top bar has it). A description, page-wide actions, and one row of tabs or filters. A detail page may add an h2 `title` |
+| `EmptyState`, `ErrorState`, `LoadingState`, `QueryState` (`StateViews.tsx`, `QueryState.tsx`) | The page contract | See section 9 |
+| `DegradedState` | A part that works with less than usual | What is missing, why, what still works, the fix. In place of the part, not a second banner |
+| `DisabledReason`, `DisabledAction` | No dead buttons | Contract reasons link their fix (Connections, Access, All configuration, or the demo command); page-specific reasons pass `{ text, fix }` |
+| `CopyButton` | Copying ids, keys, commands | Clipboard API with an `execCommand` fallback; announces "Copied", or how to copy by hand |
+| `CodeBlock` | Commands, snippets, JSON | Mono, copy button, a focusable scroll region named by its label. Mask secrets before passing them in (`copyValue` may differ from what is shown) |
+| `KeyValueList` | Ids, timings, costs | Missing values are an em dash; `mono` for ids, `numeric` for numbers, `copy` for a copy button |
+| `DataTable` | Long lists | Virtualized rows (`@tanstack/react-virtual`) in a scroll viewport with a sticky header that never hides the focused row; one tab stop, arrows/Page/Home/End move the row focus, Enter or a click opens the row. Loading, error and empty take the body's place; a later page's error shows under the rows. `onEndReached` asks once per list end. Cells hold text and pills, not their own buttons |
+| `Pagination` | Server lists with a total | The range is written and announced; the end buttons say why they are disabled |
+
+## 12. Charts
+
+Recharts is the only charting library (SPEC §3.3), and it is used only by the two wrappers below;
+the small displays are plain HTML or SVG. Chart code is imported by the pages that draw charts, so
+it stays out of every other bundle.
+
+**Rules** (all enforced by the components):
+
+- **Color means a verdict or an outcome.** Series colors come only from `charts/palette.ts`:
+  the outcome tones (tone from `ui/outcomes.v1.json`, shade from the pill's emphasis), the verdict
+  tokens, or the neutral inks (`fg-muted`, `fg-subtle`) for measures with no verdict (latency,
+  cost, counts). Two outcomes of one tone differ by shade (`solid` / `light`), and a color always
+  follows its outcome, whatever order or filter.
+- **Text wears text tokens**: labels, values, axes and legends are `fg`, `fg-muted`; a colored
+  key beside the words carries the identity.
+- **One axis**, recessive: solid 1px hairlines in `border`, tick text 11px in `fg-muted`,
+  tabular figures.
+- **Thin marks**: bars at most 24px thick with a 4px rounded data end and a square baseline; a 2px
+  surface gap between stacked segments; lines 2px; end dots 8px with a 2px surface ring.
+- **Legend for two or more series**, none for one (the title names it). Direct labels where they
+  fit (bar values at the tip, probabilities at the end), never a number on every point.
+- **Hover and focus show the same readout** (values first, then series names, keyed by a short
+  line); the chart is focusable and its arrow keys move the readout. The readout never holds the
+  only copy of a number: every chart has a **table view** (the Chart / Table switch), and the chart
+  itself is described in words (`aria-describedby`).
+- No chart animation (Recharts animates geometry; `isAnimationActive` is off).
+
+| Component | Shows | Notes |
+|---|---|---|
+| `ChartFrame` | Title (a heading), description, legend, Chart / Table switch | Wrap every chart in it |
+| `ChartLegend`, `ChartTable`, `ChartTooltipBox` (`ChartParts.tsx`) | Legend, table view, hover readout | Plain HTML in text tokens |
+| `OutcomeTimeSeries` | Requests per time bucket, stacked by outcome ("Requests by outcome") | Recharts. Stacks in `OUTCOME_STACK_ORDER`; only the top segment of a column is rounded |
+| `BarChart` | One measure across named categories ("What was caught", stage latencies) | Recharts, horizontal bars with the value at the tip, neutral ink unless the measure is an outcome |
+| `RiskBar`, `RiskBarLegend` | One evaluator's risk with its flag and block ticks | A `meter`; its text names the value and both thresholds. `outcome/RiskBar` re-exports it |
+| `ProbabilityBars` | How the fast check split its answer across a question's options | A list: every option with its probability written out, the most likely one marked in words. Color only on options that count toward the risk |
+| `Sparkline` | A word-sized trend next to a number | An image named with what it shows and a summary; nulls leave a gap; hover shows a point. Its exact values belong in the table of the chart it summarises |
+
+The reliability chart, confusion grid and timing waterfall are custom SVG in their own features
+(SPEC §3.3); they follow the same rules and draw their colors from `palette.ts`.
+
+## 13. Accessibility
 
 WCAG 2.2 AA:
 
@@ -167,12 +304,20 @@ WCAG 2.2 AA:
 - Popovers are reachable by keyboard and touch.
 
 `e2e/stack/shell.spec.ts` runs axe (wcag2a/aa, 21aa, 22aa) on every route in both themes. It
-allows no serious or critical violations.
+allows no serious or critical violations. In unit tests, `src/test/axe.ts` runs axe-core in jsdom
+(the same tags plus best practices, contrast excepted) and the kit page test allows no violations
+at all.
 
-## 12. Decisions
+## 14. Decisions
 
 - **Base UI over Radix.** It is the shadcn default and gives accessible primitives with a
   `render` prop.
+- **The sheet is a Base UI Dialog at the edge**, not Base UI's Drawer: the Drawer's swipe
+  gestures and snap points serve touch bottom sheets, which the dashboard does not have.
+- **Segmented controls are radio groups**, not toggle groups: exactly one option is always
+  selected, and screen readers hear "1 of 3".
+- **DataTable is an ARIA grid with row focus.** A row does one thing (open the item), so the row
+  is the focus target and the grid is one tab stop; the focused row is always kept rendered.
 - **File-based routing** (`@tanstack/router-plugin`) with `autoCodeSplitting`. `routeTree.gen.ts`
   is committed because `tsc -b` runs before `vite build`.
 - **`zod/mini`** for search params and `/config.json`. Zod 4 implements Standard Schema, so

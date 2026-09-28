@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "system-prompt-leak-length-counted-after-normalization",
+  "status": "frozen",
+  "description": "The raw system instructions have 204 code points, but collapsing their whitespace runs leaves 157, below the 200 minimum: the detector does not run, although the response repeats them verbatim.",
+  "input": {
+    "detector": "system_prompt_leak",
+    "response": "Sure, here it is: You are  the   returns   helper\n\n\nfor   Acme   Outdoor.   Accept   returns   within\tthe   window,   ask   for   the   order   number   first,   and   never   promise   cash   refunds   for   gift   cards.",
+    "evidence": [],
+    "user_request": "",
+    "system_instructions": "You are  the   returns   helper\n\n\nfor   Acme   Outdoor.   Accept   returns   within\tthe   window,   ask   for   the   order   number   first,   and   never   promise   cash   refunds   for   gift   cards.",
+    "rules": {}
+  },
+  "expected": {"ran": false, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

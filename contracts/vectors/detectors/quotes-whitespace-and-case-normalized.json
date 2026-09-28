@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-whitespace-and-case-normalized",
+  "status": "frozen",
+  "description": "Normalization lowercases ASCII letters, collapses whitespace runs (including the line break) to one space and strips edge punctuation, giving \"cancel any time from settings, then billing\", a substring of the normalized evidence: does not fire.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "The guide says \"Cancel   ANY time\nfrom Settings, then Billing.\" and nothing else.",
+    "evidence": [
+      {
+        "id": "cancel",
+        "source": "request_system",
+        "text": "You can cancel any time from Settings, then Billing."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

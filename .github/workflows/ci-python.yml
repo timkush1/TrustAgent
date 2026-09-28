@@ -43,9 +43,11 @@ jobs:
       # Editable, so the tests import src/ (where the stubs are generated next)
       # and the contracts lookup can walk up to the repository's contracts/.
       # A regular install would copy the package without the gitignored stubs.
+      # With the knowledge extra (CPU torch is installed above anyway), so the
+      # async vector-store tests run instead of being skipped (importorskip).
       - name: Install package and dev tools
         run: |
-          pip install -e .
+          pip install -e ".[knowledge]"
           pip install pytest==7.4.4 pytest-asyncio==0.23.8 pytest-cov \
             ruff==0.1.15 black==23.12.1
 
@@ -73,3 +75,18 @@ jobs:
       # a deliberate baseline update in the same PR. See docs/EVALUATION.md.
       - name: Eval regression gate (golden set, mock provider)
         run: python -m evals.run_eval --dataset golden --provider mock --check-baseline
+
+      # The SPEC P2 gate: golden_v2 (CONTRADICTED, baseless, NO_CLAIMS, outage
+      # and span cases) against its scoring v2 baseline (ADR-001).
+      - name: Eval regression gate (golden_v2, mock provider)
+        run: python -m evals.run_eval --dataset golden_v2 --provider mock --check-baseline
+
+      # The default install has no `knowledge` extra: the engine must import
+      # without torch, sentence-transformers or qdrant-client (SPEC 3.2
+      # test_lazy_imports). A throwaway venv, so the tools above stay out.
+      - name: Import without the knowledge extra
+        run: |
+          python -m venv "$RUNNER_TEMP/nox"
+          "$RUNNER_TEMP/nox/bin/pip" install --quiet .
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nox/bin/python" -c "import sys, truthtable.main; heavy = [m for m in ('torch', 'sentence_transformers', 'qdrant_client') if m in sys.modules]; assert not heavy, heavy; print('truthtable.main imports without the knowledge extra')"

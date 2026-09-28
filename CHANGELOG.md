@@ -28,7 +28,74 @@ phase (P0 → P7).
   [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md).
 - `scripts/check-forbidden.mjs` enforces the superseded-identifier list.
 
+- **Walking skeleton (S0)** — the gateway gates non-streaming OpenAI chat on
+  observe and flag routes (Tier-0 detectors, evidence from the request, one Jev
+  call through the scenario mock, `decide()`, the §2.12 response headers),
+  records traces and decisions, streams them over WebSocket v2, and submits
+  deep audits through `Evaluate`; `trafficgen --once --expect` and a zero-key
+  `make demo`.
+- **Fast check (Jev) backends** (`internal/jev`): `openrouter-decisions`,
+  `openrouter-systemone`, `typesafe` and `compatible` next to `mock` and `off`,
+  chosen by auto resolution (demo → mock; base URL + gateway key → compatible;
+  OpenRouter key → openrouter-decisions; TypeSafe key → typesafe; else off).
+  Retries honour Retry-After; hedging; a breaker that counts vendor faults only;
+  a token-bucket limiter with a sync reserve and an in-flight cap; a daily spend
+  cap with an enforcing reserve; one cost event per attempt; snapshot tracking
+  (WS `decision_model_changed`); keep-warm; a startup probe. `/api/status`
+  reports the live state, last error with its fix, snapshot and today's spend.
+  New `cmd/jevcheck` (checks a key and endpoint with one probe) and
+  `cmd/mock-upstream` (fakes every vendor the gateway calls, with keyed faults).
+- **Deep-audit engine cores**: providers with retries, typed errors, structured
+  outputs, a price table and an OpenRouter judge; `LLM_PROVIDER=auto` judge
+  resolution with every fallback reported (`LLM_FALLBACK=none` by default);
+  `GetEngineInfo`; the internal RPC token and RPC caps; decomposer v2 (the
+  question, `{claim, quote}` output, UTF-16 claim spans, windows for long
+  answers); a hardened verifier (repair turn, UNKNOWN instead of a defaulted
+  confidence, NOT_CHECKED without evidence); one `CostRecord` per judge call,
+  stored per audit and shown in the trace detail with its cost label; async
+  knowledge I/O.
+- **TypeScript decision core** (`frontend-react/src/lib/decision`): canonical
+  JSON, hashing, tokens, compile, `decide()`, the seven detectors, evidence
+  extraction and the evaluator lints, passing the same golden vectors as the Go
+  reference (`make vectors-ts`); contract types generated from the schemas
+  (`types.gen.ts`, `make gen-types`) and the committed api.v1 schema generator
+  (`make gen-api-schema`).
+- **UI kit** (DESIGN.md §11–12): Base UI primitives, page composites
+  (ConfirmDialog, DisabledAction, DataTable, KeyValueList, ...), chart
+  primitives, a themed toaster; axe and token-contrast tests.
+- **Trace detail**: claims are marked in the answer at their UTF-16 spans (verdict
+  hue, underline and icon; each mark links to its claim), paraphrased claims are
+  listed as "not located in text", and Details show each tier's model and cost.
+  The Health pill reads an engine without a judge as "No judge configured".
+- **Contracts (P1b)**: golden vectors at the SPEC §7.6 minimums (detectors 53,
+  evidence 23, decide 55, ...), 23 golden API fixtures validated against api.v1,
+  the support-bot, rubric-only and replace-unverified presets, the evaluator
+  drafter prompt with its `prompt.v1` schema, and the §2.8 lints in `validate.mjs`.
+- **Postgres migrations 0003** (policy versions, evaluators and immutable
+  evaluator versions, calibrations, labels, Studio results) **and 0004**
+  (settings, credentials, API keys, admin audit log, cost events).
+- **Configuration reference**: [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and
+  `.env.example` are generated from the key registry (`make config-docs`;
+  `make config-docs-check` and ci-contracts fail on drift).
+
 ### Changed
+- **Scoring v2** (ADR-001 in [docs/DECISIONS.md](docs/DECISIONS.md)): per-claim
+  verdict distributions, flags, `p_hallucinated`, coverage and a trust score that
+  is absent (never 0) when it cannot be computed; an audit fails with
+  `judge_unavailable` when UNKNOWN reaches half the checked claims. Both golden
+  baselines were regenerated on purpose. On the recorded golden v1 set (mock
+  judge replaying recorded answers, so measured on fixtures, not live traffic):
+  P 0.889 → 0.920, R 0.923 → 0.885, F1 0.906 → 0.902, AUROC 0.907 → 0.983,
+  ECE 0.133 → 0.085 (one parse failure is now FAILED instead of a made-up 0.3).
+  The new golden_v2 set (91 examples) is the CI gate alongside golden v1.
+- The knowledge add-on (Qdrant, embeddings, torch) is an optional extra
+  (`poetry install --extras knowledge`, engine image `EXTRAS=knowledge`) and
+  needs `TRUTHTABLE_KNOWLEDGE_ENABLED=true`; the default engine imports without
+  torch.
+- The engine refuses a non-loopback bind without the internal token; in compose
+  the proxy generates it into a shared volume on first start.
+- [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) rewritten for v2 local runs
+  on WSL (`make demo`, real mode, memory, troubleshooting).
 - CI split into `ci-go`, `ci-python`, `ci-web`, `ci-docker`, `ci-contracts`
   and `ci-e2e` workflows (job ids unchanged for branch protection).
 - Makefile split into `mk/*.mk` fragments; `make check`; WSL-aware URL opener;
@@ -49,6 +116,11 @@ phase (P0 → P7).
   score columns 0002 introduces. Back up the database before upgrading.
 - Compose services no longer set `container_name`; use
   `docker compose exec <service> …` instead of `docker exec truthtable-<service> …`.
+- Migrations 0003 and 0004 apply automatically at proxy start; like 0002, they
+  have no downgrade.
+- A v1 `.env` may still set `LLM_MODEL` (for example `claude-haiku-4-5`). Under
+  `LLM_PROVIDER=auto` it goes to whichever judge auto picks; clear it or set
+  `LLM_PROVIDER` explicitly.
 
 ## Unreleased — hardening & audit-quality pass
 

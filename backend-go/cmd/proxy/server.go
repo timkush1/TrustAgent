@@ -15,6 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
+	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/middleware"
 	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/store"
@@ -103,12 +104,12 @@ func newServer(d serverDeps) (*server, error) {
 	if d.store != nil {
 		sink.store = d.store
 	}
-	gw, err := newGateway(cfg, sink, log)
+	gw, err := newGateway(cfg, sink, gatewayHooks{snapshotChanged: s.snapshotChanged}, log)
 	if err != nil {
 		return nil, err
 	}
 	s.gateway = gw
-	s.status.jev, s.status.policy = gw.jev, gw.policy
+	s.status.jev, s.status.jevClient, s.status.policy = gw.jev, gw.client, gw.policy
 	s.auth = &apiAuth{keys: gw.auth, publicRead: cfg.PublicRead, demo: cfg.DemoMode}
 	s.status.auth = s.auth
 
@@ -227,7 +228,22 @@ func (s *server) engineChanged(h grpc.EngineHealth) {
 	s.hub.Publish(ev)
 }
 
-// start runs the hub, the engine pinger and the audit workers until shutdown.
+// snapshotChanged broadcasts a new decision-model snapshot (WS decision_model_changed, SPEC §2.5).
+// Calibration lookups per snapshot arrive with calibration (P3), so the state is "none" until then.
+// It runs on a jev attempt goroutine and must not block: Publish never does.
+func (s *server) snapshotChanged(c jev.SnapshotChange) {
+	s.log.Warn("decision model snapshot changed", "backend", c.Backend, "model", c.Model, "previous", c.Previous, "snapshot", c.Snapshot)
+	ev, err := websocket.NewEvent("decision_model_changed", "", map[string]any{
+		"backend": c.Backend, "previous_snapshot": c.Previous, "snapshot": c.Snapshot, "calibration": "none",
+	}, nil)
+	if err != nil {
+		return
+	}
+	s.hub.Publish(ev)
+}
+
+// start runs the hub, the engine pinger, the audit workers and the decision model's startup probe
+// until shutdown.
 func (s *server) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
@@ -236,6 +252,10 @@ func (s *server) start() {
 	if s.pinger != nil {
 		s.wg.Add(1)
 		go func() { defer s.wg.Done(); s.pinger.Run(ctx) }()
+	}
+	if s.cfg.Jev.StartupProbe {
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); s.gateway.probe(ctx, max(s.cfg.Jev.AttemptTimeout, 10*time.Second), s.log) }()
 	}
 	s.pool.Start()
 }
@@ -254,6 +274,7 @@ func (s *server) shutdown(ctx context.Context) error {
 		s.cancel()
 	}
 	s.wg.Wait()
+	s.gateway.close()
 	return errors.Join(errs...)
 }
 

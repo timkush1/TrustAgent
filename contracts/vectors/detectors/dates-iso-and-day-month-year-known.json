@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "dates-iso-and-day-month-year-known",
-  "status": "draft",
+  "status": "frozen",
   "description": "\"1 April 2026\" (d Month yyyy) is 2026-04-01 and \"2026-04-30\" is ISO; the evidence states both as \"April 1, 2026\" and \"April 30, 2026\". Formats differ but the normalized dates match: does not fire. \"1 April 2026\" is one date (the overlapping \"April 2026\" is ignored).",
   "input": {
     "detector": "dates_not_in_evidence",

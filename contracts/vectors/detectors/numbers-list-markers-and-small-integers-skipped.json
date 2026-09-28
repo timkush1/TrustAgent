@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "numbers-list-markers-and-small-integers-skipped",
-  "status": "draft",
+  "status": "frozen",
   "description": "The numbers 1, 2 and 3 start list items (they fall inside a list-marker match) and are skipped. \"2 buttons\" is an integer <= min_integer 10 without a unit or currency sign: skipped. Nothing is checked: does not fire.",
   "input": {
     "detector": "numbers_not_in_evidence",

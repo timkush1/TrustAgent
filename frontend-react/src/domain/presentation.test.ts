@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import scenarios from '@contracts/demo/scenarios.v1.json';
 import { flaggedTrace, trace } from '@/test/fixtures';
-import type { ClaimVerdict, GateAction, GateStatus, WouldAction } from '@/types/api';
+import type { ClaimVerdict, DecisionBackend, GateAction, GateStatus, WouldAction } from '@/types/api';
 import { OUTCOME_IDS, outcomesContract } from './contracts';
 import {
   auditStateView,
@@ -10,10 +10,12 @@ import {
   checkedAgainst,
   claimVerdictView,
   commandText,
+  decisionBackendLabel,
   fillTemplate,
   gateVerdictView,
   glossaryTerm,
   headlineReason,
+  judgeProviderLabel,
   levelWord,
   outcomeOf,
   outcomeView,
@@ -188,5 +190,27 @@ describe('copy helpers', () => {
     expect(glossaryTerm('nope')).toBeNull();
     const words = outcomesContract.outcomes.flatMap((o) => [o.label, o.headline, o.next_step ?? '']).join(' ');
     for (const jargon of AVOID_IN_PRIMARY_UI) expect(words).not.toContain(jargon);
+  });
+});
+
+describe('model names', () => {
+  it('words every fast-check backend, never the raw value', () => {
+    const backends: DecisionBackend[] = [
+      'openrouter-decisions',
+      'openrouter-systemone',
+      'typesafe',
+      'compatible',
+      'mock',
+      'off',
+    ];
+    for (const b of backends) expect(decisionBackendLabel(b)).not.toBe(b);
+    expect(decisionBackendLabel('mock')).toBe('Mock (simulated)');
+    expect(decisionBackendLabel('openrouter-decisions')).toBe('OpenRouter');
+  });
+
+  it('words the known judge providers and keeps an unknown one as given', () => {
+    expect(judgeProviderLabel('anthropic')).toBe('Anthropic');
+    expect(judgeProviderLabel('mock')).toBe('Mock (simulated)');
+    expect(judgeProviderLabel('some-new-provider')).toBe('some-new-provider');
   });
 });

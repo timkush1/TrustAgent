@@ -1,0 +1,13 @@
+{
+  "status": "ready",
+  "components": {
+    "proxy": "up",
+    "policy": "up",
+    "database": "up",
+    "engine": "up",
+    "judge": "up",
+    "decision_model": "up",
+    "knowledge": "disabled",
+    "redis": "disabled"
+  }
+}

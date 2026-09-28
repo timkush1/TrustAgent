@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "tool-name-resolution-and-untrusted-tools",
-  "status": "draft",
+  "status": "frozen",
   "description": "OpenAI tool messages: names come from the assistant tool_calls via tool_call_id (get_order, web_search). web_search matches the untrusted_tools glob \"web_*\", so its item is kept but marked untrusted (never packed, never detector reference). A legacy role \"function\" message is also a tool result.",
   "input": {
     "api_format": "openai_chat",

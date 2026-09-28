@@ -33,7 +33,8 @@ test-python: ## Run Python unit tests only (verbose; e2e/integration excluded)
 test-e2e: ## Run the engine e2e tests (proxy on :8080, engine gRPC on :50051: make up-infra, dev-python, dev-go; absent services skip)
 	cd backend-python && $(POETRY) run pytest -m e2e -v
 
-eval-golden: ## Deterministic golden-set eval (the CI regression gate, no model needed)
+eval-golden: ## Deterministic golden-set evals, golden_v2 then golden v1 (the CI regression gates, no model needed)
+	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset golden_v2 --provider mock --check-baseline
 	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset golden --provider mock --check-baseline
 
 eval-benchmark: ## HaluEval benchmark against local Ollama, EVAL_MODEL (requires make up + ollama-pull)

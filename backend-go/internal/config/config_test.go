@@ -41,6 +41,11 @@ func TestDefaults(t *testing.T) {
 		Backend: "auto", AttemptTimeout: 3 * time.Second, AsyncDeadline: 10 * time.Second, TokenBudget: 24000,
 		CharsPerToken: 4, MaxQuestionsPerCall: 16, MaxResponseTokens: 6000, MockMode: "scenario", MockSeed: 42,
 		MockLatency: 40 * time.Millisecond,
+		// The registry defaults of the HTTP backends (SPEC §2.7), which jev.DefaultHTTPConfig mirrors.
+		OpenRouterBaseURL: "https://openrouter.ai", MaxRetries: 1, MaxRetriesAsync: 2, RetryAfterCap: 10 * time.Second,
+		RPM: 1000, SyncReserve: 0.3, MaxInFlight: 64, BreakerFailures: 5, BreakerCooldown: 30 * time.Second,
+		AuthCooldown: 5 * time.Minute, AppURL: "https://github.com/timkush1/TrustAgent", AppTitle: "TrustAgent",
+		SendSessionID: true, StartupProbe: true, KeepAlive: 60 * time.Second, SpendEnforcingReserve: 0.25,
 	}
 	if !reflect.DeepEqual(j, want) {
 		t.Errorf("jev defaults %+v, want %+v", j, want)
@@ -185,5 +190,64 @@ func TestTrustedProxiesAndInternalTokenFile(t *testing.T) {
 	}
 	if c.InternalTokenFile != "/run/trustagent/token" {
 		t.Errorf("token file %q", c.InternalTokenFile)
+	}
+}
+
+func TestDecisionModelHTTPKeys(t *testing.T) {
+	clearEnv(t)
+	keyFile := filepath.Join(t.TempDir(), "jev.key")
+	if err := os.WriteFile(keyFile, []byte("  gw-key-from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{
+		"TRUTHTABLE_JEV_PATH": "/typesafe/v1/systemone", "TRUTHTABLE_OPENROUTER_BASE_URL": "http://mock-upstream:8090",
+		"TRUTHTABLE_JEV_MAX_RETRIES": "0", "TRUTHTABLE_JEV_MAX_RETRIES_ASYNC": "3", "TRUTHTABLE_JEV_RETRY_AFTER_CAP": "4s",
+		"TRUTHTABLE_GATE_JEV_RPM": "120", "TRUTHTABLE_GATE_JEV_SYNC_RESERVE": "0.5", "TRUTHTABLE_GATE_JEV_MAX_INFLIGHT": "8",
+		"TRUTHTABLE_JEV_BREAKER_FAILURES": "2", "TRUTHTABLE_JEV_BREAKER_COOLDOWN": "5s", "TRUTHTABLE_JEV_AUTH_COOLDOWN": "1m",
+		"TRUTHTABLE_JEV_PRICE_PER_MTOK": "0.05", "TRUTHTABLE_JEV_ZDR": "true", "TRUTHTABLE_JEV_SEND_SESSION_ID": "false",
+		"TRUTHTABLE_JEV_STARTUP_PROBE": "false", "TRUTHTABLE_JEV_KEEPALIVE": "0s", "TRUTHTABLE_JEV_LOG_PAYLOADS": "true",
+		"TRUTHTABLE_SPEND_ENFORCING_RESERVE": "0.1", "TRUTHTABLE_KEY_DECISION_USD_DAY": "0.5",
+		"TRUTHTABLE_JEV_API_KEY_FILE": keyFile, "TRUTHTABLE_PUBLIC_URL": "https://trust.example.com",
+	} {
+		t.Setenv(k, v)
+	}
+	c := Load()
+	if len(c.Warnings) != 0 {
+		t.Fatalf("warnings %v", c.Warnings)
+	}
+	j := c.Jev
+	if j.Path != "/typesafe/v1/systemone" || j.OpenRouterBaseURL != "http://mock-upstream:8090" || j.APIKey != "gw-key-from-file" {
+		t.Errorf("endpoint keys %+v", j)
+	}
+	if j.MaxRetries != 0 || j.MaxRetriesAsync != 3 || j.RetryAfterCap != 4*time.Second || j.RPM != 120 ||
+		j.SyncReserve != 0.5 || j.MaxInFlight != 8 || j.BreakerFailures != 2 || j.BreakerCooldown != 5*time.Second ||
+		j.AuthCooldown != time.Minute || j.PricePerMTok != 0.05 {
+		t.Errorf("resilience keys %+v", j)
+	}
+	if !j.ZDR || j.SendSessionID || j.StartupProbe || j.KeepAlive != 0 || !j.LogPayloads ||
+		j.SpendEnforcingReserve != 0.1 || j.KeyUSDDay != 0.5 || c.PublicURL != "https://trust.example.com" {
+		t.Errorf("flags %+v public %q", j, c.PublicURL)
+	}
+}
+
+func TestDecisionModelKeysOutOfRangeFallBack(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("TRUTHTABLE_GATE_JEV_RPM", "0")
+	t.Setenv("TRUTHTABLE_GATE_JEV_SYNC_RESERVE", "1.5")
+	t.Setenv("TRUTHTABLE_JEV_MAX_RETRIES", "-1")
+	t.Setenv("TRUTHTABLE_JEV_PRICE_PER_MTOK", "-0.1")
+	t.Setenv("TRUTHTABLE_JEV_API_KEY_FILE", filepath.Join(t.TempDir(), "missing.key"))
+	t.Setenv("TRUTHTABLE_JEV_API_KEY", "")
+	c := Load()
+	if c.Jev.RPM != 1000 || c.Jev.SyncReserve != 0.3 || c.Jev.MaxRetries != 1 || c.Jev.PricePerMTok != 0 || c.Jev.APIKey != "" {
+		t.Errorf("fallbacks %+v", c.Jev)
+	}
+	if len(c.Warnings) != 5 {
+		t.Errorf("want 5 warnings, got %v", c.Warnings)
+	}
+	for _, w := range c.Warnings {
+		if strings.Contains(w, "gw-key") {
+			t.Errorf("a warning leaks a credential: %q", w)
+		}
 	}
 }

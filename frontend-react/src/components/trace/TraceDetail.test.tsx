@@ -71,6 +71,16 @@ describe('Trace detail', () => {
     expect(within(region('Claims')).getByText('Hallucinated')).toBeInTheDocument();
     expect(within(region('Claims')).getByText('0 of 1 claims supported · 1 contradicted')).toBeInTheDocument();
     expect(within(region('Claims')).queryByRole('status')).toBeNull();
+
+    // 4. The claim is marked in the answer at its UTF-16 span, and the mark links to its row.
+    const answer = region('Answer');
+    const mark = within(answer).getByRole('link', { name: '60 days, contradicted claim' });
+    expect(mark.closest('mark')).toHaveAttribute('data-v', 'contradicted');
+    // The marked answer still reads as the model's text.
+    expect(within(answer).getByTestId('answer-marked')).toHaveTextContent(scenario(REFUND).response);
+    await userEvent.click(mark);
+    expect(claim).toHaveFocus();
+    expect(within(answer).queryByText(/not located in text/)).toBeNull();
   });
 
   it('says a request without documents was not checked, and why', async () => {
@@ -167,5 +177,8 @@ describe('Trace detail', () => {
     expect(details).toHaveTextContent('support-bot · policy version 1');
     expect(details).toHaveTextContent('188 ms');
     expect(details).toHaveTextContent('2.4 s');
+    // What each tier ran on, and its cost with an honest label (the mock's cost is simulated).
+    expect(details).toHaveTextContent('Fast check (Jev) modelmock/jevMock (simulated)');
+    expect(details).toHaveTextContent('Fast check (Jev) cost$0Simulated');
   });
 });

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "citation-out-of-range",
-  "status": "draft",
+  "status": "frozen",
   "description": "Two evidence items before dedup and no [Document N] markers: the valid range is 1..2. [1] is fine; [3] is above 2 and [^0] is 0: fires with both, in text order.",
   "input": {
     "detector": "citation_out_of_range",

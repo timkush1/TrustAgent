@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-known-from-user-request-and-rules",
+  "status": "frozen",
+  "description": "The reference includes user_request and rule values, not only evidence (evidence must be present for the detector to run). The upload URL is in user_request and the status URL (trailing \".\" stripped) in a rule value: both known, does not fire.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "Upload it at https://files.example.com/upload and check https://status.example.com.",
+    "evidence": [
+      {"id": "uploads", "source": "request_system", "text": "Attachments up to 20 MB are accepted."}
+    ],
+    "user_request": "Is https://files.example.com/upload the right place for my invoice?",
+    "system_instructions": "",
+    "rules": {"allowed_links": "Status page: https://status.example.com"}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

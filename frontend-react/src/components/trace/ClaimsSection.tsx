@@ -9,7 +9,7 @@ import { VerdictBadge } from '@/components/outcome/VerdictBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auditStateView, copy } from '@/domain/presentation';
 import type { AuditDetail, TraceSummary } from '@/types/api';
-import { auditHasResult, claimsSummary, disagreementLine, orderedClaims } from './traceView';
+import { auditHasResult, claimRowId, claimsSummary, disagreementLine, orderedClaims } from './traceView';
 
 const DEEP_AUDIT = copy.tiers.deep_audit;
 
@@ -26,7 +26,16 @@ function ClaimsPending({ label }: { label: string }) {
   );
 }
 
-export function ClaimsSection({ summary, audit }: { summary: TraceSummary; audit: AuditDetail | null }) {
+export function ClaimsSection({
+  summary,
+  audit,
+  claimIdPrefix = '',
+}: {
+  summary: TraceSummary;
+  audit: AuditDetail | null;
+  /** Prefix of the row ids the answer's claim marks link to (claimRowId). */
+  claimIdPrefix?: string;
+}) {
   const state = auditStateView(summary.audit);
   const claims = orderedClaims(audit);
   const counts = claimsSummary(audit);
@@ -38,8 +47,18 @@ export function ClaimsSection({ summary, audit }: { summary: TraceSummary; audit
       claims.length > 0 ? (
         <ol aria-label="Claims" className="divide-y divide-border">
           {claims.map((c) => (
-            <li key={c.index} className="space-y-1 py-2.5">
-              <VerdictBadge verdict={c.status} legend />
+            <li
+              key={c.index}
+              id={claimRowId(claimIdPrefix, c.index)}
+              tabIndex={-1}
+              className="-mx-2 space-y-1 rounded-md px-2 py-2.5 focus:bg-surface-hover"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <VerdictBadge verdict={c.status} legend />
+                {c.span === null && c.status !== 'NOT_CHECKED' ? (
+                  <span className="text-xs text-fg-muted">{copy.trace.claim_not_located}</span>
+                ) : null}
+              </div>
               <p className="text-sm text-fg">{c.claim ?? 'Hidden: this key cannot see claim text.'}</p>
               {c.reasoning ? <p className="text-xs text-fg-muted">{c.reasoning}</p> : null}
             </li>

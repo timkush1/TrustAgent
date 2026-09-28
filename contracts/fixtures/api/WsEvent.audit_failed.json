@@ -1,0 +1,14 @@
+{
+  "v": 2,
+  "seq": 824,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "audit_failed",
+  "ts": "2026-09-28T10:17:14.792Z",
+  "trace_id": "01a0e784-545c-75e1-9b7c-0a4f28d63b0e",
+  "data": {
+    "audit_id": "01a0e784-55ee-7c03-a5a9-d71b24f86d29",
+    "kind": "judge_unavailable",
+    "message": "The judge returned HTTP 529 (overloaded) after 3 attempts.",
+    "retryable": true
+  }
+}

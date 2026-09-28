@@ -85,14 +85,95 @@ func TestRewrite(t *testing.T) {
 // writeContracts builds a minimal contracts directory with one draft vector.
 func writeContracts(t *testing.T, vector string) string {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "vectors", "tokens"), 0o755); err != nil {
+	return writeVector(t, t.TempDir(), "tokens", vector)
+}
+
+// writeVector writes vector as vectors/<kind>/sample.json under dir and returns dir.
+func writeVector(t *testing.T, dir, kind, vector string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "vectors", kind), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "vectors", "tokens", "sample.json"), []byte(vector), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "vectors", kind, "sample.json"), []byte(vector), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// semanticVector is a hand-written detectors vector: expected is a subset of the output (findings
+// is left out) that the reference agrees with.
+const semanticVector = `{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "sample",
+  "status": "draft",
+  "description": "kept as is",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "Refunds within 60 days.",
+    "evidence": [{"id": "p", "source": "request_system", "text": "Refunds within 30 days."}],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true},
+  "tolerance": 1e-9
+}
+`
+
+func TestSemanticVerifyAndFreeze(t *testing.T) {
+	dir := writeVector(t, t.TempDir(), "detectors", semanticVector)
+	path := filepath.Join(dir, "vectors", "detectors", "sample.json")
+	var stdout, stderr bytes.Buffer
+
+	// Verified in every mode, but never written, and not frozen unless its kind is named.
+	for _, args := range [][]string{{"-check"}, {"-rev", "test"}, {"-freeze", "-rev", "test"}, {"-kinds", "tokens", "-freeze"}} {
+		stderr.Reset()
+		if code := run(append([]string{"-contracts", dir}, args...), &stdout, &stderr); code != 0 {
+			t.Fatalf("%v: exit %d: %s", args, code, stderr.String())
+		}
+		if b, _ := os.ReadFile(path); string(b) != semanticVector {
+			t.Fatalf("%v rewrote a semantic vector:\n%s", args, b)
+		}
+	}
+	// Freezing rewrites the file in place and keeps its permissions (a repository source).
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := run([]string{"-contracts", dir, "-kinds", "detectors", "-freeze", "-rev", "test"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("freeze: exit %d: %s", code, stderr.String())
+	}
+	b, _ := os.ReadFile(path)
+	if want := strings.Replace(semanticVector, `"status": "draft"`, `"status": "frozen"`, 1); string(b) != want {
+		t.Fatalf("frozen file:\n%s\nwant only the status changed", b)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("frozen file mode %v, want -rw-------", got)
+	}
+
+	// A draft the reference disagrees with fails and is never frozen.
+	wrong := strings.Replace(semanticVector, `"fired": true`, `"fired": false`, 1)
+	dir = writeVector(t, t.TempDir(), "detectors", wrong)
+	path = filepath.Join(dir, "vectors", "detectors", "sample.json")
+	stderr.Reset()
+	if code := run([]string{"-contracts", dir, "-kinds", "detectors", "-freeze", "-rev", "test"}, &stdout, &stderr); code != 1 ||
+		!strings.Contains(stderr.String(), "$.fired: want false, got true") {
+		t.Fatalf("disagreeing draft: exit %d: %s", code, stderr.String())
+	}
+	if b, _ := os.ReadFile(path); string(b) != wrong {
+		t.Error("vectorgen froze a vector the reference disagrees with")
+	}
+
+	// Semantic vectors are written by hand: a null expected is an error, not something to fill in.
+	dir = writeVector(t, t.TempDir(), "detectors", strings.Replace(semanticVector, `{"ran": true, "fired": true}`, "null", 1))
+	stderr.Reset()
+	if code := run([]string{"-contracts", dir, "-rev", "test"}, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "written by hand") {
+		t.Fatalf("null expected: exit %d: %s", code, stderr.String())
+	}
 }
 
 func TestGenerateCheckFreeze(t *testing.T) {
@@ -137,7 +218,8 @@ func TestGenerateCheckFreeze(t *testing.T) {
 
 func TestRunUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	for _, args := range [][]string{{"-kinds", "decide"}, {"-kinds", "nonsense"}, {"-check", "-freeze"}, {"extra"}, {"-nope"}} {
+	// lint has no Go runner yet and cost's runner is skipped: neither can be processed.
+	for _, args := range [][]string{{"-kinds", "lint"}, {"-kinds", "cost"}, {"-kinds", "nonsense"}, {"-check", "-freeze"}, {"extra"}, {"-nope"}} {
 		if code := run(args, &stdout, &stderr); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}

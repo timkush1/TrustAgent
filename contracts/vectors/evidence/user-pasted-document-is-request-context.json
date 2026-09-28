@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "user-pasted-document-is-request-context",
-  "status": "draft",
+  "status": "frozen",
   "description": "A <document> block pasted into the user message is a request_context item (user-supplied, shown as not verified as app-supplied), not request_system evidence. user_request is the final text part with the block removed.",
   "input": {
     "api_format": "openai_chat",

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "numbers-small-integer-with-unit-is-checked",
-  "status": "draft",
+  "status": "frozen",
   "description": "5 is <= min_integer but \"days\" is the second token after it, so it is checked; the reference has 3 and 4 only: unknown. 3% ends in \"%\", so it is checked too, and normalizes to 3, which is known. Fires on 5 only.",
   "input": {
     "detector": "numbers_not_in_evidence",

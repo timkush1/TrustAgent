@@ -52,7 +52,7 @@ const RULES = [
   { re: /^policies\/presets\.v1\.json$/, schema: 'presets.v1' },
   { re: /^policies\/[a-z0-9.-]+\.ya?ml$/, schema: 'policy.v1' },
   { re: /^rules\/[a-z0-9-]+\.v[0-9]+\.json$/, schema: null },
-  { re: /^prompts\/[a-z0-9-]+\.v[0-9]+\.json$/, schema: null },
+  { re: /^prompts\/[a-z0-9-]+\.v[0-9]+\.json$/, schema: 'prompt.v1' },
   { re: /^pricing\/prices\.v1\.json$/, schema: 'pricing.v1' },
   { re: /^pricing\/assumptions\.v1\.json$/, schema: 'pricing-assumptions.v1' },
   { re: /^claims\/value-claims\.v1\.json$/, schema: 'value-claims.v1' },
@@ -62,13 +62,23 @@ const RULES = [
   { re: /^ui\/copy\.v1\.json$/, schema: 'ui-copy.v1' },
   { re: /^ui\/glossary\.v1\.json$/, schema: 'ui-glossary.v1' },
   { re: /^ui\/commands\.v1\.json$/, schema: 'ui-commands.v1' },
-  { re: /^fixtures\/(api|vendor)\/[A-Za-z0-9._-]+\.json$/, schema: null },
+  { re: /^fixtures\/api\/[^/]+\.json$/, schema: 'api.v1', apiFixture: true },
+  { re: /^fixtures\/vendor\/[A-Za-z0-9._-]+\.json$/, schema: null },
   { re: /^vectors\/[^/]+\/[^/]+\.json$/, schema: 'vector.v1' },
   { re: /^superseded\.v1\.json$/, schema: 'superseded.v1' },
 ];
 
+// fixtures/api/<Type>.<case>.json is validated against api.v1.schema.json#/$defs/<Type>. A generic
+// instance such as Page<TraceSummary> is spelled Page-TraceSummary in the file name.
+const API_FIXTURE = /^fixtures\/api\/([A-Z][A-Za-z0-9]*(?:-[A-Z][A-Za-z0-9]*)?)\.([a-z0-9][a-z0-9_-]*(?:\.[a-z0-9][a-z0-9_-]*)*)\.json$/;
+function apiFixtureName(rel) {
+  const m = rel.match(API_FIXTURE);
+  return m && { def: m[1].replace(/^([A-Za-z0-9]+)-([A-Za-z0-9]+)$/, '$1<$2>'), variant: m[2] };
+}
+
 // Files in contracts/ that are not contract data.
-const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|(^|\/)\.gitkeep$/;
+// tools/ holds generators (contracts/tools/api-schema), not contract data.
+const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|validate(\.test)?\.mjs|package\.json|package-lock\.json)$|^tools\/|(^|\/)\.gitkeep$/;
 
 const EXTERNAL = [
   { file: 'config/policies.yaml', schema: 'policy.v1' },
@@ -112,7 +122,7 @@ const ajv = new Ajv2020({
 });
 addFormats(ajv);
 
-const docs = new Map(); // rel -> { data, text, schema }
+const docs = new Map(); // rel -> { data, text, schema, fixture? }
 const schemaNames = new Set();
 let parseOnly = 0;
 
@@ -124,9 +134,14 @@ for (const full of walk(ROOT)) {
     error(rel, 'no schema mapping for this path; add a rule to RULES in validate.mjs (or fix the file name)');
     continue;
   }
+  const fixture = rule.apiFixture ? apiFixtureName(rel) : undefined;
+  if (fixture === null) {
+    error(rel, 'an API fixture is named <Type>.<case>.json after the api.v1 definition it holds (Page<T> as Page-T), e.g. TraceDetail.flagged.json');
+    continue;
+  }
   const { data, text } = parse(full, rel);
   if (data === undefined) continue;
-  docs.set(rel, { data, text, schema: rule.schema });
+  docs.set(rel, { data, text, schema: rule.schema, fixture });
   if (rule.schema === '$schema') {
     const name = basename(rel).replace(/\.schema\.json$/, '');
     if (data.$id !== `${SCHEMA_BASE}${basename(rel)}`) error(rel, `$id must be ${SCHEMA_BASE}${basename(rel)}`);
@@ -150,22 +165,32 @@ for (const name of schemaNames) {
   }
 }
 
-function validate(rel, data, schemaName) {
+// validate checks data against a schema, or against one of its $defs when def is given.
+function validate(rel, data, schemaName, def) {
   if (!schemaNames.has(schemaName)) {
     error(rel, `schema ${schemaName} is missing`);
     return false;
   }
+  const label = def ? `${schemaName}#/$defs/${def}` : schemaName;
+  if (def && !Object.hasOwn(docs.get(`schema/${schemaName}.schema.json`)?.data?.$defs ?? {}, def)) {
+    error(rel, `${schemaName}.schema.json has no definition ${def}`);
+    return false;
+  }
   let fn;
   try {
-    fn = ajv.getSchema(`${SCHEMA_BASE}${schemaName}.schema.json`);
+    fn = ajv.getSchema(`${SCHEMA_BASE}${schemaName}.schema.json${def ? `#/$defs/${encodeURIComponent(def)}` : ''}`);
   } catch {
     return false; // compile error already reported
+  }
+  if (!fn) {
+    error(rel, `cannot resolve ${label}`);
+    return false;
   }
   if (fn(data)) return true;
   for (const e of fn.errors.slice(0, 20)) {
     const where = e.instancePath || '/';
     const extra = e.params && Object.keys(e.params).length ? ` ${JSON.stringify(e.params)}` : '';
-    error(rel, `${where} ${e.message}${extra} [${schemaName}]`);
+    error(rel, `${where} ${e.message}${extra} [${label}]`);
   }
   if (fn.errors.length > 20) error(rel, `…and ${fn.errors.length - 20} more schema errors`);
   return false;
@@ -176,7 +201,7 @@ const valid = new Map(); // rel -> data, only documents that passed their schema
 for (const [rel, doc] of docs) {
   if (!doc.schema || doc.schema === '$schema') continue;
   validated++;
-  if (validate(rel, doc.data, doc.schema)) valid.set(rel, doc.data);
+  if (validate(rel, doc.data, doc.schema, doc.fixture?.def)) valid.set(rel, doc.data);
 }
 
 const external = new Map(); // repo-relative path -> { data, schema }
@@ -261,17 +286,7 @@ function checkEvaluatorHardRules(rel, spec) {
   const ef = spec.escalation?.escalate_from ?? null;
   if (crit !== null && !(warnAt <= crit + EPS)) error(rel, `warn_at ${warnAt} must be <= critical_at ${crit}`);
   if (ef !== null && !(ef < warnAt - EPS)) error(rel, `escalate_from ${ef} must be < warn_at ${warnAt}`);
-  // Backticked references resolve to a declared state field or rules.<param>.
-  const fields = new Set(spec.state_fields);
-  const params = new Set(Object.keys(spec.params ?? {}));
-  for (const s of strings(q)) {
-    for (const [, ref] of s.matchAll(/`([^`]+)`/g)) {
-      const pm = ref.match(/^rules\.([a-z][a-z0-9_]*)$/);
-      const ok = pm ? fields.has('rules') && params.has(pm[1]) : fields.has(ref);
-      if (!ok) error(rel, `unresolved_state_reference: \`${ref}\``);
-    }
-    if (/[a-z][a-z0-9_]{1,47}__v[0-9]+/.test(s)) error(rel, `no_id_reference: question text contains a question id: "${s}"`);
-  }
+  for (const v of questionTextViolations(spec)) error(rel, v.message);
   // requires_corroboration and implies name registered evaluators or known detectors.
   for (const x of [...(spec.outcomes.requires_corroboration ?? []), ...(spec.outcomes.implies ?? [])]) {
     if (x.startsWith('det:')) {
@@ -282,6 +297,95 @@ function checkEvaluatorHardRules(rel, spec) {
   }
 }
 for (const [rel, spec] of byPrefix('evaluators/')) checkEvaluatorHardRules(rel, spec);
+
+// The two hard rules on question text (SPEC §2.8): every backticked reference resolves to a declared
+// state field or to rules.<param> with rules declared and the param declared, and no question id
+// ("<id>__v<version>") appears in text, because questions are answered independently.
+function questionTextViolations(spec) {
+  const fields = new Set(spec.state_fields);
+  const params = new Set(Object.keys(spec.params ?? {}));
+  const out = [];
+  for (const s of strings(spec.question)) {
+    for (const [, ref] of s.matchAll(/`([^`]+)`/g)) {
+      const pm = ref.match(/^rules\.([a-z][a-z0-9_]*)$/);
+      const ok = pm ? fields.has('rules') && params.has(pm[1]) : fields.has(ref);
+      if (!ok) out.push({ code: 'unresolved_state_reference', message: `unresolved_state_reference: \`${ref}\`` });
+    }
+    if (/[a-z][a-z0-9_]{1,47}__v[0-9]+/.test(s)) {
+      out.push({ code: 'no_id_reference', message: `no_id_reference: question text contains a question id: "${s}"` });
+    }
+  }
+  return out;
+}
+
+// The SPEC §2.8 lints (warnings in Studio; built-ins and drafter examples must be lint-clean). Rules the
+// SPEC gives only by id are defined as in the TypeScript reference (frontend-react/src/lib/decision/lint.ts)
+// and pinned, with the rest, by vectors/lint:
+// - non_descriptive_key: no word of three or more letters in the key besides generic ones (option_a, choice_2);
+// - near_duplicate_options: lowercase [a-z0-9]+ token Jaccard of two options' `what` above 0.5, neither with not_for;
+// - numeric_only_score_levels: a score level whose text has no letter;
+// - score_used_for_policy: any score question (score answers calibrate poorly).
+const LINT_ESCAPE_KEY = /^(no_|nothing_|not_|too_short|too_generic)/;
+const LINT_ESCAPE_WHAT = /greeting|too short|nothing to|not about|no .*(subject|facts|content)/i;
+const LINT_DOUBLE_NEGATIVE = /\bnot\b.*\b(no|not|never|without)\b/;
+const LINT_COUNTING = /more than|at least|fewer than|how many|[0-9]/;
+const LINT_GENERIC_WORDS = new Set(['option', 'choice', 'answer', 'item', 'value', 'class', 'category', 'label', 'type',
+  'case', 'other', 'misc', 'level', 'result']);
+const LINT_MAX_INSTRUCTIONS = 600;
+
+function evaluatorLints(spec) {
+  const q = spec.question;
+  const out = [];
+  const lint = (code, message) => out.push({ code, message: `${code}: ${message}` });
+  const optionWhat = (o) => (isObj(o) && typeof o.what === 'string' ? o.what : strings(o).join(' '));
+  const hasNotFor = (o) => isObj(o) && typeof o.not_for === 'string' && o.not_for !== '';
+  const tokens = (s) => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  const jaccard = (a, b) => {
+    const common = [...a].filter((t) => b.has(t)).length;
+    const union = a.size + b.size - common;
+    return union === 0 ? 0 : common / union;
+  };
+  if (q.type === 'choice') {
+    const entries = Object.entries(q.criteria);
+    if (entries.length >= 3 && !entries.some(([k, o]) => LINT_ESCAPE_KEY.test(k) || LINT_ESCAPE_WHAT.test(optionWhat(o)))) {
+      lint('missing_escape_option', 'no option for replies with nothing to judge (a greeting, a very short reply)');
+    }
+    for (const [k] of entries) {
+      if (!k.split(/[_0-9]+/).some((w) => w.length >= 3 && !LINT_GENERIC_WORDS.has(w))) {
+        lint('non_descriptive_key', `option key ${k} does not say what the option means`);
+      }
+    }
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const [ka, a] = entries[i];
+        const [kb, b] = entries[j];
+        if (!hasNotFor(a) && !hasNotFor(b) && jaccard(tokens(optionWhat(a)), tokens(optionWhat(b))) > 0.5) {
+          lint('near_duplicate_options', `${ka} and ${kb} are described almost the same way; add not_for`);
+        }
+      }
+    }
+  }
+  const instructions = strings(q.instructions);
+  for (const s of instructions) {
+    if (LINT_DOUBLE_NEGATIVE.test(s)) lint('double_negative', `instructions use a double negative: "${s}"`);
+    if (LINT_COUNTING.test(s)) lint('counting_or_arithmetic', `instructions ask for counting or arithmetic (consider escalation.numeric_or_date): "${s}"`);
+  }
+  if ([...instructions.join('')].length > LINT_MAX_INSTRUCTIONS) {
+    lint('long_instructions', `instructions are longer than ${LINT_MAX_INSTRUCTIONS} characters`);
+  }
+  if (q.type === 'score') {
+    q.criteria.forEach((level, i) => {
+      if (!/\p{L}/u.test(strings(level).join(' '))) lint('numeric_only_score_levels', `score level ${i} has no words`);
+    });
+    lint('score_used_for_policy', 'score answers calibrate poorly; prefer noul or choice for policy decisions');
+  }
+  return out;
+}
+
+// Built-in templates must stay lint-clean (SPEC §2.8).
+for (const [rel, spec] of byPrefix('evaluators/')) {
+  for (const l of evaluatorLints(spec)) error(rel, `${l.message} (built-in templates must be lint-clean)`);
+}
 
 // Evaluator refs from policies, presets and scenarios. While the registry is still empty (contracts
 // bootstrap), unresolved refs are warnings; once any evaluator exists they are errors.
@@ -374,9 +478,40 @@ for (const [label, ext] of external) if (ext.schema === 'policy.v1') checkPolicy
 const presets = get('policies/presets.v1.json');
 if (presets) {
   checkUnique('policies/presets.v1.json', presets.presets, 'id', 'preset id');
+  checkUnique('policies/presets.v1.json', presets.presets, 'name', 'preset name');
   for (const p of presets.presets) {
-    checkRouteSettings('policies/presets.v1.json', `preset ${p.id}`, merge(ROUTE_DEFAULTS, p.settings));
+    const settings = merge(ROUTE_DEFAULTS, p.settings);
+    checkRouteSettings('policies/presets.v1.json', `preset ${p.id}`, settings);
+    checkPresetReadiness('policies/presets.v1.json', p, settings);
   }
+}
+
+// A block or fallback preset must be able to enforce once calibrated (SPEC §7.2 block readiness, §2.9):
+// streams are buffered (passthrough makes the route act as flag), something can block (a block-eligible
+// active evaluator or a detectors.block_on entry), every block-eligible active evaluator has a corroborator
+// the preset attaches (a detector, an active evaluator, or none required), and, while require_calibration
+// holds, ui_note tells the user that the preset starts as Flag.
+function checkPresetReadiness(rel, preset, s) {
+  const mode = s.mode;
+  if (mode !== 'block' && mode !== 'fallback') return;
+  const where = `preset ${preset.id}`;
+  if (s.streaming !== 'buffer') error(rel, `${where}: ${mode} mode needs streaming: buffer, or streamed answers can only be flagged`);
+  if (s.require_calibration !== false && !/flag/i.test(preset.ui_note ?? '')) {
+    error(rel, `${where}: with require_calibration it acts as Flag until its checks are calibrated; ui_note must say so`);
+  }
+  const active = (s.evaluators ?? []).filter((e) => e.enabled !== false && (e.stage ?? 'active') === 'active');
+  const activeIds = new Set(active.map((e) => e.ref.split('@')[0]));
+  let canBlock = (s.detectors?.block_on ?? []).length > 0;
+  for (const e of active) {
+    const spec = registry.get(e.ref);
+    if (!spec?.outcomes.block_eligible) continue;
+    canBlock = true;
+    const req = spec.outcomes.requires_corroboration ?? [];
+    if (req.length && !req.some((x) => x.startsWith('det:') || activeIds.has(x))) {
+      error(rel, `${where}: ${e.ref} can block only when one of ${req.join(', ')} agrees, and the preset attaches none of them`);
+    }
+  }
+  if (!canBlock) error(rel, `${where}: ${mode} mode, but no active evaluator is block-eligible and detectors.block_on is empty`);
 }
 
 // ------------------------------------------------------------------------------------------ pricing
@@ -573,6 +708,113 @@ if (keys) {
   if (basic.length > 15) error(REL, `.env.example would list ${basic.length} keys (advanced: false); at most 15 are allowed`);
 }
 
+// ------------------------------------------------------------------------------------------ prompts
+
+// prompts/<id>.v<version>.json (prompt.v1). The file name matches id and version; {{name}} placeholders and
+// the declared variables agree; each example supplies exactly the user template's variables within their
+// max_chars, and its output passes output.schema. The first call, with the longest allowed inputs, must fit
+// the static playground's per-call token cap (VITE_PLAYGROUND_MAX_TOKENS), estimated at 3.5 characters per
+// token. Evaluator-draft prompts get the checks in checkDrafterPrompt.
+const PROMPT_CHARS_PER_TOKEN = 3.5;
+const PLACEHOLDER = /\{\{([^{}]*)\}\}/g;
+const placeholders = (text) => [...new Set([...text.matchAll(PLACEHOLDER)].map((m) => m[1]))];
+
+for (const [rel, p] of byPrefix('prompts/')) {
+  const m = basename(rel).match(/^(.+)\.v([0-9]+)\.json$/);
+  if (m[1] !== p.id || Number(m[2]) !== p.version) error(rel, `file name must be ${p.id}.v${p.version}.json`);
+  const texts = { system: p.system.join('\n'), user: p.user.join('\n'), repair: (p.repair ?? []).join('\n') };
+  const used = new Set();
+  for (const [name, text] of Object.entries(texts)) {
+    for (const v of placeholders(text)) {
+      if (!Object.hasOwn(p.variables, v)) error(rel, `${name}: {{${v}}} is not a declared variable`);
+      used.add(v);
+    }
+    if (text.replace(PLACEHOLDER, '').includes('{{')) error(rel, `${name}: "{{" that does not start a {{name}} placeholder`);
+  }
+  for (const v of Object.keys(p.variables)) if (!used.has(v)) error(rel, `variables.${v} is not used by system, user or repair`);
+  if (p.call.max_repairs > 0 && !placeholders(texts.repair).length) {
+    error(rel, 'call.max_repairs is above 0, so repair must be a template that passes the errors on');
+  }
+  const userVars = placeholders(texts.user);
+  for (const v of userVars) {
+    if (p.variables[v] && p.variables[v].max_chars === undefined) error(rel, `variables.${v} is sent with every call and needs max_chars`);
+  }
+  const render = (text, input) => text.replace(PLACEHOLDER,
+    (_, v) => ((input[v] ?? '').trim() === '' ? p.variables[v]?.empty ?? '' : input[v]));
+  const schemaOk = schemaNames.has(p.output.schema);
+  if (!schemaOk) error(rel, `output.schema ${p.output.schema} is not a schema in schema/`);
+
+  let chars = texts.system.length;
+  p.examples.forEach((ex, i) => {
+    const where = `examples[${i}]`;
+    for (const v of userVars) if (!Object.hasOwn(ex.input, v)) error(rel, `${where}.input has no ${v}`);
+    for (const [k, value] of Object.entries(ex.input)) {
+      if (!userVars.includes(k)) error(rel, `${where}.input.${k} is not a variable of the user template`);
+      const max = p.variables[k]?.max_chars;
+      if (max !== undefined && [...value].length > max) error(rel, `${where}.input.${k} is longer than its max_chars ${max}`);
+    }
+    const reply = JSON.stringify(ex.output);
+    chars += render(texts.user, ex.input).length + reply.length;
+    const replyTokens = Math.ceil(reply.length / PROMPT_CHARS_PER_TOKEN);
+    if (replyTokens > p.call.max_tokens) {
+      error(rel, `${where}.output needs about ${replyTokens} tokens, more than call.max_tokens ${p.call.max_tokens}`);
+    }
+    if (schemaOk && validate(`${rel} (${where}.output)`, ex.output, p.output.schema) && p.output.schema === 'evaluator-draft.v1') {
+      checkDraftExample(rel, where, ex);
+    }
+  });
+  chars += render(texts.user, Object.fromEntries(userVars.map((v) => [v, 'x'.repeat(p.variables[v]?.max_chars ?? 0)]))).length;
+  const cap = Number(keys?.keys.find((k) => k.name === 'VITE_PLAYGROUND_MAX_TOKENS')?.default ?? 0);
+  const need = Math.ceil(chars / PROMPT_CHARS_PER_TOKEN) + p.call.max_tokens;
+  if (cap > 0 && need > cap) {
+    error(rel, `the first call needs about ${need} tokens with the longest inputs (input plus call.max_tokens), `
+      + `above the static playground cap of ${cap} (VITE_PLAYGROUND_MAX_TOKENS)`);
+  }
+  if (p.output.schema === 'evaluator-draft.v1') checkDrafterPrompt(rel, texts.system);
+}
+
+// The drafter's system text names what a draft may use, so it must keep up with the schemas: every state
+// field (rules as `rules.<name>`), every category and every detector (as det:<id>).
+function checkDrafterPrompt(rel, system) {
+  const props = rawSchema('evaluator.v1')?.properties ?? {};
+  for (const f of props.state_fields?.items?.enum ?? []) {
+    const ref = f === 'rules' ? '`rules.<name>`' : `\`${f}\``;
+    if (!system.includes(ref)) error(rel, `system does not describe the state field ${ref}`);
+  }
+  for (const c of props.category?.enum ?? []) if (!new RegExp(`\\b${c}\\b`).test(system)) error(rel, `system does not list the category ${c}`);
+  for (const d of DETECTORS) if (!system.includes(`det:${d}`)) error(rel, `system does not list the detector det:${d}`);
+}
+
+// A drafter example teaches by example, so it must be a draft the drafter's own rules accept: it passes the
+// hard rules and is lint-clean, names only evaluators the example offers in existing_ids, and has 3 samples
+// that should fire and 3 that should not, each giving exactly the state the question reads (user_request
+// when it reads user_request; evidence of at least min_chars when evidence is required, none when unread).
+function checkDraftExample(rel, where, ex) {
+  const d = ex.output;
+  const at = `${rel} (${where}.output)`;
+  checkEvaluatorHardRules(at, d);
+  for (const l of evaluatorLints(d)) error(at, `${l.message} (drafter examples must be lint-clean)`);
+  const offered = new Set((ex.input.existing_ids ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  for (const x of [...(d.outcomes.requires_corroboration ?? []), ...(d.outcomes.implies ?? [])]) {
+    if (!x.startsWith('det:') && !offered.has(x)) error(at, `names evaluator ${x}, which the example's existing_ids does not offer`);
+  }
+  const firing = d.test_samples.filter((s) => s.should_fire).length;
+  if (firing !== 3) error(at, `test_samples: ${firing} of 6 should fire, want 3`);
+  const reads = new Set(d.state_fields);
+  const minChars = d.evidence.requires === 'required' ? d.evidence.min_chars ?? 40 : 0;
+  d.test_samples.forEach((s, j) => {
+    const sample = `test_samples[${j}]`;
+    if (reads.has('user_request') !== Object.hasOwn(s, 'user_request')) {
+      error(at, `${sample}: give user_request exactly when the question reads it`);
+    }
+    if (!reads.has('evidence') && s.evidence !== undefined) error(at, `${sample}: the question does not read evidence`);
+    const evidenceChars = (s.evidence ?? []).join('').length;
+    if (d.evidence.requires === 'required' && evidenceChars < minChars) {
+      error(at, `${sample}: evidence is required, and ${evidenceChars} characters are fewer than min_chars ${minChars}`);
+    }
+  });
+}
+
 // ------------------------------------------------------------------------------------------ vectors
 
 const vectorKinds = new Set(rawSchema('vector.v1')?.properties?.kind?.enum ?? []);
@@ -590,12 +832,54 @@ for (const [rel, doc] of docs) {
   // decide() inputs have a schema of their own; expected may be a subset of decision/v1, so it is not checked.
   if (v.kind === 'decide') validate(`${rel} (input)`, v.input, 'decide-input.v1');
   if (v.kind === 'lint') checkLintVector(rel, v);
+  if (v.kind === 'detectors') checkDetectorVector(rel, v);
+  if (v.kind === 'evidence') {
+    for (const [i, t] of (v.input?.settings?.tag_patterns ?? []).entries()) {
+      checkPortableRegex(rel, `input.settings.tag_patterns[${i}]`, t.pattern, t.flags ?? '');
+    }
+  }
+}
+
+// detectors vectors: an aligned finding that pins its text selects exactly that text of the response
+// (UTF-16 offsets, which JavaScript string indices are).
+function checkDetectorVector(rel, v) {
+  const response = v.input?.response;
+  if (typeof response !== 'string') {
+    error(rel, 'input.response must be a string');
+    return;
+  }
+  for (const [i, f] of (v.expected?.findings ?? []).entries()) {
+    if (!isObj(f) || f.start === -1) continue;
+    checkSpan(rel, `expected.findings[${i}]`, response, f.start, f.end, f.text);
+  }
+}
+
+// checkSpan checks a half-open UTF-16 span [start, end) of text and, when want is a string, that it
+// selects want.
+function checkSpan(rel, where, text, start, end, want) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > text.length) {
+    error(rel, `${where}: [${start}, ${end}) is not a span of a ${text.length}-code-unit text`);
+    return;
+  }
+  if (typeof want === 'string' && text.slice(start, end) !== want) {
+    error(rel, `${where}: [${start}, ${end}) selects ${JSON.stringify(text.slice(start, end))}, not ${JSON.stringify(want)}`);
+  }
 }
 
 // lint vectors: input.spec is a schema-valid evaluator (it may break a hard rule); expected is
-// {errors, lints}, each a sorted list of distinct codes from SPEC §2.8.
+// {errors, lints}, each a sorted list of distinct codes from SPEC §2.8, and must be what the text hard
+// rules and the lints above produce for the spec.
 function checkLintVector(rel, v) {
-  validate(`${rel} (input.spec)`, v.input?.spec, 'evaluator.v1');
+  const specValid = validate(`${rel} (input.spec)`, v.input?.spec, 'evaluator.v1');
+  if (specValid && isObj(v.expected)) {
+    const codesOf = (found) => [...new Set(found.map((f) => f.code))].sort();
+    const got = { errors: codesOf(questionTextViolations(v.input.spec)), lints: codesOf(evaluatorLints(v.input.spec)) };
+    for (const key of ['errors', 'lints']) {
+      if (Array.isArray(v.expected[key]) && got[key].join(',') !== v.expected[key].join(',')) {
+        error(rel, `expected.${key} is ${JSON.stringify(v.expected[key])}, but the SPEC §2.8 rules give ${JSON.stringify(got[key])}`);
+      }
+    }
+  }
   const codes = {
     errors: ['unresolved_state_reference', 'no_id_reference'],
     lints: ['missing_escape_option', 'non_descriptive_key', 'double_negative', 'counting_or_arithmetic',
@@ -610,6 +894,101 @@ function checkLintVector(rel, v) {
     for (const c of list) if (!known.includes(c)) error(rel, `expected.${key}: unknown code ${JSON.stringify(c)}`);
     if (list.join('\n') !== [...new Set(list)].sort().join('\n')) error(rel, `expected.${key} must be sorted and distinct`);
   }
+}
+
+// ------------------------------------------------------------------------------------------ api fixtures
+
+// fixtures/api holds one golden body per REST response type and WebSocket event (SPEC §2.4, §2.5); msw
+// handlers and Go handler tests start from them. Beyond their api.v1 definition: every required type has
+// a fixture, a WsEvent fixture is named WsEvent.<type>[.<variant>].json, the parts of one trace carry its
+// trace id, gate decisions are decision.v1 documents, and aligned UTF-16 spans (claim spans, verified
+// evidence spans, detector findings) select the text they claim to.
+const REQUIRED_API_FIXTURES = [
+  'HealthStatus', 'ReadyStatus', 'SystemStatus', 'Page<TraceSummary>', 'TraceDetail', 'Page<AuditSummary>', 'AuditDetail',
+  'Page<GateDecisionRow>', 'ApiErrorBody', 'WsEvent',
+];
+const REQUIRED_WS_EVENTS = [
+  'hello', 'hb', 'trace_started', 'gate_decision', 'audit_queued', 'audit_started', 'audit_completed', 'audit_failed',
+  'audit_dropped', 'gap',
+];
+
+const fixtureTypes = new Set();
+const wsEvents = new Set();
+for (const [rel, doc] of docs) {
+  if (!doc.fixture) continue;
+  const { def, variant } = doc.fixture;
+  fixtureTypes.add(def);
+  const f = valid.get(rel);
+  if (!f) continue;
+  if (def === 'TraceDetail') checkTraceDetail(rel, '', f);
+  if (def === 'AuditDetail') checkAudit(rel, '', f);
+  if (def === 'WsEvent') {
+    wsEvents.add(f.type);
+    if (variant.split('.')[0] !== f.type) error(rel, `a WsEvent fixture is named WsEvent.${f.type}[.<variant>].json after its event type`);
+    checkWsEvent(rel, f);
+  }
+}
+for (const def of REQUIRED_API_FIXTURES) {
+  if (!fixtureTypes.has(def)) error('fixtures/api', `no fixture for ${def} (${def.replace(/<(.+)>$/, '-$1')}.<case>.json)`);
+}
+for (const type of REQUIRED_WS_EVENTS) {
+  if (!wsEvents.has(type)) error('fixtures/api', `no fixture for the WebSocket event ${type} (WsEvent.${type}.json)`);
+}
+
+function checkTraceDetail(rel, at, t) {
+  for (const [i, d] of (t.decisions ?? []).entries()) {
+    if (d.trace_id !== t.trace_id) error(rel, `${at}decisions[${i}].trace_id is not the trace's ${t.trace_id}`);
+    checkDecision(rel, `${at}decisions[${i}]`, d, t.body?.response_text);
+  }
+  if (t.audit_detail) {
+    if (t.audit_detail.trace_id !== t.trace_id) error(rel, `${at}audit_detail.trace_id is not the trace's ${t.trace_id}`);
+    if (t.audit.audit_id !== t.audit_detail.audit_id) error(rel, `${at}audit.audit_id is not audit_detail.audit_id`);
+    checkAudit(rel, `${at}audit_detail.`, t.audit_detail);
+  }
+}
+
+// A gate decision view is the stored decision/v1 document; detector findings are offsets into the gated
+// response text (secret findings are masked, so only their span is checked).
+function checkDecision(rel, where, d, responseText) {
+  validate(`${rel} (${where})`, d, 'decision.v1');
+  if (typeof responseText !== 'string') return;
+  for (const det of d.detectors ?? []) {
+    for (const [i, f] of (det.findings ?? []).entries()) {
+      if (f.start === -1) continue;
+      checkSpan(rel, `${where}.detectors[${det.id}].findings[${i}]`, responseText, f.start, f.end,
+        det.id === 'secret_pattern' ? undefined : f.text);
+    }
+  }
+}
+
+function checkAudit(rel, at, a) {
+  for (const [i, c] of (a.claims ?? []).entries()) {
+    const where = `${at}claims[${i}]`;
+    if (c.span && typeof a.llm_response === 'string') {
+      checkSpan(rel, `${where}.span`, a.llm_response, c.span.start, c.span.end, c.span.method === 'exact' ? c.quote ?? undefined : undefined);
+    }
+    for (const [j, s] of (c.evidence_spans ?? []).entries()) {
+      const doc = a.context_used?.[s.doc_index];
+      if (!doc) {
+        if (a.context_used?.length) error(rel, `${where}.evidence_spans[${j}]: doc_index ${s.doc_index} is not in context_used`);
+        continue;
+      }
+      if (doc.id !== s.doc_id) error(rel, `${where}.evidence_spans[${j}]: doc_id ${s.doc_id} is not context_used[${s.doc_index}].id ${doc.id}`);
+      if (typeof doc.text === 'string') {
+        checkSpan(rel, `${where}.evidence_spans[${j}]`, doc.text, s.start, s.end, s.kind === 'quote_verified' && s.text !== null ? s.text : undefined);
+      }
+    }
+  }
+}
+
+function checkWsEvent(rel, e) {
+  const d = e.data ?? {};
+  if (e.type === 'hello' && d.epoch !== e.epoch) error(rel, 'data.epoch is not the envelope epoch');
+  for (const [key, value] of [['trace', d.trace], ['decision', d.decision], ['audit', d.audit]]) {
+    if (value && value.trace_id !== e.trace_id) error(rel, `data.${key}.trace_id is not the envelope trace_id ${e.trace_id}`);
+  }
+  if (e.type === 'gate_decision') checkDecision(rel, 'data.decision', d.decision);
+  if (e.type === 'audit_completed') checkAudit(rel, 'data.audit.', d.audit);
 }
 
 // ------------------------------------------------------------------------------------------ rules

@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "citation-not-run-with-only-untrusted-evidence",
+  "status": "frozen",
+  "description": "The only evidence item is an untrusted tool result, which is never evidence: the citation detector does not run, so [7] is not checked.",
+  "input": {
+    "detector": "citation_out_of_range",
+    "response": "According to [7], prices drop on Fridays.",
+    "evidence": [
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "Prices drop on Fridays.",
+        "untrusted": true
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {},
+    "evidence_meta": {"pre_dedup_items": 1, "max_marker": 0}
+  },
+  "expected": {"ran": false, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

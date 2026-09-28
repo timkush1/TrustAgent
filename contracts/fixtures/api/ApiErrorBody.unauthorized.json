@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Authentication required: send a key in X-TrustAgent-Key (or set TRUTHTABLE_PUBLIC_READ=true for keyless reads)."
+  }
+}

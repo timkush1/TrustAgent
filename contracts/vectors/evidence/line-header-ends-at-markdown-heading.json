@@ -1,0 +1,36 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "line-header-ends-at-markdown-heading",
+  "status": "frozen",
+  "description": "With line_headers on, \"Knowledge :\" (case-insensitive, spaces allowed before the colon) starts a block, which ends before the next markdown heading \"## Tone\". The block text excludes the header line; the block span is removed from system_instructions, and the heading and its text stay.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Knowledge :\nThe office is closed on public holidays.\n## Tone\nBe polite."
+        },
+        {"role": "user", "content": "Are you open on New Year's Day?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "sys1", "source": "request_system", "text": "The office is closed on public holidays."}
+    ],
+    "system_instructions": "## Tone\nBe polite.",
+    "user_request": "Are you open on New Year's Day?",
+    "pre_dedup_items": 1
+  },
+  "tolerance": 1e-9
+}

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "numbers-refund-window-not-in-evidence",
-  "status": "draft",
+  "status": "frozen",
   "description": "The refund scenario: the response says 60 days; the reference (evidence plus user_request) contains 30 and 45 only. 60 is above min_integer, so it is always checked, and it is unknown: fires with one finding.",
   "input": {
     "detector": "numbers_not_in_evidence",

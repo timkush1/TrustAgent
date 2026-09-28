@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "dates-known-from-user-request-and-rules-only",
-  "status": "draft",
+  "status": "frozen",
   "description": "No evidence, but rules are non-empty, so the date detector runs. 2026-05-02 is known from user_request (\"May 2, 2026\") and \"Dec. 31, 2026\" (abbreviated month with a dot) from the rules value: does not fire.",
   "input": {
     "detector": "dates_not_in_evidence",

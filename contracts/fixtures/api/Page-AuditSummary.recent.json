@@ -1,0 +1,119 @@
+{
+  "items": [
+    {
+      "audit_id": "01a0e787-7dfb-70f9-a7d2-c4b6a18e3c57",
+      "trace_id": "01a0e787-7df8-72c6-a8f1-3e7d04b59a18",
+      "created_at": "2026-09-28T10:20:11.643125Z",
+      "route": null,
+      "source": "direct",
+      "model": "gpt-4o-mini",
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "not_assessed_reason": null,
+      "trust_score": 0.648333,
+      "grade": "C",
+      "hallucination_detected": true,
+      "verdict_counts": {
+        "SUPPORTED": 2,
+        "PARTIALLY_SUPPORTED": 0,
+        "CONTRADICTED": 0,
+        "UNSUPPORTED": 1,
+        "UNKNOWN": 0,
+        "NOT_CHECKED": 0
+      },
+      "processing_ms": 3312,
+      "judge": {
+        "configured_provider": "anthropic",
+        "effective_provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "fallback_active": false,
+        "fallback_reason": null,
+        "structured_outputs": true,
+        "healthy": true,
+        "credential_source": "env"
+      },
+      "gate_action": null,
+      "selection": "direct",
+      "inclusion_prob": null,
+      "query_preview": "Do you ship to Canada, and how fast?",
+      "redacted": false
+    },
+    {
+      "audit_id": "01a0e781-0530-79a5-bd4e-1c8b2063f7d4",
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "created_at": "2026-09-28T10:13:07.504918Z",
+      "route": "support-bot",
+      "source": "proxy",
+      "model": "gpt-4o-mini",
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "not_assessed_reason": null,
+      "trust_score": 0,
+      "grade": "F",
+      "hallucination_detected": true,
+      "verdict_counts": {
+        "SUPPORTED": 0,
+        "PARTIALLY_SUPPORTED": 0,
+        "CONTRADICTED": 1,
+        "UNSUPPORTED": 0,
+        "UNKNOWN": 0,
+        "NOT_CHECKED": 0
+      },
+      "processing_ms": 2747,
+      "judge": {
+        "configured_provider": "anthropic",
+        "effective_provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "fallback_active": false,
+        "fallback_reason": null,
+        "structured_outputs": true,
+        "healthy": true,
+        "credential_source": "env"
+      },
+      "gate_action": "flag",
+      "selection": "high",
+      "inclusion_prob": 1,
+      "query_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "redacted": false
+    },
+    {
+      "audit_id": "01a0e780-a457-76e0-b93c-2f1a74d8e2b5",
+      "trace_id": "01a0e780-9e78-71f2-8c8b-7d05e3a9c4d1",
+      "created_at": "2026-09-28T10:12:42.71153Z",
+      "route": "support-bot",
+      "source": "proxy",
+      "model": "gpt-4o-mini",
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "not_assessed_reason": null,
+      "trust_score": 0.9725,
+      "grade": "A",
+      "hallucination_detected": false,
+      "verdict_counts": {
+        "SUPPORTED": 2,
+        "PARTIALLY_SUPPORTED": 0,
+        "CONTRADICTED": 0,
+        "UNSUPPORTED": 0,
+        "UNKNOWN": 0,
+        "NOT_CHECKED": 0
+      },
+      "processing_ms": 2381,
+      "judge": {
+        "configured_provider": "anthropic",
+        "effective_provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "fallback_active": false,
+        "fallback_reason": null,
+        "structured_outputs": true,
+        "healthy": true,
+        "credential_source": "env"
+      },
+      "gate_action": "pass",
+      "selection": "sample",
+      "inclusion_prob": 1,
+      "query_preview": "How long do I have to get a refund on an annual plan?",
+      "redacted": false
+    }
+  ],
+  "next_cursor": null
+}

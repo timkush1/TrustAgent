@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "numbers-utf16-offsets-after-emoji",
-  "status": "draft",
+  "status": "frozen",
   "description": "The party emoji before the text is one code point but two UTF-16 code units, so offsets are shifted by 2. $45 is known from the evidence. 7 is <= min_integer but followed by \"days\": checked, and unknown (reference has 45, 5, 10). Fires on 7.",
   "input": {
     "detector": "numbers_not_in_evidence",

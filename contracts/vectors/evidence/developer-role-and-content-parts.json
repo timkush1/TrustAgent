@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "developer-role-and-content-parts",
-  "status": "draft",
+  "status": "frozen",
   "description": "Tolerant parsing (B3): content given as parts. The developer message counts as system text, and its <context> block is a request_system item. In the last user message, the non-final text part is a request_context item, the image part is ignored, and the final input_text part is user_request. Nothing remains of the developer text once the block is removed.",
   "input": {
     "api_format": "openai_chat",

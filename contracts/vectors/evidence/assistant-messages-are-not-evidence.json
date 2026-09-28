@@ -1,0 +1,48 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "assistant-messages-are-not-evidence",
+  "status": "frozen",
+  "description": "Blocks in an earlier user message are request_context items; blocks in assistant messages are not evidence at all. In the last user message the non-final text part is an item taken whole (ctx2, the second request_context item) and the final part is user_request.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {"role": "system", "content": "Be helpful."},
+        {
+          "role": "user",
+          "content": "<document id=\"order-4411\">Order 4411 shipped 2026-03-02.</document> Where is it?"
+        },
+        {
+          "role": "assistant",
+          "content": "According to <document id=\"eta\">it arrives in 2 days</document>, soon."
+        },
+        {
+          "role": "user",
+          "content": [
+            {"type": "text", "text": "Tracking: 1Z999AA10123456784."},
+            {"type": "text", "text": "When will it arrive?"}
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "order-4411", "source": "request_context", "text": "Order 4411 shipped 2026-03-02."},
+      {"id": "ctx2", "source": "request_context", "text": "Tracking: 1Z999AA10123456784."}
+    ],
+    "system_instructions": "Be helpful.",
+    "user_request": "When will it arrive?",
+    "pre_dedup_items": 2
+  },
+  "tolerance": 1e-9
+}

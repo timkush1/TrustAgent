@@ -4,11 +4,15 @@ Main Application Entry Point
 Starts the gRPC server for the audit engine.
 
 This is where everything gets wired together:
-1. Load configuration from environment variables
-2. Initialize the LLM provider (Ollama)
-3. Initialize RAG components (embeddings + Qdrant) if configured
-4. Build the LangGraph audit workflow
-5. Start the gRPC server
+1. Load configuration (contracts registry keys; warnings, strict mode)
+2. Check the bind address against the internal token (non-loopback needs one)
+3. Resolve the audit judge (judge.py) and cap its in-flight calls
+4. Initialize the knowledge add-on (embeddings + Qdrant) if enabled; its heavy
+   dependencies are imported only then
+5. Build the LangGraph audit workflow with the scoring, claim and policy
+   settings (TRUTHTABLE_SCORING_*, TRUTHTABLE_MAX_CLAIMS, ...)
+6. Start the metrics endpoint and the gRPC server (internal-token interceptor,
+   TRUTHTABLE_ENGINE_MAX_RPCS)
 """
 
 import asyncio
@@ -17,192 +21,194 @@ import os
 import platform
 import signal
 import sys
+import time
+from typing import Any, Optional, Tuple
 
-from truthtable.config import get_settings
-from truthtable.contracts import DEMO_SCENARIOS, contract_path
-from truthtable.providers.registry import get_provider
+from truthtable import __version__
+from truthtable.config import STRICT_CONFIG_EXIT_CODE, Settings, load_settings
+from truthtable.engine_info import (
+    KNOWLEDGE_EXTRAS_MISSING,
+    KNOWLEDGE_INIT_FAILED,
+    EngineContext,
+    KnowledgeState,
+    knowledge_state_for,
+)
 from truthtable.graphs.audit_graph import build_audit_graph
 from truthtable.grpc.server import AuditServicer, create_server
+from truthtable.internal_auth import (
+    InternalTokenError,
+    InternalTokenInterceptor,
+    check_bind,
+    token_source,
+)
+from truthtable.judge import MOCK_JUDGE_MODEL, OLLAMA, JudgeSelection, resolve_judge
+from truthtable.providers.base import CompletionRequest, LLMProvider
+from truthtable.providers.limiter import LimitedProvider, configure_process_limiter
+from truthtable.providers.pricing import (
+    PriceTable,
+    PriceTableError,
+    load_default_price_table,
+    set_active_price_table,
+)
+from truthtable.contracts import ContractsNotFoundError
+from truthtable.scoring import ScoringConfig
 
-# Reported model of the mock judge unless LLM_MODEL names one.
-MOCK_JUDGE_MODEL = "mock"
+__all__ = ["MOCK_JUDGE_MODEL", "init_provider", "main"]
 
 
-def setup_logging(level: str = "INFO"):
+def setup_logging(level: str = "INFO") -> None:
     """Setup application logging."""
     logging.basicConfig(
-        level=getattr(logging, level.upper()),
+        level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
 
-async def init_provider(settings, logger):
-    """Build the configured LLM provider, falling back to local Ollama when a
-    cloud provider is unavailable (missing API key or failed health check), so
-    the engine always comes up.
+async def init_provider(
+    settings: Settings, logger: logging.Logger
+) -> Tuple[Optional[LLMProvider], str]:
+    """
+    Resolve the audit judge (see truthtable.judge for the order and the
+    fallback rules).
 
-    LLM_PROVIDER=mock (the zero-key demo and e2e stacks) is the exception: the
-    mock judge answers from the contracts scenario pack (AuditOptions.mock_scenario)
-    and never falls back; if the pack is missing the engine does not start.
+    LLM_PROVIDER=mock (the zero-key demo and e2e stacks) answers from the
+    contracts scenario pack (AuditOptions.mock_scenario) and never falls back;
+    if the pack is missing the engine does not start.
 
     Returns:
-        (provider, effective_provider_name)
+        (provider, effective_provider_name); the provider is None and the name
+        "none" when the engine runs without a judge.
     """
-    name = (settings.llm_provider or "ollama").lower()
+    selection = await resolve_judge(settings, log=logger)
+    return selection.provider, selection.effective
 
-    def _build(provider_name: str, model: str):
-        kwargs = {"model": model}
-        if provider_name == "ollama":
-            kwargs["base_url"] = settings.ollama_base_url
-        elif provider_name == "anthropic" and settings.anthropic_api_key:
-            kwargs["api_key"] = settings.anthropic_api_key
-        elif provider_name == "openai" and settings.openai_api_key:
-            kwargs["api_key"] = settings.openai_api_key
-        elif provider_name == "mock":
-            kwargs["scenarios_path"] = contract_path(DEMO_SCENARIOS)
-        return get_provider(provider_name, **kwargs)
 
-    if name == "mock":
-        explicit_model = "llm_model" in getattr(settings, "model_fields_set", set())
-        provider = _build("mock", settings.llm_model if explicit_model else MOCK_JUDGE_MODEL)
-        logger.info(
-            f"Using the mock judge (scenario fixtures from {DEMO_SCENARIOS}); "
-            "audit verdicts are simulated"
+def configure_langsmith(settings: Settings, logger: logging.Logger) -> bool:
+    """
+    Enable LangSmith tracing when LANGSMITH_TRACING=true and a key is set (D19).
+
+    Returns:
+        Whether tracing was enabled.
+    """
+    if not settings.langsmith_tracing:
+        logger.info("LangSmith tracing off (set LANGSMITH_TRACING=true to enable)")
+        return False
+    api_key = settings.langsmith_api_key.get_secret_value()
+    if not api_key:
+        logger.warning("LANGSMITH_TRACING=true but LANGSMITH_API_KEY is not set: tracing stays off")
+        return False
+    for prefix in ("LANGCHAIN", "LANGSMITH"):
+        os.environ[f"{prefix}_API_KEY"] = api_key
+        os.environ[f"{prefix}_PROJECT"] = settings.langsmith_project
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGSMITH_TRACING"] = "true"
+    logger.info(f"LangSmith tracing enabled (project: {settings.langsmith_project})")
+    return True
+
+
+def load_price_table(settings: Settings, logger: logging.Logger) -> None:
+    """Install TRUTHTABLE_PRICE_TABLE_FILE (else the contracts table) for cost reporting."""
+    try:
+        if settings.price_table_file:
+            table = PriceTable.load(settings.price_table_file)
+        else:
+            table = load_default_price_table()
+    except (OSError, PriceTableError, ContractsNotFoundError) as exc:
+        logger.warning(f"Price table unavailable ({exc}); LLM costs are reported unknown")
+        return
+    set_active_price_table(table)
+    logger.info(f"Price table {table.version} ({len(table.entries)} entries)")
+
+
+async def warm_up(provider: LLMProvider, logger: logging.Logger) -> None:
+    """
+    Ollama loads the model into memory on the first completion, which can take
+    long enough to time out the first real audit. Pay that cost at startup.
+    """
+    logger.info("Warming up the judge model (first load can take a while)...")
+    try:
+        start = time.time()
+        await provider.complete(
+            CompletionRequest(
+                messages=provider.create_messages(
+                    system_prompt="Reply with the single word: OK",
+                    user_message="OK?",
+                ),
+                model=provider.model,
+                temperature=0.0,
+                max_tokens=4,
+            )
         )
-        return provider, "mock"
+        logger.info(f"Judge model warmed up in {time.time() - start:.1f}s")
+    except Exception as exc:  # warm-up is best-effort
+        logger.warning(f"Model warm-up failed (continuing anyway): {exc}")
+
+
+def init_knowledge(
+    settings: Settings, provider: Optional[LLMProvider], logger: logging.Logger
+) -> Tuple[Any, Any, Any, Any, KnowledgeState]:
+    """
+    Start the knowledge add-on when TRUTHTABLE_KNOWLEDGE_ENABLED and QDRANT_URL
+    are set. Its dependencies (sentence-transformers, torch, qdrant-client) are
+    the `knowledge` extra and are imported only here.
+
+    Returns:
+        (embedding_service, qdrant_store, hybrid_retriever, ingestor, state);
+        the first four are None when knowledge is off.
+    """
+    state = knowledge_state_for(settings)
+    if not state.enabled:
+        if settings.qdrant_url and not settings.knowledge_enabled:
+            logger.info(
+                "Knowledge add-on off (TRUTHTABLE_KNOWLEDGE_ENABLED=false); QDRANT_URL unused"
+            )
+        else:
+            logger.info(f"Knowledge add-on off ({state.reason})")
+        return None, None, None, None, state
+
+    logger.info("Initializing the knowledge add-on...")
+    try:
+        from truthtable.vectorstore.embeddings import EmbeddingService
+        from truthtable.vectorstore.qdrant_store import QdrantStore
+    except ImportError as exc:
+        logger.error(
+            f"Knowledge add-on unavailable: {exc}. Install the `knowledge` extra "
+            "(poetry install --extras knowledge; ENGINE_EXTRAS=knowledge for the image)"
+        )
+        return None, None, None, None, KnowledgeState(reason=f"{KNOWLEDGE_EXTRAS_MISSING}: {exc}")
 
     try:
-        logger.info(f"Initializing {name} provider (model: {settings.llm_model})...")
-        provider = _build(name, settings.llm_model)
-        if await provider.health_check():
-            logger.info(f"Provider '{name}' is healthy")
-            return provider, name
-        logger.warning(f"Provider '{name}' health check failed")
-    except Exception as exc:  # missing key, bad config, network, etc.
-        logger.warning(f"Provider '{name}' could not be initialized: {exc}")
+        logger.info(f"Loading embedding model {settings.embedding_model}...")
+        embedding_service = EmbeddingService(model_name=settings.embedding_model)
+        logger.info(f"Embedding model loaded (dimension={embedding_service.dimension})")
 
-    if name == "ollama":
-        # Already local; nothing better to fall back to — continue regardless.
-        logger.warning("Continuing with Ollama despite a failed health check")
-        return _build("ollama", settings.llm_model), "ollama"
+        logger.info(f"Connecting to Qdrant at {settings.qdrant_url}...")
+        qdrant_store = QdrantStore(
+            url=settings.qdrant_url, vector_dimension=embedding_service.dimension
+        )
+        qdrant_store.ensure_collection()
+        doc_count = qdrant_store.count()
+        logger.info(f"Qdrant connected. Knowledge base has {doc_count} points.")
+        if doc_count == 0:
+            logger.warning("Knowledge base is empty! Run: python scripts/seed_knowledge.py")
+    except Exception as exc:
+        logger.error(f"Failed to initialize the knowledge add-on: {exc}")
+        logger.warning("Continuing without knowledge retrieval")
+        return None, None, None, None, KnowledgeState(reason=f"{KNOWLEDGE_INIT_FAILED}: {exc}")
 
-    logger.warning(
-        f"Falling back to local Ollama (model: {settings.ollama_fallback_model}). "
-        f"Set a valid {name.upper()}_API_KEY to use {name} for higher-quality audits."
+    # Knowledge-base components (VERITAS-lite): claim-level ingestion with the
+    # Gate-1 entailment check, contradiction detection, and hybrid (BM25 +
+    # dense RRF) retrieval. Ingestion needs the judge.
+    from truthtable.kb.hybrid import HybridClaimRetriever
+
+    hybrid_retriever = HybridClaimRetriever(
+        embedding_service=embedding_service, qdrant_store=qdrant_store
     )
-    fallback = _build("ollama", settings.ollama_fallback_model)
-    if await fallback.health_check():
-        logger.info("Ollama fallback is healthy")
-    else:
-        logger.warning("Ollama fallback health check failed - continuing anyway")
-    return fallback, "ollama"
-
-
-async def main():
-    """Main application entry point."""
-    # Load settings
-    settings = get_settings()
-    setup_logging(settings.log_level)
-
-    logger = logging.getLogger(__name__)
-    logger.info("Starting TrustAgent Audit Engine")
-    logger.info(f"Configured provider: {settings.llm_provider}, model: {settings.llm_model}")
-
-    # Setup LangSmith tracing (optional)
-    if settings.langsmith_api_key:
-        os.environ["LANGCHAIN_TRACING_V2"] = "true"
-        os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
-        os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
-        logger.info(f"LangSmith tracing enabled (project: {settings.langsmith_project})")
-    else:
-        logger.info("LangSmith tracing disabled (set LANGSMITH_API_KEY to enable)")
-
-    # Initialize the LLM provider with automatic fallback to local Ollama when a
-    # cloud provider is unavailable (missing key / failed health check).
-    provider, effective_provider = await init_provider(settings, logger)
-    judge_fallback_active = effective_provider != (settings.llm_provider or "ollama").lower()
-
-    # Warm-up: Ollama loads the model into memory on the first completion,
-    # which can take long enough to time out the first real audit. Pay that
-    # cost here instead, before we accept traffic.
-    if effective_provider == "ollama":
-        import time
-
-        from truthtable.providers.base import CompletionRequest
-
-        logger.info("Warming up the judge model (first load can take a while)...")
-        try:
-            start = time.time()
-            await provider.complete(
-                CompletionRequest(
-                    messages=provider.create_messages(
-                        system_prompt="Reply with the single word: OK",
-                        user_message="OK?",
-                    ),
-                    model=provider.model,
-                    temperature=0.0,
-                    max_tokens=4,
-                )
-            )
-            logger.info(f"Judge model warmed up in {time.time() - start:.1f}s")
-        except Exception as exc:  # warm-up is best-effort
-            logger.warning(f"Model warm-up failed (continuing anyway): {exc}")
-
-    # Initialize RAG components (if Qdrant URL is configured)
-    embedding_service = None
-    qdrant_store = None
-
-    if settings.qdrant_url and settings.rag_enabled:
-        logger.info("Initializing RAG components...")
-        try:
-            from truthtable.vectorstore.embeddings import EmbeddingService
-            from truthtable.vectorstore.qdrant_store import QdrantStore
-
-            # Load embedding model (takes ~2s on first load)
-            logger.info("Loading embedding model...")
-            embedding_service = EmbeddingService()
-            logger.info(f"Embedding model loaded (dimension={embedding_service.dimension})")
-
-            # Connect to Qdrant
-            logger.info(f"Connecting to Qdrant at {settings.qdrant_url}...")
-            qdrant_store = QdrantStore(
-                url=settings.qdrant_url,
-                vector_dimension=embedding_service.dimension,
-            )
-            qdrant_store.ensure_collection()
-
-            doc_count = qdrant_store.count()
-            logger.info(f"Qdrant connected. Knowledge base has {doc_count} documents.")
-
-            if doc_count == 0:
-                logger.warning("Knowledge base is empty! " "Run: python scripts/seed_knowledge.py")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize RAG components: {e}")
-            logger.warning("Continuing without knowledge retrieval")
-            embedding_service = None
-            qdrant_store = None
-    elif settings.qdrant_url and not settings.rag_enabled:
-        logger.info("RAG disabled (rag_enabled=false). Running without knowledge retrieval.")
-    else:
-        logger.warning(
-            "QDRANT_URL not set. Running without knowledge retrieval. "
-            "Set QDRANT_URL=http://localhost:6333 to enable."
-        )
-
-    # Knowledge-base components (VERITAS-lite): claim-level ingestion with
-    # the Gate-1 entailment check, contradiction detection, and hybrid
-    # (BM25 + dense RRF) retrieval. Requires both the LLM and the vector store.
     ingestor = None
-    hybrid_retriever = None
-    if embedding_service is not None and qdrant_store is not None:
+    if provider is not None:
         from truthtable.kb import ClaimIngestor, ContradictionDetector
-        from truthtable.kb.hybrid import HybridClaimRetriever
 
-        hybrid_retriever = HybridClaimRetriever(
-            embedding_service=embedding_service, qdrant_store=qdrant_store
-        )
         ingestor = ClaimIngestor(
             provider=provider,
             embedding_service=embedding_service,
@@ -211,63 +217,144 @@ async def main():
             on_change=hybrid_retriever.mark_dirty,
         )
         logger.info("Knowledge base enabled: Gate-1 ingestion + hybrid retrieval")
+    return embedding_service, qdrant_store, hybrid_retriever, ingestor, state
 
-    # Build audit graph (with or without retrieval)
-    logger.info("Building audit graph...")
-    audit_graph = build_audit_graph(
-        provider=provider,
-        embedding_service=embedding_service,
-        qdrant_store=qdrant_store,
-        hybrid_retriever=hybrid_retriever,
-        verifier_concurrency=settings.verifier_concurrency,
-    )
-    logger.info("Audit graph ready")
 
-    # Start Prometheus metrics HTTP server
-    metrics_port = 8001
+def start_metrics(settings: Settings, logger: logging.Logger) -> None:
+    """Serve Prometheus metrics on METRICS_PORT (D15)."""
     try:
         from prometheus_client import start_http_server
 
-        start_http_server(metrics_port)
-        logger.info(f"Metrics server listening on :{metrics_port}")
-    except Exception as e:
-        logger.warning(f"Failed to start metrics server: {e}")
+        start_http_server(settings.metrics_port)
+        logger.info(f"Metrics server listening on :{settings.metrics_port}")
+    except Exception as exc:
+        logger.warning(f"Failed to start metrics server on :{settings.metrics_port}: {exc}")
 
-    # Create gRPC server
-    logger.info(f"Creating gRPC server on {settings.grpc_host}:{settings.grpc_port}...")
+
+async def main() -> None:
+    """Main application entry point."""
+    loaded = load_settings()
+    settings = loaded.settings
+    setup_logging(settings.effective_log_level)
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting TrustAgent Audit Engine {__version__}")
+    for warning in loaded.warnings:
+        logger.warning(f"Configuration: {warning}")
+    if loaded.strict_failure:
+        logger.error(
+            f"TRUTHTABLE_STRICT_CONFIG=true and {len(loaded.warnings)} configuration "
+            "warning(s): refusing to start"
+        )
+        raise SystemExit(STRICT_CONFIG_EXIT_CODE)
+
+    # contracts.py reads TRUTHTABLE_CONTRACTS_DIR from the process environment;
+    # hand it a value that came from a dotenv file (the environment still wins).
+    if settings.contracts_dir.strip().lower() not in ("", "auto"):
+        os.environ.setdefault("TRUTHTABLE_CONTRACTS_DIR", settings.contracts_dir)
+
+    configure_langsmith(settings, logger)
+    load_price_table(settings, logger)
+
+    # A non-loopback bind needs the internal token (waits for the proxy's file).
+    tokens = token_source(settings.internal_token.get_secret_value(), settings.internal_token_file)
+    try:
+        await check_bind(settings.grpc_host, tokens)
+    except InternalTokenError as exc:
+        logger.error(str(exc))
+        raise SystemExit(STRICT_CONFIG_EXIT_CODE) from None
+
+    judge: JudgeSelection = await resolve_judge(settings, log=logger)
+    limiter = configure_process_limiter(settings.judge_max_inflight)
+    provider: Optional[LLMProvider] = (
+        LimitedProvider(judge.provider, limiter) if judge.provider is not None else None
+    )
+    if provider is not None and judge.effective == OLLAMA:
+        await warm_up(provider, logger)
+
+    embedding_service, qdrant_store, hybrid_retriever, ingestor, knowledge = init_knowledge(
+        settings, provider, logger
+    )
+
+    audit_graph = None
+    if provider is not None:
+        logger.info("Building audit graph...")
+        audit_graph = build_audit_graph(
+            provider=provider,
+            embedding_service=embedding_service,
+            qdrant_store=qdrant_store,
+            hybrid_retriever=hybrid_retriever,
+            verifier_concurrency=settings.verifier_concurrency,
+            scoring=ScoringConfig.from_settings(settings),
+            max_claims=settings.max_claims,
+            unsupported_policy=settings.unsupported_policy,
+            extract_claims_without_evidence=settings.audit_extract_claims_without_evidence,
+            retriever_top_k=settings.retriever_top_k,
+            retriever_score_threshold=settings.retriever_score_threshold,
+        )
+        logger.info("Audit graph ready")
+    else:
+        logger.warning("No audit judge: every deep audit is NOT_ASSESSED (no_judge)")
+
+    start_metrics(settings, logger)
+
+    engine = EngineContext(
+        settings=settings,
+        judge=judge,
+        knowledge=knowledge,
+        warnings=[str(warning) for warning in loaded.warnings],
+    )
     servicer = AuditServicer(
         audit_graph=audit_graph,
         provider=provider,
         qdrant_store=qdrant_store,
         embedding_service=embedding_service,
         ingestor=ingestor,
-        judge_provider=effective_provider,
-        judge_fallback_active=judge_fallback_active,
+        engine=engine,
     )
-    server = create_server(servicer, host=settings.grpc_host, port=settings.grpc_port)
+    server = create_server(
+        servicer,
+        host=settings.grpc_host,
+        port=settings.grpc_port,
+        max_rpcs=settings.engine_max_rpcs,
+        interceptors=[InternalTokenInterceptor(tokens)],
+    )
 
-    # Start server
     await server.start()
-    logger.info(f"gRPC server listening on {settings.grpc_host}:{settings.grpc_port}")
+    logger.info(
+        f"gRPC server listening on {settings.grpc_host}:{settings.grpc_port} "
+        f"(max {settings.engine_max_rpcs} RPCs, {settings.engine_max_audits} audits; "
+        f"internal token {'required' if tokens.current() else 'not configured'})"
+    )
     logger.info("TrustAgent Audit Engine is ready!")
 
     # Setup graceful shutdown (cross-platform)
     # WHY: loop.add_signal_handler() only works on Unix, not Windows.
     # On Windows, we rely on the KeyboardInterrupt caught in __main__.
-    async def shutdown(sig_name):
+    async def shutdown(sig_name: str) -> None:
         logger.info(f"Received {sig_name}, shutting down...")
         await server.stop(grace=5)
         logger.info("Server stopped gracefully")
 
     if platform.system() != "Windows":
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        tasks: "set[asyncio.Task[None]]" = set()
+
+        def on_signal(sig: signal.Signals) -> None:
+            task = asyncio.create_task(shutdown(sig.name))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s.name)))
+            loop.add_signal_handler(sig, on_signal, sig)
     else:
         logger.info("Running on Windows - using KeyboardInterrupt for shutdown")
 
-    # Wait for termination
-    await server.wait_for_termination()
+    try:
+        await server.wait_for_termination()
+    finally:
+        if provider is not None:
+            await provider.close()
 
 
 if __name__ == "__main__":
@@ -275,6 +362,8 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nShutdown requested by user")
+    except SystemExit:
+        raise
     except Exception as e:
         logging.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)

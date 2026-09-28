@@ -3,6 +3,7 @@ package grpc_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,91 @@ func TestPingerStates(t *testing.T) {
 	}
 	if got := len(changes); got != 3 || changes[0] != grpc.StateUp || changes[2] != grpc.StateDown {
 		t.Errorf("transitions %v", changes)
+	}
+}
+
+func TestPingerReadsAnEngineWithoutAJudgeAsUp(t *testing.T) {
+	deps := map[string]bool{"judge": false}
+	eng := enginetest.Start(t, &enginetest.Engine{HealthFunc: func(context.Context) (*pb.HealthResponse, error) {
+		return &pb.HealthResponse{Healthy: false, JudgeProvider: "none", Dependencies: deps}, nil
+	}})
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	if h := p.Check(context.Background()); h.State != grpc.StateUp || !strings.Contains(h.Detail, "no deep-audit judge") {
+		t.Errorf("no judge: %+v", h)
+	}
+	// Another failing dependency still degrades the engine.
+	deps["qdrant"] = false
+	if h := p.Check(context.Background()); h.State != grpc.StateDegraded {
+		t.Errorf("no judge and Qdrant down: %+v", h)
+	}
+}
+
+func TestPingerCachesEngineInfoPerEngineVersion(t *testing.T) {
+	version, calls := "2.0.0", 0
+	eng := enginetest.Start(t, &enginetest.Engine{
+		HealthFunc: func(context.Context) (*pb.HealthResponse, error) {
+			return &pb.HealthResponse{Healthy: true, Version: version, Dependencies: map[string]bool{"judge": true}}, nil
+		},
+		EngineInfoFunc: func(context.Context) (*pb.EngineInfo, error) {
+			calls++
+			return &pb.EngineInfo{Version: version, MaxAudits: 16, Warnings: []string{"w"}}, nil
+		},
+	})
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	ctx := context.Background()
+	if h := p.Check(ctx); h.Info.GetMaxAudits() != 16 || calls != 1 {
+		t.Fatalf("first check: info %v calls %d", h.Info, calls)
+	}
+	p.Check(ctx)
+	if calls != 1 || p.Health().Info.GetVersion() != "2.0.0" {
+		t.Errorf("the same engine is asked once: calls %d", calls)
+	}
+	version = "2.0.1" // a restarted engine
+	if h := p.Check(ctx); calls != 2 || h.Info.GetVersion() != "2.0.1" {
+		t.Errorf("a new engine version is asked again: calls %d info %v", calls, h.Info)
+	}
+}
+
+func TestPingerAsksEngineInfoAgainWhenTheJudgeChanges(t *testing.T) {
+	// The owner adds a judge key and restarts the engine within one ping interval: same version,
+	// never seen down, but a different judge.
+	health := &pb.HealthResponse{Healthy: false, Version: "2.0.0", JudgeProvider: "none", Dependencies: map[string]bool{"judge": false}}
+	calls := 0
+	eng := enginetest.Start(t, &enginetest.Engine{
+		HealthFunc: func(context.Context) (*pb.HealthResponse, error) { return health, nil },
+		EngineInfoFunc: func(context.Context) (*pb.EngineInfo, error) {
+			calls++
+			info := &pb.EngineInfo{Version: "2.0.0", Judge: &pb.JudgeInfo{EffectiveProvider: health.GetJudgeProvider(), CredentialSource: "none"}}
+			if health.GetJudgeProvider() == "none" {
+				info.Warnings = []string{"no judge configured"}
+			} else {
+				info.Judge.CredentialSource = "env"
+			}
+			return info, nil
+		},
+	})
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	ctx := context.Background()
+	if h := p.Check(ctx); calls != 1 || len(h.Info.GetWarnings()) != 1 {
+		t.Fatalf("no judge: calls %d info %v", calls, h.Info)
+	}
+	health = &pb.HealthResponse{Healthy: true, Version: "2.0.0", JudgeProvider: "anthropic", JudgeModel: "claude-haiku-4-5",
+		Dependencies: map[string]bool{"judge": true}}
+	h := p.Check(ctx)
+	if calls != 2 || len(h.Info.GetWarnings()) != 0 || h.Info.GetJudge().GetCredentialSource() != "env" {
+		t.Errorf("a new judge is asked again: calls %d info %v", calls, h.Info)
+	}
+	p.Check(ctx)
+	if calls != 2 {
+		t.Errorf("the same setup is asked once: calls %d", calls)
+	}
+}
+
+func TestPingerWithoutEngineInfoKeepsHealth(t *testing.T) {
+	eng := enginetest.Start(t, &enginetest.Engine{}) // GetEngineInfo is UNIMPLEMENTED
+	p := grpc.NewPinger(client(t, eng, time.Second, ""), time.Hour, nil)
+	if h := p.Check(context.Background()); h.State != grpc.StateUp || h.Info != nil {
+		t.Errorf("health %+v", h)
 	}
 }
 
