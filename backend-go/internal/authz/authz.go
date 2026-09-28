@@ -199,6 +199,7 @@ type Authenticator struct {
 
 	touchMu sync.Mutex
 	touched map[string]time.Time
+	touchWG sync.WaitGroup
 }
 
 type subjectInfo struct {
@@ -435,7 +436,8 @@ func (a *Authenticator) IsProxyKey(secret string) bool {
 // touchEvery throttles last_used_at updates per key.
 const touchEvery = time.Minute
 
-// touch records a key's use at most once per touchEvery.
+// touch records a key's use (api_keys.last_used_at) at most once per touchEvery, in the
+// background: the bookkeeping write never delays the request.
 func (a *Authenticator) touch(id string) {
 	now := a.now()
 	a.touchMu.Lock()
@@ -449,12 +451,19 @@ func (a *Authenticator) touch(id string) {
 	}
 	a.touched[id] = now
 	a.touchMu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := a.store.TouchAPIKey(ctx, id, now); err != nil {
-		a.log.Debug("authz: last_used_at not updated", "key_id", id, "err", err)
-	}
+	a.touchWG.Add(1)
+	go func() {
+		defer a.touchWG.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := a.store.TouchAPIKey(ctx, id, now); err != nil {
+			a.log.Debug("authz: last_used_at not updated", "key_id", id, "err", err)
+		}
+	}()
 }
+
+// Wait blocks until the background last-used updates finish (shutdown and tests).
+func (a *Authenticator) Wait() { a.touchWG.Wait() }
 
 func hashHex(secret string) string {
 	d := sha256.Sum256([]byte(secret))

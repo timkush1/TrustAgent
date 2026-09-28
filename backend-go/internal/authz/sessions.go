@@ -158,42 +158,68 @@ func (a *Authenticator) ClearCookie() *http.Cookie {
 	return &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode}
 }
 
+// epochRetry is how long a failed epoch refresh waits before the next attempt, while the last
+// known epoch keeps being served.
+const epochRetry = 5 * time.Second
+
 // epochCache holds the current session epoch (settings row session_epoch), refreshed every
-// RevalidateEvery; without a store it lives in memory.
+// RevalidateEvery; without a store it lives in memory. One caller refreshes at a time and never
+// under the state lock: while a refresh runs (or after one failed, for epochRetry) the others
+// get the last known epoch at once, so a slow database does not serialize every cookie request.
 type epochCache struct {
-	store  Store
-	now    func() time.Time
-	mu     sync.Mutex
-	value  int64
-	at     time.Time
-	known  bool
-	memory int64
+	store   Store
+	now     func() time.Time
+	mu      sync.Mutex // guards the fields below
+	value   int64
+	next    time.Time // when the value is due for a refresh
+	known   bool
+	memory  int64
+	refresh sync.Mutex // held by the one caller that reads the store
+}
+
+func (e *epochCache) cached() (int64, bool, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.store == nil {
+		return e.memory, true, true
+	}
+	return e.value, e.known, e.known && e.now().Before(e.next)
 }
 
 func (e *epochCache) current(ctx context.Context) (int64, error) {
+	v, known, fresh := e.cached()
+	if fresh {
+		return v, nil
+	}
+	if known {
+		if !e.refresh.TryLock() {
+			return v, nil // another request is refreshing
+		}
+	} else {
+		e.refresh.Lock()
+	}
+	defer e.refresh.Unlock()
+	if v, _, fresh := e.cached(); fresh {
+		return v, nil
+	}
+	got, err := e.store.SessionEpoch(ctx)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.store == nil {
-		return e.memory, nil
-	}
-	if e.known && e.now().Sub(e.at) < RevalidateEvery {
-		return e.value, nil
-	}
-	v, err := e.store.SessionEpoch(ctx)
 	if err != nil {
 		if e.known {
-			return e.value, nil // keep serving the last known epoch while the database is away
+			e.next = e.now().Add(epochRetry) // keep serving the last known epoch
+			return e.value, nil
 		}
 		return 0, err
 	}
-	e.value, e.at, e.known = v, e.now(), true
-	return v, nil
+	e.value, e.known, e.next = got, true, e.now().Add(RevalidateEvery)
+	return got, nil
 }
 
 func (e *epochCache) bump(ctx context.Context, actor string) (int64, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.store == nil {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 		e.memory++
 		return e.memory, nil
 	}
@@ -201,8 +227,25 @@ func (e *epochCache) bump(ctx context.Context, actor string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	e.value, e.at, e.known = v, e.now(), true
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.known || v > e.value {
+		e.value, e.known = v, true
+	}
+	e.next = e.now().Add(RevalidateEvery)
 	return v, nil
+}
+
+// SessionsReady reports whether a session can be issued now: sessions are enabled and the session
+// epoch can be read. Check it before an action that must not be lost when the session fails.
+func (a *Authenticator) SessionsReady(ctx context.Context) error {
+	if a.sessions == nil {
+		return ErrSessionsDisabled
+	}
+	if _, err := a.epoch.current(ctx); err != nil {
+		return ErrUnavailable
+	}
+	return nil
 }
 
 // IssueSession starts a session for id, which must be a key identity (env key or api key). It

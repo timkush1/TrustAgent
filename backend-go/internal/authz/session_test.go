@@ -11,7 +11,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/authz/authztest"
+	"github.com/truthtable/backend-go/internal/store"
 )
+
+// authztestStore names the fake store for embedding.
+type authztestStore = authztest.Store
 
 func resolveCookie(f *fixture, cookie string) Result {
 	return f.a.Resolve(request(http.MethodGet, "/api/traces", cookie), SurfaceAPI)
@@ -275,5 +281,93 @@ func TestSessionSharedEnvSecret(t *testing.T) {
 	}
 	if res := resolveCookie(f, cookie); res.Identity == nil || !res.Identity.Has(ScopeAdmin) || res.Identity.Label != "app" {
 		t.Errorf("re-validated session %+v", res.Identity)
+	}
+}
+
+// TestEpochCacheNeverSerializesRequests: once the epoch is known, a slow or failing database
+// never blocks cookie requests; a failed refresh is retried after epochRetry, not per request.
+func TestEpochCacheNeverSerializesRequests(t *testing.T) {
+	f := newFixture(t, nil)
+	cookie, _ := f.login(t, viewerKey)
+	reads := f.st.Reads()
+
+	f.clock.Advance(RevalidateEvery)
+	f.st.SetErr(errors.New("db down"))
+	for i := 0; i < 5; i++ {
+		if res := resolveCookie(f, cookie); res.Identity == nil {
+			t.Fatalf("the last known epoch keeps sessions working: %+v", res)
+		}
+	}
+	if n := f.st.Reads() - reads; n != 1 {
+		t.Errorf("%d epoch reads during the outage, want 1 (then back off)", n)
+	}
+	f.clock.Advance(epochRetry)
+	resolveCookie(f, cookie)
+	if n := f.st.Reads() - reads; n != 2 {
+		t.Errorf("%d epoch reads after epochRetry, want 2", n)
+	}
+
+	// A hanging refresh: other requests are served from the known epoch meanwhile.
+	f.st.SetErr(nil)
+	gate := make(chan struct{})
+	f.st.SetGate(gate)
+	f.clock.Advance(RevalidateEvery)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resolveCookie(f, cookie) // refreshes, waits on the gate
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.st.Reads()-reads < 3 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	start := time.Now()
+	if res := resolveCookie(f, cookie); res.Identity == nil || time.Since(start) > time.Second {
+		t.Errorf("a request during a hanging refresh: %+v after %v", res, time.Since(start))
+	}
+	close(gate)
+	<-done
+	f.st.SetGate(nil)
+}
+
+// revokeRaceStore delays APIKeyByID until released, to overlap a lookup with a revocation.
+type revokeRaceStore struct {
+	*authztestStore
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *revokeRaceStore) APIKeyByID(ctx context.Context, id string) (*store.APIKeyRecord, error) {
+	rec, err := s.authztestStore.APIKeyByID(ctx, id)
+	if s.entered != nil {
+		s.entered <- struct{}{}
+		<-s.release
+	}
+	return rec, err
+}
+
+// TestKeyCacheRevocationRace: a lookup that read a key's row before a local revocation does not
+// put the pre-revocation row back into the cache.
+func TestKeyCacheRevocationRace(t *testing.T) {
+	base := newFixture(t, nil)
+	rs := &revokeRaceStore{authztestStore: base.st}
+	f := newFixture(t, func(o *Options) { o.Store = rs; o.Now = base.clock.Now })
+	f.st, f.clock = base.st, base.clock
+	secret, id := f.mint(t, "dash", ScopeRead)
+	cookie, _ := f.login(t, secret)
+	f.clock.Advance(RevalidateEvery) // the next request re-validates the subject
+
+	rs.entered, rs.release = make(chan struct{}), make(chan struct{})
+	done := make(chan Result)
+	go func() { done <- resolveCookie(f, cookie) }()
+	<-rs.entered // the lookup read the still-active row
+	rs.entered = nil
+	if _, err := f.a.RevokeKey(context.Background(), id, "root"); err != nil {
+		t.Fatal(err)
+	}
+	close(rs.release)
+	<-done
+	if res := resolveCookie(f, cookie); res.Identity != nil {
+		t.Error("the revoked key's session survived through a stale cache entry")
 	}
 }

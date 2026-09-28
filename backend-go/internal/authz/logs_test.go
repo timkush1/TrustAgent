@@ -46,6 +46,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	f.a.Resolve(request(http.MethodGet, "/api/traces", cookie), SurfaceAPI)
 	_, _ = f.a.AuthenticateContext(ctx, adminSecret)
 
+	f.a.Wait() // background last-used updates log their failures too
 	logs := f.logs.String()
 	if !strings.Contains(logs, "api key lookup failed") {
 		t.Fatalf("the outage was not logged:\n%s", logs)

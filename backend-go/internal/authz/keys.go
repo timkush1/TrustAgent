@@ -112,6 +112,9 @@ type keyCache struct {
 	now  func() time.Time
 	bySh map[string]cachedKey
 	byID map[string]cachedKey
+	// gen counts local revocations: a lookup that overlapped one does not cache its (possibly
+	// pre-revocation) row, so a revoked key cannot be put back into the cache.
+	gen uint64
 }
 
 func newKeyCache(now func() time.Time) *keyCache {
@@ -140,6 +143,7 @@ func (c *keyCache) put(m map[string]cachedKey, k string, rec *store.APIKeyRecord
 func (c *keyCache) bySHA(ctx context.Context, st Store, sha string) (*store.APIKeyRecord, error) {
 	c.mu.Lock()
 	e, ok := c.bySh[sha]
+	gen := c.gen
 	c.mu.Unlock()
 	if c.fresh(e, ok) {
 		return e.rec, nil
@@ -152,9 +156,11 @@ func (c *keyCache) bySHA(ctx context.Context, st Store, sha string) (*store.APIK
 		return nil, err
 	}
 	c.mu.Lock()
-	c.put(c.bySh, sha, rec)
-	if rec != nil {
-		c.put(c.byID, rec.ID, rec)
+	if c.gen == gen {
+		c.put(c.bySh, sha, rec)
+		if rec != nil {
+			c.put(c.byID, rec.ID, rec)
+		}
 	}
 	c.mu.Unlock()
 	return rec, nil
@@ -164,6 +170,7 @@ func (c *keyCache) bySHA(ctx context.Context, st Store, sha string) (*store.APIK
 func (c *keyCache) byKeyID(ctx context.Context, st Store, id string) (*store.APIKeyRecord, error) {
 	c.mu.Lock()
 	e, ok := c.byID[id]
+	gen := c.gen
 	c.mu.Unlock()
 	if c.fresh(e, ok) {
 		return e.rec, nil
@@ -176,9 +183,11 @@ func (c *keyCache) byKeyID(ctx context.Context, st Store, id string) (*store.API
 		return nil, err
 	}
 	c.mu.Lock()
-	c.put(c.byID, id, rec)
-	if rec != nil {
-		c.put(c.bySh, rec.SHA256, rec)
+	if c.gen == gen {
+		c.put(c.byID, id, rec)
+		if rec != nil {
+			c.put(c.bySh, rec.SHA256, rec)
+		}
 	}
 	c.mu.Unlock()
 	return rec, nil
@@ -188,6 +197,7 @@ func (c *keyCache) byKeyID(ctx context.Context, st Store, id string) (*store.API
 func (c *keyCache) forget(rec *store.APIKeyRecord) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.gen++
 	delete(c.byID, rec.ID)
 	delete(c.bySh, rec.SHA256)
 }
@@ -270,6 +280,9 @@ func (a *Authenticator) RevokeKey(ctx context.Context, id, actor string) (*store
 	if a.store == nil {
 		return nil, ErrNoStore
 	}
+	a.cache.mu.Lock()
+	a.cache.gen++ // lookups already running when the revocation starts must not cache their row
+	a.cache.mu.Unlock()
 	rec, _, err := a.store.RevokeAPIKey(ctx, id, actor)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, ErrKeyNotFound

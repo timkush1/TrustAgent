@@ -36,9 +36,17 @@ func TestSetupTokenLifecycle(t *testing.T) {
 	if b, err := base64.RawURLEncoding.DecodeString(token); err != nil || len(b) != 32 {
 		t.Errorf("token is not 32 random bytes: %q", token)
 	}
-	rec := f.st.SetupToken()
-	if rec == nil || rec.SHA256 == token || rec.SHA256 != hashHex(token) || rec.Forced {
-		t.Fatalf("stored %+v: only the hash is stored", rec)
+	state := f.st.SetupToken()
+	if state == nil || len(state.Tokens) != 1 || state.Tokens[0].SHA256 != hashHex(token) || state.Tokens[0].Forced {
+		t.Fatalf("stored %+v: only the hash is stored", state)
+	}
+	// Another start (or replica) prints a second URL; the first one keeps working.
+	var second bytes.Buffer
+	if printed, _, err := setup.Announce(ctx, &second, ""); err != nil || !printed || second.String() == out.String() {
+		t.Fatalf("second announce %v %v", printed, err)
+	}
+	if n := len(f.st.SetupToken().Tokens); n != 2 {
+		t.Errorf("%d pending tokens", n)
 	}
 
 	if _, _, err := setup.Claim(ctx, "wrong-token"); !errors.Is(err, ErrSetupTokenInvalid) {
@@ -69,7 +77,7 @@ func TestSetupTokenLifecycle(t *testing.T) {
 
 	// Recovery: -force mints a token that can be claimed although an admin exists.
 	forced, _, err := setup.Mint(ctx, "", true, "cli")
-	if err != nil || !f.st.SetupToken().Forced {
+	if st := f.st.SetupToken(); err != nil || len(st.Tokens) != 1 || !st.Tokens[0].Forced {
 		t.Fatalf("forced mint: %v", err)
 	}
 	if _, _, err := setup.Claim(ctx, forced); err != nil {

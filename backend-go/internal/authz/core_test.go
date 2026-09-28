@@ -80,6 +80,7 @@ func TestKeysAuthenticateAndRevoke(t *testing.T) {
 	if err != nil || got.Label != "ci" || got.Kind != KindAPIKey || got.KeyID != id || got.Subject != "key:"+id {
 		t.Fatalf("identity %+v %v", got, err)
 	}
+	f.a.Wait()
 	keys, _ := f.a.ListKeys(context.Background())
 	if len(keys) != 1 || keys[0].SHA256 == secret || keys[0].Prefix != secret[:9] || keys[0].LastUsedAt == nil {
 		t.Errorf("stored key %+v", keys)

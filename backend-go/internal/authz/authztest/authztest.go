@@ -20,11 +20,15 @@ import (
 type Store struct {
 	mu      sync.Mutex
 	keys    map[string]*store.APIKeyRecord
-	setup   *store.SetupTokenRecord
+	setup   *store.SetupState
 	epoch   int64
 	Audit   []store.AdminAuditEntry
 	Err     error
 	Lookups int // APIKeyBySHA256 and APIKeyByID calls
+	// EpochReads counts SessionEpoch calls; a non-nil EpochGate makes SessionEpoch wait for a
+	// receive on it first (a slow database).
+	EpochReads int
+	EpochGate  chan struct{}
 }
 
 // New returns an empty store.
@@ -34,6 +38,20 @@ func clone(k *store.APIKeyRecord) *store.APIKeyRecord {
 	c := *k
 	c.Scopes = slices.Clone(k.Scopes)
 	return &c
+}
+
+// Reads returns EpochReads under the lock.
+func (s *Store) Reads() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.EpochReads
+}
+
+// SetGate installs (or removes, with nil) the SessionEpoch gate.
+func (s *Store) SetGate(g chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.EpochGate = g
 }
 
 // SetErr sets or clears the outage error.
@@ -185,26 +203,40 @@ func (s *Store) adminExists() bool {
 	return false
 }
 
-// PutSetupToken implements authz.Store.
-func (s *Store) PutSetupToken(_ context.Context, rec store.SetupTokenRecord, actor string) error {
+// PutSetupToken implements authz.Store: it adds a pending token (dropping expired ones, keeping
+// the newest store.MaxPendingSetupTokens); a claimed state starts over.
+func (s *Store) PutSetupToken(_ context.Context, rec store.SetupTokenRecord, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.Err != nil {
 		return s.Err
 	}
-	rec.ClaimedAt, rec.ClaimedKeyID = nil, ""
-	s.setup = &rec
+	if s.setup == nil || s.setup.ClaimedAt != nil {
+		s.setup = &store.SetupState{Tokens: []store.SetupTokenRecord{rec}}
+		return nil
+	}
+	var keep []store.SetupTokenRecord
+	for _, t := range s.setup.Tokens {
+		if t.ExpiresAt.After(rec.CreatedAt) {
+			keep = append(keep, t)
+		}
+	}
+	if n := store.MaxPendingSetupTokens - 1; len(keep) > n {
+		keep = keep[len(keep)-n:]
+	}
+	s.setup.Tokens = append(keep, rec)
 	return nil
 }
 
-// SetupToken returns the stored setup record (nil when none).
-func (s *Store) SetupToken() *store.SetupTokenRecord {
+// SetupToken returns a copy of the setup state (nil when none).
+func (s *Store) SetupToken() *store.SetupState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.setup == nil {
 		return nil
 	}
 	c := *s.setup
+	c.Tokens = slices.Clone(s.setup.Tokens)
 	return &c
 }
 
@@ -215,19 +247,20 @@ func (s *Store) ClaimSetupToken(_ context.Context, sha string, now time.Time, en
 	if s.Err != nil {
 		return s.Err
 	}
-	rec := s.setup
-	switch {
-	case rec == nil || rec.SHA256 != sha:
+	if s.setup == nil {
 		return store.ErrSetupTokenInvalid
-	case rec.ClaimedAt != nil:
-		return store.ErrSetupTokenUsed
-	case !rec.ExpiresAt.After(now):
-		return store.ErrSetupTokenExpired
-	case !rec.Forced && (envAdmin || s.adminExists()):
-		return store.ErrSetupComplete
+	}
+	claimable := false
+	for _, t := range s.setup.Tokens {
+		if t.SHA256 == sha && t.ExpiresAt.After(now) && (t.Forced || (!envAdmin && !s.adminExists())) {
+			claimable = true
+		}
+	}
+	if s.setup.ClaimedAt != nil || !claimable {
+		return store.SetupClaimOutcome(s.setup, sha, now)
 	}
 	t := now.UTC()
-	rec.ClaimedAt, rec.ClaimedKeyID = &t, admin.ID
+	s.setup.ClaimedAt, s.setup.ClaimedKeyID = &t, admin.ID
 	admin.CreatedAt = t
 	s.keys[admin.ID] = clone(admin)
 	s.Audit = append(s.Audit, store.AdminAuditEntry{Actor: "setup", Action: "setup.claim", Target: admin.ID})
@@ -235,7 +268,18 @@ func (s *Store) ClaimSetupToken(_ context.Context, sha string, now time.Time, en
 }
 
 // SessionEpoch implements authz.Store.
-func (s *Store) SessionEpoch(context.Context) (int64, error) {
+func (s *Store) SessionEpoch(ctx context.Context) (int64, error) {
+	s.mu.Lock()
+	gate := s.EpochGate
+	s.EpochReads++
+	s.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.Err != nil {

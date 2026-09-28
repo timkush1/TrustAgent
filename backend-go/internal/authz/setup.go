@@ -39,6 +39,9 @@ var (
 // Setup is the one-time setup token (SPEC §7.5): it exists only while no admin credential exists,
 // is 32 random bytes stored as its SHA-256 in settings.setup with a 1 h TTL, travels in the URL
 // fragment (never sent to a server log), and its claim atomically creates the setup-admin key.
+// Every proxy start (and -new-setup-token) adds a token without invalidating the pending ones, so
+// a URL printed by an earlier start or another replica keeps working until it expires; the first
+// claim ends them all.
 type Setup struct {
 	a         *Authenticator
 	ttl       time.Duration
@@ -64,7 +67,7 @@ func (s *Setup) Required(ctx context.Context) (bool, error) {
 	return !exists, nil
 }
 
-// Mint stores a new setup token and returns it with its expiry. seed ("" for a random token) is
+// Mint adds a pending setup token and returns it with its expiry. seed ("" for a random token) is
 // TRUTHTABLE_SETUP_TOKEN. Unless force is set, it fails with ErrSetupNotRequired while an admin
 // credential exists; a forced (recovery) token can be claimed anyway.
 func (s *Setup) Mint(ctx context.Context, seed string, force bool, actor string) (string, time.Time, error) {
