@@ -302,6 +302,29 @@ func TestRateLimitedErrorShapes(t *testing.T) {
 	}
 }
 
+// TestTrustedProxiesNameTheClientIP: X-Forwarded-For names the client (its rate-limit bucket)
+// only when the connection comes from TRUTHTABLE_TRUSTED_PROXIES.
+func TestTrustedProxiesNameTheClientIP(t *testing.T) {
+	get := func(env *testEnv, forwardedFor string) int {
+		req, _ := http.NewRequest(http.MethodGet, env.http.URL+"/api/traces", nil)
+		req.Header.Set("X-Forwarded-For", forwardedFor)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	trusted := newTestEnv(t, envOpts{publicRead: true, rateLimit: 1, trustedProxies: []string{"127.0.0.1/32", "::1"}})
+	if a, b := get(trusted, "203.0.113.1"), get(trusted, "203.0.113.2"); a != http.StatusOK || b != http.StatusOK {
+		t.Errorf("behind a trusted proxy each client has its own bucket: HTTP %d, %d", a, b)
+	}
+	untrusted := newTestEnv(t, envOpts{publicRead: true, rateLimit: 1})
+	if a, b := get(untrusted, "203.0.113.1"), get(untrusted, "203.0.113.2"); a != http.StatusOK || b != http.StatusTooManyRequests {
+		t.Errorf("an untrusted X-Forwarded-For must not dodge the limit: HTTP %d, %d", a, b)
+	}
+}
+
 func TestHealthAndStatus(t *testing.T) {
 	env := newTestEnv(t, envOpts{demo: true})
 	code, body := env.get("/health", "")

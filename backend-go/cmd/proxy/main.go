@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -46,7 +47,7 @@ func newLogger(level string) *slog.Logger {
 // accepting requests, let observe-mode gates and queued audits drain, stop the stream.
 func run(cfg *config.Config, log *slog.Logger) error {
 	log.Info("starting the TrustAgent proxy", "version", version.Version, "port", cfg.ServerPort,
-		"upstream", cfg.UpstreamURL, "engine", cfg.GRPCAddress)
+		"upstream", redactURL(cfg.UpstreamURL), "engine", cfg.GRPCAddress)
 	if cfg.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -71,6 +72,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		log.Info("trace writes run inline; the batched TRUTHTABLE_TRACE_FLUSH=async writer lands in P2")
 	}
 
+	cfg.InternalToken = internalToken(cfg.InternalToken, cfg.InternalTokenFile, log)
 	if cfg.GRPCAddress != "" {
 		client, err := grpc.NewAuditClient(cfg.GRPCAddress, cfg.GRPCTimeout, cfg.InternalToken)
 		if err != nil {
@@ -143,6 +145,17 @@ func run(cfg *config.Config, log *slog.Logger) error {
 	}
 	log.Info("TrustAgent proxy stopped")
 	return runErr
+}
+
+// redactURL is a URL safe to log: a password becomes xxxxx and the query is dropped (a base URL
+// may carry an api-key parameter).
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(unparseable URL)"
+	}
+	u.RawQuery, u.Fragment = "", ""
+	return u.Redacted()
 }
 
 // serve runs an HTTP server; a graceful shutdown is not an error.

@@ -94,7 +94,7 @@ func newGateway(cfg *config.Config, sink gate.Sink, log *slog.Logger) (*gatewayP
 	if err != nil {
 		return nil, err
 	}
-	log.Info("upstream (passthrough credentials)", "url", up.Base())
+	log.Info("upstream (passthrough credentials)", "url", redactURL(up.Base().String()))
 	if cfg.TestMode {
 		log.Warn("TRUTHTABLE_TEST_MODE: test_response and X-TrustAgent-Scenario are honoured")
 	}

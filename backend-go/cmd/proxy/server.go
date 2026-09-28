@@ -124,9 +124,13 @@ func newServer(d serverDeps) (*server, error) {
 func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin.Engine {
 	cfg := s.cfg
 	r := gin.New()
-	// Client IPs come from the connection: X-Forwarded-For is trusted from no proxy until
-	// TRUTHTABLE_TRUSTED_PROXIES is read (P2), so it cannot dodge the rate and WS caps.
-	_ = r.SetTrustedProxies(nil)
+	// Client IPs (rate limits, the WS per-IP cap) come from the connection, or from X-Forwarded-For
+	// only when the connection is from TRUTHTABLE_TRUSTED_PROXIES (the dashboard's nginx); by
+	// default no proxy is trusted.
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		s.log.Warn("TRUTHTABLE_TRUSTED_PROXIES is not usable; trusting no proxy", "err", err)
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(gin.Recovery(), requestLog(s.log), middleware.CORS(cfg.AllowedOrigins))
 
 	limiter := d.limiter

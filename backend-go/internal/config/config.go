@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,10 @@ import (
 	"strings"
 	"time"
 )
+
+// DefaultInternalTokenFile is the TRUTHTABLE_INTERNAL_TOKEN_FILE default: the volume the proxy and
+// the engine share in compose.
+const DefaultInternalTokenFile = "/var/lib/trustagent-internal/internal.token" // #nosec G101 -- a path, not a credential
 
 type Config struct {
 	ServerPort      int
@@ -59,6 +64,8 @@ type Config struct {
 	PublicRead             bool          // TRUTHTABLE_PUBLIC_READ: /api reads and /ws without a key
 	Readonly               bool          // TRUTHTABLE_READONLY
 	InternalToken          string        // TRUTHTABLE_INTERNAL_TOKEN (metadata x-trustagent-internal)
+	InternalTokenFile      string        // TRUTHTABLE_INTERNAL_TOKEN_FILE: the proxy writes it, the engine reads it
+	TrustedProxies         []string      // TRUTHTABLE_TRUSTED_PROXIES: CIDRs or IPs whose X-Forwarded-For is trusted
 	TraceFlush             string        // TRUTHTABLE_TRACE_FLUSH: async | sync
 	BodyRetention          time.Duration // TRUTHTABLE_BODY_RETENTION
 	BodyMaxBytes           int           // TRUTHTABLE_BODY_MAX_BYTES
@@ -191,6 +198,8 @@ func Load() *Config {
 		PublicRead:             l.bool("TRUTHTABLE_PUBLIC_READ", false),
 		Readonly:               l.bool("TRUTHTABLE_READONLY", false),
 		InternalToken:          strings.TrimSpace(os.Getenv("TRUTHTABLE_INTERNAL_TOKEN")),
+		InternalTokenFile:      strings.TrimSpace(getEnv("TRUTHTABLE_INTERNAL_TOKEN_FILE", DefaultInternalTokenFile)),
+		TrustedProxies:         l.networks("TRUTHTABLE_TRUSTED_PROXIES"),
 		TraceFlush:             l.enum("TRUTHTABLE_TRACE_FLUSH", "async", "async", "sync"),
 		BodyRetention:          l.duration("TRUTHTABLE_BODY_RETENTION", 168*time.Hour),
 		BodyMaxBytes:           l.int("TRUTHTABLE_BODY_MAX_BYTES", 262144),
@@ -262,6 +271,20 @@ func (l *loader) enum(key, def string, allowed ...string) string {
 		}
 		return s, nil
 	})
+}
+
+// networks parses a comma-separated list of CIDRs and IP addresses (TRUTHTABLE_TRUSTED_PROXIES);
+// an entry that is neither is ignored with a warning. Empty means none.
+func (l *loader) networks(key string) []string {
+	var out []string
+	for _, item := range getEnvList(key, nil) {
+		if _, _, err := net.ParseCIDR(item); err == nil || net.ParseIP(item) != nil {
+			out = append(out, item)
+			continue
+		}
+		l.warnings = append(l.warnings, fmt.Sprintf("%s entry %q is not a CIDR or an IP address; ignored", key, item))
+	}
+	return out
 }
 
 // keyList parses "label=key,..." (registry kind key_list). An entry without a label is kept as

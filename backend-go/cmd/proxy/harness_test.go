@@ -131,6 +131,8 @@ type envOpts struct {
 	engineDown bool
 	// rateLimit is TRUTHTABLE_RATE_LIMIT_PER_MINUTE (default: high enough never to trip).
 	rateLimit int
+	// trustedProxies is TRUTHTABLE_TRUSTED_PROXIES.
+	trustedProxies []string
 }
 
 type testEnv struct {
@@ -156,6 +158,7 @@ func testConfig(t *testing.T, o envOpts) *config.Config {
 	if o.rateLimit > 0 {
 		cfg.RateLimitPerMinute = o.rateLimit
 	}
+	cfg.TrustedProxies = o.trustedProxies
 	cfg.DatabaseURL, cfg.RedisURL, cfg.InternalToken = "", "", ""
 	cfg.EngineHealthInterval = time.Hour
 	cfg.WorkerCount = 2

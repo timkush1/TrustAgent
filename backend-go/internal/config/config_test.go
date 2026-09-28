@@ -166,3 +166,24 @@ func TestPersistenceWorkerAndWebSocketKeys(t *testing.T) {
 		t.Errorf("an invalid queue size falls back with a warning: %d %v", c.AuditQueueHigh, c.Warnings)
 	}
 }
+
+func TestTrustedProxiesAndInternalTokenFile(t *testing.T) {
+	clearEnv(t)
+	c := Load()
+	if c.TrustedProxies != nil || c.InternalTokenFile != DefaultInternalTokenFile {
+		t.Errorf("defaults: trusted proxies %v, token file %q", c.TrustedProxies, c.InternalTokenFile)
+	}
+
+	t.Setenv("TRUTHTABLE_TRUSTED_PROXIES", "172.16.0.0/12, 10.0.0.7 ,nginx, ::1")
+	t.Setenv("TRUTHTABLE_INTERNAL_TOKEN_FILE", "/run/trustagent/token")
+	c = Load()
+	if want := []string{"172.16.0.0/12", "10.0.0.7", "::1"}; !reflect.DeepEqual(c.TrustedProxies, want) {
+		t.Errorf("trusted proxies %v, want %v", c.TrustedProxies, want)
+	}
+	if len(c.Warnings) != 1 || !strings.Contains(c.Warnings[0], `"nginx"`) {
+		t.Errorf("an entry that is not a network is ignored with a warning: %v", c.Warnings)
+	}
+	if c.InternalTokenFile != "/run/trustagent/token" {
+		t.Errorf("token file %q", c.InternalTokenFile)
+	}
+}
