@@ -47,6 +47,12 @@ var ErrStreamClosed = errors.New("llmapi: stream already finished")
 // Browsers and nginx drop trailers and SDKs drop comments; clients that need the decision of a
 // stream call GET /v1/trustagent/decisions/:trace_id (SPEC §2.12).
 //
+// An Incomplete event (the unterminated end of an upstream stream) is never followed by anything:
+// its open last line would absorb the next bytes (the annotation comment would turn into the tail
+// of a data line, which the client then dispatches as a malformed event). WriteEvent keeps it
+// back, and Finish, or WriteEvents with an annotation, writes it last, where a client drops it as
+// it would have without the gateway.
+//
 // The first write error is sticky: from then on every write returns it (the client went away).
 // A StreamWriter is not safe for concurrent use.
 type StreamWriter struct {
@@ -56,6 +62,7 @@ type StreamWriter struct {
 	status   int
 	wrote    bool
 	held     *Event
+	tail     []byte // the bytes of Incomplete events, written last
 	finished bool
 	err      error
 }
@@ -152,12 +159,26 @@ func (s *StreamWriter) flush() error {
 	return nil
 }
 
-// WriteEvent forwards one event: its Raw bytes when it was read, else its encoding.
-func (s *StreamWriter) WriteEvent(ev Event) error { return s.write(ev.Bytes()) }
+// WriteEvent forwards one event: its Raw bytes when it was read, else its encoding. An Incomplete
+// event is kept back and written last (see StreamWriter).
+func (s *StreamWriter) WriteEvent(ev Event) error {
+	if ev.Incomplete {
+		if s.err != nil {
+			return s.err
+		}
+		if s.finished {
+			return ErrStreamClosed
+		}
+		s.tail = append(s.tail, ev.Bytes()...)
+		return nil
+	}
+	return s.write(ev.Bytes())
+}
 
-// WriteEvents writes a built stream (a block or synthesized stream), putting the annotation
-// comment, when given, just before the terminal event of format (or at the end when the stream
-// has none).
+// WriteEvents writes a collected or built stream (a buffered answer, a block or a synthesized
+// stream), putting the annotation comment, when given, just before the terminal event of format,
+// or at the end when the stream has none. With an annotation the stream is complete, so an
+// Incomplete tail goes out after it; without one the tail waits for Finish.
 func (s *StreamWriter) WriteEvents(format string, events []Event, ann *Annotation) error {
 	annotated := ann == nil
 	for i := range events {
@@ -171,10 +192,25 @@ func (s *StreamWriter) WriteEvents(format string, events []Event, ann *Annotatio
 			return err
 		}
 	}
-	if !annotated {
-		return s.WriteAnnotation(*ann)
+	if ann == nil {
+		return nil
 	}
-	return nil
+	if !annotated {
+		if err := s.WriteAnnotation(*ann); err != nil {
+			return err
+		}
+	}
+	return s.writeTail()
+}
+
+// writeTail writes the Incomplete events kept back, if any.
+func (s *StreamWriter) writeTail() error {
+	if len(s.tail) == 0 {
+		return nil
+	}
+	tail := s.tail
+	s.tail = nil
+	return s.write(tail)
 }
 
 // WriteComment writes a comment event, one ": " line per line of text.
@@ -208,9 +244,9 @@ func (s *StreamWriter) Release() error {
 }
 
 // Finish ends the stream: the annotation comment (when ann is not nil), then the held terminal
-// event, then the trailers. A trailer name that was declared is set as is; any other is sent with
-// the net/http trailer prefix (HTTP/2 and chunked HTTP/1.1 deliver both). Trailers are set even
-// when a write fails, and Finish reports the first error.
+// event, then an Incomplete tail, then the trailers. A trailer name that was declared is set as
+// is; any other is sent with the net/http trailer prefix (HTTP/2 and chunked HTTP/1.1 deliver
+// both). Trailers are set even when a write fails, and Finish reports the first error.
 func (s *StreamWriter) Finish(ann *Annotation, trailers map[string]string) error {
 	var err error
 	if ann != nil {
@@ -218,6 +254,9 @@ func (s *StreamWriter) Finish(ann *Annotation, trailers map[string]string) error
 	}
 	if err == nil {
 		err = s.Release()
+	}
+	if err == nil {
+		err = s.writeTail()
 	}
 	if err == nil {
 		err = s.Commit()

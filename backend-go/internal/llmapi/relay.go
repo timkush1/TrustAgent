@@ -29,7 +29,8 @@ type RelayResult struct {
 //
 // Relay returns at the terminal event, at the end of the upstream stream (Held false: there is
 // nothing to hold, Finish still writes the annotation), on a read error, or on the first failed
-// write.
+// write. When the upstream stopped in the middle of an event, the writer keeps that unterminated
+// tail back and Finish writes it after the annotation.
 func Relay(src *Reader, asm *StreamAssembler, dst *StreamWriter) RelayResult {
 	var res RelayResult
 	for {

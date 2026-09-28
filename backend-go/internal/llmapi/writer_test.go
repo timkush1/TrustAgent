@@ -432,3 +432,105 @@ func TestCollectStopsWhenTheClientLeaves(t *testing.T) {
 	// Closing the upstream ends the read still in flight.
 	_ = pr.CloseWithError(io.ErrClosedPipe)
 }
+
+// clientEvents parses a relayed body the way an SSE client does: events that never got their
+// blank line are dropped.
+func clientEvents(t *testing.T, body []byte) []Event {
+	t.Helper()
+	var out []Event
+	for _, ev := range readAll(t, NewReader(bytes.NewReader(body))) {
+		if !ev.Incomplete {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func TestNothingFollowsAnUnterminatedTail(t *testing.T) {
+	complete := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n"
+	comment := ": " + testAnnotation.Comment() + "\n\n"
+	cases := []struct {
+		name, tail string
+		held       bool
+	}{
+		// The upstream stopped inside a data line: the comment must not become the rest of it.
+		{"open data line", "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\" there\"}", false},
+		// A whole line but no blank line: the comment's blank line must not dispatch it.
+		{"no blank line", "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\" there\"}}]}\r\n", false},
+		{"cr-terminated line", "data: {\"choices\":[]}\r", false},
+		// [DONE] without its blank line is still the terminal event, held and released last.
+		{"unterminated [DONE]", "data: [DONE]\n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := complete + tc.tail
+			rec := httptest.NewRecorder()
+			sw := NewStreamWriter(rec)
+			asm, _ := NewStreamAssembler(FormatOpenAIChat)
+			res := Relay(NewReader(&chunked{src: []byte(src), sizes: []int{7, 3}}), asm, sw)
+			if res.Held != tc.held || res.UpstreamErr != nil || res.ClientErr != nil || res.Bytes != int64(len(src)) {
+				t.Fatalf("%+v", res)
+			}
+			if rec.Body.String() != complete {
+				t.Fatalf("the tail went out before the decision: %q", rec.Body.String())
+			}
+			if err := sw.Finish(&testAnnotation, nil); err != nil {
+				t.Fatal(err)
+			}
+			if want := complete + comment + tc.tail; rec.Body.String() != want {
+				t.Errorf("body %q\nwant %q", rec.Body.String(), want)
+			}
+			// The client reads the complete events and the comment, nothing malformed.
+			evs := clientEvents(t, rec.Body.Bytes())
+			if len(evs) != 2 || len(evs[1].Comments) != 1 || evs[1].Comments[0] != testAnnotation.Comment() || evs[1].HasData {
+				t.Errorf("client events %+v", evs)
+			}
+		})
+	}
+}
+
+func TestWriteEventsKeepsAnUnterminatedTailLast(t *testing.T) {
+	src := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: {\"choi"
+	collect := func() []Event {
+		asm, _ := NewStreamAssembler(FormatOpenAIChat)
+		res := Collect(NewReader(strings.NewReader(src)), asm, CollectOptions{})
+		if len(res.Events) != 2 || !res.Events[1].Incomplete {
+			t.Fatalf("%+v", res)
+		}
+		return res.Events
+	}
+	want := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n\n: " + testAnnotation.Comment() + "\n\ndata: {\"choi"
+
+	// Delivered after the decision with the annotation: the tail goes out after it.
+	rec := httptest.NewRecorder()
+	if err := NewStreamWriter(rec).WriteEvents(FormatOpenAIChat, collect(), &testAnnotation); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Body.String() != want {
+		t.Errorf("body %q", rec.Body.String())
+	}
+
+	// Without an annotation the tail waits for Finish, which writes the annotation first.
+	rec = httptest.NewRecorder()
+	sw := NewStreamWriter(rec)
+	if err := sw.WriteEvents(FormatOpenAIChat, collect(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := sw.Finish(&testAnnotation, nil); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Body.String() != want {
+		t.Errorf("body %q", rec.Body.String())
+	}
+	if err := sw.WriteEvent(Event{Raw: []byte("data: x"), Incomplete: true}); !errors.Is(err, ErrStreamClosed) {
+		t.Errorf("a tail after Finish: %v", err)
+	}
+
+	// A client that is gone gets the sticky error, not a silent keep-back.
+	w := &brokenWriter{header: http.Header{}, failAt: 1}
+	sw = NewStreamWriter(w)
+	_ = sw.WriteKeepalive()
+	if err := sw.WriteEvent(Event{Raw: []byte("data: x"), Incomplete: true}); !errors.Is(err, errClientGone) {
+		t.Errorf("a tail after a failed write: %v", err)
+	}
+}
