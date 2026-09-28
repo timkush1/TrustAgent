@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "timeout-fail-closed-blocks",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route with buffered streaming, fail closed. The request timed out (status timeout, would = pass). Failing, fail closed, effective mode block, and not sampled_out: action block, degraded timeout, reason fail_closed. The calibration cap is skipped because fail-closed applied.",
   "input": {
     "policy": {

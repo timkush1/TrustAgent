@@ -64,8 +64,8 @@
     },
     {
       "id": "trafficgen_once",
-      "command": "docker compose exec -T proxy /trafficgen --once",
-      "description": "Send every demo scenario once through the proxy.",
+      "command": "docker compose -p truthtable-demo exec -T proxy /trafficgen --once",
+      "description": "Send every demo scenario once through the demo stack's proxy (make demo).",
       "services": ["proxy"]
     },
     {

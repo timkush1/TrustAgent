@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "on-no-evidence-block-with-calibrated-factual-claims",
-  "status": "draft",
+  "status": "frozen",
   "description": "Same as on-no-evidence-block-caps-uncalibrated-factual-claims, but factual_claims uses calibrated space with a measured identity table: risk apply(table, 0.90) = 0.90, calibrated. The calibration cap finds nothing uncalibrated, so the block stands. The top-level calibration summary covers the active non-internal evaluators only (refusal, pii_secret_leak, both raw): none.",
   "input": {
     "policy": {

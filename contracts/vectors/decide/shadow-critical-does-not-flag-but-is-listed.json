@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "shadow-critical-does-not-flag-but-is-listed",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route with commitments@1 attached as shadow. It is asked and reported (unapproved_commitment 0.97 >= critical_at 0.90: critical), but shadow evaluators are outside the active set: no reason, no effect on would, max_risk or verdict. Active evaluators are ok (groundedness 0.20 is below escalate_from), so action pass and deep_audit sample.",
   "input": {
     "policy": {

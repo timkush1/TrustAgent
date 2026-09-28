@@ -30,7 +30,7 @@ test-python: ## Run Python unit tests only (verbose; e2e/integration excluded)
 	@echo "Running Python tests..."
 	cd backend-python && $(POETRY) run pytest $(PYTEST_FLAGS)
 
-test-e2e: ## Run end-to-end tests (requires full stack running: make up-all)
+test-e2e: ## Run the engine e2e tests (proxy on :8080, engine gRPC on :50051: make up-infra, dev-python, dev-go; absent services skip)
 	cd backend-python && $(POETRY) run pytest -m e2e -v
 
 eval-golden: ## Deterministic golden-set eval (the CI regression gate, no model needed)

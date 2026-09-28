@@ -22,11 +22,13 @@ Pipeline position:
 """
 
 import logging
-from typing import List, Set
+from typing import TYPE_CHECKING, List, Set
 
-from ...vectorstore.embeddings import EmbeddingService
-from ...vectorstore.qdrant_store import QdrantStore
 from ..state import AuditState
+
+if TYPE_CHECKING:  # type-only: keeps importing this module free of the knowledge extras
+    from ...vectorstore.embeddings import EmbeddingService
+    from ...vectorstore.qdrant_store import QdrantStore
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +51,8 @@ class RetrieverNode:
 
     def __init__(
         self,
-        embedding_service: EmbeddingService,
-        qdrant_store: QdrantStore,
+        embedding_service: "EmbeddingService",
+        qdrant_store: "QdrantStore",
         top_k_per_claim: int = 3,
         score_threshold: float = 0.3,
         hybrid_retriever=None,

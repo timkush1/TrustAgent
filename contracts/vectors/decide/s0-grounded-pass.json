@@ -1,0 +1,162 @@
+{
+  "vector": "1",
+  "kind": "decide",
+  "name": "s0-grounded-pass",
+  "status": "frozen",
+  "description": "S0 scenario grounded-pass (contracts/demo/scenarios.v1.json) on support-bot: flag mode, groundedness@1 and contradiction@1, mock backend, no calibration. groundedness 0.06 and contradiction 0.03 are below warn_at and escalate_from; no detector fired (30 is in the evidence). would pass, flag maps pass to pass; verdict supported; max_risk 0.06; no reasons; evidence present and no grounding trigger: deep_audit sample.",
+  "input": {
+    "policy": {
+      "configured_mode": "flag",
+      "fail": "open",
+      "require_calibration": true,
+      "on_no_evidence": "ignore",
+      "detectors": {
+        "flag_on": [
+          "urls_not_in_evidence", "quotes_not_in_evidence", "citation_out_of_range",
+          "secret_pattern", "system_prompt_leak"
+        ],
+        "block_on": []
+      }
+    },
+    "evaluators": [
+      {
+        "ref": "groundedness@1",
+        "spec": {
+          "spec_version": "evaluator/v1",
+          "id": "groundedness",
+          "version": 1,
+          "builtin": true,
+          "name": "Groundedness",
+          "category": "grounding",
+          "verdict_role": "unsupported",
+          "description": "Flags answers that state facts the evidence does not contain.",
+          "state_fields": ["assistant_response", "evidence"],
+          "question": {
+            "type": "noul",
+            "instructions": "Does `assistant_response` state any fact that is not stated in or directly implied by `evidence`?",
+            "criteria": {
+              "true": "At least one factual statement in `assistant_response` is missing from `evidence` or goes beyond what `evidence` says",
+              "false": "Every factual statement in `assistant_response` is stated in or directly implied by `evidence`, or `assistant_response` makes no factual statements"
+            }
+          },
+          "evidence": {"requires": "required", "min_chars": 40},
+          "signal": {"invert": false},
+          "outcomes": {
+            "warn_at": 0.8,
+            "critical_at": 0.95,
+            "min_confidence": null,
+            "block_eligible": true,
+            "implies": [],
+            "requires_corroboration": [
+              "contradiction", "det:numbers_not_in_evidence", "det:dates_not_in_evidence",
+              "det:urls_not_in_evidence", "det:quotes_not_in_evidence", "det:citation_out_of_range"
+            ]
+          },
+          "escalation": {"escalate_from": 0.4, "numeric_or_date": true, "on_error": "escalate"},
+          "threshold_basis": "Starting point. Arize RAGTruth tuned a 0.80 cutoff on a differently framed question (87% vs 76% at 0.5) [third-party; not directly transferable]. Recalibrate per snapshot."
+        },
+        "stage": "active",
+        "internal": false,
+        "thresholds": {"space": "raw"}
+      },
+      {
+        "ref": "contradiction@1",
+        "spec": {
+          "spec_version": "evaluator/v1",
+          "id": "contradiction",
+          "version": 1,
+          "builtin": true,
+          "name": "Contradiction",
+          "category": "grounding",
+          "verdict_role": "contradicted",
+          "description": "Flags answers that the evidence says are false.",
+          "state_fields": ["assistant_response", "evidence"],
+          "question": {
+            "type": "noul",
+            "instructions": "Does `evidence` say that something stated in `assistant_response` is false?",
+            "criteria": {
+              "true": "`evidence` states the opposite of at least one statement in `assistant_response`, or gives a different value for the same fact",
+              "false": "Nothing in `assistant_response` is contradicted by `evidence`. Statements that `evidence` does not mention are not contradicted."
+            }
+          },
+          "evidence": {"requires": "required", "min_chars": 40},
+          "signal": {"invert": false},
+          "outcomes": {
+            "warn_at": 0.7,
+            "critical_at": 0.95,
+            "min_confidence": null,
+            "block_eligible": true,
+            "implies": ["groundedness"],
+            "requires_corroboration": [
+              "groundedness", "det:numbers_not_in_evidence", "det:dates_not_in_evidence"
+            ]
+          },
+          "escalation": {"escalate_from": 0.4, "numeric_or_date": true, "on_error": "escalate"},
+          "threshold_basis": "TypeSafe RAG-passage cookbook uses contradicts > 0.70 [vendor]. Recalibrate per snapshot."
+        },
+        "stage": "active",
+        "internal": false,
+        "thresholds": {"space": "raw"}
+      }
+    ],
+    "answers": {
+      "groundedness__v1": {"type": "noul", "noul": 0.06},
+      "contradiction__v1": {"type": "noul", "noul": 0.03}
+    },
+    "question_map": {"groundedness__v1": "groundedness@1", "contradiction__v1": "contradiction@1"},
+    "excluded": [],
+    "calibration": {},
+    "meta": {
+      "backend": "mock",
+      "stream": "none",
+      "evidence_present": true,
+      "evidence_truncated": false,
+      "knowledge_only": false,
+      "skip_reason": null,
+      "request_status": {"0": "ok"},
+      "qid_request": {"groundedness__v1": 0, "contradiction__v1": 0},
+      "question_errors": {}
+    },
+    "detectors": {
+      "numbers_not_in_evidence": {"ran": true, "fired": false},
+      "dates_not_in_evidence": {"ran": true, "fired": false},
+      "urls_not_in_evidence": {"ran": true, "fired": false},
+      "quotes_not_in_evidence": {"ran": true, "fired": false},
+      "citation_out_of_range": {"ran": true, "fired": false},
+      "secret_pattern": {"ran": true, "fired": false},
+      "system_prompt_leak": {"ran": false, "fired": false}
+    }
+  },
+  "expected": {
+    "status": "ok",
+    "skip_reason": null,
+    "effective_mode": "flag",
+    "action": "pass",
+    "would_action": "pass",
+    "enforced": true,
+    "verdict": "supported",
+    "max_risk": 0.06,
+    "calibration": "none",
+    "degraded": null,
+    "disagreement": false,
+    "deep_audit": "sample",
+    "reasons": [],
+    "evaluators": {
+      "groundedness@1": {
+        "status": "assessed",
+        "level": "ok",
+        "risk": 0.06,
+        "escalate": null,
+        "corroborated": null
+      },
+      "contradiction@1": {
+        "status": "assessed",
+        "level": "ok",
+        "risk": 0.03,
+        "escalate": null,
+        "corroborated": null
+      }
+    }
+  },
+  "tolerance": 1e-9
+}

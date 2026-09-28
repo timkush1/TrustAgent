@@ -1,0 +1,30 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-sum-1.10-anomaly",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "refusal probabilities sum to 1.10: within the tolerance at its edge, renormalized with the sum_out_of_range anomaly.",
+  "input": {
+    "template": "refusal@1",
+    "answer": {
+      "type": "choice",
+      "choice": "declines_or_deflects",
+      "probabilities": {"answers_request": 0.3, "declines_or_deflects": 0.8}
+    }
+  },
+  "expected": {
+    "anomalies": ["sum_out_of_range"],
+    "confidence_source": "fallback_top_prob",
+    "error": null,
+    "probabilities": {
+      "answers_request": 0.2727272727272727,
+      "asks_clarifying_question": 0,
+      "declines_or_deflects": 0.7272727272727273,
+      "nothing_to_answer": 0
+    },
+    "risk_raw": 0.7272727272727273,
+    "top": "declines_or_deflects",
+    "vendor_confidence": null
+  }
+}

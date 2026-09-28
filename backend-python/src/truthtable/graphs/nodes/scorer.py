@@ -6,14 +6,37 @@ This node aggregates claim verification results into a final faithfulness score.
 The faithfulness score indicates how much of the LLM's response is supported
 by the provided context. A score of 1.0 means fully faithful, 0.0 means
 completely unsupported (hallucination).
+
+It also classifies the audit for the v2 wire result (SPEC section 2.2): the
+terminal status (COMPLETED, DEGRADED or FAILED) and the verdict (GROUNDED,
+HALLUCINATED, UNVERIFIABLE or NO_CLAIMS). The scores themselves are still the
+v1 formula; scoring v2 (SPEC section 3.2, scoring/aggregate.py) replaces them.
 """
 
 import logging
-from typing import List
+from dataclasses import dataclass
+from typing import List, Optional, Sequence, Tuple
 
-from ..state import AuditState, ClaimVerification, VerificationStatus
+from ..state import (
+    DECIDED_STATUSES,
+    AuditOutcome,
+    AuditState,
+    AuditVerdict,
+    ClaimVerification,
+    NotAssessedReason,
+    UnsupportedPolicy,
+    VerificationStatus,
+    coerce_status,
+)
 
 logger = logging.getLogger(__name__)
+
+# An audit whose UNKNOWN share of the checked claims reaches this fraction FAILS
+# with error_kind judge_unavailable instead of reporting a score built on judge
+# failures (SPEC section 2.2; the TRUTHTABLE_SCORING_MAX_UNKNOWN_FRACTION default).
+MAX_UNKNOWN_FRACTION = 0.5
+
+NO_CLAIMS_TRACE = "No verifiable claims were found in the response."
 
 
 def calculate_faithfulness_score(verifications: List[ClaimVerification]) -> float:
@@ -144,18 +167,15 @@ def generate_reasoning_trace(verifications: List[ClaimVerification], score: floa
     """
     # Count by status (every VerificationStatus must be a key here, or the
     # increment below raises KeyError for that status).
-    status_counts = {
-        VerificationStatus.SUPPORTED: 0,
-        VerificationStatus.PARTIALLY_SUPPORTED: 0,
-        VerificationStatus.CONTRADICTED: 0,
-        VerificationStatus.UNSUPPORTED: 0,
-        VerificationStatus.UNKNOWN: 0,
-    }
-
-    for v in verifications:
-        status_counts[v["status"]] += 1
-
     total = len(verifications)
+    if total == 0:
+        # A response without claims has nothing to break down (and nothing to
+        # divide by: this used to raise ZeroDivisionError, D1).
+        return NO_CLAIMS_TRACE
+
+    status_counts = {status: 0 for status in VerificationStatus}
+    for v in verifications:
+        status_counts[coerce_status(v["status"])] += 1
 
     # Build trace
     trace_lines = [
@@ -167,8 +187,11 @@ def generate_reasoning_trace(verifications: List[ClaimVerification], score: floa
         f"  ✕ Contradicted: {status_counts[VerificationStatus.CONTRADICTED]} ({status_counts[VerificationStatus.CONTRADICTED]/total*100:.1f}%)",
         f"  ✗ Unsupported: {status_counts[VerificationStatus.UNSUPPORTED]} ({status_counts[VerificationStatus.UNSUPPORTED]/total*100:.1f}%)",
         f"  ? Unknown: {status_counts[VerificationStatus.UNKNOWN]} ({status_counts[VerificationStatus.UNKNOWN]/total*100:.1f}%)",
-        "",
     ]
+    not_checked = status_counts[VerificationStatus.NOT_CHECKED]
+    if not_checked:
+        trace_lines.append(f"  - Not checked: {not_checked} ({not_checked/total*100:.1f}%)")
+    trace_lines.append("")
 
     # Add details for problematic claims (contradicted first — strongest signal)
     problem_claims = [
@@ -189,6 +212,61 @@ def generate_reasoning_trace(verifications: List[ClaimVerification], score: floa
         trace_lines.append("")
 
     return "\n".join(trace_lines)
+
+
+@dataclass(frozen=True)
+class AuditAssessment:
+    """How an audit ends: its terminal status and, unless it failed, its verdict."""
+
+    status: AuditOutcome
+    verdict: Optional[AuditVerdict]
+    degraded_reasons: Tuple[str, ...] = ()
+    error_kind: Optional[str] = None
+
+
+def assess_audit(
+    verifications: Sequence[ClaimVerification],
+    unsupported_policy: UnsupportedPolicy = UnsupportedPolicy.HALLUCINATION,
+    max_unknown_fraction: float = MAX_UNKNOWN_FRACTION,
+) -> AuditAssessment:
+    """
+    Classify a verified audit (SPEC section 2.2 status rules).
+
+    - No claims: COMPLETED, NO_CLAIMS.
+    - Only NOT_CHECKED claims: COMPLETED, NOT_ASSESSED.
+    - UNKNOWN claims reach ``max_unknown_fraction`` of the checked claims:
+      FAILED with error_kind judge_unavailable and no verdict.
+    - Otherwise the verdict comes from the decided claims only (UNKNOWN and
+      NOT_CHECKED are excluded): GROUNDED unless the v1 hallucination rule fires.
+      When it fires, HALLUCINATED, except UNVERIFIABLE under the ``unverifiable``
+      policy when no claim is CONTRADICTED (the answer is unchecked, not wrong).
+      Any UNKNOWN claim makes the audit DEGRADED (unknown_claims).
+    """
+    if not verifications:
+        return AuditAssessment(AuditOutcome.COMPLETED, AuditVerdict.NO_CLAIMS)
+
+    statuses = [coerce_status(v["status"]) for v in verifications]
+    checked = [s for s in statuses if s is not VerificationStatus.NOT_CHECKED]
+    if not checked:
+        return AuditAssessment(AuditOutcome.COMPLETED, AuditVerdict.NOT_ASSESSED)
+
+    unknown = sum(1 for s in checked if s not in DECIDED_STATUSES)
+    if unknown / len(checked) >= max_unknown_fraction:
+        return AuditAssessment(AuditOutcome.FAILED, None, error_kind="judge_unavailable")
+
+    decided = [v for v, s in zip(verifications, statuses) if s in DECIDED_STATUSES]
+    if not detect_hallucination(decided):
+        verdict = AuditVerdict.GROUNDED
+    elif unsupported_policy is UnsupportedPolicy.UNVERIFIABLE and not any(
+        s is VerificationStatus.CONTRADICTED for s in statuses
+    ):
+        verdict = AuditVerdict.UNVERIFIABLE
+    else:
+        verdict = AuditVerdict.HALLUCINATED
+
+    if unknown:
+        return AuditAssessment(AuditOutcome.DEGRADED, verdict, degraded_reasons=("unknown_claims",))
+    return AuditAssessment(AuditOutcome.COMPLETED, verdict)
 
 
 class ScorerNode:
@@ -222,9 +300,9 @@ class ScorerNode:
         start = time.time()
         logger.info(f"Calculating scores for request {state['request_id']}")
 
-        verifications = state["claim_verifications"]
+        verifications = state.get("claim_verifications") or []
 
-        # Calculate faithfulness score
+        # Calculate faithfulness score (0.0 when there are no claims)
         score = calculate_faithfulness_score(verifications)
 
         # Detect hallucinations
@@ -233,17 +311,30 @@ class ScorerNode:
         # Generate reasoning trace
         reasoning = generate_reasoning_trace(verifications, score)
 
+        # Classify the audit for the v2 result
+        policy = UnsupportedPolicy(
+            state.get("unsupported_policy") or UnsupportedPolicy.HALLUCINATION.value
+        )
+        assessment = assess_audit(verifications, policy)
+
         # Update state
         state["faithfulness_score"] = score
         state["hallucination_detected"] = hallucination
         state["reasoning_trace"] = reasoning
+        state["audit_status"] = assessment.status.value
+        state["verdict"] = assessment.verdict.value if assessment.verdict else None
+        state["degraded_reasons"] = list(assessment.degraded_reasons)
+        state["error_kind"] = assessment.error_kind
+        if assessment.verdict is AuditVerdict.NOT_ASSESSED:
+            state["not_assessed_reason"] = NotAssessedReason.NO_EVIDENCE.value
 
         elapsed_ms = int((time.time() - start) * 1000)
         state.setdefault("step_timings", {})
         state["step_timings"]["score_ms"] = elapsed_ms
 
         logger.info(
-            f"Audit complete: score={score:.3f}, hallucination={hallucination} ({elapsed_ms}ms)"
+            f"Audit complete: score={score:.3f}, hallucination={hallucination}, "
+            f"status={assessment.status.value}, verdict={state['verdict']} ({elapsed_ms}ms)"
         )
 
         return state

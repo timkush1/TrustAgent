@@ -1,0 +1,31 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-small-foreign-key-dropped",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A foreign key with exactly 0.01 (not above 0.01) is dropped; the remaining options sum to 0.99 and are renormalized.",
+  "input": {
+    "template": "refusal@1",
+    "answer": {
+      "type": "choice",
+      "choice": "answers_request",
+      "confidence": 0.95,
+      "probabilities": {"answers_request": 0.95, "declines_or_deflects": 0.04, "other": 0.01}
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "vendor",
+    "error": null,
+    "probabilities": {
+      "answers_request": 0.9595959595959596,
+      "asks_clarifying_question": 0,
+      "declines_or_deflects": 0.04040404040404041,
+      "nothing_to_answer": 0
+    },
+    "risk_raw": 0.04040404040404041,
+    "top": "answers_request",
+    "vendor_confidence": 0.95
+  }
+}

@@ -1,0 +1,42 @@
+# Build context of backend-go/Dockerfile, which is the REPOSITORY ROOT
+# (`docker build -f backend-go/Dockerfile .`; compose and CI do the same).
+# BuildKit uses this Dockerfile-specific file instead of the root .dockerignore.
+#
+# Allow-list: everything is excluded, then only what the image compiles is let
+# back in (proto/, contracts/, backend-go/). Secrets such as .env can never
+# reach the build this way.
+
+*
+
+!proto/
+!contracts/
+!backend-go/
+
+# Contracts: the Go module embeds the JSON/YAML files; the npm validator's
+# dependencies are not needed.
+contracts/node_modules/
+
+# Stubs are generated inside the image from proto/ (the proto stage); a stale
+# local copy must not shadow them.
+backend-go/api/
+
+# Build, test and coverage output; tests are not compiled into the image.
+# Coverage patterns name output files only: a source file such as
+# coverage.go or a contract such as vectors/coverage.v1.json must stay in.
+backend-go/bin/
+backend-go/vendor/
+**/*.exe
+**/*.test
+**/*.out
+**/coverage.html
+**/coverage/
+**/*_test.go
+**/testdata/
+
+# Docs, Docker metadata, editor and OS noise.
+**/*.md
+**/Dockerfile*
+**/.dockerignore
+**/.DS_Store
+**/.env
+**/.env.*

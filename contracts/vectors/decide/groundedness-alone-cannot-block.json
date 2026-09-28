@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "groundedness-alone-cannot-block",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required. groundedness 0.97 >= critical_at 0.95 is critical, but none of its corroborators agree (contradiction 0.10 is ok, no detector fired), so it lands in needs_second: would = flag, and block mode maps flag to flag. Verdict unsupported; deep_audit high because a role-bearing evaluator is above ok.",
   "input": {
     "policy": {

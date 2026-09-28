@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "score-risk-levels",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route with a custom score evaluator (4 levels, risk_levels [0, 1], warn_at 0.30). Probabilities keyed \"0\"..\"3\" sum to 1; risk = P(0) + P(1) = 0.10 + 0.25 = 0.35: warn. The fractional score 2.9 is never used. top is level \"2\". No verdict-role evaluator: verdict null.",
   "input": {
     "policy": {

@@ -474,9 +474,14 @@ func TestBackfillSeeded0001Database(t *testing.T) {
 		*got.FaithfulnessScore != 0.4 || got.Grade == nil || *got.Grade != "D" || len(got.Claims) != 2 {
 		t.Errorf("legacy audit read back wrong: %+v", got)
 	}
-	list, total, err := s.ListAudits(ctx, ListFilter{Limit: 10})
-	if err != nil || total != 4 || len(list) != 4 {
-		t.Errorf("ListAudits on legacy data: total=%d len=%d err=%v", total, len(list), err)
+	list, next, err := s.ListAudits(ctx, AuditFilter{Limit: 10})
+	if err != nil || next != "" || len(list) != 4 {
+		t.Errorf("ListAudits on legacy data: len=%d next=%q err=%v", len(list), next, err)
+	}
+	for _, a := range list {
+		if a.Status != AuditCompleted || a.ScoringVersion != "v1" || a.Source != "proxy" || a.Verdict != nil {
+			t.Errorf("legacy audit %s reads back with the 0002 defaults: %+v", a.AuditID, a)
+		}
 	}
 
 	// A new audit next to legacy ones, then a no-op re-run of the runner.

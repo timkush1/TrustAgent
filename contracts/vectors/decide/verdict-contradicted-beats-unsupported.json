@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "verdict-contradicted-beats-unsupported",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. contradiction 0.75 is warn (below critical_at 0.95) and groundedness 0.97 is critical: a contradicted-role evaluator at warn or above wins over an unsupported-role one, so the verdict is contradicted. No disagreement (contradiction is not critical).",
   "input": {
     "policy": {

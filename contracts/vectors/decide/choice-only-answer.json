@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "choice-only-answer",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. The refusal answer carries only choice declines_or_deflects (no probabilities, no confidence): normalize uses {declines_or_deflects: 1}, confidence_source choice_only, vendor_confidence null. risk 1.0 >= warn_at 0.70 (critical_at null): warn. Refusal is not a grounding signal, so deep_audit stays sample.",
   "input": {
     "policy": {

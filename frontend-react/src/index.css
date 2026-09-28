@@ -1,94 +1,228 @@
-@import "tailwindcss";
+/*
+ * TrustAgent design tokens (DESIGN.md is the rulebook; SPEC §3.3).
+ *
+ * - The chrome is achromatic. Hue means a verdict or an outcome tone, nothing else.
+ * - Each color token is defined once with light-dark(); `color-scheme` picks the side.
+ *   public/theme-init.js stamps the resolved data-theme="light|dark" on <html> before first paint
+ *   (the viewer's choice, else prefers-color-scheme), so there is no flash; src/lib/theme.ts keeps it
+ *   in sync afterwards. Without the attribute (no script) :root still follows the OS.
+ * - Contrast: every text token is >= 4.5:1 on surface and on its own tint (values in DESIGN.md).
+ * - `--color-*: initial` removes Tailwind's palette, so `bg-red-500` and friends do not exist here.
+ */
+/* Scan only the app sources for class names (not docs, tests or build output). */
+@import 'tailwindcss' source('.');
+@source not './**/*.test.{ts,tsx}';
+@source not './test';
 
-/* Cyberpunk Dark Theme */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a24;
-  --text-primary: #e0e0e0;
-  --text-secondary: #888;
-  --accent-cyan: #00ffff;
-  --accent-magenta: #ff00ff;
-  --accent-green: #00ff88;
-  --accent-red: #ff3366;
-  --accent-yellow: #ffcc00;
-  --border-color: #2a2a3a;
+  color-scheme: light dark;
+
+  /* Chrome (achromatic, hue 265 at near-zero chroma). */
+  --bg: light-dark(oklch(0.985 0.002 265), oklch(0.155 0.006 265));
+  --surface: light-dark(oklch(1 0 0), oklch(0.19 0.006 265));
+  --surface-sunken: light-dark(oklch(0.965 0.003 265), oklch(0.17 0.006 265));
+  --surface-raised: light-dark(oklch(1 0 0), oklch(0.23 0.006 265));
+  --surface-hover: light-dark(oklch(0.955 0.004 265), oklch(0.245 0.006 265));
+  --fg: light-dark(oklch(0.22 0.01 265), oklch(0.93 0.004 265));
+  --fg-muted: light-dark(oklch(0.47 0.012 265), oklch(0.7 0.01 265));
+  --fg-subtle: light-dark(oklch(0.55 0.01 265), oklch(0.62 0.01 265));
+  --border: light-dark(oklch(0.91 0.004 265), oklch(0.27 0.006 265));
+  --border-strong: light-dark(oklch(0.8 0.006 265), oklch(0.36 0.006 265));
+  /* Text on an inverted fill (primary buttons, the blocked pill). */
+  --fg-inverse: light-dark(oklch(1 0 0), oklch(0.155 0.006 265));
+
+  /* Verdicts (claims). Never use them for decoration. */
+  --v-supported: light-dark(oklch(0.5 0.1 165), oklch(0.8 0.13 165));
+  --v-contradicted: light-dark(oklch(0.5 0.17 27), oklch(0.72 0.16 25));
+  --v-unsupported: light-dark(oklch(0.5 0.11 62), oklch(0.82 0.14 80));
+  --v-partial: light-dark(oklch(0.48 0.12 252), oklch(0.76 0.11 250));
+  --v-unknown: light-dark(oklch(0.5 0.012 265), oklch(0.72 0.01 265));
+  --v-not-checked: light-dark(oklch(0.52 0.005 265), oklch(0.64 0.005 265));
+
+  /* Outcome tones (contracts/ui/outcomes.v1.json) reuse the verdict hues. */
+  --tone-success: var(--v-supported);
+  --tone-danger: var(--v-contradicted);
+  --tone-warning: var(--v-unsupported);
+  --tone-info: var(--v-partial);
+  --tone-neutral: var(--v-not-checked);
+
+  /* Share of a hue mixed into the background of pills and marks. */
+  --tint: 10%;
 }
 
-* {
-  box-sizing: border-box;
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
-body {
-  margin: 0;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --tint: 16%;
 }
 
-#root {
-  min-height: 100vh;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-cyan);
-}
-
-/* Glow effects */
-.glow-cyan {
-  box-shadow: 0 0 10px var(--accent-cyan), 0 0 20px rgba(0, 255, 255, 0.3);
-}
-
-.glow-green {
-  box-shadow: 0 0 10px var(--accent-green), 0 0 20px rgba(0, 255, 136, 0.3);
-}
-
-.glow-red {
-  box-shadow: 0 0 10px var(--accent-red), 0 0 20px rgba(255, 51, 102, 0.3);
-}
-
-.glow-magenta {
-  box-shadow: 0 0 10px var(--accent-magenta), 0 0 20px rgba(255, 0, 255, 0.3);
-}
-
-/* Animation keyframes */
-@keyframes pulse-glow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@keyframes slide-in {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --tint: 16%;
   }
 }
 
-.animate-slide-in {
-  animation: slide-in 0.3s ease-out;
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-inverse: var(--fg-inverse);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-v-supported: var(--v-supported);
+  --color-v-contradicted: var(--v-contradicted);
+  --color-v-unsupported: var(--v-unsupported);
+  --color-v-partial: var(--v-partial);
+  --color-v-unknown: var(--v-unknown);
+  --color-v-not-checked: var(--v-not-checked);
+  --color-tone-success: var(--tone-success);
+  --color-tone-danger: var(--tone-danger);
+  --color-tone-warning: var(--tone-warning);
+  --color-tone-info: var(--tone-info);
+  --color-tone-neutral: var(--tone-neutral);
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+@theme {
+  /* Type scale (px): 11/16, 12/16, 13/20 base, 14/20, 15/24 answer text, 16/24, 20/28, 28/34. */
+  --text-*: initial;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.25rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+
+  /* Weights 400 / 500 / 600 only. */
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Radii 6 / 8 / 12, plus pills. Spacing stays on Tailwind's 4px grid. */
+  --radius-*: initial;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  /* Elevation is lightness, not shadow; the one shadow is for floating popups. */
+  --shadow-*: initial;
+  --shadow-popup: 0 8px 24px -12px oklch(0 0 0 / 0.25), 0 2px 6px -2px oklch(0 0 0 / 0.08);
+
+  /* Motion: 150-200 ms ease-out on transform and opacity only. */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: var(--ease-out);
+}
+
+@layer base {
+  html {
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  /* Focus ring: fg-colored, 2px, offset 2px. */
+  :focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--v-partial) 24%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * Verdict marks in answer text: hue + underline style, never hue alone.
+ * <mark data-v="contradicted">…</mark>; data-fuzzy adds a dashed outline for approximate spans.
+ */
+@layer components {
+  mark[data-v] {
+    color: inherit;
+    border-radius: 2px;
+    background-color: color-mix(in oklab, var(--vc) var(--tint), transparent);
+    text-decoration-line: underline;
+    text-decoration-color: var(--vc);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+    text-decoration-skip-ink: none;
+  }
+  mark[data-v='supported'] {
+    --vc: var(--v-supported);
+    text-decoration-style: solid;
+    text-decoration-thickness: 1px;
+  }
+  mark[data-v='contradicted'] {
+    --vc: var(--v-contradicted);
+    text-decoration-style: wavy;
+  }
+  mark[data-v='unsupported'] {
+    --vc: var(--v-unsupported);
+    text-decoration-style: dotted;
+  }
+  mark[data-v='partial'] {
+    --vc: var(--v-partial);
+    text-decoration-style: dashed;
+  }
+  mark[data-v='unknown'] {
+    --vc: var(--v-unknown);
+    text-decoration-style: double;
+  }
+  mark[data-fuzzy] {
+    outline: 1px dashed var(--vc);
+    outline-offset: 1px;
+  }
+}
+
+/* Every number in the UI is tabular (DESIGN.md). */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }

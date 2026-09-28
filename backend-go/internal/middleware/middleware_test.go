@@ -105,6 +105,18 @@ func TestCORSAllowsListedOrigin(t *testing.T) {
 	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
 		t.Errorf("expected reflected origin, got %q", got)
 	}
+	exposed := w.Header().Get("Access-Control-Expose-Headers")
+	for _, h := range []string{"X-TrustAgent-Trace-Id", "X-TrustAgent-Action", "X-TrustAgent-Audit", "X-Request-ID", "ETag"} {
+		if !strings.Contains(exposed, h) {
+			t.Errorf("Access-Control-Expose-Headers %q lacks %s", exposed, h)
+		}
+	}
+	if strings.Contains(exposed, "*") {
+		t.Error("exposed headers are listed explicitly, never *")
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "X-TrustAgent-Key") {
+		t.Errorf("allowed headers %q lack X-TrustAgent-Key", got)
+	}
 }
 
 func TestCORSIgnoresUnlistedOrigin(t *testing.T) {
@@ -171,7 +183,7 @@ func TestMemoryLimiterEnforcesLimit(t *testing.T) {
 }
 
 func TestRateLimitMiddlewareReturns429(t *testing.T) {
-	router := newRouter(RateLimit(NewMemoryLimiter(), 2, time.Minute))
+	router := newRouter(RateLimit(NewMemoryLimiter(), 2, time.Minute, nil))
 
 	statuses := []int{}
 	for i := 0; i < 3; i++ {
@@ -189,7 +201,7 @@ func TestRateLimitMiddlewareReturns429(t *testing.T) {
 }
 
 func TestRateLimitKeyedByAPIKey(t *testing.T) {
-	router := newRouter(RateLimit(NewMemoryLimiter(), 1, time.Minute))
+	router := newRouter(RateLimit(NewMemoryLimiter(), 1, time.Minute, nil))
 
 	first := httptest.NewRequest("GET", "/test", nil)
 	first.Header.Set("X-API-Key", "alice")
@@ -205,6 +217,84 @@ func TestRateLimitKeyedByAPIKey(t *testing.T) {
 	router.ServeHTTP(w, second)
 	if w.Code != http.StatusOK {
 		t.Errorf("bob has his own bucket and should pass, got %d", w.Code)
+	}
+}
+
+// recordingLimiter allows everything and records the bucket names it is asked about.
+type recordingLimiter struct{ keys []string }
+
+func (l *recordingLimiter) Allow(_ context.Context, key string, _ int, _ time.Duration) bool {
+	l.keys = append(l.keys, key)
+	return true
+}
+
+func TestRateLimitNeverNamesABucketAfterACredential(t *testing.T) {
+	limiter := &recordingLimiter{}
+	router := newRouter(RateLimit(limiter, 10, time.Minute, nil))
+	headers := []map[string]string{
+		{"Authorization": "Bearer sk-upstream-credential"},
+		{"X-API-Key": "sk-upstream-credential"},
+		{"X-TrustAgent-Key": "ta-ingest-key", "Authorization": "Bearer sk-upstream-credential"},
+		{},
+	}
+	for _, h := range headers {
+		req := httptest.NewRequest("GET", "/test", nil)
+		for k, v := range h {
+			req.Header.Set(k, v)
+		}
+		router.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	if len(limiter.keys) != len(headers) {
+		t.Fatalf("buckets = %v", limiter.keys)
+	}
+	for _, key := range limiter.keys {
+		if strings.Contains(key, "sk-upstream-credential") || strings.Contains(key, "ta-ingest-key") {
+			t.Errorf("bucket %q carries a raw credential", key)
+		}
+	}
+	if limiter.keys[0] != limiter.keys[1] {
+		t.Errorf("the same credential in Authorization and X-API-Key should share a bucket: %v", limiter.keys[:2])
+	}
+	if limiter.keys[2] == limiter.keys[0] {
+		t.Errorf("X-TrustAgent-Key should name the bucket before Authorization: %v", limiter.keys)
+	}
+	if !strings.HasSuffix(limiter.keys[3], ":ip:192.0.2.1") {
+		t.Errorf("a keyless caller should be limited by IP, got %q", limiter.keys[3])
+	}
+}
+
+func TestRateLimitWritesTheRouteErrorShape(t *testing.T) {
+	var denied []string
+	deny := func(c *gin.Context, status int, code, message string) {
+		denied = append(denied, code)
+		c.JSON(status, gin.H{"error": gin.H{"message": message, "type": "trustagent_error", "code": code}})
+	}
+	router := newRouter(RateLimit(NewMemoryLimiter(), 1, time.Minute, deny))
+	var w *httptest.ResponseRecorder
+	for i := 0; i < 2; i++ {
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/test", nil))
+	}
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "60" {
+		t.Fatalf("status %d, Retry-After %q", w.Code, w.Header().Get("Retry-After"))
+	}
+	if len(denied) != 1 || denied[0] != CodeRateLimited {
+		t.Errorf("deny calls = %v", denied)
+	}
+	if !strings.Contains(w.Body.String(), `"code":"rate_limited"`) || strings.Contains(w.Body.String(), "ok") {
+		t.Errorf("body = %s (the handler must not run)", w.Body.String())
+	}
+}
+
+func TestRateLimitDefaultErrorBody(t *testing.T) {
+	router := newRouter(RateLimit(NewMemoryLimiter(), 1, time.Minute, nil))
+	var w *httptest.ResponseRecorder
+	for i := 0; i < 2; i++ {
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/test", nil))
+	}
+	if !strings.HasPrefix(w.Body.String(), `{"error":{"code":"rate_limited","message":`) {
+		t.Errorf("body = %s", w.Body.String())
 	}
 }
 

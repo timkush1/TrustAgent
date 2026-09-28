@@ -1,0 +1,35 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-weighted-risk",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "off_brand_tone weights clearly_off_voice 1.0 and slightly_off_voice 0.5: risk = 0.2*1.0 + 0.6*0.5 = 0.50, summed over the weight keys in sorted order.",
+  "input": {
+    "template": "off_brand_tone@1",
+    "answer": {
+      "type": "choice",
+      "choice": "slightly_off_voice",
+      "confidence": 0.6,
+      "probabilities": {
+        "matches_brand_voice": 0.2,
+        "slightly_off_voice": 0.6,
+        "clearly_off_voice": 0.2
+      }
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "vendor",
+    "error": null,
+    "probabilities": {
+      "clearly_off_voice": 0.2,
+      "matches_brand_voice": 0.2,
+      "slightly_off_voice": 0.6,
+      "too_short_to_judge": 0
+    },
+    "risk_raw": 0.5,
+    "top": "slightly_off_voice",
+    "vendor_confidence": 0.6
+  }
+}

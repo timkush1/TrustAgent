@@ -1,0 +1,34 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-tie-smallest-key",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Same distribution, but the vendor choice clearly_off_voice is not tied for the maximum: the lexicographically smallest tied key, matches_brand_voice, is top.",
+  "input": {
+    "template": "off_brand_tone@1",
+    "answer": {
+      "type": "choice",
+      "choice": "clearly_off_voice",
+      "probabilities": {
+        "matches_brand_voice": 0.4,
+        "slightly_off_voice": 0.4,
+        "clearly_off_voice": 0.2
+      }
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "fallback_top_prob",
+    "error": null,
+    "probabilities": {
+      "clearly_off_voice": 0.2,
+      "matches_brand_voice": 0.4,
+      "slightly_off_voice": 0.4,
+      "too_short_to_judge": 0
+    },
+    "risk_raw": 0.4,
+    "top": "matches_brand_voice",
+    "vendor_confidence": null
+  }
+}

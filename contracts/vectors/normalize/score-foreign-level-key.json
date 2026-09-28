@@ -1,0 +1,48 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "score-foreign-level-key",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A 4-level score with a probability on level \"4\" (0.3 > 0.01): as for choice, unexpected_option.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "answer_completeness",
+      "version": 1,
+      "builtin": false,
+      "name": "Answer completeness",
+      "category": "quality",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "score",
+        "instructions": "How much of what `user_request` asks does `assistant_response` answer?",
+        "criteria": [
+          "Answers none of what `user_request` asks",
+          "Answers a small part of what `user_request` asks",
+          "Answers most of what `user_request` asks", "Answers everything `user_request` asks"
+        ]
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"risk_levels": [0, 1]},
+      "outcomes": {
+        "warn_at": 0.3,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    },
+    "answer": {"type": "score", "probabilities": {"0": 0.1, "2": 0.6, "4": 0.3}}
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": "unexpected_option",
+    "probabilities": null,
+    "risk_raw": null,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

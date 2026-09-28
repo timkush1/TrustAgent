@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-sum-0.85-invalid",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "refusal probabilities sum to 0.85: |s - 1| = 0.15 > max(0.10, 0.005*4), so invalid_distribution.",
+  "input": {
+    "template": "refusal@1",
+    "answer": {
+      "type": "choice",
+      "choice": "answers_request",
+      "probabilities": {"answers_request": 0.5, "declines_or_deflects": 0.35}
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": "invalid_distribution",
+    "probabilities": null,
+    "risk_raw": null,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

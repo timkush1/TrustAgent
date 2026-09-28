@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-factual-claims",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template factual_claims@1 (contracts/evaluators/factual_claims.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "factual_claims@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "f6aa110ac665bc04a84a28e546731ec08958657e73a1da765e9893a9472d740d",
+    "question_id": "factual_claims__v1",
+    "question_sha256": "78bf1218f164df5d0e0f69f7a33f9cff51793b642de41d6221ebceb392a1afdb",
+    "question_tokens": 94,
+    "spec_sha256": "a830cae6aaa4a44a1894d1543cfe14ee03a3e512d1c9b89a46949f8a10421149"
+  }
+}

@@ -664,19 +664,135 @@ for (const [rel, doc] of docs) {
 
 // ------------------------------------------------------------------------------------------ scenarios
 
+// A scenario's expectations hold only under the policy the gateway loads: config/policies.yaml (compose
+// mounts ./config at /etc/trustagent), or the SPEC example when that file is absent. These checks replay
+// the parts of routing, compile and the UI outcome rules that need no evidence extraction; the Go and TS
+// runners and trafficgen --expect pin the rest.
+
+const SCENARIO_PATHS = { openai_chat: '/v1/chat/completions', openai_completions: '/v1/completions', anthropic_messages: '/v1/messages' };
+const MODE_ACTIONS = { observe: ['observe'], flag: ['pass', 'flag'], block: ['pass', 'flag', 'block'], fallback: ['pass', 'flag', 'block', 'fallback'] };
+const JUDGED = ['GROUNDED', 'HALLUCINATED', 'UNVERIFIABLE'];
+
+// Route globs: "*" matches any run of characters, "?" one character.
+const matchGlob = (glob, s) => new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`).test(s);
+
+// The first route whose matchers all match (SPEC §2.7), or null for the defaults route. The body extension's
+// trustagent.route stands in for a missing X-TrustAgent-Route header (both are match inputs, SPEC §2.12).
+// Routes matching on key_labels are skipped: the ingest key is not part of a scenario.
+function scenarioRoute(policy, s) {
+  const headers = new Map(Object.entries(s.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+  if (!headers.has('x-trustagent-route') && s.request.trustagent?.route) headers.set('x-trustagent-route', s.request.trustagent.route);
+  const path = SCENARIO_PATHS[s.api_format ?? 'openai_chat'];
+  const found = (policy.routes ?? []).find((r) => {
+    const m = r.match ?? {};
+    return !m.key_labels
+      && Object.entries(m.headers ?? {}).every(([k, v]) => headers.get(k.toLowerCase()) === v)
+      && (!m.paths || m.paths.some((p) => matchGlob(p, path)))
+      && (!m.models || m.models.some((p) => matchGlob(p, s.request.model ?? '')));
+  });
+  return found ?? null;
+}
+
+// Judge fixtures: decomposer quotes are verbatim parts of the answer, verifier evidence is verbatim from the request.
+function checkScenarioJudge(rel, s) {
+  const texts = strings(s.request);
+  (s.judge?.claims ?? []).forEach((c, i) => {
+    if (c.quote !== undefined && s.response !== undefined && !s.response.includes(c.quote)) {
+      error(rel, `${s.id}: judge.claims[${i}].quote ${JSON.stringify(c.quote)} is not a verbatim part of response`);
+    }
+    for (const e of c.evidence ?? []) {
+      if (!texts.some((t) => t.includes(e))) error(rel, `${s.id}: judge.claims[${i}].evidence ${JSON.stringify(e)} does not occur in request`);
+    }
+  });
+}
+
+// expect fields that constrain each other, whatever the route.
+function checkScenarioExpect(rel, s, outcomeRules) {
+  const x = s.expect;
+  if (x.mode !== undefined && !MODE_ACTIONS[x.mode].includes(x.action)) error(rel, `${s.id}: action ${x.action} is impossible in ${x.mode} mode`);
+  if (x.mode === 'observe' && x.status !== undefined && x.status !== 'deferred') {
+    error(rel, `${s.id}: observe routes answer with X-TrustAgent-Status deferred, not ${x.status}`);
+  }
+  if (x.action === 'pass' && x.would_action && x.would_action !== 'pass') error(rel, `${s.id}: action pass needs would_action pass`);
+  if (x.outcome !== undefined && outcomeRules && x.status !== undefined && x.status !== 'deferred') {
+    const fields = { gate_status: x.status.split(':')[0], action: x.action, would_action: x.would_action };
+    const got = outcomeRules.find((r) => Object.entries(r.when).every(([k, list]) => list.includes(fields[k])))?.outcome;
+    if (got !== x.outcome) {
+      error(rel, `${s.id}: expect.outcome ${x.outcome}, but ui/outcomes.v1.json gives ${got} for status ${x.status}, action ${x.action}, would_action ${x.would_action}`);
+    }
+  }
+  const claims = s.judge?.claims;
+  if (['sampled_out', 'dropped', 'disabled'].includes(x.audit) && x.audit_verdict) error(rel, `${s.id}: audit ${x.audit} runs no audit, so audit_verdict must be null`);
+  if (x.audit === 'not_assessed' && x.audit_verdict && x.audit_verdict !== 'NOT_ASSESSED') error(rel, `${s.id}: audit not_assessed needs audit_verdict NOT_ASSESSED`);
+  if (JUDGED.includes(x.audit_verdict) && !claims?.length) error(rel, `${s.id}: audit_verdict ${x.audit_verdict} needs judge claims`);
+  if (x.audit_verdict === 'NO_CLAIMS' && (!claims || claims.length)) error(rel, `${s.id}: audit_verdict NO_CLAIMS needs judge {claims: []}`);
+  if (x.audit_verdict === 'NOT_ASSESSED' && s.judge !== null) error(rel, `${s.id}: audit_verdict NOT_ASSESSED makes no LLM call, so judge must be null`);
+}
+
+// Mock answers and the effective mode against the route the request lands on.
+function checkScenarioRoute(rel, s, settings, policyName, seedMode) {
+  const asked = new Map(); // question id -> {ref, spec, stage, implicit}
+  for (const e of settings.evaluators ?? []) {
+    if (e.enabled === false) continue;
+    const [id, version] = e.ref.split('@');
+    asked.set(`${id}__v${version}`, { ref: e.ref, spec: registry.get(e.ref), stage: e.stage ?? 'active' });
+  }
+  // Compile step 3: factual_claims@1 joins as an internal evaluator when on_no_evidence is not ignore and a
+  // required evaluator had no evidence, so it may be answered but is not always asked.
+  if ((settings.on_no_evidence ?? 'ignore') !== 'ignore' && ![...asked.values()].some((q) => q.ref.startsWith('factual_claims@'))) {
+    asked.set('factual_claims__v1', { ref: 'factual_claims@1', spec: registry.get('factual_claims@1'), stage: 'active', implicit: true });
+  }
+  for (const [qid, answer] of Object.entries(s.mock_answers)) {
+    const q = asked.get(qid);
+    if (!q) error(rel, `${s.id}: mock_answers.${qid} is not asked on route ${s.route} (${policyName})`);
+    else if (q.spec && answer.type !== q.spec.question.type) error(rel, `${s.id}: mock_answers.${qid} is a ${answer.type} answer to a ${q.spec.question.type} question`);
+  }
+  // Evaluators that do not require evidence are asked whenever the gate runs (SPEC §2.9 compile step 2),
+  // unless the response is too long to send at all (step 1: est > max_response_tokens, with cpt >= 2.5).
+  const x = s.expect;
+  const maxTokens = settings.decision?.max_response_tokens ?? 6000;
+  const mayBeTooLong = [...(s.response ?? '')].length / 2.5 > maxTokens;
+  if (['ok', 'partial', 'not_assessed'].includes(x.status) && !mayBeTooLong) {
+    for (const [qid, q] of asked) {
+      if (q.implicit || !q.spec || q.spec.evidence.requires === 'required') continue;
+      if (!(qid in s.mock_answers)) error(rel, `${s.id}: ${q.ref} needs no evidence, so it is always asked on route ${s.route}, but mock_answers has no ${qid}`);
+      if (x.status === 'not_assessed' && q.stage === 'active') error(rel, `${s.id}: status not_assessed is impossible on route ${s.route}: ${q.ref} needs no evidence and is always assessed`);
+    }
+  }
+  const mode = settings.mode ?? seedMode;
+  const effective = ['block', 'fallback'].includes(mode) && s.stream && settings.streaming !== 'buffer' ? 'flag' : mode;
+  if (x.mode !== undefined && x.mode !== effective) error(rel, `${s.id}: expect.mode ${x.mode}, but route ${s.route} runs in ${effective} mode (${policyName})`);
+}
+
 const scenarios = get('demo/scenarios.v1.json');
 if (scenarios) {
   const REL = 'demo/scenarios.v1.json';
   checkUnique(REL, scenarios.scenarios, 'id', 'scenario id');
-  const example = get('policies/example.policies.yaml');
-  const routes = new Set(['default', ...(example?.routes ?? []).map((r) => r.name)]);
+  const loaded = external.get('../config/policies.yaml');
+  const [policyName, policy] = loaded ? ['config/policies.yaml', loaded.data] : ['policies/example.policies.yaml', get('policies/example.policies.yaml')];
+  const seedMode = keys?.keys.find((k) => k.name === 'TRUTHTABLE_GATE_DEFAULT_MODE')?.default ?? 'observe';
+  const outcomeRules = get('ui/outcomes.v1.json')?.rules;
   for (const s of scenarios.scenarios) {
     if (s.answer_source === 'scripted' && s.response === undefined) error(REL, `${s.id}: a scripted scenario needs response`);
-    if (!routes.has(s.route)) warn(REL, `${s.id}: route ${s.route} is not defined in policies/example.policies.yaml`);
     for (const qid of Object.keys(s.mock_answers)) {
       const m = qid.match(/^(.+)__v([0-9]+)$/);
       checkRef(REL, `${m[1]}@${m[2]}`, `scenario ${s.id} mock_answers`);
     }
+    checkScenarioJudge(REL, s);
+    checkScenarioExpect(REL, s, outcomeRules);
+    if (!policy) continue;
+    if (s.route !== 'default' && !(policy.routes ?? []).some((r) => r.name === s.route)) {
+      warn(REL, `${s.id}: route ${s.route} is not defined in ${policyName}`);
+      continue;
+    }
+    const route = scenarioRoute(policy, s);
+    const landed = route?.name ?? 'default';
+    if (landed !== s.route) {
+      error(REL, `${s.id}: the request lands on route ${landed} in ${policyName}, not ${s.route} (check headers and model)`);
+      continue;
+    }
+    const { name, description, match, ...own } = route ?? {};
+    checkScenarioRoute(REL, s, merge(merge(ROUTE_DEFAULTS, policy.defaults ?? {}), own), policyName, seedMode);
   }
 }
 

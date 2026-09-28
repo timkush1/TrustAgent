@@ -1,0 +1,138 @@
+# TrustAgent dashboard server (SPEC §3.3, §3.4).
+#
+# Rendered at container start by the nginx image's envsubst entrypoint into
+# /etc/nginx/conf.d/default.conf. Only DASHBOARD_* and NGINX_LOCAL_RESOLVERS are
+# substituted (NGINX_ENVSUBST_FILTER in the Dockerfile); every other $name here
+# is an nginx variable.
+#
+# The browser only ever talks to this origin: /v1, /api, /ws and /health are
+# proxied to the TrustAgent proxy (DASHBOARD_PROXY_UPSTREAM), so the dashboard
+# needs no CORS, no build-time API URL and no key in the bundle. Everything
+# else is the single-page app.
+
+# Connection header towards the proxy (snippets/proxy.conf): "upgrade" for a
+# WebSocket handshake, otherwise empty.
+map $http_upgrade $trustagent_connection {
+    default upgrade;
+    ''      '';
+}
+
+server {
+    listen 3000;
+    server_name _;
+    server_tokens off;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Chat bodies and knowledge-base uploads pass through to the proxy, which
+    # enforces the real limits (TRUTHTABLE_MAX_BODY_BYTES, _MAX_UPLOAD_BYTES).
+    client_max_body_size 32m;
+
+    # Resolve the proxy at request time through the container's DNS (Docker's
+    # embedded server), so a recreated proxy container is found again and nginx
+    # starts even while the proxy is still down.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+    set $trustagent_upstream ${DASHBOARD_PROXY_UPSTREAM};
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Liveness of this container (the image HEALTHCHECK); answered by nginx
+    # itself, independent of the proxy.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # ---------- Proxied to the TrustAgent proxy ----------
+
+    # Gateway traffic (SDK clients may use the dashboard origin as base URL):
+    # streamed both ways, long reads for slow upstreams and SSE.
+    location /v1/ {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        gzip off;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_pass $trustagent_upstream;
+    }
+
+    # Server-sent events: Playground runs and Studio dry-runs.
+    location /api/playground {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        gzip off;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_pass $trustagent_upstream;
+    }
+
+    location /api/studio/dry-run {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        gzip off;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_pass $trustagent_upstream;
+    }
+
+    # The proxy enforces the real per-route deadlines (TRUTHTABLE_WRITE_TIMEOUT
+    # =0: /api gets the upstream timeout + 30 s, a knowledge upload the ingest
+    # timeout + 30 s, 5.5 and 6.5 minutes by default), so nginx must not give
+    # up earlier and turn a slow answer into a 504.
+    location /api/ {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_pass $trustagent_upstream;
+    }
+
+    # Live stream (WS v2). The proxy sends heartbeats, so an idle socket still
+    # sees traffic well within the read timeout.
+    location = /ws {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_pass $trustagent_upstream;
+    }
+
+    location = /health {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        proxy_pass $trustagent_upstream;
+    }
+
+    location /health/ {
+        include /etc/nginx/conf.d/snippets/proxy.conf;
+        proxy_pass $trustagent_upstream;
+    }
+
+    # ---------- Served by nginx ----------
+
+    # Runtime settings for the app, written at start by
+    # /docker-entrypoint.d/40-runtime-config.sh (no secrets).
+    location = /config.json {
+        alias /etc/nginx/runtime/config.json;
+        default_type application/json;
+        include /etc/nginx/conf.d/snippets/security-headers.conf;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # Fingerprinted build output: cache forever.
+    location /assets/ {
+        include /etc/nginx/conf.d/snippets/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # Single-page app: unknown paths get index.html, which is always revalidated
+    # so a new deployment is picked up.
+    location / {
+        include /etc/nginx/conf.d/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri $uri/ /index.html;
+    }
+}
