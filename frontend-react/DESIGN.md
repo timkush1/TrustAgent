@@ -1,8 +1,9 @@
 # TrustAgent dashboard design rules
 
-These rules apply to everything under `frontend-react/src`. The tokens live in `src/index.css`.
-The words, icons and tones for server values live in `src/domain/presentation.ts`, which reads
-`contracts/ui/*.v1.json`. SPEC §3.3 is the normative page list. This file is the house style.
+These rules apply to everything under `frontend-react/src`. The tokens live in
+`src/styles/tokens.css`, which the app (`src/index.css`) and the landing page
+(`src/landing/landing.css`) both import. The words, icons and tones for server values live in
+`src/domain/presentation.ts`, which reads `contracts/ui/*.v1.json`. SPEC §3.3 is the normative page list. This file is the house style.
 
 ## 1. Point of view
 
@@ -69,7 +70,7 @@ text is never drawn on a tint: the neutral tint badge uses `fg-muted`.
 - **Neutral tint badge**: grey text on a grey tint misses 4.5:1 in the dark theme, so a neutral
   `tint` badge uses `fg-muted` text.
 
-`src/components/charts/tokenContrast.test.ts` reads these tokens from `index.css` and checks every
+`src/components/charts/tokenContrast.test.ts` reads these tokens from `styles/tokens.css` and checks every
 pair the kit uses, in both themes: text 4.5:1, control edges, focus ring and chart marks 3:1.
 Colors at partial alpha are composited in sRGB, as browsers do, so a tint may measure slightly
 lower than an OKLab mix would suggest.
@@ -133,7 +134,7 @@ are not shown in lists or headers.
 
 - 150–200 ms ease-out, animating `transform` and `opacity` only.
 - Spinners (Checking, Deep audit running) are the only looping animation.
-- `prefers-reduced-motion` turns animation and transitions off globally (`src/index.css`).
+- `prefers-reduced-motion` turns animation and transitions off globally (`src/styles/tokens.css`).
 
 ## 8. Data honesty
 

@@ -1,8 +1,8 @@
 /**
  * Computes the contrast of every token pair the UI kit and the charts put together, in both
- * themes, straight from src/index.css (jsdom cannot compute colors, so axe's color-contrast rule
- * is off in component tests). Text needs 4.5:1 (WCAG 1.4.3); control boundaries, focus rings and
- * chart marks need 3:1 (WCAG 1.4.11).
+ * themes, straight from src/styles/tokens.css, which src/index.css and the landing page import
+ * (jsdom cannot compute colors, so axe's color-contrast rule is off in component tests). Text
+ * needs 4.5:1 (WCAG 1.4.3); control boundaries, focus rings and chart marks need 3:1 (WCAG 1.4.11).
  *
  * Colors are converted OKLCH → OKLab → linear sRGB (Björn Ottosson's matrices), clamped to the
  * sRGB gamut. `color-mix(in oklab, a p%, b)` mixes in OKLab; a color at partial alpha
@@ -22,7 +22,7 @@ const { fileURLToPath } = (await import(/* @vite-ignore */ urlSpecifier)) as { f
 // Through a variable: Vite rewrites `new URL('…', import.meta.url)` into an asset URL.
 // fileURLToPath, not `.pathname`: on Windows the pathname is "/C:/…", which is not a file path.
 const here = import.meta.url;
-const css = readFileSync(fileURLToPath(new URL('../../index.css', here).href), 'utf8');
+const css = readFileSync(fileURLToPath(new URL('../../styles/tokens.css', here).href), 'utf8');
 
 type Lab = [number, number, number];
 type Rgb = [number, number, number]; // gamma-encoded sRGB, 0..1
@@ -74,7 +74,7 @@ const tint: Record<Theme, number> = { light: 0.1, dark: 0.16 };
 
 function lab(name: string, theme: Theme): Lab {
   const t = tokens.get(name);
-  if (!t) throw new Error(`index.css has no token --${name}`);
+  if (!t) throw new Error(`tokens.css has no token --${name}`);
   return t[theme];
 }
 const rgb = (name: string, theme: Theme) => labToRgb(lab(name, theme));
@@ -151,7 +151,7 @@ add('v-unknown light-shade mark (Not checked) on surface', 3, (t) => mix('v-unkn
 for (const ink of ['fg-muted', 'fg-subtle']) add(`${ink} ink mark on surface`, 3, (t) => rgb(ink, t), (t) => rgb('surface', t));
 
 describe('token contrast', () => {
-  it('reads every color token from index.css', () => {
+  it('reads every color token from tokens.css', () => {
     for (const name of ['bg', 'surface', 'fg', 'fg-muted', 'fg-subtle', 'fg-inverse', 'border-strong', ...TONES, ...VERDICTS]) {
       expect(tokens.has(name), name).toBe(true);
     }
