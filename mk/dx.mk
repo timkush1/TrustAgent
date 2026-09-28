@@ -1,6 +1,6 @@
 # ============================================================================
-# mk/dx.mk - Compose stacks (default and demo), setup tools, local models,
-# load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
+# mk/dx.mk - Compose stacks (default and demo), setup tools, generated
+# configuration docs, local models, load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
 # root Makefile; targets are declared .PHONY there.
 #
 # Services are addressed by compose service name (`$(COMPOSE) exec ollama ...`);
@@ -85,6 +85,14 @@ configure: ## Create or complete .env: generated secrets only, never overwrites 
 doctor: ## Diagnose the running stack (make doctor ARGS="--expect demo --json")
 	$(PYTHON) scripts/doctor.py $(ARGS)
 
+# Both files are generated from contracts/config/keys.v1.json (SPEC §2.7); the
+# scripts unit tests (CI job "DX scripts") also fail when they are stale.
+config-docs: ## Regenerate docs/CONFIGURATION.md and .env.example from the key registry
+	$(PYTHON) scripts/gen_config_docs.py
+
+config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.example differ from the key registry
+	$(PYTHON) scripts/gen_config_docs.py --check
+
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo "*"
 
@@ -128,4 +136,4 @@ dashboards: ## Open the Grafana dashboards (profile observability; WSL/macOS/Lin
 # ---------- Aggregate hooks (see the root Makefile) ----------
 test: test-scripts
 lint: lint-scripts
-check: compose-check
+check: compose-check config-docs-check
