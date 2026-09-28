@@ -62,6 +62,7 @@ type Config struct {
 	MetricsPort            int           // TRUTHTABLE_METRICS_PORT
 	ShutdownDrainTimeout   time.Duration // TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT (M6)
 	PublicRead             bool          // TRUTHTABLE_PUBLIC_READ: /api reads and /ws without a key
+	PublicURL              string        // TRUTHTABLE_PUBLIC_URL: the dashboard's public origin
 	Readonly               bool          // TRUTHTABLE_READONLY
 	InternalToken          string        // TRUTHTABLE_INTERNAL_TOKEN (metadata x-trustagent-internal)
 	InternalTokenFile      string        // TRUTHTABLE_INTERNAL_TOKEN_FILE: the proxy writes it, the engine reads it
@@ -101,8 +102,10 @@ type JevConfig struct {
 	Model               string // TRUTHTABLE_JEV_MODEL
 	OpenRouterKey       string // OPENROUTER_API_KEY
 	TypeSafeKey         string // TYPESAFE_API_KEY
-	APIKey              string // TRUTHTABLE_JEV_API_KEY
+	APIKey              string // TRUTHTABLE_JEV_API_KEY, else the contents of TRUTHTABLE_JEV_API_KEY_FILE
 	BaseURL             string // TRUTHTABLE_JEV_BASE_URL
+	Path                string // TRUTHTABLE_JEV_PATH ("" = the backend's path)
+	OpenRouterBaseURL   string // TRUTHTABLE_OPENROUTER_BASE_URL
 	AttemptTimeout      time.Duration
 	AsyncDeadline       time.Duration
 	TokenBudget         int
@@ -114,6 +117,29 @@ type JevConfig struct {
 	MockFixtures        string
 	MockSeed            int64
 	MockLatency         time.Duration
+
+	// Resilience and limits of the HTTP backends (jev.HTTPConfig).
+	MaxRetries      int           // TRUTHTABLE_JEV_MAX_RETRIES
+	MaxRetriesAsync int           // TRUTHTABLE_JEV_MAX_RETRIES_ASYNC
+	RetryAfterCap   time.Duration // TRUTHTABLE_JEV_RETRY_AFTER_CAP
+	RPM             int           // TRUTHTABLE_GATE_JEV_RPM
+	SyncReserve     float64       // TRUTHTABLE_GATE_JEV_SYNC_RESERVE
+	MaxInFlight     int           // TRUTHTABLE_GATE_JEV_MAX_INFLIGHT
+	BreakerFailures int           // TRUTHTABLE_JEV_BREAKER_FAILURES
+	BreakerCooldown time.Duration // TRUTHTABLE_JEV_BREAKER_COOLDOWN
+	AuthCooldown    time.Duration // TRUTHTABLE_JEV_AUTH_COOLDOWN
+	PricePerMTok    float64       // TRUTHTABLE_JEV_PRICE_PER_MTOK (0 = the price table)
+	AppURL          string        // TRUTHTABLE_JEV_APP_URL
+	AppTitle        string        // TRUTHTABLE_JEV_APP_TITLE
+	ZDR             bool          // TRUTHTABLE_JEV_ZDR
+	SendSessionID   bool          // TRUTHTABLE_JEV_SEND_SESSION_ID
+	StartupProbe    bool          // TRUTHTABLE_JEV_STARTUP_PROBE
+	KeepAlive       time.Duration // TRUTHTABLE_JEV_KEEPALIVE (0 = no keep-warm)
+	LogPayloads     bool          // TRUTHTABLE_JEV_LOG_PAYLOADS
+	// SpendEnforcingReserve is TRUTHTABLE_SPEND_ENFORCING_RESERVE and KeyUSDDay
+	// TRUTHTABLE_KEY_DECISION_USD_DAY; the daily cap is Config.SpendCapDecisionUSDDay.
+	SpendEnforcingReserve float64
+	KeyUSDDay             float64
 }
 
 // APIKeySecrets returns the secrets of the API keys (for the legacy /api key check).
@@ -190,12 +216,35 @@ func Load() *Config {
 			MockFixtures:        RepoPath(getEnv("TRUTHTABLE_JEV_MOCK_FIXTURES", "")),
 			MockSeed:            l.int64("TRUTHTABLE_JEV_MOCK_SEED", 42),
 			MockLatency:         l.duration("TRUTHTABLE_JEV_MOCK_LATENCY", 40*time.Millisecond),
+
+			Path:                  strings.TrimSpace(os.Getenv("TRUTHTABLE_JEV_PATH")),
+			OpenRouterBaseURL:     getEnv("TRUTHTABLE_OPENROUTER_BASE_URL", "https://openrouter.ai"),
+			MaxRetries:            l.intAtLeast("TRUTHTABLE_JEV_MAX_RETRIES", 1, 0),
+			MaxRetriesAsync:       l.intAtLeast("TRUTHTABLE_JEV_MAX_RETRIES_ASYNC", 2, 0),
+			RetryAfterCap:         l.duration("TRUTHTABLE_JEV_RETRY_AFTER_CAP", 10*time.Second),
+			RPM:                   l.intAtLeast("TRUTHTABLE_GATE_JEV_RPM", 1000, 1),
+			SyncReserve:           l.fraction("TRUTHTABLE_GATE_JEV_SYNC_RESERVE", 0.3),
+			MaxInFlight:           l.intAtLeast("TRUTHTABLE_GATE_JEV_MAX_INFLIGHT", 64, 1),
+			BreakerFailures:       l.intAtLeast("TRUTHTABLE_JEV_BREAKER_FAILURES", 5, 1),
+			BreakerCooldown:       l.duration("TRUTHTABLE_JEV_BREAKER_COOLDOWN", 30*time.Second),
+			AuthCooldown:          l.duration("TRUTHTABLE_JEV_AUTH_COOLDOWN", 5*time.Minute),
+			PricePerMTok:          l.nonNegative("TRUTHTABLE_JEV_PRICE_PER_MTOK", 0),
+			AppURL:                getEnv("TRUTHTABLE_JEV_APP_URL", "https://github.com/timkush1/TrustAgent"),
+			AppTitle:              getEnv("TRUTHTABLE_JEV_APP_TITLE", "TrustAgent"),
+			ZDR:                   l.bool("TRUTHTABLE_JEV_ZDR", false),
+			SendSessionID:         l.bool("TRUTHTABLE_JEV_SEND_SESSION_ID", true),
+			StartupProbe:          l.bool("TRUTHTABLE_JEV_STARTUP_PROBE", true),
+			KeepAlive:             l.duration("TRUTHTABLE_JEV_KEEPALIVE", 60*time.Second),
+			LogPayloads:           l.bool("TRUTHTABLE_JEV_LOG_PAYLOADS", false),
+			SpendEnforcingReserve: l.fraction("TRUTHTABLE_SPEND_ENFORCING_RESERVE", 0.25),
+			KeyUSDDay:             l.nonNegative("TRUTHTABLE_KEY_DECISION_USD_DAY", 0),
 		},
 
 		ReadHeaderTimeout:      l.duration("TRUTHTABLE_READ_HEADER_TIMEOUT", 10*time.Second),
 		MetricsPort:            l.int("TRUTHTABLE_METRICS_PORT", 8002),
 		ShutdownDrainTimeout:   l.duration("TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT", 20*time.Second),
 		PublicRead:             l.bool("TRUTHTABLE_PUBLIC_READ", false),
+		PublicURL:              getEnv("TRUTHTABLE_PUBLIC_URL", "http://localhost:3000"),
 		Readonly:               l.bool("TRUTHTABLE_READONLY", false),
 		InternalToken:          strings.TrimSpace(os.Getenv("TRUTHTABLE_INTERNAL_TOKEN")),
 		InternalTokenFile:      strings.TrimSpace(getEnv("TRUTHTABLE_INTERNAL_TOKEN_FILE", DefaultInternalTokenFile)),
@@ -215,6 +264,9 @@ func Load() *Config {
 			ReplayMaxBytes: l.int64("TRUTHTABLE_WS_REPLAY_MAX_BYTES", 64<<20),
 			Heartbeat:      l.duration("TRUTHTABLE_WS_HEARTBEAT", 20*time.Second),
 		},
+	}
+	if c.Jev.APIKey == "" {
+		c.Jev.APIKey = l.secretFile("TRUTHTABLE_JEV_API_KEY_FILE")
 	}
 	c.Warnings = l.warnings
 	return c
@@ -254,6 +306,54 @@ func (l *loader) int64(key string, def int64) int64 {
 
 func (l *loader) float(key string, def float64) float64 {
 	return parse(l, key, def, "a number", func(s string) (float64, error) { return strconv.ParseFloat(s, 64) })
+}
+
+// intAtLeast is an integer no smaller than lo (the registry min).
+func (l *loader) intAtLeast(key string, def, lo int) int {
+	return parse(l, key, def, fmt.Sprintf("an integer of at least %d", lo), func(s string) (int, error) {
+		n, err := strconv.Atoi(s)
+		if err == nil && n < lo {
+			err = fmt.Errorf("below %d", lo)
+		}
+		return n, err
+	})
+}
+
+// fraction is a number from 0 to 1.
+func (l *loader) fraction(key string, def float64) float64 {
+	return parse(l, key, def, "a number from 0 to 1", func(s string) (float64, error) {
+		f, err := strconv.ParseFloat(s, 64)
+		if err == nil && (f < 0 || f > 1) {
+			err = fmt.Errorf("out of range")
+		}
+		return f, err
+	})
+}
+
+// nonNegative is a number of at least 0.
+func (l *loader) nonNegative(key string, def float64) float64 {
+	return parse(l, key, def, "a number of at least 0", func(s string) (float64, error) {
+		f, err := strconv.ParseFloat(s, 64)
+		if err == nil && f < 0 {
+			err = fmt.Errorf("negative")
+		}
+		return f, err
+	})
+}
+
+// secretFile reads a credential from the file named by key (a *_FILE key, for Docker secrets). A
+// file that cannot be read is reported without its contents and yields no credential.
+func (l *loader) secretFile(key string) string {
+	path := strings.TrimSpace(os.Getenv(key))
+	if path == "" {
+		return ""
+	}
+	b, err := os.ReadFile(path) // #nosec G304 -- the operator names the credential file (a registry *_FILE key)
+	if err != nil {
+		l.warnings = append(l.warnings, fmt.Sprintf("%s: the file %q cannot be read; no credential loaded", key, path))
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 func (l *loader) bool(key string, def bool) bool {
