@@ -10,14 +10,18 @@ The benchmark CLI behind `make bench-lite`, `make bench-publish` and `make eval-
     python -m evals.bench publish --latest          # refuses simulated (mock) runs
 
 `run` checks everything that could fail before the first paid call (the
-gate-eval binary, the judge key, a price for the judge model), then judges the
+gate-eval binary and a dry gate-eval start that resolves its route, evaluators,
+backend and key; the judge key; a price for the judge model), then judges the
 examples system by system under one hard cost cap, resumable: rerunning the
 same command reuses the cached results and the spend ledger
 (evals/.cache/<resume key>.*), so the cap covers every session. It writes
 evals/results/<run_id>/run.json, labelled measured or simulated (report.py).
 
 Keys come from the environment or the repository's .env, like the engine
-(OPENROUTER_API_KEY covers the judge; gate-eval reads its own configuration).
+(one OPENROUTER_API_KEY covers Jev and the judge). gate-eval reads only its
+process environment, so the harness passes it the .env values it needs
+(OPENROUTER_API_KEY, TYPESAFE_API_KEY, TRUTHTABLE_*) that the environment does
+not already set.
 
 The cache key covers the judge model, prompts, evaluators and the gate-eval
 binary, but not gate-eval's own configuration (backend, calibration, policy):
@@ -27,15 +31,16 @@ after changing that, start a new run with `--resume-key` (or clear the cache).
 import argparse
 import asyncio
 import logging
+import os
 import re
 import shutil
 import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from truthtable.config import load_settings, repo_root
+from truthtable.config import env_files, load_settings, repo_root
 from truthtable.judge import build_provider, judge_model
 from truthtable.providers.base import LLMProvider
 from truthtable.providers.mock import MockLLMProvider
@@ -197,6 +202,7 @@ def plan_run(
             binary=binary,
             evaluators=tuple(args.evaluators),
             extra_args=tuple(args.gate_eval_arg or ()),
+            env=gate_eval_env(),
         )
         judges.append((GateJudge(config), list(examples)))
 
@@ -216,6 +222,45 @@ def plan_run(
         subset = full_audit_subset(examples, args.full_audit_n, args.seed)
         judges.append((LLMFullAuditJudge(provider), subset))
     return Plan(judges=judges, provider=provider)
+
+
+# What gate-eval reads from its environment: the decision-model keys and the
+# gateway's TRUTHTABLE_* settings (backend, model, price, policy file, budget).
+GATE_EVAL_ENV_KEYS = frozenset({"OPENROUTER_API_KEY", "TYPESAFE_API_KEY"})
+GATE_EVAL_ENV_PREFIX = "TRUTHTABLE_"
+
+
+def gate_eval_env(environ: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+    """
+    The dotenv values gate-eval needs but would not see: it reads only its own
+    process environment, while the judge (like the engine) also reads the
+    repository's .env. The same files and precedence apply (a later file
+    wins; the process environment wins over every file).
+    """
+    from dotenv import dotenv_values  # a pydantic-settings dependency
+
+    env = os.environ if environ is None else environ
+    values: Dict[str, str] = {}
+    for path in env_files(env):
+        if not path.is_file():
+            continue
+        for name, value in dotenv_values(path).items():
+            wanted = name in GATE_EVAL_ENV_KEYS or name.startswith(GATE_EVAL_ENV_PREFIX)
+            if value is not None and wanted:
+                values[name] = value
+    return {name: value for name, value in values.items() if name not in env}
+
+
+async def preflight(plan: Plan) -> None:
+    """Check what can be checked for free before the first paid call."""
+    for judge, _ in plan.judges:
+        if isinstance(judge, GateJudge):
+            problem = await judge.preflight()
+            if problem is not None:
+                raise PreconditionError(
+                    f"{problem} (gate-eval reads OPENROUTER_API_KEY or TYPESAFE_API_KEY and "
+                    "TRUTHTABLE_JEV_* from the environment or .env; see docs/JEV-ACCESS.md)"
+                )
 
 
 def _progress(system: str, done: int, total: int) -> None:
@@ -250,6 +295,7 @@ async def execute(
     runs: Dict[str, SystemRun] = {}
     descriptions: Dict[str, SystemDescription] = {}
     try:
+        await preflight(plan)
         for judge, subset in plan.judges:
             run = await run_judge(
                 judge,

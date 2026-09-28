@@ -776,6 +776,22 @@ class GateJudge:
             raise
         return int(process.returncode or 0), stdout, stderr
 
+    async def preflight(self) -> Optional[str]:
+        """
+        Run gate-eval without examples. It still resolves the route, the
+        evaluators, the decision backend and its key (and a paid backend's
+        cost cap), but makes no decision-model call, so a misconfiguration
+        shows before anything is spent. Returns the problem, or None.
+        """
+        try:
+            code, _, stderr = await self._run("", self.config.reserve_usd)
+        except (OSError, TimeoutError) as exc:
+            return f"gate-eval could not run: {type(exc).__name__}: {exc}"
+        if code != 0:
+            tail = stderr.decode("utf-8", "replace").strip()[-300:]
+            return f"gate-eval exited {code} before any example: {tail or '(no message)'}"
+        return None
+
     async def judge(self, example: BenchExample, budget: CostBudget) -> JudgeRecord:
         try:
             reservation = budget.reserve(self.config.reserve_usd)

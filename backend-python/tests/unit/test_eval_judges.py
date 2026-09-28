@@ -268,6 +268,18 @@ async def test_a_cancelled_gate_call_charges_its_reservation(gate_eval: FakeGate
     assert budget.spent_usd == pytest.approx(0.0025) and budget.reserved_usd == 0
 
 
+async def test_gate_preflight_starts_gate_eval_without_examples(gate_eval: FakeGateEval) -> None:
+    judge = _gate(gate_eval)
+
+    assert await judge.preflight() is None
+    assert gate_eval.inputs() == []  # no example was sent
+    gate_eval.set(exit=2, stderr='gate-eval: unknown evaluator "groundedness@9"')
+    problem = await judge.preflight()
+    assert problem is not None and "exited 2" in problem and "groundedness@9" in problem
+    missing = await GateJudge(GateEvalConfig(binary=Path("/nonexistent/gate-eval"))).preflight()
+    assert missing is not None and "could not run" in missing
+
+
 def test_parse_gate_result_fallbacks() -> None:
     config = GateEvalConfig(binary=Path("/bin/true"))
 

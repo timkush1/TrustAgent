@@ -311,6 +311,46 @@ def test_preconditions_fail_before_anything_is_spent(
     assert not (tmp_path / "cache").exists() or not any((tmp_path / "cache").glob("*.ledger.jsonl"))
 
 
+def test_a_gate_eval_that_cannot_start_stops_the_run_before_any_spend(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset = _dataset(tmp_path)
+    fake = _gate(tmp_path)
+    fake.set(exit=1, stderr="gate-eval: no decision model: OPENROUTER_API_KEY is not set")
+
+    code = bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate"))
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "gate-eval exited 1 before any example" in err and "OPENROUTER_API_KEY" in err
+    assert len(fake.argv()) == 1 and fake.inputs() == []  # only the dry start ran
+    ledger = tmp_path / "cache" / "lite-set.ledger.jsonl"
+    assert not ledger.exists()
+
+
+def test_gate_eval_gets_the_dotenv_values_it_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dotenv = tmp_path / "test.env"
+    dotenv.write_text(
+        "OPENROUTER_API_KEY=sk-or-from-dotenv\n"
+        "TRUTHTABLE_JEV_BACKEND=openrouter-decisions\n"
+        "TRUTHTABLE_JEV_MODEL=typesafe/jev-1.13\n"
+        "ANTHROPIC_API_KEY=not-for-gate-eval\n",
+        encoding="utf-8",
+    )
+    environ = {"TRUTHTABLE_ENV_FILE": str(dotenv), "TRUTHTABLE_JEV_MODEL": "from-the-process"}
+
+    env = bench.gate_eval_env(environ)
+
+    # The process environment wins; only what gate-eval reads is passed on.
+    assert env == {
+        "OPENROUTER_API_KEY": "sk-or-from-dotenv",
+        "TRUTHTABLE_JEV_BACKEND": "openrouter-decisions",
+    }
+    assert bench.gate_eval_env({"TRUTHTABLE_ENV_FILE": ""}) == {}
+
+
 def test_concurrency_must_be_positive(tmp_path: Path) -> None:
     # benchmark-run.v1 requires environment.concurrency >= 1; a run that could
     # never be published is refused before it starts.
