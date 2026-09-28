@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -1059,4 +1060,72 @@ func metricValue(name string, labelPairs ...string) float64 {
 		}
 	}
 	return 0
+}
+
+func TestKeyCheckStaysOnTheDecisionOrigin(t *testing.T) {
+	cases := []struct {
+		name   string
+		cfg    Config
+		keyURL string
+	}{
+		{"default", Config{Backend: BackendOpenRouterDecisions, OpenRouterKey: "k"}, "https://openrouter.ai/api/v1/key"},
+		{"OpenRouter base URL", Config{OpenRouterKey: "k", OpenRouterBaseURL: "http://mock-upstream:8090"}, "http://mock-upstream:8090/api/v1/key"},
+		{"explicit .../api base", Config{Backend: BackendOpenRouterDecisions, JevAPIKey: "k", BaseURL: "https://or-proxy.example/api/"},
+			"https://or-proxy.example/api/v1/key"},
+		{"explicit base on the OpenRouter origin", Config{Backend: BackendOpenRouterSystemOne, OpenRouterKey: "k", BaseURL: "https://openrouter.ai"},
+			"https://openrouter.ai/api/v1/key"},
+		{"explicit gateway base", Config{Backend: BackendOpenRouterDecisions, JevAPIKey: "corp-secret", BaseURL: "https://gw.corp.example/openrouter"}, ""},
+		{"typesafe", Config{TypeSafeKey: "k"}, ""},
+		{"compatible", Config{BaseURL: "https://ai-gateway.vercel.sh/typesafe", JevAPIKey: "k", Model: "typesafe-ai/jev"}, ""},
+	}
+	for _, c := range cases {
+		if r := resolve(c.cfg); r.ep.keyURL != c.keyURL || r.backend == BackendOff {
+			t.Errorf("%s: backend %s key URL %q, want %q", c.name, r.backend, r.ep.keyURL, c.keyURL)
+		}
+	}
+
+	// End to end: a gateway credential for an OpenRouter-shaped endpoint never reaches the
+	// OpenRouter base (here the mock), neither through the key check nor through keep-warm.
+	h := newHarness(t, mockupstream.Config{})
+	var mu sync.Mutex
+	var seen []string
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Method+" "+r.URL.Path+" auth="+r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"d","model":"typesafe/jev-1.13-20260917","answers":{},"usage":{"input_tokens":300}}`)
+	}))
+	defer gw.Close()
+	const secret = "corp-gateway-secret-0123"
+	cl := h.client(BackendOpenRouterDecisions, func(c *Config) {
+		c.OpenRouterKey, c.JevAPIKey, c.BaseURL = "", secret, gw.URL+"/openrouter"
+		c.HTTP.KeepAlive = 20 * time.Millisecond
+	})
+	if _, err := cl.CheckKey(context.Background()); !errors.Is(err, ErrKeyCheckUnsupported) {
+		t.Fatalf("key check off the decision origin: %v", err)
+	}
+	cl.SetKeepWarm(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		n := len(seen)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no keep-warm request reached the gateway")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cl.SetKeepWarm(false)
+	mu.Lock()
+	if seen[0] != "HEAD /openrouter/alpha/decisions auth=" {
+		t.Errorf("keep-warm %q, want an unauthenticated HEAD of the endpoint", seen[0])
+	}
+	mu.Unlock()
+	if reqs := h.mock.Requests(); len(reqs) != 0 {
+		t.Errorf("the OpenRouter base got %d requests: %+v", len(reqs), reqs[0])
+	}
 }

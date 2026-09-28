@@ -50,12 +50,15 @@ func resolveEndpoint(backend string, explicit bool, cfg Config, b *Binding) (end
 		if u, err := url.Parse(base); err == nil && strings.EqualFold(u.Hostname(), "openrouter.ai") && !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/api") {
 			warnings = append(warnings, "OpenRouter URLs end in /api: "+base+" will likely return a web page (bad_content_type); fix TRUTHTABLE_JEV_BASE_URL or leave it empty")
 		}
-		// The key check follows the decision base when it is an .../api base, else OpenRouter.
-		keyBase := orBase + "/api"
-		if strings.HasSuffix(strings.TrimRight(base, "/"), "/api") {
-			keyBase = strings.TrimRight(base, "/")
+		// The key check (and keep-warm) sends the decision credential, so it stays on the
+		// decision endpoint's origin: {base}/v1/key for an .../api base, the OpenRouter key
+		// endpoint when base is on the OpenRouter origin, and nothing for any other gateway.
+		switch {
+		case strings.HasSuffix(strings.TrimRight(base, "/"), "/api"):
+			ep.keyURL = strings.TrimRight(base, "/") + PathKey
+		case sameOrigin(base, orBase):
+			ep.keyURL = orBase + "/api" + PathKey
 		}
-		ep.keyURL = keyBase + PathKey
 	case BackendTypeSafe:
 		if base == "" {
 			base = DefaultTypeSafeBaseURL
@@ -84,11 +87,19 @@ func resolveEndpoint(backend string, explicit bool, cfg Config, b *Binding) (end
 	}
 	ep.url, ep.host = u.String(), u.Hostname()
 	if ep.keyURL != "" {
-		if _, err := checkURL(ep.keyURL); err != nil {
-			return endpoint{}, nil, err
+		// Defense in depth: the credential that KeyFunc releases for ep.host never goes elsewhere.
+		if ku, err := checkURL(ep.keyURL); err != nil || !sameOrigin(ku.String(), ep.url) {
+			ep.keyURL = ""
 		}
 	}
 	return ep, warnings, nil
+}
+
+// sameOrigin reports whether two absolute URLs share scheme, host and port.
+func sameOrigin(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	return errA == nil && errB == nil && ua.Host != "" && strings.EqualFold(ua.Scheme, ub.Scheme) && strings.EqualFold(ua.Host, ub.Host)
 }
 
 // joinURL joins a base URL and a path with exactly one slash between them.
