@@ -160,6 +160,30 @@ func TestDemoSelectionRunsOnThisBuild(t *testing.T) {
 	}
 }
 
+// TestEnforcingDemoRoutesTrustNoUserContext: a demo route in block or fallback mode reads no
+// user-message context, so its block-readiness checklist is clean (SPEC §7.2: validation warns
+// when an enforcing route trusts request_context, which an end user can fill with "documents").
+func TestEnforcingDemoRoutesTrustNoUserContext(t *testing.T) {
+	reg, err := evaluators.Builtins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dp := loadDemoPolicy(t, reg)
+	enforcing := 0
+	for _, r := range append([]*policy.Route{dp.Default}, dp.Routes...) {
+		if r.Mode != decision.ModeBlock && r.Mode != decision.ModeFallback {
+			continue
+		}
+		enforcing++
+		if slices.Contains(r.Evidence.Sources, evidence.SourceRequestContext) {
+			t.Errorf("route %s (%s) trusts %s: list evidence.sources without it", r.Name, r.Mode, evidence.SourceRequestContext)
+		}
+	}
+	if enforcing == 0 {
+		t.Error("no demo route blocks or falls back")
+	}
+}
+
 func routeNamed(dp *demoPolicy, name string) *policy.Route {
 	for _, r := range dp.Routes {
 		if r.Name == name {

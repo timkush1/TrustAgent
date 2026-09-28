@@ -51,6 +51,9 @@ routes:
     match: {headers: {X-TrustAgent-Route: help-center}}
     mode: block
     streaming: buffer
+    # An enforcing route trusts no user-message context (SPEC §7.2 block readiness): end users
+    # cannot inject "documents" that make a false answer look supported.
+    evidence: {sources: [request_system, tool_results, extension]}
     evaluators:
       - ref: groundedness@1
       - ref: contradiction@1
