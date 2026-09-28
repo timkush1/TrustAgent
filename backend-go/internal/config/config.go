@@ -141,8 +141,10 @@ type JevConfig struct {
 	Model               string        `env:"TRUTHTABLE_JEV_MODEL"`
 	OpenRouterKey       string        `env:"OPENROUTER_API_KEY"`
 	TypeSafeKey         string        `env:"TYPESAFE_API_KEY"`
-	APIKey              string        `env:"TRUTHTABLE_JEV_API_KEY"`
+	APIKey              string        `env:"TRUTHTABLE_JEV_API_KEY"` // else the contents of TRUTHTABLE_JEV_API_KEY_FILE
 	BaseURL             string        `env:"TRUTHTABLE_JEV_BASE_URL"`
+	Path                string        `env:"TRUTHTABLE_JEV_PATH"` // "" = the backend's path
+	OpenRouterBaseURL   string        `env:"TRUTHTABLE_OPENROUTER_BASE_URL"`
 	AttemptTimeout      time.Duration `env:"TRUTHTABLE_JEV_ATTEMPT_TIMEOUT"`
 	AsyncDeadline       time.Duration `env:"TRUTHTABLE_JEV_ASYNC_DEADLINE"`
 	TokenBudget         int           `env:"TRUTHTABLE_JEV_TOKEN_BUDGET"`
@@ -154,6 +156,29 @@ type JevConfig struct {
 	MockFixtures        string        `env:"TRUTHTABLE_JEV_MOCK_FIXTURES,repopath"`
 	MockSeed            int64         `env:"TRUTHTABLE_JEV_MOCK_SEED"`
 	MockLatency         time.Duration `env:"TRUTHTABLE_JEV_MOCK_LATENCY"`
+
+	// Resilience and limits of the HTTP backends (jev.HTTPConfig).
+	MaxRetries      int           `env:"TRUTHTABLE_JEV_MAX_RETRIES"`
+	MaxRetriesAsync int           `env:"TRUTHTABLE_JEV_MAX_RETRIES_ASYNC"`
+	RetryAfterCap   time.Duration `env:"TRUTHTABLE_JEV_RETRY_AFTER_CAP"`
+	RPM             int           `env:"TRUTHTABLE_GATE_JEV_RPM"`
+	SyncReserve     float64       `env:"TRUTHTABLE_GATE_JEV_SYNC_RESERVE"`
+	MaxInFlight     int           `env:"TRUTHTABLE_GATE_JEV_MAX_INFLIGHT"`
+	BreakerFailures int           `env:"TRUTHTABLE_JEV_BREAKER_FAILURES"`
+	BreakerCooldown time.Duration `env:"TRUTHTABLE_JEV_BREAKER_COOLDOWN"`
+	AuthCooldown    time.Duration `env:"TRUTHTABLE_JEV_AUTH_COOLDOWN"`
+	PricePerMTok    float64       `env:"TRUTHTABLE_JEV_PRICE_PER_MTOK"` // 0 = the price table
+	AppURL          string        `env:"TRUTHTABLE_JEV_APP_URL"`
+	AppTitle        string        `env:"TRUTHTABLE_JEV_APP_TITLE"`
+	ZDR             bool          `env:"TRUTHTABLE_JEV_ZDR"`
+	SendSessionID   bool          `env:"TRUTHTABLE_JEV_SEND_SESSION_ID"`
+	StartupProbe    bool          `env:"TRUTHTABLE_JEV_STARTUP_PROBE"`
+	KeepAlive       time.Duration `env:"TRUTHTABLE_JEV_KEEPALIVE"` // 0 = no keep-warm
+	LogPayloads     bool          `env:"TRUTHTABLE_JEV_LOG_PAYLOADS"`
+	// SpendEnforcingReserve is TRUTHTABLE_SPEND_ENFORCING_RESERVE and KeyUSDDay
+	// TRUTHTABLE_KEY_DECISION_USD_DAY; the daily cap is Config.SpendCapDecisionUSDDay.
+	SpendEnforcingReserve float64 `env:"TRUTHTABLE_SPEND_ENFORCING_RESERVE"`
+	KeyUSDDay             float64 `env:"TRUTHTABLE_KEY_DECISION_USD_DAY"`
 }
 
 // APIKeySecrets returns the secrets of the API keys (for the legacy /api key check).

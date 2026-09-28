@@ -407,6 +407,24 @@ func (l *loader) bind(c *Config) {
 		c.UpstreamURL = DefaultUpstreamURL
 	}
 	c.TrustedProxies = l.networks("TRUTHTABLE_TRUSTED_PROXIES", c.TrustedProxies)
+	if c.Jev.APIKey == "" {
+		c.Jev.APIKey = l.secretFile("TRUTHTABLE_JEV_API_KEY_FILE")
+	}
+}
+
+// secretFile reads a credential from the file a *_FILE key names (Docker secrets). A file that
+// cannot be read is a warning (without its contents) and yields no credential.
+func (l *loader) secretFile(key string) string {
+	e, ok := l.byName[key]
+	if !ok || e.Value == "" {
+		return ""
+	}
+	b, err := os.ReadFile(e.Value) // #nosec G304 -- the operator names the credential file (a registry *_FILE key)
+	if err != nil {
+		l.warn(key, fmt.Sprintf("the file %q cannot be read", e.Value), "no credential is loaded from it")
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 func (l *loader) bindStruct(v reflect.Value) {
@@ -442,6 +460,10 @@ func (l *loader) bindStruct(v reflect.Value) {
 // set converts a validated value into a field. An error is a binding defect (a field type that
 // does not fit the key's kind), which the package tests rule out.
 func (l *loader) set(fv reflect.Value, e *Entry, value string) error {
+	if value == "" && fv.Kind() != reflect.String && fv.Kind() != reflect.Slice {
+		fv.SetZero() // a key without a static default (for example TRUTHTABLE_JEV_PRICE_PER_MTOK)
+		return nil
+	}
 	switch {
 	case fv.Type() == durationType:
 		if value == "" {

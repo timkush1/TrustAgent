@@ -50,8 +50,8 @@ func (e Entry) DisplayValue() string {
 	return strings.Join(parts, ",")
 }
 
-// Secrets returns every loaded secret value: each secret key's value, and each key of the
-// key_list keys (label=key lists), without duplicates.
+// Secrets returns every loaded secret value: each secret key's value, each key of the key_list
+// keys (label=key lists) and credentials read from *_FILE keys, without duplicates.
 func (c *Config) Secrets() []string {
 	seen := map[string]bool{}
 	var out []string
@@ -77,6 +77,7 @@ func (c *Config) Secrets() []string {
 		}
 		add(e.Value)
 	}
+	add(c.Jev.APIKey) // may come from TRUTHTABLE_JEV_API_KEY_FILE, which is not itself secret
 	return out
 }
 

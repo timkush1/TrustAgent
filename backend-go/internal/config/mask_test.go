@@ -163,7 +163,7 @@ func TestDumpSpec(t *testing.T) {
 	for name, want := range map[string]string{
 		"TRUTHTABLE_PORT": "ServerPort", "TRUTHTABLE_JEV_ATTEMPT_TIMEOUT": "Jev.AttemptTimeout",
 		"TRUTHTABLE_ADMIN_KEYS": "Auth.AdminKeys", "TRUTHTABLE_WS_HEARTBEAT": "WS.Heartbeat",
-		"TRUTHTABLE_JEV_BREAKER_FAILURES": "<nil>",
+		"TRUTHTABLE_JEV_BREAKER_FAILURES": "Jev.BreakerFailures", "TRUTHTABLE_STREAM_IDLE_TIMEOUT": "<nil>",
 	} {
 		if got := field(name); got != want {
 			t.Errorf("%s field %s, want %s", name, got, want)
