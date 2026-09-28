@@ -21,7 +21,7 @@ the `cost` vectors.
 | `policies/presets.v1.json` | Presets offered on the Policies page | `presets.v1` |
 | `policies/*.yaml` | Example policies; `example.policies.yaml` is the SPEC §2.7 example | `policy.v1` |
 | `rules/` | Detector, secret and evidence-extraction rules (`{pattern, flags}`, RE2- and JS-compatible), pinned by the `detectors` and `evidence` vectors | no schema yet; every pattern is compiled in JS and Go |
-| `prompts/` | LLM prompts, e.g. the Studio evaluator drafter | parse-only for now |
+| `prompts/<id>.v<N>.json` | LLM prompts shared by every sender, e.g. the Studio evaluator drafter (see [Prompts](#prompts)) | `prompt.v1` |
 | `pricing/prices.v1.json` | Price table (USD per million tokens) | `pricing.v1` |
 | `pricing/assumptions.v1.json` | The assumptions behind every cost estimate, as checkable arithmetic | `pricing-assumptions.v1` |
 | `claims/value-claims.v1.json` | Every number on the landing page, README and Savings panel, with its label | `value-claims.v1` |
@@ -114,6 +114,48 @@ fails every runner.
 The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
 [`vectors/README.md`](vectors/README.md).
 
+## Presets
+
+`policies/presets.v1.json` holds the route presets the Policies page offers. A preset is a partial
+`RouteSettings` that the page merges over the route the way a route merges over `defaults` (objects key by
+key, arrays replace), so a preset without `evaluators` keeps the route's own; `validate.mjs` checks each one
+merged over the schema defaults. The first three are the SPEC §2.7 presets; the others
+start from the SPEC's own examples (the `support-bot` and `payments-faq` routes and the `rubric-only`
+question set).
+
+| Preset | Mode | What it sets |
+|---|---|---|
+| `observe-all` | observe | every request checked (`sample_rate: 1`); answers never change |
+| `flag-risky` | flag | flag mode only, keeping the route's evaluators |
+| `block-contradictions` | block | groundedness and contradiction, buffered streams, `require_calibration`; starts as Flag until calibrated |
+| `support-bot` | flag | groundedness, contradiction and commitments, with off-brand tone in shadow; fill in the two params |
+| `rubric-only` | flag | the `rubric-only` set (refusal, unsafe policy, PII or secret leak, injection success) for apps without documents |
+| `replace-unverified` | fallback | payments-style strictness: fail closed, buffered, 1.5 s deadline with a 400 ms hedge, no `request_context` evidence, URL and citation detectors block, fallback answer from documents only, then block |
+
+## Prompts
+
+`prompts/<id>.v<N>.json` (`prompt.v1`) is an LLM prompt that every sender uses unchanged: the engine's
+`DraftEvaluator` (`truthtable/studio/drafter.py`) and the static build's Studio send
+`evaluator-drafter.v1.json`.
+
+- `system`, `user` and `repair` are lists of lines joined with `"\n"`. `{{name}}` is replaced by the value of
+  `variables.name`, or by its `empty` text when the value is blank; values longer than `max_chars` are
+  rejected before the call.
+- Messages: the system text; then, per example, a user turn (`user` rendered with `example.input`) and an
+  assistant turn (`example.output` as compact JSON); then the user turn for the real input.
+- `call` holds the sampling settings (the drafter: temperature 0.2, max_tokens 1600). The reply is one JSON
+  object that must pass `output.schema`; when it does not, the reply and `repair` (rendered with `{{errors}}`)
+  are appended, at most `call.max_repairs` times.
+- The system text and examples are the same for every call, so senders should mark them cacheable where the
+  provider supports prompt caching.
+
+The drafter asks for one self-contained question (noul or choice, never score) with descriptive option keys,
+`what`/`not_for` descriptions and exactly one escape option, backticked state references only, no counting or
+double negatives, `escalation.numeric_or_date` for checks on numbers or dates, parameters as `rules.<name>`,
+corroborators from the registry or the detectors, six labelled test samples, a rationale and split suggestions.
+Its three examples (a choice check with a parameter, a grounding check on dates that can block, and a
+security check) are validated like drafts, so changing a rule in the system text means updating the examples.
+
 ## Demo scenarios
 
 `demo/scenarios.v1.json` is the single source of demo and e2e traffic. A scenario is a complete,
@@ -183,8 +225,19 @@ and then runs the cross-file checks JSON Schema cannot express:
   `risk_levels` are below the number of criteria; `escalate_from < warn_at <= critical_at`; backticked
   references resolve to a declared state field or `rules.<param>`; no question id in question text;
   `requires_corroboration` and `implies` name registered evaluators or known detectors;
+- evaluator lints (SPEC §2.8): built-in templates are lint-clean, and every `lint` vector's `expected` is what
+  the text hard rules and lints give for its spec (rules the SPEC names only by id follow the TypeScript
+  reference, `frontend-react/src/lib/decision/lint.ts`);
 - question sets, policies, presets and scenario mock answers reference registered evaluators (while
   `evaluators/` is still empty these refs are reported as warnings);
+- presets: unique ids and names; a block or fallback preset buffers streams, can block (a block-eligible
+  evaluator or `detectors.block_on`), attaches a corroborator for each block-eligible evaluator, and says in
+  `ui_note` that it starts as Flag while `require_calibration` holds;
+- prompts: the file name matches `id` and `version`; `{{name}}` placeholders and `variables` agree; examples
+  supply exactly the user template's variables and pass `output.schema`; the first call fits the static
+  playground's token cap; the drafter's system text names every state field, category and detector, and its
+  examples pass the hard rules, are lint-clean and have 3 firing and 3 non-firing samples with exactly the
+  state the question reads;
 - policies: unique route names and evaluator ids, declared params unique per route, `evidence_sources`
   within the route sources, `hedge_after_ms` below `deadline_ms`, threshold order after overrides;
 - pricing figures recompute from their terms; value claims match their figure, price entry or measured
