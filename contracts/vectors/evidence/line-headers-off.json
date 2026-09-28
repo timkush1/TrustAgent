@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "line-headers-off",
-  "status": "draft",
+  "status": "frozen",
   "description": "The same untagged prompt with evidence.line_headers false: no tag, marker or markdown block exists, so there is no evidence and the whole system text is system_instructions.",
   "input": {
     "api_format": "openai_chat",

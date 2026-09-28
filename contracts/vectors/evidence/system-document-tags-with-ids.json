@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "system-document-tags-with-ids",
-  "status": "draft",
+  "status": "frozen",
   "description": "Two <document> blocks in an OpenAI system message. The first has a valid id attribute, which becomes the item id; the second only has a title, so it gets the fallback sys2 (second request_system item). system_instructions is the system text without the blocks; the resulting run of 7 newlines collapses to 2.",
   "input": {
     "api_format": "openai_chat",
