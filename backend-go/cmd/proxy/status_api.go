@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -43,8 +44,10 @@ type statusReporter struct {
 	engine engineHealth // nil when no audit engine is configured
 	db     dbStatus     // nil when persistence is disabled
 	jev    jev.Info
-	policy *policy.Policy
-	auth   *apiAuth
+	// jevClient reports the live decision-model state (jev.StatusReporter); nil falls back to jev.
+	jevClient jev.Client
+	policy    *policy.Policy
+	auth      *apiAuth
 	// redisState is the rate limiter's backend state at startup (up, down or disabled).
 	redisState string
 	now        func() time.Time
@@ -264,12 +267,10 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 		DecisionModel: s.decisionModel(),
 		Knowledge:     knowledgeStatus(eng),
 		Policy:        s.policyStatus(),
-		Budgets: statusBudgets{
-			DecisionUSDDay: cfg.SpendCapDecisionUSDDay, LLMUSDDay: cfg.SpendCapLLMUSDDay,
-		},
-		Credentials: statusCredentials{Store: "unavailable", Undecryptable: []string{}},
-		Redis:       statusRedis{componentState: componentState{State: s.redisState}, Configured: cfg.RedisURL != ""},
-		Warnings:    append([]string{}, cfg.Warnings...),
+		Budgets:       s.budgets(),
+		Credentials:   statusCredentials{Store: "unavailable", Undecryptable: []string{}},
+		Redis:         statusRedis{componentState: componentState{State: s.redisState}, Configured: cfg.RedisURL != ""},
+		Warnings:      append([]string{}, cfg.Warnings...),
 	}
 	if s.auth.publicRead {
 		st.Auth.Read = "public"
@@ -393,16 +394,55 @@ func knowledgeStatus(h grpc.EngineHealth) statusKnowledge {
 	return k
 }
 
-// decisionModel is SystemStatus.decision_model. S0 ships the mock and off backends only.
-func (s *statusReporter) decisionModel() decisionModelStatus {
-	d := decisionModelStatus{
-		Provider: "jev", Backend: s.jev.Backend, BackendReason: s.jev.Reason, ModelRequested: nonEmpty(s.jev.Model),
-		Credential: decisionCredential{Source: "none"}, State: "off", Breaker: "closed", CalibrationState: "none",
+// jevStatus is the live decision-model state, or the resolved backend alone when the client
+// cannot report it.
+func (s *statusReporter) jevStatus() jev.Status {
+	if r, ok := s.jevClient.(jev.StatusReporter); ok {
+		return r.Status()
 	}
+	st := jev.Status{Info: s.jev, State: "off", Breaker: jev.BreakerClosed}
 	if s.jev.Backend == jev.BackendMock {
-		d.State = "mock"
+		st.State = "mock"
+	}
+	return st
+}
+
+// decisionModel is SystemStatus.decision_model, from the client's live status: state, breaker,
+// last error with its hint, snapshot, rate use and the endpoint's host. Latency percentiles and
+// 24-hour totals come from the cost ledger (P4); until then calls and cost count since start.
+func (s *statusReporter) decisionModel() decisionModelStatus {
+	st := s.jevStatus()
+	d := decisionModelStatus{
+		Provider: "jev", Backend: st.Backend, BackendReason: st.Reason, ModelRequested: nonEmpty(st.Model),
+		Snapshot: nonEmpty(st.Snapshot), Credential: decisionCredential{Source: defaultString(st.CredentialSource, "none")},
+		State: st.State, Breaker: defaultString(st.Breaker, jev.BreakerClosed), CalibrationState: "none",
+		Calls24h: int(st.Calls), Cost24hUSD: st.CostUSD, RPMLimit: st.RPMLimit, RPMUsed: st.RPMUsed,
+	}
+	if d.State == "" {
+		d.State = "off"
+	}
+	if st.Endpoint != "" {
+		if u, err := url.Parse(st.Endpoint); err == nil && u.Hostname() != "" {
+			d.EndpointHost = nonEmpty(u.Hostname())
+		}
+	}
+	if e := st.LastError; e != nil {
+		d.LastError = &decisionModelError{Kind: e.Kind, Message: e.Message, Hint: e.Hint, At: e.At.UTC()}
 	}
 	return d
+}
+
+// budgets is SystemStatus.budgets: the decision cap and today's spend from the decision-model
+// client's budget (in memory until the persisted ledger, P4); the LLM cap is enforced by the
+// engine, so its spend reads 0 here until the ledger lands.
+func (s *statusReporter) budgets() statusBudgets {
+	b := statusBudgets{DecisionUSDDay: s.cfg.SpendCapDecisionUSDDay, LLMUSDDay: s.cfg.SpendCapLLMUSDDay}
+	if sp := s.jevStatus().Spend; sp != nil {
+		b.DecisionSpentTodayUSD = sp.SpentUSD
+		b.DecisionExhausted = sp.Exhausted
+		b.DecisionReserveOnly = !sp.Exhausted && sp.SoftCapUSD > 0 && sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD
+	}
+	return b
 }
 
 func (s *statusReporter) policyStatus() statusPolicy {
@@ -435,4 +475,12 @@ func engineStatusEvent(h grpc.EngineHealth) map[string]any {
 		ev["detail"] = h.Detail
 	}
 	return ev
+}
+
+// defaultString is s, or def when s is empty.
+func defaultString(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
