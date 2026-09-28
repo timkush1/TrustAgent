@@ -133,6 +133,8 @@ type envOpts struct {
 	rateLimit int
 	// trustedProxies is TRUTHTABLE_TRUSTED_PROXIES.
 	trustedProxies []string
+	// adminKey, when set, is a TRUTHTABLE_ADMIN_KEYS entry (label admin).
+	adminKey string
 }
 
 type testEnv struct {
@@ -159,6 +161,9 @@ func testConfig(t *testing.T, o envOpts) *config.Config {
 		cfg.RateLimitPerMinute = o.rateLimit
 	}
 	cfg.TrustedProxies = o.trustedProxies
+	if o.adminKey != "" {
+		cfg.Auth.AdminKeys = []config.APIKey{{Label: "admin", Key: o.adminKey}}
+	}
 	cfg.DatabaseURL, cfg.RedisURL, cfg.InternalToken = "", "", ""
 	cfg.EngineHealthInterval = time.Hour
 	cfg.WorkerCount = 2
@@ -179,6 +184,9 @@ func newTestEnv(t *testing.T, o envOpts) *testEnv {
 		d.store = o.store
 		if d.store == nil {
 			d.store = newMemStore()
+		}
+		if pg, ok := d.store.(*store.PostgresStore); ok {
+			d.pg = pg // policy versions, the dry-run and the aggregates
 		}
 		cfg.DatabaseURL = "postgres://configured-for-status"
 	}

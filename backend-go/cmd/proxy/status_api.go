@@ -46,8 +46,9 @@ type statusReporter struct {
 	jev    jev.Info
 	// jevClient reports the live decision-model state (jev.StatusReporter); nil falls back to jev.
 	jevClient jev.Client
-	policy    *policy.Policy
-	auth      *apiAuth
+	// policies is the policy engine (the version in effect and the file's state).
+	policies *policy.Engine
+	auth     *apiAuth
 	// redisState is the rate limiter's backend state at startup (up, down or disabled).
 	redisState string
 	now        func() time.Time
@@ -473,14 +474,13 @@ func (s *statusReporter) budgets() statusBudgets {
 	return b
 }
 
+// policyStatus is SystemStatus.policy from the policy engine: the version in effect, where it came
+// from, whether dashboard edits are possible and the state of the policy file.
 func (s *statusReporter) policyStatus() statusPolicy {
-	p := statusPolicy{Source: s.policy.Source, FileStatus: "ok"}
-	v := s.policy.Version
-	p.Version = &v
-	if s.policy.Source == policy.SourceBuiltin {
-		p.FileStatus = "missing"
+	if s.policies == nil {
+		return statusPolicy{Source: policy.SourceBuiltin, FileStatus: "missing"}
 	}
-	return p
+	return statusPolicy(s.policies.Status())
 }
 
 var buildSHAOnce = sync.OnceValue(func() string {

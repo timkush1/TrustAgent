@@ -38,7 +38,7 @@ func main() {
 	// gin's panic recovery dumps request headers (keys, the session cookie) in debug mode and on a
 	// broken pipe; it captures this writer when the router is built.
 	gin.DefaultErrorWriter = redactor.Writer(os.Stderr)
-	if err := run(cfg, log); err != nil {
+	if err := run(cfg, log, redactor); err != nil {
 		log.Error("TrustAgent proxy stopped", "err", err)
 		os.Exit(1)
 	}
@@ -54,8 +54,9 @@ func newLogger(level string, redactor *config.Redactor) *slog.Logger {
 }
 
 // run starts the proxy and blocks until SIGINT or SIGTERM, then shuts down in order: stop
-// accepting requests, let observe-mode gates and queued audits drain, stop the stream.
-func run(cfg *config.Config, log *slog.Logger) error {
+// accepting requests, let observe-mode gates and queued audits drain, stop the stream. redactor
+// masks the secrets that only exist at run time (the generated internal token).
+func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error {
 	log.Info("starting the TrustAgent proxy", "version", version.Version, "port", cfg.ServerPort,
 		"upstream", redactURL(cfg.UpstreamURL), "engine", cfg.GRPCAddress)
 	if cfg.LogLevel != "debug" {
@@ -74,7 +75,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 			log.Error("persistence disabled: the database could not be opened", "err", err)
 		} else {
 			defer pg.Close()
-			d.store = pg
+			d.store, d.pg = pg, pg
 			log.Info("persistence enabled (Postgres)")
 		}
 	}
@@ -84,6 +85,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 	}
 
 	cfg.InternalToken = internalToken(cfg.InternalToken, cfg.InternalTokenFile, log)
+	redactor.Add(cfg.InternalToken) // a generated token was not in the loaded configuration
 	if cfg.GRPCAddress != "" {
 		client, err := grpc.NewAuditClient(cfg.GRPCAddress, cfg.GRPCTimeout, cfg.InternalToken)
 		if err != nil {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -12,7 +11,6 @@ import (
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/decision"
-	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
@@ -24,7 +22,6 @@ import (
 type gatewayParts struct {
 	handler *proxy.Handler
 	auth    *authz.Authenticator
-	policy  *policy.Policy
 	// client is the decision-model client; jev is its resolved backend, as built.
 	client jev.Client
 	jev    jev.Info
@@ -93,28 +90,21 @@ func hasSyncRoute(p *policy.Policy) bool {
 	return slices.ContainsFunc(routes, func(r *policy.Route) bool { return r != nil && r.Mode != decision.ModeObserve })
 }
 
-// newGateway builds the gate hot path: the policy, the decision-model client, the gate and the /v1
-// handler, behind the ingest auth of auth (newAuthenticator). The sink persists and broadcasts
-// traces and decisions and submits deep audits.
-func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, hooks gatewayHooks, log *slog.Logger) (*gatewayParts, error) {
+// newGateway builds the gate hot path: the decision-model client, the gate and the /v1 handler,
+// behind the ingest auth of auth (newAuthenticator). The policy and the evaluator registry come
+// from ps, the policy services: the handler reads ps.Engine.Current() per request, so a saved or
+// hot-reloaded policy applies without a restart. The sink persists and broadcasts traces and
+// decisions and submits deep audits.
+func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, ps *policyServices, hooks gatewayHooks, log *slog.Logger) (*gatewayParts, error) {
 	for _, w := range cfg.Warnings {
 		log.Warn("config: " + w)
 	}
 
-	registry, err := evaluators.Builtins()
-	if err != nil {
-		return nil, fmt.Errorf("evaluator templates: %w", err)
-	}
-	pol, err := policy.LoadFile(cfg.PolicyFile, policy.Seeds{
-		Mode: cfg.GateDefaultMode, Fail: cfg.GateFailMode, MaxResponseTokens: cfg.Jev.MaxResponseTokens,
-	}, registry)
-	if err != nil {
-		return nil, err
-	}
+	registry, pol := ps.Registry, ps.Engine.Current()
 	if pol.Source == policy.SourceBuiltin {
 		log.Warn("policy file not found: gating every request on the built-in defaults", "path", cfg.PolicyFile, "mode", pol.Default.Mode)
 	} else {
-		log.Info("policy loaded", "path", pol.Path, "routes", len(pol.Routes), "default_mode", pol.Default.Mode)
+		log.Info("policy loaded", "path", pol.Path, "version", pol.Version, "source", pol.Source, "routes", len(pol.Routes), "default_mode", pol.Default.Mode)
 	}
 
 	// Auto resolution (SPEC §3.1): demo → mock; base URL + TRUTHTABLE_JEV_API_KEY → compatible; an
@@ -183,8 +173,8 @@ func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, h
 	}
 
 	h := proxy.New(proxy.Options{
-		Upstream: up, Policy: pol, Gate: g, Sink: sink, TestMode: cfg.TestMode,
+		Upstream: up, Policy: ps.Engine.Current, Gate: g, Sink: sink, TestMode: cfg.TestMode,
 		MaxUpstreamResponseBytes: cfg.MaxUpstreamResponseBytes, GateMaxConcurrency: cfg.GateMaxConcurrency, Logger: log,
 	})
-	return &gatewayParts{handler: h, auth: auth, policy: pol, client: jevClient, jev: info}, nil
+	return &gatewayParts{handler: h, auth: auth, client: jevClient, jev: info}, nil
 }

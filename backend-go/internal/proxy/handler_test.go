@@ -183,7 +183,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 		t.Fatal(err)
 	}
 	sink := newRecSink()
-	h := New(Options{Upstream: up, Policy: pol, Gate: g, Sink: sink, TestMode: o.testMode, GateMaxConcurrency: o.maxGates, Logger: quiet})
+	h := New(Options{Upstream: up, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink, TestMode: o.testMode, GateMaxConcurrency: o.maxGates, Logger: quiet})
 	r := gin.New()
 	r.Use(middleware.CORS([]string{"http://localhost:5173"}))
 	v1 := r.Group("/v1", h.TraceIDs(), auth.Ingest(Deny))

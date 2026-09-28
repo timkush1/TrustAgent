@@ -46,8 +46,9 @@ const TrafficgenKeyLabel = "trafficgen"
 // Options configures a Handler.
 type Options struct {
 	Upstream *upstream.Client
-	// Policy is the loaded policy (hot reload arrives with policy versions in P3).
-	Policy *policy.Policy
+	// Policy returns the policy in effect; it is called once per request, so a saved, rolled back
+	// or hot-reloaded version applies from the next request on (policy.Engine.Current).
+	Policy func() *policy.Policy
 	Gate   *gate.Gate
 	// Sink records traces and decisions and submits audits; nil means gate.NopSink.
 	Sink gate.Sink
@@ -65,7 +66,7 @@ type Options struct {
 // Handler serves /v1.
 type Handler struct {
 	up       *upstream.Client
-	policy   *policy.Policy
+	policy   func() *policy.Policy
 	gate     *gate.Gate
 	sink     gate.Sink
 	testMode bool
@@ -253,15 +254,17 @@ func (h *Handler) newExchange(c *gin.Context, req *llmapi.ChatRequest, start tim
 		model, bodyRoute = req.Model, req.Extension.Route
 	}
 	keyLabel := authz.KeyLabel(c)
-	route := h.policy.Match(&policy.Request{
+	// One policy per request: a reload mid-request cannot mix two versions.
+	pol := h.policy()
+	route := pol.Match(&policy.Request{
 		Path: c.Request.URL.Path, Model: model, Headers: c.Request.Header, KeyLabel: keyLabel, BodyRoute: bodyRoute,
 	})
-	mode, _ := h.policy.Mode(route, c.GetHeader(HeaderClientMode))
+	mode, _ := pol.Mode(route, c.GetHeader(HeaderClientMode))
 
 	t := &gate.TraceStart{
 		TraceID: c.GetString(traceIDKey), CreatedAt: start.UTC(), Source: gate.SourceProxy,
 		APIFormat: llmapi.FormatOpenAIChat, Path: c.Request.URL.Path, Route: route.Name,
-		PolicyVersion: h.policy.Version, Mode: mode, KeyLabel: keyLabel, Model: model,
+		PolicyVersion: pol.Version, Mode: mode, KeyLabel: keyLabel, Model: model,
 		AnswerSource: gate.AnswerLive, Flags: []string{},
 	}
 	if id := c.GetString(clientRequestIDKey); id != "" {
@@ -280,7 +283,7 @@ func (h *Handler) newExchange(c *gin.Context, req *llmapi.ChatRequest, start tim
 		t.Source = gate.SourceTrafficgen
 	}
 
-	x := &gate.Exchange{Trace: t, Policy: h.policy, Route: route, Request: req}
+	x := &gate.Exchange{Trace: t, Policy: pol, Route: route, Request: req}
 	if req != nil {
 		settings := route.Evidence.Extraction()
 		ev, err := evidence.Extract(req, &settings)
@@ -378,7 +381,7 @@ func (a *answer) write(w http.ResponseWriter, log *slog.Logger) {
 // already running, this one is recorded as skipped:overload with detectors only.
 func (h *Handler) respondThenGate(c *gin.Context, x *gate.Exchange, route *policy.Route, ans *answer, start time.Time) {
 	upstream.CopyResponseHeaders(c.Writer.Header(), ans.header)
-	setDeferredHeaders(c.Writer.Header(), x.Trace, route, h.policy.Label(route))
+	setDeferredHeaders(c.Writer.Header(), x.Trace, route, x.Policy.Label(route))
 	ans.write(c.Writer, h.log)
 	written := h.now()
 

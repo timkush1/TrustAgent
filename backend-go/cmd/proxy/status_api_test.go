@@ -10,7 +10,6 @@ import (
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
-	"github.com/truthtable/backend-go/internal/policy"
 )
 
 func TestJudgeStateFromEngineHealth(t *testing.T) {
@@ -108,7 +107,7 @@ func TestStatusUsesEngineInfo(t *testing.T) {
 		t.Errorf("knowledge %+v", k)
 	}
 	s := &statusReporter{cfg: &config.Config{}, engine: fixedHealth{h}, jev: jev.Info{Backend: jev.BackendMock}, now: time.Now,
-		policy: &policy.Policy{Source: policy.SourceBuiltin}, auth: &apiAuth{keys: authz.New(nil, "keys")}}
+		auth: &apiAuth{keys: authz.New(nil, "keys")}}
 	st := s.system(context.Background())
 	if st.Engine.MaxAudits == nil || *st.Engine.MaxAudits != 16 || len(st.Warnings) != 1 || st.Warnings[0] != "Engine: LLM_MODEL is ignored under auto" {
 		t.Errorf("engine %+v warnings %v", st.Engine, st.Warnings)
