@@ -43,9 +43,11 @@ jobs:
       # Editable, so the tests import src/ (where the stubs are generated next)
       # and the contracts lookup can walk up to the repository's contracts/.
       # A regular install would copy the package without the gitignored stubs.
+      # With the knowledge extra (CPU torch is installed above anyway), so the
+      # async vector-store tests run instead of being skipped (importorskip).
       - name: Install package and dev tools
         run: |
-          pip install -e .
+          pip install -e ".[knowledge]"
           pip install pytest==7.4.4 pytest-asyncio==0.23.8 pytest-cov \
             ruff==0.1.15 black==23.12.1
 
