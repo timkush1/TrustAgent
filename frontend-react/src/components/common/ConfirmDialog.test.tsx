@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/data/errors';
@@ -93,6 +94,37 @@ describe('ConfirmDialog', () => {
     await userEvent.click(confirm());
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts clean each time a parent opens it', async () => {
+    function Controlled() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <Button onClick={() => setOpen(true)}>Allow uncalibrated blocking</Button>
+          <ConfirmDialog
+            open={open}
+            onOpenChange={setOpen}
+            title="Allow uncalibrated blocking?"
+            confirmLabel="Allow blocking"
+            confirmationText="support-bot"
+            onConfirm={() => Promise.reject(new Error('Policy is locked'))}
+          />
+        </>
+      );
+    }
+    render(<Controlled />);
+    const opener = screen.getByRole('button', { name: 'Allow uncalibrated blocking' });
+    await userEvent.click(opener);
+    const input = await screen.findByRole('textbox', { name: 'To confirm, type support-bot' });
+    await userEvent.type(input, 'support-bot{Enter}');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Policy is locked');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await userEvent.click(opener);
+    expect(await screen.findByRole('textbox', { name: 'To confirm, type support-bot' })).toHaveValue('');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Allow blocking' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('shows progress and cannot be dismissed while the action runs', async () => {

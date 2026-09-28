@@ -65,14 +65,21 @@ export function ConfirmDialog({
   const instructionId = `${id}-instruction`;
   const inputId = `${id}-input`;
 
+  // Every opening starts clean, however it was opened (the trigger, or a parent setting `open`):
+  // no text typed for an earlier attempt, no error from it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setTyped('');
+      setError(null);
+    }
+  }
+
   const matches = confirmationText === undefined || typed.trim() === confirmationText;
 
   const setOpen = (next: boolean) => {
     if (!next && pending) return; // Stay open until the action settles.
-    if (next) {
-      setTyped('');
-      setError(null);
-    }
     setOpenState(next);
     onOpenChange?.(next);
   };
