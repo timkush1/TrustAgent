@@ -1,4 +1,8 @@
-package main
+// Package recording builds trustagent.recording/v1 recordings of gateway traffic (SPEC §2.13):
+// the manifest a static demo replays, derived from trace details, with a label that can only say
+// what the traces support, and the sanitizer every published string goes through. cmd/export-replay
+// writes recordings with it; GET /api/export/replay can serve the same manifest.
+package recording
 
 import (
 	"cmp"
@@ -17,96 +21,102 @@ import (
 
 // Recording constants (contracts/schema/recording.v1.schema.json, SPEC §2.13).
 const (
-	recordingSchema = "trustagent.recording/v1"
-	kindRecorded    = "recorded"
-	kindMock        = "mock"
-	// mockLabel is the only label a mock recording may carry (contracts/ui/copy.v1.json
+	Schema       = "trustagent.recording/v1"
+	KindRecorded = "recorded"
+	KindMock     = "mock"
+	// MockLabel is the only label a mock recording may carry (contracts/ui/copy.v1.json
 	// recording.mock).
-	mockLabel = "Simulated (mock checks + mock judge): not model output"
+	MockLabel = "Simulated (mock checks + mock judge): not model output"
 )
 
-// traceData is one exported trace: its detail as GET /api/traces/:id serves it, and the deep
+// Trace is one exported trace: its detail as GET /api/traces/:id serves it, and the deep
 // audit's LLM cost when the source knows it.
-type traceData struct {
+type Trace struct {
 	Detail store.TraceDetail
 	LLMUSD *float64
 }
 
-// judgeInfo is the part of AuditDetail.judge (api.ts JudgeInfo) a recording names.
-type judgeInfo struct {
+// Judge is the part of AuditDetail.judge (api.ts JudgeInfo) a recording names.
+type Judge struct {
 	Provider       string `json:"provider"`
 	Model          string `json:"model"`
 	FallbackActive bool   `json:"fallback_active"`
 }
 
-// recording is manifest.json (api.ts Recording).
-type recording struct {
+// Recording is manifest.json (api.ts Recording).
+type Recording struct {
 	Schema            string               `json:"schema"`
 	Kind              string               `json:"kind"`
 	Label             string               `json:"label"`
 	RecordedAt        time.Time            `json:"recorded_at"`
 	GitSHA            string               `json:"git_sha"`
 	TrustAgentVersion string               `json:"trustagent_version"`
-	DecisionModel     recordingModel       `json:"decision_model"`
-	Judge             judgeInfo            `json:"judge"`
+	DecisionModel     Model                `json:"decision_model"`
+	Judge             Judge                `json:"judge"`
 	CalibrationState  string               `json:"calibration_state"`
-	AnswerSources     answerSources        `json:"answer_sources"`
-	Totals            totals               `json:"totals"`
-	ROI               roi                  `json:"roi"`
+	AnswerSources     AnswerSources        `json:"answer_sources"`
+	Totals            Totals               `json:"totals"`
+	ROI               ROI                  `json:"roi"`
 	Traces            []store.TraceSummary `json:"traces"`
-	Events            []event              `json:"events"`
+	Events            []Event              `json:"events"`
 }
 
-type recordingModel struct {
+// Model is Recording.decision_model: the one decision backend and snapshot of the traces.
+type Model struct {
 	Backend  string  `json:"backend"`
 	Snapshot *string `json:"snapshot"`
 }
 
-type answerSources struct {
+// AnswerSources counts the traces with scripted and generated answers.
+type AnswerSources struct {
 	Scripted  int `json:"scripted"`
 	Generated int `json:"generated"`
 }
 
-type totals struct {
+// Totals are the recording's trace count and spend.
+type Totals struct {
 	Traces      int     `json:"traces"`
 	DecisionUSD float64 `json:"decision_usd"`
 	LLMUSD      float64 `json:"llm_usd"`
 }
 
-// roi carries the RoiSummary members a recording can state from its own traces; the full summary
+// ROI carries the RoiSummary members a recording can state from its own traces; the full summary
 // (costs, counterfactuals, savings) is computed by internal/costs.
-type roi struct {
+type ROI struct {
 	Window         string `json:"window"`
 	GatedResponses int    `json:"gated_responses"`
 	Simulated      bool   `json:"simulated"`
 }
 
-// event is one replayed WebSocket event, t_ms after the first trace started.
-type event struct {
+// Event is one replayed WebSocket event, t_ms after the first trace started.
+type Event struct {
 	TMs     int64  `json:"t_ms"`
 	Type    string `json:"type"`
 	TraceID string `json:"trace_id,omitempty"`
 	Data    any    `json:"data"`
 }
 
-// buildOptions are what the traces cannot say.
-type buildOptions struct {
-	gitSHA, version string
-	// judge is --judge-provider/--judge-model, for traces without a deep audit.
-	judge *judgeInfo
+// Options are what the traces cannot say.
+type Options struct {
+	// GitSHA and Version identify the build that exported the recording.
+	GitSHA, Version string
+	// Judge names the judge when no trace has a deep audit (export-replay --judge-provider and
+	// --judge-model); when audits name one, it must agree.
+	Judge *Judge
 }
 
-// errNotRecordable is returned when the traces cannot be labelled honestly.
-var errNotRecordable = errors.New("these traces cannot be exported as a recording")
+// ErrNotRecordable is returned when the traces cannot be labelled honestly.
+var ErrNotRecordable = errors.New("these traces cannot be exported as a recording")
 
-// buildRecording assembles the manifest from the traces (sorted oldest first). It fails rather
+// Build assembles the manifest from the traces, oldest first (the slice itself is not reordered). It fails rather
 // than mislabel: kind recorded needs a real decision backend, a judge that is neither a fallback
 // nor the mock, and an answer_source on every trace; kind mock needs the mock decision backend.
-func buildRecording(traces []traceData, opt buildOptions) (*recording, error) {
+func Build(traces []Trace, opt Options) (*Recording, error) {
 	if len(traces) == 0 {
-		return nil, fmt.Errorf("%w: no traces match", errNotRecordable)
+		return nil, fmt.Errorf("%w: no traces match", ErrNotRecordable)
 	}
-	slices.SortStableFunc(traces, func(a, b traceData) int {
+	traces = slices.Clone(traces) // sorted here; the caller's order is left alone
+	slices.SortStableFunc(traces, func(a, b Trace) int {
 		if c := a.Detail.CreatedAt.Compare(b.Detail.CreatedAt); c != 0 {
 			return c
 		}
@@ -114,21 +124,21 @@ func buildRecording(traces []traceData, opt buildOptions) (*recording, error) {
 	})
 	for _, t := range traces {
 		if _, err := uuid.Parse(t.Detail.TraceID); err != nil {
-			return nil, fmt.Errorf("%w: trace %q has a legacy (non-UUID) id", errNotRecordable, t.Detail.TraceID)
+			return nil, fmt.Errorf("%w: trace %q has a legacy (non-UUID) id", ErrNotRecordable, t.Detail.TraceID)
 		}
 	}
 	model, err := decisionModel(traces)
 	if err != nil {
 		return nil, err
 	}
-	judge, err := judgeOf(traces, opt.judge)
+	judge, err := judgeOf(traces, opt.Judge)
 	if err != nil {
 		return nil, err
 	}
-	r := &recording{
-		Schema: recordingSchema, RecordedAt: traces[0].Detail.CreatedAt.UTC(), GitSHA: opt.gitSHA,
-		TrustAgentVersion: opt.version, DecisionModel: model, Judge: judge,
-		CalibrationState: calibrationState(traces), Traces: make([]store.TraceSummary, len(traces)), Events: []event{},
+	r := &Recording{
+		Schema: Schema, RecordedAt: traces[0].Detail.CreatedAt.UTC(), GitSHA: opt.GitSHA,
+		TrustAgentVersion: opt.Version, DecisionModel: model, Judge: judge,
+		CalibrationState: calibrationState(traces), Traces: make([]store.TraceSummary, len(traces)), Events: []Event{},
 	}
 	var missing []string
 	live := 0
@@ -159,9 +169,9 @@ func buildRecording(traces []traceData, opt buildOptions) (*recording, error) {
 
 	switch model.Backend {
 	case "mock":
-		r.Kind, r.Label = kindMock, mockLabel
+		r.Kind, r.Label = KindMock, MockLabel
 	case "off":
-		return nil, fmt.Errorf("%w: no trace was checked by a decision model", errNotRecordable)
+		return nil, fmt.Errorf("%w: no trace was checked by a decision model", ErrNotRecordable)
 	default:
 		var problems []string
 		if judge.FallbackActive {
@@ -174,12 +184,12 @@ func buildRecording(traces []traceData, opt buildOptions) (*recording, error) {
 			problems = append(problems, fmt.Sprintf("%d traces have no answer_source (first %s)", len(missing), missing[0]))
 		}
 		if len(problems) > 0 {
-			return nil, fmt.Errorf("%w as recorded: %s", errNotRecordable, strings.Join(problems, "; "))
+			return nil, fmt.Errorf("%w as recorded: %s", ErrNotRecordable, strings.Join(problems, "; "))
 		}
-		r.Kind = kindRecorded
+		r.Kind = KindRecorded
 		r.Label = recordedLabel(r, live)
 	}
-	r.ROI.Simulated = r.Kind == kindMock
+	r.ROI.Simulated = r.Kind == KindMock
 	last := traces[len(traces)-1].Detail.CreatedAt
 	r.ROI.Window = window(last.Sub(traces[0].Detail.CreatedAt))
 	r.Events = events(traces)
@@ -187,7 +197,7 @@ func buildRecording(traces []traceData, opt buildOptions) (*recording, error) {
 }
 
 // decisionModel is the single decision backend and snapshot of the traces that reached one.
-func decisionModel(traces []traceData) (recordingModel, error) {
+func decisionModel(traces []Trace) (Model, error) {
 	backends, snapshots := map[string]bool{}, map[string]bool{}
 	for _, t := range traces {
 		if dm := t.Detail.DecisionModel; dm != nil {
@@ -199,15 +209,15 @@ func decisionModel(traces []traceData) (recordingModel, error) {
 	}
 	switch {
 	case len(backends) == 0:
-		return recordingModel{Backend: "off"}, nil
+		return Model{Backend: "off"}, nil
 	case len(backends) > 1:
-		return recordingModel{}, fmt.Errorf("%w: the traces mix decision backends %s; narrow --since/--until or --route",
-			errNotRecordable, strings.Join(keys(backends), ", "))
+		return Model{}, fmt.Errorf("%w: the traces mix decision backends %s; narrow --since/--until or --route",
+			ErrNotRecordable, strings.Join(keys(backends), ", "))
 	case len(snapshots) > 1:
-		return recordingModel{}, fmt.Errorf("%w: the traces mix decision-model snapshots %s; narrow --since/--until",
-			errNotRecordable, strings.Join(keys(snapshots), ", "))
+		return Model{}, fmt.Errorf("%w: the traces mix decision-model snapshots %s; narrow --since/--until",
+			ErrNotRecordable, strings.Join(keys(snapshots), ", "))
 	}
-	m := recordingModel{Backend: keys(backends)[0]}
+	m := Model{Backend: keys(backends)[0]}
 	if len(snapshots) == 1 {
 		s := keys(snapshots)[0]
 		m.Snapshot = &s
@@ -217,8 +227,8 @@ func decisionModel(traces []traceData) (recordingModel, error) {
 
 // judgeOf is the judge of the deep audits (effective provider and model); every audit must name
 // the same one. Without audits the flags name it.
-func judgeOf(traces []traceData, flags *judgeInfo) (judgeInfo, error) {
-	seen := map[string]judgeInfo{}
+func judgeOf(traces []Trace, flags *Judge) (Judge, error) {
+	seen := map[string]Judge{}
 	fallback := false
 	for _, t := range traces {
 		a := t.Detail.AuditDetail
@@ -232,7 +242,7 @@ func judgeOf(traces []traceData, flags *judgeInfo) (judgeInfo, error) {
 			FallbackActive     bool   `json:"fallback_active"`
 		}
 		if err := json.Unmarshal(a.Judge, &j); err != nil {
-			return judgeInfo{}, fmt.Errorf("audit %s: judge: %w", a.AuditID, err)
+			return Judge{}, fmt.Errorf("audit %s: judge: %w", a.AuditID, err)
 		}
 		provider := j.EffectiveProvider
 		if provider == "" {
@@ -241,19 +251,19 @@ func judgeOf(traces []traceData, flags *judgeInfo) (judgeInfo, error) {
 		if provider == "" || j.Model == "" {
 			continue
 		}
-		seen[provider+"\x00"+j.Model] = judgeInfo{Provider: provider, Model: j.Model}
+		seen[provider+"\x00"+j.Model] = Judge{Provider: provider, Model: j.Model}
 		fallback = fallback || j.FallbackActive
 	}
 	switch len(seen) {
 	case 0:
 		if flags == nil {
-			return judgeInfo{}, fmt.Errorf("%w: no deep audit names its judge: pass --judge-provider and --judge-model", errNotRecordable)
+			return Judge{}, fmt.Errorf("%w: no deep audit names its judge: pass --judge-provider and --judge-model", ErrNotRecordable)
 		}
 		return *flags, nil
 	case 1:
 		for _, j := range seen {
 			if flags != nil && (flags.Provider != j.Provider || flags.Model != j.Model) {
-				return judgeInfo{}, fmt.Errorf("%w: the audits were judged by %s %s, not %s %s", errNotRecordable, j.Provider, j.Model, flags.Provider, flags.Model)
+				return Judge{}, fmt.Errorf("%w: the audits were judged by %s %s, not %s %s", ErrNotRecordable, j.Provider, j.Model, flags.Provider, flags.Model)
 			}
 			j.FallbackActive = fallback
 			return j, nil
@@ -264,7 +274,7 @@ func judgeOf(traces []traceData, flags *judgeInfo) (judgeInfo, error) {
 		names = append(names, j.Provider+" "+j.Model)
 	}
 	sort.Strings(names)
-	return judgeInfo{}, fmt.Errorf("%w: the audits mix judges (%s); narrow --since/--until", errNotRecordable, strings.Join(names, ", "))
+	return Judge{}, fmt.Errorf("%w: the audits mix judges (%s); narrow --since/--until", ErrNotRecordable, strings.Join(names, ", "))
 }
 
 // calibrationStates are the CalibrationState values from weakest to strongest.
@@ -273,7 +283,7 @@ var calibrationStates = []string{"none", "mock", "proxy", "family", "provisional
 // calibrationState is the weakest calibration state of the active, assessed evaluators across the
 // recorded decisions ("none" when there are none; an unknown state counts as none): a recording
 // claims no more than its weakest check.
-func calibrationState(traces []traceData) string {
+func calibrationState(traces []Trace) string {
 	weakest, found := len(calibrationStates)-1, false
 	for _, t := range traces {
 		for _, raw := range t.Detail.Decisions {
@@ -305,7 +315,7 @@ func calibrationState(traces []traceData) string {
 
 // recordedLabel is "Recorded {date} · {snapshot} + {judge} · {answer sources} answers · replayed,
 // not live" (contracts/ui/copy.v1.json recording.recorded).
-func recordedLabel(r *recording, live int) string {
+func recordedLabel(r *Recording, live int) string {
 	snapshot := r.DecisionModel.Backend
 	if r.DecisionModel.Snapshot != nil {
 		snapshot = *r.DecisionModel.Snapshot
@@ -348,15 +358,15 @@ var auditFailedKinds = []string{"engine_unavailable", "timeout", "judge_unavaila
 // arrived, gate_decision when it was decided, audit_queued with the decision when an audit was
 // planned, and audit_completed or audit_failed when the audit ended. t_ms counts from the first
 // trace; events are ordered by time, then by trace order.
-func events(traces []traceData) []event {
+func events(traces []Trace) []Event {
 	start := traces[0].Detail.CreatedAt
 	ms := func(t time.Time) int64 { return max(t.Sub(start).Milliseconds(), 0) }
-	var out []event
+	var out []Event
 	for _, t := range traces {
 		d := t.Detail
 		s := d.TraceSummary
 		at := ms(s.CreatedAt)
-		out = append(out, event{TMs: at, Type: "trace_started", TraceID: s.TraceID, Data: map[string]any{"trace": pendingSummary(s)}})
+		out = append(out, Event{TMs: at, Type: "trace_started", TraceID: s.TraceID, Data: map[string]any{"trace": pendingSummary(s)}})
 		decided := at
 		for _, p := range []*int64{s.Timings.TotalMs, s.Timings.GateMs} {
 			if p != nil {
@@ -365,11 +375,11 @@ func events(traces []traceData) []event {
 			}
 		}
 		if len(d.Decisions) > 0 {
-			out = append(out, event{TMs: decided, Type: "gate_decision", TraceID: s.TraceID,
+			out = append(out, Event{TMs: decided, Type: "gate_decision", TraceID: s.TraceID,
 				Data: map[string]any{"trace": decidedSummary(s), "decision": d.Decisions[0]}})
 		}
 		if s.Audit.AuditID != nil && s.Audit.Lane != nil {
-			out = append(out, event{TMs: decided, Type: "audit_queued", TraceID: s.TraceID,
+			out = append(out, Event{TMs: decided, Type: "audit_queued", TraceID: s.TraceID,
 				Data: map[string]any{"audit_id": *s.Audit.AuditID, "lane": *s.Audit.Lane, "queue_depth": 0}})
 		}
 		a := d.AuditDetail
@@ -379,7 +389,7 @@ func events(traces []traceData) []event {
 		done := max(ms(a.CreatedAt)+a.ProcessingMs, decided)
 		switch a.Status {
 		case "completed", "degraded":
-			out = append(out, event{TMs: done, Type: "audit_completed", TraceID: s.TraceID, Data: map[string]any{"audit": a}})
+			out = append(out, Event{TMs: done, Type: "audit_completed", TraceID: s.TraceID, Data: map[string]any{"audit": a}})
 		case "failed":
 			kind, message := "internal", ""
 			if a.Error != nil {
@@ -388,11 +398,11 @@ func events(traces []traceData) []event {
 					kind = a.Error.Kind
 				}
 			}
-			out = append(out, event{TMs: done, Type: "audit_failed", TraceID: s.TraceID,
+			out = append(out, Event{TMs: done, Type: "audit_failed", TraceID: s.TraceID,
 				Data: map[string]any{"audit_id": a.AuditID, "kind": kind, "message": message, "retryable": false}})
 		}
 	}
-	slices.SortStableFunc(out, func(a, b event) int { return cmp.Compare(a.TMs, b.TMs) })
+	slices.SortStableFunc(out, func(a, b Event) int { return cmp.Compare(a.TMs, b.TMs) })
 	return out
 }
 

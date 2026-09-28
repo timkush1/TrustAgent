@@ -1,4 +1,4 @@
-package main
+package recording
 
 import (
 	"bytes"
@@ -41,13 +41,13 @@ var (
 	ipv6Pattern        = regexp.MustCompile(`\[[0-9A-Fa-f:.]{2,45}\]`)
 )
 
-// sanitizer scrubs strings; it is safe for concurrent use after construction.
-type sanitizer struct {
+// Sanitizer scrubs strings; it is safe for concurrent use after construction.
+type Sanitizer struct {
 	secrets []*regexp.Regexp
 }
 
-// newSanitizer compiles the credential patterns of contracts/rules/secrets.v1.json.
-func newSanitizer() (*sanitizer, error) {
+// NewSanitizer compiles the credential patterns of contracts/rules/secrets.v1.json.
+func NewSanitizer() (*Sanitizer, error) {
 	b, err := contracts.FS.ReadFile("rules/secrets.v1.json")
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func newSanitizer() (*sanitizer, error) {
 	if err := json.Unmarshal(b, &doc); err != nil {
 		return nil, fmt.Errorf("secrets.v1.json: %w", err)
 	}
-	s := &sanitizer{}
+	s := &Sanitizer{}
 	for _, p := range doc.Patterns {
 		src := p.Pattern
 		if p.Flags != "" {
@@ -78,7 +78,7 @@ func newSanitizer() (*sanitizer, error) {
 }
 
 // String scrubs one string.
-func (s *sanitizer) String(v string) string {
+func (s *Sanitizer) String(v string) string {
 	for _, re := range s.secrets {
 		v = re.ReplaceAllStringFunc(v, maskSecret)
 	}
@@ -177,7 +177,7 @@ func maskRunes(r []rune, c rune, mask func(rune) bool) string {
 }
 
 // Value scrubs every string in a decoded JSON value (object keys are kept).
-func (s *sanitizer) Value(v any) any {
+func (s *Sanitizer) Value(v any) any {
 	switch x := v.(type) {
 	case string:
 		return s.String(x)
@@ -197,7 +197,7 @@ func (s *sanitizer) Value(v any) any {
 
 // JSON marshals v, scrubs every string in it and returns the indented document. Numbers keep
 // their text, and <, > and & are not escaped.
-func (s *sanitizer) JSON(v any) ([]byte, error) {
+func (s *Sanitizer) JSON(v any) ([]byte, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err

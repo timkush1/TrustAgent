@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/recording"
 	"github.com/truthtable/backend-go/internal/store"
 )
 
@@ -28,7 +29,7 @@ type filter struct {
 
 // traceSource reads trace details: the newest traces matching f, at most f.limit.
 type traceSource interface {
-	Traces(ctx context.Context, f filter) ([]traceData, error)
+	Traces(ctx context.Context, f filter) ([]recording.Trace, error)
 }
 
 // traceStore is the part of the store the database source reads.
@@ -46,8 +47,8 @@ type dbSource struct {
 	now   func() time.Time
 }
 
-func (d *dbSource) Traces(ctx context.Context, f filter) ([]traceData, error) {
-	var out []traceData
+func (d *dbSource) Traces(ctx context.Context, f filter) ([]recording.Trace, error) {
+	var out []recording.Trace
 	cursor := ""
 	for len(out) < f.limit {
 		recs, next, err := d.store.ListTraces(ctx, store.TraceFilter{
@@ -71,12 +72,12 @@ func (d *dbSource) Traces(ctx context.Context, f filter) ([]traceData, error) {
 	return out, nil
 }
 
-func (d *dbSource) detail(ctx context.Context, rec *store.TraceRecord) (traceData, error) {
+func (d *dbSource) detail(ctx context.Context, rec *store.TraceRecord) (recording.Trace, error) {
 	decisions, err := d.store.TraceDecisions(ctx, rec.TraceID)
 	if err != nil {
-		return traceData{}, err
+		return recording.Trace{}, err
 	}
-	t := traceData{Detail: store.TraceDetail{
+	t := recording.Trace{Detail: store.TraceDetail{
 		TraceSummary: rec.Summary(), Decisions: decisions, Labels: []store.LabelView{},
 	}}
 	body, err := d.store.GetTraceBody(ctx, rec.TraceID)
@@ -86,7 +87,7 @@ func (d *dbSource) detail(ctx context.Context, rec *store.TraceRecord) (traceDat
 	case errors.Is(err, store.ErrNotFound):
 		t.Detail.Body = store.UnavailableBody(store.BodyNotStored)
 	default:
-		return traceData{}, err
+		return recording.Trace{}, err
 	}
 	if rec.AuditID != nil {
 		audit, err := d.store.GetAudit(ctx, *rec.AuditID)
@@ -96,7 +97,7 @@ func (d *dbSource) detail(ctx context.Context, rec *store.TraceRecord) (traceDat
 			t.Detail.AuditDetail = &detail
 			t.LLMUSD = audit.CostUSD
 		case !errors.Is(err, store.ErrNotFound): // a queued audit has no row yet
-			return traceData{}, err
+			return recording.Trace{}, err
 		}
 	}
 	return t, nil
@@ -121,8 +122,8 @@ func newAPISource(base, key string, client *http.Client) (*apiSource, error) {
 	return &apiSource{base: u, key: key, client: client}, nil
 }
 
-func (a *apiSource) Traces(ctx context.Context, f filter) ([]traceData, error) {
-	var out []traceData
+func (a *apiSource) Traces(ctx context.Context, f filter) ([]recording.Trace, error) {
+	var out []recording.Trace
 	cursor := ""
 	for len(out) < f.limit {
 		q := url.Values{}
@@ -159,7 +160,7 @@ func (a *apiSource) Traces(ctx context.Context, f filter) ([]traceData, error) {
 			if r := d.Body.UnavailableReason; r != nil && *r == store.BodyScope {
 				return nil, errors.New("the API key lacks the content scope, so trace bodies are hidden: use an admin key")
 			}
-			out = append(out, traceData{Detail: d})
+			out = append(out, recording.Trace{Detail: d})
 		}
 		if page.NextCursor == nil || *page.NextCursor == "" || len(page.Items) == 0 {
 			break

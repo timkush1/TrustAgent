@@ -34,6 +34,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/recording"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
 )
@@ -131,10 +132,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		}
 		*p.dst = &t
 	}
-	var judge *judgeInfo
+	var judge *recording.Judge
 	switch {
 	case judgeProvider != "" && judgeModel != "":
-		judge = &judgeInfo{Provider: judgeProvider, Model: judgeModel}
+		judge = &recording.Judge{Provider: judgeProvider, Model: judgeModel}
 	case judgeProvider != "" || judgeModel != "":
 		return usage("pass both --judge-provider and --judge-model")
 	}
@@ -159,12 +160,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		fmt.Fprintf(stderr, "export-replay: %v\n", err)
 		return exitFailed
 	}
-	rec, err := buildRecording(traces, buildOptions{gitSHA: gitSHA, version: version.Version, judge: judge})
+	rec, err := recording.Build(traces, recording.Options{GitSHA: gitSHA, Version: version.Version, Judge: judge})
 	if err != nil {
 		fmt.Fprintf(stderr, "export-replay: %v\n", err)
 		return exitFailed
 	}
-	san, err := newSanitizer()
+	san, err := recording.NewSanitizer()
 	if err != nil {
 		fmt.Fprintf(stderr, "export-replay: %v\n", err)
 		return exitFailed
@@ -222,7 +223,7 @@ func openSource(ctx context.Context, d deps, databaseURL, api, apiKeyFile string
 
 // writeRecording writes manifest.json and traces/<id>.json under dir, sanitized. An existing
 // recording is replaced only with force; other files in dir are left alone.
-func writeRecording(dir string, rec *recording, traces []traceData, san *sanitizer, force bool) error {
+func writeRecording(dir string, rec *recording.Recording, traces []recording.Trace, san *recording.Sanitizer, force bool) error {
 	manifest := filepath.Join(dir, "manifest.json")
 	tracesDir := filepath.Join(dir, "traces")
 	if _, err := os.Stat(manifest); err == nil {

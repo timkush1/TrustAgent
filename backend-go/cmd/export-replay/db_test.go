@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/recording"
+	"github.com/truthtable/backend-go/internal/recording/recordingtest"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/storetest"
 )
@@ -94,7 +96,7 @@ func TestRunAgainstPostgres(t *testing.T) {
 	}
 	defer st.Close()
 
-	doc := fixture(t, "refund-contradiction-flag").Decisions[0]
+	doc := recordingtest.Fixture(t, "refund-contradiction-flag").Decisions[0]
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	old := seed(t, st, base.Add(-48*time.Hour), "scripted", true, doc) // outside --since
 	first := seed(t, st, base, "scripted", true, doc)
@@ -122,8 +124,8 @@ func TestRunAgainstPostgres(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
-	m := validateRecording(t, dir)
-	if m["kind"] != "mock" || m["label"] != mockLabel || dig(m, "decision_model", "snapshot") != "mock/jev-heuristic-v1" ||
+	m := recordingtest.ValidateDir(t, dir)
+	if m["kind"] != "mock" || m["label"] != recording.MockLabel || dig(m, "decision_model", "snapshot") != "mock/jev-heuristic-v1" ||
 		dig(m, "judge", "provider") != "mock" || dig(m, "answer_sources", "scripted") != 1.0 || dig(m, "answer_sources", "generated") != 1.0 ||
 		dig(m, "totals", "llm_usd") != 0.0012 || dig(m, "git_sha") != "0123abcd4567" {
 		t.Errorf("manifest = %v", m)
