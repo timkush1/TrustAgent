@@ -356,6 +356,18 @@ func TestReaderRestHandsOverTheUnreadBytes(t *testing.T) {
 		t.Errorf("rest %q %v", rest, err)
 	}
 
+	// A stream that ended in a read error: nothing is left but the error.
+	r = NewReader(&failAfter{data: []byte("data: a\n\n"), err: boom})
+	if _, err := r.Next(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Next(); !errors.Is(err, boom) {
+		t.Fatalf("err %v", err)
+	}
+	if rest, err := io.ReadAll(r.Rest()); len(rest) != 0 || !errors.Is(err, boom) {
+		t.Errorf("rest after a read error %q %v", rest, err)
+	}
+
 	// At the end of a stream there is nothing left.
 	r = NewReader(strings.NewReader("data: a\n\n"))
 	readAll(t, r)
