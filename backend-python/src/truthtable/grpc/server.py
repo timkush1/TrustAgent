@@ -18,6 +18,7 @@ from grpc import aio
 from .. import __version__
 from .pb import evaluator_pb2
 from .pb import evaluator_pb2_grpc
+from ..engine_info import EngineContext, engine_info, judge_info
 from ..graphs.audit_graph import AuditStepError, run_audit
 from ..graphs.state import (
     DECIDED_STATUSES,
@@ -50,6 +51,19 @@ SCORING_VERSION = "v1"
 # RPC past the deadline of `python -m truthtable.healthcheck` (3 s by default)
 # and marking a serving engine unhealthy.
 JUDGE_HEALTH_TIMEOUT_S = 2.0
+
+# Qdrant probes (health, point count) are synchronous client calls; they run in
+# a worker thread, bounded like the judge probe.
+QDRANT_PROBE_TIMEOUT_S = 1.0
+
+# Engine concurrency defaults (TRUTHTABLE_ENGINE_MAX_RPCS / _MAX_AUDITS, C-H13).
+DEFAULT_MAX_RPCS = 64
+DEFAULT_MAX_AUDITS = 16
+
+NO_JUDGE_TRACE = (
+    "Not assessed: the engine has no audit judge configured (LLM_PROVIDER); "
+    "no LLM call was made."
+)
 
 # TrustGrade cutoffs (D18): A>=0.9, B>=0.7, C>=0.5, D>=0.3, F<0.3. They must
 # match the TrustGrade comments in proto/evaluator.proto.
@@ -188,13 +202,23 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - HealthCheck: Service health status
     - IngestDocuments, ListKBClaims, ListConflicts, GetKBStats: knowledge base
 
-    The other v2 RPCs (GetEngineInfo, RetrieveContext, ApplyRuntimeConfig,
-    DraftEvaluator) are not overridden yet, so they inherit the generated
-    handlers and return UNIMPLEMENTED until their phase lands.
+    - GetEngineInfo: What the engine runs with (judge, knowledge, limits)
+
+    The other v2 RPCs (RetrieveContext, ApplyRuntimeConfig, DraftEvaluator)
+    are not overridden yet, so they inherit the generated handlers and return
+    UNIMPLEMENTED until their phase lands.
     """
 
     def __init__(
-        self, audit_graph, provider=None, qdrant_store=None, embedding_service=None, ingestor=None
+        self,
+        audit_graph,
+        provider=None,
+        qdrant_store=None,
+        embedding_service=None,
+        ingestor=None,
+        *,
+        engine: Optional[EngineContext] = None,
+        max_audits: Optional[int] = None,
     ):
         """
         Initialize the servicer.
@@ -206,16 +230,75 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             embedding_service: Embedding service for document ingestion (optional)
             ingestor: ClaimIngestor for claim-level (Gate-1 gated) ingestion;
                       None falls back to legacy chunk ingestion
+            engine: Startup facts reported by GetEngineInfo and HealthCheck (the
+                    resolved judge, settings, knowledge state). Without it the
+                    servicer reports built-in defaults.
+            max_audits: Concurrent audits (default: engine.max_audits, else 16)
         """
         self.audit_graph = audit_graph
         self.provider = provider
         self.qdrant_store = qdrant_store
         self.embedding_service = embedding_service
         self.ingestor = ingestor
+        self.engine = engine
         self._version = __version__
-        logger.info("AuditServicer initialized")
+        if max_audits is None:
+            max_audits = engine.max_audits if engine is not None else DEFAULT_MAX_AUDITS
+        self.max_audits = max_audits
+        # Audits beyond max_audits queue here instead of loading the judge (C-H13).
+        self._audit_slots = asyncio.Semaphore(max_audits)
+        self._judge_healthy: Optional[bool] = engine.judge.healthy if engine else None
+        logger.info(f"AuditServicer initialized (max {max_audits} concurrent audits)")
+
+    @property
+    def _no_judge(self) -> bool:
+        """The engine was started without a judge (LLM_PROVIDER=none, or none found)."""
+        return self.engine is not None and not self.engine.has_judge
 
     async def Evaluate(
+        self, request: evaluator_pb2.AuditRequest, context
+    ) -> evaluator_pb2.AuditResult:
+        """
+        Run an audit to completion and return its v2 result (SPEC section 2.2).
+
+        At most `max_audits` audits run at once; later calls wait for a slot.
+        Without a judge the audit is NOT_ASSESSED (no_judge) with no LLM call.
+        """
+        if self._no_judge:
+            return self._not_assessed_without_judge(request)
+        async with self._audit_slots:
+            result = await self._evaluate(request, context)
+        if self.engine is not None:
+            result.judge.CopyFrom(judge_info(self.engine.judge, self._judge_healthy))
+        return result
+
+    def _not_assessed_without_judge(
+        self, request: evaluator_pb2.AuditRequest
+    ) -> evaluator_pb2.AuditResult:
+        trace_id = request.trace_id or request.request_id
+        result = evaluator_pb2.AuditResult(
+            audit_id=request.audit_id or str(uuid.uuid4()),
+            request_id=request.request_id or trace_id,
+            trace_id=trace_id,
+            status=evaluator_pb2.AUDIT_STATUS_COMPLETED,
+            verdict=evaluator_pb2.AUDIT_VERDICT_NOT_ASSESSED,
+            not_assessed_reason="no_judge",
+            reasoning_trace=NO_JUDGE_TRACE,
+            completed_at_ms=int(time.time() * 1000),
+            scoring_version=SCORING_VERSION,
+        )
+        if request.HasField("gate"):
+            result.gate.CopyFrom(request.gate)
+        if request.HasField("evidence_summary"):
+            result.evidence_summary.CopyFrom(request.evidence_summary)
+        result.step_timings["total_ms"] = 0
+        if self.engine is not None:
+            result.judge.CopyFrom(judge_info(self.engine.judge, None))
+        AUDITS_TOTAL.labels(status="success").inc()
+        logger.info(f"Audit {result.audit_id}: NOT_ASSESSED (no_judge)")
+        return result
+
+    async def _evaluate(
         self, request: evaluator_pb2.AuditRequest, context
     ) -> evaluator_pb2.AuditResult:
         """
@@ -369,11 +452,16 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         self, request: evaluator_pb2.AuditRequest, context
     ) -> evaluator_pb2.AuditSubmission:
         """
-        Submit an audit request and process synchronously.
-
-        In a production system, this would queue the job and return immediately.
-        For simplicity, we process synchronously here.
+        Submit an audit request and process synchronously (legacy; shares the
+        Evaluate concurrency limit).
         """
+        async with self._audit_slots:
+            return await self._submit_audit(request, context)
+
+    async def _submit_audit(
+        self, request: evaluator_pb2.AuditRequest, context
+    ) -> evaluator_pb2.AuditSubmission:
+        """Run an audit and store its result for GetAuditResult."""
         audit_id = str(uuid.uuid4())
         start_time = time.time()
 
@@ -488,41 +576,102 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             step_timings=step_timings,
         )
 
+    async def _probe_judge(self) -> Optional[bool]:
+        """The judge's health (bounded); None without a judge to probe."""
+        if not self.provider:
+            return None
+        try:
+            healthy = bool(
+                await asyncio.wait_for(self.provider.health_check(), JUDGE_HEALTH_TIMEOUT_S)
+            )
+        except Exception:  # includes the probe timing out
+            healthy = False
+        self._judge_healthy = healthy
+        return healthy
+
+    async def _probe_qdrant(self) -> Tuple[bool, int]:
+        """(reachable, points) of the knowledge store, off the event loop and bounded."""
+        if not self.qdrant_store:
+            return False, 0
+        try:
+            reachable = bool(
+                await asyncio.wait_for(
+                    asyncio.to_thread(self.qdrant_store.health_check), QDRANT_PROBE_TIMEOUT_S
+                )
+            )
+            points = 0
+            if reachable:
+                points = int(
+                    await asyncio.wait_for(
+                        asyncio.to_thread(self.qdrant_store.count), QDRANT_PROBE_TIMEOUT_S
+                    )
+                )
+            return reachable, points
+        except Exception:
+            return False, 0
+
     async def HealthCheck(
         self, request: evaluator_pb2.HealthRequest, context
     ) -> evaluator_pb2.HealthResponse:
         """
         Health check endpoint.
+
+        Dependencies are reported under the keys `judge` and, with a knowledge
+        store, `qdrant` (D10). `healthy` is true when all of them are.
         """
         logger.debug("Health check requested")
 
-        # Check dependencies
-        dependencies = {}
-
-        # Check the audit judge (whichever provider it is; the v1 key was "ollama")
-        if self.provider:
-            try:
-                dependencies["judge"] = bool(
-                    await asyncio.wait_for(self.provider.health_check(), JUDGE_HEALTH_TIMEOUT_S)
-                )
-            except Exception:  # includes the probe timing out
-                dependencies["judge"] = False
+        dependencies: Dict[str, bool] = {}
+        judge_healthy = await self._probe_judge()
+        if judge_healthy is not None:
+            dependencies["judge"] = judge_healthy
         else:
-            dependencies["judge"] = True  # Assume ok if no provider
+            # No judge: unhealthy when the engine was started without one,
+            # otherwise (a bare servicer) assumed fine.
+            dependencies["judge"] = not self._no_judge
 
-        # Check Qdrant vector store
+        kb_points = 0
         if self.qdrant_store:
-            try:
-                dependencies["qdrant"] = self.qdrant_store.health_check()
-            except Exception:
-                dependencies["qdrant"] = False
+            dependencies["qdrant"], kb_points = await self._probe_qdrant()
 
-        # Overall health
-        healthy = all(dependencies.values()) if dependencies else True
-
-        return evaluator_pb2.HealthResponse(
-            healthy=healthy, version=self._version, dependencies=dependencies
+        response = evaluator_pb2.HealthResponse(
+            healthy=all(dependencies.values()),
+            version=self._version,
+            dependencies=dependencies,
+            kb_claims=kb_points,
+            knowledge_enabled=self.qdrant_store is not None,
         )
+        if self.engine is not None:
+            judge = self.engine.judge
+            response.judge_provider = judge.effective
+            response.judge_model = judge.model
+            response.judge_fallback_active = judge.fallback_active
+            response.knowledge_enabled = self.engine.knowledge.enabled
+        return response
+
+    async def GetEngineInfo(
+        self, request: evaluator_pb2.EngineInfoRequest, context
+    ) -> evaluator_pb2.EngineInfo:
+        """
+        What the engine runs with (SPEC section 2.2): version, judge (with a
+        fresh bounded health probe), knowledge, verifier, scoring settings,
+        warnings and the concurrency limits the proxy sizes its workers by.
+        """
+        judge_healthy = await self._probe_judge()
+        qdrant_reachable, kb_points = await self._probe_qdrant()
+        if self.engine is not None:
+            info = engine_info(
+                self.engine,
+                judge_healthy=judge_healthy,
+                qdrant_reachable=qdrant_reachable,
+                kb_claims=kb_points,
+            )
+        else:
+            info = evaluator_pb2.EngineInfo(version=self._version)
+        info.max_audits = self.max_audits
+        if not info.max_rpcs:
+            info.max_rpcs = DEFAULT_MAX_RPCS
+        return info
 
     async def IngestDocuments(
         self, request: evaluator_pb2.IngestRequest, context
@@ -705,34 +854,32 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
 
 def create_server(
-    # 0.0.0.0 is intentional: reachable only on the internal Docker network,
-    # not published to the host (see docker-compose.yml).
     servicer: AuditServicer,
-    host: str = "0.0.0.0",  # nosec B104
+    host: str = "127.0.0.1",
     port: int = 50051,
-    max_workers: int = 10,
+    max_rpcs: int = DEFAULT_MAX_RPCS,
+    interceptors: Sequence[Any] = (),
 ) -> aio.Server:
     """
     Create and configure the gRPC server.
 
     Args:
         servicer: AuditServicer instance
-        host: Host to bind to
+        host: Host to bind to. Loopback by default; the engine binds a
+              non-loopback address (0.0.0.0 in compose, where the port stays
+              on the internal network) only with an internal token.
         port: Port to listen on
-        max_workers: Maximum concurrent requests
+        max_rpcs: Concurrent RPCs (TRUTHTABLE_ENGINE_MAX_RPCS); further calls
+                  fail fast with RESOURCE_EXHAUSTED instead of piling up (C-H13)
+        interceptors: Server interceptors (the internal-token check)
 
     Returns:
         Configured gRPC server
     """
-    logger.info(f"Creating gRPC server (max_workers={max_workers})")
+    logger.info(f"Creating gRPC server (max {max_rpcs} concurrent RPCs)")
 
-    # Create server
-    server = aio.server()
-
-    # Register servicer
+    server = aio.server(interceptors=list(interceptors), maximum_concurrent_rpcs=max_rpcs)
     evaluator_pb2_grpc.add_AuditServiceServicer_to_server(servicer, server)
-
-    # Bind to address
     server.add_insecure_port(f"{host}:{port}")
 
     logger.info(f"gRPC server configured on {host}:{port}")
