@@ -167,8 +167,9 @@ func parseEnvelope(body []byte) envelope {
 			if ls, ok := obj.Metadata["limit_source"].(string); ok {
 				env.limitSource = ls
 			}
-			if raw, ok := obj.Metadata["raw"].(string); ok && env.message != "" && !strings.Contains(env.message, raw) {
-				env.message += ": " + raw
+			// OpenRouter puts the provider's own message in metadata.raw.
+			if detail, ok := obj.Metadata["raw"].(string); ok && env.message != "" && !strings.Contains(env.message, detail) {
+				env.message += ": " + detail
 			}
 		case json.Unmarshal(raw.Error, &s) == nil:
 			env.message = firstNonEmpty(s, env.message)

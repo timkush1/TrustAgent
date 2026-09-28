@@ -76,6 +76,13 @@ type Request struct {
 	Questions map[string]any `json:"questions"`
 }
 
+// NewRequest builds the vendor request of one compiled request (SPEC §2.9 compile, §2.12): the
+// compiled model, state and questions, plus the trace id as session_id, which OpenRouter
+// backends send (TRUTHTABLE_JEV_SEND_SESSION_ID) and which never enters request_sha256.
+func NewRequest(r *decision.Request, traceID string) *Request {
+	return &Request{Model: r.Model, SessionID: traceID, State: r.State, Questions: r.Questions}
+}
+
 // Response is a decision-model response with the gateway's call accounting.
 type Response struct {
 	// ID is the vendor response id; Snapshot is the model snapshot that answered.

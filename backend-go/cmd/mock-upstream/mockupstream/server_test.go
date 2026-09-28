@@ -447,9 +447,10 @@ func TestLatencyKnobs(t *testing.T) {
 	if el := time.Since(start); el < 60*time.Millisecond {
 		t.Errorf("jev latency: %s", el)
 	}
+	_, slow := newTestServer(t, Config{JevLatency: 5 * time.Second})
 	start = time.Now()
-	do(t, srv, call{path: "/api/alpha/decisions?latency_ms=0", header: orKey, body: decisionBody("m", "")})
-	if el := time.Since(start); el > 50*time.Millisecond {
+	do(t, slow, call{path: "/api/alpha/decisions?latency_ms=0", header: orKey, body: decisionBody("m", "")})
+	if el := time.Since(start); el > 2*time.Second {
 		t.Errorf("latency override to 0: %s", el)
 	}
 	start = time.Now()

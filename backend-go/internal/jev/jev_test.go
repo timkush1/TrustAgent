@@ -296,6 +296,20 @@ func TestErrorKind(t *testing.T) {
 	}
 }
 
+func TestNewRequest(t *testing.T) {
+	c := &decision.Request{Model: "typesafe/jev-1.13", State: map[string]any{"a": "b"}, Questions: s0Questions}
+	r := NewRequest(c, "0192f7c2-trace")
+	if r.Model != c.Model || r.SessionID != "0192f7c2-trace" || r.State["a"] != "b" || len(r.Questions) != 2 {
+		t.Errorf("request %+v", r)
+	}
+	// session_id is transport only: the request hash covers {model, state, questions}.
+	h1, _ := decision.SHA256Hex(*c)
+	h2, _ := decision.SHA256Hex(decision.Request{Model: r.Model, State: r.State, Questions: r.Questions})
+	if h1 != h2 {
+		t.Error("request hash changed")
+	}
+}
+
 func TestSkipReason(t *testing.T) {
 	for kind, want := range map[string]string{
 		KindBreakerOpen: "breaker_open", KindRateLimited: "rate_limited", KindOverload: "overload", KindBudget: "budget",

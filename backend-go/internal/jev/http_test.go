@@ -664,7 +664,7 @@ func TestLimiterThroughClient(t *testing.T) {
 }
 
 func TestInFlightCapThroughClient(t *testing.T) {
-	h := newHarness(t, mockupstream.Config{JevLatency: 300 * time.Millisecond})
+	h := newHarness(t, mockupstream.Config{JevLatency: time.Second})
 	cl := h.client(BackendOpenRouterDecisions, func(c *Config) { c.HTTP.MaxInFlight, c.HTTP.SyncReserve = 2, 0.5 })
 	done := make(chan error, 1)
 	go func() {
