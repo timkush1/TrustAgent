@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "recording": "node scripts/build-demo-recording.ts",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
