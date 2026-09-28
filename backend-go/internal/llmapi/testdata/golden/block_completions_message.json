@@ -1,0 +1,1 @@
+{"id":"cmpl-7","object":"text_completion","created":1760000300,"model":"gpt-3.5-turbo-instruct","choices":[{"text":"I can't confirm that from our policy documents. A person will follow up.","index":0,"logprobs":null,"finish_reason":"content_filter"}],"usage":{"prompt_tokens":6,"completion_tokens":5,"total_tokens":11}}
