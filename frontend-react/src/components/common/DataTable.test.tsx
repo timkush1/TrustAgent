@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/data/errors';
@@ -141,6 +141,35 @@ describe('DataTable', () => {
     expect(onEndReached).toHaveBeenCalledOnce();
     rerender(<DataTable<Claim> aria-label="Claims" columns={columns} rows={claims.slice(0, 8)} getRowId={(c) => c.id} totalRows={-1} onEndReached={onEndReached} />);
     expect(onEndReached).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again for a replaced list of the same length, as after a new filter', () => {
+    const onEndReached = vi.fn();
+    const props = { 'aria-label': 'Claims', columns, getRowId: (c: Claim) => c.id, totalRows: -1, onEndReached };
+    const { rerender } = render(<DataTable<Claim> {...props} rows={claims.slice(0, 5)} />);
+    expect(onEndReached).toHaveBeenCalledOnce();
+    rerender(<DataTable<Claim> {...props} rows={claims.slice(50, 55)} />);
+    expect(onEndReached).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not take the focused row, kept rendered far below the view, for reaching the end', async () => {
+    const onEndReached = vi.fn();
+    const props = { 'aria-label': 'Claims', columns, getRowId: (c: Claim) => c.id, totalRows: -1, onEndReached };
+    const { rerender } = render(<DataTable<Claim> {...props} rows={claims} />);
+    const viewport = screen.getByRole('grid').parentElement as HTMLElement;
+    Object.defineProperty(viewport, 'scrollHeight', { configurable: true, get: () => 36 + claims.length * 40 });
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, get: () => 400 });
+    await userEvent.tab();
+    await userEvent.keyboard('{End}');
+    await waitFor(() => expect(rowAt(101)).toHaveFocus());
+    expect(onEndReached).toHaveBeenCalledOnce();
+    // Back at the top, a new list of 60 rows: the focus position, clamped to its last row, stays
+    // rendered far below the view, but the viewer has not scrolled anywhere near it.
+    act(() => viewport.scrollTo({ top: 0 }));
+    rerender(<DataTable<Claim> {...props} rows={claims.slice(0, 60)} />);
+    expect(rowAt(61)).toHaveAttribute('tabindex', '0');
+    expect(rowAt(30)).toBeNull();
+    expect(onEndReached).toHaveBeenCalledOnce();
   });
 
   it("shows a later page's failure under the rows, with Retry", async () => {

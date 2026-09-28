@@ -44,7 +44,7 @@ export interface DataTableProps<Row> {
   maxHeight?: string;
   /** Rows that exist on the server; -1 when unknown (more pages). Defaults to rows.length. */
   totalRows?: number;
-  /** The last rows came into view: load the next page. Called once per row count. */
+  /** The last rows came into view: load the next page. Called once per list end (row count and last row). */
   onEndReached?: () => void;
   /** First load in flight: shows the loading state after 200 ms (page contract). */
   isLoading?: boolean;
@@ -125,16 +125,24 @@ export function DataTable<Row>({
     rangeExtractor,
   });
   const items = virtualizer.getVirtualItems();
-  const lastRendered = items.length > 0 ? items[items.length - 1].index : -1;
+  // The last row rendered for the viewport. The focused row is kept rendered wherever it is (see
+  // rangeExtractor), so when it trails the viewport's rows it says nothing about how far the
+  // viewer scrolled, and must not count as reaching the end.
+  let lastRendered = items.length > 0 ? items[items.length - 1].index : -1;
+  if (items.length > 1 && lastRendered === activeIndex && items[items.length - 2].index !== activeIndex - 1) {
+    lastRendered = items[items.length - 2].index;
+  }
 
-  // Ask once per row count: the next call waits until the list has grown (or shrunk).
-  const endRequestedAt = useRef(-1);
+  // Ask once per list end: the next call waits until the list has grown, shrunk or been replaced
+  // (a new filter's first page can have as many rows as the last list had).
+  const endKey = count === 0 ? '' : `${count}:${getRowId(rows[count - 1], count - 1)}`;
+  const endRequestedFor = useRef('');
   useEffect(() => {
     if (!onEndReached || count === 0 || lastRendered < count - END_THRESHOLD) return;
-    if (endRequestedAt.current === count) return;
-    endRequestedAt.current = count;
+    if (endRequestedFor.current === endKey) return;
+    endRequestedFor.current = endKey;
     onEndReached();
-  }, [onEndReached, lastRendered, count]);
+  }, [onEndReached, lastRendered, count, endKey]);
 
   // Move focus once the requested row is rendered (it always is: see rangeExtractor).
   useEffect(() => {
