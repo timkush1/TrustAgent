@@ -18,6 +18,8 @@
 
 # Contracts: the JSON/YAML files only; not the npm validator or the Go module.
 contracts/node_modules/
+# Build tooling (the api.v1 schema generator and its node_modules) is not an image input.
+contracts/tools/
 contracts/**/*.go
 contracts/go.mod
 contracts/*.mjs
