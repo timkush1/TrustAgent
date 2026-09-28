@@ -126,16 +126,51 @@ async def test_gate_cost_cap_exit_is_over_budget(gate_eval: FakeGateEval) -> Non
 
     record = await _gate(gate_eval).judge(example("e4"), budget)
 
-    assert record.status == OVER_BUDGET and budget.exhausted
-    assert budget.spent_usd == 0 and budget.reserved_usd == 0
+    assert record.status == OVER_BUDGET and record.error_kind == "gate_eval_cost_cap"
+    # The per-example ceiling stopped it, not the run's cap: the run carries on,
+    # and the reservation is charged (calls before the stop may have been billed).
+    assert not budget.exhausted
+    assert budget.spent_usd == pytest.approx(0.002) and budget.reserved_usd == 0
 
 
 async def test_gate_budget_error_line_is_over_budget(gate_eval: FakeGateEval) -> None:
     gate_eval.default(decision=None, error={"kind": "budget", "message": "cap"})
+    budget = CostBudget(1.0)
 
-    record = await _gate(gate_eval).judge(example("e5"), CostBudget(1.0))
+    record = await _gate(gate_eval).judge(example("e5"), budget)
 
-    assert record.status == OVER_BUDGET
+    assert record.status == OVER_BUDGET and not budget.exhausted
+
+
+async def test_gate_decision_skipped_for_budget_is_over_budget(gate_eval: FakeGateEval) -> None:
+    skipped = {
+        **decision(status="skipped", groundedness=None, contradiction=None, verdict=None),
+        "skip_reason": "budget",
+        "degraded": "budget",
+    }
+    gate_eval.default(decision=skipped, error=None)
+    budget = CostBudget(1.0)
+
+    record = await _gate(gate_eval).judge(example("e7"), budget)
+
+    assert record.status == OVER_BUDGET and record.predicted is None
+    assert budget.spent_usd == pytest.approx(0.002) and not budget.exhausted
+
+
+async def test_gate_undecided_verdict_is_failed_not_negative(gate_eval: FakeGateEval) -> None:
+    # partial: groundedness errored and contradiction stayed under warn, so the
+    # gate's verdict is unknown; that must not count as "not hallucinated".
+    gate_eval.default(
+        decision=decision(
+            status="partial", groundedness=None, contradiction=0.2, verdict="unknown"
+        ),
+        error=None,
+    )
+
+    record = await _gate(gate_eval).judge(example("e8"), CostBudget(1.0))
+
+    assert record.status == FAILED and record.error_kind == "gate_verdict_unknown"
+    assert record.predicted is None and record.score is None
 
 
 async def test_gate_refuses_to_start_past_the_cap(gate_eval: FakeGateEval) -> None:

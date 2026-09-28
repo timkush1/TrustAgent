@@ -38,11 +38,21 @@ gate-eval protocol (gate-eval/v1; implemented by backend-go/cmd/gate-eval):
           "error": null | {"kind": "...", "message": "..."}}
 
     Exit 0 when every line was answered (per-line errors in-band), 3 when the
-    cost cap stopped it (error kind "budget" in-band means the same), any other
+    --max-cost-usd cap stopped it (an in-band error kind "budget", or a
+    decision skipped with skip_reason "budget", means the same), any other
     code on a fatal error (stderr explains). The harness reads the decision's
-    `status`, `verdict`, `would_action`, `deep_audit`, `max_risk`, `gate_ms`,
-    `evaluators[ref].{status, risk_raw}` and `decision_model.{backend,
-    snapshot, latency_ms, cost_usd, cost_source}`.
+    `status`, `skip_reason`, `verdict`, `would_action`, `deep_audit`,
+    `max_risk`, `gate_ms`, `evaluators[ref].{status, risk_raw}` and
+    `decision_model.{backend, snapshot, latency_ms, cost_usd, cost_source,
+    calls}`.
+
+    The harness runs one example per invocation and passes that example's
+    reservation as --max-cost-usd, so a budget stop is a per-example ceiling:
+    the example is excluded as over budget and charged its reservation (calls
+    made before the stop may have been billed), and the run carries on under
+    its own cap. A decision whose verdict is `unknown` or `not_assessed` (an
+    evaluator errored, or nothing was assessed) is a gate failure, never a
+    "not hallucinated" prediction.
 """
 
 import asyncio
@@ -144,6 +154,9 @@ STATE_FIELD_ORDER = (
 )
 NONE_PROVIDED = "(none provided)"
 HALLUCINATION_VERDICTS = frozenset({"unsupported", "contradicted"})
+# decision/v1 verdicts that decide nothing (SPEC section 2.9 decide: an error, or
+# nothing assessed).
+UNDECIDED_VERDICTS = frozenset({"unknown", "not_assessed"})
 FLAGGING_ACTIONS = frozenset({"flag", "block"})
 
 
@@ -578,13 +591,14 @@ def parse_gate_decision(decision: Mapping[str, Any], config: GateEvalConfig) -> 
     if not isinstance(latency, (int, float)) or isinstance(latency, bool):
         latency = decision.get("gate_ms")
     cost = model.get("cost_usd")
-    ok = status in ("ok", "partial") and score is not None
+    undecided = verdict is not None and str(verdict) in UNDECIDED_VERDICTS
+    ok = status in ("ok", "partial") and score is not None and not undecided
     error_kind = None
     if not ok:
         degraded = decision.get("degraded")
         error_kind = f"gate_{status or 'unknown'}" + (f":{degraded}" if degraded else "")
         if status in ("ok", "partial"):
-            error_kind = "gate_no_signal"
+            error_kind = "gate_no_signal" if score is None else f"gate_verdict_{verdict}"
     calls = model.get("calls")
     return GateOutcome(
         ok=ok,
@@ -601,6 +615,17 @@ def parse_gate_decision(decision: Mapping[str, Any], config: GateEvalConfig) -> 
         calls=int(calls) if isinstance(calls, int) else (1 if model else 0),
         status=status,
     )
+
+
+def _budget_stop(answer: Optional[Mapping[str, Any]]) -> bool:
+    """Whether a gate-eval answer says its --max-cost-usd cap stopped the example."""
+    if answer is None:
+        return False
+    error = answer.get("error")
+    if isinstance(error, Mapping) and error.get("kind") == GATE_EVAL_BUDGET_KIND:
+        return True
+    decision = answer.get("decision")
+    return isinstance(decision, Mapping) and decision.get("skip_reason") == GATE_EVAL_BUDGET_KIND
 
 
 class GateJudge:
@@ -688,11 +713,12 @@ class GateJudge:
         wall_ms = (time.monotonic() - started) * 1000
 
         answer = self._answer(example.id, stdout)
-        if code == GATE_EVAL_EXIT_BUDGET or (
-            answer is not None and (answer.get("error") or {}).get("kind") == GATE_EVAL_BUDGET_KIND
-        ):
-            budget.release(reservation)
-            budget.exhausted = True
+        if code == GATE_EVAL_EXIT_BUDGET or _budget_stop(answer):
+            # This example's ceiling (--max-cost-usd = its reservation) stopped
+            # gate-eval, not the run's cap: exclude the example and carry on.
+            # Calls made before the stop may have been billed, so the
+            # reservation is charged (cost unknown).
+            budget.settle(reservation, None, system=self.system, example_id=example.id)
             return self._record(example, OVER_BUDGET, error_kind="gate_eval_cost_cap")
         if code != 0 or answer is None:
             budget.settle(reservation, None, system=self.system, example_id=example.id)
