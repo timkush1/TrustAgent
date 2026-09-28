@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "urls-not-run-without-evidence",
-  "status": "draft",
+  "status": "frozen",
   "description": "The URL detector runs only when evidence is present. Here there is none (only rules), so it does not run even though the response has a URL.",
   "input": {
     "detector": "urls_not_in_evidence",

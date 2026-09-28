@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "dates-month-name-not-in-evidence",
-  "status": "draft",
+  "status": "frozen",
   "description": "\"March 15, 2026\" (Month d, yyyy) normalizes to 2026-03-15. The evidence has the ISO dates 2026-03-10 and 2026-03-12 only: unknown, fires.",
   "input": {
     "detector": "dates_not_in_evidence",

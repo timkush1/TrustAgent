@@ -1,0 +1,21 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "citation-range-counts-items-before-dedup",
+  "status": "frozen",
+  "description": "Three items were extracted before dedup (two were identical, so two remain) and no markers: the range is max(0, 3) = 3. [3] is in range although only two items are left; [4] is not: fires on [4].",
+  "input": {
+    "detector": "citation_out_of_range",
+    "response": "Refunds [3] differ from exchanges [4].",
+    "evidence": [
+      {"id": "sys1", "source": "request_system", "text": "Refunds take 5 days."},
+      {"id": "sys3", "source": "request_system", "text": "Exchanges take 10 days."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {},
+    "evidence_meta": {"pre_dedup_items": 3, "max_marker": 0}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "[4]", "start": 34, "end": 37}]},
+  "tolerance": 1e-9
+}

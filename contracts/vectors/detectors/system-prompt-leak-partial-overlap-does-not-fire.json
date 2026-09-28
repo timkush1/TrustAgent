@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "system-prompt-leak-partial-overlap-does-not-fire",
-  "status": "draft",
+  "status": "frozen",
   "description": "The response shares about 110 characters with the long system prompt: every 200-code-point window of the prompt (stride 50, plus the final window) is longer than the overlap, so none occurs in the response: does not fire.",
   "input": {
     "detector": "system_prompt_leak",

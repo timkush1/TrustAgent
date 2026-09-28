@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-path-and-query-keep-their-case",
+  "status": "frozen",
+  "description": "Only the scheme and the authority are lowercased. The first URL becomes https://example.com/Docs?Plan=Annual, the evidence URL. The second differs in path and query case, so it is unknown: fires on it. The pointing emoji is two UTF-16 code units, which the offsets count.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "👉 https://EXAMPLE.com/Docs?Plan=Annual or https://example.com/docs?plan=annual",
+    "evidence": [
+      {
+        "id": "docs",
+        "source": "request_system",
+        "text": "Plan guide: https://example.com/Docs?Plan=Annual"
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "https://example.com/docs?plan=annual", "start": 43, "end": 79}]
+  },
+  "tolerance": 1e-9
+}

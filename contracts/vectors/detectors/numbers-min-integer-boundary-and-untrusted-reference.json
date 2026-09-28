@@ -1,0 +1,29 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-min-integer-boundary-and-untrusted-reference",
+  "status": "frozen",
+  "description": "min_integer is 10 and the skip is \"<= min_integer\": 10 is skipped, 11 is checked. The untrusted tool item mentions 11 and 250 but is never a reference, and the trusted evidence has 10 only: fires on 11 and 250, in text order.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "Plans include 10 projects and 11 dashboards; the 250 GB cap applies.",
+    "evidence": [
+      {"id": "plans", "source": "request_system", "text": "Every plan includes 10 projects."},
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "Plans include 11 dashboards and a 250 GB storage cap.",
+        "untrusted": true
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "11", "start": 30, "end": 32}, {"text": "250", "start": 49, "end": 52}]
+  },
+  "tolerance": 1e-9
+}

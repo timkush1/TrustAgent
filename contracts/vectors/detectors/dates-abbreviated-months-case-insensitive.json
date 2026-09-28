@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-abbreviated-months-case-insensitive",
+  "status": "frozen",
+  "description": "Month names match case-insensitively, with abbreviations and an optional dot. \"SEPT. 5, 2026\" is 2026-09-05, the ISO date in the evidence. \"sep 2026\" is the month 2026-09, a prefix of 2026-09-05: known. Does not fire.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "Renewal: SEPT. 5, 2026 (billing cycle sep 2026).",
+    "evidence": [
+      {"id": "renewal", "source": "request_system", "text": "Your plan renews on 2026-09-05."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}
