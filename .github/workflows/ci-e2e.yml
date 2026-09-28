@@ -2,7 +2,8 @@ name: CI (E2E)
 
 # Compose end-to-end suite (SPEC §3.4) running the S0 exit gate (SPEC §4.2):
 # the zero-key demo stack (make demo), doctor --expect demo, trafficgen
-# --expect over the s0 scenarios and the Playwright stack skeleton, with the
+# --expect over the s0 scenarios, the Playwright stack skeleton and the static
+# site's specs (built and served by vite preview), with the
 # compose logs uploaded on failure. The scripts job lints and unit-tests the
 # setup scripts the suite relies on and validates every compose profile.
 # No path filters on purpose: a required check that never reports would block
@@ -135,6 +136,16 @@ jobs:
         env:
           DASHBOARD_HOST_PORT: '3000'
         run: npx playwright test --project=stack -g skeleton
+
+      # The static GitHub Pages site needs no stack: build it and let Playwright serve it with
+      # vite preview (SPEC §3.3, §7.5: replay, landing, CSP and network specs).
+      - name: Playwright (static site)
+        working-directory: frontend-react
+        env:
+          PLAYWRIGHT_STATIC_PREVIEW: '1'
+        run: |
+          npm run build:static
+          npx playwright test --project=static
 
       - name: Collect logs
         if: failure()
