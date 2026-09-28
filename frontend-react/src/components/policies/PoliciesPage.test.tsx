@@ -81,6 +81,33 @@ describe('Policies page', { timeout: 20_000 }, () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Unsaved changes' })).not.toBeInTheDocument());
   });
 
+  it('saves with the version the draft started from, so an edit saved elsewhere is never overwritten', async () => {
+    const user = userEvent.setup();
+    const { control, ws } = renderPage('/app/policies');
+    await card('support-bot');
+    await chooseMode(user, 'support-bot', 'Observe');
+    await screen.findByRole('region', { name: 'Unsaved changes' });
+
+    // Someone else saves version 4; the live stream refreshes the page while the draft is open.
+    control.state.policies = policyState({ id: 4, etag: '"v4"', source: 'dashboard', author: 'other-admin', message: 'Edited elsewhere' });
+    ws.connect();
+    ws.send({ type: 'policy_updated', data: { version: 4, source: 'dashboard', author: 'other-admin', message: 'Edited elsewhere' } });
+    expect(await screen.findByText(/Version 4 · Edited in the dashboard/)).toBeInTheDocument();
+    expect(screen.getByText(/The policy changed on the server since you started/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review and save' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review and save a new policy version' });
+    await within(dialog).findByText('The server accepts this policy.');
+    await within(dialog).findByTestId('preview-impact');
+    await user.type(within(dialog).getByRole('textbox', { name: 'What changed and why' }), 'Observe support-bot');
+    await user.click(within(dialog).getByRole('button', { name: 'Save version' }));
+
+    expect(await within(dialog).findByText(/Someone changed the policy while you were editing/)).toBeInTheDocument();
+    const put = control.callsTo('/api/policies', 'PUT')[0];
+    expect(put.headers.get('if-match')).toBe('"v3"');
+    expect(control.state.policies).toMatchObject({ id: 4, message: 'Edited elsewhere' });
+  });
+
   it('shows server validation errors and blocks the save', async () => {
     const user = userEvent.setup();
     const control = createControlApi({

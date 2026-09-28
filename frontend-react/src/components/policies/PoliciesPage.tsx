@@ -336,6 +336,7 @@ export function PoliciesPage() {
               onOpenChange={setReviewOpen}
               state={state}
               draftYaml={draft.yaml}
+              baseEtag={draft.baseEtag}
               names={names}
               writeReason={writeReason}
               postReason={postReason}

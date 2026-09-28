@@ -37,6 +37,12 @@ export interface ReviewSaveDialogProps {
   onOpenChange: (open: boolean) => void;
   state: PolicyState;
   draftYaml: string;
+  /**
+   * The ETag of the policy version the draft was started from. The save sends it as If-Match, so
+   * a version saved elsewhere in the meantime (already shown here through a refetch) is answered
+   * with 412 instead of being overwritten by a draft that never saw it.
+   */
+  baseEtag: string;
   names: ReadonlyMap<string, string>;
   /** Why saving is not possible (read-only, not an admin, file-managed, locked). */
   writeReason: Reason | null;
@@ -75,6 +81,7 @@ export function ReviewSaveDialog({
   onOpenChange,
   state,
   draftYaml,
+  baseEtag,
   names,
   writeReason,
   postReason,
@@ -104,7 +111,7 @@ export function ReviewSaveDialog({
   });
 
   const save = useMutation({
-    mutationFn: () => ds.savePolicy({ yaml: draftYaml, message: message.trim() }, state.etag),
+    mutationFn: () => ds.savePolicy({ yaml: draftYaml, message: message.trim() }, baseEtag),
     onSuccess: (next) => {
       queryClient.setQueryData(qkc.policies.state, next);
       void queryClient.invalidateQueries({ queryKey: qkc.policies.versions });
