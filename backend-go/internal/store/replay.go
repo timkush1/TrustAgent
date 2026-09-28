@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -30,8 +29,7 @@ type ReplayRow struct {
 	DecisionSnapshot *string
 	// AuditVerdict is the newest deep-audit verdict of the trace, if any.
 	AuditVerdict *string
-	// Body is the trace body when ReplayFilter.WithBodies is set and one was kept (it may have
-	// expired: check ExpiresAt).
+	// Body is left nil by ForEachReplayDecision; a replay that must re-run a detector loads it.
 	Body *BodyRecord
 }
 
@@ -43,8 +41,6 @@ type ReplayFilter struct {
 	Limit int
 	// Routes, when not empty, keeps only decisions recorded on these routes.
 	Routes []string
-	// WithBodies joins the trace bodies (for detectors that must be re-run).
-	WithBodies bool
 }
 
 // MaxReplayRows is the largest dry-run window in rows (SPEC §2.4 row 26: limit <= 100000).
@@ -67,18 +63,11 @@ func (s *PostgresStore) ForEachReplayDecision(ctx context.Context, f ReplayFilte
 	q.WriteString(`
 		SELECT d.trace_id, d.created_at, d.route, d.policy_version, COALESCE(t.stream, false), COALESCE(t.source, ''),
 			d.late, d.decision, d.decision_snapshot, a.verdict`)
-	if f.WithBodies {
-		q.WriteString(`, b.trace_id IS NOT NULL, b.user_request, b.system_instructions, b.response_text, b.evidence,
-			b.rules, b.expires_at`)
-	}
 	q.WriteString(`
 		FROM gate_decisions d
 		LEFT JOIN traces t ON t.trace_id = d.trace_id
 		LEFT JOIN LATERAL (SELECT verdict FROM audits WHERE trace_id = d.trace_id
 			ORDER BY created_at DESC LIMIT 1) a ON true`)
-	if f.WithBodies {
-		q.WriteString(` LEFT JOIN trace_bodies b ON b.trace_id = d.trace_id`)
-	}
 	q.WriteString(` WHERE d.attempt = 0 AND d.created_at >= $1`)
 	if len(f.Routes) > 0 {
 		q.WriteString(` AND d.route = ANY(` + arg(f.Routes) + `)`)
@@ -92,34 +81,11 @@ func (s *PostgresStore) ForEachReplayDecision(ctx context.Context, f ReplayFilte
 	defer rows.Close()
 	for rows.Next() {
 		var r ReplayRow
-		dest := []any{&r.TraceID, &r.CreatedAt, &r.Route, &r.PolicyVersion, &r.Stream, &r.Source, &r.Late,
-			&r.Decision, &r.DecisionSnapshot, &r.AuditVerdict}
-		var (
-			hasBody bool
-			body    BodyRecord
-			rules   []byte
-			expires *time.Time
-		)
-		if f.WithBodies {
-			dest = append(dest, &hasBody, &body.UserRequest, &body.SystemInstructions, &body.ResponseText, &body.Evidence,
-				&rules, &expires)
-		}
-		if err := rows.Scan(dest...); err != nil {
+		if err := rows.Scan(&r.TraceID, &r.CreatedAt, &r.Route, &r.PolicyVersion, &r.Stream, &r.Source, &r.Late,
+			&r.Decision, &r.DecisionSnapshot, &r.AuditVerdict); err != nil {
 			return err
 		}
 		r.CreatedAt = r.CreatedAt.UTC()
-		if hasBody {
-			body.TraceID = r.TraceID
-			if expires != nil {
-				body.ExpiresAt = *expires
-			}
-			if len(rules) > 0 {
-				if err := json.Unmarshal(rules, &body.Rules); err != nil {
-					return fmt.Errorf("trace body rules: %w", err)
-				}
-			}
-			r.Body = &body
-		}
 		if err := fn(&r); err != nil {
 			return err
 		}

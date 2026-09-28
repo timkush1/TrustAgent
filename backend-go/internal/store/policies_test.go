@@ -376,12 +376,9 @@ func TestForEachReplayDecision(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	collect(ReplayFilter{Since: now.Add(-time.Hour), WithBodies: true})
+	collect(ReplayFilter{Since: now.Add(-time.Hour)})
 	if len(rows) != 4 || rows[0].TraceID != traceIDs[0] || rows[3].TraceID != traceIDs[3] {
 		t.Fatalf("rows %d", len(rows))
-	}
-	if rows[0].Body == nil || rows[0].Body.ResponseText == nil || *rows[0].Body.ResponseText != "Within 60 days." || rows[1].Body != nil {
-		t.Errorf("bodies %+v %+v", rows[0].Body, rows[1].Body)
 	}
 	if !rows[1].Stream || rows[0].Stream || rows[1].AuditVerdict == nil || *rows[1].AuditVerdict != "HALLUCINATED" || rows[0].AuditVerdict != nil {
 		t.Errorf("stream/audit %+v %+v", rows[0], rows[1])
@@ -395,7 +392,7 @@ func TestForEachReplayDecision(t *testing.T) {
 	}
 
 	collect(ReplayFilter{Since: now.Add(-90 * time.Second), Routes: []string{"support-bot"}})
-	if len(rows) != 2 || rows[0].Body != nil {
+	if len(rows) != 2 {
 		t.Errorf("window+route: %d rows", len(rows))
 	}
 	collect(ReplayFilter{Since: now.Add(-time.Hour), Limit: 1})
