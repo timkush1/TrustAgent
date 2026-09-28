@@ -46,7 +46,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 
-from .base import CompletionRequest, CompletionResponse, LLMProvider, MessageRole
+from .base import (
+    CompletionRequest,
+    CompletionResponse,
+    LLMProvider,
+    MessageRole,
+    normalized_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +216,8 @@ def mock_judge_scope(scenario: str = "") -> Iterator[MockJudgeScope]:
 class MockLLMProvider(LLMProvider):
     """Deterministic fixture-replay provider for evaluation, testing and the demo."""
 
+    provider_name = "mock"
+
     def __init__(
         self,
         model: str = "mock",
@@ -325,7 +333,16 @@ class MockLLMProvider(LLMProvider):
             logger.error(f"Mock judge fixture miss: {exc}")
             raise
 
-        return CompletionResponse(content=content, model=self.model, finish_reason="stop")
+        # The schema of a structured request is ignored; costs are simulated.
+        return self.priced(
+            CompletionResponse(
+                content=content,
+                model=self.model,
+                finish_reason="stop",
+                usage=normalized_usage(0, 0),
+                provider=self.provider_name,
+            )
+        )
 
     async def health_check(self) -> bool:
         return True

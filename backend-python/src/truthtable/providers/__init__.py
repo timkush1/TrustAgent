@@ -1,10 +1,12 @@
 """Register all available providers."""
 
-from .registry import register_provider
+from .anthropic import AnthropicProvider
+from .errors import BudgetError, ProviderConnectionError, ProviderError
+from .limiter import JudgeLimiter, LimitedProvider
+from .mock import MockLLMProvider
 from .ollama import OllamaProvider
 from .openai import OpenAIProvider
-from .anthropic import AnthropicProvider
-from .mock import MockLLMProvider
+from .registry import register_provider
 
 # Register providers
 register_provider("ollama", OllamaProvider)
@@ -13,9 +15,14 @@ register_provider("anthropic", AnthropicProvider)
 register_provider("mock", MockLLMProvider)
 
 __all__ = [
+    "AnthropicProvider",
+    "BudgetError",
+    "JudgeLimiter",
+    "LimitedProvider",
+    "MockLLMProvider",
     "OllamaProvider",
     "OpenAIProvider",
-    "AnthropicProvider",
-    "MockLLMProvider",
+    "ProviderConnectionError",
+    "ProviderError",
     "register_provider",
 ]

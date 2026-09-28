@@ -7,70 +7,88 @@ passed explicitly; it is never logged.
 
 API shape notes (vs. OpenAI):
 - The system prompt is a top-level "system" parameter, not a message role.
-- Responses carry content as a list of blocks; we use the first text block.
+- Responses carry content as a list of blocks; the text blocks are joined.
+- `stop_reason: "max_tokens"` means the answer was cut off (response.truncated).
+- Structured outputs use `output_config.format` (structured.py documents the
+  verified parameter and the TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS modes).
+- 429 and 529 ("overloaded_error") and other 5xx are retried (retry.py),
+  honouring `retry-after`.
 """
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Dict, Optional, Union
 
-import httpx
-
-from .base import CompletionRequest, CompletionResponse, LLMProvider, MessageRole
+from .base import CompletionRequest, CompletionResponse, MessageRole, normalized_usage
+from .errors import ProviderError
+from .http_provider import HTTPProvider
+from .structured import (
+    ANTHROPIC_OUTPUT_CONFIG,
+    StructuredOutputsMode,
+    anthropic_output_config,
+    rejects_parameter,
+)
+from .transport import JsonObject, bad_response, int_field, object_field
 
 logger = logging.getLogger(__name__)
 
 ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 
-class AnthropicProvider(LLMProvider):
+class AnthropicProvider(HTTPProvider):
     """
     Provider for the Anthropic Messages API.
 
     Args:
-        model: Model name (e.g., "claude-haiku-4-5-20251001")
+        model: Model name (e.g., "claude-haiku-4-5")
         api_key: API key; defaults to the ANTHROPIC_API_KEY environment variable
         base_url: API root
-        timeout: Request timeout in seconds
+        timeout: Request timeout in seconds (per attempt)
+        structured_outputs: auto | on | off (TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS)
+        **kwargs: HTTPProvider options (retry_policy, transport, price_table, ...)
     """
+
+    provider_name = "anthropic"
 
     def __init__(
         self,
-        model: str,
+        model: str = DEFAULT_ANTHROPIC_MODEL,
         api_key: Optional[str] = None,
-        base_url: str = "https://api.anthropic.com",
+        base_url: str = ANTHROPIC_BASE_URL,
         timeout: float = 60.0,
-        **kwargs,
+        structured_outputs: Union[str, StructuredOutputsMode] = StructuredOutputsMode.AUTO,
+        **kwargs: Any,
     ):
-        super().__init__(model=model, **kwargs)
+        super().__init__(model=model, base_url=base_url, timeout=timeout, **kwargs)
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not self.api_key:
             raise ValueError("Anthropic API key missing: set ANTHROPIC_API_KEY or pass api_key")
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
+        self.structured_outputs_mode = StructuredOutputsMode.parse(structured_outputs)
+        # Set once in `auto` mode when the API rejects output_config.
+        self._structured_outputs_rejected = False
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=self.timeout,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": self.api_key,
-                    "anthropic-version": ANTHROPIC_VERSION,
-                },
-            )
-        return self._client
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": ANTHROPIC_VERSION,
+        }
 
-    async def complete(self, request: CompletionRequest) -> CompletionResponse:
-        client = await self._get_client()
+    @property
+    def supports_structured_outputs(self) -> bool:
+        return (
+            self.structured_outputs_mode is not StructuredOutputsMode.OFF
+            and not self._structured_outputs_rejected
+        )
 
+    def _payload(self, request: CompletionRequest, structured: bool) -> JsonObject:
         # Anthropic takes the system prompt as a top-level parameter.
         system_parts = [m.content for m in request.messages if m.role == MessageRole.SYSTEM]
         chat_messages = [m.to_dict() for m in request.messages if m.role != MessageRole.SYSTEM]
 
-        payload = {
+        payload: Dict[str, Any] = {
             "model": request.model or self.model,
             "messages": chat_messages,
             "max_tokens": request.max_tokens,
@@ -78,51 +96,63 @@ class AnthropicProvider(LLMProvider):
         }
         if system_parts:
             payload["system"] = "\n\n".join(system_parts)
+        if structured and request.response_schema is not None:
+            payload[ANTHROPIC_OUTPUT_CONFIG] = anthropic_output_config(request.response_schema)
+        return payload
 
+    async def _complete(self, request: CompletionRequest) -> CompletionResponse:
+        structured = request.response_schema is not None and self.supports_structured_outputs
         try:
-            response = await client.post("/v1/messages", json=payload)
-            response.raise_for_status()
-            data = response.json()
-
-            text_blocks = [
-                b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"
-            ]
-            usage = data.get("usage", {})
-            prompt_tokens = usage.get("input_tokens", 0)
-            completion_tokens = usage.get("output_tokens", 0)
-
-            return CompletionResponse(
-                content="".join(text_blocks),
-                model=data.get("model", request.model),
-                finish_reason=data.get("stop_reason", "stop"),
-                usage={
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                },
+            data = await self._request(
+                "POST",
+                "/v1/messages",
+                self._payload(request, structured),
+                timeout_s=request.timeout_s,
             )
+        except ProviderError as exc:
+            if not (
+                structured
+                and self.structured_outputs_mode is StructuredOutputsMode.AUTO
+                and rejects_parameter(exc, ANTHROPIC_OUTPUT_CONFIG)
+            ):
+                raise
+            self._structured_outputs_rejected = True
+            logger.warning(
+                f"Anthropic rejected structured outputs for model {request.model or self.model} "
+                f"({exc}); continuing without them (TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS=auto)"
+            )
+            structured = False
+            data = await self._request(
+                "POST", "/v1/messages", self._payload(request, False), timeout_s=request.timeout_s
+            )
+        return self._parse(data, request, structured)
 
-        except httpx.ConnectError as e:
-            logger.error(f"Failed to connect to Anthropic at {self.base_url}: {e}")
-            raise ConnectionError(f"Cannot connect to Anthropic at {self.base_url}") from e
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Anthropic returned error {e.response.status_code}")
-            raise RuntimeError(
-                f"Anthropic request failed: {e.response.status_code} - {e.response.text}"
-            ) from e
+    def _parse(
+        self, data: JsonObject, request: CompletionRequest, structured: bool
+    ) -> CompletionResponse:
+        blocks = data.get("content")
+        if not isinstance(blocks, list):
+            raise bad_response(self.provider_name, "content blocks")
+        text_blocks = [
+            str(b.get("text", ""))
+            for b in blocks
+            if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        usage = object_field(data, "usage")
+        response = CompletionResponse(
+            content="".join(text_blocks),
+            model=str(data.get("model") or request.model or self.model),
+            finish_reason=str(data.get("stop_reason") or "stop"),
+            usage=normalized_usage(
+                int_field(usage, "input_tokens"), int_field(usage, "output_tokens")
+            ),
+            provider=self.provider_name,
+            structured=structured,
+        )
+        return self.priced(response)
 
     async def health_check(self) -> bool:
-        client = await self._get_client()
-        try:
-            response = await client.get("/v1/models", timeout=10.0)
-            response.raise_for_status()
-            return True
-        except Exception as e:
-            logger.error(f"Anthropic health check failed: {e}")
-            return False
-
-    async def close(self):
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        healthy = await self._probe("/v1/models")
+        if not healthy:
+            logger.error("Anthropic health check failed")
+        return healthy
