@@ -48,6 +48,11 @@ func classifyStatus(status int, header http.Header, body []byte, retryAfterCap t
 	}
 	effect := effectNeutral
 	switch {
+	case status == http.StatusForbidden && env.moderation:
+		// OpenRouter's moderation 403 judges the input, not the key: opening the breaker for the
+		// auth cooldown would let any flagged prompt pause fast checks for everyone.
+		e.Kind = KindBadRequest
+		e.Message = "the provider's moderation flagged the input: " + e.Message
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		e.Kind, effect = KindAuth, effectAuth
 	case status == http.StatusPaymentRequired:
@@ -78,8 +83,11 @@ func classifyStatus(status int, header http.Header, body []byte, retryAfterCap t
 		e.Kind, effect = KindBadResponse, effectFault
 	}
 	e.Hint = Hint(e.Kind)
-	if e.Kind == KindCredits && e.Retryable {
+	switch {
+	case e.Kind == KindCredits && e.Retryable:
 		e.Hint = "OpenRouter's in-flight budget for this key was exceeded; TrustAgent retries after Retry-After."
+	case env.moderation && e.Kind == KindBadRequest:
+		e.Hint = "The provider's moderation refused this one input; the key is fine and other requests are unaffected."
 	}
 	return e, effect
 }
@@ -134,6 +142,8 @@ type envelope struct {
 	message     string
 	errorType   string
 	limitSource string
+	// moderation is set for OpenRouter's moderation error (metadata.reasons / flagged_input).
+	moderation bool
 }
 
 // parseEnvelope reads the vendor error envelopes:
@@ -167,6 +177,9 @@ func parseEnvelope(body []byte) envelope {
 			if ls, ok := obj.Metadata["limit_source"].(string); ok {
 				env.limitSource = ls
 			}
+			_, flagged := obj.Metadata["flagged_input"]
+			_, reasons := obj.Metadata["reasons"]
+			env.moderation = flagged || reasons
 			// OpenRouter puts the provider's own message in metadata.raw.
 			if detail, ok := obj.Metadata["raw"].(string); ok && env.message != "" && !strings.Contains(env.message, detail) {
 				env.message += ": " + detail

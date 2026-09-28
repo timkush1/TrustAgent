@@ -22,6 +22,9 @@ func TestClassifyStatus(t *testing.T) {
 	}{
 		{"401 openrouter", 401, nil, `{"error":{"code":401,"message":"No auth credentials found"}}`, KindAuth, effectAuth, false, 0, "No auth credentials found"},
 		{"403 typesafe detail object", 403, nil, `{"detail":{"error_type":"forbidden","message":"Key disabled"}}`, KindAuth, effectAuth, false, 0, "Key disabled"},
+		{"403 moderation judges the input, not the key", 403, nil,
+			`{"error":{"code":403,"message":"Your input was flagged","metadata":{"reasons":["harassment"],"flagged_input":"…","provider_name":"X","model_slug":"m"}}}`,
+			KindBadRequest, effectNeutral, false, 0, "moderation flagged the input: Your input was flagged"},
 		{"402 credits", 402, nil, `{"error":{"code":402,"message":"Insufficient credits"}}`, KindCredits, effectAuth, false, 0, "Insufficient credits"},
 		{"402 in-flight without Retry-After stays credits", 402, nil,
 			`{"error":{"code":402,"message":"budget","metadata":{"limit_source":"openrouter_in_flight_budget"}}}`, KindCredits, effectAuth, false, 0, "budget"},
