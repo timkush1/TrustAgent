@@ -59,6 +59,8 @@ vectors-ts: ## Run the golden vectors against the TypeScript decision core (src/
 # The `stack` project runs against a running stack's dashboard: start one with `make demo`.
 # PLAYWRIGHT_BASE_URL overrides the address (default http://localhost:${DASHBOARD_HOST_PORT:-3000}).
 # PLAYWRIGHT_ARGS narrows the run, e.g. `make test-e2e-web PLAYWRIGHT_ARGS="-g skeleton"` (the S0 gate).
+# The policy-edit spec signs in as admin: set TRUSTAGENT_SETUP_URL (the proxy's SETUP link, or a new
+# one from `make setup-url`) or TRUSTAGENT_ADMIN_KEY; without either it is skipped with the reason.
 PLAYWRIGHT_ARGS ?=
 
 playwright-install: ## Install the Chromium build the Playwright specs use (once per machine; add --with-deps on a bare Linux box)
