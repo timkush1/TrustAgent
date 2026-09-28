@@ -65,14 +65,16 @@ func (p *Policy) Label(r *Route) string {
 // modeRank orders modes by strictness for overrides.client_mode stricter_only.
 var modeRank = map[string]int{decision.ModeObserve: 0, decision.ModeFlag: 1, decision.ModeBlock: 2, decision.ModeFallback: 2}
 
-// enforceable are the modes this build can apply; a client asking for another mode is ignored.
-var enforceable = []string{decision.ModeObserve, decision.ModeFlag}
-
 // Mode returns the configured mode for a request to route r: the route mode, or the mode the client
 // asked for in X-TrustAgent-Mode when overrides.client_mode allows it (stricter_only: only a
-// stricter mode). The second result reports whether the client's mode was applied.
+// stricter mode). The second result reports whether the client's mode was applied. A client may
+// only ask for a mode this build enforces (block and fallback need Env.Enforcing).
 func (p *Policy) Mode(r *Route, requested string) (string, bool) {
 	requested = strings.ToLower(strings.TrimSpace(requested))
+	enforceable := []string{decision.ModeObserve, decision.ModeFlag}
+	if p.enforcing {
+		enforceable = validModes
+	}
 	if requested == "" || requested == r.Mode || !slices.Contains(enforceable, requested) {
 		return r.Mode, false
 	}

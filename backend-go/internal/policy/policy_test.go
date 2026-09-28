@@ -15,12 +15,14 @@ import (
 
 func registry(t *testing.T) *evaluators.Registry {
 	t.Helper()
-	r, err := evaluators.Builtins()
+	r, err := registryFor()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return r
 }
+
+func registryFor() (*evaluators.Registry, error) { return evaluators.Builtins() }
 
 func parse(t *testing.T, doc string) *Policy {
 	t.Helper()
@@ -111,7 +113,7 @@ func TestParseRejects(t *testing.T) {
 		"empty":               {"", "version must be 1"},
 		"unknown field":       {"version: 1\ndefaults: {modes: flag}\n", "line 2"},
 		"unknown route field": {"version: 1\nroutes:\n  - name: a\n    match: {}\n    enforce: true\n", "line 5"},
-		"block mode":          {"version: 1\nroutes:\n  - name: pay\n    match: {}\n    mode: block\n", "block and fallback land in P3"},
+		"block mode":          {"version: 1\nroutes:\n  - name: pay\n    match: {}\n    mode: block\n", "not enforced by this build"},
 		"bad mode":            {"version: 1\ndefaults: {mode: strict}\n", `unknown value "strict"`},
 		"reserved name":       {"version: 1\nroutes:\n  - name: default\n    match: {}\n", "reserved"},
 		"duplicate name":      {"version: 1\nroutes:\n  - {name: a, match: {}}\n  - {name: a, match: {}}\n", "duplicate route"},
