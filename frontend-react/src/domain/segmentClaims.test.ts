@@ -45,6 +45,34 @@ describe('segmentClaims', () => {
     expect(r.segments.find((s) => s.verdict)?.text).toBe('30 €');
   });
 
+  it('marks the characters the engine located in CJK and emoji text (engine offsets, not indexOf)', () => {
+    // Offsets computed by the engine's aligner (backend-python text/spans.py align_quote) for this
+    // exact text. Python indexes code points, so it must convert: '富士山…' starts at code point 3
+    // but UTF-16 offset 5, after the two astral emoji.
+    const text = '🗻🎉 富士山は日本にある。退款期限为30天，不是60 days. Launch day 🚀 went well.';
+    const r = segmentClaims(text, [
+      claim(0, 'SUPPORTED', at(5, 14)),
+      claim(1, 'CONTRADICTED', at(15, 23)),
+      claim(2, 'UNSUPPORTED', at(26, 33)),
+      claim(3, 'PARTIALLY_SUPPORTED', at(42, 58)),
+    ]);
+    expect(r.segments.filter((s) => s.verdict).map((s) => [s.text, s.verdict])).toEqual([
+      ['富士山は日本にある', 'SUPPORTED'],
+      ['退款期限为30天', 'CONTRADICTED'],
+      ['60 days', 'UNSUPPORTED'],
+      ['day 🚀 went well', 'PARTIALLY_SUPPORTED'],
+    ]);
+    expect(r.segments.map((s) => s.text).join('')).toBe(text);
+    expect(r.unlocated).toEqual([]);
+  });
+
+  it('keeps engine offsets on the original text when it holds characters the engine strips', () => {
+    // The engine audits the text without the zero-width space and maps the span back (19..26).
+    const text = 'Refund​ window: 👋 30 days.';
+    const r = segmentClaims(text, [claim(0, 'CONTRADICTED', at(19, 26))]);
+    expect(r.segments.find((s) => s.verdict)?.text).toBe('30 days');
+  });
+
   it('never splits a surrogate pair', () => {
     const text = 'ab😀cd';
     // 3 is inside the emoji (a high surrogate at 2, low at 3); 4 is after it.
