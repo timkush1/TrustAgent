@@ -5,9 +5,11 @@ Benchmark runner (SPEC section 3.2: concurrency, cost cap, resumable cache).
 
 - at most `concurrency` examples at once;
 - each result is appended to a JSON Lines cache keyed by
-  sha256(example id + the judge's fingerprint: system, provider, model,
-  prompts or binary), so an interrupted run resumes where it stopped and a
-  changed judge never reuses stale results. Failed examples are cached too
+  sha256(example id + the example's content digest + the judge's
+  fingerprint: system, provider, model, prompts or binary), so an
+  interrupted run resumes where it stopped, and neither a changed judge nor
+  an example whose text or label changed under the same id (another dataset
+  revision or preparation option) reuses stale results. Failed examples are cached too
   (a resumed run does not pay for them again) unless `retry_failed`;
   over-budget examples are not, so a resumed run with a larger cap runs them;
 - the run's CostBudget is shared by every system: once a reservation is
@@ -37,15 +39,19 @@ EXAMPLE_TIMEOUT_S = 600.0
 Progress = Callable[[str, int, int], None]
 
 
-def cache_key(example_id: str, fingerprint: Mapping[str, Any]) -> str:
-    """The cache key of one example's result under one judge configuration."""
-    canonical = json.dumps(
-        {"example": example_id, "judge": fingerprint},
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
+def _sha256_json(value: Any) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def example_digest(example: BenchExample) -> str:
+    """SHA-256 of everything an example carries (texts, evidence, label, meta)."""
+    return _sha256_json(example.to_json())
+
+
+def cache_key(example_id: str, fingerprint: Mapping[str, Any], example_sha256: str = "") -> str:
+    """The cache key of one example's result under one judge configuration."""
+    return _sha256_json({"example": example_id, "content": example_sha256, "judge": fingerprint})
 
 
 class ResultCache:
@@ -124,7 +130,7 @@ async def run_judge(
 
     async def one(example: BenchExample) -> JudgeRecord:
         nonlocal done
-        key = cache_key(example.id, fingerprint)
+        key = cache_key(example.id, fingerprint, example_digest(example))
         cached = cache.get(key)
         if cached is not None and not (retry_failed and cached.status == FAILED):
             run.reused += 1

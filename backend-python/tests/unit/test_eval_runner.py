@@ -5,6 +5,7 @@ exclusion, and a spend ledger that carries the cap across sessions.
 """
 
 import asyncio
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -216,6 +217,22 @@ async def test_a_new_judge_configuration_does_not_reuse_results(tmp_path: Path) 
     assert run.reused == 0 and other.judged == ["e0", "e1"]
     assert cache_key("e0", {"model": "m1"}) != cache_key("e0", {"model": "m2"})
     assert cache_key("e0", {"a": 1, "b": 2}) == cache_key("e0", {"b": 2, "a": 1})
+
+
+async def test_a_changed_example_under_the_same_id_is_judged_again(tmp_path: Path) -> None:
+    # Another dataset revision (or preparation option) can change an example's
+    # text or label under the same id: its cached result must not be reused.
+    cache = ResultCache(tmp_path / "cache.jsonl")
+    judge = FakeJudge(cost=0.0)
+    await run_judge(judge, EXAMPLES[:1], budget=CostBudget(1.0), cache=cache)
+
+    relabelled = dataclasses.replace(EXAMPLES[0], label_hallucinated=False)
+    run = await run_judge(judge, [relabelled], budget=CostBudget(1.0), cache=cache)
+
+    assert run.reused == 0 and judge.judged == ["e0", "e0"]
+    assert run.records[0].label is False
+    again = await run_judge(judge, [relabelled], budget=CostBudget(1.0), cache=cache)
+    assert again.reused == 1
 
 
 async def test_a_slow_example_times_out(tmp_path: Path) -> None:
