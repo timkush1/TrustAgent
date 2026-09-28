@@ -129,6 +129,8 @@ type envOpts struct {
 	store      store.Store // default: a memStore
 	// engineDown makes the fake engine fail its health checks.
 	engineDown bool
+	// rateLimit is TRUTHTABLE_RATE_LIMIT_PER_MINUTE (default: high enough never to trip).
+	rateLimit int
 }
 
 type testEnv struct {
@@ -151,6 +153,9 @@ func testConfig(t *testing.T, o envOpts) *config.Config {
 	cfg.Jev.Backend, cfg.Jev.MockMode, cfg.Jev.MockLatency, cfg.Jev.MockFixtures = "mock", "scenario", 0, ""
 	cfg.UpstreamURL = "http://127.0.0.1:1" // test_response answers; nothing reaches the upstream
 	cfg.RateLimitPerMinute, cfg.UploadLimitPerMin = 100000, 100000
+	if o.rateLimit > 0 {
+		cfg.RateLimitPerMinute = o.rateLimit
+	}
 	cfg.DatabaseURL, cfg.RedisURL, cfg.InternalToken = "", "", ""
 	cfg.EngineHealthInterval = time.Hour
 	cfg.WorkerCount = 2

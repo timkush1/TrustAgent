@@ -133,8 +133,11 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	if limiter == nil {
 		limiter = middleware.NewMemoryLimiter()
 	}
-	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute)
-	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute)
+	// /api answers 429 as an ApiErrorBody, /v1 in the upstream API's error shape (SPEC §2.12).
+	apiDeny := func(c *gin.Context, status int, code, message string) { abortAPI(c, status, code, message) }
+	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute, apiDeny)
+	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute, apiDeny)
+	v1RateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute, proxy.Deny)
 	bodyLimit := middleware.BodyLimit(cfg.MaxBodyBytes)
 	read, ingest := s.auth.require(authz.ScopeRead), s.auth.require(authz.ScopeIngest)
 	writable := s.writable()
@@ -160,7 +163,7 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	// LLM API (SPEC §2.12): every /v1 response carries the trace id; ingest auth reads
 	// X-TrustAgent-Key only, so Authorization stays the client's upstream credential (B1).
 	h := s.gateway.handler
-	v1 := r.Group("/v1", h.TraceIDs(), s.gateway.auth.Ingest(proxy.Deny), rateLimit)
+	v1 := r.Group("/v1", h.TraceIDs(), s.gateway.auth.Ingest(proxy.Deny), v1RateLimit)
 	v1.POST("/chat/completions", bodyLimit, h.ChatCompletions)
 	// Proxied but not gated yet: completions are gated in P3; /v1/responses stays ungated.
 	v1.POST("/completions", bodyLimit, h.Passthrough(proxy.StatusSkippedUnsupportedAPI))

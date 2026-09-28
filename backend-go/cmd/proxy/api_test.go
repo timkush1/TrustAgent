@@ -267,6 +267,41 @@ func TestAPIValidationAndErrors(t *testing.T) {
 	}
 }
 
+// TestRateLimitedErrorShapes: a refused request is 429 rate_limited with Retry-After, as an
+// ApiErrorBody on /api and in the OpenAI error shape on /v1 (SPEC §2.4, §2.12).
+func TestRateLimitedErrorShapes(t *testing.T) {
+	env := newTestEnv(t, envOpts{rateLimit: 1})
+	env.get("/api/traces", testKey)
+	code, body := env.get("/api/traces", testKey)
+	if code != http.StatusTooManyRequests || !strings.Contains(string(body), `"code":"rate_limited"`) {
+		t.Fatalf("/api over the limit: HTTP %d %s", code, body)
+	}
+	contractstest.ValidateJSON(t, schemaError, body)
+
+	s := loadDemoScenarios(t)["grounded-pass"]
+	env.send(s)
+	req, _ := http.NewRequest(http.MethodPost, env.http.URL+"/v1/chat/completions", strings.NewReader(`{"model":"m","messages":[]}`))
+	req.Header.Set("X-TrustAgent-Key", testKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var openAI struct {
+		Error struct {
+			Type string `json:"type"`
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&openAI); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" ||
+		openAI.Error.Type != "trustagent_error" || openAI.Error.Code != "rate_limited" || resp.Header.Get("X-TrustAgent-Trace-Id") == "" {
+		t.Errorf("/v1 over the limit: HTTP %d %+v %v", resp.StatusCode, openAI, resp.Header)
+	}
+}
+
 func TestHealthAndStatus(t *testing.T) {
 	env := newTestEnv(t, envOpts{demo: true})
 	code, body := env.get("/health", "")
