@@ -348,6 +348,7 @@ async def test_evaluate_results_carry_the_judge(monkeypatch: pytest.MonkeyPatch)
     assert result.verdict == pb.AUDIT_VERDICT_GROUNDED
     assert result.judge.effective_provider == "anthropic"
     assert result.judge.model == "claude-haiku-4-5"
+    assert result.judge.healthy is True
 
 
 # ---------------------------------------------------------------------------
@@ -412,3 +413,17 @@ async def test_rpcs_beyond_max_rpcs_are_rejected(monkeypatch: pytest.MonkeyPatch
         await first
 
     assert exc_info.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+
+
+async def test_result_judge_health_follows_the_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def failing_run_audit(**kwargs: Any) -> Dict[str, Any]:
+        raise RuntimeError("judge down")
+
+    monkeypatch.setattr(server_mod, "run_audit", failing_run_audit)
+    monkeypatch.setattr(server_mod, "_failure_kind", lambda exc: "judge_unavailable")
+
+    async with serving(servicer_for(FakeJudge())) as stub:
+        result = await stub.Evaluate(pb.AuditRequest(request_id="r"), timeout=RPC_TIMEOUT_S)
+
+    assert result.status == pb.AUDIT_STATUS_FAILED
+    assert result.judge.healthy is False

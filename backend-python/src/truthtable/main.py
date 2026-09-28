@@ -246,6 +246,11 @@ async def main() -> None:
         )
         raise SystemExit(STRICT_CONFIG_EXIT_CODE)
 
+    # contracts.py reads TRUTHTABLE_CONTRACTS_DIR from the process environment;
+    # hand it a value that came from a dotenv file (the environment still wins).
+    if settings.contracts_dir.strip().lower() not in ("", "auto"):
+        os.environ.setdefault("TRUTHTABLE_CONTRACTS_DIR", settings.contracts_dir)
+
     configure_langsmith(settings, logger)
     load_price_table(settings, logger)
 

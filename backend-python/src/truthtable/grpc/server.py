@@ -60,6 +60,9 @@ QDRANT_PROBE_TIMEOUT_S = 1.0
 DEFAULT_MAX_RPCS = 64
 DEFAULT_MAX_AUDITS = 16
 
+# AuditResult.error_kind values that mean the judge itself failed.
+_JUDGE_FAILURE_KINDS = frozenset({"judge_unavailable", "decomposer_failed"})
+
 NO_JUDGE_TRACE = (
     "Not assessed: the engine has no audit judge configured (LLM_PROVIDER); "
     "no LLM call was made."
@@ -269,7 +272,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         async with self._audit_slots:
             result = await self._evaluate(request, context)
         if self.engine is not None:
-            result.judge.CopyFrom(judge_info(self.engine.judge, self._judge_healthy))
+            # JudgeInfo.healthy describes this audit: false only when it failed
+            # because the judge did not answer.
+            judge_failed = result.error_kind in _JUDGE_FAILURE_KINDS
+            result.judge.CopyFrom(judge_info(self.engine.judge, not judge_failed))
         return result
 
     def _not_assessed_without_judge(
