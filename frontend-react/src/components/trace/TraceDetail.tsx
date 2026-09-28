@@ -6,7 +6,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, SearchX } from 'lucide-react';
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import { useDataSource } from '@/app/services';
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
@@ -36,6 +36,8 @@ const isNotFound = (err: unknown) => isApiError(err) && err.kind === 'http' && e
 
 export function TraceDetail({ traceId }: { traceId: string }) {
   const ds = useDataSource();
+  // Claim marks in the answer link to their rows in the Claims section by id.
+  const claimIdPrefix = useId();
   const detailQuery = useQuery(traceQuery(ds, traceId));
   const live = useStreamStore((s) => s.traces[traceId]);
   const liveDecision = useStreamStore((s) => s.decisions[traceId]);
@@ -87,10 +89,10 @@ export function TraceDetail({ traceId }: { traceId: string }) {
       {partialError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
       <OutcomeCard summary={summary} decision={decision} />
       <div className="grid gap-6 @4xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <AnswerSection view={view} />
+        <AnswerSection view={view} claimIdPrefix={claimIdPrefix} />
         <div className="space-y-6">
           <ChecksList summary={summary} decision={decision} />
-          <ClaimsSection summary={summary} audit={audit} />
+          <ClaimsSection summary={summary} audit={audit} claimIdPrefix={claimIdPrefix} />
         </div>
       </div>
       <TraceFacts summary={summary} decision={decision} audit={audit} />
