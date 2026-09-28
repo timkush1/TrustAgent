@@ -46,6 +46,9 @@ ENV_EXAMPLE_REL = ".env.example"
 MAX_BASIC_KEYS = 15
 # .env.example comment lines stay within this width ("# " included).
 ENV_WIDTH = 80
+# Runtime-settable keys are edited on the dashboard's Settings page, which ships in P4
+# (SPEC §4.2). Set this to "" once it has landed; the generated docs then drop the tag.
+SETTINGS_PHASE = "P4"
 
 # Plain-language names for the registry's service ids (schema: ConfigKey.services).
 SERVICE_TEXT: Dict[str, str] = {
@@ -312,6 +315,17 @@ def build_registry(data: Any, schema: Mapping[str, Any]) -> Registry:
             problems.append(f"{key['name']}: kind enum needs an enum list")
         if key["secret"] and key["default"] not in ("", None):
             problems.append(f"{key['name']}: a secret cannot ship a default")
+    # Each group heading needs an anchor of its own for the index of docs/CONFIGURATION.md.
+    anchors = {_slug(h): h for h in re.findall(r"^#+ (.+)$", _MD_INTRO, re.MULTILINE)}
+    for title in (g["title"] for g in data["groups"]):
+        anchor = _slug(title)
+        if not anchor:
+            problems.append(f"group title {title!r} gives an empty heading anchor")
+        elif anchor in anchors:
+            problems.append(
+                f"group title {title!r} gets the heading anchor #{anchor} of {anchors[anchor]!r}"
+            )
+        anchors.setdefault(anchor, title)
     basic = [k["name"] for k in data["keys"] if not k["advanced"]]
     if len(basic) > MAX_BASIC_KEYS:
         problems.append(
@@ -384,10 +398,17 @@ def _md_text(text: str) -> str:
 
 
 def _md_code(text: str) -> str:
-    """A code span that is safe inside a table cell."""
+    """A code span that is safe inside a table cell; an empty value reads *empty*.
+
+    The fence is one backtick longer than the longest backtick run inside, and padded with a
+    space when the text holds backticks (CommonMark strips one space from each side).
+    """
     text = " ".join(text.split()).replace("|", "\\|")
-    fence = "``" if "`" in text else "`"
-    pad = " " if fence == "``" or text.startswith(" ") or text.endswith(" ") else ""
+    if not text:
+        return "*empty*"
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * (longest + 1)
+    pad = " " if longest else ""
     return f"{fence}{pad}{text}{pad}{fence}"
 
 
@@ -434,7 +455,7 @@ def md_details(key: Mapping[str, Any]) -> str:
         pairs = [f"{_md_code(s)} = {_md_code(v)}" for s, v in key["shorthands"].items()]
         sentences.append(f"Shorthands: {', '.join(pairs)}.")
     if key.get("runtime") == "settable":
-        sentences.append("Also editable while running (dashboard Settings).")
+        sentences.append(f"Also editable while running in {_settings_page()}.")
     elif key.get("runtime") == "seed":
         sentences.append("Seeds a value that is then edited in the dashboard or policy file.")
     return " ".join(sentences)
@@ -453,6 +474,11 @@ def _restart(key: Mapping[str, Any]) -> str:
 def _slug(title: str) -> str:
     """The anchor GitHub gives a Markdown heading."""
     return re.sub(r"[^\w\- ]", "", title.strip().lower()).replace(" ", "-")
+
+
+def _settings_page() -> str:
+    """Where runtime-settable keys are edited, with the phase that ships it while pending."""
+    return "dashboard Settings" + (f" *(from {SETTINGS_PHASE})*" if SETTINGS_PHASE else "")
 
 
 # ----------------------------------------------------------------------------- renderers
@@ -484,9 +510,10 @@ every other key is marked *advanced* and has a safe default.
 - **Which value wins at start.** Built-in default, then `.env`, then the process
   environment. A variable that is already set in the environment is never overwritten
   by `.env`.
-- **Settings you can change while running** (marked below) also have a value in the
-  dashboard. A non-empty environment variable always wins over it and shows there as
-  read-only (*managed by environment*).
+- **Settings you can change while running** (marked *Also editable while running*)
+  also get a value in {settings_page}. A non-empty
+  environment variable always wins over it and shows there as read-only (*managed by
+  environment*); to change such a value, edit `.env` and run `make up` again.
 - **Durations** use Go syntax in both services: `800ms`, `30s`, `5m`, `2160h`.
 - **Mistakes are reported, not guessed.** An invalid value produces a warning with a
   hint, and an unknown `TRUTHTABLE_*` name gets a *did you mean …?* suggestion. With
@@ -506,8 +533,11 @@ every other key is marked *advanced* and has a safe default.
 | Advanced | `no` = listed in `.env.example`. `yes` = add it to `.env` yourself when you \
 need it. |
 | Secret | `yes` = never logged, never sent to the browser, masked in the dashboard. |
-| Restart | `yes` = takes effect after a restart (`make up` again); `rebuild` = after \
-rebuilding the dashboard image; `no` = applied while running. |
+| Restart | What a change needs. `yes` = a restart: edit `.env`, then run `make up` again. \
+`rebuild` = a new build: the key is read only when the dashboard bundle is built (for \
+example `npm run build` in `frontend-react/`). \
+`no` = nothing when changed in {settings_page}; a value in `.env` still takes \
+effect at the next `make up`. |
 | Description | What it does, then the value syntax. |
 
 ## Groups
@@ -523,6 +553,7 @@ def render_markdown(registry: Registry) -> str:
         groups=len(registry.groups),
         basic=len(registry.basic_keys()),
         services=services,
+        settings_page=_settings_page(),
     ).splitlines()
     out.append("")
     for group in registry.groups:
@@ -601,8 +632,9 @@ def render_env_example(registry: Registry) -> str:
     out: List[str] = [
         "# TrustAgent settings (.env). NEVER commit .env.",
         "#",
-        f"# Generated from {REGISTRY_REL} by scripts/gen_config_docs.py",
-        "# (make config-docs): to change this template, change the registry.",
+        f"# The template, .env.example, is generated from {REGISTRY_REL}",
+        "# by scripts/gen_config_docs.py (make config-docs): change the registry, not",
+        "# .env.example. Your own .env is yours to edit.",
         "#",
         "# `make up` and `make demo` create .env from this file when it is missing",
         "# (scripts/configure.py --ensure) and add the generated values the stack needs:",
@@ -613,8 +645,8 @@ def render_env_example(registry: Registry) -> str:
         "# These are the common settings, commented out at their defaults: uncomment a",
         "# line to change it. Every other key is advanced; docs/CONFIGURATION.md lists",
         "# them all with their defaults, and any of them can be added here the same way.",
-        "# Precedence: built-in default < .env < process environment. A value set here",
-        "# wins over the dashboard, which then shows it as read-only.",
+        "# Precedence: built-in default < .env < process environment. A non-empty value",
+        "# set here wins over the dashboard, which then shows it as read-only.",
     ]
     for group in registry.groups:
         keys = [k for k in group.keys if not k["advanced"]]

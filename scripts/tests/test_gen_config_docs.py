@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -203,6 +204,14 @@ class BuildRegistryTest(unittest.TestCase):
         keys.append(key("BASIC_EXTRA", advanced=False))
         self.assert_problem(registry(keys), "at most 15 are allowed")
 
+    def test_group_titles_need_their_own_heading_anchor(self) -> None:
+        clash = [{"id": "core", "title": "Core"}, {"id": "judge", "title": "core!"}]
+        self.assert_problem(registry([key("A_KEY")], clash), "anchor #core of 'Core'")
+        fixed = [{"id": "core", "title": "Groups"}]
+        self.assert_problem(registry([key("A_KEY")], fixed), "anchor #groups of 'Groups'")
+        empty = [{"id": "core", "title": "?!"}]
+        self.assert_problem(registry([key("A_KEY")], empty), "empty heading anchor")
+
     def test_schema_values_the_generator_cannot_describe_are_refused(self) -> None:
         schema = copy.deepcopy(REAL_SCHEMA)
         schema["$defs"]["ConfigKey"]["properties"]["services"]["items"]["enum"].append("robot")
@@ -298,6 +307,29 @@ class RenderMarkdownTest(unittest.TestCase):
             cells[6],
         )
 
+    def test_code_spans_survive_backticks_pipes_and_empty_values(self) -> None:
+        self.assertEqual(gen._md_code("a|b"), "`a\\|b`")
+        self.assertEqual(gen._md_code("x`y"), "`` x`y ``")
+        self.assertEqual(gen._md_code("``a`"), "``` ``a` ```")
+        self.assertEqual(gen._md_code("  "), "*empty*")
+        md = self.render([key("A_DIR", default="/x", compose_default="")])
+        self.assertEqual(table_rows(md)["A_DIR"][1], "`/x`<br>compose: *empty*")
+
+    def test_runtime_settings_carry_the_phase_of_the_settings_page(self) -> None:
+        keys = [key("LIVE_KEY", restart=False, runtime="settable")]
+        with mock.patch.object(gen, "SETTINGS_PHASE", "P9"):
+            md = self.render(keys)
+        self.assertIn(
+            "Also editable while running in dashboard Settings *(from P9)*.",
+            table_rows(md)["LIVE_KEY"][6],
+        )
+        self.assertIn("`no` = nothing when changed in dashboard Settings *(from P9)*;", md)
+        self.assertIn("also get a value in dashboard Settings *(from P9)*.", md)
+        with mock.patch.object(gen, "SETTINGS_PHASE", ""):
+            md = self.render(keys)
+        self.assertIn("Also editable while running in dashboard Settings.", md)
+        self.assertNotIn("*(from", md)
+
     def test_md_prose_keeps_spaces_around_code_spans(self) -> None:
         self.assertEqual(
             gen.md_prose("an  unknown TRUTHTABLE_* key\n(see LLM_PROVIDER)"),
@@ -355,6 +387,13 @@ class RenderEnvExampleTest(unittest.TestCase):
         self.assertIn("Secret.", text)
         self.assertIn("One of: x, y.", text)
         self.assertIn("Comma-separated, from: p, q.", text)
+
+    def test_header_names_the_template_so_a_copied_env_reads_right(self) -> None:
+        # configure.py --ensure copies this header into a new .env.
+        header = self.render([key("A_KEY", advanced=False)]).split("\n\n", 1)[0]
+        self.assertTrue(all(line.startswith("#") for line in header.splitlines()))
+        self.assertIn(f"# The template, .env.example, is generated from {gen.REGISTRY_REL}", header)
+        self.assertIn("Your own .env is yours to edit.", header)
 
     def test_values_that_need_quotes_are_quoted(self) -> None:
         self.assertEqual(gen.env_value("http://localhost:3000"), "http://localhost:3000")
