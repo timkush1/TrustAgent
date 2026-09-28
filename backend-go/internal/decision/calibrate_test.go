@@ -530,6 +530,50 @@ func TestQuickCalibrate(t *testing.T) {
 	}
 }
 
+// TestQuickLeaveOneOutMatchesTheDefinition checks the single-sort leave-one-out against the
+// definition: refit on every subset with one label removed. Chains of risks within EPS, which a
+// removal can split, are included.
+func TestQuickLeaveOneOutMatchesTheDefinition(t *testing.T) {
+	r := rand.New(rand.NewPCG(21, 22))
+	for trial := 0; trial < 150; trial++ {
+		s := randomLabels(r, 8+r.IntN(40), 0.4)
+		if trial%3 == 0 {
+			s = append(s, LabeledScore{Risk: 0.5, Fire: true}, LabeledScore{Risk: 0.5 + 0.8e-9}, LabeledScore{Risk: 0.5 + 1.6e-9, Fire: true})
+		}
+		for _, objective := range []string{ObjectiveMaxF1, ObjectiveMinThresholdAtPrecision} {
+			q, err := QuickCalibrate(&QuickCalibrationRequest{Labeled: s, Objective: objective})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !q.Enough || q.Threshold == nil {
+				continue
+			}
+			var lo, hi float64
+			found := false
+			for i := range s {
+				rest := append(slices.Clone(s[:i]), s[i+1:]...)
+				var c Confusion
+				var ok bool
+				if objective == ObjectiveMaxF1 {
+					c, ok = MaxF1Threshold(rest, 0)
+				} else {
+					c, ok = MinThresholdAtPrecision(rest, QuickDefaultTargetPrecision)
+				}
+				if !ok {
+					continue
+				}
+				if !found {
+					lo, hi, found = c.Threshold, c.Threshold, true
+				}
+				lo, hi = math.Min(lo, c.Threshold), math.Max(hi, c.Threshold)
+			}
+			if (q.LOORange != nil) != found || (found && (q.LOORange[0] != lo || q.LOORange[1] != hi)) {
+				t.Fatalf("trial %d %s: loo_range %v, definition [%v, %v] (found %v)", trial, objective, q.LOORange, lo, hi, found)
+			}
+		}
+	}
+}
+
 func TestQuickMappingThresholds(t *testing.T) {
 	r := rand.New(rand.NewPCG(9, 9))
 	balanced := func(n, pos int) []LabeledScore {

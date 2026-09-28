@@ -137,9 +137,8 @@ type riskGroup struct {
 	Pos, Neg int
 }
 
-// groupRisks sorts the scores by risk and merges runs whose consecutive risks differ by at most
-// EPS. It returns the groups in ascending order.
-func groupRisks(samples []LabeledScore) []riskGroup {
+// sortByRisk returns the scores stably sorted by risk.
+func sortByRisk(samples []LabeledScore) []LabeledScore {
 	sorted := slices.Clone(samples)
 	slices.SortStableFunc(sorted, func(a, b LabeledScore) int {
 		switch {
@@ -150,8 +149,23 @@ func groupRisks(samples []LabeledScore) []riskGroup {
 		}
 		return 0
 	})
-	var out []riskGroup
-	for _, s := range sorted {
+	return sorted
+}
+
+// groupRisks sorts the scores by risk and merges runs whose consecutive risks differ by at most
+// EPS. It returns the groups in ascending order.
+func groupRisks(samples []LabeledScore) []riskGroup {
+	return groupSorted(sortByRisk(samples), -1, nil)
+}
+
+// groupSorted groups risk-sorted scores as groupRisks does, leaving out the score at index skip
+// (-1 keeps all). The groups are appended to buf[:0].
+func groupSorted(sorted []LabeledScore, skip int, buf []riskGroup) []riskGroup {
+	out := buf[:0]
+	for i, s := range sorted {
+		if i == skip {
+			continue
+		}
 		if n := len(out); n > 0 && s.Risk-out[n-1].Hi <= EPS {
 			out[n-1].Hi = s.Risk
 			if s.Fire {
@@ -176,12 +190,22 @@ func groupRisks(samples []LabeledScore) []riskGroup {
 // candidates are the distinct risks (runs within EPS count once, represented by their smallest
 // risk), so every possible split of the labels appears exactly once.
 func ThresholdGrid(samples []LabeledScore) []Confusion {
-	groups := groupRisks(samples)
-	pos, neg := countLabels(samples)
-	out := make([]Confusion, len(groups))
+	return gridOf(groupRisks(samples), nil)
+}
+
+// gridOf is the threshold grid of ascending groups, appended to buf[:0].
+func gridOf(groups []riskGroup, buf []Confusion) []Confusion {
+	pos, neg := 0, 0
+	for _, g := range groups {
+		pos, neg = pos+g.Pos, neg+g.Neg
+	}
+	out := buf[:0]
+	if out == nil {
+		out = make([]Confusion, 0, len(groups))
+	}
 	tp, fp := pos, neg // everything fires at the lowest candidate
-	for i, g := range groups {
-		out[i] = Confusion{Threshold: g.Lo, TP: tp, FP: fp, TN: neg - fp, FN: pos - tp}
+	for _, g := range groups {
+		out = append(out, Confusion{Threshold: g.Lo, TP: tp, FP: fp, TN: neg - fp, FN: pos - tp})
 		tp -= g.Pos
 		fp -= g.Neg
 	}
@@ -217,8 +241,12 @@ const (
 // is at least minPrecision (minus EPS; 0 disables the floor) and that catch at least one positive.
 // Ties in F1 (compared exactly) go to the higher threshold, which fires less. ok is false when no
 // candidate qualifies.
-func MaxF1Threshold(samples []LabeledScore, minPrecision float64) (best Confusion, ok bool) {
-	for _, c := range ThresholdGrid(samples) {
+func MaxF1Threshold(samples []LabeledScore, minPrecision float64) (Confusion, bool) {
+	return maxF1Of(ThresholdGrid(samples), minPrecision)
+}
+
+func maxF1Of(grid []Confusion, minPrecision float64) (best Confusion, ok bool) {
+	for _, c := range grid {
 		if c.TP == 0 || c.Precision() < minPrecision-EPS {
 			continue
 		}
@@ -232,7 +260,11 @@ func MaxF1Threshold(samples []LabeledScore, minPrecision float64) (best Confusio
 // MinThresholdAtPrecision returns the smallest candidate threshold whose precision is at least
 // target (minus EPS) and that catches at least one positive: the highest recall at that precision.
 func MinThresholdAtPrecision(samples []LabeledScore, target float64) (Confusion, bool) {
-	for _, c := range ThresholdGrid(samples) {
+	return minThresholdOf(ThresholdGrid(samples), target)
+}
+
+func minThresholdOf(grid []Confusion, target float64) (Confusion, bool) {
+	for _, c := range grid {
 		if c.TP > 0 && c.Precision() >= target-EPS {
 			return c, true
 		}

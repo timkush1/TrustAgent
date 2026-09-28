@@ -104,11 +104,11 @@ func QuickCalibrate(req *QuickCalibrationRequest) (*QuickCalibration, error) {
 		return nil, fmt.Errorf("calibrate: current threshold %v, want a value in [0,1]", *c)
 	}
 
-	pick := func(samples []LabeledScore) (Confusion, bool) {
+	pick := func(grid []Confusion) (Confusion, bool) {
 		if objective == ObjectiveMinThresholdAtPrecision {
-			return MinThresholdAtPrecision(samples, target)
+			return minThresholdOf(grid, target)
 		}
-		return MaxF1Threshold(samples, 0)
+		return maxF1Of(grid, 0)
 	}
 
 	pos, neg := countLabels(req.Labeled)
@@ -120,7 +120,7 @@ func QuickCalibrate(req *QuickCalibrationRequest) (*QuickCalibration, error) {
 		return q, nil
 	}
 
-	c, ok := pick(req.Labeled)
+	c, ok := pick(ThresholdGrid(req.Labeled))
 	if !ok {
 		q.Message = fmt.Sprintf("With %d labels, no threshold reaches precision %s; keep it watching and label more traffic.", q.N, percent(target))
 		q.Mapping = quickMapping(req.Labeled, pos, neg)
@@ -133,12 +133,16 @@ func QuickCalibrate(req *QuickCalibrationRequest) (*QuickCalibration, error) {
 	q.Precision = &PointCI{Point: c.Precision(), CI95: [2]float64{plo, phi}}
 	q.Recall = &PointCI{Point: c.Recall(), CI95: [2]float64{rlo, rhi}}
 
+	// Leave-one-out: each label left out in turn, regrouped and re-picked. The risk order does not
+	// depend on which label is left out, so one sort serves every pass (O(n) each).
 	loLOO, hiLOO, found := 0.0, 0.0, false
-	rest := make([]LabeledScore, 0, len(req.Labeled)-1)
-	for i := range req.Labeled {
-		rest = append(rest[:0], req.Labeled[:i]...)
-		rest = append(rest, req.Labeled[i+1:]...)
-		li, ok := pick(rest)
+	sorted := sortByRisk(req.Labeled)
+	var groups []riskGroup
+	var grid []Confusion
+	for i := range sorted {
+		groups = groupSorted(sorted, i, groups)
+		grid = gridOf(groups, grid)
+		li, ok := pick(grid)
 		if !ok {
 			continue
 		}
