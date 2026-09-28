@@ -15,7 +15,13 @@ import pytest
 
 from provider_fakes import json_reply
 from truthtable.config import Settings
-from truthtable.judge import MOCK_JUDGE_MODEL, build_provider, judge_model, resolve_judge
+from truthtable.judge import (
+    MOCK_JUDGE_MODEL,
+    OLLAMA,
+    build_provider,
+    judge_model,
+    resolve_judge,
+)
 from truthtable.providers import (
     AnthropicProvider,
     MockLLMProvider,
@@ -221,7 +227,7 @@ async def test_unhealthy_judge_is_kept_and_reported_without_fallback() -> None:
 async def test_fallback_to_ollama_is_explicit_and_reported() -> None:
     transport = FakeUpstreams(down=("api.anthropic.com",))
 
-    selection = await resolve(settings(anthropic_api_key="a", llm_fallback="ollama"), transport)
+    selection = await resolve(settings(anthropic_api_key="a", llm_fallback=OLLAMA), transport)
 
     assert selection.effective == "ollama"
     assert isinstance(selection.provider, OllamaProvider)
@@ -234,7 +240,7 @@ async def test_fallback_to_ollama_is_explicit_and_reported() -> None:
 
 
 async def test_fallback_covers_a_missing_key() -> None:
-    selection = await resolve(settings(llm_provider="openrouter", llm_fallback="ollama"))
+    selection = await resolve(settings(llm_provider="openrouter", llm_fallback=OLLAMA))
 
     assert selection.effective == "ollama"
     assert selection.fallback_active is True
@@ -244,7 +250,7 @@ async def test_fallback_covers_a_missing_key() -> None:
 async def test_explicit_ollama_never_falls_back() -> None:
     transport = FakeUpstreams(models=())  # reachable, model not pulled
 
-    selection = await resolve(settings(llm_provider="ollama", llm_fallback="ollama"), transport)
+    selection = await resolve(settings(llm_provider="ollama", llm_fallback=OLLAMA), transport)
 
     assert selection.effective == "ollama"
     assert selection.healthy is False
