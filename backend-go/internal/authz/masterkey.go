@@ -125,16 +125,50 @@ func readMasterKeyFile(path string) ([]byte, error) {
 	return key, nil
 }
 
-// writeMasterKeyFile creates path exclusively with mode 0600 in a 0700 directory.
+// writeMasterKeyFile creates path with mode 0600 in a 0700 directory, failing with fs.ErrExist
+// when it already exists. The key is written to a temporary file first and published with a hard
+// link, so another process (a second replica on the same volume) never reads a half-written key,
+// and a crash never leaves an empty key file behind. Filesystems without hard links fall back to
+// an exclusive create.
 func writeMasterKeyFile(path string, key []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("master key directory: %w", err)
 	}
+	data := base64.StdEncoding.EncodeToString(key) + "\n"
+	tmp, err := os.CreateTemp(dir, ".secret-key-*") // mode 0600
+	if err != nil {
+		return writeMasterKeyExclusive(path, data)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) //nolint:errcheck // best-effort cleanup; the link (if any) keeps the data
+	if _, err := tmp.WriteString(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(tmpName, path); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		return writeMasterKeyExclusive(path, data)
+	}
+	return nil
+}
+
+// writeMasterKeyExclusive creates path exclusively with mode 0600 and writes data.
+func writeMasterKeyExclusive(path, data string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- see readMasterKeyFile
 	if err != nil {
 		return err
 	}
-	if _, err := f.WriteString(base64.StdEncoding.EncodeToString(key) + "\n"); err != nil {
+	if _, err := f.WriteString(data); err != nil {
 		_ = f.Close()
 		_ = os.Remove(path)
 		return err

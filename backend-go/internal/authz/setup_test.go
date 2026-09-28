@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -193,5 +194,42 @@ func TestMasterKey(t *testing.T) {
 	}
 	if e := EphemeralMasterKey(); e.Source != MasterEphemeralOnly || bytes.Equal(e.Derive(InfoSession), s1) {
 		t.Errorf("ephemeral %+v", e)
+	}
+}
+
+// TestMasterKeyConcurrentGeneration: processes sharing a data volume that start together all end
+// up with the one generated key, never reading a half-written file, and leave no temporary files.
+func TestMasterKeyConcurrentGeneration(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "data", "secret.key")
+		const n = 8
+		ids := make([]string, n)
+		errs := make([]error, n)
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				m, err := LoadMasterKey("", path)
+				errs[i] = err
+				if err == nil {
+					ids[i] = m.ID
+				}
+			}()
+		}
+		wg.Wait()
+		for i := 0; i < n; i++ {
+			if errs[i] != nil || ids[i] != ids[0] {
+				t.Fatalf("round %d: loader %d got %q %v, loader 0 got %q", round, i, ids[i], errs[i], ids[0])
+			}
+		}
+		entries, err := os.ReadDir(filepath.Dir(path))
+		if err != nil || len(entries) != 1 || entries[0].Name() != "secret.key" {
+			t.Fatalf("round %d: the data directory holds %v (%v)", round, entries, err)
+		}
+		if st, err := os.Stat(path); err != nil || st.Mode().Perm() != 0o600 {
+			t.Fatalf("round %d: key file %v %v", round, st, err)
+		}
 	}
 }
