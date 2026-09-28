@@ -13,14 +13,16 @@ import { describe, expect, it } from 'vitest';
 import { LIGHT_SHADE_PERCENT } from './palette';
 
 // Vitest hands CSS imports (even ?raw) to tests as empty strings, so read the stylesheet from
-// disk. The specifier is a variable because the app's tsconfig has no Node types.
-const fsSpecifier = 'node:fs';
+// disk. The specifiers are variables because the app's tsconfig has no Node types.
+const [fsSpecifier, urlSpecifier] = ['node:fs', 'node:url'];
 const { readFileSync } = (await import(/* @vite-ignore */ fsSpecifier)) as {
   readFileSync: (path: string, encoding: 'utf8') => string;
 };
+const { fileURLToPath } = (await import(/* @vite-ignore */ urlSpecifier)) as { fileURLToPath: (url: string) => string };
 // Through a variable: Vite rewrites `new URL('…', import.meta.url)` into an asset URL.
+// fileURLToPath, not `.pathname`: on Windows the pathname is "/C:/…", which is not a file path.
 const here = import.meta.url;
-const css = readFileSync(decodeURIComponent(new URL('../../index.css', here).pathname), 'utf8');
+const css = readFileSync(fileURLToPath(new URL('../../index.css', here).href), 'utf8');
 
 type Lab = [number, number, number];
 type Rgb = [number, number, number]; // gamma-encoded sRGB, 0..1
