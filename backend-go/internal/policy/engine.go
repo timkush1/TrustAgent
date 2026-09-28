@@ -500,7 +500,10 @@ func (e *Engine) Reload(ctx context.Context) error {
 		defer e.mu.Unlock()
 		prev := e.file
 		e.file = e.readFile()
-		fileChanged := prev.exists != e.file.exists || prev.sha != e.file.sha || (prev.err == nil) != (e.file.err == nil)
+		// The file is re-checked on every read, so a file that names an evaluator the registry
+		// has only just loaded turns valid without a byte changing.
+		fileChanged := prev.exists != e.file.exists || prev.sha != e.file.sha || (prev.err == nil) != (e.file.err == nil) ||
+			prev.valid() != e.file.valid()
 		if fileChanged && e.file.exists && !e.file.valid() {
 			fileErr = e.file.errorsOf()
 		}
@@ -575,10 +578,28 @@ func (e *Engine) Trigger() {
 	}
 }
 
-// Run reloads on notifications and on the poll interval until ctx ends.
+// Revalidate retries, on the next reload, a newest version that failed to load: call it when
+// the evaluator registry changed, since such a version usually names an evaluator this replica
+// had not loaded yet (the policy and evaluator polls run independently). The policy file is
+// re-checked on every reload anyway.
+func (e *Engine) Revalidate() {
+	e.mu.Lock()
+	e.badHead = 0
+	e.mu.Unlock()
+	e.Trigger()
+}
+
+// Run reloads on notifications and on the poll interval until ctx ends. It returns after its
+// listener has stopped, so the caller may close the store then.
 func (e *Engine) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	if l, ok := e.cfg.Store.(Listener); ok && e.cfg.Store != nil {
-		go e.listen(ctx, l)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			e.listen(ctx, l)
+		}()
 	}
 	var tick <-chan time.Time
 	if e.cfg.ReloadInterval > 0 {

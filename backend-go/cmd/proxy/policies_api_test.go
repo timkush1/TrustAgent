@@ -588,6 +588,32 @@ func TestPolicyServicesPostgres(t *testing.T) {
 	}
 	waitFor(t, "evaluator on the replica", func() bool { _, ok := b.Registry.Get("tone@1"); return ok })
 
+	// A policy version naming an evaluator the replica has not loaded yet is retried once the
+	// evaluator arrives.
+	early := &store.PolicyVersionRecord{Source: store.PolicySourceDashboard, Author: "other", Doc: json.RawMessage(`{"version":1}`),
+		YAML: "version: 1\ndefaults:\n  evaluators: [{ref: tone@2}]\n", SHA256: "early"}
+	if err := pg.WithPolicyLock(ctx, wiring.channel, func(tx store.PolicyTx) error { return tx.Insert(ctx, early) }); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the replica to see the version", func() bool { return b.Engine.State().HeadID == early.ID })
+	if b.Engine.State().Version.ID == early.ID {
+		t.Fatal("a version naming an unknown evaluator became active")
+	}
+	doc2 := []byte(strings.Replace(strings.Replace(toneSpecJSON, "%V", "2", 1), "%W", "it", 1))
+	spec2, err := decision.ParseSpec(doc2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, _ := spec2.Hashes()
+	if _, err := pg.UpsertEvaluatorVersions(ctx, wiring.channel, []store.EvaluatorUpsert{{
+		Evaluator: store.EvaluatorRecord{ID: "tone", Name: "Tone", Category: "quality", Origin: "dashboard"},
+		Version: store.EvaluatorVersionRecord{EvaluatorID: "tone", Version: 2, Spec: doc2, SpecSHA256: h2.SpecSHA256,
+			QuestionSHA256: h2.QuestionSHA256, CalibrationKey: h2.CalibrationKey, CreatedBy: "admin"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the retried version on the replica", func() bool { return b.Engine.State().Version.ID == early.ID })
+
 	w := p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\n","window":"24h"}`)
 	if res := decode[policy.DryRunResult](t, w); res.Evaluated != 0 || len(res.Caveats) == 0 {
 		t.Errorf("empty dry-run %+v", res)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -95,7 +96,9 @@ type policyServices struct {
 	hub      *websocket.Hub
 	// reload is the poll interval of the evaluator tables (TRUTHTABLE_POLICY_RELOAD_INTERVAL).
 	reload time.Duration
-	log    *slog.Logger
+	// evalTrigger asks run to reload the evaluators (an evaluator notification arrived).
+	evalTrigger chan struct{}
+	log         *slog.Logger
 }
 
 // newPolicyServices loads the evaluator registry (built-ins, files, database) and the policy
@@ -113,7 +116,7 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 	for _, warning := range penv.Warnings {
 		log.Warn("config: " + warning)
 	}
-	ps := &policyServices{hub: w.hub, reload: penv.ReloadInterval, log: log}
+	ps := &policyServices{hub: w.hub, reload: penv.ReloadInterval, evalTrigger: make(chan struct{}, 1), log: log}
 
 	regCfg := evaluators.Config{Dir: penv.EvaluatorsDir, Channel: w.channel, Logger: log}
 	var versions policy.VersionStore
@@ -161,43 +164,64 @@ func (ps *policyServices) mount(api *gin.RouterGroup, g apiGuards) {
 }
 
 // run hot-reloads the policy and the evaluators until ctx ends: notifications, which carry both,
-// and the poll.
+// and the poll. It returns once nothing it started still uses the store, so the caller may close
+// the store after it.
 func (ps *policyServices) run(ctx context.Context) {
-	if ps.reload > 0 {
-		go func() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var tick <-chan time.Time
+		if ps.reload > 0 {
 			t := time.NewTicker(ps.reload)
 			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					ps.reloadEvaluators()
-				}
+			tick = t.C
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick:
+			case <-ps.evalTrigger:
 			}
-		}()
-	}
+			ps.reloadEvaluators(ctx)
+		}
+	}()
 	ps.Engine.Run(ctx)
+	wg.Wait()
 }
 
-// notified handles config notifications other than policy versions.
+// notified handles config notifications other than policy versions. It runs on the listener
+// goroutine, so it only hands the reload to run.
 func (ps *policyServices) notified(payload string) {
 	if strings.HasPrefix(payload, "evaluator") {
-		ps.reloadEvaluators()
+		select {
+		case ps.evalTrigger <- struct{}{}:
+		default:
+		}
 	}
 }
 
-// reloadEvaluators re-reads the stored evaluators and announces new versions.
-func (ps *policyServices) reloadEvaluators() {
+// reloadEvaluators re-reads the stored evaluators, announces new versions, and has the engine
+// retry a policy version that named an evaluator this replica had not loaded yet.
+func (ps *policyServices) reloadEvaluators(ctx context.Context) {
 	before := ps.Registry.Refs()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	changed, err := ps.Registry.Reload(ctx)
+	changed, err := ps.Registry.Reload(rctx)
 	if err != nil {
-		ps.log.Warn("evaluator reload failed", "err", err)
+		if ctx.Err() == nil { // not shutting down
+			ps.log.Warn("evaluator reload failed", "err", err)
+		}
 		return
 	}
-	if !changed || ps.hub == nil {
+	if !changed {
+		return
+	}
+	if ps.Engine != nil {
+		ps.Engine.Revalidate()
+	}
+	if ps.hub == nil {
 		return
 	}
 	known := map[string]bool{}

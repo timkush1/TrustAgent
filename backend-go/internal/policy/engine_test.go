@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/policy/policytest"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/storetest"
@@ -619,6 +620,96 @@ func TestEngineSaveMatchingDivergedFile(t *testing.T) {
 		// The answered ETag is current: the next save needs no reload.
 		if _, err := e.Save(ctx, SaveRequest{Source: Source{YAML: dashY}, IfMatch: st.ETag(), Author: "admin"}); err != nil {
 			t.Errorf("next save: %v", err)
+		}
+	})
+}
+
+// growingSpecs is a resolver that learns evaluators while the engine runs, as the registry does
+// when another replica stores a version.
+type growingSpecs struct {
+	base  Resolver
+	mu    sync.Mutex
+	extra map[string]*decision.Spec
+}
+
+func (g *growingSpecs) Get(ref string) (*decision.Spec, bool) {
+	g.mu.Lock()
+	s, ok := g.extra[ref]
+	g.mu.Unlock()
+	if ok {
+		return s, true
+	}
+	return g.base.Get(ref)
+}
+
+// learn adds id@1 as a copy of refusal@1.
+func (g *growingSpecs) learn(t *testing.T, id string) {
+	t.Helper()
+	base, ok := g.base.Get("refusal@1")
+	if !ok {
+		t.Fatal("refusal@1 is not a built-in")
+	}
+	cp := *base
+	cp.ID = id
+	g.mu.Lock()
+	g.extra[id+"@1"] = &cp
+	g.mu.Unlock()
+}
+
+// TestEngineRevalidate: a version or a file naming an evaluator the registry has not loaded yet
+// applies once the evaluator arrives (the policy and evaluator polls run independently).
+func TestEngineRevalidate(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		ctx := context.Background()
+		specs := &growingSpecs{base: registry(t), extra: map[string]*decision.Spec{}}
+		f := newFixture(t, b, fileA)
+		e := f.engine(t, func(c *EngineConfig) { c.Env.Specs = specs })
+		good := e.State().Version.ID
+		insertVersion(t, b, "version: 1\ndefaults:\n  evaluators: [{ref: later@1}]\n", "later")
+		if err := e.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if e.State().Version.ID != good {
+			t.Fatal("a version naming an unknown evaluator became active")
+		}
+		specs.learn(t, "later")
+		if err := e.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if e.State().Version.ID != good {
+			t.Fatal("a failed version was retried without Revalidate")
+		}
+		e.Revalidate()
+		if err := e.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if st := e.State(); st.Version.ID != good+1 || len(st.Warnings) != 0 || e.Current().Default.Evaluators[0].Ref != "later@1" {
+			t.Fatalf("after Revalidate %+v %v", st.Version, st.Warnings)
+		}
+		select {
+		case <-e.trigger:
+		default:
+			t.Error("Revalidate did not ask Run to reload")
+		}
+
+		// The file is re-checked on every reload: once its evaluator is known it is no longer
+		// invalid (here diverged, since the dashboard version above is newer) and can be adopted.
+		f.write(t, "version: 1\ndefaults:\n  mode: flag\n  evaluators: [{ref: sooner@1}]\n")
+		if err := e.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if st := e.State(); st.File.Status != FileInvalid || st.Version.ID != good+1 {
+			t.Fatalf("file naming an unknown evaluator %+v %+v", st.File, st.Version)
+		}
+		specs.learn(t, "sooner")
+		if err := e.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if st := e.State(); st.File.Status != FileDiverged || len(st.File.Errors) != 0 {
+			t.Fatalf("file after its evaluator arrived %+v", st.File)
+		}
+		if _, err := e.AdoptFile(ctx, "admin", ""); err != nil || e.Current().Default.Evaluators[0].Ref != "sooner@1" {
+			t.Errorf("adopt: %v", err)
 		}
 	})
 }
