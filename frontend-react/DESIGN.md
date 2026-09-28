@@ -320,12 +320,17 @@ SPEC §3.3 is the page list; these notes record how each page applies the rules 
   dialog: achromatic syntax styling, token colors, Tab left to the browser, problems both as lint
   marks and as a text list. Its schema check is policy.v1 compiled ahead of time
   (`src/lib/policy/policyValidator.gen.ts`, `make gen-policy-validator`), because ajv's runtime
-  compiler needs `eval`, which the CSP forbids.
+  compiler needs `eval`, which the CSP forbids. The save's `If-Match` is the ETag the draft started
+  from, never the one on screen (the stream refreshes that). A diverged policies.yaml follows SPEC
+  §7.2: the dashboard version stays in effect and the file waits for "Adopt file"; "Restore my
+  edit" appears only when the file itself is in effect.
 - **Playground** (`components/playground/`). The form lives in a store, so it survives runs and
   page changes (never persisted: prompts may be sensitive). The result is a numbered timeline
   (your model → fast check → what your app received → deep audit), each step with a state icon
   and words; the deep audit keeps updating from the live stream. The curl equivalent is always
-  shown and follows the form.
+  shown and follows the form. An unedited example keeps its demo scenario id and sends it only to a
+  demo or test-mode stack, whose mock checks answer it as trafficgen's scripted run (labelled
+  simulated); editing the example drops it.
 - **Evaluators** (`components/evaluators/`). Library cards, checks that run on a route first.
   Calibration progress uses the contract copy and one meter per requirement. Writes that arrive
   in P4 (label queue, calibrate, adopt, Studio) are shown disabled with one shared reason. The
