@@ -46,6 +46,8 @@ type mockClient struct {
 	cfg       MockConfig
 	info      Info
 	scenarios map[string]map[string]*decision.RawAnswer
+	// fallbacks holds, per scenario, the answers to the re-gate of its scripted fallback answer.
+	fallbacks map[string]*mockFallback
 	// costs receives one simulated cost event per call.
 	costs  CostSink
 	status statusTracker
@@ -73,34 +75,58 @@ func newMock(cfg MockConfig, model string) (*mockClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jev: mock fixtures: %w", err)
 	}
-	if m.scenarios, err = parseScenarios(b); err != nil {
+	if m.scenarios, m.fallbacks, err = parseScenarios(b); err != nil {
 		return nil, fmt.Errorf("jev: mock fixtures: %w", err)
 	}
 	return m, nil
 }
 
-// parseScenarios reads the mock answers of a trustagent.scenarios/v1 pack.
-func parseScenarios(b []byte) (map[string]map[string]*decision.RawAnswer, error) {
+// mockFallback is a scenario's scripted fallback answer (scenarios.v1 fallback): the re-gate of a
+// state whose assistant_response is Response is answered from MockAnswers.
+type mockFallback struct {
+	Response    string                         `json:"response"`
+	MockAnswers map[string]*decision.RawAnswer `json:"mock_answers"`
+}
+
+// parseScenarios reads the mock answers of a trustagent.scenarios/v1 pack, and the answers to the
+// re-gate of each scripted fallback answer.
+func parseScenarios(b []byte) (map[string]map[string]*decision.RawAnswer, map[string]*mockFallback, error) {
 	var pack struct {
 		Scenarios []struct {
 			ID          string                         `json:"id"`
 			MockAnswers map[string]*decision.RawAnswer `json:"mock_answers"`
+			Fallback    *mockFallback                  `json:"fallback"`
 		} `json:"scenarios"`
 	}
 	if err := json.Unmarshal(b, &pack); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make(map[string]map[string]*decision.RawAnswer, len(pack.Scenarios))
+	fallbacks := map[string]*mockFallback{}
 	for _, s := range pack.Scenarios {
 		if s.ID == "" {
-			return nil, fmt.Errorf("a scenario has no id")
+			return nil, nil, fmt.Errorf("a scenario has no id")
 		}
 		if _, dup := out[s.ID]; dup {
-			return nil, fmt.Errorf("scenario %q is defined twice", s.ID)
+			return nil, nil, fmt.Errorf("scenario %q is defined twice", s.ID)
 		}
 		out[s.ID] = s.MockAnswers
+		if s.Fallback != nil && s.Fallback.Response != "" {
+			fallbacks[s.ID] = s.Fallback
+		}
 	}
-	return out, nil
+	return out, fallbacks, nil
+}
+
+// scripted returns the answers a scenario scripts for req: its fallback answers when req gates
+// the scenario's fallback answer (the attempt-1 re-gate, SPEC §2.12), else its mock answers.
+func (m *mockClient) scripted(scenario string, req *Request) map[string]*decision.RawAnswer {
+	if fb := m.fallbacks[scenario]; fb != nil {
+		if text, ok := req.State[decision.FieldAssistantResponse].(string); ok && text == fb.Response {
+			return fb.MockAnswers
+		}
+	}
+	return m.scenarios[scenario]
 }
 
 func (m *mockClient) Info() Info { return m.info }
@@ -137,7 +163,7 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 	if err != nil {
 		return nil, &Error{Kind: KindBadResponse, Message: "mock: state is not canonicalizable", Err: err}
 	}
-	scripted := m.scenarios[opt.Scenario]
+	scripted := m.scripted(opt.Scenario, req)
 	qids := make([]string, 0, len(req.Questions))
 	for qid := range req.Questions {
 		qids = append(qids, qid)
