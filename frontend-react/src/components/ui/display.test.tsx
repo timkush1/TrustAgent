@@ -88,10 +88,11 @@ describe('Card and Section', () => {
 
   it('collapses to a disclosure whose heading stays navigable', async () => {
     render(
-      <Section title="Performance" collapsible>
+      <Section title="Performance" collapsible actions={<button type="button">Export</button>}>
         <p>Stage latencies</p>
       </Section>,
     );
+    expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
     const heading = screen.getByRole('heading', { level: 2, name: 'Performance' });
     const toggle = screen.getByRole('button', { name: 'Performance' });
     expect(heading).toContainElement(toggle);

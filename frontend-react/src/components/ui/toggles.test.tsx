@@ -70,6 +70,20 @@ describe('RadioGroup', () => {
     expect(closed).toHaveFocus();
     expect(onValueChange).toHaveBeenLastCalledWith('closed');
   });
+
+  it('describes each option even when its value has spaces', () => {
+    render(
+      <RadioGroup
+        label="Backend"
+        options={[
+          { value: 'open router', label: 'OpenRouter', description: 'Recommended.' },
+          { value: 'other gateway', label: 'Other gateway', description: 'Any compatible gateway.' },
+        ]}
+      />,
+    );
+    expect(screen.getByRole('radio', { name: 'OpenRouter' })).toHaveAccessibleDescription('Recommended.');
+    expect(screen.getByRole('radio', { name: 'Other gateway' })).toHaveAccessibleDescription('Any compatible gateway.');
+  });
 });
 
 describe('SegmentedControl', () => {

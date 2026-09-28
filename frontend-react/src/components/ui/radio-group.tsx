@@ -72,8 +72,9 @@ export function RadioGroup<V extends string = string>({
           </p>
         ) : null}
       </div>
-      {options.map((o) => {
-        const optionDescriptionId = `${id}-${o.value}-description`;
+      {options.map((o, i) => {
+        // By position, not value: a value may hold spaces, which would split the id reference.
+        const optionDescriptionId = `${id}-option-${i}-description`;
         return (
           <div key={o.value} className="space-y-0.5">
             {/* The label wraps the radio, so a click on the words selects it. */}

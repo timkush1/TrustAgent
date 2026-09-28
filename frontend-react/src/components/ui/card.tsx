@@ -65,14 +65,17 @@ export function Section({ title, description, actions, children, className, coll
     // Disclosure pattern: the h2 wraps the toggle button, so the heading stays navigable.
     return (
       <Collapsible.Root defaultOpen={defaultOpen} render={<section aria-labelledby={headingId} />} className={cn('space-y-3', className)}>
-        <div className="space-y-0.5">
-          <h2 id={headingId} className="text-base font-semibold text-fg">
-            <Collapsible.Trigger className="group inline-flex items-center gap-1.5 rounded-sm text-left hover:text-fg">
-              <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted transition-transform group-data-panel-open:rotate-90" />
-              {title}
-            </Collapsible.Trigger>
-          </h2>
-          {description ? <p className="pl-5.5 text-sm text-fg-muted">{description}</p> : null}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <h2 id={headingId} className="text-base font-semibold text-fg">
+              <Collapsible.Trigger className="group inline-flex items-center gap-1.5 rounded-sm text-left hover:text-fg">
+                <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted transition-transform group-data-panel-open:rotate-90" />
+                {title}
+              </Collapsible.Trigger>
+            </h2>
+            {description ? <p className="pl-5.5 text-sm text-fg-muted">{description}</p> : null}
+          </div>
+          {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
         <Collapsible.Panel>{children}</Collapsible.Panel>
       </Collapsible.Root>
