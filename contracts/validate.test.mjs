@@ -287,6 +287,30 @@ describe('validate.mjs', () => {
     assert.match(r.out, /grounded-pass: an s0 scenario runs on the walking skeleton and carries no phase tag/);
   });
 
+  test('a fallback answer whose re-gate blocks applies on_fail to the action and the delivered text', { skip: !existsSync(PENDING) }, () => {
+    const sb = sandbox();
+    sb.edit('demo/scenarios.v1.json', (d) => {
+      const s = d.scenarios.find((x) => x.id === 'payments-fallback');
+      s.fallback.expect.would_action = 'block';
+    });
+    let r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    // payments-faq has on_fail block: the client gets the block body with action block.
+    assert.match(r.out, /payments-fallback: the re-gate of the fallback answer would block and on_fail is block, so expect\.action is block, not fallback/);
+    assert.match(r.out, /payments-fallback: the client receives "I can't confirm that from our policy documents\. A person will follow up\."/);
+
+    const ok = sandbox();
+    ok.edit('demo/scenarios.v1.json', (d) => {
+      const s = d.scenarios.find((x) => x.id === 'payments-fallback');
+      s.fallback.expect.would_action = 'block';
+      s.expect.action = 'block';
+      s.expect.outcome = 'blocked';
+      s.expect.delivered_text = "I can't confirm that from our policy documents. A person will follow up.";
+    });
+    r = run(ok.root);
+    assert.doesNotMatch(r.out, /payments-fallback/, r.out);
+  });
+
   test('pricing figures and value claims cannot drift from the arithmetic', () => {
     const sb = sandbox();
     sb.edit('pricing/assumptions.v1.json', (a) => { a.figures.find((f) => f.id === 'fast_check_per_1k').per_1k_usd = 0.3; });

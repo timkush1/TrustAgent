@@ -1173,16 +1173,25 @@ function checkScenarioRoute(rel, s, settings, policyName, seedMode) {
   const effective = ['block', 'fallback'].includes(mode) && s.stream && settings.streaming !== 'buffer' ? 'flag' : mode;
   if (x.mode !== undefined && x.mode !== effective) error(rel, `${s.id}: expect.mode ${x.mode}, but route ${s.route} runs in ${effective} mode (${policyName})`);
 
-  // What the client receives: the block message, the fallback answer, or the answer itself.
+  // What the client receives: the block message, the fallback answer, or the answer itself. A scenario
+  // with a fallback answer is one whose gate falls back (SPEC §2.12 Fallback): a re-gate that does not
+  // block delivers the fallback answer with action fallback; one that blocks applies on_fail (block: the
+  // block body with action block; flag: the fallback answer with action flag; original: the answer with
+  // action flag).
   if (s.fallback && mode !== 'fallback') error(rel, `${s.id}: fallback needs a route in fallback mode, and ${s.route} runs in ${mode} mode`);
   if (x.action === 'fallback' && !s.fallback) error(rel, `${s.id}: action fallback needs a fallback answer`);
   const block = settings.block ?? {};
-  let delivered = s.response;
-  if (x.action === 'block' && (block.style ?? 'message') === 'message') delivered = block.message;
-  if (x.action === 'fallback' && s.fallback) {
+  const blocked = (block.style ?? 'message') === 'message' ? block.message : s.response; // style error: no answer text
+  let delivered = x.action === 'block' ? blocked : s.response;
+  if (s.fallback && mode === 'fallback') {
     const onFail = settings.fallback?.on_fail ?? 'block';
-    if (s.fallback.expect.would_action !== 'block' || onFail === 'flag') delivered = s.fallback.response;
-    else if (onFail === 'block') delivered = block.message;
+    const regate = s.fallback.expect.would_action;
+    const action = regate !== 'block' ? 'fallback' : onFail === 'block' ? 'block' : 'flag';
+    if (x.would_action !== 'block') error(rel, `${s.id}: a fallback answer means the gate falls back, which needs expect.would_action block`);
+    if (x.action !== action) {
+      error(rel, `${s.id}: the re-gate of the fallback answer would ${regate} and on_fail is ${onFail}, so expect.action is ${action}, not ${x.action}`);
+    }
+    delivered = action === 'block' ? blocked : regate !== 'block' || onFail === 'flag' ? s.fallback.response : s.response;
   }
   if ((x.delivered_text ?? s.response) !== delivered) {
     error(rel, `${s.id}: the client receives ${JSON.stringify(delivered)} (action ${x.action} on route ${s.route}), so expect.delivered_text must say so${x.delivered_text === undefined ? '' : `, not ${JSON.stringify(x.delivered_text)}`}`);

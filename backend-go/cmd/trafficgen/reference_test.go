@@ -377,6 +377,7 @@ func blockTexts(t *testing.T, id string, raw json.RawMessage) []string {
 type reference struct {
 	route      *policy.Route
 	core       *decision.Core
+	action     string // X-TrustAgent-Action: the core's, or on_fail's after a fallback that fails its re-gate
 	status     string // X-TrustAgent-Status
 	checked    string // X-TrustAgent-Checked-Against
 	audit      string // X-TrustAgent-Audit (the deep-audit plan)
@@ -507,6 +508,7 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 
 	core, compiled := decide(*s.Response, s.MockAnswers)
 	ref.core = core
+	ref.action = core.Action
 	ref.status = core.Status
 	if route.Mode == decision.ModeObserve {
 		ref.status = "deferred"
@@ -529,17 +531,19 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		if s.Fallback == nil {
 			t.Fatal("the gate falls back, but the scenario has no fallback answer")
 		}
-		// SPEC §2.12 Fallback: re-gate the fallback answer (attempt 1), deliver it unless it would
-		// block too, then apply on_fail.
+		// SPEC §2.12 Fallback: re-gate the fallback answer (attempt 1) and deliver it unless it
+		// would block too; then on_fail decides: block sends the block body (Action: block), flag
+		// the fallback answer and original the answer (both Action: flag).
 		ref.regate, _ = decide(s.Fallback.Response, s.Fallback.MockAnswers)
 		switch {
 		case ref.regate.WouldAction != decision.ActionBlock:
 			ref.delivered = s.Fallback.Response
 		case route.Fallback.OnFail == "flag":
-			ref.delivered = s.Fallback.Response
+			ref.delivered, ref.action = s.Fallback.Response, decision.ActionFlag
 		case route.Fallback.OnFail == "original":
+			ref.action = decision.ActionFlag
 		default:
-			ref.delivered = blockText()
+			ref.delivered, ref.action = blockText(), decision.ActionBlock
 		}
 	default:
 		if s.Fallback != nil {
@@ -667,7 +671,7 @@ func TestScenariosMatchTheReference(t *testing.T) {
 				}
 			}
 			eq("mode", x.Mode, c.EffectiveMode)
-			eq("action", x.Action, c.Action)
+			eq("action", x.Action, ref.action)
 			eq("would_action", deref(x.WouldAction), c.WouldAction)
 			eq("status", x.Status, ref.status)
 			eq("verdict", deref(x.Verdict), deref(c.Verdict))
@@ -678,7 +682,7 @@ func TestScenariosMatchTheReference(t *testing.T) {
 			eq("checked_against", x.CheckedAgainst, ref.checked)
 			eq("deep_audit", x.DeepAudit, c.DeepAudit)
 			eq("audit", x.Audit, ref.audit)
-			eq("outcome", x.Outcome, store.Outcome(store.OutcomeFields{GateStatus: c.Status, Action: c.Action, WouldAction: c.WouldAction}))
+			eq("outcome", x.Outcome, store.Outcome(store.OutcomeFields{GateStatus: c.Status, Action: ref.action, WouldAction: c.WouldAction}))
 
 			delivered := *s.Response
 			if x.DeliveredText != nil {
