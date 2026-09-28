@@ -21,6 +21,7 @@ implement them replace the corresponding cases here with behaviour tests.
 import asyncio
 import json
 import re
+import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Sequence, Union
@@ -371,6 +372,33 @@ async def test_health_check_bounds_a_hanging_judge_probe(monkeypatch: pytest.Mon
 
     assert response.healthy is False
     assert dict(response.dependencies) == {"judge": False}
+
+
+async def test_health_check_probes_the_judge_and_qdrant_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Both probes hang to their bounds; run one after the other they would
+    # outlast the deadline, so the check must run them at the same time.
+    class HangingProvider:
+        async def health_check(self) -> bool:
+            await asyncio.sleep(RPC_TIMEOUT_S * 2)
+            return True
+
+    class HangingQdrant:
+        def health_check(self) -> bool:
+            time.sleep(0.8)
+            return True
+
+    monkeypatch.setattr(server_mod, "JUDGE_HEALTH_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(server_mod, "QDRANT_PROBE_TIMEOUT_S", 0.5)
+    servicer = AuditServicer(
+        audit_graph=None, provider=HangingProvider(), qdrant_store=HangingQdrant()
+    )
+    async with serving(servicer) as audit_stub:
+        response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=0.9)
+
+    assert dict(response.dependencies) == {"judge": False, "qdrant": False}
+    assert response.healthy is False
 
 
 async def test_legacy_submit_and_get_keep_v1_mapping(

@@ -739,7 +739,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         logger.debug("Health check requested")
 
         dependencies: Dict[str, bool] = {}
-        judge_healthy = await self._probe_judge()
+        # Concurrent probes: each is bounded (judge 2 s, Qdrant 1 s + 1 s), and
+        # together they must stay inside the healthcheck's 3 s deadline.
+        judge_healthy, (qdrant_reachable, kb_points) = await asyncio.gather(
+            self._probe_judge(), self._probe_qdrant()
+        )
         if judge_healthy is not None:
             dependencies["judge"] = judge_healthy
         else:
@@ -747,9 +751,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             # otherwise (a bare servicer) assumed fine.
             dependencies["judge"] = not self._no_judge
 
-        kb_points = 0
         if self.qdrant_store:
-            dependencies["qdrant"], kb_points = await self._probe_qdrant()
+            dependencies["qdrant"] = qdrant_reachable
 
         response = evaluator_pb2.HealthResponse(
             healthy=all(dependencies.values()),
@@ -774,8 +777,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         fresh bounded health probe), knowledge, verifier, scoring settings,
         warnings and the concurrency limits the proxy sizes its workers by.
         """
-        judge_healthy = await self._probe_judge()
-        qdrant_reachable, kb_points = await self._probe_qdrant()
+        judge_healthy, (qdrant_reachable, kb_points) = await asyncio.gather(
+            self._probe_judge(), self._probe_qdrant()
+        )
         if self.engine is not None:
             info = engine_info(
                 self.engine,
