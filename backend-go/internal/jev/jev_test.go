@@ -2,9 +2,11 @@ package jev
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,7 +91,12 @@ func TestMockScenarioAnswers(t *testing.T) {
 		t.Errorf("response accounting %+v", resp)
 	}
 	if resp.InputTokens == nil || *resp.InputTokens <= decision.Overhead || resp.CostUSD == nil || *resp.CostUSD <= 0 {
-		t.Errorf("tokens %v cost %v", resp.InputTokens, resp.CostUSD)
+		t.Fatalf("tokens %v cost %v", resp.InputTokens, resp.CostUSD)
+	}
+	// The simulated cost is $0.042 per million input tokens, without float noise in its JSON.
+	want := strconv.Itoa(*resp.InputTokens*42) + "e-9"
+	if got, _ := json.Marshal(*resp.CostUSD); !sameNumber(t, string(got), want) || len(got) > 12 {
+		t.Errorf("cost %s for %d tokens, want %s", got, *resp.InputTokens, want)
 	}
 	// Answers are copies: changing one does not change the fixtures.
 	*resp.Answers["groundedness__v1"].Noul = 0
@@ -221,4 +228,15 @@ func TestErrorKind(t *testing.T) {
 	if msg := (&Error{Kind: KindOff, Message: "m", Err: errors.New("e")}).Error(); msg != "jev off: m: e" {
 		t.Errorf("message %q", msg)
 	}
+}
+
+// sameNumber reports whether two JSON numbers denote the same float64.
+func sameNumber(t *testing.T, a, b string) bool {
+	t.Helper()
+	x, err1 := strconv.ParseFloat(a, 64)
+	y, err2 := strconv.ParseFloat(b, 64)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("not numbers: %q %q", a, b)
+	}
+	return x == y
 }
