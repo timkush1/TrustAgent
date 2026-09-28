@@ -2,14 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>%F0%9F%94%8D</text></svg>"
-    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TrustAgent — AI Hallucination Control Plane</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <title>TrustAgent</title>
+    <!-- Sets data-theme before first paint (no flash); a file, so the CSP needs no inline script. -->
+    <script src="%BASE_URL%theme-init.js"></script>
   </head>
   <body>
+    <noscript>TrustAgent's dashboard needs JavaScript.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
