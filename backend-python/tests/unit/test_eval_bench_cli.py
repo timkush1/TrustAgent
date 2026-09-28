@@ -305,6 +305,10 @@ def test_preconditions_fail_before_anything_is_spent(
         *common,
     ]
     assert bench.main(mock_without_fixtures) == 2
+
+    unsafe_run_id = ["run", "--dataset", str(dataset), "--run-id", "../../escape", *common]
+    assert bench.main(unsafe_run_id) == 2
+    assert "run id" in capsys.readouterr().err
     assert not (tmp_path / "cache").exists() or not any((tmp_path / "cache").glob("*.ledger.jsonl"))
 
 

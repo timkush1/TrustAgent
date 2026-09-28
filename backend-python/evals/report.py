@@ -21,6 +21,7 @@ calibration view (ECE, Brier, reliability bins).
 """
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -67,6 +68,23 @@ LATENCY_DECIMALS = 1
 
 # measured.json values derived from runs: key -> (system, how).
 _RATIO_KEY = "same_checks_cost_ratio"
+
+# benchmark-run.v1 run_id; "." and ".." are refused too (the id names files).
+_RUN_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def check_run_id(run_id: str) -> str:
+    """
+    `run_id` if it is safe as a file name and schema-valid.
+
+    Raises:
+        ValueError: Otherwise.
+    """
+    if not _RUN_ID.fullmatch(run_id) or run_id in (".", ".."):
+        raise ValueError(
+            f"run id {run_id!r} must be 1-128 letters, digits, '.', '_' or '-' (not . or ..)"
+        )
+    return run_id
 
 
 class MockOutputRefused(RuntimeError):
@@ -302,7 +320,7 @@ def write_local_run(
     if label == LABEL_MEASURED and (simulated or document.get("mock") is not False):
         raise MockOutputRefused("refusing to label mock output measured")
     errors = schema_errors(document, BENCHMARK_SCHEMA) if label == LABEL_MEASURED else []
-    path = out_dir / str(document["run_id"]) / "run.json"
+    path = out_dir / check_run_id(str(document["run_id"])) / "run.json"
     _write_json(
         path,
         {
@@ -330,6 +348,12 @@ def _check_publishable(run: Mapping[str, Any]) -> Dict[str, Any]:
         for records in (run.get("per_example") or {}).values()
         for record in records
     ]
+    if not records:
+        # Without them nothing shows the run was not mock output.
+        raise MockOutputRefused(
+            f"run {document.get('run_id')} has no per-example records: bench-publish cannot "
+            "check that it is not mock output"
+        )
     if (
         run.get("label") != LABEL_MEASURED
         or document.get("measured") is not True
@@ -347,6 +371,10 @@ def _check_publishable(run: Mapping[str, Any]) -> Dict[str, Any]:
     errors = schema_errors(document, BENCHMARK_SCHEMA)
     if errors:
         raise BenchmarkSchemaError(f"run {document.get('run_id')}", errors)
+    try:
+        check_run_id(str(document["run_id"]))
+    except ValueError as exc:
+        raise BenchmarkSchemaError(f"run {document.get('run_id')}", [str(exc)]) from exc
     return document
 
 
@@ -496,6 +524,9 @@ def publish(
     """
     Publish a local measured run (make bench-publish; see the module docstring).
 
+    Everything is checked before anything is written: a refused run leaves
+    docs/benchmarks and measured.json as they were.
+
     Raises:
         MockOutputRefused: The run is simulated.
         BenchmarkSchemaError: The run, a published run, or the derived
@@ -512,16 +543,20 @@ def publish(
     with open(run_file, encoding="utf-8") as f:
         run = json.load(f)
     document = _check_publishable(run)
-    result_path = results / f"{document['run_id']}.json"
-    _write_json(result_path, document)
+    run_id = document["run_id"]
+    result_path = results / f"{run_id}.json"
 
-    runs = load_results(results)
-    _write_json(index, build_index(runs, now))
+    published = load_results(results) if results.is_dir() else []
+    runs = [existing for existing in published if existing.get("run_id") != run_id]
+    runs.append(document)
     with open(claims, encoding="utf-8") as f:
         previous = json.load(f)
     derived = derive_measured(runs, previous, now)
     errors = schema_errors(derived, MEASURED_SCHEMA)
     if errors:
         raise BenchmarkSchemaError("derived measured.json", errors)
+
+    _write_json(result_path, document)
+    _write_json(index, build_index(runs, now))
     _write_json(claims, derived)
     return {"result": result_path, "index": index, "measured": claims}

@@ -291,6 +291,61 @@ def test_publish_refuses_a_schema_invalid_run(tmp_path: Path, bench_paths: Dict[
         _publish(run_file, bench_paths)
 
 
+def test_publish_refuses_a_run_without_per_example_records(
+    tmp_path: Path, bench_paths: Dict[str, Path]
+) -> None:
+    document, label, records = _run()
+    run_file = write_local_run(tmp_path / "local", document, label, records, MANIFEST)
+    stripped = json.loads(run_file.read_text())
+    stripped["per_example"] = {}
+    run_file.write_text(json.dumps(stripped))
+
+    with pytest.raises(MockOutputRefused, match="no per-example records"):
+        _publish(run_file, bench_paths)
+    assert not bench_paths["results_dir"].exists()
+
+
+def test_publish_writes_nothing_when_a_check_fails(
+    tmp_path: Path, bench_paths: Dict[str, Path]
+) -> None:
+    # A broken run already in docs/benchmarks/results stops the publish before
+    # the new run, the index or measured.json is written.
+    results = bench_paths["results_dir"]
+    results.mkdir(parents=True)
+    (results / "broken.json").write_text(json.dumps({"run_id": "broken"}))
+    document, label, records = _run()
+    run_file = write_local_run(tmp_path / "local", document, label, records, MANIFEST)
+    before = bench_paths["measured_path"].read_text()
+
+    with pytest.raises(BenchmarkSchemaError, match="broken.json"):
+        _publish(run_file, bench_paths)
+
+    assert sorted(path.name for path in results.iterdir()) == ["broken.json"]
+    assert not bench_paths["index_path"].exists()
+    assert bench_paths["measured_path"].read_text() == before
+
+
+def test_republishing_a_run_replaces_it(tmp_path: Path, bench_paths: Dict[str, Path]) -> None:
+    document, label, records = _run()
+    run_file = write_local_run(tmp_path / "local", document, label, records, MANIFEST)
+
+    _publish(run_file, bench_paths)
+    _publish(run_file, bench_paths)
+
+    index = json.loads(bench_paths["index_path"].read_text())
+    assert [entry["run_id"] for entry in index["runs"]] == ["lite-ragtruth-qa-1"]
+
+
+@pytest.mark.parametrize("run_id", ["..", ".", "a/b", "../escape", ""])
+def test_unsafe_run_ids_are_refused(tmp_path: Path, run_id: str) -> None:
+    document, label, records = _run()
+    document["run_id"] = run_id
+
+    with pytest.raises(ValueError, match="run id"):
+        write_local_run(tmp_path / "local", document, label, records, MANIFEST)
+    assert not (tmp_path / "local").exists()
+
+
 def _published(
     run_id: str, created_at: str, tier: str, name: str, subset: Any, systems: Sequence[str]
 ) -> Dict[str, Any]:

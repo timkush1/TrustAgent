@@ -68,6 +68,7 @@ from .report import (
     BenchmarkSchemaError,
     MockOutputRefused,
     build_benchmark_run,
+    check_run_id,
     publish,
     summarize_system,
     utc_now,
@@ -216,6 +217,12 @@ async def execute(
 ) -> Tuple[Path, str, Dict[str, List[JudgeRecord]]]:
     """Run the benchmark; returns (run file, label, records by system)."""
     systems = parse_systems(args.systems)
+    run_id: Optional[str] = None
+    if args.run_id:
+        try:
+            run_id = check_run_id(args.run_id)
+        except ValueError as exc:
+            raise PreconditionError(str(exc)) from exc
     manifest, examples = load_prepared(Path(args.dataset))
     resume_key = args.resume_key or f"{args.tier}-{Path(args.dataset).stem}"
     cache_dir = Path(args.cache_dir)
@@ -277,7 +284,7 @@ async def execute(
 
     created_at = utc_now()
     document, label = build_benchmark_run(
-        run_id=args.run_id or make_run_id(args.tier, manifest, created_at),
+        run_id=run_id or make_run_id(args.tier, manifest, created_at),
         created_at=created_at,
         git_sha=git_sha(),
         tier=args.tier,
