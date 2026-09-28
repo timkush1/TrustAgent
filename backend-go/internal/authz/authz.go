@@ -301,7 +301,7 @@ func NewAuthenticator(o Options) *Authenticator {
 		a.subjects[sub] = subjectInfo{label: k.Label, scopes: Expand(k.Scopes)}
 	}
 	a.cache = newKeyCache(a.now)
-	a.epoch = &epochCache{store: o.Store, now: a.now}
+	a.epoch = newEpochCache(o.Store, a.now)
 	if o.Store == nil {
 		// Without a database the epoch lives in memory; a random start value ends the sessions of
 		// a previous process, whose revocations were not persisted either.

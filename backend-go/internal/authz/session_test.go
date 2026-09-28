@@ -371,3 +371,89 @@ func TestKeyCacheRevocationRace(t *testing.T) {
 		t.Error("the revoked key's session survived through a stale cache entry")
 	}
 }
+
+// staleEpochStore reads the epoch, then holds the answer until released: a refresh whose read
+// happened before a concurrent bump committed.
+type staleEpochStore struct {
+	*authztestStore
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *staleEpochStore) SessionEpoch(ctx context.Context) (int64, error) {
+	ep, err := s.authztestStore.SessionEpoch(ctx)
+	if s.entered != nil {
+		s.entered <- struct{}{}
+		<-s.release
+	}
+	return ep, err
+}
+
+// TestEpochBumpSurvivesAnOverlappingRefresh: a revoke-all takes effect at once on this replica,
+// even when a refresh that read the old epoch finishes after it.
+func TestEpochBumpSurvivesAnOverlappingRefresh(t *testing.T) {
+	base := newFixture(t, nil)
+	ss := &staleEpochStore{authztestStore: base.st}
+	f := newFixture(t, func(o *Options) { o.Store = ss; o.Now = base.clock.Now })
+	f.st, f.clock = base.st, base.clock
+	cookie, _ := f.login(t, viewerKey)
+	f.clock.Advance(RevalidateEvery) // the next request refreshes the epoch
+
+	ss.entered, ss.release = make(chan struct{}), make(chan struct{})
+	done := make(chan Result)
+	go func() { done <- resolveCookie(f, cookie) }()
+	<-ss.entered // the refresh read the old epoch
+	ss.entered = nil
+	if _, err := f.a.RevokeAllSessions(context.Background(), "root"); err != nil {
+		t.Fatal(err)
+	}
+	close(ss.release)
+	if res := <-done; res.Identity != nil {
+		t.Error("the request whose refresh overlapped the bump kept the old epoch")
+	}
+	if res := resolveCookie(f, cookie); res.Identity != nil {
+		t.Error("a stale refresh undid the revoke-all")
+	}
+}
+
+// TestEpochUnknownWaitIsBounded: before any epoch is known, a hanging read holds up other
+// requests only as long as their own context allows; a failed read is retried by the next request.
+func TestEpochUnknownWaitIsBounded(t *testing.T) {
+	st, clk := authztest.New(), newClock()
+	e := newEpochCache(st, clk.Now)
+
+	gate := make(chan struct{})
+	st.SetGate(gate)
+	first := make(chan error, 1)
+	go func() {
+		_, err := e.current(context.Background())
+		first <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for st.Reads() < 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	start := time.Now()
+	_, err := e.current(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 2*time.Second {
+		t.Errorf("a caller behind a hanging first read: %v after %v", err, time.Since(start))
+	}
+	close(gate)
+	st.SetGate(nil)
+	if err := <-first; err != nil {
+		t.Fatalf("the first read: %v", err)
+	}
+
+	st2 := authztest.New()
+	st2.SetErr(errors.New("db down"))
+	e2 := newEpochCache(st2, clk.Now)
+	if _, err := e2.current(context.Background()); err == nil {
+		t.Fatal("the failed read is an error")
+	}
+	st2.SetErr(nil)
+	if ep, err := e2.current(context.Background()); err != nil || ep != 0 || st2.Reads() != 2 {
+		t.Errorf("the next request retries: %d %v after %d reads", ep, err, st2.Reads())
+	}
+}

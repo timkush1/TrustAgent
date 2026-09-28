@@ -163,43 +163,61 @@ func (a *Authenticator) ClearCookie() *http.Cookie {
 const epochRetry = 5 * time.Second
 
 // epochCache holds the current session epoch (settings row session_epoch), refreshed every
-// RevalidateEvery; without a store it lives in memory. One caller refreshes at a time and never
-// under the state lock: while a refresh runs (or after one failed, for epochRetry) the others
-// get the last known epoch at once, so a slow database does not serialize every cookie request.
+// RevalidateEvery; without a store it lives in memory. One caller reads the store at a time and
+// never under the state lock: once an epoch is known, while a refresh runs (or after one failed,
+// for epochRetry) the others get the last known epoch at once, so a slow database does not
+// serialize every cookie request. Before any epoch is known, callers wait for the one read only as
+// long as their own context allows.
 type epochCache struct {
-	store   Store
-	now     func() time.Time
-	mu      sync.Mutex // guards the fields below
-	value   int64
-	next    time.Time // when the value is due for a refresh
-	known   bool
-	memory  int64
-	refresh sync.Mutex // held by the one caller that reads the store
+	store  Store
+	now    func() time.Time
+	mu     sync.Mutex // guards the fields below
+	value  int64
+	next   time.Time // when the value is due for a refresh
+	known  bool
+	memory int64
+	// gen counts local bumps: a read that overlapped one does not store its (possibly
+	// pre-bump) value, so a revoke-all cannot be undone by a refresh that read the old epoch.
+	gen uint64
+	// refresh holds a token while one caller reads the store.
+	refresh chan struct{}
 }
 
-func (e *epochCache) cached() (int64, bool, bool) {
+func newEpochCache(st Store, now func() time.Time) *epochCache {
+	return &epochCache{store: st, now: now, refresh: make(chan struct{}, 1)}
+}
+
+// cached returns the epoch, whether it is known and fresh, and the bump generation.
+func (e *epochCache) cached() (v int64, known, fresh bool, gen uint64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.store == nil {
-		return e.memory, true, true
+		return e.memory, true, true, e.gen
 	}
-	return e.value, e.known, e.known && e.now().Before(e.next)
+	return e.value, e.known, e.known && e.now().Before(e.next), e.gen
 }
 
 func (e *epochCache) current(ctx context.Context) (int64, error) {
-	v, known, fresh := e.cached()
+	v, known, fresh, _ := e.cached()
 	if fresh {
 		return v, nil
 	}
 	if known {
-		if !e.refresh.TryLock() {
+		select {
+		case e.refresh <- struct{}{}:
+		default:
 			return v, nil // another request is refreshing
 		}
 	} else {
-		e.refresh.Lock()
+		select {
+		case e.refresh <- struct{}{}:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 	}
-	defer e.refresh.Unlock()
-	if v, _, fresh := e.cached(); fresh {
+	defer func() { <-e.refresh }()
+	v, _, fresh, gen := e.cached()
+	if fresh {
 		return v, nil
 	}
 	got, err := e.store.SessionEpoch(ctx)
@@ -211,6 +229,9 @@ func (e *epochCache) current(ctx context.Context) (int64, error) {
 			return e.value, nil
 		}
 		return 0, err
+	}
+	if e.gen != gen {
+		return e.value, nil // a local bump overlapped the read: its epoch is newer
 	}
 	e.value, e.known, e.next = got, true, e.now().Add(RevalidateEvery)
 	return got, nil
@@ -229,6 +250,7 @@ func (e *epochCache) bump(ctx context.Context, actor string) (int64, error) {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.gen++
 	if !e.known || v > e.value {
 		e.value, e.known = v, true
 	}
