@@ -26,21 +26,31 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
-	log := newLogger(cfg.LogLevel)
+	// Command-line modes (-check-config, -dump-config-spec, -new-setup-token [-force]) and
+	// TRUTHTABLE_STRICT_CONFIG (exit 2 on any configuration warning) run first (cli.go).
+	cfg, code, exit := bootConfig(os.Args[1:], os.Stdout, os.Stderr)
+	if exit {
+		os.Exit(code)
+	}
+	redactor := cfg.Redactor()
+	log := newLogger(cfg.LogLevel, redactor)
 	slog.SetDefault(log)
+	// gin's panic recovery dumps request headers (keys, the session cookie) in debug mode and on a
+	// broken pipe; it captures this writer when the router is built.
+	gin.DefaultErrorWriter = redactor.Writer(os.Stderr)
 	if err := run(cfg, log); err != nil {
 		log.Error("TrustAgent proxy stopped", "err", err)
 		os.Exit(1)
 	}
 }
 
-func newLogger(level string) *slog.Logger {
+// newLogger logs text to stderr; redactor masks every loaded secret and credential pattern.
+func newLogger(level string, redactor *config.Redactor) *slog.Logger {
 	var l slog.Level
 	if err := l.UnmarshalText([]byte(level)); err != nil {
 		l = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l, ReplaceAttr: redactor.ReplaceAttr}))
 }
 
 // run starts the proxy and blocks until SIGINT or SIGTERM, then shuts down in order: stop
@@ -68,6 +78,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 			log.Info("persistence enabled (Postgres)")
 		}
 	}
+	d.master = loadMasterKey(cfg, log) // signs dashboard sessions (P2 authz core)
 	if cfg.TraceFlush != "sync" {
 		log.Info("trace writes run inline; the batched TRUTHTABLE_TRACE_FLUSH=async writer lands in P2")
 	}
@@ -98,6 +109,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		return fmt.Errorf("gateway: %w", err)
 	}
 	logAuth(log, cfg)
+	srv.announceSetup(context.Background(), os.Stdout) // "SETUP: open …" while no admin exists
 	srv.start()
 
 	httpServer := &http.Server{
@@ -173,7 +185,7 @@ func logAuth(log *slog.Logger, cfg *config.Config) {
 		log.Warn("TRUTHTABLE_PUBLIC_READ: /api reads and /ws need no key; demo mode shows keyless readers prompts and answers")
 	case cfg.PublicRead:
 		log.Warn("TRUTHTABLE_PUBLIC_READ: /api reads and /ws need no key (texts stay hidden without a key)")
-	case len(cfg.APIKeys) == 0:
-		log.Warn("no TRUTHTABLE_API_KEYS: /api and /ws refuse every caller; set keys or TRUTHTABLE_PUBLIC_READ=true")
+	case len(cfg.APIKeys)+len(cfg.Auth.ReadKeys)+len(cfg.Auth.AdminKeys) == 0 && cfg.DatabaseURL == "":
+		log.Warn("no env keys and no database: /api and /ws refuse every caller; set TRUTHTABLE_API_KEYS / _ADMIN_KEYS or TRUTHTABLE_PUBLIC_READ=true")
 	}
 }

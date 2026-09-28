@@ -41,6 +41,8 @@ type serverDeps struct {
 	limiter    middleware.Limiter
 	redisState string
 	log        *slog.Logger
+	// master signs dashboard sessions; nil means an ephemeral key (sessions end at restart).
+	master *authz.MasterKey
 }
 
 // server is the proxy: the /v1 gateway, the REST API, the WS hub and the deep-audit workers.
@@ -104,7 +106,7 @@ func newServer(d serverDeps) (*server, error) {
 	if d.store != nil {
 		sink.store = d.store
 	}
-	gw, err := newGateway(cfg, sink, gatewayHooks{snapshotChanged: s.snapshotChanged}, log)
+	gw, err := newGateway(cfg, sink, newAuthenticator(cfg, d.store, d.master, log), gatewayHooks{snapshotChanged: s.snapshotChanged}, log)
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +165,8 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	api.GET("/kb/claims", read, rateLimit, handleListKBClaims(d.engine))
 	api.GET("/kb/conflicts", read, rateLimit, handleListConflicts(d.engine))
 	api.GET("/kb/stats", read, rateLimit, handleKBStats(d.engine))
+	// P2 authz core: setup, session, ws-ticket and keys endpoints (setup_api.go, session_api.go, keys_api.go).
+	s.mountAuthz(api, rateLimit, bodyLimit, writable)
 
 	r.GET("/ws", s.serveWS)
 
@@ -203,8 +207,8 @@ func (s *server) writable() gin.HandlerFunc {
 }
 
 // serveWS serves GET /ws: WS v2 with protocol=2, v1 frames otherwise (SPEC §2.5). Browsers cannot
-// set headers on the handshake, so until WS tickets and sessions (P2) a browser connects through
-// TRUTHTABLE_PUBLIC_READ; other clients send X-TrustAgent-Key. A failure before the upgrade is 401.
+// set headers on the handshake: they connect with a single-use ?ticket= (POST /api/ws-ticket) or
+// their session cookie; other clients send X-TrustAgent-Key. A failure before the upgrade is 401.
 func (s *server) serveWS(c *gin.Context) {
 	id, status, code, msg := s.auth.identify(c.Request, authz.ScopeRead, false)
 	if id == nil {

@@ -126,8 +126,17 @@ func TestTrafficgenExpectAgainstPostgres(t *testing.T) {
 	}
 	_, body = env.get("/api/status", testKey)
 	contractstest.ValidateJSON(t, schemaStatus, body)
-	// The newest embedded migration (0003 and 0004 arrived with P1b).
-	if !strings.Contains(string(body), `"migration":"0004_security_costs.up.sql"`) {
-		t.Errorf("status %s", body)
+	if want := newestMigration(t); !strings.Contains(string(body), `"migration":"`+want+`"`) {
+		t.Errorf("status names the newest migration %s: %s", want, body)
 	}
+}
+
+// newestMigration is the last embedded migration file, which /api/status reports once applied.
+func newestMigration(t *testing.T) string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "internal", "store", "migrations", "*.up.sql"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("migrations: %v", err)
+	}
+	return filepath.Base(files[len(files)-1])
 }

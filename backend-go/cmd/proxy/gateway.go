@@ -93,26 +93,12 @@ func hasSyncRoute(p *policy.Policy) bool {
 	return slices.ContainsFunc(routes, func(r *policy.Route) bool { return r != nil && r.Mode != decision.ModeObserve })
 }
 
-// newGateway builds the gate hot path: ingest auth, the policy, the decision-model client, the
-// gate and the /v1 handler. The sink persists and broadcasts traces and decisions and submits
-// deep audits.
-func newGateway(cfg *config.Config, sink gate.Sink, hooks gatewayHooks, log *slog.Logger) (*gatewayParts, error) {
+// newGateway builds the gate hot path: the policy, the decision-model client, the gate and the /v1
+// handler, behind the ingest auth of auth (newAuthenticator). The sink persists and broadcasts
+// traces and decisions and submits deep audits.
+func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, hooks gatewayHooks, log *slog.Logger) (*gatewayParts, error) {
 	for _, w := range cfg.Warnings {
 		log.Warn("config: " + w)
-	}
-
-	keys := make([]authz.Key, 0, len(cfg.APIKeys))
-	for _, k := range cfg.APIKeys {
-		keys = append(keys, authz.Key{Label: k.Label, Secret: k.Key, Scopes: authz.APIKeyScopes})
-	}
-	auth := authz.New(keys, cfg.IngestAuth)
-	switch {
-	case auth.IngestMode() == authz.IngestOpen:
-		log.Warn("TRUTHTABLE_INGEST_AUTH=open: /v1 accepts requests without an ingest key")
-	case !auth.HasIngestKeys():
-		log.Warn("no ingest keys: /v1 answers 401 until TRUTHTABLE_API_KEYS (label=key) is set, or TRUTHTABLE_INGEST_AUTH=open")
-	default:
-		log.Info("/v1 ingest auth: X-TrustAgent-Key", "keys", len(keys))
 	}
 
 	registry, err := evaluators.Builtins()

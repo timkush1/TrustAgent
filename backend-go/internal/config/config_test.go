@@ -219,6 +219,9 @@ func TestDecisionModelHTTPKeys(t *testing.T) {
 	if j.Path != "/typesafe/v1/systemone" || j.OpenRouterBaseURL != "http://mock-upstream:8090" || j.APIKey != "gw-key-from-file" {
 		t.Errorf("endpoint keys %+v", j)
 	}
+	if red := c.Redactor().Redact("key gw-key-from-file"); strings.Contains(red, "gw-key-from-file") {
+		t.Errorf("a credential read from a file is masked in logs: %q", red)
+	}
 	if j.MaxRetries != 0 || j.MaxRetriesAsync != 3 || j.RetryAfterCap != 4*time.Second || j.RPM != 120 ||
 		j.SyncReserve != 0.5 || j.MaxInFlight != 8 || j.BreakerFailures != 2 || j.BreakerCooldown != 5*time.Second ||
 		j.AuthCooldown != time.Minute || j.PricePerMTok != 0.05 {
