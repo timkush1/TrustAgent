@@ -1,0 +1,10 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "mixed-cjk-and-ascii",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Narrow and wide code points in one string: ASCII letters, digits and spaces are narrow, the CJK ideographs are wide.",
+  "input": {"value": "Refund 退款 within 30 days 三十天", "cpt": 4},
+  "expected": {"est": 12, "narrow": 25, "wide": 5}
+}

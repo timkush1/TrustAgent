@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "verdict-unknown-when-role-evaluator-errors",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route, fail open. groundedness has a question error (missing_answer); contradiction 0.20 is ok. No role-bearing evaluator is at warn, and one is in error: verdict unknown (checked before not_assessed and supported). Status partial with a block-eligible error: degraded error. The escalate error on groundedness makes deep_audit high.",
   "input": {
     "policy": {

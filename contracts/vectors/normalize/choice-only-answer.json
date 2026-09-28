@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-only-answer",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "No probabilities, and choice is an option: {declines_or_deflects: 1} with confidence_source choice_only, risk 1. vendor_confidence stays null.",
+  "input": {"template": "refusal@1", "answer": {"type": "choice", "choice": "declines_or_deflects"}},
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "choice_only",
+    "error": null,
+    "probabilities": {
+      "answers_request": 0,
+      "asks_clarifying_question": 0,
+      "declines_or_deflects": 1,
+      "nothing_to_answer": 0
+    },
+    "risk_raw": 1,
+    "top": "declines_or_deflects",
+    "vendor_confidence": null
+  }
+}

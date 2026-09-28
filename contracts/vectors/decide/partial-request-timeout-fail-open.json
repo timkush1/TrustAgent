@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "partial-request-timeout-fail-open",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route, fail open, questions split over two requests: request 0 (groundedness, contradiction) ok, request 1 (refusal, pii_secret_leak) timed out. Not every request failed: status partial. pii_secret_leak is block-eligible and in error, so the decision is failing; fail open records degraded error (partial maps to error). groundedness 0.85 is warn: action flag, verdict unsupported. refusal ignores errors (escalate null); pii_secret_leak escalates (error).",
   "input": {
     "policy": {

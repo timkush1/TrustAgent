@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "number-one-point-zero",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The literal 1.0 is the number 1 and is written 1 (ES6 number to string).",
+  "input": {"value": 1.0},
+  "expected": {
+    "jcs": "1",
+    "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+  }
+}

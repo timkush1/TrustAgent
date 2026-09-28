@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "sampled-out-not-degraded",
-  "status": "draft",
+  "status": "frozen",
   "description": "Observe route whose sample_rate skipped the Jev call (skip_reason sampled_out). Status skipped and every evaluator error sampled_out, but sampled_out is excluded from fail handling: degraded stays null. deep_audit uses the sampled_out exception: sample, not sample_error. Action observe, would pass.",
   "input": {
     "policy": {

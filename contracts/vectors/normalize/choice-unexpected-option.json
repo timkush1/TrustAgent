@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-unexpected-option",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A key that is not an option (declines) carries 0.4 > 0.01: unexpected_option.",
+  "input": {
+    "template": "refusal@1",
+    "answer": {
+      "type": "choice",
+      "choice": "answers_request",
+      "probabilities": {"answers_request": 0.6, "declines": 0.4}
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": "unexpected_option",
+    "probabilities": null,
+    "risk_raw": null,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

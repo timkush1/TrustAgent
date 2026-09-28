@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "skipped-breaker-fail-closed-fallback-route-blocks",
-  "status": "draft",
+  "status": "frozen",
   "description": "Fallback route (buffered), fail closed; the circuit breaker is open (skip_reason breaker_open). Status skipped is failing; fail closed forces action block even in fallback mode (there is nothing to re-gate a fallback with). breaker_open maps to degraded breaker.",
   "input": {
     "policy": {

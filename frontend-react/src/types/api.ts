@@ -15,11 +15,10 @@
  * - Without the `content` scope the server returns the same objects with text fields set to null
  *   and `redacted: true`.
  *
- * Deferred to P1b, together with src/lib/contracts/types.gen.ts: the re-exports of the
- * schema-generated types (PolicyDoc, RouteSettings, RouteEvaluatorRef, EvaluatorSpec,
- * EvaluatorDraft, CalibrationFile, CalibrationEntry, BenchmarkRun) and the §2.6 interfaces that
- * embed them (PolicyVersion, EffectiveRoute, PolicyState, EvaluatorVersion, EvaluatorDetail,
- * StudioDraftResponse, StudioTestRequest, StudioDryRunRequest, CalibrationRecord).
+ * Types generated from the other contract schemas (PolicyDoc, RouteSettings, RouteEvaluatorRef,
+ * EvaluatorSpec, EvaluatorDraft, CalibrationFile, CalibrationEntry, BenchmarkRun) live in
+ * src/lib/contracts/types.gen.ts (json-schema-to-typescript, drift-checked) and are re-exported
+ * here, as §2.6 prints them.
  */
 
 // primitives
@@ -787,6 +786,7 @@ export interface EvidenceSuggestion {
 }
 
 // policies
+export type { PolicyDoc, RouteSettings, RouteEvaluatorRef } from '@/lib/contracts/types.gen';
 export interface PolicyVersionMeta {
   id: number;
   created_at: ISODateTime;
@@ -794,6 +794,10 @@ export interface PolicyVersionMeta {
   author: string;
   message: string;
   sha256: string;
+}
+export interface PolicyVersion extends PolicyVersionMeta {
+  yaml: string;
+  doc: import('@/lib/contracts/types.gen').PolicyDoc;
 }
 export interface Downgrade {
   code:
@@ -811,6 +815,40 @@ export interface BlockReadiness {
   evaluator: string;
   ready: boolean;
   missing: ('evidence' | 'corroborator' | 'calibration' | 'buffering' | 'mode')[];
+}
+export interface EffectiveRoute {
+  name: string;
+  match: Record<string, unknown>;
+  mode: PolicyMode;
+  effective_mode: PolicyMode;
+  fail: 'open' | 'closed';
+  downgrades: Downgrade[];
+  block_readiness: BlockReadiness[];
+  evaluators: {
+    ref: string;
+    stage: 'active' | 'shadow';
+    resolved: boolean;
+    calibration_state: CalibrationState;
+    threshold_space: 'raw' | 'calibrated';
+    warn_at: number;
+    critical_at: number | null;
+  }[];
+  settings: import('@/lib/contracts/types.gen').RouteSettings;
+}
+export interface PolicyState extends PolicyVersion {
+  etag: string;
+  locked: boolean;
+  persisted: boolean;
+  editable: boolean;
+  editable_reason: string | null;
+  effective_routes: EffectiveRoute[];
+  file: {
+    path: string;
+    sha256: string | null;
+    status: 'ok' | 'missing' | 'invalid' | 'diverged';
+    errors: FieldError[];
+  };
+  warnings: string[];
 }
 export interface ValidateResult {
   ok: boolean;
@@ -845,6 +883,13 @@ export interface PolicyDryRunResult {
 }
 
 // evaluators, studio, calibration
+export type {
+  EvaluatorSpec,
+  EvaluatorDraft,
+  CalibrationFile,
+  CalibrationEntry,
+  BenchmarkRun,
+} from '@/lib/contracts/types.gen';
 export interface CalibrationProgress {
   evaluator_ref: string;
   snapshot: string | null;
@@ -865,11 +910,35 @@ export interface EvaluatorMeta {
   attached_routes: { route: string; stage: 'active' | 'shadow' }[];
   updated_at: ISODateTime;
 }
+export interface EvaluatorVersion {
+  evaluator_id: string;
+  version: number;
+  spec: import('@/lib/contracts/types.gen').EvaluatorSpec;
+  spec_sha256: string;
+  question_sha256: string;
+  calibration_key: string;
+  created_by: string;
+  created_at: ISODateTime;
+  changelog: string;
+}
+export interface EvaluatorDetail extends EvaluatorMeta {
+  versions: Omit<EvaluatorVersion, 'spec'>[];
+  latest: EvaluatorVersion;
+  calibration_progress: CalibrationProgress;
+}
 export interface Lint {
   code: string;
   severity: 'error' | 'warning';
   path: string;
   message: string;
+}
+export interface StudioDraftResponse {
+  draft: import('@/lib/contracts/types.gen').EvaluatorDraft | null;
+  errors: FieldError[];
+  lints: Lint[];
+  model: string;
+  cost_usd: number;
+  attempts: number;
 }
 export interface StudioSample {
   id: string;
@@ -880,6 +949,12 @@ export interface StudioSample {
   system_instructions?: string;
   rules?: Record<string, string>;
   expected?: 'fire' | 'no_fire';
+}
+export interface StudioTestRequest {
+  spec?: import('@/lib/contracts/types.gen').EvaluatorSpec;
+  ref?: string;
+  samples: StudioSample[];
+  thresholds?: { warn_at?: number; critical_at?: number | null };
 }
 export interface StudioTestResponse {
   run_id: string;
@@ -932,6 +1007,15 @@ export interface QuickCalibration {
   };
   grid: { threshold: number; tp: number; fp: number; tn: number; fn: number }[];
 }
+export interface StudioDryRunRequest {
+  spec?: import('@/lib/contracts/types.gen').EvaluatorSpec;
+  ref?: string;
+  thresholds?: { warn_at?: number; critical_at?: number | null };
+  route: string;
+  window: '24h' | '7d';
+  max_samples: number;
+  confirm_cost?: boolean;
+}
 export interface DryRunResult {
   run_id: string;
   evaluator_ref: string;
@@ -979,6 +1063,9 @@ export interface CalibrationRecordMeta {
   target_key: string;
   quality: 'measured' | 'provisional' | 'proxy' | 'mock';
   active: boolean;
+}
+export interface CalibrationRecord extends CalibrationRecordMeta {
+  entry: import('@/lib/contracts/types.gen').CalibrationEntry;
 }
 export interface ReliabilityResponse {
   evaluator: string;

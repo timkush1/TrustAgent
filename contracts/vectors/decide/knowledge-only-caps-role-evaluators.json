@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "knowledge-only-caps-role-evaluators",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required, evidence came only from the knowledge base. Both role-bearing evaluators are capped at warn (groundedness 0.97, contradiction 0.98: capped knowledge_only). pii_secret_leak has no verdict role and is not capped: exposes_secret 0.95 is critical and corroborated by the fired secret_pattern detector, so it blocks. Reasons: the critical first, then warns by risk.",
   "input": {
     "policy": {

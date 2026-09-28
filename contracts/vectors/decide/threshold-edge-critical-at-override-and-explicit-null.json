@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "threshold-edge-critical-at-override-and-explicit-null",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required. groundedness override critical_at 0.90 with risk exactly 0.90: critical. contradiction override critical_at null (an explicit null overrides the spec 0.95): risk 0.99 is only warn. groundedness is then uncorroborated (contradiction not critical): needs_second_signal, action flag. Verdict contradicted (contradiction at warn).",
   "input": {
     "policy": {

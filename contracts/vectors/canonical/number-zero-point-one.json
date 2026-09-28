@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "number-zero-point-one",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "0.1 is written with the shortest round-trip digits: 0.1.",
+  "input": {"value": 0.1},
+  "expected": {
+    "jcs": "0.1",
+    "sha256": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310"
+  }
+}

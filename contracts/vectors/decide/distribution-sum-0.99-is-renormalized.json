@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "distribution-sum-0.99-is-renormalized",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. The refusal probabilities sum to 0.99 (within the 0.10 tolerance for 4 options, and within 0.02, so no anomaly): each is divided by 0.99. declines_or_deflects 0.695 becomes 0.702020..., which crosses warn_at 0.70 (the unnormalized 0.695 would not).",
   "input": {
     "policy": {

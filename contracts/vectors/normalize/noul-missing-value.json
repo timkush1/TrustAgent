@@ -1,0 +1,18 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "noul-missing-value",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A noul answer without its noul value is missing_answer.",
+  "input": {"template": "groundedness@1", "answer": {"type": "noul"}},
+  "expected": {
+    "anomalies": [],
+    "confidence_source": null,
+    "error": "missing_answer",
+    "probabilities": null,
+    "risk_raw": null,
+    "top": null,
+    "vendor_confidence": null
+  }
+}

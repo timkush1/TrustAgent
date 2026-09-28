@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "on-no-evidence-flag",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route with on_no_evidence: flag and no evidence. Both required evaluators were excluded as no_evidence, and compile added factual_claims@1 as an internal evaluator: 0.90 >= warn_at 0.60 is warn. The no-evidence rule raises would to flag and adds no_evidence. factual_claims is internal, so it is outside the active set: no factual_claims:warn reason and no effect on max_risk (refusal 0.02 is the max). Verdict not_assessed.",
   "input": {
     "policy": {

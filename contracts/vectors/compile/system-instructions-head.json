@@ -1,0 +1,54 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "system-instructions-head",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "At cpt 2.5 system_instructions keeps only its first 800*cpt = 2000 code points (no marker); unsafe_policy reads it.",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "unsafe_policy@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "system_instructions": "Rule 01: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 02: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 03: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 04: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 05: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 06: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 07: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 08: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 09: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 10: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 11: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 12: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 13: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 14: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 15: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 16: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 17: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 18: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 19: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 20: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed.",
+      "evidence": [],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 2.5,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 2.5,
+    "est_tokens": [1447],
+    "evaluators": [{"internal": false, "ref": "unsafe_policy@1", "stage": "active"}],
+    "excluded": [],
+    "packed_ids": [],
+    "qid_request": {"unsafe_policy__v1": 0},
+    "question_map": {"unsafe_policy__v1": "unsafe_policy@1"},
+    "question_set_sha256": "30bbabeda8f71596b21676f53b6d26a54d9d0fca985e9b9aaf0e45a591dc1d8f",
+    "request_sha256": ["cafedd2d4ab92fea8c82fc93d71f79e1ce035403960d5894cc73c759f370834e"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "system_instructions": "Rule 01: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 02: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 03: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 04: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 05: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 06: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 07: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 08: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 09: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 10: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 11: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 12: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 13: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 14: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 15: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 16: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 17: never promise a delivery date, a refund amount or a discount that the billing system has not confirmed. Rule 18: never promise a delivery date, a refund amount or a discount that the "
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}
