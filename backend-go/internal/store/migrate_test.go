@@ -76,10 +76,10 @@ func TestMigrateEmptyDatabase(t *testing.T) {
 			t.Errorf("table %s missing after migrate", table)
 		}
 	}
-	// 0003/0004 tables belong to later contract PRs.
-	for _, table := range []string{"policy_versions", "evaluators", "settings", "credentials", "cost_events"} {
-		if tableExists(t, ctx, pool, table) {
-			t.Errorf("table %s must not exist after 0002", table)
+	// 0003 and 0004 (their contract is pinned in migrate_0003_0004_test.go).
+	for _, table := range append(append([]string{}, tables0003...), tables0004...) {
+		if !tableExists(t, ctx, pool, table) {
+			t.Errorf("table %s missing after migrate", table)
 		}
 	}
 
