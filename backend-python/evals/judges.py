@@ -836,7 +836,10 @@ class GateJudge:
             # An invalid example or a compile failure: no decision-model call.
             cost = _number(answer.get("cost_usd"))
             charged = budget.settle(
-                reservation, cost if cost is not None else 0.0, system=self.system
+                reservation,
+                cost if cost is not None else 0.0,
+                system=self.system,
+                example_id=example.id,
             )
             return self._record(
                 example,
