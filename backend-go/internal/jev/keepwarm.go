@@ -93,10 +93,15 @@ func (c *httpClient) SetKeepWarm(active bool) {
 	<-c.warmDone
 }
 
-// Close stops keep-warm and drops idle connections.
+// Close stops keep-warm for good and drops idle connections. Stopping and closing happen under one
+// lock, so a concurrent SetKeepWarm(true) cannot restart the loop after Close.
 func (c *httpClient) Close() error {
-	c.SetKeepWarm(false)
 	c.warmMu.Lock()
+	if c.warmOn {
+		close(c.warmStop)
+		<-c.warmDone
+		c.warmOn = false
+	}
 	c.closed = true
 	c.warmMu.Unlock()
 	c.hc.CloseIdleConnections()

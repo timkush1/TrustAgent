@@ -334,7 +334,8 @@ type Config struct {
 	Budget Budget
 	// OnSnapshotChange is called when the snapshot answering a model differs from the last one
 	// seen (or from KnownSnapshot for the default model), e.g. to broadcast
-	// decision_model_changed.
+	// decision_model_changed. It runs on the attempt goroutine before the decision is delivered,
+	// so it must not block.
 	OnSnapshotChange func(SnapshotChange)
 	// KnownSnapshot is the last snapshot recorded for the default model, if persisted.
 	KnownSnapshot string

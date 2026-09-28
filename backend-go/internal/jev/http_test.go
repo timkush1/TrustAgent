@@ -1168,3 +1168,21 @@ func TestEchoedCredentialIsMasked(t *testing.T) {
 		t.Errorf("status %+v", st.LastError)
 	}
 }
+
+func TestCloseStopsKeepWarmForGood(t *testing.T) {
+	h := newHarness(t, mockupstream.Config{})
+	cl := h.client(BackendOpenRouterDecisions, func(c *Config) { c.HTTP.KeepAlive = time.Hour })
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cl.SetKeepWarm(i%2 == 0)
+		}()
+	}
+	_ = cl.Close()
+	wg.Wait()
+	if cl.Status().KeepWarm {
+		t.Error("keep-warm runs after Close")
+	}
+}
