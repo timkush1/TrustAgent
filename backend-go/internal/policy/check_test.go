@@ -229,10 +229,13 @@ func TestDocIsAsWritten(t *testing.T) {
 		t.Errorf("generated YAML is block style and keeps nulls:\n%s", res.Policy.YAML)
 	}
 	// Strings that look like other types stay strings.
-	tricky := `{"version":1,"defaults":{"block":{"message":"true"},"fallback":{"model":"1.5"}}}`
-	res = CheckDoc(json.RawMessage(tricky), env(t))
-	if res.Policy == nil || res.Policy.Default.Block.Message != "true" || res.Policy.Default.Fallback.Model != "1.5" {
-		t.Fatalf("tricky strings: %v\n%s", res.Errors, res.Policy.YAML)
+	for _, v := range []string{"true", "1.5", "yes", "on", "null", "~", "0x10", "- a", "a: b", "#x", "", "  pad", "multi\nline", "é ✓"} {
+		quoted, _ := json.Marshal(v)
+		tricky := `{"version":1,"defaults":{"fallback":{"model":` + string(quoted) + `}}}`
+		res = CheckDoc(json.RawMessage(tricky), env(t))
+		if res.Policy == nil || res.Policy.Default.Fallback.Model != v {
+			t.Errorf("string %q does not round-trip: %v", v, res.Errors)
+		}
 	}
 	// Errors of the doc form carry paths only.
 	res = CheckDoc(json.RawMessage(`{"version":1,"defaults":{"mode":"strict"}}`), env(t))

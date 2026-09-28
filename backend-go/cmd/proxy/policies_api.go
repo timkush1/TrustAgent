@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -186,6 +187,9 @@ func bindJSON(c *gin.Context, dst any, optional bool) bool {
 	dec := json.NewDecoder(c.Request.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		if optional && errors.Is(err, io.EOF) {
+			return true
+		}
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			abortAPI(c, http.StatusRequestEntityTooLarge, codeTooLarge, "The request body is too large.")
