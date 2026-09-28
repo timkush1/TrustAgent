@@ -274,19 +274,30 @@ func NewAuthenticator(o Options) *Authenticator {
 	if len(subjectKey) == 0 {
 		subjectKey = randomBytes(32)
 	}
+	// A secret listed twice (for example in _API_KEYS and _ADMIN_KEYS) is one subject with the union
+	// of the scopes, named after its first label, as envIdentity reports it.
+	subOf := map[[sha256.Size]byte]string{}
 	for _, k := range o.Keys {
 		if k.Secret == "" {
 			continue
 		}
-		sub := envSubject(subjectKey, k.Label, k.Secret)
+		digest := sha256.Sum256([]byte(k.Secret))
+		sub, seen := subOf[digest]
+		if !seen {
+			sub = envSubject(subjectKey, k.Label, k.Secret)
+			subOf[digest] = sub
+		}
 		a.keys = append(a.keys, entry{
 			id:     Identity{Label: k.Label, Scopes: slices.Clone(k.Scopes), Kind: KindEnvKey, Subject: sub},
-			digest: sha256.Sum256([]byte(k.Secret)),
+			digest: digest,
 		})
-		info := a.subjects[sub]
-		info.label = k.Label
-		info.scopes = Expand(append(info.scopes, k.Scopes...))
-		a.subjects[sub] = info
+		if seen {
+			info := a.subjects[sub]
+			info.scopes = Expand(append(slices.Clone(info.scopes), k.Scopes...))
+			a.subjects[sub] = info
+			continue
+		}
+		a.subjects[sub] = subjectInfo{label: k.Label, scopes: Expand(k.Scopes)}
 	}
 	a.cache = newKeyCache(a.now)
 	a.epoch = &epochCache{store: o.Store, now: a.now}

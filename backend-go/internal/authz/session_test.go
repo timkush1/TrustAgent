@@ -259,3 +259,21 @@ func TestSessionSliding(t *testing.T) {
 		t.Errorf("a 12 h session never slides: %+v", res)
 	}
 }
+
+// TestSessionSharedEnvSecret: a secret listed in two env lists is one subject holding the union of
+// the scopes, so its session keeps them all.
+func TestSessionSharedEnvSecret(t *testing.T) {
+	f := newFixture(t, func(o *Options) {
+		o.Keys = []Key{
+			{Label: "app", Secret: appKey, Scopes: APIKeyScopes},
+			{Label: "ops", Secret: appKey, Scopes: AdminKeyScopes},
+		}
+	})
+	cookie, sess := f.login(t, appKey)
+	if sess.Label != "app" || !sess.Has(ScopeAdmin) {
+		t.Fatalf("session %+v", sess)
+	}
+	if res := resolveCookie(f, cookie); res.Identity == nil || !res.Identity.Has(ScopeAdmin) || res.Identity.Label != "app" {
+		t.Errorf("re-validated session %+v", res.Identity)
+	}
+}

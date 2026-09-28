@@ -113,6 +113,9 @@ func (a *Authenticator) Resolve(r *http.Request, s Surface) Result {
 				return Result{Identity: id, Source: SourceInjectedBearer}
 			case errors.Is(err, ErrUnavailable):
 				return Result{Source: SourceInjectedBearer, Err: failUnavailable}
+			case IsMintedKey(v):
+				// A TrustAgent key that is unknown or revoked: say so rather than "missing".
+				return Result{Source: SourceInjectedBearer, Err: failInvalidKey}
 			}
 			// Not a proxy key: the client's own credential, which inject mode strips.
 		}

@@ -260,6 +260,10 @@ func TestIngestB1InjectMode(t *testing.T) {
 	if d == nil || d.status != http.StatusUnauthorized || !strings.HasPrefix(d.message, "Missing") {
 		t.Errorf("inject mode, a client credential that is not a proxy key, open refused: %+v", d)
 	}
+	d, _ = serveIngest(inject.a, request(http.MethodPost, "/v1/chat/completions", "", "Authorization", "Bearer ta_"+strings.Repeat("Q", 43)))
+	if d == nil || d.status != http.StatusUnauthorized || d.message != "The presented key is not valid." {
+		t.Errorf("inject mode, an unknown minted key: %+v", d)
+	}
 
 	pass := newFixture(t, nil)
 	d, _ = serveIngest(pass.a, request(http.MethodPost, "/v1/chat/completions", "", "Authorization", "Bearer "+appKey))
