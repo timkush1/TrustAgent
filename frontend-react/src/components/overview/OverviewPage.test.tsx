@@ -28,6 +28,9 @@ describe('Overview page', { timeout: 20_000 }, () => {
     expect(within(glance).getByText('Needs 30 unbiased samples (have 12)')).toBeInTheDocument();
     // The fast check's latency carries its value label like the counts.
     expect(within(glance).getByRole('button', { name: /Measured: how “Fast check \(Jev\) latency” was produced/ })).toBeInTheDocument();
+    // So do the stopped count and the groundedness share (every number says where it comes from).
+    expect(within(glance).getByRole('button', { name: /Measured: how “Answers stopped or flagged” was produced/ })).toBeInTheDocument();
+    expect(within(glance).getByRole('button', { name: /Measured: how “Groundedness checked” was produced/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What was caught' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Contradicts your documents: show all 21 requests' })).toHaveAttribute(
       'href',

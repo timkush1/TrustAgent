@@ -39,7 +39,12 @@ export function AtAGlance({ stats, label }: { stats: OverviewStats; label: Value
       </Item>
       <Item
         label={copy.savings.stopped}
-        note={`${formatCount(t.flagged)} flagged to your app · ${formatCount(t.gate_errors)} check errors`}
+        note={
+          <>
+            {`${formatCount(t.flagged)} flagged to your app · ${formatCount(t.gate_errors)} check errors`}{' '}
+            <EvidenceBadge label={label} subject="Answers stopped or flagged" />
+          </>
+        }
       >
         <span className="text-xl font-semibold text-fg tabular">{formatCount(stopped)}</span>
       </Item>
@@ -50,9 +55,12 @@ export function AtAGlance({ stats, label }: { stats: OverviewStats; label: Value
           </>
         }
         note={
-          <a href="#evidence-coverage" className="font-medium text-fg underline underline-offset-2">
-            {copy.overview.why_not}
-          </a>
+          <>
+            <a href="#evidence-coverage" className="font-medium text-fg underline underline-offset-2">
+              {copy.overview.why_not}
+            </a>{' '}
+            <EvidenceBadge label={label} subject="Groundedness checked" />
+          </>
         }
       >
         <span className="text-xl font-semibold text-fg tabular">
