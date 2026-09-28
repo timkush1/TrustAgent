@@ -40,6 +40,10 @@ describe('OutcomeTimeSeries', () => {
     const box = readout.parentElement as HTMLElement;
     expect(box).toHaveTextContent('11:00');
     expect(within(box).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['0Blocked', '2Replaced', '0Flagged', '52Passed']);
+    // A zero recedes in muted ink, not by fading: its text keeps full contrast.
+    const zero = within(box).getAllByRole('listitem')[0];
+    expect(zero).toHaveAttribute('data-muted', 'true');
+    expect(zero.className).not.toMatch(/opacity/);
   });
 
   it('has a table view with every number, including totals', async () => {
@@ -133,6 +137,15 @@ describe('Sparkline', () => {
     const dot = container.querySelector('[data-end-dot]') as SVGCircleElement;
     expect(dot).toHaveAttribute('r', '4');
     expect(dot).toHaveAttribute('stroke', 'var(--surface)');
+  });
+
+  it('draws a value between two gaps as a dot rather than nothing', () => {
+    const { container } = render(<Sparkline label="Blocked per hour" values={[3, null, 5, null, 2, 4]} width={100} />);
+    const paths = [...container.querySelectorAll('path')].map((p) => p.getAttribute('d') ?? '');
+    expect(paths).toHaveLength(3);
+    const lone = paths[1];
+    expect(lone).toMatch(/^M([\d.]+,[\d.]+)L\1$/);
+    expect(container.querySelector('path')).toHaveAttribute('stroke-linecap', 'round');
   });
 
   it('shows the value under the pointer', () => {

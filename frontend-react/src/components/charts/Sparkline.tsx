@@ -57,18 +57,20 @@ export function Sparkline({
   const x = (i: number) => (n <= 1 ? width / 2 : PAD + (i / (n - 1)) * (width - 2 * PAD));
   const y = (v: number) => height - PAD - ((v - min) / span) * (height - 2 * PAD);
 
-  // One path per run of present values, so a null leaves a gap.
+  // One path per run of present values, so a null leaves a gap. A run of one point (a value between
+  // two gaps) is a zero-length line, which the round cap draws as a dot instead of nothing.
   const segments: string[] = [];
-  let current = '';
+  let run: string[] = [];
+  const endRun = () => {
+    if (run.length === 1) run.push(run[0]);
+    if (run.length > 0) segments.push(run.map((p, i) => `${i === 0 ? 'M' : 'L'}${p}`).join(''));
+    run = [];
+  };
   values.forEach((v, i) => {
-    if (v === null || !Number.isFinite(v)) {
-      if (current) segments.push(current);
-      current = '';
-      return;
-    }
-    current += `${current ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+    if (v === null || !Number.isFinite(v)) endRun();
+    else run.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
   });
-  if (current) segments.push(current);
+  endRun();
 
   let lastIndex = -1;
   for (let i = n - 1; i >= 0; i -= 1) {

@@ -107,7 +107,7 @@ export interface TooltipRow {
   label: string;
   value: string;
   color: string;
-  /** Dim a row whose value is zero. */
+  /** Recede a row whose value is zero (muted ink, never lowered opacity: text keeps 4.5:1). */
   muted?: boolean;
 }
 
@@ -118,9 +118,9 @@ export function ChartTooltipBox({ title, rows, footer }: { title: ReactNode; row
       <p className="mb-1 text-fg-muted">{title}</p>
       <ul className="space-y-0.5">
         {rows.map((r) => (
-          <li key={r.key} className={cn('flex items-center gap-2', r.muted && 'opacity-60')}>
+          <li key={r.key} data-muted={r.muted || undefined} className="flex items-center gap-2">
             <span aria-hidden="true" className="h-0.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: r.color }} />
-            <span className="font-medium tabular">{r.value}</span>
+            <span className={cn('tabular', r.muted ? 'text-fg-muted' : 'font-medium')}>{r.value}</span>
             <span className="text-fg-muted">{r.label}</span>
           </li>
         ))}
