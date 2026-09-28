@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -247,6 +248,27 @@ func TestSetupAPIClaimsTheTokenOnce(t *testing.T) {
 	}
 }
 
+// TestSetupClaimWaitsForTheDatabase: when a session could not be issued, the setup token is not
+// spent (the admin key it creates would be lost); it still works once the database is back.
+func TestSetupClaimWaitsForTheDatabase(t *testing.T) {
+	env := newAuthzEnv(t, authzEnvOpts{mutate: func(c *config.Config) { c.Auth.AdminKeys = nil }})
+	var out bytes.Buffer
+	env.srv.announceSetup(context.Background(), &out)
+	token := strings.TrimSpace(out.String()[strings.Index(out.String(), "#token=")+len("#token="):])
+	env.st.SetErr(errors.New("database down"))
+	resp, body := env.call(http.MethodPost, "/api/session", map[string]string{"setup_token": token}, nil, csrf...)
+	if resp.StatusCode != http.StatusServiceUnavailable || errorCode(t, body) != codePersistenceDisabled {
+		t.Fatalf("claim during an outage: %d %s", resp.StatusCode, body)
+	}
+	env.st.SetErr(nil)
+	resp, body = env.call(http.MethodPost, "/api/session", map[string]string{"setup_token": token}, nil, csrf...)
+	var info sessionInfo
+	strictDecode(t, body, &info)
+	if resp.StatusCode != http.StatusOK || info.CreatedAdminKey == "" {
+		t.Errorf("claim after the outage: %d %s", resp.StatusCode, body)
+	}
+}
+
 func TestSetupAPIWithoutPersistence(t *testing.T) {
 	env := newAuthzEnv(t, authzEnvOpts{noStore: true, mutate: func(c *config.Config) { c.Auth.AdminKeys = nil }})
 	_, body := env.call(http.MethodGet, "/api/setup/status", nil, nil)
@@ -431,6 +453,7 @@ func TestKeysAPI(t *testing.T) {
 	if resp, _ := env.call(http.MethodGet, "/api/traces", nil, nil, authz.HeaderKey, created.Secret); resp.StatusCode != http.StatusOK {
 		t.Errorf("the new key reads: %d", resp.StatusCode)
 	}
+	env.srv.gateway.auth.Wait() // last_used_at is written in the background
 	resp, body = env.call(http.MethodGet, "/api/keys", nil, nil, admin...)
 	var list struct {
 		Items []apiKeyView `json:"items"`

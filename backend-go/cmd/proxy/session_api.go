@@ -210,6 +210,12 @@ func (h *authzAPI) createSession(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	// The setup claim creates the only copy of the admin key: make sure a session can be issued
+	// before claiming, so a failure afterwards is unlikely (and still returns the key, below).
+	if err := h.auth.SessionsReady(ctx); err != nil {
+		abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "Sessions cannot be started right now: the database is unavailable.")
+		return
+	}
 	var (
 		id      *authz.Identity
 		created string
@@ -240,6 +246,13 @@ func (h *authzAPI) createSession(c *gin.Context) {
 	cookie, sess, err := h.auth.IssueSession(ctx, id)
 	if err != nil {
 		h.log.Error("session not issued", "err", err)
+		if created != "" {
+			// The claim succeeded: never lose the admin key. No cookie is set; the dashboard signs
+			// in with the key (POST /api/session {key}) once the database answers again.
+			noStore(c)
+			c.JSON(http.StatusOK, h.info(id, created))
+			return
+		}
 		abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "The session cannot be started right now.")
 		return
 	}
