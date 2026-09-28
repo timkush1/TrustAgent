@@ -88,7 +88,13 @@ type tally struct {
 }
 
 func generate(opt options, stdout io.Writer) error {
-	fsys := os.DirFS(opt.contracts)
+	// Every read and write stays inside the contracts directory.
+	root, err := os.OpenRoot(opt.contracts)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	fsys := root.FS()
 	all, err := vectors.Load(fsys, "vectors")
 	if err != nil {
 		return err
@@ -107,7 +113,7 @@ func generate(opt options, stdout io.Writer) error {
 		if counts[v.Dir] == nil {
 			counts[v.Dir] = &tally{}
 		}
-		action, err := process(opt, v)
+		action, err := process(opt, root, v)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", v.Path, err))
 			continue
@@ -152,12 +158,13 @@ const (
 	actionFrozen
 )
 
-// process regenerates one vector's expected value and rewrites its file when needed.
-func process(opt options, v *vectors.Vector) (action, error) {
+// process regenerates one vector's expected value and rewrites its file (under root, the
+// contracts directory) when needed.
+func process(opt options, root *os.Root, v *vectors.Vector) (action, error) {
 	if err := v.Check(); err != nil {
 		return actionNone, err
 	}
-	out, err := vectors.Run(v.Kind, v.Input, os.DirFS(opt.contracts))
+	out, err := vectors.Run(v.Kind, v.Input, root.FS())
 	if err != nil {
 		return actionNone, err
 	}
@@ -182,8 +189,12 @@ func process(opt options, v *vectors.Vector) (action, error) {
 	if !stale && !opt.freeze {
 		return actionNone, nil
 	}
-	path := filepath.Join(opt.contracts, filepath.FromSlash(v.Path))
-	src, err := os.ReadFile(path)
+	name := filepath.FromSlash(v.Path)
+	info, err := root.Stat(name)
+	if err != nil {
+		return actionNone, err
+	}
+	src, err := root.ReadFile(name)
 	if err != nil {
 		return actionNone, err
 	}
@@ -201,7 +212,8 @@ func process(opt options, v *vectors.Vector) (action, error) {
 	if err != nil {
 		return actionNone, err
 	}
-	if err := os.WriteFile(path, updated, 0o644); err != nil {
+	// The vector file is a repository source: it keeps its permissions.
+	if err := root.WriteFile(name, updated, info.Mode().Perm()); err != nil {
 		return actionNone, err
 	}
 	if opt.freeze {
@@ -212,6 +224,7 @@ func process(opt options, v *vectors.Vector) (action, error) {
 
 // gitRevision returns the short HEAD revision of the repository holding dir, or "unknown".
 func gitRevision(dir string) string {
+	// #nosec G204 -- a fixed git command; dir is the -contracts directory the developer passed.
 	out, err := exec.Command("git", "-C", dir, "rev-parse", "--short=12", "HEAD").Output()
 	if err != nil {
 		return "unknown"

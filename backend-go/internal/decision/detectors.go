@@ -645,7 +645,7 @@ func (d *detection) promptLeak() (bool, string) {
 		win := s[i : i+w]
 		var wh uint64
 		for _, c := range win {
-			wh = wh*base + uint64(c)
+			wh = wh*base + uint64(c) // #nosec G115 -- a rune from a string is a code point in [0, 0x10FFFF]
 		}
 		for _, j := range windows[wh] {
 			if slices.Equal(r[j:j+w], win) {

@@ -179,9 +179,8 @@ func missingMessage(scenario string, known bool, qid string) string {
 // skews low (u^3), so unscripted demo traffic mostly passes.
 func (m *mockClient) hashAnswer(qid string, question any, stateJCS []byte) *decision.RawAnswer {
 	h := sha256.New()
-	var seed [8]byte
-	binary.BigEndian.PutUint64(seed[:], uint64(m.cfg.Seed))
-	h.Write(seed[:])
+	// The seed's two's-complement big-endian bytes.
+	_ = binary.Write(h, binary.BigEndian, m.cfg.Seed)
 	h.Write([]byte(qid))
 	h.Write([]byte{0})
 	h.Write(stateJCS)
