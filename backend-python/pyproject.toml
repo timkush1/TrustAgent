@@ -5,6 +5,10 @@ description = "TruthTable AI Audit Engine - Hallucination Detection Service"
 authors = ["Tim Kushmaro <timk@mail.tau.ac.il>"]
 readme = "README.md"
 packages = [{include = "truthtable", from = "src"}]
+# The generated gRPC stubs are gitignored (make proto), so Poetry would leave
+# them out; list them so an installed engine (pip install ./backend-python)
+# carries the stubs generated before the build.
+include = [{path = "src/truthtable/grpc/pb/*_pb2*.py", format = ["sdist", "wheel"]}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
