@@ -11,7 +11,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Play, Square } from 'lucide-react';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useDataSource } from '@/app/services';
 import { useGatewayOrigin } from '@/components/common/useGatewayOrigin';
 import { CodeBlock } from '@/components/common/CodeBlock';
@@ -86,6 +86,8 @@ export function PlaygroundPage() {
   const policies = useQuery(policiesQuery(ds));
   const [run, setRun] = useState<RunState>(IDLE);
   const abort = useRef<AbortController | null>(null);
+  // Leaving the page stops a run still in flight (a streamed answer would otherwise keep reading).
+  useEffect(() => () => abort.current?.abort(), []);
 
   const routes = policies.data ? policies.data.effective_routes.map((r) => r.name).filter((n) => n !== 'default') : policies.isError ? null : [];
   const maxChars = status?.limits.max_text_chars ?? null;

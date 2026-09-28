@@ -1,11 +1,12 @@
 import { act, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { playgroundResult } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
-import { installMswServer } from '@/test/msw';
+import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { s0Decision, s0Trace } from '@/test/scenarios';
 import { buildRequest, EXAMPLES, formProblem, INITIAL_FORM } from './playgroundModel';
@@ -129,6 +130,32 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
     expect(await screen.findByText('Flagged')).toBeInTheDocument();
     expect((control.callsTo('/api/playground/run')[0].body as { stream: boolean }).stream).toBe(true);
+  });
+
+  it('stops a streamed run when the viewer leaves the page', async () => {
+    const user = userEvent.setup();
+    let signal: AbortSignal | null = null;
+    const { router } = renderPage('/app/playground');
+    server.use(
+      http.post(`${API}/api/playground/run`, ({ request }) => {
+        signal = request.signal;
+        // A stream that never ends on its own.
+        const body = new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(new TextEncoder().encode('event: token\ndata: {"text":"You can get "}\n\n'));
+          },
+        });
+        return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream' } });
+      }),
+    );
+    await fillChat(user);
+    await user.click(screen.getByRole('switch', { name: 'Stream the answer' }));
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    expect(await screen.findByText('You can get')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    expect(signal!.aborted).toBe(false);
+    await act(() => router.navigate({ to: '/app/overview' }));
+    await waitFor(() => expect(signal!.aborted).toBe(true));
   });
 
   it('checks a pasted answer from an example, with no model call', async () => {
