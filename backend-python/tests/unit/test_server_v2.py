@@ -704,6 +704,7 @@ async def test_evaluate_s0_scenario(
     if judge is None:
         # Preflight: no evidence, knowledge off -> NOT_ASSESSED with zero LLM calls.
         assert mock_judge.calls == 0
+        assert not result.costs
         assert result.not_assessed_reason == "no_evidence"
         assert not result.claims
         assert not result.HasField("scores")
@@ -715,6 +716,14 @@ async def test_evaluate_s0_scenario(
 
     claims = judge["claims"]
     assert mock_judge.calls == 1 + len(claims)  # one decomposition, one verification per claim
+    # One CostRecord per judge call, labelled simulated (the mock judge costs nothing).
+    assert sorted(c.component for c in result.costs) == sorted(
+        ["deep_audit_decompose"] + ["deep_audit_verify"] * len(claims)
+    )
+    assert {(c.kind, c.provider, c.cost_source, c.status) for c in result.costs} == {
+        ("llm", "mock", "simulated", "ok")
+    }
+    assert sum(c.cost_usd for c in result.costs) == 0.0
     assert result.not_assessed_reason == ""
     assert [c.index for c in result.claims] == list(range(len(claims)))
     assert [c.claim for c in result.claims] == [c["claim"] for c in claims]
@@ -867,6 +876,12 @@ async def test_evaluate_judge_outage_fails_with_judge_unavailable() -> None:
     assert "2 of 2" in result.error
     assert [c.status for c in result.claims] == [pb.VERIFICATION_STATUS_UNKNOWN] * 2
     assert {c.decided_by for c in result.claims} == {"none"}
+    # A failed audit still reports every judge call it made.
+    assert sorted((c.component, c.status) for c in result.costs) == [
+        ("deep_audit_decompose", "ok"),
+        ("deep_audit_verify", "error"),
+        ("deep_audit_verify", "error"),
+    ]
 
 
 async def test_evaluate_some_unknown_claims_is_degraded() -> None:
@@ -1014,6 +1029,18 @@ async def test_evaluate_extracts_claims_without_evidence_when_asked() -> None:
     assert [c.status for c in result.claims] == [pb.VERIFICATION_STATUS_NOT_CHECKED]
     assert result.claims[0].decided_by == "none"
     assert not result.HasField("scores")
+
+
+async def test_evaluate_with_an_exhausted_llm_budget_skips_optional_retries() -> None:
+    claim = "Paris is the capital of France."
+    unusable = {"status": "SUPPORTED", "evidence": [], "reasoning": "no confidence"}
+    judge = ScriptedJudge([claim], {claim: unusable})
+
+    result = await _evaluate(judge, _request(llm_budget_exhausted=True))
+
+    assert judge.calls == 2  # decomposition + one verification, no repair turn
+    assert [c.status for c in result.claims] == [pb.VERIFICATION_STATUS_UNKNOWN]
+    _assert_failed(result, "judge_unavailable")
 
 
 async def test_evaluate_maps_every_claim_status(

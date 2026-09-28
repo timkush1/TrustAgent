@@ -392,6 +392,7 @@ async def run_audit(
     unsupported_policy: str = "",
     context_truncated: bool = False,
     extract_claims_without_evidence: bool = False,
+    llm_budget_exhausted: bool = False,
 ) -> AuditState:
     """
     Execute the audit workflow.
@@ -415,6 +416,8 @@ async def run_audit(
                      audit records context_trimmed
         extract_claims_without_evidence: Decompose even without evidence
                      (AuditOptions.extract_claims_without_evidence)
+        llm_budget_exhausted: Skip the optional judge retries
+                     (AuditOptions.llm_budget_exhausted)
 
     Returns:
         Final AuditState with all results
@@ -432,6 +435,7 @@ async def run_audit(
         "unsupported_policy": unsupported_policy,
         "context_truncated": context_truncated,
         "extract_claims_without_evidence": extract_claims_without_evidence,
+        "llm_budget_exhausted": llm_budget_exhausted,
         "claims": None,
         "claim_verifications": None,
         "faithfulness_score": None,

@@ -28,6 +28,11 @@ v2 (SPEC section 3.2; D7):
   part the judge did not see.
 - The prompt carries the CONTRADICTED vs PARTIALLY_SUPPORTED rule of the
   claim-relation criteria: any part stated false is CONTRADICTED.
+- When the proxy says the LLM budget is exhausted (AuditOptions
+  llm_budget_exhausted) the optional truncation and repair retries are
+  skipped: an unusable answer makes the claim UNKNOWN at once.
+- Every judge call is recorded in the audit's cost ledger (deep_audit_verify;
+  providers/costs.py).
 """
 
 import asyncio
@@ -44,6 +49,7 @@ from ...providers.base import (
     Message,
     MessageRole,
 )
+from ...providers.costs import DEEP_AUDIT_VERIFY, complete_recorded
 from ...providers.errors import ProviderError
 from ...scoring.aggregate import (
     CONTEXT_TRIMMED,
@@ -352,11 +358,23 @@ def _unknown(claim: str, *, error: bool, error_kind: str) -> ClaimVerification:
     }
 
 
-async def check_claim(claim: str, context_docs: Sequence[str], provider: LLMProvider) -> ClaimCheck:
+async def _complete(provider: LLMProvider, request: CompletionRequest) -> CompletionResponse:
+    return await complete_recorded(provider, request, DEEP_AUDIT_VERIFY)
+
+
+async def check_claim(
+    claim: str,
+    context_docs: Sequence[str],
+    provider: LLMProvider,
+    *,
+    optional_retries: bool = True,
+) -> ClaimCheck:
     """
     Verify one claim against the evidence (see the module docstring).
 
-    Never raises for a judge failure: the claim comes back UNKNOWN.
+    Without `optional_retries` (the LLM budget is exhausted) the truncation
+    and repair retries are skipped. Never raises for a judge failure: the
+    claim comes back UNKNOWN.
     """
     documents = [doc for doc in context_docs if _has_text(doc)]
     if not documents:
@@ -370,15 +388,15 @@ async def check_claim(claim: str, context_docs: Sequence[str], provider: LLMProv
     calls = 0
     try:
         calls += 1
-        response = await provider.complete(_request(provider, messages, VERIFIER_MAX_TOKENS))
-        if response.truncated:
+        response = await _complete(provider, _request(provider, messages, VERIFIER_MAX_TOKENS))
+        if response.truncated and optional_retries:
             logger.warning("Verification was cut off by max_tokens; retrying with a larger budget")
             calls += 1
-            response = await provider.complete(
-                _request(provider, messages, VERIFIER_RETRY_MAX_TOKENS)
+            response = await _complete(
+                provider, _request(provider, messages, VERIFIER_RETRY_MAX_TOKENS)
             )
         verdict, problem = _parse_answer(response)
-        if verdict is None:
+        if verdict is None and optional_retries:
             logger.warning(f"Verification rejected ({problem}); asking the judge to repair it")
             repair = [
                 *messages,
@@ -389,8 +407,8 @@ async def check_claim(claim: str, context_docs: Sequence[str], provider: LLMProv
                 Message(role=MessageRole.USER, content=REPAIR_PROMPT.format(problem=problem)),
             ]
             calls += 1
-            response = await provider.complete(
-                _request(provider, repair, VERIFIER_RETRY_MAX_TOKENS)
+            response = await _complete(
+                provider, _request(provider, repair, VERIFIER_RETRY_MAX_TOKENS)
             )
             verdict, problem = _parse_answer(response)
     except Exception as exc:
@@ -405,7 +423,11 @@ async def check_claim(claim: str, context_docs: Sequence[str], provider: LLMProv
         )
 
     if verdict is None:
-        logger.error(f"Verifier output unusable after a repair turn ({problem}): UNKNOWN")
+        logger.error(
+            f"Verifier output unusable ({problem}"
+            + ("" if optional_retries else "; no retry: the LLM budget is exhausted")
+            + "): UNKNOWN"
+        )
         return ClaimCheck(_unknown(claim, error=False, error_kind=INVALID_OUTPUT), calls=calls)
 
     verification: ClaimVerification = {
@@ -448,6 +470,8 @@ async def check_all_claims(
     context_docs: Sequence[str],
     provider: LLMProvider,
     concurrency: int = 5,
+    *,
+    optional_retries: bool = True,
 ) -> List[ClaimCheck]:
     """Verify every claim, at most `concurrency` at once, in claim order."""
     # Bounded concurrency: a fast cloud judge (e.g. Claude Haiku) verifies claims
@@ -459,7 +483,9 @@ async def check_all_claims(
 
     async def _check(claim: str) -> ClaimCheck:
         async with semaphore:
-            return await check_claim(claim, context_docs, provider)
+            return await check_claim(
+                claim, context_docs, provider, optional_retries=optional_retries
+            )
 
     return list(await asyncio.gather(*(_check(claim) for claim in claims)))
 
@@ -561,7 +587,11 @@ class VerifierNode:
             add_degraded_reason(state, CONTEXT_TRIMMED)
 
         checks = await check_all_claims(
-            claims, context.documents, self.provider, concurrency=self.concurrency
+            claims,
+            context.documents,
+            self.provider,
+            concurrency=self.concurrency,
+            optional_retries=not state.get("llm_budget_exhausted"),
         )
         if any(check.retry_exhausted for check in checks):
             add_degraded_reason(state, JUDGE_RETRY_EXHAUSTED)

@@ -30,6 +30,7 @@ from ..graphs.state import (
     VerificationStatus,
     coerce_status,
 )
+from ..providers.costs import CallCost, cost_ledger
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
 from ..scoring.aggregate import SCORING_VERSION
 from ..metrics import (
@@ -230,6 +231,22 @@ def _v2_claim(index: int, cv: ClaimVerification) -> evaluator_pb2.ClaimVerificat
     return claim
 
 
+def _cost_record(call: CallCost) -> evaluator_pb2.CostRecord:
+    """proto CostRecord of one judge call (an unknown cost is sent as 0, labelled unknown)."""
+    return evaluator_pb2.CostRecord(
+        component=call.component,
+        kind=call.kind,
+        provider=call.provider,
+        model=call.model,
+        input_tokens=call.input_tokens,
+        output_tokens=call.output_tokens,
+        cost_usd=call.cost_usd if call.cost_usd is not None else 0.0,
+        cost_source=call.cost_source,
+        latency_ms=call.latency_ms,
+        status=call.status,
+    )
+
+
 def _context_truncated(request: evaluator_pb2.AuditRequest) -> bool:
     """Whether the proxy already cut the evidence it sent (context_trimmed)."""
     if request.HasField("evidence_summary") and request.evidence_summary.truncated:
@@ -394,7 +411,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         try:
             state: Optional[AuditState] = None
             failure: Optional[Tuple[str, str]] = None
-            with mock_judge_scope(options.mock_scenario) as mock_judge:
+            with mock_judge_scope(options.mock_scenario) as mock_judge, cost_ledger() as ledger:
                 try:
                     state = await run_audit(
                         graph=self.audit_graph,
@@ -406,7 +423,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                         knowledge_enabled=options.knowledge_enabled,
                         unsupported_policy=options.unsupported_policy,
                         context_truncated=_context_truncated(request),
-                        extract_claims_without_evidence=(options.extract_claims_without_evidence),
+                        extract_claims_without_evidence=options.extract_claims_without_evidence,
+                        llm_budget_exhausted=options.llm_budget_exhausted,
                     )
                 except Exception as exc:
                     logger.error(f"Audit {audit_id} failed: {exc}", exc_info=True)
@@ -420,6 +438,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             result = self._evaluate_result(
                 request, audit_id, trace_id, request_id, state, failure, int(duration * 1000)
             )
+            # Every judge call, a failed audit's included (the money is spent).
+            result.costs.extend(_cost_record(call) for call in ledger.calls)
             self._record_evaluate_metrics(result, state, duration)
 
             logger.info(

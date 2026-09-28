@@ -143,6 +143,8 @@ class AuditState(TypedDict):
         extract_claims_without_evidence: Input flag: decompose an answer that has no
                       evidence (its claims come back NOT_CHECKED) instead of
                       ending the audit at preflight
+        llm_budget_exhausted: Input flag: skip the optional judge retries
+                      (truncation and repair turns)
         context_trimmed: The verifier capped the evidence it sent the judge
         scores: The AuditScores of the audit (None when it has none)
         grade: Letter grade of scores.trust_score (None without one)
@@ -181,6 +183,7 @@ class AuditState(TypedDict):
         bool
     ]  # Input: the caller cut evidence (ContextDocument.truncated)
     extract_claims_without_evidence: NotRequired[bool]  # Input (AuditOptions field 7)
+    llm_budget_exhausted: NotRequired[bool]  # Input (AuditOptions field 8)
     context_trimmed: NotRequired[bool]  # The verifier capped the evidence it sent the judge
     scores: NotRequired[Optional[Dict[str, Any]]]  # scoring.AuditScores.to_dict(); None when absent
     grade: NotRequired[Optional[str]]  # A-F from scores.trust_score; None without one
