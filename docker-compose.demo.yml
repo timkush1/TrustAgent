@@ -15,7 +15,8 @@
 # - the deep-audit judge is the mock provider (LLM_PROVIDER=mock, same scenarios);
 # - test mode lets trafficgen send scripted answers (test_response) and scenario
 #   ids (X-TrustAgent-Scenario), so no upstream LLM is ever called;
-# - strict config: any configuration warning stops the proxy or the engine.
+# - strict config (TRUTHTABLE_STRICT_CONFIG): once the P2 config registry
+#   loader lands, any configuration warning stops the proxy or the engine.
 #
 # The project name gives the demo its own containers and volumes, so scripted
 # traces never mix with real history. It publishes the same host ports as
