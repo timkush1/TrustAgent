@@ -149,6 +149,17 @@ class ComposeTest(unittest.TestCase):
         )
         self.assertEqual(COMPOSE.count("QDRANT_URL:"), 1)
 
+    def test_trafficgen_overrides_the_proxy_image_healthcheck(self) -> None:
+        # trafficgen reuses the proxy image, whose HEALTHCHECK probes
+        # 127.0.0.1:8080; `up --wait` (make demo) fails on an unhealthy or a
+        # disabled check, so the service checks the proxy it sends to instead.
+        service = COMPOSE.split("\n  trafficgen:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn(
+            '      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://proxy:8080/health"]',
+            service,
+        )
+        self.assertNotIn("disable: true", service)
+
     def test_demo_removes_every_vendor_key_doctor_checks(self) -> None:
         for key in doctor.VENDOR_KEYS:
             self.assertIn(key, KEYS)

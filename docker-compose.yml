@@ -406,6 +406,16 @@ services:
     command: ["/trafficgen", "--loop", "--scenarios", "demo", "--base-url", "http://proxy:8080", "--interval", "20s"]
     environment:
       TRAFFICGEN_API_KEY:
+    # The image's HEALTHCHECK probes 127.0.0.1:8080, which this container does
+    # not serve, so `up --wait` (make demo) would fail on it; and a disabled
+    # check fails --wait too. Healthy here means the proxy it sends to answers.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://proxy:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+      start_interval: 1s
     depends_on:
       proxy:
         condition: service_healthy
