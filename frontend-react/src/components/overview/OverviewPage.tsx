@@ -120,7 +120,7 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
             <LabelledRateView rate={stats.audited_hallucination_share} subject="Hallucinations among audited answers" />
           </section>
           <PerformanceSection stats={stats} />
-          <Section2Connect origin={origin} demo={demo} received={received} />
+          <ConnectAnotherApp origin={origin} demo={demo} received={received} />
         </>
       )}
     </div>
@@ -128,7 +128,7 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
 }
 
 /** "Connect your app" once traffic flows: folded under its own heading, for a second app. */
-function Section2Connect(props: { origin: string; demo: boolean; received: boolean }) {
+function ConnectAnotherApp(props: { origin: string; demo: boolean; received: boolean }) {
   return (
     <details className="group rounded-lg border border-border bg-surface">
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-fg marker:hidden">

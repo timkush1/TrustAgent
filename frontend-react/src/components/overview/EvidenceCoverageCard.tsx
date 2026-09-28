@@ -129,7 +129,8 @@ export function EvidenceCoverageCard({ stats, timeWindow }: { stats: OverviewSta
   const [open, setOpen] = useState(false);
   const panelId = useId();
   // The coverage endpoint adds the reasons; the overview's own numbers carry the rest.
-  const coverage = useQuery(evidenceCoverageQuery(ds, { window: timeWindow }));
+  // Only the Why not? panel needs the reasons and suggestions: fetch them when it opens.
+  const coverage = useQuery({ ...evidenceCoverageQuery(ds, { window: timeWindow }), enabled: open });
   const summary = coverageSummary(stats.totals.requests, {
     groundedness_assessed: stats.evidence_coverage.groundedness_assessed,
     by_source: stats.evidence_coverage.by_source,
@@ -168,21 +169,25 @@ export function EvidenceCoverageCard({ stats, timeWindow }: { stats: OverviewSta
           </>
         )}
         <div id={panelId} hidden={!open || noTraffic} className="space-y-4 border-t border-border pt-3">
-          <SourceBreakdown summary={summary} />
-          {coverage.isError ? (
-            <DegradedState
-              title="The reasons are not available"
-              reason={coverage.error.message}
-              stillWorks="The per-source numbers above come from the overview and are current."
-            />
-          ) : (
-            <Gaps summary={summary} />
-          )}
-          <div className="space-y-2">
-            <h4 className="text-xs font-medium text-fg-muted">Suggestions</h4>
-            <Suggestions timeWindow={timeWindow} />
-          </div>
-          <CodeBlock label="Attach documents to any request" code={contextExtensionSnippet()} wrap />
+          {open && !noTraffic ? (
+            <>
+              <SourceBreakdown summary={summary} />
+              {coverage.isError ? (
+                <DegradedState
+                  title="The reasons are not available"
+                  reason={coverage.error.message}
+                  stillWorks="The per-source numbers above come from the overview and are current."
+                />
+              ) : (
+                <Gaps summary={summary} />
+              )}
+              <div className="space-y-2">
+                <h4 className="text-xs font-medium text-fg-muted">Suggestions</h4>
+                <Suggestions timeWindow={timeWindow} />
+              </div>
+              <CodeBlock label="Attach documents to any request" code={contextExtensionSnippet()} wrap />
+            </>
+          ) : null}
         </div>
       </CardContent>
     </Card>
