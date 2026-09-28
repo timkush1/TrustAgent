@@ -136,12 +136,23 @@ func TestSemanticVerifyAndFreeze(t *testing.T) {
 			t.Fatalf("%v rewrote a semantic vector:\n%s", args, b)
 		}
 	}
+	// Freezing rewrites the file in place and keeps its permissions (a repository source).
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if code := run([]string{"-contracts", dir, "-kinds", "detectors", "-freeze", "-rev", "test"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("freeze: exit %d: %s", code, stderr.String())
 	}
 	b, _ := os.ReadFile(path)
 	if want := strings.Replace(semanticVector, `"status": "draft"`, `"status": "frozen"`, 1); string(b) != want {
 		t.Fatalf("frozen file:\n%s\nwant only the status changed", b)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("frozen file mode %v, want -rw-------", got)
 	}
 
 	// A draft the reference disagrees with fails and is never frozen.

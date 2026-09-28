@@ -96,7 +96,13 @@ type tally struct {
 }
 
 func generate(opt options, stdout io.Writer) error {
-	fsys := os.DirFS(opt.contracts)
+	// Every read and write stays inside the contracts directory.
+	root, err := os.OpenRoot(opt.contracts)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	fsys := root.FS()
 	all, err := vectors.Load(fsys, "vectors")
 	if err != nil {
 		return err
@@ -115,11 +121,7 @@ func generate(opt options, stdout io.Writer) error {
 		if counts[v.Dir] == nil {
 			counts[v.Dir] = &tally{}
 		}
-		process := processMechanical
-		if !info.Mechanical {
-			process = processSemantic
-		}
-		action, err := process(opt, v)
+		action, err := process(opt, root, v)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", v.Path, err))
 			continue
@@ -164,15 +166,19 @@ const (
 	actionFrozen
 )
 
-// processMechanical regenerates one mechanical vector's expected value and rewrites its file when
-// needed.
-func processMechanical(opt options, v *vectors.Vector) (action, error) {
+// process regenerates one vector's expected value and rewrites its file (under root, the
+// contracts directory) when needed.
+func process(opt options, root *os.Root, v *vectors.Vector) (action, error) {
 	if err := v.Check(); err != nil {
 		return actionNone, err
 	}
-	out, err := vectors.Run(v.Kind, v.Input, os.DirFS(opt.contracts))
+	out, err := vectors.Run(v.Kind, v.Input, root.FS())
 	if err != nil {
 		return actionNone, err
+	}
+	// Hand-written kinds (decide, detectors) are checked against the reference, never generated.
+	if !vectors.Kinds[v.Kind].Mechanical {
+		return checkSemantic(opt, root, v, out)
 	}
 	want := vectors.GeneratedExpected(v.Kind, out)
 	same, err := sameJSON(v.Expected, want)
@@ -195,8 +201,12 @@ func processMechanical(opt options, v *vectors.Vector) (action, error) {
 	if !stale && !opt.freeze {
 		return actionNone, nil
 	}
-	path := filepath.Join(opt.contracts, filepath.FromSlash(v.Path))
-	src, err := os.ReadFile(path)
+	name := filepath.FromSlash(v.Path)
+	info, err := root.Stat(name)
+	if err != nil {
+		return actionNone, err
+	}
+	src, err := root.ReadFile(name)
 	if err != nil {
 		return actionNone, err
 	}
@@ -214,7 +224,8 @@ func processMechanical(opt options, v *vectors.Vector) (action, error) {
 	if err != nil {
 		return actionNone, err
 	}
-	if err := os.WriteFile(path, updated, 0o644); err != nil {
+	// The vector file is a repository source: it keeps its permissions.
+	if err := root.WriteFile(name, updated, info.Mode().Perm()); err != nil {
 		return actionNone, err
 	}
 	if opt.freeze {
@@ -223,14 +234,12 @@ func processMechanical(opt options, v *vectors.Vector) (action, error) {
 	return actionWritten, nil
 }
 
-// processSemantic checks one hand-written vector against the reference: its expected value is
-// compared as the runners compare it (a subset, numbers within tolerance). A disagreement is an
-// error for draft and frozen vectors alike, as in TestVectors. With -freeze, an agreeing draft of
-// a kind named in -kinds is marked frozen; expected itself is never written.
-func processSemantic(opt options, v *vectors.Vector) (action, error) {
-	if err := v.Check(); err != nil {
-		return actionNone, err
-	}
+// checkSemantic finishes process for a hand-written vector: out, the reference output, must agree
+// with expected as the runners compare it (a subset, numbers within tolerance). A disagreement is
+// an error for draft and frozen vectors alike, as in TestVectors. With -freeze, an agreeing draft of
+// a kind named in -kinds is marked frozen (freezing records that a person reviewed it); expected
+// itself is never written.
+func checkSemantic(opt options, root *os.Root, v *vectors.Vector, out any) (action, error) {
 	var expected any
 	if err := json.Unmarshal(v.Expected, &expected); err != nil {
 		return actionNone, fmt.Errorf("expected: %w", err)
@@ -238,18 +247,18 @@ func processSemantic(opt options, v *vectors.Vector) (action, error) {
 	if expected == nil {
 		return actionNone, errors.New("expected is null: semantic vectors are written by hand (contracts/vectors/README.md)")
 	}
-	out, err := vectors.Run(v.Kind, v.Input, os.DirFS(opt.contracts))
-	if err != nil {
-		return actionNone, err
-	}
 	if diffs := vectors.Compare(expected, out, v.Tol()); len(diffs) > 0 {
 		return actionNone, fmt.Errorf("the reference disagrees with this %s vector:\n  %s", v.Status, strings.Join(diffs, "\n  "))
 	}
 	if v.Status == vectors.StatusFrozen || !opt.freeze || !opt.kinds[v.Kind] {
 		return actionNone, nil
 	}
-	path := filepath.Join(opt.contracts, filepath.FromSlash(v.Path))
-	src, err := os.ReadFile(path)
+	name := filepath.FromSlash(v.Path)
+	info, err := root.Stat(name)
+	if err != nil {
+		return actionNone, err
+	}
+	src, err := root.ReadFile(name)
 	if err != nil {
 		return actionNone, err
 	}
@@ -258,7 +267,8 @@ func processSemantic(opt options, v *vectors.Vector) (action, error) {
 	if err != nil {
 		return actionNone, err
 	}
-	if err := os.WriteFile(path, updated, 0o644); err != nil {
+	// The vector file is a repository source: it keeps its permissions.
+	if err := root.WriteFile(name, updated, info.Mode().Perm()); err != nil {
 		return actionNone, err
 	}
 	return actionFrozen, nil
@@ -266,6 +276,7 @@ func processSemantic(opt options, v *vectors.Vector) (action, error) {
 
 // gitRevision returns the short HEAD revision of the repository holding dir, or "unknown".
 func gitRevision(dir string) string {
+	// #nosec G204 -- a fixed git command; dir is the -contracts directory the developer passed.
 	out, err := exec.Command("git", "-C", dir, "rev-parse", "--short=12", "HEAD").Output()
 	if err != nil {
 		return "unknown"
