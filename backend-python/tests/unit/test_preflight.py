@@ -46,23 +46,37 @@ class SpyJudge(LLMProvider):
 
 
 class FakeEmbeddings:
+    """Stands in for EmbeddingService; retrieval must use the async form (D8)."""
+
     dimension = 3
 
     def embed(self, texts: Sequence[str]) -> List[List[float]]:
+        raise AssertionError("retrieval must not encode on the event loop (use aembed)")
+
+    async def aembed(self, texts: Sequence[str]) -> List[List[float]]:
         return [[0.1, 0.2, 0.3] for _ in texts]
 
 
 class FakeKnowledgeBase:
-    """Stands in for QdrantStore.search: returns `hits` for every query."""
+    """Stands in for QdrantStore.asearch: returns `hits` for every query."""
 
     def __init__(self, hits: Sequence[str]):
         self.hits = list(hits)
         self.searches = 0
+        self.top_k: List[int] = []
+        self.thresholds: List[float] = []
 
     def search(
         self, query_vector: List[float], top_k: int, score_threshold: float
     ) -> List[Dict[str, Any]]:
+        raise AssertionError("retrieval must not call Qdrant on the event loop (use asearch)")
+
+    async def asearch(
+        self, query_vector: List[float], top_k: int, score_threshold: float
+    ) -> List[Dict[str, Any]]:
         self.searches += 1
+        self.top_k.append(top_k)
+        self.thresholds.append(score_threshold)
         return [{"text": text, "score": 0.9} for text in self.hits]
 
 
@@ -177,10 +191,28 @@ async def test_knowledge_hits_are_verified_as_unverifiable_policy() -> None:
 
     assert knowledge.searches > 0
     assert state["context_docs"] == ["Paris is the capital of France."]
+    # The retrieved documents are tagged as knowledge evidence.
+    assert state["context_sources"] == ["knowledge"]
     assert state["verdict"] == "GROUNDED"
     # auto: knowledge-base evidence only, so UNSUPPORTED would mean unverifiable.
     assert state["unsupported_policy"] == "unverifiable"
     assert "retrieve_ms" in state["step_timings"]
+
+
+async def test_retriever_settings_reach_the_knowledge_search() -> None:
+    judge, knowledge = SpyJudge(), FakeKnowledgeBase(hits=["Paris is the capital of France."])
+    graph = build_audit_graph(
+        provider=judge,
+        embedding_service=FakeEmbeddings(),
+        qdrant_store=knowledge,
+        retriever_top_k=7,
+        retriever_score_threshold=0.55,
+    )
+
+    await _audit(graph, knowledge_enabled=True)
+
+    assert set(knowledge.top_k) == {7}
+    assert set(knowledge.thresholds) == {0.55}
 
 
 async def test_knowledge_without_hits_is_not_assessed_and_claims_not_checked() -> None:
@@ -194,6 +226,11 @@ async def test_knowledge_without_hits_is_not_assessed_and_claims_not_checked() -
     assert len(judge.prompts) == 1  # the decomposition feeds retrieval; no verification
     _assert_not_assessed(state, "knowledge_no_hits")
     assert [cv["status"] for cv in state["claim_verifications"]] == [VerificationStatus.NOT_CHECKED]
+    # The unchecked claim keeps where the decomposer found it in the answer.
+    (unchecked,) = state["claim_verifications"]
+    assert unchecked["decided_by"] == "none" and unchecked["index"] == 0
+    assert (unchecked["span_start"], unchecked["span_end"]) == (0, len(CLAIM))
+    assert unchecked["span_method"] == "exact"
     assert "verify_ms" not in state["step_timings"]
 
 
@@ -233,3 +270,56 @@ def test_resolve_unsupported_policy(
     requested: str, sources: List[str], documents: int, expected: UnsupportedPolicy
 ) -> None:
     assert resolve_unsupported_policy(requested, sources, documents) is expected
+
+
+@pytest.mark.parametrize("engine_default", [False, True])
+async def test_extract_claims_without_evidence_decomposes_and_never_verifies(
+    engine_default: bool,
+) -> None:
+    # AuditOptions.extract_claims_without_evidence (or the engine's
+    # TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE): the claims come back
+    # NOT_CHECKED, located in the answer, and the judge is asked nothing else.
+    judge = SpyJudge()
+    graph = build_audit_graph(provider=judge, extract_claims_without_evidence=engine_default)
+
+    state = await _audit(graph, extract_claims_without_evidence=not engine_default)
+
+    assert len(judge.prompts) == 1  # the decomposition only
+    assert state["verdict"] == "NOT_ASSESSED"
+    assert state["not_assessed_reason"] == "no_evidence"
+    assert state["audit_status"] == "completed"
+    assert state["scores"] is None and state["grade"] is None
+    (claim,) = state["claim_verifications"]
+    assert claim["status"] == VerificationStatus.NOT_CHECKED
+    assert (claim["span_start"], claim["span_end"], claim["span_method"]) == (
+        0,
+        len(CLAIM),
+        "exact",
+    )
+
+
+@pytest.mark.parametrize(
+    "engine_policy, requested, expected",
+    [
+        # The engine's TRUTHTABLE_UNSUPPORTED_POLICY applies when the request names none.
+        ("unverifiable", "", "unverifiable"),
+        ("hallucination", "", "hallucination"),
+        # A request's own policy (auto included) wins over the engine default.
+        ("unverifiable", "hallucination", "hallucination"),
+        ("unverifiable", "auto", "hallucination"),
+    ],
+)
+async def test_engine_unsupported_policy_is_the_default(
+    engine_policy: str, requested: str, expected: str
+) -> None:
+    judge = SpyJudge()
+    graph = build_audit_graph(provider=judge, unsupported_policy=engine_policy)
+
+    state = await _audit(
+        graph,
+        context_docs=["Paris is in France."],
+        context_sources=["request_system"],
+        unsupported_policy=requested,
+    )
+
+    assert state["unsupported_policy"] == expected

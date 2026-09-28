@@ -5,6 +5,10 @@ description = "TruthTable AI Audit Engine - Hallucination Detection Service"
 authors = ["Tim Kushmaro <timk@mail.tau.ac.il>"]
 readme = "README.md"
 packages = [{include = "truthtable", from = "src"}]
+# The generated gRPC stubs are gitignored (make proto), so Poetry would leave
+# them out; list them so an installed engine (pip install ./backend-python)
+# carries the stubs generated before the build.
+include = [{path = "src/truthtable/grpc/pb/*_pb2*.py", format = ["sdist", "wheel"]}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -14,14 +18,23 @@ langgraph = "^0.0.20"
 pydantic = "^2.5.0"
 pydantic-settings = "^2.1.0"
 httpx = "^0.26.0"
-qdrant-client = "^1.16.0"
 redis = "^5.0.0"
 prometheus-client = "^0.19.0"
-sentence-transformers = ">=5.0.0"
-# CPU-only torch: the default PyPI wheels bundle CUDA (multiple GB). This keeps
-# `poetry install` lean and matches the CI / Dockerfile install path.
-torch = { version = ">=2.0.0", source = "pytorch-cpu" }
 numpy = ">=1.24.0"
+# Draft 2020-12 validation of contract documents (Studio drafts, SPEC section 3.2).
+jsonschema = "^4.23.0"
+# Knowledge add-on (SPEC section 3.2): optional, installed only with the
+# `knowledge` extra (`poetry install --extras knowledge`; the engine image's
+# EXTRAS build arg). The engine imports them lazily, only when knowledge
+# retrieval is enabled, so the default image stays free of torch.
+qdrant-client = { version = "^1.16.0", optional = true }
+sentence-transformers = { version = ">=5.0.0", optional = true }
+# CPU-only torch: the default PyPI wheels bundle CUDA (multiple GB). This keeps
+# the knowledge install lean and matches the Dockerfile install path.
+torch = { version = ">=2.0.0", source = "pytorch-cpu", optional = true }
+
+[tool.poetry.extras]
+knowledge = ["qdrant-client", "sentence-transformers", "torch"]
 
 # Explicit source used ONLY by torch (priority = explicit), so nothing else is
 # pulled from the PyTorch index.
@@ -61,6 +74,37 @@ python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+# Module names come from src/ (not from the stray src/__init__.py).
+mypy_path = "src"
+explicit_package_bases = true
+
+# Legacy modules predate strict typing. They are type-checked when named on the
+# command line, and followed silently when a strictly checked package imports
+# them. The packages written for v2 are checked strictly (SPEC section 4.2 P2
+# gate: mypy src/truthtable/scoring src/truthtable/runtime src/truthtable/text
+# src/truthtable/providers).
+[[tool.mypy.overrides]]
+module = "truthtable.*"
+follow_imports = "silent"
+
+# Generated gRPC stubs (gitignored, no type information).
+[[tool.mypy.overrides]]
+module = "truthtable.grpc.pb.*"
+follow_imports = "skip"
+ignore_errors = true
+
+# Third-party packages without type information.
+[[tool.mypy.overrides]]
+module = [
+    "grpc",
+    "grpc.*",
+    "langgraph.*",
+    "qdrant_client.*",
+    "sentence_transformers.*",
+    "torch.*",
+    "jsonschema.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 # e2e/integration tests need live services and are opt-in: a plain `pytest` run

@@ -1,12 +1,11 @@
-"""Unit tests for the OpenAI and Anthropic providers (mocked HTTP)."""
+"""Unit tests for the OpenAI and Anthropic providers (scripted HTTP, no network)."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
-
-from truthtable.providers.anthropic import AnthropicProvider
+from provider_fakes import ScriptedTransport, SleepRecorder, json_reply
+from truthtable.providers.anthropic import ANTHROPIC_VERSION, AnthropicProvider
 from truthtable.providers.base import CompletionRequest, Message, MessageRole
+from truthtable.providers.errors import ProviderError
 from truthtable.providers.openai import OpenAIProvider
 from truthtable.providers.registry import get_provider
 
@@ -21,15 +20,6 @@ def make_request(model: str) -> CompletionRequest:
     )
 
 
-def mock_client_returning(payload: dict) -> AsyncMock:
-    client = AsyncMock()
-    response = MagicMock()
-    response.json.return_value = payload
-    response.raise_for_status = MagicMock()
-    client.post.return_value = response
-    return client
-
-
 class TestOpenAIProvider:
     def test_requires_api_key(self, monkeypatch):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -42,87 +32,139 @@ class TestOpenAIProvider:
         assert provider.api_key == "sk-test"
 
     async def test_complete_success(self):
-        provider = OpenAIProvider(model="gpt-4o-mini", api_key="sk-test")
-        payload = {
-            "model": "gpt-4o-mini",
-            "choices": [{"message": {"content": "Yes."}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
-        }
+        transport = ScriptedTransport(
+            json_reply(
+                {
+                    "model": "gpt-4o-mini",
+                    "choices": [{"message": {"content": "Yes."}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+                }
+            )
+        )
+        provider = OpenAIProvider(model="gpt-4o-mini", api_key="sk-test", transport=transport)
 
-        with patch.object(provider, "_get_client") as get_client:
-            client = mock_client_returning(payload)
-            get_client.return_value = client
-
-            response = await provider.complete(make_request("gpt-4o-mini"))
+        response = await provider.complete(make_request("gpt-4o-mini"))
 
         assert response.content == "Yes."
         assert response.finish_reason == "stop"
         assert response.usage["total_tokens"] == 15
+        assert (response.input_tokens, response.output_tokens) == (12, 3)
+        assert response.provider == "openai"
+        assert not response.truncated
 
+        request = transport.requests[0]
+        assert request.url.path == "/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer sk-test"
         # System prompt stays in the messages array for OpenAI.
-        sent = client.post.call_args.kwargs["json"]
-        assert sent["messages"][0]["role"] == "system"
+        assert transport.body()["messages"][0]["role"] == "system"
+        assert "response_format" not in transport.body()
 
     async def test_complete_http_error(self):
-        provider = OpenAIProvider(model="gpt-4o-mini", api_key="sk-test")
+        sleep = SleepRecorder()
+        transport = ScriptedTransport(json_reply({"error": {"message": "rate limited"}}, 429))
+        provider = OpenAIProvider(
+            model="gpt-4o-mini", api_key="sk-test", transport=transport, sleep=sleep
+        )
 
-        with patch.object(provider, "_get_client") as get_client:
-            client = AsyncMock()
-            response = MagicMock()
-            response.status_code = 429
-            response.text = "rate limited"
-            response.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "429", request=MagicMock(), response=response
-            )
-            client.post.return_value = response
-            get_client.return_value = client
+        with pytest.raises(RuntimeError, match="429") as exc_info:
+            await provider.complete(make_request("gpt-4o-mini"))
 
-            with pytest.raises(RuntimeError, match="429"):
-                await provider.complete(make_request("gpt-4o-mini"))
+        assert isinstance(exc_info.value, ProviderError)
+        assert exc_info.value.kind == "rate_limited"
+        assert "rate limited" in str(exc_info.value)
+        assert transport.calls == 4  # the first attempt and 3 retries
+        assert len(sleep.delays) == 3
+
+    async def test_null_content_is_empty_text(self):
+        transport = ScriptedTransport(
+            json_reply({"choices": [{"message": {"content": None}, "finish_reason": "stop"}]})
+        )
+        provider = OpenAIProvider(model="gpt-4o-mini", api_key="sk-test", transport=transport)
+
+        response = await provider.complete(make_request("gpt-4o-mini"))
+
+        assert response.content == ""
+        assert response.model == "gpt-4o-mini"
+
+    async def test_answer_without_choices_is_a_bad_response(self):
+        transport = ScriptedTransport(json_reply({"object": "chat.completion"}))
+        provider = OpenAIProvider(model="gpt-4o-mini", api_key="sk-test", transport=transport)
+
+        with pytest.raises(ProviderError) as exc_info:
+            await provider.complete(make_request("gpt-4o-mini"))
+
+        assert exc_info.value.kind == "bad_response"
+        assert transport.calls == 1
 
 
 class TestAnthropicProvider:
     def test_requires_api_key(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-            AnthropicProvider(model="claude-haiku-4-5-20251001")
+            AnthropicProvider(model="claude-haiku-4-5")
 
     async def test_complete_success_extracts_text_blocks(self):
-        provider = AnthropicProvider(model="claude-haiku-4-5-20251001", api_key="sk-ant-test")
-        payload = {
-            "model": "claude-haiku-4-5-20251001",
-            "content": [{"type": "text", "text": "Yes, the sky is blue."}],
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 20, "output_tokens": 7},
-        }
+        transport = ScriptedTransport(
+            json_reply(
+                {
+                    "model": "claude-haiku-4-5-20251001",
+                    "content": [
+                        {"type": "text", "text": "Yes, the sky "},
+                        {"type": "text", "text": "is blue."},
+                    ],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 20, "output_tokens": 7},
+                }
+            )
+        )
+        provider = AnthropicProvider(
+            model="claude-haiku-4-5", api_key="sk-ant-test", transport=transport
+        )
 
-        with patch.object(provider, "_get_client") as get_client:
-            client = mock_client_returning(payload)
-            get_client.return_value = client
-
-            response = await provider.complete(make_request("claude-haiku-4-5-20251001"))
+        response = await provider.complete(make_request("claude-haiku-4-5"))
 
         assert response.content == "Yes, the sky is blue."
         assert response.finish_reason == "end_turn"
         assert response.usage["total_tokens"] == 27
+        assert response.model == "claude-haiku-4-5-20251001"
+        assert not response.truncated
+
+        request = transport.requests[0]
+        assert request.url.path == "/v1/messages"
+        assert request.headers["x-api-key"] == "sk-ant-test"
+        assert request.headers["anthropic-version"] == ANTHROPIC_VERSION
 
     async def test_system_prompt_is_top_level(self):
-        provider = AnthropicProvider(model="claude-haiku-4-5-20251001", api_key="sk-ant-test")
-        payload = {
-            "content": [{"type": "text", "text": "ok"}],
-            "stop_reason": "end_turn",
-            "usage": {},
-        }
+        transport = ScriptedTransport(
+            json_reply({"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn"})
+        )
+        provider = AnthropicProvider(
+            model="claude-haiku-4-5", api_key="sk-ant-test", transport=transport
+        )
 
-        with patch.object(provider, "_get_client") as get_client:
-            client = mock_client_returning(payload)
-            get_client.return_value = client
+        await provider.complete(make_request("claude-haiku-4-5"))
 
-            await provider.complete(make_request("claude-haiku-4-5-20251001"))
-
-        sent = client.post.call_args.kwargs["json"]
+        sent = transport.body()
         assert sent["system"] == "You are a fact checker."
         assert all(m["role"] != "system" for m in sent["messages"])
+
+    async def test_health_check_lists_models(self):
+        transport = ScriptedTransport(json_reply({"data": []}))
+        provider = AnthropicProvider(
+            model="claude-haiku-4-5", api_key="sk-ant-test", transport=transport
+        )
+
+        assert await provider.health_check() is True
+        assert transport.path() == "/v1/models"
+
+    async def test_health_check_fails_on_auth_error(self):
+        transport = ScriptedTransport(json_reply({"error": {"message": "invalid x-api-key"}}, 401))
+        provider = AnthropicProvider(
+            model="claude-haiku-4-5", api_key="sk-ant-test", transport=transport
+        )
+
+        assert await provider.health_check() is False
+        assert transport.calls == 1
 
 
 def test_providers_registered():
@@ -130,6 +172,4 @@ def test_providers_registered():
         mp.setenv("OPENAI_API_KEY", "sk-test")
         mp.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         assert isinstance(get_provider("openai", model="gpt-4o-mini"), OpenAIProvider)
-        assert isinstance(
-            get_provider("anthropic", model="claude-haiku-4-5-20251001"), AnthropicProvider
-        )
+        assert isinstance(get_provider("anthropic", model="claude-haiku-4-5"), AnthropicProvider)

@@ -138,7 +138,13 @@ async def test_scenario_answers_the_decomposition(scenario_judge: MockLLMProvide
     with mock_judge_scope("refund") as scope:
         response = await scenario_judge.complete(_decompose_request())
 
-    assert json.loads(response.content) == CLAIMS
+    # Decomposer v2 shape: each claim with the scenario's quote ("" when it has none).
+    assert json.loads(response.content) == {
+        "claims": [
+            {"claim": CLAIMS[0], "quote": "Refunds take 60 days"},
+            {"claim": CLAIMS[1], "quote": ""},
+        ]
+    }
     assert scope.misses == []
 
 
@@ -165,7 +171,7 @@ async def test_scenario_matching_ignores_whitespace(scenario_judge: MockLLMProvi
     with mock_judge_scope("refund"):
         response = await scenario_judge.complete(_decompose_request(f"  {RESPONSE}\n"))
 
-    assert json.loads(response.content) == CLAIMS
+    assert [item["claim"] for item in json.loads(response.content)["claims"]] == CLAIMS
 
 
 async def test_scenario_unknown_verdict_replays_a_judge_failure():

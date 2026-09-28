@@ -12,9 +12,11 @@ The BM25 index is tiny (claim texts only) and rebuilt lazily from the vector
 store whenever ingestion marks it dirty.
 """
 
+import asyncio
 import logging
 import math
 import re
+import threading
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -121,7 +123,13 @@ class HybridClaimRetriever:
     The BM25 side indexes claim texts pulled from the vector store; ingestion
     calls `mark_dirty()` and the index is rebuilt lazily on next use.
     Quarantined claims are excluded from both retrieval paths.
+
+    From async code use `aretrieve` (D8): the index rebuild and the Qdrant
+    search run in worker threads and the query is embedded on the embedding
+    service's own thread, so the event loop is never blocked.
     """
+
+    DENSE_SCORE_THRESHOLD = 0.3
 
     def __init__(self, embedding_service: Any, qdrant_store: Any, top_k: int = 10):
         self.embedding_service = embedding_service
@@ -130,32 +138,41 @@ class HybridClaimRetriever:
         self._bm25 = BM25Index()
         self._texts: Dict[str, str] = {}
         self._dirty = True
+        # Rebuilds may run in worker threads (aretrieve); one at a time.
+        self._index_lock = threading.Lock()
 
     def mark_dirty(self) -> None:
         self._dirty = True
 
     def _ensure_index(self) -> None:
-        if not self._dirty:
-            return
-        points = self.qdrant_store.scroll_points(must={"kind": "claim", "kb_status": "accepted"})
-        self._texts = {p["id"]: p.get("text", "") for p in points if p.get("text")}
-        self._bm25.build(self._texts)
-        self._dirty = False
-        logger.info(f"Hybrid retriever index rebuilt ({len(self._texts)} accepted claims)")
+        with self._index_lock:
+            if not self._dirty:
+                return
+            # Cleared first: a mark_dirty() during the rebuild triggers another.
+            self._dirty = False
+            try:
+                points = self.qdrant_store.scroll_points(
+                    must={"kind": "claim", "kb_status": "accepted"}
+                )
+            except Exception:
+                self._dirty = True
+                raise
+            texts = {p["id"]: p.get("text", "") for p in points if p.get("text")}
+            bm25 = BM25Index()
+            bm25.build(texts)
+            self._texts, self._bm25 = texts, bm25
+        logger.info(f"Hybrid retriever index rebuilt ({len(texts)} accepted claims)")
 
-    def retrieve(self, query: str, top_k: Optional[int] = None) -> List[str]:
-        """Return fused claim texts for the query (best first)."""
-        self._ensure_index()
-        limit = top_k or self.top_k
+    def _dense_query(self, vector: Sequence[float], limit: int) -> Dict[str, Any]:
+        return {
+            "query_vector": list(vector),
+            "top_k": limit,
+            "score_threshold": self.DENSE_SCORE_THRESHOLD,
+            "must": {"kind": "claim"},
+            "must_not": {"kb_status": "quarantined"},
+        }
 
-        vector = self.embedding_service.embed([query])[0]
-        dense = self.qdrant_store.search_filtered(
-            query_vector=list(vector),
-            top_k=limit,
-            score_threshold=0.3,
-            must={"kind": "claim"},
-            must_not={"kb_status": "quarantined"},
-        )
+    def _fuse(self, query: str, dense: List[Dict[str, Any]], limit: int) -> List[str]:
         dense_ids = [d["id"] for d in dense]
         dense_texts = {d["id"]: d.get("text", "") for d in dense}
 
@@ -168,3 +185,19 @@ class HybridClaimRetriever:
             if text:
                 results.append(text)
         return results
+
+    def retrieve(self, query: str, top_k: Optional[int] = None) -> List[str]:
+        """Return fused claim texts for the query (best first). Blocking."""
+        self._ensure_index()
+        limit = top_k or self.top_k
+        vector = self.embedding_service.embed([query])[0]
+        dense = self.qdrant_store.search_filtered(**self._dense_query(vector, limit))
+        return self._fuse(query, dense, limit)
+
+    async def aretrieve(self, query: str, top_k: Optional[int] = None) -> List[str]:
+        """`retrieve` without blocking the event loop (D8)."""
+        await asyncio.to_thread(self._ensure_index)
+        limit = top_k or self.top_k
+        vector = (await self.embedding_service.aembed([query]))[0]
+        dense = await self.qdrant_store.asearch_filtered(**self._dense_query(vector, limit))
+        return self._fuse(query, dense, limit)

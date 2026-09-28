@@ -19,6 +19,10 @@ Pipeline position:
     decompose -> [RETRIEVE] -> verify -> score
                   ^^^^^^^^
                   YOU ARE HERE
+
+Embedding and Qdrant calls are blocking; they run off the event loop through
+the async forms (`aembed`, `asearch`, `aretrieve`; D8), so one audit's
+retrieval never stalls the other audits and RPCs the engine is serving.
 """
 
 import logging
@@ -137,18 +141,19 @@ class RetrieverNode:
         if self.hybrid_retriever is not None:
             # Hybrid mode: BM25 + dense with RRF fusion over accepted KB claims.
             for text in search_texts:
-                for doc_text in self.hybrid_retriever.retrieve(text, top_k=self.top_k_per_claim):
+                hits = await self.hybrid_retriever.aretrieve(text, top_k=self.top_k_per_claim)
+                for doc_text in hits:
                     if doc_text not in seen_texts:
                         seen_texts.add(doc_text)
                         context_docs.append(doc_text)
         else:
             # Dense-only mode (legacy chunk store).
-            vectors = self.embedding_service.embed(search_texts)
+            vectors = await self.embedding_service.aembed(search_texts)
 
             for i, (text, vector) in enumerate(zip(search_texts, vectors)):
                 label = "query" if i == 0 and user_query else f"claim {i}"
 
-                results = self.qdrant_store.search(
+                results = await self.qdrant_store.asearch(
                     query_vector=vector,
                     top_k=self.top_k_per_claim,
                     score_threshold=self.score_threshold,

@@ -7,10 +7,11 @@ section 2.2).
 
 import asyncio
 import logging
+import math
 import uuid
 import time
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import grpc
 from grpc import aio
@@ -18,6 +19,7 @@ from grpc import aio
 from .. import __version__
 from .pb import evaluator_pb2
 from .pb import evaluator_pb2_grpc
+from ..engine_info import EngineContext, engine_info, judge_info
 from ..graphs.audit_graph import AuditStepError, run_audit
 from ..graphs.state import (
     DECIDED_STATUSES,
@@ -28,7 +30,9 @@ from ..graphs.state import (
     VerificationStatus,
     coerce_status,
 )
+from ..providers.costs import CallCost, cost_ledger
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
+from ..scoring.aggregate import SCORING_VERSION
 from ..metrics import (
     AUDITS_TOTAL,
     AUDIT_DURATION,
@@ -40,16 +44,28 @@ from ..metrics import (
 
 logger = logging.getLogger(__name__)
 
-# Evaluate results carry the v1 scorer's numbers until scoring v2 lands (SPEC
-# section 3.2, scoring/aggregate.py); scoring_version tells consumers which.
-SCORING_VERSION = "v1"
-
 # HealthCheck asks whether the engine is serving; the judge's health is only
 # reported. Its probe is bounded so a slow or unreachable judge (a provider
 # health check may wait up to 10 s) shows as judge=False instead of running the
 # RPC past the deadline of `python -m truthtable.healthcheck` (3 s by default)
 # and marking a serving engine unhealthy.
 JUDGE_HEALTH_TIMEOUT_S = 2.0
+
+# Qdrant probes (health, point count) are synchronous client calls; they run in
+# a worker thread, bounded like the judge probe.
+QDRANT_PROBE_TIMEOUT_S = 1.0
+
+# Engine concurrency defaults (TRUTHTABLE_ENGINE_MAX_RPCS / _MAX_AUDITS, C-H13).
+DEFAULT_MAX_RPCS = 64
+DEFAULT_MAX_AUDITS = 16
+
+# AuditResult.error_kind values that mean the judge itself failed.
+_JUDGE_FAILURE_KINDS = frozenset({"judge_unavailable", "decomposer_failed"})
+
+NO_JUDGE_TRACE = (
+    "Not assessed: the engine has no audit judge configured (LLM_PROVIDER); "
+    "no LLM call was made."
+)
 
 # TrustGrade cutoffs (D18): A>=0.9, B>=0.7, C>=0.5, D>=0.3, F<0.3. They must
 # match the TrustGrade comments in proto/evaluator.proto.
@@ -90,14 +106,34 @@ _AUDIT_VERDICT: Dict[AuditVerdict, int] = {
 }
 
 # Claim span offsets for a claim not located in the answer (SPEC section 2.1:
-# "-1 means unaligned"). The S0 decomposer does not align claims; spans arrive
-# with decomposer v2 (text/spans.py).
+# "-1 means unaligned"). Aligned spans come from the decomposer (text/spans.py):
+# UTF-16 code units, half-open.
 UNALIGNED_SPAN = -1
 
-# Verdicts that come with a trust score (NO_CLAIMS and NOT_ASSESSED have none).
-_SCORED_VERDICTS = frozenset(
-    {AuditVerdict.GROUNDED, AuditVerdict.HALLUCINATED, AuditVerdict.UNVERIFIABLE}
+# span_method values sent for an aligned span (an unaligned one sends "").
+_SPAN_METHODS = frozenset({"exact", "normalized", "fuzzy"})
+
+# The optional floats of AuditScores, set only when the scorer computed them.
+_SCORE_FLOATS: Tuple[str, ...] = (
+    "trust_score",
+    "faithfulness",
+    "contradiction_rate",
+    "unverified_rate",
+    "coverage",
+    "accuracy_addressed",
+    "max_contradiction",
+    "p_hallucinated",
 )
+_SCORE_COUNTS: Tuple[str, ...] = ("claims_total", "claims_decided", "claims_unknown")
+
+# The scorer's letter grade (from TRUTHTABLE_SCORING_GRADE_CUTOFFS) on the wire.
+_GRADE_BY_LETTER: Dict[str, int] = {
+    "A": evaluator_pb2.TRUST_GRADE_A,
+    "B": evaluator_pb2.TRUST_GRADE_B,
+    "C": evaluator_pb2.TRUST_GRADE_C,
+    "D": evaluator_pb2.TRUST_GRADE_D,
+    "F": evaluator_pb2.TRUST_GRADE_F,
+}
 
 _AUDIT_STATUS: Dict[AuditOutcome, int] = {
     AuditOutcome.COMPLETED: evaluator_pb2.AUDIT_STATUS_COMPLETED,
@@ -107,7 +143,10 @@ _AUDIT_STATUS: Dict[AuditOutcome, int] = {
 
 
 def grade_for_score(score: float) -> int:
-    """TrustGrade for a trust score (cutoffs documented on the proto TrustGrade)."""
+    """
+    TrustGrade for a legacy score (cutoffs documented on the proto TrustGrade).
+    Evaluate sends the scorer's grade instead (configurable cutoffs).
+    """
     for cutoff, grade in _GRADE_CUTOFFS:
         if score >= cutoff:
             return grade
@@ -135,23 +174,84 @@ def _record_claim_metrics(verifications: Iterable[ClaimVerification]) -> None:
         CLAIMS_TOTAL.labels(status=coerce_status(cv.get("status")).value).inc()
 
 
+def _finite(value: Any) -> Optional[float]:
+    """`value` as a finite float, or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _claim_span(cv: Mapping[str, Any]) -> Tuple[int, int, str]:
+    """(start, end, method) of a claim's span; (-1, -1, "") when it is not aligned."""
+    start, end = cv.get("span_start"), cv.get("span_end")
+    method = str(cv.get("span_method") or "")
+    if (
+        isinstance(start, int)
+        and isinstance(end, int)
+        and 0 <= start <= end
+        and method in _SPAN_METHODS
+    ):
+        return start, end, method
+    return UNALIGNED_SPAN, UNALIGNED_SPAN, ""
+
+
 def _v2_claim(index: int, cv: ClaimVerification) -> evaluator_pb2.ClaimVerification:
-    """v2 ClaimVerification: UNKNOWN=5 and NOT_CHECKED=6 keep their own values (D6)."""
+    """
+    v2 ClaimVerification: UNKNOWN=5 and NOT_CHECKED=6 keep their own values
+    (D6); the span, quote, reasoning, decided_by and verdict distribution come
+    from the decomposer's and verifier's records when they made them.
+    """
     status = coerce_status(cv.get("status"))
-    # quote is an optional extra a decomposer may add (decomposer v2 locates claims, P2).
-    extras: Dict[str, Any] = dict(cv)
-    return evaluator_pb2.ClaimVerification(
+    # The v2 keys are optional extras of the record (a v1 caller has none).
+    record: Mapping[str, Any] = cv
+    span_start, span_end, span_method = _claim_span(record)
+    claim = evaluator_pb2.ClaimVerification(
         index=index,
         claim=cv.get("claim", ""),
         status=_V2_CLAIM_STATUS[status],
         confidence=float(cv.get("confidence", 0.0)),
         evidence=list(cv.get("evidence") or []),
-        reasoning=cv.get("reasoning", ""),
-        quote=str(extras.get("quote") or ""),
-        decided_by="llm" if status in DECIDED_STATUSES else "none",
-        span_start=UNALIGNED_SPAN,
-        span_end=UNALIGNED_SPAN,
+        reasoning=str(record.get("reasoning") or ""),
+        quote=str(record.get("quote") or ""),
+        decided_by=str(
+            record.get("decided_by") or ("llm" if status in DECIDED_STATUSES else "none")
+        ),
+        probability_source=str(record.get("probability_source") or ""),
+        span_start=span_start,
+        span_end=span_end,
+        span_method=span_method,
     )
+    probabilities = record.get("verdict_probabilities")
+    if isinstance(probabilities, Mapping):
+        for key, value in probabilities.items():
+            number = _finite(value)
+            if number is not None:
+                claim.verdict_probabilities[str(key)] = number
+    return claim
+
+
+def _cost_record(call: CallCost) -> evaluator_pb2.CostRecord:
+    """proto CostRecord of one judge call (an unknown cost is sent as 0, labelled unknown)."""
+    return evaluator_pb2.CostRecord(
+        component=call.component,
+        kind=call.kind,
+        provider=call.provider,
+        model=call.model,
+        input_tokens=call.input_tokens,
+        output_tokens=call.output_tokens,
+        cost_usd=call.cost_usd if call.cost_usd is not None else 0.0,
+        cost_source=call.cost_source,
+        latency_ms=call.latency_ms,
+        status=call.status,
+    )
+
+
+def _context_truncated(request: evaluator_pb2.AuditRequest) -> bool:
+    """Whether the proxy already cut the evidence it sent (context_trimmed)."""
+    if request.HasField("evidence_summary") and request.evidence_summary.truncated:
+        return True
+    return any(doc.truncated for doc in request.context)
 
 
 # In-memory storage for audit results. Results are written by SubmitAudit and
@@ -188,9 +288,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - HealthCheck: Service health status
     - IngestDocuments, ListKBClaims, ListConflicts, GetKBStats: knowledge base
 
-    The other v2 RPCs (GetEngineInfo, RetrieveContext, ApplyRuntimeConfig,
-    DraftEvaluator) are not overridden yet, so they inherit the generated
-    handlers and return UNIMPLEMENTED until their phase lands.
+    - GetEngineInfo: What the engine runs with (judge, knowledge, limits)
+
+    The other v2 RPCs (RetrieveContext, ApplyRuntimeConfig, DraftEvaluator)
+    are not overridden yet, so they inherit the generated handlers and return
+    UNIMPLEMENTED until their phase lands.
     """
 
     def __init__(
@@ -200,8 +302,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         qdrant_store=None,
         embedding_service=None,
         ingestor=None,
-        judge_provider: str = "",
-        judge_fallback_active: bool = False,
+        *,
+        engine: Optional[EngineContext] = None,
+        max_audits: Optional[int] = None,
     ):
         """
         Initialize the servicer.
@@ -213,22 +316,78 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             embedding_service: Embedding service for document ingestion (optional)
             ingestor: ClaimIngestor for claim-level (Gate-1 gated) ingestion;
                       None falls back to legacy chunk ingestion
-            judge_provider: Name of the judge in use (HealthResponse.judge_provider,
-                      e.g. "anthropic", "ollama", "mock"); "" when not known
-            judge_fallback_active: Whether the configured judge was unavailable and
-                      the engine runs on its fallback judge instead
+            engine: Startup facts reported by GetEngineInfo and HealthCheck (the
+                    resolved judge, settings, knowledge state). Without it the
+                    servicer reports built-in defaults.
+            max_audits: Concurrent audits (default: engine.max_audits, else 16)
         """
         self.audit_graph = audit_graph
         self.provider = provider
         self.qdrant_store = qdrant_store
         self.embedding_service = embedding_service
         self.ingestor = ingestor
-        self.judge_provider = judge_provider
-        self.judge_fallback_active = judge_fallback_active
+        self.engine = engine
         self._version = __version__
-        logger.info("AuditServicer initialized")
+        if max_audits is None:
+            max_audits = engine.max_audits if engine is not None else DEFAULT_MAX_AUDITS
+        self.max_audits = max_audits
+        # Audits beyond max_audits queue here instead of loading the judge (C-H13).
+        self._audit_slots = asyncio.Semaphore(max_audits)
+        self._judge_healthy: Optional[bool] = engine.judge.healthy if engine else None
+        logger.info(f"AuditServicer initialized (max {max_audits} concurrent audits)")
+
+    @property
+    def _no_judge(self) -> bool:
+        """The engine was started without a judge (LLM_PROVIDER=none, or none found)."""
+        return self.engine is not None and not self.engine.has_judge
 
     async def Evaluate(
+        self, request: evaluator_pb2.AuditRequest, context
+    ) -> evaluator_pb2.AuditResult:
+        """
+        Run an audit to completion and return its v2 result (SPEC section 2.2).
+
+        At most `max_audits` audits run at once; later calls wait for a slot.
+        Without a judge the audit is NOT_ASSESSED (no_judge) with no LLM call.
+        """
+        if self._no_judge:
+            return self._not_assessed_without_judge(request)
+        async with self._audit_slots:
+            result = await self._evaluate(request, context)
+        if self.engine is not None:
+            # JudgeInfo.healthy describes this audit: false only when it failed
+            # because the judge did not answer.
+            judge_failed = result.error_kind in _JUDGE_FAILURE_KINDS
+            result.judge.CopyFrom(judge_info(self.engine.judge, not judge_failed))
+        return result
+
+    def _not_assessed_without_judge(
+        self, request: evaluator_pb2.AuditRequest
+    ) -> evaluator_pb2.AuditResult:
+        trace_id = request.trace_id or request.request_id
+        result = evaluator_pb2.AuditResult(
+            audit_id=request.audit_id or str(uuid.uuid4()),
+            request_id=request.request_id or trace_id,
+            trace_id=trace_id,
+            status=evaluator_pb2.AUDIT_STATUS_COMPLETED,
+            verdict=evaluator_pb2.AUDIT_VERDICT_NOT_ASSESSED,
+            not_assessed_reason="no_judge",
+            reasoning_trace=NO_JUDGE_TRACE,
+            completed_at_ms=int(time.time() * 1000),
+            scoring_version=SCORING_VERSION,
+        )
+        if request.HasField("gate"):
+            result.gate.CopyFrom(request.gate)
+        if request.HasField("evidence_summary"):
+            result.evidence_summary.CopyFrom(request.evidence_summary)
+        result.step_timings["total_ms"] = 0
+        if self.engine is not None:
+            result.judge.CopyFrom(judge_info(self.engine.judge, None))
+        AUDITS_TOTAL.labels(status="success").inc()
+        logger.info(f"Audit {result.audit_id}: NOT_ASSESSED (no_judge)")
+        return result
+
+    async def _evaluate(
         self, request: evaluator_pb2.AuditRequest, context
     ) -> evaluator_pb2.AuditResult:
         """
@@ -252,7 +411,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         try:
             state: Optional[AuditState] = None
             failure: Optional[Tuple[str, str]] = None
-            with mock_judge_scope(options.mock_scenario) as mock_judge:
+            with mock_judge_scope(options.mock_scenario) as mock_judge, cost_ledger() as ledger:
                 try:
                     state = await run_audit(
                         graph=self.audit_graph,
@@ -263,6 +422,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                         context_sources=[doc.source for doc in request.context],
                         knowledge_enabled=options.knowledge_enabled,
                         unsupported_policy=options.unsupported_policy,
+                        context_truncated=_context_truncated(request),
+                        extract_claims_without_evidence=options.extract_claims_without_evidence,
+                        llm_budget_exhausted=options.llm_budget_exhausted,
                     )
                 except Exception as exc:
                     logger.error(f"Audit {audit_id} failed: {exc}", exc_info=True)
@@ -276,6 +438,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             result = self._evaluate_result(
                 request, audit_id, trace_id, request_id, state, failure, int(duration * 1000)
             )
+            # Every judge call, a failed audit's included (the money is spent).
+            result.costs.extend(_cost_record(call) for call in ledger.calls)
             self._record_evaluate_metrics(result, state, duration)
 
             logger.info(
@@ -298,13 +462,14 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         total_ms: int,
     ) -> evaluator_pb2.AuditResult:
         """Map a finished audit (or its failure) onto the v2 AuditResult."""
+        view: Mapping[str, Any] = state if state is not None else {}
         result = evaluator_pb2.AuditResult(
             audit_id=audit_id,
             request_id=request_id,
             trace_id=trace_id,
             completed_at_ms=int(time.time() * 1000),
             processing_time_ms=total_ms,
-            scoring_version=SCORING_VERSION,
+            scoring_version=str(view.get("scoring_version") or SCORING_VERSION),
         )
         # Echo what the proxy decided and sent, so the result is self-contained.
         if request.HasField("gate"):
@@ -312,11 +477,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         if request.HasField("evidence_summary"):
             result.evidence_summary.CopyFrom(request.evidence_summary)
 
-        timings = dict((state or {}).get("step_timings") or {})
+        timings = dict(view.get("step_timings") or {})
         timings["total_ms"] = total_ms
         result.step_timings.update({key: int(value) for key, value in timings.items()})
 
-        verifications: Sequence[ClaimVerification] = (state or {}).get("claim_verifications") or []
+        verifications: Sequence[ClaimVerification] = view.get("claim_verifications") or []
         result.claims.extend(_v2_claim(index, cv) for index, cv in enumerate(verifications))
 
         verdict_value = state.get("verdict") if state is not None else None
@@ -351,19 +516,41 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         if verdict is AuditVerdict.NOT_ASSESSED:
             return result
 
-        # Scores are absent when not computable: no trust score without verdict
-        # claims, and none at all for NOT_ASSESSED (SPEC section 3.2).
+        # Scores are absent when not computable (SPEC section 3.2): the scorer
+        # leaves out what it cannot compute (e.g. the trust score of an
+        # UNVERIFIABLE audit with nothing addressed), and none is invented here.
         result.unsupported_policy = state.get("unsupported_policy") or ""
-        statuses = [coerce_status(cv.get("status")) for cv in verifications]
+        self._set_scores(result, state.get("scores"), verifications)
+        trust_score = result.scores.trust_score if result.scores.HasField("trust_score") else None
+        # Legacy field 4: the trust score, or 0 when there is none.
+        result.faithfulness_score = trust_score if trust_score is not None else 0.0
+        grade = state.get("grade")
+        if trust_score is not None and isinstance(grade, str):
+            result.grade = _GRADE_BY_LETTER.get(grade, evaluator_pb2.TRUST_GRADE_UNSPECIFIED)
+        return result
+
+    @staticmethod
+    def _set_scores(
+        result: evaluator_pb2.AuditResult,
+        scores: Any,
+        verifications: Sequence[ClaimVerification],
+    ) -> None:
+        """AuditResult.scores from the scorer's AuditScores (counts only without them)."""
+        if isinstance(scores, Mapping):
+            for name in _SCORE_FLOATS:
+                value = _finite(scores.get(name))
+                if value is not None:
+                    setattr(result.scores, name, value)
+            for name in _SCORE_COUNTS:
+                count = scores.get(name)
+                setattr(result.scores, name, int(count) if isinstance(count, int) else 0)
+            return
+        statuses: List[VerificationStatus] = [
+            coerce_status(cv.get("status")) for cv in verifications
+        ]
         result.scores.claims_total = len(statuses)
         result.scores.claims_decided = sum(1 for s in statuses if s in DECIDED_STATUSES)
         result.scores.claims_unknown = sum(1 for s in statuses if s is VerificationStatus.UNKNOWN)
-        if verdict in _SCORED_VERDICTS:
-            trust_score = float(state.get("faithfulness_score") or 0.0)
-            result.scores.trust_score = trust_score
-            result.faithfulness_score = trust_score
-            result.grade = grade_for_score(trust_score)
-        return result
 
     @staticmethod
     def _record_evaluate_metrics(
@@ -382,11 +569,16 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         self, request: evaluator_pb2.AuditRequest, context
     ) -> evaluator_pb2.AuditSubmission:
         """
-        Submit an audit request and process synchronously.
-
-        In a production system, this would queue the job and return immediately.
-        For simplicity, we process synchronously here.
+        Submit an audit request and process synchronously (legacy; shares the
+        Evaluate concurrency limit).
         """
+        async with self._audit_slots:
+            return await self._submit_audit(request, context)
+
+    async def _submit_audit(
+        self, request: evaluator_pb2.AuditRequest, context
+    ) -> evaluator_pb2.AuditSubmission:
+        """Run an audit and store its result for GetAuditResult."""
         audit_id = str(uuid.uuid4())
         start_time = time.time()
 
@@ -501,47 +693,106 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             step_timings=step_timings,
         )
 
+    async def _probe_judge(self) -> Optional[bool]:
+        """The judge's health (bounded); None without a judge to probe."""
+        if not self.provider:
+            return None
+        try:
+            healthy = bool(
+                await asyncio.wait_for(self.provider.health_check(), JUDGE_HEALTH_TIMEOUT_S)
+            )
+        except Exception:  # includes the probe timing out
+            healthy = False
+        self._judge_healthy = healthy
+        return healthy
+
+    async def _probe_qdrant(self) -> Tuple[bool, int]:
+        """(reachable, points) of the knowledge store, off the event loop and bounded."""
+        if not self.qdrant_store:
+            return False, 0
+        try:
+            reachable = bool(
+                await asyncio.wait_for(
+                    asyncio.to_thread(self.qdrant_store.health_check), QDRANT_PROBE_TIMEOUT_S
+                )
+            )
+            points = 0
+            if reachable:
+                points = int(
+                    await asyncio.wait_for(
+                        asyncio.to_thread(self.qdrant_store.count), QDRANT_PROBE_TIMEOUT_S
+                    )
+                )
+            return reachable, points
+        except Exception:
+            return False, 0
+
     async def HealthCheck(
         self, request: evaluator_pb2.HealthRequest, context
     ) -> evaluator_pb2.HealthResponse:
         """
         Health check endpoint.
+
+        Dependencies are reported under the keys `judge` and, with a knowledge
+        store, `qdrant` (D10). `healthy` is true when all of them are.
         """
         logger.debug("Health check requested")
 
-        # Check dependencies
-        dependencies = {}
-
-        # Check the audit judge (whichever provider it is; the v1 key was "ollama")
-        if self.provider:
-            try:
-                dependencies["judge"] = bool(
-                    await asyncio.wait_for(self.provider.health_check(), JUDGE_HEALTH_TIMEOUT_S)
-                )
-            except Exception:  # includes the probe timing out
-                dependencies["judge"] = False
+        dependencies: Dict[str, bool] = {}
+        # Concurrent probes: each is bounded (judge 2 s, Qdrant 1 s + 1 s), and
+        # together they must stay inside the healthcheck's 3 s deadline.
+        judge_healthy, (qdrant_reachable, kb_points) = await asyncio.gather(
+            self._probe_judge(), self._probe_qdrant()
+        )
+        if judge_healthy is not None:
+            dependencies["judge"] = judge_healthy
         else:
-            dependencies["judge"] = True  # Assume ok if no provider
+            # No judge: unhealthy when the engine was started without one,
+            # otherwise (a bare servicer) assumed fine.
+            dependencies["judge"] = not self._no_judge
 
-        # Check Qdrant vector store
         if self.qdrant_store:
-            try:
-                dependencies["qdrant"] = self.qdrant_store.health_check()
-            except Exception:
-                dependencies["qdrant"] = False
+            dependencies["qdrant"] = qdrant_reachable
 
-        # Overall health
-        healthy = all(dependencies.values()) if dependencies else True
-
-        return evaluator_pb2.HealthResponse(
-            healthy=healthy,
+        response = evaluator_pb2.HealthResponse(
+            healthy=all(dependencies.values()),
             version=self._version,
             dependencies=dependencies,
-            judge_provider=self.judge_provider,
-            judge_model=str(getattr(self.provider, "model", "") or ""),
-            judge_fallback_active=self.judge_fallback_active,
+            kb_claims=kb_points,
             knowledge_enabled=self.qdrant_store is not None,
         )
+        if self.engine is not None:
+            judge = self.engine.judge
+            response.judge_provider = judge.effective
+            response.judge_model = judge.model
+            response.judge_fallback_active = judge.fallback_active
+            response.knowledge_enabled = self.engine.knowledge.enabled
+        return response
+
+    async def GetEngineInfo(
+        self, request: evaluator_pb2.EngineInfoRequest, context
+    ) -> evaluator_pb2.EngineInfo:
+        """
+        What the engine runs with (SPEC section 2.2): version, judge (with a
+        fresh bounded health probe), knowledge, verifier, scoring settings,
+        warnings and the concurrency limits the proxy sizes its workers by.
+        """
+        judge_healthy, (qdrant_reachable, kb_points) = await asyncio.gather(
+            self._probe_judge(), self._probe_qdrant()
+        )
+        if self.engine is not None:
+            info = engine_info(
+                self.engine,
+                judge_healthy=judge_healthy,
+                qdrant_reachable=qdrant_reachable,
+                kb_claims=kb_points,
+            )
+        else:
+            info = evaluator_pb2.EngineInfo(version=self._version)
+        info.max_audits = self.max_audits
+        if not info.max_rpcs:
+            info.max_rpcs = DEFAULT_MAX_RPCS
+        return info
 
     async def IngestDocuments(
         self, request: evaluator_pb2.IngestRequest, context
@@ -564,7 +815,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             )
 
         try:
-            self.qdrant_store.ensure_collection()
+            await self.qdrant_store.aensure_collection()
 
             if self.ingestor is not None:
                 documents = []
@@ -609,8 +860,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     meta["doc_id"] = doc.id
                 metadata.append(meta)
 
-            vectors = self.embedding_service.embed(texts)
-            count = self.qdrant_store.upsert_documents(
+            # Off the event loop (D8): encoding and the Qdrant upsert block.
+            vectors = await self.embedding_service.aembed(texts)
+            count = await self.qdrant_store.aupsert_documents(
                 texts=texts, vectors=vectors, metadata=metadata
             )
 
@@ -625,9 +877,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     # Knowledge-base queries (VERITAS-lite)
     # ------------------------------------------------------------------
 
-    def _kb_claims(self) -> list:
-        """All claim points from the store, newest first."""
-        points = self.qdrant_store.scroll_points(must={"kind": "claim"})
+    async def _kb_claims(self) -> List[Dict[str, Any]]:
+        """All claim points from the store, newest first (paged, off the event loop; D8, D9)."""
+        points: List[Dict[str, Any]] = await self.qdrant_store.ascroll_points(
+            must={"kind": "claim"}
+        )
         points.sort(key=lambda p: p.get("ingested_at_ms", 0), reverse=True)
         return points
 
@@ -654,7 +908,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             context.set_details("Vector store not configured")
             return evaluator_pb2.ListKBClaimsResponse()
 
-        points = self._kb_claims()
+        points = await self._kb_claims()
         if request.status_filter != evaluator_pb2.KB_CLAIM_STATUS_UNSPECIFIED:
             wanted = _PROTO_TO_KB_STATUS[request.status_filter]
             points = [p for p in points if p.get("kb_status") == wanted]
@@ -676,7 +930,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             context.set_details("Vector store not configured")
             return evaluator_pb2.ListConflictsResponse()
 
-        points = {p["id"]: p for p in self._kb_claims()}
+        points = {p["id"]: p for p in await self._kb_claims()}
         seen: set = set()
         pairs = []
         for point in points.values():
@@ -704,7 +958,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             context.set_details("Vector store not configured")
             return evaluator_pb2.KBStatsResponse()
 
-        points = self._kb_claims()
+        points = await self._kb_claims()
         accepted = sum(1 for p in points if p.get("kb_status") == "accepted")
         quarantined = sum(1 for p in points if p.get("kb_status") == "quarantined")
 
@@ -724,34 +978,32 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
 
 def create_server(
-    # 0.0.0.0 is intentional: reachable only on the internal Docker network,
-    # not published to the host (see docker-compose.yml).
     servicer: AuditServicer,
-    host: str = "0.0.0.0",  # nosec B104
+    host: str = "127.0.0.1",
     port: int = 50051,
-    max_workers: int = 10,
+    max_rpcs: int = DEFAULT_MAX_RPCS,
+    interceptors: Sequence[Any] = (),
 ) -> aio.Server:
     """
     Create and configure the gRPC server.
 
     Args:
         servicer: AuditServicer instance
-        host: Host to bind to
+        host: Host to bind to. Loopback by default; the engine binds a
+              non-loopback address (0.0.0.0 in compose, where the port stays
+              on the internal network) only with an internal token.
         port: Port to listen on
-        max_workers: Maximum concurrent requests
+        max_rpcs: Concurrent RPCs (TRUTHTABLE_ENGINE_MAX_RPCS); further calls
+                  fail fast with RESOURCE_EXHAUSTED instead of piling up (C-H13)
+        interceptors: Server interceptors (the internal-token check)
 
     Returns:
         Configured gRPC server
     """
-    logger.info(f"Creating gRPC server (max_workers={max_workers})")
+    logger.info(f"Creating gRPC server (max {max_rpcs} concurrent RPCs)")
 
-    # Create server
-    server = aio.server()
-
-    # Register servicer
+    server = aio.server(interceptors=list(interceptors), maximum_concurrent_rpcs=max_rpcs)
     evaluator_pb2_grpc.add_AuditServiceServicer_to_server(servicer, server)
-
-    # Bind to address
     server.add_insecure_port(f"{host}:{port}")
 
     logger.info(f"gRPC server configured on {host}:{port}")
