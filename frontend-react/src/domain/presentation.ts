@@ -27,6 +27,7 @@ import {
 import type {
   AuditVerdict,
   ClaimVerdict,
+  DecisionBackend,
   EvaluatorLevel,
   EvidenceSource,
   EvidenceSummary,
@@ -489,4 +490,34 @@ export function weakestCostSource(sources: readonly CostSource[]): CostSource {
   const order: CostSource[] = ['simulated', 'unknown', 'computed', 'free_local', 'reported'];
   for (const s of order) if (sources.includes(s)) return s;
   return 'unknown';
+}
+
+// ---------------------------------------------------------------------------------- model names
+
+const DECISION_BACKEND_WORDS: Record<DecisionBackend, string> = {
+  'openrouter-decisions': 'OpenRouter',
+  'openrouter-systemone': 'OpenRouter System One',
+  typesafe: 'TypeSafe',
+  compatible: 'Compatible gateway',
+  mock: 'Mock (simulated)',
+  off: 'Off',
+};
+
+/** Words for the fast check's backend (DecisionModelUsage.backend). */
+export function decisionBackendLabel(backend: DecisionBackend): string {
+  return DECISION_BACKEND_WORDS[backend] ?? 'Unknown backend';
+}
+
+const JUDGE_PROVIDER_WORDS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama (local)',
+  mock: 'Mock (simulated)',
+  none: 'No judge',
+};
+
+/** Words for the deep-audit judge's provider (JudgeInfo.effective_provider). */
+export function judgeProviderLabel(provider: string): string {
+  return JUDGE_PROVIDER_WORDS[provider] ?? provider;
 }

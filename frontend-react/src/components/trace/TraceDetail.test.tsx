@@ -178,7 +178,7 @@ describe('Trace detail', () => {
     expect(details).toHaveTextContent('188 ms');
     expect(details).toHaveTextContent('2.4 s');
     // What each tier ran on, and its cost with an honest label (the mock's cost is simulated).
-    expect(details).toHaveTextContent('Fast check (Jev) modelmock/jevmock');
+    expect(details).toHaveTextContent('Fast check (Jev) modelmock/jevMock (simulated)');
     expect(details).toHaveTextContent('Fast check (Jev) cost$0Simulated');
   });
 });

@@ -5,7 +5,7 @@
  */
 import { ChevronRight } from 'lucide-react';
 import { KeyValueList, type KeyValueItem } from '@/components/common/KeyValue';
-import { copy, costSourceLabel, weakestCostSource } from '@/domain/presentation';
+import { copy, costSourceLabel, decisionBackendLabel, judgeProviderLabel, weakestCostSource } from '@/domain/presentation';
 import { formatDateTime, formatDurationMs, formatUsd } from '@/domain/format';
 import type { AuditDetail, GateDecisionView, TraceSummary } from '@/types/api';
 
@@ -15,7 +15,12 @@ function fastCheckFacts(decision: GateDecisionView | null): KeyValueItem[] {
   if (!usage) return [{ label: `${copy.tiers.fast_check} model`, value: null }];
   const label = costSourceLabel(usage.cost_source);
   return [
-    { label: `${copy.tiers.fast_check} model`, value: usage.snapshot ?? usage.model_requested, mono: true, hint: usage.backend },
+    {
+      label: `${copy.tiers.fast_check} model`,
+      value: usage.snapshot ?? usage.model_requested,
+      mono: true,
+      hint: decisionBackendLabel(usage.backend),
+    },
     {
       label: `${copy.tiers.fast_check} cost`,
       value: label === null ? null : formatUsd(usage.cost_usd),
@@ -31,9 +36,9 @@ function deepAuditFacts(audit: AuditDetail | null): KeyValueItem[] {
   const items: KeyValueItem[] = [
     {
       label: `${copy.tiers.deep_audit} judge`,
-      value: judge ? `${judge.effective_provider} · ${judge.model}` : null,
+      value: judge ? judge.model : null,
       mono: true,
-      hint: judge?.fallback_active ? 'fallback judge' : undefined,
+      hint: judge ? `${judgeProviderLabel(judge.effective_provider)}${judge.fallback_active ? ' · fallback judge' : ''}` : undefined,
     },
   ];
   const costs = audit?.costs ?? [];
