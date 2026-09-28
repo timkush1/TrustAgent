@@ -386,16 +386,17 @@ async def test_health_check_probes_the_judge_and_qdrant_concurrently(
 
     class HangingQdrant:
         def health_check(self) -> bool:
-            time.sleep(0.8)
+            time.sleep(1.2)
             return True
 
-    monkeypatch.setattr(server_mod, "JUDGE_HEALTH_TIMEOUT_S", 0.5)
-    monkeypatch.setattr(server_mod, "QDRANT_PROBE_TIMEOUT_S", 0.5)
+    # One after the other: 0.8 s + 0.8 s, past the 1.3 s deadline; together 0.8 s.
+    monkeypatch.setattr(server_mod, "JUDGE_HEALTH_TIMEOUT_S", 0.8)
+    monkeypatch.setattr(server_mod, "QDRANT_PROBE_TIMEOUT_S", 0.8)
     servicer = AuditServicer(
         audit_graph=None, provider=HangingProvider(), qdrant_store=HangingQdrant()
     )
     async with serving(servicer) as audit_stub:
-        response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=0.9)
+        response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=1.3)
 
     assert dict(response.dependencies) == {"judge": False, "qdrant": False}
     assert response.healthy is False
