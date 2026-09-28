@@ -9,7 +9,8 @@ This is where everything gets wired together:
 3. Resolve the audit judge (judge.py) and cap its in-flight calls
 4. Initialize the knowledge add-on (embeddings + Qdrant) if enabled; its heavy
    dependencies are imported only then
-5. Build the LangGraph audit workflow
+5. Build the LangGraph audit workflow with the scoring, claim and policy
+   settings (TRUTHTABLE_SCORING_*, TRUTHTABLE_MAX_CLAIMS, ...)
 6. Start the metrics endpoint and the gRPC server (internal-token interceptor,
    TRUTHTABLE_ENGINE_MAX_RPCS)
 """
@@ -50,6 +51,7 @@ from truthtable.providers.pricing import (
     set_active_price_table,
 )
 from truthtable.contracts import ContractsNotFoundError
+from truthtable.scoring import ScoringConfig
 
 __all__ = ["MOCK_JUDGE_MODEL", "init_provider", "main"]
 
@@ -283,6 +285,12 @@ async def main() -> None:
             qdrant_store=qdrant_store,
             hybrid_retriever=hybrid_retriever,
             verifier_concurrency=settings.verifier_concurrency,
+            scoring=ScoringConfig.from_settings(settings),
+            max_claims=settings.max_claims,
+            unsupported_policy=settings.unsupported_policy,
+            extract_claims_without_evidence=settings.audit_extract_claims_without_evidence,
+            retriever_top_k=settings.retriever_top_k,
+            retriever_score_threshold=settings.retriever_score_threshold,
         )
         logger.info("Audit graph ready")
     else:

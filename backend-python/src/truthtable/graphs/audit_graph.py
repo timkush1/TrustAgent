@@ -21,6 +21,17 @@ the state unchanged.
 Retrieval runs only when the caller enables knowledge and the engine has a
 knowledge base; when it finds nothing the audit is NOT_ASSESSED
 (knowledge_no_hits) and its claims come back NOT_CHECKED.
+
+With `extract_claims_without_evidence` (AuditOptions field 7, or the engine's
+TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE) an audit without evidence is
+still decomposed; the verifier never asks the judge about a claim it has
+nothing to check against, so the claims come back NOT_CHECKED and the audit is
+NOT_ASSESSED (no_evidence) with the claims located in the answer.
+
+`build_audit_graph` takes the engine settings that shape an audit: the scoring
+thresholds (TRUTHTABLE_SCORING_*), TRUTHTABLE_MAX_CLAIMS, the engine's default
+TRUTHTABLE_UNSUPPORTED_POLICY (used when the request does not name one) and the
+knowledge retriever's top-k and score threshold.
 """
 
 import logging
@@ -38,7 +49,10 @@ from .state import (
     VerificationStatus,
 )
 from .nodes import DecomposerNode, VerifierNode, ScorerNode
+from .nodes.decomposer import DEFAULT_MAX_CLAIMS, claim_records
 from ..providers.base import LLMProvider
+from ..scoring.aggregate import DEFAULT_SCORING, ScoringConfig
+from ..scoring.aggregate import resolve_unsupported_policy as resolve_policy
 
 if TYPE_CHECKING:  # knowledge add-on: imported only when retrieval is configured
     from ..vectorstore.embeddings import EmbeddingService
@@ -48,10 +62,13 @@ logger = logging.getLogger(__name__)
 
 GraphStep = Callable[[AuditState], Awaitable[AuditState]]
 
-# Evidence sources that come from the audited request itself (SPEC section 2.2
-# ContextDocument.source). Knowledge-base documents ("knowledge", "upload") are
-# not request evidence; a caller document without a source is.
-NON_REQUEST_SOURCES = frozenset({"knowledge", "upload"})
+# ContextDocument.source of the documents the knowledge retriever supplies.
+KNOWLEDGE_SOURCE = "knowledge"
+
+# decided_by of a claim nobody judged (proto ClaimVerification.decided_by).
+DECIDED_BY_NONE = "none"
+
+_POLICY_VALUES = frozenset({"", "auto"} | {policy.value for policy in UnsupportedPolicy})
 
 _NOT_ASSESSED_TRACES = {
     NotAssessedReason.NO_EVIDENCE: (
@@ -75,24 +92,19 @@ def resolve_unsupported_policy(
     requested: str, context_sources: Sequence[str], documents: int
 ) -> UnsupportedPolicy:
     """
-    Resolve AuditOptions.unsupported_policy.
+    Resolve AuditOptions.unsupported_policy (scoring.resolve_unsupported_policy).
 
     "hallucination" and "unverifiable" are taken as given. "", "auto" (and any
     unrecognised value) mean hallucination when at least one of the caller's
-    documents is request evidence, otherwise unverifiable: an answer checked
-    only against the knowledge base is not wrong just because the knowledge
-    base does not mention it.
+    documents is request evidence (any source but knowledge or upload),
+    otherwise unverifiable: an answer checked only against the knowledge base
+    is not wrong just because the knowledge base does not mention it.
     """
     value = (requested or "").strip().lower()
-    if value in {policy.value for policy in UnsupportedPolicy}:
-        return UnsupportedPolicy(value)
-    if value not in {"", "auto"}:
+    if value not in _POLICY_VALUES:
         logger.warning(f"Unknown unsupported_policy {requested!r}; using auto")
-
     sources = [context_sources[i] if i < len(context_sources) else "" for i in range(documents)]
-    if any(source not in NON_REQUEST_SOURCES for source in sources):
-        return UnsupportedPolicy.HALLUCINATION
-    return UnsupportedPolicy.UNVERIFIABLE
+    return resolve_policy(value, sources)
 
 
 def is_not_assessed(state: AuditState) -> bool:
@@ -101,18 +113,27 @@ def is_not_assessed(state: AuditState) -> bool:
 
 def mark_not_assessed(state: AuditState, reason: NotAssessedReason) -> AuditState:
     """
-    End the audit as NOT_ASSESSED. Claims already extracted come back NOT_CHECKED.
+    End the audit as NOT_ASSESSED. Claims already extracted come back
+    NOT_CHECKED, each still located in the answer (the decomposer's quote and
+    span).
 
     The v1 fields keep their types for legacy callers: score 0.0, no hallucination.
     """
+    records = claim_records(state.get("claims") or [], state.get("extracted_claims"))
     unchecked: List[ClaimVerification] = [
         {
-            "claim": claim,
+            "claim": record["claim"],
             "status": VerificationStatus.NOT_CHECKED,
             "confidence": 0.0,
             "evidence": [],
+            "decided_by": DECIDED_BY_NONE,
+            "index": index,
+            "quote": record["quote"],
+            "span_start": record["span_start"],
+            "span_end": record["span_end"],
+            "span_method": record["span_method"],
         }
-        for claim in state.get("claims") or []
+        for index, record in enumerate(records)
     ]
     state["claim_verifications"] = unchecked
     state["faithfulness_score"] = 0.0
@@ -132,12 +153,24 @@ class PreflightNode:
     have nothing to be checked against (NOT_ASSESSED, no_evidence).
     """
 
-    def __init__(self, retrieval_available: bool):
+    def __init__(
+        self,
+        retrieval_available: bool,
+        default_policy: str = "auto",
+        extract_claims_without_evidence: bool = False,
+    ):
         """
         Args:
             retrieval_available: Whether the graph has a knowledge retrieve step.
+            default_policy: The policy when the request names none
+                (TRUTHTABLE_UNSUPPORTED_POLICY: auto, hallucination or unverifiable).
+            extract_claims_without_evidence: Decompose audits without evidence
+                (TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE); a request can
+                also ask for it (AuditOptions.extract_claims_without_evidence).
         """
         self.retrieval_available = retrieval_available
+        self.default_policy = default_policy
+        self.extract_claims_without_evidence = extract_claims_without_evidence
 
     async def run(self, state: AuditState) -> AuditState:
         documents = list(state.get("context_docs") or [])
@@ -158,7 +191,7 @@ class PreflightNode:
                 ]
 
         state["unsupported_policy"] = resolve_unsupported_policy(
-            state.get("unsupported_policy") or "",
+            (state.get("unsupported_policy") or "").strip() or self.default_policy,
             state.get("context_sources") or [],
             len(documents),
         ).value
@@ -166,6 +199,12 @@ class PreflightNode:
         if documents:
             return state
         if state.get("knowledge_enabled") and self.retrieval_available:
+            return state
+        if state.get("extract_claims_without_evidence") or self.extract_claims_without_evidence:
+            logger.info(
+                f"Audit {state['request_id']} has no evidence: extracting its claims anyway "
+                "(they come back NOT_CHECKED; no verification call)"
+            )
             return state
 
         logger.info(
@@ -216,10 +255,15 @@ class KnowledgeRetrieveNode:
         if not state.get("claims"):
             return state
 
+        supplied = len(state.get("context_docs") or [])
         state = await self.retriever.run(state)
-        if not state.get("context_docs"):
+        documents = state.get("context_docs") or []
+        if not documents:
             logger.info(f"Knowledge retrieval found nothing for audit {state['request_id']}")
             return mark_not_assessed(state, NotAssessedReason.KNOWLEDGE_NO_HITS)
+        if not supplied:
+            # Every document came from the knowledge base.
+            state["context_sources"] = [KNOWLEDGE_SOURCE] * len(documents)
         return state
 
 
@@ -229,6 +273,13 @@ def build_audit_graph(
     qdrant_store: Optional["QdrantStore"] = None,
     hybrid_retriever: Any = None,
     verifier_concurrency: int = 5,
+    *,
+    scoring: ScoringConfig = DEFAULT_SCORING,
+    max_claims: int = DEFAULT_MAX_CLAIMS,
+    unsupported_policy: str = "auto",
+    extract_claims_without_evidence: bool = False,
+    retriever_top_k: int = 3,
+    retriever_score_threshold: float = 0.3,
 ) -> Any:
     """
     Build the audit workflow graph.
@@ -248,6 +299,15 @@ def build_audit_graph(
         qdrant_store: Qdrant vector store for knowledge retrieval (optional)
         hybrid_retriever: HybridClaimRetriever for BM25+dense retrieval (optional)
         verifier_concurrency: Max claims verified in parallel
+        scoring: Scoring thresholds (ScoringConfig.from_settings)
+        max_claims: Most claims per answer (TRUTHTABLE_MAX_CLAIMS)
+        unsupported_policy: Policy when a request names none
+            (TRUTHTABLE_UNSUPPORTED_POLICY)
+        extract_claims_without_evidence: Decompose audits without evidence
+            (TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE)
+        retriever_top_k: Knowledge documents per search (TRUTHTABLE_RETRIEVER_TOP_K)
+        retriever_score_threshold: Lowest dense score kept
+            (TRUTHTABLE_RETRIEVER_SCORE_THRESHOLD)
 
     Returns:
         Compiled StateGraph ready to execute
@@ -257,10 +317,14 @@ def build_audit_graph(
     has_retrieval = embedding_service is not None and qdrant_store is not None
 
     # Create nodes
-    preflight = PreflightNode(retrieval_available=has_retrieval)
-    decomposer = DecomposerNode(provider=provider)
+    preflight = PreflightNode(
+        retrieval_available=has_retrieval,
+        default_policy=unsupported_policy,
+        extract_claims_without_evidence=extract_claims_without_evidence,
+    )
+    decomposer = DecomposerNode(provider=provider, max_claims=max_claims)
     verifier = VerifierNode(provider=provider, concurrency=verifier_concurrency)
-    scorer = ScorerNode()
+    scorer = ScorerNode(config=scoring)
 
     # Initialize graph with state schema
     workflow = StateGraph(AuditState)
@@ -284,6 +348,8 @@ def build_audit_graph(
         retriever = RetrieverNode(
             embedding_service=embedding_service,
             qdrant_store=qdrant_store,
+            top_k_per_claim=retriever_top_k,
+            score_threshold=retriever_score_threshold,
             hybrid_retriever=hybrid_retriever,
         )
         workflow.add_node("retrieve", KnowledgeRetrieveNode(retriever).run)
@@ -324,6 +390,8 @@ async def run_audit(
     context_sources: Optional[List[str]] = None,
     knowledge_enabled: bool = True,
     unsupported_policy: str = "",
+    context_truncated: bool = False,
+    extract_claims_without_evidence: bool = False,
 ) -> AuditState:
     """
     Execute the audit workflow.
@@ -340,7 +408,13 @@ async def run_audit(
         knowledge_enabled: Whether knowledge retrieval may supply evidence when
                      the graph has a knowledge base. The default keeps the
                      legacy behaviour: use the knowledge base when there is one.
-        unsupported_policy: "", auto, hallucination or unverifiable
+        unsupported_policy: "", auto, hallucination or unverifiable ("" uses the
+                     graph's default, TRUTHTABLE_UNSUPPORTED_POLICY)
+        context_truncated: The caller already cut the evidence (a document's
+                     ContextDocument.truncated or EvidenceSummary.truncated): the
+                     audit records context_trimmed
+        extract_claims_without_evidence: Decompose even without evidence
+                     (AuditOptions.extract_claims_without_evidence)
 
     Returns:
         Final AuditState with all results
@@ -356,6 +430,8 @@ async def run_audit(
         "context_sources": list(context_sources or []),
         "knowledge_enabled": knowledge_enabled,
         "unsupported_policy": unsupported_policy,
+        "context_truncated": context_truncated,
+        "extract_claims_without_evidence": extract_claims_without_evidence,
         "claims": None,
         "claim_verifications": None,
         "faithfulness_score": None,

@@ -7,10 +7,11 @@ section 2.2).
 
 import asyncio
 import logging
+import math
 import uuid
 import time
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import grpc
 from grpc import aio
@@ -30,6 +31,7 @@ from ..graphs.state import (
     coerce_status,
 )
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
+from ..scoring.aggregate import SCORING_VERSION
 from ..metrics import (
     AUDITS_TOTAL,
     AUDIT_DURATION,
@@ -40,10 +42,6 @@ from ..metrics import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Evaluate results carry the v1 scorer's numbers until scoring v2 lands (SPEC
-# section 3.2, scoring/aggregate.py); scoring_version tells consumers which.
-SCORING_VERSION = "v1"
 
 # HealthCheck asks whether the engine is serving; the judge's health is only
 # reported. Its probe is bounded so a slow or unreachable judge (a provider
@@ -107,14 +105,34 @@ _AUDIT_VERDICT: Dict[AuditVerdict, int] = {
 }
 
 # Claim span offsets for a claim not located in the answer (SPEC section 2.1:
-# "-1 means unaligned"). The S0 decomposer does not align claims; spans arrive
-# with decomposer v2 (text/spans.py).
+# "-1 means unaligned"). Aligned spans come from the decomposer (text/spans.py):
+# UTF-16 code units, half-open.
 UNALIGNED_SPAN = -1
 
-# Verdicts that come with a trust score (NO_CLAIMS and NOT_ASSESSED have none).
-_SCORED_VERDICTS = frozenset(
-    {AuditVerdict.GROUNDED, AuditVerdict.HALLUCINATED, AuditVerdict.UNVERIFIABLE}
+# span_method values sent for an aligned span (an unaligned one sends "").
+_SPAN_METHODS = frozenset({"exact", "normalized", "fuzzy"})
+
+# The optional floats of AuditScores, set only when the scorer computed them.
+_SCORE_FLOATS: Tuple[str, ...] = (
+    "trust_score",
+    "faithfulness",
+    "contradiction_rate",
+    "unverified_rate",
+    "coverage",
+    "accuracy_addressed",
+    "max_contradiction",
+    "p_hallucinated",
 )
+_SCORE_COUNTS: Tuple[str, ...] = ("claims_total", "claims_decided", "claims_unknown")
+
+# The scorer's letter grade (from TRUTHTABLE_SCORING_GRADE_CUTOFFS) on the wire.
+_GRADE_BY_LETTER: Dict[str, int] = {
+    "A": evaluator_pb2.TRUST_GRADE_A,
+    "B": evaluator_pb2.TRUST_GRADE_B,
+    "C": evaluator_pb2.TRUST_GRADE_C,
+    "D": evaluator_pb2.TRUST_GRADE_D,
+    "F": evaluator_pb2.TRUST_GRADE_F,
+}
 
 _AUDIT_STATUS: Dict[AuditOutcome, int] = {
     AuditOutcome.COMPLETED: evaluator_pb2.AUDIT_STATUS_COMPLETED,
@@ -124,7 +142,10 @@ _AUDIT_STATUS: Dict[AuditOutcome, int] = {
 
 
 def grade_for_score(score: float) -> int:
-    """TrustGrade for a trust score (cutoffs documented on the proto TrustGrade)."""
+    """
+    TrustGrade for a legacy score (cutoffs documented on the proto TrustGrade).
+    Evaluate sends the scorer's grade instead (configurable cutoffs).
+    """
     for cutoff, grade in _GRADE_CUTOFFS:
         if score >= cutoff:
             return grade
@@ -152,23 +173,68 @@ def _record_claim_metrics(verifications: Iterable[ClaimVerification]) -> None:
         CLAIMS_TOTAL.labels(status=coerce_status(cv.get("status")).value).inc()
 
 
+def _finite(value: Any) -> Optional[float]:
+    """`value` as a finite float, or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _claim_span(cv: Mapping[str, Any]) -> Tuple[int, int, str]:
+    """(start, end, method) of a claim's span; (-1, -1, "") when it is not aligned."""
+    start, end = cv.get("span_start"), cv.get("span_end")
+    method = str(cv.get("span_method") or "")
+    if (
+        isinstance(start, int)
+        and isinstance(end, int)
+        and 0 <= start <= end
+        and method in _SPAN_METHODS
+    ):
+        return start, end, method
+    return UNALIGNED_SPAN, UNALIGNED_SPAN, ""
+
+
 def _v2_claim(index: int, cv: ClaimVerification) -> evaluator_pb2.ClaimVerification:
-    """v2 ClaimVerification: UNKNOWN=5 and NOT_CHECKED=6 keep their own values (D6)."""
+    """
+    v2 ClaimVerification: UNKNOWN=5 and NOT_CHECKED=6 keep their own values
+    (D6); the span, quote, reasoning, decided_by and verdict distribution come
+    from the decomposer's and verifier's records when they made them.
+    """
     status = coerce_status(cv.get("status"))
-    # reasoning and quote are optional extras a verifier or decomposer may add.
-    extras: Dict[str, Any] = dict(cv)
-    return evaluator_pb2.ClaimVerification(
+    # The v2 keys are optional extras of the record (a v1 caller has none).
+    record: Mapping[str, Any] = cv
+    span_start, span_end, span_method = _claim_span(record)
+    claim = evaluator_pb2.ClaimVerification(
         index=index,
         claim=cv.get("claim", ""),
         status=_V2_CLAIM_STATUS[status],
         confidence=float(cv.get("confidence", 0.0)),
         evidence=list(cv.get("evidence") or []),
-        reasoning=str(extras.get("reasoning") or ""),
-        quote=str(extras.get("quote") or ""),
-        decided_by="llm" if status in DECIDED_STATUSES else "none",
-        span_start=UNALIGNED_SPAN,
-        span_end=UNALIGNED_SPAN,
+        reasoning=str(record.get("reasoning") or ""),
+        quote=str(record.get("quote") or ""),
+        decided_by=str(
+            record.get("decided_by") or ("llm" if status in DECIDED_STATUSES else "none")
+        ),
+        probability_source=str(record.get("probability_source") or ""),
+        span_start=span_start,
+        span_end=span_end,
+        span_method=span_method,
     )
+    probabilities = record.get("verdict_probabilities")
+    if isinstance(probabilities, Mapping):
+        for key, value in probabilities.items():
+            number = _finite(value)
+            if number is not None:
+                claim.verdict_probabilities[str(key)] = number
+    return claim
+
+
+def _context_truncated(request: evaluator_pb2.AuditRequest) -> bool:
+    """Whether the proxy already cut the evidence it sent (context_trimmed)."""
+    if request.HasField("evidence_summary") and request.evidence_summary.truncated:
+        return True
+    return any(doc.truncated for doc in request.context)
 
 
 # In-memory storage for audit results. Results are written by SubmitAudit and
@@ -339,6 +405,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                         context_sources=[doc.source for doc in request.context],
                         knowledge_enabled=options.knowledge_enabled,
                         unsupported_policy=options.unsupported_policy,
+                        context_truncated=_context_truncated(request),
+                        extract_claims_without_evidence=(options.extract_claims_without_evidence),
                     )
                 except Exception as exc:
                     logger.error(f"Audit {audit_id} failed: {exc}", exc_info=True)
@@ -374,13 +442,14 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         total_ms: int,
     ) -> evaluator_pb2.AuditResult:
         """Map a finished audit (or its failure) onto the v2 AuditResult."""
+        view: Mapping[str, Any] = state if state is not None else {}
         result = evaluator_pb2.AuditResult(
             audit_id=audit_id,
             request_id=request_id,
             trace_id=trace_id,
             completed_at_ms=int(time.time() * 1000),
             processing_time_ms=total_ms,
-            scoring_version=SCORING_VERSION,
+            scoring_version=str(view.get("scoring_version") or SCORING_VERSION),
         )
         # Echo what the proxy decided and sent, so the result is self-contained.
         if request.HasField("gate"):
@@ -388,11 +457,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         if request.HasField("evidence_summary"):
             result.evidence_summary.CopyFrom(request.evidence_summary)
 
-        timings = dict((state or {}).get("step_timings") or {})
+        timings = dict(view.get("step_timings") or {})
         timings["total_ms"] = total_ms
         result.step_timings.update({key: int(value) for key, value in timings.items()})
 
-        verifications: Sequence[ClaimVerification] = (state or {}).get("claim_verifications") or []
+        verifications: Sequence[ClaimVerification] = view.get("claim_verifications") or []
         result.claims.extend(_v2_claim(index, cv) for index, cv in enumerate(verifications))
 
         verdict_value = state.get("verdict") if state is not None else None
@@ -427,19 +496,41 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         if verdict is AuditVerdict.NOT_ASSESSED:
             return result
 
-        # Scores are absent when not computable: no trust score without verdict
-        # claims, and none at all for NOT_ASSESSED (SPEC section 3.2).
+        # Scores are absent when not computable (SPEC section 3.2): the scorer
+        # leaves out what it cannot compute (e.g. the trust score of an
+        # UNVERIFIABLE audit with nothing addressed), and none is invented here.
         result.unsupported_policy = state.get("unsupported_policy") or ""
-        statuses = [coerce_status(cv.get("status")) for cv in verifications]
+        self._set_scores(result, state.get("scores"), verifications)
+        trust_score = result.scores.trust_score if result.scores.HasField("trust_score") else None
+        # Legacy field 4: the trust score, or 0 when there is none.
+        result.faithfulness_score = trust_score if trust_score is not None else 0.0
+        grade = state.get("grade")
+        if trust_score is not None and isinstance(grade, str):
+            result.grade = _GRADE_BY_LETTER.get(grade, evaluator_pb2.TRUST_GRADE_UNSPECIFIED)
+        return result
+
+    @staticmethod
+    def _set_scores(
+        result: evaluator_pb2.AuditResult,
+        scores: Any,
+        verifications: Sequence[ClaimVerification],
+    ) -> None:
+        """AuditResult.scores from the scorer's AuditScores (counts only without them)."""
+        if isinstance(scores, Mapping):
+            for name in _SCORE_FLOATS:
+                value = _finite(scores.get(name))
+                if value is not None:
+                    setattr(result.scores, name, value)
+            for name in _SCORE_COUNTS:
+                count = scores.get(name)
+                setattr(result.scores, name, int(count) if isinstance(count, int) else 0)
+            return
+        statuses: List[VerificationStatus] = [
+            coerce_status(cv.get("status")) for cv in verifications
+        ]
         result.scores.claims_total = len(statuses)
         result.scores.claims_decided = sum(1 for s in statuses if s in DECIDED_STATUSES)
         result.scores.claims_unknown = sum(1 for s in statuses if s is VerificationStatus.UNKNOWN)
-        if verdict in _SCORED_VERDICTS:
-            trust_score = float(state.get("faithfulness_score") or 0.0)
-            result.scores.trust_score = trust_score
-            result.faithfulness_score = trust_score
-            result.grade = grade_for_score(trust_score)
-        return result
 
     @staticmethod
     def _record_evaluate_metrics(

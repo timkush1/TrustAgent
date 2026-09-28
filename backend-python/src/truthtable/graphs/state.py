@@ -140,6 +140,9 @@ class AuditState(TypedDict):
     v2 fields (scoring v2, decomposer v2):
         extracted_claims: Quote and UTF-16 span of each claim, parallel to claims
         context_truncated: Input flag: the caller truncated evidence documents
+        extract_claims_without_evidence: Input flag: decompose an answer that has no
+                      evidence (its claims come back NOT_CHECKED) instead of
+                      ending the audit at preflight
         context_trimmed: The verifier capped the evidence it sent the judge
         scores: The AuditScores of the audit (None when it has none)
         grade: Letter grade of scores.trust_score (None without one)
@@ -177,6 +180,7 @@ class AuditState(TypedDict):
     context_truncated: NotRequired[
         bool
     ]  # Input: the caller cut evidence (ContextDocument.truncated)
+    extract_claims_without_evidence: NotRequired[bool]  # Input (AuditOptions field 7)
     context_trimmed: NotRequired[bool]  # The verifier capped the evidence it sent the judge
     scores: NotRequired[Optional[Dict[str, Any]]]  # scoring.AuditScores.to_dict(); None when absent
     grade: NotRequired[Optional[str]]  # A-F from scores.trust_score; None without one

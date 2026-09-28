@@ -143,6 +143,44 @@ async def test_non_loopback_bind_without_a_token_refuses_to_start(
     assert exc_info.value.code == 2
 
 
+class _GraphBuilt(Exception):
+    """Stops main() once it has built the audit graph."""
+
+
+async def test_main_builds_the_audit_graph_from_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The TRUTHTABLE_SCORING_* keys GetEngineInfo reports must be the ones the
+    # scorer uses, and the claim, policy and retriever keys must reach the graph.
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setenv("TRUTHTABLE_SCORING_GRADE_CUTOFFS", "0.95,0.8,0.6,0.4")
+    monkeypatch.setenv("TRUTHTABLE_SCORING_CONTRADICTION_FLAG", "0.4")
+    monkeypatch.setenv("TRUTHTABLE_MAX_CLAIMS", "7")
+    monkeypatch.setenv("TRUTHTABLE_UNSUPPORTED_POLICY", "unverifiable")
+    monkeypatch.setenv("TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE", "true")
+    monkeypatch.setenv("TRUTHTABLE_RETRIEVER_TOP_K", "4")
+    monkeypatch.setenv("VERIFIER_CONCURRENCY", "2")
+    captured: Dict[str, Any] = {}
+
+    def fake_build_audit_graph(**kwargs: Any) -> None:
+        captured.update(kwargs)
+        raise _GraphBuilt()
+
+    monkeypatch.setattr(main_mod, "build_audit_graph", fake_build_audit_graph)
+
+    with pytest.raises(_GraphBuilt):
+        await main_mod.main()
+
+    scoring = captured["scoring"]
+    assert scoring.grade_cutoffs == (0.95, 0.8, 0.6, 0.4)
+    assert scoring.contradiction_flag == pytest.approx(0.4)
+    assert captured["max_claims"] == 7
+    assert captured["unsupported_policy"] == "unverifiable"
+    assert captured["extract_claims_without_evidence"] is True
+    assert captured["retriever_top_k"] == 4
+    assert captured["verifier_concurrency"] == 2
+
+
 # ---------------------------------------------------------------------------
 # A real engine process (mock judge, loopback, internal token)
 # ---------------------------------------------------------------------------
