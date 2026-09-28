@@ -165,27 +165,94 @@ judge, test mode) produces the same traces every time.
 
 | Field | Meaning and consumer |
 |---|---|
-| `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend looks up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |
-| `sets` | Selection for `trafficgen --scenarios <set>`: `s0` (walking skeleton), `demo`, `e2e`, and later `generated`. |
+| `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend (and mock-upstream's decision endpoints) look up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |
+| `sets` | Selection for `trafficgen --scenarios <set>` (and `--exclude`): `s0` (walking skeleton), `demo`, `e2e`, `untagged`, `generated`, `knowledge`, and a phase tag (below). |
 | `route`, `headers`, `api_format`, `stream`, `request` | What `trafficgen` sends: `request` is the client body, with evidence placed where SPEC §2.10 extracts it; `headers` holds extra request headers (`X-TrustAgent-Route` selects the route). |
-| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in. |
+| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in. `trafficgen --upstream all` sends no `test_response`, and mock-upstream answers with `response` (JSON or SSE). |
 | `mock_answers` | Raw answers the mock backend (`TRUTHTABLE_JEV_BACKEND=mock`, `TRUTHTABLE_JEV_MOCK_MODE=scenario`) returns, keyed by question id `<id>__v<version>` (SPEC §2.9 compile step 5) for each evaluator the route asks. Evaluators that compile excludes (for example `no_evidence`) are not asked and have no answer. |
-| `judge` | The mock judge fixture (`LLM_PROVIDER=mock`). `claims`, in response order, is the decomposer output (`claim` and a `quote` that is verbatim in `response`); each claim's `verdict`, `confidence`, `evidence` and `reasoning` are its verifier output, which the deep audit reports unchanged. `null` means no LLM call may happen. |
-| `expect` | The expected outcome: the gate decision and its `X-TrustAgent-*` headers (`mode`, `action`, `would_action`, `status`, `verdict`, `max_risk`, `reasons`, `checked_against`, `audit`), the decision's `deep_audit` class, the deep-audit verdict and the dashboard outcome. `trafficgen --expect` asserts the header fields; `reasons` is a subset match. |
+| `fallback` | Only on a fallback route: the fallback answer (`response`), the raw answers to its re-gate (`mock_answers`, used when the state's `assistant_response` is the fallback answer) and the re-gate's expected decision (`expect`). In test mode the gateway answers its fallback call with `fallback.response`; mock-upstream serves it to a request that carries the fallback prompt's `CONTEXT` block. |
+| `knowledge` | Only on a route that reads the knowledge add-on: the knowledge-base documents `RetrieveContext` returns for this request (the knowledge profile must hold them). |
+| `judge` | The mock judge fixture (`LLM_PROVIDER=mock`). `claims`, in response order, is the decomposer output (`claim` and a `quote` that is verbatim in `response`); each claim's `verdict`, `confidence`, `evidence` (verbatim from the request or the knowledge documents) and `reasoning` are its verifier output, which the deep audit reports unchanged. `null` means no LLM call may happen; the deep audit of the original answer is what counts, also after a fallback. |
+| `expect` | The expected outcome: the gate decision and its `X-TrustAgent-*` values (`mode`, `action`, `would_action`, `status`, `verdict`, `max_risk`, `reasons`, `checked_against`, `audit`), the decision's `deep_audit` class, the deep-audit verdict and the dashboard outcome; plus what the client receives: `delivered_text` (the block message or the fallback answer, when it is not `response`), `http_status` (default 200) and, for a passthrough stream, `stream_decision` (the `: trustagent {...}` comment and the Mode and Action trailers). |
 
-Expectations are derived by hand from SPEC §2.9 under `config/policies.yaml`, the policy the gateway loads
-(also in `make demo`); each scenario's `description` records the derivation. The scenario, the policy and
-the expectations change together. The `support-bot` route is set up for deterministic runs: every pass is
-audited (`pass_sample_rate: 1.0`), no uniform draw (`uniform_sample_rate: 0`), and every body is stored.
+**How the expectations are checked.** Each scenario's `description` records its hand derivation from SPEC
+§2.9. `make contracts-check` checks the parts that need no evidence extraction (routes, mock answers,
+modes, outcomes, delivered text, judge quotes). The Go tests in `backend-go/cmd/trafficgen` replay every
+scenario through the reference (route match, evidence extraction, detectors, compile, the scripted
+answers, `decide()`, the header values, the audit plan, the fallback re-gate, the delivered text, and the
+audit verdict scoring v2 gives the judge fixture) and send every scenario this build can serve through the
+real `internal/gate` with the real mock backend. The `backend-go/cmd/proxy` scenario tests run `trafficgen
+--expect` against the whole gateway in process, both as the demo stack (mock backend, scripted answers) and
+as the e2e stack (compatible backend and LLM upstream on mock-upstream, `--upstream all`), and
+`backend-python/tests/unit/test_demo_scenarios.py` runs every queued deep audit through the engine's
+`Evaluate` with the mock judge. `trafficgen --expect` checks a running stack (`make demo-scenarios`,
+`make e2e-scenarios`): the decision the response carries (headers; for streams also trailers and the
+comment; for observe routes, whose headers say `deferred`, the stored trace), the delivered text, the
+settled trace and its audit.
 
-The S0 walking skeleton ships three scenarios (all in sets `s0`, `demo` and `e2e`, on `support-bot` in flag
-mode, with `refund-policy.md` as a `<document>` block in the system prompt when evidence is present):
+**Policies.** The routes live in `config/policies.yaml`, the policy the gateway loads (also in `make demo`),
+and in `config/policies.pending.yaml`, which holds the routes this build cannot load yet: `payments-faq`
+(fallback) and `help-center` (block) until P3 enforces block and fallback, and `handbook`, which reads the
+knowledge add-on. Its routes merge over the defaults of `config/policies.yaml`; the gateway never reads it.
+Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`), draws no uniform sample and
+stores every body, so runs are deterministic.
 
-| Scenario | Fast check | Gate | Deep audit | Outcome |
-|---|---|---|---|---|
-| `grounded-pass` | groundedness 0.06, contradiction 0.03 | pass, `ok`, supported, `request_system:1` | queued: GROUNDED, 2 SUPPORTED claims | passed |
-| `refund-contradiction-flag` | groundedness 0.96, contradiction 0.98; `numbers_not_in_evidence` fires on 60 | flag (would block), `ok`, contradicted, reasons `contradiction:critical`, `groundedness:critical`, `det:numbers_not_in_evidence` | high lane: HALLUCINATED, 1 CONTRADICTED claim quoting "60 days" | flagged |
-| `no-evidence-not-assessed` | nothing sent | pass, `not_assessed`, `none` | not_assessed: NOT_ASSESSED, no LLM call | not checked |
+**Phases.** A scenario that needs a later gateway phase than the walking skeleton carries that phase as a
+set tag: `p3` for streaming gating, `/v1/messages`, `/v1/completions`, block and fallback bodies, and routes
+in `config/policies.pending.yaml`. `trafficgen` skips scenarios whose phase is later than `--phase`
+(default: the phase the build implements, `p2` until P3 lands), so `--scenarios demo` and the S0 gate keep
+passing; P3 moves the pending block and fallback routes into `config/policies.yaml` and the default to `p3`.
+A Go test fails when a scenario's tags do not match its features.
+
+**Calibration.** `config/calibration/mock__jev-heuristic-v1.json` is the calibration of the mock snapshot,
+quality `mock`: an identity table with no labels behind it. It counts only with the mock backend in demo
+mode (SPEC §2.11), where it lets `payments-faq`, whose evidence checks adopt calibrated thresholds, fall back
+instead of being capped to a flag. It claims nothing about any real model; the e2e stack (compatible
+backend) does not use it, so `payments-fallback` is in set `demo` but not `e2e`.
+
+**Stacks.** `make demo` serves the pack with the mock decision backend and scripted answers
+(`test_response`); `make demo-scenarios` checks it (`DEMO_SCENARIOS=s0` is the S0 gate). `make e2e-up`
+starts the e2e stack (`docker-compose.e2e.yml`, project `truthtable-e2e`): the `compatible` decision backend
+calls mock-upstream's `/v1/systemone` over HTTP, the OpenAI and Anthropic upstreams are mock-upstream too,
+the judge is the mock provider, and traces are written before the response returns
+(`TRUTHTABLE_TRACE_FLUSH=sync`). `make e2e-scenarios` sends set `e2e` with `--upstream all`, so every answer
+takes the upstream path; `make e2e-down` removes the stack. Both targets take `*_PHASE=p3` once P3 lands.
+
+The pack (27 scenarios):
+
+| Scenario | Route (mode) | Shows | Gate | Deep audit | Outcome |
+|---|---|---|---|---|---|
+| `grounded-pass` | support-bot (flag) | S0: grounded answer | pass, supported | GROUNDED | passed |
+| `refund-contradiction-flag` | support-bot (flag) | S0: 60 vs 30 days | flag (would block), contradicted | HALLUCINATED | flagged |
+| `no-evidence-not-assessed` | support-bot (flag) | S0: no documents | pass, `not_assessed` | NOT_ASSESSED, no LLM call | not checked |
+| `unsupported-date-corroborated` | support-bot (flag) | a date corroborates groundedness | flag (would block), unsupported | HALLUCINATED | flagged |
+| `tool-results-grounded` | support-bot (flag) | two tool results (`tool_results:2`) | pass, supported | GROUNDED | passed |
+| `developer-role-unsupported` | support-bot (flag) | documents in a developer message | flag, unsupported (warn) | HALLUCINATED | flagged |
+| `line-header-context-grounded` | support-bot (flag) | untagged `Context:` block in the user message | pass, supported | GROUNDED | passed |
+| `extension-misquote-flag` | support-bot (flag) | `trustagent.context`; quote detector | flag, contradicted (warn) | HALLUCINATED | flagged |
+| `untagged-policy-prose` | support-bot (flag) | untagged: policy as prose | pass, `not_assessed` | NOT_ASSESSED | not checked |
+| `untagged-custom-tag` | support-bot (flag) | untagged: unknown `<policy>` tag | pass, `not_assessed` | NOT_ASSESSED | not checked |
+| `untagged-pasted-clause` | support-bot (flag) | untagged: clause pasted into the question | pass, `not_assessed` | NOT_ASSESSED | not checked |
+| `pii-leak-flag` | account-bot (flag) | another customer's email; needs a second signal | flag, unsupported | HALLUCINATED | flagged |
+| `secret-leak-flag` | assistant (flag) | token leak, rubric only | flag (would block), no verdict | NOT_ASSESSED (no evidence) | flagged |
+| `refusal-flag` | assistant (flag) | needless refusal | flag | NOT_ASSESSED | flagged |
+| `injection-success-flag` | assistant (flag) | injected page prints the system prompt | flag (would block) | NO_CLAIMS | flagged |
+| `commitment-unapproved-flag` | billing-bot (flag) | promise checked against rules only | flag (would block) | NOT_ASSESSED | flagged |
+| `off-topic-flag` | billing-bot (flag) | off-scope answer | flag | NOT_ASSESSED | flagged |
+| `observe-would-block` | faq-bot (observe) | observe records would-block | observe, `deferred` | HALLUCINATED | would block |
+| `stream-passthrough-flag` | support-bot (flag) | p3: passthrough stream, comment and trailers | flag (would block) | HALLUCINATED | flagged |
+| `anthropic-system-grounded` | support-bot (flag) | p3: `/v1/messages`, top-level system | pass, supported | GROUNDED | passed |
+| `completions-extension-grounded` | support-bot (flag) | p3: `/v1/completions` with `trustagent.context` | pass, supported | GROUNDED | passed |
+| `payments-fallback` | payments-faq (fallback) | p3: replaced by a grounded fallback (mock calibration) | fallback | HALLUCINATED (original) | replaced |
+| `help-center-link-block` | help-center (block) | p3: invented link blocked in a buffered stream | block | HALLUCINATED | blocked |
+| `help-center-uncalibrated-flag` | help-center (block) | p3: uncalibrated block acts as a flag | flag (would block) | HALLUCINATED | flagged |
+| `knowledge-only-capped` | handbook (flag) | p3, knowledge: knowledge-only evidence capped at warn | flag, contradicted | HALLUCINATED | flagged |
+| `generated-monthly-refund` | support-bot (flag) | generated answer (stand-in) | pass | GROUNDED | passed |
+| `generated-weekend-shipping` | support-bot (flag) | generated answer (stand-in) | pass | GROUNDED | passed |
+
+The landing page's three one-click scenarios (SPEC §8.1: grounded, refund 60 vs 30 days, PII leak) are
+`grounded-pass`, `refund-contradiction-flag` and `pii-leak-flag`. The three S0 scenarios never change (a Go
+test pins their bytes): the S0 exit gate, the dashboard fixtures and the engine tests read them.
 
 ## API fixtures
 
@@ -255,12 +322,17 @@ and then runs the cross-file checks JSON Schema cannot express:
 - rules: every `{pattern, flags}` in `rules/` (and every policy `tag_patterns` entry) compiles in JS, uses
   only the flags `i`, `m` and `s`, and has no lookaround, backreference or inline flags (`go test` compiles
   the same patterns, and every schema `pattern`, with Go's RE2);
-- scenarios: unique ids; a scripted scenario has `response`; the request lands on the scenario's route in
-  `config/policies.yaml` (first match on headers, paths and models); `mock_answers` name questions that route
-  asks, with the question's answer type, and cover every evaluator that needs no evidence; `expect.mode` is
-  the route's effective mode and the action fits it; `expect.outcome` is what `ui/outcomes.v1.json` gives;
-  the deep-audit fields agree with `judge` (`NOT_ASSESSED` needs `judge: null`); judge quotes occur verbatim
-  in `response` and verifier evidence verbatim in `request`;
+- scenarios: unique ids; a scripted or generated scenario has `response`; the request lands on the scenario's
+  route in `config/policies.yaml` plus `config/policies.pending.yaml` (first match on headers, paths and
+  models), and a route from the pending file needs a phase tag; `mock_answers` and `fallback.mock_answers`
+  name questions that route asks, with the question's answer type, and `mock_answers` cover every evaluator
+  that needs no evidence; `expect.mode` is the route's effective mode and the action fits it;
+  `expect.outcome` is what `ui/outcomes.v1.json` gives; `expect.delivered_text` is what the route delivers
+  (block message, fallback answer); `fallback` only on fallback routes, `knowledge` exactly on knowledge
+  routes (with the `knowledge` tag), `stream_decision` only on streams, the `generated` set exactly the
+  generated scenarios, no phase tag in `s0`; the deep-audit fields agree with `judge` (`NOT_ASSESSED` needs
+  `judge: null`); judge quotes occur verbatim in `response` and verifier evidence verbatim in `request` or
+  `knowledge`;
 - UI: every outcome is reachable and the last rule is a catch-all; glossary `see_also`, `{command:}` and
   `{claim:}` references resolve; commands name real compose services and profiles;
 - `superseded.v1.json` has the shape `scripts/check-forbidden.mjs` accepts, and no contract file uses one of
@@ -268,7 +340,8 @@ and then runs the cross-file checks JSON Schema cannot express:
 
 Repository files that follow a contract are validated too when present: `config/policies.yaml`
 (`policy.v1`, the same policy checks, and the scenario checks above, which fall back to
-`policies/example.policies.yaml` without it), `config/calibration/*.json` (`calibration.v1`, plus a
+`policies/example.policies.yaml` without it), `config/policies.pending.yaml` (`policy.v1`, only `version` and
+`routes`, whose routes are checked merged over the defaults of `config/policies.yaml`), `config/calibration/*.json` (`calibration.v1`, plus a
 non-decreasing table and quality rules) and `docs/benchmarks/results/*.json` (`benchmark-run.v1`).
 
 ## Changing contracts

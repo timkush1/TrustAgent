@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=../contracts/schema/policy.v1.schema.json
+#
+# Demo routes the gateway cannot load yet (schema policy/v1, SPEC §2.7). They are appended to the
+# routes of config/policies.yaml, merged over its defaults and overrides, so this file holds only
+# `version` and `routes` (make contracts-check refuses anything else and route names that clash).
+# The gateway never reads this file.
+#
+# - payments-faq (fallback) and help-center (block): this build enforces observe and flag only and
+#   refuses block and fallback routes. P3 moves both into config/policies.yaml once the /v1 handler
+#   enforces block and fallback bodies, then flips trafficgen's default --phase to p3.
+# - handbook (knowledge): reads the knowledge add-on (SPEC §7.1), which a policy may name only when
+#   TRUTHTABLE_KNOWLEDGE_ENABLED is set. It stays out of config/policies.yaml, whose stacks run
+#   without the add-on; a knowledge stack loads a policy that includes it.
+#
+# The scenarios on these routes carry the phase tag p3 (and knowledge for handbook), so trafficgen
+# skips them until the gateway can serve them. cmd/trafficgen tests check that the tags match.
+version: 1
+routes:
+  - name: payments-faq
+    description: >-
+      Demo payments assistant (the SPEC §2.7 example). Replaces an answer the documents contradict
+      with a fallback answer written from the documents only, and blocks if that fails too. Its
+      evidence checks adopt the calibration for the current snapshot (the mock calibration with the
+      mock backend), so the fallback is not capped to a flag.
+    match: {headers: {X-TrustAgent-Route: payments-faq}, paths: ["/v1/chat/completions"]}
+    mode: fallback
+    fail: closed
+    streaming: buffer
+    deadline_ms: 1500
+    hedge_after_ms: 400
+    evidence: {sources: [request_system, tool_results, extension]} # end users cannot inject "documents"
+    evaluators:
+      - ref: groundedness@1
+        thresholds: {space: calibrated}
+      - ref: contradiction@1
+        thresholds: {space: calibrated}
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    fallback:
+      upstream: same
+      model: gpt-4o
+      system_prompt: "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT."
+      on_fail: block
+    block: {style: message, message: "I can't confirm that from our policy documents. A person will follow up."}
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: help-center
+    description: >-
+      Demo help-center assistant in block mode with buffered streams. A link the articles do not
+      contain blocks at once (a deterministic check needs no calibration); a contradiction alone acts
+      as a flag until the evidence checks are calibrated (raw thresholds).
+    match: {headers: {X-TrustAgent-Route: help-center}}
+    mode: block
+    streaming: buffer
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    block: {style: message, message: "I can't verify that answer against our help articles, so I've held it back."}
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: handbook
+    description: >-
+      Demo HR assistant whose documents come from the knowledge base (knowledge add-on) when the
+      request carries none. Knowledge-only evidence caps the evidence checks at warn, so answers are
+      flagged, never blocked.
+    match: {headers: {X-TrustAgent-Route: handbook}}
+    mode: flag
+    evidence:
+      sources: [request_system, knowledge]
+      knowledge: {when: fallback, top_k: 5, deadline_ms: 150, min_score: 0.3}
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all

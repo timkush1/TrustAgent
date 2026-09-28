@@ -7,8 +7,14 @@
 # contracts/policies/example.policies.yaml is the full SPEC example (block and fallback routes, rules
 # parameters, shadow evaluators) to copy routes from.
 #
-# The demo scenarios (contracts/demo/scenarios.v1.json) run on the support-bot route. Their expected
-# outcomes depend on its settings, so change them together (make contracts-check cross-checks both).
+# The demo scenarios (contracts/demo/scenarios.v1.json) run on the routes below. Their expected
+# outcomes depend on these settings, so change them together: make contracts-check and the
+# cmd/trafficgen reference test cross-check both. Every demo route audits each answer it may audit
+# (pass_sample_rate 1.0) and draws no uniform sample, so demo and e2e runs are deterministic.
+#
+# Routes in block or fallback mode, and routes that read the knowledge add-on, are in
+# config/policies.pending.yaml: this build enforces observe and flag only, so it would refuse them
+# here. P3 moves the block and fallback routes into this file once the /v1 handler enforces them.
 version: 1
 defaults:
   # No mode here: the default route takes the TRUTHTABLE_GATE_DEFAULT_MODE seed (observe).
@@ -48,4 +54,56 @@ routes:
     # no-evidence trace into a queued audit.
     deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
     # Keep every body, so trace details show the answer for passed traces too.
+    store_bodies: all
+  - name: account-bot
+    description: >-
+      Demo account assistant that answers order questions from tool results. Adds the PII or secret
+      leak check to the two evidence checks: leaking a stranger's personal data flags, but never
+      blocks, because no deterministic check can confirm it.
+    match: {headers: {X-TrustAgent-Route: account-bot}}
+    mode: flag
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+      - ref: pii_secret_leak@1
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: assistant
+    description: >-
+      Demo developer-support assistant for an app without documents: the rubric-only question set
+      (refusal, unsafe or policy violation, PII or secret leak, prompt-injection success). None of
+      these checks needs documents, so every answer is checked.
+    match: {headers: {X-TrustAgent-Route: assistant}}
+    mode: flag
+    evaluators: # question set rubric-only
+      - ref: refusal@1
+      - ref: unsafe_policy@1
+      - ref: pii_secret_leak@1
+      - ref: injection_success@1
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: billing-bot
+    description: >-
+      Demo billing assistant without documents. Flags promises the allowed commitments do not permit
+      and answers outside billing. The number and date checks compare the answer with these rules, so
+      an unapproved promise with a new amount or date would be blocked in block mode.
+    match: {headers: {X-TrustAgent-Route: billing-bot}}
+    mode: flag
+    evaluators:
+      - ref: commitments@1
+        params: {allowed_commitments: "Annual plans: refund within 30 days of purchase. No other refunds, credits or discounts."}
+      - ref: off_topic@1
+        params: {allowed_scope: "Acme billing: invoices, payments, plans, refunds and credits."}
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: faq-bot
+    description: >-
+      Demo help-center assistant in observe mode: answers are never changed, and each decision
+      (including what the gate would have done) is recorded after the response.
+    match: {headers: {X-TrustAgent-Route: faq-bot}}
+    mode: observe
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all

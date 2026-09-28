@@ -15,11 +15,12 @@ import addFormats from 'ajv-formats';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPEC = join(HERE, '..', 'docs', 'v2', 'SPEC.md');
 const POLICY = join(HERE, '..', 'config', 'policies.yaml');
+const PENDING = join(HERE, '..', 'config', 'policies.pending.yaml');
 const temps = [];
 after(() => temps.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
-// A throwaway repo root holding a copy of contracts/ (without node_modules) and of config/policies.yaml,
-// the policy the scenario checks resolve routes against.
+// A throwaway repo root holding a copy of contracts/ (without node_modules) and of config/policies.yaml and
+// config/policies.pending.yaml, the policy the scenario checks resolve routes against.
 function sandbox() {
   const repo = mkdtempSync(join(tmpdir(), 'contracts-'));
   temps.push(repo);
@@ -28,6 +29,7 @@ function sandbox() {
   if (existsSync(POLICY)) {
     mkdirSync(join(repo, 'config'));
     cpSync(POLICY, join(repo, 'config', 'policies.yaml'));
+    if (existsSync(PENDING)) cpSync(PENDING, join(repo, 'config', 'policies.pending.yaml'));
   }
   const read = (rel) => JSON.parse(readFileSync(join(root, rel), 'utf8'));
   const write = (rel, data, base = root) => {
@@ -228,9 +230,9 @@ describe('validate.mjs', () => {
     });
     let r = run(sb.root);
     assert.equal(r.code, 1, r.out);
-    assert.match(r.out, /refund-contradiction-flag: mock_answers\.refusal__v1 is not asked on route support-bot \(config\/policies\.yaml\)/);
+    assert.match(r.out, /refund-contradiction-flag: mock_answers\.refusal__v1 is not asked on route support-bot \(config\/policies\.yaml( \+ config\/policies\.pending\.yaml)?\)/);
     assert.match(r.out, /refund-contradiction-flag: mock_answers\.groundedness__v1 is a choice answer to a noul question/);
-    assert.match(r.out, /no-evidence-not-assessed: the request lands on route default in config\/policies\.yaml, not support-bot/);
+    assert.match(r.out, /no-evidence-not-assessed: the request lands on route default in config\/policies\.yaml( \+ config\/policies\.pending\.yaml)?, not support-bot/);
 
     // A route that also asks an evidence-free evaluator always sends it, so it cannot be not_assessed.
     const other = sandbox();
@@ -240,6 +242,49 @@ describe('validate.mjs', () => {
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /grounded-pass: refusal@1 needs no evidence, so it is always asked on route support-bot, but mock_answers has no refusal__v1/);
     assert.match(r.out, /no-evidence-not-assessed: status not_assessed is impossible on route support-bot: refusal@1 needs no evidence/);
+  });
+
+  test('pending routes merge over config/policies.yaml, and their scenarios carry a phase tag', { skip: !existsSync(PENDING) }, () => {
+    const sb = sandbox();
+    const pending = readFileSync(PENDING, 'utf8')
+      .replace('version: 1\n', 'version: 1\noverrides: {client_mode: none}\n')
+      .replace('  - name: handbook\n', '  - name: support-bot\n');
+    sb.write('config/policies.pending.yaml', pending, sb.repo);
+    sb.edit('demo/scenarios.v1.json', (d) => {
+      const s = d.scenarios.find((x) => x.id === 'help-center-link-block');
+      s.sets = s.sets.filter((t) => t !== 'p3');
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /policies\.pending\.yaml: only version and routes belong here .*: overrides/);
+    assert.match(r.out, /policies\.pending\.yaml: duplicate route name .*"support-bot"/);
+    assert.match(r.out, /help-center-link-block: route help-center is in config\/policies\.pending\.yaml, which the gateway cannot load yet, so the scenario carries a phase tag \(p3\)/);
+  });
+
+  test('fallback answers, delivered text, streams, knowledge and tags follow the route', { skip: !existsSync(PENDING) }, () => {
+    const sb = sandbox();
+    sb.edit('demo/scenarios.v1.json', (d) => {
+      const byId = (id) => d.scenarios.find((x) => x.id === id);
+      byId('payments-fallback').expect.delivered_text = 'Something else.';
+      byId('payments-fallback').fallback.mock_answers.refusal__v1 = { type: 'choice', choice: 'answers_request' };
+      byId('help-center-link-block').expect.delivered_text = byId('help-center-link-block').response;
+      byId('refund-contradiction-flag').fallback = { response: 'x', mock_answers: {}, expect: { would_action: 'pass' } };
+      delete byId('knowledge-only-capped').knowledge;
+      byId('tool-results-grounded').expect.stream_decision = { comment: true, trailers: [] };
+      byId('generated-monthly-refund').sets = ['demo'];
+      byId('grounded-pass').sets.push('p3');
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /payments-fallback: the client receives "Approved refunds go back to your original payment method within 5 to 10 business days\." \(action fallback on route payments-faq\), so expect\.delivered_text must say so, not "Something else\."/);
+    assert.match(r.out, /payments-fallback: fallback\.mock_answers\.refusal__v1 is not asked on route payments-faq/);
+    assert.match(r.out, /help-center-link-block: the client receives "I can't verify that answer against our help articles, so I've held it back\."/);
+    assert.match(r.out, /help-center-link-block: expect\.delivered_text equals response; leave it out/);
+    assert.match(r.out, /refund-contradiction-flag: fallback needs a route in fallback mode, and support-bot runs in flag mode/);
+    assert.match(r.out, /knowledge-only-capped: route handbook reads the knowledge add-on, so the scenario lists the documents it returns/);
+    assert.match(r.out, /tool-results-grounded: expect\.stream_decision describes a stream, but the scenario does not stream/);
+    assert.match(r.out, /generated-monthly-refund: the generated set holds exactly the scenarios with answer_source generated/);
+    assert.match(r.out, /grounded-pass: an s0 scenario runs on the walking skeleton and carries no phase tag/);
   });
 
   test('pricing figures and value claims cannot drift from the arithmetic', () => {
@@ -747,5 +792,19 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
     assert.notEqual(check('scenarios.v1', withExpect({ checked_against: 'system:1' })), null);
     assert.notEqual(check('scenarios.v1', withExpect({ outcome: 'held' })), null);
     assert.notEqual(check('scenarios.v1', withExpect({ deep_audit: 'low' })), null);
+    // Delivery: the delivered text, the HTTP status and how a stream carries the decision.
+    assert.equal(check('scenarios.v1', withExpect({ delivered_text: 'Held back.', http_status: 422 })), null);
+    assert.equal(check('scenarios.v1', withExpect({ stream_decision: { comment: true, trailers: ['X-TrustAgent-Mode', 'X-TrustAgent-Action'] } })), null);
+    assert.notEqual(check('scenarios.v1', withExpect({ stream_decision: { comment: true, trailers: ['Trailer-Mode'] } })), null);
+    assert.notEqual(check('scenarios.v1', withExpect({ stream_decision: { comment: true } })), null);
+    assert.notEqual(check('scenarios.v1', withExpect({ http_status: 100 })), null);
+    // A fallback answer with its re-gate, and knowledge documents.
+    const fallback = { response: 'Refunds take 5 to 10 business days.', mock_answers: { groundedness__v1: { type: 'noul', noul: 0.04 } }, expect: { would_action: 'pass', reasons: [] } };
+    assert.equal(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, fallback }] }), null);
+    assert.notEqual(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, fallback: { ...fallback, expect: {} } }] }), null);
+    assert.notEqual(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, fallback: { response: 'x', mock_answers: {} } }] }), null);
+    assert.equal(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, knowledge: [{ id: 'kb-leave', text: 'New employees get 20 days.' }] }] }), null);
+    assert.notEqual(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, knowledge: [{ text: 'no id' }] }] }), null);
+    assert.notEqual(check('scenarios.v1', { ...doc, scenarios: [{ ...scenario, knowledge: [] }] }), null);
   });
 });
