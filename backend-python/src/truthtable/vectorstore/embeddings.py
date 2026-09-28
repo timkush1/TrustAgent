@@ -18,7 +18,9 @@ HOW IT WORKS (for learning):
     This is called "semantic similarity".
 """
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 from sentence_transformers import SentenceTransformer
@@ -47,12 +49,20 @@ class EmbeddingService:
         service = EmbeddingService()
         vectors = service.embed(["Hello world", "How are you?"])
         # vectors is a list of 2 vectors, each with 384 floats
+
+        # From async code (the audit graph, the KB), use the a* forms so the
+        # encode runs off the event loop:
+        vectors = await service.aembed(["Hello world"])
     """
 
     def __init__(self, model_name: str = DEFAULT_MODEL):
         logger.info(f"Loading embedding model: {model_name}")
         self._model = SentenceTransformer(model_name)
         self._dimension = self._model.get_sentence_embedding_dimension()
+        # encode() is CPU-bound and torch parallelises it internally: one
+        # dedicated worker keeps it off the event loop (D8) without running
+        # several encodes at once and oversubscribing the cores.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embed")
         logger.info(f"Embedding model loaded: {model_name} " f"(dimension={self._dimension})")
 
     @property
@@ -91,3 +101,18 @@ class EmbeddingService:
     def embed_single(self, text: str) -> List[float]:
         """Convenience method to embed a single text."""
         return self.embed([text])[0]
+
+    async def aembed(self, texts: List[str]) -> List[List[float]]:
+        """`embed` on the dedicated embedding thread, without blocking the event loop."""
+        if not texts:
+            return []
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._executor, self.embed, list(texts))
+
+    async def aembed_single(self, text: str) -> List[float]:
+        """`embed_single` without blocking the event loop."""
+        return (await self.aembed([text]))[0]
+
+    def close(self) -> None:
+        """Stop the embedding thread (pending encodes finish first)."""
+        self._executor.shutdown(wait=True)

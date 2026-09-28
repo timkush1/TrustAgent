@@ -24,9 +24,15 @@ class FakeEmbedding:
     def embed(self, texts):
         return [[float(len(t) % 7), float(sum(map(ord, t)) % 11), 1.0] for t in texts]
 
+    async def aembed(self, texts):
+        return self.embed(texts)
+
 
 class FakeQdrant:
-    """In-memory stand-in implementing the store operations the KB uses."""
+    """
+    In-memory stand-in implementing the store operations the KB uses, in their
+    blocking and async (a*) forms, like QdrantStore.
+    """
 
     def __init__(self):
         self.points = {}  # id -> {"vector": [...], "payload": {...}}
@@ -65,6 +71,18 @@ class FakeQdrant:
 
     def set_payload(self, point_id, payload):
         self.points[point_id]["payload"].update(payload)
+
+    async def aupsert_points(self, ids, vectors, payloads):
+        self.upsert_points(ids, vectors, payloads)
+
+    async def asearch_filtered(self, *args, **kwargs):
+        return self.search_filtered(*args, **kwargs)
+
+    async def ascroll_points(self, *args, **kwargs):
+        return self.scroll_points(*args, **kwargs)
+
+    async def aset_payload(self, point_id, payload):
+        self.set_payload(point_id, payload)
 
 
 class SequenceProvider(LLMProvider):
@@ -341,6 +359,52 @@ def test_hybrid_retriever_excludes_quarantined_and_rebuilds_lazily():
     retriever.mark_dirty()
     results = retriever.retrieve("France borders")
     assert "France borders Spain" in results
+
+
+async def test_hybrid_aretrieve_matches_retrieve_without_blocking():
+    store = FakeQdrant()
+    store.upsert_points(
+        ids=["good", "bad"],
+        vectors=[[1, 1, 1], [1, 1, 1]],
+        payloads=[
+            {"text": "Paris is the capital of France", "kind": "claim", "kb_status": "accepted"},
+            {"text": "Lyon is the capital of France", "kind": "claim", "kb_status": "quarantined"},
+        ],
+    )
+    retriever = HybridClaimRetriever(FakeEmbedding(), store)
+
+    results = await retriever.aretrieve("capital of France")
+
+    assert results == retriever.retrieve("capital of France")
+    assert "Paris is the capital of France" in results
+    assert "Lyon is the capital of France" not in results
+
+
+def test_hybrid_index_rebuild_failure_retries_next_time():
+    class FlakyStore(FakeQdrant):
+        fail = True
+
+        def scroll_points(self, must=None, limit=None):
+            if self.fail:
+                raise ConnectionError("qdrant down")
+            return super().scroll_points(must=must)
+
+    store = FlakyStore()
+    store.upsert_points(
+        ids=["good"],
+        vectors=[[1, 1, 1]],
+        payloads=[{"text": "Paris is the capital", "kind": "claim", "kb_status": "accepted"}],
+    )
+    retriever = HybridClaimRetriever(FakeEmbedding(), store)
+
+    try:
+        retriever.retrieve("capital")
+        raise AssertionError("the failed rebuild should raise")
+    except ConnectionError:
+        pass
+    store.fail = False
+
+    assert "Paris is the capital" in retriever.retrieve("capital")
 
 
 # ---------------------------------------------------------------------------
