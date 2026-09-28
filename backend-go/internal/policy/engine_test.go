@@ -430,6 +430,47 @@ func TestEngineConfigLock(t *testing.T) {
 		if v := e.View(st, true); v.Editable || *v.EditableReason != ReasonLocked {
 			t.Errorf("view %+v", v.EditableReason)
 		}
+		// Without a file change the file still wins: a dashboard edit from an unlocked replica
+		// is superseded on the next reload, and once only.
+		if err := unlocked.Reload(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := unlocked.Save(ctx, SaveRequest{Source: Source{YAML: dashY}, IfMatch: unlocked.State().ETag(), Author: "admin"}); err != nil {
+			t.Fatal(err)
+		}
+		before := len(versions(t, e))
+		for range 2 {
+			if err := e.Reload(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+		st = e.State()
+		if st.Version.Source != SourceFile || e.Current().Default.DeadlineMs != 900 || e.Current().Default.Mode != "flag" ||
+			len(versions(t, e)) != before+1 {
+			t.Fatalf("locked engine after an unlocked edit %+v (%d versions, %d before)", st.Version, len(versions(t, e)), before)
+		}
+	})
+}
+
+// TestEngineConfigLockSupersedesEarlierEdits: turning the lock on after dashboard edits makes the
+// unchanged file the active policy again at boot.
+func TestEngineConfigLockSupersedesEarlierEdits(t *testing.T) {
+	forEachBackend(t, func(t *testing.T, b backend) {
+		ctx := context.Background()
+		f := newFixture(t, b, fileA)
+		unlocked := f.engine(t)
+		if _, err := unlocked.Save(ctx, SaveRequest{Source: Source{YAML: dashY}, IfMatch: unlocked.State().ETag(), Author: "admin"}); err != nil {
+			t.Fatal(err)
+		}
+		locked := f.engine(t, func(c *EngineConfig) { c.Lock = true })
+		st := locked.State()
+		if st.Version.Source != SourceFile || locked.Current().Default.Mode != "flag" || st.File.Status != FileOK || len(versions(t, locked)) != 3 {
+			t.Fatalf("locked boot runs %+v (mode %s)", st.Version, locked.Current().Default.Mode)
+		}
+		// A second locked replica agrees without writing again.
+		if again := f.engine(t, func(c *EngineConfig) { c.Lock = true }); again.State().Version.ID != st.Version.ID || len(versions(t, again)) != 3 {
+			t.Errorf("second locked replica %+v", again.State().Version)
+		}
 	})
 }
 

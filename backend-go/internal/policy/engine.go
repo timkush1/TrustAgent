@@ -23,7 +23,8 @@ import (
 //   - The policy file is synced into versions: a changed file (new sha) becomes a file version,
 //     unless a dashboard version is newer than the last file version, in which case the file is
 //     reported as diverged until an admin adopts it. TRUTHTABLE_CONFIG_LOCK makes the file
-//     authoritative: it is always synced and dashboard writes are refused.
+//     authoritative: it is always synced, a newer version with other content is superseded by
+//     the file again, and dashboard writes are refused.
 //   - Every write runs under the policy write lock, so replicas starting together insert a file
 //     version once, and an If-Match save compares against the head it is inserted after.
 //   - Hot reload: NOTIFY on every write plus a poll (TRUTHTABLE_POLICY_RELOAD_INTERVAL) of the
@@ -401,10 +402,15 @@ func (e *Engine) syncFile(ctx context.Context) (string, error) {
 		if err != nil {
 			return err
 		}
-		if last != nil && last.FileSHA256 != nil && *last.FileSHA256 == e.file.sha {
-			return nil
-		}
 		p := e.file.res.Policy
+		if last != nil && last.FileSHA256 != nil && *last.FileSHA256 == e.file.sha {
+			// The file is recorded. Under CONFIG_LOCK it must also be what runs: a newer version
+			// from elsewhere (a dashboard edit made before the lock, or an unlocked replica) is
+			// superseded by the file again.
+			if !e.cfg.Lock || head.SHA256 == p.SHA256 {
+				return nil
+			}
+		}
 		if !e.cfg.Lock && (head == nil || head.SHA256 != p.SHA256) {
 			dash, err := tx.LastDashboardVersion(ctx)
 			if err != nil {
