@@ -79,7 +79,10 @@ class Schemas:
         try:
             import jsonschema
         except ImportError:
-            print("check_recording: the jsonschema package is required (pip install jsonschema)", file=sys.stderr)
+            print(
+                "check_recording: the jsonschema package is required (pip install jsonschema)",
+                file=sys.stderr,
+            )
             sys.exit(2)
         self._js = jsonschema
         self.docs: dict[str, Any] = {}
@@ -185,29 +188,40 @@ def check_manifest_rules(m: dict[str, Any], problems: Problems, require_recorded
             problems.add(where, "kind recorded cannot have the mock judge")
         missing = [t.get("trace_id") for t in traces if t.get("answer_source") is None]
         if missing:
-            problems.add(where, f"kind recorded needs answer_source on every trace ({len(missing)} missing)")
+            problems.add(
+                where, f"kind recorded needs answer_source on every trace ({len(missing)} missing)"
+            )
         if not RECORDED_LABEL.match(str(m.get("label", ""))):
             problems.add(where, "the recorded label must read 'Recorded … · replayed, not live'")
     elif kind == "mock":
         if m.get("label") != MOCK_LABEL:
             problems.add(where, f"a mock recording must be labelled {MOCK_LABEL!r}")
         if backend != "mock":
-            problems.add(where, f"a mock recording comes from the mock decision backend, not {backend!r}")
+            problems.add(
+                where, f"a mock recording comes from the mock decision backend, not {backend!r}"
+            )
         if (m.get("roi") or {}).get("simulated") is not True:
             problems.add(where, "a mock recording needs roi.simulated true")
         if require_recorded:
-            problems.add(where, "this is a mock recording; the launch needs `make record-demo` output (kind recorded)")
+            problems.add(
+                where,
+                "this is a mock recording; the launch needs `make record-demo` output (kind recorded)",
+            )
     else:
         problems.add(where, f"unknown kind {kind!r}")
 
     totals = m.get("totals") or {}
     if totals.get("traces") != len(traces):
-        problems.add(where, f"totals.traces is {totals.get('traces')}, but {len(traces)} traces are listed")
+        problems.add(
+            where, f"totals.traces is {totals.get('traces')}, but {len(traces)} traces are listed"
+        )
     sources = m.get("answer_sources") or {}
     for src in ("scripted", "generated"):
         n = sum(1 for t in traces if t.get("answer_source") == src)
         if sources.get(src) != n:
-            problems.add(where, f"answer_sources.{src} is {sources.get(src)}, but {n} traces are {src}")
+            problems.add(
+                where, f"answer_sources.{src} is {sources.get(src)}, but {n} traces are {src}"
+            )
     ids = [t.get("trace_id") for t in traces]
     if len(set(ids)) != len(ids):
         problems.add(where, "a trace is listed twice")
@@ -226,12 +240,22 @@ def check_events(m: dict[str, Any], schemas: Schemas, problems: Problems) -> Non
     for i, ev in enumerate(m.get("events") or []):
         if ev.get("type") == "hb":
             continue
-        envelope = {"v": 2, "seq": i + 1, "epoch": "recording", "type": ev.get("type"), "ts": m.get("recorded_at"), "data": ev.get("data")}
+        envelope = {
+            "v": 2,
+            "seq": i + 1,
+            "epoch": "recording",
+            "type": ev.get("type"),
+            "ts": m.get("recorded_at"),
+            "data": ev.get("data"),
+        }
         if ev.get("trace_id") is not None:
             envelope["trace_id"] = ev["trace_id"]
         errs = list(schemas.errors(envelope, "api.v1.schema.json", "WsEvent"))
         if errs:
-            problems.add(f"manifest.json events/{i} ({ev.get('type')})", "does not match any WsEvent: " + errs[0])
+            problems.add(
+                f"manifest.json events/{i} ({ev.get('type')})",
+                "does not match any WsEvent: " + errs[0],
+            )
 
 
 def check_dir(directory: Path, require_recorded: bool) -> Problems:
@@ -284,8 +308,12 @@ def check_dir(directory: Path, require_recorded: bool) -> Problems:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("directory", type=Path, help="recording directory (manifest.json + traces/)")
-    parser.add_argument("--require-recorded", action="store_true", help="refuse a mock recording (launch gate)")
+    parser.add_argument(
+        "directory", type=Path, help="recording directory (manifest.json + traces/)"
+    )
+    parser.add_argument(
+        "--require-recorded", action="store_true", help="refuse a mock recording (launch gate)"
+    )
     args = parser.parse_args(argv)
     if not (args.directory / "manifest.json").is_file():
         print(f"check_recording: {args.directory}/manifest.json not found", file=sys.stderr)
@@ -296,10 +324,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"FAIL {p}")
         if len(problems.items) > 200:
             print(f"... and {len(problems.items) - 200} more")
-        print(f"check_recording: {len(problems.items)} problem(s) in {args.directory}", file=sys.stderr)
+        print(
+            f"check_recording: {len(problems.items)} problem(s) in {args.directory}",
+            file=sys.stderr,
+        )
         return 1
     m = json.loads((args.directory / "manifest.json").read_text(encoding="utf-8"))
-    print(f"check_recording: ok: {args.directory} · kind {m['kind']} · {len(m['traces'])} traces · \"{m['label']}\"")
+    print(
+        f"check_recording: ok: {args.directory} · kind {m['kind']} · {len(m['traces'])} traces · \"{m['label']}\""
+    )
     return 0
 
 
