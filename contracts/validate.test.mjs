@@ -380,6 +380,66 @@ describe('validate.mjs', () => {
     assert.match(r.out, /evaluators\/refusal\.v1\.json: counting_or_arithmetic: .*\(built-in templates must be lint-clean\)/);
   });
 
+  test('drafter examples are drafts the drafter rules accept', () => {
+    const sb = sandbox();
+    sb.edit('prompts/evaluator-drafter.v1.json', (p) => {
+      const [competitors, delivery, secrets] = p.examples.map((e) => e.output);
+      competitors.question.instructions += ' Answer how many companies it names.';
+      competitors.outcomes.requires_corroboration = ['brand_safety'];
+      delivery.question.criteria.true += ' in `order_records`';
+      delivery.test_samples[0].evidence = ['Shipped.'];
+      secrets.id = 'asks_for_secrets';
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    const at = (i) => `prompts/evaluator-drafter\\.v1\\.json \\(examples\\[${i}\\]\\.output\\)`;
+    assert.match(r.out, new RegExp(`${at(0)}: counting_or_arithmetic: .*drafter examples must be lint-clean`));
+    assert.match(r.out, new RegExp(`${at(0)}: references evaluator "brand_safety", which is not in the registry`));
+    assert.match(r.out, new RegExp(`${at(0)}: names evaluator brand_safety, which the example's existing_ids does not offer`));
+    assert.match(r.out, new RegExp(`${at(1)}: unresolved_state_reference: \`order_records\``));
+    assert.match(r.out, new RegExp(`${at(1)}: test_samples\\[0\\]: evidence is required, and 8 characters are fewer than min_chars 40`));
+    assert.match(r.out, new RegExp(`${at(2)}: / must NOT have additional properties .*"additionalProperty":"id"`));
+  });
+
+  test('drafter examples: sample split and sample fields', () => {
+    const sb = sandbox();
+    sb.edit('prompts/evaluator-drafter.v1.json', (p) => {
+      const secrets = p.examples[2].output;
+      secrets.test_samples[0].should_fire = false;
+      secrets.test_samples[1].user_request = 'I forgot my password.';
+      secrets.test_samples[2].evidence = ['Password resets are done from the sign-in page only.'];
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    const at = 'prompts/evaluator-drafter\\.v1\\.json \\(examples\\[2\\]\\.output\\)';
+    assert.match(r.out, new RegExp(`${at}: test_samples: 2 of 6 should fire, want 3`));
+    assert.match(r.out, new RegExp(`${at}: test_samples\\[1\\]: give user_request exactly when the question reads it`));
+    assert.match(r.out, new RegExp(`${at}: test_samples\\[2\\]: the question does not read evidence`));
+  });
+
+  test('prompt placeholders, variables, file name and token budget are checked', () => {
+    const sb = sandbox();
+    sb.edit('prompts/evaluator-drafter.v1.json', (p) => {
+      p.user.push('<tone>{{tone}}</tone>');
+      p.variables.unused = { description: 'Never rendered.' };
+      for (let i = 0; i < 6; i++) p.system.push('x'.repeat(1500));
+      p.system[0] = p.system[0].replace('TrustAgent', 'TrustAgent {{ oops');
+      p.system = p.system.map((l) => l.replace(', det:system_prompt_leak', '').replace('`system_instructions`', 'system instructions'));
+    });
+    const copy = sb.read('prompts/evaluator-drafter.v1.json');
+    sb.write('prompts/other-drafter.v1.json', copy);
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: user: \{\{tone\}\} is not a declared variable/);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: examples\[0\]\.input has no tone/);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: variables\.unused is not used by system, user or repair/);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: system: "\{\{" that does not start a \{\{name\}\} placeholder/);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: the first call needs about [0-9]+ tokens .* above the static playground cap of 8000/);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: system does not list the detector det:system_prompt_leak/);
+    assert.match(r.out, /evaluator-drafter\.v1\.json: system does not describe the state field `system_instructions`/);
+    assert.match(r.out, /other-drafter\.v1\.json: file name must be evaluator-drafter\.v1\.json/);
+  });
+
   test('block and fallback presets must be ready to enforce once calibrated', () => {
     const sb = sandbox();
     // A block-eligible template whose only corroborator is another evaluator.

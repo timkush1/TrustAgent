@@ -52,7 +52,7 @@ const RULES = [
   { re: /^policies\/presets\.v1\.json$/, schema: 'presets.v1' },
   { re: /^policies\/[a-z0-9.-]+\.ya?ml$/, schema: 'policy.v1' },
   { re: /^rules\/[a-z0-9-]+\.v[0-9]+\.json$/, schema: null },
-  { re: /^prompts\/[a-z0-9-]+\.v[0-9]+\.json$/, schema: null },
+  { re: /^prompts\/[a-z0-9-]+\.v[0-9]+\.json$/, schema: 'prompt.v1' },
   { re: /^pricing\/prices\.v1\.json$/, schema: 'pricing.v1' },
   { re: /^pricing\/assumptions\.v1\.json$/, schema: 'pricing-assumptions.v1' },
   { re: /^claims\/value-claims\.v1\.json$/, schema: 'value-claims.v1' },
@@ -705,6 +705,113 @@ if (keys) {
   for (const gid of groupIds) if (!used.has(gid)) warn(REL, `group ${gid} has no keys`);
   const basic = keys.keys.filter((k) => !k.advanced).map((k) => k.name);
   if (basic.length > 15) error(REL, `.env.example would list ${basic.length} keys (advanced: false); at most 15 are allowed`);
+}
+
+// ------------------------------------------------------------------------------------------ prompts
+
+// prompts/<id>.v<version>.json (prompt.v1). The file name matches id and version; {{name}} placeholders and
+// the declared variables agree; each example supplies exactly the user template's variables within their
+// max_chars, and its output passes output.schema. The first call, with the longest allowed inputs, must fit
+// the static playground's per-call token cap (VITE_PLAYGROUND_MAX_TOKENS), estimated at 3.5 characters per
+// token. Evaluator-draft prompts get the checks in checkDrafterPrompt.
+const PROMPT_CHARS_PER_TOKEN = 3.5;
+const PLACEHOLDER = /\{\{([^{}]*)\}\}/g;
+const placeholders = (text) => [...new Set([...text.matchAll(PLACEHOLDER)].map((m) => m[1]))];
+
+for (const [rel, p] of byPrefix('prompts/')) {
+  const m = basename(rel).match(/^(.+)\.v([0-9]+)\.json$/);
+  if (m[1] !== p.id || Number(m[2]) !== p.version) error(rel, `file name must be ${p.id}.v${p.version}.json`);
+  const texts = { system: p.system.join('\n'), user: p.user.join('\n'), repair: (p.repair ?? []).join('\n') };
+  const used = new Set();
+  for (const [name, text] of Object.entries(texts)) {
+    for (const v of placeholders(text)) {
+      if (!Object.hasOwn(p.variables, v)) error(rel, `${name}: {{${v}}} is not a declared variable`);
+      used.add(v);
+    }
+    if (text.replace(PLACEHOLDER, '').includes('{{')) error(rel, `${name}: "{{" that does not start a {{name}} placeholder`);
+  }
+  for (const v of Object.keys(p.variables)) if (!used.has(v)) error(rel, `variables.${v} is not used by system, user or repair`);
+  if (p.call.max_repairs > 0 && !placeholders(texts.repair).length) {
+    error(rel, 'call.max_repairs is above 0, so repair must be a template that passes the errors on');
+  }
+  const userVars = placeholders(texts.user);
+  for (const v of userVars) {
+    if (p.variables[v] && p.variables[v].max_chars === undefined) error(rel, `variables.${v} is sent with every call and needs max_chars`);
+  }
+  const render = (text, input) => text.replace(PLACEHOLDER,
+    (_, v) => ((input[v] ?? '').trim() === '' ? p.variables[v]?.empty ?? '' : input[v]));
+  const schemaOk = schemaNames.has(p.output.schema);
+  if (!schemaOk) error(rel, `output.schema ${p.output.schema} is not a schema in schema/`);
+
+  let chars = texts.system.length;
+  p.examples.forEach((ex, i) => {
+    const where = `examples[${i}]`;
+    for (const v of userVars) if (!Object.hasOwn(ex.input, v)) error(rel, `${where}.input has no ${v}`);
+    for (const [k, value] of Object.entries(ex.input)) {
+      if (!userVars.includes(k)) error(rel, `${where}.input.${k} is not a variable of the user template`);
+      const max = p.variables[k]?.max_chars;
+      if (max !== undefined && [...value].length > max) error(rel, `${where}.input.${k} is longer than its max_chars ${max}`);
+    }
+    const reply = JSON.stringify(ex.output);
+    chars += render(texts.user, ex.input).length + reply.length;
+    const replyTokens = Math.ceil(reply.length / PROMPT_CHARS_PER_TOKEN);
+    if (replyTokens > p.call.max_tokens) {
+      error(rel, `${where}.output needs about ${replyTokens} tokens, more than call.max_tokens ${p.call.max_tokens}`);
+    }
+    if (schemaOk && validate(`${rel} (${where}.output)`, ex.output, p.output.schema) && p.output.schema === 'evaluator-draft.v1') {
+      checkDraftExample(rel, where, ex);
+    }
+  });
+  chars += render(texts.user, Object.fromEntries(userVars.map((v) => [v, 'x'.repeat(p.variables[v]?.max_chars ?? 0)]))).length;
+  const cap = Number(keys?.keys.find((k) => k.name === 'VITE_PLAYGROUND_MAX_TOKENS')?.default ?? 0);
+  const need = Math.ceil(chars / PROMPT_CHARS_PER_TOKEN) + p.call.max_tokens;
+  if (cap > 0 && need > cap) {
+    error(rel, `the first call needs about ${need} tokens with the longest inputs (input plus call.max_tokens), `
+      + `above the static playground cap of ${cap} (VITE_PLAYGROUND_MAX_TOKENS)`);
+  }
+  if (p.output.schema === 'evaluator-draft.v1') checkDrafterPrompt(rel, texts.system);
+}
+
+// The drafter's system text names what a draft may use, so it must keep up with the schemas: every state
+// field (rules as `rules.<name>`), every category and every detector (as det:<id>).
+function checkDrafterPrompt(rel, system) {
+  const props = rawSchema('evaluator.v1')?.properties ?? {};
+  for (const f of props.state_fields?.items?.enum ?? []) {
+    const ref = f === 'rules' ? '`rules.<name>`' : `\`${f}\``;
+    if (!system.includes(ref)) error(rel, `system does not describe the state field ${ref}`);
+  }
+  for (const c of props.category?.enum ?? []) if (!new RegExp(`\\b${c}\\b`).test(system)) error(rel, `system does not list the category ${c}`);
+  for (const d of DETECTORS) if (!system.includes(`det:${d}`)) error(rel, `system does not list the detector det:${d}`);
+}
+
+// A drafter example teaches by example, so it must be a draft the drafter's own rules accept: it passes the
+// hard rules and is lint-clean, names only evaluators the example offers in existing_ids, and has 3 samples
+// that should fire and 3 that should not, each giving exactly the state the question reads (user_request
+// when it reads user_request; evidence of at least min_chars when evidence is required, none when unread).
+function checkDraftExample(rel, where, ex) {
+  const d = ex.output;
+  const at = `${rel} (${where}.output)`;
+  checkEvaluatorHardRules(at, d);
+  for (const l of evaluatorLints(d)) error(at, `${l.message} (drafter examples must be lint-clean)`);
+  const offered = new Set((ex.input.existing_ids ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  for (const x of [...(d.outcomes.requires_corroboration ?? []), ...(d.outcomes.implies ?? [])]) {
+    if (!x.startsWith('det:') && !offered.has(x)) error(at, `names evaluator ${x}, which the example's existing_ids does not offer`);
+  }
+  const firing = d.test_samples.filter((s) => s.should_fire).length;
+  if (firing !== 3) error(at, `test_samples: ${firing} of 6 should fire, want 3`);
+  const reads = new Set(d.state_fields);
+  const minChars = d.evidence.requires === 'required' ? d.evidence.min_chars ?? 40 : 0;
+  d.test_samples.forEach((s, j) => {
+    const sample = `test_samples[${j}]`;
+    if (reads.has('user_request') !== Object.hasOwn(s, 'user_request')) {
+      error(at, `${sample}: give user_request exactly when the question reads it`);
+    }
+    if (!reads.has('evidence') && s.evidence !== undefined) error(at, `${sample}: the question does not read evidence`);
+    const evidenceChars = (s.evidence ?? []).join('').length;
+    if (d.evidence.requires === 'required' && evidenceChars < minChars) {
+      error(at, `${sample}: evidence is required, and ${evidenceChars} characters are fewer than min_chars ${minChars}`);
+    }
+  });
 }
 
 // ------------------------------------------------------------------------------------------ vectors
