@@ -268,20 +268,37 @@ type AuditSummary struct {
 // AuditDetail is one audit with its claims (api.ts AuditDetail).
 type AuditDetail struct {
 	AuditSummary
-	UserQuery         *string           `json:"user_query"`
-	LLMResponse       *string           `json:"llm_response"`
-	Claims            []ClaimView       `json:"claims"`
-	Scores            *AuditScores      `json:"scores"`
-	DegradedReasons   []string          `json:"degraded_reasons"`
-	Error             *AuditError       `json:"error"`
-	ReasoningTrace    string            `json:"reasoning_trace"`
-	StepTimings       map[string]int64  `json:"step_timings"`
-	Gate              *AuditGate        `json:"gate"`
-	EvidenceSummary   json.RawMessage   `json:"evidence_summary"`
-	ContextUsed       json.RawMessage   `json:"context_used"`
-	UnsupportedPolicy *string           `json:"unsupported_policy"`
-	ScoringVersion    string            `json:"scoring_version"`
-	Costs             []json.RawMessage `json:"costs"`
+	UserQuery         *string          `json:"user_query"`
+	LLMResponse       *string          `json:"llm_response"`
+	Claims            []ClaimView      `json:"claims"`
+	Scores            *AuditScores     `json:"scores"`
+	DegradedReasons   []string         `json:"degraded_reasons"`
+	Error             *AuditError      `json:"error"`
+	ReasoningTrace    string           `json:"reasoning_trace"`
+	StepTimings       map[string]int64 `json:"step_timings"`
+	Gate              *AuditGate       `json:"gate"`
+	EvidenceSummary   json.RawMessage  `json:"evidence_summary"`
+	ContextUsed       json.RawMessage  `json:"context_used"`
+	UnsupportedPolicy *string          `json:"unsupported_policy"`
+	ScoringVersion    string           `json:"scoring_version"`
+	Costs             []CostRecord     `json:"costs"`
+}
+
+// CostRecord is api.ts CostRecord: one model call and what it cost (SPEC §7.4). cost_source says
+// how the figure was obtained: reported by the vendor, computed from the price table, free_local,
+// simulated (mock backends) or unknown.
+type CostRecord struct {
+	Component    string  `json:"component"`
+	Kind         string  `json:"kind"`
+	Provider     string  `json:"provider"`
+	Model        string  `json:"model"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	CostUSD      float64 `json:"cost_usd"`
+	CostSource   string  `json:"cost_source"`
+	LatencyMs    int64   `json:"latency_ms"`
+	Status       string  `json:"status"`
+	Questions    int     `json:"questions"`
 }
 
 // Redact returns the summary without prompt text.

@@ -102,6 +102,52 @@ func TestSaveAuditRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSaveAuditCostsRoundTrip(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	traceID := NewID()
+	costs := []CostRecord{
+		{Component: "deep_audit_decompose", Kind: "llm", Provider: "mock", Model: "mock", InputTokens: 180, OutputTokens: 40,
+			CostSource: "simulated", LatencyMs: 3, Status: "ok"},
+		{Component: "deep_audit_verify", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", InputTokens: 400,
+			OutputTokens: 60, CostUSD: 0.0007, CostSource: "computed", LatencyMs: 900, Status: "ok", Questions: 0},
+	}
+	first := sampleAudit(NewID(), 0.2, true)
+	first.TraceID, first.Costs, first.CreatedAt = traceID, costs, time.Now().UTC().Add(-time.Minute)
+	if err := s.SaveAudit(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	// A second audit of the same trace keeps its own calls apart.
+	second := sampleAudit(NewID(), 0.9, false)
+	second.TraceID, second.Costs = traceID, costs[:1]
+	if err := s.SaveAudit(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetAudit(ctx, first.AuditID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Costs) != 2 || got.Costs[0] != costs[0] || got.Costs[1] != costs[1] {
+		t.Errorf("costs %+v, want %+v", got.Costs, costs)
+	}
+	if d := got.Detail(); len(d.Costs) != 2 {
+		t.Errorf("detail costs %+v", d.Costs)
+	}
+	latest, err := s.LatestAuditForTrace(ctx, traceID)
+	if err != nil || latest.AuditID != second.AuditID || len(latest.Costs) != 1 {
+		t.Errorf("latest %v %+v", err, latest)
+	}
+	// An audit without calls shows an empty list, never null.
+	plain := sampleAudit(NewID(), 0.9, false)
+	if err := s.SaveAudit(ctx, plain); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetAudit(ctx, plain.AuditID)
+	if d := got.Detail(); d.Costs == nil || len(d.Costs) != 0 {
+		t.Errorf("no costs: %+v", d.Costs)
+	}
+}
+
 func TestSaveAuditKeepsExplicitTraceAndRequestIDs(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()

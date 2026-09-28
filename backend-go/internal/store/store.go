@@ -101,8 +101,10 @@ type AuditRecord struct {
 	// ScoringVersion is v1 for legacy rows and v2 for Evaluate results.
 	ScoringVersion string
 	CostUSD        *float64
-	QueueWaitMs    *int64
-	CompletedAt    *time.Time
+	// Costs are the audit's model calls (AuditResult.costs); they are stored in cost_events.
+	Costs       []CostRecord
+	QueueWaitMs *int64
+	CompletedAt *time.Time
 	// TextExpiresAt is when retention nulls the prompt, answer and context.
 	TextExpiresAt *time.Time
 
