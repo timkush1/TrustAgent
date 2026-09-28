@@ -3,8 +3,9 @@
  *
  * - Full build (the dashboard image): the app at `/` (index.html), the landing page at `/welcome/`.
  * - Static build (VITE_APP_MODE=static, GitHub Pages under VITE_BASE_PATH=/TrustAgent/): the landing
- *   page is the site's root, the replay app lives at `/app/`, and `404.html` is a copy of the app so
- *   GitHub Pages boots it for every deep link (/TrustAgent/app/traffic/<id>). Both pages carry the
+ *   page is the site's root, the replay app lives at `/app/` (plus a copy per main page, so
+ *   /TrustAgent/app/traffic/ answers 200), and `404.html` is a copy of the app so GitHub Pages
+ *   boots it for every other deep link (/TrustAgent/app/traffic/<id>). Both pages carry the
  *   static CSP as a meta tag and `referrer: no-referrer`; the site talks to itself and, from P5,
  *   openrouter.ai only.
  *
@@ -20,6 +21,13 @@ export type AppMode = 'full' | 'static';
 /** SPEC §7.5, verbatim. */
 export const STATIC_CSP =
   "default-src 'self'; connect-src 'self' https://openrouter.ai; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+
+/**
+ * Static build: the app's main pages get their own copy of app/index.html, so the links people
+ * share and the nav's own URLs answer 200 on GitHub Pages; any other deep link (a trace) is served
+ * by 404.html, which boots the same app.
+ */
+export const STATIC_APP_PAGES = ['app/overview', 'app/traffic', 'app/playground', 'app/evaluators/studio'] as const;
 
 /** Build output path of each HTML entry. */
 export function pagePaths(mode: AppMode): { app: string; landing: string; notFound: string | null } {
@@ -88,6 +96,10 @@ export function sitePages(mode: AppMode): Plugin[] {
           move(outDir, 'index.html', paths.app);
           move(outDir, 'landing.html', paths.landing);
           copyFileSync(join(outDir, paths.app), join(outDir, '404.html'));
+          for (const page of STATIC_APP_PAGES) {
+            mkdirSync(join(outDir, page), { recursive: true });
+            copyFileSync(join(outDir, paths.app), join(outDir, page, 'index.html'));
+          }
         } else {
           move(outDir, 'landing.html', paths.landing);
         }
@@ -111,6 +123,16 @@ export function sitePages(mode: AppMode): Plugin[] {
             }
             const file = resolve(outDir, `.${pathname}`);
             const inside = file === outDir || file.startsWith(outDir + sep);
+            // Pages redirects a directory asked for without its slash (/app/traffic → /app/traffic/).
+            if (inside && !pathname.endsWith('/') && existsSync(join(file, 'index.html'))) {
+              // originalUrl still has the base path Vite strips from req.url.
+              const original = (req as { originalUrl?: string }).originalUrl ?? req.url ?? '/';
+              const url = new URL(original, 'http://preview.invalid');
+              res.statusCode = 301;
+              res.setHeader('Location', `${url.pathname}/${url.search}`);
+              res.end();
+              return;
+            }
             if ((req.method !== 'GET' && req.method !== 'HEAD') || !existsSync(page) || (inside && existsSync(file) && statSync(file).isFile())) {
               next();
               return;

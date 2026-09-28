@@ -14,8 +14,11 @@ export { copy };
 
 const base = import.meta.env.BASE_URL;
 export const APP_MODE: 'full' | 'static' = import.meta.env.VITE_APP_MODE === 'static' ? 'static' : 'full';
-/** "Try the demo": the replay on the static site, the dashboard next to /welcome in the full build. */
-export const DEMO_HREF = APP_MODE === 'static' ? `${base}app/traffic` : `${base}app`;
+/**
+ * "Try the demo": the replay's Traffic page on the static site (a real file there, see
+ * vite.site.ts STATIC_APP_PAGES), the dashboard next to /welcome in the full build.
+ */
+export const DEMO_HREF = APP_MODE === 'static' ? `${base}app/traffic/` : `${base}app`;
 export const REPO_URL: string = (import.meta.env.VITE_REPO_URL as string | undefined) || 'https://github.com/timkush1/TrustAgent';
 export const RECORDING_URL = `${base}demo/recorded/manifest.json`;
 
