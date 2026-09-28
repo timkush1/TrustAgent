@@ -285,17 +285,7 @@ function checkEvaluatorHardRules(rel, spec) {
   const ef = spec.escalation?.escalate_from ?? null;
   if (crit !== null && !(warnAt <= crit + EPS)) error(rel, `warn_at ${warnAt} must be <= critical_at ${crit}`);
   if (ef !== null && !(ef < warnAt - EPS)) error(rel, `escalate_from ${ef} must be < warn_at ${warnAt}`);
-  // Backticked references resolve to a declared state field or rules.<param>.
-  const fields = new Set(spec.state_fields);
-  const params = new Set(Object.keys(spec.params ?? {}));
-  for (const s of strings(q)) {
-    for (const [, ref] of s.matchAll(/`([^`]+)`/g)) {
-      const pm = ref.match(/^rules\.([a-z][a-z0-9_]*)$/);
-      const ok = pm ? fields.has('rules') && params.has(pm[1]) : fields.has(ref);
-      if (!ok) error(rel, `unresolved_state_reference: \`${ref}\``);
-    }
-    if (/[a-z][a-z0-9_]{1,47}__v[0-9]+/.test(s)) error(rel, `no_id_reference: question text contains a question id: "${s}"`);
-  }
+  for (const v of questionTextViolations(spec)) error(rel, v.message);
   // requires_corroboration and implies name registered evaluators or known detectors.
   for (const x of [...(spec.outcomes.requires_corroboration ?? []), ...(spec.outcomes.implies ?? [])]) {
     if (x.startsWith('det:')) {
@@ -306,6 +296,95 @@ function checkEvaluatorHardRules(rel, spec) {
   }
 }
 for (const [rel, spec] of byPrefix('evaluators/')) checkEvaluatorHardRules(rel, spec);
+
+// The two hard rules on question text (SPEC §2.8): every backticked reference resolves to a declared
+// state field or to rules.<param> with rules declared and the param declared, and no question id
+// ("<id>__v<version>") appears in text, because questions are answered independently.
+function questionTextViolations(spec) {
+  const fields = new Set(spec.state_fields);
+  const params = new Set(Object.keys(spec.params ?? {}));
+  const out = [];
+  for (const s of strings(spec.question)) {
+    for (const [, ref] of s.matchAll(/`([^`]+)`/g)) {
+      const pm = ref.match(/^rules\.([a-z][a-z0-9_]*)$/);
+      const ok = pm ? fields.has('rules') && params.has(pm[1]) : fields.has(ref);
+      if (!ok) out.push({ code: 'unresolved_state_reference', message: `unresolved_state_reference: \`${ref}\`` });
+    }
+    if (/[a-z][a-z0-9_]{1,47}__v[0-9]+/.test(s)) {
+      out.push({ code: 'no_id_reference', message: `no_id_reference: question text contains a question id: "${s}"` });
+    }
+  }
+  return out;
+}
+
+// The SPEC §2.8 lints (warnings in Studio; built-ins and drafter examples must be lint-clean). Rules the
+// SPEC gives only by id are defined as in the TypeScript reference (frontend-react/src/lib/decision/lint.ts)
+// and pinned, with the rest, by vectors/lint:
+// - non_descriptive_key: no word of three or more letters in the key besides generic ones (option_a, choice_2);
+// - near_duplicate_options: lowercase [a-z0-9]+ token Jaccard of two options' `what` above 0.5, neither with not_for;
+// - numeric_only_score_levels: a score level whose text has no letter;
+// - score_used_for_policy: any score question (score answers calibrate poorly).
+const LINT_ESCAPE_KEY = /^(no_|nothing_|not_|too_short|too_generic)/;
+const LINT_ESCAPE_WHAT = /greeting|too short|nothing to|not about|no .*(subject|facts|content)/i;
+const LINT_DOUBLE_NEGATIVE = /\bnot\b.*\b(no|not|never|without)\b/;
+const LINT_COUNTING = /more than|at least|fewer than|how many|[0-9]/;
+const LINT_GENERIC_WORDS = new Set(['option', 'choice', 'answer', 'item', 'value', 'class', 'category', 'label', 'type',
+  'case', 'other', 'misc', 'level', 'result']);
+const LINT_MAX_INSTRUCTIONS = 600;
+
+function evaluatorLints(spec) {
+  const q = spec.question;
+  const out = [];
+  const lint = (code, message) => out.push({ code, message: `${code}: ${message}` });
+  const optionWhat = (o) => (isObj(o) && typeof o.what === 'string' ? o.what : strings(o).join(' '));
+  const hasNotFor = (o) => isObj(o) && typeof o.not_for === 'string' && o.not_for !== '';
+  const tokens = (s) => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  const jaccard = (a, b) => {
+    const common = [...a].filter((t) => b.has(t)).length;
+    const union = a.size + b.size - common;
+    return union === 0 ? 0 : common / union;
+  };
+  if (q.type === 'choice') {
+    const entries = Object.entries(q.criteria);
+    if (entries.length >= 3 && !entries.some(([k, o]) => LINT_ESCAPE_KEY.test(k) || LINT_ESCAPE_WHAT.test(optionWhat(o)))) {
+      lint('missing_escape_option', 'no option for replies with nothing to judge (a greeting, a very short reply)');
+    }
+    for (const [k] of entries) {
+      if (!k.split(/[_0-9]+/).some((w) => w.length >= 3 && !LINT_GENERIC_WORDS.has(w))) {
+        lint('non_descriptive_key', `option key ${k} does not say what the option means`);
+      }
+    }
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const [ka, a] = entries[i];
+        const [kb, b] = entries[j];
+        if (!hasNotFor(a) && !hasNotFor(b) && jaccard(tokens(optionWhat(a)), tokens(optionWhat(b))) > 0.5) {
+          lint('near_duplicate_options', `${ka} and ${kb} are described almost the same way; add not_for`);
+        }
+      }
+    }
+  }
+  const instructions = strings(q.instructions);
+  for (const s of instructions) {
+    if (LINT_DOUBLE_NEGATIVE.test(s)) lint('double_negative', `instructions use a double negative: "${s}"`);
+    if (LINT_COUNTING.test(s)) lint('counting_or_arithmetic', `instructions ask for counting or arithmetic (consider escalation.numeric_or_date): "${s}"`);
+  }
+  if ([...instructions.join('')].length > LINT_MAX_INSTRUCTIONS) {
+    lint('long_instructions', `instructions are longer than ${LINT_MAX_INSTRUCTIONS} characters`);
+  }
+  if (q.type === 'score') {
+    q.criteria.forEach((level, i) => {
+      if (!/\p{L}/u.test(strings(level).join(' '))) lint('numeric_only_score_levels', `score level ${i} has no words`);
+    });
+    lint('score_used_for_policy', 'score answers calibrate poorly; prefer noul or choice for policy decisions');
+  }
+  return out;
+}
+
+// Built-in templates must stay lint-clean (SPEC §2.8).
+for (const [rel, spec] of byPrefix('evaluators/')) {
+  for (const l of evaluatorLints(spec)) error(rel, `${l.message} (built-in templates must be lint-clean)`);
+}
 
 // Evaluator refs from policies, presets and scenarios. While the registry is still empty (contracts
 // bootstrap), unresolved refs are warnings; once any evaluator exists they are errors.
@@ -402,6 +481,7 @@ if (presets) {
     checkRouteSettings('policies/presets.v1.json', `preset ${p.id}`, merge(ROUTE_DEFAULTS, p.settings));
   }
 }
+
 
 // ------------------------------------------------------------------------------------------ pricing
 
@@ -649,9 +729,19 @@ function checkSpan(rel, where, text, start, end, want) {
 }
 
 // lint vectors: input.spec is a schema-valid evaluator (it may break a hard rule); expected is
-// {errors, lints}, each a sorted list of distinct codes from SPEC §2.8.
+// {errors, lints}, each a sorted list of distinct codes from SPEC §2.8, and must be what the text hard
+// rules and the lints above produce for the spec.
 function checkLintVector(rel, v) {
-  validate(`${rel} (input.spec)`, v.input?.spec, 'evaluator.v1');
+  const specValid = validate(`${rel} (input.spec)`, v.input?.spec, 'evaluator.v1');
+  if (specValid && isObj(v.expected)) {
+    const codesOf = (found) => [...new Set(found.map((f) => f.code))].sort();
+    const got = { errors: codesOf(questionTextViolations(v.input.spec)), lints: codesOf(evaluatorLints(v.input.spec)) };
+    for (const key of ['errors', 'lints']) {
+      if (Array.isArray(v.expected[key]) && got[key].join(',') !== v.expected[key].join(',')) {
+        error(rel, `expected.${key} is ${JSON.stringify(v.expected[key])}, but the SPEC §2.8 rules give ${JSON.stringify(got[key])}`);
+      }
+    }
+  }
   const codes = {
     errors: ['unresolved_state_reference', 'no_id_reference'],
     lints: ['missing_escape_option', 'non_descriptive_key', 'double_negative', 'counting_or_arithmetic',

@@ -368,6 +368,18 @@ describe('validate.mjs', () => {
     assert.match(r.out, /expected\.lints must be sorted and distinct/);
   });
 
+  test('lint vectors must agree with the SPEC §2.8 rules, and built-ins must be lint-clean', () => {
+    const sb = sandbox();
+    sb.edit('vectors/lint/counting-or-arithmetic-instructions.json', (v) => { v.expected.lints = []; });
+    sb.edit('vectors/lint/no-id-reference.json', (v) => { v.expected.errors = []; });
+    sb.edit('evaluators/refusal.v1.json', (e) => { e.question.instructions = 'Does `assistant_response` decline at least one request?'; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /counting-or-arithmetic-instructions\.json: expected\.lints is \[\], but the SPEC §2\.8 rules give \["counting_or_arithmetic"\]/);
+    assert.match(r.out, /no-id-reference\.json: expected\.errors is \[\], but the SPEC §2\.8 rules give \["no_id_reference"\]/);
+    assert.match(r.out, /evaluators\/refusal\.v1\.json: counting_or_arithmetic: .*\(built-in templates must be lint-clean\)/);
+  });
+
   test('detector vector findings select their text; evidence tag patterns are portable', () => {
     const sb = sandbox();
     sb.edit('vectors/detectors/numbers-utf16-offsets-after-emoji.json', (v) => {
