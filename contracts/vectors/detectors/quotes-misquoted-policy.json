@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "quotes-misquoted-policy",
-  "status": "draft",
+  "status": "frozen",
   "description": "A curly-quoted passage of 8 words. Normalized (lowercase, trailing \".\" stripped) it is \"refunds are available within 60 days of purchase\", which is not a substring of the normalized evidence (it says 30 days): fires; the finding covers the text between the quote marks.",
   "input": {
     "detector": "quotes_not_in_evidence",

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "system-mode-whole",
-  "status": "draft",
+  "status": "frozen",
   "description": "With evidence.system_mode whole, the entire system text is a single request_system item, even without any document markup.",
   "input": {
     "api_format": "openai_chat",

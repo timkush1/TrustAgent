@@ -1,0 +1,24 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-reference-parts-are-not-joined-by-a-space",
+  "status": "frozen",
+  "description": "Each reference part is normalized on its own and the parts are joined with a newline, so a quote cannot run from the end of one evidence item into the next: \"renew every year. monthly plans renew\" is not a substring of the reference, fires.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "The policy says \"renew every year. Monthly plans renew\" in one breath.",
+    "evidence": [
+      {"id": "annual", "source": "request_system", "text": "Annual plans renew every year."},
+      {"id": "monthly", "source": "request_system", "text": "Monthly plans renew every month."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "renew every year. Monthly plans renew", "start": 17, "end": 54}]
+  },
+  "tolerance": 1e-9
+}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "bad_request",
+    "message": "Invalid query parameter limit: must be an integer from 1 to 200",
+    "field_errors": [{"path": "limit", "message": "must be an integer from 1 to 200"}]
+  }
+}

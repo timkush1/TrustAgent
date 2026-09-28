@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "dedup-across-sources-first-wins",
-  "status": "draft",
+  "status": "frozen",
   "description": "The same policy text arrives in the system prompt and, with different whitespace, in trustagent.context. Dedup hashes whitespace-collapsed text, so the extension copy is dropped; request_system comes first in the route source order and wins. The pre-dedup count is 2.",
   "input": {
     "api_format": "openai_chat",

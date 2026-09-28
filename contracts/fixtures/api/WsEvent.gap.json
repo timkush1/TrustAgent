@@ -1,0 +1,17 @@
+{
+  "v": 2,
+  "seq": 851,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "gap",
+  "ts": "2026-09-28T10:17:26.902Z",
+  "data": {
+    "from_seq": 826,
+    "to_seq": 851,
+    "reason": "slow_consumer",
+    "resync": {
+      "traces": "/api/traces?updated_since=2026-09-28T10%3A17%3A15.115Z&limit=200",
+      "decisions": "/api/gate/decisions?updated_since=2026-09-28T10%3A17%3A15.115Z&limit=200",
+      "audits": "/api/audits?completed_since=2026-09-28T10%3A17%3A15.115Z&limit=200"
+    }
+  }
+}

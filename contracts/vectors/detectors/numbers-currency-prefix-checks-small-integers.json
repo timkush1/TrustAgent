@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-currency-prefix-checks-small-integers",
+  "status": "frozen",
+  "description": "Integers <= min_integer 10 are skipped unless a currency sign ($ € £) is the code unit just before them. €3 is checked and known (the evidence has €3). $5 is checked and unknown: fires on 5 (the finding is the number token, without the sign). 2 has no sign and no unit in the next two tokens (\"items\", end): skipped.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "A €3 fee applies, or $5 with express shipping, for 2 items.",
+    "evidence": [
+      {"id": "fees", "source": "request_system", "text": "Standard shipping fee: €3 per order."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "5", "start": 22, "end": 23}]},
+  "tolerance": 1e-9
+}

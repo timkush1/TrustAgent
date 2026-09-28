@@ -1,20 +1,28 @@
-// Command vectorgen generates the expected values of the mechanical golden vector kinds
-// (canonical, tokens, question_hash, normalize, compile, calibration_apply) from the Go reference
-// in internal/decision (SPEC §7.6).
+// Command vectorgen maintains the golden vectors that the Go reference in internal/decision runs
+// (SPEC §7.6).
 //
-// Vector inputs are written by hand under contracts/vectors/<kind>/<name>.json with status draft
-// (and expected null). vectorgen fills in expected and generated_by; a person reviews the diff and
-// then freezes the vector (status frozen, by hand or with -freeze). Frozen vectors are never
-// rewritten: when the reference no longer produces a frozen expected value, vectorgen fails, since
-// a behaviour change needs a new vector. Only the expected, generated_by and status members are
-// touched; the rest of each file keeps its formatting byte for byte.
+// Mechanical kinds (canonical, tokens, question_hash, normalize, compile, calibration_apply): vector
+// inputs are written by hand under contracts/vectors/<kind>/<name>.json with status draft (and
+// expected null). vectorgen fills in expected and generated_by; a person reviews the diff and then
+// freezes the vector (status frozen, by hand or with -freeze).
+//
+// Semantic kinds with a Go runner (decide, detectors): expected is written by hand from the SPEC
+// and may be a subset of the output. vectorgen never writes it; it checks that the reference
+// agrees, and -freeze marks an agreeing draft frozen. Semantic vectors are frozen only when their
+// kind is named in -kinds, because freezing one records that a person reviewed it.
+//
+// Frozen vectors are never rewritten: when the reference no longer produces a frozen expected
+// value, vectorgen fails, since a behaviour change needs a new vector. Only the expected,
+// generated_by and status members are touched; the rest of each file keeps its formatting byte for
+// byte. Kinds without a Go runner (see vectors.Kinds) are left alone.
 //
 // Usage (from backend-go/, or `make vectors`):
 //
-//	go run ./cmd/vectorgen [-contracts ../contracts] [-kinds compile,normalize] [-check] [-freeze]
+//	go run ./cmd/vectorgen [-contracts ../contracts] [-kinds compile,detectors] [-check] [-freeze]
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -45,9 +53,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fl := flag.NewFlagSet("vectorgen", flag.ContinueOnError)
 	fl.SetOutput(stderr)
 	contracts := fl.String("contracts", "../contracts", "path of the contracts directory")
-	kinds := fl.String("kinds", "", "comma-separated mechanical kinds to process (default: all with a Go runner)")
+	kinds := fl.String("kinds", "", "comma-separated kinds to process (default: every kind with a Go runner); semantic kinds are frozen only when named here")
 	check := fl.Bool("check", false, "write nothing; fail when a draft vector is stale or a frozen one differs")
-	freeze := fl.Bool("freeze", false, "mark the processed draft vectors frozen (after reviewing their expected values)")
+	freeze := fl.Bool("freeze", false, "mark the processed draft vectors frozen once the reference agrees (after reviewing their expected values)")
 	rev := fl.String("rev", "", "revision recorded in generated_by (default: git rev-parse --short=12 HEAD)")
 	fl.Usage = func() {
 		fmt.Fprintln(stderr, "usage: vectorgen [-contracts dir] [-kinds k1,k2] [-check] [-freeze] [-rev sha]")
@@ -65,8 +73,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		opt.kinds = map[string]bool{}
 		for _, k := range strings.Split(*kinds, ",") {
 			info, ok := vectors.Kinds[k]
-			if !ok || !info.Mechanical {
-				fmt.Fprintf(stderr, "vectorgen: %q is not a mechanical vector kind\n", k)
+			if !ok || info.Skip != "" {
+				fmt.Fprintf(stderr, "vectorgen: %q is not a vector kind with a Go runner\n", k)
 				return 2
 			}
 			opt.kinds[k] = true
@@ -107,7 +115,7 @@ func generate(opt options, stdout io.Writer) error {
 			problems = append(problems, fmt.Sprintf("%s: unknown vector kind %q", v.Path, v.Dir))
 			continue
 		}
-		if !info.Mechanical || info.Skip != "" || (opt.kinds != nil && !opt.kinds[v.Dir]) {
+		if info.Skip != "" || (opt.kinds != nil && !opt.kinds[v.Dir]) {
 			continue
 		}
 		if counts[v.Dir] == nil {
@@ -168,6 +176,10 @@ func process(opt options, root *os.Root, v *vectors.Vector) (action, error) {
 	if err != nil {
 		return actionNone, err
 	}
+	// Hand-written kinds (decide, detectors) are checked against the reference, never generated.
+	if !vectors.Kinds[v.Kind].Mechanical {
+		return checkSemantic(opt, root, v, out)
+	}
 	want := vectors.GeneratedExpected(v.Kind, out)
 	same, err := sameJSON(v.Expected, want)
 	if err != nil {
@@ -220,6 +232,46 @@ func process(opt options, root *os.Root, v *vectors.Vector) (action, error) {
 		return actionFrozen, nil
 	}
 	return actionWritten, nil
+}
+
+// checkSemantic finishes process for a hand-written vector: out, the reference output, must agree
+// with expected as the runners compare it (a subset, numbers within tolerance). A disagreement is
+// an error for draft and frozen vectors alike, as in TestVectors. With -freeze, an agreeing draft of
+// a kind named in -kinds is marked frozen (freezing records that a person reviewed it); expected
+// itself is never written.
+func checkSemantic(opt options, root *os.Root, v *vectors.Vector, out any) (action, error) {
+	var expected any
+	if err := json.Unmarshal(v.Expected, &expected); err != nil {
+		return actionNone, fmt.Errorf("expected: %w", err)
+	}
+	if expected == nil {
+		return actionNone, errors.New("expected is null: semantic vectors are written by hand (contracts/vectors/README.md)")
+	}
+	if diffs := vectors.Compare(expected, out, v.Tol()); len(diffs) > 0 {
+		return actionNone, fmt.Errorf("the reference disagrees with this %s vector:\n  %s", v.Status, strings.Join(diffs, "\n  "))
+	}
+	if v.Status == vectors.StatusFrozen || !opt.freeze || !opt.kinds[v.Kind] {
+		return actionNone, nil
+	}
+	name := filepath.FromSlash(v.Path)
+	info, err := root.Stat(name)
+	if err != nil {
+		return actionNone, err
+	}
+	src, err := root.ReadFile(name)
+	if err != nil {
+		return actionNone, err
+	}
+	status := vectors.StatusFrozen
+	updated, err := rewrite(src, fileEdit{status: &status})
+	if err != nil {
+		return actionNone, err
+	}
+	// The vector file is a repository source: it keeps its permissions.
+	if err := root.WriteFile(name, updated, info.Mode().Perm()); err != nil {
+		return actionNone, err
+	}
+	return actionFrozen, nil
 }
 
 // gitRevision returns the short HEAD revision of the repository holding dir, or "unknown".

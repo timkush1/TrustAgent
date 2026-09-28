@@ -17,27 +17,34 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 
 ## Kinds with vectors
 
-| Kind | Count | Status | Go runner |
-|---|---|---|---|
-| `canonical` | 16 | frozen, generated | `internal/decision` |
-| `tokens` | 14 | frozen, generated | `internal/decision` |
-| `question_hash` | 11 | frozen, generated | `internal/decision` |
-| `normalize` | 29 | frozen, generated | `internal/decision` |
-| `compile` | 34 | frozen, generated | `internal/decision` |
-| `calibration_apply` | 13 | frozen, generated | `internal/decision` |
-| `decide` | 55 | frozen, hand-authored | `internal/decision` |
-| `detectors` | 23 | draft, hand-authored | `internal/decision` |
-| `evidence` | 14 | draft, hand-authored | `internal/evidence` (`TestEvidenceVectors`, S0 formats) |
-| `lint` | 19 | draft, hand-authored | P2 (skipped) |
+| Kind | Count (frozen + draft) | SPEC §7.6 minimum | Expected values | Go runner |
+|---|---|---|---|---|
+| `canonical` | 16 (16 + 0) | 14 | generated | `internal/decision` |
+| `tokens` | 14 (14 + 0) | 10 | generated | `internal/decision` |
+| `question_hash` | 11 (11 + 0) | 1 per template (11) | generated | `internal/decision` |
+| `normalize` | 29 (29 + 0) | 18 | generated | `internal/decision` |
+| `compile` | 34 (34 + 0) | 1 per template + 12 (23) | generated | `internal/decision` |
+| `calibration_apply` | 13 (13 + 0) | 10 | generated | `internal/decision` |
+| `decide` | 55 (55 + 0) | 40 | hand-authored | `internal/decision` |
+| `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
+| `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (`openai_chat` only) |
+| `lint` | 19 (0 + 19) | 14 | hand-authored | P2 (skipped) |
 
-`calibrate_fit` and `cost` vectors come with the Go calibration fitter (P2) and cost calculator (P4);
-`pkce` vectors are TypeScript-only.
+`calibrate_fit` vectors come with the Go calibration fitter (P2) and `cost` vectors with the cost calculator
+(`internal/costs`, P4, which also defines their input); `pkce` vectors are TypeScript-only.
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
 `github.com/truthtable/contracts` module): kinds with a Go runner must pass in full, draft and frozen alike;
-the others are skipped with the reason listed in `backend-go/internal/decision/vectors/kinds.go`.
+the others are skipped with the reason listed in `backend-go/internal/decision/vectors/kinds.go`. The
+`evidence` vectors run in `TestEvidenceVectors` (`backend-go/internal/evidence`) instead: the `openai_chat`
+ones must pass there and are frozen; the `anthropic_messages` and `openai_completions` ones stay draft until
+those formats are extracted (P2).
 
-## Generating mechanical vectors
+A vector becomes frozen only once the Go reference passes it and its `expected` value has been reviewed
+against the SPEC (SPEC §4.1). The section [SPEC §7.6 coverage](#spec-76-coverage) maps every required case
+to its vectors.
+
+## Generating and freezing vectors
 
 The mechanical kinds (`canonical`, `tokens`, `question_hash`, `normalize`, `compile`, `calibration_apply`)
 have `expected` values that the Go reference computes. To add one:
@@ -48,12 +55,20 @@ have `expected` values that the Go reference computes. To add one:
 3. Review the diff against the SPEC, then set `status: "frozen"` (by hand or with
    `VECTORGEN_FLAGS="-kinds <kind> -freeze"`).
 
+The semantic kinds with a Go runner (`decide`, `detectors`) are written by hand, `expected` included.
+`make vectors` checks them against the reference too (a disagreement fails, draft or frozen) but never
+writes their `expected`. After reviewing a draft, freeze it with `VECTORGEN_FLAGS="-kinds <kind> -freeze"`:
+semantic drafts are frozen only when their kind is named in `-kinds`. `evidence` drafts are frozen by hand
+once `TestEvidenceVectors` passes them.
+
 vectorgen never rewrites a frozen vector: when the reference no longer produces its `expected` value, it
 fails, and the change needs a new vector.
 
 Built-in evaluators are referenced as `"template": "<id>@<version>"` (resolved to
 `../evaluators/<id>.v<version>.json`); a custom evaluator is given inline as a full `spec`. Released
 templates are immutable, so the `question_hash` vectors also pin the template files.
+
+## Input and expected, by kind
 
 ### `canonical`
 
@@ -167,8 +182,17 @@ templates are immutable, so the `question_hash` vectors also pin the template fi
   names to values; `evidence_meta` is `{pre_dedup_items, max_marker}` (citation range, defaults: the
   length of `evidence` and 0); `config` is `{min_integer}` (default 10). Only the named detector runs.
 - `expected`: a `DetectorResult` without `id`: `{ran, fired, findings}`. Findings are ordered by `start`
-  and use UTF-16 offsets into `response`. `findings` is not pinned for `secret_pattern` (the matched text
-  must be masked) or when `system_prompt_leak` fires (its offsets are unaligned).
+  and use UTF-16 offsets into `response`; `validate.mjs` checks that a pinned finding selects its `text`.
+  `secret_pattern` findings pin `start` and `end` only (the matched text must be masked, and the mask is
+  not part of the contract), and `findings` is not pinned when `system_prompt_leak` fires (its finding is
+  unaligned, and which window is reported is not specified).
+- Readings of SPEC §2.10 these vectors pin:
+  - "Evidence is present" means trusted evidence: with only untrusted items, the URL, quote and citation
+    detectors do not run, and numbers and dates run only when `rules` is non-empty.
+  - Numbers compare as normalized text, not as values: `4.50` is not `4.5`, `12.0` is `12`.
+  - The unit window is the next two `window_token` matches after the number, whatever they are.
+  - A quote cannot span two reference parts: the normalized parts are joined with a newline.
+  - `system_prompt_leak` measures the 200-code-point minimum after normalization.
 - The rules, including every normalization and tie-break, are in `../rules/detectors.v1.json` and
   `../rules/secrets.v1.json`.
 
@@ -180,7 +204,8 @@ templates are immutable, so the `question_hash` vectors also pin the template fi
 - `expected`: `{items, system_instructions, user_request, pre_dedup_items, max_marker, forwarded_body}`.
   `items` are the extracted, deduplicated items in route source order as `{id, source, text, untrusted?}`
   (`label` and `truncated` are not pinned yet); `forwarded_body` is the body sent upstream, compared as
-  parsed JSON.
+  parsed JSON. Like every object in `expected` it is a subset, so it shows the members that are kept but
+  cannot prove that `trustagent` was removed; runner tests check the removal.
 - The rules are in `../rules/doc-blocks.v1.json`.
 
 ### `lint`
@@ -191,10 +216,96 @@ templates are immutable, so the `question_hash` vectors also pin the template fi
   for `near_duplicate_options` uses lowercase `[a-z0-9]+` tokens of each option's `what`.
 - Every built-in template has a `builtin-*-is-clean` vector: built-ins must stay lint-clean.
 
+## SPEC §7.6 coverage
+
+Every case SPEC §7.6 requires, and the vectors that pin it.
+
+- **canonical** (14): U+2028/2029 `line-and-paragraph-separators-escaped`; astral
+  `astral-characters-stay-literal`; control characters `control-characters-escaped`; `<>&`
+  `html-characters-not-escaped`; key order `key-order-utf16-code-units`,
+  `whitespace-removed-and-nested-keys-sorted`; lone surrogate `lone-surrogates-become-replacement-character`;
+  1.0 `number-one-point-zero`; 0.1 `number-zero-point-one`; 1e-7 `number-small-exponent`; 1e21
+  `number-large-exponent`; -0 `number-negative-zero`.
+- **tokens** (10, CJK): `cjk-ideographs-count-as-whole-tokens`, `mixed-cjk-and-ascii`,
+  `kana-and-fullwidth-are-wide`, `state-with-cjk-evidence`, plus 10 more.
+- **question_hash** (1 per template): `template-<id>` for all 11 built-ins, each with `calibration_key`.
+- **normalize** (18): sums 0.99 `choice-sum-0.99-renormalized`, 1.01 `choice-sum-1.01-renormalized`, 0.90
+  `choice-sum-0.90-anomaly`, 1.10 `choice-sum-1.10-anomaly`, 0 `choice-sum-zero-invalid`; unexpected key
+  `choice-unexpected-option`, `score-foreign-level-key`; missing option `choice-missing-options-filled`;
+  choice-only `choice-only-answer`; tie-break `choice-tie-smallest-key`, `choice-tie-vendor-choice-wins`;
+  score re-key `score-rekeyed-levels`; invert `noul-inverted-signal`.
+- **compile** (1 per template + 12): `template-<id>` for all 11 built-ins; no evidence
+  `no-evidence-excludes-required`; too long `response-too-long`; optional placeholder
+  `optional-evidence-placeholder`; packing order `packing-order-by-source-rank-and-overlap`; truncation
+  `truncation-of-an-item`; pack-to-zero `pack-to-zero-evidence-packed-away`; split by budget
+  `split-by-token-budget` and by count `split-by-question-count`; params `params-route-override-and-default`;
+  `client_rules` off `client-rules-ignored-when-off`; `factual_claims` implicit `factual-claims-implicit`;
+  untrusted tool `untrusted-tool-never-enters`.
+- **calibration_apply** (10): 13 vectors, from `zero` and `top-end` to interpolation inside a step.
+- **decide** (40 required cases):
+
+  | Required case | Vectors |
+  |---|---|
+  | Groundedness alone cannot block | `groundedness-alone-cannot-block` |
+  | Groundedness plus contradiction blocks | `groundedness-and-contradiction-block` |
+  | Groundedness plus the URL detector blocks | `groundedness-and-url-detector-block` |
+  | A baseless answer is not a disagreement | `baseless-answer-is-not-disagreement` |
+  | Contradiction critical, groundedness ok is a disagreement | `contradiction-critical-groundedness-ok-is-disagreement` |
+  | `needs_second_signal` | `pii-secret-needs-second-signal`, `groundedness-alone-cannot-block` |
+  | Observe records `would_action` | `observe-records-would-action` |
+  | No evidence: nothing sent, `not_assessed` | `no-evidence-nothing-sent-not-assessed`, `s0-no-evidence-not-assessed` |
+  | `on_no_evidence` flag and block, with the `factual_claims` calibration cap | `on-no-evidence-flag`, `on-no-evidence-block-with-calibrated-factual-claims`, `on-no-evidence-block-caps-uncalibrated-factual-claims`, `on-no-evidence-fired-by-number-detector` |
+  | Timeout fail-open | `timeout-fail-open` |
+  | Fail-closed: timeout, `skipped:budget`, `skipped:breaker`, partial with a block-eligible error | `timeout-fail-closed-blocks`, `skipped-budget-fail-closed-blocks`, `skipped-breaker-fail-closed-fallback-route-blocks`, `partial-block-eligible-error-fail-closed-blocks` |
+  | `sampled_out` is not degraded | `sampled-out-not-degraded` |
+  | Fallback mapping | `fallback-mode-maps-block-to-fallback`, `fallback-mode-keeps-flag` |
+  | Uncalibrated cap to flag | `uncalibrated-snapshot-caps-block-to-flag` |
+  | Raw space when calibration is active but not adopted | `calibration-active-but-not-adopted-uses-raw-risk` |
+  | Mock quality counts only with the mock backend | `mock-calibration-counts-with-mock-backend`, `mock-calibration-ignored-with-live-backend` |
+  | `det_block` is not capped | `det-block-not-capped` |
+  | Shadow critical does not flag and is still listed; shadow does not corroborate | `shadow-critical-does-not-flag-but-is-listed`, `shadow-does-not-corroborate` |
+  | `min_confidence` on aggregated risk | `min-confidence-uses-aggregated-risk` |
+  | Missing choice confidence | `missing-choice-confidence` |
+  | 0.99 distribution; invalid distribution | `distribution-sum-0.99-is-renormalized`, `invalid-distribution-is-evaluator-error` |
+  | `warn_at`, `critical_at`, `escalate_from` edges with an override | `threshold-edge-warn-at-override`, `threshold-edge-critical-at-override-and-explicit-null`, `threshold-edge-escalate-from-override` |
+  | `numeric_or_date_unverified` | `numeric-or-date-unverified-escalates-without-flagging` |
+  | `on_error` ignore | `on-error-ignore-vs-escalate` |
+  | Truncated evidence caps groundedness, not contradiction | `truncated-evidence-caps-groundedness-not-contradiction` |
+  | Knowledge-only cap | `knowledge-only-caps-role-evaluators` |
+  | Verdict precedence: contradicted, then unsupported, then unknown | `verdict-contradicted-beats-unsupported`, `partial-request-timeout-fail-open` (unsupported over an error), `verdict-unknown-when-role-evaluator-errors` |
+  | Per-request partial failure | `partial-request-timeout-fail-open` |
+  | Stream passthrough downgrade | `stream-passthrough-downgrades-block-to-flag` |
+  | Reasons ordering | `reasons-ordering`, `reasons-tie-broken-by-evaluator-id` |
+  | Score `risk_levels` | `score-risk-levels` |
+  | Invert noul | `invert-noul` |
+  | `deep_audit` classes | high `grounding-detector-alone-is-high`; sample `clean-pass-is-sampled`, `evidence-packed-away-not-assessed-is-sampled`, `sampled-out-not-degraded`; sample_error `timeout-fail-open`; none `no-evidence-nothing-sent-not-assessed` |
+
+- **detectors** (40, at least 5 per detector): numbers 11, dates 8, URLs 7, quotes 7, citation 6, secret 7,
+  system prompt leak 7. UTF-16 with emoji `numbers-utf16-offsets-after-emoji`, `dates-utf16-offsets-after-emoji`,
+  `urls-path-and-query-keep-their-case`, `quotes-utf16-offsets-after-emoji`; rules in the known set
+  `numbers-known-from-rules-after-normalization`, `dates-known-from-user-request-and-rules-only`,
+  `urls-known-from-user-request-and-rules`; unit exception `numbers-small-integer-with-unit-is-checked`,
+  `numbers-unit-window-is-two-tokens`, `numbers-currency-prefix-checks-small-integers`; citation marker range
+  `citation-range-from-document-markers`, `citation-range-counts-items-before-dedup`.
+- **evidence** (20): content parts `developer-role-and-content-parts`, `assistant-messages-are-not-evidence`;
+  developer role `developer-role-and-content-parts`; Anthropic system and `tool_result`
+  `anthropic-system-string-and-tool-result`, `anthropic-system-blocks-markdown-section`,
+  `anthropic-system-blocks-and-tool-result-parts`; tags `system-document-tags-with-ids`,
+  `tag-ids-valid-quoted-and-length-limits`, `route-tag-patterns-and-crlf`; markers
+  `marker-blocks-dedup-and-max-marker`; markdown `markdown-section-runs-to-same-level-heading`,
+  `anthropic-system-blocks-markdown-section`; line headers `line-headers-on`, `line-headers-off`,
+  `line-header-ends-at-markdown-heading`; extension strip `extension-context-ids-and-strip`,
+  `route-source-order-and-unconfigured-sources`; dedup `dedup-across-sources-first-wins`,
+  `marker-blocks-dedup-and-max-marker`.
+- **lint** (14, every built-in clean): `builtin-<id>-is-clean` for all 11 built-ins, plus 8 lint and hard-rule
+  cases.
+
 ## Writing a vector
 
 1. Derive `expected` from the SPEC by hand, and say how in `description` (at most 600 characters).
-2. Keep `expected` to the fields the case is about; mechanical fields (hashes, token counts, offsets you
-   did not compute) come from `cmd/vectorgen`.
+2. Keep `expected` to the fields the case is about; mechanical values (hashes, token counts) belong in a
+   mechanical kind, where `cmd/vectorgen` computes them. Detector offsets are UTF-16 code units, which are
+   JavaScript string indices: compute them with `text.indexOf(...)`, not by counting bytes or code points.
 3. Use obviously fake credentials in detector inputs (the secret patterns must still match them).
-4. Run `make contracts-check`.
+4. Run `make contracts-check`, then the Go runner (`make vectors VECTORGEN_FLAGS=-check`, or
+   `TestEvidenceVectors` for evidence); freeze only after both pass and the vector has been reviewed.

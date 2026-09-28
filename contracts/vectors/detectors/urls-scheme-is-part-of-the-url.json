@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-scheme-is-part-of-the-url",
+  "status": "frozen",
+  "description": "The pattern matches case-insensitively and the scheme is lowercased, so HTTPS://Example.com/terms is the evidence URL https://example.com/terms. http://example.com/terms (trailing \"!\" stripped) has another scheme and is unknown: fires on it.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "Read HTTPS://Example.com/terms or the mirror http://example.com/terms!",
+    "evidence": [
+      {
+        "id": "terms",
+        "source": "request_system",
+        "text": "Terms of service: https://example.com/terms"
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "http://example.com/terms", "start": 45, "end": 69}]
+  },
+  "tolerance": 1e-9
+}

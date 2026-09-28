@@ -1,0 +1,47 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "tag-ids-valid-quoted-and-length-limits",
+  "status": "frozen",
+  "description": "Only an id attribute matching [A-Za-z0-9._:-]{1,64} is kept. \"refund policy\" has a space and a 65-character id is too long: both fall back to sys<n>, n being the position among the request_system items (sys1, sys3). The single-quoted id terms.v2 and a 64-character id are valid and kept.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "<document id=\"refund policy\">Refunds within 30 days.</document>\n<document id='terms.v2' title=\"Terms\">Terms apply to all plans.</document>\n<document id=\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\">Ids longer than 64 characters are not kept.</document>\n<doc id=\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\">An id of exactly 64 characters is kept.</doc>\nAnswer politely."
+        },
+        {"role": "user", "content": "Do the terms apply to my plan?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "sys1", "source": "request_system", "text": "Refunds within 30 days."},
+      {"id": "terms.v2", "source": "request_system", "text": "Terms apply to all plans."},
+      {
+        "id": "sys3",
+        "source": "request_system",
+        "text": "Ids longer than 64 characters are not kept."
+      },
+      {
+        "id": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+        "source": "request_system",
+        "text": "An id of exactly 64 characters is kept."
+      }
+    ],
+    "system_instructions": "Answer politely.",
+    "user_request": "Do the terms apply to my plan?",
+    "pre_dedup_items": 4
+  },
+  "tolerance": 1e-9
+}

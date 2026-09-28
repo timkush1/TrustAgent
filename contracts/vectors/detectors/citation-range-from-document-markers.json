@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "citation-range-from-document-markers",
-  "status": "draft",
+  "status": "frozen",
   "description": "The system prompt numbered its single document [Document 4], so the range is max(highest marker 4, 1 item before dedup) = 4: [4] is in range and [2] too. Does not fire.",
   "input": {
     "detector": "citation_out_of_range",

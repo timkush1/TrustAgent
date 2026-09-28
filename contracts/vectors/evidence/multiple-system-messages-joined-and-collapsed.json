@@ -1,0 +1,41 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "multiple-system-messages-joined-and-collapsed",
+  "status": "frozen",
+  "description": "Blocks from both system messages are request_system items in message order (the <context> block has no id: sys2). The remainders are joined with a blank line; the runs of four newlines inside and between them collapse to two, and the result is trimmed.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are Acme's assistant.\n\n\n\nBe concise.\n<document id=\"a\">Doc A: the Pro plan includes 5 seats.</document>"
+        },
+        {
+          "role": "system",
+          "content": "<context>Doc B: extra seats cost $8 per month.</context>\nNever share discount codes."
+        },
+        {"role": "user", "content": "How many seats does Pro include?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "a", "source": "request_system", "text": "Doc A: the Pro plan includes 5 seats."},
+      {"id": "sys2", "source": "request_system", "text": "Doc B: extra seats cost $8 per month."}
+    ],
+    "system_instructions": "You are Acme's assistant.\n\nBe concise.\n\nNever share discount codes.",
+    "user_request": "How many seats does Pro include?",
+    "pre_dedup_items": 2
+  },
+  "tolerance": 1e-9
+}

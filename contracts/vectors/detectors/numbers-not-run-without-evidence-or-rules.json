@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "numbers-not-run-without-evidence-or-rules",
-  "status": "draft",
+  "status": "frozen",
   "description": "No evidence and empty rules: the numbers detector does not run (it runs only when evidence or rules is non-empty), so it cannot fire.",
   "input": {
     "detector": "numbers_not_in_evidence",

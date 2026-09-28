@@ -1,0 +1,9 @@
+{
+  "v": 2,
+  "seq": 817,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "audit_queued",
+  "ts": "2026-09-28T10:13:07.485Z",
+  "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+  "data": {"audit_id": "01a0e781-0530-79a5-bd4e-1c8b2063f7d4", "lane": "high", "queue_depth": 0}
+}

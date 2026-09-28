@@ -1,0 +1,377 @@
+{
+  "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+  "client_request_id": "req_9Kd4sT2w",
+  "created_at": "2026-09-28T10:13:05.771058Z",
+  "updated_at": "2026-09-28T10:13:10.261227Z",
+  "source": "proxy",
+  "api_format": "openai_chat",
+  "route": "support-bot",
+  "policy_version": 3,
+  "mode": "flag",
+  "effective_mode": "flag",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "live",
+  "action": "flag",
+  "would_action": "block",
+  "gate_status": "ok",
+  "skip_reason": null,
+  "verdict": "contradicted",
+  "max_risk": 0.98,
+  "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+  "checked_against": {
+    "configured": ["request_system", "request_context", "tool_results", "extension"],
+    "used": [{"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}],
+    "empty": ["request_context", "tool_results", "extension"],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 23
+  },
+  "timings": {
+    "upstream_ms": 1284,
+    "ttft_ms": null,
+    "gate_ms": 428,
+    "overhead_ms": 433,
+    "total_ms": 1717
+  },
+  "decision_model": {
+    "backend": "openrouter-decisions",
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "cost_usd": 0.000025704
+  },
+  "audit": {
+    "audit_id": "01a0e781-0530-79a5-bd4e-1c8b2063f7d4",
+    "status": "completed",
+    "lane": "high",
+    "selection": "high",
+    "verdict": "HALLUCINATED",
+    "trust_score": 0,
+    "grade": "F",
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    }
+  },
+  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+  "response_preview": "You can get a full refund within 60 days of purchase.",
+  "redacted": false,
+  "flags": [],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+      },
+      {
+        "role": "user",
+        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+      }
+    ],
+    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+    "response_text": "You can get a full refund within 60 days of purchase.",
+    "final_response_text": "You can get a full refund within 60 days of purchase.",
+    "evidence": [
+      {
+        "id": "refund-policy.md",
+        "source": "request_system",
+        "label": "refund-policy.md",
+        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "truncated": false
+      }
+    ],
+    "rules": {},
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "attempt": 0,
+      "created_at": "2026-09-28T10:13:07.483404Z",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": "flag",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "action": "flag",
+      "would_action": "block",
+      "enforced": true,
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "high",
+      "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {"type": "noul", "noul": 0.96},
+          "probabilities": null,
+          "risk_raw": 0.96,
+          "risk": 0.96,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "none",
+          "calibration_warning": null,
+          "level": "critical",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": true,
+          "block_eligible": true,
+          "thresholds": {"warn_at": 0.8, "critical_at": 0.95, "escalate_from": 0.4}
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {"type": "noul", "noul": 0.98},
+          "probabilities": null,
+          "risk_raw": 0.98,
+          "risk": 0.98,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "none",
+          "calibration_warning": null,
+          "level": "critical",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": true,
+          "block_eligible": true,
+          "thresholds": {"warn_at": 0.7, "critical_at": 0.95, "escalate_from": 0.4}
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [{"text": "60", "start": 33, "end": 35}]
+        },
+        {"id": "dates_not_in_evidence", "ran": true, "fired": false, "findings": []},
+        {"id": "urls_not_in_evidence", "ran": true, "fired": false, "findings": []},
+        {"id": "quotes_not_in_evidence", "ran": true, "fired": false, "findings": []},
+        {"id": "citation_out_of_range", "ran": true, "fired": false, "findings": []},
+        {"id": "secret_pattern", "ran": true, "fired": false, "findings": []},
+        {"id": "system_prompt_leak", "ran": false, "fired": false, "findings": []}
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "openrouter-decisions",
+        "model_requested": "typesafe/jev-1.13",
+        "snapshot": "typesafe/jev-1.13-20260917",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 402,
+        "connect_ms": 31,
+        "input_tokens": 612,
+        "cost_usd": 0.000025704,
+        "cost_source": "reported"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+        "request_sha256": ["6c7ba7dcd197a13ce2b25e5cac2a316051e08504ffb5790c04e02f2182388ba4"],
+        "packed_evidence_ids": ["refund-policy.md"],
+        "truncated_ids": [],
+        "est_tokens": [565]
+      },
+      "evidence_summary": {
+        "configured": ["request_system", "request_context", "tool_results", "extension"],
+        "used": [
+          {"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}
+        ],
+        "empty": ["request_context", "tool_results", "extension"],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 23
+      },
+      "late": false,
+      "gate_ms": 428
+    }
+  ],
+  "audit_detail": {
+    "audit_id": "01a0e781-0530-79a5-bd4e-1c8b2063f7d4",
+    "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+    "created_at": "2026-09-28T10:13:07.504918Z",
+    "route": "support-bot",
+    "source": "proxy",
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0,
+    "grade": "F",
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "processing_ms": 2747,
+    "judge": {
+      "configured_provider": "anthropic",
+      "effective_provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "fallback_active": false,
+      "fallback_reason": null,
+      "structured_outputs": true,
+      "healthy": true,
+      "credential_source": "env"
+    },
+    "gate_action": "flag",
+    "selection": "high",
+    "inclusion_prob": 1,
+    "query_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "redacted": false,
+    "user_query": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "llm_response": "You can get a full refund within 60 days of purchase.",
+    "claims": [
+      {
+        "index": 0,
+        "claim": "A full refund is available within 60 days of purchase.",
+        "status": "CONTRADICTED",
+        "confidence": 0.96,
+        "evidence": ["Annual plans can be refunded within 30 days of purchase."],
+        "reasoning": "The refund policy allows refunds within 30 days of purchase, not 60 days.",
+        "decided_by": "llm",
+        "verdict_probabilities": {
+          "supported": 0.01,
+          "partially_supported": 0.01,
+          "contradicted": 0.96,
+          "unsupported": 0.02
+        },
+        "probability_source": "llm_confidence",
+        "span": {"start": 33, "end": 40, "method": "exact"},
+        "quote": "60 days",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "refund-policy.md",
+            "start": 0,
+            "end": 56,
+            "text": "Annual plans can be refunded within 30 days of purchase.",
+            "kind": "quote_verified"
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "trust_score": 0,
+      "faithfulness": 0.015,
+      "contradiction_rate": 0.96,
+      "unverified_rate": 0.025,
+      "coverage": 0.975,
+      "accuracy_addressed": 0.015385,
+      "max_contradiction": 0.96,
+      "p_hallucinated": 0.96,
+      "claims_total": 1,
+      "claims_decided": 1,
+      "claims_unknown": 0
+    },
+    "degraded_reasons": [],
+    "error": null,
+    "reasoning_trace": "decompose: 1 claim; retrieve: 1 document (request_system); verify: 1 CONTRADICTED; score: v2, unsupported_policy hallucination.",
+    "step_timings": {
+      "decompose_ms": 1124,
+      "retrieve_ms": 3,
+      "verify_ms": 1614,
+      "score_ms": 1,
+      "total_ms": 2747
+    },
+    "gate": {
+      "action": "flag",
+      "would_action": "block",
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": ["request_system", "request_context", "tool_results", "extension"],
+      "used": [
+        {"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}
+      ],
+      "empty": ["request_context", "tool_results", "extension"],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 23
+    },
+    "context_used": [
+      {
+        "id": "refund-policy.md",
+        "source": "request_system",
+        "label": "refund-policy.md",
+        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "truncated": false
+      }
+    ],
+    "unsupported_policy": "hallucination",
+    "scoring_version": "v2",
+    "costs": [
+      {
+        "component": "deep_audit_decompose",
+        "kind": "llm",
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "input_tokens": 486,
+        "output_tokens": 61,
+        "cost_usd": 0.000791,
+        "cost_source": "computed",
+        "latency_ms": 1120,
+        "status": "ok",
+        "questions": 0
+      },
+      {
+        "component": "deep_audit_verify",
+        "kind": "llm",
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5",
+        "input_tokens": 912,
+        "output_tokens": 118,
+        "cost_usd": 0.001502,
+        "cost_source": "computed",
+        "latency_ms": 1610,
+        "status": "ok",
+        "questions": 0
+      }
+    ]
+  },
+  "labels": [
+    {
+      "target": "response",
+      "label": "hallucinated",
+      "labeled_by": "admin",
+      "created_at": "2026-09-28T11:02:17.406Z",
+      "note": "The refund policy says 30 days, not 60."
+    }
+  ]
+}
