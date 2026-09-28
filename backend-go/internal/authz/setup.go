@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -96,9 +97,13 @@ func (s *Setup) Mint(ctx context.Context, seed string, force bool, actor string)
 	return token, exp, nil
 }
 
-// URL is the dashboard setup URL; the token is in the fragment, which browsers never send.
+// URL is the dashboard setup URL; the token is in the fragment, which browsers never send. The
+// token is percent-encoded (a space as %20), so a seeded token (TRUTHTABLE_SETUP_TOKEN) with
+// URL-significant characters (+ # & % space) reads back unchanged with URLSearchParams or
+// decodeURIComponent; a generated token is base64url and unaffected.
 func (s *Setup) URL(token string) string {
-	return strings.TrimRight(s.publicURL, "/") + "/app/setup#token=" + token
+	escaped := strings.ReplaceAll(url.QueryEscape(token), "+", "%20")
+	return strings.TrimRight(s.publicURL, "/") + "/app/setup#token=" + escaped
 }
 
 // Line is the printed setup line: "SETUP: open <url>".

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,5 +232,28 @@ func TestMasterKeyConcurrentGeneration(t *testing.T) {
 		if st, err := os.Stat(path); err != nil || st.Mode().Perm() != 0o600 {
 			t.Fatalf("round %d: key file %v %v", round, st, err)
 		}
+	}
+}
+
+// TestSeededSetupTokenURL: a seeded token with URL-significant characters survives the printed
+// URL (read back as the dashboard does, with URLSearchParams semantics) and can be claimed.
+func TestSeededSetupTokenURL(t *testing.T) {
+	f := newFixture(t, func(o *Options) { o.Keys = o.Keys[:2] }) // no env admin: setup is required
+	const seed = "seed+with/slash#hash&x=1 %2F"
+	var out bytes.Buffer
+	if printed, _, err := f.a.Setup().Announce(context.Background(), &out, seed); err != nil || !printed {
+		t.Fatalf("announce: %v %v", printed, err)
+	}
+	line := strings.TrimSpace(out.String())
+	_, fragment, ok := strings.Cut(line, "#")
+	if !ok || strings.Count(line, "#") != 1 || strings.ContainsAny(fragment, " &+") {
+		t.Fatalf("the printed URL is not a single well-formed fragment: %q", line)
+	}
+	q, err := url.ParseQuery(fragment)
+	if err != nil || q.Get("token") != seed {
+		t.Fatalf("the token read back from %q is %q (%v)", line, q.Get("token"), err)
+	}
+	if _, _, err := f.a.Setup().Claim(context.Background(), q.Get("token")); err != nil {
+		t.Errorf("claim with the read-back token: %v", err)
 	}
 }
