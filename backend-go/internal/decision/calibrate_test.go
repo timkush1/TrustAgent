@@ -434,6 +434,35 @@ func TestFitCalibrationRecommendsCriticalAt(t *testing.T) {
 	}
 }
 
+func TestFitCalibrationKeepsWarnAtBelowCriticalAt(t *testing.T) {
+	// Max-F1 prefers the top block alone (F1 2000/2005 against 2010/2016 with the middle block),
+	// while the Wilson bound still holds with the middle block (1005/1011), so critical_at is the
+	// middle block's calibrated value and warn_at comes down to it.
+	s := labels([3]float64{0.1, 0, 300}, [3]float64{0.5, 5, 6}, [3]float64{0.9, 1000, 0})
+	fit, err := FitCalibration(s, FitOptions{Method: MethodIsotonic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, w := fit.Recommended.CriticalAt, fit.Recommended.WarnAt
+	if c == nil || w == nil || !near(c.Value, 5.0/11, 1e-6) || c.PredictedPos != 1011 {
+		t.Fatalf("critical_at %+v, warn_at %+v", c, w)
+	}
+	if w.Value != c.Value || !near(w.Precision, 1005.0/1011, 1e-12) || w.Recall != 1 || !slices.Contains(fit.Warnings, WarnWarnAtCapped) {
+		t.Errorf("warn_at = %+v, warnings %v", w, fit.Warnings)
+	}
+	if uncapped, ok := MaxF1Threshold(calibratedLabels(fit.Table, s), WarnMinPrecision); !ok || uncapped.Threshold != 1 {
+		t.Errorf("the case no longer crosses: max-F1 warn_at %+v", uncapped)
+	}
+}
+
+func calibratedLabels(table []float64, s []LabeledScore) []LabeledScore {
+	out := make([]LabeledScore, len(s))
+	for i, x := range s {
+		out[i] = LabeledScore{Risk: ApplyCalibration(table, x.Risk), Fire: x.Fire}
+	}
+	return out
+}
+
 func TestQuickCalibrate(t *testing.T) {
 	few := &QuickCalibrationRequest{Labeled: labels([3]float64{0.2, 1, 3}, [3]float64{0.8, 2, 1})}
 	q, err := QuickCalibrate(few)

@@ -25,7 +25,7 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `normalize` | 29 (29 + 0) | 18 | generated | `internal/decision` |
 | `compile` | 34 (34 + 0) | 1 per template + 12 (23) | generated | `internal/decision` |
 | `calibration_apply` | 13 (13 + 0) | 10 | generated | `internal/decision` |
-| `calibrate_fit` | 37 (37 + 0) | 10 | generated | `internal/decision` |
+| `calibrate_fit` | 38 (38 + 0) | 10 | generated | `internal/decision` |
 | `decide` | 55 (55 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (`openai_chat` only) |
@@ -192,7 +192,8 @@ at that risk. Input order matters: every sum runs in input order.
     `min(floor(10p), 9)`) and Brier before (raw risk) and after (the table applied as decide() applies it),
     AUROC of the raw risk with ties counting one half. `reliability` lists the non-empty bins of the
     calibrated predictions. Recommended thresholds are in calibrated space: `warn_at` is max-F1 with precision
-    `>= 0.8`, `critical_at` as above.
+    `>= 0.8`, `critical_at` as above, and a `warn_at` above `critical_at` is lowered to it (the SPEC §2.8 hard
+    rule `warn_at <= critical_at`) with a warning.
   - `quick`: needs `n >= 8` with 3 of each class (else `enough: false` and only counts and the grid). The
     threshold is raw-space; `precision` and `recall` carry Wilson intervals; `loo_range` is the range of
     thresholds the same objective picks with each label left out; `unstable` when an interval is wider than
@@ -312,7 +313,7 @@ Every case SPEC §7.6 requires, and the vectors that pin it.
   `quality-provisional-below-class-minimum`, `quality-proxy-with-one-judge-label`,
   `quality-proxy-with-uniform-audit-labels`, `quality-mock-snapshot`, `quality-family-fallback-is-provisional`;
   the full fit `fit-auto-below-500-uses-platt`, `fit-isotonic-below-500-warns`,
-  `fit-auto-at-500-compares-cv-brier`.
+  `fit-auto-at-500-compares-cv-brier`, `fit-warn-at-capped-at-critical-at`.
 - **decide** (40 required cases):
 
   | Required case | Vectors |

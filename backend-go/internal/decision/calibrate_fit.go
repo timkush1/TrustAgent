@@ -23,6 +23,7 @@ const (
 const (
 	WarnIsotonicFewLabels = "isotonic regression with fewer than 500 labels tends to overfit; auto would use Platt scaling"
 	WarnNoWarnAt          = "no threshold reaches precision 0.8, so there is no recommended warn_at"
+	WarnWarnAtCapped      = "the max-F1 warn_at was above critical_at, so warn_at is lowered to critical_at (warn_at must not exceed critical_at)"
 )
 
 // FitOptions configure Fit.
@@ -86,7 +87,8 @@ type Fit struct {
 //     table applied with ApplyCalibration, exactly as decide() will apply it.
 //   - Recommended thresholds are in calibrated space: warn_at maximizes F1 with precision >= 0.8,
 //     critical_at is the Wilson-bound threshold of WilsonCriticalAt (null with "insufficient
-//     evidence to block" otherwise).
+//     evidence to block" otherwise). A warn_at above critical_at is lowered to it (the SPEC §2.8
+//     hard rule warn_at <= critical_at), with a warning.
 //   - Metrics and the reliability table are in-sample: ECE and Brier before (raw risk as a
 //     probability) and after (calibrated), AUROC of the raw risk.
 //
@@ -158,6 +160,13 @@ func FitCalibration(samples []LabeledScore, opt FitOptions) (*Fit, error) {
 	if fit.Recommended.CriticalAt == nil {
 		reason := CriticalNullReason
 		fit.Recommended.CriticalNullReason = &reason
+	}
+	// SPEC §2.8 hard rule warn_at <= critical_at: a threshold safe enough to block is safe enough
+	// to warn, so a higher max-F1 warn_at comes down to critical_at.
+	if w, c := fit.Recommended.WarnAt, fit.Recommended.CriticalAt; w != nil && c != nil && w.Value > c.Value {
+		at := ConfusionAt(calibrated, c.Value)
+		fit.Recommended.WarnAt = &WarnAt{Value: c.Value, Precision: at.Precision(), Recall: at.Recall()}
+		fit.Warnings = append(fit.Warnings, WarnWarnAtCapped)
 	}
 	return fit, nil
 }
