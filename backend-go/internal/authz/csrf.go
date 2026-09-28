@@ -30,7 +30,7 @@ func (a *Authenticator) CheckCSRF(r *http.Request) error {
 	if r.Header.Get(HeaderCSRF) != "1" {
 		return ErrCSRFHeader
 	}
-	if !a.OriginAllowed(r.Header.Get("Origin")) {
+	if !a.AllowsOrigin(r.Header.Get("Origin")) {
 		return ErrCSRFOrigin
 	}
 	return nil
@@ -43,14 +43,15 @@ func (a *Authenticator) CheckLoginCSRF(r *http.Request) error {
 	if r.Header.Get(HeaderCSRF) != "1" {
 		return ErrCSRFHeader
 	}
-	if o := r.Header.Get("Origin"); o != "" && !a.OriginAllowed(o) {
+	if o := r.Header.Get("Origin"); o != "" && !a.AllowsOrigin(o) {
 		return ErrCSRFOrigin
 	}
 	return nil
 }
 
-// OriginAllowed reports whether origin is allow-listed.
-func (a *Authenticator) OriginAllowed(origin string) bool {
+// AllowsOrigin reports whether origin is allow-listed (TRUTHTABLE_ALLOWED_ORIGINS and the origin of
+// TRUTHTABLE_PUBLIC_URL).
+func (a *Authenticator) AllowsOrigin(origin string) bool {
 	n := normalizeOrigin(origin)
 	return n != "" && a.origins[n]
 }
