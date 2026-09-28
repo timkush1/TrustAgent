@@ -46,6 +46,9 @@ type mockClient struct {
 	cfg       MockConfig
 	info      Info
 	scenarios map[string]map[string]*decision.RawAnswer
+	// costs receives one simulated cost event per call.
+	costs  CostSink
+	status statusTracker
 }
 
 func newMock(cfg MockConfig, model string) (*mockClient, error) {
@@ -102,6 +105,17 @@ func parseScenarios(b []byte) (map[string]map[string]*decision.RawAnswer, error)
 
 func (m *mockClient) Info() Info { return m.info }
 
+// Status reports the mock as state mock; its breaker never opens.
+func (m *mockClient) Status() Status {
+	st := Status{Info: m.info, Snapshot: m.info.Model, Breaker: BreakerClosed, CPT: decision.DefaultCPT}
+	m.status.fill(&st, breakerView{state: BreakerClosed}, nil)
+	st.State = "mock"
+	if !strings.HasPrefix(st.Snapshot, "mock/") {
+		st.Snapshot = DefaultMockModel
+	}
+	return st
+}
+
 // Decide answers every question of req. In scenario mode a question the scenario scripts gets that
 // answer; any other question fails the call when strict and gets a hash answer otherwise.
 func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) (*Response, error) {
@@ -152,6 +166,17 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 	if !strings.HasPrefix(snapshot, "mock/") {
 		snapshot = DefaultMockModel
 	}
+	latency := time.Since(start).Milliseconds()
+	m.status.call()
+	m.status.attempt(time.Now(), cost, nil, false, false)
+	if m.costs != nil {
+		m.costs.RecordCost(CostEvent{
+			OccurredAt: time.Now(), TraceID: opt.TraceID, Route: opt.Route, KeyLabel: opt.KeyLabel,
+			Component: opt.component(), Kind: CostKindDecision, Provider: BackendMock, Model: snapshot,
+			InputTokens: &tokens, CostUSD: cost, CostSource: CostSimulated, PriceTableVersion: "default",
+			LatencyMs: latency, Status: AttemptOK, Questions: len(req.Questions),
+		})
+	}
 	return &Response{
 		ID:          "mock-" + hex8(sha256.Sum256(stateJCS)),
 		Snapshot:    snapshot,
@@ -160,7 +185,7 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 		CostUSD:     &cost,
 		CostSource:  CostSimulated,
 		Backend:     BackendMock,
-		LatencyMs:   time.Since(start).Milliseconds(),
+		LatencyMs:   latency,
 		Attempts:    1,
 	}, nil
 }
