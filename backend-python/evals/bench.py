@@ -123,6 +123,17 @@ def make_run_id(tier: str, manifest: DatasetManifest, created_at: str) -> str:
     return _RUN_ID_UNSAFE.sub("-", raw)[:128]
 
 
+def _positive_int(text: str) -> int:
+    """An argparse type: an integer of at least 1 (benchmark-run.v1 concurrency)."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an integer: {text!r}") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1: {value}")
+    return value
+
+
 def parse_systems(text: str) -> Tuple[str, ...]:
     systems = tuple(part.strip() for part in text.split(",") if part.strip())
     unknown = [system for system in systems if system not in SYSTEMS]
@@ -393,7 +404,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--judge-model", help="Default: the engine's model for the provider")
     run.add_argument("--mock-fixtures", type=Path, help="Match fixtures for --judge-provider mock")
-    run.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
+    run.add_argument(
+        "--concurrency", type=_positive_int, default=DEFAULT_CONCURRENCY, help="Examples at once"
+    )
     run.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Subset and bootstrap seed")
     run.add_argument("--region", default=DEFAULT_REGION, help="Where the run executed")
     run.add_argument("--run-id")

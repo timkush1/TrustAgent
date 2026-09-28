@@ -312,6 +312,17 @@ def test_preconditions_fail_before_anything_is_spent(
     assert not (tmp_path / "cache").exists() or not any((tmp_path / "cache").glob("*.ledger.jsonl"))
 
 
+def test_concurrency_must_be_positive(tmp_path: Path) -> None:
+    # benchmark-run.v1 requires environment.concurrency >= 1; a run that could
+    # never be published is refused before it starts.
+    with pytest.raises(SystemExit) as exc_info:
+        bench.main(
+            ["run", "--dataset", str(tmp_path / "d.jsonl"), "--max-cost-usd", "1"]
+            + ["--concurrency", "0"]
+        )
+    assert exc_info.value.code == 2
+
+
 def test_publish_without_a_run_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert bench.main(["publish", "--out-dir", str(tmp_path / "empty")]) == 2
     assert "no run file" in capsys.readouterr().err

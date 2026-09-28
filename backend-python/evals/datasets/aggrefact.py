@@ -214,9 +214,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--out", type=Path, help="Prepared .jsonl path")
     args = parser.parse_args(argv)
     token: Optional[str] = None
-    if args.hf_token_file is not None:
-        token = args.hf_token_file.read_text(encoding="utf-8").strip()
     try:
+        if args.hf_token_file is not None:
+            token = args.hf_token_file.read_text(encoding="utf-8").strip()
         path, manifest = prepare(
             split=args.split,
             n=args.n,

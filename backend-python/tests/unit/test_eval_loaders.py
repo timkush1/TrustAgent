@@ -335,6 +335,15 @@ def test_aggrefact_rows_api_is_paged_with_the_token() -> None:
     assert seen[0]["headers"] == {"Authorization": "Bearer hf_secret"}
 
 
+def test_aggrefact_cli_reports_an_unreadable_token_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = aggrefact.main(["--hf-token-file", str(tmp_path / "missing-token")])
+
+    assert code == 1
+    assert "AggreFact preparation failed" in capsys.readouterr().err
+
+
 def test_aggrefact_prepare_from_a_local_export(tmp_path: Path) -> None:
     export = tmp_path / "export.jsonl"
     rows = [
