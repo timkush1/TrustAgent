@@ -325,6 +325,27 @@ func TestTrustedProxiesNameTheClientIP(t *testing.T) {
 	}
 }
 
+// TestUnknownPathsAnswerInTheirErrorShape: gin's text/plain 404 never reaches a client.
+func TestUnknownPathsAnswerInTheirErrorShape(t *testing.T) {
+	env := newTestEnv(t, envOpts{})
+	code, body := env.get("/api/no-such-endpoint", testKey)
+	if code != http.StatusNotFound {
+		t.Fatalf("/api: HTTP %d %s", code, body)
+	}
+	contractstest.ValidateJSON(t, schemaError, body)
+	code, body = env.do(http.MethodPost, "/v1/audio/speech", testKey, []byte(`{}`))
+	var openAI struct {
+		Error struct {
+			Type string `json:"type"`
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &openAI); err != nil || code != http.StatusNotFound ||
+		openAI.Error.Type != "trustagent_error" || openAI.Error.Code != codeNotFound {
+		t.Errorf("/v1: HTTP %d %s", code, body)
+	}
+}
+
 func TestHealthAndStatus(t *testing.T) {
 	env := newTestEnv(t, envOpts{demo: true})
 	code, body := env.get("/health", "")

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -176,6 +177,16 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	v1.Any("/models", h.Passthrough(""))
 	v1.Any("/models/*model", h.Passthrough(""))
 	v1.Any("/embeddings", bodyLimit, h.Passthrough(""))
+
+	// Unknown paths answer in the error shape of their family, not gin's text/plain 404.
+	r.NoRoute(func(c *gin.Context) {
+		if p := c.Request.URL.Path; p == "/v1" || strings.HasPrefix(p, "/v1/") {
+			proxy.Deny(c, http.StatusNotFound, codeNotFound, "TrustAgent does not serve "+c.Request.Method+" "+p+".")
+			c.Abort()
+			return
+		}
+		abortAPI(c, http.StatusNotFound, codeNotFound, "No endpoint here: "+c.Request.Method+" "+c.Request.URL.Path+".")
+	})
 	return r
 }
 
