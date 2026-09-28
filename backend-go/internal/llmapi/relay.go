@@ -1,6 +1,7 @@
 package llmapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"time"
@@ -13,14 +14,30 @@ type RelayResult struct {
 	// Events and Bytes count what was read from the upstream.
 	Events int
 	Bytes  int64
-	// ClientErr is the write error that ended the relay: the client went away. The answer is
-	// then gated unenforced and audited with the client_disconnected flag when the assembler saw
-	// the finish reason (Finished), and skipped otherwise (SPEC §2.12).
+	// ClientErr is the write error that ended the relay: the client went away (ClientGone also
+	// reads a cancelled upstream read as the client leaving). The answer is then gated unenforced
+	// and audited with the client_disconnected flag when the assembler saw the finish reason
+	// (Finished), and skipped otherwise (SPEC §2.12).
 	ClientErr error
 	// UpstreamErr is the read error that ended the relay, other than a clean end of stream. After
 	// ErrEventTooLarge the stream is not broken, only no longer readable event by event:
 	// io.Copy(dst, src.Rest()) forwards the rest as is (skipped:upstream_error).
 	UpstreamErr error
+}
+
+// ClientGone reports whether the relay ended because the client left: a failed write, or a failed
+// upstream read while ctx, the client's request context (http.Request.Context, which net/http
+// cancels when the client's connection closes), is cancelled. The upstream call runs on that
+// context (M1), so a client that leaves usually shows up first as the upstream read failing with
+// context.Canceled, not as a write error; an UpstreamErr alone is not an upstream failure. When the
+// client is gone, the answer is gated unenforced and audited with the client_disconnected flag if
+// the assembler saw the finish reason (Finished), and skipped otherwise (SPEC §2.12).
+func (r RelayResult) ClientGone(ctx context.Context) bool {
+	return clientGone(ctx, r.ClientErr, r.UpstreamErr)
+}
+
+func clientGone(ctx context.Context, clientErr, upstreamErr error) bool {
+	return clientErr != nil || (upstreamErr != nil && errors.Is(ctx.Err(), context.Canceled))
 }
 
 // Relay is the passthrough streaming loop: it reads the upstream stream event by event, feeds
@@ -89,6 +106,12 @@ type CollectResult struct {
 	ClientErr error
 	// UpstreamErr is the read error that ended collection, other than a clean end of stream.
 	UpstreamErr error
+}
+
+// ClientGone reports whether collection ended because the client left (see
+// RelayResult.ClientGone): close the upstream body and do not use the Reader again.
+func (r CollectResult) ClientGone(ctx context.Context) bool {
+	return clientGone(ctx, r.ClientErr, r.UpstreamErr)
 }
 
 // Collect is the buffer streaming read: it reads the whole upstream stream (up to its terminal

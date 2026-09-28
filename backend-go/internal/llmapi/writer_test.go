@@ -2,6 +2,7 @@ package llmapi
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -621,5 +622,84 @@ func TestOversizeStreamsStillReachTheClientWhole(t *testing.T) {
 	// Write is io.Writer: a gone client fails it.
 	if n, err := NewStreamWriter(&brokenWriter{header: http.Header{}, failAt: 1}).Write([]byte("x")); n != 0 || !errors.Is(err, errClientGone) {
 		t.Errorf("write %d %v", n, err)
+	}
+}
+
+func TestClientGone(t *testing.T) {
+	live := t.Context()
+	cancelled, cancel := context.WithCancel(live)
+	cancel()
+	expired, cancel2 := context.WithDeadline(live, time.Now().Add(-time.Second))
+	defer cancel2()
+	boom := errors.New("read failed")
+	cases := []struct {
+		res  RelayResult
+		ctx  context.Context
+		want bool
+	}{
+		{RelayResult{ClientErr: errClientGone}, live, true},
+		{RelayResult{UpstreamErr: context.Canceled}, cancelled, true}, // the client closed its connection
+		{RelayResult{UpstreamErr: boom}, live, false},                 // the upstream failed
+		{RelayResult{UpstreamErr: context.DeadlineExceeded}, expired, false},
+		{RelayResult{Held: true}, cancelled, false}, // the stream was read whole: the decision stands
+	}
+	for i, tc := range cases {
+		if got := tc.res.ClientGone(tc.ctx); got != tc.want {
+			t.Errorf("case %d: %v", i, got)
+		}
+		col := CollectResult{ClientErr: tc.res.ClientErr, UpstreamErr: tc.res.UpstreamErr}
+		if got := col.ClientGone(tc.ctx); got != tc.want {
+			t.Errorf("case %d (collect): %v", i, got)
+		}
+	}
+}
+
+// onWrite is a ResponseWriter that calls fn with every body write.
+type onWrite struct {
+	*httptest.ResponseRecorder
+	fn func(p []byte)
+}
+
+func (o onWrite) Write(p []byte) (int, error) {
+	o.fn(p)
+	return o.ResponseRecorder.Write(p)
+}
+
+func TestClientLeavingCancelsTheUpstreamRead(t *testing.T) {
+	// The upstream call runs on the client's context (M1): when the client leaves after the finish
+	// chunk, the relay ends on the upstream read, not on a write, and the answer is complete.
+	src := string(fixture(t, "openai_chat_basic.sse"))
+	cut := strings.Index(src, `data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[],`)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, src[:cut]) // everything up to and including the finish chunk
+		_ = http.NewResponseController(w).Flush()
+		<-r.Context().Done()
+	}))
+	defer upstream.Close()
+	clientCtx, clientLeaves := context.WithCancel(t.Context())
+	defer clientLeaves()
+	req, err := http.NewRequestWithContext(clientCtx, http.MethodPost, upstream.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := upstream.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	// The client leaves once the finish chunk reached it.
+	w := onWrite{httptest.NewRecorder(), func(p []byte) {
+		if bytes.Contains(p, []byte(`"finish_reason":"stop"`)) {
+			clientLeaves()
+		}
+	}}
+	asm, _ := NewStreamAssembler(FormatOpenAIChat)
+	res := Relay(NewReader(resp.Body), asm, NewStreamWriter(w))
+	if res.ClientErr != nil || !errors.Is(res.UpstreamErr, context.Canceled) {
+		t.Fatalf("%+v", res)
+	}
+	if !res.ClientGone(clientCtx) || !asm.Finished() {
+		t.Errorf("client gone %v finished %v: gate unenforced, audit client_disconnected", res.ClientGone(clientCtx), asm.Finished())
 	}
 }
