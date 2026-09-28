@@ -70,6 +70,9 @@ logs: ## Follow the stack's logs (SERVICE=proxy for one service)
 demo-logs: ## Follow the demo stack's logs (SERVICE=engine for one service)
 	$(DEMO_COMPOSE) logs -f $(SERVICE)
 
+setup-url: ## Print a new one-time setup URL (SETUP: open …#token=…) for the running stack; claim it to create the admin key
+	$(COMPOSE) exec -T proxy /proxy -new-setup-token
+
 status: ## Show the stack's containers and their health
 	@$(COMPOSE) ps --all
 

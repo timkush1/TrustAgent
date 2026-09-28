@@ -83,7 +83,7 @@ BENCH_RUN = cd backend-python && $(POETRY) run python -m evals.bench run \
 define require_gate_eval
 	@test -x "$(GATE_EVAL_PATH)" || { \
 		echo "$(1) needs the Go gate-eval binary at $(GATE_EVAL_PATH):"; \
-		echo "  go -C backend-go build -o bin/gate-eval ./cmd/gate-eval   (or pass GATE_EVAL_BIN=...)"; \
+		echo "  make gate-eval   (or pass GATE_EVAL_BIN=...)"; \
 		exit 2; }
 endef
 
