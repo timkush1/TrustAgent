@@ -246,6 +246,16 @@ func scrub(s string) string {
 	return s
 }
 
+// redactSecret masks the credential itself wherever a vendor echoes it (SPEC §7.5 masks any loaded
+// secret, whatever its format). Values shorter than 8 bytes are left alone: they are no real key,
+// and masking them would mangle messages.
+func redactSecret(msg, secret string) string {
+	if len(secret) < 8 {
+		return msg
+	}
+	return strings.ReplaceAll(msg, secret, "[redacted]")
+}
+
 // errAttemptTimeout marks an attempt that ran past TRUTHTABLE_JEV_ATTEMPT_TIMEOUT.
 var errAttemptTimeout = errors.New("attempt timed out")
 

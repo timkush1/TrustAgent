@@ -674,6 +674,7 @@ func (c *httpClient) do(ctx context.Context, cl *call, a *attempt, key string) a
 			Hint:    Hint(KindNotFound)}
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		res.err, res.effect = classifyStatus(resp.StatusCode, resp.Header, body, c.cfg.RetryAfterCap)
+		res.err.Message = redactSecret(res.err.Message, key)
 	case len(body) > maxResponseBytes:
 		res.err, res.effect = &Error{Kind: KindBadResponse, Status: resp.StatusCode, Message: "the response is larger than 4 MiB", Hint: Hint(KindBadResponse)}, effectFault
 	default:
@@ -684,6 +685,7 @@ func (c *httpClient) do(ctx context.Context, cl *call, a *attempt, key string) a
 		}
 		w, e := decodeResponse(body)
 		if e != nil {
+			e.Message = redactSecret(e.Message, key)
 			res.err, res.effect = e, effectFault
 			return res
 		}

@@ -153,3 +153,19 @@ func TestHints(t *testing.T) {
 		t.Error("unknown kinds have no hint")
 	}
 }
+
+func TestDecodeResponseErrorEnvelope(t *testing.T) {
+	if _, e := decodeResponse([]byte(`{"error":{"code":502,"message":"Provider returned error"}}`)); e == nil || e.Kind != KindBadResponse ||
+		e.Message != "the response has no answers object: Provider returned error" {
+		t.Errorf("a 2xx error envelope: %+v", e)
+	}
+	if _, e := decodeResponse([]byte(`{"id":"d","model":"m"}`)); e == nil || e.Message != "the response has no answers object" {
+		t.Errorf("no answers: %+v", e)
+	}
+	if got := redactSecret("key ts-live-12345678 rejected", "ts-live-12345678"); got != "key [redacted] rejected" {
+		t.Errorf("redactSecret %q", got)
+	}
+	if got := redactSecret("a k b", "k"); got != "a k b" {
+		t.Errorf("a short value is no key: %q", got)
+	}
+}

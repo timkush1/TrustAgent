@@ -95,7 +95,12 @@ func decodeResponse(body []byte) (*wireResponse, *Error) {
 		return nil, &Error{Kind: KindBadResponse, Status: 200, Message: "the response is not a decision JSON object", Err: err, Hint: Hint(KindBadResponse)}
 	}
 	if w.Answers == nil {
-		return nil, &Error{Kind: KindBadResponse, Status: 200, Message: "the response has no answers object", Hint: Hint(KindBadResponse)}
+		msg := "the response has no answers object"
+		// Some gateways answer 200 with an error envelope; its message says what went wrong.
+		if env := parseEnvelope(body); env.message != "" {
+			msg += ": " + env.message
+		}
+		return nil, &Error{Kind: KindBadResponse, Status: 200, Message: msg, Hint: Hint(KindBadResponse)}
 	}
 	if u := w.Usage; u != nil {
 		if t := u.inputTokens(); t != nil && *t < 0 {

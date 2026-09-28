@@ -1147,3 +1147,24 @@ func TestInFlightBudgetIsNotNoCredits(t *testing.T) {
 		t.Errorf("an empty account shows no_credits: %+v", st)
 	}
 }
+
+func TestEchoedCredentialIsMasked(t *testing.T) {
+	const key = "ts-live-ABCDEFGH12345678"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"detail":{"error_type":"auth","message":"Unknown API key `+key+`"}}`)
+	}))
+	defer srv.Close()
+	cl, err := New(Config{Backend: BackendTypeSafe, TypeSafeKey: key, BaseURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = decide(t, cl, testRequest(""), CallOptions{})
+	if ErrorKind(err) != KindAuth || strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "Unknown API key [redacted]") {
+		t.Errorf("error %v", err)
+	}
+	if st := cl.(StatusReporter).Status(); st.LastError == nil || strings.Contains(st.LastError.Message, key) {
+		t.Errorf("status %+v", st.LastError)
+	}
+}

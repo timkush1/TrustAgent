@@ -385,7 +385,7 @@ type resolution struct {
 // Resolve reports the backend New would build and why, without building it (doctor, jevcheck).
 func Resolve(cfg Config) Info {
 	r := resolve(cfg)
-	info := Info{Backend: r.backend, Reason: r.reason, Model: r.model, Endpoint: r.ep.url,
+	info := Info{Backend: r.backend, Reason: r.reason, Model: r.model, Endpoint: redactURL(r.ep.url),
 		Misconfigured: r.misconfigured, Warnings: r.warnings, CredentialSource: "none"}
 	switch {
 	case r.binding != nil:
