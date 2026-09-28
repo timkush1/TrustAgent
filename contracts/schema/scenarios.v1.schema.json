@@ -120,7 +120,7 @@
             "type": "object",
             "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
             "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
-            "description": "Answers the mock decision backend returns for this scenario, keyed by question id."
+            "description": "Answers the mock decision backend returns for this scenario, keyed by question id: \"<id>__v<version>\" of each evaluator attached to the route that compile() sends (SPEC §2.9 step 5). Evaluators that compile excludes (for example no_evidence) are not asked and have no answer; evaluators that need no evidence are always asked (validate.mjs checks both against config/policies.yaml)."
           },
           "judge": {
             "anyOf": [
@@ -128,7 +128,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["claims"],
-                "description": "Mock judge fixture (LLM_PROVIDER=mock, AuditOptions.mock_scenario).",
+                "description": "Mock judge fixture (LLM_PROVIDER=mock, AuditOptions.mock_scenario). claims[] in response order is the decomposer output ({claim, quote}); each entry's verdict, confidence, evidence and reasoning are the verifier output for that claim (verdict is the verifier's status), which the deep audit reports unchanged.",
                 "properties": {
                   "claims": {
                     "type": "array",
@@ -141,39 +141,80 @@
                         "verdict": {"$ref": "common.v1.schema.json#/$defs/ClaimVerdict"},
                         "confidence": {"$ref": "common.v1.schema.json#/$defs/Probability"},
                         "reasoning": {"type": "string"},
-                        "quote": {"type": "string"},
-                        "evidence": {"type": "array", "items": {"type": "string"}}
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Decomposer quote: a verbatim substring of response (validate.mjs checks it); the claim span is located from it."
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {"type": "string", "minLength": 1},
+                          "description": "Verifier evidence quotes, each verbatim from the request's evidence (validate.mjs checks they occur in request)."
+                        }
                       }
                     }
                   }
                 }
               },
-              {"type": "null"}
+              {
+                "type": "null",
+                "description": "No LLM call is expected: the deep audit is not run or is NOT_ASSESSED at preflight. A mock judge call for this scenario is a fixture miss."
+              }
             ]
           },
           "expect": {
             "type": "object",
             "additionalProperties": false,
             "required": ["action"],
-            "description": "What trafficgen --expect asserts. reasons must all be present (subset match).",
+            "description": "The expected outcome, derived by hand from SPEC §2.9 under the policy the gateway loads (config/policies.yaml). trafficgen --expect asserts the header fields; the other fields are for tests of the stored trace and the UI. reasons must all be present (subset match).",
             "properties": {
+              "mode": {
+                "$ref": "common.v1.schema.json#/$defs/PolicyMode",
+                "description": "X-TrustAgent-Mode: the effective mode (the route mode, or flag when block or fallback meets a passthrough stream)."
+              },
               "action": {"$ref": "common.v1.schema.json#/$defs/GateAction"},
               "would_action": {
-                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/WouldAction"}, {"type": "null"}]
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/WouldAction"}, {"type": "null"}],
+                "description": "The decision's would_action. X-TrustAgent-Would-Action is sent only when it differs from action, so an absent header means would_action equals action."
               },
               "status": {
                 "type": "string",
                 "pattern": "^(ok|partial|not_assessed|skipped:[a-z_]+|timeout|error:[a-z0-9_]+|deferred)$",
                 "description": "X-TrustAgent-Status value."
               },
-              "verdict": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}]},
-              "reasons": {"type": "array", "items": {"type": "string"}},
+              "verdict": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}],
+                "description": "X-TrustAgent-Verdict value."
+              },
+              "max_risk": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}],
+                "description": "The decision's max_risk. X-TrustAgent-Risk carries it with 2 decimals and is absent when null."
+              },
+              "reasons": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "X-TrustAgent-Reasons entries (comma-separated in the header, absent when empty)."
+              },
+              "checked_against": {
+                "type": "string",
+                "pattern": "^(none|(request_system|request_context|tool_results|extension|knowledge):[0-9]+(,(request_system|request_context|tool_results|extension|knowledge):[0-9]+)*)$",
+                "description": "X-TrustAgent-Checked-Against value: evidence items per source, or none."
+              },
+              "deep_audit": {
+                "$ref": "common.v1.schema.json#/$defs/DeepAuditClass",
+                "description": "The decision's deep_audit class (SPEC §2.9); not a header."
+              },
               "audit": {
                 "enum": ["queued", "sampled_out", "dropped", "disabled", "not_assessed"],
                 "description": "X-TrustAgent-Audit value."
               },
               "audit_verdict": {
-                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/AuditVerdict"}, {"type": "null"}]
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/AuditVerdict"}, {"type": "null"}],
+                "description": "The deep-audit verdict the trace ends with. null when the answer is not audited (sampled_out, dropped, disabled). NOT_ASSESSED when there was nothing to check it against (X-TrustAgent-Audit: not_assessed, whether Go skipped the audit or the engine preflight answered), with no LLM call, so validate.mjs requires judge: null."
+              },
+              "outcome": {
+                "$ref": "ui-outcomes.v1.schema.json#/properties/outcomes/items/properties/id",
+                "description": "The single outcome the dashboard shows once the gate has decided (contracts/ui/outcomes.v1.json); validate.mjs derives it from status, action and would_action."
               }
             }
           }

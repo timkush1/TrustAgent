@@ -113,6 +113,36 @@ fails every runner.
 The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
 [`vectors/README.md`](vectors/README.md).
 
+## Demo scenarios
+
+`demo/scenarios.v1.json` is the single source of demo and e2e traffic. A scenario is a complete,
+deterministic story that every service reads, so a zero-key stack (`make demo`: mock decision backend, mock
+judge, test mode) produces the same traces every time.
+
+| Field | Meaning and consumer |
+|---|---|
+| `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend looks up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |
+| `sets` | Selection for `trafficgen --scenarios <set>`: `s0` (walking skeleton), `demo`, `e2e`, and later `generated`. |
+| `route`, `headers`, `api_format`, `stream`, `request` | What `trafficgen` sends: `request` is the client body, with evidence placed where SPEC §2.10 extracts it; `headers` holds extra request headers (`X-TrustAgent-Route` selects the route). |
+| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in. |
+| `mock_answers` | Raw answers the mock backend (`TRUTHTABLE_JEV_BACKEND=mock`, `TRUTHTABLE_JEV_MOCK_MODE=scenario`) returns, keyed by question id `<id>__v<version>` (SPEC §2.9 compile step 5) for each evaluator the route asks. Evaluators that compile excludes (for example `no_evidence`) are not asked and have no answer. |
+| `judge` | The mock judge fixture (`LLM_PROVIDER=mock`). `claims`, in response order, is the decomposer output (`claim` and a `quote` that is verbatim in `response`); each claim's `verdict`, `confidence`, `evidence` and `reasoning` are its verifier output, which the deep audit reports unchanged. `null` means no LLM call may happen. |
+| `expect` | The expected outcome: the gate decision and its `X-TrustAgent-*` headers (`mode`, `action`, `would_action`, `status`, `verdict`, `max_risk`, `reasons`, `checked_against`, `audit`), the decision's `deep_audit` class, the deep-audit verdict and the dashboard outcome. `trafficgen --expect` asserts the header fields; `reasons` is a subset match. |
+
+Expectations are derived by hand from SPEC §2.9 under `config/policies.yaml`, the policy the gateway loads
+(also in `make demo`); each scenario's `description` records the derivation. The scenario, the policy and
+the expectations change together. The `support-bot` route is set up for deterministic runs: every pass is
+audited (`pass_sample_rate: 1.0`), no uniform draw (`uniform_sample_rate: 0`), and every body is stored.
+
+The S0 walking skeleton ships three scenarios (all in sets `s0`, `demo` and `e2e`, on `support-bot` in flag
+mode, with `refund-policy.md` as a `<document>` block in the system prompt when evidence is present):
+
+| Scenario | Fast check | Gate | Deep audit | Outcome |
+|---|---|---|---|---|
+| `grounded-pass` | groundedness 0.06, contradiction 0.03 | pass, `ok`, supported, `request_system:1` | queued: GROUNDED, 2 SUPPORTED claims | passed |
+| `refund-contradiction-flag` | groundedness 0.96, contradiction 0.98; `numbers_not_in_evidence` fires on 60 | flag (would block), `ok`, contradicted, reasons `contradiction:critical`, `groundedness:critical`, `det:numbers_not_in_evidence` | high lane: HALLUCINATED, 1 CONTRADICTED claim quoting "60 days" | flagged |
+| `no-evidence-not-assessed` | nothing sent | pass, `not_assessed`, `none` | not_assessed: NOT_ASSESSED, no LLM call | not checked |
+
 ## Validation
 
 ```bash
@@ -145,14 +175,21 @@ and then runs the cross-file checks JSON Schema cannot express:
 - rules: every `{pattern, flags}` in `rules/` (and every policy `tag_patterns` entry) compiles in JS, uses
   only the flags `i`, `m` and `s`, and has no lookaround, backreference or inline flags (`go test` compiles
   the same patterns, and every schema `pattern`, with Go's RE2);
+- scenarios: unique ids; a scripted scenario has `response`; the request lands on the scenario's route in
+  `config/policies.yaml` (first match on headers, paths and models); `mock_answers` name questions that route
+  asks, with the question's answer type, and cover every evaluator that needs no evidence; `expect.mode` is
+  the route's effective mode and the action fits it; `expect.outcome` is what `ui/outcomes.v1.json` gives;
+  the deep-audit fields agree with `judge` (`NOT_ASSESSED` needs `judge: null`); judge quotes occur verbatim
+  in `response` and verifier evidence verbatim in `request`;
 - UI: every outcome is reachable and the last rule is a catch-all; glossary `see_also`, `{command:}` and
   `{claim:}` references resolve; commands name real compose services and profiles;
 - `superseded.v1.json` has the shape `scripts/check-forbidden.mjs` accepts, and no contract file uses one of
   its identifiers.
 
 Repository files that follow a contract are validated too when present: `config/policies.yaml`
-(`policy.v1`), `config/calibration/*.json` (`calibration.v1`, plus a non-decreasing table and quality
-rules) and `docs/benchmarks/results/*.json` (`benchmark-run.v1`).
+(`policy.v1`, the same policy checks, and the scenario checks above, which fall back to
+`policies/example.policies.yaml` without it), `config/calibration/*.json` (`calibration.v1`, plus a
+non-decreasing table and quality rules) and `docs/benchmarks/results/*.json` (`benchmark-run.v1`).
 
 ## Changing contracts
 

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../schema/policy.v1.schema.json
 #
-# Example policy (SPEC §2.7), verbatim apart from this header. config/policies.yaml starts as a copy of this
-# file (with its schema comment pointing at ../contracts/schema/policy.v1.schema.json). make contracts-check
+# Example policy (SPEC §2.7), verbatim apart from this header. config/policies.yaml, the policy the gateway
+# loads, keeps these defaults with a demo support-bot route; copy routes from here. make contracts-check
 # validates this file and, when present, config/policies.yaml against policy.v1.
 version: 1
 defaults:
