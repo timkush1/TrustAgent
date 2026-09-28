@@ -3,9 +3,10 @@
 // retention plans. The proxy handler owns the HTTP side and hands each exchange to Evaluate; a
 // Sink persists and broadcasts the lifecycle and submits audits.
 //
-// S0 gates non-streaming OpenAI chat on observe and flag routes. Knowledge retrieval, the calibration
-// lookup, late decisions, retries and hedging, spend and rate limits, and the fallback re-gate
-// land in P2/P3.
+// S0 gates non-streaming OpenAI chat on observe and flag routes. Retries, hedging, spend and rate
+// limits run inside the decision-model client (internal/jev); a refusal before any vendor request
+// becomes the gate's skip reason. Knowledge retrieval, the calibration lookup, recording late
+// decisions and the fallback re-gate land in P3.
 package gate
 
 import (
@@ -228,7 +229,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 					skip = SkipDecisionModelOff
 				} else {
 					var answers map[string]*decision.RawAnswer
-					usage, answers, in.Meta.RequestStatus = g.call(ctx, x, compiled, model)
+					usage, answers, in.Meta.RequestStatus, skip = g.call(ctx, x, compiled, model)
 					in.Answers = answers
 				}
 			}
@@ -282,15 +283,30 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	return res
 }
 
-// call sends every compiled request concurrently, bounded by the route deadline (sync) or the
-// async deadline (observe) and by the attempt timeout.
-func (g *Gate) call(ctx context.Context, x *Exchange, c *decision.Compiled, model string) (*DecisionModelUsage, map[string]*decision.RawAnswer, map[string]string) {
+// call sends every compiled request concurrently. The gate waits until the route deadline (sync)
+// or the async deadline (observe); each attempt runs detached inside the client with its own
+// TRUTHTABLE_JEV_ATTEMPT_TIMEOUT, so an attempt still running at the deadline may finish as a late
+// decision, and a hanging vendor still counts against the breaker (SPEC §2.9 late decisions).
+//
+// When every request was refused before reaching the vendor (breaker, rate limit, budget, missing
+// credentials), skip is that refusal (SPEC §2.9 caller rules); a partial refusal is a request
+// status error:<kind> instead.
+func (g *Gate) call(ctx context.Context, x *Exchange, c *decision.Compiled, model string) (usage *DecisionModelUsage, answers map[string]*decision.RawAnswer, status map[string]string, skip string) {
 	class, deadline := jev.ClassSync, time.Duration(x.Route.DeadlineMs)*time.Millisecond
 	if x.Trace.Mode == decision.ModeObserve {
 		class, deadline = jev.ClassAsync, g.cfg.AsyncDeadline
 	}
-	ctx, cancel := context.WithTimeout(ctx, min(deadline, g.cfg.AttemptTimeout))
+	if deadline <= 0 {
+		deadline = g.cfg.AttemptTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
+	opt := jev.CallOptions{
+		Class: class, Scenario: x.Trace.Scenario,
+		HedgeAfter: time.Duration(x.Route.HedgeAfterMs) * time.Millisecond,
+		Enforcing:  x.Trace.Mode == decision.ModeBlock || x.Trace.Mode == decision.ModeFallback,
+		TraceID:    x.Trace.TraceID, Route: x.Route.Name, KeyLabel: x.Trace.KeyLabel,
+	}
 
 	type outcome struct {
 		resp *jev.Response
@@ -303,22 +319,26 @@ func (g *Gate) call(ctx context.Context, x *Exchange, c *decision.Compiled, mode
 		go func() {
 			defer wg.Done()
 			r := &c.Requests[k]
-			resp, err := g.cfg.Jev.Decide(ctx, &jev.Request{Model: r.Model, SessionID: x.Trace.TraceID, State: r.State, Questions: r.Questions},
-				jev.CallOptions{Class: class, Scenario: x.Trace.Scenario})
+			o := opt
+			o.OnLate = g.lateDecision(x.Trace.TraceID, k)
+			resp, err := g.cfg.Jev.Decide(ctx, jev.NewRequest(r, x.Trace.TraceID), o)
 			outcomes[k] = outcome{resp, err}
 		}()
 	}
 	wg.Wait()
 
-	usage := &DecisionModelUsage{Backend: g.cfg.Jev.Info().Backend, ModelRequested: &model, Calls: len(c.Requests), CostSource: jev.CostUnknown}
-	answers := map[string]*decision.RawAnswer{}
-	status := map[string]string{}
-	var costSources []string
+	usage = &DecisionModelUsage{Backend: g.cfg.Jev.Info().Backend, ModelRequested: &model, Calls: len(c.Requests), CostSource: jev.CostUnknown}
+	answers = map[string]*decision.RawAnswer{}
+	status = map[string]string{}
+	var costSources, skips []string
 	for k, o := range outcomes {
 		key := strconv.Itoa(k)
 		if o.err != nil {
-			usage.Attempts++
+			usage.Attempts += attemptsOf(o.err)
 			kind := jev.ErrorKind(o.err)
+			if reason, ok := jev.SkipReason(o.err); ok {
+				skips = append(skips, reason)
+			}
 			if kind == jev.KindTimeout {
 				status[key] = decision.RequestTimeout
 			} else {
@@ -358,7 +378,36 @@ func (g *Gate) call(ctx context.Context, x *Exchange, c *decision.Compiled, mode
 	if len(costSources) > 0 && !slices.ContainsFunc(costSources, func(s string) bool { return s != costSources[0] }) {
 		usage.CostSource = costSources[0]
 	}
-	return usage, answers, status
+	if len(skips) == len(c.Requests) {
+		// Nothing reached the vendor: the gate was skipped, not failed (decide() reads skip_reason).
+		return usage, answers, map[string]string{}, skips[0]
+	}
+	return usage, answers, status, ""
+}
+
+// attemptsOf is the number of vendor requests a failed call made (0 when it was refused before
+// any, such as by the breaker or the budget).
+func attemptsOf(err error) int {
+	var e *jev.Error
+	if errors.As(err, &e) {
+		return e.Attempts
+	}
+	return 1
+}
+
+// lateDecision receives a decision that arrived after the gate stopped waiting (SPEC §2.9): it is
+// never enforced. Passing it keeps the attempt running to its own timeout, so a hanging vendor
+// still counts against the breaker; recording it on the trace with late=true lands with the P3
+// handler pipeline, so for now it is logged.
+func (g *Gate) lateDecision(traceID string, request int) func(*jev.Response, error) {
+	return func(resp *jev.Response, err error) {
+		if err != nil {
+			g.log.Info("gate: late decision-model call failed", "trace_id", traceID, "request", request, "kind", jev.ErrorKind(err))
+			return
+		}
+		g.log.Info("gate: late decision arrived (recorded only, never enforced)", "trace_id", traceID, "request", request,
+			"latency_ms", resp.LatencyMs, "snapshot", resp.Snapshot)
+	}
 }
 
 // compileRoute is the part of a route compile() reads.
@@ -375,6 +424,13 @@ func (g *Gate) compileRoute(r *policy.Route, p *policy.Policy, model string) *de
 
 func (g *Gate) budget(r *policy.Route) decision.Budget {
 	b := g.cfg.Budget
+	// HTTP backends learn chars-per-token from usage.input_tokens (SPEC §2.9 cpt); compile packs
+	// evidence with the current estimate.
+	if src, ok := g.cfg.Jev.(jev.CPTSource); ok {
+		if cpt := src.CPT(); cpt > 0 {
+			b.CPT = cpt
+		}
+	}
 	b.MaxResponseTokens = r.Decision.MaxResponseTokens
 	b.EvidenceMaxTokens = r.Evidence.MaxTokens
 	return b

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -479,5 +480,128 @@ func TestMessages(t *testing.T) {
 	want := []ChatMessage{{Role: "user", Content: "a\nb"}, {Role: "function", Content: "x", Name: "f"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("messages %+v", got)
+	}
+}
+
+// scriptedJev answers every call with err (or delegates to Client when err is nil) and records the
+// call options the gate passed.
+type scriptedJev struct {
+	jev.Client
+	err  error
+	mu   sync.Mutex
+	opts []jev.CallOptions
+	dl   []time.Duration
+}
+
+func (s *scriptedJev) Decide(ctx context.Context, req *jev.Request, opt jev.CallOptions) (*jev.Response, error) {
+	s.mu.Lock()
+	s.opts = append(s.opts, opt)
+	if d, ok := ctx.Deadline(); ok {
+		s.dl = append(s.dl, time.Until(d))
+	}
+	s.mu.Unlock()
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.Client.Decide(ctx, req, opt)
+}
+
+// flagPolicy gates every answer in flag mode (block and fallback are refused until P3).
+func flagPolicy(t *testing.T, extra string) *policy.Policy {
+	t.Helper()
+	doc := []byte("version: 1\ndefaults:\n  mode: flag\n  deadline_ms: 1500\n" + extra)
+	p, err := policy.Parse(doc, policy.DefaultSeeds(), registry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestCallOptionsCarryRouteAndTrace(t *testing.T) {
+	p := flagPolicy(t, "  hedge_after_ms: 400\n")
+	cl := &scriptedJev{Client: strictMock(t, 0).Client}
+	g := newGate(t, cl, seq())
+	x := exchange(t, p, nil, []byte(defaultRouteBody), "Within 4 hours.", "")
+	x.Trace.KeyLabel = "support-app"
+	g.Evaluate(context.Background(), x)
+	if len(cl.opts) != 1 {
+		t.Fatalf("calls %d", len(cl.opts))
+	}
+	o := cl.opts[0]
+	if o.Class != jev.ClassSync || o.HedgeAfter != 400*time.Millisecond || o.Enforcing || o.TraceID != x.Trace.TraceID ||
+		o.Route != "default" || o.KeyLabel != "support-app" || o.OnLate == nil {
+		t.Errorf("call options %+v", o)
+	}
+	// A block (or fallback) trace may spend the enforcing reserve of the decision budget.
+	x.Trace.Mode = decision.ModeBlock
+	g.Evaluate(context.Background(), x)
+	if len(cl.opts) != 2 || !cl.opts[1].Enforcing {
+		t.Errorf("a block trace is enforcing: %+v", cl.opts)
+	}
+	// The gate waits for the route deadline (1.5 s), not min(deadline, attempt timeout 3 s → 1.5 s)
+	// capped any lower: attempts are bounded inside the client.
+	if d := cl.dl[0]; d < 1200*time.Millisecond || d > 1500*time.Millisecond {
+		t.Errorf("waiter deadline %v, want the 1.5 s route deadline", d)
+	}
+}
+
+func TestObserveCallsWaitForTheAsyncDeadline(t *testing.T) {
+	p := repoPolicy(t)
+	cl := &scriptedJev{Client: strictMock(t, 0).Client}
+	g, err := New(Config{Jev: cl, Evaluators: registry(t), Budget: decision.DefaultBudget(), AttemptTimeout: time.Second,
+		AsyncDeadline: 8 * time.Second, Rand: seq(), Logger: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := exchange(t, p, nil, []byte(defaultRouteBody), "Within 4 hours.", "")
+	if x.Trace.Mode != decision.ModeObserve {
+		t.Fatalf("the default route observes, got %s", x.Trace.Mode)
+	}
+	x.Route.SampleRate = 1
+	g.Evaluate(context.Background(), x)
+	if len(cl.opts) != 1 || cl.opts[0].Class != jev.ClassAsync || cl.opts[0].Enforcing {
+		t.Fatalf("observe call options %+v", cl.opts)
+	}
+	if d := cl.dl[0]; d < 7*time.Second {
+		t.Errorf("observe waiter deadline %v, want the 8 s async deadline (not the 1 s attempt timeout)", d)
+	}
+}
+
+func TestPreCallRefusalBecomesSkipReason(t *testing.T) {
+	for _, tc := range []struct {
+		kind, skip, degraded string
+	}{
+		{jev.KindBreakerOpen, "breaker_open", decision.DegradedBreaker},
+		{jev.KindBudget, "budget", decision.DegradedBudget},
+		{jev.KindRateLimited, "rate_limited", "rate_limited"},
+		{jev.KindCredentialsUnavailable, "credentials_unavailable", decision.DegradedOff},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			p := flagPolicy(t, "")
+			cl := &scriptedJev{Client: strictMock(t, 0).Client, err: &jev.Error{Kind: tc.kind}}
+			r := newGate(t, cl, seq()).Evaluate(context.Background(), exchange(t, p, nil, []byte(defaultRouteBody), "Within 4 hours.", ""))
+			d := r.Decision
+			if r.Status != "skipped:"+tc.skip || d.SkipReason == nil || *d.SkipReason != tc.skip {
+				t.Errorf("status %s skip %v", r.Status, d.SkipReason)
+			}
+			// Fail open: the answer passes, degraded by the refusal (SPEC §2.9 FAIL map).
+			if d.Action != decision.ActionPass || d.Degraded == nil || *d.Degraded != tc.degraded {
+				t.Errorf("action %s degraded %v, want pass %s", d.Action, d.Degraded, tc.degraded)
+			}
+			if d.DecisionModel == nil || d.DecisionModel.Attempts != 0 {
+				t.Errorf("a refused call reached no vendor: %+v", d.DecisionModel)
+			}
+			contractstest.Validate(t, "decision.v1.schema.json", d)
+		})
+	}
+}
+
+func TestVendorFailureStaysARequestError(t *testing.T) {
+	p := repoPolicy(t)
+	cl := &scriptedJev{Client: strictMock(t, 0).Client, err: &jev.Error{Kind: jev.KindAuth, Status: 401, Attempts: 1}}
+	r := newGate(t, cl, seq()).Evaluate(context.Background(),
+		exchange(t, p, map[string]string{"X-TrustAgent-Route": "support-bot"}, []byte(defaultRouteBody), "Within 4 hours.", ""))
+	if r.Status != "error:auth" || r.Decision.SkipReason != nil || r.Decision.DecisionModel.Attempts != 1 {
+		t.Errorf("status %s skip %v usage %+v", r.Status, r.Decision.SkipReason, r.Decision.DecisionModel)
 	}
 }
