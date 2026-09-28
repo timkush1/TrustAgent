@@ -2,7 +2,7 @@ import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { effectiveRoutes, policyState } from '@/test/control/fixtures';
+import { effectiveRoutes, policyState, policyVersion, policyVersionMeta } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
@@ -203,7 +203,46 @@ describe('Policies page', { timeout: 20_000 }, () => {
     expect(control.callsTo('/api/policies/rollback')[0].body).toMatchObject({ version: 2 });
   });
 
-  it('explains a diverged policies.yaml and adopts the file', async () => {
+  it('explains a diverged policies.yaml that is not applied, shows the edits and adopts the file', async () => {
+    // SPEC §7.2 and the gateway: the file changed after a newer dashboard edit, so the edit (version
+    // 4) stays in effect and the file waits to be adopted. Nothing to restore: the edit is in effect.
+    const user = userEvent.setup();
+    const control = createControlApi({
+      policies: policyState({
+        id: 4,
+        etag: '"v4"',
+        source: 'dashboard',
+        author: 'setup-admin',
+        message: 'Block contradictions on payments-faq',
+        file: { path: '/etc/trustagent/policies.yaml', sha256: 'b'.repeat(64), status: 'diverged', errors: [] },
+      }),
+      versions: [policyVersionMeta(4, { source: 'dashboard', author: 'setup-admin' }), policyVersionMeta(3), policyVersionMeta(2), policyVersionMeta(1)],
+      versionBodies: { 3: policyVersion(3, 'version: 1\ndefaults:\n  mode: observe\n') },
+    });
+    renderPage('/app/policies', { control });
+    expect(
+      await screen.findByText(/policies.yaml changed on disk after your dashboard edit from \d\d:\d\d and is not applied: version 4 stays in effect until you adopt the file/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/replaced your dashboard edit/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore my edit' })).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: 'View diff' }));
+    const diff = await screen.findByRole('dialog', { name: 'Your dashboard edits' });
+    expect(within(diff).getByText(/open \/etc\/trustagent\/policies.yaml to read it/)).toBeInTheDocument();
+    expect(await within(diff).findByText(/policies.yaml as last applied \(version 3\) → your edits in effect \(version 4\)/)).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Your dashboard edits' })).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Adopt file' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Adopt policies.yaml?' });
+    expect(within(confirm).getByText(/The file on disk replaces version 4 as the policy in effect/)).toBeInTheDocument();
+    await user.click(within(confirm).getByRole('button', { name: 'Adopt file' }));
+    await waitFor(() => expect(control.callsTo('/api/policies/adopt-file', 'POST')).toHaveLength(1));
+    expect(control.callsTo('/api/policies/rollback', 'POST')).toHaveLength(0);
+    await waitFor(() => expect(screen.queryByText(/is not applied/)).not.toBeInTheDocument());
+  });
+
+  it('offers to restore an edit that policies.yaml replaced', async () => {
     const user = userEvent.setup();
     const control = createControlApi({
       policies: policyState({ file: { path: '/etc/trustagent/policies.yaml', sha256: null, status: 'diverged', errors: [] } }),
@@ -215,6 +254,21 @@ describe('Policies page', { timeout: 20_000 }, () => {
     await user.click(within(confirm).getByRole('button', { name: 'Adopt file' }));
     await waitFor(() => expect(control.callsTo('/api/policies/adopt-file', 'POST')).toHaveLength(1));
     await waitFor(() => expect(screen.queryByText(/replaced your dashboard edit/)).not.toBeInTheDocument());
+  });
+
+  it('restores the dashboard edit that policies.yaml replaced', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({
+      policies: policyState({ file: { path: '/etc/trustagent/policies.yaml', sha256: null, status: 'diverged', errors: [] } }),
+    });
+    renderPage('/app/policies', { control });
+    await screen.findByText(/replaced your dashboard edit/);
+    await user.click(await screen.findByRole('button', { name: 'Restore my edit' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Restore your dashboard edit?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Restore my edit' }));
+    await waitFor(() => expect(control.callsTo('/api/policies/rollback', 'POST')).toHaveLength(1));
+    // Version 2 is the dashboard edit the file (version 3, in effect) replaced.
+    expect(control.callsTo('/api/policies/rollback')[0].body).toMatchObject({ version: 2 });
   });
 
   it('says why nothing can be changed on a read-only instance', async () => {
