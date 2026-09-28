@@ -74,6 +74,8 @@ func TestFieldErrorPositions(t *testing.T) {
 		{"evidence_sources", "version: 1\ndefaults:\n  evidence: {sources: [request_system]}\n  evaluators:\n    - {ref: groundedness@1, evidence_sources: [extension]}\n", "defaults.evaluators[0].evidence_sources[0]", 5, 48, "never widen"},
 		{"syntax", "version: 1\ndefaults: {mode: flag\n", "", 1, 1, "did not find expected"},
 		{"not a mapping", "- a\n- b\n", "", 1, 1, "must be a YAML mapping"},
+		{"second document", "version: 1\n---\nroutes: []\n", "", 3, 1, "single YAML document"},
+		{"broken second document", "version: 1\n---\nroutes: [\n", "", 3, 1, "did not find expected"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -95,6 +97,13 @@ func TestFieldErrorPositions(t *testing.T) {
 // TestInheritedErrorsReportedOnce: a bad defaults value is reported at the defaults, not again
 // for each route that inherits it; a cross-field rule that fails only in a route is reported for
 // that route.
+// TestDocumentMarkers: document start and end markers and an empty trailing document are fine.
+func TestDocumentMarkers(t *testing.T) {
+	for _, doc := range []string{"---\nversion: 1\n", "version: 1\n...\n", "version: 1\n---\n", "version: 1\n---\n# a comment\n"} {
+		mustCheck(t, doc, env(t))
+	}
+}
+
 func TestInheritedErrorsReportedOnce(t *testing.T) {
 	doc := `version: 1
 defaults:

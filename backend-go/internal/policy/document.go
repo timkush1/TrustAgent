@@ -66,6 +66,14 @@ func decodeDocument(src []byte) (*document, []FieldError) {
 	if err := dec.Decode(&d.typed); err != nil && !errors.Is(err, io.EOF) {
 		return nil, yamlErrors(err)
 	}
+	// A second document would be ignored silently (only the first is read): refuse it.
+	var extra yaml.Node
+	if err := dec.Decode(&extra); err != nil && !errors.Is(err, io.EOF) {
+		return nil, yamlErrors(err)
+	} else if err == nil && !emptyDocument(&extra) {
+		n := extra.Content[0]
+		return nil, []FieldError{{Line: n.Line, Col: n.Column, Message: "the policy must be a single YAML document: remove the one after ---"}}
+	}
 	var generic any
 	if err := root.Decode(&generic); err != nil {
 		return nil, yamlErrors(err)
@@ -76,6 +84,15 @@ func decodeDocument(src []byte) (*document, []FieldError) {
 	}
 	d.doc, _ = doc.(map[string]any)
 	return d, nil
+}
+
+// emptyDocument reports a document with no content (a trailing "---").
+func emptyDocument(doc *yaml.Node) bool {
+	if len(doc.Content) == 0 {
+		return true
+	}
+	n := doc.Content[0]
+	return len(doc.Content) == 1 && n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == ""
 }
 
 // yamlErrors converts a yaml.v3 error into field errors with line numbers.
