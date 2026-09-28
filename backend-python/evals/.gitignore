@@ -1,0 +1,4 @@
+# Local benchmark state: the resumable judge cache, the spend ledger and run
+# outputs. Published runs go to docs/benchmarks/ via `make bench-publish`.
+.cache/
+results/
