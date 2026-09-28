@@ -122,13 +122,31 @@ export function stopTrustingUserContext(yaml: string, route: string): string {
   return setRouteField(yaml, route, ['evidence', 'sources'], sources);
 }
 
-/** Applies a preset's settings over a route (arrays and scalars replace, like the policy merge). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Sets `value` at `path` the way routes merge over defaults (SPEC §2.7): a nested object merges
+ * key by key into the map already there, arrays and scalars replace.
+ */
+function mergeIn(doc: Document, path: (string | number)[], value: unknown): void {
+  if (isPlainObject(value) && isMap(doc.getIn(path, true))) {
+    for (const [key, inner] of Object.entries(value)) mergeIn(doc, [...path, key], inner);
+    return;
+  }
+  doc.setIn(path, structuredClone(value));
+}
+
+/**
+ * Applies a preset's settings over a route like the policy merge: nested objects (evidence,
+ * detectors, fallback, …) merge key by key, so a route's own `evidence.tag_patterns` survives a
+ * preset that sets `evidence.sources`; arrays and scalars replace.
+ */
 export function applyPreset(yaml: string, route: string, preset: Pick<PolicyPreset, 'settings'>): string {
   return edit(yaml, (doc) => {
     const base = routePath(doc, route);
-    for (const [key, value] of Object.entries(preset.settings)) {
-      doc.setIn([...base, key], structuredClone(value));
-    }
+    for (const [key, value] of Object.entries(preset.settings)) mergeIn(doc, [...base, key], value);
   });
 }
 

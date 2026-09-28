@@ -58,6 +58,28 @@ describe('policy draft edits', () => {
     });
   });
 
+  it('merges a preset into nested route settings key by key, like routes merge over defaults', () => {
+    const preset = {
+      settings: {
+        mode: 'fallback' as const,
+        evidence: { sources: ['request_system' as const, 'extension' as const] },
+        fallback: { upstream: 'same' as const, on_fail: 'flag' as const },
+        detectors: { block_on: ['urls_not_in_evidence' as const] },
+      },
+    };
+    const next = applyPreset(exampleYaml, 'payments-faq', preset);
+    const r = route(next, 'payments-faq');
+    // Arrays replace; the keys the preset does not name stay.
+    expect(r.evidence).toEqual({ sources: ['request_system', 'extension'] });
+    expect(r.detectors).toEqual({ block_on: ['urls_not_in_evidence'] });
+    expect(r.fallback).toMatchObject({ upstream: 'same', model: 'gpt-4o', on_fail: 'flag' });
+    expect((r.fallback as { system_prompt: string }).system_prompt).toMatch(/^Answer using only the information in CONTEXT/);
+    expect(r.block).toMatchObject({ style: 'message' });
+    // A route without the object gets the preset's whole object.
+    const support = route(applyPreset(exampleYaml, 'support-bot', preset), 'support-bot');
+    expect(support.fallback).toEqual({ upstream: 'same', on_fail: 'flag' });
+  });
+
   it('refuses unknown routes and broken YAML', () => {
     expect(() => setRouteMode(exampleYaml, 'nope', 'flag')).toThrow(DraftError);
     expect(() => setRouteMode('routes: [', 'x', 'flag')).toThrow(/does not parse/);
