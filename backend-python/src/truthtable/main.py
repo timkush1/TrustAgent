@@ -121,6 +121,7 @@ async def main():
     # Initialize the LLM provider with automatic fallback to local Ollama when a
     # cloud provider is unavailable (missing key / failed health check).
     provider, effective_provider = await init_provider(settings, logger)
+    judge_fallback_active = effective_provider != (settings.llm_provider or "ollama").lower()
 
     # Warm-up: Ollama loads the model into memory on the first completion,
     # which can take long enough to time out the first real audit. Pay that
@@ -240,6 +241,8 @@ async def main():
         qdrant_store=qdrant_store,
         embedding_service=embedding_service,
         ingestor=ingestor,
+        judge_provider=effective_provider,
+        judge_fallback_active=judge_fallback_active,
     )
     server = create_server(servicer, host=settings.grpc_host, port=settings.grpc_port)
 

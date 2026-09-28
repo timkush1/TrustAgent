@@ -39,6 +39,9 @@ _CODE_FENCE = re.compile(r"^```[a-zA-Z]*\s*|\s*```$")
 # Default cap for any single untrusted text entering a prompt.
 MAX_PROMPT_TEXT_CHARS = 8000
 
+# Cap on a verifier's reasoning (the prompt asks for one short sentence).
+MAX_REASONING_CHARS = 1000
+
 
 def sanitize_text(text: str, max_chars: int = MAX_PROMPT_TEXT_CHARS) -> str:
     """Strip hidden/control characters and cap length before prompt insertion."""
@@ -86,10 +89,12 @@ def validate_claims(parsed: Any, max_claims: int = 20, max_claim_chars: int = 50
 def validate_verdict(parsed: Any, allowed_statuses: set[str]) -> dict:
     """
     Validate verifier output against the expected schema:
-        {"status": <allowed>, "confidence": float, "evidence": [str, ...]}
+        {"status": <allowed>, "confidence": float, "evidence": [str, ...],
+         "reasoning"?: str}
 
     Raises ValueError on any violation; clamps confidence to [0, 1] and caps
-    evidence list size/length.
+    evidence list size/length. reasoning is optional: anything but a string
+    reads as "" and a long one is capped.
     """
     if not isinstance(parsed, dict):
         raise ValueError("Expected a JSON object")
@@ -109,4 +114,14 @@ def validate_verdict(parsed: Any, allowed_statuses: set[str]) -> dict:
         raise ValueError("Evidence must be a list")
     evidence = [str(item)[:500] for item in evidence_raw[:10]]
 
-    return {"status": status.upper(), "confidence": confidence, "evidence": evidence}
+    reasoning_raw = parsed.get("reasoning", "")
+    reasoning = (
+        reasoning_raw.strip()[:MAX_REASONING_CHARS] if isinstance(reasoning_raw, str) else ""
+    )
+
+    return {
+        "status": status.upper(),
+        "confidence": confidence,
+        "evidence": evidence,
+        "reasoning": reasoning,
+    }

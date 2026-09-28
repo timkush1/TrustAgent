@@ -5,7 +5,7 @@ Defines the state schema for the audit workflow.
 LangGraph uses TypedDict to define what data flows through the graph.
 """
 
-from typing import TypedDict, List, Dict, Optional
+from typing import TypedDict, List, Dict, NotRequired, Optional
 from enum import Enum
 
 
@@ -79,6 +79,7 @@ class ClaimVerification(TypedDict):
     status: VerificationStatus  # Verification outcome
     confidence: float  # Confidence score (0.0-1.0)
     evidence: List[str]  # Supporting/refuting snippets
+    reasoning: NotRequired[str]  # The judge's one-sentence explanation, when it gave one
 
 
 class AuditState(TypedDict):

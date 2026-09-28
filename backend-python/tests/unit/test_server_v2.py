@@ -343,6 +343,38 @@ async def test_health_check(stub: pb_grpc.AuditServiceStub) -> None:
     assert dict(response.dependencies) == {"judge": True}  # D10: no "ollama" key
 
 
+async def test_health_check_names_the_judge() -> None:
+    # SPEC 2.2 HealthResponse fields 4-7: the proxy's /api/status and WS hello
+    # show which judge runs deep audits and whether it is the fallback.
+    class NamedProvider:
+        model = "llama3.2:1b"
+
+        async def health_check(self) -> bool:
+            return True
+
+    servicer = AuditServicer(
+        audit_graph=None,
+        provider=NamedProvider(),
+        judge_provider="ollama",
+        judge_fallback_active=True,
+    )
+    async with serving(servicer) as audit_stub:
+        response = await audit_stub.HealthCheck(pb.HealthRequest(), timeout=RPC_TIMEOUT_S)
+
+    assert (response.judge_provider, response.judge_model) == ("ollama", "llama3.2:1b")
+    assert response.judge_fallback_active is True
+    assert response.knowledge_enabled is False
+
+
+async def test_health_check_without_a_named_judge_leaves_the_fields_empty(
+    stub: pb_grpc.AuditServiceStub,
+) -> None:
+    response = await stub.HealthCheck(pb.HealthRequest(), timeout=RPC_TIMEOUT_S)
+
+    assert (response.judge_provider, response.judge_model) == ("", "")
+    assert response.judge_fallback_active is False
+
+
 async def test_health_check_reports_unhealthy_provider() -> None:
     class UnhealthyProvider:
         async def health_check(self) -> bool:
@@ -721,6 +753,7 @@ async def test_evaluate_s0_scenario(
     assert [c.status for c in result.claims] == [_claim_status(c["verdict"]) for c in claims]
     assert [c.confidence for c in result.claims] == pytest.approx([c["confidence"] for c in claims])
     assert [list(c.evidence) for c in result.claims] == [c["evidence"] for c in claims]
+    assert [c.reasoning for c in result.claims] == [c["reasoning"] for c in claims]
     assert {c.decided_by for c in result.claims} == {"llm"}
     # S0 does not locate claims in the answer: every span is unaligned (-1, SPEC 2.1).
     assert {(c.span_start, c.span_end, c.span_method) for c in result.claims} == {(-1, -1, "")}

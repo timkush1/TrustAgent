@@ -138,7 +138,7 @@ def _record_claim_metrics(verifications: Iterable[ClaimVerification]) -> None:
 def _v2_claim(index: int, cv: ClaimVerification) -> evaluator_pb2.ClaimVerification:
     """v2 ClaimVerification: UNKNOWN=5 and NOT_CHECKED=6 keep their own values (D6)."""
     status = coerce_status(cv.get("status"))
-    # reasoning and quote are optional extras a verifier or decomposer may add.
+    # quote is an optional extra a decomposer may add (decomposer v2 locates claims, P2).
     extras: Dict[str, Any] = dict(cv)
     return evaluator_pb2.ClaimVerification(
         index=index,
@@ -146,7 +146,7 @@ def _v2_claim(index: int, cv: ClaimVerification) -> evaluator_pb2.ClaimVerificat
         status=_V2_CLAIM_STATUS[status],
         confidence=float(cv.get("confidence", 0.0)),
         evidence=list(cv.get("evidence") or []),
-        reasoning=str(extras.get("reasoning") or ""),
+        reasoning=cv.get("reasoning", ""),
         quote=str(extras.get("quote") or ""),
         decided_by="llm" if status in DECIDED_STATUSES else "none",
         span_start=UNALIGNED_SPAN,
@@ -194,7 +194,14 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     """
 
     def __init__(
-        self, audit_graph, provider=None, qdrant_store=None, embedding_service=None, ingestor=None
+        self,
+        audit_graph,
+        provider=None,
+        qdrant_store=None,
+        embedding_service=None,
+        ingestor=None,
+        judge_provider: str = "",
+        judge_fallback_active: bool = False,
     ):
         """
         Initialize the servicer.
@@ -206,12 +213,18 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             embedding_service: Embedding service for document ingestion (optional)
             ingestor: ClaimIngestor for claim-level (Gate-1 gated) ingestion;
                       None falls back to legacy chunk ingestion
+            judge_provider: Name of the judge in use (HealthResponse.judge_provider,
+                      e.g. "anthropic", "ollama", "mock"); "" when not known
+            judge_fallback_active: Whether the configured judge was unavailable and
+                      the engine runs on its fallback judge instead
         """
         self.audit_graph = audit_graph
         self.provider = provider
         self.qdrant_store = qdrant_store
         self.embedding_service = embedding_service
         self.ingestor = ingestor
+        self.judge_provider = judge_provider
+        self.judge_fallback_active = judge_fallback_active
         self._version = __version__
         logger.info("AuditServicer initialized")
 
@@ -521,7 +534,13 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         healthy = all(dependencies.values()) if dependencies else True
 
         return evaluator_pb2.HealthResponse(
-            healthy=healthy, version=self._version, dependencies=dependencies
+            healthy=healthy,
+            version=self._version,
+            dependencies=dependencies,
+            judge_provider=self.judge_provider,
+            judge_model=str(getattr(self.provider, "model", "") or ""),
+            judge_fallback_active=self.judge_fallback_active,
+            knowledge_enabled=self.qdrant_store is not None,
         )
 
     async def IngestDocuments(

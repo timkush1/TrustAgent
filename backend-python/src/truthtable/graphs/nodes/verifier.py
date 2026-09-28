@@ -147,6 +147,8 @@ async def verify_claim(
             "confidence": result["confidence"],
             "evidence": result["evidence"],
         }
+        if result["reasoning"]:
+            verification["reasoning"] = result["reasoning"]
 
         logger.debug(
             f"Verified claim: {claim[:50]}... -> {status.value} "
