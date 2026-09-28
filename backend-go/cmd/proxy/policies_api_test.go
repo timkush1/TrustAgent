@@ -423,6 +423,40 @@ func TestPoliciesAPIFileManagedAndLocked(t *testing.T) {
 	wantError(t, locked.do(t, "PUT", "/api/policies", adminKey, `{"yaml":"version: 1\n"}`, "If-Match", `"v1"`), http.StatusLocked, codeLocked)
 }
 
+// TestPoliciesAPIReadonly: read-only mode refuses every non-GET policy request, reads still work.
+func TestPoliciesAPIReadonly(t *testing.T) {
+	reg, err := evaluators.Builtins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "policies.yaml")
+	writePolicy(t, file, apiPolicyYAML)
+	engine, err := policy.NewEngine(context.Background(), policy.EngineConfig{File: file,
+		Env: policy.Env{Seeds: policy.DefaultSeeds(), Specs: reg}, Store: policytest.New(), Logger: quietLog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pols, err := newPoliciesAPI(engine, policytest.New(), quietLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := testGuards()
+	g.writable = (&server{cfg: &config.Config{Readonly: true}}).writable()
+	r := gin.New()
+	pols.register(r.Group("/api"), g)
+	p := &policyRouter{r: r, file: file}
+	checkState(t, p.do(t, "GET", "/api/policies", readKey, ""))
+	for _, req := range []struct{ method, path, body string }{
+		{"POST", "/api/policies/validate", `{"yaml":"version: 1\n"}`},
+		{"POST", "/api/policies/dry-run", `{"yaml":"version: 1\n","window":"1h"}`},
+		{"PUT", "/api/policies", `{"yaml":"version: 1\n"}`},
+		{"POST", "/api/policies/rollback", `{"version":1}`},
+		{"POST", "/api/policies/adopt-file", ""},
+	} {
+		wantError(t, p.do(t, req.method, req.path, adminKey, req.body, "If-Match", `"v1"`), http.StatusForbidden, "readonly")
+	}
+}
+
 func TestEvaluatorsAPI(t *testing.T) {
 	p := newPolicyRouter(t, nil, nil)
 	wantError(t, p.do(t, "GET", "/api/evaluators", "", ""), http.StatusUnauthorized, codeUnauthorized)

@@ -67,11 +67,13 @@ func (a *policiesAPI) register(api *gin.RouterGroup, g apiGuards) {
 	api.GET("/policies/versions/:id", g.read, g.rateLimit, a.version)
 	api.GET("/policies/export", g.read, g.rateLimit, a.export)
 	api.GET("/policies/presets", g.read, g.rateLimit, a.presetList)
-	api.POST("/policies/validate", g.read, g.rateLimit, g.bodyLimit, a.validate)
+	// Read-only mode refuses every non-GET /api/* request (SPEC §2.4), the read-scope
+	// validate and dry-run included.
+	api.POST("/policies/validate", g.writable, g.read, g.rateLimit, g.bodyLimit, a.validate)
 	api.PUT("/policies", g.writable, g.admin, g.rateLimit, g.bodyLimit, a.save)
 	api.POST("/policies/rollback", g.writable, g.admin, g.rateLimit, g.bodyLimit, a.rollback)
 	api.POST("/policies/adopt-file", g.writable, g.admin, g.rateLimit, g.bodyLimit, a.adoptFile)
-	api.POST("/policies/dry-run", g.read, g.dryRunLimit, g.bodyLimit, a.dryRun)
+	api.POST("/policies/dry-run", g.writable, g.read, g.dryRunLimit, g.bodyLimit, a.dryRun)
 }
 
 // isAdmin reports whether the caller may edit (PolicyState.editable).
