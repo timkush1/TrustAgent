@@ -1,0 +1,10 @@
+data: {"id":"cmpl-7","object":"text_completion","created":1760000300,"choices":[{"text":"Paris is","index":0,"logprobs":null,"finish_reason":null}],"model":"gpt-3.5-turbo-instruct"}
+
+data: {"id":"cmpl-7","object":"text_completion","created":1760000300,"choices":[{"text":" the capital.","index":0,"logprobs":null,"finish_reason":null}],"model":"gpt-3.5-turbo-instruct"}
+
+data: {"id":"cmpl-7","object":"text_completion","created":1760000300,"choices":[{"text":"","index":0,"logprobs":null,"finish_reason":"stop"}],"model":"gpt-3.5-turbo-instruct"}
+
+data: {"id":"cmpl-7","object":"text_completion","created":1760000300,"model":"gpt-3.5-turbo-instruct","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":5,"total_tokens":11}}
+
+data: [DONE]
+
