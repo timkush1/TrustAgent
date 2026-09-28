@@ -18,6 +18,7 @@ import { Route as AppPoliciesRouteImport } from './routes/app/policies'
 import { Route as AppSavingsRouteImport } from './routes/app/savings'
 import { Route as AppAuditsIdRouteImport } from './routes/app/audits/$id'
 import { Route as AppEvaluatorsIndexRouteImport } from './routes/app/evaluators/index'
+import { Route as AppEvaluatorsIdRouteImport } from './routes/app/evaluators/$id'
 import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
 import { Route as AppSettingsSectionRouteImport } from './routes/app/settings/$section'
 import { Route as AppTracesIdRouteImport } from './routes/app/traces/$id'
@@ -69,6 +70,11 @@ const AppEvaluatorsIndexRoute = AppEvaluatorsIndexRouteImport.update({
   path: '/evaluators/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEvaluatorsIdRoute = AppEvaluatorsIdRouteImport.update({
+  id: '/evaluators/$id',
+  path: '/evaluators/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/app/savings': typeof AppSavingsRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
+  '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
@@ -119,6 +126,7 @@ export interface FileRoutesByTo {
   '/app/savings': typeof AppSavingsRoute
   '/app': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
+  '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
@@ -136,6 +144,7 @@ export interface FileRoutesById {
   '/app/savings': typeof AppSavingsRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
+  '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
@@ -154,6 +163,7 @@ export interface FileRouteTypes {
     | '/app/savings'
     | '/app/'
     | '/app/audits/$id'
+    | '/app/evaluators/$id'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/app/savings'
     | '/app'
     | '/app/audits/$id'
+    | '/app/evaluators/$id'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | '/app/savings'
     | '/app/'
     | '/app/audits/$id'
+    | '/app/evaluators/$id'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
@@ -263,6 +275,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEvaluatorsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/evaluators/$id': {
+      id: '/app/evaluators/$id'
+      path: '/evaluators/$id'
+      fullPath: '/app/evaluators/$id'
+      preLoaderRoute: typeof AppEvaluatorsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/settings/': {
       id: '/app/settings/'
       path: '/settings'
@@ -308,6 +327,7 @@ interface AppRouteChildren {
   AppSavingsRoute: typeof AppSavingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppAuditsIdRoute: typeof AppAuditsIdRoute
+  AppEvaluatorsIdRoute: typeof AppEvaluatorsIdRoute
   AppSettingsSectionRoute: typeof AppSettingsSectionRoute
   AppTracesIdRoute: typeof AppTracesIdRoute
   AppTrafficTraceIdRoute: typeof AppTrafficTraceIdRoute
@@ -323,6 +343,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSavingsRoute: AppSavingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppAuditsIdRoute: AppAuditsIdRoute,
+  AppEvaluatorsIdRoute: AppEvaluatorsIdRoute,
   AppSettingsSectionRoute: AppSettingsSectionRoute,
   AppTracesIdRoute: AppTracesIdRoute,
   AppTrafficTraceIdRoute: AppTrafficTraceIdRoute,
