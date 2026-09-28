@@ -48,3 +48,14 @@ jobs:
       - name: make contracts-check contracts-test contracts-go
         if: hashFiles('contracts/**') != ''
         run: make contracts-check contracts-test contracts-go
+
+      # docs/CONFIGURATION.md and .env.example are generated from the key registry
+      # (SPEC §3.4): fail with a diff when a key changed without `make config-docs`.
+      # The generator is standard-library Python; the runner's python3 is enough.
+      - name: Configuration docs match the key registry (gen_config_docs --check)
+        run: python3 scripts/gen_config_docs.py --check
+
+      # contracts/schema/api.v1.schema.json is generated from frontend-react/src/types/api.ts
+      # (contracts/tools/api-schema, pinned generator): fail when the two drift apart.
+      - name: api.v1 schema matches src/types/api.ts (gen-api-schema-check)
+        run: make gen-api-schema-check
