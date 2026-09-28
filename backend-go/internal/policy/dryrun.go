@@ -177,23 +177,27 @@ func (d *DryRun) Run(ctx context.Context, src ReplaySource) (*DryRunResult, erro
 				return nil
 			}
 			old := recorded(row.PolicyVersion)
-			cur, curRoute, skip := d.input(d.Current, row, rec, old, notes, body)
+			cur, skip := d.input(d.Current, row, rec, old, notes, body)
 			if skip != "" {
 				skipped[skip]++
 				return nil
 			}
-			prop, propRoute, skip := d.input(d.Proposed, row, rec, old, notes, body)
+			prop, skip := d.input(d.Proposed, row, rec, old, notes, body)
 			if skip != "" {
 				skipped[skip]++
 				return nil
 			}
 			c, err := decision.Decide(cur)
 			if err != nil {
-				return fmt.Errorf("replay %s (current, route %s): %w", row.TraceID, curRoute.Name, err)
+				notes["unreplayable"] = true
+				skipped[SkipNoAnswers]++
+				return nil
 			}
 			p, err := decision.Decide(prop)
 			if err != nil {
-				return fmt.Errorf("replay %s (proposed, route %s): %w", row.TraceID, propRoute.Name, err)
+				notes["unreplayable"] = true
+				skipped[SkipNoAnswers]++
+				return nil
 			}
 			if row.Late {
 				late++
@@ -284,7 +288,7 @@ func parseRecorded(doc json.RawMessage) (*recordedDecision, error) {
 // input builds the decide() input of a recorded trace under policy p. It returns a skip reason
 // when the recording cannot answer for p.
 func (d *DryRun) input(p *Policy, row *store.ReplayRow, rec *recordedDecision, old *Policy, notes map[string]bool,
-	body func(traceID string) *store.BodyRecord) (*decision.Input, *Route, string) {
+	body func(traceID string) *store.BodyRecord) (*decision.Input, string) {
 	route, ok := p.Route(row.Route)
 	if !ok {
 		route = p.Default
@@ -353,7 +357,7 @@ func (d *DryRun) input(p *Policy, row *store.ReplayRow, rec *recordedDecision, o
 		}
 		st, ok := rerunNumbers(row, route.Detectors.MinInteger, d.Now)
 		if !ok {
-			return nil, route, SkipBodyExpired
+			return nil, SkipBodyExpired
 		}
 		in.Detectors[decision.DetNumbers] = st
 	}
@@ -432,7 +436,7 @@ func (d *DryRun) input(p *Policy, row *store.ReplayRow, rec *recordedDecision, o
 		}
 		spec, ok := d.Specs.Get(e.Ref)
 		if !ok {
-			return nil, route, SkipNotInHistory
+			return nil, SkipNotInHistory
 		}
 		if spec.ID == decision.FactualClaimsID {
 			attached = true
@@ -446,7 +450,7 @@ func (d *DryRun) input(p *Policy, row *store.ReplayRow, rec *recordedDecision, o
 			th.Space = decision.SpaceRaw
 		}
 		if skip := add(e.Ref, spec, e.StageOrDefault(), false, th, e.Params, sr); skip != "" {
-			return nil, route, skip
+			return nil, skip
 		}
 	}
 	// compile() step 3: the implicit factual_claims evaluator.
@@ -454,13 +458,13 @@ func (d *DryRun) input(p *Policy, row *store.ReplayRow, rec *recordedDecision, o
 		spec, ok := d.Specs.Get(decision.FactualClaimsRef)
 		sr := stored[decision.FactualClaimsRef]
 		if !ok || (sr == nil && !skipped) {
-			return nil, route, SkipNotInHistory
+			return nil, SkipNotInHistory
 		}
 		if skip := add(decision.FactualClaimsRef, spec, decision.StageActive, true, decision.Thresholds{Space: decision.SpaceRaw}, nil, sr); skip != "" {
-			return nil, route, skip
+			return nil, skip
 		}
 	}
-	return in, route, ""
+	return in, ""
 }
 
 // paramsOf returns the params a route sets for ref.
@@ -523,6 +527,9 @@ func (d *DryRun) caveats(res *DryRunResult, notes map[string]bool, skipped map[s
 	}
 	if n := skipped[SkipNoAnswers]; n > 0 {
 		out = append(out, fmt.Sprintf("%d traces were skipped because they have no stored answers (sampled out or not recorded).", n))
+	}
+	if notes["unreplayable"] {
+		out = append(out, "Some recorded decisions could not be replayed (an inconsistent recording) and are counted as having no answers.")
 	}
 	if n := skipped[SkipBodyExpired]; n > 0 {
 		out = append(out, fmt.Sprintf("%d traces were skipped because re-running the numbers detector for the new min_integer needs their body, which was not kept or has expired.", n))

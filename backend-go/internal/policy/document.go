@@ -144,9 +144,14 @@ func jsonCompatible(v any) (any, error) {
 	return nil, fmt.Errorf("unsupported value %v", v)
 }
 
+// maxWalk bounds the nodes the structural walk visits. Aliases are walked where they are used,
+// so a document of nested aliases ("billion laughs") would otherwise take exponential time.
+const maxWalk = 200_000
+
 // walker checks a node tree against a Go type shaped by yaml tags.
 type walker struct {
-	errs []FieldError
+	errs    []FieldError
+	visited int
 }
 
 var optFloatType = reflect.TypeOf(OptFloat{})
@@ -163,6 +168,13 @@ func join(path, key string) string {
 }
 
 func (w *walker) walk(n *yaml.Node, t reflect.Type, path string) {
+	w.visited++
+	if w.visited > maxWalk {
+		if w.visited == maxWalk+1 {
+			w.fail(n, path, "the document is too large or expands too many aliases")
+		}
+		return
+	}
 	for n.Kind == yaml.AliasNode && n.Alias != nil {
 		n = n.Alias
 	}
@@ -354,6 +366,9 @@ func find(n *yaml.Node, path []seg) (*yaml.Node, bool) {
 			return cur, false
 		}
 		cur = next
+	}
+	for cur != nil && cur.Kind == yaml.AliasNode && cur.Alias != nil {
+		cur = cur.Alias
 	}
 	return cur, true
 }

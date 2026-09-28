@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -309,5 +312,73 @@ func TestValidationErrorFormatting(t *testing.T) {
 	}
 	if s := (FieldError{Message: "m"}).String(); s != "m" {
 		t.Errorf("bare error %q", s)
+	}
+}
+
+// TestAnchorsAndAliases: YAML anchors resolve like the values they name.
+func TestAnchorsAndAliases(t *testing.T) {
+	doc := `version: 1
+defaults: &base
+  mode: flag
+routes: &rs
+  - name: a
+    match: {}
+    deadline_ms: &d 700
+    hedge_after_ms: 0
+    decision: {max_response_tokens: *d}
+`
+	p := mustCheck(t, doc, env(t))
+	if p.Routes[0].DeadlineMs != 700 || p.Routes[0].Decision.MaxResponseTokens != 700 || p.Default.Mode != "flag" {
+		t.Errorf("aliases %+v", p.Routes[0].Settings)
+	}
+	res := Check([]byte("version: 1\nx: &a {mode: flag}\ndefaults: *a\n"), env(t))
+	if res.Policy != nil || findError(res.Errors, "x") == nil {
+		t.Errorf("unknown anchored field %+v", res.Errors)
+	}
+}
+
+// FuzzCheck: arbitrary input never panics, and a valid result always has a document and a hash.
+func FuzzCheck(f *testing.F) {
+	for _, seed := range []string{"version: 1\n", "", "- a", "version: 1\nroutes: [{name: a, match: {}}]\n",
+		"version: 1\ndefaults: {evaluators: [{ref: groundedness@1, thresholds: {critical_at: null}}]}\n",
+		"version: 1\nroutes: &r [{name: a, match: {}}]\ndefaults: {mode: *r}\n", "version: 1\ndefaults: {deadline_ms: 1e400}\n"} {
+		f.Add(seed)
+	}
+	reg, err := registryFor()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Fuzz(func(t *testing.T, doc string) {
+		res := Check([]byte(doc), Env{Seeds: DefaultSeeds(), Specs: reg, Enforcing: true})
+		if res.Policy != nil && (len(res.Policy.Doc) == 0 || res.Policy.SHA256 == "" || res.Policy.Default == nil) {
+			t.Errorf("valid result without doc or hash: %q", doc)
+		}
+		if res.Policy == nil && len(res.Errors) == 0 {
+			t.Errorf("invalid result without errors: %q", doc)
+		}
+	})
+}
+
+// TestAliasBomb: aliases are walked where they are used, so a small document of anchored lists
+// could name a huge tree; validation stops at a budget instead of taking quadratic or worse time.
+func TestAliasBomb(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("version: 1\ndefaults:\n  evidence:\n    untrusted_tools: &p [")
+	for i := range 2000 {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("t" + strconv.Itoa(i))
+	}
+	b.WriteString("]\nroutes: [&r {name: a, match: {}, evidence: {untrusted_tools: *p}}")
+	b.WriteString(strings.Repeat(", *r", 2000))
+	b.WriteString("]\n")
+	start := time.Now()
+	res := Check([]byte(b.String()), env(t))
+	if res.Policy != nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("alias bomb accepted or slow: %v", time.Since(start))
+	}
+	if !slices.ContainsFunc(res.Errors, func(e FieldError) bool { return strings.Contains(e.Message, "too many aliases") }) {
+		t.Errorf("errors %v", res.Errors[:min(3, len(res.Errors))])
 	}
 }

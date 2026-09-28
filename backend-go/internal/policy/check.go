@@ -177,6 +177,10 @@ func (c *checker) run() *Policy {
 	}
 	names := map[string]bool{}
 	for i, raw := range rawRoutes {
+		if i >= len(d.typed.Routes) || i >= len(c.routeNodes) {
+			c.topError("routes", mappingValue(d.root, "routes"), "the routes list could not be read")
+			return nil
+		}
 		rr, _ := raw.(map[string]any)
 		t := d.typed.Routes[i]
 		sc := scope{name: t.Name, index: i}

@@ -15,12 +15,14 @@ import (
 
 func registry(t *testing.T) *evaluators.Registry {
 	t.Helper()
-	r, err := evaluators.Builtins()
+	r, err := registryFor()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return r
 }
+
+func registryFor() (*evaluators.Registry, error) { return evaluators.Builtins() }
 
 func parse(t *testing.T, doc string) *Policy {
 	t.Helper()
