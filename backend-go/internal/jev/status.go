@@ -38,10 +38,13 @@ type StatusError struct {
 
 // statusTracker keeps the counters and the last outcome behind Status.
 type statusTracker struct {
-	mu              sync.Mutex
-	lastErr         *StatusError
-	lastOK          time.Time
-	unreachable     bool
+	mu          sync.Mutex
+	lastErr     *StatusError
+	lastOK      time.Time
+	unreachable bool
+	// transient marks a last error that a retry may cure (the in-flight 402 is kind credits but
+	// says nothing about the balance).
+	transient       bool
 	calls, attempts int64
 	costUSD         float64
 }
@@ -65,7 +68,7 @@ func (s *statusTracker) attempt(at time.Time, costUSD float64, err *Error, neutr
 		s.lastOK, s.unreachable = at, false
 	default:
 		s.lastErr = &StatusError{Kind: err.Kind, Message: err.Message, Hint: err.Hint, Status: err.Status, At: at}
-		s.unreachable = network
+		s.unreachable, s.transient = network, err.Retryable
 	}
 }
 
@@ -76,8 +79,9 @@ func (s *statusTracker) keyCheck(at time.Time, err *Error) {
 	if err == nil {
 		return
 	}
-	if err.Kind == KindAuth || err.Kind == KindCredits {
+	if (err.Kind == KindAuth || err.Kind == KindCredits) && !err.Retryable {
 		s.lastErr = &StatusError{Kind: err.Kind, Message: err.Message, Hint: err.Hint, Status: err.Status, At: at}
+		s.unreachable, s.transient = false, false
 	}
 }
 
@@ -98,6 +102,9 @@ func (s *statusTracker) fill(st *Status, b breakerView, spend *SpendStatus) {
 	kind := ""
 	if errAfterOK {
 		kind = s.lastErr.Kind
+		if kind == KindCredits && s.transient {
+			kind = KindRetryable // OpenRouter's in-flight budget: busy, not out of credits
+		}
 	}
 	switch {
 	case b.state == BreakerOpen && kind == KindAuth:

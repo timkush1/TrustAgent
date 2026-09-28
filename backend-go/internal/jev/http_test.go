@@ -1129,3 +1129,21 @@ func TestKeyCheckStaysOnTheDecisionOrigin(t *testing.T) {
 		t.Errorf("the OpenRouter base got %d requests: %+v", len(reqs), reqs[0])
 	}
 }
+
+func TestInFlightBudgetIsNotNoCredits(t *testing.T) {
+	h := newHarness(t, mockupstream.Config{})
+	busy := h.client(BackendOpenRouterDecisions, h.withFault("402_inflight"))
+	if _, err := decide(t, busy, testRequest("t"), CallOptions{}); ErrorKind(err) != KindCredits {
+		t.Fatalf("in-flight 402: %v", err)
+	}
+	if st := busy.Status(); st.State != "degraded" || st.LastError == nil || st.LastError.Kind != KindCredits || st.Breaker != BreakerClosed {
+		t.Errorf("a transient in-flight 402 is busy, not out of credits: %+v", st)
+	}
+	broke := h.client(BackendOpenRouterDecisions, h.withFault("402_credits"))
+	if _, err := decide(t, broke, testRequest("t2"), CallOptions{}); ErrorKind(err) != KindCredits {
+		t.Fatalf("credits 402: %v", err)
+	}
+	if st := broke.Status(); st.State != "no_credits" {
+		t.Errorf("an empty account shows no_credits: %+v", st)
+	}
+}
