@@ -434,6 +434,37 @@ func TestProducerOverflowBecomesAGap(t *testing.T) {
 	}
 }
 
+// A reconnect whose next event was dropped at Publish (a hub_overflow hole in the seqs) cannot be
+// replayed: it gets a buffer_evicted gap, not the events after the hole.
+func TestReplayAcrossAnOverflowHoleIsAGap(t *testing.T) {
+	h := NewHub(Config{ProducerBuffer: 1, Logger: slog.New(slog.DiscardHandler)})
+	h.Publish(policyEvent(t, 1))
+	h.dispatch(<-h.events) // seq 1
+	h.Publish(policyEvent(t, 2))
+	h.Publish(policyEvent(t, 3)) // dropped: seq 2
+	h.flushOverflow()
+	h.dispatch(<-h.events) // seq 3
+	if h.ring.has(2) || !h.ring.has(1) || !h.ring.has(3) {
+		t.Fatalf("ring seqs: has(1)=%v has(2)=%v has(3)=%v", h.ring.has(1), h.ring.has(2), h.ring.has(3))
+	}
+
+	since := int64(1)
+	c := &client{send: make(chan []byte, 8), protocol: ProtocolV2, content: true}
+	if err := h.add(&registration{c: c, sinceSeq: &since, epoch: h.Epoch()}); err != nil {
+		t.Fatal(err)
+	}
+	hello, gap := string(<-c.send), string(<-c.send)
+	if !strings.Contains(hello, `"replayed_from":null`) {
+		t.Errorf("hello %s", hello)
+	}
+	if !strings.Contains(gap, `"reason":"buffer_evicted"`) || !strings.Contains(gap, `"from_seq":2,"to_seq":3`) {
+		t.Errorf("gap %s", gap)
+	}
+	if len(c.send) != 0 {
+		t.Errorf("%d events replayed across the hole", len(c.send))
+	}
+}
+
 func TestRingCaps(t *testing.T) {
 	r := newRing(3, 100)
 	for i := int64(1); i <= 5; i++ {

@@ -689,9 +689,18 @@ func (r *ring) evict() {
 
 func (r *ring) at(i int) *ringEntry { return &r.buf[(r.head+i)%len(r.buf)] }
 
-// has reports whether seq is still in the ring.
+// has reports whether the event with seq is still in the ring. Ring seqs increase but are not
+// contiguous: the events dropped at Publish (a hub_overflow gap) have seqs no ring entry carries.
 func (r *ring) has(seq int64) bool {
-	return r.n > 0 && seq >= r.at(0).seq && seq <= r.at(r.n-1).seq
+	if r.n == 0 || seq < r.at(0).seq || seq > r.at(r.n-1).seq {
+		return false
+	}
+	for i := 0; i < r.n; i++ {
+		if s := r.at(i).seq; s >= seq {
+			return s == seq
+		}
+	}
+	return false
 }
 
 // after returns the entries with a seq above since, oldest first.
