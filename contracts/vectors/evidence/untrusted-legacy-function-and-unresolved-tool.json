@@ -3,7 +3,7 @@
   "kind": "evidence",
   "name": "untrusted-legacy-function-and-unresolved-tool",
   "status": "frozen",
-  "description": "The legacy role \"function\" message is named search_web by its name field, which matches the untrusted_tools glob search_*: its item is kept, marked untrusted, and still counted before dedup. The tool message's tool_call_id matches no assistant tool call, so it has no name and cannot match a glob: a trusted item. Both get positional ids.",
+  "description": "The legacy role \"function\" message is named search_web by its name field, which matches the untrusted_tools glob search_*: its item is kept, marked untrusted, and still counted before dedup. The tool message's tool_call_id matches no assistant tool call, so it has no name, which search_* does not match: a trusted item (how a bare * glob treats an unresolved name is not pinned here). Both get positional ids.",
   "input": {
     "api_format": "openai_chat",
     "settings": {
