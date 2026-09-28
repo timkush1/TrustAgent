@@ -36,7 +36,8 @@ def download_halueval(samples: int, seed: int) -> None:
 
     if not RAW_PATH.exists():
         print(f"Downloading HaluEval QA data from {HALUEVAL_QA_URL} ...")
-        with urllib.request.urlopen(HALUEVAL_QA_URL) as response:  # nosec B310 - fixed https URL
+        # A fixed https:// URL.
+        with urllib.request.urlopen(HALUEVAL_QA_URL) as response:  # nosec B310
             RAW_PATH.write_bytes(response.read())
         print(f"Saved raw data to {RAW_PATH}")
     else:
@@ -50,7 +51,7 @@ def download_halueval(samples: int, seed: int) -> None:
                 items.append(json.loads(line))
     print(f"Loaded {len(items)} HaluEval QA items")
 
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311
     n_items = min(samples // 2, len(items))
     sampled = rng.sample(items, n_items)
 
