@@ -29,5 +29,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "e2e/**/*.ts", "src/test/lint", "scripts"]
+  "include": ["vite.config.ts", "vite.site.ts", "playwright.config.ts", "e2e/**/*.ts", "src/test/lint", "scripts"]
 }

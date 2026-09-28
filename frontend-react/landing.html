@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>TrustAgent: catch hallucinations before your users do</title>
+    <meta
+      name="description"
+      content="An open-source gateway that checks every LLM answer against the documents your app already sent, and sends only the risky ones to a full LLM audit."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="TrustAgent: catch hallucinations before your users do" />
+    <meta
+      property="og:description"
+      content="Open-source hallucination gateway: a fast check on every answer, a claim-by-claim audit for the risky ones. Try the recorded demo, or run it locally with no keys."
+    />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <!-- Sets data-theme before first paint (no flash); a file, so the CSP needs no inline script. -->
+    <script src="%BASE_URL%theme-init.js"></script>
+  </head>
+  <body>
+    <noscript>
+      TrustAgent is an open-source hallucination gateway for LLM apps. This page needs JavaScript to
+      show its interactive parts; the source and documentation are at
+      <a href="https://github.com/timkush1/TrustAgent">github.com/timkush1/TrustAgent</a>.
+    </noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/landing/main.tsx"></script>
+  </body>
+</html>
