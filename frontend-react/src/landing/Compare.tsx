@@ -50,11 +50,11 @@ export function Compare() {
       {/* A focusable, named scroll region: keyboard users can scroll the table sideways on a phone. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <div className="overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Comparison table (scrolls sideways)">
-        <table className="w-full min-w-[56rem] border-collapse text-left text-sm">
+        <table className="w-full min-w-[60rem] border-collapse text-left text-sm">
           <caption className="sr-only">TrustAgent compared with four kinds of tools. Cells marked TODO are not yet verified.</caption>
           <thead>
             <tr className="border-b border-border bg-surface-sunken">
-              <th scope="col" className="w-64 px-4 py-3 font-medium text-fg-muted">
+              <th scope="col" className="w-64 min-w-48 px-4 py-3 font-medium text-fg-muted">
                 <span className="sr-only">Tool</span>
               </th>
               {columns.map((c) => (
@@ -92,8 +92,8 @@ export function Compare() {
         </table>
       </div>
       <p className="mt-3 text-xs text-fg-muted">
-        Other products’ cells stay blank until each is checked against that vendor’s own documentation, dated and linked. We would
-        rather show a gap than a guess.
+        Other products’ cells are placeholders until each is checked against that vendor’s own documentation, dated and
+        linked. We would rather show a gap than a guess.
       </p>
 
       <div className="mt-16 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
