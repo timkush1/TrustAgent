@@ -118,6 +118,9 @@ type Config struct {
 	ProducerBuffer int
 	// AllowedOrigins are the browser origins allowed to connect; an empty Origin is allowed.
 	AllowedOrigins []string
+	// OriginAllowed, when set, admits further origins (the dashboard's own TRUTHTABLE_PUBLIC_URL
+	// origin, as the CSRF check does).
+	OriginAllowed func(origin string) bool
 	// Hello supplies demo, readonly and the status summary of hello; nil sends zero values.
 	Hello  func() HelloInfo
 	Now    func() time.Time
@@ -193,10 +196,10 @@ func NewHub(cfg Config) *Hub {
 		clients: map[*client]struct{}{}, perIP: map[string]int{},
 		ring: newRing(max(cfg.ReplayEvents, 0), cfg.ReplayMaxBytes),
 	}
-	origins := slices.Clone(cfg.AllowedOrigins)
+	origins, extra := slices.Clone(cfg.AllowedOrigins), cfg.OriginAllowed
 	h.upgrader = websocket.Upgrader{ReadBufferSize: 1024, WriteBufferSize: 4096, CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
-		return origin == "" || slices.Contains(origins, origin)
+		return origin == "" || slices.Contains(origins, origin) || (extra != nil && extra(origin))
 	}}
 	return h
 }

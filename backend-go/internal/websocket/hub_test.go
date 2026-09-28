@@ -543,3 +543,38 @@ func waitLastSeq(t *testing.T, h *testHub, n int64) {
 		time.Sleep(2 * time.Millisecond)
 	}
 }
+
+// TestOriginCheck: the allow-list and the OriginAllowed hook admit an origin, anything else is
+// refused before the upgrade, and a request without an Origin (a non-browser client) connects.
+func TestOriginCheck(t *testing.T) {
+	h := startHub(t, Config{
+		AllowedOrigins: []string{"http://allowed.example"},
+		OriginAllowed:  func(o string) bool { return o == "https://dashboard.example" },
+	}, true)
+	for origin, ok := range map[string]bool{
+		"":                          true,
+		"http://allowed.example":    true,
+		"https://dashboard.example": true,
+		"https://evil.example":      false,
+	} {
+		header := http.Header{}
+		if origin != "" {
+			header.Set("Origin", origin)
+		}
+		conn, resp, err := websocket.DefaultDialer.Dial(h.url+"/ws?protocol=2", header)
+		if ok {
+			if err != nil {
+				t.Errorf("origin %q refused: %v", origin, err)
+				continue
+			}
+			_ = conn.Close()
+			continue
+		}
+		if err == nil {
+			_ = conn.Close()
+			t.Errorf("origin %q connected", origin)
+		} else if resp == nil || resp.StatusCode != http.StatusForbidden {
+			t.Errorf("origin %q: want 403, got %v", origin, resp)
+		}
+	}
+}
