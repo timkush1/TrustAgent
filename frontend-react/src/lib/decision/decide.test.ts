@@ -130,6 +130,38 @@ describe('the decision core end to end', () => {
     expect(absent.evaluators['groundedness@1'].thresholds.critical_at).toBe(0.95);
   });
 
+  it('records a null answer probability as 0, as the Go reference decodes it', () => {
+    const answers = {
+      groundedness__v1: { type: 'noul' as const, noul: 0.05 },
+      contradiction__v1: { type: 'noul' as const, noul: 0.02 },
+    };
+    const { input } = gate('flag', answers);
+    const refusal = builtinSpec('refusal@1')!;
+    const withChoice: DecideInput = {
+      ...input,
+      evaluators: [...input.evaluators, { ref: 'refusal@1', spec: refusal.raw, stage: 'active', internal: false, thresholds: { space: 'raw' } }],
+      answers: {
+        ...answers,
+        refusal__v1: {
+          type: 'choice',
+          choice: 'answers_request',
+          probabilities: { answers_request: 0.9, declines_or_deflects: null as unknown as number, nothing_to_answer: 0.1 },
+          legend: { x: null },
+        },
+      },
+      question_map: { ...input.question_map, refusal__v1: 'refusal@1' },
+      meta: { ...input.meta, qid_request: { ...input.meta.qid_request, refusal__v1: 0 } },
+    };
+    const r = decide(withChoice).evaluators['refusal@1'];
+    expect(r.answer).toEqual({
+      type: 'choice',
+      choice: 'answers_request',
+      probabilities: { answers_request: 0.9, declines_or_deflects: 0, nothing_to_answer: 0.1 },
+      legend: { x: null },
+    });
+    expect(r).toMatchObject({ status: 'assessed', level: 'ok', risk_raw: 0 });
+  });
+
   it.each([
     ['configured_mode', (i: DecideInput) => ({ ...i, policy: { ...i.policy, configured_mode: 'enforce' as never } }), /configured_mode/],
     ['fail', (i: DecideInput) => ({ ...i, policy: { ...i.policy, fail: 'shut' as never } }), /fail mode/],

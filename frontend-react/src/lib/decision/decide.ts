@@ -387,13 +387,17 @@ function assess(
   return e;
 }
 
-/** The answer as decision/v1 records it: type, plus the members that are set (Go omitempty). */
+/**
+ * The answer as decision/v1 records it: type, plus the members that are set (Go omitempty). A null
+ * probability is recorded as 0, the value Go's decoder stores for it (and the one normalize uses).
+ */
 function rawAnswerView(a: RawAnswerInput): NonNullable<EvaluatorResult['answer']> {
   const out: Record<string, unknown> = { type: a.type ?? '' };
   for (const key of ['noul', 'choice', 'score', 'confidence', 'probabilities', 'legend'] as const) {
     const v = a[key];
     const empty = v === null || v === undefined || v === '' || (typeof v === 'object' && Object.keys(v).length === 0);
-    if (!empty) out[key] = v;
+    if (empty) continue;
+    out[key] = key === 'probabilities' ? record(Object.entries(v as Record<string, number | null>).map(([k, p]) => [k, p ?? 0] as const)) : v;
   }
   return out as unknown as NonNullable<EvaluatorResult['answer']>;
 }
