@@ -34,13 +34,14 @@ export function WhatWasCaught({ stats }: { stats: OverviewStats }) {
               data={rows.map((r) => ({ key: r.key, label: r.label, value: r.count }))}
               labelWidth={200}
             />
-            <ul aria-label="Open the requests behind each reason" className="space-y-1 border-t border-border pt-2">
+            {/* Each link is a 24px-tall target (WCAG 2.2 target size): text-xs lines are only 16px. */}
+            <ul aria-label="Open the requests behind each reason" className="border-t border-border pt-1">
               {rows.map((r) => (
-                <li key={r.key} className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
+                <li key={r.key} className="flex flex-wrap items-center justify-between gap-x-3 text-xs">
                   <Link
                     to="/app/traffic"
                     search={{ reason: r.reason }}
-                    className="min-w-0 truncate font-medium text-fg underline underline-offset-2"
+                    className="block min-h-6 min-w-0 truncate leading-6 font-medium text-fg underline underline-offset-2"
                   >
                     {r.label}
                     <span className="sr-only">: show all {formatCount(r.count)} requests</span>
@@ -48,7 +49,7 @@ export function WhatWasCaught({ stats }: { stats: OverviewStats }) {
                   <Link
                     to="/app/traffic/$traceId"
                     params={{ traceId: r.latestTraceId }}
-                    className="inline-flex shrink-0 items-center gap-0.5 text-fg-muted underline underline-offset-2 hover:text-fg"
+                    className="inline-flex min-h-6 shrink-0 items-center gap-0.5 text-fg-muted underline underline-offset-2 hover:text-fg"
                   >
                     Latest example{' '}
                     <span className="sr-only">of {r.label}</span>
