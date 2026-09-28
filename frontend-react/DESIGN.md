@@ -252,6 +252,10 @@ message and code.
 | `KeyValueList` | Ids, timings, costs | Missing values are an em dash; `mono` for ids, `numeric` for numbers, `copy` for a copy button |
 | `DataTable` | Long lists | Virtualized rows (`@tanstack/react-virtual`) in a scroll viewport with a sticky header that never hides the focused row; one tab stop, arrows/Page/Home/End move the row focus, Enter or a click opens the row. Loading, error and empty take the body's place; a later page's error shows under the rows. `onEndReached` asks once per list end. Cells hold text and pills, not their own buttons |
 | `Pagination` | Server lists with a total | The range is written and announced; the end buttons say why they are disabled |
+| `EvidenceBadge`, `LabelledValueBadge` | Where a number comes from: Measured, Estimate, Third-party, Vendor, Simulated (SPEC §7.4) | Achromatic; a popover gives the glossary definition, the server's `basis`, source link and date. Every cost, rate and count a page shows carries one; on the demo stack it says Simulated |
+| `LabelledRateView` | A `LabelledRate` (hallucination rate, audited share) | Below `min_n` it shows "Needs 30 unbiased samples (have 12)" and a meter, never the number |
+| `DiffView` | Reviewing a change (policy save, rollback, evaluator versions) | From two texts or a server unified diff. Achromatic: "+" and full-weight text on a raised row for additions, "−" and struck muted text for removals, "Added:"/"Removed:" for screen readers; unchanged runs fold |
+| `useWriteReason(level)` | The reason for `<DisabledAction>` on writes | `'admin'`: read-only instance, then a caller without the admin scope. `'post'`: read-scope POSTs (validate, Preview impact) that a read-only instance still refuses |
 
 ## 12. Charts
 
@@ -292,6 +296,45 @@ it stays out of every other bundle.
 
 The reliability chart, confusion grid and timing waterfall are custom SVG in their own features
 (SPEC §3.3); they follow the same rules and draw their colors from `palette.ts`.
+
+## 12a. Pages (P3)
+
+SPEC §3.3 is the page list; these notes record how each page applies the rules above.
+
+- **Overview** (`components/overview/`). Order: setup checklist (folds to "Setup complete"),
+  "Connect your app" while no request has arrived (that is the empty state), the at-a-glance
+  strip (one surface with hairline dividers, not stat cards), "Requests by outcome", "What was
+  caught" beside evidence coverage and its "Why not?" disclosure, the savings strip, the audited
+  share, Performance (collapsed), and "Connect your app" again, folded. The time window and the
+  Summary / Savings tab live in the URL (`?window=7d&tab=savings`); the window picker sits in the
+  page header until the top bar grows one. Snippets never contain a key: they read
+  `$TRUSTAGENT_KEY` and the provider key from the environment.
+- **Policies** (`components/policies/`). Nothing changes on the server until a review: route
+  cards, presets, one-click fixes and the YAML editor all edit a **draft** (YAML text, edited
+  with the `yaml` Document API so comments survive and only touched lines change). The draft bar
+  leads to one review dialog (diff, server validation and block readiness, "Preview impact (free
+  — replays past answers)", a message) and the save sends `If-Match`; a 412 offers to reload.
+  "Allow uncalibrated blocking" is a typed confirmation (the route name). A downgraded route shows
+  "Block → currently acting as Flag" in a dashed box with a warning icon (the degraded-state
+  shape), each downgrade followed by its fix. The advanced editor is CodeMirror 6, loaded with the
+  dialog: achromatic syntax styling, token colors, Tab left to the browser, problems both as lint
+  marks and as a text list. Its schema check is policy.v1 compiled ahead of time
+  (`src/lib/policy/policyValidator.gen.ts`, `make gen-policy-validator`), because ajv's runtime
+  compiler needs `eval`, which the CSP forbids.
+- **Playground** (`components/playground/`). The form lives in a store, so it survives runs and
+  page changes (never persisted: prompts may be sensitive). The result is a numbered timeline
+  (your model → fast check → what your app received → deep audit), each step with a state icon
+  and words; the deep audit keeps updating from the live stream. The curl equivalent is always
+  shown and follows the form.
+- **Evaluators** (`components/evaluators/`). Library cards, checks that run on a route first.
+  Calibration progress uses the contract copy and one meter per requirement. Writes that arrive
+  in P4 (label queue, calibrate, adopt, Studio) are shown disabled with one shared reason. The
+  reliability chart is custom SVG: neutral ink bars at most 24px thick, a dashed diagonal, one
+  focusable surface whose arrow keys move the readout, a table view, and the caption "agreement
+  with labels, not ground truth".
+- **Knowledge** (`components/knowledge/`). In the nav only while `/api/status` reports the add-on
+  enabled; with it off (or a 409 `knowledge_disabled`) the page explains the add-on and shows the
+  one command that turns it on.
 
 ## 13. Accessibility
 
