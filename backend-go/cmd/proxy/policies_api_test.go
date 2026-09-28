@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,7 +64,26 @@ func testGuards() apiGuards {
 	pass := func(c *gin.Context) { c.Next() }
 	return apiGuards{
 		read: auth.require(authz.ScopeRead), admin: auth.require(authz.ScopeAdmin), writable: pass, rateLimit: pass,
-		dryRunLimit: middleware.RateLimit(middleware.NewMemoryLimiter(), 6, time.Minute), bodyLimit: middleware.BodyLimit(1 << 20),
+		dryRunLimit: countLimit(6), bodyLimit: middleware.BodyLimit(1 << 20),
+	}
+}
+
+// countLimit admits n requests, then answers 429 rate_limited. It stands in for the server's
+// middleware.RateLimit (6/min on the dry-run), whose signature the P2 middleware changes, so the
+// tests pin only that the dry-run route is guarded by its own limit.
+func countLimit(n int) gin.HandlerFunc {
+	var mu sync.Mutex
+	seen := 0
+	return func(c *gin.Context) {
+		mu.Lock()
+		seen++
+		over := seen > n
+		mu.Unlock()
+		if over {
+			abortAPI(c, http.StatusTooManyRequests, "rate_limited", "Rate limit exceeded.")
+			return
+		}
+		c.Next()
 	}
 }
 
@@ -395,14 +415,11 @@ func TestPoliciesAPIDryRun(t *testing.T) {
 	wantError(t, p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\ndefaults: {mode: x}\n","window":"1h"}`),
 		http.StatusUnprocessableEntity, codeValidationFailed)
 	wantError(t, p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\n","window":"1y"}`), http.StatusBadRequest, codeBadRequest)
-	// The 6/min limit (the requests above count).
-	w = p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\n","window":"1h","limit":0}`)
-	if w.Code != http.StatusTooManyRequests {
-		wantError(t, w, http.StatusBadRequest, codeBadRequest)
-		if w := p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\n","window":"1h"}`); w.Code != http.StatusTooManyRequests {
-			t.Errorf("7th dry-run: HTTP %d", w.Code)
-		}
-	}
+	// The dry-run's own limit (6 per window; the five requests above count).
+	wantError(t, p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\n","window":"1h","limit":0}`), http.StatusBadRequest, codeBadRequest)
+	wantError(t, p.do(t, "POST", "/api/policies/dry-run", readKey, `{"yaml":"version: 1\n","window":"1h"}`), http.StatusTooManyRequests, "rate_limited")
+	// Other policy routes do not share it.
+	checkState(t, p.do(t, "GET", "/api/policies", readKey, ""))
 }
 
 func TestPoliciesAPIFileManagedAndLocked(t *testing.T) {

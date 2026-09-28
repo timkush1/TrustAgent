@@ -86,8 +86,8 @@ type policyWiring struct {
 //	// ps.Engine.Current (per request) instead of the policy.LoadFile result;
 //	// statusReporter.policyStatus: return ps.Engine.Status().
 //	ps.mount(api, apiGuards{read: read, admin: s.auth.require(authz.ScopeAdmin), writable: writable,
-//	    rateLimit: rateLimit, dryRunLimit: middleware.RateLimit(limiter, 6, time.Minute), bodyLimit: bodyLimit})
-//	go ps.run(ctx) // in server.start
+//	    rateLimit: rateLimit, dryRunLimit: middleware.RateLimit(limiter, 6, time.Minute, apiDeny), bodyLimit: bodyLimit})
+//	go ps.run(ctx) // in server.start, joined before the store closes
 type policyServices struct {
 	Registry *evaluators.Registry
 	Engine   *policy.Engine
