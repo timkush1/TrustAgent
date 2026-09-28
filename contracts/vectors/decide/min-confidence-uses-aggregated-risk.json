@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "min-confidence-uses-aggregated-risk",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route with unsafe_policy (min_confidence 0.90) and a route override critical_at 0.70. breaks_operator_rule 0.80 + compliant 0.20: risk 0.80 >= 0.70, but the aggregated confidence max(0.80, 0.20) = 0.80 is below 0.90, so it cannot be critical; the vendor confidence 0.99 is display only. Level warn. No verdict-role evaluator: verdict null.",
   "input": {
     "policy": {

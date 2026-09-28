@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "no-evidence-nothing-sent-not-assessed",
-  "status": "draft",
+  "status": "frozen",
   "description": "block-contradictions preset with no evidence: compile excluded groundedness and contradiction as no_evidence, so no question was sent (empty question_map and request_status, answers null). Every active evaluator is not_assessed, so status not_assessed; would = pass and block mode keeps pass. on_no_evidence is ignore. No evidence at all: deep_audit none.",
   "input": {
     "policy": {

@@ -1,0 +1,35 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "choice-tie-vendor-choice-wins",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "off_brand_tone: matches_brand_voice and slightly_off_voice tie at 0.4; the vendor choice slightly_off_voice is among the tied options, so it is top (not the smaller key). Risk: 0.4*0.5 + 0.2*1 = 0.40.",
+  "input": {
+    "template": "off_brand_tone@1",
+    "answer": {
+      "type": "choice",
+      "choice": "slightly_off_voice",
+      "confidence": 0.4,
+      "probabilities": {
+        "matches_brand_voice": 0.4,
+        "slightly_off_voice": 0.4,
+        "clearly_off_voice": 0.2
+      }
+    }
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "vendor",
+    "error": null,
+    "probabilities": {
+      "clearly_off_voice": 0.2,
+      "matches_brand_voice": 0.4,
+      "slightly_off_voice": 0.4,
+      "too_short_to_judge": 0
+    },
+    "risk_raw": 0.4,
+    "top": "slightly_off_voice",
+    "vendor_confidence": 0.4
+  }
+}

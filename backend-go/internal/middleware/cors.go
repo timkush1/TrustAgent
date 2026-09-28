@@ -2,9 +2,28 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+// ExposedHeaders are the response headers a cross-origin browser may read (SPEC §2.4: ETag,
+// Retry-After, X-Request-ID and every X-TrustAgent-* header, listed explicitly, never "*").
+var ExposedHeaders = []string{
+	"ETag", "Retry-After", "X-Request-ID",
+	"X-TrustAgent-Trace-Id", "X-TrustAgent-Route", "X-TrustAgent-Mode", "X-TrustAgent-Action",
+	"X-TrustAgent-Would-Action", "X-TrustAgent-Status", "X-TrustAgent-Verdict", "X-TrustAgent-Risk",
+	"X-TrustAgent-Calibrated", "X-TrustAgent-Degraded", "X-TrustAgent-Reasons",
+	"X-TrustAgent-Checked-Against", "X-TrustAgent-Decision-Model", "X-TrustAgent-Gate-Ms",
+	"X-TrustAgent-Overhead-Ms", "X-TrustAgent-Audit", "X-TrustAgent-Source",
+}
+
+// allowedHeaders are the request headers a cross-origin browser may send: the SPEC §2.4 list, plus
+// Authorization and X-API-Key, which the legacy /api key check still reads until the P2 authz core.
+var allowedHeaders = []string{
+	"Content-Type", "If-Match", "X-TrustAgent-Key", "X-TrustAgent-CSRF", "X-TrustAgent-Route",
+	"X-TrustAgent-Mode", "X-Request-ID", "Authorization", "X-API-Key",
+}
 
 // CORS reflects the request origin only when it appears in the allowlist
 // (replacing the previous wildcard "*"). Requests from other origins get no
@@ -14,14 +33,18 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 	for _, origin := range allowedOrigins {
 		allowed[origin] = true
 	}
+	exposed := strings.Join(ExposedHeaders, ", ")
+	requestHeaders := strings.Join(allowedHeaders, ", ")
 
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 		if origin != "" && allowed[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Request-ID")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Headers", requestHeaders)
+			c.Header("Access-Control-Expose-Headers", exposed)
+			c.Header("Access-Control-Max-Age", "600")
 		}
 
 		if c.Request.Method == http.MethodOptions {

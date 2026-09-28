@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "shadow-does-not-corroborate",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required; contradiction@1 is attached as shadow. Both groundedness 0.97 and the shadow contradiction 0.98 are critical, but critical_ids only counts active evaluators, so groundedness stays uncorroborated: needs_second_signal and action flag. The shadow contradiction also does not set the verdict (unsupported, from groundedness) or disagreement.",
   "input": {
     "policy": {

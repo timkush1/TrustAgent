@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "evidence-item-object",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A compiled evidence item {id, source, text} as it enters request_sha256: keys sorted, no whitespace.",
+  "input": {"value": {"text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.", "source": "request_system", "id": "refund-policy.md"}},
+  "expected": {
+    "jcs": "{\"id\":\"refund-policy.md\",\"source\":\"request_system\",\"text\":\"Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.\"}",
+    "sha256": "44379610b0709e1ebc41b4bb8774aa6f87eec34b67194e266f7188b09e1ce8fd"
+  }
+}

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "reasons-tie-broken-by-evaluator-id",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. refusal and pii_secret_leak both have risk exactly 0.80 (warn); with equal level and risk, reasons are ordered by evaluator id ascending.",
   "input": {
     "policy": {

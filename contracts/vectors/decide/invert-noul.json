@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "invert-noul",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route with a custom noul evaluator whose signal is inverted (the question asks for the good behaviour). noul 0.10 means \"probably does not cite\": risk_raw = 1 - 0.10 = 0.90 >= warn_at 0.60: warn.",
   "input": {
     "policy": {

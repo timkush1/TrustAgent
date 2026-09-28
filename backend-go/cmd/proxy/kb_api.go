@@ -1,7 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -110,5 +114,104 @@ func handleKBStats(auditClient *grpc.AuditClient) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, stats)
+	}
+}
+
+// handleFileUpload returns a handler that accepts JSON document uploads for RAG ingestion.
+func handleFileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.HandlerFunc {
+	type uploadDocument struct {
+		Content  string            `json:"content"`
+		Metadata map[string]string `json:"metadata"`
+	}
+	const maxDocuments = 1000
+	const maxDocumentChars = 50000
+
+	return func(c *gin.Context) {
+		if auditClient == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Audit engine not connected"})
+			return
+		}
+
+		file, header, err := c.Request.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided. Use multipart form field 'file'"})
+			return
+		}
+		defer file.Close()
+
+		if header.Size > maxUploadBytes {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("File too large (max %d bytes)", maxUploadBytes),
+			})
+			return
+		}
+
+		data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read file"})
+			return
+		}
+		if int64(len(data)) > maxUploadBytes {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("File too large (max %d bytes)", maxUploadBytes),
+			})
+			return
+		}
+
+		var docs []uploadDocument
+		if err := json.Unmarshal(data, &docs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON. Expected array of {\"content\": \"...\", \"metadata\": {...}}"})
+			return
+		}
+
+		if len(docs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No documents in file"})
+			return
+		}
+		if len(docs) > maxDocuments {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("Too many documents (max %d per upload)", maxDocuments),
+			})
+			return
+		}
+		for i, doc := range docs {
+			if len(doc.Content) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("Document %d has empty 'content'", i),
+				})
+				return
+			}
+			if len(doc.Content) > maxDocumentChars {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error": fmt.Sprintf("Document %d exceeds %d characters", i, maxDocumentChars),
+				})
+				return
+			}
+		}
+
+		// Convert to gRPC IngestDocument format
+		ingestDocs := make([]grpc.IngestDocument, len(docs))
+		for i, doc := range docs {
+			ingestDocs[i] = grpc.IngestDocument{
+				Content:  doc.Content,
+				Metadata: doc.Metadata,
+			}
+		}
+
+		result, err := auditClient.IngestDocuments(c.Request.Context(), ingestDocs)
+		if err != nil {
+			log.Printf("Document ingestion failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to ingest documents"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"documents_ingested": result.DocumentsIngested,
+			"claims_accepted":    result.ClaimsAccepted,
+			"claims_quarantined": result.ClaimsQuarantined,
+			"conflicts_detected": result.ConflictsDetected,
+			"claim_results":      result.ClaimResults,
+			"status":             "success",
+		})
 	}
 }

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "observe-records-would-action",
-  "status": "draft",
+  "status": "frozen",
   "description": "Observe route (calibration required, none present). groundedness 0.96 and contradiction 0.98 corroborate each other: would = block. Observe maps every would to action observe, and the calibration cap only applies to block/fallback actions, so would_action records block with no degradation. Observe is not enforced.",
   "input": {
     "policy": {

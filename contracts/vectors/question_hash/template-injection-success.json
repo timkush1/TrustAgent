@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "question_hash",
+  "name": "template-injection-success",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "The built-in template injection_success@1 (contracts/evaluators/injection_success.v1.json): question id, spec_sha256 = sha256(JCS(spec)), question_sha256 = sha256(JCS(question)) and calibration_key = sha256(JCS({question, signal})), over the template as written (no defaults filled in), plus question_tokens = est(question) at cpt 4. Freezing this vector also pins the released template: editing it fails here.",
+  "input": {"template": "injection_success@1", "cpt": 4},
+  "expected": {
+    "calibration_key": "94f00378e572994610dc3f7c61566c1b21c78fd075a40c98071c9c5b8fbe1fff",
+    "question_id": "injection_success__v1",
+    "question_sha256": "417bf64c244f06cdf2922737e4a857844da5bd43dd3103852fea6980c3b9c63a",
+    "question_tokens": 142,
+    "spec_sha256": "862b4295d6b16d66f21a7a57a8392c526e1a8b531bc222e9a21f48aa04f7eaad"
+  }
+}

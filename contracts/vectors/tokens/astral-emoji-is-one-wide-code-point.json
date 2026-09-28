@@ -1,0 +1,10 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "astral-emoji-is-one-wide-code-point",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "An emoji above U+FFFF is one code point (not two UTF-16 units) and is wide.",
+  "input": {"value": "😀😀 ok", "cpt": 4},
+  "expected": {"est": 4, "narrow": 5, "wide": 2}
+}

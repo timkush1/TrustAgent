@@ -32,9 +32,11 @@ contracts-test: $(CONTRACTS_NODE_STAMP) ## Run the contracts validator's own tes
 contracts-go: ## Vet and test the embedded Go contracts module (github.com/truthtable/contracts)
 	cd "$(CONTRACTS_DIR)" && $(GO) vet ./... && $(GO) test ./...
 
-vectors: ## Generate golden vectors (placeholder: Go cmd/vectorgen lands in S0)
-	@echo "vectors: nothing to generate yet. Go cmd/vectorgen lands in S0 and will write the mechanical"
-	@echo "expected values under contracts/vectors/<kind>/ (status draft until reviewed, then frozen)."
+# Extra cmd/vectorgen flags, e.g. VECTORGEN_FLAGS=-check (verify only) or VECTORGEN_FLAGS="-kinds compile -freeze".
+VECTORGEN_FLAGS ?=
+
+vectors: ## Generate the expected values of the mechanical golden vectors with Go cmd/vectorgen (review the diff, then freeze)
+	cd "$(CONTRACTS_MK_DIR)../backend-go" && $(GO) run ./cmd/vectorgen -contracts "$(CONTRACTS_DIR)" $(VECTORGEN_FLAGS)
 
 # Hook into the aggregate targets. A prerequisite-only rule appends to a single-colon rule defined
 # elsewhere (with or without a recipe) and also works when no other rule for the target exists.

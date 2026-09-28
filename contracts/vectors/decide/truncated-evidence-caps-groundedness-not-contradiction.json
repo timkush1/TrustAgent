@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "truncated-evidence-caps-groundedness-not-contradiction",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, calibration not required, evidence truncated during packing. groundedness (verdict role unsupported) 0.97 would be critical but is capped at warn (capped evidence_truncated); contradiction 0.97 keeps critical. contradiction is then uncorroborated (groundedness not critical): needs_second_signal and action flag. No disagreement: groundedness is warn, not ok.",
   "input": {
     "policy": {

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "threshold-edge-warn-at-override",
-  "status": "draft",
+  "status": "frozen",
   "description": "Flag route. groundedness has a route override warn_at 0.70 and risk exactly 0.70: warn (risk >= warn - EPS); being at warn, it does not escalate. contradiction uses its spec warn_at 0.70 with risk 0.6999: ok, and inside [escalate_from 0.40, warn_at) so it escalates as uncertain.",
   "input": {
     "policy": {

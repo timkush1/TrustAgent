@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "stream-passthrough-downgrades-block-to-flag",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route whose stream is passed through unbuffered: effective_mode becomes flag and stream_not_buffered is added. groundedness 0.96 and contradiction 0.98 would block, but effective flag mode maps block to flag. Still enforced (effective mode is not observe).",
   "input": {
     "policy": {

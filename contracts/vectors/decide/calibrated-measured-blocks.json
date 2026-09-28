@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "calibrated-measured-blocks",
-  "status": "draft",
+  "status": "frozen",
   "description": "Adopted calibration: both evaluators use calibrated space with the recommended thresholds warn_at 0.78, critical_at 0.96, and a measured table t[i] = min(1, (i+2)/100). groundedness raw 0.95 -> 0.97, contradiction raw 0.96 -> 0.98, both >= 0.96: critical, corroborated, calibrated. The cap does not apply: action block, calibration all. escalate_from stays the spec value 0.40.",
   "input": {
     "policy": {

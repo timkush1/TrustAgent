@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "decide",
   "name": "det-block-not-capped",
-  "status": "draft",
+  "status": "frozen",
   "description": "Block route, require_calibration true, no calibration, block_on [urls_not_in_evidence]. The URL detector fired: det_block, so would = block. groundedness 0.97 is critical and corroborated by the same detector (block set), but because a detector blocks, the calibration cap does not apply: action block, no degradation.",
   "input": {
     "policy": {

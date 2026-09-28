@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "state-with-cjk-evidence",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A small state object with CJK evidence text: keys and ASCII are narrow, the ideographs wide.",
+  "input": {
+    "value": {
+      "assistant_response": "Refunds are available for 30 days.",
+      "evidence": [{"id": "doc1", "source": "extension", "text": "退款政策是三十天"}]
+    },
+    "cpt": 4
+  },
+  "expected": {"est": 38, "narrow": 117, "wide": 8}
+}

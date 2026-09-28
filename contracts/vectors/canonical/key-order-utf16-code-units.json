@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "canonical",
+  "name": "key-order-utf16-code-units",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Object keys sort by UTF-16 code units: the empty key, B (U+0042), a (U+0061), U+00E9, the emoji (surrogates D83D DE00) and the fullwidth A (U+FF21). UTF-8 byte order would put U+FF21 before the emoji.",
+  "input": {"value": {"\uff21": 1, "\ud83d\ude00": 2, "\u00e9": 3, "a": 4, "B": 5, "": 6}},
+  "expected": {
+    "jcs": "{\"\":6,\"B\":5,\"a\":4,\"é\":3,\"😀\":2,\"Ａ\":1}",
+    "sha256": "208c2d0b212620eea1fb7ad70b726a7cb2fe48b7684b0ba333ee72da3486f1e3"
+  }
+}

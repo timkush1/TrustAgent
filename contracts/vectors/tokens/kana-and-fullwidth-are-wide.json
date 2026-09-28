@@ -1,0 +1,10 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "kana-and-fullwidth-are-wide",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "Hiragana (U+3042..) and fullwidth Latin (U+FF21..) are at or above U+3000, so each is a whole token; the space between them is narrow.",
+  "input": {"value": "ありがとう ＡＢＣ", "cpt": 4},
+  "expected": {"est": 9, "narrow": 3, "wide": 8}
+}
