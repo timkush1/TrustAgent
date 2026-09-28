@@ -51,6 +51,9 @@ make doctor         # diagnose a running stack (ARGS="--expect demo")
 make check          # the local gate: lint + unit tests + contracts + compose config
 make install        # deps for all projects;  make proto  # regenerate gRPC stubs after editing proto
 make contracts-check / contracts-test / vectors   # validate contracts; regenerate mechanical vectors
+make vectors-ts     # run the same golden vectors against the TypeScript decision core
+make gen-types / gen-api-schema (+ -check)        # regenerate types.gen.ts / api.v1.schema.json
+make config-docs (+ -check)                       # regenerate docs/CONFIGURATION.md + .env.example from the key registry
 make test-e2e-web   # Playwright specs against a running stack
 ```
 
