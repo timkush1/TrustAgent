@@ -1,0 +1,66 @@
+#!/bin/sh
+# Validates and normalises the dashboard settings that go into the nginx
+# configuration (SPEC §2.7, dashboard keys). The nginx image's
+# /docker-entrypoint.sh sources *.envsh files in name order, so this runs before
+# 20-envsubst-on-templates.sh renders /etc/nginx/templates and the values
+# exported here are the ones substituted:
+#
+#   DASHBOARD_PROXY_UPSTREAM  http(s)://host[:port], no path. proxy_pass with a
+#                             variable replaces the whole request URI with any
+#                             path given here, so a path would send every /api,
+#                             /v1, /ws and /health request to that one path. A
+#                             trailing "/" is dropped.
+#   DASHBOARD_CONNECT_SRC     extra CSP connect-src sources. A registry list, so
+#                             comma-separated; CSP separates sources with
+#                             spaces, so it is rewritten space-separated.
+#
+# An invalid value stops the container, so a typo is visible at start instead
+# of as a dashboard that cannot reach the API. Sourced, not run: it changes no
+# shell options for the scripts after it and unsets its helpers.
+
+dashboard_env_fail() {
+    echo "12-dashboard-env.envsh: ERROR: $*" >&2
+    exit 1
+}
+
+# ---------- DASHBOARD_PROXY_UPSTREAM ----------
+dashboard_env_upstream=${DASHBOARD_PROXY_UPSTREAM:-}
+while [ "${dashboard_env_upstream%/}" != "$dashboard_env_upstream" ]; do
+    dashboard_env_upstream=${dashboard_env_upstream%/}
+done
+case "$dashboard_env_upstream" in
+    "")
+        dashboard_env_fail "DASHBOARD_PROXY_UPSTREAM is empty; set it to the proxy's base URL (default http://proxy:8080)" ;;
+    *[![:graph:]]* | *\"* | *\'* | *\\* | *\;* | *\$* | *\{* | *\}*)
+        dashboard_env_fail "DASHBOARD_PROXY_UPSTREAM must be a URL without spaces, quotes, ';', '\$', braces or backslashes" ;;
+    http://?* | https://?*) ;;
+    *)
+        dashboard_env_fail "DASHBOARD_PROXY_UPSTREAM must start with http:// or https:// (got $dashboard_env_upstream)" ;;
+esac
+case "${dashboard_env_upstream#*://}" in
+    */* | *\?* | *\#*)
+        dashboard_env_fail "DASHBOARD_PROXY_UPSTREAM must be scheme://host[:port] without a path or query (got $dashboard_env_upstream)" ;;
+esac
+export DASHBOARD_PROXY_UPSTREAM="$dashboard_env_upstream"
+
+# ---------- DASHBOARD_CONNECT_SRC ----------
+# Split on commas and whitespace without pathname expansion: a CSP wildcard
+# source such as https://*.example.com must not match files.
+case $- in
+    *f*) dashboard_env_noglob=1 ;;
+    *) dashboard_env_noglob= ;;
+esac
+set -f
+dashboard_env_sources=
+for dashboard_env_item in $(printf '%s' "${DASHBOARD_CONNECT_SRC:-}" | tr ',' ' '); do
+    case "$dashboard_env_item" in
+        *[![:graph:]]* | *\"* | *\'* | *\\* | *\;* | *\$* | *\{* | *\}*)
+            dashboard_env_fail "DASHBOARD_CONNECT_SRC entries are CSP host or scheme sources (e.g. https://api.example.com, wss://api.example.com) without quotes, ';', '\$', braces or backslashes (got $dashboard_env_item)" ;;
+    esac
+    dashboard_env_sources="${dashboard_env_sources:+$dashboard_env_sources }$dashboard_env_item"
+done
+[ -n "$dashboard_env_noglob" ] || set +f
+export DASHBOARD_CONNECT_SRC="$dashboard_env_sources"
+
+unset dashboard_env_upstream dashboard_env_noglob dashboard_env_sources dashboard_env_item
+unset -f dashboard_env_fail

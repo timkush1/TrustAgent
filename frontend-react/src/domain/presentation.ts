@@ -27,6 +27,7 @@ import {
 import type {
   AuditVerdict,
   ClaimVerdict,
+  DecisionBackend,
   EvaluatorLevel,
   EvidenceSource,
   EvidenceSummary,
@@ -459,3 +460,64 @@ export function toneVar(tone: Tone): string {
 }
 
 export { copy };
+
+// ------------------------------------------------------------------------------------------- costs
+
+export type CostSource = 'reported' | 'computed' | 'free_local' | 'simulated' | 'unknown';
+
+/**
+ * The honest-number label of a cost (DESIGN.md §8): vendor-reported, computed from the price
+ * table (an estimate), simulated by a mock, or a local model with no API fee. Null when unknown:
+ * the figure is then not shown as a number.
+ */
+export function costSourceLabel(source: CostSource): string | null {
+  switch (source) {
+    case 'reported':
+      return copy.value_labels.vendor;
+    case 'computed':
+      return copy.value_labels.estimate;
+    case 'simulated':
+      return copy.value_labels.simulated;
+    case 'free_local':
+      return 'Local model, no API fee';
+    default:
+      return null;
+  }
+}
+
+/** The least certain of several cost sources (simulated, then unknown, then estimate, then vendor). */
+export function weakestCostSource(sources: readonly CostSource[]): CostSource {
+  const order: CostSource[] = ['simulated', 'unknown', 'computed', 'free_local', 'reported'];
+  for (const s of order) if (sources.includes(s)) return s;
+  return 'unknown';
+}
+
+// ---------------------------------------------------------------------------------- model names
+
+const DECISION_BACKEND_WORDS: Record<DecisionBackend, string> = {
+  'openrouter-decisions': 'OpenRouter',
+  'openrouter-systemone': 'OpenRouter System One',
+  typesafe: 'TypeSafe',
+  compatible: 'Compatible gateway',
+  mock: 'Mock (simulated)',
+  off: 'Off',
+};
+
+/** Words for the fast check's backend (DecisionModelUsage.backend). */
+export function decisionBackendLabel(backend: DecisionBackend): string {
+  return DECISION_BACKEND_WORDS[backend] ?? 'Unknown backend';
+}
+
+const JUDGE_PROVIDER_WORDS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama (local)',
+  mock: 'Mock (simulated)',
+  none: 'No judge',
+};
+
+/** Words for the deep-audit judge's provider (JudgeInfo.effective_provider). */
+export function judgeProviderLabel(provider: string): string {
+  return JUDGE_PROVIDER_WORDS[provider] ?? provider;
+}

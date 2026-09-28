@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -153,6 +154,25 @@ func (s *PostgresStore) saveAudit(ctx context.Context, record *AuditRecord, trac
 		}
 		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 			return fmt.Errorf("insert claims: %w", err)
+		}
+	}
+
+	if len(record.Costs) > 0 {
+		// One cost_events row per model call, stamped with the audit's created_at so the audit
+		// detail finds its own rows among the trace's (cost_events has no audit id).
+		batch := &pgx.Batch{}
+		for _, c := range record.Costs {
+			batch.Queue(`
+				INSERT INTO cost_events (occurred_at, trace_id, route, component, kind, provider, model,
+					input_tokens, output_tokens, cost_usd, cost_source, latency_ms, status, questions, selection)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+				createdAt, traceID, record.Route, c.Component, c.Kind, nilIfEmpty(c.Provider), nilIfEmpty(c.Model),
+				clampInt32(c.InputTokens), clampInt32(c.OutputTokens), c.CostUSD, defaultString(c.CostSource, "unknown"),
+				clampInt32(c.LatencyMs), nilIfEmpty(c.Status), c.Questions, record.Selection,
+			)
+		}
+		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
+			return fmt.Errorf("insert cost events: %w", err)
 		}
 	}
 
@@ -366,7 +386,49 @@ func (s *PostgresStore) getAudit(ctx context.Context, where, id string) (*AuditR
 		c.SpanStart, c.SpanEnd = intPtr(spanStart), intPtr(spanEnd)
 		record.Claims = append(record.Claims, c)
 	}
-	return record, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if record.Costs, err = s.auditCosts(ctx, record); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// auditCosts reads the audit's model calls back from cost_events: its trace's deep-audit rows
+// stamped with the audit's created_at (saveAudit writes them so).
+func (s *PostgresStore) auditCosts(ctx context.Context, record *AuditRecord) ([]CostRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT component, kind, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(input_tokens, 0),
+			COALESCE(output_tokens, 0), COALESCE(cost_usd, 0)::float8, cost_source, COALESCE(latency_ms, 0),
+			COALESCE(status, ''), COALESCE(questions, 0)
+		FROM cost_events
+		WHERE occurred_at = $1 AND trace_id = $2 AND component LIKE 'deep\_audit%'
+		ORDER BY id`, record.CreatedAt, record.TraceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CostRecord
+	for rows.Next() {
+		var (
+			c                             CostRecord
+			input, output, latency, quest int32
+		)
+		if err := rows.Scan(&c.Component, &c.Kind, &c.Provider, &c.Model, &input, &output, &c.CostUSD, &c.CostSource,
+			&latency, &c.Status, &quest); err != nil {
+			return nil, err
+		}
+		c.InputTokens, c.OutputTokens, c.LatencyMs, c.Questions = int64(input), int64(output), int64(latency), int(quest)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// clampInt32 fits a count into an INT column.
+func clampInt32(v int64) int32 {
+	return int32(min(max(v, 0), math.MaxInt32)) // #nosec G115 -- clamped to the int32 range first
 }
 
 // Summary returns the audit as the audit list shows it.
@@ -407,7 +469,10 @@ func (r *AuditRecord) Detail() AuditDetail {
 		Scores: r.Scores, DegradedReasons: nonNil(r.DegradedReasons), ReasoningTrace: r.ReasoningTrace,
 		StepTimings: r.StepTimings, Gate: r.Gate, EvidenceSummary: jsonOrNull(r.EvidenceSummary),
 		ContextUsed: jsonOr(r.ContextUsed, "[]"), ScoringVersion: defaultString(r.ScoringVersion, scoringVersionLegacy),
-		Costs: []json.RawMessage{},
+		Costs: r.Costs,
+	}
+	if d.Costs == nil {
+		d.Costs = []CostRecord{}
 	}
 	if d.StepTimings == nil {
 		d.StepTimings = map[string]int64{}

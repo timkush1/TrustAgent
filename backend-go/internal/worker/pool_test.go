@@ -145,6 +145,12 @@ func hallucinated(_ context.Context, req *pb.AuditRequest) (*pb.AuditResult, err
 			Evidence: []string{"Annual plans can be refunded within 30 days of purchase."}, Quote: "60 days",
 			DecidedBy: "llm", SpanStart: -1, SpanEnd: -1,
 		}},
+		Costs: []*pb.CostRecord{
+			{Component: "deep_audit_decompose", Kind: "llm", Provider: "mock", Model: "mock", InputTokens: 180, OutputTokens: 40,
+				CostSource: "simulated", LatencyMs: 3, Status: "ok"},
+			{Component: "deep_audit_verify", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", InputTokens: 400,
+				OutputTokens: 60, CostUsd: 0.0007, CostSource: "computed", LatencyMs: 900, Status: "ok"},
+		},
 	}, nil
 }
 
@@ -179,6 +185,11 @@ func TestCompletedAuditIsPersistedThenBroadcast(t *testing.T) {
 	}
 	if rec.TextExpiresAt == nil || rec.CompletedAt == nil || rec.QueueWaitMs == nil {
 		t.Errorf("timestamps %+v", rec)
+	}
+	// Every model call of the audit is kept with its cost source, and the audit's cost is their sum.
+	if len(rec.Costs) != 2 || rec.Costs[0].Component != "deep_audit_decompose" || rec.Costs[0].CostSource != "simulated" ||
+		rec.Costs[1].Model != "claude-haiku-4-5" || rec.Costs[1].InputTokens != 400 || rec.CostUSD == nil || *rec.CostUSD != 0.0007 {
+		t.Errorf("costs %+v total %v", rec.Costs, rec.CostUSD)
 	}
 	if got := st.traceStatus(j.Request.TraceId); got != store.AuditCompleted {
 		t.Errorf("trace audit status %q", got)

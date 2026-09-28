@@ -20,6 +20,7 @@ HOW IT WORKS (for learning):
     - "Cosine distance" = How we measure similarity between vectors (0=identical, 2=opposite)
 """
 
+import asyncio
 import logging
 import uuid
 from typing import List, Optional, Dict, Any
@@ -31,6 +32,9 @@ logger = logging.getLogger(__name__)
 
 # Name of our collection in Qdrant
 DEFAULT_COLLECTION = "truthtable_knowledge"
+
+# Points per scroll request (D9: scroll_points follows next_page_offset).
+SCROLL_PAGE_SIZE = 1000
 
 
 class QdrantStore:
@@ -265,21 +269,37 @@ class QdrantStore:
     def scroll_points(
         self,
         must: Optional[Dict[str, Any]] = None,
-        limit: int = 10000,
+        limit: Optional[int] = None,
+        page_size: int = SCROLL_PAGE_SIZE,
     ) -> List[Dict[str, Any]]:
-        """Return points matching the filter (payloads only, no vectors)."""
-        records, _ = self._client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=self._build_filter(must),
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
-        points = []
-        for record in records:
-            point = {"id": str(record.id)}
-            point.update(record.payload or {})
-            points.append(point)
+        """
+        Return the points matching the filter (payloads only, no vectors).
+
+        Reads page after page (following Qdrant's next_page_offset) until the
+        collection is exhausted, or until `limit` points when a limit is given;
+        one request used to return at most one page (D9).
+        """
+        if page_size < 1:
+            raise ValueError("page_size must be at least 1")
+        points: List[Dict[str, Any]] = []
+        scroll_filter = self._build_filter(must)
+        offset: Any = None
+        while limit is None or len(points) < limit:
+            batch = page_size if limit is None else min(page_size, limit - len(points))
+            records, offset = self._client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=scroll_filter,
+                limit=batch,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for record in records:
+                point = {"id": str(record.id)}
+                point.update(record.payload or {})
+                points.append(point)
+            if offset is None or not records:
+                break
         return points
 
     def set_payload(self, point_id: str, payload: Dict[str, Any]) -> None:
@@ -306,3 +326,62 @@ class QdrantStore:
         except Exception as e:
             logger.error(f"Qdrant health check failed: {e}")
             return False
+
+    # ------------------------------------------------------------------
+    # Async forms (D8): the Qdrant client is synchronous, so from async code
+    # (the audit graph, the KB) every call runs in a worker thread instead of
+    # blocking the event loop.
+    # ------------------------------------------------------------------
+
+    async def aensure_collection(self) -> None:
+        await asyncio.to_thread(self.ensure_collection)
+
+    async def aupsert_documents(
+        self,
+        texts: List[str],
+        vectors: List[List[float]],
+        metadata: Optional[List[Dict[str, Any]]] = None,
+    ) -> int:
+        return await asyncio.to_thread(self.upsert_documents, texts, vectors, metadata)
+
+    async def asearch(
+        self,
+        query_vector: List[float],
+        top_k: int = 5,
+        score_threshold: float = 0.3,
+    ) -> List[Dict[str, Any]]:
+        return await asyncio.to_thread(self.search, query_vector, top_k, score_threshold)
+
+    async def aupsert_points(
+        self, ids: List[str], vectors: List[List[float]], payloads: List[Dict[str, Any]]
+    ) -> None:
+        await asyncio.to_thread(self.upsert_points, ids, vectors, payloads)
+
+    async def asearch_filtered(
+        self,
+        query_vector: List[float],
+        top_k: int = 5,
+        score_threshold: float = 0.3,
+        must: Optional[Dict[str, Any]] = None,
+        must_not: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        return await asyncio.to_thread(
+            self.search_filtered, query_vector, top_k, score_threshold, must, must_not
+        )
+
+    async def ascroll_points(
+        self,
+        must: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None,
+        page_size: int = SCROLL_PAGE_SIZE,
+    ) -> List[Dict[str, Any]]:
+        return await asyncio.to_thread(self.scroll_points, must, limit, page_size)
+
+    async def aset_payload(self, point_id: str, payload: Dict[str, Any]) -> None:
+        await asyncio.to_thread(self.set_payload, point_id, payload)
+
+    async def acount(self) -> int:
+        return await asyncio.to_thread(self.count)
+
+    async def ahealth_check(self) -> bool:
+        return await asyncio.to_thread(self.health_check)

@@ -46,6 +46,9 @@ type mockClient struct {
 	cfg       MockConfig
 	info      Info
 	scenarios map[string]map[string]*decision.RawAnswer
+	// costs receives one simulated cost event per call.
+	costs  CostSink
+	status statusTracker
 }
 
 func newMock(cfg MockConfig, model string) (*mockClient, error) {
@@ -102,6 +105,17 @@ func parseScenarios(b []byte) (map[string]map[string]*decision.RawAnswer, error)
 
 func (m *mockClient) Info() Info { return m.info }
 
+// Status reports the mock as state mock; its breaker never opens.
+func (m *mockClient) Status() Status {
+	st := Status{Info: m.info, Snapshot: m.info.Model, Breaker: BreakerClosed, CPT: decision.DefaultCPT}
+	m.status.fill(&st, breakerView{state: BreakerClosed}, nil)
+	st.State = "mock"
+	if !strings.HasPrefix(st.Snapshot, "mock/") {
+		st.Snapshot = DefaultMockModel
+	}
+	return st
+}
+
 // Decide answers every question of req. In scenario mode a question the scenario scripts gets that
 // answer; any other question fails the call when strict and gets a hash answer otherwise.
 func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) (*Response, error) {
@@ -147,10 +161,24 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 	if est, err := decision.Est(map[string]any{"model": req.Model, "state": req.State, "questions": req.Questions}, decision.DefaultCPT); err == nil {
 		tokens += est
 	}
-	cost := float64(tokens) * DefaultPricePerMTok / 1e6
+	// Priced in exact integer steps (tokens × $0.042 per 1e6 is tokens × 42 / 1e9), so the cost is the
+	// double nearest its decimal value and serializes as, say, 2.3772e-05 rather than
+	// 0.000023772000000000002.
+	cost := float64(tokens) * (DefaultPricePerMTok * 1e3) / 1e9
 	snapshot := req.Model
 	if !strings.HasPrefix(snapshot, "mock/") {
 		snapshot = DefaultMockModel
+	}
+	latency := time.Since(start).Milliseconds()
+	m.status.call()
+	m.status.attempt(time.Now(), cost, nil, false, false)
+	if m.costs != nil {
+		m.costs.RecordCost(CostEvent{
+			OccurredAt: time.Now(), TraceID: opt.TraceID, Route: opt.Route, KeyLabel: opt.KeyLabel,
+			Component: opt.component(), Kind: CostKindDecision, Provider: BackendMock, Model: snapshot,
+			InputTokens: &tokens, CostUSD: cost, CostSource: CostSimulated, PriceTableVersion: "default",
+			LatencyMs: latency, Status: AttemptOK, Questions: len(req.Questions),
+		})
 	}
 	return &Response{
 		ID:          "mock-" + hex8(sha256.Sum256(stateJCS)),
@@ -160,7 +188,7 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 		CostUSD:     &cost,
 		CostSource:  CostSimulated,
 		Backend:     BackendMock,
-		LatencyMs:   time.Since(start).Milliseconds(),
+		LatencyMs:   latency,
 		Attempts:    1,
 	}, nil
 }
@@ -179,9 +207,8 @@ func missingMessage(scenario string, known bool, qid string) string {
 // skews low (u^3), so unscripted demo traffic mostly passes.
 func (m *mockClient) hashAnswer(qid string, question any, stateJCS []byte) *decision.RawAnswer {
 	h := sha256.New()
-	var seed [8]byte
-	binary.BigEndian.PutUint64(seed[:], uint64(m.cfg.Seed))
-	h.Write(seed[:])
+	// The seed's two's-complement big-endian bytes.
+	_ = binary.Write(h, binary.BigEndian, m.cfg.Seed)
 	h.Write([]byte(qid))
 	h.Write([]byte{0})
 	h.Write(stateJCS)

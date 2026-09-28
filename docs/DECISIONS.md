@@ -15,6 +15,38 @@ models against HaluEval on a schedule.
 **Rejected**: LLM-in-CI on every PR (flaky, slow, costly); pure unit tests of
 the scorer (don't catch graph-wiring or parsing regressions).
 
+**Re-baseline for scoring v2** (v2 gateway, P2; SPEC section 3.2): both golden
+baselines were regenerated on purpose, in the same change as scoring v2,
+decomposer v2 and the verifier hardening. The gate itself is unchanged (exact
+match, zero tolerance); what it compares changed:
+
+- *Scoring.* Each decided claim is a verdict distribution; CONTRADICTED counts
+  as wrong and UNSUPPORTED as baseless (request evidence) or unverifiable
+  (knowledge evidence); the verdict comes from the contradiction and baseless
+  flags instead of the v1 ratio rule. UNKNOWN and NOT_CHECKED claims are left
+  out, a judge outage is a FAILED audit with no score (D4: v1 scored it about
+  0.3), and `faithfulness_score` now carries the trust score.
+- *Report.* Each example records its status, verdict, degraded reasons, policy,
+  trust score, `p_hallucinated` and per-claim verdicts with UTF-16 spans (D17).
+  FAILED audits are counted and left out of the detection metrics, whose
+  ranking score is `p_hallucinated` (v1 used 1 - faithfulness).
+- *golden_v1* (dataset and fixtures frozen, still runnable as
+  `--dataset golden`): precision 0.889 -> 0.920, recall 0.923 -> 0.885,
+  F1 0.906 -> 0.902, balanced accuracy 0.899 -> 0.899, AUROC 0.907 -> 0.983,
+  ECE 0.133 -> 0.085 (49 of 50 scored). Three examples moved:
+  `med-insulin-faithful` (a parse failure) is FAILED instead of scoring 0.3;
+  `special-bees-boundary` (one partial claim among three) is no longer a false
+  positive; `special-greatwall-partial` becomes a false negative, because its
+  recorded judge says PARTIALLY_SUPPORTED where the v2 prompt rule (any part
+  stated false is CONTRADICTED) makes it CONTRADICTED, as golden_v2 records it.
+- *golden_v2* (new CI gate, 91 examples: faithful, contradicting and baseless
+  variants of every fact, NO_CLAIMS, the short-answer and knowledge-evidence
+  cases, capped evidence, UTF-16 spans, repairs, fallbacks and judge outages):
+  precision 0.960, recall 0.941, F1 0.950, balanced accuracy 0.944,
+  AUROC 0.985, ECE 0.076 over 88 scored examples; 3 FAILED by design;
+  86 of 91 expected outcomes met (the 5 misses are the recorded judge's
+  deliberate errors).
+
 ## ADR-002: Postgres over SQLite for audit persistence
 
 **Context** (Phase 4): audit results lived in an in-memory dict and browser

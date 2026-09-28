@@ -1,0 +1,193 @@
+{
+  "v": 2,
+  "seq": 816,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "gate_decision",
+  "ts": "2026-09-28T10:13:07.484Z",
+  "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+  "data": {
+    "trace": {
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "client_request_id": "req_9Kd4sT2w",
+      "created_at": "2026-09-28T10:13:05.771058Z",
+      "updated_at": "2026-09-28T10:13:07.483404Z",
+      "source": "proxy",
+      "api_format": "openai_chat",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": "flag",
+      "model": "gpt-4o-mini",
+      "stream": false,
+      "upstream_status": 200,
+      "answer_source": "live",
+      "action": "flag",
+      "would_action": "block",
+      "gate_status": "ok",
+      "skip_reason": null,
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+      "checked_against": {
+        "configured": ["request_system", "request_context", "tool_results", "extension"],
+        "used": [
+          {"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}
+        ],
+        "empty": ["request_context", "tool_results", "extension"],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 23
+      },
+      "timings": {
+        "upstream_ms": 1284,
+        "ttft_ms": null,
+        "gate_ms": 428,
+        "overhead_ms": 433,
+        "total_ms": 1717
+      },
+      "decision_model": {
+        "backend": "openrouter-decisions",
+        "snapshot": "typesafe/jev-1.13-20260917",
+        "cost_usd": 0.000025704
+      },
+      "audit": {
+        "audit_id": "01a0e781-0530-79a5-bd4e-1c8b2063f7d4",
+        "status": "queued",
+        "lane": "high",
+        "selection": "high",
+        "verdict": null,
+        "trust_score": null,
+        "grade": null,
+        "verdict_counts": null
+      },
+      "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "response_preview": "You can get a full refund within 60 days of purchase.",
+      "redacted": false,
+      "flags": []
+    },
+    "decision": {
+      "spec": "decision/v1",
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "attempt": 0,
+      "created_at": "2026-09-28T10:13:07.483404Z",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": "flag",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "action": "flag",
+      "would_action": "block",
+      "enforced": true,
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "high",
+      "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {"type": "noul", "noul": 0.96},
+          "probabilities": null,
+          "risk_raw": 0.96,
+          "risk": 0.96,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "none",
+          "calibration_warning": null,
+          "level": "critical",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": true,
+          "block_eligible": true,
+          "thresholds": {"warn_at": 0.8, "critical_at": 0.95, "escalate_from": 0.4}
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {"type": "noul", "noul": 0.98},
+          "probabilities": null,
+          "risk_raw": 0.98,
+          "risk": 0.98,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "none",
+          "calibration_warning": null,
+          "level": "critical",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": true,
+          "block_eligible": true,
+          "thresholds": {"warn_at": 0.7, "critical_at": 0.95, "escalate_from": 0.4}
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [{"text": "60", "start": 33, "end": 35}]
+        },
+        {"id": "dates_not_in_evidence", "ran": true, "fired": false, "findings": []},
+        {"id": "urls_not_in_evidence", "ran": true, "fired": false, "findings": []},
+        {"id": "quotes_not_in_evidence", "ran": true, "fired": false, "findings": []},
+        {"id": "citation_out_of_range", "ran": true, "fired": false, "findings": []},
+        {"id": "secret_pattern", "ran": true, "fired": false, "findings": []},
+        {"id": "system_prompt_leak", "ran": false, "fired": false, "findings": []}
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "openrouter-decisions",
+        "model_requested": "typesafe/jev-1.13",
+        "snapshot": "typesafe/jev-1.13-20260917",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 402,
+        "connect_ms": 31,
+        "input_tokens": 612,
+        "cost_usd": 0.000025704,
+        "cost_source": "reported"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+        "request_sha256": ["6c7ba7dcd197a13ce2b25e5cac2a316051e08504ffb5790c04e02f2182388ba4"],
+        "packed_evidence_ids": ["refund-policy.md"],
+        "truncated_ids": [],
+        "est_tokens": [565]
+      },
+      "evidence_summary": {
+        "configured": ["request_system", "request_context", "tool_results", "extension"],
+        "used": [
+          {"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}
+        ],
+        "empty": ["request_context", "tool_results", "extension"],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 23
+      },
+      "late": false,
+      "gate_ms": 428
+    }
+  }
+}

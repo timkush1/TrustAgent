@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "system-prompt-leak-short-prompt-not-run",
-  "status": "draft",
+  "status": "frozen",
   "description": "The system instructions have fewer than 200 code points, so the leak detector does not run, even though the response repeats them verbatim.",
   "input": {
     "detector": "system_prompt_leak",

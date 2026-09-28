@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -43,8 +44,10 @@ type statusReporter struct {
 	engine engineHealth // nil when no audit engine is configured
 	db     dbStatus     // nil when persistence is disabled
 	jev    jev.Info
-	policy *policy.Policy
-	auth   *apiAuth
+	// jevClient reports the live decision-model state (jev.StatusReporter); nil falls back to jev.
+	jevClient jev.Client
+	policy    *policy.Policy
+	auth      *apiAuth
 	// redisState is the rate limiter's backend state at startup (up, down or disabled).
 	redisState string
 	now        func() time.Time
@@ -103,6 +106,7 @@ type statusEngine struct {
 	componentState
 	Version              string `json:"version,omitempty"`
 	RuntimeConfigVersion *int64 `json:"runtime_config_version,omitempty"`
+	MaxAudits            *int32 `json:"max_audits,omitempty"`
 }
 
 type statusJudge struct {
@@ -159,8 +163,9 @@ type decisionModelStatus struct {
 
 type statusKnowledge struct {
 	componentState
-	Enabled  bool   `json:"enabled"`
-	KBClaims *int64 `json:"kb_claims,omitempty"`
+	Enabled        bool   `json:"enabled"`
+	KBClaims       *int64 `json:"kb_claims,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty"`
 }
 
 type statusPolicy struct {
@@ -264,12 +269,10 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 		DecisionModel: s.decisionModel(),
 		Knowledge:     knowledgeStatus(eng),
 		Policy:        s.policyStatus(),
-		Budgets: statusBudgets{
-			DecisionUSDDay: cfg.SpendCapDecisionUSDDay, LLMUSDDay: cfg.SpendCapLLMUSDDay,
-		},
-		Credentials: statusCredentials{Store: "unavailable", Undecryptable: []string{}},
-		Redis:       statusRedis{componentState: componentState{State: s.redisState}, Configured: cfg.RedisURL != ""},
-		Warnings:    append([]string{}, cfg.Warnings...),
+		Budgets:       s.budgets(),
+		Credentials:   statusCredentials{Store: "unavailable", Undecryptable: []string{}},
+		Redis:         statusRedis{componentState: componentState{State: s.redisState}, Configured: cfg.RedisURL != ""},
+		Warnings:      append([]string{}, cfg.Warnings...),
 	}
 	if s.auth.publicRead {
 		st.Auth.Read = "public"
@@ -284,6 +287,15 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 		st.Engine.Version = r.GetVersion()
 		if v := r.GetRuntimeConfigVersion(); v != 0 {
 			st.Engine.RuntimeConfigVersion = &v
+		}
+	}
+	if info := eng.Info; info != nil {
+		if n := info.GetMaxAudits(); n > 0 {
+			st.Engine.MaxAudits = &n
+		}
+		// The engine's own configuration notes (a judge fallback, an unknown key, a missing extra).
+		for _, w := range info.GetWarnings() {
+			st.Warnings = append(st.Warnings, "Engine: "+w)
 		}
 	}
 	return st
@@ -322,7 +334,9 @@ func engineComponent(h grpc.EngineHealth) componentState {
 	return cs
 }
 
-// judgeState is the deep-audit judge's state as the engine reports it.
+// judgeState is the deep-audit judge's state as the engine reports it. judge_provider "none" means
+// the engine runs without a judge; an engine that leaves judge_provider empty (it does not name its
+// judge, like the S0 engine) is judged by its judge dependency alone.
 func judgeState(h grpc.EngineHealth) string {
 	r := h.Response
 	switch {
@@ -330,7 +344,7 @@ func judgeState(h grpc.EngineHealth) string {
 		return stateDisabled
 	case r == nil:
 		return stateUnknown
-	case r.GetJudgeProvider() == "" || r.GetJudgeProvider() == "none":
+	case r.GetJudgeProvider() == "none":
 		return stateDisabled
 	}
 	ok, known := r.GetDependencies()["judge"]
@@ -363,14 +377,28 @@ func judgeStatus(h grpc.EngineHealth) statusJudge {
 		reason := "the configured judge is unavailable; the engine uses its fallback judge"
 		j.FallbackReason = &reason
 	}
+	// GetEngineInfo says how the judge was chosen: where its key came from and why a fallback runs.
+	if ji := h.Info.GetJudge(); ji != nil {
+		if src := ji.GetCredentialSource(); src != "" {
+			j.CredentialSource = src
+		}
+		if why := ji.GetFallbackReason(); why != "" && j.FallbackActive {
+			j.FallbackReason = &why
+		}
+	}
 	return j
 }
 
 // verifierStatus is SystemStatus.verifier: 2.0 verifies claims with the LLM judge only.
 func verifierStatus(h grpc.EngineHealth) statusVerifier {
 	v := statusVerifier{Configured: "auto", Effective: "llm", Reason: "deep audits verify claims with the LLM judge"}
+	if c := h.Info.GetVerifierConfigured(); c != "" {
+		v.Configured = c
+	}
 	if st := judgeState(h); st == stateDown || st == stateDisabled {
 		v.Effective, v.Reason = "off", "no deep-audit judge is available"
+	} else if why := h.Info.GetVerifierReason(); why != "" && h.Info.GetVerifierEffective() == "llm" {
+		v.Reason = why
 	}
 	return v
 }
@@ -383,6 +411,7 @@ func knowledgeStatus(h grpc.EngineHealth) statusKnowledge {
 	}
 	k.Enabled = true
 	k.State = stateUp
+	k.EmbeddingModel = h.Info.GetKnowledge().GetEmbeddingModel()
 	if ok, known := r.GetDependencies()["qdrant"]; known && !ok {
 		k.State, k.Detail = stateDown, "the engine cannot reach its Qdrant store"
 	}
@@ -391,16 +420,56 @@ func knowledgeStatus(h grpc.EngineHealth) statusKnowledge {
 	return k
 }
 
-// decisionModel is SystemStatus.decision_model. S0 ships the mock and off backends only.
-func (s *statusReporter) decisionModel() decisionModelStatus {
-	d := decisionModelStatus{
-		Provider: "jev", Backend: s.jev.Backend, BackendReason: s.jev.Reason, ModelRequested: nonEmpty(s.jev.Model),
-		Credential: decisionCredential{Source: "none"}, State: "off", Breaker: "closed", CalibrationState: "none",
+// jevStatus is the live decision-model state, or the resolved backend alone when the client
+// cannot report it.
+func (s *statusReporter) jevStatus() jev.Status {
+	if r, ok := s.jevClient.(jev.StatusReporter); ok {
+		return r.Status()
 	}
+	st := jev.Status{Info: s.jev, State: "off", Breaker: jev.BreakerClosed}
 	if s.jev.Backend == jev.BackendMock {
-		d.State = "mock"
+		st.State = "mock"
+	}
+	return st
+}
+
+// decisionModel is SystemStatus.decision_model, from the client's live status: state, breaker,
+// last error with its hint, snapshot, rate use, the endpoint's host and the last 24 hours' calls and
+// cost (held in memory, so they restart with the proxy). Latency percentiles come with the cost
+// ledger (P4).
+func (s *statusReporter) decisionModel() decisionModelStatus {
+	st := s.jevStatus()
+	d := decisionModelStatus{
+		Provider: "jev", Backend: st.Backend, BackendReason: st.Reason, ModelRequested: nonEmpty(st.Model),
+		Snapshot: nonEmpty(st.Snapshot), Credential: decisionCredential{Source: defaultString(st.CredentialSource, "none")},
+		State: st.State, Breaker: defaultString(st.Breaker, jev.BreakerClosed), CalibrationState: "none",
+		Calls24h: int(st.Calls24h), Cost24hUSD: st.Cost24hUSD, RPMLimit: st.RPMLimit, RPMUsed: st.RPMUsed,
+	}
+	if d.State == "" {
+		d.State = "off"
+	}
+	if st.Endpoint != "" {
+		if u, err := url.Parse(st.Endpoint); err == nil && u.Hostname() != "" {
+			d.EndpointHost = nonEmpty(u.Hostname())
+		}
+	}
+	if e := st.LastError; e != nil {
+		d.LastError = &decisionModelError{Kind: e.Kind, Message: e.Message, Hint: e.Hint, At: e.At.UTC()}
 	}
 	return d
+}
+
+// budgets is SystemStatus.budgets: the decision cap and today's spend from the decision-model
+// client's budget (in memory until the persisted ledger, P4); the LLM cap is enforced by the
+// engine, so its spend reads 0 here until the ledger lands.
+func (s *statusReporter) budgets() statusBudgets {
+	b := statusBudgets{DecisionUSDDay: s.cfg.SpendCapDecisionUSDDay, LLMUSDDay: s.cfg.SpendCapLLMUSDDay}
+	if sp := s.jevStatus().Spend; sp != nil {
+		b.DecisionSpentTodayUSD = sp.SpentUSD
+		b.DecisionExhausted = sp.Exhausted
+		b.DecisionReserveOnly = !sp.Exhausted && sp.SoftCapUSD > 0 && sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD
+	}
+	return b
 }
 
 func (s *statusReporter) policyStatus() statusPolicy {
@@ -433,4 +502,12 @@ func engineStatusEvent(h grpc.EngineHealth) map[string]any {
 		ev["detail"] = h.Detail
 	}
 	return ev
+}
+
+// defaultString is s, or def when s is empty.
+func defaultString(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }

@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-full-date-needs-an-exact-match",
+  "status": "frozen",
+  "description": "Prefix matching only widens a month-year in the response. \"March 2026\" (2026-03) equals the evidence date \"March 2026\": known. \"March 15, 2026\" normalizes to 2026-03-15, and a full response date needs the same full date in the reference; the reference has only the month 2026-03: fires on it.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "The beta opens in March 2026, on March 15, 2026 exactly.",
+    "evidence": [
+      {"id": "beta", "source": "request_system", "text": "The public beta opens in March 2026."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "March 15, 2026", "start": 33, "end": 47}]
+  },
+  "tolerance": 1e-9
+}

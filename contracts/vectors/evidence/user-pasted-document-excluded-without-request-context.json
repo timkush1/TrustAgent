@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "user-pasted-document-excluded-without-request-context",
-  "status": "draft",
+  "status": "frozen",
   "description": "The same request on a route whose evidence.sources omit request_context (like the payments-faq example): the pasted block is not evidence at all. It is still removed from user_request.",
   "input": {
     "api_format": "openai_chat",

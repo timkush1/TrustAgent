@@ -129,6 +129,11 @@ func resultRecord(job *Job, lane string, res *pb.AuditResult, finished time.Time
 	var cost float64
 	for _, c := range res.GetCosts() {
 		cost += c.GetCostUsd()
+		rec.Costs = append(rec.Costs, store.CostRecord{
+			Component: c.GetComponent(), Kind: c.GetKind(), Provider: c.GetProvider(), Model: c.GetModel(),
+			InputTokens: c.GetInputTokens(), OutputTokens: c.GetOutputTokens(), CostUSD: c.GetCostUsd(),
+			CostSource: c.GetCostSource(), LatencyMs: c.GetLatencyMs(), Status: c.GetStatus(), Questions: int(c.GetQuestions()),
+		})
 	}
 	if len(res.GetCosts()) > 0 {
 		rec.CostUSD = &cost

@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "numbers-known-from-rules-after-normalization",
-  "status": "draft",
+  "status": "frozen",
   "description": "The response price 1,299.00 normalizes to 1299 (commas removed, trailing .00 stripped), which the rules value states as $1299: known. 3 is an integer <= min_integer 10 with no unit in the next two tokens (\"seats\", end) and no currency sign: skipped. Nothing unknown: does not fire.",
   "input": {
     "detector": "numbers_not_in_evidence",

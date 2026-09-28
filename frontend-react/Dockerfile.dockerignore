@@ -1,0 +1,43 @@
+# Build context of frontend-react/Dockerfile, which is the REPOSITORY ROOT
+# (`docker build -f frontend-react/Dockerfile .`; compose and CI do the same).
+# BuildKit uses this Dockerfile-specific file instead of the root .dockerignore.
+#
+# Allow-list: everything is excluded, then only what `npm run build` reads is
+# let back in: frontend-react/ plus the directories its @contracts and @bench
+# aliases point at (vite.config.ts, tsconfig.app.json). Secrets such as .env can
+# never reach the build this way (Vite would otherwise read .env* files).
+
+*
+
+!frontend-react/
+!contracts/
+!docs/benchmarks/
+
+# Contracts: the JSON/YAML files only; not the npm validator or the Go module.
+contracts/node_modules/
+# Build tooling (the api.v1 schema generator and its node_modules) is not an image input.
+contracts/tools/
+contracts/**/*.go
+contracts/go.mod
+contracts/*.mjs
+contracts/package*.json
+
+# Dependencies and build output are recreated inside the image.
+frontend-react/node_modules/
+frontend-react/dist/
+frontend-react/dist-*/
+frontend-react/.vite/
+frontend-react/**/*.tsbuildinfo
+
+# Tests and their artifacts.
+frontend-react/e2e/
+frontend-react/coverage/
+frontend-react/playwright-report/
+frontend-react/test-results/
+
+# Docs, Docker metadata, editor and OS noise, secrets.
+frontend-react/**/*.md
+frontend-react/Dockerfile*
+**/.DS_Store
+**/.env
+**/.env.*

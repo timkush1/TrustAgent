@@ -1,0 +1,62 @@
+{
+  "items": [
+    {
+      "trace_id": "01a0e781-ca92-77d3-b60a-2b9e14c08e63",
+      "created_at": "2026-09-28T10:13:59.43279Z",
+      "route": "support-bot",
+      "mode": "flag",
+      "effective_mode": "flag",
+      "action": "pass",
+      "would_action": "pass",
+      "status": "not_assessed",
+      "verdict": "not_assessed",
+      "max_risk": null,
+      "reasons": [],
+      "late": false,
+      "decision_snapshot": null,
+      "decision_ms": null,
+      "cost_usd": null,
+      "audit_verdict": "NOT_ASSESSED",
+      "evaluator_levels": {"groundedness@1": null, "contradiction@1": null}
+    },
+    {
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "created_at": "2026-09-28T10:13:07.483404Z",
+      "route": "support-bot",
+      "mode": "flag",
+      "effective_mode": "flag",
+      "action": "flag",
+      "would_action": "block",
+      "status": "ok",
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+      "late": false,
+      "decision_snapshot": "typesafe/jev-1.13-20260917",
+      "decision_ms": 402,
+      "cost_usd": 0.000025704,
+      "audit_verdict": "HALLUCINATED",
+      "evaluator_levels": {"groundedness@1": "critical", "contradiction@1": "critical"}
+    },
+    {
+      "trace_id": "01a0e780-9e78-71f2-8c8b-7d05e3a9c4d1",
+      "created_at": "2026-09-28T10:12:42.705207Z",
+      "route": "support-bot",
+      "mode": "flag",
+      "effective_mode": "flag",
+      "action": "pass",
+      "would_action": "pass",
+      "status": "ok",
+      "verdict": "supported",
+      "max_risk": 0.06,
+      "reasons": [],
+      "late": false,
+      "decision_snapshot": "typesafe/jev-1.13-20260917",
+      "decision_ms": 377,
+      "cost_usd": 0.000026208,
+      "audit_verdict": "GROUNDED",
+      "evaluator_levels": {"groundedness@1": "ok", "contradiction@1": "ok"}
+    }
+  ],
+  "next_cursor": "MTc5MDU5MDM2MjcwNTIwN3wwMWEwZTc4MC05ZTc4LTcxZjItOGM4Yi03ZDA1ZTNhOWM0ZDE"
+}

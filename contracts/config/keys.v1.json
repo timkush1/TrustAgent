@@ -1260,7 +1260,7 @@
       "advanced": true,
       "restart": true,
       "group": "decision_model",
-      "description": "Per-attempt timeout (synchronous: min of this and the remaining deadline)."
+      "description": "Per-attempt timeout. Each attempt runs detached with this timeout; a synchronous gate stops waiting at the route deadline, and an attempt still running then may finish as a late decision (never enforced)."
     },
     {
       "name": "TRUTHTABLE_JEV_ASYNC_DEADLINE",

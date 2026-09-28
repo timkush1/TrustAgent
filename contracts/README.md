@@ -21,7 +21,7 @@ the `cost` vectors.
 | `policies/presets.v1.json` | Presets offered on the Policies page | `presets.v1` |
 | `policies/*.yaml` | Example policies; `example.policies.yaml` is the SPEC §2.7 example | `policy.v1` |
 | `rules/` | Detector, secret and evidence-extraction rules (`{pattern, flags}`, RE2- and JS-compatible), pinned by the `detectors` and `evidence` vectors | no schema yet; every pattern is compiled in JS and Go |
-| `prompts/` | LLM prompts, e.g. the Studio evaluator drafter | parse-only for now |
+| `prompts/<id>.v<N>.json` | LLM prompts shared by every sender, e.g. the Studio evaluator drafter (see [Prompts](#prompts)) | `prompt.v1` |
 | `pricing/prices.v1.json` | Price table (USD per million tokens) | `pricing.v1` |
 | `pricing/assumptions.v1.json` | The assumptions behind every cost estimate, as checkable arithmetic | `pricing-assumptions.v1` |
 | `claims/value-claims.v1.json` | Every number on the landing page, README and Savings panel, with its label | `value-claims.v1` |
@@ -31,7 +31,8 @@ the `cost` vectors.
 | `ui/copy.v1.json` | User-facing strings (banners, wizard, trace detail, savings, limits) | `ui-copy.v1` |
 | `ui/glossary.v1.json` | Plain-language definitions for `<Term id>` tooltips | `ui-glossary.v1` |
 | `ui/commands.v1.json` | Every copyable command | `ui-commands.v1` |
-| `fixtures/api/`, `fixtures/vendor/` | Golden REST/WS bodies (checked against `api.v1`) and sanitized vendor captures | parse-only here |
+| `fixtures/api/<Type>.<case>.json` | One golden REST body or WebSocket event per `api.v1` type (`Page<T>` is spelled `Page-T`); msw handlers and Go handler tests start from them | `api.v1#/$defs/<Type>` |
+| `fixtures/vendor/` | Sanitized vendor captures (P1g) | parse-only |
 | `vectors/<kind>/<name>.json` | Golden vectors; the input and expected shape of each kind is in [`vectors/README.md`](vectors/README.md) | `vector.v1` |
 | `superseded.v1.json` | SPEC Appendix A as data, for `scripts/check-forbidden.mjs` | `superseded.v1` |
 | `go.mod`, `embed.go` | Go module `github.com/truthtable/contracts` exposing `contracts.FS` | |
@@ -103,15 +104,58 @@ fails every runner.
 1. **draft**: hand-authored semantic vectors, and new cases, start as `draft`. `expected` may be a
    subset of the output. Numbers compare as parsed values within `tolerance` (default `1e-9`); strings
    and arrays compare exactly.
-2. **generated**: Go `cmd/vectorgen` (lands in S0; `make vectors`) fills in mechanical `expected` values
+2. **generated**: Go `cmd/vectorgen` (`make vectors`) fills in mechanical `expected` values
    and records `generated_by`. A person reviews the diff.
 3. **frozen**: once the Go reference passes the vector and the review is done, `status` becomes `frozen`.
    A frozen vector never changes. A behaviour change adds a new vector (and, if needed, a new evaluator
    or schema version).
 
 `decide` vector inputs are validated against `decide-input.v1`, and `lint` vector specs against `evaluator.v1`.
-The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
+`make vectors` also checks the hand-written kinds that have a Go runner (`decide`, `detectors`) against the
+reference, but never writes their `expected`. The per-kind `input`/`expected` formats, and the SPEC readings the draft vectors pin, are in
 [`vectors/README.md`](vectors/README.md).
+
+## Presets
+
+`policies/presets.v1.json` holds the route presets the Policies page offers. A preset is a partial
+`RouteSettings` that the page merges over the route the way a route merges over `defaults` (objects key by
+key, arrays replace), so a preset without `evaluators` keeps the route's own; `validate.mjs` checks each one
+merged over the schema defaults. The first three are the SPEC §2.7 presets; the others
+start from the SPEC's own examples (the `support-bot` and `payments-faq` routes and the `rubric-only`
+question set).
+
+| Preset | Mode | What it sets |
+|---|---|---|
+| `observe-all` | observe | every request checked (`sample_rate: 1`); answers never change |
+| `flag-risky` | flag | flag mode only, keeping the route's evaluators |
+| `block-contradictions` | block | groundedness and contradiction, buffered streams, `require_calibration`; starts as Flag until calibrated |
+| `support-bot` | flag | groundedness, contradiction and commitments, with off-brand tone in shadow; fill in the two params |
+| `rubric-only` | flag | the `rubric-only` set (refusal, unsafe policy, PII or secret leak, injection success) for apps without documents |
+| `replace-unverified` | fallback | the `payments-faq` settings, keeping the route's evaluators: fail closed, buffered, 1.5 s deadline with a 400 ms hedge, no `request_context` evidence, URL and citation detectors block, fallback answer from documents only, then block |
+
+## Prompts
+
+`prompts/<id>.v<N>.json` (`prompt.v1`) is an LLM prompt that every sender uses unchanged: the engine's
+`DraftEvaluator` (`truthtable/studio/drafter.py`) and the static build's Studio send
+`evaluator-drafter.v1.json`.
+
+- `system`, `user` and `repair` are lists of lines joined with `"\n"`. `{{name}}` is replaced by the value of
+  `variables.name`, or by its `empty` text when the value is blank; values longer than `max_chars` are
+  rejected before the call.
+- Messages: the system text; then, per example, a user turn (`user` rendered with `example.input`) and an
+  assistant turn (`example.output` as compact JSON); then the user turn for the real input.
+- `call` holds the sampling settings (the drafter: temperature 0.2, max_tokens 1600). The reply is one JSON
+  object that must pass `output.schema`; when it does not, the reply and `repair` (rendered with `{{errors}}`)
+  are appended, at most `call.max_repairs` times.
+- The system text and examples are the same for every call, so senders should mark them cacheable where the
+  provider supports prompt caching.
+
+The drafter asks for one self-contained question (noul or choice, never score) with descriptive option keys,
+`what`/`not_for` descriptions and exactly one escape option, backticked state references only, no counting or
+double negatives, `escalation.numeric_or_date` for checks on numbers or dates, parameters as `rules.<name>`,
+corroborators from the registry or the detectors, six labelled test samples, a rationale and split suggestions.
+Its three examples (a choice check with a parameter, a grounding check on dates that can block, and a
+security check) are validated like drafts, so changing a rule in the system text means updating the examples.
 
 ## Demo scenarios
 
@@ -143,13 +187,33 @@ mode, with `refund-policy.md` as a `<document>` block in the system prompt when 
 | `refund-contradiction-flag` | groundedness 0.96, contradiction 0.98; `numbers_not_in_evidence` fires on 60 | flag (would block), `ok`, contradicted, reasons `contradiction:critical`, `groundedness:critical`, `det:numbers_not_in_evidence` | high lane: HALLUCINATED, 1 CONTRADICTED claim quoting "60 days" | flagged |
 | `no-evidence-not-assessed` | nothing sent | pass, `not_assessed`, `none` | not_assessed: NOT_ASSESSED, no LLM call | not checked |
 
+## API fixtures
+
+`fixtures/api/<Type>.<case>.json` holds one golden body per REST response type and WebSocket event of the
+`api.v1` core subset (SPEC §2.4, §2.5). `<Type>` is the `api.v1` definition the body validates against
+(`Page<T>` is written `Page-T`); WebSocket fixtures are `WsEvent.<type>[.<variant>].json`. msw handlers and
+Go handler tests start from them, so they tell one consistent, production-like story:
+
+- the three S0 demo scenarios on `support-bot` (flag mode) as live proxy traffic, gated by Jev 1.13 through
+  OpenRouter (`typesafe/jev-1.13-20260917`) and audited by Claude Haiku: a grounded pass, the flagged 60-day
+  refund answer with its gate decision and deep audit, and a trace with no evidence that was not checked;
+- a direct audit whose answer starts with emoji, so its claim spans differ between UTF-16 code units and code
+  points;
+- the WebSocket lifecycle of the flagged trace (`trace_started` to `audit_completed`), plus `hello`, `hb`,
+  `audit_failed`, `audit_dropped` and `gap`, and the error body for 400, 401, 404 and 503.
+
+Ids are UUIDv7 whose time matches `created_at`; hashes, token counts and detector findings come from the Go
+reference (the frozen `s0-*` compile vectors), costs from `pricing/prices.v1.json`, and audit scores from the
+scoring v2 formulas (SPEC §3.2). When `api.ts` changes, regenerate `api.v1` and update the fixtures in the same
+contract PR.
+
 ## Validation
 
 ```bash
 make contracts-check     # npm ci when needed, then node validate.mjs
 make contracts-test      # the validator's own tests (node --test)
 make contracts-go        # go vet + go test for the embed module
-make vectors             # placeholder until cmd/vectorgen lands in S0
+make vectors             # Go cmd/vectorgen fills mechanical expected values (VECTORGEN_FLAGS=-check: fail on stale)
 ```
 
 Without the root Makefile targets: `make -f mk/contracts.mk contracts-check`, or
@@ -162,8 +226,19 @@ and then runs the cross-file checks JSON Schema cannot express:
   `risk_levels` are below the number of criteria; `escalate_from < warn_at <= critical_at`; backticked
   references resolve to a declared state field or `rules.<param>`; no question id in question text;
   `requires_corroboration` and `implies` name registered evaluators or known detectors;
+- evaluator lints (SPEC §2.8): built-in templates are lint-clean, and every `lint` vector's `expected` is what
+  the text hard rules and lints give for its spec (rules the SPEC names only by id follow the TypeScript
+  reference, `frontend-react/src/lib/decision/lint.ts`);
 - question sets, policies, presets and scenario mock answers reference registered evaluators (while
   `evaluators/` is still empty these refs are reported as warnings);
+- presets: unique ids and names; a block or fallback preset buffers streams, can block (a block-eligible
+  evaluator or `detectors.block_on`), attaches a corroborator for each block-eligible evaluator, and says in
+  `ui_note` that it starts as Flag while `require_calibration` holds;
+- prompts: the file name matches `id` and `version`; `{{name}}` placeholders and `variables` agree; examples
+  supply exactly the user template's variables and pass `output.schema`; the first call fits the static
+  playground's token cap; the drafter's system text names every state field, category and detector, and its
+  examples pass the hard rules, are lint-clean and have 3 firing and 3 non-firing samples with exactly the
+  state the question reads;
 - policies: unique route names and evaluator ids, declared params unique per route, `evidence_sources`
   within the route sources, `hedge_after_ms` below `deadline_ms`, threshold order after overrides;
 - pricing figures recompute from their terms; value claims match their figure, price entry or measured
@@ -171,7 +246,12 @@ and then runs the cross-file checks JSON Schema cannot express:
 - the key registry: unique names and aliases, valid defaults per kind, no secret defaults, `VITE_*`
   keys exactly the build keys and never secret, at most 15 non-advanced keys (`.env.example`);
 - vectors: known kind, kind matches the directory, name matches the file; `decide` inputs match
-  `decide-input.v1`; `lint` specs match `evaluator.v1` and `expected` lists known codes, sorted;
+  `decide-input.v1`; `lint` specs match `evaluator.v1` and `expected` lists known codes, sorted; pinned
+  `detectors` findings select their text (UTF-16 offsets); `evidence` tag patterns are portable;
+- API fixtures: the file name names an `api.v1` definition (`WsEvent.<type>[.<variant>].json` for events)
+  and the fixture validates against it; every core response type and WebSocket event has a fixture; the
+  parts of a trace carry its id; gate decisions also validate against `decision.v1`; claim spans, verified
+  evidence spans and detector findings select the text they claim to (UTF-16 offsets);
 - rules: every `{pattern, flags}` in `rules/` (and every policy `tag_patterns` entry) compiles in JS, uses
   only the flags `i`, `m` and `s`, and has no lookaround, backreference or inline flags (`go test` compiles
   the same patterns, and every schema `pattern`, with Go's RE2);

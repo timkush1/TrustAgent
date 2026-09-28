@@ -1,16 +1,15 @@
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
-import { Toaster } from 'sonner';
 import type { AppServices } from '@/app/services';
 import { NotFound } from '@/components/common/RouteStates';
+import { Toaster } from '@/components/ui/toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { useThemePreference } from '@/lib/theme';
 
 function RootLayout() {
-  const theme = useThemePreference();
   return (
     <TooltipProvider delay={400}>
       <Outlet />
-      <Toaster theme={theme} position="bottom-right" closeButton richColors={false} />
+      {/* The themed toaster reads the theme itself (components/ui/toast.tsx). */}
+      <Toaster />
     </TooltipProvider>
   );
 }

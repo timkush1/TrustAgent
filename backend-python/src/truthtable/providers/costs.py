@@ -1,0 +1,150 @@
+"""
+Per-call LLM cost records of an audit (SPEC sections 2.2 `CostRecord` and 7.4).
+
+The gateway's cost ledger (`cost_events`) holds one row per LLM call, built
+from the `CostRecord`s an AuditResult carries; Go reconciles the audit's LLM
+cap reservation with them. The engine opens a `cost_ledger()` around each
+audit, and the decomposer and verifier make every judge call through
+`complete_recorded(provider, request, component)`, which appends one
+`CallCost` to that ledger (a call that raised too, with status `error`).
+Outside a ledger (the eval harness, knowledge-base ingestion) recording is a
+no-op.
+
+The cost of a call is what the provider priced it at (pricing.py), with its
+label: `reported` (OpenRouter `usage.cost`), `computed` (tokens x the price
+table), `free_local` (Ollama), `simulated` (the mock judge) or `unknown`. A
+call that raised has no usage to price: cost 0 and `unknown`.
+
+Tasks the audit spawns (concurrent windows and claims) copy the context, so
+they all record into the audit's ledger.
+"""
+
+import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Iterator, List, Optional, Tuple
+
+from .base import CompletionRequest, CompletionResponse, LLMProvider
+from .limiter import unwrap
+from .pricing import UNKNOWN
+
+# CostRecord.component values of a deep audit.
+DEEP_AUDIT_DECOMPOSE = "deep_audit_decompose"
+DEEP_AUDIT_VERIFY = "deep_audit_verify"
+
+# CostRecord.kind of a judge call.
+KIND_LLM = "llm"
+
+# CostRecord.status values.
+STATUS_OK = "ok"
+STATUS_ERROR = "error"
+
+
+@dataclass(frozen=True)
+class CallCost:
+    """One judge call, as proto CostRecord reports it."""
+
+    component: str
+    provider: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Optional[float]
+    cost_source: str
+    latency_ms: int
+    status: str
+    kind: str = KIND_LLM
+
+
+class CostLedger:
+    """The judge calls of one audit, in the order they finished."""
+
+    def __init__(self) -> None:
+        self._calls: List[CallCost] = []
+
+    def add(self, call: CallCost) -> None:
+        self._calls.append(call)
+
+    @property
+    def calls(self) -> Tuple[CallCost, ...]:
+        return tuple(self._calls)
+
+    @property
+    def total_usd(self) -> float:
+        """The known costs summed (unknown ones count as 0)."""
+        total = 0.0
+        for call in self._calls:
+            total += call.cost_usd or 0.0
+        return total
+
+
+_LEDGER: ContextVar[Optional[CostLedger]] = ContextVar("truthtable_cost_ledger", default=None)
+
+
+@contextmanager
+def cost_ledger() -> Iterator[CostLedger]:
+    """Record the judge calls made inside the block (one audit)."""
+    ledger = CostLedger()
+    token = _LEDGER.set(ledger)
+    try:
+        yield ledger
+    finally:
+        _LEDGER.reset(token)
+
+
+def current_ledger() -> Optional[CostLedger]:
+    """The ledger of the audit in progress, if any."""
+    return _LEDGER.get()
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
+
+
+async def complete_recorded(
+    provider: LLMProvider, request: CompletionRequest, component: str
+) -> CompletionResponse:
+    """
+    `provider.complete(request)`, recorded as one `component` call in the
+    current audit's ledger (if any).
+
+    Raises:
+        Whatever the provider raised (after recording the failed call).
+    """
+    ledger = _LEDGER.get()
+    if ledger is None:
+        return await provider.complete(request)
+    name = unwrap(provider).provider_name
+    started = time.monotonic()
+    try:
+        response = await provider.complete(request)
+    except Exception:
+        ledger.add(
+            CallCost(
+                component=component,
+                provider=name,
+                model=request.model or provider.model,
+                input_tokens=0,
+                output_tokens=0,
+                cost_usd=None,
+                cost_source=UNKNOWN,
+                latency_ms=_elapsed_ms(started),
+                status=STATUS_ERROR,
+            )
+        )
+        raise
+    ledger.add(
+        CallCost(
+            component=component,
+            provider=response.provider or name,
+            model=response.model or request.model or provider.model,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            cost_usd=response.cost_usd,
+            cost_source=response.cost_source,
+            latency_ms=response.latency_ms or _elapsed_ms(started),
+            status=STATUS_OK,
+        )
+    )
+    return response

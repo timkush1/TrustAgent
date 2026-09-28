@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-curly-apostrophe-and-min-words",
+  "status": "frozen",
+  "description": "The evidence writes don’t with a curly apostrophe; normalization maps it to a straight one, so the curly-quoted passage is known. The straight-quoted passage has exactly 4 words, the minimum, so it is checked, and it is not in the evidence: fires on it.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "Support wrote “We don't offer refunds on monthly plans” but also \"refunds are always available\".",
+    "evidence": [
+      {
+        "id": "refunds",
+        "source": "request_system",
+        "text": "We don’t offer refunds on monthly plans."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "refunds are always available", "start": 66, "end": 94}]
+  },
+  "tolerance": 1e-9
+}

@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "engine_unavailable",
+    "message": "The audit engine is not reachable; the audit was not queued.",
+    "details": {"engine": "down", "last_ok": "2026-09-28T10:19:02.551Z"},
+    "retry_after_ms": 5000
+  },
+  "trace_id": "01a0e787-7df8-72c6-a8f1-3e7d04b59a18"
+}

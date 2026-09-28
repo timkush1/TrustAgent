@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
+	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/middleware"
 	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/store"
@@ -102,12 +104,12 @@ func newServer(d serverDeps) (*server, error) {
 	if d.store != nil {
 		sink.store = d.store
 	}
-	gw, err := newGateway(cfg, sink, log)
+	gw, err := newGateway(cfg, sink, gatewayHooks{snapshotChanged: s.snapshotChanged}, log)
 	if err != nil {
 		return nil, err
 	}
 	s.gateway = gw
-	s.status.jev, s.status.policy = gw.jev, gw.policy
+	s.status.jev, s.status.jevClient, s.status.policy = gw.jev, gw.client, gw.policy
 	s.auth = &apiAuth{keys: gw.auth, publicRead: cfg.PublicRead, demo: cfg.DemoMode}
 	s.status.auth = s.auth
 
@@ -124,17 +126,24 @@ func newServer(d serverDeps) (*server, error) {
 func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin.Engine {
 	cfg := s.cfg
 	r := gin.New()
-	// Client IPs come from the connection: X-Forwarded-For is trusted from no proxy until
-	// TRUTHTABLE_TRUSTED_PROXIES is read (P2), so it cannot dodge the rate and WS caps.
-	_ = r.SetTrustedProxies(nil)
+	// Client IPs (rate limits, the WS per-IP cap) come from the connection, or from X-Forwarded-For
+	// only when the connection is from TRUTHTABLE_TRUSTED_PROXIES (the dashboard's nginx); by
+	// default no proxy is trusted.
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		s.log.Warn("TRUTHTABLE_TRUSTED_PROXIES is not usable; trusting no proxy", "err", err)
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(gin.Recovery(), requestLog(s.log), middleware.CORS(cfg.AllowedOrigins))
 
 	limiter := d.limiter
 	if limiter == nil {
 		limiter = middleware.NewMemoryLimiter()
 	}
-	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute)
-	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute)
+	// /api answers 429 as an ApiErrorBody, /v1 in the upstream API's error shape (SPEC §2.12).
+	apiDeny := func(c *gin.Context, status int, code, message string) { abortAPI(c, status, code, message) }
+	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute, apiDeny)
+	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute, apiDeny)
+	v1RateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute, proxy.Deny)
 	bodyLimit := middleware.BodyLimit(cfg.MaxBodyBytes)
 	read, ingest := s.auth.require(authz.ScopeRead), s.auth.require(authz.ScopeIngest)
 	writable := s.writable()
@@ -160,7 +169,7 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	// LLM API (SPEC §2.12): every /v1 response carries the trace id; ingest auth reads
 	// X-TrustAgent-Key only, so Authorization stays the client's upstream credential (B1).
 	h := s.gateway.handler
-	v1 := r.Group("/v1", h.TraceIDs(), s.gateway.auth.Ingest(proxy.Deny), rateLimit)
+	v1 := r.Group("/v1", h.TraceIDs(), s.gateway.auth.Ingest(proxy.Deny), v1RateLimit)
 	v1.POST("/chat/completions", bodyLimit, h.ChatCompletions)
 	// Proxied but not gated yet: completions are gated in P3; /v1/responses stays ungated.
 	v1.POST("/completions", bodyLimit, h.Passthrough(proxy.StatusSkippedUnsupportedAPI))
@@ -169,6 +178,16 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	v1.Any("/models", h.Passthrough(""))
 	v1.Any("/models/*model", h.Passthrough(""))
 	v1.Any("/embeddings", bodyLimit, h.Passthrough(""))
+
+	// Unknown paths answer in the error shape of their family, not gin's text/plain 404.
+	r.NoRoute(func(c *gin.Context) {
+		if p := c.Request.URL.Path; p == "/v1" || strings.HasPrefix(p, "/v1/") {
+			proxy.Deny(c, http.StatusNotFound, codeNotFound, "TrustAgent does not serve "+c.Request.Method+" "+p+".")
+			c.Abort()
+			return
+		}
+		abortAPI(c, http.StatusNotFound, codeNotFound, "No endpoint here: "+c.Request.Method+" "+c.Request.URL.Path+".")
+	})
 	return r
 }
 
@@ -209,7 +228,22 @@ func (s *server) engineChanged(h grpc.EngineHealth) {
 	s.hub.Publish(ev)
 }
 
-// start runs the hub, the engine pinger and the audit workers until shutdown.
+// snapshotChanged broadcasts a new decision-model snapshot (WS decision_model_changed, SPEC §2.5).
+// Calibration lookups per snapshot arrive with calibration (P3), so the state is "none" until then.
+// It runs on a jev attempt goroutine and must not block: Publish never does.
+func (s *server) snapshotChanged(c jev.SnapshotChange) {
+	s.log.Warn("decision model snapshot changed", "backend", c.Backend, "model", c.Model, "previous", c.Previous, "snapshot", c.Snapshot)
+	ev, err := websocket.NewEvent("decision_model_changed", "", map[string]any{
+		"backend": c.Backend, "previous_snapshot": c.Previous, "snapshot": c.Snapshot, "calibration": "none",
+	}, nil)
+	if err != nil {
+		return
+	}
+	s.hub.Publish(ev)
+}
+
+// start runs the hub, the engine pinger, the audit workers and the decision model's startup probe
+// until shutdown.
 func (s *server) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
@@ -218,6 +252,10 @@ func (s *server) start() {
 	if s.pinger != nil {
 		s.wg.Add(1)
 		go func() { defer s.wg.Done(); s.pinger.Run(ctx) }()
+	}
+	if s.cfg.Jev.StartupProbe {
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); s.gateway.probe(ctx, max(s.cfg.Jev.AttemptTimeout, 10*time.Second), s.log) }()
 	}
 	s.pool.Start()
 }
@@ -236,6 +274,7 @@ func (s *server) shutdown(ctx context.Context) error {
 		s.cancel()
 	}
 	s.wg.Wait()
+	s.gateway.close()
 	return errors.Join(errs...)
 }
 

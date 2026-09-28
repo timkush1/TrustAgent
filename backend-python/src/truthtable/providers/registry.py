@@ -5,7 +5,8 @@ Manages registration and retrieval of LLM providers.
 This implements the Registry pattern for dynamic provider selection.
 """
 
-from typing import Dict, Type
+from typing import Any, Dict, List, Type
+
 from .base import LLMProvider
 
 
@@ -24,7 +25,7 @@ class ProviderRegistry:
         provider = registry.get("ollama", model="llama3.2", base_url="...")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._providers: Dict[str, Type[LLMProvider]] = {}
 
     def register(self, name: str, provider_class: Type[LLMProvider]) -> None:
@@ -37,7 +38,7 @@ class ProviderRegistry:
         """
         self._providers[name] = provider_class
 
-    def get(self, name: str, **kwargs) -> LLMProvider:
+    def get(self, name: str, **kwargs: Any) -> LLMProvider:
         """
         Get a provider instance.
 
@@ -60,7 +61,7 @@ class ProviderRegistry:
         provider_class = self._providers[name]
         return provider_class(**kwargs)
 
-    def list_providers(self) -> list[str]:
+    def list_providers(self) -> List[str]:
         """Get list of registered provider names."""
         return list(self._providers.keys())
 
@@ -74,11 +75,11 @@ def register_provider(name: str, provider_class: Type[LLMProvider]) -> None:
     _registry.register(name, provider_class)
 
 
-def get_provider(name: str, **kwargs) -> LLMProvider:
+def get_provider(name: str, **kwargs: Any) -> LLMProvider:
     """Get a provider from the global registry."""
     return _registry.get(name, **kwargs)
 
 
-def list_providers() -> list[str]:
+def list_providers() -> List[str]:
     """List all registered providers."""
     return _registry.list_providers()

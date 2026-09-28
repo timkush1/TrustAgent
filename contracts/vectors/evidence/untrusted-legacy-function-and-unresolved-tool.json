@@ -1,0 +1,60 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "untrusted-legacy-function-and-unresolved-tool",
+  "status": "frozen",
+  "description": "The legacy role \"function\" message is named search_web by its name field, which matches the untrusted_tools glob search_*: its item is kept, marked untrusted, and still counted before dedup. The tool message's tool_call_id matches no assistant tool call, so it has no name, which search_* does not match: a trusted item (how a bare * glob treats an unresolved name is not pinned here). Both get positional ids.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": ["search_*"]
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {"role": "system", "content": "You are a research assistant."},
+        {"role": "user", "content": "What is the capital of Australia?"},
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_7",
+              "type": "function",
+              "function": {"name": "lookup", "arguments": "{\"q\":\"capital\"}"}
+            }
+          ]
+        },
+        {
+          "role": "function",
+          "name": "search_web",
+          "content": "Sydney is the largest city in Australia."
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_404",
+          "content": "Canberra is the capital of Australia."
+        }
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "Sydney is the largest city in Australia.",
+        "untrusted": true
+      },
+      {"id": "tool2", "source": "tool_results", "text": "Canberra is the capital of Australia."}
+    ],
+    "system_instructions": "You are a research assistant.",
+    "user_request": "What is the capital of Australia?",
+    "pre_dedup_items": 2
+  },
+  "tolerance": 1e-9
+}

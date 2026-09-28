@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-utf16-offsets-after-emoji",
+  "status": "frozen",
+  "description": "The parcel emoji is two UTF-16 code units and the em dash one (three UTF-8 bytes): offsets count UTF-16 code units. 2026-07-04 is in the evidence. \"July 9, 2026\" is 2026-07-09, which is not: fires on it.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "📦 Your parcel arrives 2026-07-04 — or by July 9, 2026 at the latest.",
+    "evidence": [
+      {"id": "shipping", "source": "request_system", "text": "Estimated delivery: 2026-07-04."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "July 9, 2026", "start": 42, "end": 54}]
+  },
+  "tolerance": 1e-9
+}

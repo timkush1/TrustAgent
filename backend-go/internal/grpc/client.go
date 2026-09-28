@@ -19,8 +19,12 @@ import (
 // configured (SPEC §2.2, TRUTHTABLE_INTERNAL_TOKEN).
 const InternalTokenHeader = "x-trustagent-internal"
 
-// healthTimeout bounds one engine health check.
-const healthTimeout = 2 * time.Second
+// healthTimeout bounds one engine health check; engineInfoTimeout one GetEngineInfo (the engine
+// runs a bounded judge probe and Qdrant probes for it).
+const (
+	healthTimeout     = 2 * time.Second
+	engineInfoTimeout = 4 * time.Second
+)
 
 // AuditClient talks to the audit engine (AuditService).
 type AuditClient struct {
@@ -66,6 +70,15 @@ func (c *AuditClient) Health(ctx context.Context) (*pb.HealthResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, healthTimeout)
 	defer cancel()
 	return c.client.HealthCheck(ctx, &pb.HealthRequest{})
+}
+
+// EngineInfo asks the engine what it runs with (SPEC §2.2 GetEngineInfo): version, the judge and
+// how it was chosen, knowledge, verifier, scoring settings, configuration warnings and its limits.
+// The engine probes its judge for the answer, so it is bounded like a health check.
+func (c *AuditClient) EngineInfo(ctx context.Context) (*pb.EngineInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, engineInfoTimeout)
+	defer cancel()
+	return c.client.GetEngineInfo(ctx, &pb.EngineInfoRequest{})
 }
 
 // IngestDocument represents a document to ingest into the knowledge base.

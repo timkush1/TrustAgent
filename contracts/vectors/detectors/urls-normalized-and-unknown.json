@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "detectors",
   "name": "urls-normalized-and-unknown",
-  "status": "draft",
+  "status": "frozen",
   "description": "The first URL loses its trailing \".\" and \"/\" and its host is lowercased: https://docs.example.com/refunds, which the evidence contains. The second becomes https://example.com/terms (trailing \".\" stripped), which no reference text contains: fires on it, with the finding covering the stripped URL.",
   "input": {
     "detector": "urls_not_in_evidence",

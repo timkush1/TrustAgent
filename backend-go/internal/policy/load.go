@@ -68,7 +68,7 @@ type Policy struct {
 // LoadFile reads and validates the policy at path. A missing file yields the built-in policy (the
 // defaults route only), so a fresh install gates in the seeded mode; any other error is returned.
 func LoadFile(path string, seeds Seeds, specs Resolver) (*Policy, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- the operator names the policy file (TRUTHTABLE_POLICY_FILE)
 	if errors.Is(err, fs.ErrNotExist) {
 		p, err := Parse([]byte("version: 1\n"), seeds, specs)
 		if err != nil {

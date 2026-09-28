@@ -1,0 +1,24 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-not-run-with-only-untrusted-evidence",
+  "status": "frozen",
+  "description": "The only evidence item is an untrusted tool result, which is never evidence, so the quote detector does not run, although that item contains the quoted words.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "The page says \"prices drop every Friday at noon\".",
+    "evidence": [
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "Prices drop every Friday at noon.",
+        "untrusted": true
+      }
+    ],
+    "user_request": "When do prices drop?",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": false, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-stop-at-brackets-and-strip-trailing-slash",
+  "status": "frozen",
+  "description": "The URL pattern stops at \")\" and \"]\". The first URL, with its trailing \"/\" stripped, is https://help.example.com/refunds/annual, which the evidence contains. The second is https://help.example.com/refund-form, which no reference text contains: fires on it.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "Details (https://help.example.com/refunds/annual/). Form: [https://help.example.com/refund-form]",
+    "evidence": [
+      {
+        "id": "refunds",
+        "source": "request_system",
+        "text": "Annual plan refunds: https://help.example.com/refunds/annual"
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "https://help.example.com/refund-form", "start": 59, "end": 95}]
+  },
+  "tolerance": 1e-9
+}

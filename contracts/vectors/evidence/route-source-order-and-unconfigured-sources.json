@@ -1,0 +1,79 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "route-source-order-and-unconfigured-sources",
+  "status": "frozen",
+  "description": "The route lists sources tool_results then request_system, so the tool item comes first. request_context and extension are not route sources: the pasted <context> block is dropped but still removed from user_request, and trustagent.context adds no item (the trustagent member is still stripped from the forwarded body). pre_dedup_items counts configured sources only: 2.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["tool_results", "request_system"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are Acme support.\n<document id=\"policy\">Orders ship within 2 business days.</document>"
+        },
+        {
+          "role": "user",
+          "content": "<context>I was told shipping takes 1 day.</context>\nWhy has my order 4411 not arrived?"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {"name": "get_order", "arguments": "{\"id\":\"4411\"}"}
+            }
+          ]
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "Order 4411 shipped on 2026-03-02."}
+      ],
+      "trustagent": {"context": [{"id": "crm-note", "text": "Customer is a VIP."}]}
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "tool1", "source": "tool_results", "text": "Order 4411 shipped on 2026-03-02."},
+      {"id": "policy", "source": "request_system", "text": "Orders ship within 2 business days."}
+    ],
+    "system_instructions": "You are Acme support.",
+    "user_request": "Why has my order 4411 not arrived?",
+    "pre_dedup_items": 2,
+    "max_marker": 0,
+    "forwarded_body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are Acme support.\n<document id=\"policy\">Orders ship within 2 business days.</document>"
+        },
+        {
+          "role": "user",
+          "content": "<context>I was told shipping takes 1 day.</context>\nWhy has my order 4411 not arrived?"
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_1",
+              "type": "function",
+              "function": {"name": "get_order", "arguments": "{\"id\":\"4411\"}"}
+            }
+          ]
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "Order 4411 shipped on 2026-03-02."}
+      ]
+    }
+  },
+  "tolerance": 1e-9
+}

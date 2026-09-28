@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "evidence",
   "name": "marker-blocks-dedup-and-max-marker",
-  "status": "draft",
+  "status": "frozen",
   "description": "Three [Document N] markers, each block running to the next marker or the end. Documents 1 and 3 have the same text, so dedup keeps the first; the pre-dedup count (3) and the highest marker number (3) are what citation_out_of_range uses. Ids are positional before dedup (sys1, sys2).",
   "input": {
     "api_format": "openai_chat",
