@@ -1,71 +1,131 @@
 # ============================================================================
-# mk/dx.mk - Compose stack, local models, load test, monitoring shortcuts.
-# Owned by the W-DX stream. Included by the root Makefile; targets are
-# declared .PHONY there. Services are addressed by compose service name
-# (`$(COMPOSE) exec ollama ...`); there are no fixed container names.
+# mk/dx.mk - Compose stacks (default and demo), setup tools, local models,
+# load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
+# root Makefile; targets are declared .PHONY there.
+#
+# Services are addressed by compose service name (`$(COMPOSE) exec ollama ...`);
+# there are no fixed container names. The default stack's project name comes
+# from COMPOSE_PROJECT_NAME (.env) or `name: truthtable` in docker-compose.yml;
+# the demo stack always runs as $(DEMO_PROJECT).
 # ============================================================================
 
-# open_url: open $(1) in the host browser and always print it, so a headless
-# shell still gets something to click. Tries, in order: wslview (WSL), the
-# Windows shell via explorer.exe (WSL without wslu), open (macOS), xdg-open
-# (Linux desktop), then Python's webbrowser module.
-define open_url
-@url='$(1)'; echo "Opening $$url"; \
-if command -v wslview >/dev/null 2>&1 && wslview "$$url" >/dev/null 2>&1; then :; \
-elif grep -qi microsoft /proc/version 2>/dev/null && command -v explorer.exe >/dev/null 2>&1; then explorer.exe "$$url" || true; \
-elif [ "$$(uname -s)" = Darwin ] && open "$$url"; then :; \
-elif command -v xdg-open >/dev/null 2>&1 && xdg-open "$$url" >/dev/null 2>&1; then :; \
-elif $(PYTHON) -c 'import sys, webbrowser; sys.exit(0 if webbrowser.open(sys.argv[1]) else 1)' "$$url" >/dev/null 2>&1; then :; \
-else echo "No browser launcher found; open the URL above manually."; fi
-endef
+# Image tag of the app services (docker-compose.yml reads TRUSTAGENT_VERSION).
+TRUSTAGENT_VERSION ?= $(shell cat VERSION 2>/dev/null)
+export TRUSTAGENT_VERSION
+
+DEMO_PROJECT ?= truthtable-demo
+DEMO_COMPOSE  = $(COMPOSE) -p $(DEMO_PROJECT) -f docker-compose.yml -f docker-compose.demo.yml --profile demo
+# `make demo` builds the images from this checkout; `make demo DEMO_BUILD=` uses
+# local or published images instead (CI builds them first, with a layer cache).
+DEMO_BUILD   ?= --build
+# Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
+UP_ARGS      ?=
+# Seconds `up --wait` gives every service to become healthy.
+WAIT_TIMEOUT ?= 600
+# OPEN=0 prints the dashboard URL without opening a browser (CI never opens one).
+OPEN         ?= 1
+# `make logs SERVICE=proxy` / `make demo-logs SERVICE=engine` follow one service.
+SERVICE      ?=
+
+# Read with the same precedence as compose: process env, then .env, then default.
+DASHBOARD_URL = http://localhost:$(shell $(PYTHON) scripts/envfile.py get DASHBOARD_HOST_PORT 3000)
+OPEN_URL_ARGS = $(if $(filter 0,$(OPEN)),--print-only)
 
 ##@ Stack (docker compose)
 
-up: ## Start infrastructure services (redis, postgres, qdrant, ollama, prometheus, grafana) and wait until healthy
-	$(COMPOSE) up -d --wait redis postgres qdrant ollama prometheus grafana
-	@echo "✅ Infrastructure services running"
-	@echo "Redis:      redis://localhost:6379"
-	@echo "Postgres:   postgres://truthtable@localhost:5432/truthtable (password: POSTGRES_PASSWORD in .env; compose uses truthtable-dev when it is empty or unset)"
-	@echo "Qdrant:     http://localhost:6333"
-	@echo "Ollama:     http://localhost:11434"
-	@echo "Prometheus: http://localhost:9090"
-	@echo "Grafana:    http://localhost:3001 (user admin, password: GRAFANA_ADMIN_PASSWORD in .env)"
+up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons), wait until healthy, open the dashboard
+	$(PYTHON) scripts/configure.py --ensure
+	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) $(UP_ARGS)
+	@echo "✅ TrustAgent is running (proxy: http://localhost:$$($(PYTHON) scripts/envfile.py get PROXY_HOST_PORT 8080)/v1)"
+	@$(PYTHON) scripts/open_url.py $(OPEN_URL_ARGS) --label "Dashboard" "$(DASHBOARD_URL)"
 
-up-all: ## Start all services (infrastructure + application)
-	$(COMPOSE) up -d
-	@echo "✅ All services running"
-
-down: ## Stop all services
+down: ## Stop the stack (keeps its volumes)
 	$(COMPOSE) down
-	@echo "✅ All services stopped"
+	@echo "✅ Stack stopped"
 
-logs: ## View logs from all services
-	$(COMPOSE) logs -f
+up-infra: ## Start only the backing services (postgres + COMPOSE_PROFILES add-ons) for make dev-go / dev-python
+	$(PYTHON) scripts/configure.py --ensure
+	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) \
+		$$($(COMPOSE) config --services | grep -vxE 'proxy|engine|dashboard|trafficgen')
+	@echo "✅ Backing services running (postgres on localhost:$$($(PYTHON) scripts/envfile.py get POSTGRES_HOST_PORT 5432), user truthtable, POSTGRES_PASSWORD in .env)"
 
-status: ## Show status of all services
-	@echo "Service Status:"
-	@$(COMPOSE) ps
+demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build, wait until healthy, open the dashboard
+	$(PYTHON) scripts/configure.py --ensure
+	$(DEMO_COMPOSE) up -d $(DEMO_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT)
+	@echo "✅ Demo stack running (project $(DEMO_PROJECT), DEMO MODE: simulated checks, no keys, \$$0)"
+	@echo "   Diagnose: python3 scripts/doctor.py --expect demo   Stop: make demo-down"
+	@$(PYTHON) scripts/open_url.py $(OPEN_URL_ARGS) --label "Dashboard" "$(DASHBOARD_URL)"
 
-clean-data: ## Remove all Docker volumes (WARNING: deletes all data)
-	$(COMPOSE) down -v
+demo-down: ## Stop the demo stack (keeps its volumes; make demo-clean deletes them)
+	$(DEMO_COMPOSE) down
+	@echo "✅ Demo stack stopped"
+
+demo-clean: ## Stop the demo stack and delete its volumes (demo database and secret key)
+	$(DEMO_COMPOSE) down --volumes --remove-orphans
+	@echo "✅ Demo stack and its volumes removed"
+
+logs: ## Follow the stack's logs (SERVICE=proxy for one service)
+	$(COMPOSE) logs -f $(SERVICE)
+
+demo-logs: ## Follow the demo stack's logs (SERVICE=engine for one service)
+	$(DEMO_COMPOSE) logs -f $(SERVICE)
+
+status: ## Show the stack's containers and their health
+	@$(COMPOSE) ps --all
+
+clean-data: ## Stop the stack and delete its volumes (WARNING: deletes all data)
+	$(COMPOSE) down --volumes
 	@echo "✅ All data volumes removed"
 
-##@ Ollama (local judge fallback)
+##@ Setup tools
 
-ollama-pull: ## Pull the default Ollama fallback model, OLLAMA_MODEL (1B; fits ~2GB RAM)
-	$(COMPOSE) exec ollama ollama pull $(OLLAMA_MODEL)
+configure: ## Create or complete .env: generated secrets only, never overwrites (interactive setup comes later)
+	$(PYTHON) scripts/configure.py --ensure
+
+doctor: ## Diagnose the running stack (make doctor ARGS="--expect demo --json")
+	$(PYTHON) scripts/doctor.py $(ARGS)
+
+# Every profile on its own, all of them together, and the demo override.
+COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo "*"
+
+compose-check: ## Validate the compose files: every profile and the demo override (docker compose config -q)
+	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \
+	set -e; for p in $(COMPOSE_CHECK_PROFILES); do \
+		$(COMPOSE) $${p:+--profile "$$p"} config -q; echo "compose config ok: profile $${p:-default}"; \
+	done; \
+	$(DEMO_COMPOSE) config -q; echo "compose config ok: demo override"
+
+test-scripts: ## Unit tests of the setup scripts (scripts/tests, standard library only)
+	$(PYTHON) -m unittest discover -s scripts/tests -v
+
+lint-scripts: ## ruff + black --check on scripts/ (the engine's settings, via its Poetry env)
+	cd backend-python && $(POETRY) run ruff check --config pyproject.toml ../scripts
+	cd backend-python && $(POETRY) run black --check --config pyproject.toml ../scripts
+
+##@ Ollama (profile local-llm: local judge)
+
+ollama-pull: ## Pull OLLAMA_MODEL into the running ollama service (ollama-init pulls OLLAMA_FALLBACK_MODEL by itself)
+	$(COMPOSE) --profile local-llm exec -T ollama ollama pull $(OLLAMA_MODEL)
 	@echo "✅ $(OLLAMA_MODEL) model downloaded"
 
-ollama-list: ## List available Ollama models
-	$(COMPOSE) exec ollama ollama list
+ollama-list: ## List the models in the ollama service
+	$(COMPOSE) --profile local-llm exec -T ollama ollama list
 
 ##@ Load testing and monitoring
 
-load-test: ## Measure proxy overhead under load (requires stack: make up-all; uses dockerized k6)
-	docker run --rm -i --network host grafana/k6 run - < scripts/load/proxy-overhead.js
+load-test: ## Measure proxy overhead under load (requires the demo stack: make demo; uses dockerized k6)
+	docker run --rm -i --network host \
+		-e BASE_URL="http://localhost:$$($(PYTHON) scripts/envfile.py get PROXY_HOST_PORT 8080)" \
+		-e API_KEY="$$($(PYTHON) scripts/envfile.py get TRAFFICGEN_API_KEY)" \
+		grafana/k6 run - < scripts/load/proxy-overhead.js
 
-metrics: ## Open the Prometheus UI in a browser (WSL/macOS/Linux aware)
-	$(call open_url,http://localhost:9090)
+metrics: ## Open the Prometheus UI (profile observability; WSL/macOS/Linux aware)
+	@$(PYTHON) scripts/open_url.py --label "Prometheus" http://localhost:9090
 
-dashboards: ## Open the Grafana dashboards in a browser (WSL/macOS/Linux aware)
-	$(call open_url,http://localhost:3001)
+dashboards: ## Open the Grafana dashboards (profile observability; WSL/macOS/Linux aware)
+	@$(PYTHON) scripts/open_url.py --label "Grafana (admin / GRAFANA_ADMIN_PASSWORD in .env)" http://localhost:3001
+
+# ---------- Aggregate hooks (see the root Makefile) ----------
+test: test-scripts
+lint: lint-scripts
+check: compose-check
