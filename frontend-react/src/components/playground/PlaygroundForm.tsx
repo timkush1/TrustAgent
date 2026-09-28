@@ -34,9 +34,11 @@ export interface PlaygroundFormProps {
   maxChars: number | null;
   /** Everything is locked while a run is in flight. */
   busy: boolean;
+  /** A demo or test-mode stack: an unedited example is answered with its scenario's scripted checks. */
+  scripted?: boolean;
 }
 
-export function PlaygroundFormView({ routes, maxChars, busy }: PlaygroundFormProps) {
+export function PlaygroundFormView({ routes, maxChars, busy, scripted = false }: PlaygroundFormProps) {
   const { form, set, setMessage, addMessage, removeMessage, setDoc, addDoc, removeDoc, load, reset } = usePlaygroundStore();
   const modelListId = useId();
   const length = textLength(form);
@@ -78,6 +80,12 @@ export function PlaygroundFormView({ routes, maxChars, busy }: PlaygroundFormPro
           ? 'Your request goes to your model through the gateway, then the answer is checked exactly as your app’s would be.'
           : 'No model call: paste an answer and see how the checks judge it against the documents.'}
       </p>
+      {scripted && form.scenario ? (
+        <p className="text-xs text-fg-muted">
+          Example “{EXAMPLES.find((e) => e.id === form.scenario)?.title ?? form.scenario}”: this stack’s mock checks answer it with the
+          scenario’s scripted results (simulated). Editing the example makes it your own request.
+        </p>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field

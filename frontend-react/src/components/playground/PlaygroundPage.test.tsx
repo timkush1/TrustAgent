@@ -56,7 +56,33 @@ describe('Playground model', () => {
 
   it('turns the demo scenarios into audit examples', () => {
     const refund = EXAMPLES.find((e) => e.id === 'refund-contradiction-flag');
-    expect(refund?.form).toMatchObject({ mode: 'audit', route: 'support-bot', response: 'You can get a full refund within 60 days of purchase.' });
+    expect(refund?.form).toMatchObject({
+      mode: 'audit',
+      route: 'support-bot',
+      response: 'You can get a full refund within 60 days of purchase.',
+      scenario: 'refund-contradiction-flag',
+    });
+  });
+
+  it('sends an example scenario only when asked, and forgets it once the example is edited', () => {
+    const refund = EXAMPLES.find((e) => e.id === 'refund-contradiction-flag')!;
+    expect(buildRequest(refund.form).scenario).toBeUndefined();
+    expect(buildRequest(refund.form, { scenario: true }).scenario).toBe('refund-contradiction-flag');
+
+    const store = usePlaygroundStore.getState();
+    store.load(refund.form);
+    store.set('modeOverride', 'block');
+    store.set('model', 'gpt-4o');
+    // Neither the mode to act as nor the model is scripted by the scenario.
+    expect(usePlaygroundStore.getState().form.scenario).toBe('refund-contradiction-flag');
+    store.set('response', 'Refunds within 30 days.');
+    expect(usePlaygroundStore.getState().form.scenario).toBe('');
+    store.load(refund.form);
+    store.setMessage(1, { content: 'Something else?' });
+    expect(usePlaygroundStore.getState().form.scenario).toBe('');
+    store.load(refund.form);
+    store.addDoc();
+    expect(usePlaygroundStore.getState().form.scenario).toBe('');
   });
 });
 
@@ -170,6 +196,19 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Check the answer' }));
     expect(await screen.findByText('Audit mode: no model call.')).toBeInTheDocument();
     expect(control.callsTo('/api/playground/run')[0].body).toMatchObject({ mode: 'audit', route: 'support-bot' });
+    // A live (non-demo) stack runs real checks: no scenario is sent.
+    expect(control.callsTo('/api/playground/run')[0].body).not.toHaveProperty('scenario');
+  });
+
+  it('sends the example scenario to a demo stack, whose mock checks script it', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/playground', { status: { demo: true } });
+    await user.click(await screen.findByRole('button', { name: 'Load an example' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Refund window: 60 days vs 30 days' }));
+    expect(screen.getByText(/this stack’s mock checks answer it with the scenario’s scripted results \(simulated\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Check the answer' }));
+    await screen.findByText('Audit mode: no model call.');
+    expect(control.callsTo('/api/playground/run')[0].body).toMatchObject({ mode: 'audit', scenario: 'refund-contradiction-flag' });
   });
 
   it('shows the curl equivalent of the form with the key masked', async () => {

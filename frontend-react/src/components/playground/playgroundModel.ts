@@ -26,6 +26,11 @@ export interface PlaygroundForm {
   stream: boolean;
   /** "" keeps the route's own mode. */
   modeOverride: PolicyMode | '';
+  /**
+   * The demo scenario an unedited example came from ("" otherwise). Sent only to a demo or
+   * test-mode stack, whose mock checks answer it with the scenario's scripted answers.
+   */
+  scenario: string;
 }
 
 export const INITIAL_FORM: PlaygroundForm = {
@@ -40,9 +45,15 @@ export const INITIAL_FORM: PlaygroundForm = {
   response: '',
   stream: false,
   modeOverride: '',
+  scenario: '',
 };
 
-export function buildRequest(form: PlaygroundForm): PlaygroundRequest {
+export interface BuildOptions {
+  /** Send the example's scenario id (a demo or test-mode stack, where mock checks are keyed by it). */
+  scenario?: boolean;
+}
+
+export function buildRequest(form: PlaygroundForm, options: BuildOptions = {}): PlaygroundRequest {
   const messages = form.messages
     .filter((m) => m.content.trim() !== '')
     .map((m) => ({ role: m.role, content: m.content }));
@@ -56,6 +67,7 @@ export function buildRequest(form: PlaygroundForm): PlaygroundRequest {
   if (form.mode === 'audit') request.response = form.response;
   if (form.mode === 'chat' && form.stream) request.stream = true;
   if (form.modeOverride) request.mode_override = form.modeOverride;
+  if (options.scenario && form.scenario) request.scenario = form.scenario;
   return request;
 }
 
@@ -90,7 +102,11 @@ export interface PlaygroundExample {
   form: PlaygroundForm;
 }
 
-/** The demo scenarios as audit-mode examples: no upstream model is needed to try them. */
+/**
+ * The demo scenarios as audit-mode examples: no upstream model is needed to try them. Each keeps
+ * its scenario id until the viewer edits what the scenario scripts (the conversation, documents,
+ * answer, mode or route), so a demo stack plays it exactly as trafficgen does.
+ */
 export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown as { scenarios: ScenarioJson[] }).scenarios.map((s) => ({
   id: s.id,
   title: s.title,
@@ -101,5 +117,6 @@ export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown a
     model: s.request.model,
     messages: s.request.messages.map((m) => ({ role: m.role, content: m.content })),
     response: s.response,
+    scenario: s.id,
   },
 }));

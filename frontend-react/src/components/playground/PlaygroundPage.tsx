@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { isApiError } from '@/data/errors';
 import { policiesQuery } from '@/data/queries';
-import { useSystemStatus } from '@/data/useSystem';
+import { useAppMode, useSystemStatus } from '@/data/useSystem';
 import { playgroundCurl } from '@/domain/snippets';
 import type { GateDecisionView, PlaygroundResult } from '@/types/api';
 import { buildRequest, formProblem } from './playgroundModel';
@@ -82,6 +82,7 @@ export function PlaygroundPage() {
   const origin = useGatewayOrigin();
   const form = usePlaygroundStore((s) => s.form);
   const { status } = useSystemStatus();
+  const { demo } = useAppMode();
   const writeReason = useWriteReason('admin');
   const policies = useQuery(policiesQuery(ds));
   const [run, setRun] = useState<RunState>(IDLE);
@@ -92,7 +93,9 @@ export function PlaygroundPage() {
   const routes = policies.data ? policies.data.effective_routes.map((r) => r.name).filter((n) => n !== 'default') : policies.isError ? null : [];
   const maxChars = status?.limits.max_text_chars ?? null;
   const problem = formProblem(form, maxChars);
-  const request = buildRequest(form);
+  // Mock checks on a demo or test-mode stack answer an unedited example with its scripted answers.
+  const scripted = demo || status?.test_mode === true;
+  const request = buildRequest(form, { scenario: scripted });
   const runReason: Reason | null = writeReason ?? (problem ? { text: problem } : null);
 
   const start = async () => {
@@ -132,7 +135,7 @@ export function PlaygroundPage() {
         <Card>
           <CardHeader level={2} title="Request" description="Kept here between runs." />
           <CardContent className="space-y-5">
-            <PlaygroundFormView routes={routes} maxChars={maxChars} busy={run.running} />
+            <PlaygroundFormView routes={routes} maxChars={maxChars} busy={run.running} scripted={scripted} />
             {/* Stays in view at the bottom of a long form. */}
             <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-2 rounded-b-lg border-t border-border bg-surface px-4 py-3">
               {run.running ? (
