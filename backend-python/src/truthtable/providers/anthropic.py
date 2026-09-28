@@ -13,11 +13,13 @@ API shape notes (vs. OpenAI):
   verified parameter and the TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS modes).
 - 429 and 529 ("overloaded_error") and other 5xx are retried (retry.py),
   honouring `retry-after`.
+- Models without sampling parameters reject `temperature` with a 400; it is
+  then dropped for that model (logged once) and the call retried.
 """
 
 import logging
 import os
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Set, Union
 
 from .base import CompletionRequest, CompletionResponse, MessageRole, normalized_usage
 from .errors import ProviderError
@@ -35,6 +37,9 @@ logger = logging.getLogger(__name__)
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5"
+
+# Sampling parameter some models do not accept (dropped when rejected).
+TEMPERATURE = "temperature"
 
 
 class AnthropicProvider(HTTPProvider):
@@ -66,8 +71,10 @@ class AnthropicProvider(HTTPProvider):
         if not self.api_key:
             raise ValueError("Anthropic API key missing: set ANTHROPIC_API_KEY or pass api_key")
         self.structured_outputs_mode = StructuredOutputsMode.parse(structured_outputs)
-        # Set once in `auto` mode when the API rejects output_config.
-        self._structured_outputs_rejected = False
+        # Optional request parameters the API rejected, by model: output_config
+        # (auto mode, e.g. an older model) and temperature (models without
+        # sampling parameters). They are dropped for that model from then on.
+        self._rejected: Dict[str, Set[str]] = {}
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -76,56 +83,71 @@ class AnthropicProvider(HTTPProvider):
             "anthropic-version": ANTHROPIC_VERSION,
         }
 
-    @property
-    def supports_structured_outputs(self) -> bool:
+    def _structured_for(self, model: str) -> bool:
         return (
             self.structured_outputs_mode is not StructuredOutputsMode.OFF
-            and not self._structured_outputs_rejected
+            and ANTHROPIC_OUTPUT_CONFIG not in self._rejected.get(model, ())
         )
 
-    def _payload(self, request: CompletionRequest, structured: bool) -> JsonObject:
+    @property
+    def supports_structured_outputs(self) -> bool:
+        return self._structured_for(self.model)
+
+    def _payload(self, request: CompletionRequest, model: str, structured: bool) -> JsonObject:
         # Anthropic takes the system prompt as a top-level parameter.
         system_parts = [m.content for m in request.messages if m.role == MessageRole.SYSTEM]
         chat_messages = [m.to_dict() for m in request.messages if m.role != MessageRole.SYSTEM]
 
         payload: Dict[str, Any] = {
-            "model": request.model or self.model,
+            "model": model,
             "messages": chat_messages,
             "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
         }
+        if TEMPERATURE not in self._rejected.get(model, ()):
+            payload[TEMPERATURE] = request.temperature
         if system_parts:
             payload["system"] = "\n\n".join(system_parts)
         if structured and request.response_schema is not None:
             payload[ANTHROPIC_OUTPUT_CONFIG] = anthropic_output_config(request.response_schema)
         return payload
 
+    def _droppable(self, error: ProviderError, payload: JsonObject) -> Optional[str]:
+        """The optional parameter `error` rejects, when it may be dropped and retried."""
+        if (
+            ANTHROPIC_OUTPUT_CONFIG in payload
+            and self.structured_outputs_mode is StructuredOutputsMode.AUTO
+            and rejects_parameter(error, ANTHROPIC_OUTPUT_CONFIG)
+        ):
+            return ANTHROPIC_OUTPUT_CONFIG
+        if TEMPERATURE in payload and rejects_parameter(error, TEMPERATURE):
+            return TEMPERATURE
+        return None
+
     async def _complete(self, request: CompletionRequest) -> CompletionResponse:
-        structured = request.response_schema is not None and self.supports_structured_outputs
-        try:
-            data = await self._request(
-                "POST",
-                "/v1/messages",
-                self._payload(request, structured),
-                timeout_s=request.timeout_s,
-            )
-        except ProviderError as exc:
-            if not (
-                structured
-                and self.structured_outputs_mode is StructuredOutputsMode.AUTO
-                and rejects_parameter(exc, ANTHROPIC_OUTPUT_CONFIG)
-            ):
-                raise
-            self._structured_outputs_rejected = True
-            logger.warning(
-                f"Anthropic rejected structured outputs for model {request.model or self.model} "
-                f"({exc}); continuing without them (TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS=auto)"
-            )
-            structured = False
-            data = await self._request(
-                "POST", "/v1/messages", self._payload(request, False), timeout_s=request.timeout_s
-            )
-        return self._parse(data, request, structured)
+        model = request.model or self.model
+        while True:
+            structured = request.response_schema is not None and self._structured_for(model)
+            payload = self._payload(request, model, structured)
+            try:
+                data = await self._request(
+                    "POST", "/v1/messages", payload, timeout_s=request.timeout_s
+                )
+            except ProviderError as exc:
+                parameter = self._droppable(exc, payload)
+                if parameter is None:
+                    raise
+                self._rejected.setdefault(model, set()).add(parameter)
+                logger.warning(
+                    f"Anthropic rejected {parameter} for model {model} ({exc}); retrying "
+                    f"without it"
+                    + (
+                        " (TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS=auto)"
+                        if parameter == ANTHROPIC_OUTPUT_CONFIG
+                        else ""
+                    )
+                )
+                continue
+            return self._parse(data, request, structured)
 
     def _parse(
         self, data: JsonObject, request: CompletionRequest, structured: bool

@@ -275,3 +275,23 @@ async def test_ollama_length_is_truncated() -> None:
     response = await OllamaProvider(model="m", transport=transport).complete(request())
 
     assert response.truncated is True
+
+
+async def test_anthropic_drops_a_rejected_temperature_per_model() -> None:
+    transport = ScriptedTransport(
+        json_reply(
+            {"error": {"type": "invalid_request_error", "message": "temperature: not supported"}},
+            400,
+        ),
+        json_reply(ANTHROPIC_OK),
+    )
+    judge = AnthropicProvider(api_key="k", model="claude-sonnet-5", transport=transport)
+
+    await judge.complete(request())
+    await judge.complete(request())
+
+    assert "temperature" in transport.body(0)
+    assert "temperature" not in transport.body(1)
+    assert "temperature" not in transport.body(2)
+    assert "output_config" in transport.body(2)  # structured outputs unaffected
+    assert transport.calls == 3
