@@ -297,12 +297,9 @@ func (d *decodedBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (d *decodedBody) Close() error {
-	if c, ok := d.r.(io.Closer); ok {
-		_ = c.Close()
-	}
-	return d.src.Close()
-}
+// Close closes the source. The decoders hold nothing to release, and leaving them alone keeps a
+// Close that races a read (a relay that drains the end of a stream) free of data races.
+func (d *decodedBody) Close() error { return d.src.Close() }
 
 // undecodable marks the errors of broken encoded bytes as ErrUndecodable. The source's own errors
 // (a timeout, a reset connection, a body cut short) are kept as they are.
