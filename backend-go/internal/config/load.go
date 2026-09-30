@@ -560,11 +560,16 @@ const minSetupTokenLen = 16
 // crossChecks reports combinations of values that are refused or risky.
 func (l *loader) crossChecks(c *Config) {
 	// Inject mode refuses open ingest (SPEC §0 #1, §2.4): the proxy would otherwise spend its own
-	// upstream credential on anonymous callers.
-	if c.IngestAuth == "open" && c.Injecting() {
-		l.warn("TRUTHTABLE_INGEST_AUTH", "open is refused while TRUTHTABLE_UPSTREAM_API_KEY injects an upstream credential",
+	// upstream credential on anonymous callers. Any upstream's key counts (D15).
+	if injected := c.InjectedKeys(); c.IngestAuth == "open" && len(injected) > 0 {
+		l.warn("TRUTHTABLE_INGEST_AUTH", "open is refused while an upstream credential is injected ("+strings.Join(injected, ", ")+" is set)",
 			"ingest keys stay required; set TRUTHTABLE_API_KEYS (label=key)")
 		c.IngestAuth = "keys"
+	}
+	// The fallback upstream's credential is sent only to the fallback upstream.
+	if c.FallbackUpstreamAPIKey != "" && c.FallbackUpstreamURL == "" {
+		l.warn("TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY", "the credential is never sent: there is no fallback upstream",
+			"set TRUTHTABLE_FALLBACK_UPSTREAM_URL, or unset the key")
 	}
 	// One secret in several key lists: its scopes are the union, which is rarely intended.
 	lists := []struct {

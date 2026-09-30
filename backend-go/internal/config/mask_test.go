@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -167,7 +168,8 @@ func TestDumpSpec(t *testing.T) {
 	for name, want := range map[string]string{
 		"TRUTHTABLE_PORT": "ServerPort", "TRUTHTABLE_JEV_ATTEMPT_TIMEOUT": "Jev.AttemptTimeout",
 		"TRUTHTABLE_ADMIN_KEYS": "Auth.AdminKeys", "TRUTHTABLE_WS_HEARTBEAT": "WS.Heartbeat",
-		"TRUTHTABLE_JEV_BREAKER_FAILURES": "Jev.BreakerFailures", "TRUTHTABLE_STREAM_IDLE_TIMEOUT": "<nil>",
+		"TRUTHTABLE_JEV_BREAKER_FAILURES": "Jev.BreakerFailures", "TRUTHTABLE_STREAM_IDLE_TIMEOUT": "StreamIdleTimeout",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT": "FallbackUpstreamFormat", "TRUTHTABLE_ENV_FILE": "<nil>",
 	} {
 		if got := field(name); got != want {
 			t.Errorf("%s field %s, want %s", name, got, want)
@@ -226,5 +228,34 @@ func TestRedactingWriterMasksGinRecoveryDumps(t *testing.T) {
 		t.Fatal("writer")
 	} else if n, err := w.Write([]byte("Bearer abc")); err != nil || n != len("Bearer abc") {
 		t.Errorf("Write reports the input length: %d %v", n, err)
+	}
+}
+
+// TestUpstreamCredentialsAreMasked: every upstream's injected credential is a loaded secret: the
+// Redactor masks it in logs and the settings view shows it masked.
+func TestUpstreamCredentialsAreMasked(t *testing.T) {
+	c := LoadWith(LoadOptions{Environ: []string{
+		"TRUTHTABLE_UPSTREAM_API_KEY=openai-upstream-credential-1",
+		"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY=anthropic-upstream-credential-2",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY=fallback-upstream-credential-3",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://fallback.example",
+	}})
+	secrets := []string{"openai-upstream-credential-1", "anthropic-upstream-credential-2", "fallback-upstream-credential-3"}
+	for _, s := range secrets {
+		if !slices.Contains(c.Secrets(), s) {
+			t.Errorf("%s is not a loaded secret", s)
+		}
+	}
+	line := c.Redactor().Redact("keys " + strings.Join(secrets, " "))
+	for _, s := range secrets {
+		if strings.Contains(line, s) {
+			t.Errorf("%s survives redaction: %s", s, line)
+		}
+	}
+	for _, name := range []string{"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"} {
+		e := entry(t, c, name)
+		if !e.Key.Secret || !strings.Contains(e.DisplayValue(), "…") || strings.Contains(e.DisplayValue(), "credential") {
+			t.Errorf("%s shown as %q", name, e.DisplayValue())
+		}
 	}
 }
