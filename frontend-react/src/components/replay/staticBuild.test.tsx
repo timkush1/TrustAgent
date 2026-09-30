@@ -3,10 +3,10 @@
  * the six static nav items, the simulated banner, the hidden pages, the recorded Playground and
  * the Studio placeholder.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { configure, render, screen, waitFor, within } from '@testing-library/react';
 import { ServicesContext, type AppServices } from '@/app/services';
 import { NotFound, RouteError } from '@/components/common/RouteStates';
 import { buildRuntimeConfig } from '@/config/runtime';
@@ -25,7 +25,8 @@ async function renderStatic(path: string) {
     location: { href: 'https://example.github.io/TrustAgent/', origin: 'https://example.github.io', protocol: 'https:' },
     env: { BASE_URL: '/TrustAgent/', VITE_APP_MODE: 'static' },
   });
-  const dataSource = createReplayDataSource({ basePath: config.basePath, fetchImpl: recordingFetch('/TrustAgent/').fetch, clock: new ManualClock() });
+  const tape = recordingFetch('/TrustAgent/');
+  const dataSource = createReplayDataSource({ basePath: config.basePath, fetchImpl: tape.fetch, clock: new ManualClock() });
   await dataSource.ready;
   const queryClient = createTestQueryClient();
   const services: AppServices = { config, dataSource, queryClient };
@@ -44,12 +45,15 @@ async function renderStatic(path: string) {
       </QueryClientProvider>
     </ServicesContext.Provider>,
   );
-  return { ...utils, router, dataSource };
+  return { ...utils, router, dataSource, requests: tape.requests };
 }
 
 beforeEach(() => {
   useStreamStore.getState().reset();
 });
+// The first render of a file loads the lazily split route modules; under load that can take longer
+// than the 1 s default.
+configure({ asyncUtilTimeout: 5000 });
 
 describe('hiddenStaticPage', () => {
   it('hides the pages that need a gateway, with or without the base path', () => {
@@ -120,6 +124,19 @@ describe('static build', () => {
     expect(within(main).getByText('make demo')).toBeInTheDocument();
     expect(within(main).getByRole('link', { name: /Traffic/ })).toHaveAttribute('href', '/app/traffic');
     expect(formatViolations(await axeViolations(main))).toEqual([]);
+  });
+
+  it('answers a setup link with why sign-in needs a running stack, and probes no session or setup', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const { dataSource, requests } = await renderStatic('/app/setup#token=not-a-real-token');
+    expect(await screen.findByRole('heading', { name: 'Setup is not part of the static demo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create the admin key' })).toBeNull();
+    // The replay control plane answers without asking anyone.
+    await expect(dataSource.getSession()).rejects.toMatchObject({ status: 404 });
+    await expect(dataSource.getSetupStatus()).rejects.toMatchObject({ status: 404 });
+    expect(requests.filter((url) => !url.includes('/demo/recorded/'))).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it('opens the recorded runs from the Playground, and says the live check is coming soon', async () => {

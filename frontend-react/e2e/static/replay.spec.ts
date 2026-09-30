@@ -5,6 +5,8 @@
  * GitHub Pages; the pages that need a gateway explain themselves.
  */
 import { expect, test } from '@playwright/test';
+import { hiddenStaticPage } from '../../src/components/replay/staticPages';
+import { STATIC_APP_PAGES } from '../../vite.site';
 import { seriousViolations } from '../stack/stack';
 import { MOCK_LABEL, recorded, requireStaticSite } from './site';
 
@@ -86,6 +88,27 @@ test.describe('replay', () => {
     await nav.getByRole('link', { name: 'Run it yourself' }).click();
     await expect(page).toHaveURL(/\/TrustAgent\/#self-host$/);
     await expect(page.getByRole('heading', { name: 'On your laptop in one command.' })).toBeInViewport();
+  });
+
+  test('answers a setup link with why sign-in needs a running stack, without asking a gateway', async ({ page }) => {
+    const api: string[] = [];
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname.includes('/api/')) api.push(r.url());
+    });
+    // A hidden page has no copy of its own: GitHub Pages serves it 404.html, which boots the app.
+    const res = await page.goto('app/setup#token=not-a-real-token');
+    expect(res?.status()).toBe(404);
+    await expect(page.getByRole('heading', { name: 'Setup is not part of the static demo' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create the admin key' })).toHaveCount(0);
+    expect(api, 'no session or setup probe').toEqual([]);
+  });
+
+  test('gives each main page its own copy of the app, and hides none of them', async ({ request }) => {
+    for (const path of STATIC_APP_PAGES) {
+      expect(hiddenStaticPage(`/${path}`), `${path} is listed in STATIC_APP_PAGES but hidden`).toBeNull();
+      const res = await request.get(`${path}/`);
+      expect(res.status(), `${path}/`).toBe(200);
+    }
   });
 
   test('fits a 400 px wide screen', async ({ page }) => {
