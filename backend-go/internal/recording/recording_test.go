@@ -200,8 +200,37 @@ func TestBuildRefusesMislabelling(t *testing.T) {
 		"no judge":          {noEvidence(), recording.Options{}, "--judge-provider"},
 		"judge flag clash":  {recordingtest.Set(t), recording.Options{Judge: &recording.Judge{Provider: "openai", Model: "gpt-4o"}}, "were judged by anthropic"},
 	} {
-		if _, err := recording.Build(c.traces, c.opt); err == nil || !strings.Contains(err.Error(), c.want) || !errors.Is(err, recording.ErrNotRecordable) {
+		_, err := recording.Build(c.traces, c.opt)
+		if err == nil || !strings.Contains(err.Error(), c.want) || !errors.Is(err, recording.ErrNotRecordable) {
 			t.Errorf("%s: err = %v, want %q", name, err, c.want)
 		}
+		if errors.Is(err, recording.ErrNoJudge) != (name == "no judge") {
+			t.Errorf("%s: ErrNoJudge = %t", name, errors.Is(err, recording.ErrNoJudge))
+		}
+	}
+}
+
+// TestBuildDefaultJudge: the default judge (GET /api/export/replay: the engine's judge) names the
+// judge only when no audit and no flag does, and is never checked against the audits.
+func TestBuildDefaultJudge(t *testing.T) {
+	def := &recording.Judge{Provider: "openrouter", Model: "anthropic/claude-haiku-4.5"}
+	unaudited := recordingtest.Set(t)
+	for i := range unaudited {
+		unaudited[i].Detail.AuditDetail, unaudited[i].Detail.Audit.AuditID, unaudited[i].LLMUSD = nil, nil, nil
+	}
+	rec, _ := build(t, unaudited, recording.Options{GitSHA: "abc1234", Version: "1.0.0", DefaultJudge: def})
+	if rec.Judge.Provider != def.Provider || rec.Judge.Model != def.Model || !strings.Contains(rec.Label, "anthropic/claude-haiku-4.5") {
+		t.Errorf("unaudited: judge %+v label %q", rec.Judge, rec.Label)
+	}
+	// Audits name their judge: the default is ignored, not a clash.
+	rec, _ = build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", DefaultJudge: def})
+	if rec.Judge.Provider != "anthropic" {
+		t.Errorf("audited: judge %+v", rec.Judge)
+	}
+	// A flag wins over the default.
+	flag := &recording.Judge{Provider: "anthropic", Model: "claude-haiku-4-5"}
+	rec, _ = build(t, unaudited, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Judge: flag, DefaultJudge: def})
+	if rec.Judge.Provider != "anthropic" {
+		t.Errorf("flag and default: judge %+v", rec.Judge)
 	}
 }

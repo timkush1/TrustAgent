@@ -1,7 +1,8 @@
 // Package recording builds trustagent.recording/v1 recordings of gateway traffic (SPEC §2.13):
 // the manifest a static demo replays, derived from trace details, with a label that can only say
-// what the traces support, and the sanitizer every published string goes through. cmd/export-replay
-// writes recordings with it; GET /api/export/replay can serve the same manifest.
+// what the traces support, and the sanitizer every published string goes through. DBSource reads
+// the trace details from the store. cmd/export-replay writes recordings with it; GET
+// /api/export/replay serves the same manifest.
 package recording
 
 import (
@@ -103,10 +104,17 @@ type Options struct {
 	// Judge names the judge when no trace has a deep audit (export-replay --judge-provider and
 	// --judge-model); when audits name one, it must agree.
 	Judge *Judge
+	// DefaultJudge names the judge when neither the audits nor Judge do (GET /api/export/replay:
+	// the judge the audit engine reports); unlike Judge it is never checked against the audits.
+	DefaultJudge *Judge
 }
 
 // ErrNotRecordable is returned when the traces cannot be labelled honestly.
 var ErrNotRecordable = errors.New("these traces cannot be exported as a recording")
+
+// ErrNoJudge (an ErrNotRecordable) is returned when no deep audit, option or default names the
+// judge.
+var ErrNoJudge = fmt.Errorf("%w: no deep audit names its judge", ErrNotRecordable)
 
 // Build assembles the manifest from the traces, oldest first (the slice itself is not reordered). It fails rather
 // than mislabel: kind recorded needs a real decision backend, a judge that is neither a fallback
@@ -133,7 +141,7 @@ func Build(traces []Trace, opt Options) (*Recording, error) {
 	if err != nil {
 		return nil, err
 	}
-	judge, err := judgeOf(traces, opt.Judge)
+	judge, err := judgeOf(traces, opt.Judge, opt.DefaultJudge)
 	if err != nil {
 		return nil, err
 	}
@@ -213,10 +221,10 @@ func decisionModel(traces []Trace) (Model, error) {
 	case len(backends) == 0:
 		return Model{Backend: "off"}, nil
 	case len(backends) > 1:
-		return Model{}, fmt.Errorf("%w: the traces mix decision backends %s; narrow --since/--until or --route",
+		return Model{}, fmt.Errorf("%w: the traces mix decision backends %s; narrow the time window (since, until) or the route",
 			ErrNotRecordable, strings.Join(keys(backends), ", "))
 	case len(snapshots) > 1:
-		return Model{}, fmt.Errorf("%w: the traces mix decision-model snapshots %s; narrow --since/--until",
+		return Model{}, fmt.Errorf("%w: the traces mix decision-model snapshots %s; narrow the time window (since, until)",
 			ErrNotRecordable, strings.Join(keys(snapshots), ", "))
 	}
 	m := Model{Backend: keys(backends)[0]}
@@ -228,8 +236,8 @@ func decisionModel(traces []Trace) (Model, error) {
 }
 
 // judgeOf is the judge of the deep audits (effective provider and model); every audit must name
-// the same one. Without audits the flags name it.
-func judgeOf(traces []Trace, flags *Judge) (Judge, error) {
+// the same one. Without audits the flags name it, else the default.
+func judgeOf(traces []Trace, flags, def *Judge) (Judge, error) {
 	seen := map[string]Judge{}
 	fallback := false
 	for _, t := range traces {
@@ -258,10 +266,13 @@ func judgeOf(traces []Trace, flags *Judge) (Judge, error) {
 	}
 	switch len(seen) {
 	case 0:
-		if flags == nil {
-			return Judge{}, fmt.Errorf("%w: no deep audit names its judge: pass --judge-provider and --judge-model", ErrNotRecordable)
+		switch {
+		case flags != nil:
+			return *flags, nil
+		case def != nil:
+			return *def, nil
 		}
-		return *flags, nil
+		return Judge{}, fmt.Errorf("%w: pass --judge-provider and --judge-model", ErrNoJudge)
 	case 1:
 		for _, j := range seen {
 			if flags != nil && (flags.Provider != j.Provider || flags.Model != j.Model) {
@@ -276,7 +287,7 @@ func judgeOf(traces []Trace, flags *Judge) (Judge, error) {
 		names = append(names, j.Provider+" "+j.Model)
 	}
 	sort.Strings(names)
-	return Judge{}, fmt.Errorf("%w: the audits mix judges (%s); narrow --since/--until", ErrNotRecordable, strings.Join(names, ", "))
+	return Judge{}, fmt.Errorf("%w: the audits mix judges (%s); narrow the time window (since, until)", ErrNotRecordable, strings.Join(names, ", "))
 }
 
 // calibrationStates are the CalibrationState values from weakest to strongest.

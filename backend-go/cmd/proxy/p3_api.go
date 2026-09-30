@@ -25,4 +25,7 @@ func (s *server) mountP3API(r *gin.Engine, api *gin.RouterGroup, guards apiGuard
 
 	// The price table (row 49).
 	api.GET("/pricing", guards.read, guards.rateLimit, s.handlePricing)
+
+	// The recording manifest of stored traffic (row 66, admin).
+	api.GET("/export/replay", guards.admin, guards.rateLimit, s.handleExportReplay)
 }
