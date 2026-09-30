@@ -328,8 +328,10 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	up := s.upstreamRecord(relayEnd)
 
 	if observe {
+		// Nothing waits for the decision: the terminal event and any unterminated tail go out
+		// as the upstream sent them.
 		if !gone {
-			if err := s.sw.Release(); err != nil {
+			if err := s.sw.Finish(nil, nil); err != nil {
 				h.log.Debug("client went away before the end of the stream", "trace_id", x.Trace.TraceID, "err", err)
 			}
 		}

@@ -630,6 +630,16 @@ func TestStreamObserveAnnotationsNoneAndActionOnly(t *testing.T) {
 			t.Errorf("the gate ran afterwards: %s would %s text %q", r.Decision.Action, r.Decision.WouldAction, r.ResponseText)
 		}
 	})
+	t.Run("observe unterminated", func(t *testing.T) {
+		// An upstream that stops in the middle of an event: the client gets that tail too.
+		cut := append(slices.Clone(events[:3]), `data: {"choices":[{"index":0,"delta":{"content":"tr`)
+		e := newStrmEnv(t, newStrmUpstream(t, cut...), strmOpts{policyYAML: strmPolicy("mode: observe")})
+		_, body := e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+		if string(body) != strings.Join(cut, "") {
+			t.Errorf("observe dropped the tail:\n%s", body)
+		}
+		e.sink.result(t)
+	})
 	t.Run("annotations none", func(t *testing.T) {
 		e := newStrmEnv(t, newStrmUpstream(t, events...), strmOpts{policyYAML: strmPolicy("mode: flag, stream_annotations: none")})
 		resp, body := e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
