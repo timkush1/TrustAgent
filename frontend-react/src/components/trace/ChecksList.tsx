@@ -1,8 +1,10 @@
 /**
- * "Checks" (SPEC §3.3 "Trace detail" 2, right): one row per evaluator the fast check asked, with
- * its level word and a risk bar with flag and block ticks, or "Not checked — no documents".
- * Shadow evaluators are labelled "Watching".
+ * "Checks" (SPEC §3.3 "Trace detail" 2, right): one row per evaluator the fast check asked, named
+ * from the evaluator library (GET /api/evaluators), with its level word and a risk bar with flag and
+ * block ticks, or "Not checked — no documents". Shadow evaluators are labelled "Watching". A
+ * decision that arrived after the deadline says so: it was recorded, never enforced.
  */
+import { Clock } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { RiskBar, RiskBarLegend } from '@/components/outcome/RiskBar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,8 +53,29 @@ function CheckItem({ row }: { row: CheckRow }) {
   );
 }
 
-export function ChecksList({ summary, decision }: { summary: TraceSummary; decision: GateDecisionView | null }) {
-  const rows = checkRows(decision);
+/** "Arrived late, not enforced", with what that means. */
+function LateNote() {
+  return (
+    <p data-testid="late-decision" className="flex items-start gap-2 border-b border-border py-2.5 text-sm text-fg-muted">
+      <Clock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+      <span>
+        <span className="font-medium text-fg">{copy.trace.late}.</span> {copy.trace.late_note}
+      </span>
+    </p>
+  );
+}
+
+export function ChecksList({
+  summary,
+  decision,
+  names,
+}: {
+  summary: TraceSummary;
+  decision: GateDecisionView | null;
+  /** Evaluator names by id from the evaluator library; humanized ids without it. */
+  names?: ReadonlyMap<string, string>;
+}) {
+  const rows = checkRows(decision, names);
   let content;
   if (summary.gate_status === 'pending') {
     content = (
@@ -89,7 +112,10 @@ export function ChecksList({ summary, decision }: { summary: TraceSummary; decis
         </h2>
         <span className="text-xs text-fg-muted">{copy.tiers.fast_check}</span>
       </div>
-      <div className="rounded-lg border border-border bg-surface px-4 py-1.5">{content}</div>
+      <div className="rounded-lg border border-border bg-surface px-4 py-1.5">
+        {decision?.late ? <LateNote /> : null}
+        {content}
+      </div>
     </section>
   );
 }

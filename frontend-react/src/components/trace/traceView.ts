@@ -203,15 +203,19 @@ export interface CheckRow {
   note: string | null;
 }
 
-/** "groundedness@1" → "Groundedness" (the evaluator library names them from P4). */
-export function evaluatorName(ref: string): string {
-  return humanizeId(ref.split('@')[0]);
+/**
+ * An evaluator's name: its library name from GET /api/evaluators (by id: "groundedness@1" →
+ * "groundedness"), else the humanized id ("Groundedness") while the library is not at hand.
+ */
+export function evaluatorName(ref: string, names?: ReadonlyMap<string, string>): string {
+  const id = ref.split('@')[0];
+  return names?.get(id) ?? humanizeId(id);
 }
 
-function checkRow(r: EvaluatorResult): CheckRow {
+function checkRow(r: EvaluatorResult, names?: ReadonlyMap<string, string>): CheckRow {
   const row = {
     ref: r.ref,
-    name: evaluatorName(r.ref),
+    name: evaluatorName(r.ref, names),
     shadow: r.stage === 'shadow',
     level: r.level,
     risk: r.risk,
@@ -229,10 +233,10 @@ function checkRow(r: EvaluatorResult): CheckRow {
   return { ...row, kind: 'error', note: why ? `Check failed — ${why}` : 'Check failed' };
 }
 
-/** One row per evaluator, in route order (the decision's key order). */
-export function checkRows(decision: GateDecisionView | null): CheckRow[] {
+/** One row per evaluator, in route order (the decision's key order), named from the library when given. */
+export function checkRows(decision: GateDecisionView | null, names?: ReadonlyMap<string, string>): CheckRow[] {
   if (!decision) return [];
-  return Object.values(decision.evaluators).map(checkRow);
+  return Object.values(decision.evaluators).map((r) => checkRow(r, names));
 }
 
 // ------------------------------------------------------------------------------- detector marks

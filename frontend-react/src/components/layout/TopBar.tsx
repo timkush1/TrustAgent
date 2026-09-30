@@ -18,7 +18,8 @@ function usePageTitle(): string {
 
 /**
  * Top bar (SPEC §3.3): page title, demo/read-only badge, Health pill, theme toggle; the single
- * banner sits under it. The time-window picker joins when Overview does (P3).
+ * banner sits under it. The time window is the Overview's own control, in its page header
+ * (DESIGN.md §12a), until the top bar grows one.
  */
 export function TopBar() {
   const title = usePageTitle();

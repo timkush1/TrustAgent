@@ -1,7 +1,8 @@
 /**
  * The top of a trace (SPEC §3.3 "Trace detail" 1): the outcome pill and headline, what the answer
- * was checked against, the reasons in plain words, and the next step. "Was this right?", "Open
- * evaluator" and "Adjust threshold" join with labels (P3) and the evaluator pages (P4).
+ * was checked against, the reasons in plain words, the next step, and a link to what the user
+ * received when it was not the model's answer. "Was this right?", "Open evaluator" and "Adjust
+ * threshold" arrive in P4 with labels (SPEC §2.4 #39-41) and threshold editing.
  */
 import { ArrowDown } from 'lucide-react';
 import type { MouseEvent } from 'react';
