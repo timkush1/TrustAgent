@@ -131,6 +131,7 @@
       "answer_not_sent": "Your model's answer (not sent to the user)",
       "received_instead": "What the user received instead",
       "received_fallback": "A fallback answer written from your documents only, then checked again: {result}.",
+      "received_fallback_no_documents": "A fallback answer written without documents (this request carried none), then checked again: {result}.",
       "received_blocked": "The route's block message, sent in place of your model's answer.",
       "received_not_stored": "The text sent instead is not stored for this request.",
       "see_received": "See what the user received instead",

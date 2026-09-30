@@ -148,18 +148,23 @@ function ReceivedInstead({
   delivered,
   text,
   check,
+  documents,
   id,
 }: {
   delivered: 'fallback' | 'blocked';
   text: string | null;
   check: GateDecisionView | null;
+  /** The request carried documents; without them the fallback prompt has none to write from. */
+  documents: boolean;
   id: string;
 }) {
   const Icon = delivered === 'blocked' ? ShieldX : CornerDownRight;
   const note =
     delivered === 'blocked'
       ? copy.trace.received_blocked
-      : fillTemplate(copy.trace.received_fallback, { result: fallbackCheckResult(check) });
+      : fillTemplate(documents ? copy.trace.received_fallback : copy.trace.received_fallback_no_documents, {
+          result: fallbackCheckResult(check),
+        });
   return (
     <div id={id} tabIndex={-1} data-delivered={delivered} className="space-y-1.5 border-t border-border pt-3 outline-none">
       <p className="flex items-center gap-1.5 text-xs font-medium text-fg">
@@ -237,6 +242,7 @@ export function AnswerSection({
               delivered={delivered}
               text={deliveredText}
               check={attempts.find((d) => d.attempt === 1) ?? null}
+              documents={Boolean((summary.checked_against ?? decision?.evidence_summary)?.used.length)}
               id={receivedId(claimIdPrefix)}
             />
           ) : null}

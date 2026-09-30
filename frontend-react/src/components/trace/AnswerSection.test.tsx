@@ -103,6 +103,18 @@ describe('AnswerSection: what the user received', () => {
     expect(screen.getByText('The text sent instead is not stored for this request.')).toBeInTheDocument();
   });
 
+  it('does not credit documents for a fallback when the request carried none', () => {
+    const detail = p3Detail('payments-fallback');
+    const none = { ...detail.checked_against!, used: [], empty: detail.checked_against!.configured, tokens: 0 };
+    const v = buildTraceView({
+      detail: { ...detail, checked_against: none, decisions: detail.decisions.map((d) => ({ ...d, evidence_summary: none })) },
+    }) as TraceView;
+    renderAnswer(v);
+    const received = screen.getByText('What the user received instead').parentElement as HTMLElement;
+    expect(received).toHaveTextContent('A fallback answer written without documents (this request carried none), then checked again: low risk.');
+    expect(received).not.toHaveTextContent('from your documents');
+  });
+
   it('shows nothing extra when the user received the model\'s answer', () => {
     renderAnswer(view(s0Audit(REFUND)));
     expect(screen.queryByText('What the user received instead')).toBeNull();
