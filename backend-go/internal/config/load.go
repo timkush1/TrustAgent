@@ -387,6 +387,26 @@ func validURL(v string) bool {
 	return true
 }
 
+// upstreamHost is where a request to an upstream URL goes, for comparing two upstreams: its
+// scheme, lowercased host name and port (the scheme's default port when none is given); "" when
+// the URL does not parse.
+func upstreamHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme, port := strings.ToLower(u.Scheme), u.Port()
+	if port == "" {
+		switch scheme {
+		case "https":
+			port = "443"
+		case "http":
+			port = "80"
+		}
+	}
+	return scheme + "://" + strings.ToLower(u.Hostname()) + ":" + port
+}
+
 // splitList splits a comma-separated list, trimming items and dropping empty ones.
 func splitList(v string) []string {
 	var out []string
@@ -570,6 +590,20 @@ func (l *loader) crossChecks(c *Config) {
 	if c.FallbackUpstreamAPIKey != "" && c.FallbackUpstreamURL == "" {
 		l.warn("TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY", "the credential is never sent: there is no fallback upstream",
 			"set TRUTHTABLE_FALLBACK_UPSTREAM_URL, or unset the key")
+	}
+	// A fallback upstream without a key of its own is sent the client's credentials (D15), which
+	// were meant for the primary upstream of its format: on another host they would reach a server
+	// the client never chose (D23). The warning names keys, never a value.
+	if c.FallbackUpstreamURL != "" && c.FallbackUpstreamAPIKey == "" {
+		primaryKey, primary := "TRUTHTABLE_UPSTREAM_URL", c.UpstreamURL
+		if c.FallbackUpstreamFormat == "anthropic" {
+			primaryKey, primary = "TRUTHTABLE_ANTHROPIC_UPSTREAM_URL", c.AnthropicUpstreamURL
+		}
+		if host := upstreamHost(c.FallbackUpstreamURL); host == "" || host != upstreamHost(primary) {
+			l.warn("TRUTHTABLE_FALLBACK_UPSTREAM_URL",
+				"it points at another host than "+primaryKey+" and TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY is not set, so clients' credentials would be forwarded to it",
+				"set TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY to give the fallback upstream its own credential")
+		}
 	}
 	// One secret in several key lists: its scopes are the union, which is rarely intended.
 	lists := []struct {
