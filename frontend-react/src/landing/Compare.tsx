@@ -3,6 +3,7 @@
  * every other product's cell is a dated TODO until it is verified against that vendor's own docs,
  * with a link (P6). Nothing is guessed. The five limits are the contract's words (copy.limits).
  */
+import { ArrowRight } from 'lucide-react';
 import { claim } from './claims';
 import { copy } from './content';
 import { ClaimValue, Section } from './ui';
@@ -47,6 +48,11 @@ export function Compare() {
       title="Where it fits, and where it doesn’t."
       lead="A per-answer gate you run yourself, for teams that already send documents with their prompts."
     >
+      {/* Below 1024 px the table is wider than the page: say so, since a phone shows no scrollbar. */}
+      <p aria-hidden="true" className="mb-2 flex items-center justify-end gap-1 text-xs text-fg-muted lg:hidden">
+        Scroll sideways for all five columns
+        <ArrowRight className="size-3.5" />
+      </p>
       {/* A focusable, named scroll region: keyboard users can scroll the table sideways on a phone. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
       <div className="overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Comparison table (scrolls sideways)">
