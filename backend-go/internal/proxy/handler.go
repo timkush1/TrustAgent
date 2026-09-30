@@ -403,7 +403,8 @@ func (h *Handler) respondThenGate(f *flow, ans *answer) {
 // upstreamFailed answers a request whose upstream call failed outright (502, or 504 on a
 // timeout, in the route's error shape) and records the trace as skipped:upstream_error. The
 // failure is never enforced (D4): the decision is recorded with enforced false and the
-// delivered action is pass.
+// delivered action is pass. A call that ended because the client went away is no upstream
+// failure: it is recorded as skipped:client_disconnected, unenforced, and nothing is written.
 func (h *Handler) upstreamFailed(f *flow, err error) {
 	c, x := f.c, f.x
 	var up gate.Upstream
@@ -411,19 +412,34 @@ func (h *Handler) upstreamFailed(f *flow, err error) {
 		ms := h.now().Sub(f.upStart).Milliseconds()
 		up.Ms = &ms
 	}
-	h.log.Warn("upstream call failed", "trace_id", x.Trace.TraceID, "err", err)
-	status, code, msg := http.StatusBadGateway, CodeUpstreamError, "The upstream LLM API could not be reached."
-	if upstream.IsTimeout(err) {
-		status, code, msg = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
-	}
+	gone := clientGone(c, err)
 	x.SkipReason, x.Unenforced = gate.SkipUpstreamError, true
+	if gone {
+		h.log.Debug("the client went away before the upstream answered", "trace_id", x.Trace.TraceID)
+		x.SkipReason = gate.SkipClientDisconnected
+	} else {
+		h.log.Warn("upstream call failed", "trace_id", x.Trace.TraceID, "err", err)
+	}
 	res := h.gate.Evaluate(f.record, x)
 	fin := &gate.Final{Action: unenforcedAction(res.Decision.Action), Delivered: gate.DeliveredOriginal}
 	end := h.now()
 	audit := h.decided(f, res, up, end, fin)
 	h.countRequest(f, fin.Action, up, end)
+	if gone {
+		return
+	}
+	status, code, msg := http.StatusBadGateway, CodeUpstreamError, "The upstream LLM API could not be reached."
+	if upstream.IsTimeout(err) {
+		status, code, msg = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
+	}
 	setDecisionHeaders(c.Writer.Header(), res, audit)
 	writeError(c.Writer, f.format, status, code, msg)
+}
+
+// clientGone reports whether err ended an upstream call because the client went away (the
+// request context the call runs on was cancelled), not because the upstream failed or timed out.
+func clientGone(c *gin.Context, err error) bool {
+	return errors.Is(err, context.Canceled) && c.Request.Context().Err() != nil
 }
 
 func readError(c *gin.Context, err error) {

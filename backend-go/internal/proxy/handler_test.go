@@ -708,6 +708,33 @@ func TestUpstreamDownIs502AndRecorded(t *testing.T) {
 	}
 }
 
+// TestClientGoneBeforeTheAnswer: a client that goes away while the upstream is still answering is
+// not an upstream failure. The trace is skipped:client_disconnected and never enforced (nothing
+// reached the client), even on a closed block route, and no error body is written.
+func TestClientGoneBeforeTheAnswer(t *testing.T) {
+	e := newEnv(t, envOpts{enforcing: true, policyYAML: blockPolicy("block", "fail: closed")})
+	e.up.delay = 10 * time.Second
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(defaultRouteBody)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-TrustAgent-Key", ingestKey)
+	time.AfterFunc(50*time.Millisecond, cancel)
+	w := newRecorder()
+	e.router.ServeHTTP(w, req)
+	r := e.sink.result(t)
+	if r.Status != "skipped:"+gate.SkipClientDisconnected || r.Decision.Enforced || r.Final == nil ||
+		r.Final.Action != decision.ActionPass || r.Upstream.Ms == nil {
+		t.Errorf("status %s enforced %v final %+v upstream %+v", r.Status, r.Decision.Enforced, r.Final, r.Upstream)
+	}
+	if w.Body.Len() != 0 || w.Header().Get(HeaderStatus) != "" {
+		t.Errorf("nothing is written to a client that went away: %d %q", w.Code, w.Body.String())
+	}
+	if e.up.calls() != 1 {
+		t.Errorf("%d upstream calls", e.up.calls())
+	}
+}
+
 func TestNoTextIsSkipped(t *testing.T) {
 	e := newEnv(t, envOpts{policyYAML: "version: 1\ndefaults: {mode: flag}\n"})
 	e.up.body = `{"choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`
