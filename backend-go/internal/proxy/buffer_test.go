@@ -445,3 +445,60 @@ func TestBufferedToolCallsPassThroughUnenforced(t *testing.T) {
 	}
 
 }
+
+// TestBufferedClientLeavesDuringTheFallback: a client that goes away while the fallback is called
+// gets nothing, so nothing is recorded as delivered: the decision is unenforced and the trace's
+// delivered action is pass with the original (as for a JSON call the client left), flagged
+// client_disconnected (the answer was complete, D7). The fallback's attempt 1 stays on record,
+// before the trace's decision.
+func TestBufferedClientLeavesDuringTheFallback(t *testing.T) {
+	sc := loadStrmScenario(t, "stream-passthrough-flag")
+	result1 := &gate.Result{Decision: &gate.Decision{Attempt: 1}}
+	called := make(chan struct{})
+	restore := bufferedFallback
+	bufferedFallback = func(_ *Handler, ctx context.Context, _ *flow, _ *gate.Result) *fallbackOut {
+		close(called)
+		<-ctx.Done() // the client leaves while the fallback upstream answers
+		return &fallbackOut{Action: decision.ActionFallback, Delivered: gate.DeliveredFallback, Text: "A fallback answer.",
+			Result1: result1, Flags: []string{gate.FlagFallbackUsed}}
+	}
+	t.Cleanup(func() { bufferedFallback = restore })
+	e := newStrmEnv(t, newStrmUpstream(t, strmOpenAIStream(sc.Response)...), strmOpts{
+		policyYAML: strmBufferPolicy("fallback", "", "fallback: {upstream: same, on_fail: block}"),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.srv.URL+"/v1/chat/completions",
+		strings.NewReader(sc.body(t, llmapi.FormatOpenAIChat, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(HeaderScenario, sc.ID)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if resp, err := e.srv.Client().Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fallback was not called")
+	}
+	cancel()
+	<-done
+
+	r := e.sink.result(t)
+	want := &gate.Final{Action: decision.ActionPass, Delivered: gate.DeliveredOriginal}
+	if !reflect.DeepEqual(r.Final, want) || r.Decision.Enforced || r.Decision.Action != decision.ActionFallback ||
+		!slices.Contains(r.Flags, gate.FlagClientDisconnected) || slices.Contains(r.Flags, gate.FlagFallbackUsed) {
+		t.Errorf("final %+v enforced %v action %s flags %v", r.Final, r.Decision.Enforced, r.Decision.Action, r.Flags)
+	}
+	e.sink.mu.Lock()
+	calls, attempts := slices.Clone(e.sink.calls), slices.Clone(e.sink.attempts)
+	e.sink.mu.Unlock()
+	if !slices.Equal(calls, []string{"attempt", "decided"}) || attempts[0] != result1 {
+		t.Errorf("sink calls %v", calls)
+	}
+}

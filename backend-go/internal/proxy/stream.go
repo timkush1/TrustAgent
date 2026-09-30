@@ -198,7 +198,8 @@ type streamOutcome struct {
 // classify sets the exchange's gated text, or its skip reason, from how the stream ended:
 //
 //   - the client went away (D7): after the finish reason the answer is gated unenforced and
-//     audited with flag client_disconnected, before it skipped as client_disconnected;
+//     audited with flag client_disconnected, before it skipped as client_disconnected (and
+//     unenforced: nothing more reaches the client);
 //   - an undecodable body: skipped:undecodable; a read error, an event or an answer past the size
 //     limit, or a stream that ended before its finish reason: skipped:upstream_error;
 //   - an error the upstream reported inside the stream, or an answer without text (tool calls
@@ -216,7 +217,9 @@ func (s *streamState) classify(clientGone bool, upstreamErr error) streamOutcome
 			x.Unenforced = true
 			s.gatedText(resp)
 		} else {
-			x.SkipReason = gate.SkipClientDisconnected
+			// Nothing more reaches the client: skipped and unenforced, as a JSON call the client
+			// left (upstreamFailed).
+			x.SkipReason, x.Unenforced = gate.SkipClientDisconnected, true
 		}
 	case errors.Is(upstreamErr, upstream.ErrUndecodable):
 		x.SkipReason = gate.SkipUndecodable
@@ -247,16 +250,18 @@ func (s *streamState) gatedText(resp *llmapi.ChatResponse) {
 	x.Unenforced = true
 }
 
-// leftDuringGate reports whether the client went away while the answer was being decided: then
-// nothing reaches it, and an answer that was complete is recorded unenforced with the
-// client_disconnected flag (D7).
+// leftDuringGate reports whether the client went away while the answer was being decided (or its
+// fallback called): then nothing reaches it, so the decision is recorded unenforced, and an answer
+// that was complete gets the client_disconnected flag (D7).
 func (s *streamState) leftDuringGate(g *gate.Result, out *streamOutcome) bool {
 	if s.f.c.Request.Context().Err() == nil {
 		return false
 	}
 	out.gone = true
-	if s.asm.Finished() && g.Decision != nil {
+	if g.Decision != nil {
 		g.Decision.Enforced = false
+	}
+	if s.asm.Finished() && !s.asm.TooLarge() {
 		out.disconnected = true
 	}
 	return true
@@ -293,6 +298,9 @@ func appendStreamFlag(flags []string, flag string) []string {
 //
 // An event past the size limit is forwarded with the rest of the stream as it is; an answer past
 // TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES is relayed whole but not gated (skipped:upstream_error).
+// A stream that fails or stalls before its first event is answered as a failed upstream call
+// (streamFailed, D21). The request counts once in requests_total, with the action it delivered
+// (observe on observe routes, as respondThenGate).
 func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	c, x := f.c, f.x
 	x.Stream = gate.StreamPassthrough
@@ -302,6 +310,7 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 		return
 	}
 	hdr := c.Writer.Header()
+	base := hdr.Clone()
 	if resp != nil {
 		upstream.CopyResponseHeaders(hdr, resp.Header)
 	}
@@ -326,6 +335,10 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	relayEnd := h.now()
 	gone := res.ClientGone(c.Request.Context())
 	s.closeUpstream(!gone && res.UpstreamErr == nil)
+	if !gone && s.failedEarly(res.UpstreamErr, nil) {
+		h.streamFailed(f, s, base, res.UpstreamErr, relayEnd)
+		return
+	}
 	out := s.classify(gone, res.UpstreamErr)
 	up := s.upstreamRecord(relayEnd)
 
@@ -337,7 +350,9 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 				h.log.Debug("client went away before the end of the stream", "trace_id", x.Trace.TraceID, "err", err)
 			}
 		}
-		h.gateStreamLater(f, out, up, relayEnd)
+		written := h.now()
+		h.countRequest(f, decision.ActionObserve, up, written)
+		h.gateStreamLater(f, out, up, written)
 		return
 	}
 	// The gate bounds itself by the route deadline; the record context lets it finish when the
@@ -347,12 +362,71 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 		gone = true
 	}
 	addStreamFlags(g, out)
-	audit := h.decided(f, g, up, h.now(), nil)
+	end := h.now()
+	audit := h.decided(f, g, up, end, nil)
+	h.countRequest(f, deliveredAction(g), up, end)
 	if gone {
 		return
 	}
 	if err := s.sw.Finish(streamAnnotation(f.route, g), streamTrailers(f.route, g, audit)); err != nil {
 		h.log.Debug("client went away before the end of the stream", "trace_id", x.Trace.TraceID, "err", err)
+	}
+}
+
+// failedEarly reports whether an upstream stream failed or stalled before its first event while
+// the client's headers are still uncommitted (D21): a read error or the idle timeout, not the size
+// limit, before any whole event was relayed (nothing was written) or, for a buffered answer,
+// read (read holds the events collected; an unterminated tail is no event).
+func (s *streamState) failedEarly(err error, read []llmapi.Event) bool {
+	if err == nil || errors.Is(err, llmapi.ErrEventTooLarge) || s.resp == nil || s.sw.Committed() {
+		return false
+	}
+	return !slices.ContainsFunc(read, func(ev llmapi.Event) bool { return !ev.Incomplete })
+}
+
+// streamFailed answers a stream whose upstream failed or stalled before its first event, while
+// nothing was written, as a failed upstream call (D21, as upstreamFailed and D4): 502, or 504 when
+// the stream was silent past TRUTHTABLE_STREAM_IDLE_TIMEOUT, in the route's error shape, never a
+// 200 stream that holds only the annotation. The trace is skipped:upstream_error
+// (skipped:undecodable for a body the gateway cannot decode, D24), the decision unenforced and the
+// delivered action pass; the request counts once. The upstream's response headers are dropped
+// (base holds the ones set before they were copied): the client gets the gateway's error, not the
+// upstream's stream.
+func (h *Handler) streamFailed(f *flow, s *streamState, base http.Header, err error, end time.Time) {
+	c, x := f.c, f.x
+	h.log.Warn("the upstream stream failed before its first event", "trace_id", x.Trace.TraceID, "err", err)
+	x.SkipReason, x.Unenforced = gate.SkipUpstreamError, true
+	if errors.Is(err, upstream.ErrUndecodable) {
+		x.SkipReason = gate.SkipUndecodable
+	}
+	g := h.gate.Evaluate(f.record, x)
+	fin := &gate.Final{Action: unenforcedAction(g.Decision.Action), Delivered: gate.DeliveredOriginal}
+	up := s.upstreamRecord(end)
+	done := h.now()
+	audit := h.decided(f, g, up, done, fin)
+	h.countRequest(f, fin.Action, up, done)
+
+	hdr := c.Writer.Header()
+	resetHeader(hdr, base)
+	setDecisionHeaders(hdr, g, audit)
+	// The failure may come after the route's write deadline (a stall runs to the idle timeout).
+	if window := streamDeadlineWindow(f.up); window > 0 {
+		_ = s.sw.ExtendWriteDeadline(window)
+	}
+	status, code, msg := http.StatusBadGateway, CodeUpstreamError, "The upstream LLM API stream failed before its first event."
+	if upstream.IsTimeout(err) {
+		status, code, msg = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
+	}
+	writeError(c.Writer, f.format, status, code, msg)
+}
+
+// resetHeader puts h back to base.
+func resetHeader(h, base http.Header) {
+	for k := range h {
+		delete(h, k)
+	}
+	for k, v := range base {
+		h[k] = v
 	}
 }
 
@@ -365,7 +439,9 @@ func (h *Handler) relayStreamUngated(f *flow, resp *http.Response, body io.Reade
 	}
 	f.x.SkipReason = gate.SkipUnsupportedAPI
 	g := h.gate.Evaluate(f.record, f.x)
-	audit := h.decided(f, g, gate.Upstream{Status: http.StatusOK}, h.now(), nil)
+	up, end := gate.Upstream{Status: http.StatusOK}, h.now()
+	audit := h.decided(f, g, up, end, nil)
+	h.countRequest(f, deliveredAction(g), up, end)
 	setDecisionHeaders(hdr, g, audit)
 	sw := llmapi.NewStreamWriter(f.c.Writer)
 	if _, err := io.Copy(sw, body); err != nil {
@@ -438,14 +514,6 @@ func streamTrailers(route *policy.Route, res *gate.Result, audit string) map[str
 	return out
 }
 
-// streamDeliveredAction is the action the client got: the delivered outcome's, else the decision's.
-func streamDeliveredAction(res *gate.Result) string {
-	if res.Final != nil && res.Final.Action != "" {
-		return res.Final.Action
-	}
-	return res.Decision.Action
-}
-
 // streamAnnotation is the ": trustagent {...}" comment of a decided stream, or nil with
 // stream_annotations: none. Its reasons are the decision's, then the delivery's (a failed
 // fallback).
@@ -455,7 +523,7 @@ func streamAnnotation(route *policy.Route, res *gate.Result) *llmapi.Annotation 
 	}
 	d := res.Decision
 	a := &llmapi.Annotation{
-		TraceID: res.Trace.TraceID, Action: streamDeliveredAction(res), WouldAction: d.WouldAction, Status: res.Status,
+		TraceID: res.Trace.TraceID, Action: deliveredAction(res), WouldAction: d.WouldAction, Status: res.Status,
 		Verdict: d.Verdict, MaxRisk: d.MaxRisk, Reasons: slices.Clone(d.Reasons),
 	}
 	if a.WouldAction == "" {
