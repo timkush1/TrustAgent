@@ -2,7 +2,8 @@
  * The hero's answer card (SPEC §8.1), in three beats: the answer arrives; "Flagged · 212 ms ·
  * $0.0002"; "60 days" gets a wavy underline next to the evidence "…within 30 days of purchase"
  * (refund-policy.md). The words are the scenario pack's refund example; the time and cost are the
- * `hero_card_*` claims, labelled Simulated. With reduced motion the card shows its last beat at once.
+ * `hero_card_*` claims, labelled Simulated. With reduced motion the card shows its last beat at once
+ * and offers no "Play again" (there is nothing to replay).
  */
 import { Flag, OctagonX, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,8 +19,23 @@ const words = REFUND.answer.split(/(?<=\s)/);
 const quoteAt = REFUND.answer.indexOf(REFUND.quote);
 const evidenceAt = REFUND.evidence.indexOf(REFUND.evidenceNumber);
 
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+
 function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return typeof window.matchMedia === 'function' && window.matchMedia(REDUCED_MOTION).matches;
+}
+
+/** Follows the reduced-motion setting, including a change while the page is open. */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(prefersReducedMotion);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia(REDUCED_MOTION);
+    const update = () => setReduced(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return reduced;
 }
 
 /** 0 question only · 1 answer streaming · 2 flagged · 3 underline and evidence (done). */
@@ -84,6 +100,7 @@ function Answer({ shown, marked }: { shown: number; marked: boolean }) {
 
 export function HeroCard() {
   const { beat, shown, play } = useBeats();
+  const reduced = useReducedMotion();
   const on = (n: number) => (beat >= n ? '' : undefined);
   return (
     <figure className="w-full">
@@ -154,15 +171,17 @@ export function HeroCard() {
           </span>
           The scripted refund example from the demo: the policy says 30 days, the answer says 60.
         </span>
-        <button
-          type="button"
-          onClick={play}
-          disabled={beat < 3}
-          className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 font-medium text-fg-muted transition-colors enabled:hover:text-fg disabled:invisible"
-        >
-          <RotateCcw aria-hidden="true" className="size-3.5" />
-          Play again
-        </button>
+        {reduced ? null : (
+          <button
+            type="button"
+            onClick={play}
+            disabled={beat < 3}
+            className="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 font-medium text-fg-muted transition-colors enabled:hover:text-fg disabled:invisible"
+          >
+            <RotateCcw aria-hidden="true" className="size-3.5" />
+            Play again
+          </button>
+        )}
       </figcaption>
     </figure>
   );

@@ -136,6 +136,7 @@ describe('hero answer card', () => {
       });
       expect(mark()).toHaveTextContent('60 days');
       expect(mark()).toHaveAttribute('data-on');
+      expect(screen.getByRole('button', { name: /play again/i })).toBeEnabled();
       unmount();
 
       const matchMedia = window.matchMedia;
@@ -143,7 +144,8 @@ describe('hero answer card', () => {
       try {
         const reduced = render(<HeroCard />);
         expect(reduced.container.querySelector('mark.hero-mark')).toHaveAttribute('data-on');
-        expect(screen.getByRole('button', { name: /play again/i })).toBeEnabled();
+        // Nothing moves, so there is nothing to play again (no button that does nothing).
+        expect(screen.queryByRole('button', { name: /play again/i })).toBeNull();
       } finally {
         window.matchMedia = matchMedia;
       }
