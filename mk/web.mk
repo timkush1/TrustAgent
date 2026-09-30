@@ -12,9 +12,12 @@ install-react: ## Install Node dependencies (npm install)
 dev-react: ## Run React dashboard in development mode
 	cd frontend-react && npm run dev
 
-test-react: ## Run React tests only (vitest)
+# Extra vitest flags, e.g. VITEST_FLAGS=--maxWorkers=2 on a small machine (make check VITEST_FLAGS=...).
+VITEST_FLAGS ?=
+
+test-react: ## Run React tests only (vitest; VITEST_FLAGS=--maxWorkers=2 limits the workers)
 	@echo "Running React tests..."
-	cd frontend-react && npm test
+	cd frontend-react && npm test$(if $(VITEST_FLAGS), -- $(VITEST_FLAGS))
 
 lint-react: ## Run eslint
 	@echo "Linting React..."
