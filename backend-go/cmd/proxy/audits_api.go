@@ -223,7 +223,8 @@ func (a *auditsAPI) direct(c *gin.Context) {
 			opts.MockScenario = s
 		}
 	}
-	ctx := c.Request.Context()
+	// The trace is written even when the caller hangs up: its audit runs either way.
+	ctx := context.WithoutCancel(c.Request.Context())
 	a.recordTrace(ctx, directTrace(traceID, auditID, &req, opts.MockScenario, callerIdentity(c)))
 	job := &worker.Job{
 		Request: &pb.AuditRequest{
