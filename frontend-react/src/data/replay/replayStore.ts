@@ -50,6 +50,16 @@ export const INITIAL_REPLAY: ReplayInfo = {
   speed: 1,
 };
 
+/**
+ * The tape's clock: the recording's wall-clock time at the replay position (ms since the epoch), or
+ * null when no recording is replaying (the full build).
+ */
+export function replayClock(s: ReplayInfo): number | null {
+  if (s.status !== 'ready' || !s.recordedAt) return null;
+  const start = Date.parse(s.recordedAt);
+  return Number.isNaN(start) ? null : start + s.position;
+}
+
 export const useReplayStore = create<ReplayStore>()((set) => ({
   ...INITIAL_REPLAY,
   restart: null,

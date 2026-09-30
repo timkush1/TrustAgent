@@ -107,6 +107,10 @@ describe('static build', () => {
     const flagged = rows().find((r) => within(r).queryByText('Flagged')) as HTMLElement;
     expect(within(flagged).getByText('refund-policy.md')).toBeInTheDocument();
     expect(within(flagged).getByText('Hallucinated')).toBeInTheDocument();
+    // Times follow the tape's clock ("just now", "1 min. ago"), not the days since the recording.
+    const times = rows().map((r) => r.querySelector('time')?.textContent ?? '');
+    expect(times.filter((t) => /Sep/.test(t))).toEqual([]);
+    expect(times.some((t) => /now|ago/.test(t))).toBe(true);
   });
 
   it('shows why Policies is not here, with a real way to run it', async () => {
