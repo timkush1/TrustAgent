@@ -240,10 +240,11 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 		f.upStart = h.now()
 		resp, cancel, err := f.up.Do(ctx, http.MethodPost, playgroundPath, "", f.c.Request.Header, f.forward)
 		if err != nil {
-			return nil, h.playgroundUpstreamFailed(ctx, f, err)
+			return nil, h.playgroundUpstreamFailed(ctx, f, 0, err)
 		}
+		status := resp.StatusCode
 		if ans, err = h.upstreamAnswer(f, resp, cancel); err != nil {
-			return nil, h.playgroundUpstreamFailed(ctx, f, err)
+			return nil, h.playgroundUpstreamFailed(ctx, f, status, err)
 		}
 		up = ans.upstreamRecord()
 	} else {
@@ -308,31 +309,39 @@ func runContext(c *gin.Context) *gin.Context {
 	return rc
 }
 
-// playgroundUpstreamFailed records a chat-mode run whose upstream call failed outright, as
-// upstreamFailed does on /v1 (skipped:upstream_error; undecodable for a body whose encoding is
-// broken, D24; client_disconnected when the caller went away; never enforced), and returns the
-// 502, or 504 on a timeout, that names the trace.
-func (h *Handler) playgroundUpstreamFailed(ctx context.Context, f *flow, err error) *PlaygroundError {
+// playgroundUpstreamFailed records a chat-mode run whose upstream call failed, as upstreamFailed
+// does on /v1 (skipped:upstream_error; undecodable for a 2xx whose body cannot be decoded, D24;
+// client_disconnected when the caller went away; never enforced), and returns the 502, or 504 on
+// a timeout, that names the trace. status is the status the upstream answered with before its
+// body failed to read; 0 when the call itself failed.
+func (h *Handler) playgroundUpstreamFailed(ctx context.Context, f *flow, status int, err error) *PlaygroundError {
 	x := f.x
 	ms := h.now().Sub(f.upStart).Milliseconds()
 	x.SkipReason, x.Unenforced = gate.SkipUpstreamError, true
 	pe := &PlaygroundError{Status: http.StatusBadGateway, Code: CodeUpstreamError, TraceID: x.Trace.TraceID,
 		Message: "The upstream LLM API could not be reached."}
+	answered := status >= 200 && status <= 299
 	switch {
 	case errors.Is(err, context.Canceled) && ctx.Err() != nil:
 		x.SkipReason = gate.SkipClientDisconnected
-	case errors.Is(err, upstream.ErrUndecodable):
-		x.SkipReason = gate.SkipUndecodable
-		pe.Message = "The upstream LLM API answered with a body the gateway cannot decode (its Content-Encoding)."
 	case upstream.IsTimeout(err):
 		pe.Status, pe.Code, pe.Message = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
+	case status != 0 && !answered:
+		// An error status whose body could not be read: reported as the status it is.
+		pe.UpstreamStatus = status
+		pe.Message = fmt.Sprintf("The upstream LLM API answered HTTP %d%s", status, upstreamHint(status))
+	case answered && errors.Is(err, upstream.ErrUndecodable):
+		x.SkipReason = gate.SkipUndecodable
+		pe.Message = "The upstream LLM API answered with a body the gateway cannot decode (its Content-Encoding)."
+	case answered:
+		pe.Message = "The upstream LLM API's answer could not be read."
 	}
 	if x.SkipReason != gate.SkipClientDisconnected {
-		h.log.Warn("playground: upstream call failed", "trace_id", x.Trace.TraceID, "skip", x.SkipReason, "err", err)
+		h.log.Warn("playground: upstream call failed", "trace_id", x.Trace.TraceID, "status", status, "skip", x.SkipReason, "err", err)
 	}
 	res := h.gate.Evaluate(f.record, x)
 	fin := &gate.Final{Action: unenforcedAction(res.Decision.Action), Delivered: gate.DeliveredOriginal}
-	h.decided(f, res, gate.Upstream{Ms: &ms}, h.now(), fin)
+	h.decided(f, res, gate.Upstream{Status: status, Ms: &ms}, h.now(), fin)
 	return pe
 }
 

@@ -384,25 +384,38 @@ func TestPlaygroundRunContext(t *testing.T) {
 	}
 }
 
-// TestPlaygroundUndecodableAnswer: an upstream body the gateway cannot decode is recorded as
-// skipped:undecodable (D24), never enforced, and answered with a 502 that names the trace.
+// TestPlaygroundUndecodableAnswer: a 2xx body the gateway cannot decode is recorded as
+// skipped:undecodable (D24), an error status whose body cannot be read as skipped:upstream_error
+// with that status; neither is enforced, and each is a 502 that names the trace.
 func TestPlaygroundUndecodableAnswer(t *testing.T) {
-	e := newEnv(t, envOpts{testMode: true, policyYAML: blockPolicy("flag", "")})
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Encoding", "br")
-		_, _ = io.WriteString(w, "not brotli")
-	}))
-	t.Cleanup(up.Close)
-	e.injecting(t, up.URL)
-	_, err := e.handler.Playground(context.Background(), playgroundContext(), refundRun(t, PlaygroundChat), nil)
-	pe := playgroundErr(t, err)
-	r := e.sink.result(t)
-	if pe.Status != http.StatusBadGateway || pe.Code != CodeUpstreamError || pe.TraceID != r.Trace.TraceID {
-		t.Errorf("%+v", pe)
-	}
-	if r.Status != "skipped:undecodable" || r.Decision.Enforced || r.Final == nil || r.Final.Action != decision.ActionPass {
-		t.Errorf("status %s enforced %v final %+v", r.Status, r.Decision.Enforced, r.Final)
+	for _, tc := range []struct {
+		status              int
+		skip                string
+		reportedStatus      int
+		messageMentionsHTTP bool
+	}{
+		{http.StatusOK, "skipped:undecodable", 0, false},
+		{http.StatusTooManyRequests, "skipped:upstream_error", http.StatusTooManyRequests, true},
+	} {
+		e := newEnv(t, envOpts{testMode: true, policyYAML: blockPolicy("flag", "")})
+		up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Encoding", "br")
+			w.WriteHeader(tc.status)
+			_, _ = io.WriteString(w, "not brotli")
+		}))
+		t.Cleanup(up.Close)
+		e.injecting(t, up.URL)
+		_, err := e.handler.Playground(context.Background(), playgroundContext(), refundRun(t, PlaygroundChat), nil)
+		pe := playgroundErr(t, err)
+		r := e.sink.result(t)
+		if pe.Status != http.StatusBadGateway || pe.Code != CodeUpstreamError || pe.TraceID != r.Trace.TraceID ||
+			pe.UpstreamStatus != tc.reportedStatus || strings.Contains(pe.Message, "HTTP") != tc.messageMentionsHTTP {
+			t.Errorf("status %d: %+v", tc.status, pe)
+		}
+		if r.Status != tc.skip || r.Decision.Enforced || r.Upstream.Status != tc.status || r.Final == nil || r.Final.Action != decision.ActionPass {
+			t.Errorf("status %d: recorded %s enforced %v upstream %d final %+v", tc.status, r.Status, r.Decision.Enforced, r.Upstream.Status, r.Final)
+		}
 	}
 }
 
