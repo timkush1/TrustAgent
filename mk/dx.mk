@@ -193,9 +193,12 @@ LOAD_DURATION ?= 30s
 K6_IMAGE      ?= grafana/k6
 # k6 joins the running proxy container's network namespace and calls it on 127.0.0.1: no bridge
 # hop in the measurement, and no run at all (docker refuses) when the proxy is not running.
-# $(call k6_run,<scenarios>): k6 reads the container environment as __ENV.
-k6_run = docker run --rm -i --network "container:$$($(LOAD_COMPOSE) ps -q proxy)" \
-	-e BASE_URL=http://127.0.0.1:8080 -e API_KEY="$$($(PYTHON) scripts/envfile.py get TRAFFICGEN_API_KEY)" \
+# $(call k6_run,<scenarios>): k6 reads the container environment as __ENV. The proxy key reaches
+# it through docker's own environment (`-e API_KEY` without a value), never the command line,
+# where other local users could read it.
+k6_run = API_KEY="$$($(PYTHON) scripts/envfile.py get TRAFFICGEN_API_KEY)" \
+	docker run --rm -i --network "container:$$($(LOAD_COMPOSE) ps -q proxy)" \
+	-e BASE_URL=http://127.0.0.1:8080 -e API_KEY \
 	-e RATE=$(LOAD_RATE) -e DURATION=$(LOAD_DURATION) -e SCENARIOS=$(1) \
 	$(K6_IMAGE) run - < scripts/load/gateway-overhead.js
 

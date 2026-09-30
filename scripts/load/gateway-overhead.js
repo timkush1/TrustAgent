@@ -19,8 +19,9 @@
 // gateway at mock-jev-slow. By hand, with the load stack up (`make load-up`; it publishes no port),
 // inside the proxy container's network namespace:
 //
+//   API_KEY="$(python3 scripts/envfile.py get TRAFFICGEN_API_KEY)" \
 //   docker run --rm -i --network "container:$(docker compose -p truthtable-load ps -q proxy)" \
-//     -e BASE_URL=http://127.0.0.1:8080 -e API_KEY=<TRAFFICGEN_API_KEY> -e SCENARIOS=a,b,c \
+//     -e BASE_URL=http://127.0.0.1:8080 -e API_KEY -e SCENARIOS=a,b,c \
 //     grafana/k6 run - < scripts/load/gateway-overhead.js
 //
 // Environment: BASE_URL (http://localhost:8080), API_KEY (the proxy key, X-TrustAgent-Key),

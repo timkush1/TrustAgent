@@ -190,6 +190,16 @@ class LoadK6Test(unittest.TestCase):
         self.assertNotIn("$(MAKE)", recipe, "make -n would run such a recipe line for real")
         self.assertIn("down --volumes", recipe)
 
+    def test_the_proxy_key_never_reaches_a_command_line(self) -> None:
+        # `docker run -e API_KEY=<key>` would show the key to every local user (ps); docker
+        # takes it from its own environment when -e names the variable alone.
+        k6_run = DX_MK.split("k6_run =", 1)[1].split("\n\n", 1)[0]
+        self.assertRegex(k6_run, r"-e API_KEY(\s|\\)")
+        self.assertNotRegex(k6_run, r"-e API_KEY=")
+        self.assertRegex(
+            k6_run, r'^ API_KEY="\$\$\(\$\(PYTHON\) scripts/envfile\.py get TRAFFICGEN_API_KEY\)"'
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
