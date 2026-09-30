@@ -176,6 +176,47 @@ func TestMockScenarioAnswers(t *testing.T) {
 	}
 }
 
+// TestMockFallbackAnswers: the re-gate of a scenario's scripted fallback answer (its state's
+// assistant_response is fallback.response) is answered from fallback.mock_answers, any other
+// state of the scenario from mock_answers.
+func TestMockFallbackAnswers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.json")
+	pack := `{"scenarios":[{"id":"fb","mock_answers":{"groundedness__v1":{"type":"noul","noul":0.97}},
+		"fallback":{"response":"Refunds take 5 to 10 business days.","mock_answers":{"groundedness__v1":{"type":"noul","noul":0.04}}}}]}`
+	if err := os.WriteFile(path, []byte(pack), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cl := mockClientFor(t, MockConfig{FixturesPath: path, Strict: true})
+	q := map[string]any{"groundedness__v1": s0Questions["groundedness__v1"]}
+	for text, want := range map[string]float64{"Refunds take 2 business days.": 0.97, "Refunds take 5 to 10 business days.": 0.04} {
+		req := &Request{Model: DefaultMockModel, State: map[string]any{"assistant_response": text}, Questions: q}
+		resp, err := cl.Decide(context.Background(), req, CallOptions{Scenario: "fb"})
+		if err != nil || *resp.Answers["groundedness__v1"].Noul != want {
+			t.Errorf("%q: resp %+v err %v, want %v", text, resp, err, want)
+		}
+	}
+
+	// Every fallback in the contract pack scripts its re-gate.
+	cl = mockClientFor(t, MockConfig{Mode: MockScenario, Strict: true})
+	m := cl.(*mockClient)
+	if len(m.fallbacks) == 0 {
+		t.Fatal("the contract pack has no fallback scenario")
+	}
+	for id, fb := range m.fallbacks {
+		req := &Request{Model: DefaultMockModel, State: map[string]any{"assistant_response": fb.Response}, Questions: s0Questions}
+		resp, err := cl.Decide(context.Background(), req, CallOptions{Scenario: id})
+		if err != nil {
+			t.Errorf("%s: %v", id, err)
+			continue
+		}
+		for qid, a := range fb.MockAnswers {
+			if got := resp.Answers[qid]; got == nil || got.Noul == nil || *got.Noul != *a.Noul {
+				t.Errorf("%s: %s answered %+v, want the fallback answer %+v", id, qid, got, a)
+			}
+		}
+	}
+}
+
 func TestMockStrictMisses(t *testing.T) {
 	cl := mockClientFor(t, MockConfig{Mode: MockScenario, Strict: true})
 	for _, scenario := range []string{"", "no-such-scenario", "no-evidence-not-assessed"} {

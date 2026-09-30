@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # ============================================================================
-# TrustAgent proxy (Go): the gateway binary plus the demo traffic generator.
+# TrustAgent proxy (Go): the gateway binary, the demo traffic generator and the
+# mock vendor APIs of the e2e and load stacks.
 # ============================================================================
 # Build context: the REPOSITORY ROOT (SPEC §3.4), so the image can generate the
 # gRPC stubs from proto/ and compile the contracts module that backend-go/go.mod
@@ -16,7 +17,8 @@
 #          so a fresh clone builds with nothing but Docker)
 #   build  compiles every command in CMDS into /out, on the build platform
 #          (GOOS/GOARCH come from the target platform, so multi-arch is cheap)
-#   final  alpine, non-root uid 1001, binaries at /<cmd> (/proxy, /trafficgen)
+#   final  alpine, non-root uid 1001, binaries at /<cmd> (/proxy, /trafficgen,
+#          /mock-upstream)
 
 ARG GO_VERSION=1.25.11
 ARG ALPINE_VERSION=3.24
@@ -63,7 +65,7 @@ COPY --from=proto /out/ ./
 # VERSION is stamped into internal/version (compose passes TRUSTAGENT_VERSION).
 # CMDS lists the ./cmd/<name> packages to ship; each lands at /<name>.
 ARG VERSION=dev
-ARG CMDS="proxy trafficgen"
+ARG CMDS="proxy trafficgen mock-upstream"
 ARG TARGETOS
 ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -80,7 +82,7 @@ FROM alpine:${ALPINE_VERSION}
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="truthtable-proxy" \
-      org.opencontainers.image.description="TrustAgent gateway proxy and demo traffic generator" \
+      org.opencontainers.image.description="TrustAgent gateway proxy, demo traffic generator and mock vendor APIs" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${VERSION}"

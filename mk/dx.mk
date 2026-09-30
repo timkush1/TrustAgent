@@ -1,12 +1,12 @@
 # ============================================================================
-# mk/dx.mk - Compose stacks (default and demo), setup tools, local models,
+# mk/dx.mk - Compose stacks (default, demo and e2e), setup tools, local models,
 # load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
 # root Makefile; targets are declared .PHONY there.
 #
 # Services are addressed by compose service name (`$(COMPOSE) exec ollama ...`);
 # there are no fixed container names. The default stack's project name comes
 # from COMPOSE_PROJECT_NAME (.env) or `name: truthtable` in docker-compose.yml;
-# the demo stack always runs as $(DEMO_PROJECT).
+# the demo stack always runs as $(DEMO_PROJECT), the e2e stack as $(E2E_PROJECT).
 # ============================================================================
 
 # Image tag of the app services (docker-compose.yml reads TRUSTAGENT_VERSION).
@@ -18,6 +18,23 @@ DEMO_COMPOSE  = $(COMPOSE) -p $(DEMO_PROJECT) -f docker-compose.yml -f docker-co
 # `make demo` builds the images from this checkout; `make demo DEMO_BUILD=` uses
 # local or published images instead (CI builds them first, with a layer cache).
 DEMO_BUILD   ?= --build
+# Scenario checks (trafficgen --expect inside the proxy container): which
+# scenarios (--scenarios, --exclude) and the gateway phase they may need
+# (--phase; empty = trafficgen's default, the phase this build implements).
+DEMO_SCENARIOS ?= demo
+DEMO_PHASE     ?=
+
+E2E_PROJECT ?= truthtable-e2e
+E2E_COMPOSE  = $(COMPOSE) -p $(E2E_PROJECT) -f docker-compose.yml -f docker-compose.e2e.yml --profile e2e
+E2E_BUILD   ?= --build
+E2E_SCENARIOS ?= e2e
+E2E_EXCLUDE   ?=
+E2E_PHASE     ?=
+# all: every answer comes from mock-upstream through the upstream path (no
+# test_response); none: scripted answers, as in the demo.
+E2E_UPSTREAM  ?= all
+# trafficgen flags shared by the scenario targets.
+TRAFFICGEN_CHECK = /trafficgen --once --expect --base-url http://127.0.0.1:8080
 # Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
 UP_ARGS      ?=
 # Seconds `up --wait` gives every service to become healthy.
@@ -64,6 +81,28 @@ demo-clean: ## Stop the demo stack and delete its volumes (demo database and sec
 	$(DEMO_COMPOSE) down --volumes --remove-orphans
 	@echo "✅ Demo stack and its volumes removed"
 
+demo-scenarios: ## Check the demo scenarios against the running demo stack (trafficgen --expect; DEMO_SCENARIOS=s0, DEMO_PHASE=p3)
+	$(DEMO_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(DEMO_SCENARIOS) $(if $(DEMO_PHASE),--phase $(DEMO_PHASE))
+
+##@ End-to-end stack (real HTTP paths against mock-upstream)
+
+e2e-up: ## Start the e2e stack (compatible fast check and LLM upstreams on mock-upstream, mock judge, sync traces), wait until healthy
+	$(PYTHON) scripts/configure.py --ensure
+	$(E2E_COMPOSE) up -d $(E2E_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT)
+	@echo "✅ E2E stack running (project $(E2E_PROJECT): every vendor is mock-upstream, \$$0)"
+	@echo "   Check: make e2e-scenarios   Stop: make e2e-down"
+
+e2e-scenarios: ## Check the e2e scenarios against the running e2e stack (E2E_SCENARIOS=e2e E2E_EXCLUDE= E2E_PHASE=p3 E2E_UPSTREAM=all)
+	$(E2E_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(E2E_SCENARIOS) --upstream $(E2E_UPSTREAM) \
+		$(if $(E2E_EXCLUDE),--exclude $(E2E_EXCLUDE)) $(if $(E2E_PHASE),--phase $(E2E_PHASE))
+
+e2e-logs: ## Follow the e2e stack's logs (SERVICE=mock-upstream for one service)
+	$(E2E_COMPOSE) logs -f $(SERVICE)
+
+e2e-down: ## Stop the e2e stack and delete its volumes (it holds test data only)
+	$(E2E_COMPOSE) down --volumes --remove-orphans
+	@echo "✅ E2E stack and its volumes removed"
+
 logs: ## Follow the stack's logs (SERVICE=proxy for one service)
 	$(COMPOSE) logs -f $(SERVICE)
 
@@ -97,14 +136,15 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 	$(PYTHON) scripts/gen_config_docs.py --check
 
 # Every profile on its own, all of them together, and the demo override.
-COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo "*"
+COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-compose-check: ## Validate the compose files: every profile and the demo override (docker compose config -q)
+compose-check: ## Validate the compose files: every profile and the demo and e2e overrides (docker compose config -q)
 	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \
 	set -e; for p in $(COMPOSE_CHECK_PROFILES); do \
 		$(COMPOSE) $${p:+--profile "$$p"} config -q; echo "compose config ok: profile $${p:-default}"; \
 	done; \
-	$(DEMO_COMPOSE) config -q; echo "compose config ok: demo override"
+	$(DEMO_COMPOSE) config -q; echo "compose config ok: demo override"; \
+	$(E2E_COMPOSE) config -q; echo "compose config ok: e2e override"
 
 test-scripts: ## Unit tests of the setup scripts (scripts/tests, standard library only)
 	$(PYTHON) -m unittest discover -s scripts/tests -v

@@ -85,8 +85,9 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
 
 - A **Demo stack** banner at the top: *"Mock checks and a mock judge: every number here is
   simulated."*
-- **Traffic** (in the left navigation): the traffic generator sends a round of scripted requests
-  about every 20 seconds, so new rows keep appearing. Each row has an outcome pill:
+- **Traffic** (in the left navigation): the traffic generator sends a round of about 20 scripted
+  requests about once a minute, so new rows keep appearing. Each row has an outcome pill; a round
+  starts with these three:
 
   | Scenario | Outcome | Why |
   |---|---|---|
@@ -94,8 +95,12 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
   | *Refund window: 60 days vs 30 days* | **Flagged** | The answer contradicts the document. The app got the answer with a risk warning (`X-TrustAgent-Action: flag`) |
   | *No documents: not checked* | **Not checked** | There was nothing to check against, so TrustAgent says so instead of guessing |
 
-  More scenarios, including blocked and replaced answers, arrive with the full demo set *(from
-  P3)*.
+  The rest of the round shows other checks: a leaked personal email or token, a needless refusal,
+  a promise the billing rules do not allow, an off-topic answer, documents in tool results or a
+  `Context:` block, prompts whose documents TrustAgent cannot find (*Not checked*), and an observe
+  route that only records what it *would* have blocked. Blocked and replaced answers, streams and
+  the Anthropic API join the round *(from P3)*. [contracts/README.md](../contracts/README.md#demo-scenarios)
+  lists every scenario.
 - **Click a row** to open the trace: the answer, the reasons for its outcome, what it was
   **checked against** (for example the system-prompt document), and the **deep audit**, which
   arrives a few seconds later and explains the verdict claim by claim.
@@ -311,7 +316,7 @@ the demo, `make clean-data` for the real stack (**this deletes all TrustAgent da
 **No browser opens.** Open <http://localhost:3000> yourself (or your `DASHBOARD_HOST_PORT`). Use
 `make demo OPEN=0` to only print the address.
 
-**Traffic stays empty in the demo.** The first round arrives within about 20 seconds of the stack
+**Traffic stays empty in the demo.** The first round arrives within a few seconds of the stack
 becoming healthy. If nothing shows after a minute, check the generator:
 `make demo-logs SERVICE=trafficgen`.
 

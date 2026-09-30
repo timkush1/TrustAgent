@@ -1,0 +1,94 @@
+# ============================================================================
+# TrustAgent - end-to-end stack (SPEC §3.4)
+# ============================================================================
+# `make e2e-up` runs, in effect:
+#
+#   python3 scripts/configure.py --ensure
+#   docker compose -p truthtable-e2e -f docker-compose.yml -f docker-compose.e2e.yml \
+#     --profile e2e up -d --build --wait
+#
+# and `make e2e-scenarios` checks the scenarios against it:
+#
+#   docker compose -p truthtable-e2e ... exec -T proxy /trafficgen --once --expect \
+#     --scenarios e2e --base-url http://127.0.0.1:8080
+#
+# Unlike the zero-key demo, the gateway takes the real HTTP paths, all against
+# mock-upstream (profile e2e), so nothing leaves the machine and nothing costs:
+# - the fast check is the `compatible` decision backend pointed at
+#   mock-upstream's TypeSafe-shaped /v1/systemone (the real HTTP client with its
+#   retries, breaker and Content-Type checks); mock-upstream answers each
+#   question from the scenario's mock_answers (X-TrustAgent-Scenario reaches it
+#   in test mode);
+# - the OpenAI and Anthropic upstreams are mock-upstream too, which answers a
+#   request with its scenario's scripted response, JSON or SSE
+#   (`trafficgen --upstream all` sends no test_response, so every answer comes
+#   through the upstream path);
+# - the deep-audit judge is the mock provider (LLM_PROVIDER=mock);
+# - traces are written before the response returns (TRUTHTABLE_TRACE_FLUSH=sync),
+#   so a test can read a trace as soon as its request is answered.
+#
+# A calibration of quality mock counts only with the mock backend, so the
+# scenarios that rely on it (set demo only, such as payments-fallback) are not
+# in set e2e. Scenarios tagged p3 wait for the P3 gateway (trafficgen skips
+# them until --phase p3). cmd/proxy's TestE2EScenariosAgainstMockUpstream runs
+# the same configuration in process, without Docker.
+#
+# The stack publishes the same host ports as `make up` and `make demo`
+# (PROXY_HOST_PORT, DASHBOARD_HOST_PORT): stop those first, or give the e2e
+# stack others, e.g. `PROXY_HOST_PORT=18080 DASHBOARD_HOST_PORT=13000 make e2e-up`.
+
+name: truthtable-e2e
+
+x-e2e-env: &e2e-env
+  TRUTHTABLE_TEST_MODE: "true"
+  TRUTHTABLE_STRICT_CONFIG: "true"
+
+services:
+  proxy:
+    environment:
+      <<: *e2e-env
+      TRUTHTABLE_TRACE_FLUSH: sync
+      TRUTHTABLE_JEV_BACKEND: compatible
+      TRUTHTABLE_JEV_BASE_URL: http://mock-upstream:8090
+      TRUTHTABLE_JEV_PATH: /v1/systemone
+      TRUTHTABLE_JEV_MODEL: typesafe/jev-1.13
+      # mock-upstream accepts any key; this one only has to be non-empty.
+      TRUTHTABLE_JEV_API_KEY: e2e-mock-upstream-key
+      TRUTHTABLE_OPENROUTER_BASE_URL: http://mock-upstream:8090
+      TRUTHTABLE_UPSTREAM_URL: http://mock-upstream:8090
+      TRUTHTABLE_ANTHROPIC_UPSTREAM_URL: http://mock-upstream:8090
+      TRUTHTABLE_FALLBACK_UPSTREAM_URL: http://mock-upstream:8090
+      # Test traffic reads traces with the trafficgen key; the dashboard reads
+      # them without signing in (the stack holds scripted data only).
+      TRUTHTABLE_PUBLIC_READ: "true"
+      TRAFFICGEN_API_KEY:
+      # No vendor credential reaches the e2e proxy.
+      OPENROUTER_API_KEY: !reset null
+      TYPESAFE_API_KEY: !reset null
+      TRUTHTABLE_UPSTREAM_API_KEY: !reset null
+      TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY: !reset null
+      TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY: !reset null
+    depends_on:
+      mock-upstream:
+        condition: service_healthy
+
+  engine:
+    environment:
+      <<: *e2e-env
+      LLM_PROVIDER: mock
+      LLM_FALLBACK: none
+      # No vendor credential reaches the e2e engine, and nothing is traced out.
+      OPENROUTER_API_KEY: !reset null
+      ANTHROPIC_API_KEY: !reset null
+      OPENAI_API_KEY: !reset null
+      LANGSMITH_API_KEY: !reset null
+      LANGSMITH_TRACING: "false"
+
+  # Nothing on the host needs the e2e database.
+  postgres:
+    ports: !reset []
+
+  # mock-upstream is in the e2e and load profiles of docker-compose.yml; this
+  # file needs it, so it turns it on with or without --profile e2e.
+  mock-upstream:
+    profiles: !reset []
