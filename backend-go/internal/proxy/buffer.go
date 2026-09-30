@@ -225,16 +225,19 @@ func (h *Handler) writeBuffered(f *flow, s *streamState, g *gate.Result, audit s
 		err = s.sw.WriteEvents(f.format, a.events, ann)
 		ann = nil
 	} else {
-		// The terminal event is somewhere in the rest: the annotation goes last.
+		// The terminal event is somewhere in the rest: the annotation goes last (and only when the
+		// rest ended between two events).
 		err = s.sw.WriteEvents(f.format, a.events, nil)
 		if err == nil {
 			_, err = io.Copy(s.sw, a.rest)
 		}
 	}
-	if err == nil {
-		err = s.sw.Finish(ann, trailers)
+	if s.sw.Err() == nil {
+		// The client is still there (a failed read of the rest is the upstream's): the decision
+		// goes out as well.
+		err = errors.Join(err, s.sw.Finish(ann, trailers))
 	}
 	if err != nil {
-		h.log.Debug("client went away before the end of the stream", "trace_id", f.x.Trace.TraceID, "err", err)
+		h.log.Debug("the stream ended early", "trace_id", f.x.Trace.TraceID, "err", err)
 	}
 }

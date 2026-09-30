@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"reflect"
 	"slices"
@@ -394,6 +395,32 @@ func TestBufferedTooLargeTail(t *testing.T) {
 	if r.Decision.Action != decision.ActionPass || r.Decision.SkipReason == nil || *r.Decision.SkipReason != gate.SkipUpstreamError ||
 		r.Final == nil || r.Final.Action != decision.ActionBlock || r.Final.Delivered != gate.DeliveredBlocked {
 		t.Errorf("fail open decides pass, the delivery blocks: action %s skip %v final %+v", r.Decision.Action, r.Decision.SkipReason, r.Final)
+	}
+}
+
+// TestBufferedOversizeRestCutOffStillFinishes: after a keepalive committed the headers, an answer
+// past the size limit goes out with the rest of the stream; an upstream that drops the connection
+// during the rest still leaves the client the decision trailers, and the trace an upstream error.
+func TestBufferedOversizeRestCutOffStillFinishes(t *testing.T) {
+	sc := loadStrmScenario(t, "grounded-pass")
+	hello, big := strmChunk("Hello ", ""), strmChunk(strings.Repeat("x", 3000), "")
+	u := newStrmUpstream(t, hello, big)
+	u.delay, u.abort = 1300*time.Millisecond, true
+	e := newStrmEnv(t, u, strmOpts{
+		policyYAML: strmPolicy("mode: flag, fail: open, streaming: buffer, buffer_keepalive_s: 1"), maxBytes: 2048,
+	})
+	resp := e.open(t, context.Background(), "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil || !strings.HasPrefix(string(body), ": keepalive\n\n"+hello+big) {
+		t.Fatalf("the keepalive, then what the upstream sent (%v):\n%q", err, body[:min(len(body), 200)])
+	}
+	if resp.Trailer.Get(HeaderStatus) != "skipped:upstream_error" || resp.Trailer.Get(HeaderAction) != decision.ActionPass {
+		t.Errorf("the client is still there and gets the decision: %v", resp.Trailer)
+	}
+	r := e.sink.result(t)
+	if r.Decision.SkipReason == nil || *r.Decision.SkipReason != gate.SkipUpstreamError || slices.Contains(r.Flags, gate.FlagClientDisconnected) {
+		t.Errorf("skip %v flags %v", r.Decision.SkipReason, r.Flags)
 	}
 }
 

@@ -170,9 +170,10 @@ type strmUpstream struct {
 	// after the first until the test sends on it.
 	delay, gap time.Duration
 	step       chan struct{}
-	// stall keeps the stream open after the events until the request goes away (gone).
-	stall bool
-	gone  chan struct{}
+	// stall keeps the stream open after the events until the request goes away (gone); abort
+	// drops the connection after them instead of ending the stream (a read error).
+	stall, abort bool
+	gone         chan struct{}
 }
 
 func newStrmUpstream(t *testing.T, events ...string) *strmUpstream {
@@ -181,7 +182,7 @@ func newStrmUpstream(t *testing.T, events ...string) *strmUpstream {
 	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		u.mu.Lock()
-		events, delay, gap, step, stall := u.events, u.delay, u.gap, u.step, u.stall
+		events, delay, gap, step, stall, abort := u.events, u.delay, u.gap, u.step, u.stall, u.abort
 		u.mu.Unlock()
 		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 		w.Header().Set("X-Upstream", "yes")
@@ -219,6 +220,9 @@ func newStrmUpstream(t *testing.T, events ...string) *strmUpstream {
 		if stall {
 			<-r.Context().Done()
 			u.gone <- struct{}{}
+		}
+		if abort {
+			panic(http.ErrAbortHandler)
 		}
 	}))
 	t.Cleanup(u.Close)
@@ -717,6 +721,45 @@ func TestStreamOversizeEventAndAnswer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStreamOversizeRestEndsAsTheUpstreamDid: after an event past the size limit the rest goes
+// out as it is, however it ends. A rest cut off inside an event gets no annotation (it would join
+// the open line; the trailers still carry the decision), and an upstream that stalls during the
+// rest is an upstream error, not a client that left.
+func TestStreamOversizeRestEndsAsTheUpstreamDid(t *testing.T) {
+	sc := loadStrmScenario(t, "grounded-pass")
+	big := strmChunk(strings.Repeat("x", 3000), "")
+	t.Run("unterminated", func(t *testing.T) {
+		events := []string{strmChunk("Hello ", ""), big, `data: {"choices":[{"index":0,"delta":{"content":"tr`}
+		e := newStrmEnv(t, newStrmUpstream(t, events...), strmOpts{policyYAML: strmPolicy("mode: flag"), maxBytes: 2048})
+		resp, body := e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+		if string(body) != strings.Join(events, "") {
+			t.Errorf("the client gets the upstream's bytes and nothing after the open event:\n%q", body[max(len(body)-120, 0):])
+		}
+		if resp.Trailer.Get(HeaderStatus) != "skipped:upstream_error" {
+			t.Errorf("trailers %v", resp.Trailer)
+		}
+		if r := e.sink.result(t); r.Decision.SkipReason == nil || *r.Decision.SkipReason != gate.SkipUpstreamError {
+			t.Errorf("skip %v", r.Decision.SkipReason)
+		}
+	})
+	t.Run("stalled", func(t *testing.T) {
+		u := newStrmUpstream(t, strmChunk("Hello ", ""), big)
+		u.stall = true
+		e := newStrmEnv(t, u, strmOpts{policyYAML: strmPolicy("mode: flag"), maxBytes: 2048, idle: 200 * time.Millisecond})
+		resp, body := e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+		if !strings.HasPrefix(string(body), strmChunk("Hello ", "")+big) {
+			t.Errorf("the rest before the stall reaches the client:\n%q", body)
+		}
+		if resp.Trailer.Get(HeaderStatus) != "skipped:upstream_error" || resp.Trailer.Get(HeaderAction) == "" {
+			t.Errorf("the client is still there and gets the decision: %v", resp.Trailer)
+		}
+		r := e.sink.result(t)
+		if r.Decision.SkipReason == nil || *r.Decision.SkipReason != gate.SkipUpstreamError || slices.Contains(r.Flags, gate.FlagClientDisconnected) {
+			t.Errorf("skip %v flags %v", r.Decision.SkipReason, r.Flags)
+		}
+	})
 }
 
 // TestStreamClientDisconnectAfterVersusBeforeFinish (D7): a client that leaves after the finish

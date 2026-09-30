@@ -776,3 +776,45 @@ func TestClearTrailers(t *testing.T) {
 		t.Errorf("after the commit the trailers stay: %v %v", rec.Result().Header, rec.Result().Trailer)
 	}
 }
+
+// TestNoCommentInsideAnOpenRawEvent: raw bytes that stop inside an event (the rest of a stream
+// relayed as it is, cut short) are never followed by a comment, which would join the event's open
+// line: Finish then leaves the annotation out and still sets the trailers. After raw bytes that
+// end between two events the annotation goes out as usual.
+func TestNoCommentInsideAnOpenRawEvent(t *testing.T) {
+	ann := Annotation{TraceID: "t1", Action: "flag", WouldAction: "block", Status: "skipped:upstream_error"}
+	for _, c := range []struct {
+		raw     string
+		comment bool
+	}{
+		{"data: {\"choices\":[{\"delta\":{\"content\":\"tr", false},
+		{"data: {\"x\":1}\n", false}, // a line ended, the event did not
+		{"data: {\"x\":1}\r", false},
+		{"data: {\"x\":1}\n\n", true},
+		{"data: {\"x\":1}\r\n\r\n", true},
+		{"data: {\"x\":1}\r\r", true},
+		{"data: {\"x\":1}\r\n\n", true},
+	} {
+		rec := httptest.NewRecorder()
+		sw := NewStreamWriter(rec)
+		sw.DeclareTrailers("X-TrustAgent-Status")
+		// Written in two pieces, so the end of an event can straddle two writes.
+		half := len(c.raw) - 1
+		if _, err := sw.Write([]byte(c.raw[:half])); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sw.Write([]byte(c.raw[half:])); err != nil {
+			t.Fatal(err)
+		}
+		if err := sw.Finish(&ann, map[string]string{"X-TrustAgent-Status": ann.Status}); err != nil {
+			t.Fatalf("%q: %v", c.raw, err)
+		}
+		body := rec.Body.String()
+		if got := strings.Contains(body, ": "+AnnotationPrefix); got != c.comment || !strings.HasPrefix(body, c.raw) {
+			t.Errorf("%q: comment %v, want %v:\n%q", c.raw, got, c.comment, body)
+		}
+		if rec.Result().Trailer.Get("X-TrustAgent-Status") != ann.Status {
+			t.Errorf("%q: trailers %v", c.raw, rec.Result().Trailer)
+		}
+	}
+}

@@ -51,7 +51,9 @@ var ErrStreamClosed = errors.New("llmapi: stream already finished")
 // its open last line would absorb the next bytes (the annotation comment would turn into the tail
 // of a data line, which the client then dispatches as a malformed event). WriteEvent keeps it
 // back, and Finish, or WriteEvents with an annotation, writes it last, where a client drops it as
-// it would have without the gateway.
+// it would have without the gateway. Raw bytes (Write: the rest of a stream that is no longer read
+// event by event) may stop inside an event too; a comment is then left out, so the annotation of
+// such a stream goes only in the trailers.
 //
 // The first write error is sticky: from then on every write returns it (the client went away).
 // A StreamWriter is not safe for concurrent use.
@@ -65,6 +67,9 @@ type StreamWriter struct {
 	tail     []byte // the bytes of Incomplete events, written last
 	finished bool
 	err      error
+	// end is the last bytes written (at most 4): whether they end an event tells if a comment may
+	// follow them.
+	end []byte
 	// window is how far ahead each write keeps the connection's write deadline (0: never
 	// touched); extended is when it was last pushed.
 	window   time.Duration
@@ -185,7 +190,29 @@ func (s *StreamWriter) write(p []byte) error {
 		s.err = err
 		return err
 	}
+	s.end = append(s.end, p...)
+	s.end = s.end[max(len(s.end)-4, 0):]
 	return s.flush()
+}
+
+// betweenEvents reports whether what was written ends between two events (nothing yet, or a
+// blank line), where a comment can go without joining an event.
+func (s *StreamWriter) betweenEvents() bool {
+	if len(s.end) == 0 {
+		return true
+	}
+	endings := 0
+	for i := len(s.end) - 1; i >= 0 && endings < 2; endings++ {
+		switch {
+		case s.end[i] == '\n' && i > 0 && s.end[i-1] == '\r':
+			i -= 2
+		case s.end[i] == '\n' || s.end[i] == '\r':
+			i--
+		default:
+			return false
+		}
+	}
+	return endings == 2
 }
 
 func (s *StreamWriter) flush() error {
@@ -259,8 +286,15 @@ func (s *StreamWriter) writeTail() error {
 	return s.write(tail)
 }
 
-// WriteComment writes a comment event, one ": " line per line of text.
+// WriteComment writes a comment event, one ": " line per line of text. After raw bytes that
+// stopped inside an event it writes nothing: the comment would join that event's open line.
 func (s *StreamWriter) WriteComment(text string) error {
+	if !s.betweenEvents() {
+		if s.err != nil {
+			return s.err
+		}
+		return nil
+	}
 	ev := CommentEvent(text)
 	return s.write(ev.Encode())
 }

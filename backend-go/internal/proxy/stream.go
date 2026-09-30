@@ -316,8 +316,10 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 
 	res := llmapi.Relay(s.rd, s.asm, s.sw)
 	if errors.Is(res.UpstreamErr, llmapi.ErrEventTooLarge) && res.ClientErr == nil {
-		// Too large to read event by event: the rest reaches the client whole and ungated.
-		if _, err := io.Copy(s.sw, s.rd.Rest()); err != nil {
+		// Too large to read event by event: the rest reaches the client whole and ungated. Only a
+		// failed write means the client left; a failed read is the upstream's (the answer is
+		// skipped as upstream_error either way).
+		if _, err := io.Copy(s.sw, s.rd.Rest()); err != nil && s.sw.Err() != nil {
 			res.ClientErr = err
 		}
 	}
