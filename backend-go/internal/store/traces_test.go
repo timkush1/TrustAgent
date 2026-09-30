@@ -315,3 +315,66 @@ func TestPreviewAndFloat32(t *testing.T) {
 		t.Errorf("float32 0.06 -> %v", v)
 	}
 }
+
+func TestRecordAttemptWritesOnlyItsDecision(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := pendingTrace("payments-faq", time.Now().UTC())
+	if err := s.StartTrace(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	tr, dec := decided(start, "fallback", "block", "contradicted", 0.97, []string{"groundedness:critical"})
+	// The fallback re-gate (attempt 1) is recorded before the trace's outcome.
+	re := *dec
+	re.Attempt, re.Action, re.WouldAction, re.Reasons = 1, "pass", strp("pass"), []string{}
+	re.Decision = json.RawMessage(`{"spec":"decision/v1","trace_id":"` + start.TraceID + `","attempt":1,"action":"pass"}`)
+	if err := s.RecordAttempt(ctx, &re); err != nil {
+		t.Fatalf("RecordAttempt: %v", err)
+	}
+	got, err := s.GetTrace(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GateStatus != GateStatusPending || got.Action != nil {
+		t.Errorf("the attempt changed the trace: %s %v", got.GateStatus, got.Action)
+	}
+	if err := s.RecordDecision(ctx, tr, dec, nil); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := s.TraceDecisions(ctx, start.TraceID)
+	if err != nil || len(docs) != 2 {
+		t.Fatalf("decisions by attempt: %s %v", docs, err)
+	}
+	var second struct {
+		Attempt int    `json:"attempt"`
+		Action  string `json:"action"`
+	}
+	if err := json.Unmarshal(docs[1], &second); err != nil || !strings.Contains(string(docs[0]), `"detectors"`) ||
+		second.Attempt != 1 || second.Action != "pass" {
+		t.Errorf("decisions by attempt: %s (%v)", docs, err)
+	}
+
+	// Writing the attempt again replaces it; the trace keeps the attempt-0 outcome.
+	re.Action, re.Decision = "flag", json.RawMessage(`{"spec":"decision/v1","trace_id":"`+start.TraceID+`","attempt":1,"action":"flag"}`)
+	if err := s.RecordAttempt(ctx, &re); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	var action string
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), max(action) FILTER (WHERE attempt = 1) FROM gate_decisions WHERE trace_id = $1`,
+		start.TraceID).Scan(&n, &action); err != nil || n != 2 || action != "flag" {
+		t.Errorf("rows %d attempt-1 action %q (%v)", n, action, err)
+	}
+	if got, _ := s.GetTrace(ctx, start.TraceID); got.GateStatus != "ok" || *got.Action != "fallback" {
+		t.Errorf("trace %s %v", got.GateStatus, got.Action)
+	}
+
+	// Attempt 0 goes with its trace, never alone.
+	zero := *dec
+	if err := s.RecordAttempt(ctx, &zero); err == nil {
+		t.Error("RecordAttempt accepted attempt 0")
+	}
+	if err := s.RecordAttempt(ctx, nil); err == nil {
+		t.Error("RecordAttempt accepted nil")
+	}
+}
