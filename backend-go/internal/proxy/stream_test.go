@@ -1161,7 +1161,7 @@ func TestServeStreamRequestsCountOnce(t *testing.T) {
 			if resp.Header.Get(HeaderAction) != c.action {
 				t.Errorf("action %q", resp.Header.Get(HeaderAction))
 			}
-			if r := e.sink.result(t); deliveredAction(r) != c.action && c.mode != decision.ModeObserve {
+			if r := e.sink.result(t); deliveredAction(r) != c.action {
 				t.Errorf("recorded action %q", deliveredAction(r))
 			}
 		})
