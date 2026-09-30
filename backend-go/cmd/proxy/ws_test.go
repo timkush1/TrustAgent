@@ -51,7 +51,8 @@ func readFrame(t *testing.T, conn *websocket.Conn) wsFrame {
 }
 
 // TestStreamCarriesTheTraceLifecycle follows the flagged scenario over WS v2: trace_started,
-// gate_decision and audit_completed, in seq order, one event per frame.
+// gate_decision, audit_queued, audit_started and audit_completed, in seq order, one event per
+// frame.
 func TestStreamCarriesTheTraceLifecycle(t *testing.T) {
 	env := newTestEnv(t, envOpts{})
 	conn, _, err := dialWS(t, env, "protocol=2", http.Header{"X-TrustAgent-Key": {testKey}})
@@ -71,7 +72,7 @@ func TestStreamCarriesTheTraceLifecycle(t *testing.T) {
 	traceID := env.send(loadDemoScenarios(t)["refund-contradiction-flag"]).Header.Get("X-TrustAgent-Trace-Id")
 	var types []string
 	last := hello.Seq
-	for len(types) < 3 {
+	for len(types) < 5 {
 		f := readFrame(t, conn)
 		if f.Type == "hb" {
 			continue
@@ -94,18 +95,26 @@ func TestStreamCarriesTheTraceLifecycle(t *testing.T) {
 			if !strings.Contains(string(f.Data), `"spec":"decision/v1"`) || !strings.Contains(string(f.Data), `"action":"flag"`) {
 				t.Errorf("gate_decision %s", f.Data)
 			}
+		case "audit_queued":
+			if !strings.Contains(string(f.Data), `"lane":"high"`) || !strings.Contains(string(f.Data), `"queue_depth":`) {
+				t.Errorf("audit_queued %s", f.Data)
+			}
+		case "audit_started":
+			if !strings.Contains(string(f.Data), `"queue_wait_ms":`) {
+				t.Errorf("audit_started %s", f.Data)
+			}
 		case "audit_completed":
 			if !strings.Contains(string(f.Data), `"verdict":"HALLUCINATED"`) || !strings.Contains(string(f.Data), `"status":"CONTRADICTED"`) {
 				t.Errorf("audit_completed %s", f.Data)
 			}
 		}
 	}
-	if strings.Join(types, ",") != "trace_started,gate_decision,audit_completed" {
+	if strings.Join(types, ",") != "trace_started,gate_decision,audit_queued,audit_started,audit_completed" {
 		t.Errorf("events %v", types)
 	}
 
 	// A reconnect with the epoch and last seq replays nothing new; one from before the trace
-	// replays its three events.
+	// replays its five events.
 	replay, _, err := dialWS(t, env, "protocol=2&since_seq=1&epoch="+hello.Epoch, http.Header{"X-TrustAgent-Key": {testKey}})
 	if err != nil {
 		t.Fatal(err)
