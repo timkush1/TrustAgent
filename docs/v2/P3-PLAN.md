@@ -74,6 +74,17 @@ File:line references point at the analysed commits. If a line has moved, find it
 | D17 | P2 debts nobody listed | The retention job (§2.3 lines 566-575) is GD's last task: it does not block the gate but must land in P3. The async ordered trace writer and the LRU fallback move to P4. | GD |
 | D18 | Checks that pass without testing anything | `trafficgen --expect` exits 1 when a selected scenario is skipped by phase, unless `--allow-skip` is given. Stack specs throw in CI instead of skipping. | GH, WEB |
 | D19 | Fallback reason strings | `fallback_failed` and `fallback_format_mismatch` are appended to `traces.reasons` through `Final.Reasons`, never into `decision/v1`. WEB adds their wording. | GH, WEB |
+| D20 | An oversize answer on a fail-open block or fallback route (GH and GS reviews). | **Blocked**, as D4's last sentence says: failing open never licenses delivering bytes the gateway did not read. `Status: skipped:upstream_error`, the decision stays pass, `Final.Action=block`. No new reason in P3 (D19 keeps two). SPEC erratum at I-3: the §2.12 "passes through" rule holds on observe and flag routes only. | GH, GS (both done), lead |
+| D21 | A passthrough stream whose upstream fails or stalls before its first event. | While the headers are uncommitted, answer it as a failed upstream call, the way GH's `h.upstreamFailed` does: 502, or 504 for the idle timeout, in the route's error shape; `skipped:upstream_error`, unenforced, Final pass, counted once. Not a 200 stream that holds only the annotation. | GS (GS-8) |
+| D22 | Who records the fallback's attempt 1. | `h.fallback` records nothing; it returns `fallbackOut.Result1`. Each caller records it with `sink.AttemptDecided(f.record, Result1)` and then calls `decided(res0)` once. GS's buffer path already does; GH's `fallbackJSON` adds it in GH-6. | GH, GS |
+| D23 | A fallback upstream without its own key (D15 follow-up, B1). | D15 stays. GS adds a configuration warning (so `TRUTHTABLE_STRICT_CONFIG` refuses to start) when `TRUTHTABLE_FALLBACK_UPSTREAM_URL` is set without `TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY` and its host differs from the host of the primary upstream of `TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT`, because clients' credentials would reach another host. The warning names keys, never a value. | GS |
+| D24 | An undecodable 2xx body on the JSON path. | Recorded as `skipped:undecodable` (`gate.SkipUndecodable`), not `upstream_error`. Delivery is unchanged: a 502 in the route's shape, unenforced, because there is no readable body to gate or deliver. | GH |
+| D25 | The `/v1/completions` prompt as evidence. | Go stays the reference: the prompt reads as one user message and its blocks are extracted. No parity-vector change in P3. GH corrects the `completions-extension-grounded` wording in `contracts/demo`; SPEC §2.10 erratum at I-3. | GH, lead |
+| D26 | `/v1/models` from an Anthropic SDK. | P3 keeps `/v1/models` on `UPSTREAM_URL` (§2.4 row 72). Choosing the family from `anthropic-version` or `x-api-key` goes to §13; DX notes it in `docs/GATEWAY.md` at integration. | DX, lead |
+| D27 | A Playground run on a sampled observe route. | A Playground run is always checked: the gate skips the observe sampling draw when `Exchange.AuditSelection` is `playground` (the `SampleRate` condition in `gate.go`). API-10 sets the selection (D12). | GD, API |
+| D28 | Calibration signals §2.11 names that P3 does not produce: `calibration_warning` "calibrated with different state fields", and `calibration_missing`. | Deferred to the P4 calibration store (#42-46). In P3 a snapshot change shows as `uncalibrated_snapshot` (raw risk, capped to flag). SPEC erratum at I-3. | lead |
+
+D20-D28 were added at the wave-4 checkpoint merges (CP-GS, CP-GD, CP-GH) to settle what the stream reviews asked of the lead.
 
 ---
 
@@ -798,12 +809,16 @@ Step 0 ─┬─ GS-1..3 ──► CP-GS ─┬───────────
      ```
 3. **I-3: end-of-P3 deletions (lead).**
    - `server.go`: remove `api.POST("/upload", …)` (`:214`) and fix the `serveWS` comment (`:340`).
+   - `server.go`: the `/v1` NoRoute branch sends `X-TrustAgent-Trace-Id` and `X-Request-ID`, which §2.12 lists as "Always" (GH review). In the same commit, `TestV1ErrorShapesOnTheServer` expects them on its 404 (`traced` true).
    - `contracts/superseded.v1.json`, error level: `ProtocolV1`, `v1Frame`, `audit_result`, and `\btrustagent_(?!gateway_|engine_)[a-z]`. Promote `?api_key=` and `VITE_TRUTHTABLE_API_KEY` to error.
    - SPEC errata:
      - D8: the §2.4 403 list;
      - D6: add `multi_choice` to the flags list at line 409;
      - D10, D11, D12, D13, D14, D15, D17 and D19;
      - `CalibrationLookup` doc: "P3 file lookup".
+     - D20, D25 and D28 (checkpoint decisions);
+     - §2.11: `mock/*` calibrations also load when `TEST_MODE` runs an explicit mock backend, not only under `DEMO_MODE` (GD review);
+     - §2.5: a handshake without `protocol=2` gets 400, not v1 frames (D13).
    - Run `node scripts/check-forbidden.mjs`.
 4. **I-4: local gates, one after another.**
    ```bash
