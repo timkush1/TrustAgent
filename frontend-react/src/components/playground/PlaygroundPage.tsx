@@ -6,8 +6,8 @@
  *
  * Page contract: Run needs an admin on a writable instance and says so otherwise; errors show the
  * server's message with what to do (rate limit with its wait, missing connection with the link);
- * the routes list degrades to free text when the policy cannot be read. A proxy that does not
- * serve runs yet (404/501) gets a degraded state instead of an error, Run says why it is off, and
+ * the routes list degrades to free text when the policy cannot be read. An older proxy that does
+ * not serve runs (404/501) gets a degraded state instead of an error, Run says why it is off, and
  * the curl command still sends the same request through the gateway.
  */
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { isApiError } from '@/data/errors';
 import { isNotServed, policiesQuery } from '@/data/queries';
-import { useAppMode, useSystemStatus } from '@/data/useSystem';
+import { useAppMode, useHealth, useSystemStatus } from '@/data/useSystem';
 import { playgroundCurl } from '@/domain/snippets';
 import type { GateDecisionView, PlaygroundResult } from '@/types/api';
 import { buildRequest, formProblem } from './playgroundModel';
@@ -46,14 +46,15 @@ interface RunState {
 
 const IDLE: RunState = { running: false, tokens: '', decision: null, result: null, error: null, mode: 'chat' };
 
-/** Run is off once this proxy has said it does not serve POST /api/playground/run. */
-const NOT_SERVED_REASON: Reason = { text: 'This proxy does not run Playground requests yet (arrives with the P3 gateway handler)' };
+/** Run is off once this proxy has said it does not serve POST /api/playground/run (an older proxy). */
+const NOT_SERVED_REASON: Reason = { text: 'This proxy is older than the dashboard and does not run Playground requests' };
 
-function RunNotServed() {
+/** 404/501 to a run: a proxy from before the Playground endpoint. What still works, and where. */
+function RunNotServed({ version }: { version: string | null }) {
   return (
     <DegradedState
-      title="This proxy does not run Playground requests yet"
-      reason="POST /api/playground/run arrives with the P3 gateway handler work (block and fallback answers, streaming)."
+      title="This proxy does not run Playground requests"
+      reason={`It does not serve POST /api/playground/run, so it is older than this dashboard${version ? ` (proxy version ${version})` : ''}. Update the proxy to run requests from here.`}
       stillWorks="The curl command below sends the same request through the gateway; its checks and deep audit appear in Traffic."
       action={
         <Link to="/app/traffic" className="text-sm font-medium text-fg underline underline-offset-2">
@@ -63,7 +64,6 @@ function RunNotServed() {
     />
   );
 }
-
 
 /** The server's message plus what the viewer can do about it. */
 function RunError({ error }: { error: unknown }) {
@@ -105,6 +105,7 @@ export function PlaygroundPage() {
   const runUnavailable = usePlaygroundStore((s) => s.runUnavailable);
   const setRunUnavailable = usePlaygroundStore((s) => s.setRunUnavailable);
   const { status } = useSystemStatus();
+  const health = useHealth();
   const { demo } = useAppMode();
   const writeReason = useWriteReason('admin');
   const policies = useQuery(policiesQuery(ds));
@@ -187,7 +188,7 @@ export function PlaygroundPage() {
           <Card>
             <CardHeader level={2} title="What happened" description={started ? undefined : 'Run the request to see each step here.'} />
             <CardContent aria-live="polite" aria-busy={run.running}>
-              {runUnavailable ? <RunNotServed /> : null}
+              {runUnavailable ? <RunNotServed version={health.data?.version ?? null} /> : null}
               {run.error ? <RunError error={run.error} /> : null}
               {runUnavailable ? null : started ? (
                 <div className={run.error ? 'mt-4' : undefined}>

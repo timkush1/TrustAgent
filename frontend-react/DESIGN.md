@@ -94,6 +94,15 @@ Answer marks use `<mark data-v="contradicted|unsupported|partial|supported|unkno
 matching claim verdict (`gateVerdictView`). Each verdict differs in hue, icon, label and
 underline, which a unit test enforces.
 
+**Instant-check marks.** A detector finding (`decision.detectors[].findings`, UTF-16) is marked
+as soon as the gate decides, before any claim: `<mark data-det="<detector id>">`, a 2px solid
+line in `fg-muted`, drawn 7px below the text (below a claim's underline), and the scan-search
+icon after the finding. It is achromatic because a detector is not a verdict. Where a finding
+overlaps a claim, it nests inside the claim's mark and both lines show; the claim's link names
+the finding ("…, instant checks: links to a URL not in your documents"). A finding on its own
+repeats the `det:*` reason copy in a tooltip and in screen-reader text, and the answer gets the
+legend "Marked by the instant checks" (a glossary term).
+
 ## 4. Outcome encoding
 
 Every trace has one outcome (SPEC §2.9, `outcomeOf()`). It is shown as `<OutcomePill>` (drawn by

@@ -6,6 +6,7 @@ import {
   clearLegacyStorage,
   LEGACY_STORAGE_KEY,
   MAX_TRACES,
+  replacesDecision,
   selectVisibleTraces,
   useStreamStore,
 } from './streamStore';
@@ -20,6 +21,20 @@ beforeEach(() => {
 });
 
 describe('streamStore merging', () => {
+  it('keeps the decision on the model\'s answer: a fallback check never replaces it, a late copy does', () => {
+    const first = decision({ attempt: 0 });
+    const fallbackCheck = decision({ attempt: 1, action: 'pass', would_action: 'pass' });
+    const late = decision({ attempt: 0, late: true });
+    store().ingest([ev({ type: 'gate_decision', data: { trace: flaggedTrace(), decision: first } }, 1)]);
+    store().ingest([ev({ type: 'gate_decision', data: { trace: flaggedTrace(), decision: fallbackCheck } }, 2)]);
+    expect(store().decisions[tid]).toEqual(first);
+    store().ingest([ev({ type: 'gate_decision', data: { trace: flaggedTrace(), decision: late } }, 3)]);
+    expect(store().decisions[tid]).toEqual(late);
+    expect(replacesDecision(late, first)).toBe(false);
+    expect(replacesDecision(fallbackCheck, first)).toBe(true);
+    expect(replacesDecision(undefined, fallbackCheck)).toBe(true);
+  });
+
   it('follows a trace from start through decision to audit', () => {
     store().ingest([ev({ type: 'trace_started', data: { trace: trace() } })]);
     expect(store().traces[tid].gate_status).toBe('pending');

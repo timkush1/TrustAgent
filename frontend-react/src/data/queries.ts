@@ -297,7 +297,7 @@ export function isKnowledgeDisabled(err: unknown): boolean {
 /**
  * Keeps control-plane queries in step with the live stream (called from liveStream.ts for every
  * committed batch): policy and evaluator changes refetch their pages; (re)connects and resyncs
- * refresh the overview.
+ * refresh the overview, its evidence coverage and the policy.
  */
 export function applyControlSideEffects(queryClient: QueryClient, batch: readonly StreamEvent[]): void {
   let overview = false;
@@ -325,7 +325,11 @@ export function applyControlSideEffects(queryClient: QueryClient, batch: readonl
         break;
     }
   }
-  if (overview) void queryClient.invalidateQueries({ queryKey: qkc.overview.all, refetchType: 'active' });
+  if (overview) {
+    void queryClient.invalidateQueries({ queryKey: qkc.overview.all, refetchType: 'active' });
+    // Evidence coverage is part of the overview, under its own key.
+    void queryClient.invalidateQueries({ queryKey: qkc.evidence.all, refetchType: 'active' });
+  }
   if (policies) void queryClient.invalidateQueries({ queryKey: qkc.policies.all, refetchType: 'active' });
   if (evaluators) void queryClient.invalidateQueries({ queryKey: qkc.evaluators.all, refetchType: 'active' });
 }

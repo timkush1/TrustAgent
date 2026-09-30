@@ -1,13 +1,14 @@
 /**
  * What happened to a Playground request, in order (SPEC §3.3 Playground): your model's answer,
- * the fast check's decision, what your app received (highlighted when it was replaced or blocked),
- * and the deep audit, which keeps updating from the live stream until it finishes.
+ * the fast check's decision, what your app received (the block message or a fallback answer in
+ * place of the model's, next to it; and every response header the run returned), and the deep
+ * audit, which keeps updating from the live stream until it finishes.
  */
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Bot, Gavel, Inbox, Search } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { RiskBar, RiskBarLegend } from '@/components/charts/RiskBar';
-import { KeyValueList } from '@/components/common/KeyValue';
+import { CodeBlock } from '@/components/common/CodeBlock';
 import { Spinner } from '@/components/ui/spinner';
 import { AuditState } from '@/components/outcome/AuditState';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
@@ -25,7 +26,8 @@ import {
   traceOutcome,
 } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
-import type { GateDecisionView, PlaygroundResult, TraceAuditStatus } from '@/types/api';
+import type { GateAction, GateDecisionView, PlaygroundResult, TraceAuditStatus } from '@/types/api';
+import { deliveredAction, receivedCaption } from './playgroundModel';
 
 export interface TimelineState {
   mode: 'chat' | 'audit';
@@ -76,10 +78,11 @@ function evaluatorName(ref: string): string {
   return humanizeId(ref.split('@')[0] ?? ref);
 }
 
-function DecisionView({ d }: { d: GateDecisionView }) {
+function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAction | null }) {
+  // One outcome per request, as in Traffic: what the app received once the run says so.
   const outcome = traceOutcome({
     gate_status: d.status,
-    action: d.action,
+    action: delivered ?? d.action,
     would_action: d.would_action,
     skip_reason: d.skip_reason,
     checked_against: d.evidence_summary,
@@ -147,11 +150,11 @@ function DecisionView({ d }: { d: GateDecisionView }) {
 }
 
 function Received({ result }: { result: PlaygroundResult }) {
-  const changed = result.delivered_text !== result.response_text;
-  const headers = Object.entries(result.headers).filter(([k]) => /^x-trustagent-/i.test(k));
+  const caption = receivedCaption(result);
+  const headers = Object.entries(result.headers);
   return (
     <div className="space-y-3">
-      {changed ? (
+      {caption ? (
         <div className="grid gap-2 md:grid-cols-2">
           <figure className="space-y-1">
             <figcaption className="text-xs text-fg-muted">Your model wrote</figcaption>
@@ -160,7 +163,7 @@ function Received({ result }: { result: PlaygroundResult }) {
             </p>
           </figure>
           <figure className="space-y-1">
-            <figcaption className="text-xs font-medium text-fg">Your app received instead</figcaption>
+            <figcaption className="text-xs font-medium text-fg">{caption}</figcaption>
             <p className="rounded-md border border-border-strong bg-surface px-3 py-2 text-sm whitespace-pre-wrap text-fg">{result.delivered_text}</p>
           </figure>
         </div>
@@ -170,7 +173,13 @@ function Received({ result }: { result: PlaygroundResult }) {
       {headers.length > 0 ? (
         <details className="text-sm">
           <summary className="cursor-pointer text-xs font-medium text-fg-muted hover:text-fg">Response headers your app saw</summary>
-          <KeyValueList className="mt-2" items={headers.map(([k, v]) => ({ label: k, value: v, mono: true }))} />
+          <CodeBlock
+            className="mt-2"
+            code={headers.map(([k, v]) => `${k}: ${v}`).join('\n')}
+            label={`${headers.length} header${headers.length === 1 ? '' : 's'}`}
+            copyLabel="Copy the response headers"
+            maxHeight="16rem"
+          />
         </details>
       ) : null}
     </div>
@@ -219,7 +228,7 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
         {tokens && !result ? <p className="rounded-md border border-border bg-surface px-3 py-2 text-md whitespace-pre-wrap text-fg">{tokens}</p> : null}
       </Step>
       <Step icon={Search} title={copy.tiers.fast_check} status={d ? 'done' : running ? 'active' : 'waiting'}>
-        {d ? <DecisionView d={d} /> : running ? <p className="text-sm text-fg-muted">Checking the answer…</p> : null}
+        {d ? <DecisionView d={d} delivered={deliveredAction(result)} /> : running ? <p className="text-sm text-fg-muted">Checking the answer…</p> : null}
       </Step>
       <Step icon={Inbox} title="What your app received" status={result ? 'done' : running ? 'active' : 'waiting'}>
         {result ? <Received result={result} /> : null}

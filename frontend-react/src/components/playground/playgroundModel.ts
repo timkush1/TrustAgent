@@ -5,7 +5,7 @@
  * demo stack plays.
  */
 import scenarioPack from '@contracts/demo/scenarios.v1.json';
-import type { ChatMessage, PlaygroundRequest, PolicyMode } from '@/types/api';
+import type { ChatMessage, GateAction, PlaygroundRequest, PlaygroundResult, PolicyMode } from '@/types/api';
 
 export type PlaygroundMode = PlaygroundRequest['mode'];
 
@@ -149,3 +149,27 @@ export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown a
       scenario: s.id,
     },
   }));
+
+/** A response header by name, case-insensitively. */
+export function headerValue(headers: Record<string, string>, name: string): string | null {
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
+  return key === undefined ? null : headers[key];
+}
+
+/**
+ * What the app received: the model's answer, or in its place the route's block message or a
+ * fallback answer (the delivered action is the X-TrustAgent-Action header the run returned).
+ */
+export function receivedCaption(result: PlaygroundResult): string | null {
+  if (result.delivered_text === result.response_text) return null;
+  const action = headerValue(result.headers, 'X-TrustAgent-Action') ?? result.decision.action;
+  return action === 'block' ? 'Your app received the block message instead' : 'Your app received a fallback answer instead';
+}
+
+const ACTIONS: readonly GateAction[] = ['observe', 'pass', 'flag', 'block', 'fallback'];
+
+/** The action the app received (X-TrustAgent-Action), which a failed fallback can turn into a block; null when absent. */
+export function deliveredAction(result: PlaygroundResult | null): GateAction | null {
+  const value = result ? headerValue(result.headers, 'X-TrustAgent-Action') : null;
+  return ACTIONS.find((a) => a === value) ?? null;
+}

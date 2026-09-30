@@ -209,6 +209,21 @@
     outline: 1px dashed var(--vc);
     outline-offset: 1px;
   }
+  /*
+   * Instant-check (detector) findings: <mark data-det="urls_not_in_evidence">. A detector is not a
+   * verdict, so the line is achromatic (fg-muted), thicker and lower than a claim's underline, and
+   * the scan icon follows it; inside a claim mark both lines show.
+   */
+  mark[data-det] {
+    color: inherit;
+    background-color: transparent;
+    text-decoration-line: underline;
+    text-decoration-style: solid;
+    text-decoration-color: var(--fg-muted);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 7px;
+    text-decoration-skip-ink: none;
+  }
 }
 
 /* Every number in the UI is tabular (DESIGN.md). */

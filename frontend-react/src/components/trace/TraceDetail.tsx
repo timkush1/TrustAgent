@@ -11,14 +11,14 @@ import { useDataSource } from '@/app/services';
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { isApiError } from '@/data/errors';
-import { auditQuery, traceQuery } from '@/data/queries';
+import { auditQuery, evaluatorsQuery, traceQuery } from '@/data/queries';
 import { useStreamStore } from '@/data/stream/streamStore';
 import { AnswerSection } from './AnswerSection';
 import { ChecksList } from './ChecksList';
 import { ClaimsSection } from './ClaimsSection';
 import { OutcomeCard } from './OutcomeCard';
 import { TraceFacts } from './TraceFacts';
-import { auditHasResult, buildTraceView } from './traceView';
+import { auditHasResult, buildTraceView, receivedId } from './traceView';
 
 function BackToTraffic() {
   return (
@@ -51,6 +51,9 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const auditId = base?.summary.audit.audit_id ?? null;
   const needAudit = Boolean(base && !base.audit && auditId && auditHasResult(base.summary.audit.status));
   const fetched = useQuery({ ...auditQuery(ds, auditId ?? ''), enabled: needAudit });
+  // The checks are named from the evaluator library (GET /api/evaluators) when this proxy serves it.
+  const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
+  const evaluatorNames = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
   const view = useMemo(() => {
     if (!base || base.audit || !fetched.data) return base;
     return buildTraceView({ detail: detailQuery.data, live, liveDecision, liveAudit, fetchedAudit: fetched.data });
@@ -87,15 +90,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     <article aria-label="Request" className="@container space-y-5" data-trace-id={summary.trace_id}>
       <BackToTraffic />
       {partialError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
-      <OutcomeCard summary={summary} decision={decision} />
+      <OutcomeCard summary={summary} decision={decision} delivered={view.delivered} receivedTarget={receivedId(claimIdPrefix)} />
       <div className="grid gap-6 @4xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <AnswerSection view={view} claimIdPrefix={claimIdPrefix} />
         <div className="space-y-6">
-          <ChecksList summary={summary} decision={decision} />
+          <ChecksList summary={summary} decision={decision} names={evaluatorNames} />
           <ClaimsSection summary={summary} audit={audit} claimIdPrefix={claimIdPrefix} />
         </div>
       </div>
-      <TraceFacts summary={summary} decision={decision} audit={audit} />
+      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} />
     </article>
   );
 }

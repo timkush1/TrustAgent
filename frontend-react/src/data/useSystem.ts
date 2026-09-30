@@ -6,10 +6,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useDataSource } from '@/app/services';
-import { selectBanner, type BannerView } from '@/domain/banner';
+import { enforcingRoutes, selectBanner, type BannerView } from '@/domain/banner';
 import { summarizeHealth, type HealthSummary } from '@/domain/health';
 import type { SystemStatus } from '@/types/api';
-import { healthQuery, isStatusUnavailable, statusQuery } from './queries';
+import { healthQuery, isStatusUnavailable, policiesQuery, statusQuery } from './queries';
 import { useStreamStore } from './stream/streamStore';
 
 export function useHealth() {
@@ -56,8 +56,16 @@ export function useHealthSummary(): HealthSummary {
   );
 }
 
+/**
+ * The one banner. The breaker banner names a route that enforces (block or fallback mode), so the
+ * policy is read only while the fast-check breaker is open.
+ */
 export function useBanner(): BannerView | null {
+  const ds = useDataSource();
   const mode = useAppMode();
   const { status } = useSystemStatus();
-  return useMemo(() => selectBanner({ ...mode, status }), [mode, status]);
+  const breakerOpen = status?.decision_model.state === 'breaker_open';
+  const policies = useQuery({ ...policiesQuery(ds), enabled: breakerOpen });
+  const routes = useMemo(() => (policies.data ? enforcingRoutes(policies.data.effective_routes) : undefined), [policies.data]);
+  return useMemo(() => selectBanner({ ...mode, status, enforcingRoutes: routes }), [mode, status, routes]);
 }

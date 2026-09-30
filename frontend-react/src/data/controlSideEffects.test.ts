@@ -22,8 +22,9 @@ describe('control-plane side effects of stream events', () => {
     expect(keysInvalidated([ev('decision_model_changed')])).toEqual(['evaluators', 'policies']);
   });
 
-  it('refreshes the overview after a (re)connect or resync', () => {
-    expect(keysInvalidated([ev('hello')])).toEqual(['overview', 'policies']);
+  it('refreshes the overview, its evidence coverage and the policy after a (re)connect or resync', () => {
+    expect(keysInvalidated([ev('hello')])).toEqual(['evidence', 'overview', 'policies']);
+    expect(keysInvalidated([ev('resync')])).toEqual(['evidence', 'overview', 'policies']);
   });
 
   it('does nothing for per-trace events', () => {

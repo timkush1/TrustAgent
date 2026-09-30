@@ -412,6 +412,14 @@ export function auditStateView(audit: Pick<TraceSummary['audit'], 'status' | 've
   return auditStates[audit.status] ?? auditStates.none;
 }
 
+// -------------------------------------------------------------------------------------- flags
+
+/** Words for a trace flag (traces.flags, SPEC §2.3); an unknown flag is humanized. */
+export function flagWord(flag: string): string {
+  const words: Record<string, string> = copy.trace.flags;
+  return Object.hasOwn(words, flag) ? words[flag] : humanizeId(flag);
+}
+
 // ----------------------------------------------------------------------------------------- evidence
 
 export function evidenceSourceLabel(source: EvidenceSource | 'none'): string {

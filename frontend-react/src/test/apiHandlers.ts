@@ -4,12 +4,13 @@
  * along, and every request is recorded so tests can assert what was asked.
  *
  * Served: GET /health (#1), /api/status (#8, 404 unless set), /api/traces (#10: route, model,
- * outcome, limit, cursor), /api/traces/:id (#11), /api/audits/:id (#14), and empty pages for the
- * resync endpoints /api/gate/decisions (#16) and /api/audits (#13).
+ * outcome, limit, cursor), /api/traces/:id (#11), /api/audits/:id (#14), empty pages for the
+ * resync endpoints /api/gate/decisions (#16) and /api/audits (#13), and the policy (#18, #21) and
+ * evaluator library (#28) the trace detail reads (404 unless set).
  */
 import { http, HttpResponse, type HttpHandler } from 'msw';
 import { outcomeOf } from '@/domain/presentation';
-import type { AuditDetail, SystemStatus, TraceDetail, TraceSummary } from '@/types/api';
+import type { AuditDetail, EvaluatorMeta, PolicyState, PolicyVersion, SystemStatus, TraceDetail, TraceSummary } from '@/types/api';
 import { API } from './msw';
 
 export interface FakeApiState {
@@ -22,6 +23,12 @@ export interface FakeApiState {
   tracesFailure: { status: number; code: string; message: string } | null;
   /** Page size when the request has no `limit`. */
   defaultLimit: number;
+  /** GET /api/policies; null answers 404 (a proxy that does not serve it). */
+  policies: PolicyState | null;
+  /** GET /api/policies/versions/:id by id. */
+  policyVersions: Record<number, PolicyVersion>;
+  /** GET /api/evaluators; null answers 404. */
+  evaluators: EvaluatorMeta[] | null;
 }
 
 export interface FakeApi {
@@ -35,7 +42,11 @@ function apiError(status: number, code: string, message: string) {
   return HttpResponse.json({ error: { code, message } }, { status });
 }
 
-export function createFakeApi(initial: Partial<FakeApiState> = {}): FakeApi {
+/**
+ * `controlPlane: false` leaves out the policy and evaluator routes, for pages rendered with the
+ * control-plane handlers (renderPage), which serve those routes themselves.
+ */
+export function createFakeApi(initial: Partial<FakeApiState> = {}, { controlPlane = true }: { controlPlane?: boolean } = {}): FakeApi {
   const state: FakeApiState = {
     traces: [],
     details: {},
@@ -43,6 +54,9 @@ export function createFakeApi(initial: Partial<FakeApiState> = {}): FakeApi {
     status: null,
     tracesFailure: null,
     defaultLimit: 50,
+    policies: null,
+    policyVersions: {},
+    evaluators: null,
     ...initial,
   };
   const traceQueries: URLSearchParams[] = [];
@@ -84,6 +98,18 @@ export function createFakeApi(initial: Partial<FakeApiState> = {}): FakeApi {
     http.get(`${API}/api/audits`, () => HttpResponse.json({ items: [], next_cursor: null })),
     http.get(`${API}/api/gate/decisions`, () => HttpResponse.json({ items: [], next_cursor: null })),
   ];
+  const controlHandlers = [
+    http.get(`${API}/api/policies`, () =>
+      state.policies ? HttpResponse.json(state.policies) : apiError(404, 'not_found', 'Not served in tests.'),
+    ),
+    http.get(`${API}/api/policies/versions/:id`, ({ params }) => {
+      const version = state.policyVersions[Number(params.id)];
+      return version ? HttpResponse.json(version) : apiError(404, 'not_found', 'No policy version with this id.');
+    }),
+    http.get(`${API}/api/evaluators`, () =>
+      state.evaluators ? HttpResponse.json({ items: state.evaluators }) : apiError(404, 'not_found', 'Not served in tests.'),
+    ),
+  ];
 
-  return { state, handlers, traceQueries };
+  return { state, handlers: controlPlane ? [...handlers, ...controlHandlers] : handlers, traceQueries };
 }

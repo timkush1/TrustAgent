@@ -20,7 +20,7 @@
       "label": "Replaced",
       "tone": "warning",
       "headline": "Replaced with an answer that sticks to your documents",
-      "next_step": "Compare the original and the replacement answers."
+      "next_step": "Compare your model's answer with the fallback answer the user received."
     },
     {
       "id": "flagged",
@@ -111,6 +111,11 @@
     {
       "match": "uncalibrated_snapshot",
       "copy": "Would have blocked — blocking stays off until this check is calibrated"
+    },
+    {"match": "fallback_failed", "copy": "Couldn't get a usable fallback answer from your model"},
+    {
+      "match": "fallback_format_mismatch",
+      "copy": "No fallback was tried: the fallback model uses a different API format than this request"
     },
     {"match": "*:*", "copy": "{evaluator}: {level}"}
   ],
