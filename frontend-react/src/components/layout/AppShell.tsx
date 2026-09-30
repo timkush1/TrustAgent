@@ -1,4 +1,5 @@
 import { Outlet } from '@tanstack/react-router';
+import { StaticRouteGuard } from '@/components/replay/StaticRouteGuard';
 import { NavRail } from './NavRail';
 import { TopBar } from './TopBar';
 
@@ -14,8 +15,10 @@ export function AppShell() {
       <NavRail />
       <div className="flex min-w-0 flex-col">
         <TopBar />
-        <main id="main" tabIndex={-1} className="flex-1 px-6 py-5 outline-none">
-          <Outlet />
+        <main id="main" tabIndex={-1} className="flex-1 px-6 py-5 outline-none max-sm:px-4">
+          <StaticRouteGuard>
+            <Outlet />
+          </StaticRouteGuard>
         </main>
       </div>
     </div>

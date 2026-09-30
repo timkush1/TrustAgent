@@ -13,7 +13,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowRight } from 'lucide-react';
-import { useDataSource } from '@/app/services';
+import { useDataSource, useRuntimeConfig } from '@/app/services';
+import { EvidenceBadge } from '@/components/common/EvidenceBadge';
+import { recordingDate, useReplayInfo } from '@/components/replay/useReplay';
 import { useGatewayOrigin } from '@/components/common/useGatewayOrigin';
 import { OutcomeTimeSeries } from '@/components/charts/OutcomeTimeSeries';
 import { DegradedState } from '@/components/common/DegradedState';
@@ -64,7 +66,7 @@ function OverviewSkeleton() {
   );
 }
 
-function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow: TimeWindow; demo: boolean }) {
+function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; timeWindow: TimeWindow; demo: boolean; replay: boolean }) {
   const origin = useGatewayOrigin();
   const liveTraces = useStreamStore((s) => s.order.length);
   const { status } = useSystemStatus();
@@ -81,8 +83,9 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
 
   return (
     <div className="space-y-5">
-      <SetupChecklist items={checklist} />
-      {noTraffic ? (
+      {/* A replay has no gateway to set up or connect to. */}
+      {replay ? null : <SetupChecklist items={checklist} />}
+      {noTraffic && !replay ? (
         <>
           <ConnectYourApp origin={origin} demo={demo} received={received} />
           <p className="text-sm text-fg-muted">
@@ -97,7 +100,7 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
             <CardContent>
               <OutcomeTimeSeries
                 title={copy.overview.hero_chart}
-                description={bucketDescription(stats)}
+                description={replay ? `${bucketDescription(stats).split(',')[0]}, over the replayed traffic` : bucketDescription(stats)}
                 buckets={outcomeBuckets(stats.outcomes_series)}
                 formatBucket={bucketFormatter(stats.bucket)}
                 headingLevel={2}
@@ -105,7 +108,7 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
             </CardContent>
           </Card>
           <div className="grid items-start gap-4 lg:grid-cols-2">
-            <WhatWasCaught stats={stats} />
+            <WhatWasCaught stats={stats} span={replay ? 'over the replayed traffic' : undefined} />
             <EvidenceCoverageCard stats={stats} timeWindow={timeWindow} />
           </div>
           <SavingsStrip timeWindow={timeWindow} />
@@ -124,7 +127,7 @@ function Summary({ stats, timeWindow, demo }: { stats: OverviewStats; timeWindow
             />
           </section>
           <PerformanceSection stats={stats} />
-          <ConnectAnotherApp origin={origin} demo={demo} received={received} />
+          {replay ? null : <ConnectAnotherApp origin={origin} demo={demo} received={received} />}
         </>
       )}
     </div>
@@ -167,7 +170,22 @@ function SavingsTab({ timeWindow }: { timeWindow: TimeWindow }) {
   );
 }
 
+/** The static build's stand-in for the time window: the recording is one fixed stretch of time. */
+function RecordingChip() {
+  const info = useReplayInfo();
+  if (info.status !== 'ready') return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+      <span>
+        {info.traces} requests on {recordingDate(info.recordedAt)}
+      </span>
+      <EvidenceBadge label={info.kind === 'mock' ? 'simulated' : 'measured'} basis={info.label ?? undefined} subject="The replayed numbers" />
+    </span>
+  );
+}
+
 export function OverviewPage({ search }: { search: OverviewSearchParams }) {
+  const replay = useRuntimeConfig().appMode === 'static';
   const ds = useDataSource();
   const navigate = useNavigate({ from: '/app/overview' });
   const { demo } = useAppMode();
@@ -196,7 +214,7 @@ export function OverviewPage({ search }: { search: OverviewSearchParams }) {
       <ErrorState error={q.error} onRetry={() => void q.refetch()} />
     );
   } else {
-    summary = <Summary stats={q.data as OverviewStats} timeWindow={timeWindow} demo={demo} />;
+    summary = <Summary stats={q.data as OverviewStats} timeWindow={timeWindow} demo={demo} replay={replay} />;
   }
 
   return (
@@ -204,6 +222,9 @@ export function OverviewPage({ search }: { search: OverviewSearchParams }) {
       <PageHeader
         description={NAV_ITEMS[0].question}
         actions={
+          replay ? (
+            <RecordingChip />
+          ) : (
           <SegmentedControl<TimeWindow>
             aria-label="Time window"
             size="sm"
@@ -211,6 +232,7 @@ export function OverviewPage({ search }: { search: OverviewSearchParams }) {
             value={timeWindow}
             onValueChange={(next) => void navigate({ search: (prev) => ({ ...prev, window: next === DEFAULT_WINDOW ? undefined : next }) })}
           />
+          )
         }
       />
       <Tabs

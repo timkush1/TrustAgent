@@ -1,8 +1,9 @@
 # TrustAgent dashboard design rules
 
-These rules apply to everything under `frontend-react/src`. The tokens live in `src/index.css`.
-The words, icons and tones for server values live in `src/domain/presentation.ts`, which reads
-`contracts/ui/*.v1.json`. SPEC §3.3 is the normative page list. This file is the house style.
+These rules apply to everything under `frontend-react/src`. The tokens live in
+`src/styles/tokens.css`, which the app (`src/index.css`) and the landing page
+(`src/landing/landing.css`) both import. The words, icons and tones for server values live in
+`src/domain/presentation.ts`, which reads `contracts/ui/*.v1.json`. SPEC §3.3 is the normative page list. This file is the house style.
 
 ## 1. Point of view
 
@@ -37,7 +38,7 @@ that. Tailwind's palette is removed (`--color-*: initial`), so only these names 
 | `surface-hover` | oklch(0.955 0.004 265) | oklch(0.245 0.006 265) | Hover, active nav |
 | `fg` | oklch(0.22 0.01 265) — 17.3:1 | oklch(0.93 0.004 265) — 15.0:1 | Text |
 | `fg-muted` | oklch(0.47 0.012 265) — 6.8:1 | oklch(0.70 0.01 265) — 6.9:1 | Secondary text |
-| `fg-subtle` | oklch(0.55 0.01 265) — 4.9:1 | oklch(0.62 0.01 265) — 5.1:1 | Hints, icons |
+| `fg-subtle` | oklch(0.55 0.01 265) — 4.9:1 | oklch(0.62 0.01 265) — 5.1:1 | Hints, icons (text only on `bg`, `surface`, `surface-raised`; on `surface-sunken` or `surface-hover` use `fg-muted`) |
 | `border` / `border-strong` | 0.91 / 0.80 | 0.27 / 0.36 | Hairlines (1px) |
 
 **Verdict hues.** Contrast is given on the surface, then on the verdict's own 10% (light) or 16%
@@ -69,7 +70,7 @@ text is never drawn on a tint: the neutral tint badge uses `fg-muted`.
 - **Neutral tint badge**: grey text on a grey tint misses 4.5:1 in the dark theme, so a neutral
   `tint` badge uses `fg-muted` text.
 
-`src/components/charts/tokenContrast.test.ts` reads these tokens from `index.css` and checks every
+`src/components/charts/tokenContrast.test.ts` reads these tokens from `styles/tokens.css` and checks every
 pair the kit uses, in both themes: text 4.5:1, control edges, focus ring and chart marks 3:1.
 Colors at partial alpha are composited in sRGB, as browsers do, so a tint may measure slightly
 lower than an OKLab mix would suggest.
@@ -127,13 +128,13 @@ are not shown in lists or headers.
 - Banner priority: unauthorized → no credits → budget exhausted → breaker open on an enforcing
   route → read-only → demo. The one that changes what users receive wins. Copy comes from
   `contracts/ui/copy.v1.json`.
-- Page content has 24px side padding. Section headings are `h2`.
+- Page content has 24px side padding (16px below 640px). Section headings are `h2`.
 
 ## 7. Motion
 
 - 150–200 ms ease-out, animating `transform` and `opacity` only.
 - Spinners (Checking, Deep audit running) are the only looping animation.
-- `prefers-reduced-motion` turns animation and transitions off globally (`src/index.css`).
+- `prefers-reduced-motion` turns animation and transitions off globally (`src/styles/tokens.css`).
 
 ## 8. Data honesty
 
@@ -348,6 +349,74 @@ SPEC §3.3 is the page list; these notes record how each page applies the rules 
 - **Knowledge** (`components/knowledge/`). In the nav only while `/api/status` reports the add-on
   enabled; with it off (or a 409 `knowledge_disabled`) the page explains the add-on and shows the
   one command that turns it on.
+
+## 12b. Landing page and static build (P5 skeleton)
+
+SPEC §3.3 ("Static build"), §7.5 ("Static GitHub Pages demo") and §8.1 are normative.
+
+**Two entries.** `index.html` is the dashboard; `landing.html` (`src/landing/`) is the landing
+page. The landing entry imports no router, TanStack Query, Recharts, Base UI, `motion`, zustand
+or `components/ui/`: its pieces are plain elements over the shared tokens (`src/landing/ui.tsx`).
+`landing.test.tsx` walks its import graph to hold that line, and `npm run size` fails when its
+first load (HTML, JS, CSS; woff2 fonts listed, not counted) is over 110 KB gzip. Keep headroom:
+the cost calculator is lazy, and the refund example comes from a virtual module
+(`virtual:trustagent/scenario/<id>`, `vite.site.ts`) instead of the whole scenario pack.
+
+| Build | `/` | Dashboard | Landing |
+|---|---|---|---|
+| Full (`npm run build`) | the dashboard | `/app/…` | `/welcome/` |
+| Static (`npm run build:static`, `VITE_APP_MODE=static`, `VITE_BASE_PATH` default `/TrustAgent/`) | the landing page | `/app/…` replaying `public/demo/recorded`, with `app/{overview,traffic,playground,evaluators/studio}/index.html` copies and `404.html` for other deep links | `/` |
+
+**Landing page rules.**
+
+- At most seven sections (`main > section`), one h1 (the contract tagline). Section eyebrows are
+  sentence case, not caps.
+- Display type is the landing's only addition to §5: hero 72 px (52 below 1024 px, 40 below 640 px), section
+  titles 40 px (32 below 640 px), a 19 px lead. Body text stays 16/26. Weights stay 400/500/600.
+- **Every number** is a claim from `contracts/claims/value-claims.v1.json`, rendered by
+  `ClaimValue` with its `LabelChip` (Measured, Estimate, Third-party, Vendor, Simulated; dashed
+  border for Simulated). The chip links to the claim's entry in the footer's "Where every number on
+  this page comes from". A `measured` claim reads `contracts/claims/measured.json` and says "not
+  yet measured" until a benchmark run publishes it; it never borrows an estimate. Contract copy
+  with `{claim:id}` placeholders goes through `splitClaims`.
+- **Coming soon** is a dashed pill with an hourglass and words, never a control that does
+  nothing: the live in-browser playground (P5) and Studio drafting (P4) are described, with
+  `make demo` as the real thing to do meanwhile.
+- The comparison table's other-product cells are dated `TODO: verify · 2026-09` placeholders
+  (`data-compare-todo`) until each is verified against the vendor's docs with a link (P6). No
+  guessed cells.
+- The hero card is an illustration of the scenario pack's refund example, labelled as such; its
+  three beats ease in over 200 ms, and with reduced motion it shows the last beat at once and
+  offers no "Play again" (nothing would move).
+- Diagrams show direction honestly: in "How it works" every link carries the request out and the
+  answer back, and the deep audit hangs off the gateway, in the background.
+- 16 px side gutter below 640 px; nothing may scroll the page sideways at 400 px (wide tables
+  scroll inside a named, focusable region).
+
+**Static build rules.**
+
+- Data comes from `ReplayDataSource` (`src/data/replay/`): REST reads answer from the tape
+  position, and the rest of the tape plays as WS v2 events in compressed time. Everything a
+  recording cannot answer comes from `unavailableControlPlane`.
+- "Now" is the tape's clock while a recording replays (`useNow`, `replayClock`): relative times
+  read "just now" and "1 min. ago" as rows arrive, like the Overview's counts, instead of the days
+  since the recording was made. The exact time stays in the title.
+- Nav: Overview (recorded), Traffic (replay), Trace (the featured flagged answer), Playground,
+  Studio, and "Run it yourself" (the landing's `#self-host`). Policies, Settings, Knowledge, the
+  evaluator library and setup are hidden; a deep link to them shows why (`StaticRouteGuard`), not
+  an error whose Retry cannot work.
+- The top bar shows the replay's status ("Replaying · 12 of 18 requests", "Replay again") in place
+  of the Health pill and demo badge; the one banner carries the recording's own label: "Replay of
+  simulated traffic." for a mock recording, "Replay of recorded traffic." for a real one. A mock
+  recording is Simulated everywhere; `check_recording.py` and `recording.ts` refuse a label that
+  could pass it off as model output.
+- Say where a tape came from, and nothing more. The committed mock tape is generated from the
+  scenario pack (`scripts/build-demo-recording.ts`), so its copy says "generated from the zero-key
+  demo's scripted scenarios", never "recorded on the demo stack" or "checked by the demo stack";
+  only a `recorded` manifest (Go `export-replay`, P5) is "recorded".
+- Both pages carry the §7.5 CSP meta and `referrer: no-referrer`; no inline script (the theme
+  script is a file), no third-party request, fonts self-hosted. P5's browser keys live in
+  `sessionStorage` only.
 
 ## 13. Accessibility
 

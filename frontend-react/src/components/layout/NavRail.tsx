@@ -2,6 +2,8 @@
  * Left navigation: an icon rail below 1024 px, labelled items above. Settings sits at the bottom.
  */
 import { Link } from '@tanstack/react-router';
+import { useRuntimeConfig } from '@/app/services';
+import { StaticNavRail } from '@/components/replay/StaticNavRail';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useSystemStatus } from '@/data/useSystem';
 import { cn } from '@/lib/cn';
@@ -28,6 +30,10 @@ function NavLink({ item }: { item: NavItem }) {
 }
 
 export function NavRail() {
+  return useRuntimeConfig().appMode === 'static' ? <StaticNavRail /> : <FullNavRail />;
+}
+
+function FullNavRail() {
   const knowledge = useSystemStatus().status?.knowledge.enabled === true;
   const main = NAV_ITEMS.filter((i) => i.to !== '/app/settings').flatMap((i) =>
     knowledge && i.to === '/app/playground' ? [i, KNOWLEDGE_NAV_ITEM] : [i],

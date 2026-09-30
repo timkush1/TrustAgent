@@ -69,6 +69,26 @@ playwright-install: ## Install the Chromium build the Playwright specs use (once
 test-e2e-web: ## Run the dashboard e2e specs against a running stack (make demo first; PLAYWRIGHT_ARGS="-g skeleton")
 	cd frontend-react && npx playwright test --project=stack $(PLAYWRIGHT_ARGS)
 
+# ---------- Static site (GitHub Pages) and its demo recording (SPEC §3.3, §2.13, §7.5) ----------
+# The static build is the landing page at the site root plus the dashboard replaying
+# frontend-react/public/demo/recorded (no backend). VITE_BASE_PATH defaults to /TrustAgent/.
+
+build-static: ## Build the static site (landing page + replay) into frontend-react/dist
+	cd frontend-react && npm run build:static
+
+size-landing: ## Fail when the landing page's first load is over 110 KB gzip (run after build-static)
+	cd frontend-react && npm run size
+
+recording: ## Rebuild the simulated demo recording from the s0 scenarios (commit the result)
+	cd frontend-react && npm run recording
+
+recording-check: ## Fail when the demo recording is stale or check_recording.py refuses it
+	cd frontend-react && node scripts/build-demo-recording.ts --check
+	$(PYTHON) scripts/check_recording.py frontend-react/public/demo/recorded
+
+test-e2e-static: ## Build the static site and run the Playwright static specs against vite preview
+	cd frontend-react && npm run build:static && PLAYWRIGHT_STATIC_PREVIEW=1 npx playwright test --project=static $(PLAYWRIGHT_ARGS)
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
 install: install-react
 test: test-react
