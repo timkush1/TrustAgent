@@ -171,6 +171,29 @@ func TestStatusEventsFireOncePerTransition(t *testing.T) {
 		Dependencies: map[string]bool{"judge": false, "qdrant": false}}})
 	s.srv.watchStatus()
 	s.expect(t, "knowledge:down")
+
+	// The engine stops answering: nothing is known about its judge and knowledge store any more
+	// (unknown, not disabled).
+	gone := grpc.EngineHealth{State: "down", Detail: "the audit engine did not answer its health check"}
+	s.engine.set(gone)
+	s.srv.publishEngineStatus(gone)
+	s.expect(t, "engine:down", "judge:unknown", "knowledge:unknown")
+	s.srv.watchStatus()
+	s.expect(t)
+}
+
+// TestStatusEventsWaitForTheEngine: before the engine's first answer, its judge and knowledge
+// store are not announced (in particular not as disabled); the first answer announces them.
+func TestStatusEventsWaitForTheEngine(t *testing.T) {
+	s := newStatusStream(t)
+	s.engine.set(grpc.EngineHealth{State: "unknown", Detail: "not checked yet"})
+	s.srv.watchStatus()
+	s.expect(t, "decision_model:ready", "budget:ok")
+	up := grpc.EngineHealth{State: "up", Response: &pb.HealthResponse{Healthy: true, KnowledgeEnabled: true,
+		Dependencies: map[string]bool{"judge": true, "qdrant": true}}}
+	s.engine.set(up)
+	s.srv.publishEngineStatus(up)
+	s.expect(t, "engine:up", "judge:up", "knowledge:up")
 }
 
 func TestStatusEventDetails(t *testing.T) {

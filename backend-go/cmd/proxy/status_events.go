@@ -41,11 +41,17 @@ func (s *server) publishEngineStatus(h grpc.EngineHealth) {
 }
 
 // publishEngineComponents broadcasts the engine, judge and knowledge states of h that changed.
+// While a configured engine has not answered (not checked yet, or down), nothing is known about
+// its knowledge store: that is unknown, not disabled, so the stream neither announces the add-on
+// off before the first health check nor turns it off when the engine stops answering.
 func (s *server) publishEngineComponents(h grpc.EngineHealth) {
 	s.hub.PublishStatus(componentEngine, h.State, h.Detail)
 	judge := judgeState(h)
 	s.hub.PublishStatus(componentJudge, judge, judgeDetail(judge))
 	k := knowledgeStatus(h)
+	if h.Response == nil && h.State != stateDisabled {
+		k.State, k.Detail = stateUnknown, ""
+	}
 	s.hub.PublishStatus(componentKnowledge, k.State, k.Detail)
 }
 
