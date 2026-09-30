@@ -146,8 +146,8 @@ func checkAttempts(t *testing.T, e *env, r0 *gate.Result, original, regated stri
 
 // TestFallbackCallsTheUpstream: the fallback request goes once to the route's upstream (same):
 // the fallback prompt with the trusted evidence as CONTEXT in front, the route's fallback model,
-// stream false, none of the gateway's members, the client's own credential and no TrustAgent
-// header. A re-gate that passes delivers the fallback answer as it came, with Action fallback; the
+// stream false, none of the gateway's members, the client's own credential and query (M2) and no
+// TrustAgent header. A re-gate that passes delivers the fallback answer as it came, with Action fallback; the
 // trace records attempt 1, then attempt 0 once, audited on the original answer.
 func TestFallbackCallsTheUpstream(t *testing.T) {
 	e := newEnv(t, envOpts{testMode: true, enforcing: true, jev: regateJev{newMockJev(t), fallbackText, regatePass},
@@ -159,7 +159,7 @@ func TestFallbackCallsTheUpstream(t *testing.T) {
 		"stream_options": map[string]any{"include_usage": true},
 		"trustagent":     map[string]any{"rules": map[string]any{}},
 	})
-	w := e.do(t, "/v1/chat/completions", body, hdr)
+	w := e.do(t, "/v1/chat/completions?api-version=2024-10-21", body, hdr)
 	r0 := e.sink.result(t)
 
 	if w.Code != http.StatusOK || w.Body.String() != e.up.body || w.Header().Get(HeaderAction) != decision.ActionFallback ||
@@ -170,8 +170,9 @@ func TestFallbackCallsTheUpstream(t *testing.T) {
 		t.Fatalf("%d upstream calls: the scripted answer makes none, the fallback one", e.up.calls())
 	}
 	up, sent := e.up.last(t)
-	if up.URL.Path != llmapi.PathChatCompletions || up.Header.Get("Authorization") != "Bearer "+upstreamKey || up.Header.Get("X-TrustAgent-Key") != "" {
-		t.Errorf("fallback call %s with headers %v", up.URL.Path, up.Header)
+	if up.URL.Path != llmapi.PathChatCompletions || up.URL.RawQuery != "api-version=2024-10-21" ||
+		up.Header.Get("Authorization") != "Bearer "+upstreamKey || up.Header.Get("X-TrustAgent-Key") != "" {
+		t.Errorf("fallback call %s?%s with headers %v", up.URL.Path, up.URL.RawQuery, up.Header)
 	}
 	var fr map[string]json.RawMessage
 	if err := json.Unmarshal(sent, &fr); err != nil {
