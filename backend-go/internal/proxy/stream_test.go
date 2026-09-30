@@ -1250,6 +1250,14 @@ func TestServeStreamFailsBeforeItsFirstEvent(t *testing.T) {
 		{name: "buffer breaks off on a closed block route", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat,
 			policy: strmBufferPolicy("block", "error", ""), mode: decision.ModeBlock, status: http.StatusBadGateway, code: CodeUpstreamError,
 			skip: gate.SkipUpstreamError},
+		// An upstream's own keepalive comment is no event (a client dispatches nothing for it) and
+		// a buffered route has not written it: the call still failed before its first event.
+		{name: "buffer reads only an upstream keepalive", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat,
+			policy: strmBufferPolicy("block", "error", ""), mode: decision.ModeBlock, events: []string{": OPENROUTER PROCESSING\n\n"},
+			status: http.StatusBadGateway, code: CodeUpstreamError, skip: gate.SkipUpstreamError},
+		{name: "buffer ends after an upstream keepalive", path: "/v1/messages", format: llmapi.FormatAnthropicMessages,
+			policy: strmBufferPolicy("block", "", ""), mode: decision.ModeBlock, events: []string{": keepalive\n\n", "\n"}, ends: true,
+			status: http.StatusBadGateway, skip: gate.SkipUpstreamError},
 		{name: "undecodable", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat, policy: strmPolicy("mode: flag"),
 			mode: decision.ModeFlag, events: strmOpenAIStream(sc.Response), header: http.Header{"Content-Encoding": {"br"}},
 			status: http.StatusBadGateway, code: CodeUpstreamError, skip: gate.SkipUndecodable},
@@ -1318,4 +1326,61 @@ func TestServeStreamFailsBeforeItsFirstEvent(t *testing.T) {
 		}
 		e.sink.result(t)
 	})
+}
+
+// TestServeStreamEarlyFailureNeedsUncommittedHeaders (D21 boundaries): a stream counts as failed
+// before its first event only while nothing went out and nothing is held. A relayed upstream
+// keepalive comment commits the headers, so a failure after it stays a 200 stream with the failure
+// in the trailers; a stream whose only event is the terminal one holds it and is an answer without
+// text; a buffered answer whose keepalive committed the headers can no longer become an error
+// status, so a closed block route sends its block as a message-style stream.
+func TestServeStreamEarlyFailureNeedsUncommittedHeaders(t *testing.T) {
+	sc := loadStrmScenario(t, "stream-passthrough-flag")
+	const comment = ": OPENROUTER PROCESSING\n\n"
+	for _, c := range []struct {
+		name, policy, action, status string
+		events                       []string
+		delay                        time.Duration
+		abort                        bool
+		// prefix starts the client's body; text, when set, is the answer text it carries.
+		prefix, text string
+	}{
+		{name: "relay after an upstream keepalive", policy: strmPolicy("mode: flag"), events: []string{comment}, abort: true,
+			action: decision.ActionPass, status: "skipped:upstream_error", prefix: comment},
+		{name: "relay of only the terminal event", policy: strmPolicy("mode: flag"), events: []string{"data: [DONE]\n\n"},
+			action: decision.ActionPass, status: "skipped:no_text", prefix: ": " + llmapi.AnnotationPrefix},
+		{name: "buffer after its keepalive", policy: strmBufferPolicy("block", "error", "buffer_keepalive_s: 1"),
+			delay: 1300 * time.Millisecond, abort: true, action: decision.ActionBlock, status: "skipped:upstream_error",
+			prefix: ": keepalive\n\n", text: strmBlockMessage},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			u := newStrmUpstream(t, c.events...)
+			u.delay, u.abort = c.delay, c.abort
+			e := newStrmEnv(t, u, strmOpts{policyYAML: c.policy, serve: true})
+			route := e.pol.Match(&policy.Request{Path: "/v1/chat/completions"})
+			mode, _ := e.pol.Mode(route, "")
+			var resp *http.Response
+			var body []byte
+			strmCountedOnce(t, route.Name, llmapi.FormatOpenAIChat, mode, c.action, func() {
+				resp, body = e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+			})
+			if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") ||
+				!strings.HasPrefix(string(body), c.prefix) {
+				t.Fatalf("%d %s:\n%s", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+			}
+			if resp.Trailer.Get(HeaderAction) != c.action || resp.Trailer.Get(HeaderStatus) != c.status {
+				t.Errorf("trailers %v", resp.Trailer)
+			}
+			if text, _ := strmText(t, llmapi.FormatOpenAIChat, body); text != c.text {
+				t.Errorf("text %q, want %q", text, c.text)
+			}
+			if _, at := strmAnnotation(t, strmEvents(t, body)); at < 0 {
+				t.Errorf("no annotation:\n%s", body)
+			}
+			if r := e.sink.result(t); deliveredAction(r) != c.action || r.Status != c.status {
+				t.Errorf("recorded action %q status %q", deliveredAction(r), r.Status)
+			}
+			e.sink.none(t)
+		})
+	}
 }

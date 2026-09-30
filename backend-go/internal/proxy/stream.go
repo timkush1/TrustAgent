@@ -375,14 +375,16 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 
 // failedEarly reports whether an upstream stream failed, stalled or ended before its first event
 // while the client's headers are still uncommitted (D21): no whole event was relayed (written, or
-// held back: held) or, for a buffered answer, read (read holds the events collected; an
-// unterminated tail is no event). An event past the size limit is no failure: the rest of the
+// held back: held) or, for a buffered answer, read (read holds the events collected). An
+// unterminated tail is no event, and neither is a block without data or an event type (the
+// upstream's own keepalive comment, stray blank lines): a client dispatches nothing for it, and a
+// buffered answer has not written it. An event past the size limit is no failure: the rest of the
 // stream is relayed as it is.
 func (s *streamState) failedEarly(err error, held bool, read []llmapi.Event) bool {
 	if s.resp == nil || held || s.sw.Committed() || errors.Is(err, llmapi.ErrEventTooLarge) {
 		return false
 	}
-	return !slices.ContainsFunc(read, func(ev llmapi.Event) bool { return !ev.Incomplete })
+	return !slices.ContainsFunc(read, func(ev llmapi.Event) bool { return !ev.Incomplete && (ev.HasData || ev.Name != "") })
 }
 
 // streamFailed answers a stream whose upstream failed, stalled or ended before its first event,
