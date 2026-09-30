@@ -5,7 +5,8 @@
  * Counted: everything the landing page loads before it is interactive, gzip -9: its HTML, the
  * theme-init script, its entry chunk with every statically imported chunk, and their CSS. Fonts are
  * listed but not counted: they are woff2 (already compressed), shared with the dashboard, and the
- * browser fetches only the subsets a page uses. The dashboard entry is reported for information.
+ * browser fetches only the subsets a page uses. Chunks the page loads lazily after its first render
+ * (the cost calculator) are listed, not counted. The dashboard entry is reported for information.
  *
  *   node scripts/check-size.ts [--dist dist] [--budget-kb 110]
  */
@@ -20,6 +21,7 @@ interface ManifestChunk {
   src?: string;
   isEntry?: boolean;
   imports?: string[];
+  dynamicImports?: string[];
   css?: string[];
   assets?: string[];
 }
@@ -95,6 +97,26 @@ if (!landingKey) {
 // the app is index.html and the landing page welcome/index.html.
 const staticLayout = existsSync(join(dist, 'app/index.html'));
 const total = report('Landing page', landingKey, htmlOf([staticLayout ? 'index.html' : 'welcome/index.html']), true);
+
+// What the landing page fetches after its first render (React.lazy parts, such as the cost
+// calculator): listed so the split stays visible, not counted against the budget.
+const upFront = closure(landingKey).files;
+const later = new Set<string>();
+const visited = new Set<string>();
+const followDynamic = (k: string) => {
+  if (visited.has(k)) return;
+  visited.add(k);
+  for (const d of manifest[k]?.dynamicImports ?? []) {
+    for (const f of closure(d).files) if (!upFront.has(f)) later.add(f);
+    followDynamic(d);
+  }
+  for (const i of manifest[k]?.imports ?? []) followDynamic(i);
+};
+followDynamic(landingKey);
+if (later.size > 0) {
+  const lazyTotal = [...later].reduce((n, f) => n + gz(join(dist, f)), 0);
+  console.log(`  after first render (lazy, not counted): ${[...later].sort().join(', ')}, ${kb(lazyTotal)}`);
+}
 if (appKey) report('Dashboard entry', appKey, htmlOf([staticLayout ? 'app/index.html' : 'index.html']), false);
 
 console.log(`\nLanding budget: ${kb(total)} of ${kb(budget)}`);
