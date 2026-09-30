@@ -588,3 +588,65 @@ func TestOriginCheck(t *testing.T) {
 		}
 	}
 }
+
+// TestPublishStatusSendsTransitionsOnly: a component's state is broadcast when it changes, once,
+// whoever reports it; its first state is a change from unknown.
+func TestPublishStatusSendsTransitionsOnly(t *testing.T) {
+	h := startHub(t, Config{}, true)
+	conn := dial(t, h, "protocol=2", nil)
+	next(t, conn) // hello
+	waitClients(t, h.Hub, 1)
+	steps := []struct {
+		component, state, detail string
+		sent                     bool
+	}{
+		{"engine", "unknown", "", false}, // nothing reported yet
+		{"engine", "up", "", true},
+		{"engine", "up", "still up", false},
+		{"judge", "up", "", true},
+		{"engine", "degraded", "the audit engine reports judge unhealthy", true},
+		{"judge", "down", "the judge does not answer", true},
+		{"engine", "degraded", "", false},
+		{"engine", "up", "", true},
+	}
+	var want []string
+	for _, s := range steps {
+		if got := h.PublishStatus(s.component, s.state, s.detail); got != s.sent {
+			t.Errorf("%s %s: sent %t, want %t", s.component, s.state, got, s.sent)
+		}
+		if s.sent {
+			want = append(want, s.component+":"+s.state+":"+s.detail)
+		}
+	}
+	for _, w := range want {
+		f := nextEvent(t, conn)
+		contractstest.ValidateJSON(t, wsEventSchema, f.raw)
+		var d struct{ Component, State, Detail string }
+		_ = json.Unmarshal(f.Data, &d)
+		if f.Type != "status" || d.Component+":"+d.State+":"+d.Detail != w {
+			t.Errorf("frame %s, want %s", f.raw, w)
+		}
+		if w == "engine:up:" && strings.Contains(string(f.Data), "detail") {
+			t.Errorf("an empty detail is left out: %s", f.Data)
+		}
+	}
+
+	// Concurrent reporters of the same transition broadcast it once.
+	var wg sync.WaitGroup
+	sent := make(chan bool, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() { defer wg.Done(); sent <- h.PublishStatus("knowledge", "down", "") }()
+	}
+	wg.Wait()
+	close(sent)
+	n := 0
+	for s := range sent {
+		if s {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("knowledge down broadcast %d times", n)
+	}
+}

@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -178,6 +179,10 @@ type Hub struct {
 	perIP   map[string]int
 	seq     int64
 	ring    *ring
+
+	// statusMu guards lastStatus, the last state PublishStatus broadcast per component.
+	statusMu   sync.Mutex
+	lastStatus map[string]string
 }
 
 // NewHub builds a hub.
@@ -188,7 +193,8 @@ func NewHub(cfg Config) *Hub {
 		events: make(chan Event, cfg.ProducerBuffer), register: make(chan *registration),
 		unregister: make(chan *client), done: make(chan struct{}),
 		clients: map[*client]struct{}{}, perIP: map[string]int{},
-		ring: newRing(max(cfg.ReplayEvents, 0), cfg.ReplayMaxBytes),
+		ring:       newRing(max(cfg.ReplayEvents, 0), cfg.ReplayMaxBytes),
+		lastStatus: map[string]string{},
 	}
 	origins, extra := slices.Clone(cfg.AllowedOrigins), cfg.OriginAllowed
 	h.upgrader = websocket.Upgrader{ReadBufferSize: 1024, WriteBufferSize: 4096, CheckOrigin: func(r *http.Request) bool {
@@ -213,6 +219,36 @@ func (h *Hub) Publish(ev Event) {
 		h.overflow.Add(1)
 		metrics.WSDropped.Inc()
 	}
+}
+
+// StatusUnknown is every component's state before PublishStatus broadcast one.
+const StatusUnknown = "unknown"
+
+// PublishStatus broadcasts status{component, state, detail?} (SPEC §2.5) when state differs from
+// the component's last broadcast state (StatusUnknown before the first), and reports whether it
+// did: status events are transitions only, so a repeated state is never broadcast, whichever
+// goroutine reports it. The detail carries no content.
+func (h *Hub) PublishStatus(component, state, detail string) bool {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	last, ok := h.lastStatus[component]
+	if !ok {
+		last = StatusUnknown
+	}
+	if state == last {
+		return false
+	}
+	data := map[string]string{"component": component, "state": state}
+	if detail != "" {
+		data["detail"] = detail
+	}
+	ev, err := NewEvent("status", "", data, nil)
+	if err != nil {
+		return false
+	}
+	h.lastStatus[component] = state
+	h.Publish(ev)
+	return true
 }
 
 // Run owns the hub state until ctx ends, then closes every client.
