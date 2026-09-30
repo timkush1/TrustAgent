@@ -128,7 +128,8 @@ func New(o Options) *Handler {
 // POST /v1/chat/completions, /v1/completions and /v1/messages; /v1/messages/count_tokens (on the
 // Anthropic upstream), /v1/models and /v1/embeddings passed through; the Responses API passed
 // through ungated with X-TrustAgent-Status skipped:unsupported_api. bodyLimit bounds the request
-// bodies; nil sets no bound.
+// body of every route, the passthrough ones included (Passthrough reads the whole body to strip
+// the gateway's members); nil sets no bound.
 func (h *Handler) Mount(v1 gin.IRoutes, bodyLimit gin.HandlerFunc) {
 	if bodyLimit == nil {
 		bodyLimit = func(c *gin.Context) { c.Next() }
@@ -139,8 +140,8 @@ func (h *Handler) Mount(v1 gin.IRoutes, bodyLimit gin.HandlerFunc) {
 	v1.POST("/messages/count_tokens", bodyLimit, h.Passthrough(""))
 	v1.Any("/responses", bodyLimit, h.Passthrough(StatusSkippedUnsupportedAPI))
 	v1.Any("/responses/*rest", bodyLimit, h.Passthrough(StatusSkippedUnsupportedAPI))
-	v1.Any("/models", h.Passthrough(""))
-	v1.Any("/models/*model", h.Passthrough(""))
+	v1.Any("/models", bodyLimit, h.Passthrough(""))
+	v1.Any("/models/*model", bodyLimit, h.Passthrough(""))
 	v1.Any("/embeddings", bodyLimit, h.Passthrough(""))
 }
 

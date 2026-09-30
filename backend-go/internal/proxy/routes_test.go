@@ -175,6 +175,21 @@ func TestPassthroughUpstreamPerPath(t *testing.T) {
 	checkAnthropicError(t, w, http.StatusBadRequest, llmapi.AnthropicInvalidRequestError)
 }
 
+// TestPassthroughBodiesAreBounded: every passthrough route reads its body within the /v1 body
+// limit (Passthrough buffers the body to strip the gateway's members), so an oversized body is a
+// 413 in the route's shape and reaches no upstream.
+func TestPassthroughBodiesAreBounded(t *testing.T) {
+	e := newEnv(t, envOpts{})
+	big := `{"model":"m","input":"` + strings.Repeat("a", 1<<20) + `"}`
+	for _, path := range []string{"/v1/models", "/v1/models/gpt-4o", "/v1/embeddings", "/v1/responses", "/v1/responses/resp_1"} {
+		checkOpenAIError(t, e.send(t, http.MethodPost, path, big, nil), http.StatusRequestEntityTooLarge, CodeRequestTooLarge)
+	}
+	checkAnthropicError(t, e.do(t, "/v1/messages/count_tokens", big, nil), http.StatusRequestEntityTooLarge, llmapi.AnthropicInvalidRequestError)
+	if n := e.up.calls() + e.anth.calls(); n != 0 {
+		t.Errorf("%d upstream calls: an oversized body reaches no upstream", n)
+	}
+}
+
 // checkAnthropicError checks a TrustAgent error in the Anthropic shape.
 func checkAnthropicError(t *testing.T, w *httptest.ResponseRecorder, status int, errType string) {
 	t.Helper()
