@@ -538,7 +538,10 @@ class StatusChecksTest(unittest.TestCase):
         )
         check = d.check_policy()
         self.assertEqual(check.status, "WARN")
-        self.assertIn("2 route(s) run below their configured mode", check.summary)
+        # chat keeps its flag mode: only handbook runs below the mode it was configured with.
+        self.assertIn(
+            "2 route(s) with downgrades (1 running below the configured mode)", check.summary
+        )
         self.assertIn("handbook runs as flag (configured block): uncalibrated", check.detail)
         self.assertIn("chat: stream_not_buffered", check.detail)
 

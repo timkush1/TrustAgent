@@ -609,6 +609,19 @@ class Doctor:
         body, error, _ = self.get_json("/api/policies")
         routes = body.get("effective_routes") if isinstance(body, dict) else None
         downgrades = describe_downgrades(routes) if isinstance(routes, list) else []
+        # A downgrade (an unmet block-readiness item) does not always lower the effective mode,
+        # so the routes that run below their configured mode are counted apart.
+        below = (
+            sum(
+                1
+                for r in routes
+                if isinstance(r, dict)
+                and r.get("downgrades")
+                and r.get("mode") != r.get("effective_mode")
+            )
+            if isinstance(routes, list)
+            else 0
+        )
         details: List[str] = []
         if pol.get("file_error"):
             details.append(f"file error: {pol['file_error']}")
@@ -644,7 +657,9 @@ class Doctor:
             return Check(
                 "policy.state",
                 "WARN",
-                summary + f"; {len(downgrades)} route(s) run below their configured mode",
+                summary
+                + f"; {len(downgrades)} route(s) with downgrades"
+                + (f" ({below} running below the configured mode)" if below else ""),
                 detail,
                 "the Policies page shows each downgrade with its fix",
             )

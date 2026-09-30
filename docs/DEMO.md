@@ -97,8 +97,10 @@ make doctor ARGS="--expect demo"
 Every check should pass: the containers, the proxy, engine and dashboard, demo mode with no
 vendor keys, the fast check (`backend mock, state mock`), at least two calibrated targets (the
 simulated calibration), the policy, both metrics endpoints (`trustagent_gateway_*` on the proxy,
-`trustagent_engine_*` on the engine), recent traces and a completed deep audit. A `WARN` "no
-admin yet" only means the setup link is not claimed yet.
+`trustagent_engine_*` on the engine), recent traces and a completed deep audit. Two warnings are
+expected: "no admin yet" until you claim the setup link, and a downgrade on the `help-center`
+route in `policy.state`, which keeps raw thresholds on purpose (the *block route that is not
+calibrated* scenario). Only a `FAIL` makes the command exit 1.
 
 Run every scenario once and compare with what it expects (the M-Demo gate does this):
 

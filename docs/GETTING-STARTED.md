@@ -120,7 +120,9 @@ python3 scripts/doctor.py --expect demo
 
 Every check should say `PASS` (a `SKIP` is fine). A `WARN` such as "still starting" usually
 clears when you run it again a minute later, and "no admin yet" clears once you claim the setup
-link. A `FAIL` comes with a command that fixes it.
+link. One `WARN` stays on purpose: `policy.state` lists a downgrade on the demo's `help-center`
+route, which is left uncalibrated to show what that does. A `FAIL` comes with a command that
+fixes it.
 
 ## 4. Stop the demo
 

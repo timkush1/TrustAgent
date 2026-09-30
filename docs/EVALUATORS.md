@@ -73,7 +73,8 @@ routes:
 
 The dashboard's **Policies** page shows each route's evaluators, their
 calibration state and the block-readiness checklist, and `make doctor` lists
-the routes that run below their configured mode.
+each route's downgrades (unmet checklist items) and which routes run below
+their configured mode.
 
 ## Calibration
 
