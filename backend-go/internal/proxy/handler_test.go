@@ -47,6 +47,8 @@ type recSink struct {
 	decided  chan *gate.Result
 	attempts []*gate.Result // AttemptDecided calls
 	late     []*gate.Result // LateDecided calls
+	// calls is the order of the GateDecided ("decided") and AttemptDecided ("attempt") calls.
+	calls []string
 }
 
 func newRecSink() *recSink { return &recSink{decided: make(chan *gate.Result, 16)} }
@@ -58,6 +60,9 @@ func (s *recSink) TraceStarted(_ context.Context, t *gate.TraceStart) {
 }
 
 func (s *recSink) GateDecided(_ context.Context, r *gate.Result) string {
+	s.mu.Lock()
+	s.calls = append(s.calls, "decided")
+	s.mu.Unlock()
 	s.decided <- r
 	if r.Audit.Selection != "" {
 		return gate.AuditQueued
@@ -69,6 +74,14 @@ func (s *recSink) AttemptDecided(_ context.Context, r *gate.Result) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.attempts = append(s.attempts, r)
+	s.calls = append(s.calls, "attempt")
+}
+
+// log returns the AttemptDecided calls and the order of the recorded calls.
+func (s *recSink) log() (attempts []*gate.Result, calls []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.attempts), slices.Clone(s.calls)
 }
 
 func (s *recSink) LateDecided(_ context.Context, r *gate.Result) {
@@ -105,6 +118,11 @@ type fakeUpstream struct {
 	ctype    string
 	// delay holds the answer back that long, or until the gateway gives up on the call.
 	delay time.Duration
+	// encoding, when set, is sent as the answer's Content-Encoding.
+	encoding string
+	// respond, when set, answers each request in place of status, ctype and body: n counts the
+	// requests before this one.
+	respond func(n int, body []byte) (status int, ctype, answer string)
 }
 
 func newFakeUpstream(t *testing.T) *fakeUpstream {
@@ -113,10 +131,14 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
+		n := len(f.requests)
 		f.requests = append(f.requests, r.Clone(context.Background()))
 		f.bodies = append(f.bodies, b)
-		status, body, ctype, delay := f.status, f.body, f.ctype, f.delay
+		status, body, ctype, delay, encoding, respond := f.status, f.body, f.ctype, f.delay, f.encoding, f.respond
 		f.mu.Unlock()
+		if respond != nil {
+			status, ctype, body = respond(n, b)
+		}
 		if delay > 0 {
 			select {
 			case <-time.After(delay):
@@ -125,6 +147,9 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 			}
 		}
 		w.Header().Set("Content-Type", ctype)
+		if encoding != "" {
+			w.Header().Set("Content-Encoding", encoding)
+		}
 		w.Header().Set("X-Upstream", "yes")
 		w.Header().Set("X-TrustAgent-Action", "spoofed")
 		w.WriteHeader(status)
@@ -161,9 +186,10 @@ func newRecorder() recorder { return recorder{httptest.NewRecorder()} }
 type env struct {
 	router *gin.Engine
 	sink   *recSink
-	// up is the OpenAI upstream and anth the Anthropic one.
-	up, anth *fakeUpstream
-	handler  *Handler
+	// up is the OpenAI upstream and anth the Anthropic one; fb is the fallback upstream, nil
+	// unless envOpts.fallbackFormat is set.
+	up, anth, fb *fakeUpstream
+	handler      *Handler
 }
 
 type envOpts struct {
@@ -183,13 +209,17 @@ type envOpts struct {
 	rateLimit int
 	// upstreamTimeout bounds each upstream call, the wait for response headers included (0: 5s).
 	upstreamTimeout time.Duration
+	// fallbackFormat, when set, adds a fallback upstream (env.fb) answering in that family
+	// (TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT).
+	fallbackFormat string
 }
 
 // anthropicBody is the Anthropic upstream's default answer.
 const anthropicBody = `{"id":"msg_up","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"Priority tickets get a first response within 4 hours."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":9}}`
 
-// loadPolicy loads config/policies.yaml, or yaml when set; enforcing accepts block and fallback.
-func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, enforcing bool) *policy.Policy {
+// loadPolicy loads config/policies.yaml, or yaml when set, as the gateway does with env's
+// Enforcing (block and fallback accepted) and FallbackUpstream (fallback.upstream: fallback).
+func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, env policy.Env) *policy.Policy {
 	t.Helper()
 	src := []byte(yaml)
 	if yaml == "" {
@@ -199,7 +229,8 @@ func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, enforcing b
 		}
 		src = b
 	}
-	res := policy.Check(src, policy.Env{Seeds: policy.DefaultSeeds(), Specs: reg, Enforcing: enforcing})
+	env.Seeds, env.Specs = policy.DefaultSeeds(), reg
+	res := policy.Check(src, env)
 	if res.Policy == nil {
 		t.Fatal(res.Err())
 	}
@@ -212,7 +243,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pol := loadPolicy(t, reg, o.policyYAML, o.enforcing)
+	pol := loadPolicy(t, reg, o.policyYAML, policy.Env{Enforcing: o.enforcing, FallbackUpstream: o.fallbackFormat != ""})
 	cl := o.jev
 	if cl == nil {
 		backend := o.jevBackend
@@ -243,9 +274,18 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	set := &upstream.Set{OpenAI: up, Anthropic: anth}
+	var fb *fakeUpstream
+	if o.fallbackFormat != "" {
+		fb = newFakeUpstream(t)
+		if set.Fallback, err = upstream.New(upstream.Config{BaseURL: fb.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey); err != nil {
+			t.Fatal(err)
+		}
+		set.FallbackFormat = o.fallbackFormat
+	}
 	sink := newRecSink()
 	h := New(Options{
-		Upstreams: &upstream.Set{OpenAI: up, Anthropic: anth}, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
+		Upstreams: set, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
 		TestMode: o.testMode, GateMaxConcurrency: o.maxGates, MaxUpstreamResponseBytes: o.maxBytes, Logger: quiet,
 	})
 	r := gin.New()
@@ -262,7 +302,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 			c.Abort()
 		}
 	})
-	return &env{router: r, sink: sink, up: fu, anth: fa, handler: h}
+	return &env{router: r, sink: sink, up: fu, anth: fa, fb: fb, handler: h}
 }
 
 func (e *env) do(t *testing.T, path, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -295,7 +335,11 @@ type scenario struct {
 	Headers  map[string]string `json:"headers"`
 	Request  json.RawMessage   `json:"request"`
 	Response string            `json:"response"`
-	Expect   struct {
+	// Fallback is the scenario's scripted fallback answer, if it has one.
+	Fallback *struct {
+		Response string `json:"response"`
+	} `json:"fallback"`
+	Expect struct {
 		Mode           string   `json:"mode"`
 		Action         string   `json:"action"`
 		WouldAction    string   `json:"would_action"`
@@ -305,6 +349,7 @@ type scenario struct {
 		Reasons        []string `json:"reasons"`
 		CheckedAgainst string   `json:"checked_against"`
 		Audit          string   `json:"audit"`
+		DeliveredText  *string  `json:"delivered_text"`
 	} `json:"expect"`
 }
 
@@ -705,6 +750,30 @@ func TestUpstreamDownIs502AndRecorded(t *testing.T) {
 	}
 	if r := e.sink.result(t); r.Upstream.Status != 0 {
 		t.Errorf("no upstream status: %+v", r.Upstream)
+	}
+}
+
+// TestUndecodableAnswer: a 2xx whose body cannot be decoded (a Content-Encoding the gateway does
+// not read) has nothing to gate or deliver: a 502 in the route's shape, recorded as
+// skipped:undecodable with the upstream's status, unenforced even on a closed block route (D24).
+// An upstream error whose body cannot be decoded stays skipped:upstream_error.
+func TestUndecodableAnswer(t *testing.T) {
+	for _, c := range []struct {
+		status int
+		skip   string
+	}{{http.StatusOK, gate.SkipUndecodable}, {http.StatusServiceUnavailable, gate.SkipUpstreamError}} {
+		e := newEnv(t, envOpts{enforcing: true, policyYAML: blockPolicy("block", "fail: closed")})
+		e.up.status, e.up.encoding = c.status, "br"
+		w := e.do(t, "/v1/chat/completions", defaultRouteBody, nil)
+		r := e.sink.result(t)
+		if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"code":"upstream_error"`) ||
+			w.Header().Get(HeaderStatus) != "skipped:"+c.skip || w.Header().Get(HeaderAction) != decision.ActionPass {
+			t.Errorf("%d: %d %s %v", c.status, w.Code, w.Body.String(), w.Header())
+		}
+		if r.Upstream.Status != c.status || r.Decision.Enforced || r.Final == nil || r.Final.Action != decision.ActionPass {
+			t.Errorf("%d: upstream %+v enforced %v final %+v", c.status, r.Upstream, r.Decision.Enforced, r.Final)
+		}
+		contractstest.Validate(t, "decision.v1.schema.json", r.Decision)
 	}
 }
 

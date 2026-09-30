@@ -238,22 +238,33 @@ func TestBlockActionOnlyHeaders(t *testing.T) {
 	checkBlocked(t, w, e.sink.result(t))
 }
 
-// TestFallbackDecisionDeliversWhatFallbackChose: a fallback decision is handed to fallback(),
-// whose outcome is delivered and recorded (the fallback call itself lands with GH-6; until then
-// the outcome is a block with reason fallback_failed).
+// TestFallbackDecisionDeliversWhatFallbackChose: on a fallback route only a fallback decision
+// (would block) runs the route's fallback, whose choice is delivered and recorded, attempt 1
+// first (fallback_test.go covers the fallback itself); an answer that passes goes out as it came,
+// with no fallback call.
 func TestFallbackDecisionDeliversWhatFallbackChose(t *testing.T) {
-	e := newEnv(t, envOpts{testMode: true, enforcing: true, policyYAML: blockPolicy("fallback", "")})
+	e := newEnv(t, envOpts{testMode: true, enforcing: true, jev: regateJev{newMockJev(t), fallbackText, regatePass},
+		policyYAML: blockPolicy("fallback", "")})
+	e.up.body = chatAnswer(fallbackText)
 	req, answer, hdr := contradicted(t)
 	w := e.do(t, "/v1/chat/completions", withTestResponse(t, req, answer), hdr)
 	r := e.sink.result(t)
-	if r.Decision.Action != decision.ActionFallback || r.Final == nil || r.Final.Delivered != gate.DeliveredBlocked ||
-		!slices.Equal(r.Final.Reasons, []string{reasonFallbackFailed}) || w.Header().Get(HeaderAction) != decision.ActionBlock ||
-		w.Header().Get(HeaderWouldAction) != "" { // would block = the delivered block
-		t.Errorf("decision %s final %+v headers %v", r.Decision.Action, r.Final, w.Header())
+	if r.Decision.Action != decision.ActionFallback || w.Header().Get(HeaderAction) != decision.ActionFallback ||
+		w.Header().Get(HeaderWouldAction) != decision.ActionBlock || w.Body.String() != e.up.body || e.up.calls() != 1 {
+		t.Errorf("decision %s, headers %v, %d upstream calls: %s", r.Decision.Action, w.Header(), e.up.calls(), w.Body.String())
 	}
-	if gatedText(t, llmapi.FormatOpenAIChat, w.Body.Bytes()) != heldBack {
-		t.Errorf("body %s", w.Body.String())
+	checkFinal(t, r, decision.ActionFallback, gate.DeliveredFallback, fallbackText, []string{gate.FlagFallbackUsed}, nil)
+	checkAttempts(t, e, r, answer, fallbackText)
+
+	p := newEnv(t, envOpts{testMode: true, enforcing: true, policyYAML: blockPolicy("fallback", "")})
+	sc := demoScenario(t, "grounded-pass")
+	w = p.do(t, "/v1/chat/completions", withTestResponse(t, string(sc.Request), sc.Response), map[string]string{"X-TrustAgent-Scenario": sc.ID})
+	r = p.sink.result(t)
+	if r.Decision.Action != decision.ActionPass || w.Header().Get(HeaderAction) != decision.ActionPass || p.up.calls() != 0 ||
+		gatedText(t, llmapi.FormatOpenAIChat, w.Body.Bytes()) != sc.Response {
+		t.Errorf("decision %s, %d upstream calls: %s", r.Decision.Action, p.up.calls(), w.Body.String())
 	}
+	checkAttempts(t, p, r, sc.Response, "")
 }
 
 // refusingJev refuses every decision-model call before any vendor request with kind.

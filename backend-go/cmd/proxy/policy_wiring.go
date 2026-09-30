@@ -89,6 +89,8 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 			Seeds:     policy.Seeds{Mode: w.cfg.GateDefaultMode, Fail: w.cfg.GateFailMode, MaxResponseTokens: w.cfg.Jev.MaxResponseTokens},
 			Specs:     reg,
 			Enforcing: w.enforcing,
+			// fallback.upstream: fallback needs an upstream to call.
+			FallbackUpstream: w.cfg.FallbackUpstreamURL != "",
 		},
 		Store: versions, Lock: w.cfg.ConfigLock, ReloadInterval: w.cfg.PolicyReloadInterval, Channel: w.channel,
 		Runtime: w.runtime, OnUpdate: ps.policyUpdated, OnError: ps.policyFailed, OnNotify: ps.notified, Logger: log,

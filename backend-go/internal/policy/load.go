@@ -62,6 +62,9 @@ type Env struct {
 	Enforcing bool
 	// Knowledge accepts the knowledge evidence source (the knowledge add-on is enabled).
 	Knowledge bool
+	// FallbackUpstream accepts fallback.upstream: fallback (TRUTHTABLE_FALLBACK_UPSTREAM_URL is
+	// set, so the gateway has a fallback upstream to call).
+	FallbackUpstream bool
 }
 
 // Policy is a loaded, validated policy document.

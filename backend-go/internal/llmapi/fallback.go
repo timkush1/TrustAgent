@@ -44,7 +44,8 @@ type Fallback struct {
 	MaxTokens int
 	// CountTokens estimates the tokens of a text; nil uses ceil(narrow/4 + wide) over code
 	// points, wide being U+3000 and above (the SPEC §2.9 estimate with the default cpt). The
-	// gate passes the decision package's estimate with its runtime cpt.
+	// gateway leaves it nil: the prompt goes to the LLM upstream, whose tokenizer is not the
+	// decision model's, so the decision model's runtime cpt does not apply.
 	CountTokens func(string) int
 }
 

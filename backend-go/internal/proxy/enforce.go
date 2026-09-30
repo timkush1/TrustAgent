@@ -60,9 +60,10 @@ type jsonOut struct {
 //   - pass, flag and observe deliver the upstream bytes, except that a block or fallback route
 //     never relays an oversized answer it could not check: it blocks it.
 //
-// enforceJSON writes nothing and records nothing: the caller records with decided(…, out.final)
-// and then writes out (writeJSON). It is shared with the Playground (playground.go): its signature
-// is fixed.
+// enforceJSON writes nothing, and records nothing but a fallback's attempt 1
+// (sink.AttemptDecided, D22): the caller then records the trace once with decided(…, out.final)
+// and writes out (writeJSON). ctx is the client's context, which the fallback call runs on (M1).
+// It is shared with the Playground (playground.go): its signature is fixed.
 func (h *Handler) enforceJSON(ctx context.Context, f *flow, res *gate.Result, ans *answer) *jsonOut {
 	d := res.Decision
 	out := &jsonOut{
@@ -100,9 +101,14 @@ func (h *Handler) blockJSON(f *flow, ans *answer) *jsonOut {
 	}
 }
 
-// fallbackJSON runs the route's fallback for a JSON answer and returns what it delivers.
+// fallbackJSON runs the route's fallback for a JSON answer and returns what it delivers. The
+// fallback's attempt 1, when there was one, is recorded here, before the caller records the
+// trace's decision (D22).
 func (h *Handler) fallbackJSON(ctx context.Context, f *flow, res *gate.Result, ans *answer) *jsonOut {
 	fo := h.fallback(ctx, f, res)
+	if fo.Result1 != nil {
+		h.sink.AttemptDecided(f.record, fo.Result1)
+	}
 	fin := &gate.Final{Action: fo.Action, Delivered: fo.Delivered, Text: fo.Text, Flags: fo.Flags, Reasons: fo.Reasons}
 	switch fo.Delivered {
 	case gate.DeliveredFallback:

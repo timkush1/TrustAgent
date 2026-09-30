@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -83,8 +84,8 @@ func setDecisionHeaders(h http.Header, r *gate.Result, audit string) {
 	if d.Degraded != nil {
 		h.Set(HeaderDegraded, *d.Degraded)
 	}
-	if n := len(d.Reasons); n > 0 {
-		h.Set(HeaderReasons, strings.Join(d.Reasons[:min(n, maxReasons)], ","))
+	if reasons := headerReasons(r); len(reasons) > 0 {
+		h.Set(HeaderReasons, strings.Join(reasons, ","))
 	}
 	h.Set(HeaderCheckedAgainst, r.CheckedAgainst)
 	if snap := r.Snapshot(); snap != "" {
@@ -118,6 +119,24 @@ func setDeferredHeaders(h http.Header, t *gate.TraceStart, route *policy.Route, 
 		h.Set(HeaderAudit, gate.AuditDisabled)
 	}
 	setSource(h, t.Source)
+}
+
+// headerReasons is the X-TrustAgent-Reasons list of a decided exchange, at most maxReasons: the
+// decision's reasons, then the delivery's that the decision does not have (a fallback that failed
+// or could not be sent, D19), as the trace records them and the stream comment carries them. When
+// the cap cuts, the delivery's reasons stay: they say why the delivered action is what it is.
+func headerReasons(r *gate.Result) []string {
+	reasons := r.Decision.Reasons
+	var delivery []string
+	if r.Final != nil {
+		for _, reason := range r.Final.Reasons {
+			if !slices.Contains(reasons, reason) && !slices.Contains(delivery, reason) {
+				delivery = append(delivery, reason)
+			}
+		}
+	}
+	delivery = delivery[:min(len(delivery), maxReasons)]
+	return append(slices.Clone(reasons[:min(len(reasons), maxReasons-len(delivery))]), delivery...)
 }
 
 // deliveredAction is the action a decided exchange delivered: the Final's, else the decision's.
