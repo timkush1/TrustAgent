@@ -107,6 +107,16 @@ func checkFinal(t *testing.T, r *gate.Result, action, delivered, text string, fl
 	}
 }
 
+// checkReasonsHeader checks that X-TrustAgent-Reasons carries the decision's reasons, then the
+// delivery's reason the trace records (D19), as the stream comment does.
+func checkReasonsHeader(t *testing.T, h http.Header, r0 *gate.Result, reason string) {
+	t.Helper()
+	want := strings.Join(append(slices.Clone(r0.Decision.Reasons), reason), ",")
+	if got := h.Get(HeaderReasons); got != want || len(r0.Decision.Reasons) == 0 {
+		t.Errorf("reasons header %q, want %q", got, want)
+	}
+}
+
 // checkAttempts checks what the sink recorded: the re-gate as attempt 1 with no audit, then the
 // trace's decision (attempt 0) once, with the audit on the original answer; or, without a
 // re-gate, the trace's decision alone.
@@ -368,6 +378,7 @@ func TestFallbackCallFailures(t *testing.T) {
 					w.Header().Get(HeaderAction) != action {
 					t.Errorf("%d action %q delivered %q", w.Code, w.Header().Get(HeaderAction), got)
 				}
+				checkReasonsHeader(t, w.Header(), r0, reasonFallbackFailed)
 				checkFinal(t, r0, action, delivered, text, nil, []string{reasonFallbackFailed})
 				checkAttempts(t, e, r0, answer, "")
 				countsOnce(t, fallbackFailed, before)
@@ -407,6 +418,7 @@ func TestFallbackUpstream(t *testing.T) {
 			e.fb.calls() != 0 || e.up.calls() != 0 {
 			t.Errorf("action %q, %d fallback calls: %s", w.Header().Get(HeaderAction), e.fb.calls(), w.Body.String())
 		}
+		checkReasonsHeader(t, w.Header(), r0, reasonFallbackFormatMismatch)
 		checkFinal(t, r0, decision.ActionBlock, gate.DeliveredBlocked, heldBack, nil, []string{reasonFallbackFormatMismatch})
 		checkAttempts(t, e, r0, answer, "")
 		countsOnce(t, fallbackFormatMismatch, before)
@@ -571,5 +583,34 @@ func TestScriptedFallbacks(t *testing.T) {
 	}
 	if _, ok := (&Handler{}).scriptedFallback(flowOf(gate.AnswerScripted, sc.ID)); ok {
 		t.Error("outside test mode: scripted fallback")
+	}
+}
+
+// TestHeaderReasonsCarryTheDelivery: X-TrustAgent-Reasons lists the decision's reasons, then the
+// delivery's the decision does not have (D19), at most 8; when the cap cuts, the delivery's stay.
+func TestHeaderReasonsCarryTheDelivery(t *testing.T) {
+	var many []string
+	for i := range 9 {
+		many = append(many, "reason"+string(rune('a'+i)))
+	}
+	result := func(reasons []string, fin *gate.Final) *gate.Result {
+		return &gate.Result{Decision: &gate.Decision{Core: decision.Core{Reasons: reasons}}, Final: fin}
+	}
+	failed := &gate.Final{Reasons: []string{reasonFallbackFailed}}
+	for name, c := range map[string]struct {
+		res  *gate.Result
+		want []string
+	}{
+		"no delivery":      {result([]string{"contradiction:critical"}, nil), []string{"contradiction:critical"}},
+		"delivery after":   {result([]string{"contradiction:critical"}, failed), []string{"contradiction:critical", reasonFallbackFailed}},
+		"delivery only":    {result(nil, failed), []string{reasonFallbackFailed}},
+		"no repeat":        {result([]string{reasonFallbackFailed}, failed), []string{reasonFallbackFailed}},
+		"capped":           {result(many, nil), many[:maxReasons]},
+		"capped, delivery": {result(many, failed), append(slices.Clone(many[:maxReasons-1]), reasonFallbackFailed)},
+		"neither":          {result(nil, &gate.Final{}), nil},
+	} {
+		if got := headerReasons(c.res); !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
 	}
 }
