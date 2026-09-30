@@ -131,8 +131,8 @@ func TestWriteDeadlinePerRoute(t *testing.T) {
 		{"/v1", ingest, 5*time.Minute + 30*time.Second},
 		{"/v1beta", ingest, apiWriteDeadline},
 		{"/api/kb/documents", ingest, 8*time.Minute + 30*time.Second},
-		{"/api/upload", ingest, 8*time.Minute + 30*time.Second},
-		{"/api/upload", 0, apiWriteDeadline}, // no engine: the upload answers 503 at once
+		{"/api/kb/documents", 0, apiWriteDeadline}, // no engine: the upload answers 503 at once
+		{"/api/upload", ingest, apiWriteDeadline},  // removed at the end of P3: an unknown path
 		{"/api/policies/dry-run", ingest, apiWriteDeadline},
 		{"/health", ingest, apiWriteDeadline},
 		{"/ws", ingest, 0},

@@ -220,7 +220,6 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	upload := handleFileUpload(d.engine, cfg.MaxUploadBytes)
 	uploadLimit := middleware.BodyLimit(cfg.MaxUploadBytes)
 	api.POST("/kb/documents", writable, s.auth.require(authz.ScopeAdmin), uploadRateLimit, knowledge, uploadLimit, upload)
-	api.POST("/upload", writable, ingest, uploadRateLimit, knowledge, uploadLimit, upload) // the v1 path
 	api.GET("/kb/claims", read, rateLimit, knowledge, handleListKBClaims(d.engine))
 	api.GET("/kb/conflicts", read, rateLimit, knowledge, handleListConflicts(d.engine))
 	api.GET("/kb/stats", read, rateLimit, knowledge, handleKBStats(d.engine))
@@ -242,9 +241,17 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	// LLM API (SPEC §2.12): the /v1 gateway (v1_routes.go).
 	s.mountV1(r, v1RateLimit, bodyLimit)
 
-	// Unknown paths answer in the error shape of their family, not gin's text/plain 404.
+	// Unknown paths answer in the error shape of their family, not gin's text/plain 404. An unknown
+	// /v1 path carries the trace and request ids like every /v1 response (SPEC §2.12: "Always").
+	v1TraceIDs := s.gateway.handler.TraceIDs()
 	r.NoRoute(func(c *gin.Context) {
-		if p := c.Request.URL.Path; p == "/v1" || strings.HasPrefix(p, "/v1/") {
+		if isV1Path(c.Request.URL.Path) {
+			v1TraceIDs(c) // sets the ids, then runs the next handler
+			return
+		}
+		c.Next()
+	}, func(c *gin.Context) {
+		if p := c.Request.URL.Path; isV1Path(p) {
 			proxy.Deny(c, http.StatusNotFound, codeNotFound, "TrustAgent does not serve "+c.Request.Method+" "+p+".")
 			c.Abort()
 			return
@@ -253,6 +260,9 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	})
 	return r
 }
+
+// isV1Path reports whether path belongs to the LLM API (/v1 and its sub-paths).
+func isV1Path(path string) bool { return path == "/v1" || strings.HasPrefix(path, "/v1/") }
 
 // apiWriteDeadline is the write deadline of /api, /health and unknown paths when
 // TRUTHTABLE_WRITE_TIMEOUT=0 (SPEC M12).
@@ -267,12 +277,12 @@ func writeDeadline(cfg *config.Config, path string, ingest time.Duration) time.D
 	switch {
 	case path == "/ws":
 		return 0
-	case path == "/v1" || strings.HasPrefix(path, "/v1/"):
+	case isV1Path(path):
 		if cfg.UpstreamTimeout <= 0 {
 			return 0
 		}
 		return cfg.UpstreamTimeout + 30*time.Second
-	case (path == "/api/kb/documents" || path == "/api/upload") && ingest > 0:
+	case path == "/api/kb/documents" && ingest > 0:
 		return ingest + 30*time.Second
 	}
 	return apiWriteDeadline
@@ -340,9 +350,10 @@ func (s *server) writable() gin.HandlerFunc {
 	}
 }
 
-// serveWS serves GET /ws: WS v2 with protocol=2, v1 frames otherwise (SPEC §2.5). Browsers cannot
-// set headers on the handshake: they connect with a single-use ?ticket= (POST /api/ws-ticket) or
-// their session cookie; other clients send X-TrustAgent-Key. A failure before the upgrade is 401.
+// serveWS serves GET /ws: WS v2 only (SPEC §2.5). A handshake without protocol=2 gets 400
+// bad_request before the upgrade, because WS v1 was removed (D13). Browsers cannot set headers on
+// the handshake: they connect with a single-use ?ticket= (POST /api/ws-ticket) or their session
+// cookie; other clients send X-TrustAgent-Key. An authentication failure before the upgrade is 401.
 func (s *server) serveWS(c *gin.Context) {
 	id, status, code, msg := s.auth.identify(c.Request, authz.ScopeRead, false)
 	if id == nil {

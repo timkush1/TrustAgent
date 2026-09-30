@@ -263,8 +263,8 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp, string(b)
 	}
-	// anthropic checks an Anthropic-shaped error; traced, that it carries the trace id (every
-	// response of the /v1 group does; the NoRoute branch runs outside the group).
+	// anthropic checks an Anthropic-shaped error; traced, that it carries the trace and request
+	// ids, as every /v1 response does (SPEC §2.12), the NoRoute branch's 404 included.
 	anthropic := func(resp *http.Response, body string, status int, errType string, traced bool) {
 		t.Helper()
 		var e struct {
@@ -272,7 +272,7 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 			Error struct{ Type, Message string } `json:"error"`
 		}
 		if resp.StatusCode != status || json.Unmarshal([]byte(body), &e) != nil || e.Type != "error" || e.Error.Type != errType ||
-			e.Error.Message == "" || traced && resp.Header.Get("X-TrustAgent-Trace-Id") == "" {
+			e.Error.Message == "" || traced && (resp.Header.Get("X-TrustAgent-Trace-Id") == "" || resp.Header.Get("X-Request-ID") == "") {
 			t.Errorf("%s %s: want %d %s in the Anthropic shape, got %d %s", resp.Request.Method, resp.Request.URL.Path, status, errType,
 				resp.StatusCode, body)
 		}
@@ -285,7 +285,7 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 		t.Errorf("chat completions without a key: %d %s", resp.StatusCode, body)
 	}
 	resp, body = send(http.MethodGet, "/v1/messages/batches", testKey)
-	anthropic(resp, body, http.StatusNotFound, "invalid_request_error", false)
+	anthropic(resp, body, http.StatusNotFound, "invalid_request_error", true)
 	// The test stack's upstream refuses connections: a 502 in the route's shape, then the limit.
 	resp, body = send(http.MethodPost, "/v1/messages", testKey)
 	anthropic(resp, body, http.StatusBadGateway, "api_error", true)
