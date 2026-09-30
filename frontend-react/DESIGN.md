@@ -378,7 +378,10 @@ the cost calculator is lazy, and the refund example comes from a virtual module
   (`data-compare-todo`) until each is verified against the vendor's docs with a link (P6). No
   guessed cells.
 - The hero card is an illustration of the scenario pack's refund example, labelled as such; its
-  three beats ease in over 200 ms, and with reduced motion it shows the last beat at once.
+  three beats ease in over 200 ms, and with reduced motion it shows the last beat at once and
+  offers no "Play again" (nothing would move).
+- Diagrams show direction honestly: in "How it works" every link carries the request out and the
+  answer back, and the deep audit hangs off the gateway, in the background.
 - 16 px side gutter below 640 px; nothing may scroll the page sideways at 400 px (wide tables
   scroll inside a named, focusable region).
 
@@ -387,6 +390,9 @@ the cost calculator is lazy, and the refund example comes from a virtual module
 - Data comes from `ReplayDataSource` (`src/data/replay/`): REST reads answer from the tape
   position, and the rest of the tape plays as WS v2 events in compressed time. Everything a
   recording cannot answer comes from `unavailableControlPlane`.
+- "Now" is the tape's clock while a recording replays (`useNow`, `replayClock`): relative times
+  read "just now" and "1 min. ago" as rows arrive, like the Overview's counts, instead of the days
+  since the recording was made. The exact time stays in the title.
 - Nav: Overview (recorded), Traffic (replay), Trace (the featured flagged answer), Playground,
   Studio, and "Run it yourself" (the landing's `#self-host`). Policies, Settings, Knowledge, the
   evaluator library and setup are hidden; a deep link to them shows why (`StaticRouteGuard`), not
