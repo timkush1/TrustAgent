@@ -26,7 +26,7 @@ what to do when something goes wrong.
    screenshot. Once the dashboard ships **Connect OpenRouter** *(from P4)*, you can click that
    instead of doing steps 3 and 4.
 
-That is all you need: there is no waitlist and no TypeSafe account. The same OpenRouter key will
+That is all you need: there is no waitlist and no TypeSafe account. The same OpenRouter key
 also runs the deep-audit judge (Claude Haiku via OpenRouter).
 
 ## What Jev is

@@ -211,7 +211,7 @@ decided on, so block and fallback work on streams.
 
 | Limit | Default | Setting |
 |---|---|---|
-| Largest answer the gateway gates | 8 MiB | `TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES` (larger: relayed ungated, `skipped:upstream_error`) |
+| Largest answer the gateway gates | 8 MiB | `TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES` (a larger answer is a skip: it passes on observe, flag and `fail: open`, and blocks on closed block/fallback routes, [§6](#6-when-something-fails)) |
 | Longest gap between upstream events | 120 s | `TRUTHTABLE_STREAM_IDLE_TIMEOUT` |
 | Time to the upstream's response headers | 60 s | `TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT` |
 | Whole upstream request | 5 min | `TRUTHTABLE_UPSTREAM_TIMEOUT` |

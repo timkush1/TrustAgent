@@ -30,7 +30,7 @@ came from.
 | `injection_success@1` | security | optional | 0.6 / 0.9 | yes |
 | `unsafe_policy@1` | safety | no | 0.6 / 0.9 | yes |
 | `refusal@1` | quality | no | 0.7 / — | no |
-| `off_topic@1` | quality | no | 0.7 / — | no |
+| `off_topic@1` | quality (param `allowed_scope`) | no | 0.7 / — | no |
 | `off_brand_tone@1` | quality (param `brand_voice`) | no | 0.6 / — | no |
 
 - **Evidence.** An evaluator that requires evidence is `not_assessed` when the
