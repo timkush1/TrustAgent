@@ -420,3 +420,50 @@ func TestInjectModePerUpstream(t *testing.T) {
 		t.Errorf("a fallback key with its upstream: %v", c.Warnings)
 	}
 }
+
+// TestFallbackUpstreamOnAnotherHostNeedsItsOwnKey (D23): a fallback upstream without its own key
+// gets the client's credentials, so it must be on the host of the primary upstream of its format
+// (scheme, host name and port; case and a default port do not matter). On another host it is a
+// warning, which TRUTHTABLE_STRICT_CONFIG refuses to start with; the warning names keys, never a
+// value. A key of its own settles it.
+func TestFallbackUpstreamOnAnotherHostNeedsItsOwnKey(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		environ []string
+		// primary is the key the warning names; "" means no warning.
+		primary string
+	}{
+		{"another host", []string{"TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://cheap-llm.example/v1"}, "TRUTHTABLE_UPSTREAM_URL"},
+		{"another port", []string{"TRUTHTABLE_UPSTREAM_URL=http://llm.internal:8080", "TRUTHTABLE_FALLBACK_UPSTREAM_URL=http://llm.internal:8081"},
+			"TRUTHTABLE_UPSTREAM_URL"},
+		{"another scheme", []string{"TRUTHTABLE_FALLBACK_UPSTREAM_URL=http://api.openai.com"}, "TRUTHTABLE_UPSTREAM_URL"},
+		{"the anthropic primary", []string{"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT=anthropic", "TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://api.openai.com"},
+			"TRUTHTABLE_ANTHROPIC_UPSTREAM_URL"},
+		{"the same host", []string{"TRUTHTABLE_UPSTREAM_URL=http://mock-upstream:8090", "TRUTHTABLE_FALLBACK_UPSTREAM_URL=http://mock-upstream:8090/fallback?tier=cheap"}, ""},
+		{"the same host by default", []string{"TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://API.OpenAI.com:443/v1"}, ""},
+		{"the anthropic host", []string{"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT=anthropic", "TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://api.anthropic.com/"}, ""},
+		{"its own key", []string{"TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://cheap-llm.example", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY=sk-fallback-0123456789"}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := LoadWith(LoadOptions{Environ: append([]string{"TRUTHTABLE_STRICT_CONFIG=true"}, c.environ...)})
+			if c.primary == "" {
+				if len(cfg.Diagnostics) != 0 {
+					t.Errorf("warnings %v", cfg.Warnings)
+				}
+				return
+			}
+			if !hasWarning(cfg, "TRUTHTABLE_FALLBACK_UPSTREAM_URL", "another host than "+c.primary) ||
+				!hasWarning(cfg, "TRUTHTABLE_FALLBACK_UPSTREAM_URL", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY") || len(cfg.Diagnostics) != 1 {
+				t.Fatalf("warnings %v", cfg.Warnings)
+			}
+			if !cfg.StrictFailure() {
+				t.Error("strict config refuses to start with it")
+			}
+			for _, host := range []string{"cheap-llm", "llm.internal", "openai.com", "http:"} {
+				if strings.Contains(cfg.Warnings[0], host) {
+					t.Errorf("the warning names a value (%s): %s", host, cfg.Warnings[0])
+				}
+			}
+		})
+	}
+}
