@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
@@ -12,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import setup_url  # noqa: E402
 
+# No .env: a developer's own .env (a worktree may set COMPOSE_PROJECT_NAME) must not change the
+# project order these tests expect.
+NO_ENV_FILE = Path(tempfile.gettempdir()) / "trustagent-test-setup-url-no-such.env"
 URL = "http://localhost:3000/app/setup#token=abc_DEF-123"
 VALID = (
     "The setup URL is valid until 2026-10-01T12:00:00Z and works once; it creates a new admin key."
@@ -72,7 +76,13 @@ def run_main(
     opener = opener or Opener()
     out, err = io.StringIO(), io.StringIO()
     code = setup_url.main(
-        list(args), run=docker, opener=opener, environ=env or {}, stdout=out, stderr=err
+        list(args),
+        run=docker,
+        opener=opener,
+        environ=env or {},
+        stdout=out,
+        stderr=err,
+        env_file=NO_ENV_FILE,
     )
     return code, out.getvalue(), err.getvalue(), opener
 
@@ -86,14 +96,28 @@ class ParseTest(unittest.TestCase):
         self.assertIsNone(setup_url.setup_line_url("SETUP: open \nsomething else\n"))
 
     def test_default_projects_start_with_the_up_project(self) -> None:
+        self.assertFalse(NO_ENV_FILE.exists())
         self.assertEqual(
-            setup_url.default_projects({}),
+            setup_url.default_projects({}, NO_ENV_FILE),
             ["truthtable", "truthtable-demo", "truthtable-e2e"],
         )
         self.assertEqual(
-            setup_url.default_projects({"COMPOSE_PROJECT_NAME": "truthtable-dx"}),
+            setup_url.default_projects({"COMPOSE_PROJECT_NAME": "truthtable-dx"}, NO_ENV_FILE),
             ["truthtable-dx", "truthtable", "truthtable-demo", "truthtable-e2e"],
         )
+
+    def test_the_up_project_comes_from_the_env_file_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text("COMPOSE_PROJECT_NAME=truthtable-wt\n", encoding="utf-8")
+            self.assertEqual(
+                setup_url.default_projects({}, env_file)[:2], ["truthtable-wt", "truthtable"]
+            )
+            # The process environment wins over the file, as compose reads them.
+            self.assertEqual(
+                setup_url.default_projects({"COMPOSE_PROJECT_NAME": "from-env"}, env_file)[0],
+                "from-env",
+            )
 
 
 class MintTest(unittest.TestCase):

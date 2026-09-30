@@ -129,9 +129,10 @@ def mint(projects: Sequence[str], force: bool, run: Runner) -> Minted:
     return Minted(project=None, url=None)
 
 
-def default_projects(environ: Mapping[str, str]) -> List[str]:
-    """The stacks `make setup-url` tries, the `make up` project first."""
-    first = resolve("COMPOSE_PROJECT_NAME", environ=environ) or DEFAULT_PROJECT
+def default_projects(environ: Mapping[str, str], env_file: Optional[Path] = None) -> List[str]:
+    """The stacks `make setup-url` tries, the `make up` project first (COMPOSE_PROJECT_NAME from
+    ``environ``, then ``env_file``, the repository's .env by default)."""
+    first = resolve("COMPOSE_PROJECT_NAME", env_file=env_file, environ=environ) or DEFAULT_PROJECT
     ordered = [first, DEFAULT_PROJECT, DEMO_PROJECT, E2E_PROJECT]
     return list(dict.fromkeys(ordered))
 
@@ -143,6 +144,7 @@ def main(
     environ: Optional[Mapping[str, str]] = None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
+    env_file: Optional[Path] = None,
 ) -> int:
     env = os.environ if environ is None else environ
     parser = argparse.ArgumentParser(
@@ -174,7 +176,7 @@ def main(
     parser.add_argument("--dashboard-url", help="with --open: the page to open without a token")
     args = parser.parse_args(argv)
 
-    projects = args.project or default_projects(env)
+    projects = args.project or default_projects(env, env_file)
     minted = mint(projects, args.force, run)
 
     def note(text: str) -> None:
