@@ -90,9 +90,24 @@ recording-check: ## Fail when the demo recording is stale or check_recording.py 
 test-e2e-static: ## Build the static site and run the Playwright static specs against vite preview
 	cd frontend-react && npm run build:static && PLAYWRIGHT_STATIC_PREVIEW=1 npx playwright test --project=static $(PLAYWRIGHT_ARGS)
 
+# ---------- The rest of CI's web and contract-type gates (ci-web.yml, ci-contracts.yml) ----------
+# `make check` runs eslint (lint) and vitest (test) already; this runs everything else CI does, one
+# step after another even under `make -j`: `npm run build` and `build:static` both write dist/, the
+# size budget reads the static build, and one build at a time suits a small machine.
+check-web-ci: ## CI's other web gates in order: generated types, policy validator, api.v1 schema, tsc -b, build, build-static, size, recording
+	@$(MAKE) --no-print-directory gen-types-check
+	@$(MAKE) --no-print-directory gen-policy-validator-check
+	@$(MAKE) --no-print-directory gen-api-schema-check
+	cd frontend-react && npx tsc -b
+	cd frontend-react && npm run build
+	@$(MAKE) --no-print-directory build-static
+	@$(MAKE) --no-print-directory size-landing
+	@$(MAKE) --no-print-directory recording-check
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
 install: install-react
 test: test-react
 lint: lint-react
 fmt: fmt-react
 clean: clean-react
+check: check-web-ci
