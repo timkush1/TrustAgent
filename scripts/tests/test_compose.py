@@ -180,7 +180,9 @@ class ComposeTest(unittest.TestCase):
         # Same image as the proxy (built by the proxy service, never pulled on its
         # own); its healthcheck probes its own port, not the proxy's.
         service = COMPOSE.split("\n  mock-upstream:\n", 1)[1].split("\n\n", 1)[0]
-        self.assertIn("image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}", service)
+        self.assertIn(
+            "image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}", service
+        )
         self.assertIn("pull_policy: never", service)
         self.assertIn("profiles: [e2e, load]", service)
         self.assertIn('command: ["/mock-upstream"]', service)
