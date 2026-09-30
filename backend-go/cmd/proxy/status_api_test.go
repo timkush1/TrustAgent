@@ -12,6 +12,7 @@ import (
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 )
@@ -170,6 +171,27 @@ func TestStatusShowsTheDemoCalibration(t *testing.T) {
 	}
 	if got := env.srv.calibrationState("typesafe/jev-1.13-20260917"); got != "none" {
 		t.Errorf("uncalibrated snapshot %s", got)
+	}
+
+	// The gateway's gate reads it: a gated answer's evidence checks carry the mock calibration's
+	// state (support-bot keeps raw thresholds, so nothing is calibrated and nothing changes).
+	sc := loadDemoScenarios(t)["refund-contradiction-flag"]
+	traceID := env.send(sc).Header.Get("X-TrustAgent-Trace-Id")
+	tr := env.settledTrace(traceID)
+	if len(tr.Decisions) != 1 {
+		t.Fatalf("decisions %d", len(tr.Decisions))
+	}
+	var d gate.Decision
+	if err := json.Unmarshal(tr.Decisions[0], &d); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"groundedness@1", "contradiction@1"} {
+		if e, _ := d.Evaluators.Get(ref); e == nil || e.CalibrationState != "mock" || e.Calibrated {
+			t.Errorf("%s: %+v", ref, e)
+		}
+	}
+	if d.Calibration != "none" || d.Action != "flag" {
+		t.Errorf("decision calibration %s action %s", d.Calibration, d.Action)
 	}
 }
 
