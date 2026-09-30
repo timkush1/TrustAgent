@@ -426,3 +426,98 @@ func TestRecordDecisionKeepsWhatTheClientGot(t *testing.T) {
 		t.Errorf("error-style block body %+v (%v)", gb, err)
 	}
 }
+
+func TestRecordLateDecisionReplacesItsAttemptRow(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := pendingTrace("support-bot", time.Now().UTC())
+	if err := s.StartTrace(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	// The gate timed out and passed the answer unchecked.
+	tr, dec := decided(start, "pass", "pass", "unknown", 0, []string{})
+	tr.GateStatus, dec.Status, dec.MaxRisk, dec.Verdict = "timeout", "timeout", nil, nil
+	tr.MaxRisk, tr.Verdict = nil, nil
+	if err := s.RecordDecision(ctx, tr, dec, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// The decision model answered late: the whole row is the late decision's, usage included.
+	late := *dec
+	calls, attempts, ms, cost := 1, 2, int64(3400), 0.000042
+	late.Late, late.Status, late.Action, late.WouldAction, late.Verdict = true, "ok", "flag", strp("block"), strp("contradicted")
+	risk := 0.97
+	late.MaxRisk, late.Reasons, late.Calibration = &risk, []string{"contradiction:critical"}, "all"
+	late.DecisionSnapshot, late.DecisionCalls, late.DecisionAttempts, late.DecisionMs, late.CostUSD = strp("jev-1.2"), &calls, &attempts, &ms, &cost
+	late.RequestSHA256 = []string{"abc"}
+	late.Decision = json.RawMessage(`{"spec":"decision/v1","trace_id":"` + start.TraceID + `","attempt":0,"action":"flag","late":true}`)
+	if err := s.RecordLateDecision(ctx, &late); err != nil {
+		t.Fatalf("RecordLateDecision: %v", err)
+	}
+	// Recording it again (a retried write) changes nothing more: the flag is there once.
+	if err := s.RecordLateDecision(ctx, &late); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		n                  int
+		isLate             bool
+		status, action     string
+		snapshot           *string
+		dCalls, dAttempts  *int
+		dMs                *int
+		dCost              *float64
+		reqSHA             []string
+		created, updatedAt time.Time
+	)
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) OVER (), late, status, action, decision_snapshot, decision_calls,
+		decision_attempts, decision_ms, cost_usd::float8, request_sha256, created_at, updated_at
+		FROM gate_decisions WHERE trace_id = $1`, start.TraceID).Scan(&n, &isLate, &status, &action, &snapshot, &dCalls,
+		&dAttempts, &dMs, &dCost, &reqSHA, &created, &updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || !isLate || status != "ok" || action != "flag" || *snapshot != "jev-1.2" || *dCalls != 1 || *dAttempts != 2 ||
+		*dMs != 3400 || *dCost != cost || len(reqSHA) != 1 || updatedAt.Before(created) {
+		t.Errorf("row: n %d late %v %s %s snapshot %v calls %v attempts %v ms %v cost %v sha %v", n, isLate, status, action,
+			snapshot, dCalls, dAttempts, dMs, dCost, reqSHA)
+	}
+	got, err := s.GetTrace(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *got.Action != "pass" || got.GateStatus != "timeout" || got.MaxRisk != nil {
+		t.Errorf("the trace keeps what was enforced: %v %s %v", *got.Action, got.GateStatus, got.MaxRisk)
+	}
+	if c := strings.Count(strings.Join(got.Flags, ","), "late_decision"); c != 1 {
+		t.Errorf("flags %v", got.Flags)
+	}
+	docs, _ := s.TraceDecisions(ctx, start.TraceID)
+	if len(docs) != 1 || !strings.Contains(strings.ReplaceAll(string(docs[0]), " ", ""), `"late":true`) {
+		t.Errorf("decisions %s", docs)
+	}
+
+	// A regular write of the same attempt after it never buries the late decision.
+	if err := s.RecordDecision(ctx, tr, dec, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT late, action FROM gate_decisions WHERE trace_id = $1`, start.TraceID).Scan(&isLate, &action); err != nil ||
+		!isLate || action != "flag" {
+		t.Errorf("after a regular write: late %v action %s (%v)", isLate, action, err)
+	}
+
+	// A late attempt 1 upserts its own row; it needs the late mark and a trace id.
+	one := late
+	one.Attempt = 1
+	if err := s.RecordLateDecision(ctx, &one); err != nil {
+		t.Fatal(err)
+	}
+	if docs, _ := s.TraceDecisions(ctx, start.TraceID); len(docs) != 2 {
+		t.Errorf("attempt 1: %d rows", len(docs))
+	}
+	notLate := *dec
+	if err := s.RecordLateDecision(ctx, &notLate); err == nil {
+		t.Error("RecordLateDecision accepted a decision that is not late")
+	}
+	if err := s.RecordLateDecision(ctx, nil); err == nil {
+		t.Error("RecordLateDecision accepted nil")
+	}
+}

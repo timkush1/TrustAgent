@@ -198,6 +198,9 @@ type Error struct {
 	RetryAfter time.Duration
 	// Attempts is the number of vendor requests the call made before failing.
 	Attempts int
+	// Continued is set on a timeout whose attempts go on after the caller stopped waiting:
+	// CallOptions.OnLate then receives their outcome, exactly once (SPEC §2.9 late decisions).
+	Continued bool
 }
 
 func (e *Error) Error() string {

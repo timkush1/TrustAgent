@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/store"
 )
 
@@ -82,6 +83,24 @@ func (m *memStore) RecordAttempt(_ context.Context, d *store.DecisionRecord) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.putDecision(d)
+	return nil
+}
+
+// RecordLateDecision replaces an attempt's decision with its late one and flags the trace
+// late_decision, leaving every other trace field as it was, as the Postgres store does.
+func (m *memStore) RecordLateDecision(_ context.Context, d *store.DecisionRecord) error {
+	if d == nil || d.TraceID == "" || !d.Late {
+		return errors.New("memstore: RecordLateDecision needs a late decision with a trace id")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.putDecision(d)
+	if t, ok := m.traces[d.TraceID]; ok && !slices.Contains(t.Flags, gate.FlagLateDecision) {
+		cp := *t
+		cp.Flags = append(slices.Clone(t.Flags), gate.FlagLateDecision)
+		cp.UpdatedAt = time.Now().UTC()
+		m.traces[d.TraceID] = &cp
+	}
 	return nil
 }
 

@@ -553,15 +553,18 @@ func (cl *call) leave(ctx context.Context) (*Response, error) {
 	for _, a := range cl.attempts {
 		a.late.Store(true)
 	}
+	continued := false
 	if cl.running > 0 {
 		inFlight, _ := cl.c.limiter.load()
 		if cl.opt.OnLate != nil && 2*inFlight < cl.c.cfg.MaxInFlight {
+			continued = true
 			go cl.drainLate(cl.running)
 		} else {
 			cl.cancelRunning(-1, AttemptCancelled)
 		}
 	}
-	return nil, &Error{Kind: KindTimeout, Message: "no decision before the deadline", Err: ctx.Err(), Hint: Hint(KindTimeout), Attempts: len(cl.attempts)}
+	return nil, &Error{Kind: KindTimeout, Message: "no decision before the deadline", Err: ctx.Err(), Hint: Hint(KindTimeout),
+		Attempts: len(cl.attempts), Continued: continued}
 }
 
 // drainLate waits for the n running attempts after the caller left and reports the first

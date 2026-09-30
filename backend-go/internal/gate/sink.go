@@ -15,8 +15,11 @@ import "context"
 //
 // AttemptDecided records a later attempt of the same trace (attempt 1, the fallback re-gate): its
 // gate_decisions row only, with no deep audit and no change to the trace. LateDecided records a
-// decision recomputed after a late decision-model answer: the late gate_decisions row, the trace
-// flag late_decision and a WS event; it is never enforced and never audited.
+// decision recomputed after a late decision-model answer: the late gate_decisions row of its
+// attempt, the trace flag late_decision and a WS event; it is never enforced and never audited.
+// It runs on a goroutine of its own and can arrive before GateDecided or AttemptDecided recorded
+// that attempt (a fallback call still running, say), so implementations record it after them; only
+// results with LateExpected set can get one.
 type Sink interface {
 	TraceStarted(ctx context.Context, t *TraceStart)
 	GateDecided(ctx context.Context, r *Result) string
