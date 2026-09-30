@@ -10,11 +10,14 @@
  *   route runs no deep audit (the one audit answer known up front), and Source.
  * - Otherwise the decision's headers. Action is what was delivered (the trace action), and
  *   Would-Action is sent when it differs from the decision's action.
+ * - A late decision (SPEC §2.9 "Late decisions") replaced the stored decision after the answer
+ *   went out, but not the trace: the headers are those of the check that timed out, which the
+ *   trace keeps (sentDecision).
  * - `headers: action_only` keeps only Trace-Id, Request-ID and Action.
  *
  * The stored decision does not keep the kind of a failed check, so `error:<kind>` reads `error`.
  */
-import type { GateDecisionView, TraceAuditStatus, TraceSummary } from '@/types/api';
+import type { GateDecisionView, GateStatus, TraceAuditStatus, TraceSummary } from '@/types/api';
 import { formatRisk } from './format';
 
 export type HeadersSetting = 'full' | 'action_only';
@@ -27,7 +30,24 @@ export interface ResponseHeader {
 export interface DecisionHeadersInput {
   summary: Pick<
     TraceSummary,
-    'trace_id' | 'client_request_id' | 'route' | 'policy_version' | 'source' | 'mode' | 'action' | 'skip_reason' | 'audit' | 'timings'
+    | 'trace_id'
+    | 'client_request_id'
+    | 'route'
+    | 'policy_version'
+    | 'source'
+    | 'mode'
+    | 'effective_mode'
+    | 'action'
+    | 'would_action'
+    | 'gate_status'
+    | 'skip_reason'
+    | 'verdict'
+    | 'max_risk'
+    | 'reasons'
+    | 'checked_against'
+    | 'decision_model'
+    | 'audit'
+    | 'timings'
   >;
   /** The decision on the model's answer (attempt 0); null while the gate has not decided. */
   decision: GateDecisionView | null;
@@ -72,6 +92,51 @@ export function checkedAgainstValue(decision: Pick<GateDecisionView, 'evidence_s
   return used.length === 0 ? 'none' : used.map((u) => `${u.source}:${u.items}`).join(',');
 }
 
+/** The decision fields the headers are written from. */
+export type SentDecision = Pick<
+  GateDecisionView,
+  | 'action'
+  | 'effective_mode'
+  | 'status'
+  | 'skip_reason'
+  | 'would_action'
+  | 'verdict'
+  | 'max_risk'
+  | 'calibration'
+  | 'degraded'
+  | 'reasons'
+  | 'evidence_summary'
+  | 'gate_ms'
+> & { snapshot: string | null };
+
+/**
+ * The decision the headers were written from. A late decision is the one exception: it arrived
+ * after the waiter gave up, so the answer went out with the check that timed out. The late result
+ * upserted the stored decision but left the trace alone, so the trace still holds what was sent
+ * (action, status, verdict, risk, reasons, evidence, model); a check that failed assessed nothing
+ * (Calibrated: none) and is degraded by its status (SPEC §2.9 FAIL).
+ */
+export function sentDecision(summary: DecisionHeadersInput['summary'], decision: GateDecisionView): SentDecision {
+  if (!decision.late) return { ...decision, snapshot: decision.decision_model?.snapshot ?? null };
+  const status: GateStatus = summary.gate_status === 'pending' ? 'timeout' : summary.gate_status;
+  const failed = status === 'timeout' || status === 'error';
+  return {
+    action: summary.action ?? decision.action,
+    effective_mode: summary.effective_mode ?? decision.effective_mode,
+    status,
+    skip_reason: summary.skip_reason,
+    would_action: summary.would_action,
+    verdict: summary.verdict,
+    max_risk: summary.max_risk,
+    calibration: failed ? 'none' : decision.calibration,
+    degraded: failed ? status : decision.degraded,
+    reasons: summary.reasons,
+    evidence_summary: summary.checked_against,
+    gate_ms: summary.timings.gate_ms,
+    snapshot: summary.decision_model?.snapshot ?? null,
+  };
+}
+
 /** Whether the answer went out before its check (the observe path of SPEC §2.12). */
 export function deferredHeaders(summary: DecisionHeadersInput['summary'], decision: GateDecisionView | null): boolean {
   if (summary.mode !== 'observe') return false;
@@ -103,21 +168,22 @@ export function decisionHeaders({ summary, decision, headers }: DecisionHeadersI
     return out;
   }
   if (!decision) return out;
+  const d = sentDecision(summary, decision);
 
-  set('X-TrustAgent-Action', summary.action ?? decision.action);
+  set('X-TrustAgent-Action', summary.action ?? d.action);
   if (actionOnly) return out;
   set('X-TrustAgent-Route', routeLabel);
-  set('X-TrustAgent-Mode', decision.effective_mode);
-  set('X-TrustAgent-Status', statusHeaderValue(decision));
-  if (decision.would_action && decision.would_action !== decision.action) set('X-TrustAgent-Would-Action', decision.would_action);
-  set('X-TrustAgent-Verdict', decision.verdict);
-  if (decision.max_risk !== null) set('X-TrustAgent-Risk', formatRisk(decision.max_risk));
-  set('X-TrustAgent-Calibrated', decision.calibration);
-  set('X-TrustAgent-Degraded', decision.degraded);
-  set('X-TrustAgent-Reasons', decision.reasons.slice(0, MAX_HEADER_REASONS).join(','));
-  set('X-TrustAgent-Checked-Against', checkedAgainstValue(decision));
-  set('X-TrustAgent-Decision-Model', decision.decision_model?.snapshot);
-  set('X-TrustAgent-Gate-Ms', decision.gate_ms);
+  set('X-TrustAgent-Mode', d.effective_mode);
+  set('X-TrustAgent-Status', statusHeaderValue(d));
+  if (d.would_action && d.would_action !== d.action) set('X-TrustAgent-Would-Action', d.would_action);
+  set('X-TrustAgent-Verdict', d.verdict);
+  if (d.max_risk !== null) set('X-TrustAgent-Risk', formatRisk(d.max_risk));
+  set('X-TrustAgent-Calibrated', d.calibration);
+  set('X-TrustAgent-Degraded', d.degraded);
+  set('X-TrustAgent-Reasons', d.reasons.slice(0, MAX_HEADER_REASONS).join(','));
+  set('X-TrustAgent-Checked-Against', checkedAgainstValue(d));
+  set('X-TrustAgent-Decision-Model', d.snapshot);
+  set('X-TrustAgent-Gate-Ms', d.gate_ms);
   set('X-TrustAgent-Overhead-Ms', summary.timings.overhead_ms);
   set('X-TrustAgent-Audit', auditHeaderValue(summary.audit.status));
   set('X-TrustAgent-Source', source);

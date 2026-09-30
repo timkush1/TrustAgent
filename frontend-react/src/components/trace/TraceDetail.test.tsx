@@ -265,6 +265,22 @@ describe('Trace detail: Details', () => {
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
 
+  it('shows the timed-out check\'s headers when the decision arrived late', async () => {
+    const detail = p3Detail('help-center-link-block');
+    // The check timed out (the trace keeps that); its result upserted the decision afterwards.
+    const late = { ...detail, gate_status: 'timeout' as const, verdict: null, max_risk: null, decisions: [{ ...detail.decisions[0], late: true }] };
+    const { container } = renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: late } }));
+    await screen.findByRole('region', { name: 'Outcome' });
+    const details = await openDetails(container);
+    expect(within(details).getByText(copy.trace.headers_late)).toBeInTheDocument();
+    const headers = within(details).getByRole('region', { name: /^\d+ headers$/ });
+    expect(headers).toHaveTextContent('X-TrustAgent-Status: timeout');
+    expect(headers).toHaveTextContent('X-TrustAgent-Degraded: timeout');
+    expect(headers).not.toHaveTextContent('X-TrustAgent-Verdict');
+    // The checks still show the late result, said to be late.
+    expect(within(region('Checks')).getByTestId('late-decision')).toBeInTheDocument();
+  });
+
   it('shows only the action when the route sends headers: action_only', async () => {
     const detail = p3Detail('help-center-link-block');
     const policyVersion = {

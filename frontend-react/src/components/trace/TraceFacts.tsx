@@ -92,6 +92,7 @@ function ResponseHeaders({ summary, decision, open }: { summary: TraceSummary; d
   const notes = [copy.trace.headers_description];
   if (setting === 'action_only') notes.push(copy.trace.headers_action_only);
   if (setting === null && summary.policy_version !== null) notes.push(copy.trace.headers_setting_unknown);
+  if (decision?.late && setting !== 'action_only') notes.push(copy.trace.headers_late);
   if (summary.stream && !deferredHeaders(summary, decision)) notes.push(copy.trace.headers_stream);
   return (
     <Subsection title={copy.trace.headers_title}>

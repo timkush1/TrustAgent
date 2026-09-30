@@ -143,6 +143,7 @@
       "headers_action_only": "This route sends only the action (headers: action_only).",
       "headers_setting_unknown": "Shown with every header: this request's policy version could not be read to check the route's headers setting.",
       "headers_stream": "A streamed answer carries the decision headers as trailers and a stream comment when the route passes streams straight through.",
+      "headers_late": "The fast check answered after the answer was sent, so these are the headers of the check that timed out, as the trace recorded them.",
       "flags_title": "Flags",
       "attempts_title": "Fast check by attempt",
       "attempt_answer": "Your model's answer",

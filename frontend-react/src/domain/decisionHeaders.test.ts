@@ -66,6 +66,41 @@ describe('decisionHeaders', () => {
     expect(h['X-TrustAgent-Audit']).toBe('queued');
   });
 
+  it('writes the headers of the check that timed out when its decision arrived late', () => {
+    // The trace keeps what was sent: a timeout that failed open on a flag route, flagged by a
+    // detector. The late decision upserted the stored row with the model's full verdict.
+    const decided = s0Trace(REFUND, 'decided');
+    const summary = {
+      ...decided,
+      action: 'flag' as const,
+      would_action: 'flag' as const,
+      gate_status: 'timeout' as const,
+      verdict: null,
+      max_risk: null,
+      reasons: ['det:numbers_not_in_evidence'],
+      decision_model: { backend: 'mock' as const, snapshot: null, cost_usd: null },
+      timings: { ...decided.timings, gate_ms: 1500 },
+    };
+    const late = { ...s0Decision(REFUND), late: true };
+    const h = asRecord(decisionHeaders({ summary, decision: late }));
+    expect(h).toMatchObject({
+      'X-TrustAgent-Action': 'flag',
+      'X-TrustAgent-Mode': 'flag',
+      'X-TrustAgent-Status': 'timeout',
+      'X-TrustAgent-Calibrated': 'none',
+      'X-TrustAgent-Degraded': 'timeout',
+      'X-TrustAgent-Reasons': 'det:numbers_not_in_evidence',
+      'X-TrustAgent-Checked-Against': 'request_system:1',
+      'X-TrustAgent-Gate-Ms': '1500',
+    });
+    // Nothing of the late result was sent: no verdict, risk, model or would-block.
+    for (const name of ['X-TrustAgent-Verdict', 'X-TrustAgent-Risk', 'X-TrustAgent-Decision-Model', 'X-TrustAgent-Would-Action']) {
+      expect(h[name], name).toBeUndefined();
+    }
+    // An on-time decision is written as it is.
+    expect(asRecord(decisionHeaders({ summary: decided, decision: s0Decision(REFUND) }))['X-TrustAgent-Verdict']).toBe('contradicted');
+  });
+
   it('keeps only the trace ids and the action with headers: action_only', () => {
     const detail = p3Detail('help-center-link-block');
     const headers = decisionHeaders({ summary: detail, decision: detail.decisions[0], headers: 'action_only' });
