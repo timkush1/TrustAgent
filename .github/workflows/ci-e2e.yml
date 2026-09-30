@@ -39,9 +39,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Same pins as ci-python.yml; the settings come from the engine's pyproject.
-      - name: Install linters
-        run: pip install ruff==0.1.15 black==23.12.1
+      # Same pins as ci-python.yml; the settings come from the engine's pyproject. PyYAML and
+      # jsonschema let the tests validate the load policy and the recording against contracts/.
+      - name: Install linters and test dependencies
+        run: pip install ruff==0.1.15 black==23.12.1 pyyaml==6.0.2 jsonschema==4.26.0
 
       - name: ruff
         run: ruff check --config backend-python/pyproject.toml scripts
@@ -52,7 +53,7 @@ jobs:
       - name: Unit tests (scripts/tests)
         run: python -m unittest discover -s scripts/tests -v
 
-      - name: Compose files (every profile and the demo override)
+      - name: Compose files (every profile and the demo, e2e and load overrides)
         run: make compose-check
 
   e2e:
