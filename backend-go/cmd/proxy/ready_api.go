@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,11 @@ const (
 // readyTimeout bounds the database ping of one readiness check.
 const readyTimeout = 2 * time.Second
 
+// readyProbeTTL is how long one database probe answers readiness checks. The endpoint is public
+// and unauthenticated, so however often it is called it costs the database at most one probe per
+// interval, and concurrent checks share the probe in flight.
+const readyProbeTTL = time.Second
+
 // readyStatus is api.ts ReadyStatus (GET /health/ready, SPEC §2.4 endpoint 2): the overall state
 // and every component's state as a ComponentStateName.
 type readyStatus struct {
@@ -27,10 +33,21 @@ type readyStatus struct {
 	Components map[string]string `json:"components"`
 }
 
-// handleReady serves GET /health/ready (public). It reads the same cached component state as
-// GET /api/status (statusReporter), plus one database ping, and never runs the status aggregates:
-// the endpoint is unauthenticated. strict=1 answers 503 unless every component is ready.
-func (s *server) handleReady(c *gin.Context) {
+// readyAPI serves GET /health/ready (public, SPEC §2.4 endpoint 2). It reads the same cached
+// component state as GET /api/status (statusReporter), plus the database probe it shares across
+// checks for readyProbeTTL, and never runs the status aggregates: the endpoint is unauthenticated.
+type readyAPI struct {
+	s   *server
+	now func() time.Time
+
+	// mu serializes the database probe; probedAt and database are the last probe's time and state.
+	mu       sync.Mutex
+	probedAt time.Time
+	database string
+}
+
+// handle serves GET /health/ready. strict=1 answers 503 unless every component is ready.
+func (a *readyAPI) handle(c *gin.Context) {
 	strict := false
 	switch c.Query("strict") {
 	case "", "0", "false":
@@ -40,9 +57,7 @@ func (s *server) handleReady(c *gin.Context) {
 		badParam(c, "strict", "must be 1 or 0")
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), readyTimeout)
-	defer cancel()
-	r := s.readiness(ctx)
+	r := a.readiness()
 	code := http.StatusOK
 	if strict && r.Status != readyReady {
 		code = http.StatusServiceUnavailable
@@ -52,14 +67,14 @@ func (s *server) handleReady(c *gin.Context) {
 }
 
 // readiness maps the status reporter's view of each dependency onto ReadyStatus.
-func (s *server) readiness(ctx context.Context) readyStatus {
-	st := s.status
+func (a *readyAPI) readiness() readyStatus {
+	st := a.s.status
 	eng := st.engineHealth()
 	dm := st.decisionModel().State
 	components := map[string]string{
 		"proxy":          stateUp,
 		"policy":         policyComponent(st.policyStatus()),
-		"database":       st.persistence(ctx).State,
+		"database":       a.databaseState(),
 		"engine":         eng.State,
 		"judge":          judgeState(eng),
 		"decision_model": decisionModelComponent(dm),
@@ -67,6 +82,21 @@ func (s *server) readiness(ctx context.Context) readyStatus {
 		"redis":          st.redisState,
 	}
 	return readyStatus{Status: overallReadiness(components, dm), Components: components}
+}
+
+// databaseState is the persistence state GET /api/status reports, probed at most once per
+// readyProbeTTL. The probe runs on its own deadline, so a caller that hangs up cannot leave a
+// cancelled ping cached as a database that is down.
+func (a *readyAPI) databaseState() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.database != "" && a.now().Sub(a.probedAt) < readyProbeTTL {
+		return a.database
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), readyTimeout)
+	defer cancel()
+	a.database, a.probedAt = a.s.status.persistence(ctx).State, a.now()
+	return a.database
 }
 
 // policyComponent is up while the policy file agrees with the policy in effect (or was

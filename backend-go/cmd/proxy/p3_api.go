@@ -12,7 +12,8 @@ import (
 // 15).
 func (s *server) mountP3API(r *gin.Engine, api *gin.RouterGroup, guards apiGuards) {
 	// Public readiness (row 2): component states only, never the status aggregates.
-	r.GET("/health/ready", s.handleReady)
+	ready := &readyAPI{s: s, now: time.Now}
+	r.GET("/health/ready", ready.handle)
 
 	// POST /api/audit (row 15, mounted with the audit reads) refuses audits the engine cannot
 	// judge: 503 no_judge.

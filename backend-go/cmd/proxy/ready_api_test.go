@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/truthtable/backend-go/internal/contractstest"
 )
@@ -16,6 +19,21 @@ const schemaReady = "api.v1.schema.json#/$defs/ReadyStatus"
 type pingFailStore struct{ *memStore }
 
 func (pingFailStore) Ping(context.Context) error { return errors.New("connection refused") }
+
+// pingCountStore is a store that counts database pings and fails them on demand.
+type pingCountStore struct {
+	*memStore
+	pings *atomic.Int32
+	fail  *atomic.Bool
+}
+
+func (p pingCountStore) Ping(context.Context) error {
+	p.pings.Add(1)
+	if p.fail.Load() {
+		return errors.New("connection refused")
+	}
+	return nil
+}
 
 func getReady(t *testing.T, env *testEnv, query string) (int, readyStatus) {
 	t.Helper()
@@ -121,5 +139,40 @@ func TestReadinessMapping(t *testing.T) {
 		if got := policyComponent(statusPolicy{FileStatus: status}); got != want {
 			t.Errorf("policy file %s -> %s, want %s", status, got, want)
 		}
+	}
+}
+
+// TestReadySharesTheDatabaseProbe: the public endpoint costs the database one probe per
+// readyProbeTTL however many checks arrive, concurrent ones included; an older probe is repeated.
+func TestReadySharesTheDatabaseProbe(t *testing.T) {
+	st := pingCountStore{memStore: newMemStore(), pings: new(atomic.Int32), fail: new(atomic.Bool)}
+	env := newTestEnv(t, envOpts{store: st})
+	now := time.Now()
+	a := &readyAPI{s: env.srv, now: func() time.Time { return now }}
+	base := st.pings.Load()
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got := a.readiness().Components["database"]; got != stateUp {
+				t.Errorf("database %q", got)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := st.pings.Load() - base; n != 1 {
+		t.Fatalf("20 checks pinged the database %d times, want 1", n)
+	}
+	st.fail.Store(true)
+	if got := a.databaseState(); got != stateUp {
+		t.Errorf("within the probe's lifetime: %q, want the cached up", got)
+	}
+	now = now.Add(readyProbeTTL)
+	if got := a.databaseState(); got != stateDown {
+		t.Errorf("after the probe's lifetime: %q, want down", got)
+	}
+	if n := st.pings.Load() - base; n != 2 {
+		t.Errorf("%d pings, want 2", n)
 	}
 }
