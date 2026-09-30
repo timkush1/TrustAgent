@@ -63,6 +63,10 @@ func (m *memStore) RecordDecision(_ context.Context, t *store.TraceRecord, d *st
 			cp.QuestionPreview = old.QuestionPreview
 		}
 		cp.CreatedAt = old.CreatedAt
+		// A late decision recorded before this write keeps its flag, as in the Postgres store.
+		if slices.Contains(old.Flags, gate.FlagLateDecision) && !slices.Contains(cp.Flags, gate.FlagLateDecision) {
+			cp.Flags = append(slices.Clone(cp.Flags), gate.FlagLateDecision)
+		}
 	} else {
 		m.order = append(m.order, t.TraceID)
 	}

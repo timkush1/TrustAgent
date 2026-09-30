@@ -503,6 +503,41 @@ func TestRecordLateDecisionReplacesItsAttemptRow(t *testing.T) {
 		!isLate || action != "flag" {
 		t.Errorf("after a regular write: late %v action %s (%v)", isLate, action, err)
 	}
+	// Nor does it drop the trace's late_decision flag.
+	if got, err := s.GetTrace(ctx, start.TraceID); err != nil {
+		t.Fatal(err)
+	} else if !containsString(got.Flags, "late_decision") {
+		t.Errorf("after a regular write: flags %v", got.Flags)
+	}
+
+	// The fallback records attempt 1 before the trace write of attempt 0: a late decision of
+	// attempt 1 recorded in between keeps its flag through that write.
+	fb := pendingTrace("support-bot", time.Now().UTC())
+	if err := s.StartTrace(ctx, fb); err != nil {
+		t.Fatal(err)
+	}
+	fbTrace, fbDec := decided(fb, "fallback", "block", "contradicted", 0.9, []string{"contradiction:critical"})
+	fbTrace.Flags = append(fbTrace.Flags, "fallback_used")
+	regate := *fbDec
+	regate.Attempt, regate.Status, regate.Action = 1, "timeout", "pass"
+	if err := s.RecordAttempt(ctx, &regate); err != nil {
+		t.Fatal(err)
+	}
+	lateRegate := regate
+	lateRegate.Late, lateRegate.Status = true, "ok"
+	if err := s.RecordLateDecision(ctx, &lateRegate); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordDecision(ctx, fbTrace, fbDec, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetTrace(ctx, fb.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(got.Flags, "late_decision") || !containsString(got.Flags, "fallback_used") || *got.Action != "fallback" {
+		t.Errorf("attempt 1 late before attempt 0: flags %v action %v", got.Flags, *got.Action)
+	}
 
 	// A late attempt 1 upserts its own row; it needs the late mark and a trace id.
 	one := late

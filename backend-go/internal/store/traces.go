@@ -382,7 +382,8 @@ const traceInsertCount = 41
 
 // traceDecisionUpdate updates a stored trace with a decided one. The gate outcome, the reasons,
 // the audit status and the flags are the decision's; everything else keeps a stored value the
-// decision does not have.
+// decision does not have. A late_decision flag already stored stays (RecordLateDecision): the
+// late decision of the fallback's attempt 1 can be recorded before the trace write of attempt 0.
 const traceDecisionUpdate = `
 	effective_mode = COALESCE(EXCLUDED.effective_mode, traces.effective_mode),
 	model = COALESCE(EXCLUDED.model, traces.model),
@@ -412,7 +413,8 @@ const traceDecisionUpdate = `
 	audit_selection = COALESCE(EXCLUDED.audit_selection, traces.audit_selection),
 	question_preview = COALESCE(EXCLUDED.question_preview, traces.question_preview),
 	response_preview = COALESCE(EXCLUDED.response_preview, traces.response_preview),
-	flags = EXCLUDED.flags,
+	flags = CASE WHEN 'late_decision' = ANY(traces.flags) AND NOT ('late_decision' = ANY(EXCLUDED.flags))
+		THEN array_append(EXCLUDED.flags, 'late_decision') ELSE EXCLUDED.flags END,
 	updated_at = now()`
 
 func traceInsertArgs(t *TraceRecord) []any {
