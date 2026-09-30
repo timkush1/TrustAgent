@@ -25,8 +25,10 @@ type StatsFilter struct {
 const mockTraceSQL = `(t.source = 'test' OR COALESCE(t.decision_backend, '') = 'mock'
 	OR t.flags && ARRAY['mock_decision','mock_judge','test_mode']::TEXT[])`
 
-// traceWhere is the WHERE clause of a traces row aliased t, over the arguments of args.
-const traceWhere = `t.created_at >= $1 AND t.created_at < $2 AND ($3 = '' OR t.route = $3) AND ($4::BOOLEAN OR NOT ` + mockTraceSQL + `)`
+// traceWhere is the WHERE clause of a traces row aliased t, over the arguments of args. The
+// aggregates are about gateway traffic: the trace a direct audit (POST /api/audit, source direct)
+// records is not a gateway request, and neither is its audit.
+const traceWhere = `t.created_at >= $1 AND t.created_at < $2 AND t.source <> 'direct' AND ($3 = '' OR t.route = $3) AND ($4::BOOLEAN OR NOT ` + mockTraceSQL + `)`
 
 func (f StatsFilter) args(extra ...any) []any {
 	return append([]any{f.From, f.To, f.Route, f.IncludeMock}, extra...)

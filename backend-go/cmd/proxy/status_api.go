@@ -431,10 +431,19 @@ func verifierStatus(h grpc.EngineHealth) statusVerifier {
 	return v
 }
 
+// knowledgeStatus is SystemStatus.knowledge from the engine's health: disabled without an engine
+// or when the engine runs without the knowledge add-on, unknown while the engine does not answer
+// (it may have the add-on), else up, or down when it cannot reach its Qdrant store.
 func knowledgeStatus(h grpc.EngineHealth) statusKnowledge {
 	k := statusKnowledge{componentState: componentState{State: stateDisabled}}
 	r := h.Response
-	if r == nil || !r.GetKnowledgeEnabled() {
+	switch {
+	case h.State == stateDisabled:
+		return k
+	case r == nil:
+		k.State = stateUnknown
+		return k
+	case !r.GetKnowledgeEnabled():
 		return k
 	}
 	k.Enabled = true
@@ -494,15 +503,28 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 // budgets is SystemStatus.budgets: the decision cap and today's spend from the decision-model
 // client's budget (in memory until the persisted ledger, P4). The LLM cap is enforced by the
 // engine; its spend today is read from cost_events when there is a database (system).
+//
+// The decision budget is exhausted once the day's spend reaches the cap, and reserve_only from the
+// soft cap, (1 − SPEND_ENFORCING_RESERVE)·cap, where observe and flag calls stop while enforcing
+// routes still spend the reserve; the WS budget status says the same. jev.SpendStatus.Exhausted
+// is already true at the soft cap (it answers whether a non-enforcing call may spend).
 func (s *statusReporter) budgets() statusBudgets {
 	b := statusBudgets{DecisionUSDDay: s.cfg.SpendCapDecisionUSDDay, LLMUSDDay: s.cfg.SpendCapLLMUSDDay}
 	if sp := s.jevStatus().Spend; sp != nil {
 		b.DecisionSpentTodayUSD = sp.SpentUSD
-		b.DecisionExhausted = sp.Exhausted
-		b.DecisionReserveOnly = !sp.Exhausted && sp.SoftCapUSD > 0 && sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD
+		if sp.CapUSD > 0 {
+			b.DecisionExhausted = sp.SpentUSD >= sp.CapUSD-spendEps
+		} else {
+			b.DecisionExhausted = sp.Exhausted
+		}
+		b.DecisionReserveOnly = !b.DecisionExhausted && sp.CapUSD > 0 && sp.SoftCapUSD < sp.CapUSD-spendEps &&
+			(sp.Exhausted || sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD-spendEps)
 	}
 	return b
 }
+
+// spendEps absorbs float rounding in the spend comparisons (jev's budget epsilon).
+const spendEps = 1e-8
 
 // policyStatus is SystemStatus.policy from the policy engine: the version in effect, where it came
 // from, whether dashboard edits are possible and the state of the policy file.

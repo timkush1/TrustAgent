@@ -264,3 +264,43 @@ func TestCalibrationSettings(t *testing.T) {
 		t.Errorf("loaded: %q %v", got, family)
 	}
 }
+
+func TestBudgetStatesMatchTheCap(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		sp                  jev.SpendStatus
+		exhausted, reserved bool
+	}{
+		{"under the soft cap", jev.SpendStatus{SpentUSD: 1, CapUSD: 2, SoftCapUSD: 1.5}, false, false},
+		// jev reports Exhausted from the soft cap on: only observe and flag calls stop there.
+		{"between the soft cap and the cap", jev.SpendStatus{SpentUSD: 1.6, CapUSD: 2, SoftCapUSD: 1.5, Exhausted: true}, false, true},
+		{"held past the soft cap", jev.SpendStatus{SpentUSD: 1.4, ReservedUSD: 0.2, CapUSD: 2, SoftCapUSD: 1.5}, false, true},
+		{"at the cap", jev.SpendStatus{SpentUSD: 2, CapUSD: 2, SoftCapUSD: 1.5, Exhausted: true}, true, false},
+		{"no reserve", jev.SpendStatus{SpentUSD: 1.9, CapUSD: 2, SoftCapUSD: 2}, false, false},
+		{"no cap", jev.SpendStatus{SpentUSD: 9}, false, false},
+	} {
+		st := jev.Status{Info: jev.Info{Backend: jev.BackendOpenRouterDecisions}, Spend: &tc.sp}
+		s := &statusReporter{cfg: &config.Config{SpendCapDecisionUSDDay: tc.sp.CapUSD}, jev: st.Info, jevClient: fakeStatusJev{st: st}, now: time.Now}
+		if b := s.budgets(); b.DecisionExhausted != tc.exhausted || b.DecisionReserveOnly != tc.reserved {
+			t.Errorf("%s: exhausted %v reserve_only %v, want %v %v", tc.name, b.DecisionExhausted, b.DecisionReserveOnly, tc.exhausted, tc.reserved)
+		}
+	}
+}
+
+func TestKnowledgeStatusWhileTheEngineIsSilent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    grpc.EngineHealth
+		want string
+	}{
+		{"no engine", grpc.EngineHealth{State: stateDisabled}, stateDisabled},
+		{"not checked yet", grpc.EngineHealth{State: grpc.StateUnknown}, stateUnknown},
+		{"down", grpc.EngineHealth{State: grpc.StateDown}, stateUnknown},
+		{"without the add-on", grpc.EngineHealth{State: grpc.StateUp, Response: &pb.HealthResponse{Healthy: true}}, stateDisabled},
+		{"with the add-on", grpc.EngineHealth{State: grpc.StateUp, Response: &pb.HealthResponse{Healthy: true, KnowledgeEnabled: true}}, stateUp},
+	} {
+		if k := knowledgeStatus(tc.h); k.State != tc.want {
+			t.Errorf("%s: knowledge %s, want %s", tc.name, k.State, tc.want)
+		}
+	}
+}
