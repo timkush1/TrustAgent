@@ -223,7 +223,7 @@ func TestP3FormatScenariosEndToEnd(t *testing.T) {
 	env := newScenarioEnv(t, func(cfg *config.Config) {
 		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
 		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
-		cfg.UpstreamURL = upstream.URL
+		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
 	})
 	runScenarioIDs(t, env, p3FormatScenarios, "--upstream", "all")
 	paths := map[string]int{}
@@ -317,7 +317,7 @@ func TestE2EScenariosAgainstMockUpstream(t *testing.T) {
 	env := newScenarioEnv(t, func(cfg *config.Config) {
 		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
 		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
-		cfg.UpstreamURL = upstream.URL
+		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
 	})
 	runScenarios(t, env, "e2e", "--upstream", "all")
 
