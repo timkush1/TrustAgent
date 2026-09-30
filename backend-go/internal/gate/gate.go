@@ -195,8 +195,11 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	uniform := !x.NoAudit && x.AuditSelection == "" && route.DeepAudit.Enabled && hasText &&
 		route.DeepAudit.UniformSampleRate > 0 && g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
 
+	// Observe routes decide by sample_rate whether the decision model is asked at all. A run
+	// whose audit is chosen already (a Playground run, D27) is always checked: it takes no draw.
 	skip := x.SkipReason
-	if skip == "" && mode == decision.ModeObserve && route.SampleRate < 1 && g.cfg.Rand() >= route.SampleRate {
+	if skip == "" && x.AuditSelection == "" && mode == decision.ModeObserve && route.SampleRate < 1 &&
+		g.cfg.Rand() >= route.SampleRate {
 		skip = SkipSampledOut
 	}
 

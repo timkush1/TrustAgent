@@ -182,3 +182,37 @@ func TestKnowledgeOnlyCapsGrounding(t *testing.T) {
 	}
 	contractstest.Validate(t, "decision.v1.schema.json", r.Decision)
 }
+
+func TestPlaygroundRunIsNeverSampledOut(t *testing.T) {
+	// D27: an observe route that samples half its traffic still checks every Playground run.
+	doc := []byte("version: 1\ndefaults:\n  sample_rate: 0.5\n")
+	p, err := policy.Parse(doc, policy.DefaultSeeds(), registry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl := strictMock(t, 0)
+	x := exchange(t, p, nil, []byte(defaultRouteBody), "Within 4 hours.", "")
+	x.AuditSelection = SelectionPlayground
+	r := newGate(t, &countingJev{Client: jevHash(t)}, seq(0.99, 0.99)).Evaluate(context.Background(), x)
+	if r.Status == "skipped:sampled_out" || r.Decision.SkipReason != nil {
+		t.Errorf("a Playground run was sampled out: status %s", r.Status)
+	}
+	if r.Audit.Selection != SelectionPlayground {
+		t.Errorf("audit %+v", r.Audit)
+	}
+	// The same draw samples an ordinary request out.
+	x = exchange(t, p, nil, []byte(defaultRouteBody), "Within 4 hours.", "")
+	if r := newGate(t, cl, seq(0.99, 0.99)).Evaluate(context.Background(), x); r.Status != "skipped:sampled_out" {
+		t.Errorf("an ordinary request: status %s", r.Status)
+	}
+}
+
+// jevHash is the mock decision model answering every question from a hash of the request.
+func jevHash(t *testing.T) jev.Client {
+	t.Helper()
+	cl, err := jev.New(jev.Config{Backend: jev.BackendMock, Mock: jev.MockConfig{Mode: jev.MockHash}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cl
+}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -43,19 +42,11 @@ func (s *server) initCalibration() {
 }
 
 // calibrationSettings are TRUTHTABLE_CALIBRATION_DIR and TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK as
-// the configuration loaded them. A relative directory that does not exist from the working
-// directory resolves against the repository root, as config's repopath keys do, so a host run
-// from backend-go finds config/calibration. A configuration built without the loader has none.
+// the configuration loaded them. The loader resolves a relative directory that does not exist from
+// the working directory against the repository root (a repopath key), so a host run from
+// backend-go finds config/calibration. A configuration built without the loader has none.
 func calibrationSettings(cfg *config.Config) (dir string, familyFallback bool) {
-	for _, e := range cfg.Entries() {
-		switch e.Key.Name {
-		case "TRUTHTABLE_CALIBRATION_DIR":
-			dir = config.RepoPath(e.Value)
-		case "TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK":
-			familyFallback, _ = strconv.ParseBool(e.Value)
-		}
-	}
-	return dir, familyFallback
+	return cfg.CalibrationDir, cfg.CalibrationFamilyFallback
 }
 
 // allowMockCalibration reports whether mock calibrations load: only where the mock decision model
