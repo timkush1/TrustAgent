@@ -77,6 +77,7 @@ func (s *traceSink) TraceStarted(ctx context.Context, t *gate.TraceStart) {
 		Trace store.TraceSummary `json:"trace"`
 	}
 	s.publish("trace_started", t.TraceID, payload{sum}, payload{sum.Redact()})
+	s.waiters.started(t.TraceID, t.KeyLabel)
 }
 
 // GateDecided records and broadcasts a decided trace, then submits its deep audit. It returns
@@ -118,6 +119,7 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	}
 	s.publish("gate_decision", r.Trace.TraceID, payload{sum, decisionJSON},
 		payload{sum.Redact(), store.RedactDecision(decisionJSON)})
+	s.waiters.decided(r.Trace.TraceID, r.Trace.KeyLabel, r.Headers, decisionJSON)
 	if r.LateExpected {
 		s.attemptRecorded(r, &sum)
 	}
@@ -218,6 +220,7 @@ func (s *traceSink) recordLate(ctx context.Context, r *gate.Result, sum *store.T
 	if d.Attempt != 0 {
 		return
 	}
+	s.waiters.decided(d.TraceID, r.Trace.KeyLabel, r.Headers, doc)
 	var view store.TraceSummary
 	switch rec, err := s.storedTrace(ctx, d.TraceID); {
 	case err == nil:
