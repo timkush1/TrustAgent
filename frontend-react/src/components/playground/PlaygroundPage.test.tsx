@@ -7,6 +7,7 @@ import { playgroundResult } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
+import { p3Detail } from '@/test/p3Fixtures';
 import { stopLive } from '@/test/renderLive';
 import { s0Decision, s0Trace } from '@/test/scenarios';
 import { buildRequest, EXAMPLES, formProblem, INITIAL_FORM } from './playgroundModel';
@@ -149,16 +150,82 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(await screen.findByText('Hallucinated')).toBeInTheDocument();
   });
 
-  it('shows what the app received instead when the answer was replaced', async () => {
+  it('shows the fallback answer the app received in place of the model\'s, and the headers it got', async () => {
     const user = userEvent.setup();
-    const control = createControlApi({
-      playground: playgroundResult({ delivered_text: "I can't confirm that from our policy documents." }),
+    // payments-fallback on a P3 proxy: the contradicted answer was replaced by a checked fallback.
+    const decision = p3Detail('payments-fallback').decisions[0];
+    const result = playgroundResult({
+      trace_id: decision.trace_id,
+      response_text: 'The money will be back on your card within 2 business days.',
+      delivered_text: 'Approved refunds go back to your original payment method within 5 to 10 business days.',
+      decision,
+      headers: {
+        'X-TrustAgent-Trace-Id': decision.trace_id,
+        'X-Request-ID': decision.trace_id,
+        'X-TrustAgent-Action': 'fallback',
+        'X-TrustAgent-Would-Action': 'block',
+        'X-TrustAgent-Status': 'ok',
+        'X-TrustAgent-Source': 'playground',
+      },
     });
-    renderPage('/app/playground', { control });
+    renderPage('/app/playground', { control: createControlApi({ playground: result }) });
     await fillChat(user);
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
-    expect(await screen.findByText('Your app received instead')).toBeInTheDocument();
-    expect(screen.getByText("I can't confirm that from our policy documents.")).toBeInTheDocument();
+    const timeline = await screen.findByRole('list', { name: 'What happened to the request' });
+    expect(await within(timeline).findByText('Your app received a fallback answer instead')).toBeInTheDocument();
+    expect(within(timeline).getByText(result.delivered_text)).toBeInTheDocument();
+    expect(within(timeline).getByText('Replaced')).toBeInTheDocument();
+    await user.click(within(timeline).getByText('Response headers your app saw'));
+    const headers = within(timeline).getByRole('region', { name: '6 headers' });
+    expect(headers).toHaveTextContent('X-TrustAgent-Action: fallback');
+    expect(headers).toHaveTextContent(`X-Request-ID: ${decision.trace_id}`);
+  });
+
+  it('shows the block message the app received in place of a blocked answer', async () => {
+    const user = userEvent.setup();
+    const decision = p3Detail('help-center-link-block').decisions[0];
+    const result = playgroundResult({
+      trace_id: decision.trace_id,
+      response_text: 'Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.',
+      delivered_text: "I can't verify that answer against our help articles, so I've held it back.",
+      decision,
+      headers: { 'X-TrustAgent-Action': 'block', 'X-TrustAgent-Status': 'ok' },
+    });
+    renderPage('/app/playground', { control: createControlApi({ playground: result }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    expect(await screen.findByText('Your app received the block message instead')).toBeInTheDocument();
+    expect(screen.getByText(result.delivered_text)).toBeInTheDocument();
+    expect(screen.getByText('Blocked')).toBeInTheDocument();
+  });
+
+  it('shows a failed fallback as the block the app received', async () => {
+    const user = userEvent.setup();
+    const decision = p3Detail('payments-fallback').decisions[0];
+    const result = playgroundResult({
+      trace_id: decision.trace_id,
+      response_text: 'The money will be back on your card within 2 business days.',
+      delivered_text: "I can't confirm that from our policy documents. A person will follow up.",
+      decision,
+      headers: { 'X-TrustAgent-Action': 'block', 'X-TrustAgent-Would-Action': 'block', 'X-TrustAgent-Status': 'ok' },
+    });
+    renderPage('/app/playground', { control: createControlApi({ playground: result }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    const timeline = await screen.findByRole('list', { name: 'What happened to the request' });
+    expect(await within(timeline).findByText('Your app received the block message instead')).toBeInTheDocument();
+    expect(within(timeline).getByText('Blocked')).toBeInTheDocument();
+    expect(within(timeline).queryByText('Replaced')).toBeNull();
+  });
+
+  it('shows the answer once when the app received it as the model wrote it', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/playground');
+    await fillChat(user);
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    const timeline = await screen.findByRole('list', { name: 'What happened to the request' });
+    expect(await within(timeline).findAllByText(playgroundResult().delivered_text)).toHaveLength(1);
+    expect(within(timeline).queryByText(/instead$/)).toBeNull();
   });
 
   it('streams tokens, then the decision and the result', async () => {
@@ -270,18 +337,20 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(await screen.findByRole('link', { name: 'Open Connections' })).toBeInTheDocument();
   });
 
-  it('degrades when this proxy does not serve runs, and says why Run is then off', async () => {
+  it('degrades on an older proxy that does not serve runs, and says why Run is then off', async () => {
     const user = userEvent.setup();
     const control = createControlApi({ playground: errorReply(404, 'not_found', 'No endpoint here: POST /api/playground/run.') });
     renderPage('/app/playground', { control });
     await fillChat(user);
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
-    expect(await screen.findByText('This proxy does not run Playground requests yet')).toBeInTheDocument();
+    expect(await screen.findByText('This proxy does not run Playground requests')).toBeInTheDocument();
+    expect(screen.getByText(/so it is older than this dashboard \(proxy version 2\.0\.0-test\)\. Update the proxy/)).toBeInTheDocument();
+    expect(screen.queryByText(/P3/)).toBeNull();
     expect(screen.queryByText(/The run failed/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Traffic' })).toHaveAttribute('href', '/app/traffic');
     const run = screen.getByRole('button', { name: 'Send the request' });
     expect(run).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText(/does not run Playground requests yet \(arrives with the P3 gateway handler\)/)).toBeInTheDocument();
+    expect(screen.getByText('This proxy is older than the dashboard and does not run Playground requests')).toBeInTheDocument();
     // The curl equivalent still works through the gateway.
     expect(screen.getByRole('region', { name: 'The same request with curl' }).textContent).toContain('/v1/chat/completions');
   });

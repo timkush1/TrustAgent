@@ -42,7 +42,11 @@ function apiError(status: number, code: string, message: string) {
   return HttpResponse.json({ error: { code, message } }, { status });
 }
 
-export function createFakeApi(initial: Partial<FakeApiState> = {}): FakeApi {
+/**
+ * `controlPlane: false` leaves out the policy and evaluator routes, for pages rendered with the
+ * control-plane handlers (renderPage), which serve those routes themselves.
+ */
+export function createFakeApi(initial: Partial<FakeApiState> = {}, { controlPlane = true }: { controlPlane?: boolean } = {}): FakeApi {
   const state: FakeApiState = {
     traces: [],
     details: {},
@@ -93,6 +97,8 @@ export function createFakeApi(initial: Partial<FakeApiState> = {}): FakeApi {
     }),
     http.get(`${API}/api/audits`, () => HttpResponse.json({ items: [], next_cursor: null })),
     http.get(`${API}/api/gate/decisions`, () => HttpResponse.json({ items: [], next_cursor: null })),
+  ];
+  const controlHandlers = [
     http.get(`${API}/api/policies`, () =>
       state.policies ? HttpResponse.json(state.policies) : apiError(404, 'not_found', 'Not served in tests.'),
     ),
@@ -105,5 +111,5 @@ export function createFakeApi(initial: Partial<FakeApiState> = {}): FakeApi {
     ),
   ];
 
-  return { state, handlers, traceQueries };
+  return { state, handlers: controlPlane ? [...handlers, ...controlHandlers] : handlers, traceQueries };
 }

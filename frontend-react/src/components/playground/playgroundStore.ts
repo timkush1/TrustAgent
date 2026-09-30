@@ -18,7 +18,7 @@ interface PlaygroundStore {
   removeDoc: (index: number) => void;
   load: (form: PlaygroundForm) => void;
   reset: () => void;
-  /** This proxy answered 404/501 to a run: it does not serve POST /api/playground/run yet. */
+  /** This proxy answered 404/501 to a run: an older proxy that does not serve POST /api/playground/run. */
   runUnavailable: boolean;
   setRunUnavailable: (value: boolean) => void;
 }

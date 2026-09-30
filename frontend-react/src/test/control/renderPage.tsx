@@ -34,7 +34,7 @@ export function adminStatus(overrides: Partial<SystemStatus> = {}): SystemStatus
 export function renderPage(path: string, options: RenderPageOptions = {}) {
   const control = options.control ?? createControlApi();
   const status = options.status === null ? null : adminStatus(options.status ?? {});
-  const api = options.api ?? createFakeApi({ status });
+  const api = options.api ?? createFakeApi({ status }, { controlPlane: false });
   server.use(...control.handlers);
   const app = renderLive(path, api);
   return { ...app, control, api };
