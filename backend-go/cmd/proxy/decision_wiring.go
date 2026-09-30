@@ -4,11 +4,14 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/truthtable/backend-go/internal/calibration"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/metrics"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/websocket"
 )
 
@@ -94,7 +97,7 @@ func (s *server) calibrationState(snapshot string) string {
 
 // startDecisionLoops starts the decision side's background loops on wg until ctx ends: the
 // calibration reload poll, which broadcasts calibration_updated for each snapshot whose
-// calibrations changed.
+// calibrations changed, and, with a database, the retention job (D17).
 func (s *server) startDecisionLoops(ctx context.Context, wg *sync.WaitGroup) {
 	if st, ok := s.calib.(*calibration.Store); ok {
 		every := calibrationReload
@@ -103,6 +106,58 @@ func (s *server) startDecisionLoops(ctx context.Context, wg *sync.WaitGroup) {
 			defer wg.Done()
 			st.Watch(ctx, every, s.calibrationUpdated)
 		}()
+	}
+	if s.pg != nil {
+		first, every := retentionFirst, retentionEvery
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.retentionLoop(ctx, first, every)
+		}()
+	}
+}
+
+// The retention job's first run comes shortly after start, then one every hour (SPEC §2.3); tests
+// shorten both.
+var (
+	retentionFirst = time.Minute
+	retentionEvery = time.Hour
+)
+
+// retentionLoop runs the retention job until ctx ends.
+func (s *server) retentionLoop(ctx context.Context, first, every time.Duration) {
+	t := time.NewTimer(first)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		s.runRetention(ctx)
+		t.Reset(every)
+	}
+}
+
+// runRetention runs every retention rule once (store.RunRetention) and reports how far the job is
+// behind in retention_lag_seconds.
+func (s *server) runRetention(ctx context.Context) {
+	start := time.Now()
+	rep, err := s.pg.RunRetention(ctx, store.RetentionConfig{Days: s.cfg.RetentionDays, CostDays: s.cfg.CostRetentionDays})
+	if ctx.Err() != nil {
+		return
+	}
+	metrics.SetRetentionLag(rep.Lag)
+	if err != nil {
+		s.log.Warn("retention: a rule did not finish; the next run continues", "err", err, "lag", rep.Lag.Round(time.Second))
+	}
+	var n int64
+	for _, rows := range rep.Rows {
+		n += rows
+	}
+	if n > 0 {
+		s.log.Info("retention: removed expired data", "rows", rep.Rows, "lag", rep.Lag.Round(time.Second),
+			"took_ms", time.Since(start).Milliseconds())
 	}
 }
 

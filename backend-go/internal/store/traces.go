@@ -602,7 +602,8 @@ func (s *PostgresStore) GetTrace(ctx context.Context, traceID string) (*TraceRec
 	return scanTrace(s.pool.QueryRow(ctx, traceSelect+" WHERE t.trace_id = $1", traceID))
 }
 
-// GetTraceBody returns the stored body of a trace, or ErrNotFound when none was kept.
+// GetTraceBody returns the stored body of a trace, or ErrNotFound when none was kept. A body the
+// retention job deleted comes back as an expired record without content.
 func (s *PostgresStore) GetTraceBody(ctx context.Context, traceID string) (*BodyRecord, error) {
 	var (
 		b     BodyRecord
@@ -615,6 +616,9 @@ func (s *PostgresStore) GetTraceBody(ctx context.Context, traceID string) (*Body
 		FROM trace_bodies WHERE trace_id = $1`, traceID).Scan(
 		&b.TraceID, &b.Messages, &b.UserRequest, &b.SystemInstructions, &b.ResponseText, &b.FinalResponseText,
 		&b.Evidence, &rules, &b.Bytes, &b.Truncated, &prob, &b.ExpiresAt)
+	if errors.Is(err, ErrNotFound) {
+		return s.expiredBody(ctx, traceID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -625,6 +629,21 @@ func (s *PostgresStore) GetTraceBody(ctx context.Context, traceID string) (*Body
 		}
 	}
 	return &b, nil
+}
+
+// expiredBody is the body of a trace whose body retention deleted (flag body_expired): a record
+// without content that expired at the zero time, so View reports it expired rather than never
+// stored. Any other trace has no body: ErrNotFound.
+func (s *PostgresStore) expiredBody(ctx context.Context, traceID string) (*BodyRecord, error) {
+	var expired bool
+	err := s.pool.QueryRow(ctx, `SELECT 'body_expired' = ANY(flags) FROM traces WHERE trace_id = $1`, traceID).Scan(&expired)
+	switch {
+	case err != nil:
+		return nil, err
+	case !expired:
+		return nil, ErrNotFound
+	}
+	return &BodyRecord{TraceID: traceID, Messages: json.RawMessage("[]"), Evidence: json.RawMessage("[]"), Rules: map[string]string{}}, nil
 }
 
 // TraceDecisions returns the decision/v1 documents of a trace, by attempt.
