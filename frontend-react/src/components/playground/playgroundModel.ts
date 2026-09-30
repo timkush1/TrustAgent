@@ -92,8 +92,35 @@ interface ScenarioJson {
   id: string;
   title: string;
   route: string;
-  request: { model: string; messages: ChatMessage[] };
+  api_format: string;
+  stream: boolean;
+  sets: string[];
+  request: { model: string; messages?: { role: string; content: unknown }[] } & Record<string, unknown>;
   response: string;
+}
+
+/** The roles the form's message picker offers. */
+const FORM_ROLES: ReadonlySet<string> = new Set<ChatMessage['role']>(['system', 'user', 'assistant']);
+
+/**
+ * Whether the form holds a scenario's request exactly (contracts/README.md: a consumer picks the
+ * scenarios it can represent by `api_format`, `stream` and the phase and `knowledge` tags): a
+ * non-streaming OpenAI chat body of only `model` and `messages`, each message plain text with a role
+ * the form offers, on a route the running gateway already serves. That leaves out Anthropic system
+ * blocks, a completions `prompt`, tool calls (`content: null`), `developer` messages, the
+ * `trustagent` extension, and the `p3` and `knowledge` scenarios.
+ */
+function formHolds(s: ScenarioJson): boolean {
+  const { messages, ...rest } = s.request;
+  return (
+    s.api_format === 'openai_chat' &&
+    !s.stream &&
+    !s.sets.includes('p3') &&
+    !s.sets.includes('knowledge') &&
+    Object.keys(rest).every((k) => k === 'model') &&
+    Array.isArray(messages) &&
+    messages.every((m) => FORM_ROLES.has(m.role) && typeof m.content === 'string')
+  );
 }
 
 export interface PlaygroundExample {
@@ -103,20 +130,22 @@ export interface PlaygroundExample {
 }
 
 /**
- * The demo scenarios as audit-mode examples: no upstream model is needed to try them. Each keeps
+ * The demo scenarios the form holds, as audit-mode examples: no upstream model is needed to try them. Each keeps
  * its scenario id until the viewer edits what the scenario scripts (the conversation, documents,
  * answer, mode or route), so a demo stack plays it exactly as trafficgen does.
  */
-export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown as { scenarios: ScenarioJson[] }).scenarios.map((s) => ({
-  id: s.id,
-  title: s.title,
-  form: {
-    ...INITIAL_FORM,
-    mode: 'audit',
-    route: s.route,
-    model: s.request.model,
-    messages: s.request.messages.map((m) => ({ role: m.role, content: m.content })),
-    response: s.response,
-    scenario: s.id,
-  },
-}));
+export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown as { scenarios: ScenarioJson[] }).scenarios
+  .filter(formHolds)
+  .map((s) => ({
+    id: s.id,
+    title: s.title,
+    form: {
+      ...INITIAL_FORM,
+      mode: 'audit',
+      route: s.route,
+      model: s.request.model,
+      messages: (s.request.messages ?? []).map((m) => ({ role: m.role as ChatMessage['role'], content: m.content as string })),
+      response: s.response,
+      scenario: s.id,
+    },
+  }));

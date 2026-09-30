@@ -13,7 +13,7 @@ import { copy } from '@/domain/presentation';
 import type { OverviewStats } from '@/types/api';
 import { caughtRows, windowLong } from './overviewModel';
 
-/** `span` replaces the window words (the static replay says "over the recorded traffic"). */
+/** `span` replaces the window words (the static replay says "over the replayed traffic"). */
 export function WhatWasCaught({ stats, span }: { stats: OverviewStats; span?: string }) {
   const rows = caughtRows(stats);
   return (

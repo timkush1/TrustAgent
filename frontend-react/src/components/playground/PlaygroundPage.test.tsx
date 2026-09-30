@@ -67,6 +67,30 @@ describe('Playground model', () => {
     });
   });
 
+  it('offers only the scenarios the form holds as they are', () => {
+    const ids = EXAMPLES.map((e) => e.id);
+    expect(ids.slice(0, 3)).toEqual(['grounded-pass', 'refund-contradiction-flag', 'no-evidence-not-assessed']);
+    // Another request shape, tool calls, a developer message, the extension, streaming, P3 or knowledge.
+    for (const id of [
+      'anthropic-system-grounded',
+      'completions-extension-grounded',
+      'tool-results-grounded',
+      'developer-role-unsupported',
+      'extension-misquote-flag',
+      'stream-passthrough-flag',
+      'payments-fallback',
+      'knowledge-only-capped',
+    ]) {
+      expect(ids).not.toContain(id);
+    }
+    for (const e of EXAMPLES) {
+      for (const m of e.form.messages) {
+        expect(['system', 'user', 'assistant']).toContain(m.role);
+        expect(typeof m.content).toBe('string');
+      }
+    }
+  });
+
   it('sends an example scenario only when asked, and forgets it once the example is edited', () => {
     const refund = EXAMPLES.find((e) => e.id === 'refund-contradiction-flag')!;
     expect(buildRequest(refund.form).scenario).toBeUndefined();
