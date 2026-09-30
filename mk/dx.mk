@@ -47,14 +47,23 @@ SERVICE      ?=
 # Read with the same precedence as compose: process env, then .env, then default.
 DASHBOARD_URL = http://localhost:$(shell $(PYTHON) scripts/envfile.py get DASHBOARD_HOST_PORT 3000)
 OPEN_URL_ARGS = $(if $(filter 0,$(OPEN)),--print-only)
+# The `make up` stack's project: COMPOSE_PROJECT_NAME (env, then .env), else `name: truthtable`.
+UP_PROJECT = $(shell $(PYTHON) scripts/envfile.py get COMPOSE_PROJECT_NAME truthtable)
+# The one-time setup link (scripts/setup_url.py runs /proxy -new-setup-token in the stack's proxy
+# and reads its "SETUP: open <url>" line). `make up` and `make demo` open it, or the dashboard when
+# an admin already exists. SETUP_FORCE=1 mints a recovery link although an admin exists.
+SETUP_FORCE   ?=
+SETUP_PROJECT ?=
+SETUP_URL_ARGS = $(if $(filter 1,$(SETUP_FORCE)),--force)
+SETUP_OPEN = $(PYTHON) scripts/setup_url.py --open $(OPEN_URL_ARGS) --dashboard-url "$(DASHBOARD_URL)"
 
 ##@ Stack (docker compose)
 
-up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons), wait until healthy, open the dashboard
+up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons), wait until healthy, open the setup link (or the dashboard)
 	$(PYTHON) scripts/configure.py --ensure
 	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) $(UP_ARGS)
 	@echo "✅ TrustAgent is running (proxy: http://localhost:$$($(PYTHON) scripts/envfile.py get PROXY_HOST_PORT 8080)/v1)"
-	@$(PYTHON) scripts/open_url.py $(OPEN_URL_ARGS) --label "Dashboard" "$(DASHBOARD_URL)"
+	@$(SETUP_OPEN) --project "$(UP_PROJECT)"
 
 down: ## Stop the stack (keeps its volumes)
 	$(COMPOSE) down
@@ -66,12 +75,12 @@ up-infra: ## Start only the backing services (postgres + COMPOSE_PROFILES add-on
 		$$($(COMPOSE) config --services | grep -vxE 'proxy|engine|dashboard|trafficgen')
 	@echo "✅ Backing services running (postgres on localhost:$$($(PYTHON) scripts/envfile.py get POSTGRES_HOST_PORT 5432), user truthtable, POSTGRES_PASSWORD in .env)"
 
-demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build, wait until healthy, open the dashboard
+demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build, wait until healthy, open the setup link (or the dashboard)
 	$(PYTHON) scripts/configure.py --ensure
 	$(DEMO_COMPOSE) up -d $(DEMO_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT)
 	@echo "✅ Demo stack running (project $(DEMO_PROJECT), DEMO MODE: simulated checks, no keys, \$$0)"
 	@echo "   Diagnose: python3 scripts/doctor.py --expect demo   Stop: make demo-down"
-	@$(PYTHON) scripts/open_url.py $(OPEN_URL_ARGS) --label "Dashboard" "$(DASHBOARD_URL)"
+	@$(SETUP_OPEN) --project $(DEMO_PROJECT)
 
 demo-down: ## Stop the demo stack (keeps its volumes; make demo-clean deletes them)
 	$(DEMO_COMPOSE) down
@@ -109,8 +118,11 @@ logs: ## Follow the stack's logs (SERVICE=proxy for one service)
 demo-logs: ## Follow the demo stack's logs (SERVICE=engine for one service)
 	$(DEMO_COMPOSE) logs -f $(SERVICE)
 
-setup-url: ## Print a new one-time setup URL (SETUP: open …#token=…) for the running stack; claim it to create the admin key
-	$(COMPOSE) exec -T proxy /proxy -new-setup-token
+setup-url: ## Print a new one-time setup URL (SETUP: open …#token=…) of the running stack (make up's, else the demo's; SETUP_PROJECT=, SETUP_FORCE=1)
+	@$(PYTHON) scripts/setup_url.py $(if $(SETUP_PROJECT),--project "$(SETUP_PROJECT)") $(SETUP_URL_ARGS)
+
+demo-setup-url: ## Print only a new one-time setup URL of the demo stack (for TRUSTAGENT_SETUP_URL: make -s demo-setup-url)
+	@$(PYTHON) scripts/setup_url.py --url-only --project $(DEMO_PROJECT) $(SETUP_URL_ARGS)
 
 status: ## Show the stack's containers and their health
 	@$(COMPOSE) ps --all
