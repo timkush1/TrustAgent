@@ -230,6 +230,28 @@ func replacedResult() *gate.Result {
 	return r
 }
 
+// decidedEvent decodes the last gate_decision event: the trace summary and the decision/v1 document.
+func decidedEvent(t *testing.T, pub *events) (store.TraceSummary, gate.Decision) {
+	t.Helper()
+	pub.mu.Lock()
+	defer pub.mu.Unlock()
+	var p struct {
+		Trace    store.TraceSummary `json:"trace"`
+		Decision gate.Decision      `json:"decision"`
+	}
+	for i := len(pub.evs) - 1; i >= 0; i-- {
+		if pub.evs[i].Type != "gate_decision" {
+			continue
+		}
+		if err := json.Unmarshal(pub.evs[i].Data, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.Trace, p.Decision
+	}
+	t.Fatal("no gate_decision event")
+	return p.Trace, p.Decision
+}
+
 // storedDecisions returns a trace's stored decision/v1 documents, by attempt.
 func storedDecisions(t *testing.T, st *memStore, traceID string) []gate.Decision {
 	t.Helper()
@@ -267,11 +289,16 @@ func TestSinkRecordsTheDeliveredOutcome(t *testing.T) {
 		job.Request.GetGate().GetDelivered() != gate.DeliveredFallback || job.Gate.Action != decision.ActionFallback {
 		t.Errorf("audit gate %+v, request gate delivered %q", job.Gate, job.Request.GetGate().GetDelivered())
 	}
+	// The live stream shows the dashboard what the client got: the event's trace is the stored one.
+	if sum, d := decidedEvent(t, pub); *sum.Action != decision.ActionFallback || !slices.Contains(sum.Flags, gate.FlagFallbackUsed) ||
+		sum.Timings.TTFTMs == nil || *sum.Timings.TTFTMs != 120 || d.Action != decision.ActionFallback {
+		t.Errorf("gate_decision event: trace action %v flags %v ttft %v, decision action %s", sum.Action, sum.Flags, sum.Timings.TTFTMs, d.Action)
+	}
 
 	// The fallback failed and the route blocked: the trace says block and why; decision/v1 does not
 	// change (its action stays fallback, and fallback_failed is never a decision reason).
-	st, q = newMemStore(), &fakeQueue{engine: true, lane: gate.LaneHigh}
-	s = newSink(st, q, &events{})
+	st, q, pub = newMemStore(), &fakeQueue{engine: true, lane: gate.LaneHigh}, &events{}
+	s = newSink(st, q, pub)
 	r = replacedResult()
 	r.Final = &gate.Final{Action: decision.ActionBlock, Delivered: gate.DeliveredBlocked,
 		Text: "I can't confirm that from our policy documents.", Reasons: []string{"fallback_failed"}}
@@ -290,6 +317,10 @@ func TestSinkRecordsTheDeliveredOutcome(t *testing.T) {
 	}
 	if q.jobs[0].Gate.Delivered != gate.DeliveredBlocked {
 		t.Errorf("audit gate %+v", q.jobs[0].Gate)
+	}
+	if sum, d := decidedEvent(t, pub); *sum.Action != decision.ActionBlock || !slices.Contains(sum.Reasons, "fallback_failed") ||
+		d.Action != decision.ActionFallback || slices.Contains(d.Reasons, "fallback_failed") {
+		t.Errorf("gate_decision event: trace action %v reasons %v, decision action %s reasons %v", sum.Action, sum.Reasons, d.Action, d.Reasons)
 	}
 
 	// An error-style block sends no answer text; an original delivery keeps the original text.

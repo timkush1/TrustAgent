@@ -378,3 +378,51 @@ func TestRecordAttemptWritesOnlyItsDecision(t *testing.T) {
 		t.Error("RecordAttempt accepted nil")
 	}
 }
+
+func TestRecordDecisionKeepsWhatTheClientGot(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := pendingTrace("payments-faq", time.Now().UTC())
+	if err := s.StartTrace(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	// The fallback answer went out: the trace's action and flags say so, the body keeps both texts,
+	// and the stream's time to first token is kept.
+	tr, dec := decided(start, "fallback", "block", "contradicted", 0.97, []string{"groundedness:critical"})
+	ttft := int64(120)
+	tr.TTFTMs, tr.Flags = &ttft, []string{"test_mode", "mock_decision", "fallback_used"}
+	b := body(tr.TraceID, time.Now().Add(time.Hour))
+	b.FinalResponseText = strp("Approved refunds go back to your original payment method within 5 to 10 business days.")
+	if err := s.RecordDecision(ctx, tr, dec, b); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTrace(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := got.Summary()
+	if *sum.Action != "fallback" || sum.Timings.TTFTMs == nil || *sum.Timings.TTFTMs != 120 ||
+		strings.Join(sum.Flags, ",") != "test_mode,mock_decision,fallback_used" {
+		t.Errorf("trace action %v ttft %v flags %v", sum.Action, sum.Timings.TTFTMs, sum.Flags)
+	}
+	gb, err := s.GetTraceBody(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := gb.View(time.Now()); *v.ResponseText != "Within 60 days." || v.FinalResponseText == nil ||
+		*v.FinalResponseText != *b.FinalResponseText {
+		t.Errorf("body texts %v / %v", v.ResponseText, v.FinalResponseText)
+	}
+
+	// An error-style block delivered no answer text: final_response_text is NULL.
+	start = pendingTrace("payments-faq", time.Now().UTC())
+	tr, dec = decided(start, "block", "block", "contradicted", 0.97, []string{"groundedness:critical"})
+	b = body(tr.TraceID, time.Now().Add(time.Hour))
+	b.FinalResponseText = nil
+	if err := s.RecordDecision(ctx, tr, dec, b); err != nil {
+		t.Fatal(err)
+	}
+	if gb, err := s.GetTraceBody(ctx, start.TraceID); err != nil || gb.FinalResponseText != nil || *gb.ResponseText != "Within 60 days." {
+		t.Errorf("error-style block body %+v (%v)", gb, err)
+	}
+}
