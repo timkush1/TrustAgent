@@ -6,9 +6,9 @@ what to do when something goes wrong.
 
 > **Where this stands.** TrustAgent 2.0 is being built in phases (see
 > [docs/v2/SPEC.md §4](v2/SPEC.md#4-implementation-sequence)). Everything on the OpenRouter side of
-> this guide works today. TrustAgent features carry the phase that ships them: *(from S0)*,
-> *(from P2)*, *(from P3)* or *(from P4)*. A tagged feature is not available until that phase has
-> landed.
+> this guide works today, and so does everything untagged on the TrustAgent side. Features still on
+> the way carry the phase that ships them, such as *(from P4)*; a tagged feature is not available
+> until that phase has landed.
 
 ## TL;DR
 
@@ -27,7 +27,7 @@ what to do when something goes wrong.
    instead of doing steps 3 and 4.
 
 That is all you need: there is no waitlist and no TypeSafe account. The same OpenRouter key will
-also run the deep-audit judge (Claude Haiku via OpenRouter) *(from P2)*.
+also runs the deep-audit judge (Claude Haiku via OpenRouter).
 
 ## What Jev is
 
@@ -59,12 +59,12 @@ In order of ease:
 |---|---|---|---|
 | 1 | **Dashboard → Connect OpenRouter** | OpenRouter creates a key for you (PKCE sign-in). TrustAgent stores it encrypted and uses it for both the fast check and the judge. **Then open [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) and set a credit limit on the new key (for example $2)**, because keys created this way have no limit. | *(from P4)* |
 | 2 | **Paste a key** in Settings → Connections | Works for OpenRouter, TypeSafe, Anthropic or OpenAI keys. Stored encrypted; never sent back to the browser. | *(from P4)* |
-| 3 | **Environment:** `OPENROUTER_API_KEY=…` in `.env`, then `docker compose up -d` | An environment value always wins and shows as read-only in the dashboard. | Put the key there now; TrustAgent reads it *(from P2)* |
-| 4 | **Headless:** `python3 scripts/configure.py --with-secrets` | Writes the configuration, secrets included, without opening the dashboard. (Without `--with-secrets` it writes only the non-secret settings.) | *(from P2)* |
+| 3 | **Environment:** `OPENROUTER_API_KEY=…` in `.env`, then `make up` | An environment value always wins and shows as read-only in the dashboard. | Now |
+| 4 | **Headless:** `python3 scripts/configure.py --with-secrets` | Writes the configuration, secrets included, without opening the dashboard. (Without `--with-secrets` it writes only the non-secret settings.) | *(from P4)*; today `configure.py --ensure` fills in only the generated secrets |
 
 ## Backends
 
-Set with `TRUTHTABLE_JEV_BACKEND` *(from P2)*. The default is `auto`, which picks the first match:
+Set with `TRUTHTABLE_JEV_BACKEND`. The default is `auto`, which picks the first match:
 demo mode uses `mock`; `TRUTHTABLE_JEV_BASE_URL` plus `TRUTHTABLE_JEV_API_KEY` selects `compatible`;
 an OpenRouter key selects `openrouter-decisions`; a TypeSafe key selects `typesafe`. With no key at
 all the fast check is `off`.
@@ -80,8 +80,9 @@ all the fast check is `off`.
 
 ## Settings that matter
 
-All of these will be editable in the dashboard *(from P4; route modes from P3)*. Until then they
-come from the environment or from the policy file `config/policies.yaml` *(from P2)*.
+Route modes are editable on the dashboard's **Policies** page; the other settings will be
+*(from P4)*. Until then they come from the environment or from the policy file
+`config/policies.yaml`.
 
 | Setting | Default | Effect | Environment or policy key |
 |---|---|---|---|
@@ -108,8 +109,9 @@ that.
 
 ## Errors and fixes
 
-TrustAgent shows these messages once the fast check is wired in *(from P2)*. The fixes on the
-OpenRouter side apply today.
+TrustAgent reports these errors with their fix in `make doctor` and on the dashboard (both read
+`/api/status`); the affected answers carry `X-TrustAgent-Status` / `-Degraded`. The fixes on the
+OpenRouter side apply as they are.
 
 | You see | What it means | What to do |
 |---|---|---|
@@ -132,14 +134,13 @@ OpenRouter side apply today.
 - Thresholds shift between Jev snapshots. Recalibrate after the dashboard reports "Jev version
   changed".
 - **Privacy:** the prompt, the answer and the documents go to OpenRouter and then to TypeSafe. Per
-  route you can set `store_bodies: none` or turn the gate off *(from P3)*. Keys never reach the
-  browser.
+  route you can set `store_bodies: none` or turn the gate off. Keys never reach the browser.
 
 ## How to verify
 
 | Check | What it tells you | Available |
 |---|---|---|
-| `make doctor` (or `python3 scripts/doctor.py`) | Which backend is active and why it was chosen, the Jev snapshot, latency and cost | *(from S0)*; the full checks arrive by P5 |
+| `make doctor` (or `python3 scripts/doctor.py`) | Which backend is active and why it was chosen, its state, the Jev snapshot, latency and the last 24 hours' calls and cost (labelled estimate), with a fix for each error state | Now |
 | Dashboard → Settings → Test | Sends one probe (about $0.00001) and shows the backend, snapshot, latency and any error with its fix | *(from P4)* |
 
 **Today**, before either exists, you can confirm that the key works and see its limit with a free
