@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { copy } from '@/domain/presentation';
 import { createFakeApi } from '@/test/apiHandlers';
 import { API, installMswServer, server } from '@/test/msw';
+import { p3Detail } from '@/test/p3Fixtures';
 import { renderLive, stopLive } from '@/test/renderLive';
 import { REFUND_DOC, auditIdOf, s0Audit, s0Decision, s0Detail, s0Trace, scenario, traceIdOf } from '@/test/scenarios';
 
@@ -161,6 +162,40 @@ describe('Trace detail', () => {
     server.use(http.get(`${API}/api/traces/:id`, () => HttpResponse.json(s0Detail(PASS))));
     await userEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('region', { name: 'Outcome' })).toHaveTextContent('Passed');
+  });
+
+  it('shows a replaced answer: the checks on the model\'s answer, and what the user received instead', async () => {
+    const detail = p3Detail('payments-fallback');
+    renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: detail } }));
+    const outcome = await screen.findByRole('region', { name: 'Outcome' });
+    expect(within(outcome).getByText('Replaced')).toBeInTheDocument();
+    expect(within(outcome).getByText('Replaced with an answer that sticks to your documents')).toBeInTheDocument();
+    expect(within(outcome).getByText('Checked against: refund-timing.md')).toBeInTheDocument();
+    // Reasons and checks describe the model's answer (attempt 0), not the fallback check.
+    expect(within(outcome).getByRole('list', { name: 'Reasons' })).toHaveTextContent('Mentions a number not in your documents: 2');
+    const checks = within(region('Checks')).getByRole('list', { name: 'Checks' });
+    expect(within(checks).getAllByText('High risk')).toHaveLength(2);
+
+    const answer = region('Answer');
+    const received = within(answer).getByTestId('received-text');
+    expect(received).toHaveTextContent('Approved refunds go back to your original payment method within 5 to 10 business days.');
+    await userEvent.click(within(outcome).getByRole('link', { name: 'See what the user received instead' }));
+    expect(received.parentElement).toHaveFocus();
+    // The deep audit judged the model's answer.
+    expect(within(region('Claims')).getByText('Hallucinated')).toBeInTheDocument();
+  });
+
+  it('shows a blocked answer with the block message the user received', async () => {
+    const detail = p3Detail('help-center-link-block');
+    renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: detail } }));
+    const outcome = await screen.findByRole('region', { name: 'Outcome' });
+    expect(within(outcome).getByText('Blocked')).toBeInTheDocument();
+    expect(within(outcome).getByRole('list', { name: 'Reasons' })).toHaveTextContent(
+      'Links to a URL not in your documents: https://acme.example/reset-password',
+    );
+    expect(within(region('Answer')).getByTestId('received-text')).toHaveTextContent(
+      "I can't verify that answer against our help articles, so I've held it back.",
+    );
   });
 
   it('keeps ids and timings in collapsed Details', async () => {

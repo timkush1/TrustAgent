@@ -20,7 +20,7 @@
       "label": "Replaced",
       "tone": "warning",
       "headline": "Replaced with an answer that sticks to your documents",
-      "next_step": "Compare the original and the replacement answers."
+      "next_step": "Compare your model's answer with the fallback answer the user received."
     },
     {
       "id": "flagged",

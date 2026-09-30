@@ -6,18 +6,25 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { axeViolations, formatViolations } from '@/test/axe';
+import { p3Detail } from '@/test/p3Fixtures';
 import { s0Audit, s0Trace, scenario } from '@/test/scenarios';
 import type { AuditDetail, ClaimView } from '@/types/api';
 import { AnswerSection } from './AnswerSection';
+import { buildTraceView, type TraceView } from './traceView';
 
 const REFUND = 'refund-contradiction-flag' as const;
 
-function view(audit: AuditDetail, text = scenario(REFUND).response) {
+function view(audit: AuditDetail, text = scenario(REFUND).response): TraceView {
   return {
     question: 'How long do I have to get a refund?',
     answer: { text, preview: false },
     summary: s0Trace(REFUND, 'audited'),
     audit,
+    decision: null,
+    attempts: [],
+    body: null,
+    delivered: 'original',
+    deliveredText: null,
   };
 }
 
@@ -25,7 +32,7 @@ function withClaims(claims: ClaimView[]): AuditDetail {
   return { ...s0Audit(REFUND), claims };
 }
 
-const renderAnswer = (v: ReturnType<typeof view>) =>
+const renderAnswer = (v: TraceView) =>
   render(
     <TooltipProvider>
       <AnswerSection view={v} claimIdPrefix="t-" />
@@ -59,5 +66,46 @@ describe('AnswerSection claim marks', () => {
     renderAnswer(view(s0Audit(REFUND), 'A different answer than the audited one.'));
     expect(screen.queryByRole('link', { name: /contradicted claim/ })).toBeNull();
     expect(screen.getByRole('list', { name: 'Claims not located in text' })).toBeInTheDocument();
+  });
+});
+
+describe('AnswerSection: what the user received', () => {
+  it('shows the fallback answer after the marked model answer, with how its check rated it', async () => {
+    const v = buildTraceView({ detail: p3Detail('payments-fallback') }) as TraceView;
+    renderAnswer(v);
+    expect(screen.getByText("Your model's answer (not sent to the user)")).toBeInTheDocument();
+    // The claim marks stay on the model's answer.
+    const mark = screen.getByRole('link', { name: /^within 2 business days, contradicted claim/ });
+    expect(mark.closest('mark')).toHaveAttribute('data-v', 'contradicted');
+    const received = screen.getByText('What the user received instead').parentElement as HTMLElement;
+    expect(received).toHaveAttribute('data-delivered', 'fallback');
+    expect(within(received).getByTestId('received-text')).toHaveTextContent(
+      'Approved refunds go back to your original payment method within 5 to 10 business days.',
+    );
+    expect(received).toHaveTextContent('A fallback answer written from your documents only, then checked again: low risk.');
+    expect(received.querySelector('mark')).toBeNull();
+    expect(formatViolations(await axeViolations(document.body))).toEqual([]);
+  });
+
+  it('shows the block message of a blocked answer', () => {
+    renderAnswer(buildTraceView({ detail: p3Detail('help-center-link-block') }) as TraceView);
+    const received = screen.getByText('What the user received instead').parentElement as HTMLElement;
+    expect(received).toHaveAttribute('data-delivered', 'blocked');
+    expect(within(received).getByTestId('received-text')).toHaveTextContent(
+      "I can't verify that answer against our help articles, so I've held it back.",
+    );
+    expect(received).toHaveTextContent("The route's block message, sent in place of your model's answer.");
+  });
+
+  it('says when the text sent instead was not stored', () => {
+    const v = buildTraceView({ detail: p3Detail('help-center-link-block') }) as TraceView;
+    renderAnswer({ ...v, deliveredText: null });
+    expect(screen.getByText('The text sent instead is not stored for this request.')).toBeInTheDocument();
+  });
+
+  it('shows nothing extra when the user received the model\'s answer', () => {
+    renderAnswer(view(s0Audit(REFUND)));
+    expect(screen.queryByText('What the user received instead')).toBeNull();
+    expect(screen.getByText('Answer', { selector: 'p' })).toBeInTheDocument();
   });
 });

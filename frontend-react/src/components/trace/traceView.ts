@@ -9,6 +9,7 @@ import {
   copy,
   fillTemplate,
   humanizeId,
+  levelWord,
   statusReason,
 } from '@/domain/presentation';
 import type {
@@ -31,24 +32,47 @@ export interface TraceViewInput {
   fetchedAudit?: AuditDetail | null;
 }
 
+/** What the user received (AuditDetail.gate.delivered): the model's answer, a fallback answer or the block message. */
+export type Delivered = 'original' | 'fallback' | 'blocked';
+
 export interface TraceView {
   summary: TraceSummary;
+  /** The fast check's decision on the model's answer: attempt 0 (a late decision over an on-time one). */
   decision: GateDecisionView | null;
+  /** Every stored decision, one per attempt, in order; attempt 1 checked the fallback answer. */
+  attempts: GateDecisionView[];
   audit: AuditDetail | null;
   body: TraceDetail['body'] | null;
   question: string | null;
   /** The answer as the model gave it; `preview` when only the list preview is known. */
   answer: { text: string; preview: boolean } | null;
+  /** What the user received; null while the gate has not decided. */
+  delivered: Delivered | null;
+  /** The text sent in place of the model's answer (the fallback answer or the block message), when stored. */
+  deliveredText: string | null;
 }
 
-/** The decision that stands: the highest attempt, a late decision over an on-time one. */
-export function latestDecision(list: readonly (GateDecisionView | null | undefined)[]): GateDecisionView | null {
-  let best: GateDecisionView | null = null;
+/**
+ * One decision per attempt, in attempt order. A late decision updates its attempt's row, so it
+ * replaces an on-time copy of the same attempt; otherwise the first copy seen stays.
+ */
+export function decisionAttempts(list: readonly (GateDecisionView | null | undefined)[]): GateDecisionView[] {
+  const byAttempt = new Map<number, GateDecisionView>();
   for (const d of list) {
     if (!d) continue;
-    if (!best || d.attempt > best.attempt || (d.attempt === best.attempt && d.late && !best.late)) best = d;
+    const prev = byAttempt.get(d.attempt);
+    if (!prev || (d.late && !prev.late)) byAttempt.set(d.attempt, d);
   }
-  return best;
+  return [...byAttempt.values()].sort((a, b) => a.attempt - b.attempt);
+}
+
+/**
+ * The decision on the model's own answer (attempt 0). The fallback check (attempt 1) judged a
+ * different text, so it never stands in for it: the checks, reasons and marks describe the answer
+ * the model gave.
+ */
+export function answerDecision(attempts: readonly GateDecisionView[]): GateDecisionView | null {
+  return attempts.find((d) => d.attempt === 0) ?? null;
 }
 
 /**
@@ -64,24 +88,65 @@ export function pickAudit(summary: TraceSummary, audits: readonly (AuditDetail |
   return best;
 }
 
+/**
+ * What the user received. The gateway records a delivered fallback with the flag `fallback_used`
+ * (also when a failed re-check still sends it with Action: flag) and a block as the trace action;
+ * the deep audit repeats what it was told. Null until the gate has decided.
+ */
+export function deliveredOf(summary: TraceSummary, audit: AuditDetail | null): Delivered | null {
+  if ((summary.flags ?? []).includes('fallback_used') || summary.action === 'fallback') return 'fallback';
+  if (summary.action === 'block') return 'blocked';
+  const reported = audit?.gate?.delivered;
+  if (reported) return reported;
+  return summary.action === null ? null : 'original';
+}
+
 export function buildTraceView(input: TraceViewInput): TraceView | null {
   const { detail, live } = input;
   const base = detail ?? live;
   if (!base) return null;
   let summary = detail && live ? mergeTraceSummary(detail, live) : base;
-  const decision = latestDecision([...(detail?.decisions ?? []), input.liveDecision]);
+  const attempts = decisionAttempts([...(detail?.decisions ?? []), input.liveDecision]);
+  const decision = answerDecision(attempts);
   const audit = pickAudit(summary, [input.liveAudit, detail?.audit_detail, input.fetchedAudit]);
   if (audit) summary = applyAuditToTrace(summary, audit);
 
   const body = detail?.body ?? null;
+  const delivered = deliveredOf(summary, audit);
+  const replaced = delivered === 'fallback' || delivered === 'blocked';
   const question = body?.user_request ?? audit?.user_query ?? summary.question_preview ?? null;
-  const full = body?.response_text ?? body?.final_response_text ?? audit?.llm_response ?? null;
+  // final_response_text is what was sent; it stands in for the model's answer only when that was sent.
+  const full = body?.response_text ?? (replaced ? null : body?.final_response_text) ?? audit?.llm_response ?? null;
   const answer = full
     ? { text: full, preview: false }
     : summary.response_preview
       ? { text: summary.response_preview, preview: true }
       : null;
-  return { summary, decision, audit, body, question, answer };
+  const sent = body?.final_response_text ?? null;
+  // A store that kept only the model's answer has nothing to show for what was sent instead.
+  const deliveredText = replaced && sent !== null && sent !== body?.response_text ? sent : null;
+  return { summary, decision, attempts, audit, body, question, answer, delivered, deliveredText };
+}
+
+const LEVEL_RANK: Record<EvaluatorLevel, number> = { ok: 0, warn: 1, critical: 2 };
+
+/** How the fallback check (attempt 1) rated the fallback answer: "low risk", or why it did not finish. */
+export function fallbackCheckResult(check: GateDecisionView | null | undefined): string | null {
+  if (!check) return null;
+  if (check.status === 'timeout' || check.status === 'error' || check.status === 'skipped') {
+    return statusReason(check.skip_reason ?? check.status);
+  }
+  let top: EvaluatorLevel | null = null;
+  for (const e of Object.values(check.evaluators)) {
+    if (e.internal || e.stage === 'shadow' || e.level === null) continue;
+    if (top === null || LEVEL_RANK[e.level] > LEVEL_RANK[top]) top = e.level;
+  }
+  return top ? levelWord(top).label.toLowerCase() : null;
+}
+
+/** The id of the "What the user received instead" block; the outcome card links to it. */
+export function receivedId(prefix: string): string {
+  return `${prefix}received`;
 }
 
 /** The audit status is terminal and has a result to fetch. */

@@ -3,15 +3,18 @@
  * deep audit arrives, each located claim is marked in the answer (DESIGN.md §3: verdict hue,
  * underline style and icon, never color alone). A mark is a link to its row in the Claims section;
  * claims the audit could not place in the text are listed under the answer as "not located in
- * text". Detector marks follow in P3.
+ * text". When the user received something else (a fallback answer or the block message), it
+ * follows the answer as "What the user received instead"; the marks stay on the model's answer,
+ * which is what the checks judged.
  */
+import { CornerDownRight, ShieldX } from 'lucide-react';
 import type { CSSProperties, MouseEvent } from 'react';
 import { VerdictBadge } from '@/components/outcome/VerdictBadge';
 import { Tooltip } from '@/components/ui/tooltip';
-import { claimVerdictView, copy } from '@/domain/presentation';
+import { claimVerdictView, copy, fillTemplate } from '@/domain/presentation';
 import { segmentClaims, type AnswerSegment } from '@/domain/segmentClaims';
-import type { ClaimView } from '@/types/api';
-import { auditHasResult, claimRowId, type TraceView } from './traceView';
+import type { ClaimView, GateDecisionView } from '@/types/api';
+import { auditHasResult, claimRowId, fallbackCheckResult, receivedId, type TraceView } from './traceView';
 
 /** Scrolls to a claim's row and moves focus there (the row is focusable with tabIndex -1). */
 function jumpToClaim(event: MouseEvent<HTMLAnchorElement>, id: string) {
@@ -92,19 +95,55 @@ function NotLocated({ claims, idPrefix }: { claims: ClaimView[]; idPrefix: strin
   );
 }
 
+function ReceivedInstead({
+  delivered,
+  text,
+  check,
+  id,
+}: {
+  delivered: 'fallback' | 'blocked';
+  text: string | null;
+  check: GateDecisionView | null;
+  id: string;
+}) {
+  const Icon = delivered === 'blocked' ? ShieldX : CornerDownRight;
+  const note =
+    delivered === 'blocked'
+      ? copy.trace.received_blocked
+      : fillTemplate(copy.trace.received_fallback, { result: fallbackCheckResult(check) });
+  return (
+    <div id={id} tabIndex={-1} data-delivered={delivered} className="space-y-1.5 border-t border-border pt-3 outline-none">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-fg">
+        <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
+        {copy.trace.received_instead}
+      </p>
+      {text ? (
+        <p data-testid="received-text" className="rounded-md border border-border-strong bg-surface px-3 py-2 text-md whitespace-pre-wrap text-fg">
+          {text}
+        </p>
+      ) : (
+        <p className="text-sm text-fg-muted">{copy.trace.received_not_stored}</p>
+      )}
+      <p className="text-xs text-fg-muted">{note}</p>
+    </div>
+  );
+}
+
 export function AnswerSection({
   view,
   claimIdPrefix = '',
 }: {
-  view: Pick<TraceView, 'question' | 'answer' | 'summary' | 'audit'>;
+  view: Pick<TraceView, 'question' | 'answer' | 'summary' | 'audit' | 'delivered' | 'deliveredText' | 'attempts'>;
   /** Prefix of the Claims section's row ids (claimRowId), unique per page. */
   claimIdPrefix?: string;
 }) {
-  const { question, answer, summary, audit } = view;
+  const { question, answer, summary, audit, delivered, deliveredText, attempts } = view;
   const claims = audit && auditHasResult(audit.status) ? audit.claims : [];
   // Spans refer to the text the engine audited; mark only when that is the text shown here.
   const located = Boolean(answer && !answer.preview && (audit?.llm_response == null || audit.llm_response === answer.text));
   const { segments, unlocated } = answer ? segmentClaims(answer.text, claims, { located }) : { segments: [], unlocated: [] };
+  const replaced = delivered === 'fallback' || delivered === 'blocked';
+  const answerLabel = replaced ? copy.trace.answer_not_sent : question ? 'Answer' : null;
   return (
     <section aria-labelledby="answer-title" className="space-y-3">
       <h2 id="answer-title" className="text-base font-semibold text-fg">
@@ -121,7 +160,7 @@ export function AnswerSection({
             </div>
           ) : null}
           <div className="space-y-0.5">
-            {question ? <p className="text-xs font-medium text-fg-muted">Answer</p> : null}
+            {answerLabel ? <p className="text-xs font-medium text-fg-muted">{answerLabel}</p> : null}
             {answer ? (
               <AnswerText text={answer.text} segments={segments} idPrefix={claimIdPrefix} />
             ) : (
@@ -132,6 +171,14 @@ export function AnswerSection({
             ) : null}
           </div>
           {unlocated.length > 0 ? <NotLocated claims={unlocated} idPrefix={claimIdPrefix} /> : null}
+          {replaced ? (
+            <ReceivedInstead
+              delivered={delivered}
+              text={deliveredText}
+              check={attempts.find((d) => d.attempt === 1) ?? null}
+              id={receivedId(claimIdPrefix)}
+            />
+          ) : null}
         </div>
       )}
     </section>

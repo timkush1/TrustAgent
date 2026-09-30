@@ -49,13 +49,13 @@ interface Shape {
 
 const TRACE_SHAPE = {
   strings: ['trace_id', 'created_at', 'updated_at'],
-  lists: ['reasons'],
+  lists: ['reasons', 'flags'],
   records: ['audit', 'timings'],
 } as const satisfies Shape;
 
 const SHAPES = {
   trace: TRACE_SHAPE,
-  traceDetail: { ...TRACE_SHAPE, lists: ['reasons', 'decisions'] },
+  traceDetail: { ...TRACE_SHAPE, lists: ['reasons', 'flags', 'decisions'] },
   decision: { strings: ['trace_id'], lists: ['reasons', 'detectors'], records: ['evaluators'] },
   decisionRow: { strings: ['trace_id', 'created_at'], lists: ['reasons'] },
   auditSummary: { strings: ['audit_id', 'trace_id', 'status'] },

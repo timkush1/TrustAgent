@@ -18,7 +18,7 @@ import { ChecksList } from './ChecksList';
 import { ClaimsSection } from './ClaimsSection';
 import { OutcomeCard } from './OutcomeCard';
 import { TraceFacts } from './TraceFacts';
-import { auditHasResult, buildTraceView } from './traceView';
+import { auditHasResult, buildTraceView, receivedId } from './traceView';
 
 function BackToTraffic() {
   return (
@@ -87,7 +87,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     <article aria-label="Request" className="@container space-y-5" data-trace-id={summary.trace_id}>
       <BackToTraffic />
       {partialError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
-      <OutcomeCard summary={summary} decision={decision} />
+      <OutcomeCard summary={summary} decision={decision} delivered={view.delivered} receivedTarget={receivedId(claimIdPrefix)} />
       <div className="grid gap-6 @4xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <AnswerSection view={view} claimIdPrefix={claimIdPrefix} />
         <div className="space-y-6">

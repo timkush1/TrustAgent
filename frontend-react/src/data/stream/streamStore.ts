@@ -171,6 +171,18 @@ class Draft {
   }
 }
 
+/**
+ * Whether `next` becomes the trace's decision. A trace keeps the decision on the model's answer
+ * (attempt 0): a fallback check (attempt 1) judged another text, so it fills in only while nothing
+ * else is known. Within an attempt the newer copy wins, except that an on-time copy never replaces
+ * a late one (the late decision updated the same row after it).
+ */
+export function replacesDecision(prev: GateDecisionView | undefined, next: GateDecisionView): boolean {
+  if (!prev) return true;
+  if (next.attempt !== prev.attempt) return next.attempt === 0;
+  return next.late || !prev.late;
+}
+
 function applyEvent(d: Draft, ev: StreamEvent): void {
   switch (ev.type) {
     case 'hello':
@@ -182,10 +194,8 @@ function applyEvent(d: Draft, ev: StreamEvent): void {
       return;
     case 'gate_decision': {
       d.upsertTrace(ev.data.trace);
-      const prev = d.decisions[ev.data.trace.trace_id];
-      if (!prev || ev.data.decision.attempt >= prev.attempt || ev.data.decision.late) {
-        d.write('decisions')[ev.data.trace.trace_id] = ev.data.decision;
-      }
+      const id = ev.data.trace.trace_id;
+      if (replacesDecision(d.decisions[id], ev.data.decision)) d.write('decisions')[id] = ev.data.decision;
       return;
     }
     case 'audit_queued': {
