@@ -308,7 +308,8 @@ func TestPlaygroundRunAuditMode(t *testing.T) {
 }
 
 // TestPlaygroundRunModeOverride: the admin's override is not bound by overrides.client_mode
-// (none in config/policies.yaml); block needs the enforcing gateway.
+// (none in config/policies.yaml); block needs the enforcing gateway, and the gate still caps a
+// block its calibration does not support.
 func TestPlaygroundRunModeOverride(t *testing.T) {
 	env := newTestEnv(t, envOpts{adminKey: playAdminKey})
 	run := playRun(t, "refund-contradiction-flag", "audit")
@@ -332,9 +333,25 @@ func TestPlaygroundRunModeOverride(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("%d %s", code, body)
 	}
+	// support-bot's evidence checks use raw thresholds, which require_calibration caps to a flag:
+	// the override applies (mode block, would block) and the original answer is delivered.
 	res, d := decodeResult(t, body)
-	if d["mode"] != "block" || res.Headers["X-TrustAgent-Action"] != "block" || res.DeliveredText == res.ResponseText || res.DeliveredText == "" {
-		t.Errorf("block override: mode %v headers %v delivered %q", d["mode"], res.Headers, res.DeliveredText)
+	if d["mode"] != "block" || d["would_action"] != "block" || d["action"] != "flag" || res.Headers["X-TrustAgent-Action"] != "flag" ||
+		res.DeliveredText != res.ResponseText {
+		t.Errorf("block override: mode %v would %v action %v headers %v delivered %q", d["mode"], d["would_action"], d["action"], res.Headers, res.DeliveredText)
+	}
+
+	// On help-center, a block route, a link the articles do not contain blocks without a
+	// calibration: the run delivers the route's block message instead of the answer.
+	run = playRun(t, "help-center-link-block", "audit")
+	code, body = runPlayground(t, env, playAdminKey, run)
+	if code != http.StatusOK {
+		t.Fatalf("%d %s", code, body)
+	}
+	res, d = decodeResult(t, body)
+	if d["mode"] != "block" || d["action"] != "block" || res.Headers["X-TrustAgent-Action"] != "block" ||
+		res.DeliveredText != "I can't verify that answer against our help articles, so I've held it back." {
+		t.Errorf("help-center block: mode %v action %v headers %v delivered %q", d["mode"], d["action"], res.Headers, res.DeliveredText)
 	}
 }
 

@@ -12,9 +12,9 @@
 # cmd/trafficgen reference test cross-check both. Every demo route audits each answer it may audit
 # (pass_sample_rate 1.0) and draws no uniform sample, so demo and e2e runs are deterministic.
 #
-# Routes in block or fallback mode, and routes that read the knowledge add-on, are in
-# config/policies.pending.yaml: this build enforces observe and flag only, so it would refuse them
-# here. P3 moves the block and fallback routes into this file once the /v1 handler enforces them.
+# payments-faq (fallback) and help-center (block) enforce: the /v1 handler replaces or blocks the
+# answers their checks fail (SPEC §2.12). The route that reads the knowledge add-on (handbook) is in
+# config/policies.pending.yaml: these stacks run without the add-on, so the gateway would refuse it here.
 version: 1
 defaults:
   # No mode here: the default route takes the TRUTHTABLE_GATE_DEFAULT_MODE seed (observe).
@@ -105,5 +105,50 @@ routes:
     evaluators:
       - ref: groundedness@1
       - ref: contradiction@1
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: payments-faq
+    description: >-
+      Demo payments assistant (the SPEC §2.7 example). Replaces an answer the documents contradict
+      with a fallback answer written from the documents only, and blocks if that fails too. Its
+      evidence checks adopt the calibration for the current snapshot (the mock calibration with the
+      mock backend), so the fallback is not capped to a flag.
+    match: {headers: {X-TrustAgent-Route: payments-faq}, paths: ["/v1/chat/completions"]}
+    mode: fallback
+    fail: closed
+    streaming: buffer
+    deadline_ms: 1500
+    hedge_after_ms: 400
+    evidence: {sources: [request_system, tool_results, extension]} # end users cannot inject "documents"
+    evaluators:
+      - ref: groundedness@1
+        thresholds: {space: calibrated}
+      - ref: contradiction@1
+        thresholds: {space: calibrated}
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    fallback:
+      upstream: same
+      model: gpt-4o
+      system_prompt: "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT."
+      on_fail: block
+    block: {style: message, message: "I can't confirm that from our policy documents. A person will follow up."}
+    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: help-center
+    description: >-
+      Demo help-center assistant in block mode with buffered streams. A link the articles do not
+      contain blocks at once (a deterministic check needs no calibration); a contradiction alone acts
+      as a flag until the evidence checks are calibrated (raw thresholds).
+    match: {headers: {X-TrustAgent-Route: help-center}}
+    mode: block
+    streaming: buffer
+    # An enforcing route trusts no user-message context (SPEC §7.2 block readiness): end users
+    # cannot inject "documents" that make a false answer look supported.
+    evidence: {sources: [request_system, tool_results, extension]}
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    block: {style: message, message: "I can't verify that answer against our help articles, so I've held it back."}
     deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all

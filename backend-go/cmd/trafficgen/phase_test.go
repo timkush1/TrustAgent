@@ -133,8 +133,9 @@ func TestS0ScenariosAreByteStable(t *testing.T) {
 	}
 }
 
-// TestDemoSelectionRunsOnThisBuild: what the demo loop and the S0 gate send by default is
-// servable by this build, and --phase p3 adds the rest.
+// TestDemoSelectionRunsOnThisBuild: this build's default phase sends every scenario of the demo
+// loop, the S0 gate and the e2e check (with --expect a skip fails the check, D18), and --phase p2,
+// the gateway before P3, still serves the S0 gate and skips exactly the phase-tagged scenarios.
 func TestDemoSelectionRunsOnThisBuild(t *testing.T) {
 	all, err := loadScenarios("")
 	if err != nil {
@@ -145,17 +146,17 @@ func TestDemoSelectionRunsOnThisBuild(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		run, skipped := byPhase(picked, defaultPhase)
+		if _, skipped := byPhase(picked, defaultPhase); len(skipped) > 0 {
+			t.Errorf("--scenarios %s at the default phase %s skips %d scenarios", sel, defaultPhase, len(skipped))
+		}
+		run, skipped := byPhase(picked, "p2")
 		for _, s := range run {
 			if scenarioPhase(s.Sets) != phaseS0 {
-				t.Errorf("%s: --scenarios %s sends %s, which needs %s", sel, sel, s.ID, scenarioPhase(s.Sets))
+				t.Errorf("%s: --scenarios %s --phase p2 sends %s, which needs %s", sel, sel, s.ID, scenarioPhase(s.Sets))
 			}
 		}
 		if sel == "s0" && len(skipped) > 0 {
-			t.Errorf("the S0 gate would skip %d scenarios", len(skipped))
-		}
-		if later, _ := byPhase(picked, "p3"); len(later) != len(picked) {
-			t.Errorf("--scenarios %s --phase p3 still skips %d scenarios", sel, len(picked)-len(later))
+			t.Errorf("the S0 gate would skip %d scenarios at --phase p2", len(skipped))
 		}
 	}
 }

@@ -6,9 +6,9 @@ import (
 	"github.com/truthtable/backend-go/internal/proxy"
 )
 
-// gatewayEnforces is whether the /v1 handler enforces block and fallback: the policy refuses
-// those modes until it does (the P3 turn-on sets it).
-const gatewayEnforces = false
+// gatewayEnforces is whether the /v1 handler enforces block and fallback. The policy refuses those
+// modes while it is off; P3 turned it on, so block and fallback routes load and are enforced.
+const gatewayEnforces = true
 
 // mountV1 mounts the LLM API (SPEC §2.12): every /v1 response carries the trace id; ingest auth
 // reads X-TrustAgent-Key only, so Authorization stays the client's upstream credential (B1).

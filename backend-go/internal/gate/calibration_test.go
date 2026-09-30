@@ -40,9 +40,9 @@ func calibratedGate(t *testing.T, cl jev.Client, cal policy.CalibrationLookup) *
 }
 
 // TestP3ScenariosWithTheMockCalibration runs the gate side of the P3 block and fallback scenarios
-// on config/policies.pending.yaml with the demo's mock calibration.
+// on config/policies.yaml (payments-faq, help-center) with the demo's mock calibration.
 func TestP3ScenariosWithTheMockCalibration(t *testing.T) {
-	p := pendingPolicy(t)
+	p := repoPolicy(t)
 	cal := mockCalibration(t, registry(t))
 	for _, id := range []string{"payments-fallback", "help-center-link-block", "help-center-uncalibrated-flag"} {
 		t.Run(id, func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestP3ScenariosWithTheMockCalibration(t *testing.T) {
 }
 
 func TestPaymentsFallbackNeedsTheCalibration(t *testing.T) {
-	p := pendingPolicy(t)
+	p := repoPolicy(t)
 	reg := registry(t)
 	sc := scenarioByID(t, "payments-fallback")
 

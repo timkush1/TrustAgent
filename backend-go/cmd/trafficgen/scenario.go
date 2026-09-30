@@ -131,9 +131,9 @@ func selectScenarios(all []scenario, sel, exclude string) ([]scenario, error) {
 // when --phase reaches that phase.
 const (
 	phaseS0 = "s0"
-	// defaultPhase is the phase this build's gateway implements. P3 moves it to p3 together with
-	// the block and fallback routes of config/policies.pending.yaml.
-	defaultPhase = "p2"
+	// defaultPhase is the phase this build's gateway implements: P3 enforces block and fallback,
+	// gates streams and serves /v1/messages and /v1/completions.
+	defaultPhase = "p3"
 )
 
 var phases = []string{phaseS0, "p2", "p3", "p4", "p5"}

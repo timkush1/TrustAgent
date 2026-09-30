@@ -248,17 +248,17 @@ describe('validate.mjs', () => {
     const sb = sandbox();
     const pending = readFileSync(PENDING, 'utf8')
       .replace('version: 1\n', 'version: 1\noverrides: {client_mode: none}\n')
-      .replace('  - name: handbook\n', '  - name: support-bot\n');
+      .concat('  - {name: support-bot, match: {headers: {X-TrustAgent-Route: support-bot-2}}}\n');
     sb.write('config/policies.pending.yaml', pending, sb.repo);
     sb.edit('demo/scenarios.v1.json', (d) => {
-      const s = d.scenarios.find((x) => x.id === 'help-center-link-block');
+      const s = d.scenarios.find((x) => x.id === 'knowledge-only-capped');
       s.sets = s.sets.filter((t) => t !== 'p3');
     });
     const r = run(sb.root);
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /policies\.pending\.yaml: only version and routes belong here .*: overrides/);
     assert.match(r.out, /policies\.pending\.yaml: duplicate route name .*"support-bot"/);
-    assert.match(r.out, /help-center-link-block: route help-center is in config\/policies\.pending\.yaml, which the gateway cannot load yet, so the scenario carries a phase tag \(p3\)/);
+    assert.match(r.out, /knowledge-only-capped: route handbook is in config\/policies\.pending\.yaml, which the gateway cannot load yet, so the scenario carries a phase tag \(p3\)/);
   });
 
   test('fallback answers, delivered text, streams, knowledge and tags follow the route', { skip: !existsSync(PENDING) }, () => {

@@ -10,9 +10,9 @@ package main
 //     mock-upstream's /v1/systemone and the LLM upstream on mock-upstream too, so every answer
 //     takes the upstream path (trafficgen --upstream all), --scenarios e2e.
 //
-// Scenarios tagged with a later gateway phase (p3) are skipped by trafficgen's default --phase;
-// cmd/trafficgen's reference tests cover them, and TestP3FormatScenariosEndToEnd runs the ones on
-// the other gated formats (/v1/messages, /v1/completions) with --phase p3.
+// trafficgen's default phase is p3, the phase this build implements, so both sets are sent whole:
+// streams, /v1/messages and /v1/completions, and the block and fallback routes. A phase skip would
+// fail --expect (D18), and runScenarios also pins how many scenarios each set sends.
 
 import (
 	"context"
@@ -150,8 +150,12 @@ func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 	return &testEnv{t: t, srv: srv, http: hs, store: st, engine: eng}
 }
 
-// runScenarios runs trafficgen --once --expect with args against env, and checks that every
-// scenario of set it sends passes and that it skips exactly the phase-tagged ones.
+// setSizes is how many scenarios each set sends, and how many of them need phase p3: this build
+// serves every one of them.
+var setSizes = map[string]struct{ all, p3 int }{"demo": {26, 6}, "e2e": {23, 5}}
+
+// runScenarios runs trafficgen --once --expect with args against env, and checks that it sends
+// every scenario of set, skips none and that each passes.
 func runScenarios(t *testing.T, env *testEnv, set string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(buildTrafficgen(t), append([]string{"--once", "--expect", "--scenarios", set, "--base-url", env.http.URL,
@@ -162,24 +166,27 @@ func runScenarios(t *testing.T, env *testEnv, set string, args ...string) string
 	if err != nil {
 		t.Fatalf("trafficgen --scenarios %s %v: %v\n%s", set, args, err, out)
 	}
-	sent := 0
+	if strings.Contains(out, "skipping") {
+		t.Errorf("trafficgen skipped scenarios of set %s:\n%s", set, out)
+	}
+	sent, p3 := 0, 0
 	for _, s := range loadDemoScenarios(t) {
 		if !slices.Contains(s.Sets, set) {
 			continue
 		}
-		if slices.Contains(s.Sets, "p3") {
-			if !strings.Contains(out, "skipping "+s.ID+":") {
-				t.Errorf("%s needs P3, but trafficgen did not skip it:\n%s", s.ID, out)
-			}
-			continue
-		}
 		sent++
+		if slices.Contains(s.Sets, "p3") {
+			p3++
+		}
 		if !strings.Contains(out, "ok   "+s.ID+" ") {
 			t.Errorf("%s did not pass:\n%s", s.ID, out)
 		}
 	}
-	if sent < 15 {
-		t.Errorf("only %d scenarios of set %s ran on this build", sent, set)
+	if want := setSizes[set]; sent != want.all || p3 != want.p3 {
+		t.Errorf("set %s sent %d scenarios (%d of them p3), want %d (%d p3)", set, sent, p3, want.all, want.p3)
+	}
+	if n := strings.Count(out, "ok   "); n != sent {
+		t.Errorf("%d ok lines for the %d scenarios of set %s:\n%s", n, sent, set, out)
 	}
 	t.Logf("trafficgen --scenarios %s %v:\n%s", set, args, out)
 	return out
@@ -205,12 +212,12 @@ func runScenarioIDs(t *testing.T, env *testEnv, ids []string, args ...string) {
 }
 
 // p3FormatScenarios are the P3 scenarios on the other gated formats (/v1/messages and
-// /v1/completions, JSON answers): the handler serves them before the turn-on moves trafficgen's
-// default phase to p3.
+// /v1/completions, JSON answers).
 var p3FormatScenarios = []string{"anthropic-system-grounded", "completions-extension-grounded"}
 
-// TestP3FormatScenariosEndToEnd runs the P3 format scenarios in both stacks: scripted answers
-// with the mock decision backend, and upstream answers from mock-upstream.
+// TestP3FormatScenariosEndToEnd runs the P3 format scenarios in both stacks, scripted answers with
+// the mock decision backend and upstream answers from mock-upstream, and checks that each format
+// reaches its own upstream path.
 func TestP3FormatScenariosEndToEnd(t *testing.T) {
 	runScenarioIDs(t, newScenarioEnv(t, nil), p3FormatScenarios)
 
@@ -298,9 +305,13 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 }
 
 // TestDemoScenariosEndToEnd is the zero-key demo's scenario check (make demo-scenarios) in
-// process: the mock decision backend answers from mock_answers, the answers are scripted.
+// process: the mock decision backend answers from mock_answers, the answers are scripted, and the
+// repo's calibration directory holds the mock calibration payments-faq adopts (as the demo stack's
+// TRUTHTABLE_CALIBRATION_DIR does), so payments-fallback falls back instead of being capped to a flag.
 func TestDemoScenariosEndToEnd(t *testing.T) {
-	runScenarios(t, newScenarioEnv(t, nil), "demo")
+	runScenarios(t, newScenarioEnv(t, func(cfg *config.Config) {
+		cfg.CalibrationDir = config.RepoPath("config/calibration")
+	}), "demo")
 }
 
 // TestE2EScenariosAgainstMockUpstream is the e2e stack (docker-compose.e2e.yml, make
@@ -326,7 +337,7 @@ func TestE2EScenariosAgainstMockUpstream(t *testing.T) {
 	llm, decisions := 0, 0
 	for _, r := range mu.Requests() {
 		switch r.Path {
-		case "/v1/chat/completions":
+		case "/v1/chat/completions", "/v1/completions", "/v1/messages":
 			llm++
 			var body map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(r.Body), &body); err != nil {
@@ -352,7 +363,7 @@ func TestE2EScenariosAgainstMockUpstream(t *testing.T) {
 			}
 		}
 	}
-	if llm < 15 || decisions < 10 {
+	if llm != setSizes["e2e"].all || decisions < 10 {
 		t.Errorf("mock-upstream answered %d LLM and %d decision requests", llm, decisions)
 	}
 }

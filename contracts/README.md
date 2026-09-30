@@ -191,24 +191,26 @@ comment; for observe routes, whose headers say `deferred`, the stored trace), th
 settled trace and its audit.
 
 **Policies.** The routes live in `config/policies.yaml`, the policy the gateway loads (also in `make demo`),
-and in `config/policies.pending.yaml`, which holds the routes this build cannot load yet: `payments-faq`
-(fallback) and `help-center` (block) until P3 enforces block and fallback, and `handbook`, which reads the
-knowledge add-on. Its routes merge over the defaults of `config/policies.yaml`; the gateway never reads it.
-Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`), draws no uniform sample and
-stores every body, so runs are deterministic.
+enforcing demo routes `payments-faq` (fallback) and `help-center` (block) included, and in
+`config/policies.pending.yaml`, which holds `handbook`: it reads the knowledge add-on, which the demo and
+e2e stacks run without. Its routes merge over the defaults of `config/policies.yaml`; the gateway never
+reads it. Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`), draws no uniform
+sample and stores every body, so runs are deterministic.
 
 **Phases.** A scenario that needs a later gateway phase than the walking skeleton carries that phase as a
 set tag: `p3` for streaming gating, `/v1/messages`, `/v1/completions`, block and fallback bodies, and routes
 in `config/policies.pending.yaml`. `trafficgen` skips scenarios whose phase is later than `--phase`
-(default: the phase the build implements, `p2` until P3 lands), so `--scenarios demo` and the S0 gate keep
-passing; P3 moves the pending block and fallback routes into `config/policies.yaml` and the default to `p3`.
-A Go test fails when a scenario's tags do not match its features.
+(default: the phase this build implements, `p3`), so a gateway of an earlier phase can still be driven
+with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
+that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 26 scenarios
+(6 of them `p3`) and the e2e set 23. A Go test fails when a scenario's tags do not match its features.
 
 **Calibration.** `config/calibration/mock__jev-heuristic-v1.json` is the calibration of the mock snapshot,
-quality `mock`: an identity table with no labels behind it. It counts only with the mock backend in demo
-mode (SPEC §2.11), where it lets `payments-faq`, whose evidence checks adopt calibrated thresholds, fall back
-instead of being capped to a flag. It claims nothing about any real model; the e2e stack (compatible
-backend) does not use it, so `payments-fallback` is in set `demo` but not `e2e`.
+quality `mock`: an identity table with no labels behind it. It counts only with the mock backend, in demo
+mode or a test-mode stack (SPEC §2.11), where it lets `payments-faq`, whose evidence checks adopt
+calibrated thresholds, fall back instead of being capped to a flag. It claims nothing about any real
+model; the e2e stack (compatible backend) does not use it, so `payments-fallback` is in set `demo` but not
+`e2e`.
 
 **Stacks.** `make demo` serves the pack with the mock decision backend and scripted answers
 (`test_response`); `make demo-scenarios` checks it (`DEMO_SCENARIOS=s0` is the S0 gate). `make e2e-up`

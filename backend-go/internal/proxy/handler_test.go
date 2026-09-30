@@ -218,7 +218,8 @@ type envOpts struct {
 const anthropicBody = `{"id":"msg_up","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"Priority tickets get a first response within 4 hours."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":9}}`
 
 // loadPolicy loads config/policies.yaml, or yaml when set, as the gateway does with env's
-// Enforcing (block and fallback accepted) and FallbackUpstream (fallback.upstream: fallback).
+// Enforcing (block and fallback accepted) and FallbackUpstream (fallback.upstream: fallback). The
+// repo policy has block and fallback routes since P3, so it always loads enforcing.
 func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, env policy.Env) *policy.Policy {
 	t.Helper()
 	src := []byte(yaml)
@@ -227,7 +228,7 @@ func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, env policy.
 		if err != nil {
 			t.Fatal(err)
 		}
-		src = b
+		src, env.Enforcing = b, true
 	}
 	env.Seeds, env.Specs = policy.DefaultSeeds(), reg
 	res := policy.Check(src, env)

@@ -446,7 +446,8 @@ func TestAuditThatNeverSettles(t *testing.T) {
 func TestWithoutExpectOnlyTransportFailuresCount(t *testing.T) {
 	stub, srv := newStub(t)
 	stub.mutate = func(string, http.Header) {}
-	code, out := runTG(t, "--scenarios", "demo", "--base-url", srv.URL)
+	// Without --expect a phase skip is only a note (with it, see TestExpectFailsOnAPhaseSkip).
+	code, out := runTG(t, "--scenarios", "demo", "--phase", "p2", "--base-url", srv.URL)
 	if _, _, polls := stub.snapshot(); code != exitOK || len(polls) != 0 {
 		t.Fatalf("exit %d, polls %v:\n%s", code, polls, out)
 	}
@@ -460,6 +461,34 @@ func TestWithoutExpectOnlyTransportFailuresCount(t *testing.T) {
 	code, out = runTG(t, "--once", "--scenarios", "grounded-pass", "--base-url", failing.URL)
 	if code != exitMismatch || !strings.Contains(out, "HTTP 400") || !strings.Contains(out, "test_mode_disabled") {
 		t.Fatalf("exit %d:\n%s", code, out)
+	}
+}
+
+// TestExpectFailsOnAPhaseSkip: with --expect, a selected scenario skipped by phase fails the check
+// although every scenario sent passes (D18), unless --allow-skip accepts the skip; this build's
+// default phase sends the whole demo set.
+func TestExpectFailsOnAPhaseSkip(t *testing.T) {
+	_, srv := newStub(t)
+	args := []string{"--once", "--expect", "--scenarios", "s0,payments-fallback", "--phase", "p2", "--base-url", srv.URL, "--audit-timeout", "10s"}
+	code, out := runTG(t, args...)
+	if code != exitMismatch {
+		t.Fatalf("exit %d, want %d:\n%s", code, exitMismatch, out)
+	}
+	for _, want := range []string{
+		"skipping payments-fallback: it needs gateway phase p3 (this run: --phase p2)",
+		"--expect skips 1 selected scenario(s) that need a later gateway phase than p2, so the check fails; pass --allow-skip",
+		"ok   grounded-pass ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in:\n%s", want, out)
+		}
+	}
+	if code, out := runTG(t, append(args, "--allow-skip")...); code != exitOK || strings.Contains(out, "so the check fails") {
+		t.Fatalf("--allow-skip: exit %d:\n%s", code, out)
+	}
+	code, out = runTG(t, "--once", "--expect", "--scenarios", "demo", "--base-url", srv.URL, "--audit-timeout", "10s")
+	if code != exitOK || strings.Contains(out, "skipping") || !strings.Contains(out, "ok   payments-fallback ") {
+		t.Fatalf("the default phase (%s) sends the whole demo set: exit %d:\n%s", defaultPhase, code, out)
 	}
 }
 
@@ -521,7 +550,7 @@ func TestUsageErrors(t *testing.T) {
 		{"--base-url", "localhost:8080"},
 		{"--scenarios", "no-such-set"},
 		{"--scenarios", "s0", "--exclude", "s0"},
-		{"--scenarios", "p3"}, // every p3 scenario needs a later phase than the default
+		{"--scenarios", "p3", "--phase", "p2"}, // every p3 scenario needs a later phase than p2
 		{"--phase", "p9"},
 		{"--upstream", "sometimes"},
 		{"--interval", "0s", "--loop"},
@@ -582,7 +611,8 @@ func TestPhases(t *testing.T) {
 			t.Errorf("%s: phase %s, want %s", sets, got, want)
 		}
 	}
-	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows(defaultPhase, "p3") {
+	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows("p2", "p3") ||
+		!phaseAllows(defaultPhase, "p3") || phaseAllows(defaultPhase, "p4") {
 		t.Error("phaseAllows")
 	}
 }

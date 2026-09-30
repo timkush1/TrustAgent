@@ -3,8 +3,6 @@ package gate
 import (
 	"context"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -13,22 +11,6 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
 )
-
-// pendingPolicy loads config/policies.pending.yaml, whose block and fallback routes the /v1
-// handler enforces from P3 (payments-faq, help-center) and whose handbook route reads the
-// knowledge add-on.
-func pendingPolicy(t *testing.T) *policy.Policy {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "policies.pending.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := policy.Check(b, policy.Env{Seeds: policy.DefaultSeeds(), Specs: registry(t), Enforcing: true, Knowledge: true})
-	if res.Policy == nil {
-		t.Fatal(res.Err())
-	}
-	return res.Policy
-}
 
 // scenarioByID returns a demo scenario.
 func scenarioByID(t *testing.T, id string) scenario {
@@ -50,7 +32,7 @@ func scenarioExchange(t *testing.T, p *policy.Policy, id string) *Exchange {
 }
 
 func TestExchangeStreamSetsTheDecisionStream(t *testing.T) {
-	p := pendingPolicy(t)
+	p := repoPolicy(t) // payments-faq, the fallback route
 	for _, tc := range []struct {
 		stream, mode string
 		downgraded   bool

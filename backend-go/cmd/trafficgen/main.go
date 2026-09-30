@@ -10,7 +10,9 @@
 // (generated), or mock-upstream in the e2e stack (all).
 //
 // Scenarios tagged with a later gateway phase than --phase (default: this build's) are skipped,
-// so `--scenarios demo` keeps working while P3 scenarios wait for P3.
+// so an older gateway can still be driven with `--phase p2`. With --expect, a skipped scenario
+// fails the check (exit status 1), because a check that skips a scenario has not tested it;
+// --allow-skip accepts the skips.
 //
 // With --expect, trafficgen checks the decision the response carries (headers; for streams also
 // the trailers and the `: trustagent {...}` comment), the HTTP status and the delivered text
@@ -67,6 +69,7 @@ type options struct {
 	file         string
 	once, loop   bool
 	expect       bool
+	allowSkip    bool
 	interval     time.Duration
 	auditTimeout time.Duration
 	timeout      time.Duration
@@ -99,11 +102,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.BoolVar(&o.once, "once", false, "send the scenarios once and exit (the default)")
 	fl.BoolVar(&o.loop, "loop", false, "send the scenarios every --interval until stopped")
 	fl.BoolVar(&o.expect, "expect", false, "check the gate headers and the deep audit against each scenario's expect")
+	fl.BoolVar(&o.allowSkip, "allow-skip", false, "with --expect, pass although selected scenarios are skipped because they need a later gateway phase than --phase")
 	fl.DurationVar(&o.interval, "interval", 20*time.Second, "pause between rounds with --loop")
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
 	fl.Usage = func() {
-		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect] [--scenarios s0] [--exclude sets] [--phase p2] [--upstream none] [--base-url URL] [--file pack.json]")
+		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--file pack.json]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
 	}
@@ -141,13 +145,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		fmt.Fprintf(stderr, "trafficgen: every scenario in %q needs a later gateway phase than %s\n", o.sets, o.phase)
 		return exitUsage
 	}
+	// A check that skips a selected scenario has not tested it (D18): the skips fail the check,
+	// reported like a mismatch, unless --allow-skip accepts them.
+	skipFails := o.expect && len(skipped) > 0 && !o.allowSkip
+	if skipFails {
+		fmt.Fprintf(stderr, "trafficgen: --expect skips %d selected scenario(s) that need a later gateway phase than %s, so the check fails; pass --allow-skip to accept that\n",
+			len(skipped), o.phase)
+	}
 	g := &generator{opts: o, client: &http.Client{Timeout: o.timeout}, out: stdout}
 	if o.key == "" {
 		fmt.Fprintln(stderr, "trafficgen: "+keyEnv+" is not set; requests carry no X-TrustAgent-Key")
 	}
 
 	if !o.loop {
-		if g.round(ctx, selected) {
+		if g.round(ctx, selected) && !skipFails {
 			return exitOK
 		}
 		return exitMismatch

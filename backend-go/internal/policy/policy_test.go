@@ -113,7 +113,6 @@ func TestParseRejects(t *testing.T) {
 		"empty":               {"", "version must be 1"},
 		"unknown field":       {"version: 1\ndefaults: {modes: flag}\n", "line 2"},
 		"unknown route field": {"version: 1\nroutes:\n  - name: a\n    match: {}\n    enforce: true\n", "line 5"},
-		"block mode":          {"version: 1\nroutes:\n  - name: pay\n    match: {}\n    mode: block\n", "not enforced by this build"},
 		"bad mode":            {"version: 1\ndefaults: {mode: strict}\n", `unknown value "strict"`},
 		"reserved name":       {"version: 1\nroutes:\n  - name: default\n    match: {}\n", "reserved"},
 		"duplicate name":      {"version: 1\nroutes:\n  - {name: a, match: {}}\n  - {name: a, match: {}}\n", "duplicate route"},
@@ -140,6 +139,22 @@ func TestParseRejects(t *testing.T) {
 				t.Errorf("error %q lacks %q", msg, c.want)
 			}
 		})
+	}
+}
+
+// TestOnlyAnEnforcingEnvAcceptsBlockAndFallback: a caller that does not enforce (Env.Enforcing
+// off) gets block and fallback refused, so a policy never claims enforcement nobody does; Parse
+// and LoadFile check as this build's gateway, which enforces both.
+func TestOnlyAnEnforcingEnvAcceptsBlockAndFallback(t *testing.T) {
+	for _, mode := range []string{"block", "fallback"} {
+		doc := "version: 1\nroutes:\n  - name: pay\n    match: {}\n    mode: " + mode + "\n    fallback: {upstream: same}\n"
+		if res := Check([]byte(doc), Env{Seeds: DefaultSeeds(), Specs: registry(t)}); res.Policy != nil ||
+			!strings.Contains(res.Err().Error(), mode+" is not enforced by this build") {
+			t.Errorf("%s without Enforcing: %v", mode, res.Errors)
+		}
+		if _, err := Parse([]byte(doc), DefaultSeeds(), registry(t)); err != nil {
+			t.Errorf("Parse %s: %v", mode, err)
+		}
 	}
 }
 

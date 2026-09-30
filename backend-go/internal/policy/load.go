@@ -57,8 +57,9 @@ type Resolver interface {
 type Env struct {
 	Seeds Seeds
 	Specs Resolver
-	// Enforcing accepts block and fallback modes. Leave it off until the /v1 handler enforces
-	// them, so a policy never claims enforcement the build does not do.
+	// Enforcing accepts block and fallback modes. The /v1 handler enforces them since P3, so the
+	// gateway, LoadFile and Parse set it; a caller that does not enforce leaves it off, so a policy
+	// never claims enforcement nobody does.
 	Enforcing bool
 	// Knowledge accepts the knowledge evidence source (the knowledge add-on is enabled).
 	Knowledge bool
@@ -114,8 +115,9 @@ func (p *Policy) Route(name string) (*Route, bool) {
 // builtinYAML is the document of the built-in policy: the defaults route only.
 const builtinYAML = "version: 1\n"
 
-// LoadFile reads and validates the policy at path. A missing file yields the built-in policy (the
-// defaults route only), so a fresh install gates in the seeded mode; any other error is returned.
+// LoadFile reads and validates the policy at path as this build's gateway does (block and fallback
+// accepted, Env.Enforcing). A missing file yields the built-in policy (the defaults route only), so
+// a fresh install gates in the seeded mode; any other error is returned.
 func LoadFile(path string, seeds Seeds, specs Resolver) (*Policy, error) {
 	b, err := os.ReadFile(path) // #nosec G304 -- the operator names the policy file (TRUTHTABLE_POLICY_FILE)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -129,7 +131,7 @@ func LoadFile(path string, seeds Seeds, specs Resolver) (*Policy, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := Check(b, Env{Seeds: seeds, Specs: specs})
+	res := Check(b, Env{Seeds: seeds, Specs: specs, Enforcing: true})
 	if res.Policy == nil {
 		return nil, fmt.Errorf("%s: %w", path, res.Err())
 	}
@@ -138,10 +140,10 @@ func LoadFile(path string, seeds Seeds, specs Resolver) (*Policy, error) {
 }
 
 // Parse validates a policy document and resolves every route's effective settings. The error is
-// a *ValidationError. Block and fallback modes are refused (Env.Enforcing off); use Check for the
-// full result.
+// a *ValidationError. Block and fallback modes are accepted, as this build enforces them
+// (Env.Enforcing); use Check for another Env and the full result.
 func Parse(doc []byte, seeds Seeds, specs Resolver) (*Policy, error) {
-	res := Check(doc, Env{Seeds: seeds, Specs: specs})
+	res := Check(doc, Env{Seeds: seeds, Specs: specs, Enforcing: true})
 	if res.Policy == nil {
 		return nil, res.Err()
 	}
