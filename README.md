@@ -234,8 +234,9 @@ make test-e2e-web   # Playwright against a running stack (make demo first)
 ```
 
 **The golden regression gate** runs the real audit pipeline with recorded judge answers and
-fails CI when a single prediction moves. On those recorded fixtures (a mock judge replaying
-recorded outputs, so these numbers characterize the pipeline, not a live model) **[measured]**:
+fails CI when a single prediction moves. The judge there is a mock replaying hand-written
+fixtures, a few of them wrong on purpose, so these numbers show that the pipeline is stable;
+they are not a model's accuracy **[simulated]**:
 
 | Set | Examples | Precision | Recall | F1 | AUROC | ECE |
 |---|---|---|---|---|---|---|
@@ -335,8 +336,8 @@ The full index is [docs/README.md](docs/README.md). Component guides:
 - **Jev is English-first** and weak on numbers, dates and double negatives; the detectors cover
   numbers and dates, and the deep audit explains what Jev cannot.
 - **Tool calls are not gated** in 2.0, and only the first choice of an `n > 1` answer is.
-- **The demo's numbers are simulated**, and the golden metrics characterize the pipeline on
-  recorded outputs, not a live model.
+- **The demo's numbers are simulated**, and so are the golden metrics: they characterize the
+  pipeline on hand-written judge answers, not a live model.
 - **Single-tenant:** no per-user data isolation.
 
 ## License
