@@ -78,6 +78,14 @@ describe('landing page', () => {
     expect(screen.getAllByRole('link', { name: /github/i })[0].getAttribute('href')).toMatch(/^https:\/\/github\.com\//);
   });
 
+  it('draws the request going out and the answer coming back through the gateway', async () => {
+    await renderLanding();
+    const figure = document.getElementById('how')?.querySelector('figure') as HTMLElement;
+    expect(within(figure).getAllByText('request')).toHaveLength(2);
+    expect(within(figure).getAllByText('answer')).toHaveLength(2);
+    expect(within(figure).getByText(/· in the background, for flagged and sampled answers/)).toBeInTheDocument();
+  });
+
   it('shows the replay with its own label, and the live playground as coming soon with no control', async () => {
     await renderLanding();
     const replay = screen.getByRole('heading', { name: 'The replay' }).closest('div[class*="flex-col"]') as HTMLElement;

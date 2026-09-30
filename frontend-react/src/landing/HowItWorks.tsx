@@ -1,5 +1,5 @@
 /** Section 2 (SPEC §8.1): three plain steps, the request path, and who it is for. */
-import { ArrowDown, ArrowRight, FileText, Gauge, ScanSearch } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, FileText, Gauge, ScanSearch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { copy } from './content';
 import { Section } from './ui';
@@ -31,24 +31,37 @@ function Box({ title, children, strong = false }: { title: string; children?: Re
   );
 }
 
-function Arrow({ label }: { label: string }) {
+/**
+ * The link between two boxes: the request goes out, the answer comes back. On wide screens a
+ * narrow column ("request" over →, ← over "answer"); down and up, side by side, when the boxes stack.
+ */
+function Connector() {
   return (
-    <div className="flex items-center justify-center text-fg-subtle lg:flex-col" aria-hidden="true">
-      <span className="text-xs max-lg:mr-2 lg:mb-1">{label}</span>
-      <ArrowRight className="size-4 max-lg:rotate-90" />
+    <div className="flex items-center justify-center gap-6 text-xs text-fg-subtle lg:flex-col lg:gap-1" aria-hidden="true">
+      <span className="inline-flex items-center gap-1.5 lg:flex-col lg:gap-0.5">
+        request
+        <ArrowRight className="size-4 max-lg:rotate-90" />
+      </span>
+      <span className="inline-flex items-center gap-1.5 lg:flex-col lg:gap-0.5">
+        <ArrowLeft className="size-4 max-lg:rotate-90" />
+        answer
+      </span>
     </div>
   );
 }
 
-/** The request path: app → gateway (instant checks, fast check, policy) → provider; audits on the side. */
+/**
+ * The request path: app → gateway → provider, and the answer back through the gateway's checks
+ * (instant checks, fast check, policy); the deep audit runs beside it, in the background.
+ */
 function PathDiagram() {
   return (
     <figure className="mb-14">
-      <div className="grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.6fr)_auto_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.7fr)_auto_minmax(0,1fr)]">
         <Box title="Your app">
           <p className="mt-1 text-sm text-fg-muted">OpenAI or Anthropic SDK, base URL changed</p>
         </Box>
-        <Arrow label="request" />
+        <Connector />
         <Box title="TrustAgent gateway" strong>
           <ol className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
             {[copy.tiers.instant_checks, copy.tiers.fast_check, 'Your policy'].map((t, i) => (
@@ -59,19 +72,20 @@ function PathDiagram() {
             ))}
           </ol>
         </Box>
-        <Arrow label="answer" />
+        <Connector />
         <Box title="Your LLM provider">
           <p className="mt-1 text-sm text-fg-muted">OpenAI, Anthropic or any compatible API</p>
         </Box>
       </div>
-      <div className="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.6fr)_auto_minmax(0,1fr)]">
+      <div className="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.7fr)_auto_minmax(0,1fr)]">
         <div className="lg:col-start-3">
-          <div className="flex justify-center py-1 text-fg-subtle" aria-hidden="true">
+          {/* From the gateway above it; when the boxes stack the provider sits in between, so no arrow. */}
+          <div className="flex justify-center py-1 text-fg-subtle max-lg:hidden" aria-hidden="true">
             <ArrowDown className="size-4" />
           </div>
-          <div className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm">
+          <div className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm max-lg:mt-3">
             <span className="font-semibold text-fg">{copy.tiers.deep_audit}</span>
-            <span className="text-fg-muted"> · asynchronous, for flagged and sampled answers, claim by claim, into your dashboard</span>
+            <span className="text-fg-muted"> · in the background, for flagged and sampled answers: claim by claim, into your dashboard</span>
           </div>
         </div>
       </div>
