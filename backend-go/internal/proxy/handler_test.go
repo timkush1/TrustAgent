@@ -853,4 +853,12 @@ func TestRequestMetrics(t *testing.T) {
 	if got := metricSample(t, "trustagent_gateway_requests_total", counter...) - before; got != 1 {
 		t.Errorf("an upstream failure: requests_total grew by %v", got)
 	}
+
+	// Passthrough traffic counts with no route, format or action.
+	ungated := []string{"route", "none", "format", "none", "action", "none"}
+	before = metricSample(t, "trustagent_gateway_requests_total", ungated...)
+	e.send(t, http.MethodGet, "/v1/models", "", nil)
+	if got := metricSample(t, "trustagent_gateway_requests_total", ungated...) - before; got != 1 {
+		t.Errorf("a passthrough request: requests_total grew by %v", got)
+	}
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/metrics"
 	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/upstream"
@@ -233,6 +234,9 @@ func (h *Handler) Passthrough(status string) gin.HandlerFunc {
 		}
 		r := c.Request.WithContext(context.WithValue(c.Request.Context(), errorFormatKey{}, format))
 		rp.ServeHTTP(c.Writer, r)
+		// Ungated traffic counts in requests_total with no route, format or action, and adds no
+		// overhead sample.
+		metrics.ObserveRequest("", "", "", "", -1)
 	}
 }
 
