@@ -100,7 +100,7 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
             <CardContent>
               <OutcomeTimeSeries
                 title={copy.overview.hero_chart}
-                description={replay ? `${bucketDescription(stats).split(',')[0]}, over the recorded traffic` : bucketDescription(stats)}
+                description={replay ? `${bucketDescription(stats).split(',')[0]}, over the replayed traffic` : bucketDescription(stats)}
                 buckets={outcomeBuckets(stats.outcomes_series)}
                 formatBucket={bucketFormatter(stats.bucket)}
                 headingLevel={2}
@@ -108,7 +108,7 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
             </CardContent>
           </Card>
           <div className="grid items-start gap-4 lg:grid-cols-2">
-            <WhatWasCaught stats={stats} span={replay ? 'over the recorded traffic' : undefined} />
+            <WhatWasCaught stats={stats} span={replay ? 'over the replayed traffic' : undefined} />
             <EvidenceCoverageCard stats={stats} timeWindow={timeWindow} />
           </div>
           <SavingsStrip timeWindow={timeWindow} />
@@ -176,8 +176,10 @@ function RecordingChip() {
   if (info.status !== 'ready') return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-      <span>Recorded {recordingDate(info.recordedAt)} · {info.traces} requests</span>
-      <EvidenceBadge label={info.kind === 'mock' ? 'simulated' : 'measured'} basis={info.label ?? undefined} subject="The recorded numbers" />
+      <span>
+        {info.traces} requests on {recordingDate(info.recordedAt)}
+      </span>
+      <EvidenceBadge label={info.kind === 'mock' ? 'simulated' : 'measured'} basis={info.label ?? undefined} subject="The replayed numbers" />
     </span>
   );
 }

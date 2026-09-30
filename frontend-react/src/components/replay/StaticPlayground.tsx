@@ -1,6 +1,7 @@
 /**
  * Playground in the static build (SPEC §7.5 "Static GitHub Pages demo"). Replay is the primary
- * experience: the three example requests open their recorded runs. Checking your own answers live
+ * experience: the three example requests open their runs on the tape (simulated for a mock
+ * recording, which the header says). Checking your own answers live
  * in the browser (your OpenRouter key, kept in this tab) arrives in P5, so it is described as coming
  * soon, with no control that pretends to work.
  */
@@ -18,6 +19,7 @@ import { tracesQuery } from '@/data/queries';
 import { checkedAgainst, commandText, copy, headlineReason, outcomeOf } from '@/domain/presentation';
 import type { TraceSummary } from '@/types/api';
 import { distinctExamples } from './examples';
+import { useReplayInfo } from './useReplay';
 
 function ExampleCard({ trace }: { trace: TraceSummary }) {
   const outcome = outcomeOf(trace);
@@ -43,7 +45,7 @@ function ExampleCard({ trace }: { trace: TraceSummary }) {
         params={{ traceId: trace.trace_id }}
         className="mt-auto inline-flex items-center gap-1 text-sm font-medium text-fg underline underline-offset-2"
       >
-        Open the recorded run
+        Open this request
         <ArrowRight aria-hidden="true" className="size-3.5" />
       </Link>
     </li>
@@ -56,6 +58,7 @@ export function StaticPlayground() {
   const examples = useMemo(() => distinctExamples(q.data?.items ?? []), [q.data]);
   const showLoading = useDelayedLoading(q.isPending);
   const demo = commandText('demo') ?? 'make demo';
+  const simulated = useReplayInfo().kind === 'mock';
 
   let body;
   if (q.isPending) body = showLoading ? <LoadingState rows={3} /> : null;
@@ -71,7 +74,13 @@ export function StaticPlayground() {
 
   return (
     <div className="space-y-8">
-      <PageHeader description="Try it now: the example requests below were checked by the demo stack and recorded. Open one to see what the fast check and the deep audit found." />
+      <PageHeader
+        description={
+          simulated
+            ? 'Try it now: the example requests below are on the replay, checked by the demo’s mock checks and mock judge (simulated, not model output). Open one to see what the fast check and the deep audit found.'
+            : 'Try it now: the example requests below were checked by a running gateway and recorded. Open one to see what the fast check and the deep audit found.'
+        }
+      />
       <section aria-labelledby="examples-title" className="space-y-3">
         <h2 id="examples-title" className="text-base font-semibold text-fg">
           Example requests

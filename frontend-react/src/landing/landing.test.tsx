@@ -83,6 +83,9 @@ describe('landing page', () => {
     const replay = screen.getByRole('heading', { name: 'The replay' }).closest('div[class*="flex-col"]') as HTMLElement;
     expect(within(replay).getByText(MOCK_LABEL)).toBeInTheDocument();
     expect(within(replay).getByText(/18 requests/)).toBeInTheDocument();
+    // A simulated tape is generated from the scenarios; it never claims a stack recorded it.
+    expect(within(replay).getByText(/Generated from the zero-key demo’s scripted scenarios, dated 28 Sept? 2026/)).toBeInTheDocument();
+    expect(within(replay).queryByText(/Recorded/)).toBeNull();
     const live = screen.getByRole('heading', { name: /try it live in your browser/i }).closest('div[class*="border-dashed"]') as HTMLElement;
     expect(within(live).getByText('Coming soon')).toBeInTheDocument();
     // Only the copy button of `make demo`: nothing that pretends to connect a key.

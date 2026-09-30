@@ -1,7 +1,9 @@
 /**
- * Section 5 (SPEC §8.1): try it. The replay tape is the primary way in (its label says what it is:
- * simulated or recorded, when, and whose answers); trying it live in the browser with your own
- * OpenRouter key arrives in P5 and is shown as coming soon, with no control that pretends to work.
+ * Section 5 (SPEC §8.1): try it. The replay tape is the primary way in. Its card says what the tape
+ * is (simulated or recorded), when, and whose answers; a simulated tape says it was generated from
+ * the demo's scripted scenarios, never that a running stack recorded it. Trying it live in the
+ * browser with your own OpenRouter key arrives in P5 and is shown as coming soon, with no control
+ * that pretends to work.
  */
 import { ArrowRight, CircleCheck, CircleMinus, Flag, Hourglass, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -117,7 +119,10 @@ function TapeCard() {
           {tape.label}
         </p>
         <p className="mt-1 text-xs text-fg-muted">
-          {tape.kind === 'mock' ? 'Recorded from the zero-key demo stack' : 'Recorded'} on {date.format(Date.parse(tape.recorded_at))} ·{' '}
+          {tape.kind === 'mock'
+            ? `Generated from the zero-key demo’s scripted scenarios, dated ${date.format(Date.parse(tape.recorded_at))}`
+            : `Recorded on ${date.format(Date.parse(tape.recorded_at))}`}{' '}
+          ·{' '}
           {tape.traces.length} requests · {sources} answers ·{' '}
           {[...counts.entries()].map(([id, n]) => `${n} ${outcome(id).label.toLowerCase()}`).join(', ')}
         </p>
@@ -157,7 +162,7 @@ export function TryIt() {
       id="try"
       eyebrow="Try it"
       title="Watch it catch the refund answer."
-      lead="Open the dashboard on recorded traffic: every request, what it was checked against, and the claim the deep audit found contradicted."
+      lead="Open the dashboard on a replay of the demo’s traffic: every request, what it was checked against, and the claim the deep audit found contradicted."
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TapeCard />

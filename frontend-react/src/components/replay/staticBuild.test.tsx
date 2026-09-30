@@ -85,9 +85,11 @@ describe('static build', () => {
     const { container } = await renderStatic('/app/traffic');
     await waitFor(() => expect(container.querySelectorAll('[data-banner]')).toHaveLength(1));
     const banner = container.querySelector('[data-banner="replay"]') as HTMLElement;
-    expect(within(banner).getByText('Replay of recorded traffic.')).toBeInTheDocument();
+    expect(within(banner).getByText('Replay of simulated traffic.')).toBeInTheDocument();
     expect(within(banner).getByText(MOCK_LABEL)).toBeInTheDocument();
-    expect(banner).toHaveTextContent(/recorded 28 Sept? 2026 on the zero-key demo stack/);
+    // Generated from the scenarios (scripts/build-demo-recording.ts), not recorded from a stack.
+    expect(banner).toHaveTextContent(/generated from the zero-key demo’s scripted scenarios, dated 28 Sept? 2026/);
+    expect(banner).not.toHaveTextContent(/recorded/i);
     expect(within(banner).getByRole('link', { name: 'Run it yourself' })).toHaveAttribute('href', '/TrustAgent/#self-host');
     // No Health pill or demo badge for a gateway that is not there.
     expect(screen.queryByRole('button', { name: /System health/ })).toBeNull();
@@ -121,14 +123,16 @@ describe('static build', () => {
     const list = await screen.findByRole('list', { name: 'Example requests' });
     const cards = within(list).getAllByRole('listitem');
     expect(cards).toHaveLength(3);
-    for (const card of cards) expect(within(card).getByRole('link', { name: /Open the recorded run/ }).getAttribute('href')).toMatch(/^\/app\/traffic\//);
+    for (const card of cards) expect(within(card).getByRole('link', { name: /Open this request/ }).getAttribute('href')).toMatch(/^\/app\/traffic\//);
+    expect(screen.getByText(/checked by the demo’s mock checks and mock judge \(simulated, not model output\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/checked by the demo stack/)).toBeNull();
     expect(screen.getByText('Coming soon')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('shows the Overview of the recording with its Simulated badge', async () => {
     await renderStatic('/app/overview');
-    expect(await screen.findByText(/Recorded 28 Sept? 2026 · 18 requests/)).toBeInTheDocument();
+    expect(await screen.findByText(/18 requests on 28 Sept? 2026/)).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Time window' })).toBeNull();
   });
 

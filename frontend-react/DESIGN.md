@@ -392,9 +392,14 @@ the cost calculator is lazy, and the refund example comes from a virtual module
   evaluator library and setup are hidden; a deep link to them shows why (`StaticRouteGuard`), not
   an error whose Retry cannot work.
 - The top bar shows the replay's status ("Replaying · 12 of 18 requests", "Replay again") in place
-  of the Health pill and demo badge; the one banner is "Replay of recorded traffic." with the
-  recording's own label. A mock recording is Simulated everywhere; `check_recording.py` and
-  `recording.ts` refuse a label that could pass it off as model output.
+  of the Health pill and demo badge; the one banner carries the recording's own label: "Replay of
+  simulated traffic." for a mock recording, "Replay of recorded traffic." for a real one. A mock
+  recording is Simulated everywhere; `check_recording.py` and `recording.ts` refuse a label that
+  could pass it off as model output.
+- Say where a tape came from, and nothing more. The committed mock tape is generated from the
+  scenario pack (`scripts/build-demo-recording.ts`), so its copy says "generated from the zero-key
+  demo's scripted scenarios", never "recorded on the demo stack" or "checked by the demo stack";
+  only a `recorded` manifest (Go `export-replay`, P5) is "recorded".
 - Both pages carry the §7.5 CSP meta and `referrer: no-referrer`; no inline script (the theme
   script is a file), no third-party request, fonts self-hosted. P5's browser keys live in
   `sessionStorage` only.

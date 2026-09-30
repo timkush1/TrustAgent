@@ -19,7 +19,8 @@ test.describe('replay', () => {
     expect(res?.status()).toBe(200);
 
     const banner = page.locator('[data-banner="replay"]');
-    await expect(banner).toContainText('Replay of recorded traffic.');
+    await expect(banner).toContainText('Replay of simulated traffic.');
+    await expect(banner).toContainText('generated from the zero-key demo’s scripted scenarios');
     await expect(banner.locator('[data-recording-label]')).toHaveText(MOCK_LABEL);
     await expect(page.locator('[data-banner]')).toHaveCount(1);
 
@@ -72,7 +73,7 @@ test.describe('replay', () => {
     await expect(nav.getByRole('link', { name: 'Run it yourself' })).toBeVisible();
     const labels = await nav.getByRole('link').evaluateAll((links) => links.map((a) => a.getAttribute('aria-label')).filter(Boolean));
     expect(labels).toEqual(['Overview', 'Traffic', 'Trace', 'Playground', 'Studio', 'Run it yourself']);
-    await expect(page.getByText(/Recorded \d+ \w+ \d{4} · \d+ requests/)).toBeVisible();
+    await expect(page.getByText(/\d+ requests on \d+ \w+ \d{4}/)).toBeVisible();
 
     await page.goto('app/policies');
     await expect(page.getByRole('heading', { name: 'Policies is not part of the static demo' })).toBeVisible();
