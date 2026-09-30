@@ -61,8 +61,8 @@ type PlaygroundDocument struct {
 type PlaygroundInput struct {
 	// Mode is PlaygroundChat or PlaygroundAudit.
 	Mode string
-	// Route names the route the run is checked on; "" matches the run as a POST
-	// /v1/chat/completions of Model.
+	// Route names the route the run is checked on; "" matches the run as the admin's own POST
+	// /v1/chat/completions of Model: by KeyLabel, with no header of the dashboard's.
 	Route    string
 	Model    string
 	Messages []PlaygroundMessage
@@ -137,9 +137,13 @@ type playgroundExtension struct {
 // Playground runs one Playground request (SPEC §2.4 row 61, §3.3; D12) through the /v1 exchange
 // helpers, the way POST /v1/chat/completions would have handled it:
 //
-//   - the flow comes from newFlow: the named route (or the route the policy matches), in the
-//     route's mode or the admin's ModeOverride, with source playground and audit selection
-//     playground, so every run with an answer gets a deep audit (disabled without an engine);
+//   - the flow comes from newFlow, on a request of its own (runContext): the /v1 path and JSON
+//     content headers only, so nothing the dashboard's browser sent (its cookies and origin, a
+//     credential a reverse proxy added) reaches the route match or an upstream call made for the
+//     run, the route's fallback call included. The route is the named one, or the one the
+//     policy matches for the admin's key label; the mode is the route's or the admin's
+//     ModeOverride; source and audit selection are playground, so every run with an answer gets
+//     a deep audit (disabled without an engine);
 //   - audit mode answers through the test_response path (scriptedAnswer, no upstream call);
 //     chat mode calls the upstream of the OpenAI family with stream:false, and only with the
 //     gateway's own key (inject mode): without one the run is refused with 503
@@ -176,9 +180,9 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 		return nil, fmt.Errorf("playground: the request does not parse: %w", err)
 	}
 
-	f := h.newFlow(c, llmapi.FormatOpenAIChat, playgroundPath, raw, req, start)
+	f := h.newFlow(runContext(c), llmapi.FormatOpenAIChat, playgroundPath, raw, req, start)
 	x, t := f.x, f.x.Trace
-	route := f.route
+	var route *policy.Route
 	if in.Route != "" {
 		named, ok := x.Policy.Route(in.Route)
 		if !ok {
@@ -186,6 +190,11 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 				Message: fmt.Sprintf("No route is named %q in the policy in effect.", in.Route)}
 		}
 		route = named
+	} else {
+		// newFlow matched without a key label: the /api caller's identity is not an ingest key's.
+		route = x.Policy.Match(&policy.Request{
+			Path: playgroundPath, Model: in.Model, Headers: f.c.Request.Header, KeyLabel: in.KeyLabel,
+		})
 	}
 	mode := route.Mode
 	if in.ModeOverride != "" && in.ModeOverride != route.Mode {
@@ -229,8 +238,7 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 	var up gate.Upstream // audit mode: no upstream call
 	if chat {
 		f.upStart = h.now()
-		header := http.Header{"Content-Type": {"application/json"}, "Accept": {"application/json"}}
-		resp, cancel, err := f.up.Do(ctx, http.MethodPost, playgroundPath, "", header, f.forward)
+		resp, cancel, err := f.up.Do(ctx, http.MethodPost, playgroundPath, "", f.c.Request.Header, f.forward)
 		if err != nil {
 			return nil, h.playgroundUpstreamFailed(ctx, f, err)
 		}
@@ -282,6 +290,22 @@ func (h *Handler) useRoute(f *flow, route *policy.Route) {
 		return
 	}
 	f.x.Evidence, f.x.Trace.UserRequest = ev, ev.UserRequest
+}
+
+// runContext is the gin context a run's flow is built on: c's values and writer, with a request
+// of its own that stands for the admin's POST /v1/chat/completions (the same context, the /v1
+// path without a query, no body left to read, and only the JSON content headers). The flow's
+// helpers match the route on the request's headers and forward them on the upstream calls they
+// make (the route's fallback call sends the client's headers), so none of the dashboard's reach
+// them.
+func runContext(c *gin.Context) *gin.Context {
+	r := c.Request.Clone(c.Request.Context())
+	r.URL.Path, r.URL.RawPath, r.URL.RawQuery, r.RequestURI = playgroundPath, "", "", playgroundPath
+	r.Header = http.Header{"Content-Type": {"application/json"}, "Accept": {"application/json"}}
+	r.Body, r.GetBody, r.ContentLength = http.NoBody, nil, 0
+	rc := c.Copy()
+	rc.Request, rc.Writer = r, c.Writer
+	return rc
 }
 
 // playgroundUpstreamFailed records a chat-mode run whose upstream call failed outright, as

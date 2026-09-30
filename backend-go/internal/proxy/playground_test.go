@@ -329,21 +329,56 @@ func TestPlaygroundPieces(t *testing.T) {
 	}
 }
 
-// TestPlaygroundRouteMatchedLikeAChatCompletion: without a route name, the run is matched as a
-// POST /v1/chat/completions of its model.
+// TestPlaygroundRouteMatchedLikeAChatCompletion: without a route name, the run is matched as the
+// admin's own POST /v1/chat/completions of its model: by the admin's key label, and never by a
+// header of the dashboard's request.
 func TestPlaygroundRouteMatchedLikeAChatCompletion(t *testing.T) {
 	yaml := blockPolicy("flag", "") + `routes:
+  - name: dashboard-origin
+    match: {headers: {Origin: "http://localhost:5173"}}
+  - name: admins
+    match: {key_labels: [root]}
+    mode: observe
   - name: mini
     match: {models: ["gpt-4o-mini"]}
     mode: observe
 `
 	e := newEnv(t, envOpts{testMode: true, policyYAML: yaml})
-	res, err := e.handler.Playground(context.Background(), playgroundContext(), refundRun(t, PlaygroundAudit), nil)
-	if err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct{ keyLabel, route string }{{"", "mini"}, {"ci-bot", "mini"}, {"root", "admins"}} {
+		in := refundRun(t, PlaygroundAudit)
+		in.KeyLabel = tc.keyLabel
+		res, err := e.handler.Playground(context.Background(), playgroundContext(), in, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := e.sink.result(t)
+		if res.Decision.Route != tc.route || r.Trace.Route != tc.route || res.Decision.Mode != decision.ModeObserve {
+			t.Errorf("key label %q: route %s (trace %s) mode %s, want %s", tc.keyLabel, res.Decision.Route, r.Trace.Route, res.Decision.Mode, tc.route)
+		}
 	}
-	e.sink.result(t)
-	if res.Decision.Route != "mini" || res.Decision.Mode != decision.ModeObserve {
-		t.Errorf("route %s mode %s", res.Decision.Route, res.Decision.Mode)
+}
+
+// TestPlaygroundRunContext: a run's flow stands for a POST /v1/chat/completions of its own: the
+// /v1 path and the JSON content headers only, none of the dashboard's (so the route's fallback
+// call cannot forward them), while the dashboard's request, writer and values stay as they were.
+func TestPlaygroundRunContext(t *testing.T) {
+	c := playgroundContext()
+	c.Request.Header.Set("Authorization", "Basic YWRtaW46cHJveHk=") // a reverse proxy's credential
+	c.Request.URL.RawQuery = "debug=1"
+	c.Set("identity", "root")
+	rc := runContext(c)
+	r := rc.Request
+	if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" || r.URL.RawQuery != "" || r.Context() != c.Request.Context() {
+		t.Errorf("request %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+	}
+	want := http.Header{"Content-Type": {"application/json"}, "Accept": {"application/json"}}
+	if len(r.Header) != len(want) || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Accept") != "application/json" {
+		t.Errorf("headers %v, want %v", r.Header, want)
+	}
+	if rc.Writer != c.Writer || rc.GetString("identity") != "root" {
+		t.Error("the run's context lost the dashboard request's writer or values")
+	}
+	if c.Request.URL.Path != "/api/playground/run" || c.Request.Header.Get("Cookie") == "" || c.Request.URL.RawQuery != "debug=1" {
+		t.Errorf("the dashboard's request changed: %s %v", c.Request.URL, c.Request.Header)
 	}
 }
