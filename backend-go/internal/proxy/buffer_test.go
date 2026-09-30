@@ -358,6 +358,21 @@ func TestBufferedTooLargeTail(t *testing.T) {
 	if r := e.sink.result(t); r.Final == nil || r.Final.Delivered != gate.DeliveredBlocked {
 		t.Errorf("final %+v", r.Final)
 	}
+
+	// Fail open lets an unchecked answer through, not an unread one: a block route that fails open
+	// still blocks an answer past the limit rather than relaying its rest ungated (D4).
+	e = newStrmEnv(t, newStrmUpstream(t, events...), strmOpts{
+		policyYAML: strmPolicy(`mode: block, fail: open, streaming: buffer, block: {message: "` + strmBlockMessage + `"}`), maxBytes: 2048,
+	})
+	_, body = e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+	if text, asm := strmText(t, llmapi.FormatOpenAIChat, body); text != strmBlockMessage || !asm.Terminated() {
+		t.Errorf("a fail-open block route blocks the unread answer: %q", text)
+	}
+	r = e.sink.result(t)
+	if r.Decision.Action != decision.ActionPass || r.Decision.SkipReason == nil || *r.Decision.SkipReason != gate.SkipUpstreamError ||
+		r.Final == nil || r.Final.Action != decision.ActionBlock || r.Final.Delivered != gate.DeliveredBlocked {
+		t.Errorf("fail open decides pass, the delivery blocks: action %s skip %v final %+v", r.Decision.Action, r.Decision.SkipReason, r.Final)
+	}
 }
 
 // TestBufferedToolCallsPassThroughUnenforced (D5): an answer with tool calls and no text cannot be

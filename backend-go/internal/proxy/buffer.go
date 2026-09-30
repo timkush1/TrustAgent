@@ -25,9 +25,12 @@ import (
 // the fallback's answer re-emitted as a stream, or what on_fail picked.
 //
 // An answer the gate cannot check (past TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES, undecodable, cut
-// short by a read error) is a skip: a closed block or fallback route blocks it (D4); anything
-// else delivers what was read and then the rest of the stream, ungated. An error the upstream
-// reported inside the stream, or an answer without text, passes through unenforced (D4, D5).
+// short by a read error) is a skip: a closed block or fallback route blocks it (D4). An answer
+// past the size limit is never relayed ungated on a block or fallback route, whatever its fail
+// mode: fail open lets an unchecked answer through, not an unread one (D4, as the JSON path).
+// Anything else delivers what was read and then the rest of the stream, ungated. An error the
+// upstream reported inside the stream, or an answer without text, passes through unenforced (D4,
+// D5).
 func (h *Handler) serveBuffered(f *flow, resp *http.Response, body io.Reader) {
 	c, x := f.c, f.x
 	x.Stream = gate.StreamBuffer
@@ -141,7 +144,17 @@ func (h *Handler) bufferedDelivery(f *flow, s *streamState, g *gate.Result, col 
 		a.result1 = fo.Result1
 		return a
 	}
+	if tooLarge && bufferEnforcing(g.Decision.EffectiveMode) {
+		// The ungated relay of an answer past the size limit stays on observe and flag routes (D4).
+		return h.bufferedBlock(f, s)
+	}
 	return original()
+}
+
+// bufferEnforcing reports whether an effective mode enforces its decision on the answer: block
+// and fallback.
+func bufferEnforcing(mode string) bool {
+	return mode == decision.ModeBlock || mode == decision.ModeFallback
 }
 
 // bufferedFallbackEvents re-emits a delivered fallback answer as a stream of f's format, with finish
