@@ -11,11 +11,13 @@ package main
 //     takes the upstream path (trafficgen --upstream all), --scenarios e2e.
 //
 // Scenarios tagged with a later gateway phase (p3) are skipped by trafficgen's default --phase;
-// cmd/trafficgen's reference tests cover them.
+// cmd/trafficgen's reference tests cover them, and TestP3FormatScenariosEndToEnd runs the ones on
+// the other gated formats (/v1/messages, /v1/completions) with --phase p3.
 
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -183,6 +185,118 @@ func runScenarios(t *testing.T, env *testEnv, set string, args ...string) string
 	return out
 }
 
+// runScenarioIDs runs trafficgen --once --expect --phase p3 on the scenarios ids against env and
+// checks that each passes.
+func runScenarioIDs(t *testing.T, env *testEnv, ids []string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(buildTrafficgen(t), append([]string{"--once", "--expect", "--phase", "p3", "--scenarios", strings.Join(ids, ","),
+		"--base-url", env.http.URL, "--audit-timeout", "30s"}, args...)...)
+	cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	if err != nil {
+		t.Fatalf("trafficgen --scenarios %v %v: %v\n%s", ids, args, err, out)
+	}
+	for _, id := range ids {
+		if !strings.Contains(out, "ok   "+id+" ") {
+			t.Errorf("%s did not pass:\n%s", id, out)
+		}
+	}
+}
+
+// p3FormatScenarios are the P3 scenarios on the other gated formats (/v1/messages and
+// /v1/completions, JSON answers): the handler serves them before the turn-on moves trafficgen's
+// default phase to p3.
+var p3FormatScenarios = []string{"anthropic-system-grounded", "completions-extension-grounded"}
+
+// TestP3FormatScenariosEndToEnd runs the P3 format scenarios in both stacks: scripted answers
+// with the mock decision backend, and upstream answers from mock-upstream.
+func TestP3FormatScenariosEndToEnd(t *testing.T) {
+	runScenarioIDs(t, newScenarioEnv(t, nil), p3FormatScenarios)
+
+	mu, err := mockupstream.New(mockupstream.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(mu)
+	t.Cleanup(upstream.Close)
+	env := newScenarioEnv(t, func(cfg *config.Config) {
+		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
+		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
+		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
+	})
+	runScenarioIDs(t, env, p3FormatScenarios, "--upstream", "all")
+	paths := map[string]int{}
+	for _, r := range mu.Requests() {
+		paths[r.Path]++
+	}
+	if paths["/v1/messages"] != 1 || paths["/v1/completions"] != 1 {
+		t.Errorf("mock-upstream answered %v: each format reaches its own path once", paths)
+	}
+}
+
+// TestV1ErrorShapesOnTheServer: the server's own /v1 wiring (ingest auth, the v1 limiter, the
+// upstream call and the NoRoute branch of server.go) answers in the error shape of the route's
+// API, as an SDK pointed at the gateway expects: Anthropic on /v1/messages and its sub-paths,
+// OpenAI elsewhere.
+func TestV1ErrorShapesOnTheServer(t *testing.T) {
+	env := newScenarioEnv(t, func(cfg *config.Config) { cfg.RateLimitPerMinute = 1 })
+	send := func(method, path, key string) (*http.Response, string) {
+		t.Helper()
+		r, _ := http.NewRequest(method, env.http.URL+path, strings.NewReader(`{"model":"claude-haiku-4-5","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`))
+		r.Header.Set("Content-Type", "application/json")
+		if key != "" {
+			r.Header.Set("X-TrustAgent-Key", key)
+		}
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp, string(b)
+	}
+	// anthropic checks an Anthropic-shaped error; traced, that it carries the trace id (every
+	// response of the /v1 group does; the NoRoute branch runs outside the group).
+	anthropic := func(resp *http.Response, body string, status int, errType string, traced bool) {
+		t.Helper()
+		var e struct {
+			Type  string                         `json:"type"`
+			Error struct{ Type, Message string } `json:"error"`
+		}
+		if resp.StatusCode != status || json.Unmarshal([]byte(body), &e) != nil || e.Type != "error" || e.Error.Type != errType ||
+			e.Error.Message == "" || traced && resp.Header.Get("X-TrustAgent-Trace-Id") == "" {
+			t.Errorf("%s %s: want %d %s in the Anthropic shape, got %d %s", resp.Request.Method, resp.Request.URL.Path, status, errType,
+				resp.StatusCode, body)
+		}
+	}
+
+	resp, body := send(http.MethodPost, "/v1/messages", "")
+	anthropic(resp, body, http.StatusUnauthorized, "authentication_error", true)
+	if resp, body := send(http.MethodPost, "/v1/chat/completions", ""); resp.StatusCode != http.StatusUnauthorized ||
+		!strings.Contains(body, `"type":"trustagent_error"`) || !strings.Contains(body, `"code":"unauthorized"`) {
+		t.Errorf("chat completions without a key: %d %s", resp.StatusCode, body)
+	}
+	resp, body = send(http.MethodGet, "/v1/messages/batches", testKey)
+	anthropic(resp, body, http.StatusNotFound, "invalid_request_error", false)
+	// The test stack's upstream refuses connections: a 502 in the route's shape, then the limit.
+	resp, body = send(http.MethodPost, "/v1/messages", testKey)
+	anthropic(resp, body, http.StatusBadGateway, "api_error", true)
+	if got := resp.Header.Get("X-TrustAgent-Status"); got != "skipped:upstream_error" {
+		t.Errorf("status %q", got)
+	}
+	// The limiter's window is a fixed minute: a request that lands in a new one passes again.
+	for range 3 {
+		if resp, body = send(http.MethodPost, "/v1/messages", testKey); resp.StatusCode != http.StatusBadGateway {
+			break
+		}
+	}
+	anthropic(resp, body, http.StatusTooManyRequests, "rate_limit_error", true)
+	if resp.Header.Get("Retry-After") == "" {
+		t.Error("a 429 carries Retry-After")
+	}
+}
+
 // TestDemoScenariosEndToEnd is the zero-key demo's scenario check (make demo-scenarios) in
 // process: the mock decision backend answers from mock_answers, the answers are scripted.
 func TestDemoScenariosEndToEnd(t *testing.T) {
@@ -203,7 +317,7 @@ func TestE2EScenariosAgainstMockUpstream(t *testing.T) {
 	env := newScenarioEnv(t, func(cfg *config.Config) {
 		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
 		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
-		cfg.UpstreamURL = upstream.URL
+		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
 	})
 	runScenarios(t, env, "e2e", "--upstream", "all")
 

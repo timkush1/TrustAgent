@@ -164,6 +164,24 @@ func TestBlockJSONErrorStyle(t *testing.T) {
 	}
 }
 
+// TestBlockText: the text a block delivers (the trace's delivered text) is the route's message, or
+// the default when the route sets none, in either style.
+func TestBlockText(t *testing.T) {
+	for _, tc := range []struct {
+		b    Block
+		want string
+	}{
+		{Block{}, DefaultBlockMessage},
+		{Block{Style: BlockStyleError, Status: 451}, DefaultBlockMessage},
+		{Block{Message: "Held back."}, "Held back."},
+		{Block{Style: BlockStyleError, Message: "Held back."}, "Held back."},
+	} {
+		if got := tc.b.Text(); got != tc.want {
+			t.Errorf("%+v: Text() = %q, want %q", tc.b, got, tc.want)
+		}
+	}
+}
+
 func TestBlockStream(t *testing.T) {
 	msg := "I can't confirm that."
 	b := Block{Message: msg, Style: BlockStyleError} // streams are always message style
