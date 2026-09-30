@@ -8,18 +8,30 @@ import (
 	"github.com/truthtable/backend-go/internal/policy"
 )
 
-// planAudit applies the SPEC §2.9 caller rules to a decision: the uniform draw wins, then the
-// decision's deep_audit class picks the lane and its sample rate. Without an answer there is
-// nothing to audit.
-func (g *Gate) planAudit(r *policy.Route, core *decision.Core, uniform, hasText bool, scenario string) AuditPlan {
+// auditDraw is what planAudit needs besides the route and the decision.
+type auditDraw struct {
+	// uniform is the pre-gate uniform draw; hasText says there is an answer to audit.
+	uniform, hasText bool
+	// forced is Exchange.AuditSelection; scenario the trace's scenario id (test mode).
+	forced, scenario string
+}
+
+// planAudit applies the SPEC §2.9 caller rules to a decision: a selection the caller forces (a
+// Playground run) wins, then the uniform draw, then the decision's deep_audit class picks the lane
+// and its sample rate. Without an answer there is nothing to audit.
+func (g *Gate) planAudit(r *policy.Route, core *decision.Core, d auditDraw) AuditPlan {
 	da := r.DeepAudit
-	p := AuditPlan{Verifier: da.Verifier, MockScenario: scenario}
+	p := AuditPlan{Verifier: da.Verifier, MockScenario: d.scenario}
 	switch {
+	case d.forced != "" && d.hasText:
+		p.Selection, p.Lane, p.InclusionProb = d.forced, LaneHigh, 1
+	case d.forced != "":
+		p.Status = AuditNotAssessed
 	case !da.Enabled:
 		p.Status = AuditDisabled
-	case !hasText:
+	case !d.hasText:
 		p.Status = AuditNotAssessed
-	case uniform:
+	case d.uniform:
 		p.Selection, p.Lane, p.InclusionProb = SelectionUniform, LaneLow, da.UniformSampleRate
 		p.UniformSample, p.Verifier = true, "llm"
 	case core.DeepAudit == decision.DeepAuditHigh:

@@ -60,9 +60,8 @@ type Config struct {
 	IngestAuth               string        `env:"TRUTHTABLE_INGEST_AUTH"` // keys | open (open is refused in inject mode)
 	TestMode                 bool          `env:"TRUTHTABLE_TEST_MODE"`   // M7
 	DemoMode                 bool          `env:"TRUTHTABLE_DEMO_MODE"`
-	UpstreamAPIKey           string        `env:"TRUTHTABLE_UPSTREAM_API_KEY"` // non-empty enables inject mode
 	UpstreamHeaderTimeout    time.Duration `env:"TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT"`
-	UpstreamTimeout          time.Duration `env:"TRUTHTABLE_UPSTREAM_TIMEOUT"`
+	UpstreamTimeout          time.Duration `env:"TRUTHTABLE_UPSTREAM_TIMEOUT"` // a JSON answer, whole
 	MaxUpstreamResponseBytes int64         `env:"TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES"`
 	PolicyFile               string        `env:"TRUTHTABLE_POLICY_FILE,repopath"`
 	GateDefaultMode          string        `env:"TRUTHTABLE_GATE_DEFAULT_MODE"` // seed
@@ -71,10 +70,29 @@ type Config struct {
 	UniformAuditsPerDay      int           `env:"TRUTHTABLE_UNIFORM_AUDITS_PER_DAY"`
 	Jev                      JevConfig
 
+	// Named upstreams (SPEC §2.12 forwarding): UpstreamURL serves the OpenAI formats, the Anthropic
+	// upstream /v1/messages, and the optional fallback upstream the routes with fallback.upstream:
+	// fallback. Each one injects its own key when it is set (inject mode) and passes the client's
+	// credentials through otherwise (D15).
+	UpstreamAPIKey          string        `env:"TRUTHTABLE_UPSTREAM_API_KEY"`
+	UpstreamAuthHeader      string        `env:"TRUTHTABLE_UPSTREAM_AUTH_HEADER"` // authorization (Bearer) | api-key | x-api-key
+	AnthropicUpstreamURL    string        `env:"TRUTHTABLE_ANTHROPIC_UPSTREAM_URL"`
+	AnthropicUpstreamAPIKey string        `env:"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY"` // injected on x-api-key
+	FallbackUpstreamURL     string        `env:"TRUTHTABLE_FALLBACK_UPSTREAM_URL"`      // "" = no fallback upstream
+	FallbackUpstreamAPIKey  string        `env:"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"`  // injected on the format's header
+	FallbackUpstreamFormat  string        `env:"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT"`   // openai | anthropic
+	StreamIdleTimeout       time.Duration `env:"TRUTHTABLE_STREAM_IDLE_TIMEOUT"`        // between reads of a stream; 0 = none
+
 	// Policy engine: hot reload, the file lock and the custom evaluator files (SPEC §2.7, §7.2).
 	PolicyReloadInterval time.Duration `env:"TRUTHTABLE_POLICY_RELOAD_INTERVAL"` // 0 disables polling
 	ConfigLock           bool          `env:"TRUTHTABLE_CONFIG_LOCK"`            // the file is the only authority
 	EvaluatorsDir        string        `env:"TRUTHTABLE_EVALUATORS_DIR,repopath"`
+	// Calibration files (trustagent.calibration/v1) and the snapshot-family fallback (SPEC §2.9).
+	CalibrationDir            string `env:"TRUTHTABLE_CALIBRATION_DIR,repopath"`
+	CalibrationFamilyFallback bool   `env:"TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK"`
+	// The knowledge add-on (evidence source knowledge) and the default of evidence.knowledge.deadline_ms.
+	KnowledgeEnabled  bool          `env:"TRUTHTABLE_KNOWLEDGE_ENABLED"`
+	KnowledgeDeadline time.Duration `env:"TRUTHTABLE_KNOWLEDGE_DEADLINE"`
 
 	// Server, persistence, engine link and WebSocket
 	ReadHeaderTimeout      time.Duration `env:"TRUTHTABLE_READ_HEADER_TIMEOUT"`
@@ -88,7 +106,10 @@ type Config struct {
 	TraceFlush             string        `env:"TRUTHTABLE_TRACE_FLUSH"`         // async | sync
 	BodyRetention          time.Duration `env:"TRUTHTABLE_BODY_RETENTION"`
 	BodyMaxBytes           int           `env:"TRUTHTABLE_BODY_MAX_BYTES"`
-	AuditQueueHigh         int           `env:"TRUTHTABLE_AUDIT_QUEUE_HIGH"` // QueueSize is the low lane
+	RetentionDays          int           `env:"TRUTHTABLE_RETENTION_DAYS"`         // traces, decisions and audits
+	CostRetentionDays      int           `env:"TRUTHTABLE_COST_RETENTION_DAYS"`    // cost events
+	LabelSampleRetention   time.Duration `env:"TRUTHTABLE_LABEL_SAMPLE_RETENTION"` // bodies of labelled samples
+	AuditQueueHigh         int           `env:"TRUTHTABLE_AUDIT_QUEUE_HIGH"`       // QueueSize is the low lane
 	AuditHighPerMin        int           `env:"TRUTHTABLE_AUDIT_HIGH_PER_MIN"`
 	EngineHealthInterval   time.Duration `env:"TRUTHTABLE_ENGINE_HEALTH_INTERVAL"` // M4
 	SpendCapDecisionUSDDay float64       `env:"TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY"`
@@ -202,8 +223,27 @@ func (c *Config) StrictFailure() bool { return c.StrictConfig && len(c.Diagnosti
 // StrictExitCode is the exit code of a strict-mode configuration failure (SPEC §2.7).
 const StrictExitCode = 2
 
-// Injecting reports whether an upstream credential is injected (inject mode, SPEC §2.12).
-func (c *Config) Injecting() bool { return c.UpstreamAPIKey != "" }
+// Injecting reports whether any upstream injects a credential (inject mode, SPEC §2.12). Each
+// upstream injects only its own key (TRUTHTABLE_UPSTREAM_API_KEY, _ANTHROPIC_UPSTREAM_API_KEY,
+// _FALLBACK_UPSTREAM_API_KEY) and passes client credentials through without one; any key set lets
+// a Bearer or x-api-key equal to a proxy key authenticate on /v1, and refuses open ingest, since
+// the proxy would otherwise spend its own credential on anonymous callers.
+func (c *Config) Injecting() bool { return len(c.InjectedKeys()) > 0 }
+
+// InjectedKeys names the upstream credential keys that are set, in registry order.
+func (c *Config) InjectedKeys() []string {
+	var out []string
+	for _, k := range []struct{ name, value string }{
+		{"TRUTHTABLE_UPSTREAM_API_KEY", c.UpstreamAPIKey},
+		{"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY", c.AnthropicUpstreamAPIKey},
+		{"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY", c.FallbackUpstreamAPIKey},
+	} {
+		if k.value != "" {
+			out = append(out, k.name)
+		}
+	}
+	return out
+}
 
 // Entries returns every registry key of the proxy with its effective value and where it came
 // from, in registry order. Secret values are included: mask them (MaskSecret) before showing them.

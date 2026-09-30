@@ -703,3 +703,118 @@ func TestClientLeavingCancelsTheUpstreamRead(t *testing.T) {
 		t.Errorf("client gone %v finished %v: gate unenforced, audit client_disconnected", res.ClientGone(clientCtx), asm.Finished())
 	}
 }
+
+// deadlineWriter records the write deadlines set through http.ResponseController.
+type deadlineWriter struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (d *deadlineWriter) SetWriteDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	return nil
+}
+
+// TestKeepWriteDeadline: once asked to, the writer keeps the write deadline a window ahead: the
+// first write pushes it, writes within a quarter of the window do not push it again, and an
+// explicit extension of at least the window counts as a push. Without a window nothing is set.
+func TestKeepWriteDeadline(t *testing.T) {
+	w := &deadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	sw := NewStreamWriter(w)
+	if err := sw.WriteComment("one"); err != nil || len(w.deadlines) != 0 {
+		t.Fatalf("no window, no deadline: %v %v", err, w.deadlines)
+	}
+	sw.KeepWriteDeadline(40 * time.Second)
+	before := time.Now()
+	_ = sw.WriteComment("two")
+	_ = sw.WriteKeepalive()
+	if len(w.deadlines) != 1 || w.deadlines[0].Before(before.Add(40*time.Second)) {
+		t.Fatalf("one push a window ahead: %v", w.deadlines)
+	}
+	if err := sw.ExtendWriteDeadline(5 * time.Minute); err != nil || len(w.deadlines) != 2 {
+		t.Fatalf("explicit extension: %v %v", err, w.deadlines)
+	}
+	_ = sw.Finish(nil, nil)
+	if len(w.deadlines) != 2 {
+		t.Errorf("an extension past the window postpones the next push: %v", w.deadlines)
+	}
+
+	// A writer that cannot set deadlines is written to as usual.
+	rec := httptest.NewRecorder()
+	sw = NewStreamWriter(rec)
+	sw.KeepWriteDeadline(time.Minute)
+	if err := sw.WriteComment("x"); err != nil || rec.Body.String() != ": x\n\n" {
+		t.Errorf("%v %q", err, rec.Body.String())
+	}
+	if err := sw.ExtendWriteDeadline(time.Minute); !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("explicit extension without support: %v", err)
+	}
+}
+
+// TestClearTrailers: trailers declared for a buffered answer are dropped when its decision goes
+// out in the headers; once the headers are sent, clearing changes nothing.
+func TestClearTrailers(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := NewStreamWriter(rec)
+	sw.DeclareTrailers("X-TrustAgent-Action", "X-TrustAgent-Mode")
+	sw.ClearTrailers()
+	rec.Header().Set("X-TrustAgent-Action", "pass")
+	if err := sw.Finish(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.Result().Header.Get("Trailer"); got != "" || rec.Result().Header.Get("X-TrustAgent-Action") != "pass" {
+		t.Errorf("Trailer %q, headers %v", got, rec.Result().Header)
+	}
+
+	rec = httptest.NewRecorder()
+	sw = NewStreamWriter(rec)
+	sw.DeclareTrailers("X-TrustAgent-Action")
+	_ = sw.WriteKeepalive()
+	sw.ClearTrailers()
+	_ = sw.Finish(nil, map[string]string{"X-TrustAgent-Action": "block"})
+	if rec.Result().Header.Get("Trailer") != "X-Trustagent-Action" || rec.Result().Trailer.Get("X-TrustAgent-Action") != "block" {
+		t.Errorf("after the commit the trailers stay: %v %v", rec.Result().Header, rec.Result().Trailer)
+	}
+}
+
+// TestNoCommentInsideAnOpenRawEvent: raw bytes that stop inside an event (the rest of a stream
+// relayed as it is, cut short) are never followed by a comment, which would join the event's open
+// line: Finish then leaves the annotation out and still sets the trailers. After raw bytes that
+// end between two events the annotation goes out as usual.
+func TestNoCommentInsideAnOpenRawEvent(t *testing.T) {
+	ann := Annotation{TraceID: "t1", Action: "flag", WouldAction: "block", Status: "skipped:upstream_error"}
+	for _, c := range []struct {
+		raw     string
+		comment bool
+	}{
+		{"data: {\"choices\":[{\"delta\":{\"content\":\"tr", false},
+		{"data: {\"x\":1}\n", false}, // a line ended, the event did not
+		{"data: {\"x\":1}\r", false},
+		{"data: {\"x\":1}\n\n", true},
+		{"data: {\"x\":1}\r\n\r\n", true},
+		{"data: {\"x\":1}\r\r", true},
+		{"data: {\"x\":1}\r\n\n", true},
+	} {
+		rec := httptest.NewRecorder()
+		sw := NewStreamWriter(rec)
+		sw.DeclareTrailers("X-TrustAgent-Status")
+		// Written in two pieces, so the end of an event can straddle two writes.
+		half := len(c.raw) - 1
+		if _, err := sw.Write([]byte(c.raw[:half])); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sw.Write([]byte(c.raw[half:])); err != nil {
+			t.Fatal(err)
+		}
+		if err := sw.Finish(&ann, map[string]string{"X-TrustAgent-Status": ann.Status}); err != nil {
+			t.Fatalf("%q: %v", c.raw, err)
+		}
+		body := rec.Body.String()
+		if got := strings.Contains(body, ": "+AnnotationPrefix); got != c.comment || !strings.HasPrefix(body, c.raw) {
+			t.Errorf("%q: comment %v, want %v:\n%q", c.raw, got, c.comment, body)
+		}
+		if rec.Result().Trailer.Get("X-TrustAgent-Status") != ann.Status {
+			t.Errorf("%q: trailers %v", c.raw, rec.Result().Trailer)
+		}
+	}
+}

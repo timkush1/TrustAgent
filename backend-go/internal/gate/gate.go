@@ -1,12 +1,13 @@
 // Package gate is the gateway's decision pipeline for one exchange (SPEC §3.1 internal/gate):
-// detectors, evidence, compile, the decision-model call, decide(), and the deep-audit and body
-// retention plans. The proxy handler owns the HTTP side and hands each exchange to Evaluate; a
-// Sink persists and broadcasts the lifecycle and submits audits.
+// detectors, evidence, compile, the decision-model call, the calibration lookup, decide(), and the
+// deep-audit and body retention plans. The proxy handler owns the HTTP side (formats, streams,
+// block and fallback bodies) and hands each exchange to Evaluate, the fallback re-gate included
+// (Exchange.Attempt 1); a Sink persists and broadcasts the lifecycle and submits audits.
 //
-// S0 gates non-streaming OpenAI chat on observe and flag routes. Retries, hedging, spend and rate
-// limits run inside the decision-model client (internal/jev); a refusal before any vendor request
-// becomes the gate's skip reason. Knowledge retrieval, the calibration lookup, recording late
-// decisions and the fallback re-gate land in P3.
+// Retries, hedging, spend and rate limits run inside the decision-model client (internal/jev); a
+// refusal before any vendor request becomes the gate's skip reason. Each evaluator's calibration
+// is looked up for the snapshot that answered (Config.Calibrations). Knowledge retrieval on the
+// hot path is P4.
 package gate
 
 import (
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/calibration"
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/evidence"
@@ -59,8 +61,8 @@ type Config struct {
 	// Now returns the current time; nil uses time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
-	// Calibrations looks up each evaluator's calibration for the snapshot that answered; nil
-	// means none (every evaluator uncalibrated). Not read yet: the P3 file lookup fills it (GD-3).
+	// Calibrations looks up each evaluator's calibration for the snapshot that answered (decide()'s
+	// calibration input); nil means none, so every evaluator is uncalibrated.
 	Calibrations policy.CalibrationLookup
 	// OnLate receives a decision recomputed after a late decision-model answer (SPEC §2.9 late
 	// decisions): never enforced, never audited. Not called yet (GD-6).
@@ -132,11 +134,12 @@ type Exchange struct {
 	// NoAudit plans no deep audit (the fallback re-gate: the audit stays on the original answer);
 	// the result's AuditPlan is then empty.
 	NoAudit bool
-	// AuditSelection, when set, always selects a deep audit, with this selection (playground for
-	// a Playground run). Not read yet (GD-1).
+	// AuditSelection, when set, always selects a deep audit of an answer with text, with this
+	// selection (playground for a Playground run), in the high lane with inclusion probability 1,
+	// whatever the route's deep_audit settings. It takes no uniform draw. NoAudit wins over it.
 	AuditSelection string
 	// KnowledgeOnly marks evidence that came only from knowledge retrieval (decision
-	// meta.knowledge_only). Not read yet (GD-1).
+	// meta.knowledge_only): a critical grounding level is capped to warn.
 	KnowledgeOnly bool
 }
 
@@ -187,9 +190,10 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	hasText := x.hasText()
 
 	// Pre-gate uniform draw: an unbiased sample of all gated traces, capped per day. An exchange
-	// that plans no audit (the fallback re-gate) takes no draw.
-	uniform := !x.NoAudit && route.DeepAudit.Enabled && hasText && route.DeepAudit.UniformSampleRate > 0 &&
-		g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
+	// that plans no audit (the fallback re-gate) or whose audit is chosen already (a Playground
+	// run) takes no draw.
+	uniform := !x.NoAudit && x.AuditSelection == "" && route.DeepAudit.Enabled && hasText &&
+		route.DeepAudit.UniformSampleRate > 0 && g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
 
 	skip := x.SkipReason
 	if skip == "" && mode == decision.ModeObserve && route.SampleRate < 1 && g.cfg.Rand() >= route.SampleRate {
@@ -227,7 +231,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		Excluded:    []decision.Exclusion{},
 		Calibration: map[string]decision.CalibrationEntry{},
 		Meta: decision.Meta{
-			Backend: g.cfg.Jev.Info().Backend, Stream: streamOf(x),
+			Backend: g.cfg.Jev.Info().Backend, Stream: streamOf(x), KnowledgeOnly: x.KnowledgeOnly,
 			EvidencePresent: x.Evidence != nil && x.Evidence.Trusted(),
 			RequestStatus:   map[string]string{}, QIDRequest: map[string]int{},
 		},
@@ -274,6 +278,10 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	} else if len(in.Evaluators) == 0 {
 		in.Evaluators = g.routeEvaluators(route)
 	}
+	if usage != nil && usage.Snapshot != nil {
+		// Calibrations are per snapshot: the one that answered, not the one the status last saw.
+		in.Calibration = calibration.Entries(g.cfg.Calibrations, in.Evaluators, routeParams(route), *usage.Snapshot)
+	}
 	if skip != "" {
 		in.Meta.SkipReason = &skip
 	}
@@ -319,7 +327,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		res.Flags = appendFlag(res.Flags, FlagUniformSample)
 	}
 	if !x.NoAudit {
-		res.Audit = g.planAudit(route, core, uniform, hasText, x.Trace.Scenario)
+		res.Audit = g.planAudit(route, core, auditDraw{uniform: uniform, hasText: hasText, forced: x.AuditSelection, scenario: x.Trace.Scenario})
 	}
 	res.Body = g.planBody(route, core)
 	return res
@@ -523,6 +531,18 @@ func (g *Gate) resolveRules(r *policy.Route, clientRules bool, reqRules map[stri
 				v = cv
 			}
 			out[name] = v
+		}
+	}
+	return out
+}
+
+// routeParams are the route params of each enabled evaluator, by ref (the calibration target's
+// params_sha256).
+func routeParams(r *policy.Route) map[string]map[string]string {
+	out := make(map[string]map[string]string, len(r.Evaluators))
+	for _, e := range r.Evaluators {
+		if e.IsEnabled() && len(e.Params) > 0 {
+			out[e.Ref] = e.Params
 		}
 	}
 	return out

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Traces, gate decisions and trace bodies (SPEC §2.3, migration 0002). Go is the only writer.
@@ -221,7 +222,50 @@ func (s *PostgresStore) RecordDecision(ctx context.Context, t *TraceRecord, d *D
 		ON CONFLICT (trace_id) DO UPDATE SET `+traceDecisionUpdate, traceInsertArgs(t)...); err != nil {
 		return fmt.Errorf("upsert trace: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
+	if err := insertDecision(ctx, tx, d); err != nil {
+		return err
+	}
+	if b != nil {
+		rules, err := json.Marshal(nonNilMap(b.Rules))
+		if err != nil {
+			return fmt.Errorf("marshal rules: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO trace_bodies (trace_id, messages, user_request, system_instructions, response_text,
+				final_response_text, evidence, rules, bytes, truncated, inclusion_prob, expires_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			ON CONFLICT (trace_id) DO UPDATE SET final_response_text = EXCLUDED.final_response_text`,
+			t.TraceID, jsonOr(b.Messages, "[]"), b.UserRequest, b.SystemInstructions, b.ResponseText,
+			b.FinalResponseText, jsonOr(b.Evidence, "[]"), json.RawMessage(rules), b.Bytes, b.Truncated,
+			b.InclusionProb, b.ExpiresAt,
+		); err != nil {
+			return fmt.Errorf("insert trace body: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// RecordAttempt writes the gate_decisions row of a later attempt of a trace (attempt 1, the
+// fallback re-gate) and nothing else: the trace keeps its fields and its audit stays on the
+// original answer. Writing an attempt again replaces its decision.
+func (s *PostgresStore) RecordAttempt(ctx context.Context, d *DecisionRecord) error {
+	if d == nil || d.TraceID == "" {
+		return errors.New("store: a decision with a trace id is required")
+	}
+	if d.Attempt < 1 {
+		return fmt.Errorf("store: attempt %d is recorded with its trace (RecordDecision), not as a later attempt", d.Attempt)
+	}
+	return insertDecision(ctx, s.pool, d)
+}
+
+// execer runs a statement on the pool or in a transaction.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// insertDecision upserts the gate_decisions row of d's attempt.
+func insertDecision(ctx context.Context, q execer, d *DecisionRecord) error {
+	if _, err := q.Exec(ctx, `
 		INSERT INTO gate_decisions (
 			trace_id, attempt, policy_version, route, mode, effective_mode, status, action, would_action, verdict,
 			max_risk, calibration, degraded, reasons, decision, detectors, excluded, evidence_summary,
@@ -245,24 +289,7 @@ func (s *PostgresStore) RecordDecision(ctx context.Context, t *TraceRecord, d *D
 	); err != nil {
 		return fmt.Errorf("insert gate decision: %w", err)
 	}
-	if b != nil {
-		rules, err := json.Marshal(nonNilMap(b.Rules))
-		if err != nil {
-			return fmt.Errorf("marshal rules: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO trace_bodies (trace_id, messages, user_request, system_instructions, response_text,
-				final_response_text, evidence, rules, bytes, truncated, inclusion_prob, expires_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-			ON CONFLICT (trace_id) DO UPDATE SET final_response_text = EXCLUDED.final_response_text`,
-			t.TraceID, jsonOr(b.Messages, "[]"), b.UserRequest, b.SystemInstructions, b.ResponseText,
-			b.FinalResponseText, jsonOr(b.Evidence, "[]"), json.RawMessage(rules), b.Bytes, b.Truncated,
-			b.InclusionProb, b.ExpiresAt,
-		); err != nil {
-			return fmt.Errorf("insert trace body: %w", err)
-		}
-	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // TraceAuditUpdate changes a trace's audit fields; nil and empty fields keep their value.
