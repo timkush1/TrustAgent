@@ -149,7 +149,7 @@ func TestPlaygroundOverrideBypassesClientMode(t *testing.T) {
 	in.ModeOverride = decision.ModeBlock
 	_, err = e.handler.Playground(context.Background(), playgroundContext(), in, nil)
 	if pe := playgroundErr(t, err); pe.Status != http.StatusUnprocessableEntity || pe.Field != "mode_override" || pe.TraceID != "" {
-		t.Errorf("block override without enforcement: %+v", pe)
+		t.Errorf("block override on a policy that does not enforce: %+v", pe)
 	}
 	if n := len(e.sink.traces()); n != 2 {
 		t.Errorf("%d traces started, want 2 (the refused run records none)", n)
