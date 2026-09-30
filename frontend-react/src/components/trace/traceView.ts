@@ -5,6 +5,7 @@
  * page only moves forward: pending → decided → audited.
  */
 import { applyAuditToTrace, auditRank, mergeTraceSummary } from '@/data/normalize';
+import type { MarkFinding } from '@/domain/segmentClaims';
 import {
   copy,
   fillTemplate,
@@ -202,6 +203,22 @@ function checkRow(r: EvaluatorResult): CheckRow {
 export function checkRows(decision: GateDecisionView | null): CheckRow[] {
   if (!decision) return [];
   return Object.values(decision.evaluators).map(checkRow);
+}
+
+// ------------------------------------------------------------------------------- detector marks
+
+/**
+ * The instant checks' findings to mark in the model's answer: every finding of a fired detector
+ * that has a span (a masked secret has none: start -1). Offsets are UTF-16 on the gated text,
+ * which is the model's answer (body.response_text).
+ */
+export function answerFindings(decision: GateDecisionView | null): MarkFinding[] {
+  if (!decision) return [];
+  return (decision.detectors ?? [])
+    .filter((d) => d.fired)
+    .flatMap((d) =>
+      (d.findings ?? []).filter((f) => f.start >= 0 && f.end > f.start).map((f) => ({ detector: d.id, start: f.start, end: f.end })),
+    );
 }
 
 // -------------------------------------------------------------------------------------- claims

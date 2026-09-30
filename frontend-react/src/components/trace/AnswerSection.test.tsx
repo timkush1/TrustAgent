@@ -109,3 +109,58 @@ describe('AnswerSection: what the user received', () => {
     expect(screen.getByText('Answer', { selector: 'p' })).toBeInTheDocument();
   });
 });
+
+describe('AnswerSection: instant-check marks', () => {
+  function beforeAudit(id: 'help-center-link-block' | 'payments-fallback'): TraceView {
+    const detail = p3Detail(id);
+    return buildTraceView({
+      detail: { ...detail, audit_detail: null, audit: { ...detail.audit, status: 'queued', verdict: null, verdict_counts: null } },
+    }) as TraceView;
+  }
+
+  it('marks a finding at once, with its words for pointer and screen-reader users', async () => {
+    renderAnswer(beforeAudit('help-center-link-block'));
+    const answer = screen.getByTestId('answer-marked');
+    const mark = answer.querySelector('mark[data-det~="urls_not_in_evidence"]') as HTMLElement;
+    expect(mark).toHaveTextContent(/^https:\/\/acme\.example\/reset-password$/);
+    expect(mark.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(answer.querySelector('mark[data-v]')).toBeNull();
+    expect(within(answer).getByText('(instant checks: links to a URL not in your documents)')).toHaveClass('sr-only');
+    expect(screen.getByRole('button', { name: 'Marked by the instant checks' })).toBeInTheDocument();
+    // The answer still reads as the model's text.
+    expect(answer.textContent?.replace(' (instant checks: links to a URL not in your documents)', '')).toBe(
+      'Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.',
+    );
+    expect(formatViolations(await axeViolations(document.body))).toEqual([]);
+  });
+
+  it('nests the finding inside the claim that covers it, and the claim link names both', async () => {
+    renderAnswer(buildTraceView({ detail: p3Detail('help-center-link-block') }) as TraceView);
+    const link = screen.getByRole('link', {
+      name: 'Open https://acme.example/reset-password and follow the steps, unsupported claim, instant checks: links to a URL not in your documents',
+    });
+    expect(link.closest('mark')).toHaveAttribute('data-v', 'unsupported');
+    expect(link.querySelector('mark[data-det]')).toHaveTextContent('https://acme.example/reset-password');
+    // One claim mark (one link, one verdict icon) holds every piece of the claim.
+    expect(screen.getAllByRole('link', { name: /unsupported claim/ })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'The reset link expires after 1 hour, supported claim' })).toBeInTheDocument();
+    expect(screen.queryByText(/\(instant checks:/)).toBeNull();
+    expect(formatViolations(await axeViolations(document.body))).toEqual([]);
+  });
+
+  it('marks the number inside the contradicted claim of the replaced answer', () => {
+    renderAnswer(buildTraceView({ detail: p3Detail('payments-fallback') }) as TraceView);
+    const link = screen.getByRole('link', {
+      name: 'within 2 business days, contradicted claim, instant checks: mentions a number not in your documents',
+    });
+    expect(link.querySelector('mark[data-det="numbers_not_in_evidence"]')).toHaveTextContent(/^2$/);
+    expect(link.closest('mark')).toHaveTextContent('within 2 business days');
+  });
+
+  it('marks nothing on a list preview', () => {
+    const v = beforeAudit('help-center-link-block');
+    renderAnswer({ ...v, answer: { text: v.answer!.text, preview: true } });
+    expect(document.querySelector('mark')).toBeNull();
+    expect(screen.queryByText('Marked by the instant checks')).toBeNull();
+  });
+});

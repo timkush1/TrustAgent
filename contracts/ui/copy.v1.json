@@ -134,6 +134,7 @@
       "received_blocked": "The route's block message, sent in place of your model's answer.",
       "received_not_stored": "The text sent instead is not stored for this request.",
       "see_received": "See what the user received instead",
+      "instant_marks": "Marked by the instant checks",
       "disagreement": "Fast check passed it; deep audit found {count} contradicted claim(s).",
       "details": "Details",
       "show_jev_request": "Show exact Jev request",

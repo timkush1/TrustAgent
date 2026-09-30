@@ -61,6 +61,10 @@ describe('Trace detail', () => {
 
     const claims = region('Claims');
     expect(within(claims).getByRole('status')).toHaveTextContent(copy.trace.claims_pending);
+    // The instant check's finding is marked at once, before any claim.
+    const early = within(region('Answer')).getByTestId('answer-marked');
+    expect(early.querySelector('mark[data-det="numbers_not_in_evidence"]')).toHaveTextContent(/^60$/);
+    expect(early.querySelector('mark[data-v]')).toBeNull();
 
     // 3. The deep audit completes: one contradicted claim.
     api.state.details[id] = s0Detail(REFUND, 'audited');
@@ -75,7 +79,10 @@ describe('Trace detail', () => {
 
     // 4. The claim is marked in the answer at its UTF-16 span, and the mark links to its row.
     const answer = region('Answer');
-    const mark = within(answer).getByRole('link', { name: '60 days, contradicted claim' });
+    const mark = within(answer).getByRole('link', {
+      name: '60 days, contradicted claim, instant checks: mentions a number not in your documents',
+    });
+    expect(mark.querySelector('mark[data-det="numbers_not_in_evidence"]')).toHaveTextContent(/^60$/);
     expect(mark.closest('mark')).toHaveAttribute('data-v', 'contradicted');
     // The marked answer still reads as the model's text.
     expect(within(answer).getByTestId('answer-marked')).toHaveTextContent(scenario(REFUND).response);

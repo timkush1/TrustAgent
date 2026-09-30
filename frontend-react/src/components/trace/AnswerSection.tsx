@@ -1,20 +1,23 @@
 /**
- * The question and the answer as the model gave it (SPEC §3.3 "Trace detail" 2, left). When the
- * deep audit arrives, each located claim is marked in the answer (DESIGN.md §3: verdict hue,
- * underline style and icon, never color alone). A mark is a link to its row in the Claims section;
+ * The question and the answer as the model gave it (SPEC §3.3 "Trace detail" 2, left). The
+ * instant checks' findings are marked at once: an achromatic line and a scan icon, because a
+ * detector is not a verdict. When the deep audit arrives, each located claim is marked too
+ * (DESIGN.md §3: verdict hue, underline style and icon, never color alone); where they overlap, the
+ * finding nests inside the claim's mark. A claim mark is a link to its row in the Claims section;
  * claims the audit could not place in the text are listed under the answer as "not located in
  * text". When the user received something else (a fallback answer or the block message), it
  * follows the answer as "What the user received instead"; the marks stay on the model's answer,
  * which is what the checks judged.
  */
-import { CornerDownRight, ShieldX } from 'lucide-react';
-import type { CSSProperties, MouseEvent } from 'react';
+import { CornerDownRight, ScanSearch, ShieldX } from 'lucide-react';
+import { Fragment, type CSSProperties, type MouseEvent } from 'react';
+import { Term } from '@/components/common/Term';
 import { VerdictBadge } from '@/components/outcome/VerdictBadge';
 import { Tooltip } from '@/components/ui/tooltip';
-import { claimVerdictView, copy, fillTemplate } from '@/domain/presentation';
-import { segmentClaims, type AnswerSegment } from '@/domain/segmentClaims';
+import { claimVerdictView, copy, fillTemplate, reasonCopy } from '@/domain/presentation';
+import { claimRuns, segmentClaims, type AnswerSegment, type ClaimRun, type MarkFinding } from '@/domain/segmentClaims';
 import type { ClaimView, GateDecisionView } from '@/types/api';
-import { auditHasResult, claimRowId, fallbackCheckResult, receivedId, type TraceView } from './traceView';
+import { answerFindings, auditHasResult, claimRowId, fallbackCheckResult, receivedId, type TraceView } from './traceView';
 
 /** Scrolls to a claim's row and moves focus there (the row is focusable with tabIndex -1). */
 function jumpToClaim(event: MouseEvent<HTMLAnchorElement>, id: string) {
@@ -30,17 +33,53 @@ function claimLine(claim: ClaimView): string {
   return claim.claim ? `${verdict}: ${claim.claim}` : verdict;
 }
 
-function ClaimMark({ segment, idPrefix }: { segment: AnswerSegment; idPrefix: string }) {
-  const lead = segment.claims[0];
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** The instant-check words for the detectors behind some findings, once each ("Links to a URL not in your documents"). */
+function findingWords(findings: readonly MarkFinding[]): string[] {
+  return [...new Set(findings.map((f) => f.detector))].map((d) => reasonCopy(`det:${d}`));
+}
+
+/** ", instant checks: links to a URL not in your documents" for an accessible name; empty without findings. */
+function findingName(words: readonly string[]): string {
+  return words.length > 0 ? `, ${copy.tiers.instant_checks.toLowerCase()}: ${words.map(lowerFirst).join('; ')}` : '';
+}
+
+/**
+ * A piece of text an instant check marked. Inside a claim mark it is styling only (the claim's
+ * link names and explains it); on its own it repeats its words in a tooltip and, once per finding,
+ * for screen readers. The icon follows the finding's last piece.
+ */
+function DetectorMark({ piece, nested }: { piece: AnswerSegment; nested: boolean }) {
+  const ends = piece.findings.some((f) => f.end === piece.end);
+  const mark = (
+    <mark data-det={[...new Set(piece.findings.map((f) => f.detector))].join(' ')}>
+      {piece.text}
+      {ends ? <ScanSearch aria-hidden="true" className="ms-0.5 inline size-3.5 align-[-0.15em] text-fg-muted" /> : null}
+    </mark>
+  );
+  if (nested) return mark;
+  const words = findingWords(piece.findings);
+  return (
+    <>
+      <Tooltip label={<span className="block max-w-72">{`${copy.tiers.instant_checks}: ${words.join(' · ')}`}</span>}>{mark}</Tooltip>
+      {ends ? <span className="sr-only">{` (${findingName(words).slice(2)})`}</span> : null}
+    </>
+  );
+}
+
+function ClaimMark({ run, idPrefix }: { run: ClaimRun; idPrefix: string }) {
+  const lead = run.claims[0];
   const view = claimVerdictView(lead.status);
   const Icon = view.icon;
   const target = claimRowId(idPrefix, lead.index);
-  const others = segment.claims.length - 1;
-  const label = segment.claims.map(claimLine).join(' · ');
+  const others = run.claims.length - 1;
+  const words = findingWords(run.pieces.flatMap((p) => p.findings));
+  const label = [...run.claims.map(claimLine), ...words.map((w) => `${copy.tiers.instant_checks}: ${w}`)].join(' · ');
   return (
     <mark
       data-v={view.mark ?? undefined}
-      data-fuzzy={segment.fuzzy ? '' : undefined}
+      data-fuzzy={run.fuzzy ? '' : undefined}
       style={{ '--vc': `var(${view.colorVar})` } as CSSProperties}
     >
       <Tooltip label={<span className="block max-w-72">{label}</span>}>
@@ -48,10 +87,12 @@ function ClaimMark({ segment, idPrefix }: { segment: AnswerSegment; idPrefix: st
           href={`#${target}`}
           onClick={(e) => jumpToClaim(e, target)}
           // The name starts with the visible words (WCAG 2.5.3) and adds what only the style shows.
-          aria-label={`${segment.text}, ${view.label.toLowerCase()} claim${others > 0 ? ` and ${others} more` : ''}${segment.fuzzy ? ', approximate location' : ''}`}
+          aria-label={`${run.text}, ${view.label.toLowerCase()} claim${others > 0 ? ` and ${others} more` : ''}${run.fuzzy ? ', approximate location' : ''}${findingName(words)}`}
           className="rounded-[2px] text-inherit no-underline"
         >
-          {segment.text}
+          {run.pieces.map((p) =>
+            p.findings.length > 0 ? <DetectorMark key={p.start} piece={p} nested /> : <Fragment key={p.start}>{p.text}</Fragment>,
+          )}
           <Icon aria-hidden="true" className="ms-0.5 inline size-3.5 align-[-0.15em] text-(--vc)" />
         </a>
       </Tooltip>
@@ -60,11 +101,19 @@ function ClaimMark({ segment, idPrefix }: { segment: AnswerSegment; idPrefix: st
 }
 
 function AnswerText({ text, segments, idPrefix }: { text: string; segments: AnswerSegment[]; idPrefix: string }) {
-  if (!segments.some((s) => s.verdict)) return <p className="text-md whitespace-pre-wrap text-fg">{text}</p>;
+  if (!segments.some((s) => s.verdict || s.findings.length > 0)) return <p className="text-md whitespace-pre-wrap text-fg">{text}</p>;
   return (
     <p className="text-md whitespace-pre-wrap text-fg" data-testid="answer-marked">
-      {segments.map((s) =>
-        s.verdict ? <ClaimMark key={s.start} segment={s} idPrefix={idPrefix} /> : <span key={s.start}>{s.text}</span>,
+      {claimRuns(segments).map((run) =>
+        run.verdict ? (
+          <ClaimMark key={run.start} run={run} idPrefix={idPrefix} />
+        ) : (
+          <Fragment key={run.start}>
+            {run.pieces.map((p) =>
+              p.findings.length > 0 ? <DetectorMark key={p.start} piece={p} nested={false} /> : <span key={p.start}>{p.text}</span>,
+            )}
+          </Fragment>
+        ),
       )}
     </p>
   );
@@ -133,15 +182,18 @@ export function AnswerSection({
   view,
   claimIdPrefix = '',
 }: {
-  view: Pick<TraceView, 'question' | 'answer' | 'summary' | 'audit' | 'delivered' | 'deliveredText' | 'attempts'>;
+  view: Pick<TraceView, 'question' | 'answer' | 'summary' | 'audit' | 'decision' | 'delivered' | 'deliveredText' | 'attempts'>;
   /** Prefix of the Claims section's row ids (claimRowId), unique per page. */
   claimIdPrefix?: string;
 }) {
-  const { question, answer, summary, audit, delivered, deliveredText, attempts } = view;
+  const { question, answer, summary, audit, decision, delivered, deliveredText, attempts } = view;
   const claims = audit && auditHasResult(audit.status) ? audit.claims : [];
   // Spans refer to the text the engine audited; mark only when that is the text shown here.
   const located = Boolean(answer && !answer.preview && (audit?.llm_response == null || audit.llm_response === answer.text));
-  const { segments, unlocated } = answer ? segmentClaims(answer.text, claims, { located }) : { segments: [], unlocated: [] };
+  // Findings refer to the gated text, the stored answer (never a list preview).
+  const findings = answer && !answer.preview ? answerFindings(decision) : [];
+  const { segments, unlocated } = answer ? segmentClaims(answer.text, claims, { located, findings }) : { segments: [], unlocated: [] };
+  const marked = segments.some((s) => s.findings.length > 0);
   const replaced = delivered === 'fallback' || delivered === 'blocked';
   const answerLabel = replaced ? copy.trace.answer_not_sent : question ? 'Answer' : null;
   return (
@@ -168,6 +220,15 @@ export function AnswerSection({
             )}
             {answer?.preview ? (
               <p className="text-xs text-fg-muted">Preview: the full text is not stored for this request.</p>
+            ) : null}
+            {marked ? (
+              <p className="flex items-center gap-1 pt-1 text-xs text-fg-muted">
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5">
+                  <span className="h-0.5 w-3 rounded-full bg-fg-muted" />
+                  <ScanSearch className="size-3.5" />
+                </span>
+                <Term id="instant_checks">{copy.trace.instant_marks}</Term>
+              </p>
             ) : null}
           </div>
           {unlocated.length > 0 ? <NotLocated claims={unlocated} idPrefix={claimIdPrefix} /> : null}
