@@ -155,7 +155,10 @@ func testConfig(t *testing.T, o envOpts) *config.Config {
 	cfg.PolicyFile = config.RepoPath("config/policies.yaml")
 	cfg.GateDefaultMode, cfg.GateFailMode = "observe", "open"
 	cfg.Jev.Backend, cfg.Jev.MockMode, cfg.Jev.MockLatency, cfg.Jev.MockFixtures = "mock", "scenario", 0, ""
-	cfg.UpstreamURL = "http://127.0.0.1:1" // test_response answers; nothing reaches the upstream
+	// test_response answers; nothing reaches an upstream. Every upstream is a closed local port
+	// with no key, whatever the environment holds, so no in-process test can reach a vendor.
+	cfg.UpstreamURL, cfg.AnthropicUpstreamURL, cfg.FallbackUpstreamURL = "http://127.0.0.1:1", "http://127.0.0.1:1", ""
+	cfg.UpstreamAPIKey, cfg.AnthropicUpstreamAPIKey, cfg.FallbackUpstreamAPIKey = "", "", ""
 	cfg.RateLimitPerMinute, cfg.UploadLimitPerMin = 100000, 100000
 	if o.rateLimit > 0 {
 		cfg.RateLimitPerMinute = o.rateLimit

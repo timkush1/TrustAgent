@@ -44,6 +44,17 @@ func IsResponsesAPI(path string) bool {
 	return path == PathResponses || strings.HasPrefix(path, PathResponses+"/")
 }
 
+// FamilyForPath returns the API family a /v1 path belongs to: anthropic for /v1/messages and its
+// sub-paths (such as /v1/messages/count_tokens), openai for every other path. It picks the upstream
+// of a path that is passed through and the error shape of every path.
+func FamilyForPath(path string) string {
+	p := strings.TrimSuffix(path, "/")
+	if p == PathMessages || strings.HasPrefix(p, PathMessages+"/") {
+		return FamilyAnthropic
+	}
+	return FamilyOpenAI
+}
+
 // Family returns the upstream family of an API format ("openai" or "anthropic"), or "" for an
 // unknown format.
 func Family(format string) string {
