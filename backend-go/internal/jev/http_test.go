@@ -485,8 +485,9 @@ func TestLateDecisions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer cancel()
 	_, err := cl.Decide(ctx, testRequest("trace-late"), CallOptions{OnLate: func(r *Response, err error) { got <- late{r, err} }})
-	if ErrorKind(err) != KindTimeout {
-		t.Fatalf("the waiter stops at its deadline: %v", err)
+	var je *Error
+	if ErrorKind(err) != KindTimeout || !errors.As(err, &je) || !je.Continued {
+		t.Fatalf("the waiter stops at its deadline, and the attempt continues: %v", err)
 	}
 	select {
 	case l := <-got:
@@ -504,7 +505,10 @@ func TestLateDecisions(t *testing.T) {
 	h2 := newHarness(t, mockupstream.Config{JevLatency: 200 * time.Millisecond})
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer cancel2()
-	_, _ = h2.client(BackendOpenRouterDecisions, nil).Decide(ctx2, testRequest("t"), CallOptions{})
+	_, err = h2.client(BackendOpenRouterDecisions, nil).Decide(ctx2, testRequest("t"), CallOptions{})
+	if !errors.As(err, &je) || je.Continued {
+		t.Errorf("a cancelled attempt does not continue: %v", err)
+	}
 	if ev := h2.waitEvents(1)[0]; ev.Status != AttemptCancelled || !ev.Late {
 		t.Errorf("cancelled cost event %+v", ev)
 	}
@@ -515,7 +519,10 @@ func TestLateDecisions(t *testing.T) {
 	var called atomic.Bool
 	ctx3, cancel3 := context.WithTimeout(context.Background(), 40*time.Millisecond)
 	defer cancel3()
-	_, _ = busy.Decide(ctx3, testRequest("t"), CallOptions{OnLate: func(*Response, error) { called.Store(true) }})
+	_, err = busy.Decide(ctx3, testRequest("t"), CallOptions{OnLate: func(*Response, error) { called.Store(true) }})
+	if !errors.As(err, &je) || je.Continued {
+		t.Errorf("an attempt cancelled past 50%% in flight does not continue: %v", err)
+	}
 	if ev := h3.waitEvents(1)[0]; ev.Status != AttemptCancelled {
 		t.Errorf("continuation past 50%% in flight: %+v", ev)
 	}

@@ -244,6 +244,9 @@ type Result struct {
 	Final *Final
 	// Headers is the route headers setting (full or action_only).
 	Headers string
+	// LateExpected is set when decision-model attempts went on after the gate stopped waiting: a
+	// late decision of the same attempt may follow through Config.OnLate (Sink.LateDecided).
+	LateExpected bool
 }
 
 // Snapshot returns the decision-model snapshot that answered, or "".

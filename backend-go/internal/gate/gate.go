@@ -17,7 +17,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/truthtable/backend-go/internal/calibration"
@@ -26,6 +26,7 @@ import (
 	"github.com/truthtable/backend-go/internal/evidence"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/metrics"
 	"github.com/truthtable/backend-go/internal/policy"
 )
 
@@ -65,7 +66,9 @@ type Config struct {
 	// calibration input); nil means none, so every evaluator is uncalibrated.
 	Calibrations policy.CalibrationLookup
 	// OnLate receives a decision recomputed after a late decision-model answer (SPEC §2.9 late
-	// decisions): never enforced, never audited. Not called yet (GD-6).
+	// decisions): the same attempt with late=true and enforced=false, never audited. It runs on a
+	// goroutine of its own, possibly before the sink recorded the original result
+	// (Result.LateExpected). nil only logs late answers.
 	OnLate func(context.Context, *Result)
 }
 
@@ -195,14 +198,18 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	uniform := !x.NoAudit && x.AuditSelection == "" && route.DeepAudit.Enabled && hasText &&
 		route.DeepAudit.UniformSampleRate > 0 && g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
 
+	// Observe routes decide by sample_rate whether the decision model is asked at all. A run
+	// whose audit is chosen already (a Playground run, D27) is always checked: it takes no draw.
 	skip := x.SkipReason
-	if skip == "" && mode == decision.ModeObserve && route.SampleRate < 1 && g.cfg.Rand() >= route.SampleRate {
+	if skip == "" && x.AuditSelection == "" && mode == decision.ModeObserve && route.SampleRate < 1 &&
+		g.cfg.Rand() >= route.SampleRate {
 		skip = SkipSampledOut
 	}
 
 	// Tier 0: detectors run whenever there is an answer, sampled or not.
 	detectors := notRun()
 	if hasText {
+		t0 := time.Now()
 		var err error
 		if detectors, err = decision.Detect(&decision.DetectorInput{
 			Response: x.Response, Evidence: x.Evidence.DecisionItems(),
@@ -212,6 +219,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 			g.log.Error("gate: detectors failed", "trace_id", x.Trace.TraceID, "err", err)
 			detectors = notRun()
 		}
+		metrics.ObserveGateStage(StageDetectors, time.Since(t0))
 	}
 
 	model := route.Decision.Model
@@ -240,12 +248,11 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 
 	var compiled *decision.Compiled
 	var usage *DecisionModelUsage
+	var round *callRound
+	compileStart := time.Now()
 	if hasText {
 		var err error
-		compiled, err = decision.Compile(g.compileRoute(route, x.Policy, model), g.cfg.Evaluators.Specs(), &decision.CompileInputs{
-			UserRequest: x.Evidence.UserRequest, AssistantResponse: x.Response, SystemInstructions: x.Evidence.SystemInstructions,
-			Evidence: x.Evidence.DecisionItems(), Rules: reqRules,
-		}, g.budget(route))
+		compiled, err = decision.Compile(g.compileRoute(route, x.Policy, model), g.cfg.Evaluators.Specs(), g.compileInputs(x, reqRules), g.budget(route))
 		if err != nil {
 			g.log.Warn("gate: compile failed", "trace_id", x.Trace.TraceID, "route", route.Name, "err", err)
 			kind := "compile"
@@ -254,25 +261,28 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 			}
 			g.failAll(in, route, "error:"+kind)
 			compiled = nil
+			metrics.ObserveGateStage(StageCompile, time.Since(compileStart))
 		}
 	}
 
 	if compiled != nil {
-		evs, err := compiled.DecideEvaluators(g.cfg.Evaluators.Specs(), thresholds(route))
-		if err != nil {
-			g.log.Error("gate: decide evaluators", "trace_id", x.Trace.TraceID, "err", err)
-			g.failAll(in, route, "error:compile")
-		} else {
-			in.Evaluators, in.QuestionMap, in.Excluded = evs, compiled.QuestionMap, compiled.Excluded
-			in.Meta.EvidenceTruncated, in.Meta.QIDRequest = compiled.Truncated, compiled.QIDRequest
-			if skip == "" && len(compiled.Requests) > 0 {
-				if g.cfg.Jev.Info().Backend == jev.BackendOff {
-					skip = SkipDecisionModelOff
-				} else {
-					var answers map[string]*decision.RawAnswer
-					usage, answers, in.Meta.RequestStatus, skip = g.call(ctx, x, compiled, model)
-					in.Answers = answers
+		adopted := g.adopt(in, route, compiled, x.Trace.TraceID)
+		metrics.ObserveGateStage(StageCompile, time.Since(compileStart))
+		if adopted && skip == "" && len(compiled.Requests) > 0 {
+			if g.cfg.Jev.Info().Backend == jev.BackendOff {
+				skip = SkipDecisionModelOff
+			} else {
+				t0 := time.Now()
+				round = g.consult(ctx, x, model, reqRules, compiled)
+				metrics.ObserveGateStage(StageJev, time.Since(t0))
+				if round.compiled != compiled {
+					// A too_large resend: the answers are about the smaller compile.
+					compiled = round.compiled
+					g.adopt(in, route, compiled, x.Trace.TraceID)
 				}
+				var answers map[string]*decision.RawAnswer
+				usage, answers, in.Meta.RequestStatus, skip = g.collect(round, model)
+				in.Answers = answers
 			}
 		}
 	} else if len(in.Evaluators) == 0 {
@@ -286,7 +296,9 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		in.Meta.SkipReason = &skip
 	}
 
+	t0 := time.Now()
 	core, err := decision.Decide(in)
+	metrics.ObserveGateStage(StageDecide, time.Since(t0))
 	if err != nil {
 		g.log.Error("gate: decide failed", "trace_id", x.Trace.TraceID, "err", err)
 		core = internalError(mode)
@@ -295,6 +307,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	if x.Unenforced {
 		core.Enforced = false
 	}
+	observe(route.Name, mode, core, in.Meta.RequestStatus, detectors)
 
 	gateMs := g.cfg.Now().Sub(start).Milliseconds()
 	version := x.Policy.Version
@@ -330,134 +343,73 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		res.Audit = g.planAudit(route, core, auditDraw{uniform: uniform, hasText: hasText, forced: x.AuditSelection, scenario: x.Trace.Scenario})
 	}
 	res.Body = g.planBody(route, core)
+	if round != nil {
+		// Requests still running at the deadline may answer late: the late decision is made then
+		// from what this evaluation had (SPEC §2.9 late decisions).
+		ev := &lateEval{round: round, in: *in, model: model, route: route, start: start, decision: *d, result: lateResult(res)}
+		ev.decision.Core = decision.Core{}
+		res.LateExpected = round.late.arm(ev)
+	}
 	return res
 }
 
-// call sends every compiled request concurrently. The gate waits until the route deadline (sync)
-// or the async deadline (observe); each attempt runs detached inside the client with its own
-// TRUTHTABLE_JEV_ATTEMPT_TIMEOUT, so an attempt still running at the deadline may finish as a late
-// decision, and a hanging vendor still counts against the breaker (SPEC §2.9 late decisions).
-//
-// When every request was refused before reaching the vendor (breaker, rate limit, budget, missing
-// credentials), skip is that refusal (SPEC §2.9 caller rules); a partial refusal is a request
-// status error:<kind> instead.
-func (g *Gate) call(ctx context.Context, x *Exchange, c *decision.Compiled, model string) (usage *DecisionModelUsage, answers map[string]*decision.RawAnswer, status map[string]string, skip string) {
-	class, deadline := jev.ClassSync, time.Duration(x.Route.DeadlineMs)*time.Millisecond
-	if x.Trace.Mode == decision.ModeObserve {
-		class, deadline = jev.ClassAsync, g.cfg.AsyncDeadline
-	}
-	if deadline <= 0 {
-		deadline = g.cfg.AttemptTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, deadline)
-	defer cancel()
-	opt := jev.CallOptions{
-		Class: class, Scenario: x.Trace.Scenario,
-		HedgeAfter: time.Duration(x.Route.HedgeAfterMs) * time.Millisecond,
-		Enforcing:  x.Trace.Mode == decision.ModeBlock || x.Trace.Mode == decision.ModeFallback,
-		TraceID:    x.Trace.TraceID, Route: x.Route.Name, KeyLabel: x.Trace.KeyLabel,
-	}
+// Gate stages (gate_seconds{stage}).
+const (
+	StageDetectors = "detectors"
+	StageCompile   = "compile"
+	StageJev       = "jev"
+	StageDecide    = "decide"
+)
 
-	type outcome struct {
-		resp *jev.Response
-		err  error
+// observe records a decision in the gate metrics (SPEC Appendix B): the decision, each
+// evaluator's level (none when it has none), each detector that fired, and each decision-model
+// request that failed, by kind (timeout, an error kind, compile, too_large or internal). A refusal
+// before any vendor request is a skip, not a failure.
+func observe(route, mode string, core *decision.Core, requestStatus map[string]string, detectors []decision.DetectorResult) {
+	metrics.ObserveGate(route, mode, core.Action, core.Status)
+	for _, e := range core.Evaluators {
+		level := ""
+		if e.Level != nil {
+			level = *e.Level
+		}
+		metrics.EvaluatorLevel(e.Ref, level, e.Stage)
 	}
-	outcomes := make([]outcome, len(c.Requests))
-	var wg sync.WaitGroup
-	for k := range c.Requests {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			r := &c.Requests[k]
-			o := opt
-			o.OnLate = g.lateDecision(x.Trace.TraceID, k)
-			resp, err := g.cfg.Jev.Decide(ctx, jev.NewRequest(r, x.Trace.TraceID), o)
-			outcomes[k] = outcome{resp, err}
-		}()
+	for _, d := range detectors {
+		if d.Fired {
+			metrics.DetectorFired(d.ID)
+		}
 	}
-	wg.Wait()
-
-	usage = &DecisionModelUsage{Backend: g.cfg.Jev.Info().Backend, ModelRequested: &model, Calls: len(c.Requests), CostSource: jev.CostUnknown}
-	answers = map[string]*decision.RawAnswer{}
-	status = map[string]string{}
-	var costSources, skips []string
-	for k, o := range outcomes {
-		key := strconv.Itoa(k)
-		if o.err != nil {
-			usage.Attempts += attemptsOf(o.err)
-			kind := jev.ErrorKind(o.err)
-			if reason, ok := jev.SkipReason(o.err); ok {
-				skips = append(skips, reason)
-			}
-			if kind == jev.KindTimeout {
-				status[key] = decision.RequestTimeout
-			} else {
-				status[key] = "error:" + kind
-			}
-			g.log.Warn("gate: decision-model call failed", "trace_id", x.Trace.TraceID, "request", k, "kind", kind, "err", o.err)
-			continue
+	for _, st := range requestStatus {
+		switch {
+		case st == decision.RequestTimeout:
+			metrics.GateError(jev.KindTimeout)
+		case strings.HasPrefix(st, "error:"):
+			metrics.GateError(strings.TrimPrefix(st, "error:"))
 		}
-		status[key] = decision.RequestOK
-		resp := o.resp
-		for qid := range c.Requests[k].Questions {
-			if a, ok := resp.Answers[qid]; ok {
-				answers[qid] = a
-			}
-		}
-		usage.Attempts += max(resp.Attempts, 1)
-		usage.Hedged = usage.Hedged || resp.Hedged
-		if resp.Snapshot != "" {
-			snap := resp.Snapshot
-			usage.Snapshot = &snap
-		}
-		lat := resp.LatencyMs
-		if usage.LatencyMs == nil || lat > *usage.LatencyMs {
-			usage.LatencyMs = &lat
-		}
-		if resp.ConnectMs != nil {
-			usage.ConnectMs = resp.ConnectMs
-		}
-		if resp.InputTokens != nil {
-			usage.InputTokens = addInt(usage.InputTokens, *resp.InputTokens)
-		}
-		if resp.CostUSD != nil {
-			usage.CostUSD = addFloat(usage.CostUSD, *resp.CostUSD)
-		}
-		costSources = append(costSources, resp.CostSource)
 	}
-	if len(costSources) > 0 && !slices.ContainsFunc(costSources, func(s string) bool { return s != costSources[0] }) {
-		usage.CostSource = costSources[0]
-	}
-	if len(skips) == len(c.Requests) {
-		// Nothing reached the vendor: the gate was skipped, not failed (decide() reads skip_reason).
-		return usage, answers, map[string]string{}, skips[0]
-	}
-	return usage, answers, status, ""
 }
 
-// attemptsOf is the number of vendor requests a failed call made (0 when it was refused before
-// any, such as by the breaker or the budget).
-func attemptsOf(err error) int {
-	var e *jev.Error
-	if errors.As(err, &e) {
-		return e.Attempts
+// compileInputs are the compile() inputs of an exchange with an answer.
+func (g *Gate) compileInputs(x *Exchange, reqRules map[string]string) *decision.CompileInputs {
+	return &decision.CompileInputs{
+		UserRequest: x.Evidence.UserRequest, AssistantResponse: x.Response, SystemInstructions: x.Evidence.SystemInstructions,
+		Evidence: x.Evidence.DecisionItems(), Rules: reqRules,
 	}
-	return 1
 }
 
-// lateDecision receives a decision that arrived after the gate stopped waiting (SPEC §2.9): it is
-// never enforced. Passing it keeps the attempt running to its own timeout, so a hanging vendor
-// still counts against the breaker; recording it on the trace with late=true lands with the P3
-// handler pipeline, so for now it is logged.
-func (g *Gate) lateDecision(traceID string, request int) func(*jev.Response, error) {
-	return func(resp *jev.Response, err error) {
-		if err != nil {
-			g.log.Info("gate: late decision-model call failed", "trace_id", traceID, "request", request, "kind", jev.ErrorKind(err))
-			return
-		}
-		g.log.Info("gate: late decision arrived (recorded only, never enforced)", "trace_id", traceID, "request", request,
-			"latency_ms", resp.LatencyMs, "snapshot", resp.Snapshot)
+// adopt makes a compile the decide() input's evaluators, question map, exclusions and request
+// map. When the compiled evaluators cannot be decided (a bug), every route evaluator fails with
+// error:compile and adopt reports false.
+func (g *Gate) adopt(in *decision.Input, route *policy.Route, c *decision.Compiled, traceID string) bool {
+	evs, err := c.DecideEvaluators(g.cfg.Evaluators.Specs(), thresholds(route))
+	if err != nil {
+		g.log.Error("gate: decide evaluators", "trace_id", traceID, "err", err)
+		g.failAll(in, route, "error:compile")
+		return false
 	}
+	in.Evaluators, in.QuestionMap, in.Excluded = evs, c.QuestionMap, c.Excluded
+	in.Meta.EvidenceTruncated, in.Meta.QIDRequest = c.Truncated, c.QIDRequest
+	return true
 }
 
 // compileRoute is the part of a route compile() reads.

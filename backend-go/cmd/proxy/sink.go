@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -26,12 +27,14 @@ const (
 	maxAuditDocRunes = 20000
 )
 
-// traceStore is the part of the store the sink writes.
+// traceStore is the part of the store the sink writes (and reads back for a late decision's event).
 type traceStore interface {
 	StartTrace(ctx context.Context, t *store.TraceRecord) error
 	RecordDecision(ctx context.Context, t *store.TraceRecord, d *store.DecisionRecord, b *store.BodyRecord) error
 	RecordAttempt(ctx context.Context, d *store.DecisionRecord) error
+	RecordLateDecision(ctx context.Context, d *store.DecisionRecord) error
 	SetTraceAudit(ctx context.Context, traceID string, u store.TraceAuditUpdate) error
+	GetTrace(ctx context.Context, traceID string) (*store.TraceRecord, error)
 }
 
 // auditQueue is the part of the worker pool the sink submits to.
@@ -54,6 +57,8 @@ type traceSink struct {
 	log           *slog.Logger
 	// waiters wakes the /v1 decision long-polls; nil means none wait.
 	waiters *decisionWaiters
+	// late orders each late decision after the record of its attempt.
+	late lateOrder
 }
 
 var _ gate.Sink = (*traceSink)(nil)
@@ -72,6 +77,7 @@ func (s *traceSink) TraceStarted(ctx context.Context, t *gate.TraceStart) {
 		Trace store.TraceSummary `json:"trace"`
 	}
 	s.publish("trace_started", t.TraceID, payload{sum}, payload{sum.Redact()})
+	s.waiters.started(t.TraceID, t.KeyLabel)
 }
 
 // GateDecided records and broadcasts a decided trace, then submits its deep audit. It returns
@@ -113,6 +119,16 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	}
 	s.publish("gate_decision", r.Trace.TraceID, payload{sum, decisionJSON},
 		payload{sum.Redact(), store.RedactDecision(decisionJSON)})
+	s.waiters.decided(r.Trace.TraceID, r.Trace.KeyLabel, r.Headers, decisionJSON)
+	if r.LateExpected {
+		// A late decision's event reads the trace back from the database; without one it reuses
+		// the summary published here.
+		var published *store.TraceSummary
+		if s.store == nil {
+			published = &sum
+		}
+		s.attemptRecorded(r, published)
+	}
 
 	if job == nil {
 		return rec.AuditStatus
@@ -157,11 +173,183 @@ func (s *traceSink) AttemptDecided(ctx context.Context, r *gate.Result) {
 		metrics.TraceWriteDropped.Inc()
 		s.log.Error("trace: recording a later attempt failed", "trace_id", r.Decision.TraceID, "attempt", r.Decision.Attempt, "err", err)
 	}
+	if r.LateExpected {
+		s.attemptRecorded(r, nil)
+	}
 }
 
-// LateDecided records a decision recomputed after a late decision-model answer: the late row,
-// the trace flag late_decision and a WS event, never enforced or audited. Not recorded yet (GD-6).
-func (s *traceSink) LateDecided(ctx context.Context, r *gate.Result) {}
+// LateDecided records a decision recomputed after a late decision-model answer (SPEC §2.9 late
+// decisions): the late gate_decisions row of its attempt and the trace flag late_decision, then,
+// for attempt 0, the WS gate_decision event with late=true. The trace keeps what was enforced; the
+// decision is never audited. A late decision that arrives before its attempt was recorded waits
+// for that record (lateOrder).
+func (s *traceSink) LateDecided(ctx context.Context, r *gate.Result) {
+	if r == nil || r.Decision == nil {
+		return
+	}
+	sum, recorded := s.late.arrive(lateKeyOf(r), r, s.now())
+	if !recorded {
+		return
+	}
+	s.recordLate(ctx, r, sum)
+}
+
+// attemptRecorded notes that an attempt a late decision may follow was recorded (sum is the trace
+// as GateDecided published it, nil for a later attempt), and records the late decision that
+// arrived before it, off the request's path.
+func (s *traceSink) attemptRecorded(r *gate.Result, sum *store.TraceSummary) {
+	if late := s.late.recorded(lateKeyOf(r), sum, s.now()); late != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), lateRecordTimeout)
+			defer cancel()
+			s.recordLate(ctx, late, sum)
+		}()
+	}
+}
+
+// recordLate writes a late decision and, for attempt 0, broadcasts it with the trace as stored
+// (its audit may have moved on since GateDecided), or as GateDecided published it without a
+// database.
+func (s *traceSink) recordLate(ctx context.Context, r *gate.Result, sum *store.TraceSummary) {
+	d := r.Decision
+	doc, err := json.Marshal(d)
+	if err != nil {
+		s.log.Error("trace: the late decision does not marshal", "trace_id", d.TraceID, "attempt", d.Attempt, "err", err)
+		return
+	}
+	if s.store != nil {
+		if err := s.store.RecordLateDecision(ctx, decisionRecord(r, doc)); err != nil {
+			metrics.TraceWriteDropped.Inc()
+			s.log.Error("trace: recording a late decision failed", "trace_id", d.TraceID, "attempt", d.Attempt, "err", err)
+		}
+	}
+	if d.Attempt != 0 {
+		return
+	}
+	s.waiters.decided(d.TraceID, r.Trace.KeyLabel, r.Headers, doc)
+	var view store.TraceSummary
+	switch rec, err := s.storedTrace(ctx, d.TraceID); {
+	case err == nil:
+		view = rec.Summary()
+	case sum != nil:
+		view = *sum
+		view.Flags = appendNew(slices.Clone(view.Flags), gate.FlagLateDecision)
+		view.UpdatedAt = s.now().UTC()
+	default:
+		return
+	}
+	type payload struct {
+		Trace    store.TraceSummary `json:"trace"`
+		Decision json.RawMessage    `json:"decision"`
+	}
+	s.publish("gate_decision", d.TraceID, payload{view, doc}, payload{view.Redact(), store.RedactDecision(doc)})
+}
+
+// storedTrace reads a trace back; store.ErrNotFound without a database.
+func (s *traceSink) storedTrace(ctx context.Context, traceID string) (*store.TraceRecord, error) {
+	if s.store == nil {
+		return nil, store.ErrNotFound
+	}
+	return s.store.GetTrace(ctx, traceID)
+}
+
+// lateRecordTimeout bounds the writes of a late decision recorded after its attempt's record.
+const lateRecordTimeout = 10 * time.Second
+
+// Late decisions wait at most lateHold for the record of their attempt, and an attempt's record
+// waits as long for its late decision; lateSlots bounds how many wait at once.
+const (
+	lateHold  = 2 * time.Minute
+	lateSlots = 16384
+)
+
+// lateKey is one attempt of one trace.
+type lateKey struct {
+	trace   string
+	attempt int
+}
+
+func lateKeyOf(r *gate.Result) lateKey {
+	return lateKey{r.Decision.TraceID, r.Decision.Attempt}
+}
+
+// lateSlot is one attempt waiting: recorded, with the trace summary GateDecided published (nil for
+// a later attempt), until its late decision comes; or a late decision parked until its attempt is
+// recorded.
+type lateSlot struct {
+	at       time.Time
+	recorded bool
+	sum      *store.TraceSummary
+	late     *gate.Result
+}
+
+// lateOrder puts each late decision after the record of its attempt. A late answer can arrive
+// while the handler still delivers the answer (a fallback call, say), before GateDecided or
+// AttemptDecided; recorded in that order, the regular write would bury the late one. Slots
+// expire after lateHold, oldest first.
+type lateOrder struct {
+	mu    sync.Mutex
+	slots map[lateKey]lateSlot
+	queue []lateKey // insertion order, for expiry
+}
+
+// recorded notes that k was recorded and returns the late decision parked for it, if any.
+func (o *lateOrder) recorded(k lateKey, sum *store.TraceSummary, now time.Time) *gate.Result {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.expire(now)
+	if sl, ok := o.slots[k]; ok && !sl.recorded {
+		delete(o.slots, k)
+		return sl.late
+	}
+	o.put(k, lateSlot{at: now, recorded: true, sum: sum})
+	return nil
+}
+
+// arrive takes the record of a late decision's attempt; recorded is false when the attempt was not
+// recorded yet, and the late decision then waits for it.
+func (o *lateOrder) arrive(k lateKey, late *gate.Result, now time.Time) (sum *store.TraceSummary, recorded bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.expire(now)
+	if sl, ok := o.slots[k]; ok && sl.recorded {
+		delete(o.slots, k)
+		return sl.sum, true
+	}
+	o.put(k, lateSlot{at: now, late: late})
+	return nil, false
+}
+
+// put adds a slot; past lateSlots the oldest slot goes. The caller holds mu.
+func (o *lateOrder) put(k lateKey, sl lateSlot) {
+	if o.slots == nil {
+		o.slots = map[lateKey]lateSlot{}
+	}
+	o.slots[k] = sl
+	o.queue = append(o.queue, k)
+	for len(o.queue) > lateSlots {
+		delete(o.slots, o.queue[0])
+		o.queue = o.queue[1:]
+	}
+}
+
+// expire drops the slots older than lateHold; the caller holds mu.
+func (o *lateOrder) expire(now time.Time) {
+	cut := now.Add(-lateHold)
+	for len(o.queue) > 0 {
+		k := o.queue[0]
+		if sl, ok := o.slots[k]; ok {
+			if sl.at.After(cut) {
+				break
+			}
+			delete(o.slots, k)
+		}
+		o.queue = o.queue[1:]
+	}
+	if len(o.queue) == 0 {
+		o.queue = nil
+	}
+}
 
 func (s *traceSink) publish(typ, traceID string, data, redacted any) {
 	if s.pub == nil {

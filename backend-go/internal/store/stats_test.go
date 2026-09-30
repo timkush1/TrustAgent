@@ -188,3 +188,35 @@ func TestEvidenceCoverageAndRoi(t *testing.T) {
 		t.Errorf("uniform cap reached %d %v %v", n, at, err)
 	}
 }
+
+func TestAggregatesLeaveOutDirectAudits(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	seedStats(t, s, now)
+	f := StatsFilter{From: now.Add(-24 * time.Hour), To: now.Add(time.Minute)}
+	before, err := s.Overview(ctx, f, 15*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// POST /api/audit records a trace (source direct, skipped, no action) and audits it.
+	if _, err := s.pool.Exec(ctx, `INSERT INTO traces (trace_id, created_at, source, api_format, path, route, mode, gate_status,
+		audit_id, audit_status, audit_selection) VALUES ('t-direct', $1, 'direct', 'direct', '/api/audit', 'support-bot', 'observe',
+		'skipped', 'a-direct', 'completed', 'direct')`, now.Add(-2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO audits (audit_id, trace_id, request_id, hallucination_detected, created_at, route,
+		selection, status, verdict, source) VALUES ('a-direct', 't-direct', 't-direct', true, $1, 'support-bot', 'direct', 'completed',
+		'HALLUCINATED', 'direct')`, now.Add(-2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.Overview(ctx, f, 15*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Totals != before.Totals || after.Audited != before.Audited || len(after.ByRoute) != len(before.ByRoute) ||
+		after.ByRoute[0].Requests != before.ByRoute[0].Requests {
+		t.Errorf("a direct audit changed the gateway aggregates:\nbefore %+v %+v\nafter  %+v %+v", before.Totals, before.Audited,
+			after.Totals, after.Audited)
+	}
+}

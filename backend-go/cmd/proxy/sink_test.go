@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -12,8 +13,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/evidence"
 	"github.com/truthtable/backend-go/internal/gate"
+	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/websocket"
 	"github.com/truthtable/backend-go/internal/worker"
@@ -394,4 +399,216 @@ func TestSinkAttemptDecidedWritesOnlyItsRow(t *testing.T) {
 	}
 	// Without a database there is nothing to write.
 	newSink(nil, nil, &events{}).AttemptDecided(context.Background(), &r1)
+}
+
+// lateOf is the late decision of r's attempt: the decision model answered after the deadline and
+// would have passed the answer.
+func lateOf(r *gate.Result) *gate.Result {
+	d := *r.Decision
+	snap, gateMs := "jev-1.2", int64(3400)
+	d.Action, d.WouldAction, d.Reasons, d.Enforced, d.Late, d.GateMs = decision.ActionPass, decision.ActionPass, []string{}, false, true, &gateMs
+	d.DecisionModel = &gate.DecisionModelUsage{Backend: "openrouter-decisions", Snapshot: &snap, Calls: 1, Attempts: 1, CostSource: "reported"}
+	return &gate.Result{Trace: r.Trace, Decision: &d, Status: "ok", RouteLabel: r.RouteLabel, Headers: r.Headers,
+		Flags: []string{gate.FlagTestMode, gate.FlagLateDecision}}
+}
+
+func TestSinkLateDecidedRecordsTheLateRow(t *testing.T) {
+	st, pub := newMemStore(), &events{}
+	s := newSink(st, &fakeQueue{engine: true, lane: gate.LaneHigh}, pub)
+	r := flaggedResult()
+	r.LateExpected = true
+	s.TraceStarted(context.Background(), r.Trace)
+	s.GateDecided(context.Background(), r)
+
+	s.LateDecided(context.Background(), lateOf(r))
+	ds := storedDecisions(t, st, r.Trace.TraceID)
+	if len(ds) != 1 || !ds[0].Late || ds[0].Action != decision.ActionPass || ds[0].Enforced || ds[0].Attempt != 0 {
+		t.Fatalf("the late decision replaces attempt 0's row: %+v", ds)
+	}
+	tr, _ := st.GetTrace(context.Background(), r.Trace.TraceID)
+	if *tr.Action != decision.ActionFlag || tr.GateStatus != "ok" || !slices.Contains(tr.Flags, gate.FlagLateDecision) {
+		t.Errorf("the trace keeps what was enforced and gets the flag: action %v flags %v", *tr.Action, tr.Flags)
+	}
+	if types := pub.types(); strings.Join(types, ",") != "trace_started,gate_decision,gate_decision" {
+		t.Fatalf("events %v", types)
+	}
+	sum, d := decidedEvent(t, pub)
+	if !d.Late || d.Action != decision.ActionPass || *sum.Action != decision.ActionFlag || !slices.Contains(sum.Flags, gate.FlagLateDecision) {
+		t.Errorf("late event: decision late %v action %s, trace action %v flags %v", d.Late, d.Action, *sum.Action, sum.Flags)
+	}
+	if sum.Audit.Status != gate.AuditQueued {
+		t.Errorf("the event carries the stored trace: audit %+v", sum.Audit)
+	}
+}
+
+func TestSinkLateDecisionWaitsForItsAttempt(t *testing.T) {
+	st, pub := newMemStore(), &events{}
+	s := newSink(st, &fakeQueue{engine: true, lane: gate.LaneHigh}, pub)
+	r := flaggedResult()
+	r.LateExpected = true
+	s.TraceStarted(context.Background(), r.Trace)
+
+	// The late answer comes while the handler still delivers: nothing is written yet.
+	s.LateDecided(context.Background(), lateOf(r))
+	if ds := storedDecisions(t, st, r.Trace.TraceID); len(ds) != 0 {
+		t.Fatalf("a late decision was written before its attempt: %+v", ds)
+	}
+	s.GateDecided(context.Background(), r)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ds := storedDecisions(t, st, r.Trace.TraceID)
+		if len(ds) == 1 && ds[0].Late {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the late decision was not written after its attempt: %+v", ds)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for time.Now().Before(deadline) && len(pub.types()) < 3 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if types := pub.types(); strings.Join(types, ",") != "trace_started,gate_decision,gate_decision" {
+		t.Errorf("events %v", types)
+	}
+	if tr, _ := st.GetTrace(context.Background(), r.Trace.TraceID); *tr.Action != decision.ActionFlag {
+		t.Errorf("trace action %v", *tr.Action)
+	}
+
+	// A later attempt's late decision: its row only, no event.
+	r1 := replacedResult()
+	r1.Decision.Attempt, r1.LateExpected = 1, true
+	s.TraceStarted(context.Background(), r1.Trace)
+	s.AttemptDecided(context.Background(), r1)
+	n := len(pub.types())
+	s.LateDecided(context.Background(), lateOf(r1))
+	if ds := storedDecisions(t, st, r1.Trace.TraceID); len(ds) != 1 || !ds[0].Late || ds[0].Attempt != 1 {
+		t.Errorf("attempt 1's late row: %+v", ds)
+	}
+	if len(pub.types()) != n {
+		t.Errorf("attempt 1's late decision broadcast: %v", pub.types())
+	}
+	// Without a database the late decision is still broadcast, from the published trace.
+	pub2 := &events{}
+	s2 := newSink(nil, nil, pub2)
+	r2 := flaggedResult()
+	r2.LateExpected = true
+	s2.GateDecided(context.Background(), r2)
+	s2.LateDecided(context.Background(), lateOf(r2))
+	if sum, d := decidedEvent(t, pub2); !d.Late || !slices.Contains(sum.Flags, gate.FlagLateDecision) {
+		t.Errorf("no database: late %v flags %v", d.Late, sum.Flags)
+	}
+}
+
+func TestLateOrderExpires(t *testing.T) {
+	var o lateOrder
+	now := time.Now()
+	r := lateOf(flaggedResult())
+	k := lateKeyOf(r)
+	if _, ok := o.arrive(k, r, now); ok {
+		t.Fatal("nothing was recorded")
+	}
+	// Past lateHold the parked late decision is gone: the attempt's record finds nothing.
+	if got := o.recorded(k, nil, now.Add(lateHold+time.Second)); got != nil {
+		t.Error("an expired late decision was handed back")
+	}
+	if len(o.slots) != 1 || len(o.queue) != 1 {
+		t.Errorf("slots %d queue %d", len(o.slots), len(o.queue))
+	}
+	for i := range lateSlots + 10 {
+		o.recorded(lateKey{trace: strconv.Itoa(i)}, nil, now.Add(lateHold+2*time.Second))
+	}
+	if len(o.slots) > lateSlots || len(o.queue) > lateSlots {
+		t.Errorf("slots %d queue %d, want at most %d", len(o.slots), len(o.queue), lateSlots)
+	}
+}
+
+// slowJev answers every call only after the caller's deadline: the call times out, its attempt
+// goes on, and the mock's answer arrives through OnLate.
+type slowJev struct {
+	jev.Client
+	wg sync.WaitGroup
+}
+
+func (s *slowJev) Decide(ctx context.Context, req *jev.Request, opt jev.CallOptions) (*jev.Response, error) {
+	resp, err := s.Client.Decide(context.Background(), req, opt)
+	if err != nil {
+		return nil, err
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		<-ctx.Done()
+		time.Sleep(20 * time.Millisecond)
+		resp.Late = true
+		opt.OnLate(resp, nil)
+	}()
+	<-ctx.Done()
+	return nil, &jev.Error{Kind: jev.KindTimeout, Attempts: 1, Continued: true, Err: ctx.Err()}
+}
+
+func TestLateDecisionThroughTheGateAndTheSink(t *testing.T) {
+	reg, err := evaluators.Builtins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock, err := jev.New(jev.Config{Backend: jev.BackendMock, Mock: jev.MockConfig{Mode: jev.MockScenario}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, pub := newMemStore(), &events{}
+	sink := newSink(st, &fakeQueue{engine: true, lane: gate.LaneHigh}, pub)
+	cl := &slowJev{Client: mock}
+	g, err := gate.New(gate.Config{Jev: cl, Evaluators: reg, OnLate: sink.LateDecided, Logger: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := policy.Parse([]byte("version: 1\ndefaults:\n  mode: flag\n  deadline_ms: 100\n"), policy.DefaultSeeds(), reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := llmapi.ParseChatRequest([]byte(`{"model":"gpt-4o-mini","messages":[
+		{"role":"system","content":"<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase.</document>"},
+		{"role":"user","content":"How long do I have to get a refund on an annual plan?"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := p.Match(&policy.Request{Path: "/v1/chat/completions", Model: req.Model})
+	settings := route.Evidence.Extraction()
+	ev, err := evidence.Extract(req, &settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace := &gate.TraceStart{TraceID: store.NewID(), CreatedAt: time.Now().UTC(), Source: gate.SourceTest,
+		APIFormat: "openai_chat", Path: "/v1/chat/completions", Route: route.Name, PolicyVersion: p.Version, Mode: route.Mode,
+		Model: req.Model, Flags: []string{}}
+	sink.TraceStarted(context.Background(), trace)
+	res := g.Evaluate(context.Background(), &gate.Exchange{Trace: trace, Policy: p, Route: route, Request: req, Evidence: ev,
+		Response: "Annual plans can be refunded within 60 days of purchase."})
+	if !res.LateExpected || res.Status != decision.StatusTimeout {
+		t.Fatalf("status %s late expected %v", res.Status, res.LateExpected)
+	}
+	sink.GateDecided(context.Background(), res)
+	cl.wg.Wait()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if ds := storedDecisions(t, st, trace.TraceID); len(ds) == 1 && ds[0].Late {
+			if ds[0].Enforced || ds[0].Status == decision.StatusTimeout || ds[0].DecisionModel == nil {
+				t.Errorf("late row %+v", ds[0].Core)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no late row")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tr, _ := st.GetTrace(context.Background(), trace.TraceID)
+	if *tr.Action != decision.ActionPass || tr.GateStatus != decision.StatusTimeout || !slices.Contains(tr.Flags, gate.FlagLateDecision) {
+		t.Errorf("trace action %v status %s flags %v", *tr.Action, tr.GateStatus, tr.Flags)
+	}
+	if sum, d := decidedEvent(t, pub); !d.Late || *sum.Action != decision.ActionPass {
+		t.Errorf("late event: late %v trace action %v", d.Late, *sum.Action)
+	}
 }

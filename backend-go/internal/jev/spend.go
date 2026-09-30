@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/metrics"
 )
 
 // budgetEps absorbs float rounding in cap comparisons (a millionth of a cent).
@@ -125,7 +127,16 @@ func (b *MemoryBudget) Reserve(r SpendRequest) (Reservation, error) {
 		ks.reserved += usd
 	}
 	b.reserved += usd
+	b.report()
 	return &memReservation{b: b, usd: usd, key: ks}, nil
+}
+
+// SpendKindDecision is the spend_* metrics kind of decision-model spend.
+const SpendKindDecision = "decision"
+
+// report sets the spend gauges (spend_usd_today, spend_reserved_usd). Caller holds mu.
+func (b *MemoryBudget) report() {
+	metrics.SetSpend(SpendKindDecision, b.spent, b.reserved)
 }
 
 // rollover starts a new UTC day. Holds of running attempts stay reserved. Caller holds mu.
@@ -138,6 +149,7 @@ func (b *MemoryBudget) rollover() {
 	for _, k := range b.keys {
 		k.spent = 0
 	}
+	b.report()
 }
 
 // Spend reports the day's spend.
@@ -173,6 +185,7 @@ func (r *memReservation) Settle(actualUSD float64) {
 			r.key.reserved = max(r.key.reserved-r.usd, 0)
 			r.key.spent += actual
 		}
+		b.report()
 	})
 }
 
