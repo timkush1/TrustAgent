@@ -190,7 +190,7 @@ func (c *Client) OutboundHeaders(in http.Header) http.Header {
 	}
 	// Passthrough: the client's credential goes upstream untouched, unless it is a TrustAgent key.
 	for name, values := range out {
-		if isCredentialHeader(name) && slices.ContainsFunc(values, c.carriesProxyKey(name)) {
+		if isCredentialHeader(name) && slices.ContainsFunc(values, c.carriesProxyKey) {
 			delete(out, name)
 		}
 	}
@@ -203,24 +203,16 @@ func isCredentialHeader(name string) bool {
 	return slices.ContainsFunc(credentialHeaders, func(h string) bool { return strings.EqualFold(h, name) })
 }
 
-// carriesProxyKey returns the test for one value of credential header name: a Bearer token or a
-// raw key that is a TrustAgent key.
-func (c *Client) carriesProxyKey(name string) func(string) bool {
-	return func(v string) bool {
-		if strings.EqualFold(name, "Authorization") {
-			token, ok := cutBearer(v)
-			return ok && c.isProxyKey(token)
-		}
-		return c.isProxyKey(strings.TrimSpace(v))
+// carriesProxyKey reports whether one value of a credential header carries a TrustAgent key: as
+// the whole value, or as the credential after a scheme (Bearer or any other), so a proxy key is
+// never forwarded, however the client sent it (B1).
+func (c *Client) carriesProxyKey(v string) bool {
+	v = strings.TrimSpace(v)
+	if c.isProxyKey(v) {
+		return true
 	}
-}
-
-func cutBearer(v string) (string, bool) {
-	scheme, token, ok := strings.Cut(strings.TrimSpace(v), " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return "", false
-	}
-	return strings.TrimSpace(token), true
+	_, token, ok := strings.Cut(v, " ")
+	return ok && c.isProxyKey(strings.TrimSpace(token))
 }
 
 func isTrustAgentHeader(name string) bool {

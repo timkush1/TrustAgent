@@ -330,7 +330,10 @@ func TestOutboundHeadersPassthroughMode(t *testing.T) {
 	}
 	for _, h := range []http.Header{
 		{"authorization": {"Bearer ta-proxy-key"}},
+		{"Authorization": {"ta-proxy-key"}},        // no scheme
+		{"Authorization": {"Token  ta-proxy-key"}}, // another scheme
 		{"x-api-key": {" ta-proxy-key"}},
+		{"X-Api-Key": {"Bearer ta-proxy-key"}},
 		{"Api-Key": {"sk-other", "ta-proxy-key"}},
 	} {
 		if out := c.OutboundHeaders(h); len(out) != 0 {
