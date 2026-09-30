@@ -8,6 +8,7 @@ import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { copy } from '@/domain/presentation';
 import { createFakeApi } from '@/test/apiHandlers';
+import { axeViolations, formatViolations } from '@/test/axe';
 import { API, installMswServer, server } from '@/test/msw';
 import { p3Detail } from '@/test/p3Fixtures';
 import { renderLive, stopLive } from '@/test/renderLive';
@@ -222,5 +223,70 @@ describe('Trace detail', () => {
     // What each tier ran on, and its cost with an honest label (the mock's cost is simulated).
     expect(details).toHaveTextContent('Fast check (Jev) modelmock/jevMock (simulated)');
     expect(details).toHaveTextContent('Fast check (Jev) cost$0Simulated');
+  });
+});
+
+describe('Trace detail: Details', () => {
+  async function openDetails(container: HTMLElement) {
+    const details = container.querySelector('details') as HTMLElement;
+    await userEvent.click(within(details).getByText('Details'));
+    return details;
+  }
+
+  it('shows the waterfall, the headers the app received, the flags and both attempts', async () => {
+    const detail = p3Detail('payments-fallback');
+    const { container } = renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: detail } }));
+    await screen.findByRole('region', { name: 'Outcome' });
+    const details = await openDetails(container);
+
+    expect(within(details).getByRole('application', { name: /Where the time went/ })).toBeInTheDocument();
+    const headers = within(details).getByRole('region', { name: /^\d+ headers$/ });
+    expect(headers).toHaveTextContent(`X-TrustAgent-Trace-Id: ${detail.trace_id}`);
+    expect(headers).toHaveTextContent('X-TrustAgent-Action: fallback');
+    expect(headers).toHaveTextContent('X-TrustAgent-Would-Action: block');
+    // This proxy does not serve policies here, so the route's headers setting is unknown.
+    expect(await within(details).findByText(/policy version could not be read/)).toBeInTheDocument();
+
+    const flags = within(details).getByRole('heading', { name: 'Flags' }).parentElement as HTMLElement;
+    expect(within(flags).getByText('Fallback answer delivered')).toBeInTheDocument();
+    expect(within(flags).getByText('Simulated fast check (mock)')).toBeInTheDocument();
+
+    const attempts = within(details).getByRole('heading', { name: 'Fast check by attempt' }).parentElement as HTMLElement;
+    const [first, second] = within(attempts).getAllByRole('listitem');
+    expect(first).toHaveTextContent("Your model's answer");
+    expect(first).toHaveTextContent('Contradicted · High risk 0.97 · 5 ms');
+    expect(second).toHaveTextContent('Fallback check');
+    expect(second).toHaveTextContent('Supported · Low risk 0.04 · 4 ms');
+    const raw = second.querySelector('details') as HTMLElement;
+    expect(raw).not.toHaveAttribute('open');
+    await userEvent.click(within(raw).getByText('Raw decision (decision/v1)'));
+    expect(raw).toHaveAttribute('open');
+    expect(within(raw).getByRole('region', { name: 'decision/v1 · Fallback check' })).toHaveTextContent('"attempt": 1');
+    expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
+
+  it('shows only the action when the route sends headers: action_only', async () => {
+    const detail = p3Detail('help-center-link-block');
+    const policyVersion = {
+      id: 1,
+      created_at: detail.created_at,
+      source: 'file' as const,
+      author: 'file',
+      message: '',
+      sha256: '0'.repeat(64),
+      yaml: '',
+      doc: { version: 1 as const, routes: [{ name: 'help-center', match: { headers: { 'X-TrustAgent-Route': 'help-center' } }, headers: 'action_only' as const }] },
+    };
+    const api = createFakeApi({ details: { [detail.trace_id]: detail }, policyVersions: { 1: policyVersion } });
+    // The current policy is a later version, so the stored one is read.
+    api.state.policies = { ...policyVersion, id: 2, etag: '"2"', locked: false, persisted: true, editable: true, editable_reason: null, effective_routes: [], file: { path: 'policies.yaml', sha256: null, status: 'ok', errors: [] } } as never;
+    const { container } = renderLive(`/app/traffic/${detail.trace_id}`, api);
+    await screen.findByRole('region', { name: 'Outcome' });
+    const details = await openDetails(container);
+    await waitFor(() => expect(within(details).getByRole('region', { name: '3 headers' })).toBeInTheDocument());
+    const headers = within(details).getByRole('region', { name: '3 headers' });
+    expect(headers).not.toHaveTextContent('X-TrustAgent-Route');
+    expect(headers).toHaveTextContent('X-TrustAgent-Action: block');
+    expect(within(details).getByText('This route sends only the action (headers: action_only).')).toBeInTheDocument();
   });
 });

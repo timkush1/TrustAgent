@@ -6,9 +6,11 @@
  */
 import { applyAuditToTrace, auditRank, mergeTraceSummary } from '@/data/normalize';
 import type { MarkFinding } from '@/domain/segmentClaims';
+import { formatDurationMs, formatRisk } from '@/domain/format';
 import {
   copy,
   fillTemplate,
+  gateVerdictView,
   humanizeId,
   levelWord,
   statusReason,
@@ -131,18 +133,46 @@ export function buildTraceView(input: TraceViewInput): TraceView | null {
 
 const LEVEL_RANK: Record<EvaluatorLevel, number> = { ok: 0, warn: 1, critical: 2 };
 
-/** How the fallback check (attempt 1) rated the fallback answer: "low risk", or why it did not finish. */
-export function fallbackCheckResult(check: GateDecisionView | null | undefined): string | null {
-  if (!check) return null;
-  if (check.status === 'timeout' || check.status === 'error' || check.status === 'skipped') {
-    return statusReason(check.skip_reason ?? check.status);
-  }
+/** The highest level among a decision's enforced (active, not internal) evaluators, or null. */
+export function topLevel(d: GateDecisionView): EvaluatorLevel | null {
   let top: EvaluatorLevel | null = null;
-  for (const e of Object.values(check.evaluators)) {
+  for (const e of Object.values(d.evaluators)) {
     if (e.internal || e.stage === 'shadow' || e.level === null) continue;
     if (top === null || LEVEL_RANK[e.level] > LEVEL_RANK[top]) top = e.level;
   }
+  return top;
+}
+
+const unfinished = (d: GateDecisionView) => d.status === 'timeout' || d.status === 'error' || d.status === 'skipped';
+
+/** How the fallback check (attempt 1) rated the fallback answer: "low risk", or why it did not finish. */
+export function fallbackCheckResult(check: GateDecisionView | null | undefined): string | null {
+  if (!check) return null;
+  if (unfinished(check)) return statusReason(check.skip_reason ?? check.status);
+  const top = topLevel(check);
   return top ? levelWord(top).label.toLowerCase() : null;
+}
+
+/** "Your model's answer" for attempt 0, "Fallback check" for attempt 1. */
+export function attemptLabel(attempt: number): string {
+  if (attempt === 0) return copy.trace.attempt_answer;
+  if (attempt === 1) return copy.trace.attempt_fallback;
+  return `Attempt ${attempt}`;
+}
+
+/** One line per attempt: "Contradicted · High risk 0.97 · 5 ms", or why it was not checked. */
+export function attemptSummary(d: GateDecisionView): string {
+  const parts: string[] = [];
+  if (unfinished(d)) {
+    const reason = statusReason(d.skip_reason ?? d.status);
+    parts.push(d.status === 'skipped' ? `Not checked${reason ? `: ${reason}` : ''}` : `Check failed${reason ? `: ${reason}` : ''}`);
+  } else {
+    if (d.verdict) parts.push(gateVerdictView(d.verdict).label);
+    const top = topLevel(d);
+    if (top) parts.push(`${levelWord(top).label} ${formatRisk(d.max_risk)}`);
+  }
+  if (d.gate_ms !== null) parts.push(formatDurationMs(d.gate_ms));
+  return parts.join(' · ');
 }
 
 /** The id of the "What the user received instead" block; the outcome card links to it. */
