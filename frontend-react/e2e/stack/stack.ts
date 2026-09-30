@@ -1,8 +1,12 @@
 /**
- * Helpers for specs that need a running stack (`make demo`).
+ * Helpers for specs that need a running stack (`make demo`). In CI every prerequisite is provided,
+ * so a check that cannot run fails there instead of skipping (D18): a green gate always tested
+ * something.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { test, type Page, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
+import { expect, test, type Page, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
+
+const SIGN_IN_TIMEOUT = 30_000;
 
 /**
  * Checks that the dashboard answers and its /health reaches the proxy. With no stack the specs
@@ -43,4 +47,52 @@ export async function seriousViolations(page: Page): Promise<string[]> {
   return results.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
+}
+
+/**
+ * Skips the running test with `reason` when `condition` holds, or fails it in CI, like
+ * requireStack. Call it inside a test body.
+ */
+export function skipOrFail(condition: boolean, reason: string): void {
+  if (!condition) return;
+  if (process.env.CI) throw new Error(`This check cannot run: ${reason}`);
+  console.warn(`[skipped] ${reason}`);
+  test.skip(true, reason);
+}
+
+/** Whether signInAsAdmin has a way in: an admin key or the one-time setup link. */
+export function canSignInAsAdmin(): boolean {
+  return Boolean(process.env.TRUSTAGENT_ADMIN_KEY || process.env.TRUSTAGENT_SETUP_URL);
+}
+
+/** The admin key this worker created by claiming the setup link, for its later sign-ins. */
+let claimedAdminKey: string | null = null;
+
+/**
+ * Signs `page` in as an admin through /app/setup. TRUSTAGENT_ADMIN_KEY (a key from
+ * TRUTHTABLE_ADMIN_KEYS) is preferred: it works any number of times. TRUSTAGENT_SETUP_URL (the link
+ * of the proxy's one-time `SETUP: open …/app/setup#token=…` line; `make demo-setup-url` prints a
+ * fresh one) works once per stack: the admin key it creates is kept for this worker's later
+ * sign-ins, but a retry in a new worker cannot claim it again and needs TRUSTAGENT_ADMIN_KEY.
+ */
+export async function signInAsAdmin(page: Page): Promise<void> {
+  const key = process.env.TRUSTAGENT_ADMIN_KEY || claimedAdminKey;
+  const setupUrl = process.env.TRUSTAGENT_SETUP_URL;
+  if (key) {
+    await page.goto('/app/setup');
+    await page.getByLabel('Key').fill(key);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  } else if (setupUrl) {
+    // Only the fragment matters: the page is served by the dashboard under test.
+    await page.goto(`/app/setup${new URL(setupUrl).hash}`);
+    await page.getByRole('button', { name: 'Create the admin key' }).click();
+    const created = page.getByText('Your admin key (shown once)');
+    await expect(created, 'the setup link works once per stack; set TRUSTAGENT_ADMIN_KEY to sign in again').toBeVisible({
+      timeout: SIGN_IN_TIMEOUT,
+    });
+    claimedAdminKey = (await created.locator('xpath=..').locator('code').textContent())?.trim() || null;
+  } else {
+    throw new Error('Set TRUSTAGENT_ADMIN_KEY (a key from TRUTHTABLE_ADMIN_KEYS) or TRUSTAGENT_SETUP_URL to sign in as admin.');
+  }
+  await expect(page.getByText(/Admin actions are available/)).toBeVisible({ timeout: SIGN_IN_TIMEOUT });
 }
