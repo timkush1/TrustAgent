@@ -6,8 +6,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// mountP3API mounts the P3 REST endpoints (SPEC §2.4 rows 2, 16, 17, 49, 61 and 66): r for
-// /health/ready, api for the /api routes, with guards' auth, limits and body cap.
+// mountP3API mounts the P3 REST endpoints (SPEC §2.4 rows 2, 16, 17, 49 and 66; the Playground,
+// row 61, follows once the gateway's enforcement lands): r for /health/ready, api for the /api
+// routes, with guards' auth, limits and body cap. It also wires the direct-audit judge check (row
+// 15).
 func (s *server) mountP3API(r *gin.Engine, api *gin.RouterGroup, guards apiGuards) {
 	// Public readiness (row 2): component states only, never the status aggregates.
 	r.GET("/health/ready", s.handleReady)
