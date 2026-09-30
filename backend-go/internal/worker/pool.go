@@ -15,6 +15,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
@@ -35,6 +36,10 @@ var (
 	ErrStopped   = errors.New("worker: the audit pool is stopped")
 	ErrNoEngine  = errors.New("worker: no audit engine is configured")
 )
+
+// ErrNoJudge is JudgeReady's answer when the engine has no working deep-audit judge: it would
+// answer every audit not assessed.
+var ErrNoJudge = errors.New("worker: the audit engine has no working judge")
 
 // DropReason maps a Submit error to the audit_dropped reason.
 func DropReason(err error) string {
@@ -121,6 +126,9 @@ type Pool struct {
 
 	mu       sync.RWMutex
 	stopping bool
+
+	// judgeCheck is the check behind JudgeReady (SetJudgeCheck); nil means none.
+	judgeCheck atomic.Pointer[func() error]
 }
 
 // New builds a pool; Start runs its workers.
@@ -157,6 +165,26 @@ func (p *Pool) Start() {
 
 // HasEngine reports whether audits can run at all.
 func (p *Pool) HasEngine() bool { return p.cfg.Engine != nil }
+
+// SetJudgeCheck installs the check JudgeReady runs: nil when the engine can judge an audit, an
+// error such as ErrNoJudge when it cannot. The proxy reads it from the engine's cached health.
+func (p *Pool) SetJudgeCheck(check func() error) {
+	if check == nil {
+		p.judgeCheck.Store(nil)
+		return
+	}
+	p.judgeCheck.Store(&check)
+}
+
+// JudgeReady reports whether the engine can judge a new audit (nil when no check is installed).
+// Callers that ask for an audit explicitly (POST /api/audit) refuse the request when it cannot;
+// gated traffic is audited anyway and comes back not assessed.
+func (p *Pool) JudgeReady() error {
+	if check := p.judgeCheck.Load(); check != nil {
+		return (*check)()
+	}
+	return nil
+}
 
 // Submit queues a job without blocking and returns the lane it went to. A high job takes a token
 // from the high-lane bucket, or goes to the low lane when the bucket or the high queue is full.

@@ -534,3 +534,29 @@ func TestQueuedEventsCountTheJobsAhead(t *testing.T) {
 	defer cancel()
 	_ = p.Drain(ctx)
 }
+
+func TestJudgeReady(t *testing.T) {
+	p := New(Config{Logger: slog.New(slog.DiscardHandler)})
+	if err := p.JudgeReady(); err != nil {
+		t.Errorf("no check installed: %v", err)
+	}
+	ready := false
+	p.SetJudgeCheck(func() error {
+		if ready {
+			return nil
+		}
+		return ErrNoJudge
+	})
+	if err := p.JudgeReady(); !errors.Is(err, ErrNoJudge) {
+		t.Errorf("no judge: %v", err)
+	}
+	ready = true
+	if err := p.JudgeReady(); err != nil {
+		t.Errorf("judge up: %v", err)
+	}
+	p.SetJudgeCheck(nil)
+	ready = false
+	if err := p.JudgeReady(); err != nil {
+		t.Errorf("check removed: %v", err)
+	}
+}

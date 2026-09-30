@@ -12,6 +12,10 @@ func (s *server) mountP3API(r *gin.Engine, api *gin.RouterGroup, guards apiGuard
 	// Public readiness (row 2): component states only, never the status aggregates.
 	r.GET("/health/ready", s.handleReady)
 
+	// POST /api/audit (row 15, mounted with the audit reads) refuses audits the engine cannot
+	// judge: 503 no_judge.
+	s.pool.SetJudgeCheck(s.judgeCheck)
+
 	// Stored gate decisions and reliability (rows 16 and 17); they need the database.
 	gate := &gateAPI{
 		snapshot: func() string { return s.status.jevStatus().Snapshot }, includeMock: s.cfg.DemoMode,
