@@ -270,13 +270,14 @@ func pollAnswer(traceID string, e waitEntry) decisionPoll {
 	}
 	doc := e.doc
 	if e.headers == policy.HeadersActionOnly {
+		// Only action and status leave, whatever the stored document holds: a field that does not
+		// read as a string stays empty rather than letting the whole document through.
 		var d struct {
 			Action string `json:"action"`
 			Status string `json:"status"`
 		}
-		if err := json.Unmarshal(e.doc, &d); err == nil {
-			doc, _ = json.Marshal(d)
-		}
+		_ = json.Unmarshal(e.doc, &d)
+		doc, _ = json.Marshal(d)
 	}
 	return decisionPoll{TraceID: traceID, State: decisionDecided, Decision: doc}
 }

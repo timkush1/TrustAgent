@@ -142,6 +142,12 @@ func TestDecisionLongPollActionOnly(t *testing.T) {
 	if err := json.Unmarshal(p.Decision, &d); err != nil || len(d) != 2 || d["action"] != "block" || d["status"] != "ok" {
 		t.Errorf("action_only decision %s (%v)", p.Decision, err)
 	}
+	// A document whose fields do not read as strings still lets nothing else through.
+	odd := pollAnswer(id, waitEntry{headers: policy.HeadersActionOnly,
+		doc: json.RawMessage(`{"action":1,"status":"ok","reasons":["groundedness:critical"],"max_risk":0.97}`)})
+	if string(odd.Decision) != `{"action":"","status":"ok"}` {
+		t.Errorf("action_only with an odd document: %s", odd.Decision)
+	}
 }
 
 func TestDecisionLongPollReadsTheDatabase(t *testing.T) {
