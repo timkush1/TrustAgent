@@ -735,6 +735,28 @@ func TestClientGoneBeforeTheAnswer(t *testing.T) {
 	}
 }
 
+// TestClientGoneDuringTheGate: the synchronous gate runs on the detached record context, so a
+// client that hangs up while the answer is being decided leaves the real decision on record
+// rather than a cancelled check (an error, and a fail-closed block on a closed route).
+func TestClientGoneDuringTheGate(t *testing.T) {
+	e := newEnv(t, envOpts{testMode: true, enforcing: true, jevLatency: 300 * time.Millisecond, policyYAML: blockPolicy("block", "fail: closed")})
+	body, answer, hdr := contradicted(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(withTestResponse(t, body, answer))).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-TrustAgent-Key", ingestKey)
+	req.Header.Set("X-TrustAgent-Scenario", hdr["X-TrustAgent-Scenario"])
+	time.AfterFunc(50*time.Millisecond, cancel)
+	e.router.ServeHTTP(newRecorder(), req)
+	r := e.sink.result(t)
+	if r.Status != "ok" || r.Decision.Degraded != nil || r.Decision.WouldAction != decision.ActionBlock ||
+		slices.Contains(r.Decision.Reasons, decision.ReasonFailClosed) {
+		t.Errorf("status %s degraded %v would %s reasons %v: the decision is the model's, not a cancelled check",
+			r.Status, r.Decision.Degraded, r.Decision.WouldAction, r.Decision.Reasons)
+	}
+}
+
 func TestNoTextIsSkipped(t *testing.T) {
 	e := newEnv(t, envOpts{policyYAML: "version: 1\ndefaults: {mode: flag}\n"})
 	e.up.body = `{"choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"c","type":"function","function":{"name":"f","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`

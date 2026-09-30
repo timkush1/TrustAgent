@@ -346,8 +346,11 @@ func (h *Handler) serveJSON(f *flow, ans *answer) {
 		h.respondThenGate(f, ans)
 		return
 	}
+	// The gate waits on the record context: only its own deadline stops it (SPEC §2.9 late
+	// decisions), so a client that hangs up mid-check leaves the real decision on record, not a
+	// cancelled check (a timeout, and a fail-closed block on a closed route).
+	res := h.gate.Evaluate(f.record, x)
 	ctx := f.c.Request.Context()
-	res := h.gate.Evaluate(ctx, x)
 	out := h.enforceJSON(ctx, f, res, ans)
 	up, end := ans.upstreamRecord(), h.now()
 	audit := h.decided(f, res, up, end, out.final)
