@@ -17,6 +17,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/truthtable/backend-go/internal/calibration"
@@ -25,6 +26,7 @@ import (
 	"github.com/truthtable/backend-go/internal/evidence"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/metrics"
 	"github.com/truthtable/backend-go/internal/policy"
 )
 
@@ -207,6 +209,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	// Tier 0: detectors run whenever there is an answer, sampled or not.
 	detectors := notRun()
 	if hasText {
+		t0 := time.Now()
 		var err error
 		if detectors, err = decision.Detect(&decision.DetectorInput{
 			Response: x.Response, Evidence: x.Evidence.DecisionItems(),
@@ -216,6 +219,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 			g.log.Error("gate: detectors failed", "trace_id", x.Trace.TraceID, "err", err)
 			detectors = notRun()
 		}
+		metrics.ObserveGateStage(StageDetectors, time.Since(t0))
 	}
 
 	model := route.Decision.Model
@@ -245,6 +249,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	var compiled *decision.Compiled
 	var usage *DecisionModelUsage
 	var round *callRound
+	compileStart := time.Now()
 	if hasText {
 		var err error
 		compiled, err = decision.Compile(g.compileRoute(route, x.Policy, model), g.cfg.Evaluators.Specs(), g.compileInputs(x, reqRules), g.budget(route))
@@ -256,15 +261,20 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 			}
 			g.failAll(in, route, "error:"+kind)
 			compiled = nil
+			metrics.ObserveGateStage(StageCompile, time.Since(compileStart))
 		}
 	}
 
 	if compiled != nil {
-		if g.adopt(in, route, compiled, x.Trace.TraceID) && skip == "" && len(compiled.Requests) > 0 {
+		adopted := g.adopt(in, route, compiled, x.Trace.TraceID)
+		metrics.ObserveGateStage(StageCompile, time.Since(compileStart))
+		if adopted && skip == "" && len(compiled.Requests) > 0 {
 			if g.cfg.Jev.Info().Backend == jev.BackendOff {
 				skip = SkipDecisionModelOff
 			} else {
+				t0 := time.Now()
 				round = g.consult(ctx, x, model, reqRules, compiled)
+				metrics.ObserveGateStage(StageJev, time.Since(t0))
 				if round.compiled != compiled {
 					// A too_large resend: the answers are about the smaller compile.
 					compiled = round.compiled
@@ -286,7 +296,9 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		in.Meta.SkipReason = &skip
 	}
 
+	t0 := time.Now()
 	core, err := decision.Decide(in)
+	metrics.ObserveGateStage(StageDecide, time.Since(t0))
 	if err != nil {
 		g.log.Error("gate: decide failed", "trace_id", x.Trace.TraceID, "err", err)
 		core = internalError(mode)
@@ -295,6 +307,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	if x.Unenforced {
 		core.Enforced = false
 	}
+	observe(route.Name, mode, core, in.Meta.RequestStatus, detectors)
 
 	gateMs := g.cfg.Now().Sub(start).Milliseconds()
 	version := x.Policy.Version
@@ -338,6 +351,42 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		res.LateExpected = round.late.arm(ev)
 	}
 	return res
+}
+
+// Gate stages (gate_seconds{stage}).
+const (
+	StageDetectors = "detectors"
+	StageCompile   = "compile"
+	StageJev       = "jev"
+	StageDecide    = "decide"
+)
+
+// observe records a decision in the gate metrics (SPEC Appendix B): the decision, each
+// evaluator's level (none when it has none), each detector that fired, and each decision-model
+// request that failed, by kind (timeout, an error kind, compile, too_large or internal). A refusal
+// before any vendor request is a skip, not a failure.
+func observe(route, mode string, core *decision.Core, requestStatus map[string]string, detectors []decision.DetectorResult) {
+	metrics.ObserveGate(route, mode, core.Action, core.Status)
+	for _, e := range core.Evaluators {
+		level := ""
+		if e.Level != nil {
+			level = *e.Level
+		}
+		metrics.EvaluatorLevel(e.Ref, level, e.Stage)
+	}
+	for _, d := range detectors {
+		if d.Fired {
+			metrics.DetectorFired(d.ID)
+		}
+	}
+	for _, st := range requestStatus {
+		switch {
+		case st == decision.RequestTimeout:
+			metrics.GateError(jev.KindTimeout)
+		case strings.HasPrefix(st, "error:"):
+			metrics.GateError(strings.TrimPrefix(st, "error:"))
+		}
+	}
 }
 
 // compileInputs are the compile() inputs of an exchange with an answer.

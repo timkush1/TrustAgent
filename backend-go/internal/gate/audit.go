@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/metrics"
 	"github.com/truthtable/backend-go/internal/policy"
 )
 
@@ -73,7 +74,8 @@ func (g *Gate) planBody(r *policy.Route, core *decision.Core) BodyPlan {
 	return BodyPlan{InclusionProb: rate}
 }
 
-// dailyCounter caps events per UTC day (in memory; the count restarts with the process).
+// dailyCounter caps events per UTC day (in memory; the count restarts with the process). The
+// uniform sample counter reports its count as uniform_samples_today.
 type dailyCounter struct {
 	mu    sync.Mutex
 	limit int
@@ -88,10 +90,12 @@ func (d *dailyCounter) take(now time.Time) bool {
 	defer d.mu.Unlock()
 	if day := now.UTC().Format(time.DateOnly); day != d.day {
 		d.day, d.n = day, 0
+		metrics.SetUniformSamplesToday(0)
 	}
 	if d.n >= d.limit {
 		return false
 	}
 	d.n++
+	metrics.SetUniformSamplesToday(d.n)
 	return true
 }
