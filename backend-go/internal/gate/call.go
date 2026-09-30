@@ -92,7 +92,7 @@ func (g *Gate) consult(ctx context.Context, x *Exchange, model string, reqRules 
 // ctx's deadline at the latest).
 func (g *Gate) ask(ctx context.Context, x *Exchange, c *decision.Compiled, base spent) *callRound {
 	r := &callRound{compiled: c, outs: make([]callOutcome, len(c.Requests)), base: base, started: g.cfg.Now(),
-		late: &lateGate{g: g, traceID: x.Trace.TraceID, arrived: map[int]callOutcome{}}}
+		late: &lateGate{g: g, traceID: x.Trace.TraceID}}
 	opt := jev.CallOptions{
 		Class: jev.ClassSync, Scenario: x.Trace.Scenario,
 		HedgeAfter: time.Duration(x.Route.HedgeAfterMs) * time.Millisecond,

@@ -57,6 +57,9 @@ func (l *lateGate) receive(k int) func(*jev.Response, error) {
 				"latency_ms", resp.LatencyMs, "snapshot", resp.Snapshot)
 		}
 		l.mu.Lock()
+		if l.arrived == nil {
+			l.arrived = map[int]callOutcome{}
+		}
 		l.arrived[k] = callOutcome{resp, err}
 		ev := l.ready()
 		l.mu.Unlock()
