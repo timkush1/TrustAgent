@@ -217,8 +217,9 @@ type envOpts struct {
 // anthropicBody is the Anthropic upstream's default answer.
 const anthropicBody = `{"id":"msg_up","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"Priority tickets get a first response within 4 hours."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":9}}`
 
-// loadPolicy loads config/policies.yaml, or yaml when set; enforcing accepts block and fallback.
-func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, enforcing bool) *policy.Policy {
+// loadPolicy loads config/policies.yaml, or yaml when set, as the gateway does with env's
+// Enforcing (block and fallback accepted) and FallbackUpstream (fallback.upstream: fallback).
+func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, env policy.Env) *policy.Policy {
 	t.Helper()
 	src := []byte(yaml)
 	if yaml == "" {
@@ -228,7 +229,8 @@ func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, enforcing b
 		}
 		src = b
 	}
-	res := policy.Check(src, policy.Env{Seeds: policy.DefaultSeeds(), Specs: reg, Enforcing: enforcing})
+	env.Seeds, env.Specs = policy.DefaultSeeds(), reg
+	res := policy.Check(src, env)
 	if res.Policy == nil {
 		t.Fatal(res.Err())
 	}
@@ -241,7 +243,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pol := loadPolicy(t, reg, o.policyYAML, o.enforcing)
+	pol := loadPolicy(t, reg, o.policyYAML, policy.Env{Enforcing: o.enforcing, FallbackUpstream: o.fallbackFormat != ""})
 	cl := o.jev
 	if cl == nil {
 		backend := o.jevBackend
