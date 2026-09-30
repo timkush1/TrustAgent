@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -380,5 +381,27 @@ func TestPlaygroundRunContext(t *testing.T) {
 	}
 	if c.Request.URL.Path != "/api/playground/run" || c.Request.Header.Get("Cookie") == "" || c.Request.URL.RawQuery != "debug=1" {
 		t.Errorf("the dashboard's request changed: %s %v", c.Request.URL, c.Request.Header)
+	}
+}
+
+// TestPlaygroundUndecodableAnswer: an upstream body the gateway cannot decode is recorded as
+// skipped:undecodable (D24), never enforced, and answered with a 502 that names the trace.
+func TestPlaygroundUndecodableAnswer(t *testing.T) {
+	e := newEnv(t, envOpts{testMode: true, policyYAML: blockPolicy("flag", "")})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "br")
+		_, _ = io.WriteString(w, "not brotli")
+	}))
+	t.Cleanup(up.Close)
+	e.injecting(t, up.URL)
+	_, err := e.handler.Playground(context.Background(), playgroundContext(), refundRun(t, PlaygroundChat), nil)
+	pe := playgroundErr(t, err)
+	r := e.sink.result(t)
+	if pe.Status != http.StatusBadGateway || pe.Code != CodeUpstreamError || pe.TraceID != r.Trace.TraceID {
+		t.Errorf("%+v", pe)
+	}
+	if r.Status != "skipped:undecodable" || r.Decision.Enforced || r.Final == nil || r.Final.Action != decision.ActionPass {
+		t.Errorf("status %s enforced %v final %+v", r.Status, r.Decision.Enforced, r.Final)
 	}
 }

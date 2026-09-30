@@ -309,25 +309,30 @@ func runContext(c *gin.Context) *gin.Context {
 }
 
 // playgroundUpstreamFailed records a chat-mode run whose upstream call failed outright, as
-// upstreamFailed does on /v1 (skipped:upstream_error, or client_disconnected when the caller went
-// away; never enforced), and returns the 502, or 504 on a timeout, that names the trace.
+// upstreamFailed does on /v1 (skipped:upstream_error; undecodable for a body whose encoding is
+// broken, D24; client_disconnected when the caller went away; never enforced), and returns the
+// 502, or 504 on a timeout, that names the trace.
 func (h *Handler) playgroundUpstreamFailed(ctx context.Context, f *flow, err error) *PlaygroundError {
 	x := f.x
 	ms := h.now().Sub(f.upStart).Milliseconds()
 	x.SkipReason, x.Unenforced = gate.SkipUpstreamError, true
-	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+	pe := &PlaygroundError{Status: http.StatusBadGateway, Code: CodeUpstreamError, TraceID: x.Trace.TraceID,
+		Message: "The upstream LLM API could not be reached."}
+	switch {
+	case errors.Is(err, context.Canceled) && ctx.Err() != nil:
 		x.SkipReason = gate.SkipClientDisconnected
-	} else {
-		h.log.Warn("playground: upstream call failed", "trace_id", x.Trace.TraceID, "err", err)
+	case errors.Is(err, upstream.ErrUndecodable):
+		x.SkipReason = gate.SkipUndecodable
+		pe.Message = "The upstream LLM API answered with a body the gateway cannot decode (its Content-Encoding)."
+	case upstream.IsTimeout(err):
+		pe.Status, pe.Code, pe.Message = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
+	}
+	if x.SkipReason != gate.SkipClientDisconnected {
+		h.log.Warn("playground: upstream call failed", "trace_id", x.Trace.TraceID, "skip", x.SkipReason, "err", err)
 	}
 	res := h.gate.Evaluate(f.record, x)
 	fin := &gate.Final{Action: unenforcedAction(res.Decision.Action), Delivered: gate.DeliveredOriginal}
 	h.decided(f, res, gate.Upstream{Ms: &ms}, h.now(), fin)
-	pe := &PlaygroundError{Status: http.StatusBadGateway, Code: CodeUpstreamError, TraceID: x.Trace.TraceID,
-		Message: "The upstream LLM API could not be reached."}
-	if upstream.IsTimeout(err) {
-		pe.Status, pe.Code, pe.Message = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
-	}
 	return pe
 }
 
