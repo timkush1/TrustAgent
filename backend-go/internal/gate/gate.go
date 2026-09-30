@@ -132,11 +132,12 @@ type Exchange struct {
 	// NoAudit plans no deep audit (the fallback re-gate: the audit stays on the original answer);
 	// the result's AuditPlan is then empty.
 	NoAudit bool
-	// AuditSelection, when set, always selects a deep audit, with this selection (playground for
-	// a Playground run). Not read yet (GD-1).
+	// AuditSelection, when set, always selects a deep audit of an answer with text, with this
+	// selection (playground for a Playground run), in the high lane with inclusion probability 1,
+	// whatever the route's deep_audit settings. It takes no uniform draw. NoAudit wins over it.
 	AuditSelection string
 	// KnowledgeOnly marks evidence that came only from knowledge retrieval (decision
-	// meta.knowledge_only). Not read yet (GD-1).
+	// meta.knowledge_only): a critical grounding level is capped to warn.
 	KnowledgeOnly bool
 }
 
@@ -187,9 +188,10 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	hasText := x.hasText()
 
 	// Pre-gate uniform draw: an unbiased sample of all gated traces, capped per day. An exchange
-	// that plans no audit (the fallback re-gate) takes no draw.
-	uniform := !x.NoAudit && route.DeepAudit.Enabled && hasText && route.DeepAudit.UniformSampleRate > 0 &&
-		g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
+	// that plans no audit (the fallback re-gate) or whose audit is chosen already (a Playground
+	// run) takes no draw.
+	uniform := !x.NoAudit && x.AuditSelection == "" && route.DeepAudit.Enabled && hasText &&
+		route.DeepAudit.UniformSampleRate > 0 && g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
 
 	skip := x.SkipReason
 	if skip == "" && mode == decision.ModeObserve && route.SampleRate < 1 && g.cfg.Rand() >= route.SampleRate {
@@ -227,7 +229,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		Excluded:    []decision.Exclusion{},
 		Calibration: map[string]decision.CalibrationEntry{},
 		Meta: decision.Meta{
-			Backend: g.cfg.Jev.Info().Backend, Stream: streamOf(x),
+			Backend: g.cfg.Jev.Info().Backend, Stream: streamOf(x), KnowledgeOnly: x.KnowledgeOnly,
 			EvidencePresent: x.Evidence != nil && x.Evidence.Trusted(),
 			RequestStatus:   map[string]string{}, QIDRequest: map[string]int{},
 		},
@@ -319,7 +321,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		res.Flags = appendFlag(res.Flags, FlagUniformSample)
 	}
 	if !x.NoAudit {
-		res.Audit = g.planAudit(route, core, uniform, hasText, x.Trace.Scenario)
+		res.Audit = g.planAudit(route, core, auditDraw{uniform: uniform, hasText: hasText, forced: x.AuditSelection, scenario: x.Trace.Scenario})
 	}
 	res.Body = g.planBody(route, core)
 	return res
