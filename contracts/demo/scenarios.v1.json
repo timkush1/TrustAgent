@@ -1232,7 +1232,7 @@
     {
       "id": "completions-extension-grounded",
       "title": "Legacy completions with trustagent.context pass",
-      "description": "support-bot (flag) on POST /v1/completions (M9). A completions prompt is the user request and is not scanned for blocks, so the document comes in trustagent.context (extension:1). The answer restates it (30 is in the document): groundedness 0.03 and contradiction 0.02 are ok, pass, verdict supported, deep_audit sample, audited. Judge: one SUPPORTED claim, audit GROUNDED.",
+      "description": "support-bot (flag) on POST /v1/completions (M9). A completions prompt reads as one user message, so a document block in it would count as user-message context (request_context); this one comes in trustagent.context instead (extension:1). The answer restates it (30 is in the document): groundedness 0.03 and contradiction 0.02 are ok, pass, verdict supported, deep_audit sample, audited. Judge: one SUPPORTED claim, audit GROUNDED.",
       "sets": ["p3", "demo", "e2e"],
       "route": "support-bot",
       "api_format": "openai_completions",
