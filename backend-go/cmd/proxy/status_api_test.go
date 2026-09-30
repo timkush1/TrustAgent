@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -117,3 +121,124 @@ func TestStatusUsesEngineInfo(t *testing.T) {
 type fixedHealth struct{ h grpc.EngineHealth }
 
 func (f fixedHealth) Health() grpc.EngineHealth { return f.h }
+
+// statusCalibration reads decision_model's calibration fields from GET /api/status.
+func statusCalibration(t *testing.T, env *testEnv) (state string, targets int, snapshot string) {
+	t.Helper()
+	code, body := env.get("/api/status", testKey)
+	if code != http.StatusOK {
+		t.Fatalf("status %d %s", code, body)
+	}
+	var st struct {
+		DecisionModel struct {
+			CalibrationState  string  `json:"calibration_state"`
+			CalibratedTargets int     `json:"calibrated_targets"`
+			Snapshot          *string `json:"snapshot"`
+		} `json:"decision_model"`
+	}
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.DecisionModel.Snapshot != nil {
+		snapshot = *st.DecisionModel.Snapshot
+	}
+	return st.DecisionModel.CalibrationState, st.DecisionModel.CalibratedTargets, snapshot
+}
+
+func TestStatusShowsTheDemoCalibration(t *testing.T) {
+	env := newTestEnv(t, envOpts{demo: true})
+	if state, n, snap := statusCalibration(t, env); state != "mock" || n != 2 || snap != jev.DefaultMockModel {
+		t.Errorf("decision model calibration %s, %d targets, snapshot %s", state, n, snap)
+	}
+	// The evaluator API reads the same lookup (calibration_progress), for the current snapshot.
+	code, body := env.get("/api/evaluators/groundedness", testKey)
+	var ev struct {
+		CalibrationProgress struct {
+			State    string  `json:"state"`
+			Snapshot *string `json:"snapshot"`
+		} `json:"calibration_progress"`
+	}
+	if err := json.Unmarshal(body, &ev); err != nil || code != http.StatusOK {
+		t.Fatalf("evaluator %d %s (%v)", code, body, err)
+	}
+	if p := ev.CalibrationProgress; p.State != "mock" || p.Snapshot == nil || *p.Snapshot != jev.DefaultMockModel {
+		t.Errorf("calibration progress %+v", p)
+	}
+	// decision_model_changed reports the new snapshot's calibration from it too.
+	if got := env.srv.calibrationState(jev.DefaultMockModel); got != "mock" {
+		t.Errorf("snapshot calibration %s", got)
+	}
+	if got := env.srv.calibrationState("typesafe/jev-1.13-20260917"); got != "none" {
+		t.Errorf("uncalibrated snapshot %s", got)
+	}
+}
+
+func TestCalibrationReloadBroadcastsTheChange(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TRUTHTABLE_CALIBRATION_DIR", dir)
+	old := calibrationReload
+	calibrationReload = 20 * time.Millisecond
+	t.Cleanup(func() { calibrationReload = old })
+	env := newTestEnv(t, envOpts{demo: true})
+	if state, n, _ := statusCalibration(t, env); state != "none" || n != 0 {
+		t.Fatalf("empty directory: %s %d", state, n)
+	}
+	conn, _, err := dialWS(t, env, "protocol=2", http.Header{"X-TrustAgent-Key": {testKey}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hello := readFrame(t, conn); hello.Type != "hello" {
+		t.Fatalf("hello %s", hello.raw)
+	}
+
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "calibration", "mock__jev-heuristic-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mock__jev-heuristic-v1.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		f := readFrame(t, conn) // fails after 10 s without a frame
+		if f.Type != "calibration_updated" {
+			continue
+		}
+		var data struct {
+			Snapshot string `json:"snapshot"`
+			Imported int    `json:"imported"`
+		}
+		if err := json.Unmarshal(f.Data, &data); err != nil || data.Snapshot != jev.DefaultMockModel || data.Imported != 2 || f.TraceID != "" {
+			t.Errorf("calibration_updated %s (%v)", f.raw, err)
+		}
+		break
+	}
+	if state, n, _ := statusCalibration(t, env); state != "mock" || n != 2 {
+		t.Errorf("after the reload: %s %d", state, n)
+	}
+}
+
+func TestCalibrationSettings(t *testing.T) {
+	for _, tc := range []struct {
+		cfg  config.Config
+		want bool
+	}{
+		{config.Config{DemoMode: true}, true},
+		{config.Config{TestMode: true, Jev: config.JevConfig{Backend: "mock"}}, true},
+		{config.Config{TestMode: true, Jev: config.JevConfig{Backend: "compatible"}}, false},
+		{config.Config{Jev: config.JevConfig{Backend: "mock"}}, false},
+		{config.Config{}, false},
+	} {
+		if got := allowMockCalibration(&tc.cfg); got != tc.want {
+			t.Errorf("demo %v test %v backend %q: allow mock %v", tc.cfg.DemoMode, tc.cfg.TestMode, tc.cfg.Jev.Backend, got)
+		}
+	}
+	if dir, family := calibrationSettings(&config.Config{}); dir != "" || family {
+		t.Errorf("a configuration built by hand: %q %v", dir, family)
+	}
+	dir := t.TempDir()
+	t.Setenv("TRUTHTABLE_CALIBRATION_DIR", dir)
+	t.Setenv("TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK", "true")
+	if got, family := calibrationSettings(config.Load()); got != dir || !family {
+		t.Errorf("loaded: %q %v", got, family)
+	}
+}
