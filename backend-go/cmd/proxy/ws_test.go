@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -165,5 +166,26 @@ func TestStreamAuth(t *testing.T) {
 		if f.Type == "audit_completed" {
 			break
 		}
+	}
+}
+
+// TestStreamRefusesV1: WS v1 was removed (D13). An authenticated handshake without protocol=2 gets
+// 400 bad_request before the upgrade; an unauthenticated one still gets 401 first.
+func TestStreamRefusesV1(t *testing.T) {
+	env := newTestEnv(t, envOpts{})
+	for _, query := range []string{"", "protocol=1"} {
+		_, resp, err := dialWS(t, env, query, http.Header{"X-TrustAgent-Key": {testKey}})
+		if err == nil || resp == nil || resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%q: want 400, got %v %v", query, resp, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		contractstest.ValidateJSON(t, schemaError, body)
+		if !strings.Contains(string(body), `"code":"bad_request"`) || !strings.Contains(string(body), "protocol=2") {
+			t.Errorf("%q: body %s", query, body)
+		}
+	}
+	if _, resp, err := dialWS(t, env, "", nil); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("no key: want 401, got %v %v", resp, err)
 	}
 }

@@ -232,7 +232,7 @@ func failedKind(errorKind string) string {
 }
 
 // CompletedEvent is the audit_completed event of a stored audit: the full audit, the redacted
-// variant, and the ring variant without context_used, plus the v1 audit_result frame.
+// variant, and the ring variant without context_used.
 func CompletedEvent(rec *store.AuditRecord) (websocket.Event, error) {
 	detail := rec.Detail()
 	type payload struct {
@@ -242,11 +242,7 @@ func CompletedEvent(rec *store.AuditRecord) (websocket.Event, error) {
 	if err != nil {
 		return ev, err
 	}
-	if ev.Ring, err = json.Marshal(payload{detail.WithoutContext()}); err != nil {
-		return ev, err
-	}
-	ev.V1Type = "audit_result"
-	ev.V1, err = json.Marshal(v1Audit(rec))
+	ev.Ring, err = json.Marshal(payload{detail.WithoutContext()})
 	return ev, err
 }
 
@@ -271,31 +267,6 @@ func startedEvent(traceID, auditID string, waitMs int64) (websocket.Event, error
 // DroppedEvent is the audit_dropped event of an audit that was not run.
 func DroppedEvent(traceID string, auditID *string, reason string) (websocket.Event, error) {
 	return websocket.NewEvent("audit_dropped", traceID, map[string]any{"audit_id": auditID, "reason": reason}, nil)
-}
-
-// v1Audit is the audit in the v1 audit_result frame (the pre-v2 dashboard format).
-func v1Audit(rec *store.AuditRecord) any {
-	type claim struct {
-		Claim      string   `json:"claim"`
-		Status     string   `json:"status"`
-		Confidence float64  `json:"confidence"`
-		Evidence   []string `json:"evidence"`
-	}
-	claims := make([]claim, 0, len(rec.Claims))
-	for _, c := range rec.Claims {
-		claims = append(claims, claim{Claim: derefString(c.Claim), Status: c.Status, Confidence: c.Confidence, Evidence: c.Evidence})
-	}
-	var score float64
-	if rec.FaithfulnessScore != nil {
-		score = *rec.FaithfulnessScore
-	}
-	return map[string]any{
-		"audit_id": rec.AuditID, "request_id": rec.TraceID, "user_query": derefString(rec.UserQuery),
-		"llm_response": derefString(rec.LLMResponse), "faithfulness_score": score, "overall_score": score,
-		"hallucination_detected": rec.HallucinationDetected, "claims": claims, "reasoning_trace": rec.ReasoningTrace,
-		"processing_time_ms": rec.ProcessingTimeMs, "timestamp": rec.CreatedAt.UTC().Format(time.RFC3339),
-		"provider": "proxy", "model": rec.Model, "step_timings": rec.StepTimings,
-	}
 }
 
 // judgeJSON is api.ts JudgeInfo for a wire JudgeInfo.

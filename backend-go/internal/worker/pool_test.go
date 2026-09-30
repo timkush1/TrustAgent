@@ -241,7 +241,7 @@ func TestCompletedAuditIsPersistedThenBroadcast(t *testing.T) {
 		t.Fatalf("started %s %s", started.Type, started.Data)
 	}
 	ev := pub.next(t)
-	if ev.Type != "audit_completed" || ev.TraceID != j.Request.TraceId || ev.V1Type != "audit_result" {
+	if ev.Type != "audit_completed" || ev.TraceID != j.Request.TraceId {
 		t.Fatalf("event %+v", ev)
 	}
 	validateEvent(t, ev)
