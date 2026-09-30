@@ -65,6 +65,10 @@ type StreamWriter struct {
 	tail     []byte // the bytes of Incomplete events, written last
 	finished bool
 	err      error
+	// window is how far ahead each write keeps the connection's write deadline (0: never
+	// touched); extended is when it was last pushed.
+	window   time.Duration
+	extended time.Time
 }
 
 // NewStreamWriter returns a StreamWriter on w. Headers already set on w (copied from the upstream
@@ -85,6 +89,37 @@ func (s *StreamWriter) DeclareTrailers(names ...string) {
 			s.trailers = append(s.trailers, n)
 		}
 	}
+}
+
+// ClearTrailers drops the declared trailers while the headers are not sent yet: a buffered answer
+// decided before its first keepalive carries the decision in headers instead.
+func (s *StreamWriter) ClearTrailers() {
+	if !s.wrote {
+		s.trailers = nil
+	}
+}
+
+// KeepWriteDeadline keeps the connection's write deadline at least window ahead while the stream
+// is written: every write first pushes it to now+window when the last push is older than a
+// quarter of window (keepalives, a long relay, the answer after a slow gate or fallback call).
+// The route's deadline would otherwise cut off a stream that runs longer than the upstream
+// timeout. window <= 0 stops pushing it. ResponseWriters that cannot set a deadline are left as
+// they are.
+func (s *StreamWriter) KeepWriteDeadline(window time.Duration) {
+	s.window, s.extended = window, time.Time{}
+}
+
+// keepDeadline pushes the write deadline when it is due.
+func (s *StreamWriter) keepDeadline() {
+	if s.window <= 0 {
+		return
+	}
+	now := time.Now()
+	if !s.extended.IsZero() && now.Sub(s.extended) < s.window/4 {
+		return
+	}
+	s.extended = now
+	_ = s.rc.SetWriteDeadline(now.Add(s.window))
 }
 
 // SetStatus sets the status the first write sends (200 by default).
@@ -131,6 +166,7 @@ func (s *StreamWriter) Commit() error {
 	if s.err != nil {
 		return s.err
 	}
+	s.keepDeadline()
 	s.commit()
 	return s.flush()
 }
@@ -143,6 +179,7 @@ func (s *StreamWriter) write(p []byte) error {
 	if s.finished {
 		return ErrStreamClosed
 	}
+	s.keepDeadline()
 	s.commit()
 	if _, err := s.w.Write(p); err != nil {
 		s.err = err
@@ -291,7 +328,14 @@ func (s *StreamWriter) SetTrailers(trailers map[string]string) {
 // ExtendWriteDeadline pushes the connection's write deadline to now+d (before a fallback call,
 // SPEC §2.12). It returns http.ErrNotSupported when the ResponseWriter cannot do it.
 func (s *StreamWriter) ExtendWriteDeadline(d time.Duration) error {
-	return s.rc.SetWriteDeadline(time.Now().Add(d))
+	now := time.Now()
+	if err := s.rc.SetWriteDeadline(now.Add(d)); err != nil {
+		return err
+	}
+	if d >= s.window {
+		s.extended = now
+	}
+	return nil
 }
 
 func containsFold(list []string, s string) bool {

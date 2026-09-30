@@ -703,3 +703,76 @@ func TestClientLeavingCancelsTheUpstreamRead(t *testing.T) {
 		t.Errorf("client gone %v finished %v: gate unenforced, audit client_disconnected", res.ClientGone(clientCtx), asm.Finished())
 	}
 }
+
+// deadlineWriter records the write deadlines set through http.ResponseController.
+type deadlineWriter struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (d *deadlineWriter) SetWriteDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	return nil
+}
+
+// TestKeepWriteDeadline: once asked to, the writer keeps the write deadline a window ahead: the
+// first write pushes it, writes within a quarter of the window do not push it again, and an
+// explicit extension of at least the window counts as a push. Without a window nothing is set.
+func TestKeepWriteDeadline(t *testing.T) {
+	w := &deadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	sw := NewStreamWriter(w)
+	if err := sw.WriteComment("one"); err != nil || len(w.deadlines) != 0 {
+		t.Fatalf("no window, no deadline: %v %v", err, w.deadlines)
+	}
+	sw.KeepWriteDeadline(40 * time.Second)
+	before := time.Now()
+	_ = sw.WriteComment("two")
+	_ = sw.WriteKeepalive()
+	if len(w.deadlines) != 1 || w.deadlines[0].Before(before.Add(40*time.Second)) {
+		t.Fatalf("one push a window ahead: %v", w.deadlines)
+	}
+	if err := sw.ExtendWriteDeadline(5 * time.Minute); err != nil || len(w.deadlines) != 2 {
+		t.Fatalf("explicit extension: %v %v", err, w.deadlines)
+	}
+	_ = sw.Finish(nil, nil)
+	if len(w.deadlines) != 2 {
+		t.Errorf("an extension past the window postpones the next push: %v", w.deadlines)
+	}
+
+	// A writer that cannot set deadlines is written to as usual.
+	rec := httptest.NewRecorder()
+	sw = NewStreamWriter(rec)
+	sw.KeepWriteDeadline(time.Minute)
+	if err := sw.WriteComment("x"); err != nil || rec.Body.String() != ": x\n\n" {
+		t.Errorf("%v %q", err, rec.Body.String())
+	}
+	if err := sw.ExtendWriteDeadline(time.Minute); !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("explicit extension without support: %v", err)
+	}
+}
+
+// TestClearTrailers: trailers declared for a buffered answer are dropped when its decision goes
+// out in the headers; once the headers are sent, clearing changes nothing.
+func TestClearTrailers(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := NewStreamWriter(rec)
+	sw.DeclareTrailers("X-TrustAgent-Action", "X-TrustAgent-Mode")
+	sw.ClearTrailers()
+	rec.Header().Set("X-TrustAgent-Action", "pass")
+	if err := sw.Finish(nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.Result().Header.Get("Trailer"); got != "" || rec.Result().Header.Get("X-TrustAgent-Action") != "pass" {
+		t.Errorf("Trailer %q, headers %v", got, rec.Result().Header)
+	}
+
+	rec = httptest.NewRecorder()
+	sw = NewStreamWriter(rec)
+	sw.DeclareTrailers("X-TrustAgent-Action")
+	_ = sw.WriteKeepalive()
+	sw.ClearTrailers()
+	_ = sw.Finish(nil, map[string]string{"X-TrustAgent-Action": "block"})
+	if rec.Result().Header.Get("Trailer") != "X-Trustagent-Action" || rec.Result().Trailer.Get("X-TrustAgent-Action") != "block" {
+		t.Errorf("after the commit the trailers stay: %v %v", rec.Result().Header, rec.Result().Trailer)
+	}
+}
