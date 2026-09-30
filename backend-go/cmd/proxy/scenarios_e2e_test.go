@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -231,6 +232,68 @@ func TestP3FormatScenariosEndToEnd(t *testing.T) {
 	}
 	if paths["/v1/messages"] != 1 || paths["/v1/completions"] != 1 {
 		t.Errorf("mock-upstream answered %v: each format reaches its own path once", paths)
+	}
+}
+
+// TestV1ErrorShapesOnTheServer: the server's own /v1 wiring (ingest auth, the v1 limiter, the
+// upstream call and the NoRoute branch of server.go) answers in the error shape of the route's
+// API, as an SDK pointed at the gateway expects: Anthropic on /v1/messages and its sub-paths,
+// OpenAI elsewhere.
+func TestV1ErrorShapesOnTheServer(t *testing.T) {
+	env := newScenarioEnv(t, func(cfg *config.Config) { cfg.RateLimitPerMinute = 1 })
+	send := func(method, path, key string) (*http.Response, string) {
+		t.Helper()
+		r, _ := http.NewRequest(method, env.http.URL+path, strings.NewReader(`{"model":"claude-haiku-4-5","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`))
+		r.Header.Set("Content-Type", "application/json")
+		if key != "" {
+			r.Header.Set("X-TrustAgent-Key", key)
+		}
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp, string(b)
+	}
+	// anthropic checks an Anthropic-shaped error; traced, that it carries the trace id (every
+	// response of the /v1 group does; the NoRoute branch runs outside the group).
+	anthropic := func(resp *http.Response, body string, status int, errType string, traced bool) {
+		t.Helper()
+		var e struct {
+			Type  string                         `json:"type"`
+			Error struct{ Type, Message string } `json:"error"`
+		}
+		if resp.StatusCode != status || json.Unmarshal([]byte(body), &e) != nil || e.Type != "error" || e.Error.Type != errType ||
+			e.Error.Message == "" || traced && resp.Header.Get("X-TrustAgent-Trace-Id") == "" {
+			t.Errorf("%s %s: want %d %s in the Anthropic shape, got %d %s", resp.Request.Method, resp.Request.URL.Path, status, errType,
+				resp.StatusCode, body)
+		}
+	}
+
+	resp, body := send(http.MethodPost, "/v1/messages", "")
+	anthropic(resp, body, http.StatusUnauthorized, "authentication_error", true)
+	if resp, body := send(http.MethodPost, "/v1/chat/completions", ""); resp.StatusCode != http.StatusUnauthorized ||
+		!strings.Contains(body, `"type":"trustagent_error"`) || !strings.Contains(body, `"code":"unauthorized"`) {
+		t.Errorf("chat completions without a key: %d %s", resp.StatusCode, body)
+	}
+	resp, body = send(http.MethodGet, "/v1/messages/batches", testKey)
+	anthropic(resp, body, http.StatusNotFound, "invalid_request_error", false)
+	// The test stack's upstream refuses connections: a 502 in the route's shape, then the limit.
+	resp, body = send(http.MethodPost, "/v1/messages", testKey)
+	anthropic(resp, body, http.StatusBadGateway, "api_error", true)
+	if got := resp.Header.Get("X-TrustAgent-Status"); got != "skipped:upstream_error" {
+		t.Errorf("status %q", got)
+	}
+	// The limiter's window is a fixed minute: a request that lands in a new one passes again.
+	for range 3 {
+		if resp, body = send(http.MethodPost, "/v1/messages", testKey); resp.StatusCode != http.StatusBadGateway {
+			break
+		}
+	}
+	anthropic(resp, body, http.StatusTooManyRequests, "rate_limit_error", true)
+	if resp.Header.Get("Retry-After") == "" {
+		t.Error("a 429 carries Retry-After")
 	}
 }
 
