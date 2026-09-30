@@ -449,3 +449,50 @@ func TestWatchReportsChangesUntilCancelled(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// TestLookupsDuringReloads runs the gate's and the status reporter's reads against reloads (run
+// with -race): a reload swaps in a new index while lookups keep reading the old one.
+func TestLookupsDuringReloads(t *testing.T) {
+	dir := t.TempDir()
+	const snap = "typesafe/jev-1.13-20260917"
+	s := newStore(t, Config{Dir: dir, FamilyFallback: true, Current: func() string { return snap }})
+	evs := []decision.EvaluatorInput{
+		{Ref: "groundedness@1", Spec: spec(t, "groundedness@1")},
+		{Ref: "off_brand_tone@1", Spec: spec(t, "off_brand_tone@1")},
+	}
+	params := map[string]map[string]string{"off_brand_tone@1": {"brand_voice": "Formal."}}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if c := s.Lookup("groundedness@1", nil, ""); c.Table != nil && len(c.Table) != 101 {
+					t.Errorf("table of %d points", len(c.Table))
+				}
+				s.Entries(evs, params, snap)
+				s.State("")
+			}
+		}()
+	}
+	var last []float64
+	for i := range 20 {
+		last = ramp(0, 0.5+float64(i)/100)
+		writeCal(t, dir, "a.json", snap, day.Add(time.Duration(i)*time.Minute),
+			calEntry(t, "groundedness@1", nil, decision.QualityMeasured, last))
+		if _, err := s.Reload(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(done)
+	wg.Wait()
+	if c := s.Lookup("groundedness@1", nil, snap); c.State != policy.CalibrationMeasured || !slices.Equal(c.Table, last) {
+		t.Errorf("after the reloads: %s, %d points, want the last table written", c.State, len(c.Table))
+	}
+}
