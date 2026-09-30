@@ -107,17 +107,29 @@ func decisionModelDetail(st jev.Status) string {
 	return ""
 }
 
-// budgetState is the decision model's daily budget as a status: exhausted at the cap, reserve_only
-// once non-enforcing calls reached their share (only enforcing routes are checked), ok otherwise.
-// ok is false when the client keeps no budget.
+// budgetCapEps absorbs float rounding in the cap comparisons (jev's budgetEps).
+const budgetCapEps = 1e-8
+
+// budgetState is the decision model's daily budget as a status: exhausted once the day's spend
+// reaches the cap, reserve_only once observe and flag calls stop at (1 − reserve)·cap while
+// enforcing routes still spend the reserve, ok otherwise. ok is false when the client keeps no
+// budget.
+//
+// jev.SpendStatus.Exhausted is already true at that soft cap (it answers "may a non-enforcing
+// call spend?"), so only the spend against CapUSD says whether enforcing routes are still checked.
 func budgetState(sp *jev.SpendStatus) (state, detail string, ok bool) {
+	const (
+		exhausted   = "the decision model's daily budget is spent: checks are skipped until tomorrow (UTC)"
+		reserveOnly = "the decision budget's share for observe and flag routes is spent: only enforcing routes are checked"
+	)
 	switch {
 	case sp == nil:
 		return "", "", false
-	case sp.Exhausted:
-		return budgetExhausted, "the decision model's daily budget is spent: checks are skipped until tomorrow (UTC)", true
-	case sp.SoftCapUSD > 0 && sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD:
-		return budgetReserveOnly, "the decision budget's share for observe and flag routes is spent: only enforcing routes are checked", true
+	case sp.CapUSD > 0 && sp.SpentUSD >= sp.CapUSD-budgetCapEps, sp.CapUSD <= 0 && sp.Exhausted:
+		return budgetExhausted, exhausted, true
+	case sp.CapUSD > 0 && sp.SoftCapUSD < sp.CapUSD-budgetCapEps &&
+		(sp.Exhausted || sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD-budgetCapEps):
+		return budgetReserveOnly, reserveOnly, true
 	}
 	return budgetOK, "", true
 }

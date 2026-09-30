@@ -151,10 +151,16 @@ func TestStatusEventsFireOncePerTransition(t *testing.T) {
 	})
 	s.srv.watchStatus()
 	s.expect(t, "decision_model:breaker_open")
-	s.jev.set(func(st *jev.Status) { st.Spend = &jev.SpendStatus{CapUSD: 1, SoftCapUSD: 0.75, SpentUSD: 0.8} })
+	// As jev reports it: past the soft cap Exhausted is already true, yet enforcing routes still
+	// spend the reserve.
+	s.jev.set(func(st *jev.Status) {
+		st.Spend = &jev.SpendStatus{CapUSD: 1, SoftCapUSD: 0.75, SpentUSD: 0.8, Exhausted: true}
+	})
 	s.srv.watchStatus()
 	s.expect(t, "budget:reserve_only")
-	s.jev.set(func(st *jev.Status) { st.Spend = &jev.SpendStatus{CapUSD: 1, SpentUSD: 1, Exhausted: true} })
+	s.jev.set(func(st *jev.Status) {
+		st.Spend = &jev.SpendStatus{CapUSD: 1, SoftCapUSD: 0.75, SpentUSD: 1, Exhausted: true}
+	})
 	s.srv.watchStatus()
 	s.expect(t, "budget:exhausted")
 	s.srv.watchStatus()
@@ -203,19 +209,64 @@ func TestStatusFixture(t *testing.T) {
 	}
 }
 
+// TestBudgetState maps the states a real decision budget reports: reserve_only once observe and
+// flag calls stop at their share of the cap (jev's Exhausted is already true there), exhausted
+// only once enforcing calls have spent the reserve too.
 func TestBudgetState(t *testing.T) {
+	if _, _, ok := budgetState(nil); ok {
+		t.Error("a client without a budget reports a budget state")
+	}
 	for _, c := range []struct {
-		sp    *jev.SpendStatus
+		sp    jev.SpendStatus
 		state string
-		ok    bool
 	}{
-		{nil, "", false},
-		{&jev.SpendStatus{}, budgetOK, true},
-		{&jev.SpendStatus{CapUSD: 1, SoftCapUSD: 0.75, SpentUSD: 0.5, ReservedUSD: 0.3}, budgetReserveOnly, true},
-		{&jev.SpendStatus{CapUSD: 1, SpentUSD: 1, Exhausted: true}, budgetExhausted, true},
+		{jev.SpendStatus{}, budgetOK}, // no cap
+		{jev.SpendStatus{Exhausted: true}, budgetExhausted},
+		{jev.SpendStatus{CapUSD: 1, SoftCapUSD: 0.75, SpentUSD: 0.5, ReservedUSD: 0.3}, budgetReserveOnly}, // a held call
 	} {
-		if state, _, ok := budgetState(c.sp); state != c.state || ok != c.ok {
-			t.Errorf("%+v: %s %t", c.sp, state, ok)
+		if state, _, ok := budgetState(&c.sp); !ok || state != c.state {
+			t.Errorf("%+v: %s, want %s", c.sp, state, c.state)
 		}
 	}
+
+	b := jev.NewMemoryBudget(jev.BudgetConfig{CapUSD: 1, EnforcingReserve: 0.25})
+	check := func(step, want string) {
+		t.Helper()
+		sp := b.Spend()
+		if state, detail, ok := budgetState(&sp); !ok || state != want || (want != budgetOK) == (detail == "") {
+			t.Errorf("%s: %s (%q), want %s; spend %+v", step, state, detail, want, sp)
+		}
+	}
+	spend := func(usd float64, enforcing bool) {
+		t.Helper()
+		r, err := b.Reserve(jev.SpendRequest{USD: usd, Enforcing: enforcing})
+		if err != nil {
+			t.Fatalf("reserve %v (enforcing %t): %v", usd, enforcing, err)
+		}
+		r.Settle(usd)
+	}
+	check("fresh", budgetOK)
+	spend(0.5, false)
+	check("half the share", budgetOK)
+	held, err := b.Reserve(jev.SpendRequest{USD: 0.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("a held call fills the share", budgetReserveOnly)
+	held.Settle(0)
+	check("the hold released", budgetOK)
+	spend(0.3, true)
+	check("past the share", budgetReserveOnly)
+	if _, err := b.Reserve(jev.SpendRequest{USD: 0.01}); !errors.Is(err, jev.ErrBudgetExhausted) {
+		t.Fatalf("an observe call past the share: %v", err)
+	}
+	spend(0.2, true)
+	check("the cap", budgetExhausted)
+
+	// Without a reserve the share is the cap: no reserve_only state.
+	b = jev.NewMemoryBudget(jev.BudgetConfig{CapUSD: 1})
+	spend(0.9, false)
+	check("no reserve, 90%", budgetOK)
+	spend(0.1, false)
+	check("no reserve, the cap", budgetExhausted)
 }
