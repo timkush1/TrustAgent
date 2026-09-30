@@ -404,10 +404,11 @@ func (h *Handler) respondThenGate(f *flow, ans *answer) {
 }
 
 // upstreamFailed answers a request whose upstream call failed outright (502, or 504 on a
-// timeout, in the route's error shape) and records the trace as skipped:upstream_error. The
-// failure is never enforced (D4): the decision is recorded with enforced false and the
-// delivered action is pass. A call that ended because the client went away is no upstream
-// failure: it is recorded as skipped:client_disconnected, unenforced, and nothing is written.
+// timeout, in the route's error shape) and records the trace as skipped:upstream_error, or
+// skipped:undecodable for a 2xx whose body cannot be decoded (D24). The failure is never enforced
+// (D4): the decision is recorded with enforced false and the delivered action is pass. A call
+// that ended because the client went away is no upstream failure: it is recorded as
+// skipped:client_disconnected, unenforced, and nothing is written.
 func (h *Handler) upstreamFailed(f *flow, err error) {
 	c, x := f.c, f.x
 	var up gate.Upstream
@@ -415,12 +416,21 @@ func (h *Handler) upstreamFailed(f *flow, err error) {
 		ms := h.now().Sub(f.upStart).Milliseconds()
 		up.Ms = &ms
 	}
+	var answered *answerError
+	if errors.As(err, &answered) {
+		up.Status = answered.status
+	}
 	gone := clientGone(c, err)
 	x.SkipReason, x.Unenforced = gate.SkipUpstreamError, true
-	if gone {
+	switch {
+	case gone:
 		h.log.Debug("the client went away before the upstream answered", "trace_id", x.Trace.TraceID)
 		x.SkipReason = gate.SkipClientDisconnected
-	} else {
+	case errors.Is(err, upstream.ErrUndecodable) && up.Status >= 200 && up.Status <= 299:
+		// Nothing readable to gate or to deliver: a 502 as for a failed call.
+		h.log.Warn("upstream answer cannot be decoded", "trace_id", x.Trace.TraceID, "err", err)
+		x.SkipReason = gate.SkipUndecodable
+	default:
 		h.log.Warn("upstream call failed", "trace_id", x.Trace.TraceID, "err", err)
 	}
 	res := h.gate.Evaluate(f.record, x)

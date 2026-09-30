@@ -189,7 +189,8 @@ func (h *Handler) scriptedAnswer(f *flow, text string) *answer {
 
 // upstreamAnswer reads a JSON (not event-stream) upstream response to f; the caller sets
 // f.upStart before the call, which the upstream time counts from. An error means the body could
-// not be read at all, which counts as a failed upstream call (upstreamFailed).
+// not be read at all, which counts as a failed upstream call (upstreamFailed); it is an
+// *answerError that carries the status the upstream answered with.
 func (h *Handler) upstreamAnswer(f *flow, resp *http.Response, cancel context.CancelFunc) (*answer, error) {
 	a := &answer{status: resp.StatusCode, header: resp.Header, close: func() { _ = resp.Body.Close(); cancel() }}
 	body, tooLarge, err := upstream.ReadBody(resp, h.maxBytes)
@@ -197,7 +198,7 @@ func (h *Handler) upstreamAnswer(f *flow, resp *http.Response, cancel context.Ca
 	a.ms = &ms
 	if err != nil {
 		a.close()
-		return nil, err
+		return nil, &answerError{status: resp.StatusCode, err: err}
 	}
 	a.body = body
 	if tooLarge {
@@ -224,6 +225,17 @@ func (h *Handler) upstreamAnswer(f *flow, resp *http.Response, cancel context.Ca
 	}
 	return a, nil
 }
+
+// answerError is an upstream answer whose body could not be read: the upstream answered with
+// status, then reading the body failed with err (a timeout, a reset connection, a body that
+// cannot be decoded).
+type answerError struct {
+	status int
+	err    error
+}
+
+func (e *answerError) Error() string { return e.err.Error() }
+func (e *answerError) Unwrap() error { return e.err }
 
 // upstreamRecord is the upstream exchange as the trace records it: status, time and token usage.
 func (a *answer) upstreamRecord() gate.Upstream {
