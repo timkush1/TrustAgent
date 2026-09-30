@@ -39,9 +39,11 @@ const (
 
 // recSink records the lifecycle calls; a selected audit reports queued.
 type recSink struct {
-	mu      sync.Mutex
-	started []*gate.TraceStart
-	decided chan *gate.Result
+	mu       sync.Mutex
+	started  []*gate.TraceStart
+	decided  chan *gate.Result
+	attempts []*gate.Result // AttemptDecided calls
+	late     []*gate.Result // LateDecided calls
 }
 
 func newRecSink() *recSink { return &recSink{decided: make(chan *gate.Result, 16)} }
@@ -58,6 +60,18 @@ func (s *recSink) GateDecided(_ context.Context, r *gate.Result) string {
 		return gate.AuditQueued
 	}
 	return r.Audit.Status
+}
+
+func (s *recSink) AttemptDecided(_ context.Context, r *gate.Result) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts = append(s.attempts, r)
+}
+
+func (s *recSink) LateDecided(_ context.Context, r *gate.Result) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.late = append(s.late, r)
 }
 
 func (s *recSink) result(t *testing.T) *gate.Result {
@@ -183,7 +197,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 		t.Fatal(err)
 	}
 	sink := newRecSink()
-	h := New(Options{Upstream: up, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink, TestMode: o.testMode, GateMaxConcurrency: o.maxGates, Logger: quiet})
+	h := New(Options{Upstreams: &upstream.Set{OpenAI: up, Anthropic: up}, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink, TestMode: o.testMode, GateMaxConcurrency: o.maxGates, Logger: quiet})
 	r := gin.New()
 	r.Use(middleware.CORS([]string{"http://localhost:5173"}))
 	v1 := r.Group("/v1", h.TraceIDs(), auth.Ingest(Deny))

@@ -45,7 +45,8 @@ const TrafficgenKeyLabel = "trafficgen"
 
 // Options configures a Handler.
 type Options struct {
-	Upstream *upstream.Client
+	// Upstreams are the upstreams by API family, plus the optional fallback upstream.
+	Upstreams *upstream.Set
 	// Policy returns the policy in effect; it is called once per request, so a saved, rolled back
 	// or hot-reloaded version applies from the next request on (policy.Engine.Current).
 	Policy func() *policy.Policy
@@ -65,6 +66,9 @@ type Options struct {
 
 // Handler serves /v1.
 type Handler struct {
+	ups *upstream.Set
+	// up is the OpenAI upstream: every /v1 request goes there until the handler picks the
+	// upstream per format (P3).
 	up       *upstream.Client
 	policy   func() *policy.Policy
 	gate     *gate.Gate
@@ -82,7 +86,7 @@ type Handler struct {
 // New builds a Handler.
 func New(o Options) *Handler {
 	h := &Handler{
-		up: o.Upstream, policy: o.Policy, gate: o.Gate, sink: o.Sink, testMode: o.TestMode,
+		ups: o.Upstreams, up: o.Upstreams.OpenAI, policy: o.Policy, gate: o.Gate, sink: o.Sink, testMode: o.TestMode,
 		maxBytes: o.MaxUpstreamResponseBytes, log: o.Logger, now: o.Now,
 	}
 	if h.sink == nil {
@@ -221,13 +225,16 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 	if parseErr != nil {
 		x.SkipReason = gate.SkipUnparseableRequest
 	}
-	// The record outlives the client: a client that goes away still gets its trace written.
-	record := context.WithoutCancel(c.Request.Context())
-	h.sink.TraceStarted(record, x.Trace)
+	f := &flow{
+		c: c, format: llmapi.FormatOpenAIChat, req: req, raw: body, x: x, route: route, up: h.up, start: start,
+		// The record outlives the client: a client that goes away still gets its trace written.
+		record: context.WithoutCancel(c.Request.Context()),
+	}
+	h.sink.TraceStarted(f.record, x.Trace)
 
 	ans, err := h.answer(c, req, x, forward, start)
 	if err != nil {
-		h.upstreamFailed(c, x, err, start)
+		h.upstreamFailed(f, err)
 		return
 	}
 	defer ans.close()
@@ -236,12 +243,11 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 		x.SkipReason = ans.skip
 	}
 	if x.Trace.Mode == decision.ModeObserve && x.SkipReason == "" {
-		h.respondThenGate(c, x, route, ans, start)
+		h.respondThenGate(f, ans)
 		return
 	}
 	res := h.gate.Evaluate(c.Request.Context(), x)
-	h.finish(res, ans, start, h.now())
-	audit := h.sink.GateDecided(record, res)
+	audit := h.decided(f, res, ans.upstreamRecord(), h.now(), nil)
 	upstream.CopyResponseHeaders(c.Writer.Header(), ans.header)
 	setDecisionHeaders(c.Writer.Header(), res, audit)
 	ans.write(c.Writer, h.log)
@@ -362,6 +368,16 @@ func (h *Handler) answer(c *gin.Context, req *llmapi.ChatRequest, x *gate.Exchan
 	return a, nil
 }
 
+// upstreamRecord is the upstream exchange as the trace records it: status, time and token usage.
+func (a *answer) upstreamRecord() gate.Upstream {
+	u := gate.Upstream{Status: a.status, Ms: a.ms}
+	if a.usage != nil {
+		pt, ct := a.usage.PromptTokens, a.usage.CompletionTokens
+		u.PromptTokens, u.CompletionTokens = &pt, &ct
+	}
+	return u
+}
+
 // write sends the answer: status, then the body as the upstream sent it.
 func (a *answer) write(w http.ResponseWriter, log *slog.Logger) {
 	w.WriteHeader(a.status)
@@ -379,20 +395,19 @@ func (a *answer) write(w http.ResponseWriter, log *slog.Logger) {
 // respondThenGate serves an observe-mode answer at once and gates it afterwards (SPEC §2.12: the
 // body is byte-identical and the decision is recorded asynchronously). When too many gates are
 // already running, this one is recorded as skipped:overload with detectors only.
-func (h *Handler) respondThenGate(c *gin.Context, x *gate.Exchange, route *policy.Route, ans *answer, start time.Time) {
+func (h *Handler) respondThenGate(f *flow, ans *answer) {
+	c, x := f.c, f.x
 	upstream.CopyResponseHeaders(c.Writer.Header(), ans.header)
-	setDeferredHeaders(c.Writer.Header(), x.Trace, route, x.Policy.Label(route))
+	setDeferredHeaders(c.Writer.Header(), x.Trace, f.route, x.Policy.Label(f.route))
 	ans.write(c.Writer, h.log)
 	written := h.now()
 
-	ctx := context.WithoutCancel(c.Request.Context())
 	select {
 	case h.sem <- struct{}{}:
 	default:
 		x.SkipReason = gate.SkipOverload
-		res := h.gate.Evaluate(ctx, x)
-		h.finish(res, ans, start, written)
-		h.sink.GateDecided(ctx, res)
+		res := h.gate.Evaluate(f.record, x)
+		h.decided(f, res, ans.upstreamRecord(), written, nil)
 		return
 	}
 	h.async.Add(1)
@@ -400,44 +415,27 @@ func (h *Handler) respondThenGate(c *gin.Context, x *gate.Exchange, route *polic
 		defer h.async.Done()
 		defer func() { <-h.sem }()
 		// The gate bounds its decision-model call; this bounds the rest (and a stuck sink).
-		gctx, cancel := context.WithTimeout(ctx, 2*h.gate.AsyncDeadline())
+		gctx, cancel := context.WithTimeout(f.record, 2*h.gate.AsyncDeadline())
 		defer cancel()
 		res := h.gate.Evaluate(gctx, x)
-		h.finish(res, ans, start, written)
-		h.sink.GateDecided(gctx, res)
+		bounded := *f
+		bounded.record = gctx
+		h.decided(&bounded, res, ans.upstreamRecord(), written, nil)
 	}()
-}
-
-// finish fills the timings of a result: total runs to when the response was (or is about to be)
-// written, and overhead is total minus the upstream time.
-func (h *Handler) finish(res *gate.Result, ans *answer, start, end time.Time) {
-	total := end.Sub(start).Milliseconds()
-	res.TotalMs = &total
-	res.Upstream = gate.Upstream{Status: ans.status, Ms: ans.ms}
-	overhead := total
-	if ans.ms != nil {
-		overhead = max(total-*ans.ms, 0)
-	}
-	res.OverheadMs = &overhead
-	if ans.usage != nil {
-		pt, ct := ans.usage.PromptTokens, ans.usage.CompletionTokens
-		res.Upstream.PromptTokens, res.Upstream.CompletionTokens = &pt, &ct
-	}
 }
 
 // upstreamFailed answers a request whose upstream call failed outright (502, or 504 on a
 // timeout) and records the trace as skipped:upstream_error.
-func (h *Handler) upstreamFailed(c *gin.Context, x *gate.Exchange, err error, start time.Time) {
+func (h *Handler) upstreamFailed(f *flow, err error) {
+	c, x := f.c, f.x
 	h.log.Warn("upstream call failed", "trace_id", x.Trace.TraceID, "err", err)
 	status, code, msg := http.StatusBadGateway, CodeUpstreamError, "The upstream LLM API could not be reached."
 	if upstream.IsTimeout(err) {
 		status, code, msg = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
 	}
 	x.SkipReason = gate.SkipUpstreamError
-	ctx := context.WithoutCancel(c.Request.Context())
-	res := h.gate.Evaluate(ctx, x)
-	h.finish(res, &answer{}, start, h.now())
-	audit := h.sink.GateDecided(ctx, res)
+	res := h.gate.Evaluate(f.record, x)
+	audit := h.decided(f, res, gate.Upstream{}, h.now(), nil)
 	setDecisionHeaders(c.Writer.Header(), res, audit)
 	writeOpenAIError(c.Writer, status, code, msg)
 }

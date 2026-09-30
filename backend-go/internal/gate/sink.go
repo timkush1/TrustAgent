@@ -12,9 +12,16 @@ import "context"
 // selected audit (disabled when no audit engine is available), otherwise r.Audit.Status. Both
 // methods must be safe for concurrent use and must not retain r's slices beyond the call unless
 // they copy them.
+//
+// AttemptDecided records a later attempt of the same trace (attempt 1, the fallback re-gate): its
+// gate_decisions row only, with no deep audit and no change to the trace. LateDecided records a
+// decision recomputed after a late decision-model answer: the late gate_decisions row, the trace
+// flag late_decision and a WS event; it is never enforced and never audited.
 type Sink interface {
 	TraceStarted(ctx context.Context, t *TraceStart)
 	GateDecided(ctx context.Context, r *Result) string
+	AttemptDecided(ctx context.Context, r *Result)
+	LateDecided(ctx context.Context, r *Result)
 }
 
 // NopSink records nothing and submits no audits: every selected audit reports disabled.
@@ -30,3 +37,9 @@ func (NopSink) GateDecided(_ context.Context, r *Result) string {
 	}
 	return r.Audit.Status
 }
+
+// AttemptDecided implements Sink.
+func (NopSink) AttemptDecided(context.Context, *Result) {}
+
+// LateDecided implements Sink.
+func (NopSink) LateDecided(context.Context, *Result) {}

@@ -35,6 +35,10 @@ const (
 	SkipSampledOut         = decision.SkipSampledOut
 	SkipOverload           = "overload"
 	SkipDecisionModelOff   = "decision_model_off"
+	SkipClientDisconnected = "client_disconnected"
+	SkipMultiChoice        = "multi_choice"
+	SkipUndecodable        = "undecodable"
+	SkipUnsupportedAPI     = "unsupported_api"
 )
 
 // Config configures a Gate.
@@ -55,6 +59,12 @@ type Config struct {
 	// Now returns the current time; nil uses time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
+	// Calibrations looks up each evaluator's calibration for the snapshot that answered; nil
+	// means none (every evaluator uncalibrated). Not read yet: the P3 file lookup fills it (GD-3).
+	Calibrations policy.CalibrationLookup
+	// OnLate receives a decision recomputed after a late decision-model answer (SPEC §2.9 late
+	// decisions): never enforced, never audited. Not called yet (GD-6).
+	OnLate func(context.Context, *Result)
 }
 
 // Gate evaluates exchanges. It is safe for concurrent use.
@@ -108,17 +118,43 @@ type Exchange struct {
 	// Response is the gated text (choice 0).
 	Response string
 	// SkipReason is set by the handler when the exchange cannot be gated (unparseable_request,
-	// upstream_error, no_text) or the async gate queue is full (overload).
+	// upstream_error, no_text, client_disconnected, ...) or the async gate queue is full (overload).
 	SkipReason string
+	// Stream is how the answer reached the client: none (a JSON body), passthrough or buffer
+	// (decision meta.stream); "" means none.
+	Stream string
+	// Attempt is 0 for the original answer and 1 for the fallback re-gate (Decision.Attempt).
+	Attempt int
+	// Unenforced records the decision with enforced=false: the answer was delivered regardless of
+	// it (an upstream error or a tool-call-only answer passed through, a client that went away
+	// after the finish reason).
+	Unenforced bool
+	// NoAudit plans no deep audit (the fallback re-gate: the audit stays on the original answer);
+	// the result's AuditPlan is then empty.
+	NoAudit bool
+	// AuditSelection, when set, always selects a deep audit, with this selection (playground for
+	// a Playground run). Not read yet (GD-1).
+	AuditSelection string
+	// KnowledgeOnly marks evidence that came only from knowledge retrieval (decision
+	// meta.knowledge_only). Not read yet (GD-1).
+	KnowledgeOnly bool
 }
 
 // hasText reports whether there is an answer to check against a parsed request.
 func (x *Exchange) hasText() bool {
 	switch x.SkipReason {
-	case SkipUnparseableRequest, SkipUpstreamError, SkipNoText:
+	case SkipUnparseableRequest, SkipUpstreamError, SkipNoText, SkipClientDisconnected:
 		return false
 	}
 	return x.Evidence != nil && x.Response != ""
+}
+
+// streamOf is the exchange's decision meta.stream: none unless the handler set one.
+func streamOf(x *Exchange) string {
+	if x.Stream == "" {
+		return StreamNone
+	}
+	return x.Stream
 }
 
 // Evaluate gates one exchange. It never fails: problems become a skipped, error or timeout status.
@@ -150,8 +186,9 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	}
 	hasText := x.hasText()
 
-	// Pre-gate uniform draw: an unbiased sample of all gated traces, capped per day.
-	uniform := route.DeepAudit.Enabled && hasText && route.DeepAudit.UniformSampleRate > 0 &&
+	// Pre-gate uniform draw: an unbiased sample of all gated traces, capped per day. An exchange
+	// that plans no audit (the fallback re-gate) takes no draw.
+	uniform := !x.NoAudit && route.DeepAudit.Enabled && hasText && route.DeepAudit.UniformSampleRate > 0 &&
 		g.cfg.Rand() < route.DeepAudit.UniformSampleRate && g.uniform.take(start)
 
 	skip := x.SkipReason
@@ -190,7 +227,7 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		Excluded:    []decision.Exclusion{},
 		Calibration: map[string]decision.CalibrationEntry{},
 		Meta: decision.Meta{
-			Backend: g.cfg.Jev.Info().Backend, Stream: "none",
+			Backend: g.cfg.Jev.Info().Backend, Stream: streamOf(x),
 			EvidencePresent: x.Evidence != nil && x.Evidence.Trusted(),
 			RequestStatus:   map[string]string{}, QIDRequest: map[string]int{},
 		},
@@ -247,11 +284,14 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 		core = internalError(mode)
 		in.Meta.RequestStatus = map[string]string{"0": "error:internal"}
 	}
+	if x.Unenforced {
+		core.Enforced = false
+	}
 
 	gateMs := g.cfg.Now().Sub(start).Milliseconds()
 	version := x.Policy.Version
 	d := &Decision{
-		Spec: DecisionSpec, TraceID: x.Trace.TraceID, CreatedAt: start.UTC(), Route: route.Name,
+		Spec: DecisionSpec, TraceID: x.Trace.TraceID, Attempt: x.Attempt, CreatedAt: start.UTC(), Route: route.Name,
 		PolicyVersion: &version, Mode: mode, Fail: route.Fail, Core: *core,
 		Detectors: detectors, Excluded: in.Excluded, DecisionModel: usage, GateMs: &gateMs,
 	}
@@ -278,7 +318,9 @@ func (g *Gate) Evaluate(ctx context.Context, x *Exchange) *Result {
 	if uniform {
 		res.Flags = appendFlag(res.Flags, FlagUniformSample)
 	}
-	res.Audit = g.planAudit(route, core, uniform, hasText, x.Trace.Scenario)
+	if !x.NoAudit {
+		res.Audit = g.planAudit(route, core, uniform, hasText, x.Trace.Scenario)
+	}
 	res.Body = g.planBody(route, core)
 	return res
 }

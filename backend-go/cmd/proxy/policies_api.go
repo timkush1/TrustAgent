@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,12 +32,15 @@ const (
 // maxDryRunLimit is the largest dry-run window in rows (row 26: limit <= 100000).
 const maxDryRunLimit = store.MaxReplayRows
 
-// apiGuards are the middleware of the policy and evaluator routes.
+// apiGuards are the middleware of the policy, evaluator and P3 routes.
 type apiGuards struct {
 	// read and admin authenticate callers with those scopes; writable refuses writes in
 	// read-only mode; rateLimit is the general per-caller limit; dryRunLimit is the policy
 	// dry-run limit (6/min), used instead of rateLimit; bodyLimit caps request bodies.
 	read, admin, writable, rateLimit, dryRunLimit, bodyLimit gin.HandlerFunc
+	// limitBy builds an endpoint's own per-caller limit of n requests per window, used instead
+	// of rateLimit (the Playground's 10/min).
+	limitBy func(n int, window time.Duration) gin.HandlerFunc
 }
 
 // policiesAPI serves /api/policies.

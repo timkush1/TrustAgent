@@ -15,7 +15,6 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/proxy"
-	"github.com/truthtable/backend-go/internal/upstream"
 )
 
 // gatewayParts are the /v1 components main wires into the router.
@@ -57,10 +56,13 @@ func (g *gatewayParts) probe(ctx context.Context, timeout time.Duration, log *sl
 	log.Info("decision model startup probe ok", "backend", g.jev.Backend, "snapshot", resp.Snapshot, "latency_ms", resp.LatencyMs)
 }
 
-// gatewayHooks are the server's callbacks into the gateway's decision-model client.
+// gatewayHooks are the server's callbacks into the gateway's decision-model client, and the
+// calibration lookup the gate reads.
 type gatewayHooks struct {
 	// snapshotChanged receives a new Jev snapshot for a model seen before (decision_model_changed).
 	snapshotChanged func(jev.SnapshotChange)
+	// calibrations looks up evaluator calibrations per snapshot; nil means none.
+	calibrations policy.CalibrationLookup
 }
 
 // jevHTTPConfig maps the decision-model settings onto the HTTP backends' configuration, starting
@@ -148,8 +150,13 @@ func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, p
 		kw.SetKeepWarm(hasSyncRoute(pol))
 	}
 
+	// Late decisions are recorded through the sink (never enforced).
+	var onLate func(context.Context, *gate.Result)
+	if sink != nil {
+		onLate = sink.LateDecided
+	}
 	g, err := gate.New(gate.Config{
-		Jev: jevClient, Evaluators: registry,
+		Jev: jevClient, Evaluators: registry, Calibrations: hooks.calibrations, OnLate: onLate,
 		Budget: decision.Budget{
 			Tokens: cfg.Jev.TokenBudget, CPT: cfg.Jev.CharsPerToken, MaxQuestions: cfg.Jev.MaxQuestionsPerCall,
 			Overhead: decision.Overhead, MaxResponseTokens: cfg.Jev.MaxResponseTokens, EvidenceMaxTokens: 8000,
@@ -161,19 +168,16 @@ func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, p
 		return nil, err
 	}
 
-	up, err := upstream.New(upstream.Config{
-		BaseURL: cfg.UpstreamURL, HeaderTimeout: cfg.UpstreamHeaderTimeout, Timeout: cfg.UpstreamTimeout,
-	}, auth.IsProxyKey)
+	ups, err := newUpstreams(cfg, auth, log)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("upstream (passthrough credentials)", "url", redactURL(up.Base().String()))
 	if cfg.TestMode {
 		log.Warn("TRUTHTABLE_TEST_MODE: test_response and X-TrustAgent-Scenario are honoured")
 	}
 
 	h := proxy.New(proxy.Options{
-		Upstream: up, Policy: ps.Engine.Current, Gate: g, Sink: sink, TestMode: cfg.TestMode,
+		Upstreams: ups, Policy: ps.Engine.Current, Gate: g, Sink: sink, TestMode: cfg.TestMode,
 		MaxUpstreamResponseBytes: cfg.MaxUpstreamResponseBytes, GateMaxConcurrency: cfg.GateMaxConcurrency, Logger: log,
 	})
 	return &gatewayParts{handler: h, auth: auth, client: jevClient, jev: info}, nil

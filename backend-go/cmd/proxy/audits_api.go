@@ -32,6 +32,8 @@ type auditReader interface {
 type auditsAPI struct {
 	store  auditReader // nil when persistence is disabled
 	audits auditQueue  // nil when there is no audit engine
+	// pub broadcasts the trace a direct audit records (trace_started, API-8).
+	pub worker.Publisher
 	// maxTextChars caps query, response and each context text (TRUTHTABLE_MAX_TEXT_CHARS).
 	maxTextChars int
 	testMode     bool

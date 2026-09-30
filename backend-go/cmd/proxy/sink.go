@@ -50,6 +50,8 @@ type traceSink struct {
 	bodyMaxBytes  int
 	now           func() time.Time
 	log           *slog.Logger
+	// waiters wakes the /v1 decision long-polls; nil means none wait.
+	waiters *decisionWaiters
 }
 
 var _ gate.Sink = (*traceSink)(nil)
@@ -136,6 +138,14 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	}
 	return gate.AuditQueued
 }
+
+// AttemptDecided records a later attempt of a trace (the fallback re-gate): its gate_decisions
+// row only, with no audit and no change to the trace. Not recorded yet (GD-5).
+func (s *traceSink) AttemptDecided(ctx context.Context, r *gate.Result) {}
+
+// LateDecided records a decision recomputed after a late decision-model answer: the late row,
+// the trace flag late_decision and a WS event, never enforced or audited. Not recorded yet (GD-6).
+func (s *traceSink) LateDecided(ctx context.Context, r *gate.Result) {}
 
 func (s *traceSink) publish(typ, traceID string, data, redacted any) {
 	if s.pub == nil {
