@@ -15,7 +15,8 @@ func clearEnv(t *testing.T) {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		if strings.HasPrefix(k, "TRUTHTABLE_") || k == "UPSTREAM_LLM_URL" || k == "OLLAMA_BASE_URL" ||
-			k == "OPENROUTER_API_KEY" || k == "TYPESAFE_API_KEY" || k == "REDIS_URL" {
+			k == "OPENROUTER_API_KEY" || k == "TYPESAFE_API_KEY" || k == "REDIS_URL" || k == "KNOWLEDGE_ENABLED" ||
+			k == "RAG_ENABLED" {
 			t.Setenv(k, "")
 		}
 	}
@@ -277,5 +278,145 @@ func TestPolicyEngineKeys(t *testing.T) {
 	c = Load()
 	if c.PolicyReloadInterval != 5*time.Second || len(c.Warnings) != 1 {
 		t.Errorf("an invalid interval falls back with a warning: %s %v", c.PolicyReloadInterval, c.Warnings)
+	}
+}
+
+// TestUpstreamStreamCalibrationAndKnowledgeKeys: the keys P3 binds load with their registry
+// defaults, and every one reads its variable (SPEC §2.7 upstream and policy groups).
+func TestUpstreamStreamCalibrationAndKnowledgeKeys(t *testing.T) {
+	clearEnv(t)
+	c := Load()
+	if len(c.Warnings) != 0 {
+		t.Errorf("warnings %v", c.Warnings)
+	}
+	if c.UpstreamAuthHeader != "authorization" || c.AnthropicUpstreamURL != "https://api.anthropic.com" ||
+		c.AnthropicUpstreamAPIKey != "" || c.FallbackUpstreamURL != "" || c.FallbackUpstreamAPIKey != "" ||
+		c.FallbackUpstreamFormat != "openai" || c.StreamIdleTimeout != 120*time.Second {
+		t.Errorf("upstream defaults: header %q anthropic %q/%q fallback %q/%q/%q idle %s", c.UpstreamAuthHeader,
+			c.AnthropicUpstreamURL, c.AnthropicUpstreamAPIKey, c.FallbackUpstreamURL, c.FallbackUpstreamAPIKey,
+			c.FallbackUpstreamFormat, c.StreamIdleTimeout)
+	}
+	if !strings.HasSuffix(c.CalibrationDir, filepath.Join("config", "calibration")) || c.CalibrationFamilyFallback {
+		t.Errorf("calibration defaults: %q family %v", c.CalibrationDir, c.CalibrationFamilyFallback)
+	}
+	if c.KnowledgeEnabled || c.KnowledgeDeadline != 150*time.Millisecond {
+		t.Errorf("knowledge defaults: %v %s", c.KnowledgeEnabled, c.KnowledgeDeadline)
+	}
+	if c.RetentionDays != 30 || c.CostRetentionDays != 400 || c.LabelSampleRetention != 2160*time.Hour {
+		t.Errorf("retention defaults: %d %d %s", c.RetentionDays, c.CostRetentionDays, c.LabelSampleRetention)
+	}
+	if c.Injecting() {
+		t.Error("no upstream key: passthrough")
+	}
+
+	for k, v := range map[string]string{
+		"TRUTHTABLE_UPSTREAM_AUTH_HEADER":        "X-Api-Key",
+		"TRUTHTABLE_ANTHROPIC_UPSTREAM_URL":      "https://anthropic.example/base",
+		"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY":  "sk-ant-anthropic-0123456789",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_URL":       "http://fallback:9000/v1base?tier=cheap",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY":   "sk-fallback-0123456789",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT":    "Anthropic",
+		"TRUTHTABLE_STREAM_IDLE_TIMEOUT":         "45s",
+		"TRUTHTABLE_CALIBRATION_DIR":             "/etc/trustagent/calibration",
+		"TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK": "true",
+		"RAG_ENABLED":                            "true", // a legacy alias of TRUTHTABLE_KNOWLEDGE_ENABLED
+		"TRUTHTABLE_KNOWLEDGE_DEADLINE":          "250ms",
+		"TRUTHTABLE_RETENTION_DAYS":              "7",
+		"TRUTHTABLE_COST_RETENTION_DAYS":         "90",
+		"TRUTHTABLE_LABEL_SAMPLE_RETENTION":      "720h",
+	} {
+		t.Setenv(k, v)
+	}
+	c = Load()
+	if len(c.Warnings) != 0 {
+		t.Errorf("warnings %v", c.Warnings)
+	}
+	if c.UpstreamAuthHeader != "x-api-key" || c.AnthropicUpstreamURL != "https://anthropic.example/base" ||
+		c.AnthropicUpstreamAPIKey != "sk-ant-anthropic-0123456789" || c.FallbackUpstreamURL != "http://fallback:9000/v1base?tier=cheap" ||
+		c.FallbackUpstreamAPIKey != "sk-fallback-0123456789" || c.FallbackUpstreamFormat != "anthropic" ||
+		c.StreamIdleTimeout != 45*time.Second {
+		t.Errorf("upstream keys: header %q anthropic %q fallback %q/%q idle %s", c.UpstreamAuthHeader, c.AnthropicUpstreamURL,
+			c.FallbackUpstreamURL, c.FallbackUpstreamFormat, c.StreamIdleTimeout)
+	}
+	if c.CalibrationDir != "/etc/trustagent/calibration" || !c.CalibrationFamilyFallback {
+		t.Errorf("calibration keys: %q %v", c.CalibrationDir, c.CalibrationFamilyFallback)
+	}
+	if !c.KnowledgeEnabled || c.KnowledgeDeadline != 250*time.Millisecond {
+		t.Errorf("knowledge keys: %v %s", c.KnowledgeEnabled, c.KnowledgeDeadline)
+	}
+	if c.RetentionDays != 7 || c.CostRetentionDays != 90 || c.LabelSampleRetention != 720*time.Hour {
+		t.Errorf("retention keys: %d %d %s", c.RetentionDays, c.CostRetentionDays, c.LabelSampleRetention)
+	}
+	if !c.Injecting() || !reflect.DeepEqual(c.InjectedKeys(), []string{"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"}) {
+		t.Errorf("injected keys %v", c.InjectedKeys())
+	}
+}
+
+// TestUpstreamKeysValidate: the enums and durations refuse bad values with a warning and keep
+// their defaults; a URL that is not one keeps its default too.
+func TestUpstreamKeysValidate(t *testing.T) {
+	clearEnv(t)
+	for k, v := range map[string]string{
+		"TRUTHTABLE_UPSTREAM_AUTH_HEADER":     "bearer",
+		"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT": "gemini",
+		"TRUTHTABLE_STREAM_IDLE_TIMEOUT":      "-5s",
+		"TRUTHTABLE_KNOWLEDGE_DEADLINE":       "soon",
+		"TRUTHTABLE_ANTHROPIC_UPSTREAM_URL":   "api.anthropic.com",
+		"TRUTHTABLE_RETENTION_DAYS":           "0",
+	} {
+		t.Setenv(k, v)
+	}
+	c := Load()
+	if c.UpstreamAuthHeader != "authorization" || c.FallbackUpstreamFormat != "openai" || c.StreamIdleTimeout != 120*time.Second ||
+		c.KnowledgeDeadline != 150*time.Millisecond || c.AnthropicUpstreamURL != "https://api.anthropic.com" || c.RetentionDays != 30 {
+		t.Errorf("invalid values keep their defaults: %q %q %s %s %q %d", c.UpstreamAuthHeader, c.FallbackUpstreamFormat,
+			c.StreamIdleTimeout, c.KnowledgeDeadline, c.AnthropicUpstreamURL, c.RetentionDays)
+	}
+	for _, key := range []string{
+		"TRUTHTABLE_UPSTREAM_AUTH_HEADER", "TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT", "TRUTHTABLE_STREAM_IDLE_TIMEOUT",
+		"TRUTHTABLE_KNOWLEDGE_DEADLINE", "TRUTHTABLE_ANTHROPIC_UPSTREAM_URL", "TRUTHTABLE_RETENTION_DAYS",
+	} {
+		if !hasWarning(c, key, "is not") {
+			t.Errorf("no warning for %s: %v", key, c.Warnings)
+		}
+	}
+	if len(c.Diagnostics) != 6 {
+		t.Errorf("warnings %v", c.Warnings)
+	}
+	if !hasWarning(c, "TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT", "one of openai, anthropic") {
+		t.Errorf("the format enum is named: %v", c.Warnings)
+	}
+}
+
+// TestInjectModePerUpstream (D15): every upstream key alone is inject mode and refuses open
+// ingest, naming the key; a fallback key without a fallback upstream is reported as unused.
+func TestInjectModePerUpstream(t *testing.T) {
+	for _, key := range []string{
+		"TRUTHTABLE_UPSTREAM_API_KEY", "TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY",
+	} {
+		c := LoadWith(LoadOptions{Environ: []string{
+			"TRUTHTABLE_INGEST_AUTH=open", key + "=sk-injected-0123456789", "TRUTHTABLE_FALLBACK_UPSTREAM_URL=http://fb:1",
+		}})
+		if !c.Injecting() || c.IngestAuth != "keys" || !hasWarning(c, "TRUTHTABLE_INGEST_AUTH", "open is refused") ||
+			!hasWarning(c, "TRUTHTABLE_INGEST_AUTH", key) {
+			t.Errorf("%s: injecting %v ingest %s warnings %v", key, c.Injecting(), c.IngestAuth, c.Warnings)
+		}
+		for _, w := range c.Warnings {
+			if strings.Contains(w, "sk-injected") {
+				t.Errorf("%s: a credential leaked into a warning: %s", key, w)
+			}
+		}
+	}
+
+	c := LoadWith(LoadOptions{Environ: []string{"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY=sk-fallback-0123456789"}})
+	if !hasWarning(c, "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY", "never sent") || len(c.Diagnostics) != 1 {
+		t.Errorf("an unused fallback key is reported: %v", c.Warnings)
+	}
+	if strings.Contains(strings.Join(c.Warnings, "\n"), "sk-fallback") {
+		t.Errorf("the fallback key leaked: %v", c.Warnings)
+	}
+	c = LoadWith(LoadOptions{Environ: []string{"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY=sk-fallback-0123456789", "TRUTHTABLE_FALLBACK_UPSTREAM_URL=https://fb.example"}})
+	if len(c.Diagnostics) != 0 {
+		t.Errorf("a fallback key with its upstream: %v", c.Warnings)
 	}
 }

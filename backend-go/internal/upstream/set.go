@@ -1,10 +1,6 @@
 package upstream
 
 import (
-	"context"
-	"io"
-	"net/http"
-
 	"github.com/truthtable/backend-go/internal/llmapi"
 )
 
@@ -23,18 +19,4 @@ func (s *Set) For(family string) *Client {
 		return s.Anthropic
 	}
 	return s.OpenAI
-}
-
-// StreamBody is the body of a streamed (text/event-stream) response for the relay. cancel
-// releases the request's context once the relay is done. For now it is resp.Body as it is; the
-// idle timeout between reads (TRUTHTABLE_STREAM_IDLE_TIMEOUT) and the defensive gunzip land here
-// in P3 (GS-2).
-func (c *Client) StreamBody(resp *http.Response, cancel context.CancelFunc) io.ReadCloser {
-	return resp.Body
-}
-
-// DecodeBody is a response body with a stray Content-Encoding decoded. For now it is resp.Body
-// as it is: ReadBody still decodes gzip itself until the decoding moves here (GS-2).
-func DecodeBody(resp *http.Response) io.ReadCloser {
-	return resp.Body
 }
