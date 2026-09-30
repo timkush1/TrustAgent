@@ -11,7 +11,8 @@ package main
 //     takes the upstream path (trafficgen --upstream all), --scenarios e2e.
 //
 // Scenarios tagged with a later gateway phase (p3) are skipped by trafficgen's default --phase;
-// cmd/trafficgen's reference tests cover them.
+// cmd/trafficgen's reference tests cover them, and TestP3FormatScenariosEndToEnd runs the ones on
+// the other gated formats (/v1/messages, /v1/completions) with --phase p3.
 
 import (
 	"context"
@@ -181,6 +182,56 @@ func runScenarios(t *testing.T, env *testEnv, set string, args ...string) string
 	}
 	t.Logf("trafficgen --scenarios %s %v:\n%s", set, args, out)
 	return out
+}
+
+// runScenarioIDs runs trafficgen --once --expect --phase p3 on the scenarios ids against env and
+// checks that each passes.
+func runScenarioIDs(t *testing.T, env *testEnv, ids []string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(buildTrafficgen(t), append([]string{"--once", "--expect", "--phase", "p3", "--scenarios", strings.Join(ids, ","),
+		"--base-url", env.http.URL, "--audit-timeout", "30s"}, args...)...)
+	cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	if err != nil {
+		t.Fatalf("trafficgen --scenarios %v %v: %v\n%s", ids, args, err, out)
+	}
+	for _, id := range ids {
+		if !strings.Contains(out, "ok   "+id+" ") {
+			t.Errorf("%s did not pass:\n%s", id, out)
+		}
+	}
+}
+
+// p3FormatScenarios are the P3 scenarios on the other gated formats (/v1/messages and
+// /v1/completions, JSON answers): the handler serves them before the turn-on moves trafficgen's
+// default phase to p3.
+var p3FormatScenarios = []string{"anthropic-system-grounded", "completions-extension-grounded"}
+
+// TestP3FormatScenariosEndToEnd runs the P3 format scenarios in both stacks: scripted answers
+// with the mock decision backend, and upstream answers from mock-upstream.
+func TestP3FormatScenariosEndToEnd(t *testing.T) {
+	runScenarioIDs(t, newScenarioEnv(t, nil), p3FormatScenarios)
+
+	mu, err := mockupstream.New(mockupstream.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(mu)
+	t.Cleanup(upstream.Close)
+	env := newScenarioEnv(t, func(cfg *config.Config) {
+		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
+		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
+		cfg.UpstreamURL = upstream.URL
+	})
+	runScenarioIDs(t, env, p3FormatScenarios, "--upstream", "all")
+	paths := map[string]int{}
+	for _, r := range mu.Requests() {
+		paths[r.Path]++
+	}
+	if paths["/v1/messages"] != 1 || paths["/v1/completions"] != 1 {
+		t.Errorf("mock-upstream answered %v: each format reaches its own path once", paths)
+	}
 }
 
 // TestDemoScenariosEndToEnd is the zero-key demo's scenario check (make demo-scenarios) in

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/llmapi"
 	"github.com/truthtable/backend-go/internal/middleware"
 	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/upstream"
@@ -147,19 +149,49 @@ func (recorder) CloseNotify() <-chan bool { return make(chan bool) }
 func newRecorder() recorder { return recorder{httptest.NewRecorder()} }
 
 type env struct {
-	router  *gin.Engine
-	sink    *recSink
-	up      *fakeUpstream
-	handler *Handler
+	router *gin.Engine
+	sink   *recSink
+	// up is the OpenAI upstream and anth the Anthropic one.
+	up, anth *fakeUpstream
+	handler  *Handler
 }
 
 type envOpts struct {
 	testMode   bool
 	policyYAML string // "" = config/policies.yaml
+	// enforcing loads the policy as the enforcing gateway does (block and fallback accepted).
+	enforcing  bool
 	ingest     string
 	jevLatency time.Duration
 	jevBackend string
-	maxGates   int
+	// jev replaces the decision-model client (the mock of jevBackend).
+	jev      jev.Client
+	maxGates int
+	// maxBytes is MAX_UPSTREAM_RESPONSE_BYTES (0: the default).
+	maxBytes int64
+	// rateLimit, when set, limits /v1 to that many requests a minute (the v1 limiter).
+	rateLimit int
+}
+
+// anthropicBody is the Anthropic upstream's default answer.
+const anthropicBody = `{"id":"msg_up","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"Priority tickets get a first response within 4 hours."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":9}}`
+
+// loadPolicy loads config/policies.yaml, or yaml when set; enforcing accepts block and fallback.
+func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, enforcing bool) *policy.Policy {
+	t.Helper()
+	src := []byte(yaml)
+	if yaml == "" {
+		b, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "policies.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		src = b
+	}
+	res := policy.Check(src, policy.Env{Seeds: policy.DefaultSeeds(), Specs: reg, Enforcing: enforcing})
+	if res.Policy == nil {
+		t.Fatal(res.Err())
+	}
+	return res.Policy
 }
 
 func newEnv(t *testing.T, o envOpts) *env {
@@ -168,22 +200,16 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var pol *policy.Policy
-	if o.policyYAML == "" {
-		pol, err = policy.LoadFile(filepath.Join("..", "..", "..", "config", "policies.yaml"), policy.DefaultSeeds(), reg)
-	} else {
-		pol, err = policy.Parse([]byte(o.policyYAML), policy.DefaultSeeds(), reg)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := o.jevBackend
-	if backend == "" {
-		backend = jev.BackendMock
-	}
-	cl, err := jev.New(jev.Config{Backend: backend, Mock: jev.MockConfig{Mode: jev.MockScenario, Strict: true, Latency: o.jevLatency}})
-	if err != nil {
-		t.Fatal(err)
+	pol := loadPolicy(t, reg, o.policyYAML, o.enforcing)
+	cl := o.jev
+	if cl == nil {
+		backend := o.jevBackend
+		if backend == "" {
+			backend = jev.BackendMock
+		}
+		if cl, err = jev.New(jev.Config{Backend: backend, Mock: jev.MockConfig{Mode: jev.MockScenario, Strict: true, Latency: o.jevLatency}}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	quiet := slog.New(slog.DiscardHandler)
 	g, err := gate.New(gate.Config{Jev: cl, Evaluators: reg, UniformAuditsPerDay: 50, Rand: func() float64 { return 0.5 }, Logger: quiet})
@@ -191,25 +217,47 @@ func newEnv(t *testing.T, o envOpts) *env {
 		t.Fatal(err)
 	}
 	auth := authz.New([]authz.Key{{Label: "trafficgen", Secret: ingestKey, Scopes: authz.APIKeyScopes}}, o.ingest)
-	fu := newFakeUpstream(t)
+	fu, fa := newFakeUpstream(t), newFakeUpstream(t)
+	fa.body = anthropicBody
 	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: 5 * time.Second}, auth.IsProxyKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+	anth, err := upstream.New(upstream.Config{BaseURL: fa.URL, Timeout: 5 * time.Second}, auth.IsProxyKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sink := newRecSink()
-	h := New(Options{Upstreams: &upstream.Set{OpenAI: up, Anthropic: up}, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink, TestMode: o.testMode, GateMaxConcurrency: o.maxGates, Logger: quiet})
+	h := New(Options{
+		Upstreams: &upstream.Set{OpenAI: up, Anthropic: anth}, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
+		TestMode: o.testMode, GateMaxConcurrency: o.maxGates, MaxUpstreamResponseBytes: o.maxBytes, Logger: quiet,
+	})
 	r := gin.New()
 	r.Use(middleware.CORS([]string{"http://localhost:5173"}))
-	v1 := r.Group("/v1", h.TraceIDs(), auth.Ingest(Deny))
-	v1.POST("/chat/completions", middleware.BodyLimit(1<<20), h.ChatCompletions)
-	v1.POST("/completions", h.Passthrough(StatusSkippedUnsupportedAPI))
-	v1.Any("/models", h.Passthrough(""))
-	return &env{router: r, sink: sink, up: fu, handler: h}
+	guards := []gin.HandlerFunc{h.TraceIDs(), auth.Ingest(Deny)}
+	if o.rateLimit > 0 {
+		guards = append(guards, middleware.RateLimitBy(middleware.NewMemoryLimiter(), o.rateLimit, time.Minute, Deny, nil))
+	}
+	h.Mount(r.Group("/v1", guards...), middleware.BodyLimit(1<<20))
+	// As cmd/proxy/server.go: unknown /v1 paths answer in their API's error shape.
+	r.NoRoute(func(c *gin.Context) {
+		if p := c.Request.URL.Path; strings.HasPrefix(p, "/v1/") {
+			Deny(c, http.StatusNotFound, CodeNotFound, "TrustAgent does not serve "+c.Request.Method+" "+p+".")
+			c.Abort()
+		}
+	})
+	return &env{router: r, sink: sink, up: fu, anth: fa, handler: h}
 }
 
 func (e *env) do(t *testing.T, path, body string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	return e.send(t, http.MethodPost, path, body, headers)
+}
+
+// send sends an ingest-authenticated request; a header set to "" is removed.
+func (e *env) send(t *testing.T, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-TrustAgent-Key", ingestKey)
 	req.Header.Set("Authorization", "Bearer "+upstreamKey)
@@ -591,20 +639,32 @@ func TestInvalidRequestIDIsReplacedByTheTraceID(t *testing.T) {
 	}
 }
 
-func TestStreamingPassesThroughUngated(t *testing.T) {
-	e := newEnv(t, envOpts{testMode: true})
-	e.up.ctype = "text/event-stream"
-	e.up.body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n"
+// TestEventStreamTakesTheStreamBranch: the branch follows the response, not the request (M3). An
+// upstream event stream goes to the stream relay (stream.go) with its events intact; a JSON answer
+// to a stream:true request, such as an upstream error, takes the JSON path.
+func TestEventStreamTakesTheStreamBranch(t *testing.T) {
+	e := newEnv(t, envOpts{testMode: true, policyYAML: "version: 1\ndefaults: {mode: flag}\n"})
+	e.up.ctype = "text/event-stream; charset=utf-8"
+	e.up.body = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n"
 	w := e.do(t, "/v1/chat/completions", `{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}],"trustagent":{"route":"x"}}`, nil)
-	if w.Code != http.StatusOK || w.Body.String() != e.up.body || w.Header().Get(HeaderStatus) != StatusSkippedStream {
-		t.Errorf("%d %q %q", w.Code, w.Body.String(), w.Header().Get(HeaderStatus))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"content":"Hi"`) || !strings.Contains(w.Body.String(), "[DONE]") {
+		t.Errorf("%d %q", w.Code, w.Body.String())
 	}
 	if _, fwd := e.up.last(t); strings.Contains(string(fwd), "trustagent") {
 		t.Errorf("the extension was forwarded: %s", fwd)
 	}
-	if len(e.sink.traces()) != 0 {
-		t.Error("S0 records no trace for an ungated stream")
+	traces := e.sink.traces()
+	if len(traces) != 1 || !traces[0].Stream || traces[0].APIFormat != llmapi.FormatOpenAIChat {
+		t.Errorf("a streamed request is traced with stream true: %+v", traces)
 	}
+
+	// A stream:true request whose upstream answers with a JSON error is not a stream.
+	e.up.ctype, e.up.status, e.up.body = "application/json", http.StatusBadRequest, `{"error":{"message":"bad model"}}`
+	w = e.do(t, "/v1/chat/completions", `{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}`, nil)
+	if w.Code != http.StatusBadRequest || w.Body.String() != e.up.body || w.Header().Get(HeaderStatus) != "skipped:upstream_error" {
+		t.Errorf("%d %q %q", w.Code, w.Body.String(), w.Header().Get(HeaderStatus))
+	}
+	e.sink.result(t)
 }
 
 func TestUpstreamErrorPassesThrough(t *testing.T) {
@@ -675,12 +735,12 @@ func TestPassthroughEndpoints(t *testing.T) {
 	if w.Code != http.StatusOK || w.Header().Get(HeaderStatus) != "" || w.Header().Get(HeaderTraceID) == "" {
 		t.Errorf("models: %d status %q", w.Code, w.Header().Get(HeaderStatus))
 	}
-	cw := e.do(t, "/v1/completions", `{"model":"m","prompt":"hi","trustagent":{"route":"x"}}`, nil)
-	if cw.Header().Get(HeaderStatus) != StatusSkippedUnsupportedAPI {
-		t.Errorf("completions status %q", cw.Header().Get(HeaderStatus))
+	rw := e.do(t, "/v1/responses", `{"model":"m","input":"hi","trustagent":{"route":"x"}}`, nil)
+	if rw.Header().Get(HeaderStatus) != StatusSkippedUnsupportedAPI {
+		t.Errorf("responses status %q", rw.Header().Get(HeaderStatus))
 	}
-	if _, fwd := e.up.last(t); string(fwd) != `{"model":"m","prompt":"hi"}` {
-		t.Errorf("completions forwarded %s", fwd)
+	if _, fwd := e.up.last(t); string(fwd) != `{"model":"m","input":"hi"}` {
+		t.Errorf("responses forwarded %s", fwd)
 	}
 }
 
