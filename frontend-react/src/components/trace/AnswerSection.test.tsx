@@ -5,6 +5,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { detect } from '@/lib/decision/detectors';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { p3Detail } from '@/test/p3Fixtures';
 import { s0Audit, s0Trace, scenario } from '@/test/scenarios';
@@ -174,5 +175,26 @@ describe('AnswerSection: instant-check marks', () => {
     renderAnswer({ ...v, answer: { text: v.answer!.text, preview: true } });
     expect(document.querySelector('mark')).toBeNull();
     expect(screen.queryByText('Marked by the instant checks')).toBeNull();
+  });
+
+  it('marks what the detectors found in CJK and emoji text, at the offsets they report', () => {
+    // Findings from the TypeScript detectors, which the golden vectors pin to the gateway's: UTF-16
+    // offsets, two more than the code-point indexes after the two astral emoji.
+    const text = '🗻🎉 退款期限为30天，不是60 days. 见 https://acme.example/退款 🚀 today.';
+    const detectors = detect({
+      response: text,
+      evidence: [{ id: 'refund-policy.md', source: 'request_system', text: '退款期限为30天。Policy: https://acme.example/policy' }],
+      userRequest: '',
+      systemInstructions: '',
+    });
+    const v = beforeAudit('help-center-link-block');
+    renderAnswer({ ...v, answer: { text, preview: false }, decision: { ...v.decision!, detectors } });
+    const marks = [...screen.getByTestId('answer-marked').querySelectorAll('mark[data-det]')];
+    expect(marks.map((m) => [m.getAttribute('data-det'), m.textContent])).toEqual([
+      ['numbers_not_in_evidence', '60'],
+      ['urls_not_in_evidence', 'https://acme.example/退款'],
+    ]);
+    const found = detectors.filter((d) => d.fired).flatMap((d) => d.findings);
+    expect(found.map((f) => text.slice(f.start, f.end))).toEqual(found.map((f) => f.text));
   });
 });
