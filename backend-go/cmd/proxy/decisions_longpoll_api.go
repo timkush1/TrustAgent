@@ -56,6 +56,9 @@ type waitEntry struct {
 	at      time.Time
 	// ready is closed once doc is set.
 	ready chan struct{}
+	// stored marks an entry registered from the database while pending: another process may
+	// decide that trace, so a poll reads the database again rather than trusting the entry.
+	stored bool
 }
 
 func newDecisionWaiters() *decisionWaiters {
@@ -64,6 +67,12 @@ func newDecisionWaiters() *decisionWaiters {
 
 // started registers a pending trace, unless the trace is known already.
 func (w *decisionWaiters) started(traceID, keyLabel string) {
+	w.register(traceID, keyLabel, false)
+}
+
+// register adds a pending entry for a trace it does not know yet; stored marks one read from the
+// database.
+func (w *decisionWaiters) register(traceID, keyLabel string, stored bool) {
 	if w == nil || traceID == "" {
 		return
 	}
@@ -72,7 +81,7 @@ func (w *decisionWaiters) started(traceID, keyLabel string) {
 	if e := w.lookup(traceID); e != nil {
 		return
 	}
-	w.put(&waitEntry{traceID: traceID, keyLabel: keyLabel, at: w.now(), ready: make(chan struct{})})
+	w.put(&waitEntry{traceID: traceID, keyLabel: keyLabel, at: w.now(), ready: make(chan struct{}), stored: stored})
 }
 
 // decided records the decision of a trace's attempt 0 (a late one replaces it) and wakes its
@@ -166,7 +175,9 @@ func (s *server) handleDecisionLongPoll(c *gin.Context) {
 	}
 	label := authz.KeyLabel(c)
 	e, known := s.waiters.get(traceID)
-	if !known {
+	if !known || e.doc == nil && e.stored {
+		// Unknown here, or pending when the database was last read: another process may have
+		// decided it since.
 		var err error
 		if e, known, err = s.storedDecision(c.Request.Context(), traceID); err != nil {
 			s.log.Error("decision long-poll: reading the trace failed", "trace_id", traceID, "err", err)
@@ -187,6 +198,12 @@ func (s *server) handleDecisionLongPoll(c *gin.Context) {
 		case <-e.ready:
 			e, _ = s.waiters.get(traceID)
 		case <-t.C:
+			if e.stored {
+				// Nothing here wakes a trace another process decides: read the database once more.
+				if fresh, ok, err := s.storedDecision(c.Request.Context(), traceID); err == nil && ok {
+					e = fresh
+				}
+			}
 		case <-c.Request.Context().Done():
 			return
 		}
@@ -194,9 +211,10 @@ func (s *server) handleDecisionLongPoll(c *gin.Context) {
 	c.JSON(http.StatusOK, pollAnswer(traceID, e))
 }
 
-// storedDecision reads a trace the waiters do not remember from the database: a pending trace is
-// registered with the waiters, so its decision wakes the poll; a decided one answers with its
-// attempt-0 decision. known is false for an unknown trace, and without a database.
+// storedDecision reads a trace from the database, when the waiters do not remember it or last saw
+// it pending there: a pending trace is registered with the waiters (stored), so a decision this
+// process makes wakes the poll; a decided one answers with its attempt-0 decision. known is false
+// for an unknown trace, and without a database.
 func (s *server) storedDecision(ctx context.Context, traceID string) (e waitEntry, known bool, err error) {
 	rd, ok := s.status.db.(traceDecisionReader)
 	if !ok || s.status.db == nil {
@@ -214,7 +232,7 @@ func (s *server) storedDecision(ctx context.Context, traceID string) (e waitEntr
 		label = *rec.KeyLabel
 	}
 	if rec.GateStatus == store.GateStatusPending {
-		s.waiters.started(traceID, label)
+		s.waiters.register(traceID, label, true)
 		e, known = s.waiters.get(traceID)
 		return e, known, nil
 	}

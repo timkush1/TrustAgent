@@ -175,6 +175,42 @@ func TestDecisionLongPollReadsTheDatabase(t *testing.T) {
 	if code, _, _ := pollDecision(t, second, foreign.TraceID, ""); code != http.StatusNotFound {
 		t.Errorf("another key's trace in the database: HTTP %d", code)
 	}
+
+	// Another process decides a trace this one read pending: the next poll reads the decision
+	// from the database rather than the pending entry it registered, and a poll waiting on such
+	// a trace reads the database again when its wait runs out.
+	decideElsewhere := func(tr *store.TraceRecord) error {
+		done := *tr
+		done.GateStatus = "ok"
+		doc := json.RawMessage(`{"spec":"decision/v1","trace_id":"` + tr.TraceID + `","attempt":0,"action":"observe","status":"ok"}`)
+		return st.RecordDecision(context.Background(), &done,
+			&store.DecisionRecord{TraceID: tr.TraceID, Action: "observe", Status: "ok", Decision: doc}, nil)
+	}
+	if err := decideElsewhere(pending); err != nil {
+		t.Fatal(err)
+	}
+	if code, p, body := pollDecision(t, second, pending.TraceID, ""); code != http.StatusOK || p.State != decisionDecided {
+		t.Errorf("decided by another process: HTTP %d %s", code, body)
+	}
+	waiting := *pending
+	waiting.TraceID = store.NewID()
+	if err := st.StartTrace(context.Background(), &waiting); err != nil {
+		t.Fatal(err)
+	}
+	if code, p, body := pollDecision(t, second, waiting.TraceID, ""); code != http.StatusOK || p.State != decisionPending {
+		t.Fatalf("pending in the database: HTTP %d %s", code, body)
+	}
+	decidedElsewhere := make(chan error, 1)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		decidedElsewhere <- decideElsewhere(&waiting)
+	}()
+	if code, p, body := pollDecision(t, second, waiting.TraceID, "400"); code != http.StatusOK || p.State != decisionDecided {
+		t.Errorf("decided by another process during the wait: HTTP %d %s", code, body)
+	}
+	if err := <-decidedElsewhere; err != nil {
+		t.Fatal(err)
+	}
 	// Without a database only the traces this process saw are known.
 	noDB := newTestEnv(t, envOpts{noStore: true})
 	if code, _, _ := pollDecision(t, noDB, id, ""); code != http.StatusNotFound {
