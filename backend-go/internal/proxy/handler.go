@@ -23,7 +23,6 @@ import (
 	"mime"
 	"net/http"
 	"regexp"
-	"slices"
 	"sync"
 	"time"
 
@@ -335,16 +334,8 @@ func isEventStream(resp *http.Response) bool {
 // cannot be gated.
 func (h *Handler) serveJSON(f *flow, ans *answer) {
 	defer ans.close()
+	f.takeAnswer(ans)
 	x := f.x
-	x.Response = ans.text
-	if x.SkipReason == "" {
-		x.SkipReason = ans.skip
-	}
-	x.Unenforced = x.Unenforced || ans.unenforced
-	if ans.multiChoice && !slices.Contains(x.Trace.Flags, gate.FlagMultiChoice) {
-		// Only choice 0 is gated (D6); a block still replaces every choice.
-		x.Trace.Flags = append(x.Trace.Flags, gate.FlagMultiChoice)
-	}
 	if x.Trace.Mode == decision.ModeObserve && x.SkipReason == "" {
 		h.respondThenGate(f, ans)
 		return

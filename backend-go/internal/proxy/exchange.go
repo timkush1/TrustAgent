@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,17 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/upstream"
 )
+
+// The helpers a gated exchange is built from, shared with the stream relay (stream.go, buffer.go)
+// and the Playground (playground.go). Their signatures are fixed; the flow, answer and jsonOut
+// structs are append-only:
+//
+//   - newFlow builds the flow of a request (route, mode, trace, evidence, upstream);
+//   - scriptedAnswer and upstreamAnswer get a JSON answer, takeAnswer hands it to the exchange;
+//   - gate.Evaluate decides, enforceJSON applies the decision to a JSON answer (calling fallback
+//     for a fallback decision), blockOf is a route's block body;
+//   - decided records the outcome exactly once, setDecisionHeaders writes the decision headers and
+//     countRequest counts the request once its response is written.
 
 // flow is one gated /v1 exchange. Fields are append-only.
 type flow struct {
@@ -118,7 +130,8 @@ func (h *Handler) newExchange(c *gin.Context, format, path string, req *llmapi.C
 	return x, route
 }
 
-// answer is a JSON answer to a gated request: the upstream's, or the scripted test_response.
+// answer is a JSON answer to a gated request: the upstream's (upstreamAnswer), or the scripted
+// test_response (scriptedAnswer). Fields are append-only.
 type answer struct {
 	status int
 	header http.Header
@@ -138,6 +151,21 @@ type answer struct {
 	ms          *int64
 	usage       *llmapi.Usage
 	close       func()
+}
+
+// takeAnswer hands a JSON answer to the exchange before it is gated: the gated text, the skip
+// reason when the exchange has none yet, whether it is enforced, and the multi_choice flag (only
+// choice 0 is gated, D6; a block still replaces every choice).
+func (f *flow) takeAnswer(ans *answer) {
+	x := f.x
+	x.Response = ans.text
+	if x.SkipReason == "" {
+		x.SkipReason = ans.skip
+	}
+	x.Unenforced = x.Unenforced || ans.unenforced
+	if ans.multiChoice && !slices.Contains(x.Trace.Flags, gate.FlagMultiChoice) {
+		x.Trace.Flags = append(x.Trace.Flags, gate.FlagMultiChoice)
+	}
 }
 
 // scriptedAnswer is the test-mode answer to f: text as a JSON answer of f's format, with no

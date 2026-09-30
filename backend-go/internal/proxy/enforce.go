@@ -36,7 +36,7 @@ func blockOf(r *policy.Route) llmapi.Block {
 	return llmapi.Block{Style: b.Style, Message: b.Message, Status: b.Status, AnthropicStopReason: b.AnthropicStopReason}
 }
 
-// jsonOut is what a gated JSON exchange sends, and how it ended.
+// jsonOut is what a gated JSON exchange sends, and how it ended. Fields are append-only.
 type jsonOut struct {
 	// status and body are the response; rest, when set, is the unread remainder of an oversized
 	// upstream body, relayed after body.
@@ -141,7 +141,8 @@ func unenforcedAction(action string) string {
 
 // countRequest counts one gated /v1 request (requests_total) with the action it delivered, and
 // observes the latency the gateway added (overhead_seconds): end minus f.start, minus the
-// upstream time up.Ms. Call it once per gated request, when its response is written.
+// upstream time up.Ms. Call it once per gated request, when its response is written; the JSON
+// path does (serveJSON, respondThenGate, upstreamFailed), the stream paths call it themselves.
 func (h *Handler) countRequest(f *flow, action string, up gate.Upstream, end time.Time) {
 	overhead := end.Sub(f.start)
 	if up.Ms != nil {
