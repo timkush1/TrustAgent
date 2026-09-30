@@ -223,8 +223,10 @@ func (a *auditsAPI) direct(c *gin.Context) {
 			opts.MockScenario = s
 		}
 	}
-	// The trace is written even when the caller hangs up: its audit runs either way.
-	ctx := context.WithoutCancel(c.Request.Context())
+	// The trace is written even when the caller hangs up (its audit runs either way), but not
+	// for longer than directWriteTimeout: a stalled database must not hold the handler forever.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), directWriteTimeout)
+	defer cancel()
 	a.recordTrace(ctx, directTrace(traceID, auditID, &req, opts.MockScenario, callerIdentity(c)))
 	job := &worker.Job{
 		Request: &pb.AuditRequest{
@@ -287,6 +289,10 @@ const (
 	apiFormatDirect = "direct"
 	selectionDirect = "direct"
 )
+
+// directWriteTimeout bounds the trace writes of one direct audit (the audit workers bound theirs
+// the same way).
+const directWriteTimeout = 5 * time.Second
 
 // recordTrace stores a direct audit's trace and broadcasts trace_started. A failed write is logged
 // and counted: the audit still runs.

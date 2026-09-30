@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -193,4 +195,64 @@ func TestDirectAuditTraceAgainstPostgres(t *testing.T) {
 	}
 	_, detail := env.get("/api/traces/"+acc.TraceID, testKey)
 	contractstest.ValidateJSON(t, schemaTrace, detail)
+}
+
+// writeCtxStore records the context each direct-audit trace write ran on.
+type writeCtxStore struct {
+	*memStore
+	mu      sync.Mutex
+	ctxs    []context.Context
+	traceID string
+}
+
+func (w *writeCtxStore) StartTrace(ctx context.Context, t *store.TraceRecord) error {
+	w.record(ctx)
+	w.mu.Lock()
+	w.traceID = t.TraceID
+	w.mu.Unlock()
+	return w.memStore.StartTrace(ctx, t)
+}
+
+func (w *writeCtxStore) SetTraceAudit(ctx context.Context, traceID string, u store.TraceAuditUpdate) error {
+	w.record(ctx)
+	return w.memStore.SetTraceAudit(ctx, traceID, u)
+}
+
+func (w *writeCtxStore) record(ctx context.Context) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.ctxs = append(w.ctxs, ctx)
+}
+
+// TestDirectAuditWritesOutliveTheCallerButNotForever: a caller that already hung up still gets its
+// trace written and settled, and every write carries a deadline, so a stalled database cannot hold
+// the handler.
+func TestDirectAuditWritesOutliveTheCallerButNotForever(t *testing.T) {
+	st := &writeCtxStore{memStore: newMemStore()}
+	a := &auditsAPI{store: st, audits: directQueue{worker.ErrQueueFull}, maxTextChars: 1000, log: slog.New(slog.DiscardHandler)}
+	r := gin.New()
+	r.POST("/api/audit", a.direct)
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/api/audit", bytes.NewReader([]byte(`{"query":"q","response":"r"}`))).WithContext(gone)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("HTTP %d %s", w.Code, w.Body)
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.ctxs) != 2 {
+		t.Fatalf("%d trace writes, want the start and the drop", len(st.ctxs))
+	}
+	for i, ctx := range st.ctxs {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > directWriteTimeout {
+			t.Errorf("write %d: deadline %v %t, want one within %s", i, deadline, ok, directWriteTimeout)
+		}
+	}
+	tr, err := st.GetTrace(t.Context(), st.traceID)
+	if err != nil || tr.AuditStatus != store.TraceAuditDropped {
+		t.Errorf("trace %+v %v", tr, err)
+	}
 }
