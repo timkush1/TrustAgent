@@ -268,7 +268,8 @@ func (h *Handler) Serve(c *gin.Context) {
 		format = llmapi.FormatForPath(c.FullPath())
 	}
 	if format == "" {
-		writeError(c.Writer, familyFormat(path), http.StatusNotFound, CodeNotFound, "TrustAgent does not gate "+c.Request.Method+" "+path+".")
+		// Mount serves only the gated paths here; any other is not an LLM API TrustAgent gates.
+		writeError(c.Writer, familyFormat(path), http.StatusNotFound, CodeNotFound, "TrustAgent does not gate this path.")
 		return
 	}
 	body, err := io.ReadAll(c.Request.Body)
@@ -450,11 +451,17 @@ func familyFormat(path string) string {
 // §2.12): {"error":{"message","type":"trustagent_error","param":null,"code"}} on the OpenAI
 // formats, {"type":"error","error":{"type","message"}} on anthropic_messages.
 func writeError(w http.ResponseWriter, format string, status int, code, message string) {
+	// The format, which follows the request path, only picks the shape: the body is built from the
+	// gateway's own status, code and message (llmapi.ErrorBody, spelled out).
+	body := llmapi.OpenAIError(code, message)
+	if llmapi.IsAnthropic(format) {
+		body = llmapi.AnthropicError(llmapi.AnthropicErrorType(status), message)
+	}
 	w.Header().Del("Content-Length")
 	w.Header().Del("Content-Encoding")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = w.Write(llmapi.ErrorBody(format, status, code, message))
+	_, _ = w.Write(body)
 }
 
 // setBody replaces a request body (passthrough after the gateway's members are removed).
