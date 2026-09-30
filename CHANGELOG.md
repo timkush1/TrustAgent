@@ -8,6 +8,51 @@ RAG by default), Evaluator Studio, and a redesigned dashboard. The full
 specification is [docs/v2/SPEC.md](docs/v2/SPEC.md); progress is tracked by
 phase (P0 → P7).
 
+### Breaking changes (P3)
+- **Metric renames (M11).** Both services exported the same `trustagent_*`
+  names, so Prometheus counted every audit twice. The engine's metrics are now
+  `trustagent_engine_*` and the gateway's `trustagent_gateway_*`, and every
+  query of the provisioned Grafana dashboard filters by `job="proxy"` or
+  `job="engine"`. Update your dashboards and alerts:
+
+  | 1.0 name (exported by) | 2.0 name |
+  |---|---|
+  | `trustagent_audits_total{status}` (engine) | `trustagent_engine_audits_total{status}`; `status` adds `degraded` |
+  | `trustagent_audits_total{status}` (proxy) | `trustagent_gateway_audit_jobs_total{lane,selection,outcome}` |
+  | `trustagent_audit_duration_seconds` (engine) | `trustagent_engine_audit_duration_seconds` |
+  | `trustagent_audit_duration_seconds` (proxy) | `trustagent_gateway_audit_roundtrip_seconds` (queue to stored result) |
+  | `trustagent_faithfulness_score` (both) | `trustagent_engine_faithfulness_score` |
+  | `trustagent_hallucinations_detected_total` (both) | `trustagent_engine_hallucinations_detected_total` |
+  | `trustagent_active_audits` (engine) | `trustagent_engine_active_audits` |
+  | `trustagent_active_audits` (proxy) | `trustagent_gateway_audit_queue_depth{lane}` |
+  | `trustagent_claims_total{status}` (both) | `trustagent_engine_claims_total{verdict}` (label renamed) |
+  | `trustagent_websocket_clients` (proxy) | `trustagent_gateway_ws_clients` |
+
+  New engine series: `stage_duration_seconds{stage}`,
+  `judge_requests_total{provider,outcome}`, `judge_tokens_total{provider,direction}`,
+  `judge_cost_usd_total{provider}`, `judge_fallback_active`, `rpc_inflight{method}`,
+  `gate_vs_audit_total{gate_action,audit_verdict}`, `kb_ingest_claims_total{status}`.
+  The gateway's full set is in SPEC Appendix B and [docs/GATEWAY.md](docs/GATEWAY.md#14-metrics).
+- **WebSocket v1 is removed (D13).** A `GET /ws` handshake without `protocol=2`
+  answers 400 `bad_request` before the upgrade ("WS v1 was removed; connect
+  with ?protocol=2"). The `audit_result` frames and the 1.0 `/api/audits`
+  response shape are gone; clients read the v2 events (`trace_started`,
+  `gate_decision`, `audit_completed`, ...) and `GET /api/traces`.
+- **`POST /api/upload` is removed.** Upload knowledge documents with
+  `POST /api/kb/documents` (admin scope; the knowledge add-on must be on).
+- **`/v1` enforces.** Block and fallback routes now change what your client
+  receives (block bodies, fallback answers, see
+  [docs/GATEWAY.md](docs/GATEWAY.md)); P2 only observed and flagged.
+  `/v1/messages` (Anthropic) and `/v1/completions` are gated like chat
+  completions, and TrustAgent's own errors on `/v1` come in the route's API
+  shape (Anthropic routes answer in Anthropic's error format).
+- **`test_mode_disabled` is 400** on `/v1` (a `test_response` sent without
+  `TRUTHTABLE_TEST_MODE`), now in the route's error shape. SPEC §2.4 listed it
+  under 403; that list is for `/api`, and the SPEC is corrected (D8).
+- **trafficgen:** the default phase is `p3`, and `--expect` exits 1 when a
+  selected scenario is skipped because of its phase unless `--allow-skip` is
+  given, so a check can no longer pass without testing anything.
+
 ### Added (so far)
 - **v2 specification and design notes** (`docs/v2/`), plus recorded baseline
   test results.
@@ -117,6 +162,33 @@ phase (P0 → P7).
   impact, versions and rollback), Playground, Evaluators (library, detail,
   reliability) and Knowledge.
 
+- **P3 gateway** ([docs/GATEWAY.md](docs/GATEWAY.md)): one gated handler for
+  OpenAI chat, completions and Anthropic Messages, JSON and SSE. Passthrough
+  streams hold the terminal event for the decision and send it as an SSE
+  comment and HTTP trailers; `streaming: buffer` routes can block and fall
+  back on streams; `GET /v1/trustagent/decisions/:trace_id` long-polls a
+  decision. Fallback re-gates the second answer before sending it. Upstream
+  failures, tool-call-only answers and late decisions are never enforced;
+  `n > 1` gates choice 0. Inject mode is decided per upstream (OpenAI,
+  Anthropic, fallback). Calibration files in `TRUTHTABLE_CALIBRATION_DIR` are
+  re-read every 30 s (WS `calibration_updated`).
+- **P3 REST:** `GET /health/ready`, `/api/gate/decisions`,
+  `/api/gate/reliability`, `/api/pricing`, `/api/export/replay` (admin) and
+  `POST /api/playground/run` (admin).
+- **Developer experience (P3):** `make demo` and `make up` open the one-time
+  setup link (or the dashboard when an admin exists), `make demo-setup-url`
+  prints it alone and `make setup-url` finds the running stack; `make check`
+  runs every CI gate (superseded identifiers, generated types, the api.v1
+  schema, `tsc -b`, both web builds, the size budget, the recording);
+  `make doctor` checks setup, the fast check (backend, reason, snapshot,
+  latency, cost), calibration, policy and route downgrades, and both metrics
+  endpoints; `npx playwright test --project=static` serves the static site
+  itself; ci-e2e runs the M-Demo gate and the e2e stack's p3 scenarios;
+  `make load-test-gate` measures the gateway's overhead with k6 against
+  mock-upstream. New [docs/GATEWAY.md](docs/GATEWAY.md) and
+  [docs/EVALUATORS.md](docs/EVALUATORS.md); the README and
+  [docs/DEMO.md](docs/DEMO.md) describe 2.0.
+
 ### Changed
 - **Scoring v2** (ADR-001 in [docs/DECISIONS.md](docs/DECISIONS.md)): per-claim
   verdict distributions, flags, `p_hallucinated`, coverage and a trust score that
@@ -160,6 +232,15 @@ phase (P0 → P7).
   to an existing audit.
 
 ### Migration notes
+- **Metrics:** replace the 1.0 names in dashboards and alerts using the table
+  under *Breaking changes (P3)*, and add a `job` filter to every query
+  (`config/grafana/dashboards/trustagent.json` shows the pattern). The
+  provisioned Grafana datasource now has the uid `prometheus`.
+- **WebSocket clients** connect with `GET /ws?protocol=2` and read the v2
+  envelope (docs/v2/SPEC.md §2.5).
+- **Before turning on block or fallback,** read the block-readiness checklist
+  on the Policies page: a route without a measured calibration for the current
+  Jev snapshot, or a passthrough stream, acts as flag until fixed.
 - **No downgrade after migration 0002**: v1 binaries cannot scan the nullable
   score columns 0002 introduces. Back up the database before upgrading.
 - Compose services no longer set `container_name`; use

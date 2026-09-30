@@ -35,13 +35,17 @@ The Python audit engine is the core intelligence of TrustAgent. It receives audi
 
 ### Observability
 - **LangSmith Integration** - Optional tracing for LangGraph pipelines
-- **Prometheus Metrics** - Exposed on port 8001
-  - `truthtable_audits_total{status}` - Total audits processed
-  - `truthtable_audit_duration_seconds` - Pipeline execution time
-  - `truthtable_faithfulness_score` - Score distribution
-  - `truthtable_claims_total{status}` - Claim verification outcomes
-  - `truthtable_hallucinations_detected_total` - Hallucinations caught
-  - `truthtable_active_audits` - Currently processing audits
+- **Prometheus Metrics** - Exposed on port 8001 (`METRICS_PORT`), all named `trustagent_engine_*`
+  (the gateway's are `trustagent_gateway_*`; SPEC Appendix B)
+  - `trustagent_engine_audits_total{status}` - Audits by outcome: success, degraded or error
+  - `trustagent_engine_audit_duration_seconds` - Pipeline execution time
+  - `trustagent_engine_faithfulness_score` - Trust-score distribution
+  - `trustagent_engine_claims_total{verdict}` - Checked claims by verdict
+  - `trustagent_engine_hallucinations_detected_total` - Audits with the verdict HALLUCINATED
+  - `trustagent_engine_active_audits` - Audits running now
+  - `trustagent_engine_stage_duration_seconds{stage}`, `trustagent_engine_judge_*`,
+    `trustagent_engine_rpc_inflight{method}`, `trustagent_engine_gate_vs_audit_total`,
+    `trustagent_engine_kb_ingest_claims_total{status}` - see `src/truthtable/metrics.py`
 - **Step Timings** - Per-node execution time (decompose_ms, retrieve_ms, verify_ms, score_ms)
 
 ### gRPC API
@@ -281,23 +285,26 @@ pytest tests/integration/ -v
 
 ### Prometheus Metrics
 
-Metrics exposed at `http://localhost:8001/metrics`:
+Metrics are exposed at `http://localhost:8001/metrics` when the engine runs on your machine
+(`make dev-python`); in the compose stack Prometheus scrapes `engine:8001` as job `engine`. The
+sample below shows the format; its values are made up:
 
 ```
 # Counters
-truthtable_audits_total{status="success"} 42
-truthtable_audits_total{status="error"} 3
-truthtable_hallucinations_detected_total 12
-truthtable_claims_total{status="SUPPORTED"} 80
-truthtable_claims_total{status="UNSUPPORTED"} 15
+trustagent_engine_audits_total{status="success"} 42
+trustagent_engine_audits_total{status="degraded"} 2
+trustagent_engine_audits_total{status="error"} 3
+trustagent_engine_hallucinations_detected_total 12
+trustagent_engine_claims_total{verdict="supported"} 80
+trustagent_engine_claims_total{verdict="unsupported"} 15
 
 # Histograms
-truthtable_audit_duration_seconds_bucket{le="1.0"} 10
-truthtable_audit_duration_seconds_bucket{le="5.0"} 35
-truthtable_faithfulness_score_bucket{le="0.8"} 12
+trustagent_engine_audit_duration_seconds_bucket{le="1.0"} 10
+trustagent_engine_audit_duration_seconds_bucket{le="5.0"} 35
+trustagent_engine_faithfulness_score_bucket{le="0.8"} 12
 
 # Gauges
-truthtable_active_audits 2
+trustagent_engine_active_audits 2
 ```
 
 ### LangSmith Tracing

@@ -254,6 +254,15 @@ The worker gets the result back over gRPC and does two things
   tables `audits` + `audit_claims`) — that powers the History view and the
   `GET /api/audits` endpoint, and survives restarts.
 
+> **Changed in 2.0.** The hub now speaks WebSocket protocol v2 (`GET /ws?protocol=2`: one
+> envelope per event with a sequence number, replay after a reconnect, and gap events that tell
+> the client to resync). The dashboard receives `trace_started`, `gate_decision`,
+> `audit_queued`, `audit_started` and `audit_completed` instead of `audit_result`. Traces,
+> gate decisions and audits live in the `traces`, `gate_decisions` and `audits` tables
+> (migration 0002) and are read through `GET /api/traces`. WS v1 frames and the 1.0
+> `/api/audits` response shape are removed at the end of P3 ([CHANGELOG](../CHANGELOG.md)).
+> The rest of this walkthrough still describes 1.0; its rewrite is planned for P5.
+
 ### Step 5 — the dashboard renders it
 
 The browser keeps one **WebSocket** open to `ws://localhost:8080/ws`. A WebSocket is a

@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,156 +9,745 @@
   "links": [],
   "panels": [
     {
+      "title": "Deep audits (engine)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": [],
+      "id": 1
+    },
+    {
       "title": "Audit Throughput",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
-          "expr": "rate(trustagent_audits_total[5m])",
-          "legendFormat": "Go Proxy - {{status}}"
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(trustagent_gateway_audit_jobs_total{job=\"proxy\"}[5m]))",
+          "legendFormat": "Gateway jobs - {{outcome}}"
         },
         {
-          "expr": "rate(trustagent_audits_total[5m])",
-          "legendFormat": "Python Engine - {{status}}"
+          "refId": "B",
+          "expr": "sum by (status) (rate(trustagent_engine_audits_total{job=\"engine\"}[5m]))",
+          "legendFormat": "Engine audits - {{status}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
           "unit": "ops"
         }
-      }
+      },
+      "description": "Deep-audit jobs the gateway queued, by outcome, next to the audits the engine ran, by status. Each series comes from one job, so nothing is counted twice.",
+      "id": 2
     },
     {
       "title": "Hallucination Rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
         {
-          "expr": "rate(trustagent_hallucinations_detected_total[5m]) / rate(trustagent_audits_total{status=\"success\"}[5m])",
-          "legendFormat": "Hallucination Rate"
+          "refId": "A",
+          "expr": "sum(rate(trustagent_engine_hallucinations_detected_total{job=\"engine\"}[5m])) / sum(rate(trustagent_engine_audits_total{job=\"engine\",status!=\"error\"}[5m]))",
+          "legendFormat": "Hallucination rate"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": { "drawStyle": "line", "fillOpacity": 10 },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
           "unit": "percentunit",
           "thresholds": {
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.2 },
-              { "color": "red", "value": 0.5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.2
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
             ]
           }
         }
-      }
+      },
+      "description": "Share of finished deep audits (success or degraded) with the verdict HALLUCINATED.",
+      "id": 3
     },
     {
       "title": "Total Audits",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "trustagent_audits_total{status=\"success\"}", "legendFormat": "Total" }
+        {
+          "refId": "A",
+          "expr": "sum(trustagent_engine_audits_total{job=\"engine\",status!=\"error\"})",
+          "legendFormat": "Total"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } }
-      }
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "description": "Finished deep audits (success or degraded) since the engine started.",
+      "id": 4
     },
     {
       "title": "Hallucinations Detected",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "trustagent_hallucinations_detected_total", "legendFormat": "Hallucinations" }
+        {
+          "refId": "A",
+          "expr": "sum(trustagent_engine_hallucinations_detected_total{job=\"engine\"})",
+          "legendFormat": "Hallucinations"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }
-      }
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "id": 5
     },
     {
       "title": "Active Audits",
       "type": "gauge",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "trustagent_active_audits", "legendFormat": "Active" }
+        {
+          "refId": "A",
+          "expr": "sum(trustagent_engine_active_audits{job=\"engine\"})",
+          "legendFormat": "Active"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "min": 0, "max": 20, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 10 }] } }
-      }
+        "defaults": {
+          "min": 0,
+          "max": 20,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "id": 6
     },
     {
       "title": "WebSocket Clients",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "trustagent_websocket_clients", "legendFormat": "Connected" }
+        {
+          "refId": "A",
+          "expr": "sum(trustagent_gateway_ws_clients{job=\"proxy\"})",
+          "legendFormat": "Connected"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } }
-      }
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "id": 7
     },
     {
-      "title": "Average Faithfulness Score",
+      "title": "Median Trust Score",
       "type": "gauge",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "histogram_quantile(0.5, rate(trustagent_faithfulness_score_bucket[5m]))", "legendFormat": "Median Score" }
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(trustagent_engine_faithfulness_score_bucket{job=\"engine\"}[5m])))",
+          "legendFormat": "Median score"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "min": 0, "max": 1, "unit": "percentunit", "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.8 }] } }
-      }
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          }
+        }
+      },
+      "description": "Median trust score of the audits that have one (an audit with nothing checkable has none).",
+      "id": 8
     },
     {
-      "title": "Claims by Status",
+      "title": "Claims by Verdict",
       "type": "piechart",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "trustagent_claims_total", "legendFormat": "{{status}}" }
-      ]
+        {
+          "refId": "A",
+          "expr": "sum by (verdict) (trustagent_engine_claims_total{job=\"engine\"})",
+          "legendFormat": "{{verdict}}"
+        }
+      ],
+      "id": 9
     },
     {
       "title": "Audit Duration (p50, p90, p99)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "histogram_quantile(0.50, rate(trustagent_audit_duration_seconds_bucket[5m]))", "legendFormat": "p50" },
-        { "expr": "histogram_quantile(0.90, rate(trustagent_audit_duration_seconds_bucket[5m]))", "legendFormat": "p90" },
-        { "expr": "histogram_quantile(0.99, rate(trustagent_audit_duration_seconds_bucket[5m]))", "legendFormat": "p99" }
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(trustagent_engine_audit_duration_seconds_bucket{job=\"engine\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(trustagent_engine_audit_duration_seconds_bucket{job=\"engine\"}[5m])))",
+          "legendFormat": "p90"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(trustagent_engine_audit_duration_seconds_bucket{job=\"engine\"}[5m])))",
+          "legendFormat": "p99"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }
-      }
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "s"
+        }
+      },
+      "id": 10
     },
     {
       "title": "Faithfulness Score Distribution",
       "type": "histogram",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "targets": [
-        { "expr": "rate(trustagent_faithfulness_score_bucket[5m])", "legendFormat": "{{le}}", "format": "heatmap" }
+        {
+          "refId": "A",
+          "expr": "sum by (le) (rate(trustagent_engine_faithfulness_score_bucket{job=\"engine\"}[5m]))",
+          "legendFormat": "{{le}}",
+          "format": "heatmap"
+        }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short" }
-      }
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "id": 11
+    },
+    {
+      "title": "Stage Duration p95",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(trustagent_engine_stage_duration_seconds_bucket{job=\"engine\"}[5m])))",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "s"
+        }
+      },
+      "description": "Decompose, retrieve (knowledge add-on only), verify and score.",
+      "id": 12
+    },
+    {
+      "title": "Judge Calls by Outcome",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (provider, outcome) (rate(trustagent_engine_judge_requests_total{job=\"engine\"}[5m]))",
+          "legendFormat": "{{provider}} - {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "ops"
+        }
+      },
+      "id": 13
+    },
+    {
+      "title": "Gateway (fast check and policy)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "panels": [],
+      "id": 14
+    },
+    {
+      "title": "Requests by Action",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(trustagent_gateway_requests_total{job=\"proxy\"}[5m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "reqps"
+        }
+      },
+      "description": "Answers the gateway delivered, by the action it took: pass, flag, block or fallback.",
+      "id": 15
+    },
+    {
+      "title": "Gateway Overhead p95",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(trustagent_gateway_overhead_seconds_bucket{job=\"proxy\"}[5m])))",
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "s"
+        }
+      },
+      "description": "Time the gateway added to each answer, by route mode (the upstream's own time excluded).",
+      "id": 16
+    },
+    {
+      "title": "Gate Decisions by Status",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(trustagent_gateway_gate_decisions_total{job=\"proxy\"}[5m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "ops"
+        }
+      },
+      "id": 17
+    },
+    {
+      "title": "Fast Check (Jev) Calls by Outcome",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (backend, outcome) (rate(trustagent_gateway_jev_requests_total{job=\"proxy\"}[5m]))",
+          "legendFormat": "{{backend}} - {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "ops"
+        }
+      },
+      "id": 18
+    },
+    {
+      "title": "Fast Check (Jev) Latency p95",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, backend) (rate(trustagent_gateway_jev_seconds_bucket{job=\"proxy\"}[5m])))",
+          "legendFormat": "{{backend}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "s"
+        }
+      },
+      "id": 19
+    },
+    {
+      "title": "Fallbacks by Outcome",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 46
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(trustagent_gateway_fallback_total{job=\"proxy\"}[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "ops"
+        }
+      },
+      "id": 20
+    },
+    {
+      "title": "Gate Action vs Audit Verdict (1 h)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 46
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (gate_action, audit_verdict) (increase(trustagent_engine_gate_vs_audit_total{job=\"engine\"}[1h]))",
+          "legendFormat": "{{gate_action}} / {{audit_verdict}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "short"
+        }
+      },
+      "description": "Audited answers by what the fast check decided and what the deep audit found: the raw material of calibration.",
+      "id": 21
+    },
+    {
+      "title": "Judge Spend, 24 h (estimate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 46
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (provider) (increase(trustagent_engine_judge_cost_usd_total{job=\"engine\"}[24h]))",
+          "legendFormat": "{{provider}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "description": "Estimated from token counts and the price table; mock judges cost nothing.",
+      "id": 22
     }
   ],
   "schemaVersion": 38,
-  "tags": ["trustagent", "hallucination"],
-  "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": [
+    "trustagent",
+    "hallucination"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "TrustAgent - Hallucination Detection",
   "uid": "trustagent-main",
-  "version": 1,
+  "version": 2,
   "refresh": "10s"
 }

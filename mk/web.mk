@@ -12,9 +12,12 @@ install-react: ## Install Node dependencies (npm install)
 dev-react: ## Run React dashboard in development mode
 	cd frontend-react && npm run dev
 
-test-react: ## Run React tests only (vitest)
+# Extra vitest flags, e.g. VITEST_FLAGS=--maxWorkers=2 on a small machine (make check VITEST_FLAGS=...).
+VITEST_FLAGS ?=
+
+test-react: ## Run React tests only (vitest; VITEST_FLAGS=--maxWorkers=2 limits the workers)
 	@echo "Running React tests..."
-	cd frontend-react && npm test
+	cd frontend-react && npm test$(if $(VITEST_FLAGS), -- $(VITEST_FLAGS))
 
 lint-react: ## Run eslint
 	@echo "Linting React..."
@@ -59,8 +62,9 @@ vectors-ts: ## Run the golden vectors against the TypeScript decision core (src/
 # The `stack` project runs against a running stack's dashboard: start one with `make demo`.
 # PLAYWRIGHT_BASE_URL overrides the address (default http://localhost:${DASHBOARD_HOST_PORT:-3000}).
 # PLAYWRIGHT_ARGS narrows the run, e.g. `make test-e2e-web PLAYWRIGHT_ARGS="-g skeleton"` (the S0 gate).
-# The policy-edit spec signs in as admin: set TRUSTAGENT_SETUP_URL (the proxy's SETUP link, or a new
-# one from `make setup-url`) or TRUSTAGENT_ADMIN_KEY; without either it is skipped with the reason.
+# The policy-edit spec signs in as admin: set TRUSTAGENT_SETUP_URL (the demo's one-time setup link:
+# export TRUSTAGENT_SETUP_URL="$(make -s demo-setup-url)") or TRUSTAGENT_ADMIN_KEY (a key from
+# TRUTHTABLE_ADMIN_KEYS).
 PLAYWRIGHT_ARGS ?=
 
 playwright-install: ## Install the Chromium build the Playwright specs use (once per machine; add --with-deps on a bare Linux box)
@@ -89,9 +93,24 @@ recording-check: ## Fail when the demo recording is stale or check_recording.py 
 test-e2e-static: ## Build the static site and run the Playwright static specs against vite preview
 	cd frontend-react && npm run build:static && PLAYWRIGHT_STATIC_PREVIEW=1 npx playwright test --project=static $(PLAYWRIGHT_ARGS)
 
+# ---------- The rest of CI's web and contract-type gates (ci-web.yml, ci-contracts.yml) ----------
+# `make check` runs eslint (lint) and vitest (test) already; this runs everything else CI does, one
+# step after another even under `make -j`: `npm run build` and `build:static` both write dist/, the
+# size budget reads the static build, and one build at a time suits a small machine.
+check-web-ci: ## CI's other web gates in order: generated types, policy validator, api.v1 schema, tsc -b, build, build-static, size, recording
+	@$(MAKE) --no-print-directory gen-types-check
+	@$(MAKE) --no-print-directory gen-policy-validator-check
+	@$(MAKE) --no-print-directory gen-api-schema-check
+	cd frontend-react && npx tsc -b
+	cd frontend-react && npm run build
+	@$(MAKE) --no-print-directory build-static
+	@$(MAKE) --no-print-directory size-landing
+	@$(MAKE) --no-print-directory recording-check
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
 install: install-react
 test: test-react
 lint: lint-react
 fmt: fmt-react
 clean: clean-react
+check: check-web-ci
