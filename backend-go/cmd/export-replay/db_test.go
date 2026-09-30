@@ -110,7 +110,7 @@ func TestRunAgainstPostgres(t *testing.T) {
 			return ""
 		},
 		now: time.Now, rev: func() string { return "0123abcd4567" },
-		openDB: func(ctx context.Context, url string) (traceStore, func(), error) {
+		openDB: func(ctx context.Context, url string) (recording.TraceStore, func(), error) {
 			ro, err := store.OpenPostgresStore(ctx, url)
 			if err != nil {
 				return nil, nil, err

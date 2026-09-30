@@ -52,7 +52,7 @@ func main() {
 	defer stop()
 	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr, deps{
 		getenv: os.Getenv, now: time.Now, rev: gitRevision,
-		openDB: func(ctx context.Context, url string) (traceStore, func(), error) {
+		openDB: func(ctx context.Context, url string) (recording.TraceStore, func(), error) {
 			s, err := store.OpenPostgresStore(ctx, url)
 			if err != nil {
 				return nil, nil, err
@@ -67,7 +67,7 @@ type deps struct {
 	getenv func(string) string
 	now    func() time.Time
 	rev    func() string
-	openDB func(ctx context.Context, url string) (traceStore, func(), error)
+	openDB func(ctx context.Context, url string) (recording.TraceStore, func(), error)
 	client *http.Client
 }
 
@@ -93,7 +93,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	fl.StringVar(&until, "until", "", "export traces created before this RFC 3339 time")
 	fl.StringVar(&source, "source", "", "only traces from this source (proxy, direct, playground, test, trafficgen)")
 	fl.StringVar(&route, "route", "", "only traces of this route")
-	fl.IntVar(&limit, "limit", maxTraces, "most traces to export (the newest; at most 200)")
+	fl.IntVar(&limit, "limit", recording.MaxTraces, "most traces to export (the newest; at most 200)")
 	fl.StringVar(&judgeProvider, "judge-provider", "", "judge provider, when no exported trace has a deep audit")
 	fl.StringVar(&judgeModel, "judge-model", "", "judge model, when no exported trace has a deep audit")
 	fl.StringVar(&gitSHA, "git-sha", "", "git revision recorded in the manifest (default: git rev-parse HEAD)")
@@ -113,9 +113,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		fl.Usage()
 		return exitUsage
 	}
-	f := filter{source: source, route: route, limit: limit}
-	if limit < 1 || limit > maxTraces {
-		return usage("--limit must be between 1 and %d", maxTraces)
+	f := recording.Filter{Source: source, Route: route, Limit: limit}
+	if limit < 1 || limit > recording.MaxTraces {
+		return usage("--limit must be between 1 and %d", recording.MaxTraces)
 	}
 	if source != "" && !slices.Contains(traceSources, source) {
 		return usage("unknown --source %q (want one of %s)", source, strings.Join(traceSources, ", "))
@@ -123,7 +123,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	for _, p := range []struct {
 		name, v string
 		dst     **time.Time
-	}{{"since", since, &f.since}, {"until", until, &f.until}} {
+	}{{"since", since, &f.Since}, {"until", until, &f.Until}} {
 		if p.v == "" {
 			continue
 		}
@@ -219,7 +219,7 @@ func openSource(ctx context.Context, d deps, databaseURL, api, apiKeyFile string
 	if err != nil {
 		return nil, nil, err
 	}
-	return &dbSource{store: st, now: d.now}, closeDB, nil
+	return &recording.DBSource{Store: st, Now: d.now, Bodies: true}, closeDB, nil
 }
 
 // writeRecording writes manifest.json and traces/<id>.json under dir, sanitized. An existing

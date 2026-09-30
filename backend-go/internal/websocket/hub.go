@@ -1,5 +1,5 @@
-// Package websocket is the dashboard's live stream: WS protocol v2 (SPEC §2.5), with v1 frames
-// for clients that do not negotiate v2.
+// Package websocket is the dashboard's live stream: WS protocol v2 (SPEC §2.5). A handshake
+// without protocol=2 is refused with 400 before the upgrade: WS v1 was removed at the end of P3.
 //
 // Hub.Run alone owns the client map, the replay ring and the sequence counter (B6): producers
 // hand events to Run through one buffered channel, and connections talk to it through register
@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,11 +31,8 @@ import (
 	"github.com/truthtable/backend-go/internal/metrics"
 )
 
-// Protocol versions.
-const (
-	ProtocolV1 = 1
-	ProtocolV2 = 2
-)
+// ProtocolV2 is the only protocol the hub speaks (GET /ws?protocol=2).
+const ProtocolV2 = 2
 
 // Close codes (SPEC §2.5).
 const (
@@ -61,16 +59,13 @@ const (
 
 // Event is one event to broadcast. Data is the JSON of the event's data object. Redacted is the
 // variant for clients without the content scope (nil: Data). Ring is the variant the replay ring
-// keeps (nil: Data); audit_completed keeps its audit without context_used there. V1Type and V1
-// make the frame v1 clients get (nil V1: v1 clients do not get this event).
+// keeps (nil: Data); audit_completed keeps its audit without context_used there.
 type Event struct {
 	Type     string
 	TraceID  string
 	Data     json.RawMessage
 	Redacted json.RawMessage
 	Ring     json.RawMessage
-	V1Type   string
-	V1       json.RawMessage
 }
 
 // NewEvent marshals the full and the redacted data of an event; a nil redacted means the data
@@ -184,6 +179,10 @@ type Hub struct {
 	perIP   map[string]int
 	seq     int64
 	ring    *ring
+
+	// statusMu guards lastStatus, the last state PublishStatus broadcast per component.
+	statusMu   sync.Mutex
+	lastStatus map[string]string
 }
 
 // NewHub builds a hub.
@@ -194,7 +193,8 @@ func NewHub(cfg Config) *Hub {
 		events: make(chan Event, cfg.ProducerBuffer), register: make(chan *registration),
 		unregister: make(chan *client), done: make(chan struct{}),
 		clients: map[*client]struct{}{}, perIP: map[string]int{},
-		ring: newRing(max(cfg.ReplayEvents, 0), cfg.ReplayMaxBytes),
+		ring:       newRing(max(cfg.ReplayEvents, 0), cfg.ReplayMaxBytes),
+		lastStatus: map[string]string{},
 	}
 	origins, extra := slices.Clone(cfg.AllowedOrigins), cfg.OriginAllowed
 	h.upgrader = websocket.Upgrader{ReadBufferSize: 1024, WriteBufferSize: 4096, CheckOrigin: func(r *http.Request) bool {
@@ -219,6 +219,36 @@ func (h *Hub) Publish(ev Event) {
 		h.overflow.Add(1)
 		metrics.WSDropped.Inc()
 	}
+}
+
+// StatusUnknown is every component's state before PublishStatus broadcast one.
+const StatusUnknown = "unknown"
+
+// PublishStatus broadcasts status{component, state, detail?} (SPEC §2.5) when state differs from
+// the component's last broadcast state (StatusUnknown before the first), and reports whether it
+// did: status events are transitions only, so a repeated state is never broadcast, whichever
+// goroutine reports it. The detail carries no content.
+func (h *Hub) PublishStatus(component, state, detail string) bool {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	last, ok := h.lastStatus[component]
+	if !ok {
+		last = StatusUnknown
+	}
+	if state == last {
+		return false
+	}
+	data := map[string]string{"component": component, "state": state}
+	if detail != "" {
+		data["detail"] = detail
+	}
+	ev, err := NewEvent("status", "", data, nil)
+	if err != nil {
+		return false
+	}
+	h.lastStatus[component] = state
+	h.Publish(ev)
+	return true
 }
 
 // Run owns the hub state until ctx ends, then closes every client.
@@ -258,13 +288,6 @@ type envelope struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-// v1Frame is the frame of protocol v1.
-type v1Frame struct {
-	Type      string          `json:"type"`
-	Timestamp string          `json:"timestamp"`
-	Data      json.RawMessage `json:"data,omitempty"`
-}
-
 func (h *Hub) frame(seq int64, typ, traceID string, ts time.Time, data json.RawMessage) []byte {
 	b, err := json.Marshal(envelope{V: ProtocolV2, Seq: &seq, Epoch: h.cfg.Epoch, Type: typ, TS: formatTS(ts), TraceID: traceID, Data: data})
 	if err != nil {
@@ -302,10 +325,6 @@ func (h *Hub) dispatch(ev Event) {
 			ringRedacted = ringFull
 		}
 	}
-	var v1 []byte
-	if ev.V1 != nil {
-		v1, _ = json.Marshal(v1Frame{Type: ev.V1Type, Timestamp: now.Format(time.RFC3339), Data: ev.V1})
-	}
 	h.seq = seq
 	size := int64(len(ringFull))
 	if ev.Redacted != nil {
@@ -313,7 +332,7 @@ func (h *Hub) dispatch(ev Event) {
 	}
 	h.ring.push(ringEntry{seq: seq, ts: now, full: ringFull, redacted: ringRedacted, size: size})
 	for c := range h.clients {
-		h.deliver(c, seq, now, c.pick(full, redacted, v1))
+		h.deliver(c, seq, now, c.pick(full, redacted))
 	}
 }
 
@@ -332,9 +351,6 @@ func (h *Hub) deliver(c *client, seq int64, ts time.Time, frame []byte) {
 	case c.send <- frame:
 	default:
 		metrics.WSDropped.Inc()
-		if c.protocol != ProtocolV2 {
-			return
-		}
 		c.gapFrom, c.gapTo, c.gapTS = seq, seq, ts
 	}
 }
@@ -384,9 +400,6 @@ func (h *Hub) flushOverflow() {
 	h.seq += n
 	h.cfg.Logger.Warn("ws: the event channel overflowed; clients will resync", "dropped", n)
 	for c := range h.clients {
-		if c.protocol != ProtocolV2 {
-			continue
-		}
 		if c.gapFrom == 0 {
 			c.gapFrom, c.gapTS, c.overflowGap = from, now, true
 		}
@@ -432,9 +445,6 @@ func (h *Hub) add(r *registration) error {
 	h.count.Store(int64(len(h.clients)))
 	metrics.WSClients.Set(float64(len(h.clients)))
 	c.lastWrite.Store(h.cfg.Now().UnixNano())
-	if c.protocol != ProtocolV2 {
-		return nil
-	}
 
 	var (
 		replay       []ringEntry
@@ -481,7 +491,7 @@ func (h *Hub) add(r *registration) error {
 		c.send <- gap
 	}
 	for _, e := range replay {
-		h.deliver(c, e.seq, e.ts, c.pick(e.full, e.redacted, nil))
+		h.deliver(c, e.seq, e.ts, c.pick(e.full, e.redacted))
 	}
 	return nil
 }
@@ -509,17 +519,22 @@ type ConnOptions struct {
 	IP string
 }
 
+// protocolRequired is the ApiErrorBody of a handshake without protocol=2 (SPEC §2.4 error shape).
+var protocolRequired = []byte(`{"error":{"code":"bad_request","message":"WS v1 was removed; connect with ?protocol=2"}}`)
+
 // ServeWS upgrades an authenticated request and serves it until either side closes. The query
-// selects the protocol (protocol=2; anything else is v1) and, for v2, the replay position
-// (since_seq and epoch). Over the connection caps the socket closes with 4429.
+// must negotiate protocol=2 (anything else is refused with 400 before the upgrade) and may carry
+// the replay position (since_seq and epoch). Over the connection caps the socket closes with 4429.
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, opts ConnOptions) {
 	q := r.URL.Query()
-	protocol := ProtocolV1
-	if q.Get("protocol") == "2" {
-		protocol = ProtocolV2
+	if q.Get("protocol") != strconv.Itoa(ProtocolV2) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(protocolRequired)
+		return
 	}
 	var since *int64
-	if raw := q.Get("since_seq"); raw != "" && protocol == ProtocolV2 {
+	if raw := q.Get("since_seq"); raw != "" {
 		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n >= 0 {
 			since = &n
 		}
@@ -529,7 +544,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, opts ConnOptions) 
 		h.cfg.Logger.Info("ws: upgrade failed", "err", err)
 		return
 	}
-	c := &client{conn: conn, send: make(chan []byte, h.cfg.ClientBuffer), protocol: protocol, content: opts.Content, ip: opts.IP}
+	c := &client{conn: conn, send: make(chan []byte, h.cfg.ClientBuffer), content: opts.Content, ip: opts.IP}
 	reg := &registration{c: c, sinceSeq: since, epoch: q.Get("epoch"), reply: make(chan error, 1)}
 	select {
 	case h.register <- reg:
@@ -552,11 +567,10 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, opts ConnOptions) 
 
 // client is one connection. The gap fields are owned by Run.
 type client struct {
-	conn     *websocket.Conn
-	send     chan []byte
-	protocol int
-	content  bool
-	ip       string
+	conn    *websocket.Conn
+	send    chan []byte
+	content bool
+	ip      string
 	// lastWrite is the unix nanos of the last successful write (the pump stores, Run reads).
 	lastWrite atomic.Int64
 
@@ -573,22 +587,15 @@ func (c *client) gapReason() string {
 }
 
 // pick returns the frame variant for c.
-func (c *client) pick(full, redacted, v1 []byte) []byte {
-	switch {
-	case c.protocol != ProtocolV2:
-		if !c.content {
-			return nil
-		}
-		return v1
-	case c.content:
+func (c *client) pick(full, redacted []byte) []byte {
+	if c.content {
 		return full
-	default:
-		return redacted
 	}
+	return redacted
 }
 
 // writePump writes queued frames, one message per frame (B5), and a heartbeat every interval: an
-// hb frame for v2 clients and a ping for everyone.
+// hb frame and a ping.
 func (c *client) writePump(h *Hub) {
 	ticker := time.NewTicker(h.cfg.Heartbeat)
 	defer func() {
@@ -609,11 +616,9 @@ func (c *client) writePump(h *Hub) {
 			c.lastWrite.Store(h.cfg.Now().UnixNano())
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if c.protocol == ProtocolV2 {
-				hb, _ := json.Marshal(envelope{V: ProtocolV2, Type: "hb", TS: formatTS(h.cfg.Now())})
-				if err := c.conn.WriteMessage(websocket.TextMessage, hb); err != nil {
-					return
-				}
+			hb, _ := json.Marshal(envelope{V: ProtocolV2, Type: "hb", TS: formatTS(h.cfg.Now())})
+			if err := c.conn.WriteMessage(websocket.TextMessage, hb); err != nil {
+				return
 			}
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

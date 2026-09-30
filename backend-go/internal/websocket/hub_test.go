@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -279,27 +280,36 @@ func TestGapWhenReplayIsImpossible(t *testing.T) {
 	}
 }
 
-func TestV1ClientsGetV1FramesOnly(t *testing.T) {
+// TestHandshakeWithoutProtocol2IsRefused: WS v1 was removed, so a handshake that does not
+// negotiate protocol=2 gets 400 bad_request (an ApiErrorBody) before the upgrade, and no client
+// is registered.
+func TestHandshakeWithoutProtocol2IsRefused(t *testing.T) {
 	h := startHub(t, Config{}, true)
-	conn := dial(t, h, "", nil)
-	waitClients(t, h.Hub, 1)
-	h.Publish(policyEvent(t, 1)) // no v1 variant: not sent
-	ev := event(t, "audit_completed", "t1", map[string]any{"audit": 1}, nil)
-	ev.V1Type, ev.V1 = "audit_result", json.RawMessage(`{"audit_id":"a1"}`)
-	h.Publish(ev)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		t.Fatal(err)
+	for _, query := range []string{"", "protocol=1", "protocol=v2", "since_seq=1"} {
+		conn, resp, err := websocket.DefaultDialer.Dial(h.url+"/ws?"+query, nil)
+		if err == nil {
+			_ = conn.Close()
+			t.Fatalf("%q: upgraded", query)
+		}
+		if resp == nil || resp.StatusCode != http.StatusBadRequest || !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
+			t.Fatalf("%q: want 400 JSON, got %v", query, resp)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/ApiErrorBody", body)
+		var e struct {
+			Error struct{ Code, Message string } `json:"error"`
+		}
+		if json.Unmarshal(body, &e) != nil || e.Error.Code != "bad_request" || !strings.Contains(e.Error.Message, "protocol=2") {
+			t.Errorf("%q: body %s", query, body)
+		}
 	}
-	var f struct {
-		Type      string          `json:"type"`
-		Timestamp string          `json:"timestamp"`
-		Data      json.RawMessage `json:"data"`
-		V         *int            `json:"v"`
+	if n := h.ClientCount(); n != 0 {
+		t.Errorf("%d clients registered", n)
 	}
-	if err := json.Unmarshal(msg, &f); err != nil || f.Type != "audit_result" || string(f.Data) != `{"audit_id":"a1"}` || f.V != nil {
-		t.Fatalf("v1 frame %s (%v)", msg, err)
+	conn := dial(t, h, "protocol=2", nil)
+	if f := next(t, conn); f.Type != "hello" {
+		t.Errorf("v2 still connects: %s", f.raw)
 	}
 }
 
@@ -384,7 +394,7 @@ func TestConcurrentPublishConnectAndDisconnect(t *testing.T) {
 // The slow-consumer path, driven directly on Run's state (single goroutine).
 func TestSlowConsumerGetsOneGapBeforeTheNextEvent(t *testing.T) {
 	h := NewHub(Config{Logger: slog.New(slog.DiscardHandler)})
-	c := &client{send: make(chan []byte, 3), protocol: ProtocolV2, content: true}
+	c := &client{send: make(chan []byte, 3), content: true}
 	h.clients[c] = struct{}{}
 	for i := 1; i <= 5; i++ { // 3 fit, 4 and 5 are dropped
 		h.dispatch(policyEvent(t, i))
@@ -418,7 +428,7 @@ func TestSlowConsumerGetsOneGapBeforeTheNextEvent(t *testing.T) {
 
 func TestProducerOverflowBecomesAGap(t *testing.T) {
 	h := NewHub(Config{ProducerBuffer: 1, Logger: slog.New(slog.DiscardHandler)})
-	c := &client{send: make(chan []byte, 8), protocol: ProtocolV2, content: true}
+	c := &client{send: make(chan []byte, 8), content: true}
 	h.clients[c] = struct{}{}
 	h.Publish(policyEvent(t, 1))
 	h.Publish(policyEvent(t, 2)) // dropped
@@ -449,7 +459,7 @@ func TestReplayAcrossAnOverflowHoleIsAGap(t *testing.T) {
 	}
 
 	since := int64(1)
-	c := &client{send: make(chan []byte, 8), protocol: ProtocolV2, content: true}
+	c := &client{send: make(chan []byte, 8), content: true}
 	if err := h.add(&registration{c: c, sinceSeq: &since, epoch: h.Epoch()}); err != nil {
 		t.Fatal(err)
 	}
@@ -576,5 +586,67 @@ func TestOriginCheck(t *testing.T) {
 		} else if resp == nil || resp.StatusCode != http.StatusForbidden {
 			t.Errorf("origin %q: want 403, got %v", origin, resp)
 		}
+	}
+}
+
+// TestPublishStatusSendsTransitionsOnly: a component's state is broadcast when it changes, once,
+// whoever reports it; its first state is a change from unknown.
+func TestPublishStatusSendsTransitionsOnly(t *testing.T) {
+	h := startHub(t, Config{}, true)
+	conn := dial(t, h, "protocol=2", nil)
+	next(t, conn) // hello
+	waitClients(t, h.Hub, 1)
+	steps := []struct {
+		component, state, detail string
+		sent                     bool
+	}{
+		{"engine", "unknown", "", false}, // nothing reported yet
+		{"engine", "up", "", true},
+		{"engine", "up", "still up", false},
+		{"judge", "up", "", true},
+		{"engine", "degraded", "the audit engine reports judge unhealthy", true},
+		{"judge", "down", "the judge does not answer", true},
+		{"engine", "degraded", "", false},
+		{"engine", "up", "", true},
+	}
+	var want []string
+	for _, s := range steps {
+		if got := h.PublishStatus(s.component, s.state, s.detail); got != s.sent {
+			t.Errorf("%s %s: sent %t, want %t", s.component, s.state, got, s.sent)
+		}
+		if s.sent {
+			want = append(want, s.component+":"+s.state+":"+s.detail)
+		}
+	}
+	for _, w := range want {
+		f := nextEvent(t, conn)
+		contractstest.ValidateJSON(t, wsEventSchema, f.raw)
+		var d struct{ Component, State, Detail string }
+		_ = json.Unmarshal(f.Data, &d)
+		if f.Type != "status" || d.Component+":"+d.State+":"+d.Detail != w {
+			t.Errorf("frame %s, want %s", f.raw, w)
+		}
+		if w == "engine:up:" && strings.Contains(string(f.Data), "detail") {
+			t.Errorf("an empty detail is left out: %s", f.Data)
+		}
+	}
+
+	// Concurrent reporters of the same transition broadcast it once.
+	var wg sync.WaitGroup
+	sent := make(chan bool, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() { defer wg.Done(); sent <- h.PublishStatus("knowledge", "down", "") }()
+	}
+	wg.Wait()
+	close(sent)
+	n := 0
+	for s := range sent {
+		if s {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("knowledge down broadcast %d times", n)
 	}
 }

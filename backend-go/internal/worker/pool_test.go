@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/websocket"
+	"github.com/truthtable/contracts"
 )
 
 const wsEventSchema = "api.v1.schema.json#/$defs/WsEvent"
@@ -29,6 +31,7 @@ type fakeStore struct {
 	mu      sync.Mutex
 	saved   []*store.AuditRecord
 	status  map[string]string
+	history map[string][]string // every audit status a trace went through, in order
 	saveErr error
 }
 
@@ -51,9 +54,16 @@ func (s *fakeStore) SetTraceAudit(_ context.Context, traceID string, u store.Tra
 
 func (s *fakeStore) setStatus(traceID, st string) {
 	if s.status == nil {
-		s.status = map[string]string{}
+		s.status, s.history = map[string]string{}, map[string][]string{}
 	}
 	s.status[traceID] = st
+	s.history[traceID] = append(s.history[traceID], st)
+}
+
+func (s *fakeStore) statusHistory(traceID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string{}, s.history[traceID]...)
 }
 
 func (s *fakeStore) traceStatus(traceID string) string {
@@ -78,6 +88,50 @@ func (p *fakePub) next(t *testing.T) websocket.Event {
 		t.Fatal("no event was published")
 		return websocket.Event{}
 	}
+}
+
+// outcome returns the next event that ends an audit (completed, failed or dropped), checking that
+// the lifecycle events before it are valid WsEvents.
+func (p *fakePub) outcome(t *testing.T) websocket.Event {
+	t.Helper()
+	for {
+		ev := p.next(t)
+		if ev.Type != "audit_queued" && ev.Type != "audit_started" {
+			return ev
+		}
+		validateEvent(t, ev)
+	}
+}
+
+// fixtureData is the data object of the golden fixture contracts/fixtures/api/WsEvent.<typ>.json.
+func fixtureData(t *testing.T, typ string) map[string]any {
+	t.Helper()
+	b, err := contracts.FS.ReadFile("fixtures/api/WsEvent." + typ + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(b, &f); err != nil {
+		t.Fatal(err)
+	}
+	return f.Data
+}
+
+// sameShape reports whether data has exactly the fixture's keys, each with a value of the same JSON type.
+func sameShape(data json.RawMessage, fixture map[string]any) bool {
+	var got map[string]any
+	if json.Unmarshal(data, &got) != nil || len(got) != len(fixture) {
+		return false
+	}
+	for k, v := range fixture {
+		g, ok := got[k]
+		if !ok || fmt.Sprintf("%T", g) != fmt.Sprintf("%T", v) {
+			return false
+		}
+	}
+	return true
 }
 
 // validateEvent checks every variant of an event against the WsEvent schema.
@@ -162,11 +216,38 @@ func TestCompletedAuditIsPersistedThenBroadcast(t *testing.T) {
 	if err != nil || lane != LaneHigh {
 		t.Fatalf("submit: %s %v", lane, err)
 	}
+	// The lifecycle: queued in its lane, started by a worker (persisted as running), completed.
+	queued := pub.next(t)
+	validateEvent(t, queued)
+	var q struct {
+		AuditID    string `json:"audit_id"`
+		Lane       string `json:"lane"`
+		QueueDepth int    `json:"queue_depth"`
+	}
+	_ = json.Unmarshal(queued.Data, &q)
+	if queued.Type != "audit_queued" || queued.TraceID != j.Request.TraceId || q.AuditID != j.Request.AuditId ||
+		q.Lane != LaneHigh || q.QueueDepth != 0 || !sameShape(queued.Data, fixtureData(t, "audit_queued")) {
+		t.Fatalf("queued %s %s", queued.Type, queued.Data)
+	}
+	started := pub.next(t)
+	validateEvent(t, started)
+	var sd struct {
+		AuditID     string `json:"audit_id"`
+		QueueWaitMs int64  `json:"queue_wait_ms"`
+	}
+	_ = json.Unmarshal(started.Data, &sd)
+	if started.Type != "audit_started" || started.TraceID != j.Request.TraceId || sd.AuditID != j.Request.AuditId ||
+		sd.QueueWaitMs < 0 || !sameShape(started.Data, fixtureData(t, "audit_started")) {
+		t.Fatalf("started %s %s", started.Type, started.Data)
+	}
 	ev := pub.next(t)
-	if ev.Type != "audit_completed" || ev.TraceID != j.Request.TraceId || ev.V1Type != "audit_result" {
+	if ev.Type != "audit_completed" || ev.TraceID != j.Request.TraceId {
 		t.Fatalf("event %+v", ev)
 	}
 	validateEvent(t, ev)
+	if got := st.statusHistory(j.Request.TraceId); strings.Join(got, ",") != "running,completed" {
+		t.Errorf("trace audit statuses %v, want running then completed", got)
+	}
 
 	reqs := eng.Requests()
 	if len(reqs) != 1 || reqs[0].GetAuditId() != j.Request.AuditId || reqs[0].GetQuery() != "Can I get a refund?" {
@@ -220,7 +301,7 @@ func TestNotAssessedAndDegradedTraceStatuses(t *testing.T) {
 		if _, err := p.Submit(j); err != nil {
 			t.Fatal(err)
 		}
-		ev := pub.next(t)
+		ev := pub.outcome(t)
 		validateEvent(t, ev)
 		if got := st.traceStatus(j.Request.TraceId); got != want {
 			t.Errorf("%s: trace audit status %q", want, got)
@@ -259,7 +340,7 @@ func TestFailedAudits(t *testing.T) {
 			if _, err := p.Submit(j); err != nil {
 				t.Fatal(err)
 			}
-			ev := pub.next(t)
+			ev := pub.outcome(t)
 			validateEvent(t, ev)
 			var data struct {
 				AuditID   string `json:"audit_id"`
@@ -379,7 +460,7 @@ func TestDrainTimeoutDropsTheRest(t *testing.T) {
 		if got := st.traceStatus(j.Request.TraceId); got != store.TraceAuditDropped {
 			t.Errorf("trace %s: %q", j.Request.TraceId, got)
 		}
-		ev := pub.next(t)
+		ev := pub.outcome(t)
 		validateEvent(t, ev)
 		if ev.Type != "audit_dropped" || !strings.Contains(string(ev.Data), `"reason":"stopped"`) {
 			t.Errorf("event %s %s", ev.Type, ev.Data)
@@ -404,5 +485,78 @@ func TestTokenBucketRefills(t *testing.T) {
 	}
 	if z := newTokenBucket(0, time.Now); z.take() {
 		t.Fatal("a zero rate allows nothing")
+	}
+}
+
+// TestQueuedEventsCountTheJobsAhead: audit_queued names the lane a job went to and how many audits
+// wait ahead of it there; a job that is not queued announces nothing.
+func TestQueuedEventsCountTheJobsAhead(t *testing.T) {
+	eng := enginetest.Start(t, &enginetest.Engine{})
+	c, err := grpc.NewAuditClient(eng.Target, time.Second, "", eng.Dialer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	pub := newPub()
+	// Not started: the jobs stay queued.
+	p := New(Config{Engine: c, LowQueue: 3, HighQueue: 1, HighPerMin: 1, Publisher: pub, Logger: slog.New(slog.DiscardHandler)})
+	jobs := []*Job{job(LaneLow, "sample"), job(LaneHigh, "high"), job(LaneLow, "sample"), job(LaneHigh, "high")}
+	want := []struct {
+		lane  string
+		depth int
+	}{{LaneLow, 0}, {LaneHigh, 0}, {LaneLow, 1}, {LaneLow, 2}} // the second high job finds no token
+	for i, j := range jobs {
+		if _, err := p.Submit(j); err != nil {
+			t.Fatal(err)
+		}
+		ev := pub.next(t)
+		validateEvent(t, ev)
+		var q struct {
+			AuditID    string `json:"audit_id"`
+			Lane       string `json:"lane"`
+			QueueDepth int    `json:"queue_depth"`
+		}
+		_ = json.Unmarshal(ev.Data, &q)
+		if ev.Type != "audit_queued" || ev.TraceID != j.Request.TraceId || q.AuditID != j.Request.AuditId ||
+			q.Lane != want[i].lane || q.QueueDepth != want[i].depth {
+			t.Errorf("job %d: %s %s, want lane %s depth %d", i, ev.Type, ev.Data, want[i].lane, want[i].depth)
+		}
+	}
+	if _, err := p.Submit(job(LaneLow, "sample")); !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("full: %v", err)
+	}
+	select {
+	case ev := <-pub.events:
+		t.Errorf("a job that was not queued announced %s", ev.Type)
+	default:
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = p.Drain(ctx)
+}
+
+func TestJudgeReady(t *testing.T) {
+	p := New(Config{Logger: slog.New(slog.DiscardHandler)})
+	if err := p.JudgeReady(); err != nil {
+		t.Errorf("no check installed: %v", err)
+	}
+	ready := false
+	p.SetJudgeCheck(func() error {
+		if ready {
+			return nil
+		}
+		return ErrNoJudge
+	})
+	if err := p.JudgeReady(); !errors.Is(err, ErrNoJudge) {
+		t.Errorf("no judge: %v", err)
+	}
+	ready = true
+	if err := p.JudgeReady(); err != nil {
+		t.Errorf("judge up: %v", err)
+	}
+	p.SetJudgeCheck(nil)
+	ready = false
+	if err := p.JudgeReady(); err != nil {
+		t.Errorf("check removed: %v", err)
 	}
 }

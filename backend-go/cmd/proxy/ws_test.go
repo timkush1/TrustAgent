@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -51,7 +52,8 @@ func readFrame(t *testing.T, conn *websocket.Conn) wsFrame {
 }
 
 // TestStreamCarriesTheTraceLifecycle follows the flagged scenario over WS v2: trace_started,
-// gate_decision and audit_completed, in seq order, one event per frame.
+// gate_decision, audit_queued, audit_started and audit_completed, in seq order, one event per
+// frame.
 func TestStreamCarriesTheTraceLifecycle(t *testing.T) {
 	env := newTestEnv(t, envOpts{})
 	conn, _, err := dialWS(t, env, "protocol=2", http.Header{"X-TrustAgent-Key": {testKey}})
@@ -71,7 +73,7 @@ func TestStreamCarriesTheTraceLifecycle(t *testing.T) {
 	traceID := env.send(loadDemoScenarios(t)["refund-contradiction-flag"]).Header.Get("X-TrustAgent-Trace-Id")
 	var types []string
 	last := hello.Seq
-	for len(types) < 3 {
+	for len(types) < 5 {
 		f := readFrame(t, conn)
 		if f.Type == "hb" {
 			continue
@@ -94,18 +96,26 @@ func TestStreamCarriesTheTraceLifecycle(t *testing.T) {
 			if !strings.Contains(string(f.Data), `"spec":"decision/v1"`) || !strings.Contains(string(f.Data), `"action":"flag"`) {
 				t.Errorf("gate_decision %s", f.Data)
 			}
+		case "audit_queued":
+			if !strings.Contains(string(f.Data), `"lane":"high"`) || !strings.Contains(string(f.Data), `"queue_depth":`) {
+				t.Errorf("audit_queued %s", f.Data)
+			}
+		case "audit_started":
+			if !strings.Contains(string(f.Data), `"queue_wait_ms":`) {
+				t.Errorf("audit_started %s", f.Data)
+			}
 		case "audit_completed":
 			if !strings.Contains(string(f.Data), `"verdict":"HALLUCINATED"`) || !strings.Contains(string(f.Data), `"status":"CONTRADICTED"`) {
 				t.Errorf("audit_completed %s", f.Data)
 			}
 		}
 	}
-	if strings.Join(types, ",") != "trace_started,gate_decision,audit_completed" {
+	if strings.Join(types, ",") != "trace_started,gate_decision,audit_queued,audit_started,audit_completed" {
 		t.Errorf("events %v", types)
 	}
 
 	// A reconnect with the epoch and last seq replays nothing new; one from before the trace
-	// replays its three events.
+	// replays its five events.
 	replay, _, err := dialWS(t, env, "protocol=2&since_seq=1&epoch="+hello.Epoch, http.Header{"X-TrustAgent-Key": {testKey}})
 	if err != nil {
 		t.Fatal(err)
@@ -156,5 +166,26 @@ func TestStreamAuth(t *testing.T) {
 		if f.Type == "audit_completed" {
 			break
 		}
+	}
+}
+
+// TestStreamRefusesV1: WS v1 was removed (D13). An authenticated handshake without protocol=2 gets
+// 400 bad_request before the upgrade; an unauthenticated one still gets 401 first.
+func TestStreamRefusesV1(t *testing.T) {
+	env := newTestEnv(t, envOpts{})
+	for _, query := range []string{"", "protocol=1"} {
+		_, resp, err := dialWS(t, env, query, http.Header{"X-TrustAgent-Key": {testKey}})
+		if err == nil || resp == nil || resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%q: want 400, got %v %v", query, resp, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		contractstest.ValidateJSON(t, schemaError, body)
+		if !strings.Contains(string(body), `"code":"bad_request"`) || !strings.Contains(string(body), "protocol=2") {
+			t.Errorf("%q: body %s", query, body)
+		}
+	}
+	if _, resp, err := dialWS(t, env, "", nil); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("no key: want 401, got %v %v", resp, err)
 	}
 }

@@ -16,91 +16,9 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
-// maxTraces is the most traces one recording holds (SPEC §2.4 endpoint 66: limit <= 200).
-const maxTraces = 200
-
-// filter selects the traces to export.
-type filter struct {
-	since, until *time.Time
-	source       string // TraceSource
-	route        string
-	limit        int
-}
-
-// traceSource reads trace details: the newest traces matching f, at most f.limit.
+// traceSource reads trace details: the newest traces matching f, at most f.Limit.
 type traceSource interface {
-	Traces(ctx context.Context, f filter) ([]recording.Trace, error)
-}
-
-// traceStore is the part of the store the database source reads.
-type traceStore interface {
-	ListTraces(ctx context.Context, f store.TraceFilter) ([]store.TraceRecord, string, error)
-	GetTraceBody(ctx context.Context, traceID string) (*store.BodyRecord, error)
-	TraceDecisions(ctx context.Context, traceID string) ([]json.RawMessage, error)
-	GetAudit(ctx context.Context, auditID string) (*store.AuditRecord, error)
-}
-
-// dbSource reads traces from Postgres, building each detail as GET /api/traces/:id does for a
-// caller with the content scope.
-type dbSource struct {
-	store traceStore
-	now   func() time.Time
-}
-
-func (d *dbSource) Traces(ctx context.Context, f filter) ([]recording.Trace, error) {
-	var out []recording.Trace
-	cursor := ""
-	for len(out) < f.limit {
-		recs, next, err := d.store.ListTraces(ctx, store.TraceFilter{
-			Limit: min(f.limit-len(out), maxTraces), Cursor: cursor, Since: f.since, Until: f.until, Source: f.source, Route: f.route,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for i := range recs {
-			t, err := d.detail(ctx, &recs[i])
-			if err != nil {
-				return nil, fmt.Errorf("trace %s: %w", recs[i].TraceID, err)
-			}
-			out = append(out, t)
-		}
-		if next == "" || len(recs) == 0 {
-			break
-		}
-		cursor = next
-	}
-	return out, nil
-}
-
-func (d *dbSource) detail(ctx context.Context, rec *store.TraceRecord) (recording.Trace, error) {
-	decisions, err := d.store.TraceDecisions(ctx, rec.TraceID)
-	if err != nil {
-		return recording.Trace{}, err
-	}
-	t := recording.Trace{Detail: store.TraceDetail{
-		TraceSummary: rec.Summary(), Decisions: decisions, Labels: []store.LabelView{},
-	}}
-	body, err := d.store.GetTraceBody(ctx, rec.TraceID)
-	switch {
-	case err == nil:
-		t.Detail.Body = body.View(d.now())
-	case errors.Is(err, store.ErrNotFound):
-		t.Detail.Body = store.UnavailableBody(store.BodyNotStored)
-	default:
-		return recording.Trace{}, err
-	}
-	if rec.AuditID != nil {
-		audit, err := d.store.GetAudit(ctx, *rec.AuditID)
-		switch {
-		case err == nil:
-			detail := audit.Detail()
-			t.Detail.AuditDetail = &detail
-			t.LLMUSD = audit.CostUSD
-		case !errors.Is(err, store.ErrNotFound): // a queued audit has no row yet
-			return recording.Trace{}, err
-		}
-	}
-	return t, nil
+	Traces(ctx context.Context, f recording.Filter) ([]recording.Trace, error)
 }
 
 // apiSource reads traces through the gateway's REST API (GET /api/traces and
@@ -122,23 +40,23 @@ func newAPISource(base, key string, client *http.Client) (*apiSource, error) {
 	return &apiSource{base: u, key: key, client: client}, nil
 }
 
-func (a *apiSource) Traces(ctx context.Context, f filter) ([]recording.Trace, error) {
+func (a *apiSource) Traces(ctx context.Context, f recording.Filter) ([]recording.Trace, error) {
 	var out []recording.Trace
 	cursor := ""
-	for len(out) < f.limit {
+	for len(out) < f.Limit {
 		q := url.Values{}
-		q.Set("limit", strconv.Itoa(min(f.limit-len(out), maxTraces)))
-		if f.since != nil {
-			q.Set("since", f.since.UTC().Format(time.RFC3339Nano))
+		q.Set("limit", strconv.Itoa(min(f.Limit-len(out), recording.MaxTraces)))
+		if f.Since != nil {
+			q.Set("since", f.Since.UTC().Format(time.RFC3339Nano))
 		}
-		if f.until != nil {
-			q.Set("until", f.until.UTC().Format(time.RFC3339Nano))
+		if f.Until != nil {
+			q.Set("until", f.Until.UTC().Format(time.RFC3339Nano))
 		}
-		if f.source != "" {
-			q.Set("source", f.source)
+		if f.Source != "" {
+			q.Set("source", f.Source)
 		}
-		if f.route != "" {
-			q.Set("route", f.route)
+		if f.Route != "" {
+			q.Set("route", f.Route)
 		}
 		if cursor != "" {
 			q.Set("cursor", cursor)
