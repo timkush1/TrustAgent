@@ -112,6 +112,11 @@
       "match": "uncalibrated_snapshot",
       "copy": "Would have blocked — blocking stays off until this check is calibrated"
     },
+    {"match": "fallback_failed", "copy": "Couldn't get a usable fallback answer from your model"},
+    {
+      "match": "fallback_format_mismatch",
+      "copy": "No fallback was tried: the fallback model uses a different API format than this request"
+    },
     {"match": "*:*", "copy": "{evaluator}: {level}"}
   ],
   "status_reasons": {
