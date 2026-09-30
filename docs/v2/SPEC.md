@@ -406,7 +406,7 @@ CREATE TABLE IF NOT EXISTS traces (
   audit_id TEXT, audit_status TEXT NOT NULL DEFAULT 'none',  -- none|queued|sampled_out|dropped|disabled|running|completed|degraded|failed|not_assessed
   audit_lane TEXT, audit_selection TEXT,          -- high|sample|error_sample|uniform|direct|playground|studio
   question_preview TEXT, response_preview TEXT,   -- ≤200 / ≤300 chars
-  flags TEXT[] NOT NULL DEFAULT '{}');            -- client_disconnected|late_decision|fallback_used|test_mode|mock_decision|mock_judge|uniform_sample|body_expired|text_redacted
+  flags TEXT[] NOT NULL DEFAULT '{}');            -- client_disconnected|late_decision|fallback_used|test_mode|mock_decision|mock_judge|uniform_sample|body_expired|text_redacted|multi_choice
 CREATE INDEX IF NOT EXISTS idx_traces_created ON traces (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_traces_updated ON traces (updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_traces_route   ON traces (route, created_at DESC);
@@ -563,6 +563,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_time ON cost_events (occurred_at DESC
   - `TRUTHTABLE_TRACE_FLUSH=sync` (test mode) writes inline.
   - Audits are persisted before `audit_completed` is broadcast.
   - `GET /api/traces/:id` falls back to an in-memory LRU of the last 2,000 traces.
+  - **P3 (D17):** the ordered channel and the LRU fallback move to P4; P3 writes each trace-scoped row directly with the same upserts. A trace's decision write keeps a `late_decision` flag that is already stored.
 - **Retention (hourly):** adaptive batches starting at 5,000 and halving after a timeout, each under `SET LOCAL statement_timeout='5s'`. Lag is exposed in `trustagent_gateway_retention_lag_seconds`.
 
   | Data | Rule |
@@ -609,7 +610,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_time ON cost_events (occurred_at DESC
   - Exposed headers: `ETag, Retry-After, X-Request-ID` and every `X-TrustAgent-*` header, listed explicitly.
   - `Max-Age 600`.
 - **Pagination:** keyset `limit` (1–200, default 50) and `cursor`, returning `{items, next_cursor}`. KB endpoints keep limit/offset with `total`.
-- **Error codes:** 400 `bad_request|invalid_json|invalid_nonce`; 401; 403 `forbidden|csrf_failed|readonly|test_mode_disabled`; 404; 409 `conflict|env_managed|confirmation_required|knowledge_disabled|file_managed|ingest_key_required|body_expired`; 412 `stale_version`; 413; 422 `validation_failed`; 423 `locked`; 428; 429 `rate_limited`; 500; 502 `upstream_error`; 503 `persistence_disabled|engine_unavailable|queue_full|no_judge|decision_model_unavailable|budget_exhausted|credentials_unavailable`; 504.
+- **Error codes:** 400 `bad_request|invalid_json|invalid_nonce`; 401; 403 `forbidden|csrf_failed|readonly`; 404; 409 `conflict|env_managed|confirmation_required|knowledge_disabled|file_managed|ingest_key_required|body_expired`; 412 `stale_version`; 413; 422 `validation_failed`; 423 `locked`; 428; 429 `rate_limited`; 500; 502 `upstream_error`; 503 `persistence_disabled|engine_unavailable|queue_full|no_judge|decision_model_unavailable|budget_exhausted|credentials_unavailable`; 504. These are the `/api` codes: `/v1` answers `test_mode_disabled` with 400 in the route's error shape (§2.12, M7; D8).
 - **Rate limits:** general per key id, or per session id for cookie auth, or per IP; `RATE_LIMIT_PER_MINUTE`. Specific limits:
 
   | Endpoint | Limit |
@@ -643,7 +644,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_time ON cost_events (occurred_at DESC
 | 13 | GET `/api/audits` | read | `limit, cursor, since, completed_since, route, source, status, verdict, selection` | `Page<AuditSummary>` |
 | 14 | GET `/api/audits/:id` | read | — | `AuditDetail` |
 | 15 | POST `/api/audit` | ingest | `DirectAuditRequest` | 202 `{trace_id, audit_id, status:"queued", lane}`. 503 `budget_exhausted` when the LLM cap is hit (all lanes); `queue_full`, `engine_unavailable`, `no_judge` |
-| 16 | GET `/api/gate/decisions` | read | `limit, cursor, since, updated_since, route, action, status, evaluator, level, disagreement, late` | `Page<GateDecisionRow>` |
+| 16 | GET `/api/gate/decisions` | read | `limit, cursor, since, updated_since, route, action, status, evaluator, level, disagreement, late` | `Page<GateDecisionRow>`: one row per trace, its attempt 0; a late decision shows through `late` and `updated_at`, and attempt-1 rows appear only in `TraceDetail.decisions` (D10) |
 | 17 | GET `/api/gate/reliability` | read | `evaluator` (required), `snapshot`, `window=7d`, `bins=10`, `labels=human\|uniform_audit\|all` | `ReliabilityResponse`. Default uses human labels plus uniform-sample, non-mock, non-test traces; `n_by_source` reported |
 | 18 | GET `/api/policies` | read | — | `PolicyState`, `ETag: "v<id>"` |
 | 19 | GET `/api/policies/versions` | read | `limit, cursor` | `Page<PolicyVersionMeta>` |
@@ -688,15 +689,15 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_time ON cost_events (occurred_at DESC
 | 58 | POST `/api/connect/openrouter/start` | admin | `{return_to?}` | `{auth_url, nonce, expires_in:600}` |
 | 59 | POST `/api/connect/openrouter/complete` | admin | `{code, nonce, bind?}` | `{credential, bindings, verification}`. Bindings apply only when `verification.ok`; on 402 the credential is stored unbound with hint `no_credits` |
 | 60 | POST `/api/decision-model/test` | admin | — | `DecisionModelTestResult` (probe ≈ $0.00001; never shows the noul) |
-| 61 | POST `/api/playground/run` | admin | `PlaygroundRequest` | `PlaygroundResult` or SSE (`token`, `decision`, `done`, `error`) |
+| 61 | POST `/api/playground/run` | admin | `PlaygroundRequest` | `PlaygroundResult` or SSE (`token`, `decision`, `done`, `error`). D12: `mode_override` bypasses `overrides.client_mode`; every run is checked (no observe sampling, D27) and submits a deep audit with selection `playground` (`disabled` without an engine); chat mode needs an injected upstream credential, else 503 `credentials_unavailable`; the upstream is called with `stream:false`, and `stream:true` sends the answer as `token` events; `scenario` only in test mode; 10 runs a minute |
 | 62–65 | GET `/api/kb/claims`, `/api/kb/conflicts`, `/api/kb/stats`; POST `/api/kb/documents` | read / admin | as today | 409 `knowledge_disabled` when the add-on is off |
-| 66 | GET `/api/export/replay` | admin | `since, until, limit≤200, source?` | `Recording` (sanitized) |
+| 66 | GET `/api/export/replay` | admin | `since, until, limit≤200, source?, route?, git_sha?` | `Recording` (sanitized): the manifest only; the full recording directory stays with `cmd/export-replay` and a zip bundle is P5 (D11) |
 | 67–69 | GET/POST `/api/keys`, DELETE `/api/keys/:id` | admin | `{label, scopes}` | Secret shown once |
 | 70 | GET `/api/admin/audit-log` | admin | `limit, cursor` | `Page<AdminAuditEntry>` |
 | 71 | POST `/v1/chat/completions`, `/v1/completions`, `/v1/messages` | ingest | Upstream body plus the `trustagent` extension | Gated upstream response (§2.12) |
 | 72 | POST `/v1/messages/count_tokens`; ANY `/v1/models*`, `/v1/embeddings` | ingest | — | Passthrough (ReverseProxy `Rewrite`) |
 | 73 | ANY `/v1/responses*` | ingest | — | Passthrough, **ungated**; `X-TrustAgent-Status: skipped:unsupported_api` |
-| 74 | GET `/v1/trustagent/decisions/:trace_id` | ingest | `wait_ms≤10000` | `{trace_id, state: pending\|decided, decision: GateDecisionView\|null}`. Long-poll; only for the key label that created the trace; honours `headers: action_only` (then only `action` and `status`) |
+| 74 | GET `/v1/trustagent/decisions/:trace_id` | ingest | `wait_ms≤10000` | `{trace_id, state: pending\|decided, decision: GateDecisionView\|null}`. Long-poll; only for the key label that created the trace; honours `headers: action_only` (then only `action` and `status`, always). A trace last seen pending in the database is read again, so several gateways can share one database |
 | 75 | GET `/ws` | read | `since_seq, epoch, protocol=2, ticket` | WS v2 (§2.5) |
 
 **Policy editability:** `editable=false` for one of these reasons: `file-managed (no database)`, `locked (TRUTHTABLE_CONFIG_LOCK)`, or `admin sign-in required`.
@@ -704,7 +705,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_time ON cost_events (occurred_at DESC
 ### 2.5 WebSocket protocol v2
 
 **Handshake:** `GET /ws?protocol=2[&since_seq=N&epoch=E][&ticket=T]`.
-- Without `protocol=2`, the hub sends v1 frames (one JSON per frame). v1 is removed at the end of P3.
+- Without `protocol=2`, the handshake gets 400 `bad_request` ("WS v1 was removed; connect with ?protocol=2") before the upgrade: WS v1 was removed at the end of P3 (D13).
 - Auth by cookie, `X-TrustAgent-Key` or ticket. A failure before upgrade returns 401; after upgrade the socket closes with 4401.
 - Caps: `WS_MAX_CLIENTS` 200, and `WS_MAX_PER_IP` 10 (cookie sessions are keyed by session id). Over the cap the socket closes with 4429.
 - Origin must be allow-listed; an empty Origin is allowed for non-browser clients.
@@ -1718,9 +1719,9 @@ Implemented in Go and TS with vectors. Regexes are RE2- and JS-compatible, with 
 
 - **IDs:** valid `[A-Za-z0-9._:-]{1,64}` ids are kept, otherwise `sys{n}|ctx{n}|tool{n}|ext{n}|kb{n}`.
 - **Dedup:** by sha256 of whitespace-collapsed text; the first occurrence wins.
-- **`user_request`:** the last user message's final text part with blocks removed (for `/v1/completions`, the `prompt`).
+- **`user_request`:** the last user message's final text part with blocks removed. For `/v1/completions`, the `prompt` reads as one user message: `user_request` is the prompt with blocks removed, and its blocks are `request_context` evidence (D25; Go is the reference).
 - **Tolerant parsing (B3):** content may be a string or `[{type: text|input_text, text}]`. Other part types are ignored. Parse failure never returns 400.
-- **Gated response text:** only `content` / `text_delta`. Reasoning (`reasoning`, `reasoning_content`, `thinking_delta`) and tool-call arguments are excluded; tool calls are documented as ungated. With `n>1`, only choice 0 is gated and the others are marked `skipped:multi_choice`.
+- **Gated response text:** only `content` / `text_delta`. Reasoning (`reasoning`, `reasoning_content`, `thinking_delta`) and tool-call arguments are excluded; tool calls are documented as ungated. With `n>1`, only choice 0 is gated and the trace gets the flag `multi_choice`; a block replaces every choice (D6).
 
 ### 2.11 Calibration (`trustagent.calibration/v1`, the "thresholds JSON")
 
@@ -1747,22 +1748,23 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
   | `measured` | Human and public-dataset labels only, n ≥ 200, n_pos ≥ 30, n_neg ≥ 30 | Yes |
   | `provisional` | Human/public labels below the measured thresholds, or a family fallback | No |
   | `proxy` | Any fit using uniform-audit or judge labels | No |
-  | `mock` | Snapshot `mock/*` | Only when the backend is mock and `DEMO_MODE` is on (the loader refuses `mock/*` files otherwise) |
+  | `mock` | Snapshot `mock/*` | Only when the backend is mock. The loader reads `mock/*` files under `DEMO_MODE`, or when `TEST_MODE` runs the mock backend explicitly (the test stacks), and refuses them otherwise |
 
 - **Methods:** PAV isotonic when n ≥ 500, otherwise Platt (Newton with smoothed targets). `auto` picks by 5-fold CV Brier. The 101-point table is authoritative.
 - **`warn_at`:** maximizes F1 subject to precision ≥ 0.8.
 - **`critical_at`:** the smallest t such that, for every t′ ≥ t, the Wilson 95% lower bound of precision is ≥ 0.95 with ≥ 50 predicted positives. Otherwise `null` with "insufficient evidence to block". Quick calibration (Studio) never emits `critical_at`.
 - **Key:**
   - `target_key = "<id>@<v>#<calibration_key[:16]>#<params_sha[:16]|->"`, where `calibration_key = sha256(JCS({question, signal}))` and `params_sha = sha256(JCS(resolved route params))` for evaluators that have params.
-  - A difference in fit-context state composition produces a `calibration_warning: "calibrated with different state fields"`; the calibration still applies.
+  - A difference in fit-context state composition produces a `calibration_warning: "calibrated with different state fields"`; the calibration still applies. P4: P3 produces no `calibration_warning` (D28).
 - **Lookup:**
   1. Exact snapshot.
   2. Family (snapshot minus `-YYYYMMDD`), only if `CALIBRATION_FAMILY_FALLBACK`; forced to `provisional`, state `family`.
   3. None.
 
-  API-imported and fitted rows override files. File merge: newest `created_at` wins, with a warning.
+  API-imported and fitted rows override files (P4, #42-46). File merge: newest `created_at` wins, with a warning.
+  **P3 (D14):** the lookup reads files only, from `TRUTHTABLE_CALIBRATION_DIR`, polled every 30 s; a change broadcasts WS `calibration_updated`. A file that stops parsing keeps its last good content.
 - **Activation vs adoption:** activating a calibration **does not change live decisions** while the route's threshold space is `raw`. "Adopt calibration" creates a new policy version with `space: calibrated` and the recommended thresholds, and is gated by a Preview-impact dry-run.
-- **Snapshot change:** WS `decision_model_changed` shows a banner. Adopted routes whose calibration no longer applies fall back to raw risk with `calibration_missing` and are capped to flag.
+- **Snapshot change:** WS `decision_model_changed` shows a banner. Adopted routes whose calibration no longer applies fall back to raw risk and are capped to flag. P3 reports this with the reason `uncalibrated_snapshot`; `calibration_missing` comes with the P4 calibration store (D28).
 - **Committed files:**
   - `config/calibration/mock__jev-heuristic-v1.json` (quality `mock`).
   - `config/calibration/typesafe__jev-1.13-<date>.json` (measured, from P6 bench-lite, for groundedness@1 and contradiction@1).
@@ -1778,7 +1780,8 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
 - Strip every `X-TrustAgent-*` header, hop-by-hop headers, `Cookie`, `Host`, `Content-Length` and `Accept-Encoding` (B2; gzip is then transparent, and a stray `Content-Encoding` is decoded defensively).
 - **Passthrough mode:** client `Authorization`/`x-api-key` go upstream untouched.
 - **Inject mode:** Bearer or `x-api-key` counts as the proxy key only if it equals one. All client credentials are stripped, and the configured credential is set on `UPSTREAM_AUTH_HEADER`. Anthropic `anthropic-version` passes through.
-- The proxy key is never forwarded (B1).
+- **Per upstream (D15):** an upstream injects only when its own key is set (`TRUTHTABLE_UPSTREAM_API_KEY`, `TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY`, `TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY`); otherwise the client's credentials pass through. A fallback upstream without its own key whose scheme, host or port differs from the primary upstream of its format is a configuration warning, so `TRUTHTABLE_STRICT_CONFIG` refuses to start (D23).
+- The proxy key is never forwarded (B1): a credential header whose value is a proxy key is dropped, whatever its scheme.
 - URLs are built as base path + request path, with base query merged with client query (M2). The request uses the client context (M1).
 
 **Response headers.** All are listed explicitly in `Access-Control-Expose-Headers`. With `headers: action_only`, only `Trace-Id`, `Request-ID` and `Action` are sent.
@@ -1791,7 +1794,7 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
 | `X-TrustAgent-Would-Action` | pass\|flag\|block | When it differs from action (sync) |
 | `X-TrustAgent-Status` | ok\|partial\|not_assessed\|skipped:<r>\|timeout\|error:<k>\|deferred | Always on gated routes |
 | `X-TrustAgent-Verdict`, `-Risk` (2 decimals), `-Calibrated`, `-Degraded` | per decision | Sync decisions |
-| `X-TrustAgent-Reasons` | ≤8, comma-separated | Non-empty |
+| `X-TrustAgent-Reasons` | ≤8, comma-separated: the decision's reasons, then the delivery's (`fallback_failed`, `fallback_format_mismatch`) without repeats; when the cap cuts, the delivery's are kept | Non-empty |
 | `X-TrustAgent-Checked-Against` | `request_system:2,tool_results:1` \| `none` | Gated |
 | `X-TrustAgent-Decision-Model` | Snapshot | When called |
 | `X-TrustAgent-Gate-Ms` / `-Overhead-Ms` | ints | Gated |
@@ -1801,7 +1804,8 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
 **Observe mode:** async; sends Trace-Id, Route, Mode, `Action: observe`, `Status: deferred` and Audit. The body is byte-identical.
 
 **Streaming passthrough:**
-- `Trailer:` is declared up front.
+- `Trailer:` is declared up front (D9): Trace-Id, Request-ID, Route and Source go up front; Mode, Action, Would-Action, Status, Verdict, Risk, Calibrated, Degraded, Reasons, Checked-Against, Decision-Model, Gate-Ms, Overhead-Ms and Audit are trailers (with `action_only`, only Action). Observe streams send the deferred headers up front and do not hold the terminal event; `stream_annotations: none` writes no comment.
+- An upstream that fails or stalls before its first event, while the headers are uncommitted, is answered as a failed upstream call: 502, or 504 for the idle timeout, in the route's error shape, `skipped:upstream_error`, unenforced (D21). Buffered routes do the same until a gateway keepalive commits the headers; an upstream keepalive comment or blank line is not an event.
 - The terminal event (`data: [DONE]` / `event: message_stop`) is held until the decision arrives or the deadline passes. Before it, the proxy writes `: trustagent {"trace_id","action","would_action","status","verdict","max_risk","reasons"}` (with `stream_annotations: comment`).
 - SDKs drop comments, and browsers and nginx drop trailers. Clients that need the decision call `GET /v1/trustagent/decisions/:trace_id`.
 - If the client disconnects **after** a finish reason was seen, the text is gated unenforced and audited with flag `client_disconnected`. A disconnect before that skips.
@@ -1834,18 +1838,24 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
    - Prepend `fallback.system_prompt + "\n\nCONTEXT:\n<context>\n" +` packed evidence as `[id] text` lines (≤8k tokens) `+ "\n</context>"` (Anthropic: prepend to `system`).
    - Force `stream:false`.
    - With no evidence, the prompt instead ends `" If you are not certain, say so; do not include specific numbers, dates, URLs or quotations."`
-2. Send it **once** to `same` or the `fallback` upstream. A format mismatch becomes block with `fallback_format_mismatch`.
+2. Send it **once** to `same` or the `fallback` upstream. A format mismatch always blocks, with `fallback_format_mismatch`. If the call fails (transport error, non-2xx, non-JSON, no text), there is no re-gate: the trace gets the reason `fallback_failed`, and `on_fail: block` sends the block body while `flag` and `original` send the original with `Action: flag` (D2). In test mode, when the attempt-0 answer came from `test_response` and `X-TrustAgent-Scenario` names a scenario with a `fallback`, the fallback answer is scripted from it, with no upstream call (D1).
 3. Re-gate with `attempt=1` and a fresh deadline.
-4. If the new would is pass or flag, deliver the fallback (`Action: fallback`, flag `fallback_used`).
-5. If the new would is block, apply `on_fail`: `block` (the bodies above), `flag` (deliver the fallback with `Action: flag`) or `original` (deliver the original with `Action: flag`).
+4. If the attempt-1 **action** is pass or flag, deliver the fallback (`Action: fallback`, flag `fallback_used`) (D3).
+5. Otherwise (block, a fail-closed block, or fallback from would=block), apply `on_fail`: `block` (the bodies above), `flag` (deliver the fallback with `Action: flag`) or `original` (deliver the original with `Action: flag`).
 6. Buffered streams re-emit the delivered text as a synthesized stream with `finish_reason:"stop"` / `stop_reason:"end_turn"`.
 7. The deep audit always audits the original text.
+8. Attempt 1 is recorded before the trace's decision (D22). `fallback_failed` and `fallback_format_mismatch` go to `traces.reasons` (and `X-TrustAgent-Reasons`), never into `decision/v1` (D19).
 
 **TrustAgent errors on `/v1/*`:**
 - OpenAI routes: `{"error":{"message","type":"trustagent_error","param":null,"code"}}`.
 - Anthropic routes: `{"type":"error","error":{"type":"authentication_error|invalid_request_error|rate_limit_error|api_error|overloaded_error","message"}}`.
-- Statuses: 401, 413, 429 (with `Retry-After`), 502, 504.
-- An upstream non-2xx response, non-JSON body, or a body over `MAX_UPSTREAM_RESPONSE_BYTES` passes through with `Status: skipped:upstream_error`.
+- Statuses: 400 (`test_mode_disabled`, D8), 401, 404 (an unknown `/v1` path, with the trace and request ids), 413, 429 (with `Retry-After`), 502, 504.
+- **Answers the gateway cannot check** (D4, D5, D20, D24) are never enforced as a policy decision, except that the gateway never relays bytes it did not read on a block or fallback route:
+  - An upstream non-2xx answer passes through as it is: `Status: skipped:upstream_error`, the stored decision has `enforced:false`, and the delivered action is pass.
+  - A transport error or timeout answers 502 or 504 in the route's error shape, recorded the same way; a client that left first is recorded as `skipped:client_disconnected`.
+  - A 2xx body that cannot be decoded answers 502, recorded as `skipped:undecodable`, unenforced.
+  - An answer with no text (tool calls only) passes through unenforced (`skipped:no_text`).
+  - A 2xx body that is not JSON, or is over `MAX_UPSTREAM_RESPONSE_BYTES`, is gated as a skip: observe and flag routes pass it through, closed block and fallback routes block it, and an oversized body is blocked on every block or fallback route, fail-open ones included (the decision stays pass).
 
 ### 2.13 Recording and benchmark formats
 
@@ -3046,3 +3056,17 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | Market-signal claims in §8.3 | P6 re-verification |
 | Default caps ($2 decision, $5 LLM) | Owner confirms at onboarding |
 | 150 ms knowledge deadline | P3 load test |
+
+## Appendix E: P3 errata
+
+The lead decisions D1-D28 of `docs/v2/P3-PLAN.md` §1 settled the gaps P3 found. The sections above are corrected where they contradicted them (§2.3, §2.4, §2.5, §2.10, §2.11, §2.12, each marked with its decision). These settled points have no other home:
+
+- **P3 REST scope (D16):** #2, #15 (the trace row), #16, #17, #49, #61, #66 and #71-74; WS `audit_queued`, `audit_started`, late `gate_decision`, `status` transitions and `calibration_updated`. The rest of §2.4 and §2.5 is P4 or later (`P3-PLAN.md` §13).
+- **#15 direct audits:** the trace row has `source: direct`, mode observe and `gate_status: skipped`, and `trace_started` carries it. Direct traces stay out of the gateway figures of `/api/stats/*`.
+- **#17 defaults:** `snapshot` defaults to the one in effect (empty means every snapshot), `bins` must be 10, and simulated traffic counts only in demo mode.
+- **`status` events:** every component starts as `unknown`; budget states are `ok`, `reserve_only` (spend past the enforcing reserve's share) and `exhausted` (at the cap). Knowledge reads `unknown` while a configured engine is silent.
+- **Client disconnects (D7):** a client that leaves before the finish reason, or while the gate or a buffered fallback runs, is recorded unenforced with `skipped:client_disconnected`; after a finish reason the text is gated unenforced with the flag `client_disconnected` and audited.
+- **trafficgen (D18):** the default `--phase` is the build's (`p3`), and `--expect` exits 1 when it skips a selected scenario by phase, unless `--allow-skip` is given. Stack specs throw in CI instead of skipping.
+- **`/v1/models` (D26):** it stays on `TRUTHTABLE_UPSTREAM_URL` (§2.4 row 72); choosing the family from `anthropic-version` or `x-api-key` is P4.
+- **Checks that do not fit P3 (D17, D28):** the async ordered trace writer and its LRU fallback, `calibration_warning` and `calibration_missing` move to P4.
+- **superseded identifiers (Appendix A):** WS v1 (`ProtocolV1`, `v1Frame`, the frame type `audit_result`) and metric names without the service prefix are errors in `contracts/superseded.v1.json`; the metric rule matches metric-shaped names only, because `trustagent_error`, `trustagent_blocked` and similar are TrustAgent identifiers, not metrics.

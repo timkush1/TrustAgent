@@ -13,7 +13,7 @@ and renders audit results to a browser dashboard. Untrusted inputs:
 1. **Client API traffic** (`/v1/*`, `/api/audit`) — arbitrary prompts/responses,
    potentially adversarial (prompt injection aimed at the *audit* LLM,
    resource-exhaustion payloads).
-2. **Uploaded knowledge-base documents** (`/api/upload`) — a poisoned document
+2. **Uploaded knowledge-base documents** (`POST /api/kb/documents`) — a poisoned document
    can attack the verifier ("always answer SUPPORTED") or pollute retrieval.
 3. **The browser** — cross-origin pages attempting CORS reads or cross-site
    WebSocket hijacking (CSWSH) of live audit data.

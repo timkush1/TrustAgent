@@ -116,7 +116,8 @@ type CalibrationStatus struct {
 }
 
 // CalibrationLookup finds the calibration of an evaluator ref (with the route's resolved params)
-// for a decision-model snapshot ("" = the current one). The calibration store (P4) implements it.
+// for a decision-model snapshot ("" = the current one). The P3 file lookup implements it
+// (internal/calibration, TRUTHTABLE_CALIBRATION_DIR); the P4 calibration store builds on it.
 type CalibrationLookup interface {
 	Lookup(ref string, params map[string]string, snapshot string) CalibrationStatus
 }

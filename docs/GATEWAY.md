@@ -86,7 +86,7 @@ client = Anthropic(
 | `POST /v1/messages` | yes | Anthropic Messages, JSON and SSE; errors in Anthropic's shape |
 | `POST /v1/messages/count_tokens` | no | Passed to the Anthropic upstream |
 | `/v1/responses*` | no | Passed through with `X-TrustAgent-Status: skipped:unsupported_api` |
-| `/v1/models*`, `/v1/embeddings` | no | Passed through |
+| `/v1/models*`, `/v1/embeddings` | no | Passed through to `TRUTHTABLE_UPSTREAM_URL`, also for an Anthropic SDK (choosing the upstream from its headers is planned) |
 | `GET /v1/trustagent/decisions/:trace_id` | — | The decision of an earlier request ([§5](#5-reading-a-decision-later-long-poll)) |
 
 ---

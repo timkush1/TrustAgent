@@ -29,9 +29,9 @@
 #
 # A calibration of quality mock counts only with the mock backend, so the
 # scenarios that rely on it (set demo only, such as payments-fallback) are not
-# in set e2e. Scenarios tagged p3 wait for the P3 gateway (trafficgen skips
-# them until --phase p3). cmd/proxy's TestE2EScenariosAgainstMockUpstream runs
-# the same configuration in process, without Docker.
+# in set e2e. trafficgen's default phase is p3, so the whole set runs (23
+# scenarios). cmd/proxy's TestE2EScenariosAgainstMockUpstream runs the same
+# configuration in process, without Docker.
 #
 # The stack publishes the same host ports as `make up` and `make demo`
 # (PROXY_HOST_PORT, DASHBOARD_HOST_PORT): stop those first, or give the e2e

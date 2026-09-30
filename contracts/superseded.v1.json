@@ -158,6 +158,12 @@
       "note": "Metric names need the service prefix: trustagent_engine_* or trustagent_gateway_*."
     },
     {
+      "area": "dx",
+      "pattern": "\\btrustagent_(?!gateway_|engine_)[a-z][a-z0-9_]*_(total|seconds|bytes|ratio|score|count|sum|bucket|info|inflight|clients|audits|depth|state|usd|today)\\b",
+      "kind": "regex",
+      "note": "Metric names carry the service prefix (M11, SPEC Appendix B): trustagent_gateway_* or trustagent_engine_*; the 1.0 names such as trustagent_audits_total were renamed (CHANGELOG). The rule matches metric-shaped names only (a unit or type suffix), because trustagent_error, trustagent_blocked, trustagent_version and similar are TrustAgent identifiers, not metrics."
+    },
+    {
       "area": "engine",
       "pattern": "\\bContextSource\\b",
       "kind": "regex",
@@ -197,8 +203,7 @@
       "area": "frontend",
       "pattern": "?api_key=",
       "kind": "literal",
-      "note": "Keys never go in URLs. warn until the legacy WebSocket query-key auth is removed (backend-go/cmd/proxy/main.go, frontend-react/src/api/client.ts: WS tickets, P2); then error.",
-      "level": "warn"
+      "note": "Keys never go in URLs: browsers open the WebSocket with a single-use ?ticket= (POST /api/ws-ticket) or the session cookie."
     },
     {
       "area": "frontend",
@@ -216,8 +221,26 @@
       "area": "frontend",
       "pattern": "\\bVITE_TRUTHTABLE_API_KEY\\b",
       "kind": "regex",
-      "note": "Removed (breaking): no key in the bundle. warn until the legacy dashboard client drops it (frontend-react/src/api/client.ts, P2 web); then error.",
-      "level": "warn"
+      "note": "Removed (breaking): no key in the bundle; the dashboard signs in with a session."
+    },
+    {
+      "area": "frontend",
+      "pattern": "ProtocolV1",
+      "kind": "literal",
+      "note": "WS v1 was removed at the end of P3 (D13): a handshake without protocol=2 gets 400 bad_request. Only WS v2 exists."
+    },
+    {
+      "area": "frontend",
+      "pattern": "v1Frame",
+      "kind": "literal",
+      "note": "WS v1 frames were removed at the end of P3 (D13); the stream speaks WS v2 envelopes only."
+    },
+    {
+      "area": "frontend",
+      "pattern": "\\baudit_result\\b",
+      "kind": "regex",
+      "allow": ["frontend-react/src/data/live/streamClient.test.ts", "frontend-react/src/data/normalize.test.ts"],
+      "note": "The WS v1 frame type; WS v2 sends audit_completed (SPEC §2.5). Allowed only in the tests that check a v1 frame is refused."
     },
     {
       "area": "frontend",
