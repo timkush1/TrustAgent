@@ -121,7 +121,13 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 		payload{sum.Redact(), store.RedactDecision(decisionJSON)})
 	s.waiters.decided(r.Trace.TraceID, r.Trace.KeyLabel, r.Headers, decisionJSON)
 	if r.LateExpected {
-		s.attemptRecorded(r, &sum)
+		// A late decision's event reads the trace back from the database; without one it reuses
+		// the summary published here.
+		var published *store.TraceSummary
+		if s.store == nil {
+			published = &sum
+		}
+		s.attemptRecorded(r, published)
 	}
 
 	if job == nil {
