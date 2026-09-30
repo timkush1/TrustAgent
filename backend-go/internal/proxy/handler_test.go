@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/truthtable/contracts"
 
 	"github.com/truthtable/backend-go/internal/authz"
@@ -765,5 +766,91 @@ func TestEveryResponseHeaderIsExposedToBrowsers(t *testing.T) {
 	e.router.ServeHTTP(w, req)
 	if !strings.Contains(w.Header().Get("Access-Control-Expose-Headers"), HeaderTraceID) {
 		t.Errorf("preflight exposes %q", w.Header().Get("Access-Control-Expose-Headers"))
+	}
+}
+
+// metricSample reads a series from the default registry by name and label pairs: a counter's
+// value or a histogram's sample count.
+func metricSample(t *testing.T, name string, labelPairs ...string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+	series:
+		for _, m := range f.GetMetric() {
+			for i := 0; i+1 < len(labelPairs); i += 2 {
+				found := false
+				for _, l := range m.GetLabel() {
+					found = found || l.GetName() == labelPairs[i] && l.GetValue() == labelPairs[i+1]
+				}
+				if !found {
+					continue series
+				}
+			}
+			return m.GetCounter().GetValue() + float64(m.GetHistogram().GetSampleCount())
+		}
+	}
+	return 0
+}
+
+// TestRequestMetrics: every gated JSON request counts once in requests_total with its format and
+// delivered action, and once in overhead_seconds with its configured mode (GH-5).
+func TestRequestMetrics(t *testing.T) {
+	const routes = "version: 1\ndefaults: {mode: flag, require_calibration: false, evaluators: [{ref: groundedness@1}, {ref: contradiction@1}]}\nroutes:\n" +
+		"  - {name: metrics-flag, match: {headers: {X-TrustAgent-Route: metrics-flag}}}\n" +
+		"  - {name: metrics-observe, mode: observe, match: {headers: {X-TrustAgent-Route: metrics-observe}}}\n" +
+		"  - {name: metrics-block, mode: block, match: {headers: {X-TrustAgent-Route: metrics-block}}}\n"
+	e := newEnv(t, envOpts{testMode: true, enforcing: true, policyYAML: routes})
+	req, answer, hdr := contradicted(t)
+	cases := []struct {
+		route, path, body, format, mode, action string
+		scenario                                bool
+	}{
+		{"metrics-flag", "/v1/chat/completions", withTestResponse(t, req, answer), llmapi.FormatOpenAIChat, decision.ModeFlag, decision.ActionFlag, true},
+		{"metrics-flag", "/v1/messages", anthropicContradicted(t, answer), llmapi.FormatAnthropicMessages, decision.ModeFlag, decision.ActionFlag, true},
+		{"metrics-observe", "/v1/chat/completions", defaultRouteBody, llmapi.FormatOpenAIChat, decision.ModeObserve, decision.ActionObserve, false},
+		{"metrics-block", "/v1/completions", `{"model":"m","prompt":"hi","test_response":"` + answer + `",` +
+			`"trustagent":{"context":[{"id":"refund-policy.md","text":"Annual plans can be refunded within 30 days of purchase."}]}}`,
+			llmapi.FormatOpenAICompletions, decision.ModeBlock, decision.ActionBlock, true},
+	}
+	for _, tc := range cases {
+		counter := []string{"route", tc.route, "format", tc.format, "action", tc.action}
+		overhead := []string{"route", tc.route, "mode", tc.mode}
+		before, beforeH := metricSample(t, "trustagent_gateway_requests_total", counter...), metricSample(t, "trustagent_gateway_overhead_seconds", overhead...)
+		h := map[string]string{"X-TrustAgent-Route": tc.route}
+		if tc.scenario {
+			h["X-TrustAgent-Scenario"] = hdr["X-TrustAgent-Scenario"]
+		}
+		w := e.do(t, tc.path, tc.body, h)
+		if w.Header().Get(HeaderAction) != tc.action {
+			t.Fatalf("%s %s: action %q, want %s", tc.route, tc.path, w.Header().Get(HeaderAction), tc.action)
+		}
+		e.sink.result(t)
+		if got := metricSample(t, "trustagent_gateway_requests_total", counter...) - before; got != 1 {
+			t.Errorf("%s %s: requests_total grew by %v", tc.route, tc.path, got)
+		}
+		if got := metricSample(t, "trustagent_gateway_overhead_seconds", overhead...) - beforeH; got != 1 {
+			t.Errorf("%s %s: overhead_seconds observed %v samples", tc.route, tc.path, got)
+		}
+	}
+	if err := e.handler.Drain(context.Background()); err != nil {
+		t.Error(err)
+	}
+
+	// A failed upstream call counts once, with the action it delivered.
+	counter := []string{"route", "metrics-flag", "format", llmapi.FormatOpenAIChat, "action", decision.ActionPass}
+	before := metricSample(t, "trustagent_gateway_requests_total", counter...)
+	e.up.Close()
+	if w := e.do(t, "/v1/chat/completions", defaultRouteBody, map[string]string{"X-TrustAgent-Route": "metrics-flag"}); w.Code != http.StatusBadGateway {
+		t.Fatalf("status %d", w.Code)
+	}
+	e.sink.result(t)
+	if got := metricSample(t, "trustagent_gateway_requests_total", counter...) - before; got != 1 {
+		t.Errorf("an upstream failure: requests_total grew by %v", got)
 	}
 }
