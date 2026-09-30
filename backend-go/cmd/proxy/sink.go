@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,6 +30,7 @@ const (
 type traceStore interface {
 	StartTrace(ctx context.Context, t *store.TraceRecord) error
 	RecordDecision(ctx context.Context, t *store.TraceRecord, d *store.DecisionRecord, b *store.BodyRecord) error
+	RecordAttempt(ctx context.Context, d *store.DecisionRecord) error
 	SetTraceAudit(ctx context.Context, traceID string, u store.TraceAuditUpdate) error
 }
 
@@ -140,8 +142,22 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 }
 
 // AttemptDecided records a later attempt of a trace (the fallback re-gate): its gate_decisions
-// row only, with no audit and no change to the trace. Not recorded yet (GD-5).
-func (s *traceSink) AttemptDecided(ctx context.Context, r *gate.Result) {}
+// row only, with no audit, no event and no change to the trace, whose GateDecided carries the
+// delivered outcome (Result.Final).
+func (s *traceSink) AttemptDecided(ctx context.Context, r *gate.Result) {
+	if s.store == nil || r == nil || r.Decision == nil {
+		return
+	}
+	doc, err := json.Marshal(r.Decision)
+	if err != nil {
+		s.log.Error("trace: the attempt's decision does not marshal", "trace_id", r.Decision.TraceID, "attempt", r.Decision.Attempt, "err", err)
+		return
+	}
+	if err := s.store.RecordAttempt(ctx, decisionRecord(r, doc)); err != nil {
+		metrics.TraceWriteDropped.Inc()
+		s.log.Error("trace: recording a later attempt failed", "trace_id", r.Decision.TraceID, "attempt", r.Decision.Attempt, "err", err)
+	}
+}
 
 // LateDecided records a decision recomputed after a late decision-model answer: the late row,
 // the trace flag late_decision and a WS event, never enforced or audited. Not recorded yet (GD-6).
@@ -172,14 +188,19 @@ func startRecord(t *gate.TraceStart) *store.TraceRecord {
 	}
 }
 
-// decidedRecord is the traces row of a gated trace.
+// decidedRecord is the traces row of a gated trace. Its action is what the client got
+// (Result.Final): fallback when the fallback answer went out, block when it failed and blocked.
+// The delivery's reasons (fallback_failed, fallback_format_mismatch) and flags (fallback_used)
+// join the decision's on the trace only, never in decision/v1.
 func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 	rec := startRecord(r.Trace)
 	d := r.Decision
+	action := finalAction(r)
 	rec.UpdatedAt = now.UTC()
-	rec.EffectiveMode, rec.Action, rec.GateStatus = &d.EffectiveMode, &d.Action, d.Status
+	rec.EffectiveMode, rec.Action, rec.GateStatus = &d.EffectiveMode, &action, d.Status
 	rec.WouldAction = nonEmpty(d.WouldAction)
-	rec.SkipReason, rec.Verdict, rec.MaxRisk, rec.Reasons = d.SkipReason, d.Verdict, d.MaxRisk, append([]string{}, d.Reasons...)
+	rec.SkipReason, rec.Verdict, rec.MaxRisk = d.SkipReason, d.Verdict, d.MaxRisk
+	rec.Reasons = append([]string{}, d.Reasons...)
 	if d.EvidenceSummary != nil {
 		rec.EvidenceSummary, _ = json.Marshal(d.EvidenceSummary)
 	}
@@ -191,10 +212,57 @@ func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 		rec.UpstreamStatus = &st
 	}
 	rec.UpstreamMs, rec.GateMs, rec.TotalMs, rec.OverheadMs = r.Upstream.Ms, d.GateMs, r.TotalMs, r.OverheadMs
+	rec.TTFTMs = r.Upstream.TTFTMs
 	rec.PromptTokens, rec.CompletionTokens = r.Upstream.PromptTokens, r.Upstream.CompletionTokens
 	rec.ResponsePreview = store.Preview(r.ResponseText, store.ResponsePreviewRunes)
 	rec.Flags = append([]string{}, r.Flags...)
+	if f := r.Final; f != nil {
+		rec.Reasons = appendNew(rec.Reasons, f.Reasons...)
+		rec.Flags = appendNew(rec.Flags, f.Flags...)
+	}
 	return rec
+}
+
+// finalAction is the action the client got: Result.Final's, else the decision's.
+func finalAction(r *gate.Result) string {
+	if r.Final != nil && r.Final.Action != "" {
+		return r.Final.Action
+	}
+	return r.Decision.Action
+}
+
+// delivered is what the client got (original, fallback or blocked); without Result.Final, the
+// original answer.
+func delivered(r *gate.Result) string {
+	if r.Final != nil && r.Final.Delivered != "" {
+		return r.Final.Delivered
+	}
+	return gate.DeliveredOriginal
+}
+
+// finalText is the answer text the client got (trace_bodies.final_response_text): the original
+// unless Result.Final delivered another text; "" when a fallback or block delivered no answer
+// text (an error-style block sends an error body).
+func finalText(r *gate.Result) string {
+	switch f := r.Final; {
+	case f == nil:
+		return r.ResponseText
+	case f.Text != "":
+		return f.Text
+	case f.Delivered == "" || f.Delivered == gate.DeliveredOriginal:
+		return r.ResponseText
+	}
+	return ""
+}
+
+// appendNew appends the values of add that list does not hold yet.
+func appendNew(list []string, add ...string) []string {
+	for _, v := range add {
+		if v != "" && !slices.Contains(list, v) {
+			list = append(list, v)
+		}
+	}
+	return list
 }
 
 // decisionRecord is the gate_decisions row of a result.
@@ -239,10 +307,12 @@ func decisionRecord(r *gate.Result, doc json.RawMessage) *store.DecisionRecord {
 func bodyRecord(r *gate.Result, expires time.Time, maxBytes int) *store.BodyRecord {
 	msgs := append([]gate.ChatMessage{}, r.Messages...)
 	items := append([]evidence.Item{}, r.Evidence...)
-	texts := []string{r.UserRequest, r.SystemInstructions, r.ResponseText}
+	texts := []string{r.UserRequest, r.SystemInstructions, r.ResponseText, finalText(r)}
 	size := func() int {
-		n := 2 * len(texts[2]) // response_text and final_response_text
-		n += len(texts[0]) + len(texts[1])
+		n := 0
+		for _, t := range texts {
+			n += len(t)
+		}
 		for _, m := range msgs {
 			n += len(m.Content)
 		}
@@ -275,7 +345,7 @@ func bodyRecord(r *gate.Result, expires time.Time, maxBytes int) *store.BodyReco
 	}
 	return &store.BodyRecord{
 		TraceID: r.Trace.TraceID, Messages: messages, UserRequest: nonEmpty(texts[0]), SystemInstructions: nonEmpty(texts[1]),
-		ResponseText: nonEmpty(texts[2]), FinalResponseText: nonEmpty(texts[2]), Evidence: ev, Rules: rules,
+		ResponseText: nonEmpty(texts[2]), FinalResponseText: nonEmpty(texts[3]), Evidence: ev, Rules: rules,
 		Bytes: size(), Truncated: truncated, InclusionProb: r.Body.InclusionProb, ExpiresAt: expires.UTC(),
 	}
 }
@@ -294,7 +364,7 @@ func auditJob(r *gate.Result, auditID string) *worker.Job {
 		Request: req, Lane: r.Audit.Lane, Selection: r.Audit.Selection, InclusionProb: r.Audit.InclusionProb,
 		ClientRequestID: t.ClientRequestID,
 		Gate: &store.AuditGate{Action: d.Action, WouldAction: nonEmpty(d.WouldAction), Verdict: d.Verdict, MaxRisk: d.MaxRisk,
-			Delivered: "original"},
+			Delivered: delivered(r)},
 	}
 	job.ContextUsed, _ = json.Marshal(items)
 	if s := d.EvidenceSummary; s != nil {
@@ -343,7 +413,7 @@ func gateDecision(r *gate.Result) *pb.GateDecision {
 	d := r.Decision
 	g := &pb.GateDecision{
 		Action: d.Action, Mode: d.Mode, Route: d.Route, WouldAction: d.WouldAction, Status: d.Status,
-		Reasons: d.Reasons, Calibration: d.Calibration, Delivered: "original",
+		Reasons: d.Reasons, Calibration: d.Calibration, Delivered: delivered(r),
 	}
 	if d.PolicyVersion != nil {
 		g.PolicyVersion = *d.PolicyVersion
