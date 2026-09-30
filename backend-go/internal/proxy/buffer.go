@@ -127,8 +127,9 @@ func (h *Handler) bufferedDelivery(f *flow, s *streamState, g *gate.Result, col 
 		return h.bufferedBlock(f, s)
 	case decision.ActionFallback:
 		// The fallback call can take as long as an upstream call; the answer is written after it.
-		if w := f.up.Timeout(); w > 0 {
-			_ = s.sw.ExtendWriteDeadline(w + streamDeadlineMargin)
+		// A flow without an upstream (a test_response) has no timeout to size that by.
+		if f.up != nil && f.up.Timeout() > 0 {
+			_ = s.sw.ExtendWriteDeadline(f.up.Timeout() + streamDeadlineMargin)
 		}
 		fo := bufferedFallback(h, f.c.Request.Context(), f, g)
 		var a bufferedAnswer

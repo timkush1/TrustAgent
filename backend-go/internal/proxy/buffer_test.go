@@ -328,6 +328,28 @@ func TestBufferedSlowFallbackStillDelivers(t *testing.T) {
 	e.sink.result(t)
 }
 
+// TestBufferedFallbackWithoutAnUpstream: a synthesized (test_response) stream on a fallback route
+// whose flow has no upstream still reaches the fallback and delivers what it picked.
+func TestBufferedFallbackWithoutAnUpstream(t *testing.T) {
+	sc := loadStrmScenario(t, "stream-passthrough-flag")
+	restore := bufferedFallback
+	bufferedFallback = func(*Handler, context.Context, *flow, *gate.Result) *fallbackOut {
+		return &fallbackOut{Action: decision.ActionBlock, Delivered: gate.DeliveredBlocked, Text: strmBlockMessage,
+			Reasons: []string{reasonFallbackFailed}}
+	}
+	t.Cleanup(func() { bufferedFallback = restore })
+	e := newStrmEnv(t, nil, strmOpts{
+		policyYAML: strmBufferPolicy("fallback", "", "fallback: {upstream: same, on_fail: block}"), synth: sc.Response, noFlowUpstream: true,
+	})
+	resp, body := e.call(t, "/v1/chat/completions", sc.body(t, llmapi.FormatOpenAIChat, nil), sc.ID)
+	if text, _ := strmText(t, llmapi.FormatOpenAIChat, body); resp.StatusCode != http.StatusOK || text != strmBlockMessage {
+		t.Errorf("%d %q", resp.StatusCode, text)
+	}
+	if r := e.sink.result(t); r.Final == nil || r.Final.Delivered != gate.DeliveredBlocked {
+		t.Errorf("final %+v", r.Final)
+	}
+}
+
 // TestBufferedTooLargeTail: an answer past the size limit is a skip: an open route delivers what
 // was read and then the rest of the stream, ungated; a closed block route blocks it (D4).
 func TestBufferedTooLargeTail(t *testing.T) {
@@ -394,4 +416,5 @@ func TestBufferedToolCallsPassThroughUnenforced(t *testing.T) {
 	if r.Decision.Enforced || r.Decision.SkipReason == nil || *r.Decision.SkipReason != gate.SkipNoText || !reflect.DeepEqual(r.Final, want) {
 		t.Errorf("enforced %v skip %v final %+v", r.Decision.Enforced, r.Decision.SkipReason, r.Final)
 	}
+
 }

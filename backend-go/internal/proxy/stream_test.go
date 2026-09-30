@@ -284,6 +284,8 @@ type strmOpts struct {
 	writeTimeout time.Duration
 	// synth, when set, answers every request with a synthesized test_response stream of it.
 	synth string
+	// noFlowUpstream leaves the flow without an upstream (a test_response flow can have none).
+	noFlowUpstream bool
 }
 
 // strmEnv is a gateway handler with a scripted decision model, serving streams on a real server.
@@ -341,6 +343,9 @@ func newStrmEnv(t *testing.T, u *strmUpstream, o strmOpts) *strmEnv {
 	r.POST("/v1/*path", func(c *gin.Context) {
 		raw, _ := io.ReadAll(c.Request.Body)
 		f := e.newFlow(t, c, raw)
+		if o.noFlowUpstream {
+			f.up = nil
+		}
 		if o.synth != "" {
 			e.h.serveStream(f, nil, e.h.synthStream(f, o.synth))
 			return
