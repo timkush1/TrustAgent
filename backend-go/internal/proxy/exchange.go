@@ -20,15 +20,27 @@ import (
 )
 
 // The helpers a gated exchange is built from, shared with the stream relay (stream.go, buffer.go)
-// and the Playground (playground.go). Their signatures are fixed; the flow, answer and jsonOut
-// structs are append-only:
+// and the Playground (playground.go). Their signatures are fixed; the flow, answer, jsonOut and
+// fallbackOut structs are append-only. A JSON exchange runs them in this order (serveJSON):
 //
-//   - newFlow builds the flow of a request (route, mode, trace, evidence, upstream);
-//   - scriptedAnswer and upstreamAnswer get a JSON answer, takeAnswer hands it to the exchange;
-//   - gate.Evaluate decides, enforceJSON applies the decision to a JSON answer (calling fallback
-//     for a fallback decision), blockOf is a route's block body;
-//   - decided records the outcome exactly once, setDecisionHeaders writes the decision headers and
-//     countRequest counts the request once its response is written.
+//  1. f := h.newFlow(c, format, path, raw, req, start) resolves the route and mode, builds the
+//     trace and its evidence, and picks the upstream; the caller then records
+//     sink.TraceStarted(f.record, f.x.Trace);
+//  2. ans := h.scriptedAnswer(f, text), or h.upstreamAnswer(f, resp, cancel) after setting
+//     f.upStart before the call (an error there goes to upstreamFailed, which records and answers
+//     it); then f.takeAnswer(ans), and ans.close once the answer is written;
+//  3. res := h.gate.Evaluate(f.record, f.x): the record context outlives the client, and the gate
+//     bounds itself by the route's deadline;
+//  4. out := h.enforceJSON(ctx, f, res, ans) picks what is delivered. ctx is the client's context:
+//     a fallback decision calls h.fallback on it and records the fallback's attempt 1;
+//  5. audit := h.decided(f, res, ans.upstreamRecord(), end, out.final) records the trace, exactly
+//     once, and returns the X-TrustAgent-Audit value;
+//  6. h.countRequest(f, out.final.Action, up, end), then h.writeJSON(f, res, audit, ans.header, out)
+//     writes the headers (setDecisionHeaders) and out.
+//
+// blockOf is a route's block body. h.fallback runs a route's fallback and returns what it
+// delivers, recording nothing: a caller that does not go through enforceJSON records
+// fallbackOut.Result1 with sink.AttemptDecided before it calls decided (D22), as buffer.go does.
 
 // flow is one gated /v1 exchange. Fields are append-only.
 type flow struct {

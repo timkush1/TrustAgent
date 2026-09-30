@@ -1,17 +1,33 @@
-// Package proxy is the gateway's /v1 HTTP surface (SPEC §2.12): it identifies each request,
-// forwards it to the upstream of its API family, gates the answer through internal/gate, enforces
-// the decision and writes the response with the X-TrustAgent-* headers.
+// Package proxy is the gateway's /v1 HTTP surface (SPEC §2.12). Each request is identified
+// (TraceIDs), forwarded to the upstream of its API family, gated through internal/gate, and
+// answered with what the decision delivers and the X-TrustAgent-* headers.
 //
-// POST /v1/chat/completions, /v1/completions and /v1/messages share one gated handler, Serve. The
-// answer takes the branch its response calls for: an event stream (a text/event-stream 2xx, or a
-// stream:true test_response) is relayed and gated by stream.go; anything else is a JSON answer,
-// gated before it is written and enforced per route (enforce.go): block routes send the route's
-// block body, fallback routes the fallback answer (fallback.go), pass, flag and observe the
-// upstream bytes. Observe routes answer first and gate afterwards. An upstream error or an answer
-// without text is never enforced. /v1/messages/count_tokens, /v1/models and /v1/embeddings pass
-// through ungated, and so does the Responses API (skipped:unsupported_api). Every error TrustAgent
-// writes on /v1 takes the error shape of the route's API: Anthropic on /v1/messages, OpenAI
-// elsewhere.
+// Routes (Mount): POST /v1/chat/completions, /v1/completions and /v1/messages share one gated
+// handler, Serve. /v1/messages/count_tokens (on the Anthropic upstream), /v1/models and
+// /v1/embeddings pass through ungated, and so does the OpenAI Responses API
+// (skipped:unsupported_api). Every error TrustAgent writes on /v1 takes the error shape of the
+// route's API: Anthropic on /v1/messages and its sub-paths, OpenAI elsewhere.
+//
+// The route and its mode come from the policy in effect, read once per request. The answer takes
+// the branch its response calls for:
+//
+//   - an event stream (a text/event-stream 2xx, or a stream:true test_response) is relayed and
+//     gated by stream.go. Passthrough routes relay the events as they arrive and hold the
+//     terminal event while a flag, block or fallback route decides; the decision then travels as
+//     trailers and a ": trustagent" comment. A route with streaming: buffer (observe routes
+//     always relay) reads the whole answer first and enforces every action (buffer.go);
+//   - anything else is a JSON answer. Observe routes send it at once and gate it afterwards; every
+//     other route gates it first and enforces the decision (enforce.go): block sends the route's
+//     block body, fallback calls the route's fallback and re-gates its answer (fallback.go), pass
+//     and flag send the upstream bytes.
+//
+// An answer the gate cannot check fails the way the route says (fail open or closed), except two
+// kinds that are never enforced: an upstream error (a non-2xx passes through as it came, a failed
+// call becomes a 502 or 504) and an answer without text (tool calls only). A JSON or buffered
+// answer past TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES is relayed unread only on observe and flag
+// routes; block and fallback routes block it. In test mode (TRUTHTABLE_TEST_MODE) a test_response
+// answers in place of the upstream, and a scripted scenario's fallback answers from the scenario
+// pack (testfallback.go), so the zero-key demo needs no LLM upstream.
 package proxy
 
 import (
