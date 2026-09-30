@@ -103,6 +103,8 @@ type fakeUpstream struct {
 	status   int
 	body     string
 	ctype    string
+	// delay holds the answer back that long, or until the gateway gives up on the call.
+	delay time.Duration
 }
 
 func newFakeUpstream(t *testing.T) *fakeUpstream {
@@ -113,8 +115,15 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 		f.mu.Lock()
 		f.requests = append(f.requests, r.Clone(context.Background()))
 		f.bodies = append(f.bodies, b)
-		status, body, ctype := f.status, f.body, f.ctype
+		status, body, ctype, delay := f.status, f.body, f.ctype, f.delay
 		f.mu.Unlock()
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		w.Header().Set("Content-Type", ctype)
 		w.Header().Set("X-Upstream", "yes")
 		w.Header().Set("X-TrustAgent-Action", "spoofed")
@@ -172,6 +181,8 @@ type envOpts struct {
 	maxBytes int64
 	// rateLimit, when set, limits /v1 to that many requests a minute (the v1 limiter).
 	rateLimit int
+	// upstreamTimeout bounds each upstream call, the wait for response headers included (0: 5s).
+	upstreamTimeout time.Duration
 }
 
 // anthropicBody is the Anthropic upstream's default answer.
@@ -220,11 +231,15 @@ func newEnv(t *testing.T, o envOpts) *env {
 	auth := authz.New([]authz.Key{{Label: "trafficgen", Secret: ingestKey, Scopes: authz.APIKeyScopes}}, o.ingest)
 	fu, fa := newFakeUpstream(t), newFakeUpstream(t)
 	fa.body = anthropicBody
-	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: 5 * time.Second}, auth.IsProxyKey)
+	timeout := o.upstreamTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	anth, err := upstream.New(upstream.Config{BaseURL: fa.URL, Timeout: 5 * time.Second}, auth.IsProxyKey)
+	anth, err := upstream.New(upstream.Config{BaseURL: fa.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey)
 	if err != nil {
 		t.Fatal(err)
 	}

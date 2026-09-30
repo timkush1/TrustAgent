@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/decision"
@@ -260,6 +261,38 @@ func TestErrorsTakeTheRoutesShape(t *testing.T) {
 	}
 	e.sink.result(t)
 	checkAnthropicError(t, e.do(t, "/v1/messages/count_tokens", messagesBody, nil), http.StatusBadGateway, llmapi.AnthropicAPIError)
+}
+
+// TestUpstreamTimeoutIs504: an upstream that does not answer in time is a 504 upstream_timeout in
+// the route's shape, gated or passed through. The gated trace is skipped:upstream_error and never
+// enforced (D4): on a closed block route the delivered action is pass, not block.
+func TestUpstreamTimeoutIs504(t *testing.T) {
+	e := newEnv(t, envOpts{enforcing: true, upstreamTimeout: 50 * time.Millisecond, policyYAML: blockPolicy("block", "fail: closed")})
+	e.up.delay, e.anth.delay = 10*time.Second, 10*time.Second
+	for _, tc := range []struct {
+		path, body string
+		check      func(*httptest.ResponseRecorder)
+	}{
+		{"/v1/chat/completions", defaultRouteBody, func(w *httptest.ResponseRecorder) {
+			checkOpenAIError(t, w, http.StatusGatewayTimeout, CodeUpstreamTimeout)
+		}},
+		{"/v1/messages", messagesBody, func(w *httptest.ResponseRecorder) {
+			checkAnthropicError(t, w, http.StatusGatewayTimeout, llmapi.AnthropicAPIError)
+		}},
+	} {
+		w := e.do(t, tc.path, tc.body, nil)
+		tc.check(w)
+		r := e.sink.result(t)
+		if h := w.Header(); h.Get(HeaderStatus) != "skipped:upstream_error" || h.Get(HeaderAction) != decision.ActionPass {
+			t.Errorf("%s: status %q action %q", tc.path, h.Get(HeaderStatus), h.Get(HeaderAction))
+		}
+		if r.Decision.Action != decision.ActionBlock || r.Decision.Enforced || r.Final == nil || r.Final.Action != decision.ActionPass ||
+			r.Final.Delivered != gate.DeliveredOriginal || r.Upstream.Status != 0 || r.Upstream.Ms == nil {
+			t.Errorf("%s: decision %s enforced %v final %+v upstream %+v", tc.path, r.Decision.Action, r.Decision.Enforced, r.Final, r.Upstream)
+		}
+	}
+	checkAnthropicError(t, e.do(t, "/v1/messages/count_tokens", messagesBody, nil), http.StatusGatewayTimeout, llmapi.AnthropicAPIError)
+	checkOpenAIError(t, e.send(t, http.MethodGet, "/v1/models", "", nil), http.StatusGatewayTimeout, CodeUpstreamTimeout)
 }
 
 // TestRateLimitTakesTheRoutesShape: the v1 limiter answers 429 with Retry-After in the route's shape.
