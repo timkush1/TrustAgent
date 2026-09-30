@@ -405,3 +405,20 @@ func TestPlaygroundUndecodableAnswer(t *testing.T) {
 		t.Errorf("status %s enforced %v final %+v", r.Status, r.Decision.Enforced, r.Final)
 	}
 }
+
+// TestPlaygroundCallerGoesAway: a caller that goes away cancels the upstream call; the run is
+// recorded all the same, as skipped:client_disconnected and never enforced.
+func TestPlaygroundCallerGoesAway(t *testing.T) {
+	e := newEnv(t, envOpts{testMode: true, policyYAML: blockPolicy("flag", "")})
+	e.injecting(t, e.up.URL)
+	e.up.delay = 5 * time.Second
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(100*time.Millisecond, cancel)
+	_, err := e.handler.Playground(ctx, playgroundContext(), refundRun(t, PlaygroundChat), nil)
+	playgroundErr(t, err)
+	r := e.sink.result(t)
+	if r.Status != "skipped:client_disconnected" || r.Decision.Enforced || r.Trace.Source != gate.SourcePlayground {
+		t.Errorf("status %s enforced %v source %s", r.Status, r.Decision.Enforced, r.Trace.Source)
+	}
+}
