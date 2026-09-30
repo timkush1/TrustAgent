@@ -128,6 +128,10 @@ type Compiled struct {
 	EstTokens         []int    `json:"est_tokens"`
 	RequestSHA256     []string `json:"request_sha256"`
 	QuestionSetSHA256 string   `json:"question_set_sha256"`
+	// EvidenceCap is the evidence cap packing used (step 6), 0 when no included evaluator reads
+	// evidence. It is runtime-only (never in vectors): a request refused as too large compiles
+	// again with half of it (the gate's too_large rule).
+	EvidenceCap int `json:"-"`
 }
 
 // member is an evaluator taking part in compilation.
@@ -257,6 +261,7 @@ func Compile(route *CompileRoute, specs map[string]*Spec, in *CompileInputs, b B
 			qSum += e
 		}
 		limit := min(b.EvidenceMaxTokens, b.Tokens-b.Overhead-qSum-baseEst)
+		out.EvidenceCap = limit
 		p := pack(items, in.AssistantResponse, route.EvidenceSources, limit, b.CPT)
 		packed = p.state
 		out.PackedIDs = p.packedIDs

@@ -57,11 +57,35 @@ func (g *Gate) deadline(x *Exchange) time.Duration {
 // own TRUTHTABLE_JEV_ATTEMPT_TIMEOUT, so an attempt still running at the deadline may finish as a
 // late decision, and a hanging vendor still counts against the breaker (SPEC §2.9 late
 // decisions).
-
+//
+// A request refused as too large (an HTTP 413, or a 400 about size) halves the evidence cap once:
+// the exchange compiles again and every request of the new compile is sent within the same
+// deadline. When a request fails again, its questions stay error:too_large (SPEC §2.9 compile).
+// The returned round is the one whose answers count; its compile is the one they answered.
 func (g *Gate) consult(ctx context.Context, x *Exchange, model string, reqRules map[string]string, c *decision.Compiled) *callRound {
 	ctx, cancel := context.WithTimeout(ctx, g.deadline(x))
 	defer cancel()
-	return g.ask(ctx, x, c, spent{})
+	r := g.ask(ctx, x, c, spent{})
+	if !r.tooLarge() || c.EvidenceCap <= 0 || ctx.Err() != nil {
+		return r
+	}
+	b := g.budget(x.Route)
+	b.EvidenceMaxTokens = c.EvidenceCap / 2
+	smaller, err := decision.Compile(g.compileRoute(x.Route, x.Policy, model), g.cfg.Evaluators.Specs(), g.compileInputs(x, reqRules), b)
+	if err == nil {
+		_, err = smaller.DecideEvaluators(g.cfg.Evaluators.Specs(), thresholds(x.Route))
+	}
+	switch {
+	case err != nil:
+		g.log.Warn("gate: compiling again with half the evidence failed", "trace_id", x.Trace.TraceID, "route", x.Route.Name, "err", err)
+		return r
+	case slices.Equal(smaller.RequestSHA256, c.RequestSHA256):
+		// Halving the cap changed no request, so sending them again would fail the same way.
+		return r
+	}
+	g.log.Info("gate: a decision-model request was too large; sending again with half the evidence",
+		"trace_id", x.Trace.TraceID, "route", x.Route.Name, "evidence_cap", smaller.EvidenceCap)
+	return g.ask(ctx, x, smaller, g.spentBy(r))
 }
 
 // ask sends every request of a compile concurrently and waits for all of them (each returns at
