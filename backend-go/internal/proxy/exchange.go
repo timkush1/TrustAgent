@@ -187,8 +187,9 @@ func (h *Handler) scriptedAnswer(f *flow, text string) *answer {
 	return a
 }
 
-// upstreamAnswer reads a JSON (not event-stream) upstream response to f. An error means the body
-// could not be read at all, which counts as a failed upstream call.
+// upstreamAnswer reads a JSON (not event-stream) upstream response to f; the caller sets
+// f.upStart before the call, which the upstream time counts from. An error means the body could
+// not be read at all, which counts as a failed upstream call (upstreamFailed).
 func (h *Handler) upstreamAnswer(f *flow, resp *http.Response, cancel context.CancelFunc) (*answer, error) {
 	a := &answer{status: resp.StatusCode, header: resp.Header, close: func() { _ = resp.Body.Close(); cancel() }}
 	body, tooLarge, err := upstream.ReadBody(resp, h.maxBytes)
