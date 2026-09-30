@@ -8,7 +8,7 @@
  */
 import { CircleAlert, History } from 'lucide-react';
 import { commandText } from '@/domain/presentation';
-import { recordingDate, useReplayInfo, useRunItYourselfHref } from './useReplay';
+import { useReplayInfo, useRunItYourselfHref } from './useReplay';
 
 export function ReplayBanner() {
   const info = useReplayInfo();
@@ -36,7 +36,7 @@ export function ReplayBanner() {
         <span className="font-medium">{simulated ? 'Replay of simulated traffic.' : 'Replay of recorded traffic.'}</span>{' '}
         <span className="text-fg-muted">
           <span data-recording-label>{info.label}</span>
-          {simulated ? ` · generated from the zero-key demo’s scripted scenarios, dated ${recordingDate(info.recordedAt)}` : ''}.{' '}
+          {simulated ? ' · generated from the zero-key demo’s scripted scenarios' : ''}.{' '}
           <a href={href} className="font-medium text-fg underline underline-offset-2">
             Run it yourself
           </a>

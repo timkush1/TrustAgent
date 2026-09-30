@@ -88,7 +88,7 @@ describe('static build', () => {
     expect(within(banner).getByText('Replay of simulated traffic.')).toBeInTheDocument();
     expect(within(banner).getByText(MOCK_LABEL)).toBeInTheDocument();
     // Generated from the scenarios (scripts/build-demo-recording.ts), not recorded from a stack.
-    expect(banner).toHaveTextContent(/generated from the zero-key demo’s scripted scenarios, dated 28 Sept? 2026/);
+    expect(banner).toHaveTextContent(/generated from the zero-key demo’s scripted scenarios\. Run it yourself/);
     expect(banner).not.toHaveTextContent(/recorded/i);
     expect(within(banner).getByRole('link', { name: 'Run it yourself' })).toHaveAttribute('href', '/TrustAgent/#self-host');
     // No Health pill or demo badge for a gateway that is not there.
