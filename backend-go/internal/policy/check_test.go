@@ -133,6 +133,44 @@ routes:
 	}
 }
 
+// TestFallbackUpstreamNeedsAURL: fallback.upstream: fallback names the fallback upstream, so it is
+// refused, where it is written and once, unless the gateway has one (Env.FallbackUpstream, set
+// from TRUTHTABLE_FALLBACK_UPSTREAM_URL); same is always accepted.
+func TestFallbackUpstreamNeedsAURL(t *testing.T) {
+	doc := `version: 1
+defaults:
+  fallback: {upstream: fallback}
+routes:
+  - {name: a, match: {}}
+  - {name: b, match: {}, mode: fallback, fallback: {upstream: same}}
+  - name: c
+    match: {}
+    fallback: {upstream: fallback, on_fail: flag}
+`
+	res := Check([]byte(doc), enforcingEnv(t))
+	var found []FieldError
+	for _, e := range res.Errors {
+		if strings.HasSuffix(e.Path, "fallback.upstream") {
+			found = append(found, e)
+		}
+	}
+	if res.Policy != nil || len(found) != 2 || found[0].Path != "defaults.fallback.upstream" || found[0].Line != 3 ||
+		found[1].Path != "routes[2].fallback.upstream" || found[1].Line != 9 || !strings.Contains(found[0].Message, "TRUTHTABLE_FALLBACK_UPSTREAM_URL") {
+		t.Errorf("errors %+v", res.Errors)
+	}
+
+	e := enforcingEnv(t)
+	e.FallbackUpstream = true
+	p := mustCheck(t, doc, e)
+	if a, _ := p.Route("a"); a.Fallback.Upstream != "fallback" {
+		t.Errorf("route a inherits the fallback upstream: %+v", a.Fallback)
+	}
+	if b, _ := p.Route("b"); b.Fallback.Upstream != "same" {
+		t.Errorf("route b uses the same upstream: %+v", b.Fallback)
+	}
+	mustCheck(t, "version: 1\ndefaults: {mode: fallback, fallback: {upstream: same}}\n", enforcingEnv(t))
+}
+
 func TestWarnings(t *testing.T) {
 	doc := `version: 1
 overrides: {client_rules: true}

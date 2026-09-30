@@ -580,8 +580,9 @@ func (e *Engine) Preview(ctx context.Context, src ReplaySource, proposed *Policy
 	return res, nil
 }
 
-// recordedPolicy loads the policy version a trace was gated under, leniently (block, fallback
-// and knowledge are accepted: the version was valid when it was active). nil when unknown.
+// recordedPolicy loads the policy version a trace was gated under, leniently (block, fallback,
+// knowledge and the fallback upstream are accepted: the version was valid when it was active).
+// nil when unknown.
 func (e *Engine) recordedPolicy(ctx context.Context, id int64) *Policy {
 	if e.cfg.Store == nil {
 		if st := e.State(); st.Version.ID == id {
@@ -594,6 +595,6 @@ func (e *Engine) recordedPolicy(ctx context.Context, id int64) *Policy {
 		return nil
 	}
 	env := e.cfg.Env
-	env.Enforcing, env.Knowledge = true, true
+	env.Enforcing, env.Knowledge, env.FallbackUpstream = true, true, true
 	return Check([]byte(rec.YAML), env).Policy
 }

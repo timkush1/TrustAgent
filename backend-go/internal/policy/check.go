@@ -407,6 +407,9 @@ func (c *checker) settings(sc scope, s *Settings) {
 	}
 	enum("block.anthropic_stop_reason", s.Block.AnthropicStopReason, "refusal", "end_turn")
 	enum("fallback.upstream", s.Fallback.Upstream, "same", "fallback")
+	if s.Fallback.Upstream == "fallback" && !c.env.FallbackUpstream {
+		c.bad(sc, "fallback.upstream", "fallback needs a fallback upstream (TRUTHTABLE_FALLBACK_UPSTREAM_URL): set it, or use same")
+	}
 	text("fallback.model", s.Fallback.Model, 0, 128)
 	text("fallback.system_prompt", s.Fallback.SystemPrompt, 1, 4000)
 	enum("fallback.on_fail", s.Fallback.OnFail, "block", "flag", "original")
