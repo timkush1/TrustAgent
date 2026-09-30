@@ -22,4 +22,7 @@ func (s *server) mountP3API(r *gin.Engine, api *gin.RouterGroup, guards apiGuard
 	}
 	api.GET("/gate/decisions", guards.read, guards.rateLimit, gate.decisions)
 	api.GET("/gate/reliability", guards.read, guards.rateLimit, gate.reliability)
+
+	// The price table (row 49).
+	api.GET("/pricing", guards.read, guards.rateLimit, s.handlePricing)
 }

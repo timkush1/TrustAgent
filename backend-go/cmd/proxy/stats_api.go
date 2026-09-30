@@ -578,28 +578,15 @@ type judgePriceEntry struct {
 
 var judgePrice = sync.OnceValue(func() judgePriceEntry {
 	p := judgePriceEntry{name: "Claude Haiku 4.5"}
-	b, err := contracts.FS.ReadFile("pricing/prices.v1.json")
+	table, err := prices()
 	if err != nil {
 		return p
 	}
-	var doc struct {
-		Entries []struct {
-			Match    string  `json:"match"`
-			Provider string  `json:"provider"`
-			In       float64 `json:"input_per_mtok"`
-			Out      float64 `json:"output_per_mtok"`
-			AsOf     string  `json:"as_of"`
-			Note     string  `json:"note"`
-		} `json:"entries"`
-	}
-	if json.Unmarshal(b, &doc) != nil {
-		return p
-	}
-	for _, e := range doc.Entries {
+	for _, e := range table.Entries {
 		if e.Provider == "anthropic" && strings.HasPrefix(e.Match, "claude-haiku-4-5") {
-			p.in, p.out, p.ok = e.In, e.Out, true
-			p.note = "Claude Haiku 4.5 list price $" + strconv.FormatFloat(e.In, 'f', -1, 64) + " / $" +
-				strconv.FormatFloat(e.Out, 'f', -1, 64) + " per million tokens (Anthropic, as of " + e.AsOf + ")"
+			p.in, p.out, p.ok = e.InputPerMTok, e.OutputPerMTok, true
+			p.note = "Claude Haiku 4.5 list price $" + strconv.FormatFloat(e.InputPerMTok, 'f', -1, 64) + " / $" +
+				strconv.FormatFloat(e.OutputPerMTok, 'f', -1, 64) + " per million tokens (Anthropic, as of " + e.AsOf + ")"
 			return p
 		}
 	}
