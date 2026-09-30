@@ -35,6 +35,9 @@ type Block struct {
 	AnthropicStopReason string
 }
 
+// Text is the message a block delivers: Message, or DefaultBlockMessage when Message is empty.
+func (b Block) Text() string { return b.withDefaults().Message }
+
 func (b Block) withDefaults() Block {
 	if b.Style != BlockStyleError {
 		b.Style = BlockStyleMessage

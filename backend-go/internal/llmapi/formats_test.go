@@ -39,6 +39,15 @@ func TestFormatForPath(t *testing.T) {
 			t.Errorf("IsResponsesAPI(%q) = %v", path, got)
 		}
 	}
+	for path, want := range map[string]string{
+		"/v1/messages": FamilyAnthropic, "/v1/messages/": FamilyAnthropic, "/v1/messages/count_tokens": FamilyAnthropic,
+		"/v1/messages/batches/b_1": FamilyAnthropic, "/v1/messagesx": FamilyOpenAI, "/v1/chat/completions": FamilyOpenAI,
+		"/v1/completions": FamilyOpenAI, "/v1/models": FamilyOpenAI, "/v1/responses/resp_1": FamilyOpenAI, "": FamilyOpenAI,
+	} {
+		if got := FamilyForPath(path); got != want {
+			t.Errorf("FamilyForPath(%q) = %q, want %q", path, got, want)
+		}
+	}
 }
 
 func TestFormatFamilies(t *testing.T) {

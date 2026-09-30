@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -214,4 +215,183 @@ func TestAuditContextLimits(t *testing.T) {
 	if q := lastUserTurn(r); q != "last" {
 		t.Errorf("query %q", q)
 	}
+}
+
+// replacedResult is a fallback-mode result whose fallback answer went out (Result.Final).
+func replacedResult() *gate.Result {
+	r := flaggedResult()
+	r.Trace.Mode, r.Trace.Route = decision.ModeFallback, "payments-faq"
+	d := r.Decision
+	d.Mode, d.EffectiveMode, d.Action, d.Route = decision.ModeFallback, decision.ModeFallback, decision.ActionFallback, "payments-faq"
+	ttft := int64(120)
+	r.Upstream = gate.Upstream{Status: 200, TTFTMs: &ttft}
+	r.Final = &gate.Final{Action: decision.ActionFallback, Delivered: gate.DeliveredFallback,
+		Text: "Annual plans can be refunded within 30 days.", Flags: []string{gate.FlagFallbackUsed}}
+	return r
+}
+
+// decidedEvent decodes the last gate_decision event: the trace summary and the decision/v1 document.
+func decidedEvent(t *testing.T, pub *events) (store.TraceSummary, gate.Decision) {
+	t.Helper()
+	pub.mu.Lock()
+	defer pub.mu.Unlock()
+	var p struct {
+		Trace    store.TraceSummary `json:"trace"`
+		Decision gate.Decision      `json:"decision"`
+	}
+	for i := len(pub.evs) - 1; i >= 0; i-- {
+		if pub.evs[i].Type != "gate_decision" {
+			continue
+		}
+		if err := json.Unmarshal(pub.evs[i].Data, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.Trace, p.Decision
+	}
+	t.Fatal("no gate_decision event")
+	return p.Trace, p.Decision
+}
+
+// storedDecisions returns a trace's stored decision/v1 documents, by attempt.
+func storedDecisions(t *testing.T, st *memStore, traceID string) []gate.Decision {
+	t.Helper()
+	docs, err := st.TraceDecisions(context.Background(), traceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]gate.Decision, len(docs))
+	for i, doc := range docs {
+		if err := json.Unmarshal(doc, &out[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+func TestSinkRecordsTheDeliveredOutcome(t *testing.T) {
+	st, pub, q := newMemStore(), &events{}, &fakeQueue{engine: true, lane: gate.LaneHigh}
+	s := newSink(st, q, pub)
+	r := replacedResult()
+	s.TraceStarted(context.Background(), r.Trace)
+	s.GateDecided(context.Background(), r)
+	tr, _ := st.GetTrace(context.Background(), r.Trace.TraceID)
+	if *tr.Action != decision.ActionFallback || !slices.Equal(tr.Flags, []string{gate.FlagTestMode, gate.FlagFallbackUsed}) ||
+		tr.TTFTMs == nil || *tr.TTFTMs != 120 {
+		t.Errorf("trace action %v flags %v ttft %v", tr.Action, tr.Flags, tr.TTFTMs)
+	}
+	b, _ := st.GetTraceBody(context.Background(), r.Trace.TraceID)
+	if *b.ResponseText != "Within 60 days." || *b.FinalResponseText != "Annual plans can be refunded within 30 days." {
+		t.Errorf("body texts %q / %q", *b.ResponseText, *b.FinalResponseText)
+	}
+	// The audit checks the original answer and knows what went out instead.
+	job := q.jobs[0]
+	if job.Request.GetResponse() != "Within 60 days." || job.Gate.Delivered != gate.DeliveredFallback ||
+		job.Request.GetGate().GetDelivered() != gate.DeliveredFallback || job.Gate.Action != decision.ActionFallback {
+		t.Errorf("audit gate %+v, request gate delivered %q", job.Gate, job.Request.GetGate().GetDelivered())
+	}
+	// The live stream shows the dashboard what the client got: the event's trace is the stored one.
+	if sum, d := decidedEvent(t, pub); *sum.Action != decision.ActionFallback || !slices.Contains(sum.Flags, gate.FlagFallbackUsed) ||
+		sum.Timings.TTFTMs == nil || *sum.Timings.TTFTMs != 120 || d.Action != decision.ActionFallback {
+		t.Errorf("gate_decision event: trace action %v flags %v ttft %v, decision action %s", sum.Action, sum.Flags, sum.Timings.TTFTMs, d.Action)
+	}
+
+	// The fallback failed and the route blocked: the trace says block and why; decision/v1 does not
+	// change (its action stays fallback, and fallback_failed is never a decision reason).
+	st, q, pub = newMemStore(), &fakeQueue{engine: true, lane: gate.LaneHigh}, &events{}
+	s = newSink(st, q, pub)
+	r = replacedResult()
+	r.Final = &gate.Final{Action: decision.ActionBlock, Delivered: gate.DeliveredBlocked,
+		Text: "I can't confirm that from our policy documents.", Reasons: []string{"fallback_failed"}}
+	s.GateDecided(context.Background(), r)
+	tr, _ = st.GetTrace(context.Background(), r.Trace.TraceID)
+	if *tr.Action != decision.ActionBlock || !slices.Equal(tr.Reasons, []string{"contradiction:critical", "fallback_failed"}) ||
+		slices.Contains(tr.Flags, gate.FlagFallbackUsed) {
+		t.Errorf("failed fallback: action %v reasons %v flags %v", tr.Action, tr.Reasons, tr.Flags)
+	}
+	if ds := storedDecisions(t, st, r.Trace.TraceID); len(ds) != 1 || ds[0].Action != decision.ActionFallback ||
+		slices.Contains(ds[0].Reasons, "fallback_failed") {
+		t.Errorf("decision/v1 %+v", ds)
+	}
+	if b, _ := st.GetTraceBody(context.Background(), r.Trace.TraceID); *b.FinalResponseText != "I can't confirm that from our policy documents." {
+		t.Errorf("blocked text %q", *b.FinalResponseText)
+	}
+	if q.jobs[0].Gate.Delivered != gate.DeliveredBlocked {
+		t.Errorf("audit gate %+v", q.jobs[0].Gate)
+	}
+	if sum, d := decidedEvent(t, pub); *sum.Action != decision.ActionBlock || !slices.Contains(sum.Reasons, "fallback_failed") ||
+		d.Action != decision.ActionFallback || slices.Contains(d.Reasons, "fallback_failed") {
+		t.Errorf("gate_decision event: trace action %v reasons %v, decision action %s reasons %v", sum.Action, sum.Reasons, d.Action, d.Reasons)
+	}
+
+	// An error-style block sends no answer text; an original delivery keeps the original text.
+	for _, tc := range []struct {
+		final *gate.Final
+		want  *string
+	}{
+		{&gate.Final{Action: decision.ActionBlock, Delivered: gate.DeliveredBlocked}, nil},
+		{&gate.Final{Action: decision.ActionFlag, Delivered: gate.DeliveredOriginal, Reasons: []string{"fallback_failed"}}, nonEmpty("Within 60 days.")},
+		{nil, nonEmpty("Within 60 days.")},
+	} {
+		r := replacedResult()
+		r.Final = tc.final
+		b := bodyRecord(r, time.Now(), 1<<20)
+		if (b.FinalResponseText == nil) != (tc.want == nil) || (tc.want != nil && *b.FinalResponseText != *tc.want) {
+			t.Errorf("final %+v: final_response_text %v", tc.final, b.FinalResponseText)
+		}
+	}
+	// Without Final the decision's action and the original answer went out.
+	r = flaggedResult()
+	if rec := decidedRecord(r, time.Now()); *rec.Action != decision.ActionFlag || rec.TTFTMs != nil || gateDecision(r).GetDelivered() != gate.DeliveredOriginal {
+		t.Errorf("no final: action %v ttft %v", rec.Action, rec.TTFTMs)
+	}
+}
+
+func TestSinkAttemptDecidedWritesOnlyItsRow(t *testing.T) {
+	st, pub, q := newMemStore(), &events{}, &fakeQueue{engine: true, lane: gate.LaneHigh}
+	s := newSink(st, q, pub)
+	r0 := replacedResult()
+	// The re-gate of the fallback answer: attempt 1, no audit planned.
+	r1 := *r0
+	d1 := *r0.Decision
+	d1.Attempt, d1.Action, d1.WouldAction, d1.Reasons, d1.DeepAudit = 1, decision.ActionPass, decision.ActionPass, []string{}, decision.DeepAuditNone
+	r1.Decision, r1.Audit, r1.Final, r1.ResponseText = &d1, gate.AuditPlan{}, nil, r0.Final.Text
+
+	// The handler records attempt 1 before it records the trace's outcome (attempt 0).
+	s.TraceStarted(context.Background(), r0.Trace)
+	s.AttemptDecided(context.Background(), &r1)
+	tr, _ := st.GetTrace(context.Background(), r0.Trace.TraceID)
+	if tr.GateStatus != store.GateStatusPending || tr.Action != nil || tr.AuditStatus != store.TraceAuditNone {
+		t.Errorf("attempt 1 touched the trace: %+v", tr)
+	}
+	if types := pub.types(); strings.Join(types, ",") != "trace_started" || len(q.jobs) != 0 {
+		t.Errorf("attempt 1: events %v, %d audits", types, len(q.jobs))
+	}
+	if _, err := st.GetTraceBody(context.Background(), r0.Trace.TraceID); err == nil {
+		t.Error("attempt 1 wrote a body")
+	}
+
+	s.GateDecided(context.Background(), r0)
+	ds := storedDecisions(t, st, r0.Trace.TraceID)
+	if len(ds) != 2 || ds[0].Attempt != 0 || ds[0].Action != decision.ActionFallback || ds[1].Attempt != 1 || ds[1].Action != decision.ActionPass {
+		t.Errorf("decisions by attempt: %+v", ds)
+	}
+	tr, _ = st.GetTrace(context.Background(), r0.Trace.TraceID)
+	if *tr.Action != decision.ActionFallback || tr.AuditStatus != gate.AuditQueued || len(q.jobs) != 1 {
+		t.Errorf("trace %+v, %d audits", tr, len(q.jobs))
+	}
+	if types := pub.types(); strings.Join(types, ",") != "trace_started,gate_decision" {
+		t.Errorf("events %v", types)
+	}
+
+	// Writing the attempt again replaces its row and leaves the trace alone.
+	d1.Action = decision.ActionFlag
+	s.AttemptDecided(context.Background(), &r1)
+	if ds := storedDecisions(t, st, r0.Trace.TraceID); len(ds) != 2 || ds[1].Action != decision.ActionFlag {
+		t.Errorf("replaced attempt: %+v", ds)
+	}
+	if tr, _ := st.GetTrace(context.Background(), r0.Trace.TraceID); *tr.Action != decision.ActionFallback {
+		t.Errorf("trace action %v", tr.Action)
+	}
+	// Without a database there is nothing to write.
+	newSink(nil, nil, &events{}).AttemptDecided(context.Background(), &r1)
 }

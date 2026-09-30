@@ -132,6 +132,8 @@ const (
 	SelectionSample      = "sample"
 	SelectionErrorSample = "error_sample"
 	SelectionUniform     = "uniform"
+	// SelectionPlayground is the selection of a Playground run (Exchange.AuditSelection).
+	SelectionPlayground = "playground"
 
 	LaneHigh = "high"
 	LaneLow  = "low"

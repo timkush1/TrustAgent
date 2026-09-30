@@ -1,50 +1,70 @@
-// Package upstream forwards requests to the LLM provider (SPEC §2.12 forwarding, §3.1).
+// Package upstream forwards requests to the LLM providers (SPEC §2.12 forwarding, §3.1).
 //
-// S0 covers the default upstream in passthrough mode: URL join with query merge (M2), the request
-// on the client's context (M1), header filtering that drops every X-TrustAgent-* header,
-// hop-by-hop headers, Cookie, Host, Content-Length and Accept-Encoding (B2; gzip then stays
-// transparent and a stray Content-Encoding is decoded defensively), the client's own credential
-// passed through while a TrustAgent key is never forwarded (B1), and a ReverseProxy for ungated
-// endpoints. Named upstreams, inject mode, deadline middleware, 413 handling and the M3/M12
-// timeouts land in P2.
+// A Client is one named upstream: the default (OpenAI formats), the Anthropic one (/v1/messages)
+// or the optional fallback upstream; Set holds them. Every request is built from the upstream's
+// base URL joined with the request path, the base query merged with the client's (M2), and runs
+// on the client's context (M1). Headers are filtered: every X-TrustAgent-* header, hop-by-hop
+// headers, Cookie, Host, Content-Length and Accept-Encoding go (B2: gzip then stays transparent,
+// and a stray Content-Encoding is decoded defensively by DecodeBody).
+//
+// Credentials (B1, D15): an upstream with a key of its own injects it (inject mode): the client's
+// Authorization, X-Api-Key and Api-Key headers are dropped and the key is sent on the upstream's
+// auth header. Without a key the client's credential passes through untouched (passthrough
+// mode). A TrustAgent key is never forwarded, wherever the client put it.
+//
+// Timeouts (M12): the transport bounds the wait for response headers; Do bounds a whole JSON
+// answer with the total timeout, and a streamed body (StreamBody) with the idle timeout between
+// reads instead. The end of every answer Do fetched is observed as upstream_seconds{format}.
 package upstream
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/llmapi"
 )
 
 // DefaultBaseURL is the upstream when TRUTHTABLE_UPSTREAM_URL is empty.
 const DefaultBaseURL = "https://api.openai.com"
 
-// Config configures the default upstream.
+// Config configures one upstream.
 type Config struct {
 	// BaseURL is the upstream base: its path prefixes every request path.
 	BaseURL string
+	// APIKey, when set, is injected (inject mode): the client's Authorization, X-Api-Key and
+	// Api-Key headers are dropped and APIKey is sent on AuthHeader instead.
+	APIKey string
+	// AuthHeader carries APIKey: authorization (the default) sends "Bearer <key>", any other
+	// header (x-api-key, api-key) the key as it is (TRUTHTABLE_UPSTREAM_AUTH_HEADER).
+	AuthHeader string
 	// HeaderTimeout bounds the wait for response headers (TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT).
 	HeaderTimeout time.Duration
 	// Timeout bounds a whole non-streaming exchange (TRUTHTABLE_UPSTREAM_TIMEOUT).
 	Timeout time.Duration
+	// IdleTimeout bounds each read of a streamed body (TRUTHTABLE_STREAM_IDLE_TIMEOUT); 0 means
+	// none.
+	IdleTimeout time.Duration
 	// Transport overrides the HTTP transport (tests).
 	Transport http.RoundTripper
 }
 
 // Client sends requests to one upstream.
 type Client struct {
-	base       *url.URL
-	transport  http.RoundTripper
-	timeout    time.Duration
-	isProxyKey func(string) bool
+	base          *url.URL
+	transport     http.RoundTripper
+	timeout, idle time.Duration
+	apiKey        string
+	authHeader    string // canonical
+	isProxyKey    func(string) bool
 }
 
 // New builds a client. isProxyKey reports TrustAgent keys, which are stripped wherever a client
@@ -56,7 +76,14 @@ func New(cfg Config, isProxyKey func(string) bool) (*Client, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, fmt.Errorf("upstream: invalid base URL %q (want http(s)://host[/path])", raw)
+		return nil, fmt.Errorf("upstream: invalid base URL %q (want http(s)://host[/path])", redact(raw))
+	}
+	header := strings.TrimSpace(cfg.AuthHeader)
+	if header == "" {
+		header = "Authorization"
+	}
+	if strings.ContainsAny(header, " \t\r\n:") {
+		return nil, fmt.Errorf("upstream: invalid auth header %q", header)
 	}
 	if isProxyKey == nil {
 		isProxyKey = func(string) bool { return false }
@@ -69,8 +96,31 @@ func New(cfg Config, isProxyKey func(string) bool) (*Client, error) {
 		dt.IdleConnTimeout = 90 * time.Second
 		t = dt
 	}
-	return &Client{base: u, transport: t, timeout: cfg.Timeout, isProxyKey: isProxyKey}, nil
+	return &Client{
+		base: u, transport: t, timeout: cfg.Timeout, idle: cfg.IdleTimeout,
+		apiKey: cfg.APIKey, authHeader: http.CanonicalHeaderKey(header), isProxyKey: isProxyKey,
+	}, nil
 }
+
+// redact is a URL safe for an error message: a password becomes xxxxx and the query goes (a base
+// URL may carry an api-key parameter).
+func redact(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(unparseable)"
+	}
+	u.RawQuery, u.Fragment = "", ""
+	return u.Redacted()
+}
+
+// Injecting reports whether the upstream injects its own credential (inject mode).
+func (c *Client) Injecting() bool { return c.apiKey != "" }
+
+// Timeout is the total timeout of a JSON exchange (0: none).
+func (c *Client) Timeout() time.Duration { return c.timeout }
+
+// IdleTimeout is the longest wait for the next read of a stream (0: none).
+func (c *Client) IdleTimeout() time.Duration { return c.idle }
 
 // Base returns the upstream base URL.
 func (c *Client) Base() *url.URL { u := *c.base; return &u }
@@ -97,7 +147,11 @@ var hopByHop = []string{
 	"Te", "Trailer", "Transfer-Encoding", "Upgrade",
 }
 
-// OutboundHeaders filters the client's request headers for the upstream.
+// credentialHeaders are the request headers that carry an LLM API credential.
+var credentialHeaders = []string{"Authorization", "X-Api-Key", "Api-Key"}
+
+// OutboundHeaders filters the client's request headers for the upstream and sets its credential:
+// the configured key in inject mode, else the client's own (never a TrustAgent key).
 func (c *Client) OutboundHeaders(in http.Header) http.Header {
 	out := in.Clone()
 	if out == nil {
@@ -119,53 +173,83 @@ func (c *Client) OutboundHeaders(in http.Header) http.Header {
 	for _, h := range []string{"Cookie", "Host", "Content-Length", "Accept-Encoding"} {
 		out.Del(h)
 	}
-	// Passthrough: the client's credential goes upstream untouched, unless it is a TrustAgent key.
-	if v := out.Get("Authorization"); v != "" {
-		if token, ok := cutBearer(v); ok && c.isProxyKey(token) {
-			out.Del("Authorization")
+	if c.apiKey != "" {
+		// Inject mode: no client credential goes upstream (a proxy key a client sent as its
+		// credential goes with them), the upstream's own does.
+		for name := range out {
+			if isCredentialHeader(name) {
+				delete(out, name)
+			}
 		}
+		if c.authHeader == "Authorization" {
+			out.Set("Authorization", "Bearer "+c.apiKey)
+		} else {
+			out.Set(c.authHeader, c.apiKey)
+		}
+		return out
 	}
-	for _, h := range []string{"X-Api-Key", "Api-Key"} {
-		if v := out.Get(h); v != "" && c.isProxyKey(v) {
-			out.Del(h)
+	// Passthrough: the client's credential goes upstream untouched, unless it is a TrustAgent key.
+	for name, values := range out {
+		if isCredentialHeader(name) && slices.ContainsFunc(values, c.carriesProxyKey) {
+			delete(out, name)
 		}
 	}
 	return out
 }
 
-func cutBearer(v string) (string, bool) {
-	scheme, token, ok := strings.Cut(strings.TrimSpace(v), " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return "", false
+// isCredentialHeader reports the request headers that carry an LLM API credential, in any
+// spelling: Authorization, X-Api-Key and Api-Key.
+func isCredentialHeader(name string) bool {
+	return slices.ContainsFunc(credentialHeaders, func(h string) bool { return strings.EqualFold(h, name) })
+}
+
+// carriesProxyKey reports whether one value of a credential header carries a TrustAgent key: as
+// the whole value, or as the credential after a scheme (Bearer or any other), so a proxy key is
+// never forwarded, however the client sent it (B1).
+func (c *Client) carriesProxyKey(v string) bool {
+	v = strings.TrimSpace(v)
+	if c.isProxyKey(v) {
+		return true
 	}
-	return strings.TrimSpace(token), true
+	_, token, ok := strings.Cut(v, " ")
+	return ok && c.isProxyKey(strings.TrimSpace(token))
 }
 
 func isTrustAgentHeader(name string) bool {
 	return len(name) >= len("X-Trustagent-") && strings.EqualFold(name[:len("X-Trustagent-")], "X-Trustagent-")
 }
 
-// Do sends a non-streaming request upstream. The request runs on ctx, the client's context, so a
-// client that goes away cancels it (M1), bounded by the configured timeout. The caller closes the
-// response body; the returned cancel releases the timeout once the body is consumed.
+// Do sends a request upstream. The request runs on ctx, the client's context, so a client that
+// goes away cancels it (M1), bounded by the total timeout until the answer is read, or, once
+// StreamBody takes a streamed body over, by the idle timeout of each read. The caller closes the
+// response body; the returned cancel releases the exchange once the body is consumed. A request
+// the timeout aborted fails with an error IsTimeout reports.
 func (c *Client) Do(ctx context.Context, method, path, rawQuery string, header http.Header, body []byte) (*http.Response, context.CancelFunc, error) {
-	cancel := context.CancelFunc(func() {})
-	if c.timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+	start := time.Now()
+	ctx, cancelCause := context.WithCancelCause(ctx)
+	d := &deadline{cancel: cancelCause}
+	d.arm(c.timeout, errTotalTimeout)
+	release := func() {
+		d.disarm()
+		cancelCause(nil)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.URL(path, rawQuery).String(), bytes.NewReader(body))
 	if err != nil {
-		cancel()
+		release()
 		return nil, nil, err
 	}
 	req.Header = c.OutboundHeaders(header)
 	req.ContentLength = int64(len(body))
 	resp, err := c.transport.RoundTrip(req)
 	if err != nil {
-		cancel()
+		if fired := d.err(); fired != nil {
+			err = fired
+		}
+		release()
 		return nil, nil, err
 	}
-	return resp, cancel, nil
+	resp.Body = &timedBody{rc: resp.Body, d: d, start: start, format: llmapi.FormatForPath(path)}
+	return resp, release, nil
 }
 
 // IsTimeout reports whether err is an upstream timeout (as opposed to a refused or reset
@@ -173,34 +257,6 @@ func (c *Client) Do(ctx context.Context, method, path, rawQuery string, header h
 func IsTimeout(err error) bool {
 	var ne net.Error
 	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
-}
-
-// ReadBody reads at most limit bytes of a response body. It reports whether the body is larger;
-// the caller then streams the rest from resp.Body after what was read. A gzip body the transport did
-// not decode itself (a stray Content-Encoding) is decoded here, and its encoding headers removed.
-func ReadBody(resp *http.Response, limit int64) ([]byte, bool, error) {
-	if strings.EqualFold(strings.TrimSpace(resp.Header.Get("Content-Encoding")), "gzip") && !resp.Uncompressed {
-		zr, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return nil, false, fmt.Errorf("upstream: undecodable gzip body: %w", err)
-		}
-		resp.Body = struct {
-			io.Reader
-			io.Closer
-		}{zr, resp.Body}
-		resp.Header.Del("Content-Encoding")
-		resp.Header.Del("Content-Length")
-		resp.ContentLength = -1
-		resp.Uncompressed = true
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, false, err
-	}
-	if int64(len(b)) > limit {
-		return b, true, nil
-	}
-	return b, false, nil
 }
 
 // CopyResponseHeaders copies an upstream response's headers for the client with multi-value Add,

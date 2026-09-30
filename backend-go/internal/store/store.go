@@ -162,6 +162,8 @@ type Store interface {
 
 	StartTrace(ctx context.Context, t *TraceRecord) error
 	RecordDecision(ctx context.Context, t *TraceRecord, d *DecisionRecord, b *BodyRecord) error
+	// RecordAttempt writes a later attempt's gate_decisions row (the fallback re-gate) only.
+	RecordAttempt(ctx context.Context, d *DecisionRecord) error
 	SetTraceAudit(ctx context.Context, traceID string, u TraceAuditUpdate) error
 	ListTraces(ctx context.Context, f TraceFilter) ([]TraceRecord, string, error)
 	// GetTrace, GetTraceBody: ErrNotFound when absent.

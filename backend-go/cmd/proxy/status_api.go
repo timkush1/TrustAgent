@@ -60,6 +60,15 @@ type statusReporter struct {
 	// redisState is the rate limiter's backend state at startup (up, down or disabled).
 	redisState string
 	now        func() time.Time
+	// calib reports the calibration state of a snapshot (the calibration file lookup,
+	// decision_wiring.go); nil means none.
+	calib calibrationStater
+}
+
+// calibrationStater reports a snapshot's calibration state and how many targets it calibrates
+// (*calibration.Store).
+type calibrationStater interface {
+	State(snapshot string) (state string, targets int)
 }
 
 // healthStatus is api.ts HealthStatus (GET /health).
@@ -466,6 +475,10 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 	}
 	if d.State == "" {
 		d.State = "off"
+	}
+	// The calibration of the snapshot that answers; unknown until the first answer (HTTP backends).
+	if s.calib != nil && st.Snapshot != "" {
+		d.CalibrationState, d.CalibratedTargets = s.calib.State(st.Snapshot)
 	}
 	if st.Endpoint != "" {
 		if u, err := url.Parse(st.Endpoint); err == nil && u.Hostname() != "" {
