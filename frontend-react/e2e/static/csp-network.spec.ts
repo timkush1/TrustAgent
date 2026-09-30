@@ -41,7 +41,7 @@ test.describe('CSP and network', () => {
     await expectHardened(page, 'app');
 
     await page.goto('app/overview/');
-    await expect(page.getByText(/Recorded \d+ \w+ \d{4}/)).toBeVisible();
+    await expect(page.getByText(/\d+ requests on \d+ \w+ \d{4}/)).toBeVisible();
 
     // A deep link is served by 404.html, which must be just as locked down.
     await page.goto(`app/traffic/${refundTraceId}`);
