@@ -1213,8 +1213,8 @@ func TestServeStreamBranchFollowsTheResponse(t *testing.T) {
 	})
 }
 
-// TestServeStreamFailsBeforeItsFirstEvent (D21): an upstream stream that breaks off or stalls
-// before its first event, while nothing was written, is answered as a failed upstream call: 502,
+// TestServeStreamFailsBeforeItsFirstEvent (D21): an upstream stream that breaks off, stalls or
+// ends before its first event, while nothing was written, is answered as a failed upstream call: 502,
 // or 504 after the idle timeout, in the route's error shape, without the upstream's headers. The
 // trace is skipped:upstream_error (skipped:undecodable for a body the gateway cannot decode), the
 // decision unenforced and the delivered action pass, and the request counts once. A buffered
@@ -1224,13 +1224,14 @@ func TestServeStreamFailsBeforeItsFirstEvent(t *testing.T) {
 	sc := loadStrmScenario(t, "stream-passthrough-flag")
 	for _, c := range []struct {
 		name, path, format, policy, mode string
-		// events are sent before the upstream breaks off (or stalls).
-		events []string
-		stall  bool
-		header http.Header
-		status int
-		code   string
-		skip   string
+		// events are sent before the upstream breaks off or stalls (or, with ends, ends the stream
+		// cleanly).
+		events      []string
+		stall, ends bool
+		header      http.Header
+		status      int
+		code        string
+		skip        string
 	}{
 		{name: "relay breaks off", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat, policy: strmPolicy("mode: flag"),
 			mode: decision.ModeFlag, status: http.StatusBadGateway, code: CodeUpstreamError, skip: gate.SkipUpstreamError},
@@ -1238,6 +1239,10 @@ func TestServeStreamFailsBeforeItsFirstEvent(t *testing.T) {
 			mode: decision.ModeFlag, stall: true, status: http.StatusGatewayTimeout, code: CodeUpstreamTimeout, skip: gate.SkipUpstreamError},
 		{name: "relay sends half an event", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat, policy: strmPolicy("mode: flag"),
 			mode: decision.ModeFlag, events: []string{"data: {\"choi"}, status: http.StatusBadGateway, code: CodeUpstreamError, skip: gate.SkipUpstreamError},
+		{name: "relay ends without an event", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat, policy: strmPolicy("mode: flag"),
+			mode: decision.ModeFlag, ends: true, status: http.StatusBadGateway, code: CodeUpstreamError, skip: gate.SkipUpstreamError},
+		{name: "buffer ends without an event", path: "/v1/messages", format: llmapi.FormatAnthropicMessages,
+			policy: strmBufferPolicy("block", "", ""), mode: decision.ModeBlock, ends: true, status: http.StatusBadGateway, skip: gate.SkipUpstreamError},
 		{name: "anthropic breaks off", path: "/v1/messages", format: llmapi.FormatAnthropicMessages, policy: strmPolicy("mode: flag"),
 			mode: decision.ModeFlag, status: http.StatusBadGateway, skip: gate.SkipUpstreamError},
 		{name: "observe breaks off", path: "/v1/chat/completions", format: llmapi.FormatOpenAIChat, policy: strmPolicy("mode: observe"),
@@ -1251,7 +1256,7 @@ func TestServeStreamFailsBeforeItsFirstEvent(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			u := newStrmUpstream(t, c.events...)
-			u.stall, u.abort, u.header = c.stall, !c.stall, c.header
+			u.stall, u.abort, u.header = c.stall, !c.stall && !c.ends, c.header
 			e := newStrmEnv(t, u, strmOpts{policyYAML: c.policy, idle: 150 * time.Millisecond, serve: true})
 			route := e.pol.Match(&policy.Request{Path: c.path}).Name
 			// Pass is what an unenforced decision delivers; observe stays observe.

@@ -30,8 +30,8 @@ import (
 // mode: fail open lets an unchecked answer through, not an unread one (D4, as the JSON path).
 // Anything else delivers what was read and then the rest of the stream, ungated. An error the
 // upstream reported inside the stream, or an answer without text, passes through unenforced (D4,
-// D5). A stream that fails or stalls before its first event, while no keepalive committed the
-// headers, is answered as a failed upstream call (streamFailed, D21). A client that went away gets
+// D5). A stream that fails, stalls or ends before its first event, while no keepalive committed
+// the headers, is answered as a failed upstream call (streamFailed, D21). A client that went away gets
 // nothing: the decision is recorded unenforced. The request counts once in requests_total.
 func (h *Handler) serveBuffered(f *flow, resp *http.Response, body io.Reader) {
 	c, x := f.c, f.x
@@ -61,7 +61,7 @@ func (h *Handler) serveBuffered(f *flow, resp *http.Response, body io.Reader) {
 	if !tooLarge || gone {
 		s.closeUpstream(!gone && col.UpstreamErr == nil)
 	}
-	if !gone && s.failedEarly(col.UpstreamErr, col.Events) {
+	if !gone && !tooLarge && s.failedEarly(col.UpstreamErr, false, col.Events) {
 		h.streamFailed(f, s, base, col.UpstreamErr, readEnd)
 		return
 	}

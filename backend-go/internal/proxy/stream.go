@@ -298,8 +298,8 @@ func appendStreamFlag(flags []string, flag string) []string {
 //
 // An event past the size limit is forwarded with the rest of the stream as it is; an answer past
 // TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES is relayed whole but not gated (skipped:upstream_error).
-// A stream that fails or stalls before its first event is answered as a failed upstream call
-// (streamFailed, D21). The request counts once in requests_total, with the action it delivered
+// A stream that fails, stalls or ends before its first event is answered as a failed upstream
+// call (streamFailed, D21). The request counts once in requests_total, with the action it delivered
 // (observe on observe routes, as respondThenGate).
 func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	c, x := f.c, f.x
@@ -335,7 +335,7 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	relayEnd := h.now()
 	gone := res.ClientGone(c.Request.Context())
 	s.closeUpstream(!gone && res.UpstreamErr == nil)
-	if !gone && s.failedEarly(res.UpstreamErr, nil) {
+	if !gone && s.failedEarly(res.UpstreamErr, res.Held, nil) {
 		h.streamFailed(f, s, base, res.UpstreamErr, relayEnd)
 		return
 	}
@@ -373,28 +373,29 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	}
 }
 
-// failedEarly reports whether an upstream stream failed or stalled before its first event while
-// the client's headers are still uncommitted (D21): a read error or the idle timeout, not the size
-// limit, before any whole event was relayed (nothing was written) or, for a buffered answer,
-// read (read holds the events collected; an unterminated tail is no event).
-func (s *streamState) failedEarly(err error, read []llmapi.Event) bool {
-	if err == nil || errors.Is(err, llmapi.ErrEventTooLarge) || s.resp == nil || s.sw.Committed() {
+// failedEarly reports whether an upstream stream failed, stalled or ended before its first event
+// while the client's headers are still uncommitted (D21): no whole event was relayed (written, or
+// held back: held) or, for a buffered answer, read (read holds the events collected; an
+// unterminated tail is no event). An event past the size limit is no failure: the rest of the
+// stream is relayed as it is.
+func (s *streamState) failedEarly(err error, held bool, read []llmapi.Event) bool {
+	if s.resp == nil || held || s.sw.Committed() || errors.Is(err, llmapi.ErrEventTooLarge) {
 		return false
 	}
 	return !slices.ContainsFunc(read, func(ev llmapi.Event) bool { return !ev.Incomplete })
 }
 
-// streamFailed answers a stream whose upstream failed or stalled before its first event, while
-// nothing was written, as a failed upstream call (D21, as upstreamFailed and D4): 502, or 504 when
-// the stream was silent past TRUTHTABLE_STREAM_IDLE_TIMEOUT, in the route's error shape, never a
-// 200 stream that holds only the annotation. The trace is skipped:upstream_error
+// streamFailed answers a stream whose upstream failed, stalled or ended before its first event,
+// while nothing was written, as a failed upstream call (D21, as upstreamFailed and D4): 502, or 504
+// when the stream was silent past TRUTHTABLE_STREAM_IDLE_TIMEOUT, in the route's error shape, never
+// a 200 stream that holds only the annotation. The trace is skipped:upstream_error
 // (skipped:undecodable for a body the gateway cannot decode, D24), the decision unenforced and the
 // delivered action pass; the request counts once. The upstream's response headers are dropped
 // (base holds the ones set before they were copied): the client gets the gateway's error, not the
 // upstream's stream.
 func (h *Handler) streamFailed(f *flow, s *streamState, base http.Header, err error, end time.Time) {
 	c, x := f.c, f.x
-	h.log.Warn("the upstream stream failed before its first event", "trace_id", x.Trace.TraceID, "err", err)
+	h.log.Warn("the upstream stream ended before its first event", "trace_id", x.Trace.TraceID, "err", err)
 	x.SkipReason, x.Unenforced = gate.SkipUpstreamError, true
 	if errors.Is(err, upstream.ErrUndecodable) {
 		x.SkipReason = gate.SkipUndecodable
@@ -413,7 +414,7 @@ func (h *Handler) streamFailed(f *flow, s *streamState, base http.Header, err er
 	if window := streamDeadlineWindow(f.up); window > 0 {
 		_ = s.sw.ExtendWriteDeadline(window)
 	}
-	status, code, msg := http.StatusBadGateway, CodeUpstreamError, "The upstream LLM API stream failed before its first event."
+	status, code, msg := http.StatusBadGateway, CodeUpstreamError, "The upstream LLM API stream ended before its first event."
 	if upstream.IsTimeout(err) {
 		status, code, msg = http.StatusGatewayTimeout, CodeUpstreamTimeout, "The upstream LLM API did not answer in time."
 	}
