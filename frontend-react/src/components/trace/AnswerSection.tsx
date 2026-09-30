@@ -166,7 +166,7 @@ function ReceivedInstead({
           result: fallbackCheckResult(check),
         });
   return (
-    <div id={id} tabIndex={-1} data-delivered={delivered} className="space-y-1.5 border-t border-border pt-3 outline-none">
+    <div id={id} tabIndex={-1} data-delivered={delivered} className="space-y-1.5 border-t border-border pt-3">
       <p className="flex items-center gap-1.5 text-xs font-medium text-fg">
         <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
         {copy.trace.received_instead}
