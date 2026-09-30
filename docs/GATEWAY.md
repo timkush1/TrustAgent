@@ -113,8 +113,9 @@ Each route has a `mode` (`TRUTHTABLE_GATE_DEFAULT_MODE` seeds the default,
     `streaming: buffer` ([§4](#4-streaming)).
   - With `require_calibration: true` (the default), a block needs every
     block-set evaluator to be calibrated for the current Jev snapshot;
-    otherwise the action is capped at `flag` (`uncalibrated_snapshot`). See
-    [EVALUATORS.md](EVALUATORS.md#calibration).
+    otherwise the action is capped at `flag` (`uncalibrated_snapshot`). A
+    detector in `detectors.block_on` still blocks: it needs no calibration.
+    See [EVALUATORS.md](EVALUATORS.md#calibration).
 - **Client override.** With `overrides.client_mode: stricter_only`, a client
   may ask for a stricter mode with `X-TrustAgent-Mode` (observe → flag →
   block/fallback), never a milder one.
