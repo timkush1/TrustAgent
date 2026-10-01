@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -175,8 +176,15 @@ func CheckPriceEntry(e PriceEntry) (field, problem string) {
 
 func validPrice(p float64) bool { return p >= 0 && !math.IsInf(p, 0) && !math.IsNaN(p) }
 
-// ContractsPrices is the embedded contracts/pricing/prices.v1.json, parsed once.
-var ContractsPrices = sync.OnceValues(func() (PriceTable, error) {
+// ContractsPrices is the embedded contracts/pricing/prices.v1.json (parsed once). The caller owns
+// the returned entries.
+func ContractsPrices() (PriceTable, error) {
+	t, err := contractsPrices()
+	t.Entries = slices.Clone(t.Entries)
+	return t, err
+}
+
+var contractsPrices = sync.OnceValues(func() (PriceTable, error) {
 	b, err := contracts.FS.ReadFile("pricing/prices.v1.json")
 	if err != nil {
 		return PriceTable{}, err
