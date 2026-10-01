@@ -8,10 +8,17 @@ import (
 	"github.com/truthtable/backend-go/internal/decision"
 )
 
-// Knowledge states (EvidenceSummary.knowledge).
+// Knowledge states (EvidenceSummary.knowledge): the route does not read the knowledge add-on, or
+// did not need it for this request (when: fallback with request evidence, nothing to search for,
+// an answer that was not checked); the add-on is off; its documents were used; it found nothing;
+// it missed the knowledge deadline; it failed.
 const (
 	KnowledgeNotRequested = "not_requested"
 	KnowledgeDisabled     = "disabled"
+	KnowledgeUsed         = "used"
+	KnowledgeNoHits       = "no_hits"
+	KnowledgeTimeout      = "timeout"
+	KnowledgeError        = "error"
 )
 
 // Summary is what a decision was checked against (contracts/schema/evidence-summary.v1.schema.json).
@@ -36,8 +43,9 @@ type SourceCount struct {
 }
 
 // Summarize describes the trusted items of r per configured source. truncated says whether packing
-// cut or skipped an item; cpt is the characters-per-token ratio of the token estimates. The
-// knowledge add-on is not available in S0, so a configured knowledge source reports disabled.
+// cut or skipped an item; cpt is the characters-per-token ratio of the token estimates. A
+// configured knowledge source reports the retrieval's state (Result.Knowledge), or disabled when
+// no retrieval ran (the knowledge add-on is off).
 func Summarize(r *Result, configured []string, truncated bool, cpt float64) Summary {
 	s := Summary{
 		Configured: slices.Clone(configured),
@@ -52,6 +60,9 @@ func Summarize(r *Result, configured []string, truncated bool, cpt float64) Summ
 	for _, src := range configured {
 		if src == SourceKnowledge {
 			s.Knowledge = KnowledgeDisabled
+			if r.Knowledge != "" {
+				s.Knowledge = r.Knowledge
+			}
 		}
 		c := SourceCount{Source: src, Labels: []string{}}
 		for _, it := range r.Items {

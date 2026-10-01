@@ -233,6 +233,7 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 		in.Accepted()
 	}
 	h.sink.TraceStarted(f.record, t)
+	h.startKnowledge(f)
 
 	var ans *answer
 	var up gate.Upstream // audit mode: no upstream call
@@ -259,7 +260,7 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 	}
 
 	// As on /v1, the gate waits on the record context: only its own deadline stops it.
-	res := h.gate.Evaluate(f.record, x)
+	res := h.evaluate(f.record, f)
 	out := h.enforceJSON(ctx, f, res, ans)
 	audit := h.decided(f, res, up, h.now(), out.final)
 
@@ -339,7 +340,7 @@ func (h *Handler) playgroundUpstreamFailed(ctx context.Context, f *flow, status 
 	if x.SkipReason != gate.SkipClientDisconnected {
 		h.log.Warn("playground: upstream call failed", "trace_id", x.Trace.TraceID, "status", status, "skip", x.SkipReason, "err", err)
 	}
-	res := h.gate.Evaluate(f.record, x)
+	res := h.evaluate(f.record, f)
 	fin := &gate.Final{Action: unenforcedAction(res.Decision.Action), Delivered: gate.DeliveredOriginal}
 	h.decided(f, res, gate.Upstream{Status: status, Ms: &ms}, h.now(), fin)
 	return pe

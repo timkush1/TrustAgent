@@ -29,8 +29,9 @@ import (
 //  2. ans := h.scriptedAnswer(f, text), or h.upstreamAnswer(f, resp, cancel) after setting
 //     f.upStart before the call (an error there goes to upstreamFailed, which records and answers
 //     it); then f.takeAnswer(ans), and ans.close once the answer is written;
-//  3. res := h.gate.Evaluate(f.record, f.x): the record context outlives the client, and the gate
-//     bounds itself by the route's deadline;
+//  3. res := h.evaluate(f.record, f): the record context outlives the client, and the gate
+//     bounds itself by the route's deadline. evaluate joins the knowledge retrieval that
+//     h.startKnowledge(f) started next to the upstream call (knowledge.go), then gates f.x;
 //  4. out := h.enforceJSON(ctx, f, res, ans) picks what is delivered. ctx is the client's context:
 //     a fallback decision calls h.fallback on it and records the fallback's attempt 1;
 //  5. audit := h.decided(f, res, ans.upstreamRecord(), end, out.final) records the trace, exactly
@@ -61,6 +62,9 @@ type flow struct {
 	// ups is the upstream set in effect when the flow started; the fallback upstream comes from
 	// the same set.
 	ups *upstream.Set
+	// knowledge is the knowledge retrieval in flight (knowledge.go), nil when none runs or once it
+	// was joined.
+	knowledge *knowledgeFetch
 }
 
 // newFlow builds the flow of a request of format on path: the route and mode the policy in effect

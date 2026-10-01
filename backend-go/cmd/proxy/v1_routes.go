@@ -13,9 +13,12 @@ const gatewayEnforces = true
 // mountV1 mounts the LLM API (SPEC §2.12): every /v1 response carries the trace id; ingest auth
 // reads X-TrustAgent-Key only, so Authorization stays the client's upstream credential (B1).
 // proxy.Handler.Mount holds the route table: chat completions, completions and messages gated;
-// count_tokens, models and embeddings passed through; the Responses API passed through ungated.
+// count_tokens, models (on the client's SDK family) and embeddings passed through; the Responses
+// API passed through ungated.
 func (s *server) mountV1(r *gin.Engine, v1RateLimit, bodyLimit gin.HandlerFunc) {
 	h := s.gateway.handler
+	// /v1/models tells an Anthropic client's own x-api-key from a proxy key (D67).
+	h.ProxyKeys(s.gateway.auth.IsProxyKey)
 	v1 := r.Group("/v1", h.TraceIDs(), s.gateway.auth.Ingest(proxy.Deny), v1RateLimit)
 	h.Mount(v1, bodyLimit)
 	// The decision of a trace, for clients of observe routes (decisions_longpoll_api.go).
