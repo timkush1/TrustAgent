@@ -22,7 +22,7 @@ func contractsTable(t *testing.T) decision.PriceTable {
 	return ct
 }
 
-func TestPriceBookContractsOnly(t *testing.T) {
+func TestPricingBookContractsOnly(t *testing.T) {
 	ct := contractsTable(t)
 	b, err := LoadPriceBook("")
 	if err != nil {
@@ -50,7 +50,7 @@ func TestPriceBookContractsOnly(t *testing.T) {
 	}
 }
 
-func TestPriceBookOverrides(t *testing.T) {
+func TestPricingBookOverrides(t *testing.T) {
 	b := NewPriceBook(contractsTable(t), nil)
 	overrides := []decision.PriceEntry{
 		{Match: "typesafe/jev-1.13*", Provider: "openrouter", InputPerMTok: 0.05, Note: "negotiated"},
@@ -98,7 +98,7 @@ func writeFile(t *testing.T, body string) string {
 	return p
 }
 
-func TestLoadPriceBookFile(t *testing.T) {
+func TestPricingBookFile(t *testing.T) {
 	path := writeFile(t, `{"version":"acme-2026-10","currency":"USD","entries":[
 		{"match":"typesafe/jev-1.13*","provider":"openrouter","input_per_mtok":0.04,"output_per_mtok":0,"note":"contract price"}]}`)
 	b, err := LoadPriceBook(path)
@@ -133,7 +133,7 @@ func TestLoadPriceBookFile(t *testing.T) {
 }
 
 // Readers see whole snapshots while the overrides change (run with -race).
-func TestPriceBookConcurrent(t *testing.T) {
+func TestPricingBookConcurrent(t *testing.T) {
 	b := NewPriceBook(contractsTable(t), nil)
 	sets := [][]decision.PriceEntry{
 		{{Match: "typesafe/jev-1.13*", Provider: "openrouter", InputPerMTok: 0.05}},

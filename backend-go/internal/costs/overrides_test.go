@@ -7,7 +7,7 @@ import (
 	"github.com/truthtable/backend-go/internal/decision"
 )
 
-func TestValidateOverridesClean(t *testing.T) {
+func TestPricingOverridesClean(t *testing.T) {
 	ok := []decision.PriceEntry{
 		{Match: "typesafe/jev-1.13*", Provider: "openrouter", InputPerMTok: 0.05, Label: "override", AsOf: "2026-10-01", Note: "negotiated"},
 		{Match: "*", Provider: "ollama"}, // $0 is fine locally
@@ -22,7 +22,7 @@ func TestValidateOverridesClean(t *testing.T) {
 	}
 }
 
-func TestValidateOverridesFindings(t *testing.T) {
+func TestPricingOverridesFindings(t *testing.T) {
 	overrides := []decision.PriceEntry{
 		{Match: "", Provider: "openrouter", InputPerMTok: 1},                                          // 0: schema
 		{Match: "gpt-*", Provider: "OpenAI", InputPerMTok: 1},                                         // 1: schema (provider)
