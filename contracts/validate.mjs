@@ -64,6 +64,7 @@ const RULES = [
   { re: /^ui\/commands\.v1\.json$/, schema: 'ui-commands.v1' },
   { re: /^fixtures\/api\/[^/]+\.json$/, schema: 'api.v1', apiFixture: true },
   { re: /^fixtures\/vendor\/[A-Za-z0-9._-]+\.json$/, schema: null },
+  { re: /^fixtures\/grpc\/[^/]+\.json$/, schema: null, grpcFixture: true },
   { re: /^vectors\/[^/]+\/[^/]+\.json$/, schema: 'vector.v1' },
   { re: /^superseded\.v1\.json$/, schema: 'superseded.v1' },
 ];
@@ -687,6 +688,10 @@ if (keys) {
     if (k.enum && !['enum', 'list'].includes(k.kind)) error(REL, `${k.name}: enum is only allowed for kind enum or list`);
     if (k.kind === 'enum' && !k.enum) error(REL, `${k.name}: kind enum needs an enum list`);
     if (k.secret && k.default !== '' && k.default !== null) error(REL, `${k.name}: a secret cannot ship a default`);
+    // P4 D35: dashboard secrets live in the encrypted credential store, never in a settings row.
+    if (k.secret && k.runtime !== undefined && k.runtime !== null) {
+      error(REL, `${k.name}: a secret key cannot be runtime ${k.runtime}; dashboard secrets go through the credential store`);
+    }
     if ((k.min !== undefined || k.max !== undefined) && !['int', 'float', 'bytes'].includes(k.kind)) {
       error(REL, `${k.name}: min/max are only allowed for numeric kinds`);
     }
@@ -957,6 +962,55 @@ for (const def of REQUIRED_API_FIXTURES) {
 }
 for (const type of REQUIRED_WS_EVENTS) {
   if (!wsEvents.has(type)) error('fixtures/api', `no fixture for the WebSocket event ${type} (WsEvent.${type}.json)`);
+}
+
+// ------------------------------------------------------------------------------------------ gRPC fixtures
+
+// fixtures/grpc/<Message>.<case>.json holds one proto message in protojson form (field names as in
+// proto/evaluator.proto), shared by the Go builder and the Python consumer (P4-PLAN D34). Secrets in
+// them are obvious fakes, fingerprints have the D30 form, and allowed_hosts are canonical origins (D78).
+const GRPC_FIXTURE = /^fixtures\/grpc\/([A-Z][A-Za-z0-9]*)\.([a-z0-9][a-z0-9_-]*)\.json$/;
+const FAKE_SECRET = /^(sk-or-v1-fixture-|sk-or-v1-e2e-|sk-test-)[A-Za-z0-9-]*$/;
+const CANONICAL_ORIGIN = /^https?:\/\/[a-z0-9.-]+(:[0-9]{1,5})?$/;
+const protoFile = join(REPO, 'proto', 'evaluator.proto');
+const protoMessages = existsSync(protoFile)
+  ? new Set([...readFileSync(protoFile, 'utf8').matchAll(/^message ([A-Za-z0-9]+) \{/gm)].map((m) => m[1]))
+  : undefined;
+for (const [rel, doc] of docs) {
+  if (!rel.startsWith('fixtures/grpc/')) continue;
+  const m = rel.match(GRPC_FIXTURE);
+  if (!m) {
+    error(rel, 'a gRPC fixture is named <Message>.<case>.json after the proto message it holds');
+    continue;
+  }
+  if (protoMessages && !protoMessages.has(m[1])) error(rel, `${m[1]} is not a message of proto/evaluator.proto`);
+  const visit = (v, at) => {
+    if (Array.isArray(v)) v.forEach((x, i) => visit(x, `${at}[${i}]`));
+    else if (v && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) {
+        if (k === 'secret' && typeof x === 'string' && x !== '' && !FAKE_SECRET.test(x)) {
+          error(rel, `${at}.secret must be an obvious fake (sk-or-v1-fixture-…, sk-or-v1-e2e-…, sk-test-…)`);
+        }
+        if (k === 'fingerprint' && typeof x === 'string' && x !== '' && !/^fp_[0-9a-f]{12}$/.test(x)) {
+          error(rel, `${at}.fingerprint must be fp_ plus 12 lowercase hex characters (D30)`);
+        }
+        if (['allowed_hosts', 'allowedHosts'].includes(k)) {
+          for (const o of Array.isArray(x) ? x : [x]) {
+            let canonical = false;
+            try {
+              const u = new URL(o);
+              canonical = CANONICAL_ORIGIN.test(o) && u.origin === o;
+            } catch {
+              canonical = false;
+            }
+            if (!canonical) error(rel, `${at}.${k}: ${JSON.stringify(o)} is not a canonical origin scheme://host[:port] (D78)`);
+          }
+        }
+        visit(x, `${at}.${k}`);
+      }
+    }
+  };
+  visit(doc.data, '$');
 }
 
 function checkTraceDetail(rel, at, t) {

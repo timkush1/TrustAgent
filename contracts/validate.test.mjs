@@ -165,6 +165,7 @@ describe('validate.mjs', () => {
       k.keys.find((x) => x.name === 'TRUTHTABLE_READ_TIMEOUT').default = '30 seconds';
       for (const x of k.keys.slice(0, 20)) x.advanced = false;
       k.keys.push({ ...k.keys.find((x) => x.name === 'BIND_ADDR') });
+      k.keys.find((x) => x.name === 'TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY').runtime = 'settable';
     });
     const r = run(sb.root);
     assert.equal(r.code, 1);
@@ -172,6 +173,7 @@ describe('validate.mjs', () => {
     assert.match(r.out, /TRUTHTABLE_READ_TIMEOUT: default "30 seconds" is not a Go duration/);
     assert.match(r.out, /\.env\.example would list \d+ keys/);
     assert.match(r.out, /name or alias BIND_ADDR is declared twice/);
+    assert.match(r.out, /TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY: a secret key cannot be runtime settable/);
   });
 
   test('value-claim labels, secret defaults and scripted scenarios follow their rules', () => {

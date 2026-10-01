@@ -524,10 +524,9 @@
       "default": "",
       "secret": true,
       "advanced": true,
-      "restart": false,
-      "runtime": "settable",
+      "restart": true,
       "group": "upstream",
-      "description": "Injected credential for the Anthropic upstream."
+      "description": "Injected credential for the Anthropic upstream. The dashboard alternative is the encrypted upstream-anthropic credential in Settings; a non-empty value here wins."
     },
     {
       "name": "TRUTHTABLE_FALLBACK_UPSTREAM_URL",
@@ -550,10 +549,9 @@
       "default": "",
       "secret": true,
       "advanced": true,
-      "restart": false,
-      "runtime": "settable",
+      "restart": true,
       "group": "upstream",
-      "description": "Credential for the fallback upstream."
+      "description": "Credential for the fallback upstream. The dashboard alternative is the encrypted upstream-fallback credential in Settings; a non-empty value here wins."
     },
     {
       "name": "TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT",
@@ -2258,6 +2256,20 @@
       "restart": true,
       "group": "deploy",
       "description": "Host port of Postgres."
+    },
+    {
+      "name": "MOCK_UPSTREAM_HOST_PORT",
+      "aliases": [],
+      "services": ["compose"],
+      "kind": "int",
+      "default": "18090",
+      "min": 1,
+      "max": 65535,
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Host port of the mock upstream (the onboarding and e2e stacks only; it fakes OpenRouter's sign-in and key endpoints)."
     },
     {
       "name": "TRUSTAGENT_VERSION",
