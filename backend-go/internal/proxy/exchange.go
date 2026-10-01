@@ -226,8 +226,12 @@ func (h *Handler) upstreamAnswer(f *flow, resp *http.Response, cancel context.Ca
 	}
 	switch {
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		// Passed through as it is, oversized or not: an upstream error is never enforced (D4).
+		// Passed through as it is, oversized or not: an upstream error is never enforced (D4). In
+		// inject mode it may quote the gateway's own key: it is masked first (redact.go, D42).
 		a.skip, a.unenforced = gate.SkipUpstreamError, true
+		if f.up != nil && f.up.Injecting() {
+			a.body, a.rest = h.redactErrorBody(body), nil
+		}
 	case tooLarge:
 		a.skip = gate.SkipUpstreamError
 	default:

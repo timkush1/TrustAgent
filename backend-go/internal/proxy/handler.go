@@ -198,7 +198,7 @@ func (h *Handler) reverseProxies(set *upstream.Set) map[*upstream.Client]http.Ha
 	rps := map[*upstream.Client]http.Handler{}
 	for _, c := range []*upstream.Client{set.OpenAI, set.Anthropic} {
 		if _, ok := rps[c]; c != nil && !ok {
-			rps[c] = c.ReverseProxy(h.passthroughFailed)
+			rps[c] = h.redactingProxy(c)
 		}
 	}
 	h.rpsSet, h.rps = set, rps
