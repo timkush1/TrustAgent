@@ -324,7 +324,9 @@ func TestCPTTracker(t *testing.T) {
 	}
 }
 
-func TestPriceFor(t *testing.T) {
+// Decision calls are priced by the shared calculator: the env override, else the price table
+// (provider first, a leading "~" ignored), else the list price.
+func TestLookupPrice(t *testing.T) {
 	cases := []struct {
 		override       float64
 		backend, model string
@@ -333,6 +335,7 @@ func TestPriceFor(t *testing.T) {
 	}{
 		{0, BackendOpenRouterDecisions, "typesafe/jev-1.13", 0.042, "2026-09-27"},
 		{0, BackendOpenRouterDecisions, "typesafe/jev-1.13-20260917", 0.042, "2026-09-27"},
+		{0, BackendOpenRouterSystemOne, "~typesafe/jev-1.13", 0.042, "2026-09-27"},
 		{0, BackendTypeSafe, "jev-1.13.0", 0.042, "2026-09-27"},
 		{0, BackendCompatible, "jev-latest", 0.042, "2026-09-27"},
 		{0, BackendOpenRouterDecisions, "~typesafe/jev-latest", 0.042, "default"},
@@ -340,41 +343,32 @@ func TestPriceFor(t *testing.T) {
 		{0.1, BackendOpenRouterDecisions, "typesafe/jev-1.13", 0.1, "override"},
 	}
 	for _, c := range cases {
-		p := priceFor(c.override, c.backend, c.model)
+		p := lookupPrice(c.override, nil, c.backend, c.model)
 		if p.perMTok != c.perMTok || p.version != c.version {
 			t.Errorf("%s %s: %+v, want %v %s", c.backend, c.model, p, c.perMTok, c.version)
 		}
 	}
-	if got := (price{perMTok: 0.042}).usd(1_000_000); math.Abs(got-0.042) > 1e-12 {
+	if got := (price{perMTok: 0.042}).usd(1_000_000); got != 0.042 {
 		t.Errorf("usd %v", got)
 	}
 	// No float noise in the JSON of a computed cost.
-	for tokens, want := range map[int]string{566: "0.000023772", 1: "4.2e-8", 24275: "0.00101955", 0: "0"} {
+	for tokens, want := range map[int]string{566: "0.000023772", 1: "4.2e-8", 24275: "0.00101955", 0: "0", -5: "0"} {
 		if b, _ := json.Marshal((price{perMTok: 0.042}).usd(tokens)); string(b) != want {
 			t.Errorf("usd(%d) = %s, want %s", tokens, b, want)
 		}
 	}
-	if got := (price{perMTok: 0.0421234567}).usd(1000); math.Abs(got-0.0421234567e-3) > 1e-15 {
-		t.Errorf("a finer price keeps the plain formula: %v", got)
+	if got := (price{perMTok: 0.0421234567}).usd(1000); got != 0.0000421234567 {
+		t.Errorf("a finer price is exact too: %v", got)
 	}
 }
 
-func TestGlobMatch(t *testing.T) {
-	for _, c := range []struct {
-		p, s string
-		ok   bool
-	}{
-		{"typesafe/jev-1.13*", "typesafe/jev-1.13-20260917", true},
-		{"typesafe/jev-1.13*", "typesafe/jev-1.12", false},
-		{"jev-*", "jev-1.13.0", true},
-		{"*", "anything/at-all", true},
-		{"a*b*c", "axxbyyc", true},
-		{"a*b*c", "axxbyy", false},
-		{"exact", "exact", true},
-		{"exact", "exact2", false},
+func TestPricingProvider(t *testing.T) {
+	for backend, want := range map[string]string{
+		BackendOpenRouterDecisions: "openrouter", BackendOpenRouterSystemOne: "openrouter",
+		BackendTypeSafe: "typesafe", BackendMock: "mock", BackendCompatible: "", BackendOff: "", "": "",
 	} {
-		if globMatch(c.p, c.s) != c.ok {
-			t.Errorf("%q ~ %q: want %v", c.p, c.s, c.ok)
+		if got := PricingProvider(backend); got != want {
+			t.Errorf("PricingProvider(%q) = %q, want %q", backend, got, want)
 		}
 	}
 }
