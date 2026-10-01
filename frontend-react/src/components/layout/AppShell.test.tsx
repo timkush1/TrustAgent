@@ -28,13 +28,17 @@ describe('app shell and routes', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Overview');
   });
 
-  it('renders an honest placeholder that names the phase and only links to real pages', async () => {
-    // Settings is still a placeholder until P4 (Policies, Overview, Playground and Evaluators are built).
+  it('renders a Settings section under the Settings heading with no dead buttons', async () => {
     renderApp('/app/settings/connections');
-    expect(await screen.findByText(/Arrives in P4/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Connected, and within budget?');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
     const main = screen.getByRole('main');
-    expect(within(main).queryAllByRole('button').filter((b) => !b.hasAttribute('aria-haspopup') && !b.getAttribute('aria-expanded'))).toHaveLength(0);
+    // Every button does something: a disabled one says why (DESIGN.md "no dead buttons").
+    for (const button of within(main).queryAllByRole('button')) {
+      if (button.hasAttribute('disabled') || button.getAttribute('aria-disabled') === 'true') {
+        expect(button.getAttribute('aria-describedby')).toBeTruthy();
+      }
+    }
   });
 
   it('shows the Health pill from /health', async () => {
