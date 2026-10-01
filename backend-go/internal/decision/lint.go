@@ -602,12 +602,12 @@ func lowerTokens(s string) map[string]bool {
 	for _, r := range s {
 		switch {
 		case r >= 'A' && r <= 'Z':
-			cur = append(cur, byte(r-'A'+'a'))
+			cur = utf8.AppendRune(cur, r-'A'+'a')
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			cur = append(cur, byte(r))
-		case r == 'K':
+			cur = utf8.AppendRune(cur, r)
+		case r == '\u212A': // KELVIN SIGN
 			cur = append(cur, 'k')
-		case r == 'İ':
+		case r == '\u0130': // LATIN CAPITAL LETTER I WITH DOT ABOVE
 			cur = append(cur, 'i')
 			flush()
 		default:

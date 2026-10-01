@@ -370,14 +370,14 @@ func TestLintJavaScriptParity(t *testing.T) {
 			t.Errorf("double negative %q: %v", text, got)
 		}
 	}
-	// ESCAPE_WHAT/i folds ASCII only: "ſ" (long s) does not match "s".
-	for text, want := range map[string]bool{"A GREETING": true, "No Subject at all": true, "too ſhort": false, "no\nfacts": false} {
+	// ESCAPE_WHAT/i folds ASCII only: U+017F (long s) does not match "s".
+	for text, want := range map[string]bool{"A GREETING": true, "No Subject at all": true, "too \u017fhort": false, "no\nfacts": false} {
 		if got := escapeWhat.MatchString(asciiLower(text)); got != want {
 			t.Errorf("escape what %q: %v", text, got)
 		}
 	}
 	// toLowerCase: KELVIN SIGN becomes k; I WITH DOT ABOVE becomes i plus a combining dot.
-	if got := lowerTokens("Kelvin İstanbul Rate-2"); !reflect.DeepEqual(slices.Sorted(maps.Keys(got)), []string{"2", "i", "kelvin", "rate", "stanbul"}) {
+	if got := lowerTokens("\u212Aelvin \u0130stanbul Rate-2"); !reflect.DeepEqual(slices.Sorted(maps.Keys(got)), []string{"2", "i", "kelvin", "rate", "stanbul"}) {
 		t.Errorf("tokens %v", got)
 	}
 	// Object.entries lists array-index keys first, ascending, then the others in insertion order;
