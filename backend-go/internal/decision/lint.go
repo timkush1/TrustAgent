@@ -288,18 +288,18 @@ func schemaFindings(root *jsonschema.ValidationError, inst any) []FieldError {
 			// jsonschema v6.0.3 does not copy the object's location (it aliases a buffer that later
 			// properties overwrite): the object is found in the instance instead.
 			loc := append(keyOwner(inst, k.Property, e.SchemaURL), k.Property)
+			if len(e.Causes) == 0 {
+				add(loc, "invalid key: '"+k.Property+"' is not allowed")
+				return
+			}
 			for _, l := range leaves(e, nil) {
-				switch {
-				case l == e:
-				case isNot(l):
+				if isNot(l) {
 					add(loc, "invalid key: '"+k.Property+"' is reserved")
-				default:
+				} else {
 					add(loc, "invalid key: "+leafMessage(l))
 				}
 			}
-			if len(e.Causes) > 0 {
-				return
-			}
+			return
 		case *kind.Contains:
 			// The causes are each item's mismatch; the finding is about the list.
 			add(e.InstanceLocation, containsMessage(e))
