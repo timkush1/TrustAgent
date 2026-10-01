@@ -82,7 +82,7 @@ const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|v
 
 const EXTERNAL = [
   { file: 'config/policies.yaml', schema: 'policy.v1' },
-  // Demo routes the gateway cannot load yet (block and fallback before P3, the knowledge add-on):
+  // Demo routes the demo and e2e stacks cannot load (handbook reads the knowledge add-on):
   // appended to the routes of config/policies.yaml, merged over its defaults (checked below).
   { file: 'config/policies.pending.yaml', schema: 'policy.v1', pending: true },
   { dir: 'config/calibration', re: /\.json$/, schema: 'calibration.v1' },

@@ -218,7 +218,8 @@ starts the e2e stack (`docker-compose.e2e.yml`, project `truthtable-e2e`): the `
 calls mock-upstream's `/v1/systemone` over HTTP, the OpenAI and Anthropic upstreams are mock-upstream too,
 the judge is the mock provider, and traces are written before the response returns
 (`TRUTHTABLE_TRACE_FLUSH=sync`). `make e2e-scenarios` sends set `e2e` with `--upstream all`, so every answer
-takes the upstream path; `make e2e-down` removes the stack. Both targets take `*_PHASE=p3` once P3 lands.
+takes the upstream path; `make e2e-down` removes the stack. Both targets send trafficgen's default phase (`p3`);
+`DEMO_PHASE` and `E2E_PHASE` choose another.
 
 The pack (27 scenarios):
 
