@@ -63,6 +63,24 @@ type statusReporter struct {
 	// calib reports the calibration state of a snapshot (the calibration file lookup,
 	// decision_wiring.go); nil means none.
 	calib calibrationStater
+	// P4 hooks, used by system() when set: credentials is the credential store's state (GSEC),
+	// spend today's spend and caps from the cost ledger (GCOST, replacing the in-memory
+	// figures), push the engine push as last applied (GCONN).
+	credentials func() statusCredentials
+	spend       func() *spendView
+	push        func() pushState
+}
+
+// spendView is SystemStatus.budgets as the cost ledger reports it (P4, D46: real spend only).
+type spendView statusBudgets
+
+// pushState is the engine push as the gateway last saw it (P4-PLAN D34): the settings version and
+// epoch the engine applied, and a status warning ("" when none), e.g. an engine that predates
+// ApplyRuntimeConfig.
+type pushState struct {
+	Version int64
+	Epoch   string
+	Warning string
 }
 
 // calibrationStater reports a snapshot's calibration state and how many targets it calibrates
@@ -122,9 +140,10 @@ type statusPersistence struct {
 
 type statusEngine struct {
 	componentState
-	Version              string `json:"version,omitempty"`
-	RuntimeConfigVersion *int64 `json:"runtime_config_version,omitempty"`
-	MaxAudits            *int32 `json:"max_audits,omitempty"`
+	Version              string  `json:"version,omitempty"`
+	RuntimeConfigVersion *int64  `json:"runtime_config_version,omitempty"`
+	RuntimeConfigEpoch   *string `json:"runtime_config_epoch,omitempty"`
+	MaxAudits            *int32  `json:"max_audits,omitempty"`
 }
 
 type statusJudge struct {
@@ -326,7 +345,34 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 			st.Warnings = append(st.Warnings, "Engine: "+w)
 		}
 	}
+	s.applyHooks(&st)
 	return st
+}
+
+// applyHooks overlays the P4 hooks that are set on st: the credential store's state, the
+// ledger's budgets and the engine push.
+func (s *statusReporter) applyHooks(st *systemStatus) {
+	if s.credentials != nil {
+		st.Credentials = s.credentials()
+		if st.Credentials.Undecryptable == nil {
+			st.Credentials.Undecryptable = []string{}
+		}
+	}
+	if s.spend != nil {
+		if v := s.spend(); v != nil {
+			st.Budgets = statusBudgets(*v)
+		}
+	}
+	if s.push != nil {
+		p := s.push()
+		if p.Epoch != "" {
+			epoch := p.Epoch
+			st.Engine.RuntimeConfigEpoch = &epoch
+		}
+		if p.Warning != "" {
+			st.Warnings = append(st.Warnings, p.Warning)
+		}
+	}
 }
 
 func (s *statusReporter) persistence(ctx context.Context) statusPersistence {

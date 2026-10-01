@@ -37,8 +37,6 @@ func (s *server) mountP3API(r *gin.Engine, api *gin.RouterGroup, guards apiGuard
 
 	// The Playground (row 61, D12, admin). It has only its own limit of 10 runs a minute: the
 	// general limit keys on the same route path, so it would count each run twice.
-	play := &playgroundAPI{
-		h: s.gateway.handler, maxTextChars: s.cfg.MaxTextChars, deadline: playgroundDeadline(s.cfg), log: s.log,
-	}
+	play := s.playgroundHandler()
 	api.POST("/playground/run", guards.writable, guards.admin, guards.limitBy(playgroundLimit, time.Minute), guards.bodyLimit, play.run)
 }

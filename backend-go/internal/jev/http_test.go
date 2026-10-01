@@ -880,9 +880,9 @@ func TestKeyRotationResetsTheBreaker(t *testing.T) {
 	var mu sync.Mutex
 	cl := h.client(BackendAuto, func(c *Config) {
 		c.OpenRouterBaseURL = h.srv.URL
-		c.Binding = &Binding{Backend: BackendOpenRouterDecisions, Name: "openrouter", Key: func(_ context.Context, host string) (string, error) {
+		c.Binding = &Binding{Backend: BackendOpenRouterDecisions, Name: "openrouter", Key: func(_ context.Context, origin string) (string, error) {
 			mu.Lock()
-			hosts = append(hosts, host)
+			hosts = append(hosts, origin)
 			mu.Unlock()
 			return key.Load().(string), nil
 		}}
@@ -905,8 +905,9 @@ func TestKeyRotationResetsTheBreaker(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(hosts) == 0 || hosts[0] != "127.0.0.1" {
-		t.Errorf("KeyFunc hosts %v", hosts)
+	// KeyFunc receives the endpoint's canonical origin, never a bare host (P4-PLAN D78).
+	if len(hosts) == 0 || hosts[0] != h.srv.URL {
+		t.Errorf("KeyFunc origins %v, want %s", hosts, h.srv.URL)
 	}
 }
 

@@ -3,14 +3,39 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/runtimecfg"
 	"github.com/truthtable/backend-go/internal/upstream"
 )
 
-// newUpstreams builds the gateway's named upstreams (SPEC §2.12 forwarding):
+// upstreamSource serves the upstream set in effect; the /v1 handler reads Current per request
+// (proxy.Options.Upstreams). At P4 Step 0 the set is built once from the env; GCONN rebuilds it
+// atomically on runtime upstream settings and credentials (D41).
+type upstreamSource struct {
+	cur atomic.Pointer[upstream.Set]
+}
+
+// Current is the upstream set in effect.
+func (u *upstreamSource) Current() *upstream.Set { return u.cur.Load() }
+
+// newUpstreams builds the upstream source over the env's upstreams (buildUpstreams). rt is the
+// runtime configuration (nil in tests); it is not read yet.
+func newUpstreams(cfg *config.Config, auth *authz.Authenticator, rt *runtimecfg.Manager, log *slog.Logger) (*upstreamSource, error) {
+	_ = rt
+	set, err := buildUpstreams(cfg, auth, log)
+	if err != nil {
+		return nil, err
+	}
+	src := &upstreamSource{}
+	src.cur.Store(set)
+	return src, nil
+}
+
+// buildUpstreams builds the gateway's named upstreams (SPEC §2.12 forwarding):
 //
 //   - openai, the default upstream (TRUTHTABLE_UPSTREAM_URL, _API_KEY on _AUTH_HEADER), serves
 //     the OpenAI formats and the ungated endpoints;
@@ -23,7 +48,7 @@ import (
 // otherwise (D15); a TrustAgent key is never forwarded (B1). Each is logged with its redacted URL
 // and credential mode. Every client shares the header timeout, the total timeout of a JSON answer
 // and the idle timeout of a stream.
-func newUpstreams(cfg *config.Config, auth *authz.Authenticator, log *slog.Logger) (*upstream.Set, error) {
+func buildUpstreams(cfg *config.Config, auth *authz.Authenticator, log *slog.Logger) (*upstream.Set, error) {
 	build := func(name, urlKey, base, apiKey, header string) (*upstream.Client, error) {
 		c, err := upstream.New(upstream.Config{
 			BaseURL: base, APIKey: apiKey, AuthHeader: header, HeaderTimeout: cfg.UpstreamHeaderTimeout,

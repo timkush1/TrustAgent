@@ -64,6 +64,34 @@ type discardCosts struct{}
 
 func (discardCosts) RecordCost(CostEvent) {}
 
+// PriceFunc returns the input price per million tokens of model on backend and the version of
+// the price table it came from ("override" for a dashboard override); ok is false when no entry
+// matches, and the default list price applies (P4-PLAN D53).
+type PriceFunc func(backend, model string) (perMTok float64, version string, ok bool)
+
+// priceOf is the input price of model for this client's computed costs: the
+// TRUTHTABLE_JEV_PRICE_PER_MTOK override, else Config.Prices, else the embedded table.
+func (c *httpClient) priceOf(model string) price {
+	if c.cfg.PricePerMTok <= 0 && c.prices != nil {
+		if p, v, ok := c.prices(c.info.Backend, model); ok {
+			return price{perMTok: p, version: v}
+		}
+		return price{perMTok: DefaultPricePerMTok, version: "default"}
+	}
+	return priceFor(c.cfg.PricePerMTok, c.info.Backend, model)
+}
+
+// EstimateUSD is the computed input cost of inputTokens on the backend and model of info, priced
+// from the embedded table (priceFor). ok is false for the mock and off backends, which make no
+// paid call.
+func EstimateUSD(info Info, inputTokens int) (usd float64, ok bool) {
+	switch info.Backend {
+	case BackendMock, BackendOff, "":
+		return 0, false
+	}
+	return priceFor(0, info.Backend, info.Model).usd(inputTokens), true
+}
+
 // price is the input price used for computed costs.
 type price struct {
 	perMTok float64

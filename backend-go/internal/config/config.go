@@ -114,6 +114,9 @@ type Config struct {
 	EngineHealthInterval   time.Duration `env:"TRUTHTABLE_ENGINE_HEALTH_INTERVAL"` // M4
 	SpendCapDecisionUSDDay float64       `env:"TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY"`
 	SpendCapLLMUSDDay      float64       `env:"TRUTHTABLE_SPEND_CAP_LLM_USD_DAY"`
+	StudioConfirmAboveUSD  float64       `env:"TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD"` // Studio dry-run asks above this estimate
+	DryRunMaxSamples       int           `env:"TRUTHTABLE_DRYRUN_MAX_SAMPLES"`       // largest Studio dry-run sample
+	PriceTableFile         string        `env:"TRUTHTABLE_PRICE_TABLE_FILE"`         // pricing.v1 override; "" = the embedded table
 	WS                     WSConfig
 
 	// Instance identity and boot behaviour

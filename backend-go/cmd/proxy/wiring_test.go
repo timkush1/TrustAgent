@@ -145,3 +145,54 @@ func TestWriteDeadlinePerRoute(t *testing.T) {
 		t.Errorf("an upstream timeout of 0 sets no /v1 deadline, got %s", got)
 	}
 }
+
+// The P4 Step-0 seams change nothing yet (docs/v2/P4-PLAN.md §2.3): a gated request flows as
+// before, the stubs register no routes, and the harness options P4 tests use work (a custom
+// engine, a config mutation, the redacting log, WS replay frames).
+func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
+	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm" // matches no redaction pattern
+	var logs bytes.Buffer
+	eng := scenarioEngine(t, false)
+	env := newTestEnv(t, envOpts{publicRead: true, engine: eng, logs: &logs, mutate: func(c *config.Config) {
+		c.Jev.APIKey = secret // a loaded secret joins the redactor
+	}})
+	if env.engine != eng || env.srv.rt == nil || env.srv.rt.manager.Current().Version != 0 || env.srv.apply == nil || env.srv.eval == nil {
+		t.Fatalf("seams not wired: rt %v apply %v eval %v", env.srv.rt, env.srv.apply, env.srv.eval)
+	}
+	if got := env.srv.redact("key " + secret); strings.Contains(got, secret) {
+		t.Errorf("server.redact kept a loaded secret: %q", got)
+	}
+	if h := env.srv.costs.headroom(true); h <= 0 {
+		t.Errorf("without a ledger the decision headroom is unlimited, got %v", h)
+	}
+	settle, err := env.srv.costs.reserve(context.Background(), 1, "test")
+	if err != nil {
+		t.Fatalf("without a ledger nothing is reserved: %v", err)
+	}
+	settle(0.5)
+
+	resp := env.send(loadDemoScenarios(t)["refund-contradiction-flag"])
+	traceID := resp.Header.Get(proxy.HeaderTraceID)
+	d := env.settledTrace(traceID)
+	if d.Labels == nil || len(d.Labels) != 0 {
+		t.Errorf("labels hook default: %v", d.Labels)
+	}
+	frames := env.wsFrames(t, 50)
+	var sawTrace bool
+	for _, f := range frames {
+		if strings.Contains(string(f), `"trace_started"`) && strings.Contains(string(f), traceID) {
+			sawTrace = true
+		}
+	}
+	if !sawTrace {
+		t.Errorf("wsFrames did not replay trace_started of %s (%d frames)", traceID, len(frames))
+	}
+	for _, path := range []string{"/api/settings", "/api/credentials", "/api/labels/queue", "/api/studio/samples", "/api/roi/timeseries"} {
+		if code, _ := env.get(path, testKey); code != http.StatusNotFound {
+			t.Errorf("GET %s = %d before its owner mounts it, want 404", path, code)
+		}
+	}
+	if !strings.Contains(env.logText(), "level=") || strings.Contains(env.logText(), secret) {
+		t.Errorf("the redacting test log is empty or leaks the secret")
+	}
+}

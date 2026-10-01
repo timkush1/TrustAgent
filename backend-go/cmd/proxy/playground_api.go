@@ -53,6 +53,13 @@ type playgroundAPI struct {
 	log      *slog.Logger
 }
 
+// playgroundHandler builds the Playground API over the gateway's handler (p3_api.go mounts it).
+func (s *server) playgroundHandler() *playgroundAPI {
+	return &playgroundAPI{
+		h: s.gateway.handler, maxTextChars: s.cfg.MaxTextChars, deadline: playgroundDeadline(s.cfg), log: s.log,
+	}
+}
+
 // playgroundDeadline is the write deadline of a Playground run: an upstream call and a fallback
 // call, each bounded by TRUTHTABLE_UPSTREAM_TIMEOUT, plus 30 s for the gate and the records, as on
 // /v1; none when the upstream timeout is off.

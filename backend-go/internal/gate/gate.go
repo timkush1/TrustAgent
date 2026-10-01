@@ -391,6 +391,13 @@ func observe(route, mode string, core *decision.Core, requestStatus map[string]s
 
 // compileInputs are the compile() inputs of an exchange with an answer.
 func (g *Gate) compileInputs(x *Exchange, reqRules map[string]string) *decision.CompileInputs {
+	return CompileInputsOf(x, reqRules)
+}
+
+// CompileInputsOf are the compile() inputs of an exchange with an answer, exactly as the gate
+// builds them. Exported so the decision-request recompile (SPEC §2.4 row 12, P4-PLAN D63) shares
+// the gate's code.
+func CompileInputsOf(x *Exchange, reqRules map[string]string) *decision.CompileInputs {
 	return &decision.CompileInputs{
 		UserRequest: x.Evidence.UserRequest, AssistantResponse: x.Response, SystemInstructions: x.Evidence.SystemInstructions,
 		Evidence: x.Evidence.DecisionItems(), Rules: reqRules,
@@ -414,6 +421,12 @@ func (g *Gate) adopt(in *decision.Input, route *policy.Route, c *decision.Compil
 
 // compileRoute is the part of a route compile() reads.
 func (g *Gate) compileRoute(r *policy.Route, p *policy.Policy, model string) *decision.CompileRoute {
+	return CompileRouteOf(r, p, model)
+}
+
+// CompileRouteOf is the part of route r of policy p that compile() reads, for the decision model
+// model (shared with the decision-request recompile, D63).
+func CompileRouteOf(r *policy.Route, p *policy.Policy, model string) *decision.CompileRoute {
 	cr := &decision.CompileRoute{
 		OnNoEvidence: r.OnNoEvidence, EvidenceSources: r.Evidence.Sources,
 		ClientRules: p.Overrides.ClientRules, Model: model,
@@ -425,13 +438,22 @@ func (g *Gate) compileRoute(r *policy.Route, p *policy.Policy, model string) *de
 }
 
 func (g *Gate) budget(r *policy.Route) decision.Budget {
-	b := g.cfg.Budget
 	// HTTP backends learn chars-per-token from usage.input_tokens (SPEC §2.9 cpt); compile packs
 	// evidence with the current estimate.
+	cpt := 0.0
 	if src, ok := g.cfg.Jev.(jev.CPTSource); ok {
-		if cpt := src.CPT(); cpt > 0 {
-			b.CPT = cpt
-		}
+		cpt = src.CPT()
+	}
+	return RouteBudget(g.cfg.Budget, r, cpt)
+}
+
+// RouteBudget is the compile() budget of route r: base with the route's response and evidence
+// token caps, and cpt as chars-per-token when it is positive (the live estimate; a recompile
+// passes the recorded one, D63).
+func RouteBudget(base decision.Budget, r *policy.Route, cpt float64) decision.Budget {
+	b := base
+	if cpt > 0 {
+		b.CPT = cpt
 	}
 	b.MaxResponseTokens = r.Decision.MaxResponseTokens
 	b.EvidenceMaxTokens = r.Evidence.MaxTokens

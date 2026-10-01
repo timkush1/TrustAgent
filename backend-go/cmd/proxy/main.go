@@ -63,7 +63,7 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	d := serverDeps{cfg: cfg, log: log, redisState: stateDisabled}
+	d := serverDeps{cfg: cfg, log: log, redisState: stateDisabled, redactor: redactor}
 
 	if cfg.DatabaseURL == "" {
 		log.Warn("TRUTHTABLE_DATABASE_URL is not set: traces and audits are not stored")
@@ -80,9 +80,10 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 		}
 	}
 	d.master = loadMasterKey(cfg, log) // signs dashboard sessions (P2 authz core)
-	if cfg.TraceFlush != "sync" {
-		log.Info("trace writes run inline; the batched TRUTHTABLE_TRACE_FLUSH=async writer lands in P2")
-	}
+	// The batched trace writer (TRUTHTABLE_TRACE_FLUSH=async, trace_writer.go) fronts the store;
+	// its flush runs at shutdown after the drain.
+	var flushTraces func(context.Context) error
+	d.store, flushTraces = wrapTraceWriter(cfg, d.store, log)
 
 	cfg.InternalToken = internalToken(cfg.InternalToken, cfg.InternalTokenFile, log)
 	redactor.Add(cfg.InternalToken) // a generated token was not in the loaded configuration
@@ -153,6 +154,9 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 	defer drainCancel()
 	if err := srv.shutdown(drainCtx); err != nil {
 		log.Warn("work was still running at shutdown", "err", err)
+	}
+	if err := flushTraces(drainCtx); err != nil {
+		log.Warn("trace writes were still pending at shutdown", "err", err)
 	}
 	if err := metricsServer.Shutdown(ctx); err != nil {
 		log.Warn("metrics server shutdown", "err", err)

@@ -286,7 +286,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	}
 	sink := newRecSink()
 	h := New(Options{
-		Upstreams: set, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
+		Upstreams: func() *upstream.Set { return set }, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
 		TestMode: o.testMode, GateMaxConcurrency: o.maxGates, MaxUpstreamResponseBytes: o.maxBytes, Logger: quiet,
 	})
 	r := gin.New()

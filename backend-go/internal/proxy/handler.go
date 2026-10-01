@@ -45,6 +45,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/evidence"
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/llmapi"
 	"github.com/truthtable/backend-go/internal/metrics"
@@ -69,8 +70,10 @@ const TrafficgenKeyLabel = "trafficgen"
 
 // Options configures a Handler.
 type Options struct {
-	// Upstreams are the upstreams by API family, plus the optional fallback upstream.
-	Upstreams *upstream.Set
+	// Upstreams returns the upstreams in effect, by API family plus the optional fallback
+	// upstream. It is called once per request, so a rebuilt set (dashboard upstream settings and
+	// credentials, P4) applies from the next request on; nil, or a nil result, serves no upstream.
+	Upstreams func() *upstream.Set
 	// Policy returns the policy in effect; it is called once per request, so a saved, rolled back
 	// or hot-reloaded version applies from the next request on (policy.Engine.Current).
 	Policy func() *policy.Policy
@@ -86,11 +89,27 @@ type Options struct {
 	Logger             *slog.Logger
 	// Now returns the current time; nil uses time.Now.
 	Now func() time.Time
+	// Knowledge retrieves knowledge-base context for gated answers (P4-PLAN D65); nil means
+	// none. Not used yet.
+	Knowledge Retriever
+	// Redact masks secrets in text the handler relays or logs, e.g. upstream error bodies in
+	// inject mode (P4-PLAN D42); nil is the identity. Not used yet.
+	Redact func(string) string
+}
+
+// Retriever fetches knowledge-base documents for an answer (P4-PLAN D65): the handler starts it
+// together with the upstream call and joins it before the gate within the knowledge deadline. An
+// error or no documents means no knowledge, never a failed request. response may be "" when the
+// retrieval starts before the answer is known.
+type Retriever interface {
+	Retrieve(ctx context.Context, query, response string) ([]evidence.Item, error)
 }
 
 // Handler serves /v1.
 type Handler struct {
-	ups      *upstream.Set
+	upsFn    func() *upstream.Set
+	knowl    Retriever
+	redact   func(string) string
 	policy   func() *policy.Policy
 	gate     *gate.Gate
 	sink     gate.Sink
@@ -98,8 +117,11 @@ type Handler struct {
 	maxBytes int64
 	log      *slog.Logger
 	now      func() time.Time
-	// rps are the passthrough reverse proxies, one per upstream client.
-	rps map[*upstream.Client]http.Handler
+	// rps are the passthrough reverse proxies of rpsSet, one per upstream client; they are rebuilt
+	// when the upstream set changes.
+	rpsMu  sync.Mutex
+	rpsSet *upstream.Set
+	rps    map[*upstream.Client]http.Handler
 
 	sem   chan struct{}
 	async sync.WaitGroup
@@ -108,11 +130,11 @@ type Handler struct {
 // New builds a Handler.
 func New(o Options) *Handler {
 	h := &Handler{
-		ups: o.Upstreams, policy: o.Policy, gate: o.Gate, sink: o.Sink, testMode: o.TestMode,
-		maxBytes: o.MaxUpstreamResponseBytes, log: o.Logger, now: o.Now,
+		upsFn: o.Upstreams, policy: o.Policy, gate: o.Gate, sink: o.Sink, testMode: o.TestMode,
+		maxBytes: o.MaxUpstreamResponseBytes, log: o.Logger, now: o.Now, knowl: o.Knowledge, redact: o.Redact,
 	}
-	if h.ups == nil {
-		h.ups = &upstream.Set{}
+	if h.redact == nil {
+		h.redact = func(s string) string { return s }
 	}
 	if h.sink == nil {
 		h.sink = gate.NopSink{}
@@ -131,13 +153,38 @@ func New(o Options) *Handler {
 		n = 256
 	}
 	h.sem = make(chan struct{}, n)
-	h.rps = map[*upstream.Client]http.Handler{}
-	for _, c := range []*upstream.Client{h.ups.OpenAI, h.ups.Anthropic} {
-		if _, ok := h.rps[c]; c != nil && !ok {
-			h.rps[c] = c.ReverseProxy(h.passthroughFailed)
+	h.reverseProxies(h.upstreams()) // build the passthrough proxies of the initial set
+	return h
+}
+
+// noUpstreams is the set served when Options.Upstreams is nil or returns nil.
+var noUpstreams = &upstream.Set{}
+
+// upstreams is the upstream set in effect for one request (Options.Upstreams).
+func (h *Handler) upstreams() *upstream.Set {
+	if h.upsFn != nil {
+		if s := h.upsFn(); s != nil {
+			return s
 		}
 	}
-	return h
+	return noUpstreams
+}
+
+// reverseProxies returns the passthrough reverse proxies of set, building them once per set.
+func (h *Handler) reverseProxies(set *upstream.Set) map[*upstream.Client]http.Handler {
+	h.rpsMu.Lock()
+	defer h.rpsMu.Unlock()
+	if h.rpsSet == set && h.rps != nil {
+		return h.rps
+	}
+	rps := map[*upstream.Client]http.Handler{}
+	for _, c := range []*upstream.Client{set.OpenAI, set.Anthropic} {
+		if _, ok := rps[c]; c != nil && !ok {
+			rps[c] = c.ReverseProxy(h.passthroughFailed)
+		}
+	}
+	h.rpsSet, h.rps = set, rps
+	return rps
 }
 
 // Mount registers the LLM API routes on v1, the /v1 group (SPEC §2.4 rows 71-73): the gated
@@ -244,7 +291,8 @@ func (h *Handler) Passthrough(status string) gin.HandlerFunc {
 		if status != "" {
 			c.Header(HeaderStatus, status)
 		}
-		rp, ok := h.rps[h.ups.For(llmapi.FamilyForPath(path))]
+		set := h.upstreams()
+		rp, ok := h.reverseProxies(set)[set.For(llmapi.FamilyForPath(path))]
 		if !ok {
 			h.passthroughFailed(c.Writer, c.Request, errNoUpstream)
 			return

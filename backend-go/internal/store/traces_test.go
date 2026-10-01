@@ -32,6 +32,8 @@ func decided(t *TraceRecord, action, would, verdict string, risk float64, reason
 	gateMs, total := int64(41), int64(45)
 	d.GateMs, d.TotalMs, d.OverheadMs = &gateMs, &total, &total
 	d.ResponsePreview = strp("You can get a full refund within 60 days of purchase.")
+	chars := 53
+	d.ResponseChars = &chars
 	d.Flags = []string{"test_mode", "mock_decision"}
 	doc := `{"spec":"decision/v1","trace_id":"` + t.TraceID + `","detectors":[{"id":"numbers_not_in_evidence","ran":true,"fired":true,"findings":[{"text":"60","start":33,"end":35}]}]}`
 	rec := &DecisionRecord{
@@ -94,6 +96,9 @@ func TestTraceLifecycle(t *testing.T) {
 	}
 	if sum.MaxRisk == nil || *sum.MaxRisk != 0.98 {
 		t.Errorf("max_risk must read back as written (REAL column): %v", sum.MaxRisk)
+	}
+	if got.ResponseChars == nil || *got.ResponseChars != 53 {
+		t.Errorf("response_chars (0005) must read back as written: %v", got.ResponseChars)
 	}
 	if len(sum.Reasons) != 3 || sum.QuestionPreview == nil || *sum.QuestionPreview != "How long is the refund window?" {
 		t.Errorf("reasons %v, question preview %v", sum.Reasons, sum.QuestionPreview)

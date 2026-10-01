@@ -58,6 +58,9 @@ type flow struct {
 	forward []byte
 	// upStart is when the upstream call started; zero for a scripted (test_response) answer.
 	upStart time.Time
+	// ups is the upstream set in effect when the flow started; the fallback upstream comes from
+	// the same set.
+	ups *upstream.Set
 }
 
 // newFlow builds the flow of a request of format on path: the route and mode the policy in effect
@@ -69,9 +72,10 @@ type flow struct {
 //
 // newFlow is shared with the Playground (playground.go): its signature is fixed.
 func (h *Handler) newFlow(c *gin.Context, format, path string, raw []byte, req *llmapi.ChatRequest, start time.Time) *flow {
+	ups := h.upstreams()
 	f := &flow{
 		c: c, format: format, req: req, raw: raw, start: start, forward: raw,
-		up: h.ups.For(llmapi.Family(format)),
+		up: ups.For(llmapi.Family(format)), ups: ups,
 		// The record outlives the client: a client that goes away still gets its trace written.
 		record: context.WithoutCancel(c.Request.Context()),
 	}

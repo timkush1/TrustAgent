@@ -403,6 +403,11 @@ func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 	rec.TTFTMs = r.Upstream.TTFTMs
 	rec.PromptTokens, rec.CompletionTokens = r.Upstream.PromptTokens, r.Upstream.CompletionTokens
 	rec.ResponsePreview = store.Preview(r.ResponseText, store.ResponsePreviewRunes)
+	if r.ResponseText != "" {
+		// The rune count of the gated text (0005 traces.response_chars; cost per answer, P4).
+		n := utf8.RuneCountInString(r.ResponseText)
+		rec.ResponseChars = &n
+	}
 	rec.Flags = append([]string{}, r.Flags...)
 	if f := r.Final; f != nil {
 		rec.Reasons = appendNew(rec.Reasons, f.Reasons...)

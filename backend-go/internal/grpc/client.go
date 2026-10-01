@@ -24,6 +24,11 @@ const InternalTokenHeader = "x-trustagent-internal"
 const (
 	healthTimeout     = 2 * time.Second
 	engineInfoTimeout = 4 * time.Second
+	// applyRuntimeConfigTimeout bounds one ApplyRuntimeConfig: the engine makes no LLM call on
+	// apply (P4-PLAN D34).
+	applyRuntimeConfigTimeout = 4 * time.Second
+	// draftEvaluatorTimeout bounds one DraftEvaluator: the judge drafts the spec and may repair it.
+	draftEvaluatorTimeout = 60 * time.Second
 )
 
 // AuditClient talks to the audit engine (AuditService).
@@ -79,6 +84,34 @@ func (c *AuditClient) EngineInfo(ctx context.Context) (*pb.EngineInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, engineInfoTimeout)
 	defer cancel()
 	return c.client.GetEngineInfo(ctx, &pb.EngineInfoRequest{})
+}
+
+// ApplyRuntimeConfig pushes the dashboard's runtime configuration to the engine (SPEC §2.2,
+// P4-PLAN D34): the judge, its bound credential and the effective price table. An older engine
+// answers UNIMPLEMENTED.
+func (c *AuditClient) ApplyRuntimeConfig(ctx context.Context, cfg *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, applyRuntimeConfigTimeout)
+	defer cancel()
+	return c.client.ApplyRuntimeConfig(ctx, cfg)
+}
+
+// DraftEvaluator asks the engine's judge to draft an evaluator spec from a description (Studio,
+// SPEC §2.4 row 34), bounded by 60 s. FAILED_PRECONDITION "no_judge" means no judge is configured.
+func (c *AuditClient) DraftEvaluator(ctx context.Context, req *pb.DraftEvaluatorRequest) (*pb.DraftEvaluatorResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, draftEvaluatorTimeout)
+	defer cancel()
+	return c.client.DraftEvaluator(ctx, req)
+}
+
+// RetrieveContext fetches knowledge-base documents for an answer (P4-PLAN D65). deadline is the
+// knowledge deadline (TRUTHTABLE_KNOWLEDGE_DEADLINE); 0 or less leaves ctx's own deadline.
+func (c *AuditClient) RetrieveContext(ctx context.Context, req *pb.RetrieveContextRequest, deadline time.Duration) (*pb.RetrieveContextResponse, error) {
+	if deadline > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, deadline)
+		defer cancel()
+	}
+	return c.client.RetrieveContext(ctx, req)
 }
 
 // IngestDocument represents a document to ingest into the knowledge base.

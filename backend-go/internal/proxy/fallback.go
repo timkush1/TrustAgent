@@ -96,10 +96,14 @@ func (h *Handler) fallback(ctx context.Context, f *flow, res0 *gate.Result) *fal
 	settings := f.route.Fallback
 	up := f.up
 	if settings.Upstream == fallbackUpstreamFallback {
-		up = h.ups.Fallback
-		if up != nil && !llmapi.FallbackFormatCompatible(f.format, h.ups.FallbackFormat) {
+		set := f.ups
+		if set == nil {
+			set = h.upstreams()
+		}
+		up = set.Fallback
+		if up != nil && !llmapi.FallbackFormatCompatible(f.format, set.FallbackFormat) {
 			h.log.Warn("the fallback upstream cannot answer this API format: blocking", "trace_id", f.x.Trace.TraceID,
-				"route", f.route.Name, "format", f.format, "fallback_format", h.ups.FallbackFormat)
+				"route", f.route.Name, "format", f.format, "fallback_format", set.FallbackFormat)
 			metrics.Fallback(fallbackFormatMismatch)
 			return h.fallbackBlocked(f, reasonFallbackFormatMismatch)
 		}

@@ -72,10 +72,11 @@ func TestNewUpstreamsBuildsTheNamedUpstreams(t *testing.T) {
 	}
 	auth := authz.New([]authz.Key{{Label: "app", Secret: "ta-upstreams-proxy-key", Scopes: authz.APIKeyScopes}}, "keys")
 	var logs bytes.Buffer
-	set, err := newUpstreams(cfg, auth, slog.New(slog.NewTextHandler(&logs, nil)))
+	src, err := newUpstreams(cfg, auth, nil, slog.New(slog.NewTextHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	set := src.Current()
 	if set.OpenAI == nil || set.Anthropic == nil || set.Fallback == nil || set.FallbackFormat != "anthropic" {
 		t.Fatalf("set %+v", set)
 	}
@@ -114,10 +115,11 @@ func TestNewUpstreamsBuildsTheNamedUpstreams(t *testing.T) {
 func TestNewUpstreamsWithoutFallbackAndBadURLs(t *testing.T) {
 	auth := authz.New(nil, "keys")
 	quiet := slog.New(slog.DiscardHandler)
-	set, err := newUpstreams(config.LoadWith(config.LoadOptions{Environ: []string{}}), auth, quiet)
+	src, err := newUpstreams(config.LoadWith(config.LoadOptions{Environ: []string{}}), auth, nil, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
+	set := src.Current()
 	if set.Fallback != nil || set.FallbackFormat != "openai" || set.OpenAI.Base().String() != config.DefaultUpstreamURL ||
 		set.Anthropic.Base().String() != "https://api.anthropic.com" || set.OpenAI.Injecting() || set.Anthropic.Injecting() {
 		t.Errorf("defaults: %+v openai %s anthropic %s", set, set.OpenAI.Base(), set.Anthropic.Base())
@@ -128,7 +130,7 @@ func TestNewUpstreamsWithoutFallbackAndBadURLs(t *testing.T) {
 		"TRUTHTABLE_FALLBACK_UPSTREAM_URL":  "redis://cache.example",
 	} {
 		cfg := config.LoadWith(config.LoadOptions{Environ: []string{key + "=" + value}})
-		if _, err := newUpstreams(cfg, auth, quiet); err == nil || !strings.HasPrefix(err.Error(), key+": ") {
+		if _, err := newUpstreams(cfg, auth, nil, quiet); err == nil || !strings.HasPrefix(err.Error(), key+": ") {
 			t.Errorf("%s=%s: %v", key, value, err)
 		}
 	}

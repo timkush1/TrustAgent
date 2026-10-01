@@ -361,8 +361,9 @@ func newStrmEnv(t *testing.T, u *strmUpstream, o strmOpts) *strmEnv {
 		t.Fatal(err)
 	}
 	e := &strmEnv{sink: newStrmSink(), pol: res.Policy, up: up, flows: map[string]*flow{}}
+	set := &upstream.Set{OpenAI: up, Anthropic: up}
 	e.h = New(Options{
-		Upstreams: &upstream.Set{OpenAI: up, Anthropic: up}, Policy: func() *policy.Policy { return e.pol }, Gate: g,
+		Upstreams: func() *upstream.Set { return set }, Policy: func() *policy.Policy { return e.pol }, Gate: g,
 		Sink: e.sink, TestMode: true, MaxUpstreamResponseBytes: o.maxBytes, GateMaxConcurrency: o.maxGates, Logger: quiet,
 	})
 	r := gin.New()

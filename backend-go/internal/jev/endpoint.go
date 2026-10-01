@@ -10,8 +10,10 @@ import (
 // endpoint is where and how an HTTP backend sends decision requests.
 type endpoint struct {
 	backend string
-	// url is the decision endpoint; host its host (for KeyFunc host binding).
-	url, host string
+	// url is the decision endpoint; host its host; origin its canonical origin
+	// scheme://host[:port] (default port elided, host lowercased), which KeyFunc binds the
+	// credential to (P4-PLAN D78).
+	url, host, origin string
 	// openRouter selects the OpenRouter body extras (session_id, provider preferences) and the
 	// attribution headers.
 	openRouter bool
@@ -85,14 +87,30 @@ func resolveEndpoint(backend string, explicit bool, cfg Config, b *Binding) (end
 	if err != nil {
 		return endpoint{}, nil, err
 	}
-	ep.url, ep.host = u.String(), u.Hostname()
+	ep.url, ep.host, ep.origin = u.String(), u.Hostname(), CanonicalOrigin(u)
 	if ep.keyURL != "" {
-		// Defense in depth: the credential that KeyFunc releases for ep.host never goes elsewhere.
+		// Defense in depth: the credential that KeyFunc releases for ep.origin never goes elsewhere.
 		if ku, err := checkURL(ep.keyURL); err != nil || !sameOrigin(ku.String(), ep.url) {
 			ep.keyURL = ""
 		}
 	}
 	return ep, warnings, nil
+}
+
+// CanonicalOrigin is the origin of u as credential binding compares it (P4-PLAN D78):
+// scheme://host[:port] with the scheme and host lowercased and the scheme's default port elided.
+func CanonicalOrigin(u *url.URL) string {
+	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if strings.Contains(host, ":") { // IPv6 literal
+		host = "[" + host + "]"
+	}
+	if port != "" {
+		return scheme + "://" + host + ":" + port
+	}
+	return scheme + "://" + host
 }
 
 // sameOrigin reports whether two absolute URLs share scheme, host and port.

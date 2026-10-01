@@ -71,6 +71,7 @@ func TestGatewaySeriesUseTheGatewayNamespace(t *testing.T) {
 		"requests_total", "overhead_seconds", "upstream_seconds", "gate_decisions_total", "gate_seconds",
 		"gate_errors_total", "evaluator_levels_total", "detector_fired_total", "fallback_total",
 		"uniform_samples_today", "retention_lag_seconds", "spend_usd_today", "spend_reserved_usd",
+		"cost_write_dropped_total",
 	} {
 		if !seen["trustagent_gateway_"+name] {
 			t.Errorf("trustagent_gateway_%s is not registered", name)

@@ -50,6 +50,9 @@ type tracesAPI struct {
 	store traceReader // nil when persistence is disabled
 	now   func() time.Time
 	log   *slog.Logger
+	// labels reads a trace's labels for TraceDetail.labels (P4, eval_wiring.go traceLabels);
+	// nil means none.
+	labels func(ctx context.Context, traceID string) ([]store.LabelView, error)
 }
 
 // available answers 503 persistence_disabled when there is no store.
@@ -158,6 +161,16 @@ func (a *tracesAPI) get(c *gin.Context) {
 	d := store.TraceDetail{
 		TraceSummary: rec.Summary(), Body: store.UnavailableBody(store.BodyScope), Decisions: decisions,
 		Labels: []store.LabelView{},
+	}
+	if a.labels != nil {
+		labels, err := a.labels(ctx, id)
+		if err != nil {
+			a.internal(c, "get trace labels", err)
+			return
+		}
+		if labels != nil {
+			d.Labels = labels
+		}
 	}
 	if rec.AuditID != nil {
 		audit, err := a.store.GetAudit(ctx, *rec.AuditID)

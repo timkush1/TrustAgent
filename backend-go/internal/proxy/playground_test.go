@@ -62,7 +62,8 @@ func (e *env) injecting(t *testing.T, base string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.handler.ups = &upstream.Set{OpenAI: up}
+	set := &upstream.Set{OpenAI: up}
+	e.handler.upsFn = func() *upstream.Set { return set }
 }
 
 func playgroundErr(t *testing.T, err error) *PlaygroundError {

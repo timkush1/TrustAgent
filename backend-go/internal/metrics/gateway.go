@@ -96,6 +96,13 @@ var (
 		Namespace: namespace, Name: "spend_reserved_usd",
 		Help: "Spend in USD reserved for calls in flight, by kind.",
 	}, []string{"kind"})
+
+	// CostWritesDropped counts cost_events rows the ledger dropped because its buffer was full
+	// or the write failed (P4-PLAN D51, SPEC Appendix B erratum).
+	CostWritesDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace, Name: "cost_write_dropped_total",
+		Help: "Cost ledger rows dropped (buffer full or write failed).",
+	})
 )
 
 // maxRouteLabels is how many distinct route names the route label takes before "other".
@@ -187,6 +194,9 @@ func SetUniformSamplesToday(n int) { UniformSamplesToday.Set(float64(n)) }
 
 // SetRetentionLag sets how far the retention job is behind (retention_lag_seconds).
 func SetRetentionLag(d time.Duration) { RetentionLag.Set(max(d, 0).Seconds()) }
+
+// CostWriteDropped counts one dropped cost ledger row (cost_write_dropped_total).
+func CostWriteDropped() { CostWritesDropped.Inc() }
 
 // SetSpend sets today's spend and the reserved spend of a kind (spend_usd_today,
 // spend_reserved_usd).

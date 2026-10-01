@@ -25,28 +25,71 @@ const (
 	codePersistenceDisabled = "persistence_disabled"
 	codeEngineUnavailable   = "engine_unavailable"
 	codeQueueFull           = "queue_full"
+
+	// Shared by several endpoint families (moved here at P4 Step 0).
+	codeNoJudge              = "no_judge"
+	codeConflict             = "conflict"
+	codeFileManaged          = "file_managed"
+	codeStaleVersion         = "stale_version"
+	codePreconditionRequired = "precondition_required"
+
+	// P4 (docs/v2/P4-PLAN.md §2.3e; SPEC §2.4 error codes).
+	codeEnvManaged               = "env_managed"
+	codeIngestKeyRequired        = "ingest_key_required"
+	codeConfirmationRequired     = "confirmation_required"
+	codeBodyExpired              = "body_expired"
+	codeInvalidNonce             = "invalid_nonce"
+	codeBudgetExhausted          = "budget_exhausted"
+	codeCredentialsUnavailable   = "credentials_unavailable"
+	codeDecisionModelUnavailable = "decision_model_unavailable"
 )
 
-// fieldError is api.ts FieldError.
+// apiRedact masks secrets in every REST error message (P4-PLAN D42). It is the identity until
+// the credential store's redactor is wired (GSEC sets it to the process Redactor).
+var apiRedact = func(s string) string { return s }
+
+// fieldError is api.ts FieldError. Code and Details let the web render words by code, e.g.
+// reenter_secret with {names} (D37) or fallback_key_required with {host} (D41).
 type fieldError struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
+	Path    string         `json:"path"`
+	Message string         `json:"message"`
+	Code    string         `json:"code,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
-// apiErrorBody is api.ts ApiErrorBody: {"error":{code,message,field_errors?}}.
+// apiErrorBody is api.ts ApiErrorBody: {"error":{code,message,field_errors?,details?}}.
 type apiErrorBody struct {
 	Error apiError `json:"error"`
 }
 
 type apiError struct {
-	Code        string       `json:"code"`
-	Message     string       `json:"message"`
-	FieldErrors []fieldError `json:"field_errors,omitempty"`
+	Code        string         `json:"code"`
+	Message     string         `json:"message"`
+	FieldErrors []fieldError   `json:"field_errors,omitempty"`
+	Details     map[string]any `json:"details,omitempty"`
 }
 
-// abortAPI writes a REST error and stops the handler chain.
+// abortAPI writes a REST error and stops the handler chain. The message passes through
+// apiRedact.
 func abortAPI(c *gin.Context, status int, code, message string, fields ...fieldError) {
-	c.AbortWithStatusJSON(status, apiErrorBody{Error: apiError{Code: code, Message: message, FieldErrors: fields}})
+	abortAPIDetails(c, status, code, message, nil, fields...)
+}
+
+// abortAPIDetails is abortAPI with ApiErrorBody.error.details, e.g. {routes} on 409
+// confirmation_required (D77) or {fields, keys} on 409 env_managed (D33). Details carry names
+// and codes only, never secrets.
+func abortAPIDetails(c *gin.Context, status int, code, message string, details map[string]any, fields ...fieldError) {
+	var redacted []fieldError
+	if len(fields) > 0 {
+		redacted = make([]fieldError, len(fields))
+		for i, f := range fields {
+			f.Message = apiRedact(f.Message)
+			redacted[i] = f
+		}
+	}
+	c.AbortWithStatusJSON(status, apiErrorBody{Error: apiError{
+		Code: code, Message: apiRedact(message), FieldErrors: redacted, Details: details,
+	}})
 }
 
 // badParam answers 400 bad_request for one invalid query parameter.

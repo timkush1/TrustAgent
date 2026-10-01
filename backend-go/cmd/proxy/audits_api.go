@@ -24,9 +24,6 @@ import (
 	"github.com/truthtable/backend-go/internal/worker"
 )
 
-// codeNoJudge is the 503 of POST /api/audit when the engine has no working judge (SPEC §2.4).
-const codeNoJudge = "no_judge"
-
 // auditStore is the part of the store the audit endpoints use: GET /api/audits reads audits, POST
 // /api/audit records the trace of a direct audit.
 type auditStore interface {

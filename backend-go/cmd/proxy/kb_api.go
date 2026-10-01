@@ -117,8 +117,14 @@ func handleKBStats(auditClient *grpc.AuditClient) gin.HandlerFunc {
 	}
 }
 
-// handleFileUpload returns a handler that accepts JSON document uploads for RAG ingestion.
-func handleFileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.HandlerFunc {
+// handleFileUpload is POST /api/kb/documents over the server's engine (SPEC §2.4 row 65). At P4
+// it also books the ingest cost and refuses uploads past the LLM cap (D48, GCOST).
+func (s *server) handleFileUpload(maxUploadBytes int64) gin.HandlerFunc {
+	return fileUpload(s.engine, maxUploadBytes)
+}
+
+// fileUpload returns a handler that accepts JSON document uploads for RAG ingestion.
+func fileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.HandlerFunc {
 	type uploadDocument struct {
 		Content  string            `json:"content"`
 		Metadata map[string]string `json:"metadata"`

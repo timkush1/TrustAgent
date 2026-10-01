@@ -40,7 +40,10 @@ type policyWiring struct {
 	onPolicy func(*policy.Policy)
 	// channel overrides the NOTIFY channel (tests).
 	channel string
-	log     *slog.Logger
+	// notify receives every config notification that is not a policy version (D84); the
+	// evaluator reload subscribes to it. nil uses a hub of its own.
+	notify *notifyHub
+	log    *slog.Logger
 }
 
 // policyServices are the policy engine, the evaluator registry and their REST APIs.
@@ -83,6 +86,14 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 	}
 	ps.Registry = reg
 
+	// One LISTEN connection (the engine's) serves every config notification (D84): the engine
+	// hands the payloads that are not policy versions to the hub.
+	notify := w.notify
+	if notify == nil {
+		notify = newNotifyHub()
+	}
+	notify.Subscribe("evaluator", ps.notified)
+
 	engine, err := policy.NewEngine(ctx, policy.EngineConfig{
 		File: w.cfg.PolicyFile,
 		Env: policy.Env{
@@ -93,7 +104,7 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 			FallbackUpstream: w.cfg.FallbackUpstreamURL != "",
 		},
 		Store: versions, Lock: w.cfg.ConfigLock, ReloadInterval: w.cfg.PolicyReloadInterval, Channel: w.channel,
-		Runtime: w.runtime, OnUpdate: ps.policyUpdated, OnError: ps.policyFailed, OnNotify: ps.notified, Logger: log,
+		Runtime: w.runtime, OnUpdate: ps.policyUpdated, OnError: ps.policyFailed, OnNotify: notify.Dispatch, Logger: log,
 	})
 	if err != nil {
 		return nil, err

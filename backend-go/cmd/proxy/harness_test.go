@@ -9,12 +9,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
@@ -135,6 +139,20 @@ type envOpts struct {
 	trustedProxies []string
 	// adminKey, when set, is a TRUTHTABLE_ADMIN_KEYS entry (label admin).
 	adminKey string
+
+	// P4 (docs/v2/P4-PLAN.md §2.3h).
+	// pg, when set, is the store and the Postgres store (storetest.New(t) and
+	// store.NewPostgresStore): policy versions, settings, credentials, keys and the ledger.
+	pg *store.PostgresStore
+	// mutate edits the configuration after the test defaults are applied.
+	mutate func(*config.Config)
+	// engine replaces the scenario engine (enginetest.Start); engineDown is then ignored.
+	engine *enginetest.Engine
+	// logs, when set, receives the server's log at debug level through the redactor of the
+	// configuration (cfg.Redactor()), as main wires it; read it with testEnv.logText.
+	logs *bytes.Buffer
+	// master signs sessions and seals credentials; nil means an ephemeral key.
+	master *authz.MasterKey
 }
 
 type testEnv struct {
@@ -143,6 +161,77 @@ type testEnv struct {
 	http   *httptest.Server
 	store  store.Store
 	engine *enginetest.Engine
+	// logs and logMu are envOpts.logs and the lock its writer holds.
+	logs  *bytes.Buffer
+	logMu *sync.Mutex
+}
+
+// lockedWriter serializes writes to a buffer the test reads under the same lock.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
+// logText is what the server logged so far (envOpts.logs), or "" without a log buffer.
+func (e *testEnv) logText() string {
+	if e.logs == nil {
+		return ""
+	}
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
+	return e.logs.String()
+}
+
+// wsFrames returns up to n WS v2 frames the hub has published since the server started, oldest
+// first, by replaying its buffer (since_seq=0) over a connection with the test key; it stops early
+// when no further frame arrives within a second. hello frames are not counted or returned.
+func (e *testEnv) wsFrames(t *testing.T, n int) [][]byte {
+	t.Helper()
+	url := "ws" + strings.TrimPrefix(e.http.URL, "http") + "/ws?protocol=2"
+	header := http.Header{"X-TrustAgent-Key": {testKey}}
+	first, _, err := websocket.DefaultDialer.Dial(url, header)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	_ = first.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_, msg, err := first.ReadMessage()
+	_ = first.Close()
+	if err != nil {
+		t.Fatalf("ws hello: %v", err)
+	}
+	var hello struct {
+		Epoch string `json:"epoch"`
+	}
+	if err := json.Unmarshal(msg, &hello); err != nil {
+		t.Fatalf("ws hello %s: %v", msg, err)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(url+"&since_seq=0&epoch="+hello.Epoch, header)
+	if err != nil {
+		t.Fatalf("ws dial with replay: %v", err)
+	}
+	defer conn.Close()
+	var frames [][]byte
+	for len(frames) < n {
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		var f struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(msg, &f) == nil && f.Type == "hello" {
+			continue
+		}
+		frames = append(frames, msg)
+	}
+	return frames
 }
 
 func testConfig(t *testing.T, o envOpts) *config.Config {
@@ -176,15 +265,30 @@ func testConfig(t *testing.T, o envOpts) *config.Config {
 func newTestEnv(t *testing.T, o envOpts) *testEnv {
 	t.Helper()
 	cfg := testConfig(t, o)
-	eng := scenarioEngine(t, o.engineDown)
+	if o.mutate != nil {
+		o.mutate(cfg)
+	}
+	eng := o.engine
+	if eng == nil {
+		eng = scenarioEngine(t, o.engineDown)
+	}
 	client, err := grpc.NewAuditClient(eng.Target, 5*time.Second, "", eng.Dialer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	d := serverDeps{cfg: cfg, engine: client, log: slog.New(slog.DiscardHandler)}
+	d := serverDeps{cfg: cfg, engine: client, log: slog.New(slog.DiscardHandler), master: o.master}
+	logMu := &sync.Mutex{}
+	if o.logs != nil {
+		d.redactor = cfg.Redactor()
+		d.log = slog.New(slog.NewTextHandler(lockedWriter{mu: logMu, w: o.logs},
+			&slog.HandlerOptions{Level: slog.LevelDebug, ReplaceAttr: d.redactor.ReplaceAttr}))
+	}
 	if !o.noStore {
 		d.store = o.store
+		if o.pg != nil {
+			d.store = o.pg
+		}
 		if d.store == nil {
 			d.store = newMemStore()
 		}
@@ -210,7 +314,7 @@ func newTestEnv(t *testing.T, o envOpts) *testEnv {
 	for srv.pinger.Health().State == "unknown" && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	return &testEnv{t: t, srv: srv, http: hs, store: d.store, engine: eng}
+	return &testEnv{t: t, srv: srv, http: hs, store: d.store, engine: eng, logs: o.logs, logMu: logMu}
 }
 
 // send posts a scenario the way trafficgen does and returns the response.

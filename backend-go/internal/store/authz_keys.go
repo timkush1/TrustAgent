@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // APIKeyRecord is one api_keys row (migration 0004). The key itself is never stored: SHA256 is the
@@ -66,8 +67,20 @@ func insertAPIKey(ctx context.Context, q pgx.Tx, k *APIKeyRecord) error {
 		k.ID, k.Label, k.Scopes, k.SHA256, k.Prefix, k.CreatedBy).Scan(&k.CreatedAt)
 }
 
+// Execer runs one statement: a pgx.Tx inside the write's transaction, or a pool or connection.
+type Execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// InsertAdminAudit appends one admin_audit_log row through q, normally inside the transaction of
+// the write it records (P4-PLAN D44). Every admin_audit_log writer outside this package calls it;
+// the D44 scrubbing lives in insertAdminAudit.
+func InsertAdminAudit(ctx context.Context, q Execer, e AdminAuditEntry) error {
+	return insertAdminAudit(ctx, q, e)
+}
+
 // insertAdminAudit appends one admin_audit_log row.
-func insertAdminAudit(ctx context.Context, q pgx.Tx, e AdminAuditEntry) error {
+func insertAdminAudit(ctx context.Context, q Execer, e AdminAuditEntry) error {
 	var diff []byte
 	if e.Diff != nil {
 		b, err := json.Marshal(e.Diff)

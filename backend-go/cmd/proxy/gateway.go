@@ -15,6 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/proxy"
+	"github.com/truthtable/backend-go/internal/runtimecfg"
 )
 
 // gatewayParts are the /v1 components main wires into the router.
@@ -63,6 +64,14 @@ type gatewayHooks struct {
 	snapshotChanged func(jev.SnapshotChange)
 	// calibrations looks up evaluator calibrations per snapshot; nil means none.
 	calibrations policy.CalibrationLookup
+	// runtime is the runtime configuration (P4); nil in tests that build a gateway directly.
+	runtime *runtimecfg.Manager
+	// costs are the cost ledger's hooks (zero: no ledger, today's behaviour).
+	costs costHooks
+	// retriever fetches knowledge-base context for the gate (D65); nil means none.
+	retriever proxy.Retriever
+	// redact masks secrets in relayed upstream error bodies (D42); nil is the identity.
+	redact func(string) string
 }
 
 // jevHTTPConfig maps the decision-model settings onto the HTTP backends' configuration, starting
@@ -109,27 +118,7 @@ func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, p
 		log.Info("policy loaded", "path", pol.Path, "version", pol.Version, "source", pol.Source, "routes", len(pol.Routes), "default_mode", pol.Default.Mode)
 	}
 
-	// Auto resolution (SPEC §3.1): demo → mock; base URL + TRUTHTABLE_JEV_API_KEY → compatible; an
-	// OpenRouter key → openrouter-decisions; a TypeSafe key → typesafe; otherwise off, which every
-	// gated answer reports honestly as skipped:decision_model_off.
-	jevClient, err := jev.New(jev.Config{
-		Backend: cfg.Jev.Backend, Model: cfg.Jev.Model, DemoMode: cfg.DemoMode,
-		OpenRouterKey: cfg.Jev.OpenRouterKey, TypeSafeKey: cfg.Jev.TypeSafeKey, JevAPIKey: cfg.Jev.APIKey,
-		BaseURL: cfg.Jev.BaseURL, Path: cfg.Jev.Path, OpenRouterBaseURL: cfg.Jev.OpenRouterBaseURL,
-		Mock: jev.MockConfig{
-			Mode: cfg.Jev.MockMode, Strict: cfg.Jev.MockStrict, FixturesPath: cfg.Jev.MockFixtures,
-			Seed: cfg.Jev.MockSeed, Latency: cfg.Jev.MockLatency,
-		},
-		HTTP: jevHTTPConfig(cfg, log),
-		OnSnapshotChange: func(c jev.SnapshotChange) {
-			log.Info("decision model snapshot", "backend", c.Backend, "model", c.Model, "previous", c.Previous, "snapshot", c.Snapshot)
-			// The first sighting has no previous snapshot: nothing changed for users.
-			if c.Previous != "" && hooks.snapshotChanged != nil {
-				hooks.snapshotChanged(c)
-			}
-		},
-		Logger: log,
-	})
+	jevClient, err := newDecisionClient(cfg, hooks, log)
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +156,10 @@ func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, p
 	if err != nil {
 		return nil, err
 	}
+	// The uniform sample's daily count survives restarts (the cost ledger seeds it; 0 without).
+	g.SeedUniform(hooks.costs.uniformSeed)
 
-	ups, err := newUpstreams(cfg, auth, log)
+	ups, err := newUpstreams(cfg, auth, hooks.runtime, log)
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +168,9 @@ func newGateway(cfg *config.Config, sink gate.Sink, auth *authz.Authenticator, p
 	}
 
 	h := proxy.New(proxy.Options{
-		Upstreams: ups, Policy: ps.Engine.Current, Gate: g, Sink: sink, TestMode: cfg.TestMode,
+		Upstreams: ups.Current, Policy: ps.Engine.Current, Gate: g, Sink: sink, TestMode: cfg.TestMode,
 		MaxUpstreamResponseBytes: cfg.MaxUpstreamResponseBytes, GateMaxConcurrency: cfg.GateMaxConcurrency, Logger: log,
+		Knowledge: hooks.retriever, Redact: hooks.redact,
 	})
 	return &gatewayParts{handler: h, auth: auth, client: jevClient, jev: info}, nil
 }

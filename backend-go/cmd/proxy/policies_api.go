@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -21,27 +20,11 @@ import (
 // If-Match, rollback, adopt-file and the free dry-run ("Preview impact").
 
 // REST error codes of the policy endpoints (SPEC §2.4).
-const (
-	codeConflict             = "conflict"
-	codeFileManaged          = "file_managed"
-	codeLocked               = "locked"
-	codeStaleVersion         = "stale_version"
-	codePreconditionRequired = "precondition_required"
-)
+// conflict, file_managed, stale_version and precondition_required are shared (api.go).
+const codeLocked = "locked"
 
 // maxDryRunLimit is the largest dry-run window in rows (row 26: limit <= 100000).
 const maxDryRunLimit = store.MaxReplayRows
-
-// apiGuards are the middleware of the policy, evaluator and P3 routes.
-type apiGuards struct {
-	// read and admin authenticate callers with those scopes; writable refuses writes in
-	// read-only mode; rateLimit is the general per-caller limit; dryRunLimit is the policy
-	// dry-run limit (6/min), used instead of rateLimit; bodyLimit caps request bodies.
-	read, admin, writable, rateLimit, dryRunLimit, bodyLimit gin.HandlerFunc
-	// limitBy builds an endpoint's own per-caller limit of n requests per window, used instead
-	// of rateLimit (the Playground's 10/min).
-	limitBy func(n int, window time.Duration) gin.HandlerFunc
-}
 
 // policiesAPI serves /api/policies.
 type policiesAPI struct {

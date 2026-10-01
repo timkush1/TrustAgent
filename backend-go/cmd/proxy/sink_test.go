@@ -349,6 +349,15 @@ func TestSinkRecordsTheDeliveredOutcome(t *testing.T) {
 	if rec := decidedRecord(r, time.Now()); *rec.Action != decision.ActionFlag || rec.TTFTMs != nil || gateDecision(r).GetDelivered() != gate.DeliveredOriginal {
 		t.Errorf("no final: action %v ttft %v", rec.Action, rec.TTFTMs)
 	}
+	// response_chars (0005) is the rune count of the gated text, NULL without one.
+	r.ResponseText = "Größe: 30 Tage ✓"
+	if rec := decidedRecord(r, time.Now()); rec.ResponseChars == nil || *rec.ResponseChars != 16 {
+		t.Errorf("response_chars %v, want 16 runes", rec.ResponseChars)
+	}
+	r.ResponseText = ""
+	if rec := decidedRecord(r, time.Now()); rec.ResponseChars != nil {
+		t.Errorf("response_chars %v without an answer, want NULL", *rec.ResponseChars)
+	}
 }
 
 func TestSinkAttemptDecidedWritesOnlyItsRow(t *testing.T) {

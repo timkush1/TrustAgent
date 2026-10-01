@@ -69,6 +69,9 @@ type TraceRecord struct {
 	QuestionPreview *string
 	ResponsePreview *string
 	Flags           []string
+	// ResponseChars is the rune count of the gated answer text (0005; NULL before P4 and for
+	// traces without an answer).
+	ResponseChars *int
 
 	Audit AuditJoin
 }
@@ -376,9 +379,9 @@ const traceInsertColumns = `
 	total_ms, overhead_ms, gate_ms, prompt_tokens, completion_tokens, action, would_action, gate_status,
 	skip_reason, verdict, max_risk, reasons, evidence_summary, decision_backend, decision_snapshot,
 	decision_cost_usd, audit_id, audit_status, audit_lane, audit_selection, question_preview, response_preview,
-	flags`
+	flags, response_chars`
 
-const traceInsertCount = 41
+const traceInsertCount = 42
 
 // traceDecisionUpdate updates a stored trace with a decided one. The gate outcome, the reasons,
 // the audit status and the flags are the decision's; everything else keeps a stored value the
@@ -413,6 +416,7 @@ const traceDecisionUpdate = `
 	audit_selection = COALESCE(EXCLUDED.audit_selection, traces.audit_selection),
 	question_preview = COALESCE(EXCLUDED.question_preview, traces.question_preview),
 	response_preview = COALESCE(EXCLUDED.response_preview, traces.response_preview),
+	response_chars = COALESCE(EXCLUDED.response_chars, traces.response_chars),
 	flags = CASE WHEN 'late_decision' = ANY(traces.flags) AND NOT ('late_decision' = ANY(EXCLUDED.flags))
 		THEN array_append(EXCLUDED.flags, 'late_decision') ELSE EXCLUDED.flags END,
 	updated_at = now()`
@@ -436,7 +440,7 @@ func traceInsertArgs(t *TraceRecord) []any {
 		t.TTFTMs, t.TotalMs, t.OverheadMs, t.GateMs, t.PromptTokens, t.CompletionTokens, t.Action, t.WouldAction,
 		gateStatus, t.SkipReason, t.Verdict, t.MaxRisk, nonNil(t.Reasons), jsonOrNil(t.EvidenceSummary),
 		t.DecisionBackend, t.DecisionSnapshot, t.DecisionCostUSD, t.AuditID, auditStatus, t.AuditLane,
-		t.AuditSelection, t.QuestionPreview, t.ResponsePreview, nonNil(t.Flags),
+		t.AuditSelection, t.QuestionPreview, t.ResponsePreview, nonNil(t.Flags), t.ResponseChars,
 	}
 }
 
@@ -448,7 +452,7 @@ const traceSelect = `
 		t.completion_tokens, t.action, t.would_action, t.gate_status, t.skip_reason, t.verdict, t.max_risk,
 		t.reasons, t.evidence_summary, t.decision_backend, t.decision_snapshot, t.decision_cost_usd::float8,
 		t.audit_id, t.audit_status, t.audit_lane, t.audit_selection, t.question_preview, t.response_preview,
-		t.flags, a.audit_id IS NOT NULL, a.verdict, a.faithfulness_score, a.grade, vc.counts
+		t.flags, t.response_chars, a.audit_id IS NOT NULL, a.verdict, a.faithfulness_score, a.grade, vc.counts
 	FROM traces t
 	LEFT JOIN audits a ON a.audit_id = t.audit_id
 	LEFT JOIN LATERAL (
@@ -473,7 +477,7 @@ func scanTrace(row pgx.Row) (*TraceRecord, error) {
 		&t.CompletionTokens, &t.Action, &t.WouldAction, &t.GateStatus, &t.SkipReason, &t.Verdict, &maxRisk,
 		&t.Reasons, &t.EvidenceSummary, &t.DecisionBackend, &t.DecisionSnapshot, &t.DecisionCostUSD,
 		&t.AuditID, &t.AuditStatus, &t.AuditLane, &t.AuditSelection, &t.QuestionPreview, &t.ResponsePreview,
-		&t.Flags, &hasAudit, &t.Audit.Verdict, &t.Audit.TrustScore, &t.Audit.Grade, &counts,
+		&t.Flags, &t.ResponseChars, &hasAudit, &t.Audit.Verdict, &t.Audit.TrustScore, &t.Audit.Grade, &counts,
 	)
 	if err != nil {
 		return nil, err
