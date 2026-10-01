@@ -53,7 +53,7 @@ type Config struct {
 	RateLimitPerMinute int      `env:"TRUTHTABLE_RATE_LIMIT_PER_MINUTE"`
 	UploadLimitPerMin  int      `env:"TRUTHTABLE_UPLOAD_LIMIT_PER_MINUTE"`
 	MaxBodyBytes       int64    `env:"TRUTHTABLE_MAX_BODY_BYTES"`   // request body cap (non-upload routes)
-	MaxUploadBytes     int64    `env:"TRUTHTABLE_MAX_UPLOAD_BYTES"` // request body cap for /api/upload
+	MaxUploadBytes     int64    `env:"TRUTHTABLE_MAX_UPLOAD_BYTES"` // request body cap for /api/kb/documents
 	MaxTextChars       int      `env:"TRUTHTABLE_MAX_TEXT_CHARS"`
 
 	// Gateway
