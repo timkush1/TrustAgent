@@ -1,18 +1,24 @@
-// Package config reads the proxy's environment. Key names, defaults and enums follow the registry
-// contracts/config/keys.v1.json (SPEC §2.7). Invalid values fall back to the default and are
-// reported in Config.Warnings.
+// Package config reads the proxy's configuration (SPEC §2.7).
 //
-// The registry-driven loader (dotenv, strict mode, typo hints, masking) replaces this in P2.
+// contracts/config/keys.v1.json is the single registry: every Config field is bound to a registry
+// key by its `env` struct tag, and the key's kind, default, enum, bounds, aliases and shorthands
+// come from the registry, never from this package. Loading:
+//
+//   - Boot precedence: default < .env < process env. The dotenv file is $TRUTHTABLE_ENV_FILE, or
+//     (unset or "auto") the .env in the nearest parent directory holding VERSION; set but empty
+//     disables it. A dotenv assignment never overrides a variable that is already set.
+//   - A canonical name wins over its aliases.
+//   - An invalid value falls back to the default and produces a Warning{key, message, hint}; so
+//     does an unknown TRUTHTABLE_* key (with a "did you mean …?" hint within Levenshtein distance
+//     2) and a misspelled unprefixed proxy key. TRUTHTABLE_STRICT_CONFIG=true turns any warning
+//     into exit code 2 (the proxy's boot does that; see StrictFailure).
+//   - Secret values (registry secret=true) are never echoed in warnings; Redactor masks them in
+//     logs.
 package config
 
 import (
-	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -20,77 +26,136 @@ import (
 // the engine share in compose.
 const DefaultInternalTokenFile = "/var/lib/trustagent-internal/internal.token" // #nosec G101 -- a path, not a credential
 
+// DefaultUpstreamURL is what an empty TRUTHTABLE_UPSTREAM_URL resolves to (registry default_note).
+const DefaultUpstreamURL = "https://api.openai.com"
+
+// Config is the proxy configuration. Each tagged field is bound to the registry key its `env` tag
+// names; tag options: repopath (a relative path that does not exist from the working directory is
+// resolved against the repository root, see RepoPath) and repodir (a relative directory is placed
+// under the repository root when there is one).
 type Config struct {
-	ServerPort      int
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ShutdownTimeout time.Duration
-	UpstreamURL     string
-	GRPCAddress     string
-	GRPCTimeout     time.Duration
-	WorkerCount     int
-	QueueSize       int
-	LogLevel        string
+	ServerPort      int           `env:"TRUTHTABLE_PORT"`
+	ReadTimeout     time.Duration `env:"TRUTHTABLE_READ_TIMEOUT"`
+	WriteTimeout    time.Duration `env:"TRUTHTABLE_WRITE_TIMEOUT"` // 0: per-route deadlines (M12)
+	ShutdownTimeout time.Duration `env:"TRUTHTABLE_SHUTDOWN_TIMEOUT"`
+	UpstreamURL     string        `env:"TRUTHTABLE_UPSTREAM_URL"` // shorthands expanded; "" is DefaultUpstreamURL
+	GRPCAddress     string        `env:"TRUTHTABLE_GRPC_ADDRESS"`
+	GRPCTimeout     time.Duration `env:"TRUTHTABLE_GRPC_TIMEOUT"`
+	WorkerCount     int           `env:"TRUTHTABLE_WORKER_COUNT"`
+	QueueSize       int           `env:"TRUTHTABLE_QUEUE_SIZE"`
+	LogLevel        string        `env:"TRUTHTABLE_LOG_LEVEL"`
 
 	// Security
-	APIKeys            []APIKey // TRUTHTABLE_API_KEYS: ingest + read + content keys
-	AllowedOrigins     []string // CORS + WebSocket origin allowlist
-	RedisURL           string   // rate-limiter backend; empty = in-memory
-	DatabaseURL        string   // audit persistence; empty = disabled
-	RateLimitPerMinute int      // per client (IP or API key)
-	UploadLimitPerMin  int      // stricter limit for /api/upload
-	MaxBodyBytes       int64    // request body cap (non-upload routes)
-	MaxUploadBytes     int64    // request body cap for /api/upload
-	MaxTextChars       int      // max chars for query/response fields
+	APIKeys            []APIKey `env:"TRUTHTABLE_API_KEYS"`        // ingest + read + content keys
+	AllowedOrigins     []string `env:"TRUTHTABLE_ALLOWED_ORIGINS"` // CORS + WebSocket + CSRF origin allowlist
+	RedisURL           string   `env:"REDIS_URL"`                  // rate-limiter backend; empty = in-memory
+	DatabaseURL        string   `env:"TRUTHTABLE_DATABASE_URL"`    // persistence; empty = disabled
+	RateLimitPerMinute int      `env:"TRUTHTABLE_RATE_LIMIT_PER_MINUTE"`
+	UploadLimitPerMin  int      `env:"TRUTHTABLE_UPLOAD_LIMIT_PER_MINUTE"`
+	MaxBodyBytes       int64    `env:"TRUTHTABLE_MAX_BODY_BYTES"`   // request body cap (non-upload routes)
+	MaxUploadBytes     int64    `env:"TRUTHTABLE_MAX_UPLOAD_BYTES"` // request body cap for /api/kb/documents
+	MaxTextChars       int      `env:"TRUTHTABLE_MAX_TEXT_CHARS"`
 
 	// Gateway
-	IngestAuth               string        // TRUTHTABLE_INGEST_AUTH: keys | open
-	TestMode                 bool          // TRUTHTABLE_TEST_MODE (M7)
-	DemoMode                 bool          // TRUTHTABLE_DEMO_MODE
-	UpstreamHeaderTimeout    time.Duration // TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT
-	UpstreamTimeout          time.Duration // TRUTHTABLE_UPSTREAM_TIMEOUT
-	MaxUpstreamResponseBytes int64         // TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES
-	PolicyFile               string        // TRUTHTABLE_POLICY_FILE
-	GateDefaultMode          string        // TRUTHTABLE_GATE_DEFAULT_MODE (seed)
-	GateFailMode             string        // TRUTHTABLE_GATE_FAIL_MODE (seed)
-	GateMaxConcurrency       int           // TRUTHTABLE_GATE_MAX_CONCURRENCY
-	UniformAuditsPerDay      int           // TRUTHTABLE_UNIFORM_AUDITS_PER_DAY
+	IngestAuth               string        `env:"TRUTHTABLE_INGEST_AUTH"` // keys | open (open is refused in inject mode)
+	TestMode                 bool          `env:"TRUTHTABLE_TEST_MODE"`   // M7
+	DemoMode                 bool          `env:"TRUTHTABLE_DEMO_MODE"`
+	UpstreamHeaderTimeout    time.Duration `env:"TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT"`
+	UpstreamTimeout          time.Duration `env:"TRUTHTABLE_UPSTREAM_TIMEOUT"` // a JSON answer, whole
+	MaxUpstreamResponseBytes int64         `env:"TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES"`
+	PolicyFile               string        `env:"TRUTHTABLE_POLICY_FILE,repopath"`
+	GateDefaultMode          string        `env:"TRUTHTABLE_GATE_DEFAULT_MODE"` // seed
+	GateFailMode             string        `env:"TRUTHTABLE_GATE_FAIL_MODE"`    // seed
+	GateMaxConcurrency       int           `env:"TRUTHTABLE_GATE_MAX_CONCURRENCY"`
+	UniformAuditsPerDay      int           `env:"TRUTHTABLE_UNIFORM_AUDITS_PER_DAY"`
 	Jev                      JevConfig
 
+	// Named upstreams (SPEC §2.12 forwarding): UpstreamURL serves the OpenAI formats, the Anthropic
+	// upstream /v1/messages, and the optional fallback upstream the routes with fallback.upstream:
+	// fallback. Each one injects its own key when it is set (inject mode) and passes the client's
+	// credentials through otherwise (D15).
+	UpstreamAPIKey          string        `env:"TRUTHTABLE_UPSTREAM_API_KEY"`
+	UpstreamAuthHeader      string        `env:"TRUTHTABLE_UPSTREAM_AUTH_HEADER"` // authorization (Bearer) | api-key | x-api-key
+	AnthropicUpstreamURL    string        `env:"TRUTHTABLE_ANTHROPIC_UPSTREAM_URL"`
+	AnthropicUpstreamAPIKey string        `env:"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY"` // injected on x-api-key
+	FallbackUpstreamURL     string        `env:"TRUTHTABLE_FALLBACK_UPSTREAM_URL"`      // "" = no fallback upstream
+	FallbackUpstreamAPIKey  string        `env:"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"`  // injected on the format's header
+	FallbackUpstreamFormat  string        `env:"TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT"`   // openai | anthropic
+	StreamIdleTimeout       time.Duration `env:"TRUTHTABLE_STREAM_IDLE_TIMEOUT"`        // between reads of a stream; 0 = none
+
+	// Policy engine: hot reload, the file lock and the custom evaluator files (SPEC §2.7, §7.2).
+	PolicyReloadInterval time.Duration `env:"TRUTHTABLE_POLICY_RELOAD_INTERVAL"` // 0 disables polling
+	ConfigLock           bool          `env:"TRUTHTABLE_CONFIG_LOCK"`            // the file is the only authority
+	EvaluatorsDir        string        `env:"TRUTHTABLE_EVALUATORS_DIR,repopath"`
+	// Calibration files (trustagent.calibration/v1) and the snapshot-family fallback (SPEC §2.9).
+	CalibrationDir            string `env:"TRUTHTABLE_CALIBRATION_DIR,repopath"`
+	CalibrationFamilyFallback bool   `env:"TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK"`
+	// The knowledge add-on (evidence source knowledge) and the default of evidence.knowledge.deadline_ms.
+	KnowledgeEnabled  bool          `env:"TRUTHTABLE_KNOWLEDGE_ENABLED"`
+	KnowledgeDeadline time.Duration `env:"TRUTHTABLE_KNOWLEDGE_DEADLINE"`
+
 	// Server, persistence, engine link and WebSocket
-	ReadHeaderTimeout      time.Duration // TRUTHTABLE_READ_HEADER_TIMEOUT
-	MetricsPort            int           // TRUTHTABLE_METRICS_PORT
-	ShutdownDrainTimeout   time.Duration // TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT (M6)
-	PublicRead             bool          // TRUTHTABLE_PUBLIC_READ: /api reads and /ws without a key
-	PublicURL              string        // TRUTHTABLE_PUBLIC_URL: the dashboard's public origin
-	Readonly               bool          // TRUTHTABLE_READONLY
-	InternalToken          string        // TRUTHTABLE_INTERNAL_TOKEN (metadata x-trustagent-internal)
-	InternalTokenFile      string        // TRUTHTABLE_INTERNAL_TOKEN_FILE: the proxy writes it, the engine reads it
-	TrustedProxies         []string      // TRUTHTABLE_TRUSTED_PROXIES: CIDRs or IPs whose X-Forwarded-For is trusted
-	TraceFlush             string        // TRUTHTABLE_TRACE_FLUSH: async | sync
-	BodyRetention          time.Duration // TRUTHTABLE_BODY_RETENTION
-	BodyMaxBytes           int           // TRUTHTABLE_BODY_MAX_BYTES
-	AuditQueueHigh         int           // TRUTHTABLE_AUDIT_QUEUE_HIGH (QueueSize is the low lane)
-	AuditHighPerMin        int           // TRUTHTABLE_AUDIT_HIGH_PER_MIN
-	EngineHealthInterval   time.Duration // TRUTHTABLE_ENGINE_HEALTH_INTERVAL (M4)
-	SpendCapDecisionUSDDay float64       // TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY (seed)
-	SpendCapLLMUSDDay      float64       // TRUTHTABLE_SPEND_CAP_LLM_USD_DAY (seed)
+	ReadHeaderTimeout      time.Duration `env:"TRUTHTABLE_READ_HEADER_TIMEOUT"`
+	MetricsPort            int           `env:"TRUTHTABLE_METRICS_PORT"`
+	ShutdownDrainTimeout   time.Duration `env:"TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT"` // M6
+	PublicRead             bool          `env:"TRUTHTABLE_PUBLIC_READ"`            // /api reads and /ws without a key
+	Readonly               bool          `env:"TRUTHTABLE_READONLY"`
+	InternalToken          string        `env:"TRUTHTABLE_INTERNAL_TOKEN"`      // metadata x-trustagent-internal
+	InternalTokenFile      string        `env:"TRUTHTABLE_INTERNAL_TOKEN_FILE"` // the proxy writes it, the engine reads it
+	TrustedProxies         []string      `env:"TRUTHTABLE_TRUSTED_PROXIES"`     // CIDRs or IPs whose X-Forwarded-For is trusted
+	TraceFlush             string        `env:"TRUTHTABLE_TRACE_FLUSH"`         // async | sync
+	BodyRetention          time.Duration `env:"TRUTHTABLE_BODY_RETENTION"`
+	BodyMaxBytes           int           `env:"TRUTHTABLE_BODY_MAX_BYTES"`
+	RetentionDays          int           `env:"TRUTHTABLE_RETENTION_DAYS"`         // traces, decisions and audits
+	CostRetentionDays      int           `env:"TRUTHTABLE_COST_RETENTION_DAYS"`    // cost events
+	LabelSampleRetention   time.Duration `env:"TRUTHTABLE_LABEL_SAMPLE_RETENTION"` // bodies of labelled samples
+	AuditQueueHigh         int           `env:"TRUTHTABLE_AUDIT_QUEUE_HIGH"`       // QueueSize is the low lane
+	AuditHighPerMin        int           `env:"TRUTHTABLE_AUDIT_HIGH_PER_MIN"`
+	EngineHealthInterval   time.Duration `env:"TRUTHTABLE_ENGINE_HEALTH_INTERVAL"` // M4
+	SpendCapDecisionUSDDay float64       `env:"TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY"`
+	SpendCapLLMUSDDay      float64       `env:"TRUTHTABLE_SPEND_CAP_LLM_USD_DAY"`
 	WS                     WSConfig
 
-	// Warnings lists invalid values that fell back to their defaults.
+	// Instance identity and boot behaviour
+	PublicURL    string `env:"TRUTHTABLE_PUBLIC_URL"` // PKCE callback, cookie Secure, CSRF origin, setup URL
+	DataDir      string `env:"TRUTHTABLE_DATA_DIR,repodir"`
+	StrictConfig bool   `env:"TRUTHTABLE_STRICT_CONFIG"`
+	Auth         AuthConfig
+
+	// EnvFile is the dotenv file that was read, or "" when none was.
+	EnvFile string
+	// Diagnostics are the configuration warnings: invalid values that fell back to their
+	// defaults, unknown or misspelled keys, and refused combinations.
+	Diagnostics []Warning
+	// Warnings are Diagnostics rendered as "KEY: message (hint)".
 	Warnings []string
+
+	entries  []Entry
+	registry *Registry
+}
+
+// AuthConfig is the dashboard and API authentication configuration (group auth).
+type AuthConfig struct {
+	ReadKeys      []APIKey      `env:"TRUTHTABLE_READ_KEYS"`  // read + content (SPEC §2.4)
+	AdminKeys     []APIKey      `env:"TRUTHTABLE_ADMIN_KEYS"` // every scope
+	SecretKey     string        `env:"TRUTHTABLE_SECRET_KEY"` // base64, 32 bytes
+	SecretKeyFile string        `env:"TRUTHTABLE_SECRET_KEY_FILE,repodir"`
+	SessionTTL    time.Duration `env:"TRUTHTABLE_SESSION_TTL"`
+	SetupTokenTTL time.Duration `env:"TRUTHTABLE_SETUP_TOKEN_TTL"`
+	SetupToken    string        `env:"TRUTHTABLE_SETUP_TOKEN"`   // seeds the setup token
+	CookieSecure  string        `env:"TRUTHTABLE_COOKIE_SECURE"` // auto | true | false
 }
 
 // WSConfig is the WebSocket hub configuration (group websocket).
 type WSConfig struct {
-	MaxClients     int           // TRUTHTABLE_WS_MAX_CLIENTS
-	MaxPerIP       int           // TRUTHTABLE_WS_MAX_PER_IP
-	ReplayBuffer   int           // TRUTHTABLE_WS_REPLAY_BUFFER
-	ReplayMaxBytes int64         // TRUTHTABLE_WS_REPLAY_MAX_BYTES
-	Heartbeat      time.Duration // TRUTHTABLE_WS_HEARTBEAT
+	MaxClients     int           `env:"TRUTHTABLE_WS_MAX_CLIENTS"`
+	MaxPerIP       int           `env:"TRUTHTABLE_WS_MAX_PER_IP"`
+	ReplayBuffer   int           `env:"TRUTHTABLE_WS_REPLAY_BUFFER"`
+	ReplayMaxBytes int64         `env:"TRUTHTABLE_WS_REPLAY_MAX_BYTES"`
+	Heartbeat      time.Duration `env:"TRUTHTABLE_WS_HEARTBEAT"`
 }
 
-// APIKey is one TRUTHTABLE_API_KEYS entry.
+// APIKey is one key_list entry (label=key).
 type APIKey struct {
 	Label string
 	Key   string
@@ -98,48 +163,48 @@ type APIKey struct {
 
 // JevConfig is the decision-model configuration (group decision_model).
 type JevConfig struct {
-	Backend             string // TRUTHTABLE_JEV_BACKEND
-	Model               string // TRUTHTABLE_JEV_MODEL
-	OpenRouterKey       string // OPENROUTER_API_KEY
-	TypeSafeKey         string // TYPESAFE_API_KEY
-	APIKey              string // TRUTHTABLE_JEV_API_KEY, else the contents of TRUTHTABLE_JEV_API_KEY_FILE
-	BaseURL             string // TRUTHTABLE_JEV_BASE_URL
-	Path                string // TRUTHTABLE_JEV_PATH ("" = the backend's path)
-	OpenRouterBaseURL   string // TRUTHTABLE_OPENROUTER_BASE_URL
-	AttemptTimeout      time.Duration
-	AsyncDeadline       time.Duration
-	TokenBudget         int
-	CharsPerToken       float64
-	MaxQuestionsPerCall int
-	MaxResponseTokens   int
-	MockMode            string
-	MockStrict          bool
-	MockFixtures        string
-	MockSeed            int64
-	MockLatency         time.Duration
+	Backend             string        `env:"TRUTHTABLE_JEV_BACKEND"`
+	Model               string        `env:"TRUTHTABLE_JEV_MODEL"`
+	OpenRouterKey       string        `env:"OPENROUTER_API_KEY"`
+	TypeSafeKey         string        `env:"TYPESAFE_API_KEY"`
+	APIKey              string        `env:"TRUTHTABLE_JEV_API_KEY"` // else the contents of TRUTHTABLE_JEV_API_KEY_FILE
+	BaseURL             string        `env:"TRUTHTABLE_JEV_BASE_URL"`
+	Path                string        `env:"TRUTHTABLE_JEV_PATH"` // "" = the backend's path
+	OpenRouterBaseURL   string        `env:"TRUTHTABLE_OPENROUTER_BASE_URL"`
+	AttemptTimeout      time.Duration `env:"TRUTHTABLE_JEV_ATTEMPT_TIMEOUT"`
+	AsyncDeadline       time.Duration `env:"TRUTHTABLE_JEV_ASYNC_DEADLINE"`
+	TokenBudget         int           `env:"TRUTHTABLE_JEV_TOKEN_BUDGET"`
+	CharsPerToken       float64       `env:"TRUTHTABLE_JEV_CHARS_PER_TOKEN"`
+	MaxQuestionsPerCall int           `env:"TRUTHTABLE_JEV_MAX_QUESTIONS_PER_CALL"`
+	MaxResponseTokens   int           `env:"TRUTHTABLE_JEV_MAX_RESPONSE_TOKENS"`
+	MockMode            string        `env:"TRUTHTABLE_JEV_MOCK_MODE"`
+	MockStrict          bool          `env:"TRUTHTABLE_JEV_MOCK_STRICT"`
+	MockFixtures        string        `env:"TRUTHTABLE_JEV_MOCK_FIXTURES,repopath"`
+	MockSeed            int64         `env:"TRUTHTABLE_JEV_MOCK_SEED"`
+	MockLatency         time.Duration `env:"TRUTHTABLE_JEV_MOCK_LATENCY"`
 
 	// Resilience and limits of the HTTP backends (jev.HTTPConfig).
-	MaxRetries      int           // TRUTHTABLE_JEV_MAX_RETRIES
-	MaxRetriesAsync int           // TRUTHTABLE_JEV_MAX_RETRIES_ASYNC
-	RetryAfterCap   time.Duration // TRUTHTABLE_JEV_RETRY_AFTER_CAP
-	RPM             int           // TRUTHTABLE_GATE_JEV_RPM
-	SyncReserve     float64       // TRUTHTABLE_GATE_JEV_SYNC_RESERVE
-	MaxInFlight     int           // TRUTHTABLE_GATE_JEV_MAX_INFLIGHT
-	BreakerFailures int           // TRUTHTABLE_JEV_BREAKER_FAILURES
-	BreakerCooldown time.Duration // TRUTHTABLE_JEV_BREAKER_COOLDOWN
-	AuthCooldown    time.Duration // TRUTHTABLE_JEV_AUTH_COOLDOWN
-	PricePerMTok    float64       // TRUTHTABLE_JEV_PRICE_PER_MTOK (0 = the price table)
-	AppURL          string        // TRUTHTABLE_JEV_APP_URL
-	AppTitle        string        // TRUTHTABLE_JEV_APP_TITLE
-	ZDR             bool          // TRUTHTABLE_JEV_ZDR
-	SendSessionID   bool          // TRUTHTABLE_JEV_SEND_SESSION_ID
-	StartupProbe    bool          // TRUTHTABLE_JEV_STARTUP_PROBE
-	KeepAlive       time.Duration // TRUTHTABLE_JEV_KEEPALIVE (0 = no keep-warm)
-	LogPayloads     bool          // TRUTHTABLE_JEV_LOG_PAYLOADS
+	MaxRetries      int           `env:"TRUTHTABLE_JEV_MAX_RETRIES"`
+	MaxRetriesAsync int           `env:"TRUTHTABLE_JEV_MAX_RETRIES_ASYNC"`
+	RetryAfterCap   time.Duration `env:"TRUTHTABLE_JEV_RETRY_AFTER_CAP"`
+	RPM             int           `env:"TRUTHTABLE_GATE_JEV_RPM"`
+	SyncReserve     float64       `env:"TRUTHTABLE_GATE_JEV_SYNC_RESERVE"`
+	MaxInFlight     int           `env:"TRUTHTABLE_GATE_JEV_MAX_INFLIGHT"`
+	BreakerFailures int           `env:"TRUTHTABLE_JEV_BREAKER_FAILURES"`
+	BreakerCooldown time.Duration `env:"TRUTHTABLE_JEV_BREAKER_COOLDOWN"`
+	AuthCooldown    time.Duration `env:"TRUTHTABLE_JEV_AUTH_COOLDOWN"`
+	PricePerMTok    float64       `env:"TRUTHTABLE_JEV_PRICE_PER_MTOK"` // 0 = the price table
+	AppURL          string        `env:"TRUTHTABLE_JEV_APP_URL"`
+	AppTitle        string        `env:"TRUTHTABLE_JEV_APP_TITLE"`
+	ZDR             bool          `env:"TRUTHTABLE_JEV_ZDR"`
+	SendSessionID   bool          `env:"TRUTHTABLE_JEV_SEND_SESSION_ID"`
+	StartupProbe    bool          `env:"TRUTHTABLE_JEV_STARTUP_PROBE"`
+	KeepAlive       time.Duration `env:"TRUTHTABLE_JEV_KEEPALIVE"` // 0 = no keep-warm
+	LogPayloads     bool          `env:"TRUTHTABLE_JEV_LOG_PAYLOADS"`
 	// SpendEnforcingReserve is TRUTHTABLE_SPEND_ENFORCING_RESERVE and KeyUSDDay
 	// TRUTHTABLE_KEY_DECISION_USD_DAY; the daily cap is Config.SpendCapDecisionUSDDay.
-	SpendEnforcingReserve float64
-	KeyUSDDay             float64
+	SpendEnforcingReserve float64 `env:"TRUTHTABLE_SPEND_ENFORCING_RESERVE"`
+	KeyUSDDay             float64 `env:"TRUTHTABLE_KEY_DECISION_USD_DAY"`
 }
 
 // APIKeySecrets returns the secrets of the API keys (for the legacy /api key check).
@@ -151,285 +216,41 @@ func (c *Config) APIKeySecrets() []string {
 	return out
 }
 
-func Load() *Config {
-	l := &loader{}
-	c := &Config{
-		ServerPort:  l.int("TRUTHTABLE_PORT", 8080),
-		ReadTimeout: l.duration("TRUTHTABLE_READ_TIMEOUT", 30*time.Second),
-		// The write deadline must cover the slowest responses the proxy serves:
-		// streamed LLM completions and /api/upload (Gate-1 ingestion runs LLM
-		// decomposition + entailment per claim — minutes on a slow local judge;
-		// the ingest gRPC call itself is allowed 4x GRPCTimeout). 120s cut those
-		// off mid-flight even when the backend succeeded.
-		WriteTimeout:    l.duration("TRUTHTABLE_WRITE_TIMEOUT", 8*time.Minute),
-		ShutdownTimeout: l.duration("TRUTHTABLE_SHUTDOWN_TIMEOUT", 10*time.Second),
-		UpstreamURL:     upstreamURL(),
-		GRPCAddress:     getEnv("TRUTHTABLE_GRPC_ADDRESS", "localhost:50051"),
-		// Audits run the full LangGraph pipeline (decompose + per-claim verify +
-		// score). A slow local judge with several claims can exceed 30s, so the
-		// default is generous; a fast cloud judge (Claude Haiku) finishes in ~1-3s.
-		GRPCTimeout: l.duration("TRUTHTABLE_GRPC_TIMEOUT", 120*time.Second),
-		WorkerCount: l.int("TRUTHTABLE_WORKER_COUNT", 10),
-		QueueSize:   l.int("TRUTHTABLE_QUEUE_SIZE", 1000),
-		LogLevel:    getEnv("TRUTHTABLE_LOG_LEVEL", "info"),
+// StrictFailure reports whether TRUTHTABLE_STRICT_CONFIG is on and there is at least one warning:
+// the proxy then exits with code 2 (StrictExitCode) instead of starting.
+func (c *Config) StrictFailure() bool { return c.StrictConfig && len(c.Diagnostics) > 0 }
 
-		APIKeys: l.keyList("TRUTHTABLE_API_KEYS"),
-		AllowedOrigins: getEnvList("TRUTHTABLE_ALLOWED_ORIGINS", []string{
-			"http://localhost:5173",
-			"http://localhost:3000",
-		}),
-		RedisURL:           getEnv("REDIS_URL", ""),
-		DatabaseURL:        getEnv("TRUTHTABLE_DATABASE_URL", ""),
-		RateLimitPerMinute: l.int("TRUTHTABLE_RATE_LIMIT_PER_MINUTE", 120),
-		UploadLimitPerMin:  l.int("TRUTHTABLE_UPLOAD_LIMIT_PER_MINUTE", 10),
-		MaxBodyBytes:       l.int64("TRUTHTABLE_MAX_BODY_BYTES", 1<<20),    // 1 MiB
-		MaxUploadBytes:     l.int64("TRUTHTABLE_MAX_UPLOAD_BYTES", 10<<20), // 10 MiB
-		MaxTextChars:       l.int("TRUTHTABLE_MAX_TEXT_CHARS", 20000),
+// StrictExitCode is the exit code of a strict-mode configuration failure (SPEC §2.7).
+const StrictExitCode = 2
 
-		IngestAuth:               l.enum("TRUTHTABLE_INGEST_AUTH", "keys", "keys", "open"),
-		TestMode:                 l.bool("TRUTHTABLE_TEST_MODE", false),
-		DemoMode:                 l.bool("TRUTHTABLE_DEMO_MODE", false),
-		UpstreamHeaderTimeout:    l.duration("TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT", 60*time.Second),
-		UpstreamTimeout:          l.duration("TRUTHTABLE_UPSTREAM_TIMEOUT", 5*time.Minute),
-		MaxUpstreamResponseBytes: l.int64("TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES", 8<<20), // 8 MiB
-		PolicyFile:               RepoPath(getEnv("TRUTHTABLE_POLICY_FILE", "config/policies.yaml")),
-		GateDefaultMode:          l.enum("TRUTHTABLE_GATE_DEFAULT_MODE", "observe", "observe", "flag", "block", "fallback"),
-		GateFailMode:             l.enum("TRUTHTABLE_GATE_FAIL_MODE", "open", "open", "closed"),
-		GateMaxConcurrency:       l.int("TRUTHTABLE_GATE_MAX_CONCURRENCY", 256),
-		UniformAuditsPerDay:      l.int("TRUTHTABLE_UNIFORM_AUDITS_PER_DAY", 50),
-		Jev: JevConfig{
-			Backend: l.enum("TRUTHTABLE_JEV_BACKEND", "auto",
-				"auto", "openrouter-decisions", "openrouter-systemone", "typesafe", "compatible", "mock", "off"),
-			Model:               getEnv("TRUTHTABLE_JEV_MODEL", ""),
-			OpenRouterKey:       getEnv("OPENROUTER_API_KEY", ""),
-			TypeSafeKey:         getEnv("TYPESAFE_API_KEY", ""),
-			APIKey:              getEnv("TRUTHTABLE_JEV_API_KEY", ""),
-			BaseURL:             getEnv("TRUTHTABLE_JEV_BASE_URL", ""),
-			AttemptTimeout:      l.duration("TRUTHTABLE_JEV_ATTEMPT_TIMEOUT", 3*time.Second),
-			AsyncDeadline:       l.duration("TRUTHTABLE_JEV_ASYNC_DEADLINE", 10*time.Second),
-			TokenBudget:         l.int("TRUTHTABLE_JEV_TOKEN_BUDGET", 24000),
-			CharsPerToken:       l.float("TRUTHTABLE_JEV_CHARS_PER_TOKEN", 4.0),
-			MaxQuestionsPerCall: l.int("TRUTHTABLE_JEV_MAX_QUESTIONS_PER_CALL", 16),
-			MaxResponseTokens:   l.int("TRUTHTABLE_JEV_MAX_RESPONSE_TOKENS", 6000),
-			MockMode:            l.enum("TRUTHTABLE_JEV_MOCK_MODE", "scenario", "scenario", "hash", "heuristic"),
-			MockStrict:          l.bool("TRUTHTABLE_JEV_MOCK_STRICT", false),
-			MockFixtures:        RepoPath(getEnv("TRUTHTABLE_JEV_MOCK_FIXTURES", "")),
-			MockSeed:            l.int64("TRUTHTABLE_JEV_MOCK_SEED", 42),
-			MockLatency:         l.duration("TRUTHTABLE_JEV_MOCK_LATENCY", 40*time.Millisecond),
+// Injecting reports whether any upstream injects a credential (inject mode, SPEC §2.12). Each
+// upstream injects only its own key (TRUTHTABLE_UPSTREAM_API_KEY, _ANTHROPIC_UPSTREAM_API_KEY,
+// _FALLBACK_UPSTREAM_API_KEY) and passes client credentials through without one; any key set lets
+// a Bearer or x-api-key equal to a proxy key authenticate on /v1, and refuses open ingest, since
+// the proxy would otherwise spend its own credential on anonymous callers.
+func (c *Config) Injecting() bool { return len(c.InjectedKeys()) > 0 }
 
-			Path:                  strings.TrimSpace(os.Getenv("TRUTHTABLE_JEV_PATH")),
-			OpenRouterBaseURL:     getEnv("TRUTHTABLE_OPENROUTER_BASE_URL", "https://openrouter.ai"),
-			MaxRetries:            l.intAtLeast("TRUTHTABLE_JEV_MAX_RETRIES", 1, 0),
-			MaxRetriesAsync:       l.intAtLeast("TRUTHTABLE_JEV_MAX_RETRIES_ASYNC", 2, 0),
-			RetryAfterCap:         l.duration("TRUTHTABLE_JEV_RETRY_AFTER_CAP", 10*time.Second),
-			RPM:                   l.intAtLeast("TRUTHTABLE_GATE_JEV_RPM", 1000, 1),
-			SyncReserve:           l.fraction("TRUTHTABLE_GATE_JEV_SYNC_RESERVE", 0.3),
-			MaxInFlight:           l.intAtLeast("TRUTHTABLE_GATE_JEV_MAX_INFLIGHT", 64, 1),
-			BreakerFailures:       l.intAtLeast("TRUTHTABLE_JEV_BREAKER_FAILURES", 5, 1),
-			BreakerCooldown:       l.duration("TRUTHTABLE_JEV_BREAKER_COOLDOWN", 30*time.Second),
-			AuthCooldown:          l.duration("TRUTHTABLE_JEV_AUTH_COOLDOWN", 5*time.Minute),
-			PricePerMTok:          l.nonNegative("TRUTHTABLE_JEV_PRICE_PER_MTOK", 0),
-			AppURL:                getEnv("TRUTHTABLE_JEV_APP_URL", "https://github.com/timkush1/TrustAgent"),
-			AppTitle:              getEnv("TRUTHTABLE_JEV_APP_TITLE", "TrustAgent"),
-			ZDR:                   l.bool("TRUTHTABLE_JEV_ZDR", false),
-			SendSessionID:         l.bool("TRUTHTABLE_JEV_SEND_SESSION_ID", true),
-			StartupProbe:          l.bool("TRUTHTABLE_JEV_STARTUP_PROBE", true),
-			KeepAlive:             l.duration("TRUTHTABLE_JEV_KEEPALIVE", 60*time.Second),
-			LogPayloads:           l.bool("TRUTHTABLE_JEV_LOG_PAYLOADS", false),
-			SpendEnforcingReserve: l.fraction("TRUTHTABLE_SPEND_ENFORCING_RESERVE", 0.25),
-			KeyUSDDay:             l.nonNegative("TRUTHTABLE_KEY_DECISION_USD_DAY", 0),
-		},
-
-		ReadHeaderTimeout:      l.duration("TRUTHTABLE_READ_HEADER_TIMEOUT", 10*time.Second),
-		MetricsPort:            l.int("TRUTHTABLE_METRICS_PORT", 8002),
-		ShutdownDrainTimeout:   l.duration("TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT", 20*time.Second),
-		PublicRead:             l.bool("TRUTHTABLE_PUBLIC_READ", false),
-		PublicURL:              getEnv("TRUTHTABLE_PUBLIC_URL", "http://localhost:3000"),
-		Readonly:               l.bool("TRUTHTABLE_READONLY", false),
-		InternalToken:          strings.TrimSpace(os.Getenv("TRUTHTABLE_INTERNAL_TOKEN")),
-		InternalTokenFile:      strings.TrimSpace(getEnv("TRUTHTABLE_INTERNAL_TOKEN_FILE", DefaultInternalTokenFile)),
-		TrustedProxies:         l.networks("TRUTHTABLE_TRUSTED_PROXIES"),
-		TraceFlush:             l.enum("TRUTHTABLE_TRACE_FLUSH", "async", "async", "sync"),
-		BodyRetention:          l.duration("TRUTHTABLE_BODY_RETENTION", 168*time.Hour),
-		BodyMaxBytes:           l.int("TRUTHTABLE_BODY_MAX_BYTES", 262144),
-		AuditQueueHigh:         l.int("TRUTHTABLE_AUDIT_QUEUE_HIGH", 200),
-		AuditHighPerMin:        l.int("TRUTHTABLE_AUDIT_HIGH_PER_MIN", 30),
-		EngineHealthInterval:   l.duration("TRUTHTABLE_ENGINE_HEALTH_INTERVAL", 10*time.Second),
-		SpendCapDecisionUSDDay: l.float("TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY", 2.00),
-		SpendCapLLMUSDDay:      l.float("TRUTHTABLE_SPEND_CAP_LLM_USD_DAY", 5.00),
-		WS: WSConfig{
-			MaxClients:     l.int("TRUTHTABLE_WS_MAX_CLIENTS", 200),
-			MaxPerIP:       l.int("TRUTHTABLE_WS_MAX_PER_IP", 10),
-			ReplayBuffer:   l.int("TRUTHTABLE_WS_REPLAY_BUFFER", 2000),
-			ReplayMaxBytes: l.int64("TRUTHTABLE_WS_REPLAY_MAX_BYTES", 64<<20),
-			Heartbeat:      l.duration("TRUTHTABLE_WS_HEARTBEAT", 20*time.Second),
-		},
-	}
-	if c.Jev.APIKey == "" {
-		c.Jev.APIKey = l.secretFile("TRUTHTABLE_JEV_API_KEY_FILE")
-	}
-	c.Warnings = l.warnings
-	return c
-}
-
-// loader parses typed values and collects warnings for invalid ones.
-type loader struct {
-	warnings []string
-}
-
-func (l *loader) warn(key, value, want string) {
-	l.warnings = append(l.warnings, fmt.Sprintf("%s=%q is not %s; using the default", key, value, want))
-}
-
-// parse reads key and converts it with conv; an empty value is the default and a value conv
-// rejects is the default plus a warning.
-func parse[T any](l *loader, key string, def T, want string, conv func(string) (T, error)) T {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return def
-	}
-	out, err := conv(v)
-	if err != nil {
-		l.warn(key, v, want)
-		return def
-	}
-	return out
-}
-
-func (l *loader) int(key string, def int) int {
-	return parse(l, key, def, "an integer", strconv.Atoi)
-}
-
-func (l *loader) int64(key string, def int64) int64 {
-	return parse(l, key, def, "an integer", func(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) })
-}
-
-func (l *loader) float(key string, def float64) float64 {
-	return parse(l, key, def, "a number", func(s string) (float64, error) { return strconv.ParseFloat(s, 64) })
-}
-
-// intAtLeast is an integer no smaller than lo (the registry min).
-func (l *loader) intAtLeast(key string, def, lo int) int {
-	return parse(l, key, def, fmt.Sprintf("an integer of at least %d", lo), func(s string) (int, error) {
-		n, err := strconv.Atoi(s)
-		if err == nil && n < lo {
-			err = fmt.Errorf("below %d", lo)
-		}
-		return n, err
-	})
-}
-
-// fraction is a number from 0 to 1.
-func (l *loader) fraction(key string, def float64) float64 {
-	return parse(l, key, def, "a number from 0 to 1", func(s string) (float64, error) {
-		f, err := strconv.ParseFloat(s, 64)
-		if err == nil && (f < 0 || f > 1) {
-			err = fmt.Errorf("out of range")
-		}
-		return f, err
-	})
-}
-
-// nonNegative is a number of at least 0.
-func (l *loader) nonNegative(key string, def float64) float64 {
-	return parse(l, key, def, "a number of at least 0", func(s string) (float64, error) {
-		f, err := strconv.ParseFloat(s, 64)
-		if err == nil && f < 0 {
-			err = fmt.Errorf("negative")
-		}
-		return f, err
-	})
-}
-
-// secretFile reads a credential from the file named by key (a *_FILE key, for Docker secrets). A
-// file that cannot be read is reported without its contents and yields no credential.
-func (l *loader) secretFile(key string) string {
-	path := strings.TrimSpace(os.Getenv(key))
-	if path == "" {
-		return ""
-	}
-	b, err := os.ReadFile(path) // #nosec G304 G703 -- the operator names the credential file (a registry *_FILE key)
-	if err != nil {
-		l.warnings = append(l.warnings, fmt.Sprintf("%s: the file %q cannot be read; no credential loaded", key, path))
-		return ""
-	}
-	return strings.TrimSpace(string(b))
-}
-
-func (l *loader) bool(key string, def bool) bool {
-	return parse(l, key, def, "true or false", strconv.ParseBool)
-}
-
-func (l *loader) duration(key string, def time.Duration) time.Duration {
-	return parse(l, key, def, "a Go duration such as 30s", time.ParseDuration)
-}
-
-func (l *loader) enum(key, def string, allowed ...string) string {
-	return parse(l, key, def, "one of "+strings.Join(allowed, ", "), func(s string) (string, error) {
-		if !slices.Contains(allowed, s) {
-			return "", fmt.Errorf("not allowed")
-		}
-		return s, nil
-	})
-}
-
-// networks parses a comma-separated list of CIDRs and IP addresses (TRUTHTABLE_TRUSTED_PROXIES);
-// an entry that is neither is ignored with a warning. Empty means none.
-func (l *loader) networks(key string) []string {
+// InjectedKeys names the upstream credential keys that are set, in registry order.
+func (c *Config) InjectedKeys() []string {
 	var out []string
-	for _, item := range getEnvList(key, nil) {
-		if _, _, err := net.ParseCIDR(item); err == nil || net.ParseIP(item) != nil {
-			out = append(out, item)
-			continue
+	for _, k := range []struct{ name, value string }{
+		{"TRUTHTABLE_UPSTREAM_API_KEY", c.UpstreamAPIKey},
+		{"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY", c.AnthropicUpstreamAPIKey},
+		{"TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY", c.FallbackUpstreamAPIKey},
+	} {
+		if k.value != "" {
+			out = append(out, k.name)
 		}
-		l.warnings = append(l.warnings, fmt.Sprintf("%s entry %q is not a CIDR or an IP address; ignored", key, item))
 	}
 	return out
 }
 
-// keyList parses "label=key,..." (registry kind key_list). An entry without a label is kept as
-// key<n> with a warning; an entry missing its label or key is ignored with a warning.
-func (l *loader) keyList(key string) []APIKey {
-	var out []APIKey
-	seen := map[string]bool{}
-	for i, item := range strings.Split(os.Getenv(key), ",") {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		label, secret, ok := strings.Cut(item, "=")
-		label, secret = strings.TrimSpace(label), strings.TrimSpace(secret)
-		if !ok {
-			label, secret = fmt.Sprintf("key%d", i+1), item
-			l.warnings = append(l.warnings, fmt.Sprintf("%s entry %d has no label; write it as label=key", key, i+1))
-		}
-		if label == "" || secret == "" {
-			l.warnings = append(l.warnings, fmt.Sprintf("%s entry %d needs both a label and a key; ignored", key, i+1))
-			continue
-		}
-		if seen[label] {
-			l.warnings = append(l.warnings, fmt.Sprintf("%s: label %q is used twice", key, label))
-		}
-		seen[label] = true
-		out = append(out, APIKey{Label: label, Key: secret})
-	}
-	return out
-}
+// Entries returns every registry key of the proxy with its effective value and where it came
+// from, in registry order. Secret values are included: mask them (MaskSecret) before showing them.
+func (c *Config) Entries() []Entry { return append([]Entry(nil), c.entries...) }
 
-// upstreamURL reads TRUTHTABLE_UPSTREAM_URL (alias UPSTREAM_LLM_URL) with its shorthands; empty
-// means https://api.openai.com.
-func upstreamURL() string {
-	v := strings.TrimSpace(getEnv("TRUTHTABLE_UPSTREAM_URL", getEnv("UPSTREAM_LLM_URL", "")))
-	switch strings.ToLower(v) {
-	case "":
-		return "https://api.openai.com"
-	case "ollama":
-		return getEnv("OLLAMA_BASE_URL", "http://localhost:11434")
-	case "openrouter":
-		return "https://openrouter.ai/api"
-	}
-	return v
-}
+// Registry returns the registry the configuration was loaded against.
+func (c *Config) Registry() *Registry { return c.registry }
 
 // RepoPath resolves a relative path that does not exist from the working directory against the
 // repository root (the nearest parent directory holding VERSION), so `make dev-go` run from
@@ -446,43 +267,34 @@ func RepoPath(p string) string {
 	if err != nil {
 		return p
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "VERSION")); err == nil {
-			if candidate := filepath.Join(dir, p); fileExists(candidate) {
-				return candidate
-			}
-			return p
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return p
-		}
-		dir = parent
+	root := findRepoRoot(dir)
+	if root == "" {
+		return p
 	}
+	if candidate := filepath.Join(root, p); fileExists(candidate) {
+		return candidate
+	}
+	return p
+}
+
+// repoDir places a relative directory (or file inside one) under the repository root when the
+// working directory is inside the repository, so host runs share one data directory whatever
+// directory they start in. Empty, absolute and out-of-repository paths are returned unchanged.
+func repoDir(p string) string {
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return p
+	}
+	if root := findRepoRoot(dir); root != "" {
+		return filepath.Join(root, p)
+	}
+	return p
 }
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
-}
-
-func getEnvList(key string, defaultValue []string) []string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	var items []string
-	for _, item := range strings.Split(value, ",") {
-		if trimmed := strings.TrimSpace(item); trimmed != "" {
-			items = append(items, trimmed)
-		}
-	}
-	return items
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }

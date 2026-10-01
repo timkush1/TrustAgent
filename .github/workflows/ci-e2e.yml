@@ -1,12 +1,15 @@
 name: CI (E2E)
 
-# Compose end-to-end suite (SPEC §3.4) running the S0 exit gate (SPEC §4.2):
-# the zero-key demo stack (make demo), doctor --expect demo, trafficgen
-# --expect over the s0 scenarios and the Playwright stack skeleton, with the
-# compose logs uploaded on failure. The scripts job lints and unit-tests the
-# setup scripts the suite relies on and validates every compose profile.
-# No path filters on purpose: a required check that never reports would block
-# merges.
+# Compose end-to-end suite (SPEC §3.4) running the M-Demo gate (P3-PLAN §12,
+# SPEC §4.2): the zero-key demo stack (make demo), trafficgen --expect over the
+# demo scenarios, doctor --expect demo, the Playwright stack specs (the S0
+# skeleton and the M-Demo set, signed in as admin with a key generated for the
+# run), the static site's specs (built as the gate builds it and served by vite
+# preview), then the e2e stack (every vendor on mock-upstream) with its p3
+# scenarios; compose logs are uploaded on failure. The scripts job lints and
+# unit-tests the setup scripts the suite relies on and validates every compose
+# profile. No path filters on purpose: a required check that never reports
+# would block merges.
 
 on:
   push:
@@ -36,9 +39,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Same pins as ci-python.yml; the settings come from the engine's pyproject.
-      - name: Install linters
-        run: pip install ruff==0.1.15 black==23.12.1
+      # Same pins as ci-python.yml; the settings come from the engine's pyproject. PyYAML and
+      # jsonschema let the tests validate the load policy and the recording against contracts/.
+      - name: Install linters and test dependencies
+        run: pip install ruff==0.1.15 black==23.12.1 pyyaml==6.0.2 jsonschema==4.26.0
 
       - name: ruff
         run: ruff check --config backend-python/pyproject.toml scripts
@@ -49,13 +53,13 @@ jobs:
       - name: Unit tests (scripts/tests)
         run: python -m unittest discover -s scripts/tests -v
 
-      - name: Compose files (every profile and the demo override)
+      - name: Compose files (every profile and the demo, e2e and load overrides)
         run: make compose-check
 
   e2e:
     name: E2E (compose stack)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
@@ -103,16 +107,28 @@ jobs:
           cache-to: type=gha,scope=dashboard,mode=max
 
       # configure.py --ensure writes a fresh .env (generated passwords and the
-      # trafficgen key), then the demo stack starts and every service must turn
-      # healthy. OPEN=0: print the dashboard URL, no browser.
+      # trafficgen key); then a random admin key goes into it for this run only.
+      # The stack specs sign in with it (TRUSTAGENT_ADMIN_KEY; masked in the
+      # log), and with an admin key set make demo mints no setup link.
+      - name: Configure (.env and a one-run admin key)
+        run: |
+          python3 scripts/configure.py --ensure
+          key="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::$key"
+          printf 'TRUTHTABLE_ADMIN_KEYS=ci-admin=%s\n' "$key" >> .env
+          echo "TRUSTAGENT_ADMIN_KEY=$key" >> "$GITHUB_ENV"
+
+      # Every service must turn healthy. OPEN=0: print the URL, no browser.
       - name: make demo
         run: make demo DEMO_BUILD= OPEN=0
 
-      - name: Doctor (--expect demo)
-        run: python3 scripts/doctor.py --target docker --no-probe --expect demo
+      # The M-Demo gate's command: the default scenario set (demo) at the default
+      # phase; every selected scenario must pass (a phase skip fails the run).
+      - name: Trafficgen --expect (demo scenarios)
+        run: docker compose -p truthtable-demo exec -T proxy /trafficgen --once --expect
 
-      - name: Trafficgen --expect (s0 scenarios)
-        run: docker compose -p truthtable-demo exec -T proxy /trafficgen --once --expect --scenarios s0
+      - name: Doctor (--expect demo)
+        run: python3 scripts/doctor.py --target docker --expect demo
 
       - uses: actions/setup-node@v6
         with:
@@ -129,20 +145,52 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       # playwright.config.ts points the stack project at
-      # http://localhost:${DASHBOARD_HOST_PORT}, the port make demo published.
+      # http://localhost:${DASHBOARD_HOST_PORT}, the port make demo published. In
+      # CI a stack spec that cannot run fails instead of skipping.
       - name: Playwright (stack skeleton)
         working-directory: frontend-react
         env:
           DASHBOARD_HOST_PORT: '3000'
         run: npx playwright test --project=stack -g skeleton
 
+      - name: Playwright (stack, M-Demo specs)
+        working-directory: frontend-react
+        env:
+          DASHBOARD_HOST_PORT: '3000'
+        run: npx playwright test --project=stack -g "trace detail|inline claims|policy edit|rollback|fallback"
+
+      # The static GitHub Pages site needs no stack. It is built as the M-Demo gate
+      # builds it; --project=static makes Playwright serve it with vite preview
+      # (SPEC §3.3, §7.5: replay, landing, CSP and network specs).
+      - name: Playwright (static site)
+        working-directory: frontend-react
+        env:
+          VITE_APP_MODE: static
+          VITE_BASE_PATH: /TrustAgent/
+        run: |
+          npm run build
+          npx playwright test --project=static
+
+      # The e2e stack publishes the same host ports: the demo stops first.
+      - name: Stop the demo stack
+        run: make demo-clean
+
+      # Real HTTP paths: the compatible fast-check backend and both LLM upstreams
+      # on mock-upstream, traces written synchronously (docker-compose.e2e.yml).
+      - name: E2E stack and its p3 scenarios
+        run: make e2e-up E2E_BUILD= && make e2e-scenarios E2E_PHASE=p3 && make e2e-down
+
+      # Whichever stack was up when a step failed: the demo, or the e2e stack.
       - name: Collect logs
         if: failure()
         run: |
           mkdir -p e2e-artifacts
-          compose="docker compose -p truthtable-demo -f docker-compose.yml -f docker-compose.demo.yml --profile demo"
-          $compose ps --all > e2e-artifacts/compose-ps.txt 2>&1 || true
-          $compose logs --no-color --timestamps > e2e-artifacts/compose.log 2>&1 || true
+          demo="docker compose -p truthtable-demo -f docker-compose.yml -f docker-compose.demo.yml --profile demo"
+          e2e="docker compose -p truthtable-e2e -f docker-compose.yml -f docker-compose.e2e.yml --profile e2e"
+          $demo ps --all > e2e-artifacts/compose-ps.txt 2>&1 || true
+          $demo logs --no-color --timestamps > e2e-artifacts/compose.log 2>&1 || true
+          $e2e ps --all > e2e-artifacts/compose-e2e-ps.txt 2>&1 || true
+          $e2e logs --no-color --timestamps > e2e-artifacts/compose-e2e.log 2>&1 || true
           python3 scripts/doctor.py --target docker --expect demo --wait 0 --json \
             > e2e-artifacts/doctor.json 2>&1 || true
 
@@ -160,4 +208,4 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: make demo-clean
+        run: make -k demo-clean e2e-down

@@ -48,6 +48,43 @@ clean-go: ## Clean the Go build cache
 	@echo "Cleaning Go cache..."
 	cd backend-go && go clean -cache
 
+##@ Measurement and replay tools (backend-go/cmd)
+
+# make calibrate: the evaluator to fit and its labelled risks (a JSONL file, - for stdin, or the
+# output of make gate-eval). LABEL_SOURCE names the labels' origin when the lines do not.
+EVALUATOR      ?=
+IN             ?=
+LABEL_SOURCE   ?=
+DATASET        ?=
+WRITE          ?=
+CALIBRATE_ARGS ?=
+# make export-replay: where the recording goes and which traces it holds.
+REPLAY_OUT    ?=
+REPLAY_SINCE  ?=
+REPLAY_SOURCE ?= trafficgen
+REPLAY_ARGS   ?=
+
+gate-eval: ## Build backend-go/bin/gate-eval: the fast check over a JSONL file (bench-lite and eval-live run it)
+	cd backend-go && go build -o bin/gate-eval ./cmd/gate-eval
+	@echo "✅ Built backend-go/bin/gate-eval"
+
+calibrate: ## Fit a calibration: EVALUATOR=groundedness@1 IN=labels.jsonl [LABEL_SOURCE=human] [DATASET=..] [WRITE=1 writes config/calibration]
+	@test -n "$(EVALUATOR)" || { \
+		echo "usage: make calibrate EVALUATOR=<id>@<version> IN=<labelled JSONL> [LABEL_SOURCE=human|public_dataset|uniform_audit|judge]"; \
+		echo "                      [DATASET=ragtruth:qa@<rev>] [WRITE=1] [CALIBRATE_ARGS='--source api --api-key-file admin.key']"; \
+		exit 2; }
+	cd backend-go && go run ./cmd/calibrate --evaluator "$(EVALUATOR)" \
+		$(if $(IN),--in "$(if $(filter -,$(IN)),-,$(abspath $(IN)))") $(if $(LABEL_SOURCE),--label-source "$(LABEL_SOURCE)") \
+		$(foreach d,$(DATASET),--dataset "$(d)") $(if $(WRITE),--write) $(CALIBRATE_ARGS)
+
+export-replay: ## Export a sanitized replay recording: REPLAY_OUT=<dir> [REPLAY_SINCE=<RFC 3339>] [REPLAY_SOURCE=trafficgen] (reads TRUTHTABLE_DATABASE_URL)
+	@test -n "$(REPLAY_OUT)" || { \
+		echo "usage: make export-replay REPLAY_OUT=<dir> [REPLAY_SINCE=2026-09-28T00:00:00Z] [REPLAY_SOURCE=trafficgen]"; \
+		echo "                          [REPLAY_ARGS='--force' or '--api http://127.0.0.1:8080 --api-key-file read.key']"; \
+		exit 2; }
+	cd backend-go && go run ./cmd/export-replay --out "$(abspath $(REPLAY_OUT))" \
+		$(if $(REPLAY_SINCE),--since "$(REPLAY_SINCE)") $(if $(REPLAY_SOURCE),--source "$(REPLAY_SOURCE)") $(REPLAY_ARGS)
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
 install: install-go
 proto: proto-go

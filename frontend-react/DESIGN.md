@@ -1,8 +1,9 @@
 # TrustAgent dashboard design rules
 
-These rules apply to everything under `frontend-react/src`. The tokens live in `src/index.css`.
-The words, icons and tones for server values live in `src/domain/presentation.ts`, which reads
-`contracts/ui/*.v1.json`. SPEC §3.3 is the normative page list. This file is the house style.
+These rules apply to everything under `frontend-react/src`. The tokens live in
+`src/styles/tokens.css`, which the app (`src/index.css`) and the landing page
+(`src/landing/landing.css`) both import. The words, icons and tones for server values live in
+`src/domain/presentation.ts`, which reads `contracts/ui/*.v1.json`. SPEC §3.3 is the normative page list. This file is the house style.
 
 ## 1. Point of view
 
@@ -37,7 +38,7 @@ that. Tailwind's palette is removed (`--color-*: initial`), so only these names 
 | `surface-hover` | oklch(0.955 0.004 265) | oklch(0.245 0.006 265) | Hover, active nav |
 | `fg` | oklch(0.22 0.01 265) — 17.3:1 | oklch(0.93 0.004 265) — 15.0:1 | Text |
 | `fg-muted` | oklch(0.47 0.012 265) — 6.8:1 | oklch(0.70 0.01 265) — 6.9:1 | Secondary text |
-| `fg-subtle` | oklch(0.55 0.01 265) — 4.9:1 | oklch(0.62 0.01 265) — 5.1:1 | Hints, icons |
+| `fg-subtle` | oklch(0.55 0.01 265) — 4.9:1 | oklch(0.62 0.01 265) — 5.1:1 | Hints, icons (text only on `bg`, `surface`, `surface-raised`; on `surface-sunken` or `surface-hover` use `fg-muted`) |
 | `border` / `border-strong` | 0.91 / 0.80 | 0.27 / 0.36 | Hairlines (1px) |
 
 **Verdict hues.** Contrast is given on the surface, then on the verdict's own 10% (light) or 16%
@@ -69,7 +70,7 @@ text is never drawn on a tint: the neutral tint badge uses `fg-muted`.
 - **Neutral tint badge**: grey text on a grey tint misses 4.5:1 in the dark theme, so a neutral
   `tint` badge uses `fg-muted` text.
 
-`src/components/charts/tokenContrast.test.ts` reads these tokens from `index.css` and checks every
+`src/components/charts/tokenContrast.test.ts` reads these tokens from `styles/tokens.css` and checks every
 pair the kit uses, in both themes: text 4.5:1, control edges, focus ring and chart marks 3:1.
 Colors at partial alpha are composited in sRGB, as browsers do, so a tint may measure slightly
 lower than an OKLab mix would suggest.
@@ -92,6 +93,15 @@ Answer marks use `<mark data-v="contradicted|unsupported|partial|supported|unkno
 `data-fuzzy` for approximate spans. The fast check's lower-case verdicts are drawn like the
 matching claim verdict (`gateVerdictView`). Each verdict differs in hue, icon, label and
 underline, which a unit test enforces.
+
+**Instant-check marks.** A detector finding (`decision.detectors[].findings`, UTF-16) is marked
+as soon as the gate decides, before any claim: `<mark data-det="<detector id>">`, a 2px solid
+line in `fg-muted`, drawn 7px below the text (below a claim's underline), and the scan-search
+icon after the finding. It is achromatic because a detector is not a verdict. Where a finding
+overlaps a claim, it nests inside the claim's mark and both lines show; the claim's link names
+the finding ("…, instant checks: links to a URL not in your documents"). A finding on its own
+repeats the `det:*` reason copy in a tooltip and in screen-reader text, and the answer gets the
+legend "Marked by the instant checks" (a glossary term).
 
 ## 4. Outcome encoding
 
@@ -127,13 +137,13 @@ are not shown in lists or headers.
 - Banner priority: unauthorized → no credits → budget exhausted → breaker open on an enforcing
   route → read-only → demo. The one that changes what users receive wins. Copy comes from
   `contracts/ui/copy.v1.json`.
-- Page content has 24px side padding. Section headings are `h2`.
+- Page content has 24px side padding (16px below 640px). Section headings are `h2`.
 
 ## 7. Motion
 
 - 150–200 ms ease-out, animating `transform` and `opacity` only.
 - Spinners (Checking, Deep audit running) are the only looping animation.
-- `prefers-reduced-motion` turns animation and transitions off globally (`src/index.css`).
+- `prefers-reduced-motion` turns animation and transitions off globally (`src/styles/tokens.css`).
 
 ## 8. Data honesty
 
@@ -252,6 +262,10 @@ message and code.
 | `KeyValueList` | Ids, timings, costs | Missing values are an em dash; `mono` for ids, `numeric` for numbers, `copy` for a copy button |
 | `DataTable` | Long lists | Virtualized rows (`@tanstack/react-virtual`) in a scroll viewport with a sticky header that never hides the focused row; one tab stop, arrows/Page/Home/End move the row focus, Enter or a click opens the row. Loading, error and empty take the body's place; a later page's error shows under the rows. `onEndReached` asks once per list end. Cells hold text and pills, not their own buttons |
 | `Pagination` | Server lists with a total | The range is written and announced; the end buttons say why they are disabled |
+| `EvidenceBadge`, `LabelledValueBadge` | Where a number comes from: Measured, Estimate, Third-party, Vendor, Simulated (SPEC §7.4) | Achromatic; a popover gives the glossary definition, the server's `basis`, source link and date. Every cost, rate and count a page shows carries one; on the demo stack it says Simulated |
+| `LabelledRateView` | A `LabelledRate` (hallucination rate, audited share) | Below `min_n` it shows "Needs 30 unbiased samples (have 12)" and a meter, never the number |
+| `DiffView` | Reviewing a change (policy save, rollback, evaluator versions) | From two texts or a server unified diff. Achromatic: "+" and full-weight text on a raised row for additions, "−" and struck muted text for removals, "Added:"/"Removed:" for screen readers; unchanged runs fold |
+| `useWriteReason(level)` | The reason for `<DisabledAction>` on writes | `'admin'`: read-only instance, then a caller without the admin scope. `'post'`: read-scope POSTs (validate, Preview impact) that a read-only instance still refuses |
 
 ## 12. Charts
 
@@ -292,6 +306,126 @@ it stays out of every other bundle.
 
 The reliability chart, confusion grid and timing waterfall are custom SVG in their own features
 (SPEC §3.3); they follow the same rules and draw their colors from `palette.ts`.
+
+## 12a. Pages (P3)
+
+SPEC §3.3 is the page list; these notes record how each page applies the rules above.
+
+- **Overview** (`components/overview/`). Order: setup checklist (folds to "Setup complete"),
+  "Connect your app" while no request has arrived (that is the empty state), the at-a-glance
+  strip (one surface with hairline dividers, not stat cards), "Requests by outcome", "What was
+  caught" beside evidence coverage and its "Why not?" disclosure, the savings strip, the audited
+  share, Performance (collapsed), and "Connect your app" again, folded. The time window and the
+  Summary / Savings tab live in the URL (`?window=7d&tab=savings`); the window picker sits in the
+  page header until the top bar grows one. Snippets never contain a key: they read
+  `$TRUSTAGENT_KEY` and the provider key from the environment.
+- **Policies** (`components/policies/`). Nothing changes on the server until a review: route
+  cards, presets, one-click fixes and the YAML editor all edit a **draft** (YAML text, edited
+  with the `yaml` Document API so comments survive and only touched lines change). The draft bar
+  leads to one review dialog (diff, server validation and block readiness, "Preview impact (free
+  — replays past answers)", a message) and the save sends `If-Match`; a 412 offers to reload.
+  "Allow uncalibrated blocking" is a typed confirmation (the route name). A downgraded route shows
+  "Block → currently acting as Flag" in a dashed box with a warning icon (the degraded-state
+  shape), each downgrade followed by its fix. The advanced editor is CodeMirror 6, loaded with the
+  dialog: achromatic syntax styling, token colors, Tab left to the browser, problems both as lint
+  marks and as a text list. Its schema check is policy.v1 compiled ahead of time
+  (`src/lib/policy/policyValidator.gen.ts`, `make gen-policy-validator`), because ajv's runtime
+  compiler needs `eval`, which the CSP forbids. The save's `If-Match` is the ETag the draft started
+  from, never the one on screen (the stream refreshes that). A diverged policies.yaml follows SPEC
+  §7.2: the dashboard version stays in effect and the file waits for "Adopt file"; "Restore my
+  edit" appears only when the file itself is in effect.
+- **Playground** (`components/playground/`). The form lives in a store, so it survives runs and
+  page changes (never persisted: prompts may be sensitive). The result is a numbered timeline
+  (your model → fast check → what your app received → deep audit), each step with a state icon
+  and words; the deep audit keeps updating from the live stream. The curl equivalent is always
+  shown and follows the form. An unedited example keeps its demo scenario id and sends it only to a
+  demo or test-mode stack, whose mock checks answer it as trafficgen's scripted run (labelled
+  simulated); editing the example drops it. A proxy that answers 404/501 to a run gets a degraded
+  state (what is missing, that the curl command still works, a link to Traffic) and Run stays off
+  with that reason for the rest of the session.
+- **Sign in** (`components/setup/`, `/app/setup`). The target of the proxy's one-time
+  `SETUP: open …/app/setup#token=…` line. The token is read once from the fragment and removed from
+  the address bar; claiming it is an explicit button (never on page load). The created admin key
+  is shown once with a copy button and stays on screen even when the browser keeps no session
+  (a cross-origin dashboard). Sign-in with a key is the fix every `needs_admin` reason links to;
+  key management in Settings → Access arrives in P4.
+- **Evaluators** (`components/evaluators/`). Library cards, checks that run on a route first.
+  Calibration progress uses the contract copy and one meter per requirement. Writes that arrive
+  in P4 (label queue, calibrate, adopt, Studio) are shown disabled with one shared reason. The
+  reliability chart is custom SVG: neutral ink bars at most 24px thick, a dashed diagonal, one
+  focusable surface whose arrow keys move the readout, a table view, and the caption "agreement
+  with labels, not ground truth".
+- **Knowledge** (`components/knowledge/`). In the nav only while `/api/status` reports the add-on
+  enabled; with it off (or a 409 `knowledge_disabled`) the page explains the add-on and shows the
+  one command that turns it on.
+
+## 12b. Landing page and static build (P5 skeleton)
+
+SPEC §3.3 ("Static build"), §7.5 ("Static GitHub Pages demo") and §8.1 are normative.
+
+**Two entries.** `index.html` is the dashboard; `landing.html` (`src/landing/`) is the landing
+page. The landing entry imports no router, TanStack Query, Recharts, Base UI, `motion`, zustand
+or `components/ui/`: its pieces are plain elements over the shared tokens (`src/landing/ui.tsx`).
+`landing.test.tsx` walks its import graph to hold that line, and `npm run size` fails when its
+first load (HTML, JS, CSS; woff2 fonts listed, not counted) is over 110 KB gzip. Keep headroom:
+the cost calculator is lazy, and the refund example comes from a virtual module
+(`virtual:trustagent/scenario/<id>`, `vite.site.ts`) instead of the whole scenario pack.
+
+| Build | `/` | Dashboard | Landing |
+|---|---|---|---|
+| Full (`npm run build`) | the dashboard | `/app/…` | `/welcome/` |
+| Static (`npm run build:static`, `VITE_APP_MODE=static`, `VITE_BASE_PATH` default `/TrustAgent/`) | the landing page | `/app/…` replaying `public/demo/recorded`, with `app/{overview,traffic,playground,evaluators/studio}/index.html` copies and `404.html` for other deep links | `/` |
+
+**Landing page rules.**
+
+- At most seven sections (`main > section`), one h1 (the contract tagline). Section eyebrows are
+  sentence case, not caps.
+- Display type is the landing's only addition to §5: hero 72 px (52 below 1024 px, 40 below 640 px), section
+  titles 40 px (32 below 640 px), a 19 px lead. Body text stays 16/26. Weights stay 400/500/600.
+- **Every number** is a claim from `contracts/claims/value-claims.v1.json`, rendered by
+  `ClaimValue` with its `LabelChip` (Measured, Estimate, Third-party, Vendor, Simulated; dashed
+  border for Simulated). The chip links to the claim's entry in the footer's "Where every number on
+  this page comes from". A `measured` claim reads `contracts/claims/measured.json` and says "not
+  yet measured" until a benchmark run publishes it; it never borrows an estimate. Contract copy
+  with `{claim:id}` placeholders goes through `splitClaims`.
+- **Coming soon** is a dashed pill with an hourglass and words, never a control that does
+  nothing: the live in-browser playground (P5) and Studio drafting (P4) are described, with
+  `make demo` as the real thing to do meanwhile.
+- The comparison table's other-product cells are dated `TODO: verify · 2026-09` placeholders
+  (`data-compare-todo`) until each is verified against the vendor's docs with a link (P6). No
+  guessed cells.
+- The hero card is an illustration of the scenario pack's refund example, labelled as such; its
+  three beats ease in over 200 ms, and with reduced motion it shows the last beat at once and
+  offers no "Play again" (nothing would move).
+- Diagrams show direction honestly: in "How it works" every link carries the request out and the
+  answer back, and the deep audit hangs off the gateway, in the background.
+- 16 px side gutter below 640 px; nothing may scroll the page sideways at 400 px (wide tables
+  scroll inside a named, focusable region).
+
+**Static build rules.**
+
+- Data comes from `ReplayDataSource` (`src/data/replay/`): REST reads answer from the tape
+  position, and the rest of the tape plays as WS v2 events in compressed time. Everything a
+  recording cannot answer comes from `unavailableControlPlane`.
+- "Now" is the tape's clock while a recording replays (`useNow`, `replayClock`): relative times
+  read "just now" and "1 min. ago" as rows arrive, like the Overview's counts, instead of the days
+  since the recording was made. The exact time stays in the title.
+- Nav: Overview (recorded), Traffic (replay), Trace (the featured flagged answer), Playground,
+  Studio, and "Run it yourself" (the landing's `#self-host`). Policies, Settings, Knowledge, the
+  evaluator library and setup are hidden; a deep link to them shows why (`StaticRouteGuard`), not
+  an error whose Retry cannot work.
+- The top bar shows the replay's status ("Replaying · 12 of 18 requests", "Replay again") in place
+  of the Health pill and demo badge; the one banner carries the recording's own label: "Replay of
+  simulated traffic." for a mock recording, "Replay of recorded traffic." for a real one. A mock
+  recording is Simulated everywhere; `check_recording.py` and `recording.ts` refuse a label that
+  could pass it off as model output.
+- Say where a tape came from, and nothing more. The committed mock tape is generated from the
+  scenario pack (`scripts/build-demo-recording.ts`), so its copy says "generated from the zero-key
+  demo's scripted scenarios", never "recorded on the demo stack" or "checked by the demo stack";
+  only a `recorded` manifest (Go `export-replay`, P5) is "recorded".
+- Both pages carry the §7.5 CSP meta and `referrer: no-referrer`; no inline script (the theme
+  script is a file), no third-party request, fonts self-hosted. P5's browser keys live in
+  `sessionStorage` only.
 
 ## 13. Accessibility
 

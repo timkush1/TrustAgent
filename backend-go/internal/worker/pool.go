@@ -2,10 +2,12 @@
 // keeps the high lane to TRUTHTABLE_AUDIT_HIGH_PER_MIN, one Evaluate call per audit (M5: no
 // polling), persistence before broadcast, and a drain at shutdown (M6).
 //
-// S0 keeps the minimal lane model: Submit reports a full queue or a stopped pool as an error
-// (the trace records the audit as dropped), and Drain lets queued audits finish within the drain
-// timeout. The uniform-sample reserved capacity, LLM spend reservations, retries and the
-// audit_queued/audit_started lifecycle events arrive in P2.
+// Every audit's lifecycle is broadcast over WS v2 (SPEC §2.5): audit_queued when Submit puts it in
+// a lane, audit_started when a worker takes it (the trace's audit status is then persisted as
+// running), and audit_completed, audit_failed or audit_dropped at the end. Submit reports a full
+// queue or a stopped pool as an error (the trace records the audit as dropped), and Drain lets
+// queued audits finish within the drain timeout. The uniform-sample reserved capacity, LLM spend
+// reservations and retries are not part of the pool yet.
 package worker
 
 import (
@@ -13,6 +15,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
@@ -33,6 +36,10 @@ var (
 	ErrStopped   = errors.New("worker: the audit pool is stopped")
 	ErrNoEngine  = errors.New("worker: no audit engine is configured")
 )
+
+// ErrNoJudge is JudgeReady's answer when the engine has no working deep-audit judge: it would
+// answer every audit not assessed.
+var ErrNoJudge = errors.New("worker: the audit engine has no working judge")
 
 // DropReason maps a Submit error to the audit_dropped reason.
 func DropReason(err error) string {
@@ -80,6 +87,9 @@ type Job struct {
 	ContextUsed     []byte
 
 	enqueued time.Time
+	// queued is closed once Submit has broadcast audit_queued; the worker waits for it before it
+	// broadcasts audit_started, so the stream never shows a start before the queueing.
+	queued chan struct{}
 }
 
 // Config configures a Pool.
@@ -116,6 +126,9 @@ type Pool struct {
 
 	mu       sync.RWMutex
 	stopping bool
+
+	// judgeCheck is the check behind JudgeReady (SetJudgeCheck); nil means none.
+	judgeCheck atomic.Pointer[func() error]
 }
 
 // New builds a pool; Start runs its workers.
@@ -153,6 +166,26 @@ func (p *Pool) Start() {
 // HasEngine reports whether audits can run at all.
 func (p *Pool) HasEngine() bool { return p.cfg.Engine != nil }
 
+// SetJudgeCheck installs the check JudgeReady runs: nil when the engine can judge an audit, an
+// error such as ErrNoJudge when it cannot. The proxy reads it from the engine's cached health.
+func (p *Pool) SetJudgeCheck(check func() error) {
+	if check == nil {
+		p.judgeCheck.Store(nil)
+		return
+	}
+	p.judgeCheck.Store(&check)
+}
+
+// JudgeReady reports whether the engine can judge a new audit (nil when no check is installed).
+// Callers that ask for an audit explicitly (POST /api/audit) refuse the request when it cannot;
+// gated traffic is audited anyway and comes back not assessed.
+func (p *Pool) JudgeReady() error {
+	if check := p.judgeCheck.Load(); check != nil {
+		return (*check)()
+	}
+	return nil
+}
+
 // Submit queues a job without blocking and returns the lane it went to. A high job takes a token
 // from the high-lane bucket, or goes to the low lane when the bucket or the high queue is full.
 // It fails with ErrNoEngine, ErrStopped or ErrQueueFull; the job is then not run.
@@ -169,23 +202,41 @@ func (p *Pool) Submit(job *Job) (string, error) {
 	}
 	assignIDs(job)
 	job.enqueued = p.cfg.Now()
+	job.queued = make(chan struct{})
 	// A full high queue does not spend a token: the job goes to the low lane either way.
 	if job.Lane == LaneHigh && len(p.high) < cap(p.high) && p.bucket.take() {
 		select {
 		case p.high <- job:
-			metrics.AuditQueueDepth.WithLabelValues(LaneHigh).Set(float64(len(p.high)))
+			p.announceQueued(job, LaneHigh, len(p.high))
 			return LaneHigh, nil
 		default:
 		}
 	}
 	select {
 	case p.low <- job:
-		metrics.AuditQueueDepth.WithLabelValues(LaneLow).Set(float64(len(p.low)))
+		p.announceQueued(job, LaneLow, len(p.low))
 		return LaneLow, nil
 	default:
 		p.count(job.Lane, job.Selection, "dropped")
 		return "", ErrQueueFull
 	}
+}
+
+// announceQueued records a job that entered lane, with depth jobs in that lane counting it: the
+// queue gauge and the audit_queued event, whose queue_depth is the number of audits waiting ahead
+// of it. It then lets the worker that took the job announce the start.
+func (p *Pool) announceQueued(job *Job, lane string, depth int) {
+	defer close(job.queued)
+	metrics.AuditQueueDepth.WithLabelValues(lane).Set(float64(depth))
+	if p.cfg.Publisher == nil {
+		return
+	}
+	ev, err := queuedEvent(job.Request.GetTraceId(), job.Request.GetAuditId(), lane, max(depth-1, 0))
+	if err != nil {
+		p.cfg.Logger.Error("deep audit: event does not marshal", "audit_id", job.Request.GetAuditId(), "err", err)
+		return
+	}
+	p.cfg.Publisher.Publish(ev)
 }
 
 // assignIDs fills in the server-generated ids of a job (B4): a UUIDv7 audit_id, and trace_id =
@@ -283,6 +334,7 @@ func (p *Pool) run(job *Job, lane string) {
 		return
 	}
 	started := p.cfg.Now()
+	p.announceStarted(job, started, log)
 	res, err := p.cfg.Engine.Evaluate(p.ctx, req)
 	finished := p.cfg.Now()
 	if err != nil && p.ctx.Err() != nil {
@@ -296,7 +348,7 @@ func (p *Pool) run(job *Job, lane string) {
 		log.Warn("deep audit: the engine call failed", "kind", kind, "err", err)
 		rec = failedRecord(job, lane, kind, "The audit engine could not complete this audit.", started, finished, p.cfg.TextRetention)
 	} else {
-		rec = resultRecord(job, lane, res, finished, p.cfg.TextRetention)
+		rec = resultRecord(job, lane, res, started, finished, p.cfg.TextRetention)
 	}
 	status := traceAuditStatus(rec)
 	if p.cfg.Store != nil {
@@ -314,6 +366,32 @@ func (p *Pool) run(job *Job, lane string) {
 	metrics.AuditJobs.WithLabelValues(lane, job.Selection, status).Inc()
 	metrics.AuditRoundtrip.Observe(finished.Sub(job.enqueued).Seconds())
 	p.publish(rec)
+}
+
+// announceStarted records that a worker took job at started: the trace's audit status becomes
+// running, then audit_started is broadcast with the time the job waited in its lane. It waits for
+// Submit's audit_queued first.
+func (p *Pool) announceStarted(job *Job, started time.Time, log *slog.Logger) {
+	if job.queued != nil {
+		<-job.queued
+	}
+	id, traceID := job.Request.GetAuditId(), job.Request.GetTraceId()
+	if p.cfg.Store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := p.cfg.Store.SetTraceAudit(ctx, traceID, store.TraceAuditUpdate{AuditID: &id, Status: store.AuditRunning}); err != nil {
+			log.Error("deep audit: recording the running audit failed", "err", err)
+		}
+		cancel()
+	}
+	if p.cfg.Publisher == nil {
+		return
+	}
+	ev, err := startedEvent(traceID, id, max(started.Sub(job.enqueued).Milliseconds(), 0))
+	if err != nil {
+		log.Error("deep audit: event does not marshal", "err", err)
+		return
+	}
+	p.cfg.Publisher.Publish(ev)
 }
 
 // drop records a job that will not run.

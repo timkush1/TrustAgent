@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -48,28 +49,29 @@ var ResponseHeaders = []string{
 // Status values the handler sets without a decision.
 const (
 	StatusDeferred = "deferred"
-	// StatusSkippedStream marks a streaming request, which S0 passes through ungated (streaming
-	// gating lands in P3).
-	StatusSkippedStream = "skipped:stream"
-	// StatusSkippedUnsupportedAPI marks an endpoint that is proxied but not gated.
+	// StatusSkippedUnsupportedAPI marks an endpoint that is proxied but not gated (the OpenAI
+	// Responses API, SPEC §2.4 row 73).
 	StatusSkippedUnsupportedAPI = "skipped:unsupported_api"
 )
 
 // maxReasons caps X-TrustAgent-Reasons (SPEC §2.12: at most 8).
 const maxReasons = 8
 
-// setDecisionHeaders writes the headers of a decided exchange. With headers: action_only only
-// Action joins Trace-Id and Request-ID.
+// setDecisionHeaders writes the headers of a decided exchange. Action is the delivered action
+// (r.Final.Action once decided has set it, else the decision's); Would-Action comes from the
+// decision and is sent when it differs from Action. With headers: action_only only Action joins
+// Trace-Id and Request-ID.
 func setDecisionHeaders(h http.Header, r *gate.Result, audit string) {
 	d := r.Decision
-	h.Set(HeaderAction, d.Action)
+	action := deliveredAction(r)
+	h.Set(HeaderAction, action)
 	if r.Headers == policy.HeadersActionOnly {
 		return
 	}
 	h.Set(HeaderRoute, r.RouteLabel)
 	h.Set(HeaderMode, d.EffectiveMode)
 	h.Set(HeaderStatus, r.Status)
-	if d.WouldAction != "" && d.WouldAction != d.Action {
+	if d.WouldAction != "" && d.WouldAction != action {
 		h.Set(HeaderWouldAction, d.WouldAction)
 	}
 	if d.Verdict != nil {
@@ -82,8 +84,8 @@ func setDecisionHeaders(h http.Header, r *gate.Result, audit string) {
 	if d.Degraded != nil {
 		h.Set(HeaderDegraded, *d.Degraded)
 	}
-	if n := len(d.Reasons); n > 0 {
-		h.Set(HeaderReasons, strings.Join(d.Reasons[:min(n, maxReasons)], ","))
+	if reasons := headerReasons(r); len(reasons) > 0 {
+		h.Set(HeaderReasons, strings.Join(reasons, ","))
 	}
 	h.Set(HeaderCheckedAgainst, r.CheckedAgainst)
 	if snap := r.Snapshot(); snap != "" {
@@ -117,6 +119,32 @@ func setDeferredHeaders(h http.Header, t *gate.TraceStart, route *policy.Route, 
 		h.Set(HeaderAudit, gate.AuditDisabled)
 	}
 	setSource(h, t.Source)
+}
+
+// headerReasons is the X-TrustAgent-Reasons list of a decided exchange, at most maxReasons: the
+// decision's reasons, then the delivery's that the decision does not have (a fallback that failed
+// or could not be sent, D19), as the trace records them and the stream comment carries them. When
+// the cap cuts, the delivery's reasons stay: they say why the delivered action is what it is.
+func headerReasons(r *gate.Result) []string {
+	reasons := r.Decision.Reasons
+	var delivery []string
+	if r.Final != nil {
+		for _, reason := range r.Final.Reasons {
+			if !slices.Contains(reasons, reason) && !slices.Contains(delivery, reason) {
+				delivery = append(delivery, reason)
+			}
+		}
+	}
+	delivery = delivery[:min(len(delivery), maxReasons)]
+	return append(slices.Clone(reasons[:min(len(reasons), maxReasons-len(delivery))]), delivery...)
+}
+
+// deliveredAction is the action a decided exchange delivered: the Final's, else the decision's.
+func deliveredAction(r *gate.Result) string {
+	if r.Final != nil && r.Final.Action != "" {
+		return r.Final.Action
+	}
+	return r.Decision.Action
 }
 
 func setSource(h http.Header, source string) {

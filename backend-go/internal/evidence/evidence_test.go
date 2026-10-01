@@ -12,8 +12,8 @@ import (
 	"github.com/truthtable/backend-go/internal/llmapi"
 )
 
-// TestEvidenceVectors runs contracts/vectors/evidence against the extractor. The openai_chat
-// vectors must pass; the other formats are skipped until llmapi reads them (P2).
+// TestEvidenceVectors runs contracts/vectors/evidence against the extractor, every api_format
+// read through llmapi.ParseRequest as the gateway reads it.
 func TestEvidenceVectors(t *testing.T) {
 	all, err := vectors.Load(contracts.FS, "vectors")
 	if err != nil {
@@ -39,11 +39,8 @@ func TestEvidenceVectors(t *testing.T) {
 			if err := json.Unmarshal(v.Input, &in); err != nil {
 				t.Fatal(err)
 			}
-			if in.APIFormat != llmapi.FormatOpenAIChat {
-				t.Skipf("api_format %s: extraction lands with the llmapi format in P2", in.APIFormat)
-			}
 			ran++
-			req, err := llmapi.ParseChatRequest(in.Body)
+			req, err := llmapi.ParseRequest(in.APIFormat, in.Body)
 			if err != nil {
 				t.Fatal(err)
 			}

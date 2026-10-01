@@ -124,11 +124,13 @@ func clampInt32(v int) int32 {
 	return int32(v)
 }
 
+// IngestTimeout bounds one IngestDocuments call: claim-level ingestion makes several LLM calls per
+// document, so it gets four times the audit timeout.
+func (c *AuditClient) IngestTimeout() time.Duration { return 4 * c.timeout }
+
 // IngestDocuments sends documents to the Python engine for claim-level ingestion.
 func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDocument) (*IngestResult, error) {
-	// Claim-level ingestion makes multiple LLM calls per document, so allow
-	// a longer window than the standard audit timeout.
-	ctx, cancel := context.WithTimeout(ctx, 4*c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.IngestTimeout())
 	defer cancel()
 
 	pbDocs := make([]*pb.ContextDocument, len(documents))

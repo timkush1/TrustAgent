@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/truthtable/backend-go/internal/decision"
@@ -25,6 +26,9 @@ const (
 	headerCheckedAgainst = "X-TrustAgent-Checked-Against"
 	headerAudit          = "X-TrustAgent-Audit"
 )
+
+// statusDeferred is X-TrustAgent-Status on an observe-mode response: the gate runs after it.
+const statusDeferred = "deferred"
 
 // absent is how a missing header or value reads in a mismatch.
 const absent = "(absent)"
@@ -53,24 +57,26 @@ func (e expectation) str(k string) string {
 	return s
 }
 
-// checkHeaders compares the gate headers of a response with the scenario's expect (the header
-// fields of scenarios.v1 expect). reasons is a subset match; Would-Action is sent only when it
-// differs from Action; Risk has 2 decimals; X-TrustAgent-Route starts with "<route>@v".
+// checkHeaders compares the gate headers of a response with the scenario's expect.
 func checkHeaders(s *scenario, h http.Header) []mismatch {
+	return checkDecision(s, newDecisionView(&answer{header: h}), false)
+}
+
+// checkDecision compares the decision a response exposes (headers, trailers and the stream
+// comment) with the header fields of the scenario's expect. reasons is a subset match;
+// Would-Action is sent only when it differs from Action; Risk has 2 decimals;
+// X-TrustAgent-Route starts with "<route>@v". An observe-mode response says Status: deferred and
+// carries no decision yet: its decision fields are checked on the stored trace (checkTrace). A
+// stream may leave Checked-Against and Audit out (its comment carries neither): when streamed is
+// set, those two are checked only when present, and the stored trace is checked too.
+func checkDecision(s *scenario, v *decisionView, streamed bool) []mismatch {
 	e := expectation(s.Expect)
 	var out []mismatch
-	header := func(name string) (string, bool) {
-		v := h.Values(name)
-		if len(v) == 0 {
-			return "", false
-		}
-		return v[0], true
-	}
-	show := func(v string, ok bool) string {
+	show := func(val string, ok bool) string {
 		if !ok {
 			return absent
 		}
-		return fmt.Sprintf("%q", v)
+		return fmt.Sprintf("%q", val)
 	}
 	// equal checks a string member against a header; null means the header must be absent.
 	equal := func(member, name string) {
@@ -78,7 +84,7 @@ func checkHeaders(s *scenario, h http.Header) []mismatch {
 		if !present {
 			return
 		}
-		got, ok := header(name)
+		got, ok := v.get(name)
 		switch {
 		case null && ok:
 			out = append(out, mismatch{name, absent, show(got, ok)})
@@ -89,16 +95,22 @@ func checkHeaders(s *scenario, h http.Header) []mismatch {
 	equal("mode", headerMode)
 	equal("action", headerAction)
 	equal("status", headerStatus)
+	if v.deferred() && e.str("status") == statusDeferred {
+		return append(out, checkRoute(s, v)...)
+	}
 	equal("verdict", headerVerdict)
-	equal("checked_against", headerCheckedAgainst)
-	equal("audit", headerAudit)
+	for member, name := range map[string]string{"checked_against": headerCheckedAgainst, "audit": headerAudit} {
+		if _, ok := v.get(name); ok || !streamed {
+			equal(member, name)
+		}
+	}
 
 	if present, null := e.has("would_action"); present {
 		want := ""
 		if !null {
 			want = e.str("would_action")
 		}
-		got, ok := header(headerWouldAction)
+		got, ok := v.get(headerWouldAction)
 		switch {
 		case want == "" || want == e.str("action"):
 			if ok {
@@ -110,7 +122,7 @@ func checkHeaders(s *scenario, h http.Header) []mismatch {
 	}
 
 	if present, null := e.has("max_risk"); present {
-		got, ok := header(headerRisk)
+		got, ok := v.get(headerRisk)
 		if null {
 			if ok {
 				out = append(out, mismatch{headerRisk, absent, show(got, ok)})
@@ -127,7 +139,7 @@ func checkHeaders(s *scenario, h http.Header) []mismatch {
 	if present, _ := e.has("reasons"); present {
 		var want []string
 		_ = json.Unmarshal(e["reasons"], &want)
-		got, ok := header(headerReasons)
+		got, ok := v.get(headerReasons)
 		var have []string
 		if ok {
 			have = strings.Split(got, ",")
@@ -138,10 +150,78 @@ func checkHeaders(s *scenario, h http.Header) []mismatch {
 			}
 		}
 	}
+	return append(out, checkRoute(s, v)...)
+}
 
-	if s.Route != "" {
-		if got, ok := header(headerRoute); !ok || !strings.HasPrefix(got, s.Route+"@v") {
-			out = append(out, mismatch{headerRoute, fmt.Sprintf("%q", s.Route+"@v<version>"), show(got, ok)})
+func checkRoute(s *scenario, v *decisionView) []mismatch {
+	if s.Route == "" {
+		return nil
+	}
+	if got, ok := v.get(headerRoute); !ok || !strings.HasPrefix(got, s.Route+"@v") {
+		show := absent
+		if ok {
+			show = fmt.Sprintf("%q", got)
+		}
+		return []mismatch{{headerRoute, fmt.Sprintf("%q", s.Route+"@v<version>"), show}}
+	}
+	return nil
+}
+
+// streamDecision is scenarios.v1 expect.stream_decision.
+type streamDecision struct {
+	Comment  bool     `json:"comment"`
+	Trailers []string `json:"trailers"`
+}
+
+// checkAnswer compares what the client received with the scenario: the HTTP status
+// (expect.http_status, default 200), the delivered text (expect.delivered_text, default response;
+// unchecked when checkText is false) and, for a stream, how it carried the decision
+// (expect.stream_decision: the trustagent comment and the trailers).
+func checkAnswer(s *scenario, a *answer, checkText bool) []mismatch {
+	e := expectation(s.Expect)
+	var out []mismatch
+	wantStatus := http.StatusOK
+	if present, null := e.has("http_status"); present && !null {
+		_ = json.Unmarshal(e["http_status"], &wantStatus)
+	}
+	if a.status != wantStatus {
+		out = append(out, mismatch{"HTTP status", strconv.Itoa(wantStatus), strconv.Itoa(a.status)})
+	}
+	if s.Stream != a.stream {
+		want, got := "a JSON body", "an event stream"
+		if s.Stream {
+			want, got = got, want
+		}
+		out = append(out, mismatch{"response body", want, got})
+	}
+	want, textKnown := "", false
+	if present, null := e.has("delivered_text"); present && !null {
+		want, textKnown = e.str("delivered_text"), true
+	} else if s.Response != nil {
+		want, textKnown = *s.Response, true
+	}
+	if checkText && textKnown && wantStatus >= 200 && wantStatus <= 299 {
+		switch {
+		case !a.ok:
+			out = append(out, mismatch{"delivered text", fmt.Sprintf("%q", want), "no assistant text in the response"})
+		case a.text != want:
+			out = append(out, mismatch{"delivered text", fmt.Sprintf("%q", want), fmt.Sprintf("%q", a.text)})
+		}
+	}
+	if present, null := e.has("stream_decision"); present && !null {
+		var sd streamDecision
+		_ = json.Unmarshal(e["stream_decision"], &sd)
+		if sd.Comment && a.comment == nil {
+			out = append(out, mismatch{"stream decision comment", "a `" + strings.TrimSpace(annotationPrefix) + " {...}` comment", absent})
+		}
+		for _, name := range sd.Trailers {
+			if a.trailer.Get(name) == "" {
+				got := absent
+				if a.header.Get(name) != "" {
+					got = "(sent as a header, not a trailer)"
+				}
+				out = append(out, mismatch{name, "an HTTP trailer", got})
+			}
 		}
 	}
 	return out
@@ -149,11 +229,20 @@ func checkHeaders(s *scenario, h http.Header) []mismatch {
 
 // traceView is the part of GET /api/traces/:id (TraceDetail) --expect reads.
 type traceView struct {
-	TraceID     string  `json:"trace_id"`
-	GateStatus  string  `json:"gate_status"`
-	Action      *string `json:"action"`
-	WouldAction *string `json:"would_action"`
-	Audit       struct {
+	TraceID        string   `json:"trace_id"`
+	GateStatus     string   `json:"gate_status"`
+	Action         *string  `json:"action"`
+	WouldAction    *string  `json:"would_action"`
+	Verdict        *string  `json:"verdict"`
+	MaxRisk        *float64 `json:"max_risk"`
+	Reasons        []string `json:"reasons"`
+	CheckedAgainst *struct {
+		Used []struct {
+			Source string `json:"source"`
+			Items  int    `json:"items"`
+		} `json:"used"`
+	} `json:"checked_against"`
+	Audit struct {
 		Status  string  `json:"status"`
 		Verdict *string `json:"verdict"`
 	} `json:"audit"`
@@ -171,9 +260,23 @@ func (t *traceView) settled() bool {
 	return t.GateStatus != store.GateStatusPending && t.Audit.Status != store.AuditQueued && t.Audit.Status != store.AuditRunning
 }
 
+// checkedAgainst formats the trace's evidence summary as X-TrustAgent-Checked-Against does.
+func (t *traceView) checkedAgainst() string {
+	if t.CheckedAgainst == nil || len(t.CheckedAgainst.Used) == 0 {
+		return "none"
+	}
+	parts := make([]string, len(t.CheckedAgainst.Used))
+	for i, u := range t.CheckedAgainst.Used {
+		parts[i] = u.Source + ":" + strconv.Itoa(u.Items)
+	}
+	return strings.Join(parts, ",")
+}
+
 // checkTrace compares a settled trace with the scenario's outcome, audit verdict and, when the
-// scenario has a judge fixture, the claim verdicts in order.
-func checkTrace(s *scenario, t *traceView) []mismatch {
+// scenario has a judge fixture, the claim verdicts in order. For a response that did not carry the
+// whole decision (a deferred observe-mode response, or a stream), storedDecision also checks the
+// stored decision.
+func checkTrace(s *scenario, t *traceView, storedDecision bool) []mismatch {
 	e := expectation(s.Expect)
 	var out []mismatch
 	if present, _ := e.has("outcome"); present {
@@ -181,6 +284,9 @@ func checkTrace(s *scenario, t *traceView) []mismatch {
 		if want := e.str("outcome"); got != want {
 			out = append(out, mismatch{"outcome", want, got})
 		}
+	}
+	if storedDecision {
+		out = append(out, checkStoredDecision(e, t)...)
 	}
 	if present, null := e.has("audit_verdict"); present {
 		got := absent
@@ -210,6 +316,52 @@ func checkTrace(s *scenario, t *traceView) []mismatch {
 		}
 		if w := "[" + strings.Join(want, " ") + "]"; got != w {
 			out = append(out, mismatch{"audit claim verdicts", w, got})
+		}
+	}
+	return out
+}
+
+// checkStoredDecision checks the decision fields of expect on a trace.
+func checkStoredDecision(e expectation, t *traceView) []mismatch {
+	var out []mismatch
+	str := func(field, got string) {
+		if present, null := e.has(field); present {
+			want := absent
+			if !null {
+				want = e.str(field)
+			}
+			if got == "" {
+				got = absent
+			}
+			if got != want {
+				out = append(out, mismatch{"stored " + field, want, got})
+			}
+		}
+	}
+	str("would_action", deref(t.WouldAction))
+	str("verdict", deref(t.Verdict))
+	str("checked_against", t.checkedAgainst())
+	if present, null := e.has("max_risk"); present {
+		want, got := absent, absent
+		if !null {
+			var risk float64
+			_ = json.Unmarshal(e["max_risk"], &risk)
+			want = decision.FormatRisk(risk)
+		}
+		if t.MaxRisk != nil {
+			got = decision.FormatRisk(*t.MaxRisk)
+		}
+		if got != want {
+			out = append(out, mismatch{"stored max_risk", want, got})
+		}
+	}
+	if present, _ := e.has("reasons"); present {
+		var want []string
+		_ = json.Unmarshal(e["reasons"], &want)
+		for _, r := range want {
+			if !slices.Contains(t.Reasons, r) {
+				out = append(out, mismatch{"stored reasons", "to include " + fmt.Sprintf("%q", r), fmt.Sprintf("%q", strings.Join(t.Reasons, ","))})
+			}
 		}
 	}
 	return out

@@ -51,8 +51,8 @@ func (s *Server) llm(f llmFormat, openRouter bool) http.HandlerFunc {
 			return
 		}
 		answer := s.cfg.DefaultAnswer
-		if sc := s.scenarioFor(scenarioID(r), req); sc != nil && sc.Response != "" {
-			answer = sc.Response
+		if _, text := s.llmAnswer(scenarioID(r), req); text != "" {
+			answer = text
 		}
 		var model string
 		_ = json.Unmarshal(req["model"], &model)

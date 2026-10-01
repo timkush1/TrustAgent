@@ -30,7 +30,7 @@ var Kinds = map[string]Kind{
 	"compile":           {Mechanical: true, run: runCompile},
 	"calibration_apply": {Mechanical: true, run: runCalibrationApply},
 	"decide":            {run: runDecide},
-	"calibrate_fit":     {Mechanical: true, Skip: "calibration fitting (PAV, Platt, Wilson) lands in the P2 decision package"},
+	"calibrate_fit":     {Mechanical: true, run: runCalibrateFit},
 	"detectors":         {run: runDetectors},
 	"evidence":          {Skip: "run by internal/evidence (TestEvidenceVectors) until the anthropic_messages and openai_completions formats land (P2)"},
 	"lint":              {Skip: "evaluator validation and lints land in the P2 decision package"},

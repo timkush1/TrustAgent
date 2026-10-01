@@ -167,6 +167,9 @@ export async function loadRuntimeConfig(options: LoadOptions = {}): Promise<Runt
   const warnings: string[] = [];
   let file: unknown;
 
+  // The static site has no server to write config.json: it replays a recording, same origin.
+  if (env.VITE_APP_MODE === 'static') return buildRuntimeConfig(undefined, { location, env, warnings });
+
   try {
     const res = await fetchImpl(`${env.BASE_URL.replace(/\/?$/, '/')}config.json`, {
       cache: 'no-store',

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/scenarios.v1.schema.json",
   "title": "ScenarioPack",
-  "description": "contracts/demo/scenarios.v1.json: the single source of demo and e2e traffic (SPEC §7.6). Go cmd/trafficgen sends each request with X-TrustAgent-Scenario (test mode); the mock decision backend answers from mock_answers and the mock judge from judge. --expect asserts expect against the response headers.",
+  "description": "contracts/demo/scenarios.v1.json: the single source of demo and e2e traffic (SPEC §7.6, §2.13). Go cmd/trafficgen sends each request with X-TrustAgent-Scenario (test mode); the mock decision backend answers from mock_answers (fallback.mock_answers for the re-gated fallback answer), mock-upstream serves response (and fallback.response) as the upstream answer, and the mock judge answers from judge. --expect asserts expect against the response (headers, trailers, the SSE decision comment and the delivered text) and the stored trace.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "scenarios"],
@@ -33,13 +33,13 @@
             "description": "Sent as X-TrustAgent-Scenario."
           },
           "title": {"type": "string", "minLength": 1, "maxLength": 120},
-          "description": {"type": "string", "maxLength": 600},
+          "description": {"type": "string", "maxLength": 1000},
           "sets": {
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
             "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
-            "description": "Selection tags for trafficgen --scenarios (e.g. s0, demo, e2e, generated, untagged)."
+            "description": "Selection tags for trafficgen --scenarios: s0 (the walking skeleton), demo, e2e, generated (answer_source generated), untagged (documents in shapes evidence extraction does not read, so the gate is not_assessed), knowledge (needs the knowledge add-on). A phase tag (p3, p4, p5) marks a scenario that needs that gateway phase (streaming gating, block and fallback bodies, /v1/messages, /v1/completions, routes in config/policies.pending.yaml); trafficgen skips it unless --phase reaches that phase."
           },
           "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
           "api_format": {
@@ -122,6 +122,47 @@
             "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
             "description": "Answers the mock decision backend returns for this scenario, keyed by question id: \"<id>__v<version>\" of each evaluator attached to the route that compile() sends (SPEC §2.9 step 5). Evaluators that compile excludes (for example no_evidence) are not asked and have no answer; evaluators that need no evidence are always asked (validate.mjs checks both against config/policies.yaml)."
           },
+          "knowledge": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "text"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+                "text": {"type": "string", "minLength": 1}
+              }
+            },
+            "description": "Knowledge-base documents the scenario relies on (knowledge add-on, SPEC §7.1): the knowledge profile must hold them, and RetrieveContext returns them for this request, in order. Only on a route whose evidence.sources include knowledge."
+          },
+          "fallback": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["response", "mock_answers", "expect"],
+            "description": "The fallback answer of a scenario whose gate replaces the answer (route mode fallback, SPEC §2.12 Fallback). In test mode the gateway answers the fallback call with response (the scripted counterpart of test_response); mock-upstream serves it to a fallback request (its prompt carries the CONTEXT block); the mock decision backend answers the re-gate (attempt 1) with mock_answers when the state's assistant_response is response. The deep audit still audits the original answer.",
+            "properties": {
+              "response": {"type": "string", "minLength": 1},
+              "mock_answers": {
+                "type": "object",
+                "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+                "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
+                "description": "Raw answers to the re-gate of the fallback answer, keyed like mock_answers."
+              },
+              "expect": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["would_action"],
+                "description": "The re-gate decision (attempt 1). would_action pass or flag delivers the fallback; block applies fallback.on_fail.",
+                "properties": {
+                  "would_action": {"$ref": "common.v1.schema.json#/$defs/WouldAction"},
+                  "verdict": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}]},
+                  "max_risk": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]},
+                  "reasons": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            }
+          },
           "judge": {
             "anyOf": [
               {
@@ -149,7 +190,7 @@
                         "evidence": {
                           "type": "array",
                           "items": {"type": "string", "minLength": 1},
-                          "description": "Verifier evidence quotes, each verbatim from the request's evidence (validate.mjs checks they occur in request)."
+                          "description": "Verifier evidence quotes, each verbatim from the request's evidence or the scenario's knowledge documents (validate.mjs checks they occur there)."
                         }
                       }
                     }
@@ -166,7 +207,7 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["action"],
-            "description": "The expected outcome, derived by hand from SPEC §2.9 under the policy the gateway loads (config/policies.yaml). trafficgen --expect asserts the header fields; the other fields are for tests of the stored trace and the UI. reasons must all be present (subset match).",
+            "description": "The expected outcome, derived by hand from SPEC §2.9 under the policy the gateway loads (config/policies.yaml, plus config/policies.pending.yaml for phase-tagged scenarios), and cross-checked against the Go reference decide() by cmd/trafficgen tests. trafficgen --expect asserts the decision fields against what the response carries (headers; for streams also the trailers and the SSE decision comment; for observe routes, whose headers say deferred, the stored trace), the delivered text, and the settled trace. reasons must all be present (subset match).",
             "properties": {
               "mode": {
                 "$ref": "common.v1.schema.json#/$defs/PolicyMode",
@@ -215,11 +256,36 @@
               "outcome": {
                 "$ref": "ui-outcomes.v1.schema.json#/properties/outcomes/items/properties/id",
                 "description": "The single outcome the dashboard shows once the gate has decided (contracts/ui/outcomes.v1.json); validate.mjs derives it from status, action and would_action."
+              },
+              "delivered_text": {
+                "type": "string",
+                "description": "The assistant text the client receives (choice 0, the Anthropic text blocks, or the concatenated stream deltas) when it is not response: the route's block message for action block (style message), fallback.response for action fallback."
+              },
+              "http_status": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 599,
+                "default": 200,
+                "description": "The HTTP status of the gateway response (a block with style error answers block.status)."
+              },
+              "stream_decision": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["comment", "trailers"],
+                "description": "How a streamed response carries the decision (SPEC §2.12): comment is whether the stream holds the `: trustagent {...}` comment before its terminal event (stream_annotations: comment); trailers lists the X-TrustAgent-* headers that must arrive as HTTP trailers (Mode and Action on passthrough streams).",
+                "properties": {
+                  "comment": {"type": "boolean"},
+                  "trailers": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {"type": "string", "pattern": "^X-TrustAgent-[A-Za-z-]{1,40}$"}
+                  }
+                }
               }
             }
           }
         },
-        "$comment": "A scripted scenario needs response (checked by validate.mjs)."
+        "$comment": "A scripted scenario needs response; fallback needs a fallback-mode route, knowledge a route with the knowledge source (checked by validate.mjs)."
       }
     }
   }

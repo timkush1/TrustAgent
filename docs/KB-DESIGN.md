@@ -105,7 +105,7 @@ path; claim-level KB queries filter on `kind = "claim"`.
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/upload` | Ingest documents → returns per-claim accept/quarantine results + conflicts |
+| `POST /api/kb/documents` (admin) | Ingest documents → returns per-claim accept/quarantine results + conflicts (the 1.0 alias `POST /api/upload` was removed in 2.0) |
 | `GET /api/kb/claims?status=&limit=&offset=` | Page through stored claims |
 | `GET /api/kb/conflicts` | Contradiction pairs |
 | `GET /api/kb/stats` | Counters (total/accepted/quarantined/conflict pairs) |

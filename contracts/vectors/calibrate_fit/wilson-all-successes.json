@@ -1,0 +1,14 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "wilson-all-successes",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "k = n: the upper bound is exactly 1; the lower bound is n/(n + z²) = 10/13.8415 = 0.72247.",
+  "input": {
+    "op": "wilson",
+    "k": 10,
+    "n": 10
+  },
+  "expected": {"hi": 1, "lo": 0.7224672001371107}
+}

@@ -1,7 +1,8 @@
 // Package metrics holds the proxy's Prometheus metrics, namespace trustagent_gateway_* (SPEC
 // Appendix B). Audit outcomes (scores, verdicts, claims) are the engine's metrics
 // (trustagent_engine_*); the gateway counts only its own work: audit jobs, the stream and trace
-// writes. The remaining Appendix B families land with their components.
+// writes, and (gateway.go) requests, gate decisions, fallbacks, retention and spend, which their
+// components record.
 package metrics
 
 import (

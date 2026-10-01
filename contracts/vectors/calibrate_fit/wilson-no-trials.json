@@ -1,0 +1,14 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "wilson-no-trials",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "n = 0 carries no information: the interval is [0, 1].",
+  "input": {
+    "op": "wilson",
+    "k": 0,
+    "n": 0
+  },
+  "expected": {"hi": 1, "lo": 0}
+}

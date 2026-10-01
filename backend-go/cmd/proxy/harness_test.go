@@ -133,6 +133,8 @@ type envOpts struct {
 	rateLimit int
 	// trustedProxies is TRUTHTABLE_TRUSTED_PROXIES.
 	trustedProxies []string
+	// adminKey, when set, is a TRUTHTABLE_ADMIN_KEYS entry (label admin).
+	adminKey string
 }
 
 type testEnv struct {
@@ -153,12 +155,18 @@ func testConfig(t *testing.T, o envOpts) *config.Config {
 	cfg.PolicyFile = config.RepoPath("config/policies.yaml")
 	cfg.GateDefaultMode, cfg.GateFailMode = "observe", "open"
 	cfg.Jev.Backend, cfg.Jev.MockMode, cfg.Jev.MockLatency, cfg.Jev.MockFixtures = "mock", "scenario", 0, ""
-	cfg.UpstreamURL = "http://127.0.0.1:1" // test_response answers; nothing reaches the upstream
+	// test_response answers; nothing reaches an upstream. Every upstream is a closed local port
+	// with no key, whatever the environment holds, so no in-process test can reach a vendor.
+	cfg.UpstreamURL, cfg.AnthropicUpstreamURL, cfg.FallbackUpstreamURL = "http://127.0.0.1:1", "http://127.0.0.1:1", ""
+	cfg.UpstreamAPIKey, cfg.AnthropicUpstreamAPIKey, cfg.FallbackUpstreamAPIKey = "", "", ""
 	cfg.RateLimitPerMinute, cfg.UploadLimitPerMin = 100000, 100000
 	if o.rateLimit > 0 {
 		cfg.RateLimitPerMinute = o.rateLimit
 	}
 	cfg.TrustedProxies = o.trustedProxies
+	if o.adminKey != "" {
+		cfg.Auth.AdminKeys = []config.APIKey{{Label: "admin", Key: o.adminKey}}
+	}
 	cfg.DatabaseURL, cfg.RedisURL, cfg.InternalToken = "", "", ""
 	cfg.EngineHealthInterval = time.Hour
 	cfg.WorkerCount = 2
@@ -179,6 +187,9 @@ func newTestEnv(t *testing.T, o envOpts) *testEnv {
 		d.store = o.store
 		if d.store == nil {
 			d.store = newMemStore()
+		}
+		if pg, ok := d.store.(*store.PostgresStore); ok {
+			d.pg = pg // policy versions, the dry-run and the aggregates
 		}
 		cfg.DatabaseURL = "postgres://configured-for-status"
 	}

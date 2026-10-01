@@ -3,7 +3,7 @@
  * exhausted, a rejected fast-check key (unauthorized / no credits) or an open breaker on an
  * enforcing route. When several apply, the one that changes what users receive wins.
  */
-import type { SystemStatus } from '@/types/api';
+import type { EffectiveRoute, SystemStatus } from '@/types/api';
 import { copy, fillTemplate } from './presentation';
 
 export type BannerId = 'unauthorized' | 'no_credits' | 'budget_exhausted' | 'breaker_open' | 'readonly' | 'demo';
@@ -20,8 +20,16 @@ export interface BannerInputs {
   demo: boolean;
   readonly: boolean;
   status: SystemStatus | null;
-  /** Route names in block or fallback mode; the breaker banner needs one (policies arrive in P3). */
+  /** Routes in block or fallback mode (enforcingRoutes); the breaker banner needs one. */
   enforcingRoutes?: { name: string; fail: 'open' | 'closed' }[];
+}
+
+/**
+ * The routes that enforce decisions: configured to block or fall back. The configured mode, not
+ * the effective one, because an open breaker is itself one of the reasons a route acts as flag.
+ */
+export function enforcingRoutes(routes: readonly Pick<EffectiveRoute, 'name' | 'mode' | 'fail'>[]): { name: string; fail: 'open' | 'closed' }[] {
+  return routes.filter((r) => r.mode === 'block' || r.mode === 'fallback').map((r) => ({ name: r.name, fail: r.fail }));
 }
 
 function view(id: BannerId, tone: BannerView['tone'], vars: Record<string, string> = {}): BannerView {

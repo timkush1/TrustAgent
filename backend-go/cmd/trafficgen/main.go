@@ -1,14 +1,27 @@
 // Command trafficgen sends the scripted scenarios of contracts/demo/scenarios.v1.json through a
-// TrustAgent gateway (SPEC §3.1): the demo stack's live traffic and the S0 exit check.
+// TrustAgent gateway (SPEC §3.1): the demo stack's live traffic, the S0 exit check and the
+// M-Demo gate.
 //
-// Each scenario request goes to its /v1 path with the scripted answer as test_response and the
-// headers X-TrustAgent-Key (TRAFFICGEN_API_KEY) and X-TrustAgent-Scenario, so the gateway must
-// run with TRUTHTABLE_TEST_MODE=true. With --expect, trafficgen checks the gate headers against
-// each scenario's expect, then polls GET /api/traces/:id until the deep audit settles and checks
-// the outcome, the audit verdict and the claim verdicts. Any mismatch is printed and the exit
-// status is 1.
+// Each scenario request goes to its /v1 path (chat completions, completions or Anthropic
+// messages, streamed when the scenario streams) with the headers X-TrustAgent-Key
+// (TRAFFICGEN_API_KEY) and X-TrustAgent-Scenario, and with the scripted answer as test_response,
+// so the gateway must run with TRUTHTABLE_TEST_MODE=true. --upstream sends some or all scenarios
+// without test_response, so the gateway's upstream answers: a real model when recording
+// (generated), or mock-upstream in the e2e stack (all).
+//
+// Scenarios tagged with a later gateway phase than --phase (default: this build's) are skipped,
+// so an older gateway can still be driven with `--phase p2`. With --expect, a skipped scenario
+// fails the check (exit status 1), because a check that skips a scenario has not tested it;
+// --allow-skip accepts the skips.
+//
+// With --expect, trafficgen checks the decision the response carries (headers; for streams also
+// the trailers and the `: trustagent {...}` comment), the HTTP status and the delivered text
+// against each scenario's expect, then polls GET /api/traces/:id until the deep audit settles and
+// checks the outcome, the audit verdict, the claim verdicts and, for observe routes (Status:
+// deferred), the stored decision. Any mismatch is printed and the exit status is 1.
 //
 //	trafficgen --once --expect --scenarios s0
+//	trafficgen --once --expect --scenarios e2e --exclude generated --upstream all
 //	trafficgen --loop --scenarios demo --base-url http://proxy:8080 --interval 20s
 package main
 
@@ -24,6 +37,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,13 +63,30 @@ func main() {
 type options struct {
 	baseURL      string
 	sets         string
+	exclude      string
+	phase        string
+	upstream     string
 	file         string
 	once, loop   bool
 	expect       bool
+	allowSkip    bool
 	interval     time.Duration
 	auditTimeout time.Duration
 	timeout      time.Duration
 	key          string
+}
+
+// --upstream values: which scenarios get their answer from the gateway's upstream instead of
+// test_response.
+const (
+	upstreamNone      = "none"
+	upstreamGenerated = "generated"
+	upstreamAll       = "all"
+)
+
+// fromUpstream reports whether s is sent without test_response.
+func (o *options) fromUpstream(s *scenario) bool {
+	return o.upstream == upstreamAll || o.upstream == upstreamGenerated && s.AnswerSource == answerGenerated
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -63,23 +94,28 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.SetOutput(stderr)
 	var o options
 	fl.StringVar(&o.baseURL, "base-url", "http://127.0.0.1:8080", "gateway base URL")
-	fl.StringVar(&o.sets, "scenarios", "demo", "comma-separated scenario sets or ids to send (s0, demo, e2e, all, ...)")
+	fl.StringVar(&o.sets, "scenarios", "demo", "comma-separated scenario sets or ids to send (s0, demo, e2e, untagged, generated, p3, knowledge, all, ...)")
+	fl.StringVar(&o.exclude, "exclude", "", "comma-separated scenario sets or ids to leave out")
+	fl.StringVar(&o.phase, "phase", defaultPhase, "gateway phase the target implements ("+strings.Join(phases, ", ")+"); scenarios tagged with a later phase are skipped")
+	fl.StringVar(&o.upstream, "upstream", upstreamNone, "scenarios whose answer comes from the gateway's upstream instead of test_response: none, generated (recording) or all (e2e with mock-upstream)")
 	fl.StringVar(&o.file, "file", "", "scenario pack to read (default: the embedded contracts/demo/scenarios.v1.json)")
 	fl.BoolVar(&o.once, "once", false, "send the scenarios once and exit (the default)")
 	fl.BoolVar(&o.loop, "loop", false, "send the scenarios every --interval until stopped")
 	fl.BoolVar(&o.expect, "expect", false, "check the gate headers and the deep audit against each scenario's expect")
+	fl.BoolVar(&o.allowSkip, "allow-skip", false, "with --expect, pass although selected scenarios are skipped because they need a later gateway phase than --phase")
 	fl.DurationVar(&o.interval, "interval", 20*time.Second, "pause between rounds with --loop")
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
 	fl.Usage = func() {
-		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect] [--scenarios s0] [--base-url URL] [--file pack.json]")
+		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--file pack.json]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
 	}
 	if err := fl.Parse(args); err != nil {
 		return exitUsage
 	}
-	if fl.NArg() > 0 || (o.once && o.loop) || o.interval <= 0 || o.auditTimeout <= 0 || o.timeout <= 0 {
+	if fl.NArg() > 0 || (o.once && o.loop) || o.interval <= 0 || o.auditTimeout <= 0 || o.timeout <= 0 ||
+		!slices.Contains(phases, o.phase) || !slices.Contains([]string{upstreamNone, upstreamGenerated, upstreamAll}, o.upstream) {
 		fl.Usage()
 		return exitUsage
 	}
@@ -96,10 +132,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		fmt.Fprintln(stderr, "trafficgen:", err)
 		return exitUsage
 	}
-	selected, err := selectScenarios(all, o.sets)
+	selected, err := selectScenarios(all, o.sets, o.exclude)
 	if err != nil {
 		fmt.Fprintln(stderr, "trafficgen:", err)
 		return exitUsage
+	}
+	selected, skipped := byPhase(selected, o.phase)
+	for _, s := range skipped {
+		fmt.Fprintf(stderr, "trafficgen: skipping %s: it needs gateway phase %s (this run: --phase %s)\n", s.ID, scenarioPhase(s.Sets), o.phase)
+	}
+	if len(selected) == 0 {
+		fmt.Fprintf(stderr, "trafficgen: every scenario in %q needs a later gateway phase than %s\n", o.sets, o.phase)
+		return exitUsage
+	}
+	// A check that skips a selected scenario has not tested it (D18): the skips fail the check,
+	// reported like a mismatch, unless --allow-skip accepts them.
+	skipFails := o.expect && len(skipped) > 0 && !o.allowSkip
+	if skipFails {
+		fmt.Fprintf(stderr, "trafficgen: --expect skips %d selected scenario(s) that need a later gateway phase than %s, so the check fails; pass --allow-skip to accept that\n",
+			len(skipped), o.phase)
 	}
 	g := &generator{opts: o, client: &http.Client{Timeout: o.timeout}, out: stdout}
 	if o.key == "" {
@@ -107,7 +158,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	}
 
 	if !o.loop {
-		if g.round(ctx, selected) {
+		if g.round(ctx, selected) && !skipFails {
 			return exitOK
 		}
 		return exitMismatch
@@ -137,6 +188,12 @@ type sent struct {
 	ms      int64
 	fails   []mismatch
 	err     error
+	// storedDecision is set when the response did not carry the whole decision (Status: deferred
+	// in observe mode, or a stream), so the decision is also checked on the stored trace.
+	storedDecision bool
+	// unchecked is set for a generated answer that came from the upstream: a real model's answer
+	// has no expectations.
+	unchecked bool
 }
 
 // round sends every scenario once and, with --expect, checks them. It reports whether every
@@ -152,12 +209,15 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) bool {
 			if r.err != nil || r.traceID == "" {
 				continue
 			}
+			if r.unchecked {
+				continue
+			}
 			t, err := g.awaitTrace(ctx, r.traceID, deadline)
 			if err != nil {
 				r.err = err
 				continue
 			}
-			r.fails = append(r.fails, checkTrace(r.s, t)...)
+			r.fails = append(r.fails, checkTrace(r.s, t, r.storedDecision)...)
 		}
 	}
 	ok := true
@@ -175,6 +235,8 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) bool {
 			for _, m := range r.fails {
 				fmt.Fprintf(g.out, "  %s\n", m)
 			}
+		case g.opts.expect && r.unchecked:
+			fmt.Fprintf(g.out, "sent %s (trace %s, %d ms; generated upstream answer, not checked)\n", r.s.ID, r.traceID, r.ms)
 		default:
 			fmt.Fprintf(g.out, "ok   %s (trace %s, %d ms)\n", r.s.ID, r.traceID, r.ms)
 		}
@@ -197,7 +259,8 @@ func (g *generator) send(ctx context.Context, s *scenario) *sent {
 		r.err = err
 		return r
 	}
-	body, err := s.body()
+	upstream := g.opts.fromUpstream(s)
+	body, err := s.body(upstream)
 	if err != nil {
 		r.err = err
 		return r
@@ -224,18 +287,32 @@ func (g *generator) send(ctx context.Context, s *scenario) *sent {
 		return r
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// Reading to EOF also receives the trailers of a streamed answer.
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	r.ms = time.Since(start).Milliseconds()
 	r.traceID = resp.Header.Get(headerTraceID)
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+	e := expectation(s.Expect)
+	wantStatus := 0
+	if present, null := e.has("http_status"); present && !null {
+		_ = json.Unmarshal(e["http_status"], &wantStatus)
+	}
+	if (resp.StatusCode < 200 || resp.StatusCode > 299) && resp.StatusCode != wantStatus {
 		r.err = fmt.Errorf("POST %s: HTTP %d: %s", path, resp.StatusCode, snippet(respBody))
 		return r
 	}
 	if g.opts.expect {
+		if upstream && s.AnswerSource == answerGenerated {
+			r.unchecked = true
+			return r
+		}
 		if r.traceID == "" {
 			r.fails = append(r.fails, mismatch{headerTraceID, "a trace id", absent})
 		}
-		r.fails = append(r.fails, checkHeaders(s, resp.Header)...)
+		a := readAnswer(s.APIFormat, resp.StatusCode, resp.Header, resp.Trailer, respBody)
+		view := newDecisionView(a)
+		r.storedDecision = view.deferred() || a.stream
+		r.fails = append(r.fails, checkDecision(s, view, a.stream)...)
+		r.fails = append(r.fails, checkAnswer(s, a, true)...)
 	}
 	return r
 }

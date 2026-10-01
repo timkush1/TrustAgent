@@ -12,6 +12,7 @@ const ROUTES = [
   { path: '/app/policies', title: 'Policies' },
   { path: '/app/playground', title: 'Playground' },
   { path: '/app/settings/connections', title: 'Settings' },
+  { path: '/app/setup', title: 'Sign in' },
 ];
 
 test.describe('shell', () => {

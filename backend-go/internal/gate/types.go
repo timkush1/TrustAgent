@@ -24,11 +24,29 @@ const (
 	AnswerLive     = "live"
 )
 
-// Trace flags (traces.flags) the gateway sets in S0.
+// Trace flags (traces.flags, SPEC §2.3) the gateway sets.
 const (
-	FlagTestMode      = "test_mode"
-	FlagMockDecision  = "mock_decision"
-	FlagUniformSample = "uniform_sample"
+	FlagTestMode           = "test_mode"
+	FlagMockDecision       = "mock_decision"
+	FlagUniformSample      = "uniform_sample"
+	FlagClientDisconnected = "client_disconnected"
+	FlagLateDecision       = "late_decision"
+	FlagFallbackUsed       = "fallback_used"
+	FlagMultiChoice        = "multi_choice"
+)
+
+// How the answer reached the client (Exchange.Stream, decision meta.stream).
+const (
+	StreamNone        = "none"
+	StreamPassthrough = decision.StreamPassthrough
+	StreamBuffer      = "buffer"
+)
+
+// What the client received (Final.Delivered, GateDecisionView.delivered).
+const (
+	DeliveredOriginal = "original"
+	DeliveredFallback = "fallback"
+	DeliveredBlocked  = "blocked"
 )
 
 // TraceStart is a gated request as it arrives, before the upstream call: the traces row with
@@ -114,6 +132,8 @@ const (
 	SelectionSample      = "sample"
 	SelectionErrorSample = "error_sample"
 	SelectionUniform     = "uniform"
+	// SelectionPlayground is the selection of a Playground run (Exchange.AuditSelection).
+	SelectionPlayground = "playground"
 
 	LaneHigh = "high"
 	LaneLow  = "low"
@@ -177,6 +197,17 @@ type Upstream struct {
 	Ms               *int64
 	PromptTokens     *int
 	CompletionTokens *int
+	// TTFTMs is the time to the first streamed event (traces.ttft_ms); nil for a JSON answer.
+	TTFTMs *int64
+}
+
+// Final is what the handler delivered, when it differs from the decision's action or the
+// original text: the action sent as X-TrustAgent-Action and stored as the trace action,
+// Delivered (original, fallback or blocked), the delivered text, and the flags and reasons the
+// delivery adds to the trace (fallback_used; fallback_failed, fallback_format_mismatch).
+type Final struct {
+	Action, Delivered, Text string
+	Flags, Reasons          []string
 }
 
 // Result is the outcome of gating one exchange: everything the sink persists and broadcasts and
@@ -204,12 +235,18 @@ type Result struct {
 	Audit    AuditPlan
 	Body     BodyPlan
 	Flags    []string
-	// Upstream, TotalMs and OverheadMs are filled by the handler before the sink sees the result.
+	// Upstream, TotalMs, OverheadMs and Final are filled by the handler before the sink sees the
+	// result.
 	Upstream   Upstream
 	TotalMs    *int64
 	OverheadMs *int64
+	// Final is the delivered outcome; nil means the decision's action and the original text.
+	Final *Final
 	// Headers is the route headers setting (full or action_only).
 	Headers string
+	// LateExpected is set when decision-model attempts went on after the gate stopped waiting: a
+	// late decision of the same attempt may follow through Config.OnLate (Sink.LateDecided).
+	LateExpected bool
 }
 
 // Snapshot returns the decision-model snapshot that answered, or "".

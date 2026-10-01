@@ -4,7 +4,7 @@
  * so StrictMode and remounts can never open a second socket.
  */
 import type { QueryClient } from '@tanstack/react-query';
-import { qk } from './queries';
+import { applyControlSideEffects, qk } from './queries';
 import type { DataSource, LiveControl } from './source';
 import { Flusher, type FlushScheduler } from './stream/flush';
 import { RingBuffer } from './stream/ringBuffer';
@@ -60,6 +60,7 @@ export function applyQuerySideEffects(queryClient: QueryClient, batch: readonly 
     void queryClient.invalidateQueries({ queryKey: qk.decisions.all, refetchType: 'active' });
   }
   if (status) void queryClient.invalidateQueries({ queryKey: qk.status, refetchType: 'active' });
+  applyControlSideEffects(queryClient, batch);
 }
 
 /** Starts the page's live stream (idempotent) and returns its control. */

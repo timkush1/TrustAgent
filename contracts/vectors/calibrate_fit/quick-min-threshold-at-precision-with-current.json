@@ -1,0 +1,41 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quick-min-threshold-at-precision-with-current",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "min_threshold_at_precision with target 0.99: only 0.9 (3/3) reaches it, so the threshold is 0.9 with recall 1/2. current = 0.45 is not a candidate, so its row (TP 5, FP 1) is inserted into the grid between 0.3 and 0.6.",
+  "input": {
+    "op": "quick",
+    "labeled": [
+      {"risk_raw": 0.1, "label": false}, {"risk_raw": 0.1, "label": false},
+      {"risk_raw": 0.1, "label": false}, {"risk_raw": 0.3, "label": true},
+      {"risk_raw": 0.3, "label": false}, {"risk_raw": 0.3, "label": false},
+      {"risk_raw": 0.6, "label": true}, {"risk_raw": 0.6, "label": true},
+      {"risk_raw": 0.6, "label": false}, {"risk_raw": 0.9, "label": true},
+      {"risk_raw": 0.9, "label": true}, {"risk_raw": 0.9, "label": true}
+    ],
+    "objective": "min_threshold_at_precision",
+    "target_precision": 0.99,
+    "current": 0.45
+  },
+  "expected": {
+    "enough": true,
+    "grid": [
+      {"fn": 0, "fp": 6, "threshold": 0.1, "tn": 0, "tp": 6},
+      {"fn": 0, "fp": 3, "threshold": 0.3, "tn": 3, "tp": 6},
+      {"fn": 1, "fp": 1, "threshold": 0.45, "tn": 5, "tp": 5},
+      {"fn": 1, "fp": 1, "threshold": 0.6, "tn": 5, "tp": 5},
+      {"fn": 3, "fp": 0, "threshold": 0.9, "tn": 6, "tp": 3}
+    ],
+    "loo_range": [0.6, 0.9],
+    "mapping": {"method": null, "platt": null, "table": null},
+    "n": 12,
+    "n_neg": 6,
+    "n_pos": 6,
+    "precision": {"ci95": [0.4385029682449546, 1], "point": 1},
+    "recall": {"ci95": [0.1876163064826506, 0.8123836935173494], "point": 0.5},
+    "threshold": 0.9,
+    "unstable": true
+  }
+}

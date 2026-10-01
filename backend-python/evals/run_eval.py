@@ -32,7 +32,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from truthtable.graphs.audit_graph import AuditStepError, build_audit_graph, run_audit
 from truthtable.providers import (
@@ -40,6 +40,7 @@ from truthtable.providers import (
     OllamaProvider,
     OpenAIProvider,
 )
+from truthtable.providers.base import LLMProvider
 
 from .metrics import compute_metrics
 from .recorded_judge import RecordedJudge
@@ -127,7 +128,7 @@ def load_dataset(path: Path, limit: int = 0) -> List[Dict[str, Any]]:
     return examples
 
 
-def build_provider(args: argparse.Namespace):
+def build_provider(args: argparse.Namespace) -> LLMProvider:
     if args.provider == "mock":
         golden = GOLDEN_SETS.get(args.dataset, GOLDEN_V1)
         return RecordedJudge.from_file(args.fixtures or golden.fixtures)
@@ -229,7 +230,9 @@ def summarize(examples: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> 
         "verdicts": dict(sorted(verdicts.items())),
     }
 
-    expected = [(e.get("expected"), r) for e, r in zip(examples, results) if e.get("expected")]
+    expected: List[Tuple[Dict[str, Any], Dict[str, Any]]] = [
+        (e["expected"], r) for e, r in zip(examples, results) if e.get("expected")
+    ]
     if expected:
         summary["expected_outcome_match"] = sum(
             1
@@ -280,7 +283,7 @@ async def evaluate(args: argparse.Namespace) -> Dict[str, Any]:
                 context_sources=context_sources(example),
                 knowledge_enabled=False,
             )
-            results.append(example_result(example, state))
+            results.append(example_result(example, dict(state)))
         except Exception as exc:  # one broken example must not end the run (D17)
             logger.warning(f"Example {example['id']} failed: {exc}")
             results.append(failed_result(example, exc))

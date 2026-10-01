@@ -21,6 +21,7 @@ import doctor  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 DEMO = (ROOT / "docker-compose.demo.yml").read_text(encoding="utf-8")
+E2E = (ROOT / "docker-compose.e2e.yml").read_text(encoding="utf-8")
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
 ALIASES: Dict[str, str] = {
@@ -78,7 +79,11 @@ class ComposeTest(unittest.TestCase):
             self.assertEqual(set(keys), expected_passthrough(service), service)
 
     def test_every_interpolated_variable_is_a_registry_key(self) -> None:
-        for name, text in (("docker-compose.yml", COMPOSE), ("docker-compose.demo.yml", DEMO)):
+        for name, text in (
+            ("docker-compose.yml", COMPOSE),
+            ("docker-compose.demo.yml", DEMO),
+            ("docker-compose.e2e.yml", E2E),
+        ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
                 self.assertTrue(
@@ -96,7 +101,11 @@ class ComposeTest(unittest.TestCase):
             "GF_SECURITY_ADMIN_PASSWORD",
             "GF_USERS_ALLOW_SIGN_UP",
         }
-        for name, text in (("docker-compose.yml", COMPOSE), ("docker-compose.demo.yml", DEMO)):
+        for name, text in (
+            ("docker-compose.yml", COMPOSE),
+            ("docker-compose.demo.yml", DEMO),
+            ("docker-compose.e2e.yml", E2E),
+        ):
             for key in set(pattern.findall(text)):
                 if key in allowed_foreign:
                     continue
@@ -108,6 +117,7 @@ class ComposeTest(unittest.TestCase):
         # Fixed container names are caught repo-wide by scripts/check-forbidden.mjs.
         self.assertRegex(COMPOSE, r"(?m)^name: truthtable$")
         self.assertRegex(DEMO, r"(?m)^name: truthtable-demo$")
+        self.assertRegex(E2E, r"(?m)^name: truthtable-e2e$")
 
     def test_every_published_port_binds_bind_addr(self) -> None:
         ports = re.findall(r'^\s+- "([^"]*:\d+)"', COMPOSE, re.MULTILINE)
@@ -165,6 +175,46 @@ class ComposeTest(unittest.TestCase):
             self.assertIn(key, KEYS)
             self.assertTrue(KEYS[key]["secret"], key)
             self.assertRegex(DEMO, rf"(?m)^      {key}: !reset null$", key)
+
+    def test_mock_upstream_serves_the_e2e_and_load_profiles(self) -> None:
+        # Same image as the proxy (built by the proxy service, never pulled on its
+        # own); its healthcheck probes its own port, not the proxy's.
+        service = COMPOSE.split("\n  mock-upstream:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn(
+            "image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}", service
+        )
+        self.assertIn("pull_policy: never", service)
+        self.assertIn("profiles: [e2e, load]", service)
+        self.assertIn('command: ["/mock-upstream"]', service)
+        self.assertIn('MOCK_UPSTREAM_ADDR: ":8090"', service)
+        self.assertIn("http://127.0.0.1:8090/healthz", service)
+        self.assertNotIn("ports:", service)
+        dockerfile = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertRegex(dockerfile, r'(?m)^ARG CMDS="[^"]*\bmock-upstream\b[^"]*"$')
+
+    def test_e2e_points_the_gateway_at_mock_upstream(self) -> None:
+        for line in (
+            'TRUTHTABLE_TEST_MODE: "true"',
+            'TRUTHTABLE_STRICT_CONFIG: "true"',
+            "TRUTHTABLE_TRACE_FLUSH: sync",
+            "TRUTHTABLE_JEV_BACKEND: compatible",
+            "TRUTHTABLE_JEV_BASE_URL: http://mock-upstream:8090",
+            "TRUTHTABLE_JEV_PATH: /v1/systemone",
+            "TRUTHTABLE_UPSTREAM_URL: http://mock-upstream:8090",
+            "TRUTHTABLE_ANTHROPIC_UPSTREAM_URL: http://mock-upstream:8090",
+            "LLM_PROVIDER: mock",
+        ):
+            self.assertIn(line, E2E)
+        # The proxy depends on mock-upstream, so the override turns the service on
+        # itself: `config` and `up` work with or without --profile e2e.
+        self.assertIn("\n  mock-upstream:\n    profiles: !reset []\n", E2E)
+        # Every vendor credential is removed; the decision key is a placeholder
+        # that only mock-upstream accepts.
+        for key in doctor.VENDOR_KEYS:
+            if key == "TRUTHTABLE_JEV_API_KEY":
+                self.assertIn(f"      {key}: e2e-mock-upstream-key\n", E2E)
+                continue
+            self.assertRegex(E2E, rf"(?m)^      {key}: !reset null$", key)
 
     def test_demo_turns_on_the_mocks(self) -> None:
         for line in (

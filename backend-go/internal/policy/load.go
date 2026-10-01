@@ -1,34 +1,36 @@
-// Package policy loads the gateway policy (config/policies.yaml, schema policy/v1, SPEC §2.7) and
-// resolves a request to its route.
-//
-// S0 is the minimal loader: parse with KnownFields, merge every route over defaults over the
-// built-in defaults (objects merge key by key, arrays replace), validate what the S0 gate relies
-// on, match routes, and apply the client mode override. Modes are limited to observe and flag
-// until block and fallback enforcement land (P3). Database versions, hot reload, file divergence,
-// readiness and dry-run are P3.
+// Package policy is the gateway policy engine (SPEC §2.7, §3.1 internal/policy, §7.2): it parses
+// and validates policy/v1 documents (yaml.v3 with KnownFields, errors with paths, lines and
+// columns), resolves every route's effective settings, matches requests to routes and applies
+// the client mode override, computes each route's block readiness and effective mode, keeps
+// whole-document versions in Postgres (newest wins) with file divergence, adopt-file, the config
+// lock and hot reload (LISTEN/NOTIFY plus a poll), and previews a policy change by replaying
+// stored answers through decide().
 package policy
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
-	"regexp"
 	"slices"
-	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/evidence"
 )
 
-// Sources of a loaded policy (SystemStatus.policy.source).
+// Sources of a loaded policy (SystemStatus.policy.source). A database version carries the
+// source of its policy_versions row.
 const (
-	SourceFile    = "file"
+	SourceBootstrap = "bootstrap"
+	SourceFile      = "file"
+	SourceDashboard = "dashboard"
+	SourceRollback  = "rollback"
+	SourceAdoptFile = "adopt_file"
+	// SourceBuiltin is a policy made of the built-in defaults only (no file, no database).
 	SourceBuiltin = "builtin"
 )
 
@@ -51,26 +53,75 @@ type Resolver interface {
 	Get(ref string) (*decision.Spec, bool)
 }
 
+// Env is everything validation depends on besides the document.
+type Env struct {
+	Seeds Seeds
+	Specs Resolver
+	// Enforcing accepts block and fallback modes. The /v1 handler enforces them since P3, so the
+	// gateway, LoadFile and Parse set it; a caller that does not enforce leaves it off, so a policy
+	// never claims enforcement nobody does.
+	Enforcing bool
+	// Knowledge accepts the knowledge evidence source (the knowledge add-on is enabled).
+	Knowledge bool
+	// FallbackUpstream accepts fallback.upstream: fallback (TRUTHTABLE_FALLBACK_UPSTREAM_URL is
+	// set, so the gateway has a fallback upstream to call).
+	FallbackUpstream bool
+}
+
 // Policy is a loaded, validated policy document.
 type Policy struct {
-	// Version is the policy version reported as <route>@v<version>. Versions are database ids from
-	// P3; a file or built-in policy is version 1 until then.
+	// Version is the policy version reported as <route>@v<version>: the policy_versions id, or,
+	// without a database, 1 for the first policy loaded and one more per reload.
 	Version int64
-	// Source is file or builtin; Path is the file read (empty for builtin).
+	// Source is the version source (bootstrap, file, dashboard, rollback, adopt_file) or builtin;
+	// Path is the file read, if any.
 	Source    string
 	Path      string
 	Overrides Overrides
 	// Routes are the configured routes in match order; Default applies when none matches.
 	Routes  []*Route
 	Default *Route
+
+	// YAML is the document text; Doc is the document as written (PolicyDoc JSON) and SHA256 is
+	// sha256(JCS(Doc)).
+	YAML   string
+	Doc    json.RawMessage
+	SHA256 string
+	// Warnings are the non-fatal validation findings.
+	Warnings []FieldError
+
+	// enforcing records Env.Enforcing: clients may then ask for block and fallback.
+	enforcing bool
 }
 
-// LoadFile reads and validates the policy at path. A missing file yields the built-in policy (the
-// defaults route only), so a fresh install gates in the seeded mode; any other error is returned.
+// AllRoutes returns the configured routes followed by the default route.
+func (p *Policy) AllRoutes() []*Route {
+	return append(slices.Clone(p.Routes), p.Default)
+}
+
+// Route returns the route named name ("default" for the default route).
+func (p *Policy) Route(name string) (*Route, bool) {
+	if name == DefaultRouteName {
+		return p.Default, true
+	}
+	for _, r := range p.Routes {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return nil, false
+}
+
+// builtinYAML is the document of the built-in policy: the defaults route only.
+const builtinYAML = "version: 1\n"
+
+// LoadFile reads and validates the policy at path as this build's gateway does (block and fallback
+// accepted, Env.Enforcing). A missing file yields the built-in policy (the defaults route only), so
+// a fresh install gates in the seeded mode; any other error is returned.
 func LoadFile(path string, seeds Seeds, specs Resolver) (*Policy, error) {
 	b, err := os.ReadFile(path) // #nosec G304 -- the operator names the policy file (TRUTHTABLE_POLICY_FILE)
 	if errors.Is(err, fs.ErrNotExist) {
-		p, err := Parse([]byte("version: 1\n"), seeds, specs)
+		p, err := Parse([]byte(builtinYAML), seeds, specs)
 		if err != nil {
 			return nil, err
 		}
@@ -80,91 +131,118 @@ func LoadFile(path string, seeds Seeds, specs Resolver) (*Policy, error) {
 	if err != nil {
 		return nil, err
 	}
-	p, err := Parse(b, seeds, specs)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	res := Check(b, Env{Seeds: seeds, Specs: specs, Enforcing: true})
+	if res.Policy == nil {
+		return nil, fmt.Errorf("%s: %w", path, res.Err())
 	}
-	p.Path = path
-	return p, nil
+	res.Policy.Path = path
+	return res.Policy, nil
 }
 
-// Parse validates a policy document and resolves every route's effective settings.
+// Parse validates a policy document and resolves every route's effective settings. The error is
+// a *ValidationError. Block and fallback modes are accepted, as this build enforces them
+// (Env.Enforcing); use Check for another Env and the full result.
 func Parse(doc []byte, seeds Seeds, specs Resolver) (*Policy, error) {
-	var typed docYAML
-	dec := yaml.NewDecoder(bytes.NewReader(doc))
-	dec.KnownFields(true)
-	if err := dec.Decode(&typed); err != nil && !errors.Is(err, io.EOF) { // empty: fails the version check
-		return nil, fmt.Errorf("policy: %w", err)
+	res := Check(doc, Env{Seeds: seeds, Specs: specs, Enforcing: true})
+	if res.Policy == nil {
+		return nil, res.Err()
 	}
-	if typed.Version == nil || *typed.Version != 1 {
-		return nil, errors.New("policy: version must be 1")
-	}
+	return res.Policy, nil
+}
 
-	var raw struct {
-		Defaults map[string]any   `yaml:"defaults"`
-		Routes   []map[string]any `yaml:"routes"`
-	}
-	if err := yaml.Unmarshal(doc, &raw); err != nil {
-		return nil, fmt.Errorf("policy: %w", err)
-	}
+// Result is the outcome of Check.
+type Result struct {
+	// Policy is the loaded policy, nil when there are errors.
+	Policy   *Policy
+	Errors   []FieldError
+	Warnings []FieldError
+}
 
-	p := &Policy{Version: 1, Source: SourceFile, Overrides: Overrides{ClientMode: ClientModeNone}}
-	if typed.Overrides != nil {
-		p.Overrides = *typed.Overrides
-		if p.Overrides.ClientMode == "" {
-			p.Overrides.ClientMode = ClientModeNone
-		}
+// Err returns the errors as a *ValidationError, or nil.
+func (r *Result) Err() error {
+	if len(r.Errors) == 0 {
+		return nil
 	}
-	var errs []string
-	if !slices.Contains([]string{ClientModeNone, ClientModeStricterOnly, ClientModeAny}, p.Overrides.ClientMode) {
-		errs = append(errs, fmt.Sprintf("overrides.client_mode: unknown value %q", p.Overrides.ClientMode))
-	}
+	return &ValidationError{Errors: r.Errors, Warnings: r.Warnings}
+}
 
-	base := merge(builtinDefaults(seeds), raw.Defaults)
-	def, err := resolve(DefaultRouteName, base, nil)
+// Check validates a YAML (or JSON) policy document. It never panics on user input.
+func Check(src []byte, env Env) *Result {
+	return check(src, env, false)
+}
+
+// CheckDoc validates a JSON policy document (the {doc} form of the REST API). The policy's YAML
+// is generated from the document; errors report paths only.
+func CheckDoc(doc json.RawMessage, env Env) *Result {
+	text, err := yamlFromDoc(doc)
 	if err != nil {
-		return nil, fmt.Errorf("policy: defaults: %w", err)
+		return &Result{Errors: []FieldError{{Path: "doc", Message: err.Error()}}}
 	}
-	errs = append(errs, validate("defaults", &def.Settings, specs)...)
-	p.Default = def
+	return check([]byte(text), env, true)
+}
 
-	if len(raw.Routes) > maxRoutes {
-		errs = append(errs, fmt.Sprintf("routes: at most %d routes", maxRoutes))
-	}
-	names := map[string]bool{}
-	for i, rr := range raw.Routes {
-		t := typed.Routes[i]
-		where := fmt.Sprintf("routes[%d]", i)
-		switch {
-		case !routeName.MatchString(t.Name):
-			errs = append(errs, fmt.Sprintf("%s.name: %q must match %s", where, t.Name, routeName))
-		case t.Name == DefaultRouteName:
-			errs = append(errs, fmt.Sprintf("%s.name: %q is reserved", where, t.Name))
-		case names[t.Name]:
-			errs = append(errs, fmt.Sprintf("%s.name: duplicate route %q", where, t.Name))
-		}
-		names[t.Name] = true
-		if t.Match == nil {
-			errs = append(errs, where+".match: required")
-		}
-		overlay := map[string]any{}
-		for k, v := range rr {
-			if k != "name" && k != "description" && k != "match" {
-				overlay[k] = v
-			}
-		}
-		r, err := resolve(t.Name, merge(base, overlay), t.Match)
-		if err != nil {
-			return nil, fmt.Errorf("policy: %s: %w", where, err)
-		}
-		r.Description = t.Description
-		errs = append(errs, validate(where+" ("+t.Name+")", &r.Settings, specs)...)
-		p.Routes = append(p.Routes, r)
-	}
+func check(src []byte, env Env, fromDoc bool) *Result {
+	res := &Result{}
+	d, errs := decodeDocument(src)
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("policy: %s", strings.Join(errs, "; "))
+		res.Errors = stripPositions(errs, fromDoc)
+		return res
 	}
-	return p, nil
+	d.fromDoc = fromDoc
+	c := newChecker(d, env)
+	p := c.run()
+	res.Errors = stripPositions(dedupe(c.errs), fromDoc)
+	res.Warnings = stripPositions(dedupe(c.warns), fromDoc)
+	if len(res.Errors) > 0 {
+		return res
+	}
+	p.YAML = string(src)
+	var err error
+	if p.Doc, err = json.Marshal(d.doc); err == nil {
+		p.SHA256, err = decision.SHA256Hex(d.doc)
+	}
+	if err != nil {
+		res.Errors = []FieldError{{Message: "the document cannot be canonicalized: " + err.Error()}}
+		return res
+	}
+	p.Warnings = res.Warnings
+	p.enforcing = env.Enforcing
+	res.Policy = p
+	return res
+}
+
+func stripPositions(errs []FieldError, strip bool) []FieldError {
+	if !strip {
+		return errs
+	}
+	out := make([]FieldError, len(errs))
+	for i, e := range errs {
+		e.Line, e.Col = 0, 0
+		out[i] = e
+	}
+	return out
+}
+
+// dedupe drops repeated (path, message) findings, keeping the first; a defaults finding is
+// otherwise repeated for every route that inherits the value.
+func dedupe(errs []FieldError) []FieldError {
+	seen := map[string]bool{}
+	out := make([]FieldError, 0, len(errs))
+	for _, e := range errs {
+		k := e.Path + "\x00" + e.Message
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+// FileSHA256 is the hash of a policy file's bytes (policy_versions.file_sha256).
+func FileSHA256(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // resolve decodes merged settings strictly into a Route.
@@ -256,186 +334,10 @@ func toAny(s []string) []any {
 // Route setting values the gate reads.
 const (
 	StreamingPassthrough = "passthrough"
+	StreamingBuffer      = "buffer"
 	HeadersFull          = "full"
 	HeadersActionOnly    = "action_only"
 	StoreBodiesAll       = "all"
 	StoreBodiesSampled   = "sampled"
 	StoreBodiesNone      = "none"
 )
-
-const (
-	maxRoutes     = 64
-	maxEvaluators = 16
-)
-
-var (
-	routeName    = regexp.MustCompile(`^[a-z0-9-]{1,48}$`)
-	tagFlags     = regexp.MustCompile(`^[ims]{0,3}$`)
-	validSources = []string{
-		evidence.SourceRequestSystem, evidence.SourceRequestContext, evidence.SourceToolResults,
-		evidence.SourceExtension, evidence.SourceKnowledge,
-	}
-)
-
-// validate checks the effective settings of one route.
-func validate(where string, s *Settings, specs Resolver) []string {
-	var errs []string
-	bad := func(field, format string, args ...any) {
-		errs = append(errs, fmt.Sprintf("%s.%s: %s", where, field, fmt.Sprintf(format, args...)))
-	}
-	enum := func(field, v string, allowed ...string) {
-		if !slices.Contains(allowed, v) {
-			bad(field, "unknown value %q (want one of %s)", v, strings.Join(allowed, ", "))
-		}
-	}
-	unit := func(field string, v float64) {
-		if v < 0 || v > 1 {
-			bad(field, "%v is outside [0, 1]", v)
-		}
-	}
-
-	enum("mode", s.Mode, decision.ModeObserve, decision.ModeFlag, decision.ModeBlock, decision.ModeFallback)
-	if s.Mode == decision.ModeBlock || s.Mode == decision.ModeFallback {
-		bad("mode", "%s is not available yet: this build enforces observe and flag only (block and fallback land in P3)", s.Mode)
-	}
-	enum("fail", s.Fail, decision.FailOpen, decision.FailClosed)
-	if s.DeadlineMs < 100 || s.DeadlineMs > 5000 {
-		bad("deadline_ms", "%d is outside [100, 5000]", s.DeadlineMs)
-	}
-	if s.HedgeAfterMs != 0 && (s.HedgeAfterMs < 100 || s.HedgeAfterMs >= s.DeadlineMs) {
-		bad("hedge_after_ms", "%d must be 0 or in [100, deadline_ms)", s.HedgeAfterMs)
-	}
-	unit("sample_rate", s.SampleRate)
-	enum("on_no_evidence", s.OnNoEvidence, decision.OnNoEvidenceIgnore, decision.OnNoEvidenceFlag, decision.OnNoEvidenceBlock)
-	enum("streaming", s.Streaming, StreamingPassthrough, "buffer")
-	enum("stream_annotations", s.StreamAnnotations, "comment", "none")
-	enum("headers", s.Headers, HeadersFull, HeadersActionOnly)
-	enum("store_bodies", s.StoreBodies, StoreBodiesAll, StoreBodiesSampled, StoreBodiesNone)
-	unit("body_sample_rate_pass", s.BodySampleRatePass)
-
-	ev := &s.Evidence
-	for i, src := range ev.Sources {
-		enum(fmt.Sprintf("evidence.sources[%d]", i), src, validSources...)
-		if slices.Index(ev.Sources, src) != i {
-			bad("evidence.sources", "%s is listed twice", src)
-		}
-		if src == evidence.SourceKnowledge {
-			bad("evidence.sources", "knowledge needs the knowledge add-on, which this build does not include")
-		}
-	}
-	enum("evidence.system_mode", ev.SystemMode, evidence.SystemModeOff, evidence.SystemModeDocumentsOnly, evidence.SystemModeWhole)
-	if len(ev.TagPatterns) > 16 {
-		bad("evidence.tag_patterns", "at most 16 patterns")
-	}
-	for i, tp := range ev.TagPatterns {
-		if !tagFlags.MatchString(tp.Flags) || len(tp.Pattern) == 0 || len(tp.Pattern) > 256 {
-			bad(fmt.Sprintf("evidence.tag_patterns[%d]", i), "needs a pattern of 1-256 characters and flags within \"ims\"")
-		} else if _, err := tp.Compile(); err != nil {
-			bad(fmt.Sprintf("evidence.tag_patterns[%d]", i), "%v", err)
-		}
-	}
-	if ev.MaxTokens < 500 || ev.MaxTokens > 20000 {
-		bad("evidence.max_tokens", "%d is outside [500, 20000]", ev.MaxTokens)
-	}
-
-	for _, list := range [][]string{s.Detectors.FlagOn, s.Detectors.BlockOn} {
-		for _, d := range list {
-			enum("detectors", d, decision.DetectorIDs...)
-		}
-	}
-	if s.Detectors.MinInteger < 0 {
-		bad("detectors.min_integer", "must be >= 0")
-	}
-	if mrt := s.Decision.MaxResponseTokens; mrt < 500 || mrt > 12000 {
-		bad("decision.max_response_tokens", "%d is outside [500, 12000]", mrt)
-	}
-	unit("deep_audit.pass_sample_rate", s.DeepAudit.PassSampleRate)
-	unit("deep_audit.uniform_sample_rate", s.DeepAudit.UniformSampleRate)
-	unit("deep_audit.error_sample_rate", s.DeepAudit.ErrorSampleRate)
-	enum("deep_audit.verifier", s.DeepAudit.Verifier, "auto", "llm")
-
-	errs = append(errs, validateEvaluators(where, s, specs)...)
-	return errs
-}
-
-func validateEvaluators(where string, s *Settings, specs Resolver) []string {
-	var errs []string
-	if len(s.Evaluators) > maxEvaluators {
-		errs = append(errs, fmt.Sprintf("%s.evaluators: at most %d evaluators", where, maxEvaluators))
-	}
-	ids := map[string]bool{}
-	params := map[string]string{}
-	for i, e := range s.Evaluators {
-		at := fmt.Sprintf("%s.evaluators[%d]", where, i)
-		id, _, err := decision.ParseRef(e.Ref)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s.ref: %v", at, err))
-			continue
-		}
-		spec, ok := specs.Get(e.Ref)
-		if !ok {
-			errs = append(errs, fmt.Sprintf("%s.ref: unknown evaluator %s", at, e.Ref))
-			continue
-		}
-		if ids[id] {
-			errs = append(errs, fmt.Sprintf("%s.ref: evaluator %s is attached twice", at, id))
-		}
-		ids[id] = true
-		if st := e.StageOrDefault(); st != decision.StageActive && st != decision.StageShadow {
-			errs = append(errs, fmt.Sprintf("%s.stage: unknown value %q", at, e.Stage))
-		}
-		for name := range e.Params {
-			if _, declared := spec.Params[name]; !declared {
-				errs = append(errs, fmt.Sprintf("%s.params.%s: %s declares no such param", at, name, e.Ref))
-			}
-			if other, dup := params[name]; dup && other != e.Ref {
-				errs = append(errs, fmt.Sprintf("%s.params.%s: also set by %s (param names are unique across a route)", at, name, other))
-			}
-			params[name] = e.Ref
-		}
-		for _, src := range e.EvidenceSources {
-			if !slices.Contains(s.Evidence.Sources, src) {
-				errs = append(errs, fmt.Sprintf("%s.evidence_sources: %s is not a route evidence source", at, src))
-			}
-		}
-		errs = append(errs, validateThresholds(at, e.Thresholds, spec)...)
-	}
-	return errs
-}
-
-// validateThresholds checks escalate_from < warn_at <= critical_at after the route overrides are
-// merged over the spec (SPEC §2.8 hard rules).
-func validateThresholds(at string, t *Thresholds, spec *decision.Spec) []string {
-	var errs []string
-	dt := t.Decision()
-	if dt.Space != decision.SpaceRaw && dt.Space != decision.SpaceCalibrated {
-		errs = append(errs, fmt.Sprintf("%s.thresholds.space: unknown value %q", at, dt.Space))
-	}
-	warn := spec.Outcomes.WarnAt
-	if dt.WarnAt != nil {
-		warn = *dt.WarnAt
-	}
-	crit := spec.Outcomes.CriticalAt
-	if dt.CriticalAt.Set {
-		crit = dt.CriticalAt.Value
-	}
-	esc := spec.Escalation.EscalateFrom
-	if dt.EscalateFrom.Set {
-		esc = dt.EscalateFrom.Value
-	}
-	inUnit := func(name string, v *float64) {
-		if v != nil && (*v < 0 || *v > 1) {
-			errs = append(errs, fmt.Sprintf("%s.thresholds.%s: %v is outside [0, 1]", at, name, *v))
-		}
-	}
-	inUnit("warn_at", &warn)
-	inUnit("critical_at", crit)
-	inUnit("escalate_from", esc)
-	if esc != nil && !(*esc < warn) {
-		errs = append(errs, fmt.Sprintf("%s.thresholds: escalate_from %v must be below warn_at %v", at, *esc, warn))
-	}
-	if crit != nil && !(warn <= *crit) {
-		errs = append(errs, fmt.Sprintf("%s.thresholds: warn_at %v must not exceed critical_at %v", at, warn, *crit))
-	}
-	return errs
-}

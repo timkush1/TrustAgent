@@ -25,7 +25,7 @@ afterEach(() => {
 describe('DisabledReason', () => {
   it.each([
     ['needs_connection', 'Connect OpenRouter first', 'Open Connections', '/app/settings/connections'],
-    ['needs_admin', 'Needs an admin key', 'Open Access', '/app/settings/access'],
+    ['needs_admin', 'Needs an admin key', 'Sign in as an admin', '/app/setup'],
     ['env_managed', 'Set by an environment variable; change it there', 'See where it is set', '/app/settings/all'],
   ] as const)('%s says why and links the fix', async (reason, text, linkName, href) => {
     await renderWithRouter(<DisabledReason reason={reason} />);

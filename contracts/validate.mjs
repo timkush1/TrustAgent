@@ -7,8 +7,8 @@
 //   node validate.mjs --quiet    print problems only
 //   node validate.mjs --root DIR validate another contracts tree (tests); its parent is the repo root
 //
-// Repo files that follow a contract (config/policies.yaml, config/calibration/*.json,
-// docs/benchmarks/results/*.json) are validated too when they exist.
+// Repo files that follow a contract (config/policies.yaml, config/policies.pending.yaml,
+// config/calibration/*.json, docs/benchmarks/results/*.json) are validated too when they exist.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
@@ -82,6 +82,9 @@ const NOT_DATA = /^(README\.md|vectors\/README\.md|go\.mod|go\.sum|[a-z_]+\.go|v
 
 const EXTERNAL = [
   { file: 'config/policies.yaml', schema: 'policy.v1' },
+  // Demo routes the demo and e2e stacks cannot load (handbook reads the knowledge add-on):
+  // appended to the routes of config/policies.yaml, merged over its defaults (checked below).
+  { file: 'config/policies.pending.yaml', schema: 'policy.v1', pending: true },
   { dir: 'config/calibration', re: /\.json$/, schema: 'calibration.v1' },
   { dir: 'docs/benchmarks/results', re: /\.json$/, schema: 'benchmark-run.v1' },
 ];
@@ -216,7 +219,7 @@ for (const ext of EXTERNAL) {
     const { data } = parse(join(REPO, f), label);
     if (data === undefined) continue;
     validated++;
-    if (validate(label, data, ext.schema)) external.set(label, { data, schema: ext.schema });
+    if (validate(label, data, ext.schema)) external.set(label, { data, schema: ext.schema, pending: ext.pending === true });
   }
 }
 
@@ -473,7 +476,28 @@ function checkPolicy(rel, doc) {
 }
 
 for (const [rel, doc] of byPrefix('policies/')) if (/\.ya?ml$/.test(rel)) checkPolicy(rel, doc);
-for (const [label, ext] of external) if (ext.schema === 'policy.v1') checkPolicy(label, ext.data);
+for (const [label, ext] of external) if (ext.schema === 'policy.v1' && !ext.pending) checkPolicy(label, ext.data);
+
+// config/policies.pending.yaml holds only version and routes; its routes merge over the defaults of
+// config/policies.yaml and their names must not clash with its routes.
+const PENDING = '../config/policies.pending.yaml';
+const pendingPolicy = external.get(PENDING)?.data;
+const pendingRoutes = new Set();
+if (pendingPolicy) {
+  const base = external.get('../config/policies.yaml')?.data;
+  const extra = Object.keys(pendingPolicy).filter((k) => k !== 'version' && k !== 'routes');
+  if (extra.length) error(PENDING, `only version and routes belong here (they merge over config/policies.yaml): ${extra.join(', ')}`);
+  if (!base) error(PENDING, 'needs config/policies.yaml, whose defaults its routes merge over');
+  else {
+    const defaults = merge(ROUTE_DEFAULTS, base.defaults ?? {});
+    checkUnique(PENDING, [...(base.routes ?? []), ...(pendingPolicy.routes ?? [])], 'name', 'route name (across config/policies.yaml and this file)');
+    for (const r of pendingPolicy.routes ?? []) {
+      pendingRoutes.add(r.name);
+      const { name, description, match, ...settings } = r;
+      checkRouteSettings(PENDING, `route ${name}`, merge(defaults, settings));
+    }
+  }
+}
 
 const presets = get('policies/presets.v1.json');
 if (presets) {
@@ -1049,6 +1073,8 @@ for (const [rel, doc] of docs) {
 // runners and trafficgen --expect pin the rest.
 
 const SCENARIO_PATHS = { openai_chat: '/v1/chat/completions', openai_completions: '/v1/completions', anthropic_messages: '/v1/messages' };
+// Gateway phase tags (trafficgen --phase): a scenario that needs a later phase than the walking skeleton carries one.
+const PHASE_TAGS = new Set(['p2', 'p3', 'p4', 'p5']);
 const MODE_ACTIONS = { observe: ['observe'], flag: ['pass', 'flag'], block: ['pass', 'flag', 'block'], fallback: ['pass', 'flag', 'block', 'fallback'] };
 const JUDGED = ['GROUNDED', 'HALLUCINATED', 'UNVERIFIABLE'];
 
@@ -1072,15 +1098,16 @@ function scenarioRoute(policy, s) {
   return found ?? null;
 }
 
-// Judge fixtures: decomposer quotes are verbatim parts of the answer, verifier evidence is verbatim from the request.
+// Judge fixtures: decomposer quotes are verbatim parts of the answer, verifier evidence is verbatim from the request
+// (or from the scenario's knowledge documents).
 function checkScenarioJudge(rel, s) {
-  const texts = strings(s.request);
+  const texts = [...strings(s.request), ...(s.knowledge ?? []).map((k) => k.text)];
   (s.judge?.claims ?? []).forEach((c, i) => {
     if (c.quote !== undefined && s.response !== undefined && !s.response.includes(c.quote)) {
       error(rel, `${s.id}: judge.claims[${i}].quote ${JSON.stringify(c.quote)} is not a verbatim part of response`);
     }
     for (const e of c.evidence ?? []) {
-      if (!texts.some((t) => t.includes(e))) error(rel, `${s.id}: judge.claims[${i}].evidence ${JSON.stringify(e)} does not occur in request`);
+      if (!texts.some((t) => t.includes(e))) error(rel, `${s.id}: judge.claims[${i}].evidence ${JSON.stringify(e)} does not occur in request or knowledge`);
     }
   });
 }
@@ -1121,11 +1148,15 @@ function checkScenarioRoute(rel, s, settings, policyName, seedMode) {
   if ((settings.on_no_evidence ?? 'ignore') !== 'ignore' && ![...asked.values()].some((q) => q.ref.startsWith('factual_claims@'))) {
     asked.set('factual_claims__v1', { ref: 'factual_claims@1', spec: registry.get('factual_claims@1'), stage: 'active', implicit: true });
   }
-  for (const [qid, answer] of Object.entries(s.mock_answers)) {
-    const q = asked.get(qid);
-    if (!q) error(rel, `${s.id}: mock_answers.${qid} is not asked on route ${s.route} (${policyName})`);
-    else if (q.spec && answer.type !== q.spec.question.type) error(rel, `${s.id}: mock_answers.${qid} is a ${answer.type} answer to a ${q.spec.question.type} question`);
-  }
+  const answersFor = (where, answers) => {
+    for (const [qid, answer] of Object.entries(answers)) {
+      const q = asked.get(qid);
+      if (!q) error(rel, `${s.id}: ${where}.${qid} is not asked on route ${s.route} (${policyName})`);
+      else if (q.spec && answer.type !== q.spec.question.type) error(rel, `${s.id}: ${where}.${qid} is a ${answer.type} answer to a ${q.spec.question.type} question`);
+    }
+  };
+  answersFor('mock_answers', s.mock_answers);
+  if (s.fallback) answersFor('fallback.mock_answers', s.fallback.mock_answers);
   // Evaluators that do not require evidence are asked whenever the gate runs (SPEC §2.9 compile step 2),
   // unless the response is too long to send at all (step 1: est > max_response_tokens, with cpt >= 2.5).
   const x = s.expect;
@@ -1141,6 +1172,39 @@ function checkScenarioRoute(rel, s, settings, policyName, seedMode) {
   const mode = settings.mode ?? seedMode;
   const effective = ['block', 'fallback'].includes(mode) && s.stream && settings.streaming !== 'buffer' ? 'flag' : mode;
   if (x.mode !== undefined && x.mode !== effective) error(rel, `${s.id}: expect.mode ${x.mode}, but route ${s.route} runs in ${effective} mode (${policyName})`);
+
+  // What the client receives: the block message, the fallback answer, or the answer itself. A scenario
+  // with a fallback answer is one whose gate falls back (SPEC §2.12 Fallback): a re-gate that does not
+  // block delivers the fallback answer with action fallback; one that blocks applies on_fail (block: the
+  // block body with action block; flag: the fallback answer with action flag; original: the answer with
+  // action flag).
+  if (s.fallback && mode !== 'fallback') error(rel, `${s.id}: fallback needs a route in fallback mode, and ${s.route} runs in ${mode} mode`);
+  if (x.action === 'fallback' && !s.fallback) error(rel, `${s.id}: action fallback needs a fallback answer`);
+  const block = settings.block ?? {};
+  const blocked = (block.style ?? 'message') === 'message' ? block.message : s.response; // style error: no answer text
+  let delivered = x.action === 'block' ? blocked : s.response;
+  if (s.fallback && mode === 'fallback') {
+    const onFail = settings.fallback?.on_fail ?? 'block';
+    const regate = s.fallback.expect.would_action;
+    const action = regate !== 'block' ? 'fallback' : onFail === 'block' ? 'block' : 'flag';
+    if (x.would_action !== 'block') error(rel, `${s.id}: a fallback answer means the gate falls back, which needs expect.would_action block`);
+    if (x.action !== action) {
+      error(rel, `${s.id}: the re-gate of the fallback answer would ${regate} and on_fail is ${onFail}, so expect.action is ${action}, not ${x.action}`);
+    }
+    delivered = action === 'block' ? blocked : regate !== 'block' || onFail === 'flag' ? s.fallback.response : s.response;
+  }
+  if ((x.delivered_text ?? s.response) !== delivered) {
+    error(rel, `${s.id}: the client receives ${JSON.stringify(delivered)} (action ${x.action} on route ${s.route}), so expect.delivered_text must say so${x.delivered_text === undefined ? '' : `, not ${JSON.stringify(x.delivered_text)}`}`);
+  }
+  if (x.delivered_text !== undefined && x.delivered_text === s.response) error(rel, `${s.id}: expect.delivered_text equals response; leave it out`);
+  if (x.stream_decision && !s.stream) error(rel, `${s.id}: expect.stream_decision describes a stream, but the scenario does not stream`);
+
+  // Knowledge documents only on a route that reads the knowledge add-on, and only there.
+  const readsKnowledge = (settings.evidence?.sources ?? []).includes('knowledge');
+  if (readsKnowledge !== Boolean(s.knowledge?.length)) {
+    error(rel, `${s.id}: ${readsKnowledge ? `route ${s.route} reads the knowledge add-on, so the scenario lists the documents it returns (knowledge)` : `knowledge documents need a route whose evidence.sources include knowledge`}`);
+  }
+  if (readsKnowledge && !s.sets.includes('knowledge')) error(rel, `${s.id}: a scenario that needs the knowledge add-on carries the knowledge tag`);
 }
 
 const scenarios = get('demo/scenarios.v1.json');
@@ -1148,11 +1212,25 @@ if (scenarios) {
   const REL = 'demo/scenarios.v1.json';
   checkUnique(REL, scenarios.scenarios, 'id', 'scenario id');
   const loaded = external.get('../config/policies.yaml');
-  const [policyName, policy] = loaded ? ['config/policies.yaml', loaded.data] : ['policies/example.policies.yaml', get('policies/example.policies.yaml')];
+  let [policyName, policy] = loaded ? ['config/policies.yaml', loaded.data] : ['policies/example.policies.yaml', get('policies/example.policies.yaml')];
+  if (loaded && pendingPolicy) {
+    policyName = 'config/policies.yaml + config/policies.pending.yaml';
+    policy = { ...policy, routes: [...(policy.routes ?? []), ...(pendingPolicy.routes ?? [])] };
+  }
   const seedMode = keys?.keys.find((k) => k.name === 'TRUTHTABLE_GATE_DEFAULT_MODE')?.default ?? 'observe';
   const outcomeRules = get('ui/outcomes.v1.json')?.rules;
   for (const s of scenarios.scenarios) {
     if (s.answer_source === 'scripted' && s.response === undefined) error(REL, `${s.id}: a scripted scenario needs response`);
+    if (s.answer_source === 'generated' && s.response === undefined) error(REL, `${s.id}: a generated scenario needs response, the stand-in answer the zero-key demo uses`);
+    if (s.sets.includes('generated') !== (s.answer_source === 'generated')) error(REL, `${s.id}: the generated set holds exactly the scenarios with answer_source generated`);
+    if (pendingRoutes.has(s.route) && !s.sets.some((t) => PHASE_TAGS.has(t))) {
+      error(REL, `${s.id}: route ${s.route} is in config/policies.pending.yaml, which the gateway cannot load yet, so the scenario carries a phase tag (p3)`);
+    }
+    if (s.sets.includes('s0') && s.sets.some((t) => PHASE_TAGS.has(t))) error(REL, `${s.id}: an s0 scenario runs on the walking skeleton and carries no phase tag`);
+    for (const qid of Object.keys(s.fallback?.mock_answers ?? {})) {
+      const m = qid.match(/^(.+)__v([0-9]+)$/);
+      checkRef(REL, `${m[1]}@${m[2]}`, `scenario ${s.id} fallback.mock_answers`);
+    }
     for (const qid of Object.keys(s.mock_answers)) {
       const m = qid.match(/^(.+)__v([0-9]+)$/);
       checkRef(REL, `${m[1]}@${m[2]}`, `scenario ${s.id} mock_answers`);

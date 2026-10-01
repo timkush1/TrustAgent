@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "critical-at-null-when-highest-judgeable-fails",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "One group of 60 positives and 1 negative at 0.9: LB(60/61) = 0.9128 < 0.95 at the only judgeable threshold, so critical_at is null.",
+  "input": {
+    "op": "critical_at",
+    "groups": [{"risk_raw": 0.9, "pos": 60, "neg": 1}]
+  },
+  "expected": {"critical_at": null, "critical_null_reason": "insufficient evidence to block"}
+}

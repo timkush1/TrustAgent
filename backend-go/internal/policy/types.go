@@ -218,13 +218,16 @@ const DefaultRouteName = "default"
 
 // docYAML is the typed shape of the file, decoded with KnownFields for line-numbered errors.
 type docYAML struct {
-	Version   *int       `yaml:"version"`
-	Defaults  *Settings  `yaml:"defaults"`
-	Overrides *Overrides `yaml:"overrides"`
-	Routes    []struct {
-		Name        string `yaml:"name"`
-		Description string `yaml:"description"`
-		Match       *Match `yaml:"match"`
-		Settings    `yaml:",inline"`
-	} `yaml:"routes"`
+	Version   *int        `yaml:"version"`
+	Defaults  *Settings   `yaml:"defaults"`
+	Overrides *Overrides  `yaml:"overrides"`
+	Routes    []routeYAML `yaml:"routes"`
+}
+
+// routeYAML is one routes[] entry: name, description and match, plus any RouteSettings field.
+type routeYAML struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Match       *Match `yaml:"match"`
+	Settings    `yaml:",inline"`
 }

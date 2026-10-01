@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -25,11 +27,14 @@ const (
 	maxAuditDocRunes = 20000
 )
 
-// traceStore is the part of the store the sink writes.
+// traceStore is the part of the store the sink writes (and reads back for a late decision's event).
 type traceStore interface {
 	StartTrace(ctx context.Context, t *store.TraceRecord) error
 	RecordDecision(ctx context.Context, t *store.TraceRecord, d *store.DecisionRecord, b *store.BodyRecord) error
+	RecordAttempt(ctx context.Context, d *store.DecisionRecord) error
+	RecordLateDecision(ctx context.Context, d *store.DecisionRecord) error
 	SetTraceAudit(ctx context.Context, traceID string, u store.TraceAuditUpdate) error
+	GetTrace(ctx context.Context, traceID string) (*store.TraceRecord, error)
 }
 
 // auditQueue is the part of the worker pool the sink submits to.
@@ -50,6 +55,10 @@ type traceSink struct {
 	bodyMaxBytes  int
 	now           func() time.Time
 	log           *slog.Logger
+	// waiters wakes the /v1 decision long-polls; nil means none wait.
+	waiters *decisionWaiters
+	// late orders each late decision after the record of its attempt.
+	late lateOrder
 }
 
 var _ gate.Sink = (*traceSink)(nil)
@@ -68,6 +77,7 @@ func (s *traceSink) TraceStarted(ctx context.Context, t *gate.TraceStart) {
 		Trace store.TraceSummary `json:"trace"`
 	}
 	s.publish("trace_started", t.TraceID, payload{sum}, payload{sum.Redact()})
+	s.waiters.started(t.TraceID, t.KeyLabel)
 }
 
 // GateDecided records and broadcasts a decided trace, then submits its deep audit. It returns
@@ -109,6 +119,16 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	}
 	s.publish("gate_decision", r.Trace.TraceID, payload{sum, decisionJSON},
 		payload{sum.Redact(), store.RedactDecision(decisionJSON)})
+	s.waiters.decided(r.Trace.TraceID, r.Trace.KeyLabel, r.Headers, decisionJSON)
+	if r.LateExpected {
+		// A late decision's event reads the trace back from the database; without one it reuses
+		// the summary published here.
+		var published *store.TraceSummary
+		if s.store == nil {
+			published = &sum
+		}
+		s.attemptRecorded(r, published)
+	}
 
 	if job == nil {
 		return rec.AuditStatus
@@ -137,6 +157,200 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	return gate.AuditQueued
 }
 
+// AttemptDecided records a later attempt of a trace (the fallback re-gate): its gate_decisions
+// row only, with no audit, no event and no change to the trace, whose GateDecided carries the
+// delivered outcome (Result.Final).
+func (s *traceSink) AttemptDecided(ctx context.Context, r *gate.Result) {
+	if s.store == nil || r == nil || r.Decision == nil {
+		return
+	}
+	doc, err := json.Marshal(r.Decision)
+	if err != nil {
+		s.log.Error("trace: the attempt's decision does not marshal", "trace_id", r.Decision.TraceID, "attempt", r.Decision.Attempt, "err", err)
+		return
+	}
+	if err := s.store.RecordAttempt(ctx, decisionRecord(r, doc)); err != nil {
+		metrics.TraceWriteDropped.Inc()
+		s.log.Error("trace: recording a later attempt failed", "trace_id", r.Decision.TraceID, "attempt", r.Decision.Attempt, "err", err)
+	}
+	if r.LateExpected {
+		s.attemptRecorded(r, nil)
+	}
+}
+
+// LateDecided records a decision recomputed after a late decision-model answer (SPEC §2.9 late
+// decisions): the late gate_decisions row of its attempt and the trace flag late_decision, then,
+// for attempt 0, the WS gate_decision event with late=true. The trace keeps what was enforced; the
+// decision is never audited. A late decision that arrives before its attempt was recorded waits
+// for that record (lateOrder).
+func (s *traceSink) LateDecided(ctx context.Context, r *gate.Result) {
+	if r == nil || r.Decision == nil {
+		return
+	}
+	sum, recorded := s.late.arrive(lateKeyOf(r), r, s.now())
+	if !recorded {
+		return
+	}
+	s.recordLate(ctx, r, sum)
+}
+
+// attemptRecorded notes that an attempt a late decision may follow was recorded (sum is the trace
+// as GateDecided published it, nil for a later attempt), and records the late decision that
+// arrived before it, off the request's path.
+func (s *traceSink) attemptRecorded(r *gate.Result, sum *store.TraceSummary) {
+	if late := s.late.recorded(lateKeyOf(r), sum, s.now()); late != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), lateRecordTimeout)
+			defer cancel()
+			s.recordLate(ctx, late, sum)
+		}()
+	}
+}
+
+// recordLate writes a late decision and, for attempt 0, broadcasts it with the trace as stored
+// (its audit may have moved on since GateDecided), or as GateDecided published it without a
+// database.
+func (s *traceSink) recordLate(ctx context.Context, r *gate.Result, sum *store.TraceSummary) {
+	d := r.Decision
+	doc, err := json.Marshal(d)
+	if err != nil {
+		s.log.Error("trace: the late decision does not marshal", "trace_id", d.TraceID, "attempt", d.Attempt, "err", err)
+		return
+	}
+	if s.store != nil {
+		if err := s.store.RecordLateDecision(ctx, decisionRecord(r, doc)); err != nil {
+			metrics.TraceWriteDropped.Inc()
+			s.log.Error("trace: recording a late decision failed", "trace_id", d.TraceID, "attempt", d.Attempt, "err", err)
+		}
+	}
+	if d.Attempt != 0 {
+		return
+	}
+	s.waiters.decided(d.TraceID, r.Trace.KeyLabel, r.Headers, doc)
+	var view store.TraceSummary
+	switch rec, err := s.storedTrace(ctx, d.TraceID); {
+	case err == nil:
+		view = rec.Summary()
+	case sum != nil:
+		view = *sum
+		view.Flags = appendNew(slices.Clone(view.Flags), gate.FlagLateDecision)
+		view.UpdatedAt = s.now().UTC()
+	default:
+		return
+	}
+	type payload struct {
+		Trace    store.TraceSummary `json:"trace"`
+		Decision json.RawMessage    `json:"decision"`
+	}
+	s.publish("gate_decision", d.TraceID, payload{view, doc}, payload{view.Redact(), store.RedactDecision(doc)})
+}
+
+// storedTrace reads a trace back; store.ErrNotFound without a database.
+func (s *traceSink) storedTrace(ctx context.Context, traceID string) (*store.TraceRecord, error) {
+	if s.store == nil {
+		return nil, store.ErrNotFound
+	}
+	return s.store.GetTrace(ctx, traceID)
+}
+
+// lateRecordTimeout bounds the writes of a late decision recorded after its attempt's record.
+const lateRecordTimeout = 10 * time.Second
+
+// Late decisions wait at most lateHold for the record of their attempt, and an attempt's record
+// waits as long for its late decision; lateSlots bounds how many wait at once.
+const (
+	lateHold  = 2 * time.Minute
+	lateSlots = 16384
+)
+
+// lateKey is one attempt of one trace.
+type lateKey struct {
+	trace   string
+	attempt int
+}
+
+func lateKeyOf(r *gate.Result) lateKey {
+	return lateKey{r.Decision.TraceID, r.Decision.Attempt}
+}
+
+// lateSlot is one attempt waiting: recorded, with the trace summary GateDecided published (nil for
+// a later attempt), until its late decision comes; or a late decision parked until its attempt is
+// recorded.
+type lateSlot struct {
+	at       time.Time
+	recorded bool
+	sum      *store.TraceSummary
+	late     *gate.Result
+}
+
+// lateOrder puts each late decision after the record of its attempt. A late answer can arrive
+// while the handler still delivers the answer (a fallback call, say), before GateDecided or
+// AttemptDecided; recorded in that order, the regular write would bury the late one. Slots
+// expire after lateHold, oldest first.
+type lateOrder struct {
+	mu    sync.Mutex
+	slots map[lateKey]lateSlot
+	queue []lateKey // insertion order, for expiry
+}
+
+// recorded notes that k was recorded and returns the late decision parked for it, if any.
+func (o *lateOrder) recorded(k lateKey, sum *store.TraceSummary, now time.Time) *gate.Result {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.expire(now)
+	if sl, ok := o.slots[k]; ok && !sl.recorded {
+		delete(o.slots, k)
+		return sl.late
+	}
+	o.put(k, lateSlot{at: now, recorded: true, sum: sum})
+	return nil
+}
+
+// arrive takes the record of a late decision's attempt; recorded is false when the attempt was not
+// recorded yet, and the late decision then waits for it.
+func (o *lateOrder) arrive(k lateKey, late *gate.Result, now time.Time) (sum *store.TraceSummary, recorded bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.expire(now)
+	if sl, ok := o.slots[k]; ok && sl.recorded {
+		delete(o.slots, k)
+		return sl.sum, true
+	}
+	o.put(k, lateSlot{at: now, late: late})
+	return nil, false
+}
+
+// put adds a slot; past lateSlots the oldest slot goes. The caller holds mu.
+func (o *lateOrder) put(k lateKey, sl lateSlot) {
+	if o.slots == nil {
+		o.slots = map[lateKey]lateSlot{}
+	}
+	o.slots[k] = sl
+	o.queue = append(o.queue, k)
+	for len(o.queue) > lateSlots {
+		delete(o.slots, o.queue[0])
+		o.queue = o.queue[1:]
+	}
+}
+
+// expire drops the slots older than lateHold; the caller holds mu.
+func (o *lateOrder) expire(now time.Time) {
+	cut := now.Add(-lateHold)
+	for len(o.queue) > 0 {
+		k := o.queue[0]
+		if sl, ok := o.slots[k]; ok {
+			if sl.at.After(cut) {
+				break
+			}
+			delete(o.slots, k)
+		}
+		o.queue = o.queue[1:]
+	}
+	if len(o.queue) == 0 {
+		o.queue = nil
+	}
+}
+
 func (s *traceSink) publish(typ, traceID string, data, redacted any) {
 	if s.pub == nil {
 		return
@@ -162,14 +376,19 @@ func startRecord(t *gate.TraceStart) *store.TraceRecord {
 	}
 }
 
-// decidedRecord is the traces row of a gated trace.
+// decidedRecord is the traces row of a gated trace. Its action is what the client got
+// (Result.Final): fallback when the fallback answer went out, block when it failed and blocked.
+// The delivery's reasons (fallback_failed, fallback_format_mismatch) and flags (fallback_used)
+// join the decision's on the trace only, never in decision/v1.
 func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 	rec := startRecord(r.Trace)
 	d := r.Decision
+	action := finalAction(r)
 	rec.UpdatedAt = now.UTC()
-	rec.EffectiveMode, rec.Action, rec.GateStatus = &d.EffectiveMode, &d.Action, d.Status
+	rec.EffectiveMode, rec.Action, rec.GateStatus = &d.EffectiveMode, &action, d.Status
 	rec.WouldAction = nonEmpty(d.WouldAction)
-	rec.SkipReason, rec.Verdict, rec.MaxRisk, rec.Reasons = d.SkipReason, d.Verdict, d.MaxRisk, append([]string{}, d.Reasons...)
+	rec.SkipReason, rec.Verdict, rec.MaxRisk = d.SkipReason, d.Verdict, d.MaxRisk
+	rec.Reasons = append([]string{}, d.Reasons...)
 	if d.EvidenceSummary != nil {
 		rec.EvidenceSummary, _ = json.Marshal(d.EvidenceSummary)
 	}
@@ -181,10 +400,57 @@ func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 		rec.UpstreamStatus = &st
 	}
 	rec.UpstreamMs, rec.GateMs, rec.TotalMs, rec.OverheadMs = r.Upstream.Ms, d.GateMs, r.TotalMs, r.OverheadMs
+	rec.TTFTMs = r.Upstream.TTFTMs
 	rec.PromptTokens, rec.CompletionTokens = r.Upstream.PromptTokens, r.Upstream.CompletionTokens
 	rec.ResponsePreview = store.Preview(r.ResponseText, store.ResponsePreviewRunes)
 	rec.Flags = append([]string{}, r.Flags...)
+	if f := r.Final; f != nil {
+		rec.Reasons = appendNew(rec.Reasons, f.Reasons...)
+		rec.Flags = appendNew(rec.Flags, f.Flags...)
+	}
 	return rec
+}
+
+// finalAction is the action the client got: Result.Final's, else the decision's.
+func finalAction(r *gate.Result) string {
+	if r.Final != nil && r.Final.Action != "" {
+		return r.Final.Action
+	}
+	return r.Decision.Action
+}
+
+// delivered is what the client got (original, fallback or blocked); without Result.Final, the
+// original answer.
+func delivered(r *gate.Result) string {
+	if r.Final != nil && r.Final.Delivered != "" {
+		return r.Final.Delivered
+	}
+	return gate.DeliveredOriginal
+}
+
+// finalText is the answer text the client got (trace_bodies.final_response_text): the original
+// unless Result.Final delivered another text; "" when a fallback or block delivered no answer
+// text (an error-style block sends an error body).
+func finalText(r *gate.Result) string {
+	switch f := r.Final; {
+	case f == nil:
+		return r.ResponseText
+	case f.Text != "":
+		return f.Text
+	case f.Delivered == "" || f.Delivered == gate.DeliveredOriginal:
+		return r.ResponseText
+	}
+	return ""
+}
+
+// appendNew appends the values of add that list does not hold yet.
+func appendNew(list []string, add ...string) []string {
+	for _, v := range add {
+		if v != "" && !slices.Contains(list, v) {
+			list = append(list, v)
+		}
+	}
+	return list
 }
 
 // decisionRecord is the gate_decisions row of a result.
@@ -229,10 +495,12 @@ func decisionRecord(r *gate.Result, doc json.RawMessage) *store.DecisionRecord {
 func bodyRecord(r *gate.Result, expires time.Time, maxBytes int) *store.BodyRecord {
 	msgs := append([]gate.ChatMessage{}, r.Messages...)
 	items := append([]evidence.Item{}, r.Evidence...)
-	texts := []string{r.UserRequest, r.SystemInstructions, r.ResponseText}
+	texts := []string{r.UserRequest, r.SystemInstructions, r.ResponseText, finalText(r)}
 	size := func() int {
-		n := 2 * len(texts[2]) // response_text and final_response_text
-		n += len(texts[0]) + len(texts[1])
+		n := 0
+		for _, t := range texts {
+			n += len(t)
+		}
 		for _, m := range msgs {
 			n += len(m.Content)
 		}
@@ -265,7 +533,7 @@ func bodyRecord(r *gate.Result, expires time.Time, maxBytes int) *store.BodyReco
 	}
 	return &store.BodyRecord{
 		TraceID: r.Trace.TraceID, Messages: messages, UserRequest: nonEmpty(texts[0]), SystemInstructions: nonEmpty(texts[1]),
-		ResponseText: nonEmpty(texts[2]), FinalResponseText: nonEmpty(texts[2]), Evidence: ev, Rules: rules,
+		ResponseText: nonEmpty(texts[2]), FinalResponseText: nonEmpty(texts[3]), Evidence: ev, Rules: rules,
 		Bytes: size(), Truncated: truncated, InclusionProb: r.Body.InclusionProb, ExpiresAt: expires.UTC(),
 	}
 }
@@ -284,7 +552,7 @@ func auditJob(r *gate.Result, auditID string) *worker.Job {
 		Request: req, Lane: r.Audit.Lane, Selection: r.Audit.Selection, InclusionProb: r.Audit.InclusionProb,
 		ClientRequestID: t.ClientRequestID,
 		Gate: &store.AuditGate{Action: d.Action, WouldAction: nonEmpty(d.WouldAction), Verdict: d.Verdict, MaxRisk: d.MaxRisk,
-			Delivered: "original"},
+			Delivered: delivered(r)},
 	}
 	job.ContextUsed, _ = json.Marshal(items)
 	if s := d.EvidenceSummary; s != nil {
@@ -333,7 +601,7 @@ func gateDecision(r *gate.Result) *pb.GateDecision {
 	d := r.Decision
 	g := &pb.GateDecision{
 		Action: d.Action, Mode: d.Mode, Route: d.Route, WouldAction: d.WouldAction, Status: d.Status,
-		Reasons: d.Reasons, Calibration: d.Calibration, Delivered: "original",
+		Reasons: d.Reasons, Calibration: d.Calibration, Delivered: delivered(r),
 	}
 	if d.PolicyVersion != nil {
 		g.PolicyVersion = *d.PolicyVersion

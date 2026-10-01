@@ -326,3 +326,39 @@ func TestBodyLimitRejectsOversizedBody(t *testing.T) {
 		t.Errorf("oversized body should be rejected, got %d", w.Code)
 	}
 }
+
+// TestRateLimitByIdentity: cookie sessions behind one IP get one bucket each (SPEC §2.4, M8), a
+// caller without an identity falls back to the IP, and the identity never names a bucket raw.
+func TestRateLimitByIdentity(t *testing.T) {
+	limiter := NewMemoryLimiter()
+	identity := func(c *gin.Context) string { return c.GetHeader("X-Test-Identity") }
+	router := newRouter(RateLimitBy(limiter, 1, time.Minute, nil, identity))
+	do := func(id string) int {
+		req := httptest.NewRequest("GET", "/test", nil)
+		if id != "" {
+			req.Header.Set("X-Test-Identity", id)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+	if a, b := do("session:a"), do("session:b"); a != http.StatusOK || b != http.StatusOK {
+		t.Errorf("two sessions from one IP each get a bucket: %d %d", a, b)
+	}
+	if again := do("session:a"); again != http.StatusTooManyRequests {
+		t.Errorf("a session's second request in the window is refused, got %d", again)
+	}
+	if first, second := do(""), do(""); first != http.StatusOK || second != http.StatusTooManyRequests {
+		t.Errorf("without an identity the IP bucket applies: %d %d", first, second)
+	}
+
+	rec := &recordingLimiter{}
+	newRouter(RateLimitBy(rec, 10, time.Minute, nil, identity)).ServeHTTP(httptest.NewRecorder(), func() *http.Request {
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.Header.Set("X-Test-Identity", "session:secret-session-id")
+		return req
+	}())
+	if len(rec.keys) != 1 || strings.Contains(rec.keys[0], "secret-session-id") || !strings.Contains(rec.keys[0], ":id:") {
+		t.Errorf("identity bucket %v", rec.keys)
+	}
+}

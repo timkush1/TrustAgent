@@ -12,9 +12,12 @@ install-react: ## Install Node dependencies (npm install)
 dev-react: ## Run React dashboard in development mode
 	cd frontend-react && npm run dev
 
-test-react: ## Run React tests only (vitest)
+# Extra vitest flags, e.g. VITEST_FLAGS=--maxWorkers=2 on a small machine (make check VITEST_FLAGS=...).
+VITEST_FLAGS ?=
+
+test-react: ## Run React tests only (vitest; VITEST_FLAGS=--maxWorkers=2 limits the workers)
 	@echo "Running React tests..."
-	cd frontend-react && npm test
+	cd frontend-react && npm test$(if $(VITEST_FLAGS), -- $(VITEST_FLAGS))
 
 lint-react: ## Run eslint
 	@echo "Linting React..."
@@ -38,6 +41,12 @@ gen-types: ## Regenerate src/lib/contracts/types.gen.ts from contracts/schema (c
 gen-types-check: ## Fail when src/lib/contracts/types.gen.ts is stale
 	cd frontend-react && node scripts/gen-types.ts --check
 
+gen-policy-validator: ## Regenerate src/lib/policy/policyValidator.gen.ts (policy.v1 compiled by ajv, CSP-safe; commit the result)
+	cd frontend-react && node scripts/gen-policy-validator.ts
+
+gen-policy-validator-check: ## Fail when src/lib/policy/policyValidator.gen.ts is stale
+	cd frontend-react && node scripts/gen-policy-validator.ts --check
+
 gen-api-schema: ## Regenerate contracts/schema/api.v1.schema.json from src/types/api.ts (commit the result)
 	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs
 
@@ -53,6 +62,9 @@ vectors-ts: ## Run the golden vectors against the TypeScript decision core (src/
 # The `stack` project runs against a running stack's dashboard: start one with `make demo`.
 # PLAYWRIGHT_BASE_URL overrides the address (default http://localhost:${DASHBOARD_HOST_PORT:-3000}).
 # PLAYWRIGHT_ARGS narrows the run, e.g. `make test-e2e-web PLAYWRIGHT_ARGS="-g skeleton"` (the S0 gate).
+# The policy-edit spec signs in as admin: set TRUSTAGENT_SETUP_URL (the demo's one-time setup link:
+# export TRUSTAGENT_SETUP_URL="$(make -s demo-setup-url)") or TRUSTAGENT_ADMIN_KEY (a key from
+# TRUTHTABLE_ADMIN_KEYS).
 PLAYWRIGHT_ARGS ?=
 
 playwright-install: ## Install the Chromium build the Playwright specs use (once per machine; add --with-deps on a bare Linux box)
@@ -61,9 +73,44 @@ playwright-install: ## Install the Chromium build the Playwright specs use (once
 test-e2e-web: ## Run the dashboard e2e specs against a running stack (make demo first; PLAYWRIGHT_ARGS="-g skeleton")
 	cd frontend-react && npx playwright test --project=stack $(PLAYWRIGHT_ARGS)
 
+# ---------- Static site (GitHub Pages) and its demo recording (SPEC §3.3, §2.13, §7.5) ----------
+# The static build is the landing page at the site root plus the dashboard replaying
+# frontend-react/public/demo/recorded (no backend). VITE_BASE_PATH defaults to /TrustAgent/.
+
+build-static: ## Build the static site (landing page + replay) into frontend-react/dist
+	cd frontend-react && npm run build:static
+
+size-landing: ## Fail when the landing page's first load is over 110 KB gzip (run after build-static)
+	cd frontend-react && npm run size
+
+recording: ## Rebuild the simulated demo recording from the s0 scenarios (commit the result)
+	cd frontend-react && npm run recording
+
+recording-check: ## Fail when the demo recording is stale or check_recording.py refuses it
+	cd frontend-react && node scripts/build-demo-recording.ts --check
+	$(PYTHON) scripts/check_recording.py frontend-react/public/demo/recorded
+
+test-e2e-static: ## Build the static site and run the Playwright static specs against vite preview
+	cd frontend-react && npm run build:static && PLAYWRIGHT_STATIC_PREVIEW=1 npx playwright test --project=static $(PLAYWRIGHT_ARGS)
+
+# ---------- The rest of CI's web and contract-type gates (ci-web.yml, ci-contracts.yml) ----------
+# `make check` runs eslint (lint) and vitest (test) already; this runs everything else CI does, one
+# step after another even under `make -j`: `npm run build` and `build:static` both write dist/, the
+# size budget reads the static build, and one build at a time suits a small machine.
+check-web-ci: ## CI's other web gates in order: generated types, policy validator, api.v1 schema, tsc -b, build, build-static, size, recording
+	@$(MAKE) --no-print-directory gen-types-check
+	@$(MAKE) --no-print-directory gen-policy-validator-check
+	@$(MAKE) --no-print-directory gen-api-schema-check
+	cd frontend-react && npx tsc -b
+	cd frontend-react && npm run build
+	@$(MAKE) --no-print-directory build-static
+	@$(MAKE) --no-print-directory size-landing
+	@$(MAKE) --no-print-directory recording-check
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
 install: install-react
 test: test-react
 lint: lint-react
 fmt: fmt-react
 clean: clean-react
+check: check-web-ci

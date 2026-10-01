@@ -54,6 +54,11 @@ make contracts-check / contracts-test / vectors   # validate contracts; regenera
 make vectors-ts     # run the same golden vectors against the TypeScript decision core
 make gen-types / gen-api-schema (+ -check)        # regenerate types.gen.ts / api.v1.schema.json
 make config-docs (+ -check)                       # regenerate docs/CONFIGURATION.md + .env.example from the key registry
+make gen-policy-validator (+ -check)              # regenerate the CSP-safe policy.v1 validator (src/lib/policy)
+make setup-url      # print a new one-time SETUP link (claim it at /app/setup to create the admin key)
+make gate-eval      # build backend-go/bin/gate-eval;  make calibrate EVALUATOR=… IN=… [WRITE=1]
+make export-replay REPLAY_OUT=<dir>               # sanitized replay recording from the database
+make bench-lite / bench-publish / eval-live       # capped benchmark runs (real keys); publish refuses mock output
 make test-e2e-web   # Playwright specs against a running stack
 ```
 

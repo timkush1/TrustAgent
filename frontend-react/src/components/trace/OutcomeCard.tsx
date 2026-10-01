@@ -1,15 +1,40 @@
 /**
  * The top of a trace (SPEC §3.3 "Trace detail" 1): the outcome pill and headline, what the answer
- * was checked against, the reasons in plain words, and the next step. "Was this right?", "Open
- * evaluator" and "Adjust threshold" join with labels (P3) and the evaluator pages (P4).
+ * was checked against, the reasons in plain words, the next step, and a link to what the user
+ * received when it was not the model's answer. "Was this right?", "Open evaluator" and "Adjust
+ * threshold" arrive in P4 with labels (SPEC §2.4 #39-41) and threshold editing.
  */
+import { ArrowDown } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { reasonLines } from '@/components/traffic/trafficRows';
-import { checkedAgainst, traceOutcome } from '@/domain/presentation';
+import { checkedAgainst, copy, traceOutcome } from '@/domain/presentation';
 import { formatDateTime } from '@/domain/format';
 import type { GateDecisionView, TraceSummary } from '@/types/api';
+import type { Delivered } from './traceView';
 
-export function OutcomeCard({ summary, decision }: { summary: TraceSummary; decision: GateDecisionView | null }) {
+/** Scrolls to the "What the user received instead" block and moves focus there. */
+function jumpTo(event: MouseEvent<HTMLAnchorElement>, id: string) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  event.preventDefault();
+  target.scrollIntoView?.({ block: 'nearest' }); // absent in jsdom
+  target.focus({ preventScroll: true });
+}
+
+export function OutcomeCard({
+  summary,
+  decision,
+  delivered = null,
+  receivedTarget,
+}: {
+  summary: TraceSummary;
+  decision: GateDecisionView | null;
+  /** What the user received; a fallback answer or the block message gets a link to it. */
+  delivered?: Delivered | null;
+  /** The id of the answer section's "What the user received instead" block. */
+  receivedTarget?: string;
+}) {
   const outcome = traceOutcome({ ...summary, degraded: decision?.degraded ?? null });
   const pending = summary.gate_status === 'pending';
   const evidence = checkedAgainst(summary.checked_against ?? decision?.evidence_summary);
@@ -35,6 +60,16 @@ export function OutcomeCard({ summary, decision }: { summary: TraceSummary; deci
         </ul>
       ) : null}
       {outcome.next_step ? <p className="text-sm text-fg-muted">{outcome.next_step}</p> : null}
+      {receivedTarget && (delivered === 'fallback' || delivered === 'blocked') && !summary.redacted ? (
+        <a
+          href={`#${receivedTarget}`}
+          onClick={(e) => jumpTo(e, receivedTarget)}
+          className="inline-flex items-center gap-1 text-sm font-medium text-fg underline underline-offset-2"
+        >
+          {copy.trace.see_received}
+          <ArrowDown aria-hidden="true" className="size-3.5" />
+        </a>
+      ) : null}
       <p className="text-xs text-fg-muted">
         <span>{summary.route}</span>
         {summary.model ? <span> · {summary.model}</span> : null}

@@ -1,11 +1,17 @@
 import { CircleAlert, Info } from 'lucide-react';
 import type { CSSProperties } from 'react';
+import { useRuntimeConfig } from '@/app/services';
+import { ReplayBanner } from '@/components/replay/ReplayBanner';
 import { useBanner } from '@/data/useSystem';
 import { splitCommands, toneVar } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 
 /** The single full-width banner (SPEC §3.3; copy from ui/copy.v1.json). */
 export function Banner() {
+  return useRuntimeConfig().appMode === 'static' ? <ReplayBanner /> : <GatewayBanner />;
+}
+
+function GatewayBanner() {
   const banner = useBanner();
   if (!banner) return null;
   const Icon = banner.tone === 'neutral' ? Info : CircleAlert;

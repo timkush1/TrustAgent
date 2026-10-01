@@ -6,12 +6,26 @@ section 2.2).
 """
 
 import asyncio
+import functools
 import logging
 import math
 import uuid
 import time
 from collections import OrderedDict
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypeVar,
+)
 
 import grpc
 from grpc import aio
@@ -33,13 +47,33 @@ from ..graphs.state import (
 from ..providers.costs import CallCost, cost_ledger
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
 from ..scoring.aggregate import SCORING_VERSION
+from .retrieve import (
+    DEFAULT_MIN_SCORE,
+    INDEX_DISABLED,
+    KNOWLEDGE_DISABLED,
+    KNOWLEDGE_SOURCE,
+    KnowledgeRetriever,
+    RetrieveOutcome,
+    knowledge_retriever_for,
+)
 from ..metrics import (
-    AUDITS_TOTAL,
-    AUDIT_DURATION,
-    FAITHFULNESS_SCORE,
-    HALLUCINATIONS_DETECTED,
     ACTIVE_AUDITS,
+    AUDIT_DURATION,
+    AUDITS_TOTAL,
     CLAIMS_TOTAL,
+    FAITHFULNESS_SCORE,
+    GATE_ACTIONS,
+    GATE_VS_AUDIT,
+    HALLUCINATIONS_DETECTED,
+    JUDGE_COST_USD,
+    JUDGE_FALLBACK_ACTIVE,
+    JUDGE_REQUESTS,
+    JUDGE_TOKENS,
+    KB_INGEST_CLAIMS,
+    KB_STATUSES,
+    RPC_INFLIGHT,
+    STAGE_DURATION,
+    STAGES,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,7 +205,69 @@ def _failure_kind(exc: BaseException) -> str:
 
 def _record_claim_metrics(verifications: Iterable[ClaimVerification]) -> None:
     for cv in verifications:
-        CLAIMS_TOTAL.labels(status=coerce_status(cv.get("status")).value).inc()
+        CLAIMS_TOTAL.labels(verdict=coerce_status(cv.get("status")).value).inc()
+
+
+def _record_stage_durations(timings: Any) -> None:
+    """stage_duration_seconds from the graph's step timings (`<stage>_ms`, known stages only)."""
+    if not isinstance(timings, Mapping):
+        return
+    for key, value in timings.items():
+        stage = str(key)[: -len("_ms")] if str(key).endswith("_ms") else ""
+        millis = _finite(value)
+        if stage in STAGES and millis is not None and millis >= 0:
+            STAGE_DURATION.labels(stage=stage).observe(millis / 1000.0)
+
+
+def _record_judge_calls(calls: Iterable[CallCost]) -> None:
+    """Judge requests, tokens and known spend, from one audit's cost ledger."""
+    for call in calls:
+        provider = call.provider or "unknown"
+        JUDGE_REQUESTS.labels(provider=provider, outcome=call.status or "unknown").inc()
+        if call.input_tokens > 0:
+            JUDGE_TOKENS.labels(provider=provider, direction="input").inc(call.input_tokens)
+        if call.output_tokens > 0:
+            JUDGE_TOKENS.labels(provider=provider, direction="output").inc(call.output_tokens)
+        cost = _finite(call.cost_usd)
+        if cost is not None and cost > 0:
+            JUDGE_COST_USD.labels(provider=provider).inc(cost)
+
+
+def _audit_verdict_label(result: evaluator_pb2.AuditResult) -> str:
+    """The audit's verdict as a metric label: grounded ... not_assessed, or failed."""
+    if result.status == evaluator_pb2.AUDIT_STATUS_FAILED:
+        return "failed"
+    name = str(evaluator_pb2.AuditVerdict.Name(result.verdict))
+    return name[len("AUDIT_VERDICT_") :].lower()
+
+
+def _record_gate_vs_audit(result: evaluator_pb2.AuditResult) -> None:
+    """gate_vs_audit_total for an audit of a gated answer (one with a GateDecision)."""
+    if not result.HasField("gate"):
+        return
+    action = result.gate.action if result.gate.action in GATE_ACTIONS else "other"
+    GATE_VS_AUDIT.labels(gate_action=action, audit_verdict=_audit_verdict_label(result)).inc()
+
+
+_Handler = TypeVar("_Handler", bound=Callable[..., Awaitable[Any]])
+
+
+def _inflight(method: str) -> Callable[[_Handler], _Handler]:
+    """Count the RPC in rpc_inflight{method} while it is served."""
+
+    def wrap(handler: _Handler) -> _Handler:
+        @functools.wraps(handler)
+        async def serve(*args: Any, **kwargs: Any) -> Any:
+            gauge = RPC_INFLIGHT.labels(method=method)
+            gauge.inc()
+            try:
+                return await handler(*args, **kwargs)
+            finally:
+                gauge.dec()
+
+        return serve  # type: ignore[return-value]
+
+    return wrap
 
 
 def _finite(value: Any) -> Optional[float]:
@@ -289,10 +385,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
     - IngestDocuments, ListKBClaims, ListConflicts, GetKBStats: knowledge base
 
     - GetEngineInfo: What the engine runs with (judge, knowledge, limits)
+    - RetrieveContext: Knowledge-base evidence for the gate (knowledge add-on only)
 
-    The other v2 RPCs (RetrieveContext, ApplyRuntimeConfig, DraftEvaluator)
-    are not overridden yet, so they inherit the generated handlers and return
-    UNIMPLEMENTED until their phase lands.
+    The other v2 RPCs (ApplyRuntimeConfig, DraftEvaluator) are not overridden
+    yet, so they inherit the generated handlers and return UNIMPLEMENTED until
+    their phase lands.
     """
 
     def __init__(
@@ -305,6 +402,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         *,
         engine: Optional[EngineContext] = None,
         max_audits: Optional[int] = None,
+        knowledge_retriever: Optional[KnowledgeRetriever] = None,
     ):
         """
         Initialize the servicer.
@@ -320,6 +418,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     resolved judge, settings, knowledge state). Without it the
                     servicer reports built-in defaults.
             max_audits: Concurrent audits (default: engine.max_audits, else 16)
+            knowledge_retriever: RetrieveContext's retriever; by default one
+                    over embedding_service and qdrant_store (None, i.e.
+                    knowledge_disabled, without them)
         """
         self.audit_graph = audit_graph
         self.provider = provider
@@ -334,6 +435,16 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         # Audits beyond max_audits queue here instead of loading the judge (C-H13).
         self._audit_slots = asyncio.Semaphore(max_audits)
         self._judge_healthy: Optional[bool] = engine.judge.healthy if engine else None
+        if knowledge_retriever is None:
+            knowledge_retriever = knowledge_retriever_for(
+                embedding_service,
+                qdrant_store,
+                default_min_score=(
+                    engine.settings.retriever_score_threshold if engine else DEFAULT_MIN_SCORE
+                ),
+            )
+        self.knowledge_retriever = knowledge_retriever
+        JUDGE_FALLBACK_ACTIVE.set(1 if engine is not None and engine.judge.fallback_active else 0)
         logger.info(f"AuditServicer initialized (max {max_audits} concurrent audits)")
 
     @property
@@ -341,6 +452,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         """The engine was started without a judge (LLM_PROVIDER=none, or none found)."""
         return self.engine is not None and not self.engine.has_judge
 
+    @_inflight("Evaluate")
     async def Evaluate(
         self, request: evaluator_pb2.AuditRequest, context
     ) -> evaluator_pb2.AuditResult:
@@ -384,6 +496,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         if self.engine is not None:
             result.judge.CopyFrom(judge_info(self.engine.judge, None))
         AUDITS_TOTAL.labels(status="success").inc()
+        _record_gate_vs_audit(result)
         logger.info(f"Audit {result.audit_id}: NOT_ASSESSED (no_judge)")
         return result
 
@@ -440,7 +553,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             )
             # Every judge call, a failed audit's included (the money is spent).
             result.costs.extend(_cost_record(call) for call in ledger.calls)
-            self._record_evaluate_metrics(result, state, duration)
+            self._record_evaluate_metrics(result, state, duration, ledger.calls)
 
             logger.info(
                 f"Audit {audit_id}: {evaluator_pb2.AuditStatus.Name(result.status)} "
@@ -554,17 +667,30 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
     @staticmethod
     def _record_evaluate_metrics(
-        result: evaluator_pb2.AuditResult, state: Optional[AuditState], duration: float
+        result: evaluator_pb2.AuditResult,
+        state: Optional[AuditState],
+        duration: float,
+        calls: Iterable[CallCost] = (),
     ) -> None:
-        failed = result.status == evaluator_pb2.AUDIT_STATUS_FAILED
-        AUDITS_TOTAL.labels(status="error" if failed else "success").inc()
+        if result.status == evaluator_pb2.AUDIT_STATUS_FAILED:
+            outcome = "error"
+        elif result.status == evaluator_pb2.AUDIT_STATUS_DEGRADED:
+            outcome = "degraded"
+        else:
+            outcome = "success"
+        AUDITS_TOTAL.labels(status=outcome).inc()
         AUDIT_DURATION.observe(duration)
         if result.scores.HasField("trust_score"):
             FAITHFULNESS_SCORE.observe(result.scores.trust_score)
         if result.verdict == evaluator_pb2.AUDIT_VERDICT_HALLUCINATED:
             HALLUCINATIONS_DETECTED.inc()
-        _record_claim_metrics((state or {}).get("claim_verifications") or [])
+        view: Mapping[str, Any] = state or {}
+        _record_claim_metrics(view.get("claim_verifications") or [])
+        _record_stage_durations(view.get("step_timings"))
+        _record_judge_calls(calls)
+        _record_gate_vs_audit(result)
 
+    @_inflight("SubmitAudit")
     async def SubmitAudit(
         self, request: evaluator_pb2.AuditRequest, context
     ) -> evaluator_pb2.AuditSubmission:
@@ -612,6 +738,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             if result.get("hallucination_detected"):
                 HALLUCINATIONS_DETECTED.inc()
             _record_claim_metrics(result.get("claim_verifications") or [])
+            _record_stage_durations(result.get("step_timings"))
 
             logger.info(f"Audit {audit_id} completed with score: {score:.2f}")
 
@@ -630,6 +757,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         finally:
             ACTIVE_AUDITS.dec()
 
+    @_inflight("GetAuditResult")
     async def GetAuditResult(
         self, request: evaluator_pb2.AuditResultRequest, context
     ) -> evaluator_pb2.AuditResult:
@@ -727,6 +855,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         except Exception:
             return False, 0
 
+    @_inflight("HealthCheck")
     async def HealthCheck(
         self, request: evaluator_pb2.HealthRequest, context
     ) -> evaluator_pb2.HealthResponse:
@@ -767,8 +896,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             response.judge_model = judge.model
             response.judge_fallback_active = judge.fallback_active
             response.knowledge_enabled = self.engine.knowledge.enabled
+            JUDGE_FALLBACK_ACTIVE.set(1 if judge.fallback_active else 0)
         return response
 
+    @_inflight("GetEngineInfo")
     async def GetEngineInfo(
         self, request: evaluator_pb2.EngineInfoRequest, context
     ) -> evaluator_pb2.EngineInfo:
@@ -794,6 +925,43 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             info.max_rpcs = DEFAULT_MAX_RPCS
         return info
 
+    @_inflight("RetrieveContext")
+    async def RetrieveContext(
+        self, request: evaluator_pb2.RetrieveContextRequest, context: Any
+    ) -> evaluator_pb2.RetrieveContextResponse:
+        """
+        Knowledge-base evidence for the gate (SPEC sections 2.2 and 7.1; C-M24).
+
+        FAILED_PRECONDITION `knowledge_disabled` when the knowledge add-on is
+        off, INVALID_ARGUMENT `query_required` without a query or response. A
+        search error is a normal response with index_state `error`; see
+        grpc/retrieve.py for the executor, caches and budget.
+        """
+        started = time.monotonic()
+        retriever = self.knowledge_retriever
+        if retriever is None:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details(KNOWLEDGE_DISABLED)
+            return evaluator_pb2.RetrieveContextResponse(index_state=INDEX_DISABLED)
+        try:
+            query = retriever.build_query(
+                request.query, request.response, request.top_k, request.max_chars, request.min_score
+            )
+        except ValueError as exc:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(str(exc))
+            return evaluator_pb2.RetrieveContextResponse()
+        time_remaining = getattr(context, "time_remaining", None)
+        timeout_s = time_remaining() if callable(time_remaining) else None
+        try:
+            outcome = await retriever.retrieve(query, timeout_s=timeout_s)
+        except TimeoutError:
+            context.set_code(grpc.StatusCode.DEADLINE_EXCEEDED)
+            context.set_details("knowledge retrieval did not finish before the deadline")
+            return evaluator_pb2.RetrieveContextResponse()
+        return _retrieve_response(outcome, int((time.monotonic() - started) * 1000))
+
+    @_inflight("IngestDocuments")
     async def IngestDocuments(
         self, request: evaluator_pb2.IngestRequest, context
     ) -> evaluator_pb2.IngestResponse:
@@ -838,6 +1006,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     )
                     for r in report.claim_results
                 ]
+                for claim_result in report.claim_results:
+                    if claim_result.status in KB_STATUSES:
+                        KB_INGEST_CLAIMS.labels(status=claim_result.status).inc()
                 logger.info(
                     f"Claim-level ingest: {report.accepted} accepted, "
                     f"{report.quarantined} quarantined, {report.conflicts_detected} conflicts"
@@ -872,6 +1043,11 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         except Exception as e:
             logger.error(f"Document ingestion failed: {e}", exc_info=True)
             return evaluator_pb2.IngestResponse(documents_ingested=0, status=f"error: {str(e)}")
+        finally:
+            # The knowledge base may have changed (even by a partial ingest):
+            # RetrieveContext must not keep serving results cached before it.
+            if self.knowledge_retriever is not None:
+                self.knowledge_retriever.invalidate()
 
     # ------------------------------------------------------------------
     # Knowledge-base queries (VERITAS-lite)
@@ -900,6 +1076,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             ingested_at_ms=int(point.get("ingested_at_ms", 0)),
         )
 
+    @_inflight("ListKBClaims")
     async def ListKBClaims(
         self, request: evaluator_pb2.ListKBClaimsRequest, context
     ) -> evaluator_pb2.ListKBClaimsResponse:
@@ -922,6 +1099,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             claims=[self._to_kb_claim(p) for p in page], total=total
         )
 
+    @_inflight("ListConflicts")
     async def ListConflicts(
         self, request: evaluator_pb2.ListConflictsRequest, context
     ) -> evaluator_pb2.ListConflictsResponse:
@@ -950,6 +1128,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         limit = min(request.limit or 50, 200)
         return evaluator_pb2.ListConflictsResponse(conflicts=pairs[:limit], total=total)
 
+    @_inflight("GetKBStats")
     async def GetKBStats(
         self, request: evaluator_pb2.KBStatsRequest, context
     ) -> evaluator_pb2.KBStatsResponse:
@@ -975,6 +1154,28 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             quarantined=quarantined,
             conflict_pairs=len(seen),
         )
+
+
+def _retrieve_response(
+    outcome: RetrieveOutcome, latency_ms: int
+) -> evaluator_pb2.RetrieveContextResponse:
+    """RetrieveContextResponse of a retrieval (documents are evidence source `knowledge`)."""
+    return evaluator_pb2.RetrieveContextResponse(
+        documents=[
+            evaluator_pb2.ContextDocument(
+                id=document.id,
+                content=document.content,
+                metadata=dict(document.metadata),
+                relevance_score=document.score,
+                source=KNOWLEDGE_SOURCE,
+                label=document.label,
+                truncated=document.truncated,
+            )
+            for document in outcome.documents
+        ],
+        latency_ms=latency_ms,
+        index_state=outcome.index_state,
+    )
 
 
 def create_server(

@@ -16,15 +16,17 @@ export interface PhasePlaceholderProps {
   planned: readonly string[];
   /** Where to look meanwhile (optional). */
   meanwhile?: ReactNode;
+  /** Replaces "Arrives in {phase} · {phaseName}" (the public static site says "Coming soon"). */
+  badge?: string;
 }
 
-export function PhasePlaceholder({ question, phase, phaseName, planned, meanwhile }: PhasePlaceholderProps) {
+export function PhasePlaceholder({ question, phase, phaseName, planned, meanwhile, badge }: PhasePlaceholderProps) {
   return (
     <section aria-labelledby="placeholder-title" className="max-w-2xl space-y-5">
       <div className="space-y-2">
         <span className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-xs font-medium text-fg-muted">
           <Hourglass aria-hidden="true" className="size-3.5" />
-          Arrives in {phase} · {phaseName}
+          {badge ?? `Arrives in ${phase} · ${phaseName}`}
         </span>
         <h2 id="placeholder-title" className="text-xl font-semibold text-fg">
           {question}

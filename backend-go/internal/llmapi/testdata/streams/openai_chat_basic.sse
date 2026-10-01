@@ -1,0 +1,14 @@
+data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{"role":"assistant","content":"","refusal":null},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{"content":"Refunds are "},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{"content":"available within "},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{"content":"30 days — <b>no</b> exceptions."},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"usage":null}
+
+data: {"id":"chatcmpl-B9x1","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","system_fingerprint":"fp_1","choices":[],"usage":{"prompt_tokens":41,"completion_tokens":9,"total_tokens":50,"prompt_tokens_details":{"cached_tokens":0}}}
+
+data: [DONE]
+

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/truthtable/contracts"
 
 	"github.com/truthtable/backend-go/internal/authz"
@@ -25,6 +27,7 @@ import (
 	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/llmapi"
 	"github.com/truthtable/backend-go/internal/middleware"
 	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/upstream"
@@ -39,9 +42,13 @@ const (
 
 // recSink records the lifecycle calls; a selected audit reports queued.
 type recSink struct {
-	mu      sync.Mutex
-	started []*gate.TraceStart
-	decided chan *gate.Result
+	mu       sync.Mutex
+	started  []*gate.TraceStart
+	decided  chan *gate.Result
+	attempts []*gate.Result // AttemptDecided calls
+	late     []*gate.Result // LateDecided calls
+	// calls is the order of the GateDecided ("decided") and AttemptDecided ("attempt") calls.
+	calls []string
 }
 
 func newRecSink() *recSink { return &recSink{decided: make(chan *gate.Result, 16)} }
@@ -53,11 +60,34 @@ func (s *recSink) TraceStarted(_ context.Context, t *gate.TraceStart) {
 }
 
 func (s *recSink) GateDecided(_ context.Context, r *gate.Result) string {
+	s.mu.Lock()
+	s.calls = append(s.calls, "decided")
+	s.mu.Unlock()
 	s.decided <- r
 	if r.Audit.Selection != "" {
 		return gate.AuditQueued
 	}
 	return r.Audit.Status
+}
+
+func (s *recSink) AttemptDecided(_ context.Context, r *gate.Result) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts = append(s.attempts, r)
+	s.calls = append(s.calls, "attempt")
+}
+
+// log returns the AttemptDecided calls and the order of the recorded calls.
+func (s *recSink) log() (attempts []*gate.Result, calls []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.attempts), slices.Clone(s.calls)
+}
+
+func (s *recSink) LateDecided(_ context.Context, r *gate.Result) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.late = append(s.late, r)
 }
 
 func (s *recSink) result(t *testing.T) *gate.Result {
@@ -86,6 +116,13 @@ type fakeUpstream struct {
 	status   int
 	body     string
 	ctype    string
+	// delay holds the answer back that long, or until the gateway gives up on the call.
+	delay time.Duration
+	// encoding, when set, is sent as the answer's Content-Encoding.
+	encoding string
+	// respond, when set, answers each request in place of status, ctype and body: n counts the
+	// requests before this one.
+	respond func(n int, body []byte) (status int, ctype, answer string)
 }
 
 func newFakeUpstream(t *testing.T) *fakeUpstream {
@@ -94,11 +131,25 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
+		n := len(f.requests)
 		f.requests = append(f.requests, r.Clone(context.Background()))
 		f.bodies = append(f.bodies, b)
-		status, body, ctype := f.status, f.body, f.ctype
+		status, body, ctype, delay, encoding, respond := f.status, f.body, f.ctype, f.delay, f.encoding, f.respond
 		f.mu.Unlock()
+		if respond != nil {
+			status, ctype, body = respond(n, b)
+		}
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		w.Header().Set("Content-Type", ctype)
+		if encoding != "" {
+			w.Header().Set("Content-Encoding", encoding)
+		}
 		w.Header().Set("X-Upstream", "yes")
 		w.Header().Set("X-TrustAgent-Action", "spoofed")
 		w.WriteHeader(status)
@@ -133,19 +184,58 @@ func (recorder) CloseNotify() <-chan bool { return make(chan bool) }
 func newRecorder() recorder { return recorder{httptest.NewRecorder()} }
 
 type env struct {
-	router  *gin.Engine
-	sink    *recSink
-	up      *fakeUpstream
-	handler *Handler
+	router *gin.Engine
+	sink   *recSink
+	// up is the OpenAI upstream and anth the Anthropic one; fb is the fallback upstream, nil
+	// unless envOpts.fallbackFormat is set.
+	up, anth, fb *fakeUpstream
+	handler      *Handler
 }
 
 type envOpts struct {
 	testMode   bool
 	policyYAML string // "" = config/policies.yaml
+	// enforcing loads the policy as the enforcing gateway does (block and fallback accepted).
+	enforcing  bool
 	ingest     string
 	jevLatency time.Duration
 	jevBackend string
-	maxGates   int
+	// jev replaces the decision-model client (the mock of jevBackend).
+	jev      jev.Client
+	maxGates int
+	// maxBytes is MAX_UPSTREAM_RESPONSE_BYTES (0: the default).
+	maxBytes int64
+	// rateLimit, when set, limits /v1 to that many requests a minute (the v1 limiter).
+	rateLimit int
+	// upstreamTimeout bounds each upstream call, the wait for response headers included (0: 5s).
+	upstreamTimeout time.Duration
+	// fallbackFormat, when set, adds a fallback upstream (env.fb) answering in that family
+	// (TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT).
+	fallbackFormat string
+}
+
+// anthropicBody is the Anthropic upstream's default answer.
+const anthropicBody = `{"id":"msg_up","type":"message","role":"assistant","model":"claude-haiku-4-5","content":[{"type":"text","text":"Priority tickets get a first response within 4 hours."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":9}}`
+
+// loadPolicy loads config/policies.yaml, or yaml when set, as the gateway does with env's
+// Enforcing (block and fallback accepted) and FallbackUpstream (fallback.upstream: fallback). The
+// repo policy has block and fallback routes since P3, so it always loads enforcing.
+func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, env policy.Env) *policy.Policy {
+	t.Helper()
+	src := []byte(yaml)
+	if yaml == "" {
+		b, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "policies.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		src, env.Enforcing = b, true
+	}
+	env.Seeds, env.Specs = policy.DefaultSeeds(), reg
+	res := policy.Check(src, env)
+	if res.Policy == nil {
+		t.Fatal(res.Err())
+	}
+	return res.Policy
 }
 
 func newEnv(t *testing.T, o envOpts) *env {
@@ -154,22 +244,16 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var pol *policy.Policy
-	if o.policyYAML == "" {
-		pol, err = policy.LoadFile(filepath.Join("..", "..", "..", "config", "policies.yaml"), policy.DefaultSeeds(), reg)
-	} else {
-		pol, err = policy.Parse([]byte(o.policyYAML), policy.DefaultSeeds(), reg)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := o.jevBackend
-	if backend == "" {
-		backend = jev.BackendMock
-	}
-	cl, err := jev.New(jev.Config{Backend: backend, Mock: jev.MockConfig{Mode: jev.MockScenario, Strict: true, Latency: o.jevLatency}})
-	if err != nil {
-		t.Fatal(err)
+	pol := loadPolicy(t, reg, o.policyYAML, policy.Env{Enforcing: o.enforcing, FallbackUpstream: o.fallbackFormat != ""})
+	cl := o.jev
+	if cl == nil {
+		backend := o.jevBackend
+		if backend == "" {
+			backend = jev.BackendMock
+		}
+		if cl, err = jev.New(jev.Config{Backend: backend, Mock: jev.MockConfig{Mode: jev.MockScenario, Strict: true, Latency: o.jevLatency}}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	quiet := slog.New(slog.DiscardHandler)
 	g, err := gate.New(gate.Config{Jev: cl, Evaluators: reg, UniformAuditsPerDay: 50, Rand: func() float64 { return 0.5 }, Logger: quiet})
@@ -177,25 +261,60 @@ func newEnv(t *testing.T, o envOpts) *env {
 		t.Fatal(err)
 	}
 	auth := authz.New([]authz.Key{{Label: "trafficgen", Secret: ingestKey, Scopes: authz.APIKeyScopes}}, o.ingest)
-	fu := newFakeUpstream(t)
-	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: 5 * time.Second}, auth.IsProxyKey)
+	fu, fa := newFakeUpstream(t), newFakeUpstream(t)
+	fa.body = anthropicBody
+	timeout := o.upstreamTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+	anth, err := upstream.New(upstream.Config{BaseURL: fa.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &upstream.Set{OpenAI: up, Anthropic: anth}
+	var fb *fakeUpstream
+	if o.fallbackFormat != "" {
+		fb = newFakeUpstream(t)
+		if set.Fallback, err = upstream.New(upstream.Config{BaseURL: fb.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey); err != nil {
+			t.Fatal(err)
+		}
+		set.FallbackFormat = o.fallbackFormat
+	}
 	sink := newRecSink()
-	h := New(Options{Upstream: up, Policy: pol, Gate: g, Sink: sink, TestMode: o.testMode, GateMaxConcurrency: o.maxGates, Logger: quiet})
+	h := New(Options{
+		Upstreams: set, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
+		TestMode: o.testMode, GateMaxConcurrency: o.maxGates, MaxUpstreamResponseBytes: o.maxBytes, Logger: quiet,
+	})
 	r := gin.New()
 	r.Use(middleware.CORS([]string{"http://localhost:5173"}))
-	v1 := r.Group("/v1", h.TraceIDs(), auth.Ingest(Deny))
-	v1.POST("/chat/completions", middleware.BodyLimit(1<<20), h.ChatCompletions)
-	v1.POST("/completions", h.Passthrough(StatusSkippedUnsupportedAPI))
-	v1.Any("/models", h.Passthrough(""))
-	return &env{router: r, sink: sink, up: fu, handler: h}
+	guards := []gin.HandlerFunc{h.TraceIDs(), auth.Ingest(Deny)}
+	if o.rateLimit > 0 {
+		guards = append(guards, middleware.RateLimitBy(middleware.NewMemoryLimiter(), o.rateLimit, time.Minute, Deny, nil))
+	}
+	h.Mount(r.Group("/v1", guards...), middleware.BodyLimit(1<<20))
+	// As cmd/proxy/server.go: unknown /v1 paths answer in their API's error shape.
+	r.NoRoute(func(c *gin.Context) {
+		if p := c.Request.URL.Path; strings.HasPrefix(p, "/v1/") {
+			Deny(c, http.StatusNotFound, CodeNotFound, "TrustAgent does not serve "+c.Request.Method+" "+p+".")
+			c.Abort()
+		}
+	})
+	return &env{router: r, sink: sink, up: fu, anth: fa, fb: fb, handler: h}
 }
 
 func (e *env) do(t *testing.T, path, body string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	return e.send(t, http.MethodPost, path, body, headers)
+}
+
+// send sends an ingest-authenticated request; a header set to "" is removed.
+func (e *env) send(t *testing.T, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-TrustAgent-Key", ingestKey)
 	req.Header.Set("Authorization", "Bearer "+upstreamKey)
@@ -217,7 +336,11 @@ type scenario struct {
 	Headers  map[string]string `json:"headers"`
 	Request  json.RawMessage   `json:"request"`
 	Response string            `json:"response"`
-	Expect   struct {
+	// Fallback is the scenario's scripted fallback answer, if it has one.
+	Fallback *struct {
+		Response string `json:"response"`
+	} `json:"fallback"`
+	Expect struct {
 		Mode           string   `json:"mode"`
 		Action         string   `json:"action"`
 		WouldAction    string   `json:"would_action"`
@@ -227,6 +350,7 @@ type scenario struct {
 		Reasons        []string `json:"reasons"`
 		CheckedAgainst string   `json:"checked_against"`
 		Audit          string   `json:"audit"`
+		DeliveredText  *string  `json:"delivered_text"`
 	} `json:"expect"`
 }
 
@@ -577,20 +701,32 @@ func TestInvalidRequestIDIsReplacedByTheTraceID(t *testing.T) {
 	}
 }
 
-func TestStreamingPassesThroughUngated(t *testing.T) {
-	e := newEnv(t, envOpts{testMode: true})
-	e.up.ctype = "text/event-stream"
-	e.up.body = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n"
+// TestEventStreamTakesTheStreamBranch: the branch follows the response, not the request (M3). An
+// upstream event stream goes to the stream relay (stream.go) with its events intact; a JSON answer
+// to a stream:true request, such as an upstream error, takes the JSON path.
+func TestEventStreamTakesTheStreamBranch(t *testing.T) {
+	e := newEnv(t, envOpts{testMode: true, policyYAML: "version: 1\ndefaults: {mode: flag}\n"})
+	e.up.ctype = "text/event-stream; charset=utf-8"
+	e.up.body = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n"
 	w := e.do(t, "/v1/chat/completions", `{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}],"trustagent":{"route":"x"}}`, nil)
-	if w.Code != http.StatusOK || w.Body.String() != e.up.body || w.Header().Get(HeaderStatus) != StatusSkippedStream {
-		t.Errorf("%d %q %q", w.Code, w.Body.String(), w.Header().Get(HeaderStatus))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"content":"Hi"`) || !strings.Contains(w.Body.String(), "[DONE]") {
+		t.Errorf("%d %q", w.Code, w.Body.String())
 	}
 	if _, fwd := e.up.last(t); strings.Contains(string(fwd), "trustagent") {
 		t.Errorf("the extension was forwarded: %s", fwd)
 	}
-	if len(e.sink.traces()) != 0 {
-		t.Error("S0 records no trace for an ungated stream")
+	traces := e.sink.traces()
+	if len(traces) != 1 || !traces[0].Stream || traces[0].APIFormat != llmapi.FormatOpenAIChat {
+		t.Errorf("a streamed request is traced with stream true: %+v", traces)
 	}
+
+	// A stream:true request whose upstream answers with a JSON error is not a stream.
+	e.up.ctype, e.up.status, e.up.body = "application/json", http.StatusBadRequest, `{"error":{"message":"bad model"}}`
+	w = e.do(t, "/v1/chat/completions", `{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}`, nil)
+	if w.Code != http.StatusBadRequest || w.Body.String() != e.up.body || w.Header().Get(HeaderStatus) != "skipped:upstream_error" {
+		t.Errorf("%d %q %q", w.Code, w.Body.String(), w.Header().Get(HeaderStatus))
+	}
+	e.sink.result(t)
 }
 
 func TestUpstreamErrorPassesThrough(t *testing.T) {
@@ -615,6 +751,79 @@ func TestUpstreamDownIs502AndRecorded(t *testing.T) {
 	}
 	if r := e.sink.result(t); r.Upstream.Status != 0 {
 		t.Errorf("no upstream status: %+v", r.Upstream)
+	}
+}
+
+// TestUndecodableAnswer: a 2xx whose body cannot be decoded (a Content-Encoding the gateway does
+// not read) has nothing to gate or deliver: a 502 in the route's shape, recorded as
+// skipped:undecodable with the upstream's status, unenforced even on a closed block route (D24).
+// An upstream error whose body cannot be decoded stays skipped:upstream_error.
+func TestUndecodableAnswer(t *testing.T) {
+	for _, c := range []struct {
+		status int
+		skip   string
+	}{{http.StatusOK, gate.SkipUndecodable}, {http.StatusServiceUnavailable, gate.SkipUpstreamError}} {
+		e := newEnv(t, envOpts{enforcing: true, policyYAML: blockPolicy("block", "fail: closed")})
+		e.up.status, e.up.encoding = c.status, "br"
+		w := e.do(t, "/v1/chat/completions", defaultRouteBody, nil)
+		r := e.sink.result(t)
+		if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"code":"upstream_error"`) ||
+			w.Header().Get(HeaderStatus) != "skipped:"+c.skip || w.Header().Get(HeaderAction) != decision.ActionPass {
+			t.Errorf("%d: %d %s %v", c.status, w.Code, w.Body.String(), w.Header())
+		}
+		if r.Upstream.Status != c.status || r.Decision.Enforced || r.Final == nil || r.Final.Action != decision.ActionPass {
+			t.Errorf("%d: upstream %+v enforced %v final %+v", c.status, r.Upstream, r.Decision.Enforced, r.Final)
+		}
+		contractstest.Validate(t, "decision.v1.schema.json", r.Decision)
+	}
+}
+
+// TestClientGoneBeforeTheAnswer: a client that goes away while the upstream is still answering is
+// not an upstream failure. The trace is skipped:client_disconnected and never enforced (nothing
+// reached the client), even on a closed block route, and no error body is written.
+func TestClientGoneBeforeTheAnswer(t *testing.T) {
+	e := newEnv(t, envOpts{enforcing: true, policyYAML: blockPolicy("block", "fail: closed")})
+	e.up.delay = 10 * time.Second
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(defaultRouteBody)).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-TrustAgent-Key", ingestKey)
+	time.AfterFunc(50*time.Millisecond, cancel)
+	w := newRecorder()
+	e.router.ServeHTTP(w, req)
+	r := e.sink.result(t)
+	if r.Status != "skipped:"+gate.SkipClientDisconnected || r.Decision.Enforced || r.Final == nil ||
+		r.Final.Action != decision.ActionPass || r.Upstream.Ms == nil {
+		t.Errorf("status %s enforced %v final %+v upstream %+v", r.Status, r.Decision.Enforced, r.Final, r.Upstream)
+	}
+	if w.Body.Len() != 0 || w.Header().Get(HeaderStatus) != "" {
+		t.Errorf("nothing is written to a client that went away: %d %q", w.Code, w.Body.String())
+	}
+	if e.up.calls() != 1 {
+		t.Errorf("%d upstream calls", e.up.calls())
+	}
+}
+
+// TestClientGoneDuringTheGate: the synchronous gate runs on the detached record context, so a
+// client that hangs up while the answer is being decided leaves the real decision on record
+// rather than a cancelled check (an error, and a fail-closed block on a closed route).
+func TestClientGoneDuringTheGate(t *testing.T) {
+	e := newEnv(t, envOpts{testMode: true, enforcing: true, jevLatency: 300 * time.Millisecond, policyYAML: blockPolicy("block", "fail: closed")})
+	body, answer, hdr := contradicted(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(withTestResponse(t, body, answer))).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-TrustAgent-Key", ingestKey)
+	req.Header.Set("X-TrustAgent-Scenario", hdr["X-TrustAgent-Scenario"])
+	time.AfterFunc(50*time.Millisecond, cancel)
+	e.router.ServeHTTP(newRecorder(), req)
+	r := e.sink.result(t)
+	if r.Status != "ok" || r.Decision.Degraded != nil || r.Decision.WouldAction != decision.ActionBlock ||
+		slices.Contains(r.Decision.Reasons, decision.ReasonFailClosed) {
+		t.Errorf("status %s degraded %v would %s reasons %v: the decision is the model's, not a cancelled check",
+			r.Status, r.Decision.Degraded, r.Decision.WouldAction, r.Decision.Reasons)
 	}
 }
 
@@ -661,12 +870,12 @@ func TestPassthroughEndpoints(t *testing.T) {
 	if w.Code != http.StatusOK || w.Header().Get(HeaderStatus) != "" || w.Header().Get(HeaderTraceID) == "" {
 		t.Errorf("models: %d status %q", w.Code, w.Header().Get(HeaderStatus))
 	}
-	cw := e.do(t, "/v1/completions", `{"model":"m","prompt":"hi","trustagent":{"route":"x"}}`, nil)
-	if cw.Header().Get(HeaderStatus) != StatusSkippedUnsupportedAPI {
-		t.Errorf("completions status %q", cw.Header().Get(HeaderStatus))
+	rw := e.do(t, "/v1/responses", `{"model":"m","input":"hi","trustagent":{"route":"x"}}`, nil)
+	if rw.Header().Get(HeaderStatus) != StatusSkippedUnsupportedAPI {
+		t.Errorf("responses status %q", rw.Header().Get(HeaderStatus))
 	}
-	if _, fwd := e.up.last(t); string(fwd) != `{"model":"m","prompt":"hi"}` {
-		t.Errorf("completions forwarded %s", fwd)
+	if _, fwd := e.up.last(t); string(fwd) != `{"model":"m","input":"hi"}` {
+		t.Errorf("responses forwarded %s", fwd)
 	}
 }
 
@@ -691,5 +900,99 @@ func TestEveryResponseHeaderIsExposedToBrowsers(t *testing.T) {
 	e.router.ServeHTTP(w, req)
 	if !strings.Contains(w.Header().Get("Access-Control-Expose-Headers"), HeaderTraceID) {
 		t.Errorf("preflight exposes %q", w.Header().Get("Access-Control-Expose-Headers"))
+	}
+}
+
+// metricSample reads a series from the default registry by name and label pairs: a counter's
+// value or a histogram's sample count.
+func metricSample(t *testing.T, name string, labelPairs ...string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+	series:
+		for _, m := range f.GetMetric() {
+			for i := 0; i+1 < len(labelPairs); i += 2 {
+				found := false
+				for _, l := range m.GetLabel() {
+					found = found || l.GetName() == labelPairs[i] && l.GetValue() == labelPairs[i+1]
+				}
+				if !found {
+					continue series
+				}
+			}
+			return m.GetCounter().GetValue() + float64(m.GetHistogram().GetSampleCount())
+		}
+	}
+	return 0
+}
+
+// TestRequestMetrics: every gated JSON request counts once in requests_total with its format and
+// delivered action, and once in overhead_seconds with its configured mode (GH-5).
+func TestRequestMetrics(t *testing.T) {
+	const routes = "version: 1\ndefaults: {mode: flag, require_calibration: false, evaluators: [{ref: groundedness@1}, {ref: contradiction@1}]}\nroutes:\n" +
+		"  - {name: metrics-flag, match: {headers: {X-TrustAgent-Route: metrics-flag}}}\n" +
+		"  - {name: metrics-observe, mode: observe, match: {headers: {X-TrustAgent-Route: metrics-observe}}}\n" +
+		"  - {name: metrics-block, mode: block, match: {headers: {X-TrustAgent-Route: metrics-block}}}\n"
+	e := newEnv(t, envOpts{testMode: true, enforcing: true, policyYAML: routes})
+	req, answer, hdr := contradicted(t)
+	cases := []struct {
+		route, path, body, format, mode, action string
+		scenario                                bool
+	}{
+		{"metrics-flag", "/v1/chat/completions", withTestResponse(t, req, answer), llmapi.FormatOpenAIChat, decision.ModeFlag, decision.ActionFlag, true},
+		{"metrics-flag", "/v1/messages", anthropicContradicted(t, answer), llmapi.FormatAnthropicMessages, decision.ModeFlag, decision.ActionFlag, true},
+		{"metrics-observe", "/v1/chat/completions", defaultRouteBody, llmapi.FormatOpenAIChat, decision.ModeObserve, decision.ActionObserve, false},
+		{"metrics-block", "/v1/completions", `{"model":"m","prompt":"hi","test_response":"` + answer + `",` +
+			`"trustagent":{"context":[{"id":"refund-policy.md","text":"Annual plans can be refunded within 30 days of purchase."}]}}`,
+			llmapi.FormatOpenAICompletions, decision.ModeBlock, decision.ActionBlock, true},
+	}
+	for _, tc := range cases {
+		counter := []string{"route", tc.route, "format", tc.format, "action", tc.action}
+		overhead := []string{"route", tc.route, "mode", tc.mode}
+		before, beforeH := metricSample(t, "trustagent_gateway_requests_total", counter...), metricSample(t, "trustagent_gateway_overhead_seconds", overhead...)
+		h := map[string]string{"X-TrustAgent-Route": tc.route}
+		if tc.scenario {
+			h["X-TrustAgent-Scenario"] = hdr["X-TrustAgent-Scenario"]
+		}
+		w := e.do(t, tc.path, tc.body, h)
+		if w.Header().Get(HeaderAction) != tc.action {
+			t.Fatalf("%s %s: action %q, want %s", tc.route, tc.path, w.Header().Get(HeaderAction), tc.action)
+		}
+		e.sink.result(t)
+		if got := metricSample(t, "trustagent_gateway_requests_total", counter...) - before; got != 1 {
+			t.Errorf("%s %s: requests_total grew by %v", tc.route, tc.path, got)
+		}
+		if got := metricSample(t, "trustagent_gateway_overhead_seconds", overhead...) - beforeH; got != 1 {
+			t.Errorf("%s %s: overhead_seconds observed %v samples", tc.route, tc.path, got)
+		}
+	}
+	if err := e.handler.Drain(context.Background()); err != nil {
+		t.Error(err)
+	}
+
+	// A failed upstream call counts once, with the action it delivered.
+	counter := []string{"route", "metrics-flag", "format", llmapi.FormatOpenAIChat, "action", decision.ActionPass}
+	before := metricSample(t, "trustagent_gateway_requests_total", counter...)
+	e.up.Close()
+	if w := e.do(t, "/v1/chat/completions", defaultRouteBody, map[string]string{"X-TrustAgent-Route": "metrics-flag"}); w.Code != http.StatusBadGateway {
+		t.Fatalf("status %d", w.Code)
+	}
+	e.sink.result(t)
+	if got := metricSample(t, "trustagent_gateway_requests_total", counter...) - before; got != 1 {
+		t.Errorf("an upstream failure: requests_total grew by %v", got)
+	}
+
+	// Passthrough traffic counts with no route, format or action.
+	ungated := []string{"route", "none", "format", "none", "action", "none"}
+	before = metricSample(t, "trustagent_gateway_requests_total", ungated...)
+	e.send(t, http.MethodGet, "/v1/models", "", nil)
+	if got := metricSample(t, "trustagent_gateway_requests_total", ungated...) - before; got != 1 {
+		t.Errorf("a passthrough request: requests_total grew by %v", got)
 	}
 }

@@ -1,0 +1,58 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "fit-auto-below-500-uses-platt",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "auto with 40 labels (< 500) fits Platt without cross-validation. Metrics are in-sample: ECE and Brier before (raw risk) and after (the table), AUROC of the raw risk. With 13 positives nothing can reach 50 predicted positives, so critical_at is null with \"insufficient evidence to block\".",
+  "input": {
+    "op": "fit",
+    "groups": [
+      {"risk_raw": 0.1, "pos": 1, "neg": 9}, {"risk_raw": 0.4, "pos": 2, "neg": 8},
+      {"risk_raw": 0.6, "pos": 4, "neg": 6}, {"risk_raw": 0.9, "pos": 6, "neg": 4}
+    ]
+  },
+  "expected": {
+    "cv_brier": null,
+    "method": "platt",
+    "metrics": {
+      "auroc": 0.7421652421652422,
+      "brier_after": 0.18341937020925,
+      "brier_before": 0.2250000000000001,
+      "ece_after": 0.02839475000000001,
+      "ece_before": 0.175
+    },
+    "n": 40,
+    "n_neg": 27,
+    "n_pos": 13,
+    "platt": {"a": 2.930816, "b": -2.310618},
+    "recommended": {
+      "critical_at": null,
+      "critical_null_reason": "insufficient evidence to block",
+      "space": "calibrated",
+      "warn_at": null
+    },
+    "reliability": [
+      {"frac_pos": 0.1, "hi": 0.2, "lo": 0.1, "mean_pred": 0.117374, "n": 10},
+      {"frac_pos": 0.2, "hi": 0.3, "lo": 0.2, "mean_pred": 0.24263399999999996, "n": 10},
+      {"frac_pos": 0.4, "hi": 0.4, "lo": 0.3, "mean_pred": 0.36537100000000006, "n": 10},
+      {"frac_pos": 0.6, "hi": 0.6, "lo": 0.5, "mean_pred": 0.5810579999999999, "n": 10}
+    ],
+    "table": [
+      0.090247, 0.092683, 0.095177, 0.097731, 0.100346, 0.103023, 0.105763, 0.108567, 0.111436,
+      0.114372, 0.117374, 0.120444, 0.123584, 0.126794, 0.130074, 0.133427, 0.136852, 0.140351,
+      0.143924, 0.147573, 0.151298, 0.1551, 0.15898, 0.162938, 0.166975, 0.171091, 0.175288,
+      0.179565, 0.183923, 0.188363, 0.192885, 0.197489, 0.202175, 0.206943, 0.211795, 0.216729,
+      0.221745, 0.226844, 0.232026, 0.237289, 0.242634, 0.24806, 0.253567, 0.259155, 0.264821,
+      0.270566, 0.276389, 0.282289, 0.288265, 0.294315, 0.300439, 0.306634, 0.312901, 0.319236,
+      0.325639, 0.332107, 0.33864, 0.345235, 0.351889, 0.358602, 0.365371, 0.372193, 0.379067,
+      0.385989, 0.392958, 0.399971, 0.407025, 0.414117, 0.421245, 0.428407, 0.435598, 0.442817,
+      0.450059, 0.457324, 0.464606, 0.471903, 0.479213, 0.486531, 0.493855, 0.501182, 0.508508,
+      0.51583, 0.523146, 0.530452, 0.537745, 0.545022, 0.552279, 0.559515, 0.566725, 0.573907,
+      0.581058, 0.588175, 0.595255, 0.602296, 0.609295, 0.616249, 0.623156, 0.630013, 0.636818,
+      0.643569, 0.650264
+    ],
+    "warnings": ["no threshold reaches precision 0.8, so there is no recommended warn_at"]
+  },
+  "tolerance": 1e-06
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
 )
 
@@ -32,6 +33,11 @@ type dbStatus interface {
 	Migration(ctx context.Context) (string, error)
 }
 
+// statusFigures reads the status numbers kept in the database (store.PostgresStore).
+type statusFigures interface {
+	StatusFigures(ctx context.Context, now time.Time) (store.StatusFigures, error)
+}
+
 // engineHealth is the cached engine health (grpc.Pinger).
 type engineHealth interface {
 	Health() grpc.EngineHealth
@@ -46,11 +52,23 @@ type statusReporter struct {
 	jev    jev.Info
 	// jevClient reports the live decision-model state (jev.StatusReporter); nil falls back to jev.
 	jevClient jev.Client
-	policy    *policy.Policy
-	auth      *apiAuth
+	// policies is the policy engine (the version in effect and the file's state).
+	policies *policy.Engine
+	// figures reads the decision latency and today's LLM spend; nil without a database.
+	figures statusFigures
+	auth    *apiAuth
 	// redisState is the rate limiter's backend state at startup (up, down or disabled).
 	redisState string
 	now        func() time.Time
+	// calib reports the calibration state of a snapshot (the calibration file lookup,
+	// decision_wiring.go); nil means none.
+	calib calibrationStater
+}
+
+// calibrationStater reports a snapshot's calibration state and how many targets it calibrates
+// (*calibration.Store).
+type calibrationStater interface {
+	State(snapshot string) (state string, targets int)
 }
 
 // healthStatus is api.ts HealthStatus (GET /health).
@@ -277,11 +295,21 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 	if s.auth.publicRead {
 		st.Auth.Read = "public"
 	}
+	st.Auth.SetupRequired = s.auth.setupRequired(ctx)
 	if cfg.InternalToken != "" {
 		st.InternalRPC = "token"
 	}
 	if s.db == nil {
 		st.Credentials.Store = "no_database"
+	}
+	if s.figures != nil {
+		// Latency percentiles and today's judge spend come from the stored rows (the decision
+		// model's own counters restart with the proxy).
+		if f, err := s.figures.StatusFigures(ctx, s.now()); err == nil {
+			st.DecisionModel.P50Ms, st.DecisionModel.P95Ms = f.DecisionLatency.P50, f.DecisionLatency.P95
+			st.Budgets.LLMSpentTodayUSD = f.LLMSpentTodayUSD
+			st.Budgets.LLMExhausted = cfg.SpendCapLLMUSDDay > 0 && f.LLMSpentTodayUSD >= cfg.SpendCapLLMUSDDay
+		}
 	}
 	if r := eng.Response; r != nil {
 		st.Engine.Version = r.GetVersion()
@@ -403,10 +431,19 @@ func verifierStatus(h grpc.EngineHealth) statusVerifier {
 	return v
 }
 
+// knowledgeStatus is SystemStatus.knowledge from the engine's health: disabled without an engine
+// or when the engine runs without the knowledge add-on, unknown while the engine does not answer
+// (it may have the add-on), else up, or down when it cannot reach its Qdrant store.
 func knowledgeStatus(h grpc.EngineHealth) statusKnowledge {
 	k := statusKnowledge{componentState: componentState{State: stateDisabled}}
 	r := h.Response
-	if r == nil || !r.GetKnowledgeEnabled() {
+	switch {
+	case h.State == stateDisabled:
+		return k
+	case r == nil:
+		k.State = stateUnknown
+		return k
+	case !r.GetKnowledgeEnabled():
 		return k
 	}
 	k.Enabled = true
@@ -448,6 +485,10 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 	if d.State == "" {
 		d.State = "off"
 	}
+	// The calibration of the snapshot that answers; unknown until the first answer (HTTP backends).
+	if s.calib != nil && st.Snapshot != "" {
+		d.CalibrationState, d.CalibratedTargets = s.calib.State(st.Snapshot)
+	}
 	if st.Endpoint != "" {
 		if u, err := url.Parse(st.Endpoint); err == nil && u.Hostname() != "" {
 			d.EndpointHost = nonEmpty(u.Hostname())
@@ -460,26 +501,38 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 }
 
 // budgets is SystemStatus.budgets: the decision cap and today's spend from the decision-model
-// client's budget (in memory until the persisted ledger, P4); the LLM cap is enforced by the
-// engine, so its spend reads 0 here until the ledger lands.
+// client's budget (in memory until the persisted ledger, P4). The LLM cap is enforced by the
+// engine; its spend today is read from cost_events when there is a database (system).
+//
+// The decision budget is exhausted once the day's spend reaches the cap, and reserve_only from the
+// soft cap, (1 − SPEND_ENFORCING_RESERVE)·cap, where observe and flag calls stop while enforcing
+// routes still spend the reserve; the WS budget status says the same. jev.SpendStatus.Exhausted
+// is already true at the soft cap (it answers whether a non-enforcing call may spend).
 func (s *statusReporter) budgets() statusBudgets {
 	b := statusBudgets{DecisionUSDDay: s.cfg.SpendCapDecisionUSDDay, LLMUSDDay: s.cfg.SpendCapLLMUSDDay}
 	if sp := s.jevStatus().Spend; sp != nil {
 		b.DecisionSpentTodayUSD = sp.SpentUSD
-		b.DecisionExhausted = sp.Exhausted
-		b.DecisionReserveOnly = !sp.Exhausted && sp.SoftCapUSD > 0 && sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD
+		if sp.CapUSD > 0 {
+			b.DecisionExhausted = sp.SpentUSD >= sp.CapUSD-spendEps
+		} else {
+			b.DecisionExhausted = sp.Exhausted
+		}
+		b.DecisionReserveOnly = !b.DecisionExhausted && sp.CapUSD > 0 && sp.SoftCapUSD < sp.CapUSD-spendEps &&
+			(sp.Exhausted || sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD-spendEps)
 	}
 	return b
 }
 
+// spendEps absorbs float rounding in the spend comparisons (jev's budget epsilon).
+const spendEps = 1e-8
+
+// policyStatus is SystemStatus.policy from the policy engine: the version in effect, where it came
+// from, whether dashboard edits are possible and the state of the policy file.
 func (s *statusReporter) policyStatus() statusPolicy {
-	p := statusPolicy{Source: s.policy.Source, FileStatus: "ok"}
-	v := s.policy.Version
-	p.Version = &v
-	if s.policy.Source == policy.SourceBuiltin {
-		p.FileStatus = "missing"
+	if s.policies == nil {
+		return statusPolicy{Source: policy.SourceBuiltin, FileStatus: "missing"}
 	}
-	return p
+	return statusPolicy(s.policies.Status())
 }
 
 var buildSHAOnce = sync.OnceValue(func() string {

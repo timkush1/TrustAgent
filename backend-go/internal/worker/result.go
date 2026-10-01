@@ -52,13 +52,14 @@ var gradeNames = map[pb.TrustGrade]string{
 	pb.TrustGrade_TRUST_GRADE_D: "D", pb.TrustGrade_TRUST_GRADE_F: "F",
 }
 
-// baseRecord is the part of a stored audit that comes from the job.
-func baseRecord(job *Job, lane string, finished time.Time, retention time.Duration) *store.AuditRecord {
+// baseRecord is the part of a stored audit that comes from the job, which a worker took at
+// started and finished at finished.
+func baseRecord(job *Job, lane string, started, finished time.Time, retention time.Duration) *store.AuditRecord {
 	req := job.Request
 	query, response := req.GetQuery(), req.GetResponse()
 	lanePtr, selection := lane, job.Selection
 	incl := job.InclusionProb
-	queueWait := finished.Sub(job.enqueued).Milliseconds()
+	queueWait := max(started.Sub(job.enqueued).Milliseconds(), 0)
 	completed := finished.UTC()
 	rec := &store.AuditRecord{
 		AuditID: req.GetAuditId(), TraceID: req.GetTraceId(), RequestID: req.GetTraceId(),
@@ -80,8 +81,8 @@ func baseRecord(job *Job, lane string, finished time.Time, retention time.Durati
 
 // resultRecord maps an Evaluate result onto the stored audit. The wire grade, verdict and status
 // are persisted as they are (SPEC §2.2).
-func resultRecord(job *Job, lane string, res *pb.AuditResult, finished time.Time, retention time.Duration) *store.AuditRecord {
-	rec := baseRecord(job, lane, finished, retention)
+func resultRecord(job *Job, lane string, res *pb.AuditResult, started, finished time.Time, retention time.Duration) *store.AuditRecord {
+	rec := baseRecord(job, lane, started, finished, retention)
 	rec.Status = auditStatusNames[res.GetStatus()]
 	if rec.Status == "" {
 		rec.Status = store.AuditFailed
@@ -184,7 +185,7 @@ func claimRecord(c *pb.ClaimVerification) store.ClaimRecord {
 
 // failedRecord is the stored audit of an engine call that did not return a result.
 func failedRecord(job *Job, lane, kind, message string, started, finished time.Time, retention time.Duration) *store.AuditRecord {
-	rec := baseRecord(job, lane, finished, retention)
+	rec := baseRecord(job, lane, started, finished, retention)
 	rec.Status, rec.ErrorKind, rec.Error = store.AuditFailed, &kind, &message
 	rec.ProcessingTimeMs = finished.Sub(started).Milliseconds()
 	rec.ScoringVersion = "v2"
@@ -231,7 +232,7 @@ func failedKind(errorKind string) string {
 }
 
 // CompletedEvent is the audit_completed event of a stored audit: the full audit, the redacted
-// variant, and the ring variant without context_used, plus the v1 audit_result frame.
+// variant, and the ring variant without context_used.
 func CompletedEvent(rec *store.AuditRecord) (websocket.Event, error) {
 	detail := rec.Detail()
 	type payload struct {
@@ -241,11 +242,7 @@ func CompletedEvent(rec *store.AuditRecord) (websocket.Event, error) {
 	if err != nil {
 		return ev, err
 	}
-	if ev.Ring, err = json.Marshal(payload{detail.WithoutContext()}); err != nil {
-		return ev, err
-	}
-	ev.V1Type = "audit_result"
-	ev.V1, err = json.Marshal(v1Audit(rec))
+	ev.Ring, err = json.Marshal(payload{detail.WithoutContext()})
 	return ev, err
 }
 
@@ -257,34 +254,19 @@ func failedEvent(rec *store.AuditRecord) (websocket.Event, error) {
 	return websocket.NewEvent("audit_failed", rec.TraceID, data, redacted)
 }
 
+// queuedEvent is the audit_queued event of an audit Submit put in lane behind depth others.
+func queuedEvent(traceID, auditID, lane string, depth int) (websocket.Event, error) {
+	return websocket.NewEvent("audit_queued", traceID, map[string]any{"audit_id": auditID, "lane": lane, "queue_depth": depth}, nil)
+}
+
+// startedEvent is the audit_started event of an audit a worker took after waitMs in its lane.
+func startedEvent(traceID, auditID string, waitMs int64) (websocket.Event, error) {
+	return websocket.NewEvent("audit_started", traceID, map[string]any{"audit_id": auditID, "queue_wait_ms": waitMs}, nil)
+}
+
 // DroppedEvent is the audit_dropped event of an audit that was not run.
 func DroppedEvent(traceID string, auditID *string, reason string) (websocket.Event, error) {
 	return websocket.NewEvent("audit_dropped", traceID, map[string]any{"audit_id": auditID, "reason": reason}, nil)
-}
-
-// v1Audit is the audit in the v1 audit_result frame (the pre-v2 dashboard format).
-func v1Audit(rec *store.AuditRecord) any {
-	type claim struct {
-		Claim      string   `json:"claim"`
-		Status     string   `json:"status"`
-		Confidence float64  `json:"confidence"`
-		Evidence   []string `json:"evidence"`
-	}
-	claims := make([]claim, 0, len(rec.Claims))
-	for _, c := range rec.Claims {
-		claims = append(claims, claim{Claim: derefString(c.Claim), Status: c.Status, Confidence: c.Confidence, Evidence: c.Evidence})
-	}
-	var score float64
-	if rec.FaithfulnessScore != nil {
-		score = *rec.FaithfulnessScore
-	}
-	return map[string]any{
-		"audit_id": rec.AuditID, "request_id": rec.TraceID, "user_query": derefString(rec.UserQuery),
-		"llm_response": derefString(rec.LLMResponse), "faithfulness_score": score, "overall_score": score,
-		"hallucination_detected": rec.HallucinationDetected, "claims": claims, "reasoning_trace": rec.ReasoningTrace,
-		"processing_time_ms": rec.ProcessingTimeMs, "timestamp": rec.CreatedAt.UTC().Format(time.RFC3339),
-		"provider": "proxy", "model": rec.Model, "step_timings": rec.StepTimings,
-	}
 }
 
 // judgeJSON is api.ts JudgeInfo for a wire JudgeInfo.

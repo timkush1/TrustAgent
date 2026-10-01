@@ -6,7 +6,7 @@ OpenRouter key. Everything runs in Docker on your own machine; there is nothing 
 
 > **Where this stands.** TrustAgent 2.0 is being built in phases (see
 > [docs/v2/SPEC.md §4](v2/SPEC.md#4-implementation-sequence)). The demo works today. Features that
-> are still on the way carry the phase that ships them, for example *(from P2)*: they are not
+> are still on the way carry the phase that ships them, for example *(from P4)*: they are not
 > available until that phase has landed.
 
 **Contents:** [1. What you need](#1-what-you-need) ·
@@ -75,8 +75,12 @@ This one command:
 3. Starts the demo stack: the proxy, the audit engine, a database, the dashboard and a small
    traffic generator. They run as their own Docker project, `truthtable-demo`, so demo data never
    mixes with real data.
-4. Waits until every part reports healthy, then opens the dashboard at
-   **<http://localhost:3000>**. If no browser opens, open that address yourself.
+4. Waits until every part reports healthy, then opens a **one-time setup link** such as
+   `http://localhost:3000/app/setup#token=…`. Click **Create the admin key**: the dashboard shows
+   your admin key once (keep it) and signs this browser in, so you can also edit policies and use
+   the Playground. When an admin already exists it opens the dashboard at
+   **<http://localhost:3000>** instead. If no browser opens, open the printed link yourself;
+   `make demo-setup-url` prints a new one.
 
 Everything in the demo is simulated: the fast check and the deep-audit judge are mocks, and no
 vendor key reaches the demo containers, even if your `.env` holds one. It costs $0.
@@ -85,8 +89,9 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
 
 - A **Demo stack** banner at the top: *"Mock checks and a mock judge: every number here is
   simulated."*
-- **Traffic** (in the left navigation): the traffic generator sends a round of scripted requests
-  about every 20 seconds, so new rows keep appearing. Each row has an outcome pill:
+- **Traffic** (in the left navigation): the traffic generator sends a round of about 20 scripted
+  requests about once a minute, so new rows keep appearing. Each row has an outcome pill; a round
+  starts with these three:
 
   | Scenario | Outcome | Why |
   |---|---|---|
@@ -94,8 +99,13 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
   | *Refund window: 60 days vs 30 days* | **Flagged** | The answer contradicts the document. The app got the answer with a risk warning (`X-TrustAgent-Action: flag`) |
   | *No documents: not checked* | **Not checked** | There was nothing to check against, so TrustAgent says so instead of guessing |
 
-  More scenarios, including blocked and replaced answers, arrive with the full demo set *(from
-  P3)*.
+  The rest of the round shows other checks: a leaked personal email or token, a needless refusal,
+  a promise the billing rules do not allow, an off-topic answer, documents in tool results or a
+  `Context:` block, prompts whose documents TrustAgent cannot find (*Not checked*), and an observe
+  route that only records what it *would* have blocked, an answer **Blocked** for an invented
+  link, a payments answer **Replaced** by a grounded fallback, streamed answers and the Anthropic
+  API. [DEMO.md](DEMO.md) has a three-minute tour, and
+  [contracts/README.md](../contracts/README.md#demo-scenarios) lists every scenario.
 - **Click a row** to open the trace: the answer, the reasons for its outcome, what it was
   **checked against** (for example the system-prompt document), and the **deep audit**, which
   arrives a few seconds later and explains the verdict claim by claim.
@@ -109,7 +119,10 @@ python3 scripts/doctor.py --expect demo
 ```
 
 Every check should say `PASS` (a `SKIP` is fine). A `WARN` such as "still starting" usually
-clears when you run it again a minute later. A `FAIL` comes with a command that fixes it.
+clears when you run it again a minute later, and "no admin yet" clears once you claim the setup
+link. One `WARN` stays on purpose: `policy.state` lists a downgrade on the demo's `help-center`
+route, which is left uncalibrated to show what that does. A `FAIL` comes with a command that
+fixes it.
 
 ## 4. Stop the demo
 
@@ -126,11 +139,10 @@ Other handy commands: `make demo-logs SERVICE=engine` follows one part's log (le
 In real mode TrustAgent checks your own app's answers. One OpenRouter key runs both the fast
 check (Jev) and the deep-audit judge.
 
-> **Where real mode stands.** The OpenRouter fast check and the OpenRouter judge arrive
-> *(from P2)*. Before that, `make up` runs, but the fast check is off: answers pass through
-> unchecked and show as **Not checked** (`X-TrustAgent-Status: skipped:decision_model_off`),
-> and deep audits need an `ANTHROPIC_API_KEY` in `.env` (or the heavy `local-llm` add-on). The
-> demo shows the whole flow today.
+> **Without a key** `make up` still runs, but the fast check is off: answers pass through
+> unchecked and show as **Not checked** (`X-TrustAgent-Status: skipped:decision_model_off`), and
+> there is no deep-audit judge unless you set `ANTHROPIC_API_KEY` (or the heavy `local-llm`
+> add-on).
 
 1. **Get the key.** Follow the TL;DR at the top of [JEV-ACCESS.md](JEV-ACCESS.md): sign in at
    OpenRouter, add $5 of credit and create a key with a **$2 credit limit**.
@@ -153,9 +165,8 @@ check (Jev) and the deep-audit judge.
    screenshot. Every other setting in `.env` is optional; [CONFIGURATION.md](CONFIGURATION.md)
    explains each of them.
 
-   **Let the dashboard read your traffic.** Signing in to the dashboard arrives *(from P4)*.
-   Until then, add this line to `.env` as well, so the dashboard can list traces without a
-   key:
+   **Optional: let the dashboard read traffic without signing in.** Add this line to `.env` as
+   well:
 
    ```bash
    TRUTHTABLE_PUBLIC_READ=true
@@ -163,19 +174,26 @@ check (Jev) and the deep-audit judge.
 
    This is safe on your laptop because TrustAgent only listens on 127.0.0.1 (`BIND_ADDR`);
    remove the line before you ever set `BIND_ADDR=0.0.0.0`. Without a key the dashboard shows
-   outcomes and reasons but hides the prompts and answers.
+   outcomes and reasons but hides the prompts and answers. Signing in (next steps) shows them.
 4. **Start TrustAgent:**
 
    ```bash
    make up
    ```
 
-   This starts the proxy, the engine, the database and the dashboard (no traffic generator) and
-   opens the dashboard. Traffic stays empty until your app sends requests.
-5. **Check the connection** *(from P2)*: `make doctor` shows which fast-check backend is active,
-   why it was chosen, and its latency and cost.
+   This starts the proxy, the engine, the database and the dashboard (no traffic generator).
+   Traffic stays empty until your app sends requests.
+5. **Sign in as the admin.** `make up` opens a one-time setup link
+   (`http://localhost:3000/app/setup#token=…`). Click **Create the admin key**: the dashboard
+   shows your admin key once (keep it in your password manager) and signs this browser in, so you
+   can edit policies. Later, sign in at `/app/setup` with that key. If you missed the link,
+   `make setup-url` prints a new one (each replaces the last); once an admin exists,
+   `make setup-url SETUP_FORCE=1` mints a recovery link.
+6. **Check the connection:** `make doctor` shows which fast-check backend is active, why it was
+   chosen, its snapshot, state, latency and the last 24 hours' calls and cost, plus the setup,
+   calibration, policy and metrics checks.
 
-**Send a first request** *(from P2)*. Point your app at the proxy instead of the LLM provider:
+**Send a first request.** Point your app at the proxy instead of the LLM provider:
 base URL `http://localhost:8080/v1`. Two things change for your app: it sends its TrustAgent key
 in an `X-TrustAgent-Key` header, and it sends the documents the answer must stick to, so there is
 something to check against. A quick test from the terminal, with OpenRouter as the LLM too:
@@ -304,10 +322,10 @@ it was first created with, and your `.env` now has a different one (for example 
 was deleted). Put the old password back in `.env`, or delete the old data: `make demo-clean` for
 the demo, `make clean-data` for the real stack (**this deletes all TrustAgent data**).
 
-**No browser opens.** Open <http://localhost:3000> yourself (or your `DASHBOARD_HOST_PORT`). Use
-`make demo OPEN=0` to only print the address.
+**No browser opens.** Open the printed setup link, or <http://localhost:3000> (or your
+`DASHBOARD_HOST_PORT`), yourself. Use `make demo OPEN=0` to only print the address.
 
-**Traffic stays empty in the demo.** The first round arrives within about 20 seconds of the stack
+**Traffic stays empty in the demo.** The first round arrives within a few seconds of the stack
 becoming healthy. If nothing shows after a minute, check the generator:
 `make demo-logs SERVICE=trafficgen`.
 
@@ -317,5 +335,6 @@ becoming healthy. If nothing shows after a minute, check the generator:
 ## Next steps
 
 - [JEV-ACCESS.md](JEV-ACCESS.md): the fast check, its costs, backends, errors and fixes.
+- [GATEWAY.md](GATEWAY.md): what your app gets back: modes, headers, streaming, block and fallback.
 - [CONFIGURATION.md](CONFIGURATION.md): every setting, its default and what it does.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the parts fit together.

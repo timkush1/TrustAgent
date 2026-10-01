@@ -68,11 +68,11 @@ func (s *Server) decisions(env envelope, openRouter bool) http.HandlerFunc {
 		if !delay(r, s.cfg.JevLatency) {
 			return
 		}
-		sc := s.scenarios[scenarioID(r)]
+		scripted := scenarioAnswers(s.scenarios[scenarioID(r)], req.State)
 		answers := make(map[string]json.RawMessage, len(req.Questions))
 		for qid, q := range req.Questions {
-			if sc != nil && len(sc.MockAnswers[qid]) > 0 && string(sc.MockAnswers[qid]) != "null" {
-				answers[qid] = sc.MockAnswers[qid]
+			if a := scripted[qid]; len(a) > 0 && string(a) != "null" {
+				answers[qid] = a
 				continue
 			}
 			answers[qid] = hashAnswer(qid, q, req.State)

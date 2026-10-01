@@ -23,6 +23,7 @@ import type {
   TraceListParams,
 } from '../source';
 import type { ResyncEvent, ResyncReason } from '../stream/types';
+import { LiveControlPlane } from './liveControlPlane';
 import { StreamClient, type StreamClientOptions } from './streamClient';
 
 /** Page size of each resync request (the API maximum). */
@@ -38,7 +39,7 @@ function enc(id: string): string {
   return encodeURIComponent(id);
 }
 
-export class LiveDataSource implements DataSource {
+export class LiveDataSource extends LiveControlPlane implements DataSource {
   readonly kind = 'live' as const;
   private readonly config: Pick<RuntimeConfig, 'apiBase' | 'crossOrigin' | 'wsUrl'>;
   private readonly options: LiveDataSourceOptions;
@@ -46,9 +47,11 @@ export class LiveDataSource implements DataSource {
   private client: StreamClient | null = null;
 
   constructor(config: Pick<RuntimeConfig, 'apiBase' | 'crossOrigin' | 'wsUrl'>, options: LiveDataSourceOptions = {}) {
+    const http = options.http ?? createHttpClient(config);
+    super(http);
     this.config = config;
     this.options = options;
-    this.http = options.http ?? createHttpClient(config);
+    this.http = http;
   }
 
   async getHealth(signal?: AbortSignal): Promise<HealthStatus> {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/middleware"
+	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
@@ -41,6 +43,12 @@ type serverDeps struct {
 	limiter    middleware.Limiter
 	redisState string
 	log        *slog.Logger
+	// master signs dashboard sessions; nil means an ephemeral key (sessions end at restart).
+	master *authz.MasterKey
+	// pg is the Postgres store behind store, nil without a database: policy versions, the
+	// evaluator tables, the dry-run replay and the overview aggregates need it. Without it the
+	// policy is file-managed.
+	pg *store.PostgresStore
 }
 
 // server is the proxy: the /v1 gateway, the REST API, the WS hub and the deep-audit workers.
@@ -54,6 +62,16 @@ type server struct {
 	pinger  *grpc.Pinger // nil without an engine
 	status  *statusReporter
 	auth    *apiAuth
+	// policies are the policy engine and the evaluator registry (hot reload, REST APIs).
+	policies *policyServices
+	// stats serves the overview, ROI and evidence-coverage aggregates; nil without a database.
+	stats statsStore
+	// pg is the Postgres store (serverDeps.pg), nil without a database.
+	pg *store.PostgresStore
+	// calib is the calibration lookup of the gate and the policy readiness checks
+	// (decision_wiring.go); waiters wake the /v1 decision long-polls (decisions_longpoll_api.go).
+	calib   policy.CalibrationLookup
+	waiters *decisionWaiters
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -65,7 +83,7 @@ func newServer(d serverDeps) (*server, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &server{cfg: cfg, log: log}
+	s := &server{cfg: cfg, log: log, pg: d.pg}
 
 	s.status = &statusReporter{cfg: cfg, redisState: d.redisState, now: time.Now}
 	if s.status.redisState == "" {
@@ -74,10 +92,12 @@ func newServer(d serverDeps) (*server, error) {
 	if d.store != nil {
 		s.status.db = d.store
 	}
+	auth := newAuthenticator(cfg, d.store, d.master, log)
 	s.hub = websocket.NewHub(websocket.Config{
 		Version: version.Version, ReplayEvents: cfg.WS.ReplayBuffer, ReplayMaxBytes: cfg.WS.ReplayMaxBytes,
 		MaxClients: cfg.WS.MaxClients, MaxPerIP: cfg.WS.MaxPerIP, Heartbeat: cfg.WS.Heartbeat,
-		AllowedOrigins: cfg.AllowedOrigins, Logger: log,
+		// The dashboard's own origin (TRUTHTABLE_PUBLIC_URL) is allowed as in the CSRF check.
+		AllowedOrigins: cfg.AllowedOrigins, OriginAllowed: auth.AllowsOrigin, Logger: log,
 		Hello: func() websocket.HelloInfo {
 			return websocket.HelloInfo{Demo: cfg.DemoMode, Readonly: cfg.Readonly, Status: s.status.lite()}
 		},
@@ -97,24 +117,48 @@ func newServer(d serverDeps) (*server, error) {
 	}
 	s.pool = worker.New(poolCfg)
 
+	s.waiters = newDecisionWaiters()
 	sink := &traceSink{
 		pub: s.hub, audits: s.pool, bodyRetention: cfg.BodyRetention, bodyMaxBytes: cfg.BodyMaxBytes,
-		now: time.Now, log: log,
+		now: time.Now, log: log, waiters: s.waiters,
 	}
 	if d.store != nil {
 		sink.store = d.store
 	}
-	gw, err := newGateway(cfg, sink, gatewayHooks{snapshotChanged: s.snapshotChanged}, log)
+	// The calibration lookup comes before the policy services: block readiness reads it.
+	s.initCalibration()
+	// The policy services come first: the gateway reads the policy in effect and the evaluator
+	// registry from them. newServer has no context, so loading is bounded here.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ps, err := newPolicyServices(ctx, policyWiring{
+		cfg: cfg, pg: d.pg, hub: s.hub, runtime: s.policyRuntime, log: log,
+		// Block and fallback stay refused until the /v1 handler enforces them (v1_routes.go).
+		enforcing: gatewayEnforces,
+		// A new policy version turns the decision model's keep-warm on or off (the gateway sets it
+		// once at startup).
+		onPolicy: s.policyChanged,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("policy: %w", err)
+	}
+	s.policies = ps
+	s.status.policies = ps.Engine
+
+	gw, err := newGateway(cfg, sink, auth, ps, gatewayHooks{snapshotChanged: s.snapshotChanged, calibrations: s.calib}, log)
 	if err != nil {
 		return nil, err
 	}
 	s.gateway = gw
-	s.status.jev, s.status.jevClient, s.status.policy = gw.jev, gw.client, gw.policy
+	s.status.jev, s.status.jevClient = gw.jev, gw.client
 	s.auth = &apiAuth{keys: gw.auth, publicRead: cfg.PublicRead, demo: cfg.DemoMode}
 	s.status.auth = s.auth
+	if d.pg != nil {
+		s.stats, s.status.figures = d.pg, d.pg
+	}
 
 	traces := &tracesAPI{now: time.Now, log: log}
-	audits := &auditsAPI{audits: s.pool, maxTextChars: cfg.MaxTextChars, testMode: cfg.TestMode, log: log}
+	audits := &auditsAPI{audits: s.pool, pub: s.hub, maxTextChars: cfg.MaxTextChars, testMode: cfg.TestMode, log: log}
 	if d.store != nil {
 		traces.store, audits.store = d.store, d.store
 	}
@@ -134,6 +178,15 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 		_ = r.SetTrustedProxies(nil)
 	}
 	r.Use(gin.Recovery(), requestLog(s.log), middleware.CORS(cfg.AllowedOrigins))
+	if cfg.WriteTimeout == 0 {
+		// TRUTHTABLE_WRITE_TIMEOUT=0: the server has no write timeout; each route family gets
+		// its own deadline instead (SPEC M12).
+		ingest := time.Duration(0)
+		if d.engine != nil {
+			ingest = d.engine.IngestTimeout()
+		}
+		r.Use(middleware.WriteDeadline(func(c *gin.Context) time.Duration { return writeDeadline(cfg, c.Request.URL.Path, ingest) }))
+	}
 
 	limiter := d.limiter
 	if limiter == nil {
@@ -141,9 +194,14 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	}
 	// /api answers 429 as an ApiErrorBody, /v1 in the upstream API's error shape (SPEC §2.12).
 	apiDeny := func(c *gin.Context, status int, code, message string) { abortAPI(c, status, code, message) }
-	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute, apiDeny)
-	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute, apiDeny)
-	v1RateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute, proxy.Deny)
+	// Buckets are per key id, or per session id for cookie auth, else per IP (SPEC §2.4, M8): the
+	// limiters run after the authentication middleware, which stores the identity.
+	rateLimitBy := func(limit int, window time.Duration) gin.HandlerFunc {
+		return middleware.RateLimitBy(limiter, limit, window, apiDeny, rateKey)
+	}
+	rateLimit := rateLimitBy(cfg.RateLimitPerMinute, time.Minute)
+	uploadRateLimit := rateLimitBy(cfg.UploadLimitPerMin, time.Minute)
+	v1RateLimit := middleware.RateLimitBy(limiter, cfg.RateLimitPerMinute, time.Minute, proxy.Deny, rateKey)
 	bodyLimit := middleware.BodyLimit(cfg.MaxBodyBytes)
 	read, ingest := s.auth.require(authz.ScopeRead), s.auth.require(authz.ScopeIngest)
 	writable := s.writable()
@@ -157,31 +215,43 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	api.GET("/audits", read, rateLimit, audits.list)
 	api.GET("/audits/:id", read, rateLimit, audits.get)
 	api.POST("/audit", writable, ingest, rateLimit, bodyLimit, audits.direct)
-	// Knowledge base (legacy shapes until the knowledge add-on, P3).
-	api.POST("/upload", writable, ingest, uploadRateLimit, middleware.BodyLimit(cfg.MaxUploadBytes),
-		handleFileUpload(d.engine, cfg.MaxUploadBytes))
-	api.GET("/kb/claims", read, rateLimit, handleListKBClaims(d.engine))
-	api.GET("/kb/conflicts", read, rateLimit, handleListConflicts(d.engine))
-	api.GET("/kb/stats", read, rateLimit, handleKBStats(d.engine))
+	// Knowledge base (SPEC §2.4 rows 62-65): 409 knowledge_disabled while the add-on is off.
+	knowledge := s.knowledgeOn(d.engine != nil)
+	upload := handleFileUpload(d.engine, cfg.MaxUploadBytes)
+	uploadLimit := middleware.BodyLimit(cfg.MaxUploadBytes)
+	api.POST("/kb/documents", writable, s.auth.require(authz.ScopeAdmin), uploadRateLimit, knowledge, uploadLimit, upload)
+	api.GET("/kb/claims", read, rateLimit, knowledge, handleListKBClaims(d.engine))
+	api.GET("/kb/conflicts", read, rateLimit, knowledge, handleListConflicts(d.engine))
+	api.GET("/kb/stats", read, rateLimit, knowledge, handleKBStats(d.engine))
+	// P2 authz core: setup, session, ws-ticket and keys endpoints (setup_api.go, session_api.go, keys_api.go).
+	s.mountAuthz(api, rateLimit, bodyLimit, writable)
+	// Policies and evaluators (policies_api.go, evaluators_api.go). The dry-run has only its own
+	// limit: RateLimit keys on the route path, so the general limit would count it twice. limitBy
+	// builds an endpoint's own per-caller limit.
+	guards := apiGuards{read: read, admin: s.auth.require(authz.ScopeAdmin), writable: writable,
+		rateLimit: rateLimit, dryRunLimit: rateLimitBy(6, time.Minute), bodyLimit: bodyLimit, limitBy: rateLimitBy}
+	s.policies.mount(api, guards)
+	// Overview, ROI and evidence coverage (stats_api.go).
+	s.mountStats(api, read, rateLimit)
+	// The P3 REST endpoints (p3_api.go).
+	s.mountP3API(r, api, guards)
 
 	r.GET("/ws", s.serveWS)
 
-	// LLM API (SPEC §2.12): every /v1 response carries the trace id; ingest auth reads
-	// X-TrustAgent-Key only, so Authorization stays the client's upstream credential (B1).
-	h := s.gateway.handler
-	v1 := r.Group("/v1", h.TraceIDs(), s.gateway.auth.Ingest(proxy.Deny), v1RateLimit)
-	v1.POST("/chat/completions", bodyLimit, h.ChatCompletions)
-	// Proxied but not gated yet: completions are gated in P3; /v1/responses stays ungated.
-	v1.POST("/completions", bodyLimit, h.Passthrough(proxy.StatusSkippedUnsupportedAPI))
-	v1.Any("/responses", bodyLimit, h.Passthrough(proxy.StatusSkippedUnsupportedAPI))
-	v1.Any("/responses/*rest", bodyLimit, h.Passthrough(proxy.StatusSkippedUnsupportedAPI))
-	v1.Any("/models", h.Passthrough(""))
-	v1.Any("/models/*model", h.Passthrough(""))
-	v1.Any("/embeddings", bodyLimit, h.Passthrough(""))
+	// LLM API (SPEC §2.12): the /v1 gateway (v1_routes.go).
+	s.mountV1(r, v1RateLimit, bodyLimit)
 
-	// Unknown paths answer in the error shape of their family, not gin's text/plain 404.
+	// Unknown paths answer in the error shape of their family, not gin's text/plain 404. An unknown
+	// /v1 path carries the trace and request ids like every /v1 response (SPEC §2.12: "Always").
+	v1TraceIDs := s.gateway.handler.TraceIDs()
 	r.NoRoute(func(c *gin.Context) {
-		if p := c.Request.URL.Path; p == "/v1" || strings.HasPrefix(p, "/v1/") {
+		if isV1Path(c.Request.URL.Path) {
+			v1TraceIDs(c) // sets the ids, then runs the next handler
+			return
+		}
+		c.Next()
+	}, func(c *gin.Context) {
+		if p := c.Request.URL.Path; isV1Path(p) {
 			proxy.Deny(c, http.StatusNotFound, codeNotFound, "TrustAgent does not serve "+c.Request.Method+" "+p+".")
 			c.Abort()
 			return
@@ -189,6 +259,84 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 		abortAPI(c, http.StatusNotFound, codeNotFound, "No endpoint here: "+c.Request.Method+" "+c.Request.URL.Path+".")
 	})
 	return r
+}
+
+// isV1Path reports whether path belongs to the LLM API (/v1 and its sub-paths).
+func isV1Path(path string) bool { return path == "/v1" || strings.HasPrefix(path, "/v1/") }
+
+// apiWriteDeadline is the write deadline of /api, /health and unknown paths when
+// TRUTHTABLE_WRITE_TIMEOUT=0 (SPEC M12).
+const apiWriteDeadline = 60 * time.Second
+
+// writeDeadline is the per-route write deadline of path (SPEC M12): /v1 the upstream timeout plus
+// 30 s (the gate and the trace write follow the answer; none when the upstream timeout is off),
+// the knowledge upload the ingest call's bound plus 30 s, /ws none (the hub sets a deadline per
+// frame), everything else 60 s. Handlers that stream longer extend it with
+// http.ResponseController. 0 means no deadline.
+func writeDeadline(cfg *config.Config, path string, ingest time.Duration) time.Duration {
+	switch {
+	case path == "/ws":
+		return 0
+	case isV1Path(path):
+		if cfg.UpstreamTimeout <= 0 {
+			return 0
+		}
+		return cfg.UpstreamTimeout + 30*time.Second
+	case path == "/api/kb/documents" && ingest > 0:
+		return ingest + 30*time.Second
+	}
+	return apiWriteDeadline
+}
+
+// rateKey is the rate-limit bucket of the authenticated caller: the /api identity apiAuth stored,
+// else the /v1 ingest identity; "" (public or open callers) falls back to the key or IP.
+func rateKey(c *gin.Context) string {
+	if id := callerIdentity(c); id != nil {
+		return id.RateKey()
+	}
+	return authz.FromContext(c).RateKey()
+}
+
+// policyRuntime is the decision-model state the policy engine reads for effective routes and
+// block readiness, with the calibration lookup (decision_wiring.go).
+func (s *server) policyRuntime() policy.Runtime {
+	rt := policy.Runtime{Calibrations: s.calibrationLookup()}
+	if s.gateway == nil { // still loading: the gateway is built after the policy services
+		return rt
+	}
+	st := s.status.jevStatus()
+	rt.Backend, rt.Snapshot = st.Backend, st.Snapshot
+	rt.BreakerOpen = st.Breaker == jev.BreakerOpen
+	rt.BudgetExhausted = st.Spend != nil && st.Spend.Exhausted
+	return rt
+}
+
+// policyChanged keeps the decision model warm only while a route gates answers in flight.
+func (s *server) policyChanged(p *policy.Policy) {
+	if s.gateway == nil || p == nil {
+		return
+	}
+	if kw, ok := s.gateway.client.(jev.KeepWarmer); ok {
+		kw.SetKeepWarm(hasSyncRoute(p))
+	}
+}
+
+// knowledgeOn refuses knowledge-base calls the engine cannot serve: 503 engine_unavailable without
+// an engine, 409 knowledge_disabled when the engine reports the knowledge add-on off (from its
+// cached health; an engine not checked yet is let through and answers for itself).
+func (s *server) knowledgeOn(engine bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !engine {
+			abortAPI(c, http.StatusServiceUnavailable, codeEngineUnavailable, "No audit engine is configured (TRUTHTABLE_GRPC_ADDRESS).")
+			return
+		}
+		if r := s.status.engineHealth().Response; r != nil && !r.GetKnowledgeEnabled() {
+			abortAPI(c, http.StatusConflict, "knowledge_disabled",
+				"The knowledge add-on is off: start the knowledge compose profile with TRUTHTABLE_KNOWLEDGE_ENABLED=true.")
+			return
+		}
+		c.Next()
+	}
 }
 
 // writable refuses writes in read-only mode (TRUTHTABLE_READONLY; SPEC §2.4).
@@ -202,9 +350,10 @@ func (s *server) writable() gin.HandlerFunc {
 	}
 }
 
-// serveWS serves GET /ws: WS v2 with protocol=2, v1 frames otherwise (SPEC §2.5). Browsers cannot
-// set headers on the handshake, so until WS tickets and sessions (P2) a browser connects through
-// TRUTHTABLE_PUBLIC_READ; other clients send X-TrustAgent-Key. A failure before the upgrade is 401.
+// serveWS serves GET /ws: WS v2 only (SPEC §2.5). A handshake without protocol=2 gets 400
+// bad_request before the upgrade, because WS v1 was removed (D13). Browsers cannot set headers on
+// the handshake: they connect with a single-use ?ticket= (POST /api/ws-ticket) or their session
+// cookie; other clients send X-TrustAgent-Key. An authentication failure before the upgrade is 401.
 func (s *server) serveWS(c *gin.Context) {
 	id, status, code, msg := s.auth.identify(c.Request, authz.ScopeRead, false)
 	if id == nil {
@@ -214,27 +363,16 @@ func (s *server) serveWS(c *gin.Context) {
 	s.hub.ServeWS(c.Writer, c.Request, websocket.ConnOptions{Content: id.Has(authz.ScopeContent), IP: c.ClientIP()})
 }
 
-// engineChanged logs an engine health transition and broadcasts it (WS status event).
-func (s *server) engineChanged(h grpc.EngineHealth) {
-	if h.Reachable() {
-		s.log.Info("audit engine health", "state", h.State, "detail", h.Detail)
-	} else {
-		s.log.Warn("audit engine health", "state", h.State, "detail", h.Detail)
-	}
-	ev, err := websocket.NewEvent("status", "", engineStatusEvent(h), nil)
-	if err != nil {
-		return
-	}
-	s.hub.Publish(ev)
-}
+// engineChanged receives an engine health transition from the pinger (status_events.go).
+func (s *server) engineChanged(h grpc.EngineHealth) { s.publishEngineStatus(h) }
 
-// snapshotChanged broadcasts a new decision-model snapshot (WS decision_model_changed, SPEC §2.5).
-// Calibration lookups per snapshot arrive with calibration (P3), so the state is "none" until then.
-// It runs on a jev attempt goroutine and must not block: Publish never does.
+// snapshotChanged broadcasts a new decision-model snapshot (WS decision_model_changed, SPEC §2.5)
+// with its calibration state (decision_wiring.go). It runs on a jev attempt goroutine and must not
+// block: Publish never does.
 func (s *server) snapshotChanged(c jev.SnapshotChange) {
 	s.log.Warn("decision model snapshot changed", "backend", c.Backend, "model", c.Model, "previous", c.Previous, "snapshot", c.Snapshot)
 	ev, err := websocket.NewEvent("decision_model_changed", "", map[string]any{
-		"backend": c.Backend, "previous_snapshot": c.Previous, "snapshot": c.Snapshot, "calibration": "none",
+		"backend": c.Backend, "previous_snapshot": c.Previous, "snapshot": c.Snapshot, "calibration": s.calibrationState(c.Snapshot),
 	}, nil)
 	if err != nil {
 		return
@@ -242,8 +380,8 @@ func (s *server) snapshotChanged(c jev.SnapshotChange) {
 	s.hub.Publish(ev)
 }
 
-// start runs the hub, the engine pinger, the audit workers and the decision model's startup probe
-// until shutdown.
+// start runs the hub, the engine pinger, the policy reload loop, the audit workers, the decision
+// model's startup probe, and the decision and status loops until shutdown.
 func (s *server) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
@@ -253,10 +391,16 @@ func (s *server) start() {
 		s.wg.Add(1)
 		go func() { defer s.wg.Done(); s.pinger.Run(ctx) }()
 	}
+	// Policy and evaluator hot reload; shutdown joins it before main closes the store.
+	s.wg.Add(1)
+	go func() { defer s.wg.Done(); s.policies.run(ctx) }()
 	if s.cfg.Jev.StartupProbe {
 		s.wg.Add(1)
 		go func() { defer s.wg.Done(); s.gateway.probe(ctx, max(s.cfg.Jev.AttemptTimeout, 10*time.Second), s.log) }()
 	}
+	// Calibration reload and retention (decision_wiring.go), status transitions (status_events.go).
+	s.startDecisionLoops(ctx, &s.wg)
+	s.startStatusWatch(ctx, &s.wg)
 	s.pool.Start()
 }
 
@@ -275,6 +419,7 @@ func (s *server) shutdown(ctx context.Context) error {
 	}
 	s.wg.Wait()
 	s.gateway.close()
+	s.gateway.auth.Wait() // flush the api_keys last_used_at updates
 	return errors.Join(errs...)
 }
 

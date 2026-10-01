@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Traces, gate decisions and trace bodies (SPEC §2.3, migration 0002). Go is the only writer.
@@ -221,29 +222,8 @@ func (s *PostgresStore) RecordDecision(ctx context.Context, t *TraceRecord, d *D
 		ON CONFLICT (trace_id) DO UPDATE SET `+traceDecisionUpdate, traceInsertArgs(t)...); err != nil {
 		return fmt.Errorf("upsert trace: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO gate_decisions (
-			trace_id, attempt, policy_version, route, mode, effective_mode, status, action, would_action, verdict,
-			max_risk, calibration, degraded, reasons, decision, detectors, excluded, evidence_summary,
-			question_set_sha256, request_sha256, cpt, packed_evidence_ids, truncated_ids, decision_backend,
-			decision_model_requested, decision_snapshot, decision_ms, decision_calls, decision_attempts,
-			decision_hedged, connect_ms, input_tokens, cost_usd, error_kind, error_message, late, gate_ms)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
-			$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
-		ON CONFLICT (trace_id, attempt) DO UPDATE SET
-			status = EXCLUDED.status, action = EXCLUDED.action, would_action = EXCLUDED.would_action,
-			verdict = EXCLUDED.verdict, max_risk = EXCLUDED.max_risk, calibration = EXCLUDED.calibration,
-			degraded = EXCLUDED.degraded, reasons = EXCLUDED.reasons, decision = EXCLUDED.decision,
-			detectors = EXCLUDED.detectors, excluded = EXCLUDED.excluded, late = EXCLUDED.late,
-			gate_ms = EXCLUDED.gate_ms, updated_at = now()`,
-		d.TraceID, d.Attempt, d.PolicyVersion, d.Route, d.Mode, d.EffectiveMode, d.Status, d.Action, d.WouldAction,
-		d.Verdict, d.MaxRisk, d.Calibration, d.Degraded, nonNil(d.Reasons), jsonOr(d.Decision, "{}"),
-		jsonOr(d.Detectors, "[]"), jsonOr(d.Excluded, "[]"), jsonOrNil(d.EvidenceSummary), d.QuestionSetSHA256,
-		d.RequestSHA256, d.CPT, nonNil(d.PackedEvidenceIDs), nonNil(d.TruncatedIDs), d.DecisionBackend,
-		d.DecisionModelRequested, d.DecisionSnapshot, d.DecisionMs, d.DecisionCalls, d.DecisionAttempts,
-		d.DecisionHedged, d.ConnectMs, d.InputTokens, d.CostUSD, d.ErrorKind, d.ErrorMessage, d.Late, d.GateMs,
-	); err != nil {
-		return fmt.Errorf("insert gate decision: %w", err)
+	if err := insertDecision(ctx, tx, d); err != nil {
+		return err
 	}
 	if b != nil {
 		rules, err := json.Marshal(nonNilMap(b.Rules))
@@ -263,6 +243,109 @@ func (s *PostgresStore) RecordDecision(ctx context.Context, t *TraceRecord, d *D
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// RecordAttempt writes the gate_decisions row of a later attempt of a trace (attempt 1, the
+// fallback re-gate) and nothing else: the trace keeps its fields and its audit stays on the
+// original answer. Writing an attempt again replaces its decision.
+func (s *PostgresStore) RecordAttempt(ctx context.Context, d *DecisionRecord) error {
+	if d == nil || d.TraceID == "" {
+		return errors.New("store: a decision with a trace id is required")
+	}
+	if d.Attempt < 1 {
+		return fmt.Errorf("store: attempt %d is recorded with its trace (RecordDecision), not as a later attempt", d.Attempt)
+	}
+	return insertDecision(ctx, s.pool, d)
+}
+
+// RecordLateDecision records a decision recomputed after a late decision-model answer (d.Late,
+// SPEC §2.9 late decisions): it replaces the gate_decisions row of d's attempt whole, usage and
+// compile columns included, and adds the flag late_decision to the trace. The trace keeps every
+// other field: its action and gate outcome are what was enforced.
+func (s *PostgresStore) RecordLateDecision(ctx context.Context, d *DecisionRecord) error {
+	if d == nil || d.TraceID == "" {
+		return errors.New("store: a decision with a trace id is required")
+	}
+	if !d.Late {
+		return errors.New("store: a late decision must be marked late")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO gate_decisions (`+decisionColumns+`)
+		VALUES (`+placeholders(decisionColumnCount)+`)
+		ON CONFLICT (trace_id, attempt) DO UPDATE SET
+			policy_version = EXCLUDED.policy_version, route = EXCLUDED.route, mode = EXCLUDED.mode,
+			effective_mode = EXCLUDED.effective_mode, status = EXCLUDED.status, action = EXCLUDED.action,
+			would_action = EXCLUDED.would_action, verdict = EXCLUDED.verdict, max_risk = EXCLUDED.max_risk,
+			calibration = EXCLUDED.calibration, degraded = EXCLUDED.degraded, reasons = EXCLUDED.reasons,
+			decision = EXCLUDED.decision, detectors = EXCLUDED.detectors, excluded = EXCLUDED.excluded,
+			evidence_summary = EXCLUDED.evidence_summary, question_set_sha256 = EXCLUDED.question_set_sha256,
+			request_sha256 = EXCLUDED.request_sha256, cpt = EXCLUDED.cpt,
+			packed_evidence_ids = EXCLUDED.packed_evidence_ids, truncated_ids = EXCLUDED.truncated_ids,
+			decision_backend = EXCLUDED.decision_backend, decision_model_requested = EXCLUDED.decision_model_requested,
+			decision_snapshot = EXCLUDED.decision_snapshot, decision_ms = EXCLUDED.decision_ms,
+			decision_calls = EXCLUDED.decision_calls, decision_attempts = EXCLUDED.decision_attempts,
+			decision_hedged = EXCLUDED.decision_hedged, connect_ms = EXCLUDED.connect_ms,
+			input_tokens = EXCLUDED.input_tokens, cost_usd = EXCLUDED.cost_usd, error_kind = EXCLUDED.error_kind,
+			error_message = EXCLUDED.error_message, late = true, gate_ms = EXCLUDED.gate_ms, updated_at = now()`,
+		decisionArgs(d)...); err != nil {
+		return fmt.Errorf("upsert late decision: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE traces SET flags = array_append(flags, 'late_decision'), updated_at = now()
+		WHERE trace_id = $1 AND NOT ('late_decision' = ANY(flags))`, d.TraceID); err != nil {
+		return fmt.Errorf("flag late decision: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+// execer runs a statement on the pool or in a transaction.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// decisionColumns are the gate_decisions columns a decision write carries, in decisionArgs order.
+const decisionColumns = `
+	trace_id, attempt, policy_version, route, mode, effective_mode, status, action, would_action, verdict,
+	max_risk, calibration, degraded, reasons, decision, detectors, excluded, evidence_summary,
+	question_set_sha256, request_sha256, cpt, packed_evidence_ids, truncated_ids, decision_backend,
+	decision_model_requested, decision_snapshot, decision_ms, decision_calls, decision_attempts,
+	decision_hedged, connect_ms, input_tokens, cost_usd, error_kind, error_message, late, gate_ms`
+
+const decisionColumnCount = 37
+
+func decisionArgs(d *DecisionRecord) []any {
+	return []any{
+		d.TraceID, d.Attempt, d.PolicyVersion, d.Route, d.Mode, d.EffectiveMode, d.Status, d.Action, d.WouldAction,
+		d.Verdict, d.MaxRisk, d.Calibration, d.Degraded, nonNil(d.Reasons), jsonOr(d.Decision, "{}"),
+		jsonOr(d.Detectors, "[]"), jsonOr(d.Excluded, "[]"), jsonOrNil(d.EvidenceSummary), d.QuestionSetSHA256,
+		d.RequestSHA256, d.CPT, nonNil(d.PackedEvidenceIDs), nonNil(d.TruncatedIDs), d.DecisionBackend,
+		d.DecisionModelRequested, d.DecisionSnapshot, d.DecisionMs, d.DecisionCalls, d.DecisionAttempts,
+		d.DecisionHedged, d.ConnectMs, d.InputTokens, d.CostUSD, d.ErrorKind, d.ErrorMessage, d.Late, d.GateMs,
+	}
+}
+
+// insertDecision upserts the gate_decisions row of d's attempt. A late decision already recorded
+// for the attempt stays: it is the newest word on it (RecordLateDecision).
+func insertDecision(ctx context.Context, q execer, d *DecisionRecord) error {
+	if _, err := q.Exec(ctx, `
+		INSERT INTO gate_decisions (`+decisionColumns+`)
+		VALUES (`+placeholders(decisionColumnCount)+`)
+		ON CONFLICT (trace_id, attempt) DO UPDATE SET
+			status = EXCLUDED.status, action = EXCLUDED.action, would_action = EXCLUDED.would_action,
+			verdict = EXCLUDED.verdict, max_risk = EXCLUDED.max_risk, calibration = EXCLUDED.calibration,
+			degraded = EXCLUDED.degraded, reasons = EXCLUDED.reasons, decision = EXCLUDED.decision,
+			detectors = EXCLUDED.detectors, excluded = EXCLUDED.excluded, late = EXCLUDED.late,
+			gate_ms = EXCLUDED.gate_ms, updated_at = now()
+		WHERE NOT gate_decisions.late`,
+		decisionArgs(d)...); err != nil {
+		return fmt.Errorf("insert gate decision: %w", err)
+	}
+	return nil
 }
 
 // TraceAuditUpdate changes a trace's audit fields; nil and empty fields keep their value.
@@ -299,7 +382,8 @@ const traceInsertCount = 41
 
 // traceDecisionUpdate updates a stored trace with a decided one. The gate outcome, the reasons,
 // the audit status and the flags are the decision's; everything else keeps a stored value the
-// decision does not have.
+// decision does not have. A late_decision flag already stored stays (RecordLateDecision): the
+// late decision of the fallback's attempt 1 can be recorded before the trace write of attempt 0.
 const traceDecisionUpdate = `
 	effective_mode = COALESCE(EXCLUDED.effective_mode, traces.effective_mode),
 	model = COALESCE(EXCLUDED.model, traces.model),
@@ -329,7 +413,8 @@ const traceDecisionUpdate = `
 	audit_selection = COALESCE(EXCLUDED.audit_selection, traces.audit_selection),
 	question_preview = COALESCE(EXCLUDED.question_preview, traces.question_preview),
 	response_preview = COALESCE(EXCLUDED.response_preview, traces.response_preview),
-	flags = EXCLUDED.flags,
+	flags = CASE WHEN 'late_decision' = ANY(traces.flags) AND NOT ('late_decision' = ANY(EXCLUDED.flags))
+		THEN array_append(EXCLUDED.flags, 'late_decision') ELSE EXCLUDED.flags END,
 	updated_at = now()`
 
 func traceInsertArgs(t *TraceRecord) []any {
@@ -519,7 +604,8 @@ func (s *PostgresStore) GetTrace(ctx context.Context, traceID string) (*TraceRec
 	return scanTrace(s.pool.QueryRow(ctx, traceSelect+" WHERE t.trace_id = $1", traceID))
 }
 
-// GetTraceBody returns the stored body of a trace, or ErrNotFound when none was kept.
+// GetTraceBody returns the stored body of a trace, or ErrNotFound when none was kept. A body the
+// retention job deleted comes back as an expired record without content.
 func (s *PostgresStore) GetTraceBody(ctx context.Context, traceID string) (*BodyRecord, error) {
 	var (
 		b     BodyRecord
@@ -532,6 +618,9 @@ func (s *PostgresStore) GetTraceBody(ctx context.Context, traceID string) (*Body
 		FROM trace_bodies WHERE trace_id = $1`, traceID).Scan(
 		&b.TraceID, &b.Messages, &b.UserRequest, &b.SystemInstructions, &b.ResponseText, &b.FinalResponseText,
 		&b.Evidence, &rules, &b.Bytes, &b.Truncated, &prob, &b.ExpiresAt)
+	if errors.Is(err, ErrNotFound) {
+		return s.expiredBody(ctx, traceID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -542,6 +631,21 @@ func (s *PostgresStore) GetTraceBody(ctx context.Context, traceID string) (*Body
 		}
 	}
 	return &b, nil
+}
+
+// expiredBody is the body of a trace whose body retention deleted (flag body_expired): a record
+// without content that expired at the zero time, so View reports it expired rather than never
+// stored. Any other trace has no body: ErrNotFound.
+func (s *PostgresStore) expiredBody(ctx context.Context, traceID string) (*BodyRecord, error) {
+	var expired bool
+	err := s.pool.QueryRow(ctx, `SELECT 'body_expired' = ANY(flags) FROM traces WHERE trace_id = $1`, traceID).Scan(&expired)
+	switch {
+	case err != nil:
+		return nil, err
+	case !expired:
+		return nil, ErrNotFound
+	}
+	return &BodyRecord{TraceID: traceID, Messages: json.RawMessage("[]"), Evidence: json.RawMessage("[]"), Rules: map[string]string{}}, nil
 }
 
 // TraceDecisions returns the decision/v1 documents of a trace, by attempt.

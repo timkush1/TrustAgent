@@ -1,0 +1,14 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "threshold-none-without-positives",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "No label should fire, so no threshold catches a positive: the result is null.",
+  "input": {
+    "op": "threshold",
+    "groups": [{"risk_raw": 0.2, "pos": 0, "neg": 3}, {"risk_raw": 0.7, "pos": 0, "neg": 2}],
+    "objective": "max_f1"
+  },
+  "expected": {"result": null}
+}

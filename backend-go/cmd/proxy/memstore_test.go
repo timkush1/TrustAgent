@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"maps"
 	"slices"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/store"
 )
 
@@ -15,11 +18,13 @@ import (
 // and the worker write and serves the REST readers from it. The Postgres store's own tests cover
 // the SQL; the e2e test runs the same flow against Postgres when TEST_DATABASE_URL is set.
 type memStore struct {
-	mu        sync.Mutex
-	traces    map[string]*store.TraceRecord
-	order     []string // trace ids, oldest first
-	bodies    map[string]*store.BodyRecord
-	decisions map[string][]json.RawMessage
+	mu     sync.Mutex
+	traces map[string]*store.TraceRecord
+	order  []string // trace ids, oldest first
+	bodies map[string]*store.BodyRecord
+	// decisions holds each trace's decision/v1 documents by attempt (gate_decisions is unique on
+	// trace_id and attempt).
+	decisions map[string]map[int]json.RawMessage
 	audits    map[string]*store.AuditRecord
 	auditIDs  []string
 }
@@ -29,7 +34,7 @@ var _ store.Store = (*memStore)(nil)
 func newMemStore() *memStore {
 	return &memStore{
 		traces: map[string]*store.TraceRecord{}, bodies: map[string]*store.BodyRecord{},
-		decisions: map[string][]json.RawMessage{}, audits: map[string]*store.AuditRecord{},
+		decisions: map[string]map[int]json.RawMessage{}, audits: map[string]*store.AuditRecord{},
 	}
 }
 
@@ -58,16 +63,59 @@ func (m *memStore) RecordDecision(_ context.Context, t *store.TraceRecord, d *st
 			cp.QuestionPreview = old.QuestionPreview
 		}
 		cp.CreatedAt = old.CreatedAt
+		// A late decision recorded before this write keeps its flag, as in the Postgres store.
+		if slices.Contains(old.Flags, gate.FlagLateDecision) && !slices.Contains(cp.Flags, gate.FlagLateDecision) {
+			cp.Flags = append(slices.Clone(cp.Flags), gate.FlagLateDecision)
+		}
 	} else {
 		m.order = append(m.order, t.TraceID)
 	}
 	m.traces[t.TraceID] = &cp
-	m.decisions[t.TraceID] = append(m.decisions[t.TraceID], d.Decision)
+	m.putDecision(d)
 	if b != nil {
 		bc := *b
 		m.bodies[t.TraceID] = &bc
 	}
 	return nil
+}
+
+// RecordAttempt writes a later attempt's decision only, as the Postgres store does.
+func (m *memStore) RecordAttempt(_ context.Context, d *store.DecisionRecord) error {
+	if d == nil || d.TraceID == "" || d.Attempt < 1 {
+		return errors.New("memstore: RecordAttempt needs a trace id and attempt 1 or later")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.putDecision(d)
+	return nil
+}
+
+// RecordLateDecision replaces an attempt's decision with its late one and flags the trace
+// late_decision, leaving every other trace field as it was, as the Postgres store does.
+func (m *memStore) RecordLateDecision(_ context.Context, d *store.DecisionRecord) error {
+	if d == nil || d.TraceID == "" || !d.Late {
+		return errors.New("memstore: RecordLateDecision needs a late decision with a trace id")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.putDecision(d)
+	if t, ok := m.traces[d.TraceID]; ok && !slices.Contains(t.Flags, gate.FlagLateDecision) {
+		cp := *t
+		cp.Flags = append(slices.Clone(t.Flags), gate.FlagLateDecision)
+		cp.UpdatedAt = time.Now().UTC()
+		m.traces[d.TraceID] = &cp
+	}
+	return nil
+}
+
+// putDecision upserts d's attempt; the caller holds m.mu.
+func (m *memStore) putDecision(d *store.DecisionRecord) {
+	byAttempt := m.decisions[d.TraceID]
+	if byAttempt == nil {
+		byAttempt = map[int]json.RawMessage{}
+		m.decisions[d.TraceID] = byAttempt
+	}
+	byAttempt[d.Attempt] = d.Decision
 }
 
 func (m *memStore) SetTraceAudit(_ context.Context, traceID string, u store.TraceAuditUpdate) error {
@@ -195,7 +243,12 @@ func (m *memStore) GetTraceBody(_ context.Context, id string) (*store.BodyRecord
 func (m *memStore) TraceDecisions(_ context.Context, id string) ([]json.RawMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]json.RawMessage{}, m.decisions[id]...), nil
+	attempts := slices.Sorted(maps.Keys(m.decisions[id]))
+	out := make([]json.RawMessage, 0, len(attempts))
+	for _, a := range attempts {
+		out = append(out, m.decisions[id][a])
+	}
+	return out, nil
 }
 
 func (m *memStore) ListAudits(_ context.Context, f store.AuditFilter) ([]store.AuditRecord, string, error) {

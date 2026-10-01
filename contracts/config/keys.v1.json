@@ -2298,6 +2298,19 @@
       "description": "Ingest key used by the demo traffic generator."
     },
     {
+      "name": "MOCK_UPSTREAM_ADDR",
+      "aliases": [],
+      "services": ["tools"],
+      "kind": "string",
+      "default": ":8090",
+      "compose_default": ":8090",
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Listen address of mock-upstream, the fake of every vendor API the e2e and load stacks use (compose profiles e2e and load). The -addr flag overrides it."
+    },
+    {
       "name": "DASHBOARD_API_BASE",
       "aliases": [],
       "services": ["dashboard"],

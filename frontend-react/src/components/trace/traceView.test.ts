@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { decision } from '@/test/fixtures';
+import { p3Detail } from '@/test/p3Fixtures';
 import { s0Audit, s0Decision, s0Detail, s0Trace, scenario } from '@/test/scenarios';
 import type { EvaluatorResult } from '@/types/api';
 import {
+  answerDecision,
   buildTraceView,
   checkRows,
   claimsSummary,
+  decisionAttempts,
+  deliveredOf,
   disagreementLine,
   evaluatorName,
-  latestDecision,
+  fallbackCheckResult,
   orderedClaims,
   pickAudit,
 } from './traceView';
@@ -51,14 +55,22 @@ describe('buildTraceView', () => {
   });
 });
 
-describe('latestDecision and pickAudit', () => {
-  it('keeps the highest attempt and a late decision over an on-time one', () => {
+describe('decision attempts and pickAudit', () => {
+  it('keeps one decision per attempt, a late one over an on-time one, in attempt order', () => {
     const first = decision({ attempt: 0 });
     const late = decision({ attempt: 0, late: true, action: 'pass' });
-    const retry = decision({ attempt: 1 });
-    expect(latestDecision([first, null, late])).toBe(late);
-    expect(latestDecision([retry, late])).toBe(retry);
-    expect(latestDecision([])).toBeNull();
+    const fallbackCheck = decision({ attempt: 1, action: 'pass' });
+    expect(decisionAttempts([fallbackCheck, first, null, late])).toEqual([late, fallbackCheck]);
+    // An on-time copy arriving after the late one does not undo it.
+    expect(decisionAttempts([late, first])).toEqual([late]);
+    expect(decisionAttempts([])).toEqual([]);
+  });
+
+  it('describes the model\'s answer with attempt 0, never with the fallback check', () => {
+    const first = decision({ attempt: 0 });
+    const fallbackCheck = decision({ attempt: 1, action: 'pass' });
+    expect(answerDecision([first, fallbackCheck])).toBe(first);
+    expect(answerDecision([fallbackCheck])).toBeNull();
   });
 
   it('picks the audit the trace points at, else the most complete one', () => {
@@ -122,5 +134,52 @@ describe('claims', () => {
       'Fast check passed it; deep audit found 1 contradicted claim(s).',
     );
     expect(disagreementLine({ summary: s0Trace('grounded-pass'), audit: s0Audit('grounded-pass') })).toBeNull();
+  });
+});
+
+describe('what the user received', () => {
+  it('shows the fallback answer the user received, and keeps the checks on the model\'s answer', () => {
+    const detail = p3Detail('payments-fallback');
+    const view = buildTraceView({ detail });
+    expect(view?.delivered).toBe('fallback');
+    expect(view?.answer).toEqual({ text: 'The money will be back on your card within 2 business days.', preview: false });
+    expect(view?.deliveredText).toBe('Approved refunds go back to your original payment method within 5 to 10 business days.');
+    expect(view?.attempts.map((d) => d.attempt)).toEqual([0, 1]);
+    expect(view?.decision?.attempt).toBe(0);
+    expect(view?.decision?.reasons).toContain('det:numbers_not_in_evidence');
+    expect(fallbackCheckResult(view?.attempts[1])).toBe('low risk');
+  });
+
+  it('shows the block message of a blocked answer', () => {
+    const view = buildTraceView({ detail: p3Detail('help-center-link-block') });
+    expect(view?.delivered).toBe('blocked');
+    expect(view?.deliveredText).toBe("I can't verify that answer against our help articles, so I've held it back.");
+    expect(view?.answer?.text).toMatch(/^Open https:\/\/acme\.example\/reset-password/);
+  });
+
+  it('knows a delivered fallback from its flag, the block from the action, and the rest from the audit', () => {
+    const t = s0Trace(REFUND, 'decided');
+    expect(deliveredOf({ ...t, action: 'flag', flags: ['fallback_used'] }, null)).toBe('fallback');
+    expect(deliveredOf({ ...t, action: 'fallback' }, null)).toBe('fallback');
+    expect(deliveredOf({ ...t, action: 'block' }, null)).toBe('blocked');
+    expect(deliveredOf(t, null)).toBe('original');
+    expect(deliveredOf({ ...t, action: null }, null)).toBeNull();
+    const audit = s0Audit(REFUND);
+    expect(deliveredOf({ ...t, action: null }, { ...audit, gate: { ...audit.gate!, delivered: 'blocked' } })).toBe('blocked');
+  });
+
+  it('never passes the sent text off as the model\'s answer', () => {
+    const detail = p3Detail('payments-fallback');
+    // A store that kept only what was sent.
+    const onlySent = buildTraceView({ detail: { ...detail, body: { ...detail.body, response_text: null } } });
+    expect(onlySent?.answer?.text).toBe(detail.audit_detail?.llm_response);
+    // A store that kept only the model's answer: nothing to show for what was sent instead.
+    const onlyOriginal = buildTraceView({ detail: { ...detail, body: { ...detail.body, final_response_text: detail.body.response_text } } });
+    expect(onlyOriginal?.deliveredText).toBeNull();
+  });
+
+  it('says why a fallback check did not rate the answer', () => {
+    expect(fallbackCheckResult(decision({ attempt: 1, status: 'timeout' }))).toBe('the check timed out');
+    expect(fallbackCheckResult(null)).toBeNull();
   });
 });

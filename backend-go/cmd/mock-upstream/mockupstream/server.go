@@ -14,9 +14,14 @@
 // one call (keyed by X-Mock-Key, else the decision session_id, else globally) and then clears, so
 // retries and hedges can be exercised.
 //
-// Scenario ids come from X-Mock-Scenario, X-TrustAgent-Scenario or the scenario query parameter;
-// LLM requests also match a scenario by their last user message. Decision requests answer each
-// question from the scenario's mock_answers, else with a deterministic hash answer rounded to two
+// Scenario ids come from X-Mock-Scenario, X-TrustAgent-Scenario or the scenario query parameter.
+// The gateway strips X-TrustAgent-* before it calls the LLM upstream, so LLM requests are matched
+// on their conversation (every message, the Anthropic system and the prompt, as the gateway
+// forwards the scenario's request), then on their last user message; they answer with the
+// scenario's response, JSON or SSE as asked. The gateway's fallback request (its prompt carries the
+// CONTEXT block) answers with the scenario's fallback.response. Decision requests answer each
+// question from the scenario's mock_answers (fallback.mock_answers when the state's
+// assistant_response is the fallback answer), else with a deterministic hash answer rounded to two
 // decimals like the vendor (so choice probabilities can sum to 0.99 or 1.01).
 package mockupstream
 
@@ -76,7 +81,11 @@ type Server struct {
 	log       *slog.Logger
 	mux       *http.ServeMux
 	scenarios map[string]*Scenario
-	byPrompt  map[string]*Scenario
+	// byConversation, byPrompt and byFallbackPrompt match LLM requests that carry no scenario id
+	// (the first scenario in file order wins a shared key).
+	byConversation   map[string]*Scenario
+	byPrompt         map[string]*Scenario
+	byFallbackPrompt map[string]*Scenario
 
 	mu       sync.Mutex
 	counts   map[string]int
@@ -130,15 +139,21 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("mock-upstream: scenarios: %w", err)
 	}
 	s := &Server{
-		cfg: cfg, log: log, scenarios: map[string]*Scenario{}, byPrompt: map[string]*Scenario{},
+		cfg: cfg, log: log, scenarios: map[string]*Scenario{},
+		byConversation: map[string]*Scenario{}, byPrompt: map[string]*Scenario{}, byFallbackPrompt: map[string]*Scenario{},
 		counts: map[string]int{}, codes: map[string]string{}, snapshot: cfg.Snapshot,
+	}
+	first := func(m map[string]*Scenario, key string, sc *Scenario) {
+		if _, dup := m[key]; key != "" && !dup {
+			m[key] = sc
+		}
 	}
 	for _, sc := range scenarios {
 		s.scenarios[sc.ID] = sc
-		if p := sc.prompt(); p != "" {
-			if _, dup := s.byPrompt[p]; !dup {
-				s.byPrompt[p] = sc
-			}
+		first(s.byConversation, sc.conversation(), sc)
+		first(s.byPrompt, sc.prompt(), sc)
+		if sc.fallbackText() != "" {
+			first(s.byFallbackPrompt, sc.prompt(), sc)
 		}
 	}
 	s.routes()

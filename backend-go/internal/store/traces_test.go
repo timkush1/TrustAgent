@@ -315,3 +315,244 @@ func TestPreviewAndFloat32(t *testing.T) {
 		t.Errorf("float32 0.06 -> %v", v)
 	}
 }
+
+func TestRecordAttemptWritesOnlyItsDecision(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := pendingTrace("payments-faq", time.Now().UTC())
+	if err := s.StartTrace(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	tr, dec := decided(start, "fallback", "block", "contradicted", 0.97, []string{"groundedness:critical"})
+	// The fallback re-gate (attempt 1) is recorded before the trace's outcome.
+	re := *dec
+	re.Attempt, re.Action, re.WouldAction, re.Reasons = 1, "pass", strp("pass"), []string{}
+	re.Decision = json.RawMessage(`{"spec":"decision/v1","trace_id":"` + start.TraceID + `","attempt":1,"action":"pass"}`)
+	if err := s.RecordAttempt(ctx, &re); err != nil {
+		t.Fatalf("RecordAttempt: %v", err)
+	}
+	got, err := s.GetTrace(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GateStatus != GateStatusPending || got.Action != nil {
+		t.Errorf("the attempt changed the trace: %s %v", got.GateStatus, got.Action)
+	}
+	if err := s.RecordDecision(ctx, tr, dec, nil); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := s.TraceDecisions(ctx, start.TraceID)
+	if err != nil || len(docs) != 2 {
+		t.Fatalf("decisions by attempt: %s %v", docs, err)
+	}
+	var second struct {
+		Attempt int    `json:"attempt"`
+		Action  string `json:"action"`
+	}
+	if err := json.Unmarshal(docs[1], &second); err != nil || !strings.Contains(string(docs[0]), `"detectors"`) ||
+		second.Attempt != 1 || second.Action != "pass" {
+		t.Errorf("decisions by attempt: %s (%v)", docs, err)
+	}
+
+	// Writing the attempt again replaces it; the trace keeps the attempt-0 outcome.
+	re.Action, re.Decision = "flag", json.RawMessage(`{"spec":"decision/v1","trace_id":"`+start.TraceID+`","attempt":1,"action":"flag"}`)
+	if err := s.RecordAttempt(ctx, &re); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	var action string
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), max(action) FILTER (WHERE attempt = 1) FROM gate_decisions WHERE trace_id = $1`,
+		start.TraceID).Scan(&n, &action); err != nil || n != 2 || action != "flag" {
+		t.Errorf("rows %d attempt-1 action %q (%v)", n, action, err)
+	}
+	if got, _ := s.GetTrace(ctx, start.TraceID); got.GateStatus != "ok" || *got.Action != "fallback" {
+		t.Errorf("trace %s %v", got.GateStatus, got.Action)
+	}
+
+	// Attempt 0 goes with its trace, never alone.
+	zero := *dec
+	if err := s.RecordAttempt(ctx, &zero); err == nil {
+		t.Error("RecordAttempt accepted attempt 0")
+	}
+	if err := s.RecordAttempt(ctx, nil); err == nil {
+		t.Error("RecordAttempt accepted nil")
+	}
+}
+
+func TestRecordDecisionKeepsWhatTheClientGot(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := pendingTrace("payments-faq", time.Now().UTC())
+	if err := s.StartTrace(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	// The fallback answer went out: the trace's action and flags say so, the body keeps both texts,
+	// and the stream's time to first token is kept.
+	tr, dec := decided(start, "fallback", "block", "contradicted", 0.97, []string{"groundedness:critical"})
+	ttft := int64(120)
+	tr.TTFTMs, tr.Flags = &ttft, []string{"test_mode", "mock_decision", "fallback_used"}
+	b := body(tr.TraceID, time.Now().Add(time.Hour))
+	b.FinalResponseText = strp("Approved refunds go back to your original payment method within 5 to 10 business days.")
+	if err := s.RecordDecision(ctx, tr, dec, b); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTrace(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := got.Summary()
+	if *sum.Action != "fallback" || sum.Timings.TTFTMs == nil || *sum.Timings.TTFTMs != 120 ||
+		strings.Join(sum.Flags, ",") != "test_mode,mock_decision,fallback_used" {
+		t.Errorf("trace action %v ttft %v flags %v", sum.Action, sum.Timings.TTFTMs, sum.Flags)
+	}
+	gb, err := s.GetTraceBody(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := gb.View(time.Now()); *v.ResponseText != "Within 60 days." || v.FinalResponseText == nil ||
+		*v.FinalResponseText != *b.FinalResponseText {
+		t.Errorf("body texts %v / %v", v.ResponseText, v.FinalResponseText)
+	}
+
+	// An error-style block delivered no answer text: final_response_text is NULL.
+	start = pendingTrace("payments-faq", time.Now().UTC())
+	tr, dec = decided(start, "block", "block", "contradicted", 0.97, []string{"groundedness:critical"})
+	b = body(tr.TraceID, time.Now().Add(time.Hour))
+	b.FinalResponseText = nil
+	if err := s.RecordDecision(ctx, tr, dec, b); err != nil {
+		t.Fatal(err)
+	}
+	if gb, err := s.GetTraceBody(ctx, start.TraceID); err != nil || gb.FinalResponseText != nil || *gb.ResponseText != "Within 60 days." {
+		t.Errorf("error-style block body %+v (%v)", gb, err)
+	}
+}
+
+func TestRecordLateDecisionReplacesItsAttemptRow(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := pendingTrace("support-bot", time.Now().UTC())
+	if err := s.StartTrace(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	// The gate timed out and passed the answer unchecked.
+	tr, dec := decided(start, "pass", "pass", "unknown", 0, []string{})
+	tr.GateStatus, dec.Status, dec.MaxRisk, dec.Verdict = "timeout", "timeout", nil, nil
+	tr.MaxRisk, tr.Verdict = nil, nil
+	if err := s.RecordDecision(ctx, tr, dec, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// The decision model answered late: the whole row is the late decision's, usage included.
+	late := *dec
+	calls, attempts, ms, cost := 1, 2, int64(3400), 0.000042
+	late.Late, late.Status, late.Action, late.WouldAction, late.Verdict = true, "ok", "flag", strp("block"), strp("contradicted")
+	risk := 0.97
+	late.MaxRisk, late.Reasons, late.Calibration = &risk, []string{"contradiction:critical"}, "all"
+	late.DecisionSnapshot, late.DecisionCalls, late.DecisionAttempts, late.DecisionMs, late.CostUSD = strp("jev-1.2"), &calls, &attempts, &ms, &cost
+	late.RequestSHA256 = []string{"abc"}
+	late.Decision = json.RawMessage(`{"spec":"decision/v1","trace_id":"` + start.TraceID + `","attempt":0,"action":"flag","late":true}`)
+	if err := s.RecordLateDecision(ctx, &late); err != nil {
+		t.Fatalf("RecordLateDecision: %v", err)
+	}
+	// Recording it again (a retried write) changes nothing more: the flag is there once.
+	if err := s.RecordLateDecision(ctx, &late); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		n                  int
+		isLate             bool
+		status, action     string
+		snapshot           *string
+		dCalls, dAttempts  *int
+		dMs                *int
+		dCost              *float64
+		reqSHA             []string
+		created, updatedAt time.Time
+	)
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) OVER (), late, status, action, decision_snapshot, decision_calls,
+		decision_attempts, decision_ms, cost_usd::float8, request_sha256, created_at, updated_at
+		FROM gate_decisions WHERE trace_id = $1`, start.TraceID).Scan(&n, &isLate, &status, &action, &snapshot, &dCalls,
+		&dAttempts, &dMs, &dCost, &reqSHA, &created, &updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || !isLate || status != "ok" || action != "flag" || *snapshot != "jev-1.2" || *dCalls != 1 || *dAttempts != 2 ||
+		*dMs != 3400 || *dCost != cost || len(reqSHA) != 1 || updatedAt.Before(created) {
+		t.Errorf("row: n %d late %v %s %s snapshot %v calls %v attempts %v ms %v cost %v sha %v", n, isLate, status, action,
+			snapshot, dCalls, dAttempts, dMs, dCost, reqSHA)
+	}
+	got, err := s.GetTrace(ctx, start.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *got.Action != "pass" || got.GateStatus != "timeout" || got.MaxRisk != nil {
+		t.Errorf("the trace keeps what was enforced: %v %s %v", *got.Action, got.GateStatus, got.MaxRisk)
+	}
+	if c := strings.Count(strings.Join(got.Flags, ","), "late_decision"); c != 1 {
+		t.Errorf("flags %v", got.Flags)
+	}
+	docs, _ := s.TraceDecisions(ctx, start.TraceID)
+	if len(docs) != 1 || !strings.Contains(strings.ReplaceAll(string(docs[0]), " ", ""), `"late":true`) {
+		t.Errorf("decisions %s", docs)
+	}
+
+	// A regular write of the same attempt after it never buries the late decision.
+	if err := s.RecordDecision(ctx, tr, dec, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT late, action FROM gate_decisions WHERE trace_id = $1`, start.TraceID).Scan(&isLate, &action); err != nil ||
+		!isLate || action != "flag" {
+		t.Errorf("after a regular write: late %v action %s (%v)", isLate, action, err)
+	}
+	// Nor does it drop the trace's late_decision flag.
+	if got, err := s.GetTrace(ctx, start.TraceID); err != nil {
+		t.Fatal(err)
+	} else if !containsString(got.Flags, "late_decision") {
+		t.Errorf("after a regular write: flags %v", got.Flags)
+	}
+
+	// The fallback records attempt 1 before the trace write of attempt 0: a late decision of
+	// attempt 1 recorded in between keeps its flag through that write.
+	fb := pendingTrace("support-bot", time.Now().UTC())
+	if err := s.StartTrace(ctx, fb); err != nil {
+		t.Fatal(err)
+	}
+	fbTrace, fbDec := decided(fb, "fallback", "block", "contradicted", 0.9, []string{"contradiction:critical"})
+	fbTrace.Flags = append(fbTrace.Flags, "fallback_used")
+	regate := *fbDec
+	regate.Attempt, regate.Status, regate.Action = 1, "timeout", "pass"
+	if err := s.RecordAttempt(ctx, &regate); err != nil {
+		t.Fatal(err)
+	}
+	lateRegate := regate
+	lateRegate.Late, lateRegate.Status = true, "ok"
+	if err := s.RecordLateDecision(ctx, &lateRegate); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordDecision(ctx, fbTrace, fbDec, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetTrace(ctx, fb.TraceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(got.Flags, "late_decision") || !containsString(got.Flags, "fallback_used") || *got.Action != "fallback" {
+		t.Errorf("attempt 1 late before attempt 0: flags %v action %v", got.Flags, *got.Action)
+	}
+
+	// A late attempt 1 upserts its own row; it needs the late mark and a trace id.
+	one := late
+	one.Attempt = 1
+	if err := s.RecordLateDecision(ctx, &one); err != nil {
+		t.Fatal(err)
+	}
+	if docs, _ := s.TraceDecisions(ctx, start.TraceID); len(docs) != 2 {
+		t.Errorf("attempt 1: %d rows", len(docs))
+	}
+	notLate := *dec
+	if err := s.RecordLateDecision(ctx, &notLate); err == nil {
+		t.Error("RecordLateDecision accepted a decision that is not late")
+	}
+	if err := s.RecordLateDecision(ctx, nil); err == nil {
+		t.Error("RecordLateDecision accepted nil")
+	}
+}

@@ -4,8 +4,8 @@
 // The rules are data in contracts/rules/doc-blocks.v1.json and are pinned by the
 // contracts/vectors/evidence vectors.
 //
-// S0 reads openai_chat requests. Anthropic Messages (top-level system, tool_result blocks),
-// /v1/completions prompts and the knowledge add-on join in P2/P3.
+// Requests of every API format arrive through llmapi.ParseRequest (OpenAI chat and completions,
+// Anthropic Messages mapped onto chat messages). The knowledge add-on joins in P3.
 package evidence
 
 import (

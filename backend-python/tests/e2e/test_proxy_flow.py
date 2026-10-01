@@ -6,6 +6,7 @@ needing a real upstream LLM key.
 """
 
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -51,7 +52,12 @@ def test_direct_audit_endpoint_accepts_job(proxy_url):
 
 def test_file_upload_ingests_documents(proxy_url):
     """Uploading a JSON claim runs Gate-1 ingestion (LLM decomposition +
-    entailment); slow on a CPU judge, hence the long timeout."""
+    entailment); slow on a CPU judge, hence the long timeout. The upload is
+    POST /api/kb/documents (admin; its /api/upload alias was removed at the end
+    of P3) and needs the knowledge profile."""
+    admin_key = os.environ.get("TRUSTAGENT_ADMIN_KEY", "")
+    if not admin_key:
+        pytest.skip("POST /api/kb/documents needs an admin key: set TRUSTAGENT_ADMIN_KEY")
     docs = [{"content": "E2E test document: the sky is blue.", "metadata": {"source": "test"}}]
     file_data = json.dumps(docs).encode("utf-8")
     boundary = "----E2ETestBoundary"
@@ -66,9 +72,12 @@ def test_file_upload_ingests_documents(proxy_url):
     )
 
     req = urllib.request.Request(
-        f"{proxy_url}/api/upload",
+        f"{proxy_url}/api/kb/documents",
         data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "X-TrustAgent-Key": admin_key,
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=180) as resp:

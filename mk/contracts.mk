@@ -15,7 +15,7 @@ GO ?= go
 # Stamp npm writes on every install; it is older than package-lock.json when dependencies changed.
 CONTRACTS_NODE_STAMP := $(CONTRACTS_DIR)/node_modules/.package-lock.json
 
-.PHONY: contracts-install contracts-check contracts-test contracts-go vectors install check
+.PHONY: contracts-install contracts-check contracts-test contracts-go forbidden-check vectors install check
 
 contracts-install: ## Install the contracts validator dependencies (npm ci)
 	cd "$(CONTRACTS_DIR)" && $(NPM) ci --no-audit --no-fund
@@ -32,6 +32,11 @@ contracts-test: $(CONTRACTS_NODE_STAMP) ## Run the contracts validator's own tes
 contracts-go: ## Vet and test the embedded Go contracts module (github.com/truthtable/contracts)
 	cd "$(CONTRACTS_DIR)" && $(GO) vet ./... && $(GO) test ./...
 
+# SPEC Appendix A as data (contracts/superseded.v1.json); ci-contracts runs the same two steps.
+forbidden-check: ## Fail on a superseded identifier (scripts/check-forbidden.mjs: its self-test, then the scan)
+	$(NODE) "$(CONTRACTS_MK_DIR)../scripts/check-forbidden.mjs" --self-test
+	$(NODE) "$(CONTRACTS_MK_DIR)../scripts/check-forbidden.mjs"
+
 # Extra cmd/vectorgen flags, e.g. VECTORGEN_FLAGS=-check (verify only) or VECTORGEN_FLAGS="-kinds compile -freeze".
 VECTORGEN_FLAGS ?=
 
@@ -42,4 +47,4 @@ vectors: ## Generate the expected values of the mechanical golden vectors with G
 # elsewhere (with or without a recipe) and also works when no other rule for the target exists.
 # If the root Makefile ever declares them `::` (double-colon), these lines must become `::` too.
 install: contracts-install
-check: contracts-check contracts-test contracts-go
+check: contracts-check contracts-test contracts-go forbidden-check

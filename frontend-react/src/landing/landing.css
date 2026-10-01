@@ -1,0 +1,89 @@
+/*
+ * The landing page's stylesheet (SPEC §8.1): Tailwind over the landing sources only, plus the
+ * shared tokens (src/styles/tokens.css), so it ships none of the dashboard's classes. The page
+ * follows DESIGN.md: achromatic chrome, hue only for verdicts and outcomes, no gradients or glow.
+ * It adds a display type scale for marketing headings; everything else is the dashboard's.
+ */
+@import 'tailwindcss' source('.');
+@import '../styles/tokens.css';
+@source not './**/*.test.{ts,tsx}';
+
+@theme {
+  /* Display sizes (landing only): hero 72 px (52 / 40 on narrow screens), section titles 32-40 px, lead 19 px. */
+  --text-lead: 1.1875rem;
+  --text-lead--line-height: 1.75rem;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 2.375rem;
+  --text-4xl: 2.5rem;
+  --text-4xl--line-height: 2.875rem;
+  --text-display: 4.5rem;
+  --text-display--line-height: 1;
+}
+
+@layer base {
+  body {
+    font-size: 1rem;
+    line-height: 1.625;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 4.5rem;
+  }
+
+  :where(h1, h2, h3) {
+    text-wrap: balance;
+  }
+
+  :where(p) {
+    text-wrap: pretty;
+  }
+
+  /* Code shows the characters you would type: no programming ligatures (YAML's `>-` stays two characters). */
+  :where(code, pre, kbd, samp, .font-mono) {
+    font-variant-ligatures: none;
+  }
+}
+
+@layer components {
+  /* The hero's answer card: the contradicted span fades its wavy underline in (beat 3). */
+  .hero-mark {
+    border-radius: 2px;
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    text-decoration-skip-ink: none;
+    text-decoration-color: transparent;
+    background-color: transparent;
+    color: inherit;
+    transition:
+      text-decoration-color 200ms var(--ease-out),
+      background-color 200ms var(--ease-out);
+  }
+  .hero-mark[data-on] {
+    text-decoration-color: var(--v-contradicted);
+    background-color: color-mix(in oklab, var(--v-contradicted) var(--tint), transparent);
+  }
+
+  /* A beat of the hero card: hidden, then eased in (opacity and a 4 px rise only). */
+  .beat {
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 200ms var(--ease-out),
+      transform 200ms var(--ease-out);
+  }
+  .beat[data-on] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Evidence quoted in the hero card: neutral emphasis (it is the source, not a verdict). */
+  .evidence-quote {
+    border-radius: 2px;
+    background-color: var(--surface-hover);
+    box-shadow: inset 0 -1px 0 var(--border-strong);
+  }
+}

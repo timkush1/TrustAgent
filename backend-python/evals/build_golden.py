@@ -43,7 +43,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
 
 EVALS_DIR = Path(__file__).parent
 DATASET_PATH = EVALS_DIR / "datasets" / "golden" / "golden_v1.jsonl"
@@ -349,7 +349,7 @@ SPECIALS = [
 
 def _stable_confidence(key: str, low: float, high: float) -> float:
     """Deterministic pseudo-random confidence derived from the example id."""
-    digest = hashlib.md5(key.encode("utf-8")).hexdigest()
+    digest = hashlib.md5(key.encode("utf-8"), usedforsecurity=False).hexdigest()
     fraction = int(digest[:8], 16) / 0xFFFFFFFF
     return round(low + fraction * (high - low), 2)
 
@@ -376,7 +376,7 @@ def build() -> None:
         domain: str,
         query: str,
         context: List[str],
-        claims: List[tuple],
+        claims: List[Tuple[str, str, float]],
         label_hallucinated: bool,
     ) -> None:
         claim_texts = [claim for claim, _, _ in claims]
@@ -443,8 +443,8 @@ def build() -> None:
             str(special["id"]),
             str(special["domain"]),
             str(special["query"]),
-            list(special["context"]),  # type: ignore[arg-type]
-            list(special["claims"]),  # type: ignore[arg-type]
+            list(cast(Sequence[str], special["context"])),
+            list(cast(Sequence[Tuple[str, str, float]], special["claims"])),
             bool(special["label_hallucinated"]),
         )
 

@@ -28,4 +28,26 @@ describe('ChecksList', () => {
     render(<ChecksList summary={s0Trace('grounded-pass')} decision={null} />);
     expect(screen.getByText('The check details are not available for this request.')).toBeInTheDocument();
   });
+
+  it('names the checks from the evaluator library', () => {
+    const names = new Map([['groundedness', 'Grounded in your documents']]);
+    render(<ChecksList summary={s0Trace('grounded-pass')} decision={s0Decision('grounded-pass')} names={names} />);
+    const items = within(screen.getByRole('list', { name: 'Checks' })).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('Grounded in your documents');
+    // Not in the library (or no library): the humanized id.
+    expect(items[1]).toHaveTextContent('Contradiction');
+  });
+
+  it('says a late decision was recorded, not enforced', () => {
+    render(<ChecksList summary={s0Trace('refund-contradiction-flag')} decision={{ ...s0Decision('refund-contradiction-flag'), late: true }} />);
+    expect(screen.getByTestId('late-decision')).toHaveTextContent(
+      'Arrived late, not enforced. The fast check answered after the deadline, so its result did not change what was sent.',
+    );
+    expect(screen.getAllByRole('meter')).toHaveLength(2);
+  });
+
+  it('says nothing about lateness for an on-time decision', () => {
+    render(<ChecksList summary={s0Trace('refund-contradiction-flag')} decision={s0Decision('refund-contradiction-flag')} />);
+    expect(screen.queryByTestId('late-decision')).toBeNull();
+  });
 });

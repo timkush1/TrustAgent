@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
-	"github.com/truthtable/backend-go/internal/policy"
 )
 
 func TestJudgeStateFromEngineHealth(t *testing.T) {
@@ -108,7 +112,7 @@ func TestStatusUsesEngineInfo(t *testing.T) {
 		t.Errorf("knowledge %+v", k)
 	}
 	s := &statusReporter{cfg: &config.Config{}, engine: fixedHealth{h}, jev: jev.Info{Backend: jev.BackendMock}, now: time.Now,
-		policy: &policy.Policy{Source: policy.SourceBuiltin}, auth: &apiAuth{keys: authz.New(nil, "keys")}}
+		auth: &apiAuth{keys: authz.New(nil, "keys")}}
 	st := s.system(context.Background())
 	if st.Engine.MaxAudits == nil || *st.Engine.MaxAudits != 16 || len(st.Warnings) != 1 || st.Warnings[0] != "Engine: LLM_MODEL is ignored under auto" {
 		t.Errorf("engine %+v warnings %v", st.Engine, st.Warnings)
@@ -118,3 +122,185 @@ func TestStatusUsesEngineInfo(t *testing.T) {
 type fixedHealth struct{ h grpc.EngineHealth }
 
 func (f fixedHealth) Health() grpc.EngineHealth { return f.h }
+
+// statusCalibration reads decision_model's calibration fields from GET /api/status.
+func statusCalibration(t *testing.T, env *testEnv) (state string, targets int, snapshot string) {
+	t.Helper()
+	code, body := env.get("/api/status", testKey)
+	if code != http.StatusOK {
+		t.Fatalf("status %d %s", code, body)
+	}
+	var st struct {
+		DecisionModel struct {
+			CalibrationState  string  `json:"calibration_state"`
+			CalibratedTargets int     `json:"calibrated_targets"`
+			Snapshot          *string `json:"snapshot"`
+		} `json:"decision_model"`
+	}
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.DecisionModel.Snapshot != nil {
+		snapshot = *st.DecisionModel.Snapshot
+	}
+	return st.DecisionModel.CalibrationState, st.DecisionModel.CalibratedTargets, snapshot
+}
+
+func TestStatusShowsTheDemoCalibration(t *testing.T) {
+	env := newTestEnv(t, envOpts{demo: true})
+	if state, n, snap := statusCalibration(t, env); state != "mock" || n != 2 || snap != jev.DefaultMockModel {
+		t.Errorf("decision model calibration %s, %d targets, snapshot %s", state, n, snap)
+	}
+	// The evaluator API reads the same lookup (calibration_progress), for the current snapshot.
+	code, body := env.get("/api/evaluators/groundedness", testKey)
+	var ev struct {
+		CalibrationProgress struct {
+			State    string  `json:"state"`
+			Snapshot *string `json:"snapshot"`
+		} `json:"calibration_progress"`
+	}
+	if err := json.Unmarshal(body, &ev); err != nil || code != http.StatusOK {
+		t.Fatalf("evaluator %d %s (%v)", code, body, err)
+	}
+	if p := ev.CalibrationProgress; p.State != "mock" || p.Snapshot == nil || *p.Snapshot != jev.DefaultMockModel {
+		t.Errorf("calibration progress %+v", p)
+	}
+	// decision_model_changed reports the new snapshot's calibration from it too.
+	if got := env.srv.calibrationState(jev.DefaultMockModel); got != "mock" {
+		t.Errorf("snapshot calibration %s", got)
+	}
+	if got := env.srv.calibrationState("typesafe/jev-1.13-20260917"); got != "none" {
+		t.Errorf("uncalibrated snapshot %s", got)
+	}
+
+	// The gateway's gate reads it: a gated answer's evidence checks carry the mock calibration's
+	// state (support-bot keeps raw thresholds, so nothing is calibrated and nothing changes).
+	sc := loadDemoScenarios(t)["refund-contradiction-flag"]
+	traceID := env.send(sc).Header.Get("X-TrustAgent-Trace-Id")
+	tr := env.settledTrace(traceID)
+	if len(tr.Decisions) != 1 {
+		t.Fatalf("decisions %d", len(tr.Decisions))
+	}
+	var d gate.Decision
+	if err := json.Unmarshal(tr.Decisions[0], &d); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"groundedness@1", "contradiction@1"} {
+		if e, _ := d.Evaluators.Get(ref); e == nil || e.CalibrationState != "mock" || e.Calibrated {
+			t.Errorf("%s: %+v", ref, e)
+		}
+	}
+	if d.Calibration != "none" || d.Action != "flag" {
+		t.Errorf("decision calibration %s action %s", d.Calibration, d.Action)
+	}
+}
+
+func TestCalibrationReloadBroadcastsTheChange(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TRUTHTABLE_CALIBRATION_DIR", dir)
+	old := calibrationReload
+	calibrationReload = 20 * time.Millisecond
+	t.Cleanup(func() { calibrationReload = old })
+	env := newTestEnv(t, envOpts{demo: true})
+	if state, n, _ := statusCalibration(t, env); state != "none" || n != 0 {
+		t.Fatalf("empty directory: %s %d", state, n)
+	}
+	conn, _, err := dialWS(t, env, "protocol=2", http.Header{"X-TrustAgent-Key": {testKey}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hello := readFrame(t, conn); hello.Type != "hello" {
+		t.Fatalf("hello %s", hello.raw)
+	}
+
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "calibration", "mock__jev-heuristic-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mock__jev-heuristic-v1.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		f := readFrame(t, conn) // fails after 10 s without a frame
+		if f.Type != "calibration_updated" {
+			continue
+		}
+		var data struct {
+			Snapshot string `json:"snapshot"`
+			Imported int    `json:"imported"`
+		}
+		if err := json.Unmarshal(f.Data, &data); err != nil || data.Snapshot != jev.DefaultMockModel || data.Imported != 2 || f.TraceID != "" {
+			t.Errorf("calibration_updated %s (%v)", f.raw, err)
+		}
+		break
+	}
+	if state, n, _ := statusCalibration(t, env); state != "mock" || n != 2 {
+		t.Errorf("after the reload: %s %d", state, n)
+	}
+}
+
+func TestCalibrationSettings(t *testing.T) {
+	for _, tc := range []struct {
+		cfg  config.Config
+		want bool
+	}{
+		{config.Config{DemoMode: true}, true},
+		{config.Config{TestMode: true, Jev: config.JevConfig{Backend: "mock"}}, true},
+		{config.Config{TestMode: true, Jev: config.JevConfig{Backend: "compatible"}}, false},
+		{config.Config{Jev: config.JevConfig{Backend: "mock"}}, false},
+		{config.Config{}, false},
+	} {
+		if got := allowMockCalibration(&tc.cfg); got != tc.want {
+			t.Errorf("demo %v test %v backend %q: allow mock %v", tc.cfg.DemoMode, tc.cfg.TestMode, tc.cfg.Jev.Backend, got)
+		}
+	}
+	if dir, family := calibrationSettings(&config.Config{}); dir != "" || family {
+		t.Errorf("a configuration built by hand: %q %v", dir, family)
+	}
+	dir := t.TempDir()
+	t.Setenv("TRUTHTABLE_CALIBRATION_DIR", dir)
+	t.Setenv("TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK", "true")
+	if got, family := calibrationSettings(config.Load()); got != dir || !family {
+		t.Errorf("loaded: %q %v", got, family)
+	}
+}
+
+func TestBudgetStatesMatchTheCap(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		sp                  jev.SpendStatus
+		exhausted, reserved bool
+	}{
+		{"under the soft cap", jev.SpendStatus{SpentUSD: 1, CapUSD: 2, SoftCapUSD: 1.5}, false, false},
+		// jev reports Exhausted from the soft cap on: only observe and flag calls stop there.
+		{"between the soft cap and the cap", jev.SpendStatus{SpentUSD: 1.6, CapUSD: 2, SoftCapUSD: 1.5, Exhausted: true}, false, true},
+		{"held past the soft cap", jev.SpendStatus{SpentUSD: 1.4, ReservedUSD: 0.2, CapUSD: 2, SoftCapUSD: 1.5}, false, true},
+		{"at the cap", jev.SpendStatus{SpentUSD: 2, CapUSD: 2, SoftCapUSD: 1.5, Exhausted: true}, true, false},
+		{"no reserve", jev.SpendStatus{SpentUSD: 1.9, CapUSD: 2, SoftCapUSD: 2}, false, false},
+		{"no cap", jev.SpendStatus{SpentUSD: 9}, false, false},
+	} {
+		st := jev.Status{Info: jev.Info{Backend: jev.BackendOpenRouterDecisions}, Spend: &tc.sp}
+		s := &statusReporter{cfg: &config.Config{SpendCapDecisionUSDDay: tc.sp.CapUSD}, jev: st.Info, jevClient: fakeStatusJev{st: st}, now: time.Now}
+		if b := s.budgets(); b.DecisionExhausted != tc.exhausted || b.DecisionReserveOnly != tc.reserved {
+			t.Errorf("%s: exhausted %v reserve_only %v, want %v %v", tc.name, b.DecisionExhausted, b.DecisionReserveOnly, tc.exhausted, tc.reserved)
+		}
+	}
+}
+
+func TestKnowledgeStatusWhileTheEngineIsSilent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    grpc.EngineHealth
+		want string
+	}{
+		{"no engine", grpc.EngineHealth{State: stateDisabled}, stateDisabled},
+		{"not checked yet", grpc.EngineHealth{State: grpc.StateUnknown}, stateUnknown},
+		{"down", grpc.EngineHealth{State: grpc.StateDown}, stateUnknown},
+		{"without the add-on", grpc.EngineHealth{State: grpc.StateUp, Response: &pb.HealthResponse{Healthy: true}}, stateDisabled},
+		{"with the add-on", grpc.EngineHealth{State: grpc.StateUp, Response: &pb.HealthResponse{Healthy: true, KnowledgeEnabled: true}}, stateUp},
+	} {
+		if k := knowledgeStatus(tc.h); k.State != tc.want {
+			t.Errorf("%s: knowledge %s, want %s", tc.name, k.State, tc.want)
+		}
+	}
+}

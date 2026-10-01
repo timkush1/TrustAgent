@@ -1,13 +1,18 @@
-import { screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { configure, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStreamStore } from '@/data/stream/streamStore';
 import { audit } from '@/test/fixtures';
+import { policyState } from '@/test/control/fixtures';
 import { fakeDataSource } from '@/test/fakeDataSource';
 import { renderApp } from '@/test/renderApp';
+import { systemStatus } from '@/test/status';
 
 beforeEach(() => {
   useStreamStore.getState().reset();
 });
+// The first render of a file loads the lazily split route modules; under a parallel run that can
+// take longer than the 1 s default.
+configure({ asyncUtilTimeout: 5000 });
 
 describe('app shell and routes', () => {
   it('redirects / to Overview and shows the six navigation items', async () => {
@@ -24,9 +29,10 @@ describe('app shell and routes', () => {
   });
 
   it('renders an honest placeholder that names the phase and only links to real pages', async () => {
-    renderApp('/app/policies');
-    expect(await screen.findByText(/Arrives in P3/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('What does each route do with a risky answer?');
+    // Settings is still a placeholder until P4 (Policies, Overview, Playground and Evaluators are built).
+    renderApp('/app/settings/connections');
+    expect(await screen.findByText(/Arrives in P4/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Connected, and within budget?');
     const main = screen.getByRole('main');
     expect(within(main).queryAllByRole('button').filter((b) => !b.hasAttribute('aria-haspopup') && !b.getAttribute('aria-expanded'))).toHaveLength(0);
   });
@@ -45,6 +51,33 @@ describe('app shell and routes', () => {
     expect(await screen.findByText('Demo')).toBeInTheDocument();
     await waitFor(() => expect(container.querySelector('[data-banner="demo"]')).not.toBeNull());
     expect(screen.getByText('make demo-down && make up').tagName).toBe('CODE');
+  });
+
+  it('names the enforcing route in the breaker banner, reading the policy only while the breaker is open', async () => {
+    const base = systemStatus();
+    const policy = policyState();
+    const route = policy.effective_routes[0];
+    const getPolicies = vi.fn(async () => ({
+      ...policy,
+      effective_routes: [{ ...route, name: 'payments-faq', mode: 'fallback' as const, effective_mode: 'flag' as const, fail: 'closed' as const }],
+    }));
+    const ds = fakeDataSource({
+      getStatus: vi.fn(async () => systemStatus({ decision_model: { ...base.decision_model, state: 'breaker_open' } })),
+      getPolicies,
+    });
+    const { container } = renderApp('/app/traffic', ds);
+    await waitFor(() => expect(container.querySelector('[data-banner="breaker_open"]')).not.toBeNull());
+    const banner = container.querySelector('[data-banner="breaker_open"]') as HTMLElement;
+    expect(banner).toHaveTextContent('Route payments-faq enforces decisions; until the fast check recovers it follows its fail mode (closed).');
+    expect(getPolicies).toHaveBeenCalled();
+  });
+
+  it('does not read the policy for the banner while the breaker is closed', async () => {
+    const getPolicies = vi.fn(async () => policyState());
+    const ds = fakeDataSource({ getStatus: vi.fn(async () => systemStatus()), getPolicies });
+    renderApp('/app/traffic', ds);
+    await screen.findByRole('button', { name: /System health/ });
+    expect(getPolicies).not.toHaveBeenCalled();
   });
 
   it('redirects old trace links to Traffic', async () => {

@@ -124,10 +124,82 @@ func TestTrafficgenExpectAgainstPostgres(t *testing.T) {
 	if code != http.StatusOK || len(audits.Items) != 1 || audits.Items[0].Selection == nil || *audits.Items[0].Selection != "high" {
 		t.Errorf("audits HTTP %d %s", code, body)
 	}
+	checkAggregates(t, env)
 	_, body = env.get("/api/status", testKey)
 	contractstest.ValidateJSON(t, schemaStatus, body)
-	// The newest embedded migration (0003 and 0004 arrived with P1b).
-	if !strings.Contains(string(body), `"migration":"0004_security_costs.up.sql"`) {
-		t.Errorf("status %s", body)
+	if want := newestMigration(t); !strings.Contains(string(body), `"migration":"`+want+`"`) {
+		t.Errorf("status names the newest migration %s: %s", want, body)
+	}
+}
+
+// newestMigration is the last embedded migration file, which /api/status reports once applied.
+func newestMigration(t *testing.T) string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "internal", "store", "migrations", "*.up.sql"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("migrations: %v", err)
+	}
+	return filepath.Base(files[len(files)-1])
+}
+
+// checkAggregates reads the overview, ROI and evidence-coverage aggregates of the s0 traffic: all
+// of it runs on the mock decision model, so it is counted (and labelled simulated) only with
+// include_mock, and left out by default outside demo mode.
+func checkAggregates(t *testing.T, env *testEnv) {
+	t.Helper()
+	strict := func(body []byte, dst any) {
+		t.Helper()
+		dec := json.NewDecoder(strings.NewReader(string(body)))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(dst); err != nil {
+			t.Fatalf("decode %T: %v\n%s", dst, err, body)
+		}
+	}
+	code, body := env.get("/api/overview?window=1h&include_mock=true", testKey)
+	if code != http.StatusOK {
+		t.Fatalf("overview HTTP %d %s", code, body)
+	}
+	var o overviewStats
+	strict(body, &o)
+	if o.Totals.Requests != 3 || o.Totals.Flagged != 1 || !o.IncludeMock || o.Bucket != "1m" || len(o.OutcomesSeries) < 60 {
+		t.Errorf("overview totals %+v bucket %s points %d", o.Totals, o.Bucket, len(o.OutcomesSeries))
+	}
+	if o.EvidenceCoverage.WithEvidence != 2 || o.EvidenceCoverage.GroundednessAssessed != 2 || o.EvidenceCoverage.Rate == nil ||
+		o.EvidenceCoverage.BySource["request_system"] != 2 {
+		t.Errorf("overview coverage %+v", o.EvidenceCoverage)
+	}
+	if o.HallucinationRate.Label != labelSimulated || o.HallucinationRate.Value != nil || o.HallucinationRate.MinN != minRateN {
+		t.Errorf("hallucination rate %+v", o.HallucinationRate)
+	}
+	if len(o.ClaimVerdictsAmongAudited) != 6 || len(o.StageLatencyMs) != 9 || len(o.LatencyMs) != 4 {
+		t.Errorf("verdicts %v stages %v latency %v", o.ClaimVerdictsAmongAudited, o.StageLatencyMs, o.LatencyMs)
+	}
+	code, body = env.get("/api/overview?window=1h", testKey)
+	strict(body, &o)
+	if code != http.StatusOK || o.Totals.Requests != 0 || o.IncludeMock {
+		t.Errorf("without include_mock the simulated traffic is left out: HTTP %d %+v", code, o.Totals)
+	}
+	if code, _ := env.get("/api/overview?window=2d", testKey); code != http.StatusBadRequest {
+		t.Errorf("an unknown window: HTTP %d", code)
+	}
+
+	code, body = env.get("/api/evidence/coverage?window=1h&include_mock=true", testKey)
+	var cov evidenceCoverage
+	strict(body, &cov)
+	if code != http.StatusOK || cov.Requests != 3 || cov.WithEvidence != 2 || len(cov.TopReasons) != 1 || cov.TopReasons[0].Reason != "no_evidence" {
+		t.Errorf("coverage HTTP %d %+v", code, cov)
+	}
+
+	code, body = env.get("/api/roi/summary?window=1h&include_mock=true", testKey)
+	var r roiSummary
+	strict(body, &r)
+	if code != http.StatusOK || !r.Simulated || r.DecisionCost.Label != labelSimulated || r.Outcomes.Label != labelSimulated ||
+		r.Outcomes.Flagged != 1 || len(r.Counterfactual) != 2 {
+		t.Errorf("roi HTTP %d %+v", code, r)
+	}
+	for _, cf := range r.Counterfactual {
+		if cf.Label != labelSimulated {
+			t.Errorf("a counterfactual over simulated traffic is labelled %s", cf.Label)
+		}
 	}
 }

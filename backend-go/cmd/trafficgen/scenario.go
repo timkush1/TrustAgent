@@ -23,19 +23,26 @@ type scenarioPack struct {
 // scenario is one scripted exchange. Request stays raw so that fields trafficgen does not know
 // reach the gateway unchanged.
 type scenario struct {
-	ID        string            `json:"id"`
-	Title     string            `json:"title"`
-	Sets      []string          `json:"sets"`
-	Route     string            `json:"route"`
-	APIFormat string            `json:"api_format"`
-	Stream    bool              `json:"stream"`
-	Headers   map[string]string `json:"headers"`
-	Request   json.RawMessage   `json:"request"`
-	Response  *string           `json:"response"`
-	Judge     *judgeFixture     `json:"judge"`
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	Sets         []string          `json:"sets"`
+	Route        string            `json:"route"`
+	APIFormat    string            `json:"api_format"`
+	Stream       bool              `json:"stream"`
+	AnswerSource string            `json:"answer_source"`
+	Headers      map[string]string `json:"headers"`
+	Request      json.RawMessage   `json:"request"`
+	Response     *string           `json:"response"`
+	Judge        *judgeFixture     `json:"judge"`
 	// Expect keeps its raw members: an absent member is not checked, a null one is.
 	Expect map[string]json.RawMessage `json:"expect"`
 }
+
+// Answer sources (scenarios.v1 answer_source).
+const (
+	answerScripted  = "scripted"
+	answerGenerated = "generated"
+)
 
 // judgeFixture is the mock judge's output for a scenario: the claims the deep audit reports.
 type judgeFixture struct {
@@ -75,28 +82,88 @@ func loadScenarios(path string) ([]scenario, error) {
 		if s.APIFormat == "" {
 			s.APIFormat = "openai_chat"
 		}
+		if s.AnswerSource == "" {
+			s.AnswerSource = answerScripted
+		}
 	}
 	return pack.Scenarios, nil
 }
 
-// selectScenarios keeps the scenarios named by sel: a comma-separated list of set names (s0,
-// demo, e2e, ...), scenario ids, or all. File order is kept.
-func selectScenarios(all []scenario, sel string) ([]scenario, error) {
-	names := strings.Split(sel, ",")
-	for i := range names {
-		names[i] = strings.TrimSpace(names[i])
-	}
-	var out []scenario
-	for _, s := range all {
-		if slices.Contains(names, "all") || slices.Contains(names, s.ID) ||
-			slices.ContainsFunc(s.Sets, func(set string) bool { return slices.Contains(names, set) }) {
+// splitList splits a comma-separated flag value, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
 			out = append(out, s)
 		}
 	}
+	return out
+}
+
+// selectScenarios keeps the scenarios named by sel, a comma-separated list of set names (s0,
+// demo, e2e, p3, ...), scenario ids, or all, minus those named by exclude (sets or ids). File
+// order is kept.
+func selectScenarios(all []scenario, sel, exclude string) ([]scenario, error) {
+	names, drop := splitList(sel), splitList(exclude)
+	named := func(s *scenario, list []string) bool {
+		return slices.Contains(list, s.ID) || slices.ContainsFunc(s.Sets, func(set string) bool { return slices.Contains(list, set) })
+	}
+	var out []scenario
+	for i := range all {
+		s := &all[i]
+		if (slices.Contains(names, "all") || named(s, names)) && !named(s, drop) {
+			out = append(out, *s)
+		}
+	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no scenario matches %q", sel)
+		msg := fmt.Sprintf("no scenario matches %q", sel)
+		if exclude != "" {
+			msg += fmt.Sprintf(" once %q is excluded", exclude)
+		}
+		return nil, errors.New(msg)
 	}
 	return out, nil
+}
+
+// Gateway phases, in delivery order (SPEC §4.2). A scenario that needs a later phase than the
+// walking skeleton carries that phase as a set tag (p3: streaming gating, block and fallback bodies,
+// /v1/messages, /v1/completions, routes in config/policies.pending.yaml); trafficgen sends it only
+// when --phase reaches that phase.
+const (
+	phaseS0 = "s0"
+	// defaultPhase is the phase this build's gateway implements: P3 enforces block and fallback,
+	// gates streams and serves /v1/messages and /v1/completions.
+	defaultPhase = "p3"
+)
+
+var phases = []string{phaseS0, "p2", "p3", "p4", "p5"}
+
+// scenarioPhase is the latest phase tag among sets (the s0 selection set is the earliest phase).
+func scenarioPhase(sets []string) string {
+	phase := phaseS0
+	for _, s := range sets {
+		if i := slices.Index(phases, s); i > slices.Index(phases, phase) {
+			phase = s
+		}
+	}
+	return phase
+}
+
+// phaseAllows reports whether a gateway at phase serves a scenario of phase need.
+func phaseAllows(phase, need string) bool {
+	return slices.Index(phases, need) <= slices.Index(phases, phase)
+}
+
+// byPhase splits scenarios into those a gateway at phase serves and those it skips.
+func byPhase(scenarios []scenario, phase string) (run, skipped []scenario) {
+	for _, s := range scenarios {
+		if phaseAllows(phase, scenarioPhase(s.Sets)) {
+			run = append(run, s)
+		} else {
+			skipped = append(skipped, s)
+		}
+	}
+	return run, skipped
 }
 
 // apiPaths maps a scenario api_format onto its gateway path.
@@ -106,14 +173,15 @@ var apiPaths = map[string]string{
 	"anthropic_messages": "/v1/messages",
 }
 
-// body is the request trafficgen sends: the scenario request plus test_response, the scripted
-// upstream answer the gateway returns in test mode instead of calling the upstream.
-func (s *scenario) body() ([]byte, error) {
+// body is the request trafficgen sends: the scenario request plus, unless the answer comes from
+// the gateway's upstream, test_response, the scripted answer the gateway returns in test mode
+// instead of calling the upstream.
+func (s *scenario) body(fromUpstream bool) ([]byte, error) {
 	var req map[string]json.RawMessage
 	if err := json.Unmarshal(s.Request, &req); err != nil {
 		return nil, fmt.Errorf("scenario %s: request is not a JSON object: %w", s.ID, err)
 	}
-	if s.Response != nil {
+	if s.Response != nil && !fromUpstream {
 		b, err := json.Marshal(*s.Response)
 		if err != nil {
 			return nil, err

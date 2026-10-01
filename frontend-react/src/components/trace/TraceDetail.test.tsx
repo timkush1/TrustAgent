@@ -8,7 +8,9 @@ import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { copy } from '@/domain/presentation';
 import { createFakeApi } from '@/test/apiHandlers';
+import { axeViolations, formatViolations } from '@/test/axe';
 import { API, installMswServer, server } from '@/test/msw';
+import { p3Detail } from '@/test/p3Fixtures';
 import { renderLive, stopLive } from '@/test/renderLive';
 import { REFUND_DOC, auditIdOf, s0Audit, s0Decision, s0Detail, s0Trace, scenario, traceIdOf } from '@/test/scenarios';
 
@@ -60,6 +62,10 @@ describe('Trace detail', () => {
 
     const claims = region('Claims');
     expect(within(claims).getByRole('status')).toHaveTextContent(copy.trace.claims_pending);
+    // The instant check's finding is marked at once, before any claim.
+    const early = within(region('Answer')).getByTestId('answer-marked');
+    expect(early.querySelector('mark[data-det="numbers_not_in_evidence"]')).toHaveTextContent(/^60$/);
+    expect(early.querySelector('mark[data-v]')).toBeNull();
 
     // 3. The deep audit completes: one contradicted claim.
     api.state.details[id] = s0Detail(REFUND, 'audited');
@@ -74,7 +80,10 @@ describe('Trace detail', () => {
 
     // 4. The claim is marked in the answer at its UTF-16 span, and the mark links to its row.
     const answer = region('Answer');
-    const mark = within(answer).getByRole('link', { name: '60 days, contradicted claim' });
+    const mark = within(answer).getByRole('link', {
+      name: '60 days, contradicted claim, instant checks: mentions a number not in your documents',
+    });
+    expect(mark.querySelector('mark[data-det="numbers_not_in_evidence"]')).toHaveTextContent(/^60$/);
     expect(mark.closest('mark')).toHaveAttribute('data-v', 'contradicted');
     // The marked answer still reads as the model's text.
     expect(within(answer).getByTestId('answer-marked')).toHaveTextContent(scenario(REFUND).response);
@@ -163,6 +172,40 @@ describe('Trace detail', () => {
     expect(await screen.findByRole('region', { name: 'Outcome' })).toHaveTextContent('Passed');
   });
 
+  it('shows a replaced answer: the checks on the model\'s answer, and what the user received instead', async () => {
+    const detail = p3Detail('payments-fallback');
+    renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: detail } }));
+    const outcome = await screen.findByRole('region', { name: 'Outcome' });
+    expect(within(outcome).getByText('Replaced')).toBeInTheDocument();
+    expect(within(outcome).getByText('Replaced with an answer that sticks to your documents')).toBeInTheDocument();
+    expect(within(outcome).getByText('Checked against: refund-timing.md')).toBeInTheDocument();
+    // Reasons and checks describe the model's answer (attempt 0), not the fallback check.
+    expect(within(outcome).getByRole('list', { name: 'Reasons' })).toHaveTextContent('Mentions a number not in your documents: 2');
+    const checks = within(region('Checks')).getByRole('list', { name: 'Checks' });
+    expect(within(checks).getAllByText('High risk')).toHaveLength(2);
+
+    const answer = region('Answer');
+    const received = within(answer).getByTestId('received-text');
+    expect(received).toHaveTextContent('Approved refunds go back to your original payment method within 5 to 10 business days.');
+    await userEvent.click(within(outcome).getByRole('link', { name: 'See what the user received instead' }));
+    expect(received.parentElement).toHaveFocus();
+    // The deep audit judged the model's answer.
+    expect(within(region('Claims')).getByText('Hallucinated')).toBeInTheDocument();
+  });
+
+  it('shows a blocked answer with the block message the user received', async () => {
+    const detail = p3Detail('help-center-link-block');
+    renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: detail } }));
+    const outcome = await screen.findByRole('region', { name: 'Outcome' });
+    expect(within(outcome).getByText('Blocked')).toBeInTheDocument();
+    expect(within(outcome).getByRole('list', { name: 'Reasons' })).toHaveTextContent(
+      'Links to a URL not in your documents: https://acme.example/reset-password',
+    );
+    expect(within(region('Answer')).getByTestId('received-text')).toHaveTextContent(
+      "I can't verify that answer against our help articles, so I've held it back.",
+    );
+  });
+
   it('keeps ids and timings in collapsed Details', async () => {
     const id = traceIdOf(REFUND);
     const { container } = renderLive(`/app/traffic/${id}`, createFakeApi({ details: { [id]: s0Detail(REFUND) } }));
@@ -180,5 +223,86 @@ describe('Trace detail', () => {
     // What each tier ran on, and its cost with an honest label (the mock's cost is simulated).
     expect(details).toHaveTextContent('Fast check (Jev) modelmock/jevMock (simulated)');
     expect(details).toHaveTextContent('Fast check (Jev) cost$0Simulated');
+  });
+});
+
+describe('Trace detail: Details', () => {
+  async function openDetails(container: HTMLElement) {
+    const details = container.querySelector('details') as HTMLElement;
+    await userEvent.click(within(details).getByText('Details'));
+    return details;
+  }
+
+  it('shows the waterfall, the headers the app received, the flags and both attempts', async () => {
+    const detail = p3Detail('payments-fallback');
+    const { container } = renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: detail } }));
+    await screen.findByRole('region', { name: 'Outcome' });
+    const details = await openDetails(container);
+
+    expect(within(details).getByRole('application', { name: /Where the time went/ })).toBeInTheDocument();
+    const headers = within(details).getByRole('region', { name: /^\d+ headers$/ });
+    expect(headers).toHaveTextContent(`X-TrustAgent-Trace-Id: ${detail.trace_id}`);
+    expect(headers).toHaveTextContent('X-TrustAgent-Action: fallback');
+    expect(headers).toHaveTextContent('X-TrustAgent-Would-Action: block');
+    // This proxy does not serve policies here, so the route's headers setting is unknown.
+    expect(await within(details).findByText(/policy version could not be read/)).toBeInTheDocument();
+
+    const flags = within(details).getByRole('heading', { name: 'Flags' }).parentElement as HTMLElement;
+    expect(within(flags).getByText('Fallback answer delivered')).toBeInTheDocument();
+    expect(within(flags).getByText('Simulated fast check (mock)')).toBeInTheDocument();
+
+    const attempts = within(details).getByRole('heading', { name: 'Fast check by attempt' }).parentElement as HTMLElement;
+    const [first, second] = within(attempts).getAllByRole('listitem');
+    expect(first).toHaveTextContent("Your model's answer");
+    expect(first).toHaveTextContent('Contradicted · High risk 0.97 · 5 ms');
+    expect(second).toHaveTextContent('Fallback check');
+    expect(second).toHaveTextContent('Supported · Low risk 0.04 · 4 ms');
+    const raw = second.querySelector('details') as HTMLElement;
+    expect(raw).not.toHaveAttribute('open');
+    await userEvent.click(within(raw).getByText('Raw decision (decision/v1)'));
+    expect(raw).toHaveAttribute('open');
+    expect(within(raw).getByRole('region', { name: 'decision/v1 · Fallback check' })).toHaveTextContent('"attempt": 1');
+    expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
+
+  it('shows the timed-out check\'s headers when the decision arrived late', async () => {
+    const detail = p3Detail('help-center-link-block');
+    // The check timed out (the trace keeps that); its result upserted the decision afterwards.
+    const late = { ...detail, gate_status: 'timeout' as const, verdict: null, max_risk: null, decisions: [{ ...detail.decisions[0], late: true }] };
+    const { container } = renderLive(`/app/traffic/${detail.trace_id}`, createFakeApi({ details: { [detail.trace_id]: late } }));
+    await screen.findByRole('region', { name: 'Outcome' });
+    const details = await openDetails(container);
+    expect(within(details).getByText(copy.trace.headers_late)).toBeInTheDocument();
+    const headers = within(details).getByRole('region', { name: /^\d+ headers$/ });
+    expect(headers).toHaveTextContent('X-TrustAgent-Status: timeout');
+    expect(headers).toHaveTextContent('X-TrustAgent-Degraded: timeout');
+    expect(headers).not.toHaveTextContent('X-TrustAgent-Verdict');
+    // The checks still show the late result, said to be late.
+    expect(within(region('Checks')).getByTestId('late-decision')).toBeInTheDocument();
+  });
+
+  it('shows only the action when the route sends headers: action_only', async () => {
+    const detail = p3Detail('help-center-link-block');
+    const policyVersion = {
+      id: 1,
+      created_at: detail.created_at,
+      source: 'file' as const,
+      author: 'file',
+      message: '',
+      sha256: '0'.repeat(64),
+      yaml: '',
+      doc: { version: 1 as const, routes: [{ name: 'help-center', match: { headers: { 'X-TrustAgent-Route': 'help-center' } }, headers: 'action_only' as const }] },
+    };
+    const api = createFakeApi({ details: { [detail.trace_id]: detail }, policyVersions: { 1: policyVersion } });
+    // The current policy is a later version, so the stored one is read.
+    api.state.policies = { ...policyVersion, id: 2, etag: '"2"', locked: false, persisted: true, editable: true, editable_reason: null, effective_routes: [], file: { path: 'policies.yaml', sha256: null, status: 'ok', errors: [] } } as never;
+    const { container } = renderLive(`/app/traffic/${detail.trace_id}`, api);
+    await screen.findByRole('region', { name: 'Outcome' });
+    const details = await openDetails(container);
+    await waitFor(() => expect(within(details).getByRole('region', { name: '3 headers' })).toBeInTheDocument());
+    const headers = within(details).getByRole('region', { name: '3 headers' });
+    expect(headers).not.toHaveTextContent('X-TrustAgent-Route');
+    expect(headers).toHaveTextContent('X-TrustAgent-Action: block');
+    expect(within(details).getByText('This route sends only the action (headers: action_only).')).toBeInTheDocument();
   });
 });

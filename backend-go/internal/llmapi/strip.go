@@ -7,6 +7,9 @@ import (
 	"slices"
 )
 
+// errNotObject is returned by the member editors for a body that is not a JSON object.
+var errNotObject = errors.New("llmapi: body is not a JSON object")
+
 // StripMembers removes the named members from the top level of the JSON object body.
 //
 // The body is not re-encoded: every member that stays is copied byte for byte, in its original
@@ -16,17 +19,41 @@ import (
 // top-level members is normalized to none. A body with none of the names is returned unchanged,
 // and every occurrence of a duplicated name is removed.
 func StripMembers(body []byte, names ...string) ([]byte, error) {
+	obj, err := parseObject(body)
+	if err != nil {
+		return nil, err
+	}
+	if !obj.del(names...) {
+		return body, nil
+	}
+	return obj.bytes(), nil
+}
+
+// member is one top-level member of a JSON object: src is `"key": value` exactly as in the
+// source (or as built), from the key's opening quote to the end of the value.
+type member struct {
+	key   string
+	value json.RawMessage
+	src   []byte
+}
+
+// object is a JSON object edited member by member: members that are not touched keep their bytes
+// and their order.
+type object struct {
+	members []member
+}
+
+// parseObject splits a JSON object into its members.
+func parseObject(body []byte) (*object, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
-		return nil, errors.New("llmapi: body is not a JSON object")
+		return nil, errNotObject
 	}
-	type member struct{ start, end int }
-	var kept []member
-	removed := false
+	o := &object{}
 	for dec.More() {
 		keyStart := skipToKey(body, int(dec.InputOffset()))
 		keyTok, err := dec.Token()
@@ -39,27 +66,78 @@ func StripMembers(body []byte, names ...string) ([]byte, error) {
 			return nil, err
 		}
 		end := int(dec.InputOffset())
-		if slices.Contains(names, key) {
-			removed = true
-			continue
-		}
-		kept = append(kept, member{keyStart, end})
+		o.members = append(o.members, member{key: key, value: value, src: body[keyStart:end]})
 	}
 	if _, err := dec.Token(); err != nil { // the closing brace
 		return nil, err
 	}
-	if !removed {
-		return body, nil
+	return o, nil
+}
+
+// get returns the value of key; with duplicates the last one wins, as encoding/json decides.
+func (o *object) get(key string) (json.RawMessage, bool) {
+	for i := len(o.members) - 1; i >= 0; i-- {
+		if o.members[i].key == key {
+			return o.members[i].value, true
+		}
 	}
-	out := make([]byte, 0, len(body))
+	return nil, false
+}
+
+// set gives key the (valid JSON) value: in place of its first occurrence, removing any duplicate,
+// or as a new last member.
+func (o *object) set(key string, value []byte) {
+	src := append(append(marshal(key), ':'), value...)
+	m := member{key: key, value: value, src: src}
+	for i := range o.members {
+		if o.members[i].key == key {
+			o.members[i] = m
+			o.members = o.dropAfter(i, key)
+			return
+		}
+	}
+	o.members = append(o.members, m)
+}
+
+// dropAfter returns the members without the occurrences of key after position i (in place: the
+// write position never passes the read position).
+func (o *object) dropAfter(i int, key string) []member {
+	out := o.members[:i+1]
+	for _, m := range o.members[i+1:] {
+		if m.key != key {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// del removes every occurrence of the names and reports whether any was present.
+func (o *object) del(names ...string) bool {
+	n := len(o.members)
+	o.members = slices.DeleteFunc(o.members, func(m member) bool { return slices.Contains(names, m.key) })
+	return len(o.members) != n
+}
+
+// bytes encodes the object: the members' bytes joined by commas.
+func (o *object) bytes() []byte {
+	size := 2
+	for _, m := range o.members {
+		size += len(m.src) + 1
+	}
+	out := make([]byte, 0, size)
 	out = append(out, '{')
-	for i, m := range kept {
+	for i, m := range o.members {
 		if i > 0 {
 			out = append(out, ',')
 		}
-		out = append(out, body[m.start:m.end]...)
+		out = append(out, m.src...)
 	}
-	return append(out, '}'), nil
+	return append(out, '}')
+}
+
+// joinArray encodes a JSON array of already encoded elements.
+func joinArray(elems [][]byte) []byte {
+	return append(append([]byte{'['}, bytes.Join(elems, []byte{','})...), ']')
 }
 
 // skipToKey returns the offset of the opening quote of the next member key at or after off,

@@ -26,26 +26,37 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
-	log := newLogger(cfg.LogLevel)
+	// Command-line modes (-check-config, -dump-config-spec, -new-setup-token [-force]) and
+	// TRUTHTABLE_STRICT_CONFIG (exit 2 on any configuration warning) run first (cli.go).
+	cfg, code, exit := bootConfig(os.Args[1:], os.Stdout, os.Stderr)
+	if exit {
+		os.Exit(code)
+	}
+	redactor := cfg.Redactor()
+	log := newLogger(cfg.LogLevel, redactor)
 	slog.SetDefault(log)
-	if err := run(cfg, log); err != nil {
+	// gin's panic recovery dumps request headers (keys, the session cookie) in debug mode and on a
+	// broken pipe; it captures this writer when the router is built.
+	gin.DefaultErrorWriter = redactor.Writer(os.Stderr)
+	if err := run(cfg, log, redactor); err != nil {
 		log.Error("TrustAgent proxy stopped", "err", err)
 		os.Exit(1)
 	}
 }
 
-func newLogger(level string) *slog.Logger {
+// newLogger logs text to stderr; redactor masks every loaded secret and credential pattern.
+func newLogger(level string, redactor *config.Redactor) *slog.Logger {
 	var l slog.Level
 	if err := l.UnmarshalText([]byte(level)); err != nil {
 		l = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l, ReplaceAttr: redactor.ReplaceAttr}))
 }
 
 // run starts the proxy and blocks until SIGINT or SIGTERM, then shuts down in order: stop
-// accepting requests, let observe-mode gates and queued audits drain, stop the stream.
-func run(cfg *config.Config, log *slog.Logger) error {
+// accepting requests, let observe-mode gates and queued audits drain, stop the stream. redactor
+// masks the secrets that only exist at run time (the generated internal token).
+func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error {
 	log.Info("starting the TrustAgent proxy", "version", version.Version, "port", cfg.ServerPort,
 		"upstream", redactURL(cfg.UpstreamURL), "engine", cfg.GRPCAddress)
 	if cfg.LogLevel != "debug" {
@@ -64,15 +75,17 @@ func run(cfg *config.Config, log *slog.Logger) error {
 			log.Error("persistence disabled: the database could not be opened", "err", err)
 		} else {
 			defer pg.Close()
-			d.store = pg
+			d.store, d.pg = pg, pg
 			log.Info("persistence enabled (Postgres)")
 		}
 	}
+	d.master = loadMasterKey(cfg, log) // signs dashboard sessions (P2 authz core)
 	if cfg.TraceFlush != "sync" {
 		log.Info("trace writes run inline; the batched TRUTHTABLE_TRACE_FLUSH=async writer lands in P2")
 	}
 
 	cfg.InternalToken = internalToken(cfg.InternalToken, cfg.InternalTokenFile, log)
+	redactor.Add(cfg.InternalToken) // a generated token was not in the loaded configuration
 	if cfg.GRPCAddress != "" {
 		client, err := grpc.NewAuditClient(cfg.GRPCAddress, cfg.GRPCTimeout, cfg.InternalToken)
 		if err != nil {
@@ -98,6 +111,7 @@ func run(cfg *config.Config, log *slog.Logger) error {
 		return fmt.Errorf("gateway: %w", err)
 	}
 	logAuth(log, cfg)
+	srv.announceSetup(context.Background(), os.Stdout) // "SETUP: open …" while no admin exists
 	srv.start()
 
 	httpServer := &http.Server{
@@ -173,7 +187,7 @@ func logAuth(log *slog.Logger, cfg *config.Config) {
 		log.Warn("TRUTHTABLE_PUBLIC_READ: /api reads and /ws need no key; demo mode shows keyless readers prompts and answers")
 	case cfg.PublicRead:
 		log.Warn("TRUTHTABLE_PUBLIC_READ: /api reads and /ws need no key (texts stay hidden without a key)")
-	case len(cfg.APIKeys) == 0:
-		log.Warn("no TRUTHTABLE_API_KEYS: /api and /ws refuse every caller; set keys or TRUTHTABLE_PUBLIC_READ=true")
+	case len(cfg.APIKeys)+len(cfg.Auth.ReadKeys)+len(cfg.Auth.AdminKeys) == 0 && cfg.DatabaseURL == "":
+		log.Warn("no env keys and no database: /api and /ws refuse every caller; set TRUTHTABLE_API_KEYS / _ADMIN_KEYS or TRUTHTABLE_PUBLIC_READ=true")
 	}
 }

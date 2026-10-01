@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/llmapi"
 )
 
 func newClient(t *testing.T, base string) *Client {
@@ -245,5 +247,143 @@ func TestReverseProxy(t *testing.T) {
 	rp.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
 	if w.Code != http.StatusBadGateway || proxyErr == nil {
 		t.Errorf("a dead upstream goes to onError: %d %v", w.Code, proxyErr)
+	}
+}
+
+func injectClient(t *testing.T, base, header string) *Client {
+	t.Helper()
+	c, err := New(Config{BaseURL: base, APIKey: "sk-injected-upstream", AuthHeader: header, Timeout: 5 * time.Second},
+		func(s string) bool { return s == "ta-proxy-key" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// TestOutboundHeadersInjectMode (B1, D15): in inject mode every client credential goes, in any
+// spelling, and the upstream's own is set: Bearer on authorization, the raw key on any other
+// header. anthropic-version and the other client headers stay; no TrustAgent key is forwarded.
+func TestOutboundHeadersInjectMode(t *testing.T) {
+	in := http.Header{
+		"Authorization":     {"Bearer sk-client-own"},
+		"X-Api-Key":         {"sk-ant-client-own"},
+		"api-key":           {"azure-client-own"}, // a hand-built, non-canonical spelling
+		"X-Trustagent-Key":  {"ta-proxy-key"},
+		"Anthropic-Version": {"2023-06-01"},
+		"Anthropic-Beta":    {"tools-2024-04-04"},
+		"Content-Type":      {"application/json"},
+		"Cookie":            {"ta_session=abc"},
+	}
+	kept := http.Header{"Anthropic-Version": {"2023-06-01"}, "Anthropic-Beta": {"tools-2024-04-04"}, "Content-Type": {"application/json"}}
+	for _, c := range []struct {
+		header string
+		want   http.Header
+	}{
+		{"", http.Header{"Authorization": {"Bearer sk-injected-upstream"}}},
+		{"authorization", http.Header{"Authorization": {"Bearer sk-injected-upstream"}}},
+		{"x-api-key", http.Header{"X-Api-Key": {"sk-injected-upstream"}}},
+		{"api-key", http.Header{"Api-Key": {"sk-injected-upstream"}}},
+	} {
+		cl := injectClient(t, "https://api.example", c.header)
+		if !cl.Injecting() {
+			t.Errorf("%q: not injecting", c.header)
+		}
+		want := kept.Clone()
+		for k, v := range c.want {
+			want[k] = v
+		}
+		if got := cl.OutboundHeaders(in); !reflect.DeepEqual(got, want) {
+			t.Errorf("auth header %q:\n%v\nwant\n%v", c.header, got, want)
+		}
+	}
+	// The proxy key a client sent as its SDK credential is replaced, never forwarded.
+	cl := injectClient(t, "https://api.example", "x-api-key")
+	for _, h := range []http.Header{
+		{"Authorization": {"Bearer ta-proxy-key"}},
+		{"X-Api-Key": {"ta-proxy-key"}},
+		{"x-api-key": {"ta-proxy-key"}, "Authorization": {"Bearer ta-proxy-key"}},
+	} {
+		got := cl.OutboundHeaders(h)
+		if !reflect.DeepEqual(got, http.Header{"X-Api-Key": {"sk-injected-upstream"}}) {
+			t.Errorf("%v forwarded as %v", h, got)
+		}
+	}
+	if in.Get("Authorization") != "Bearer sk-client-own" || len(in["api-key"]) != 1 {
+		t.Error("the input headers must not be modified")
+	}
+	if _, err := New(Config{APIKey: "k", AuthHeader: "x api key"}, nil); err == nil {
+		t.Error("an auth header that is not a header name is refused")
+	}
+}
+
+// TestOutboundHeadersPassthroughMode: without a key of its own the upstream gets the client's
+// credential untouched (anthropic-version too), and a TrustAgent key in any spelling or position
+// is dropped.
+func TestOutboundHeadersPassthroughMode(t *testing.T) {
+	c := newClient(t, "https://api.example")
+	if c.Injecting() {
+		t.Fatal("no key: passthrough")
+	}
+	in := http.Header{"X-Api-Key": {"sk-ant-client-own"}, "Anthropic-Version": {"2023-06-01"}, "Authorization": {"Bearer sk-client-own"}}
+	if got := c.OutboundHeaders(in); !reflect.DeepEqual(got, in) {
+		t.Errorf("passthrough changed the credentials: %v", got)
+	}
+	for _, h := range []http.Header{
+		{"authorization": {"Bearer ta-proxy-key"}},
+		{"Authorization": {"ta-proxy-key"}},        // no scheme
+		{"Authorization": {"Token  ta-proxy-key"}}, // another scheme
+		{"x-api-key": {" ta-proxy-key"}},
+		{"X-Api-Key": {"Bearer ta-proxy-key"}},
+		{"Api-Key": {"sk-other", "ta-proxy-key"}},
+	} {
+		if out := c.OutboundHeaders(h); len(out) != 0 {
+			t.Errorf("%v forwarded as %v", h, out)
+		}
+	}
+}
+
+// TestInjectedCredentialReachesTheUpstream: Do and the ReverseProxy of an injecting upstream send
+// its key and none of the client's.
+func TestInjectedCredentialReachesTheUpstream(t *testing.T) {
+	var seen []http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Clone())
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer srv.Close()
+	c := injectClient(t, srv.URL, "")
+	hdr := http.Header{"Authorization": {"Bearer ta-proxy-key"}, "Anthropic-Version": {"2023-06-01"}}
+	resp, cancel, err := c.Do(context.Background(), http.MethodPost, "/v1/messages", "", hdr, []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("X-Api-Key", "sk-client-own")
+	c.ReverseProxy(func(http.ResponseWriter, *http.Request, error) {}).ServeHTTP(httptest.NewRecorder(), req)
+	if len(seen) != 2 {
+		t.Fatalf("%d upstream requests", len(seen))
+	}
+	for i, h := range seen {
+		if h.Get("Authorization") != "Bearer sk-injected-upstream" || h.Get("X-Api-Key") != "" {
+			t.Errorf("request %d credentials %v", i, h)
+		}
+	}
+	if seen[0].Get("Anthropic-Version") != "2023-06-01" {
+		t.Error("anthropic-version passes through in inject mode")
+	}
+}
+
+func TestSetFor(t *testing.T) {
+	openai, anthropic := newClient(t, "https://openai.example"), newClient(t, "https://anthropic.example")
+	s := &Set{OpenAI: openai, Anthropic: anthropic}
+	if s.For(llmapi.FamilyAnthropic) != anthropic || s.For(llmapi.FamilyOpenAI) != openai || s.For("") != openai {
+		t.Error("For routes by family")
+	}
+	s.Anthropic = nil
+	if s.For(llmapi.FamilyAnthropic) != openai {
+		t.Error("without an Anthropic upstream the default one answers")
 	}
 }

@@ -62,8 +62,11 @@ fmt: ## Format all code
 clean: ## Clean all build artifacts and caches
 	@echo "✅ All caches cleaned"
 
-# Later phases extend the gate by attaching prerequisites (`check: contracts-check`).
-check: lint test ## Run every local quality gate (lint + unit tests)
+# The local gate mirrors CI. Fragments attach their gates as prerequisites: contracts.mk (schemas,
+# validator tests, the Go embed module, superseded identifiers), dx.mk (compose files, generated
+# config docs) and web.mk (check-web-ci: generated types, api.v1 schema, tsc, both builds, the size
+# budget and the recording). Without -j they run in the order listed, one after another.
+check: lint test ## Run every local quality gate CI runs (lint, unit tests, contracts, compose, builds)
 	@echo "✅ make check passed"
 
 include $(sort $(wildcard mk/*.mk))

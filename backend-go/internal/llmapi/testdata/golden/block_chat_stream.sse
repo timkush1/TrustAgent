@@ -1,0 +1,8 @@
+data: {"id":"chatcmpl-up","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{"role":"assistant","content":"I can't confirm that."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-up","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}
+
+data: {"id":"chatcmpl-up","object":"chat.completion.chunk","created":1760000000,"model":"gpt-4o-mini-2024-07-18","choices":[],"usage":{"prompt_tokens":41,"completion_tokens":9,"total_tokens":50,"cost":0.0001}}
+
+data: [DONE]
+

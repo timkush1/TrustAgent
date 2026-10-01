@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import scenarios from '@contracts/demo/scenarios.v1.json';
 import { flaggedTrace, trace } from '@/test/fixtures';
 import type { ClaimVerdict, DecisionBackend, GateAction, GateStatus, WouldAction } from '@/types/api';
-import { OUTCOME_IDS, outcomesContract } from './contracts';
+import { copy, OUTCOME_IDS, outcomesContract } from './contracts';
 import {
   auditStateView,
   AVOID_IN_PRIMARY_UI,
@@ -12,6 +12,7 @@ import {
   commandText,
   decisionBackendLabel,
   fillTemplate,
+  flagWord,
   gateVerdictView,
   glossaryTerm,
   headlineReason,
@@ -110,6 +111,13 @@ describe('reasonCopy', () => {
     );
   });
 
+  it('words the fallback outcomes the gateway appends to a trace (D19)', () => {
+    expect(reasonCopy('fallback_failed')).toBe("Couldn't get a usable fallback answer from your model");
+    expect(reasonCopy('fallback_format_mismatch')).toBe(
+      'No fallback was tried: the fallback model uses a different API format than this request',
+    );
+  });
+
   it('falls back to "{evaluator}: {level}" for unknown evaluators', () => {
     expect(reasonCopy('custom_tone:warn')).toBe('Custom tone: Elevated risk');
     expect(reasonCopy('custom_tone:warn', { evaluatorName: () => 'House style' })).toBe('House style: Elevated risk');
@@ -178,6 +186,20 @@ describe('copy helpers', () => {
         tokens: 10,
       }).items,
     ).toEqual(['Tool results']);
+  });
+
+  it('words trace flags, and humanizes one it does not know', () => {
+    expect(flagWord('fallback_used')).toBe('Fallback answer delivered');
+    expect(flagWord('multi_choice')).toBe('Several answers in one response: only the first was checked');
+    expect(flagWord('client_disconnected')).toBe('The client disconnected before the answer finished');
+    expect(flagWord('late_decision')).toBe('The fast check answered late: recorded, not enforced');
+    expect(flagWord('brand_new_flag')).toBe('Brand new flag');
+    expect(flagWord('toString')).toBe('ToString');
+  });
+
+  it('keeps jargon out of the trace copy', () => {
+    const words = JSON.stringify(copy.trace);
+    for (const jargon of AVOID_IN_PRIMARY_UI) expect(words).not.toContain(jargon);
   });
 
   it('uses the fixed tier names', () => {
