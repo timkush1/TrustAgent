@@ -252,3 +252,71 @@ func TestDatabaseErrorsAreFatal(t *testing.T) {
 		t.Error("an unreachable database must fail New")
 	}
 }
+
+// brokenTone breaks the hard rule unresolved_state_reference: `evidence` is not a state field.
+func brokenTone(version int) string {
+	return strings.Replace(tone(version, "it"), `"Is it rude?"`, "\"Is it rude about `evidence`?\"", 1)
+}
+
+func TestHardRuleViolatorsAreExcluded(t *testing.T) {
+	if !strings.Contains(brokenTone(1), "`evidence`") {
+		t.Fatal("brokenTone did not change the spec")
+	}
+	// An embedded built-in that breaks a hard rule fails the start, like a malformed one.
+	if _, err := readDir(fstest.MapFS{"e/tone.v1.json": {Data: []byte(brokenTone(1))}}, "e", SourceBuiltin, true); err == nil ||
+		!strings.Contains(err.Error(), "tone@1 breaks the hard rule unresolved_state_reference at question.instructions") {
+		t.Errorf("embedded violator: %v", err)
+	}
+	// A file that breaks one is skipped with a warning; the other versions stay.
+	dir := writeFiles(t, map[string]string{"tone-1.json": tone(1, "it"), "tone-2.json": brokenTone(2)})
+	r, err := New(context.Background(), Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.Get("tone@2"); ok {
+		t.Error("tone@2 breaks a hard rule and must not resolve")
+	}
+	if e, ok := r.Evaluator("tone"); !ok || e.LatestVersion != 1 || len(e.Versions) != 1 {
+		t.Errorf("tone %+v", e)
+	}
+	w := r.Warnings()
+	if len(w) != 1 || !strings.Contains(w[0], "tone-2.json: tone@2 breaks the hard rule unresolved_state_reference") || !strings.HasSuffix(w[0], "(skipped)") {
+		t.Errorf("warnings %v", w)
+	}
+	// Several broken rules: the first in full, then a count.
+	twice := strings.Replace(brokenTone(1), `"outcomes":{"warn_at":0.7}`, `"outcomes":{"warn_at":0.7,"critical_at":0.5}`, 1)
+	if _, err := newVersion([]byte(twice), SourceFile); err == nil || !strings.HasSuffix(err.Error(), "(and 1 more)") {
+		t.Errorf("two violations: %v", err)
+	}
+}
+
+// TestStoredHardRuleViolatorIsSkipped stores a version that breaks a hard rule behind the
+// registry's back (as an older writer could have): Reload skips it with a warning.
+func TestStoredHardRuleViolatorIsSkipped(t *testing.T) {
+	pg, channel := newPostgres(t)
+	ctx := context.Background()
+	r, err := New(ctx, Config{Store: pg, Channel: channel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := []byte(brokenTone(1))
+	if _, err := pg.UpsertEvaluatorVersions(ctx, channel, []store.EvaluatorUpsert{{
+		Evaluator: store.EvaluatorRecord{ID: "tone", Name: "Tone", Category: "quality", Origin: OriginDashboard},
+		Version: store.EvaluatorVersionRecord{EvaluatorID: "tone", Version: 1, Spec: doc, SpecSHA256: strings.Repeat("a", 64),
+			QuestionSHA256: strings.Repeat("b", 64), CalibrationKey: strings.Repeat("c", 64), CreatedBy: "admin", Changelog: "v1"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := r.Reload(ctx); err != nil || !changed {
+		t.Fatalf("reload %v %v", changed, err)
+	}
+	if _, ok := r.Get("tone@1"); ok {
+		t.Error("a stored version that breaks a hard rule must not resolve")
+	}
+	if _, ok := r.Evaluator("tone"); ok {
+		t.Error("an evaluator without a usable version must not be listed")
+	}
+	if w := strings.Join(r.Warnings(), "\n"); !strings.Contains(w, "stored tone@1: tone@1 breaks the hard rule unresolved_state_reference") {
+		t.Errorf("warnings %q", w)
+	}
+}
