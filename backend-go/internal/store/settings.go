@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 
@@ -183,13 +184,14 @@ func (s *PostgresStore) PatchSettings(ctx context.Context, channel string, ifVer
 		if version, err = bumpRuntimeVersion(ctx, tx, actor); err != nil {
 			return err
 		}
-		if diff == nil {
-			diff = map[string]any{}
+		d := maps.Clone(diff)
+		if d == nil {
+			d = map[string]any{}
 		}
-		if _, ok := diff["keys"]; !ok {
-			diff["keys"] = keys
+		if _, ok := d["keys"]; !ok {
+			d["keys"] = keys
 		}
-		return insertAdminAudit(ctx, tx, AdminAuditEntry{Actor: actor, Action: "settings.update", Diff: diff})
+		return insertAdminAudit(ctx, tx, AdminAuditEntry{Actor: actor, Action: "settings.update", Diff: d})
 	})
 	if err != nil {
 		return 0, err
