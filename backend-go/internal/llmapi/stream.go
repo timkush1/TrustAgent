@@ -188,6 +188,34 @@ func (a *StreamAssembler) Add(ev Event) EventKind {
 	return a.addOpenAI(&ev)
 }
 
+// Text returns the gated text the stream said so far: choice 0's content (OpenAI), the text
+// blocks in order (Anthropic). It is "" once TooLarge. A delta that ended inside a character (a
+// UTF-8 sequence or a surrogate pair split across two deltas) leaves U+FFFD at the end until the
+// rest of the character arrives.
+func (a *StreamAssembler) Text() string {
+	if a.tooLarge {
+		return ""
+	}
+	if IsAnthropic(a.format) {
+		idx := make([]int, 0, len(a.blocks))
+		for i := range a.blocks {
+			idx = append(idx, i)
+		}
+		slices.Sort(idx)
+		var text bytes.Buffer
+		for _, i := range idx {
+			if b := a.blocks[i]; b.typ == blockText {
+				text.WriteString(b.text.String())
+			}
+		}
+		return text.String()
+	}
+	if c, ok := a.choices[0]; ok {
+		return c.text.String()
+	}
+	return ""
+}
+
 // Response returns what the stream said so far, choices ordered by index. Once TooLarge it has
 // no choices: there is nothing to gate.
 func (a *StreamAssembler) Response() *ChatResponse {

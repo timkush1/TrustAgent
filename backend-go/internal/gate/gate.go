@@ -144,6 +144,10 @@ type Exchange struct {
 	// KnowledgeOnly marks evidence that came only from knowledge retrieval (decision
 	// meta.knowledge_only): a critical grounding level is capped to warn.
 	KnowledgeOnly bool
+	// Advisory marks an exchange whose decision reaches no app (a Playground run): its
+	// decision-model calls never spend the enforcing reserve, whatever the mode (jev
+	// CallOptions.Enforcing false, P4-PLAN D82).
+	Advisory bool
 }
 
 // hasText reports whether there is an answer to check against a parsed request.

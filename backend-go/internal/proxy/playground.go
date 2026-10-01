@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"regexp"
 	"slices"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -82,6 +85,10 @@ type PlaygroundInput struct {
 	// recorded and the upstream called: a streamed run commits its event stream there, so what
 	// fails later (the upstream call) reaches it as an error event.
 	Accepted func()
+	// OnDecision, when set, receives the attempt-0 decision as soon as the gate made it: before a
+	// fallback call and before the run is recorded, so a streamed run can show it while the rest
+	// finishes. It is not called for a run whose upstream answered with an error.
+	OnDecision func(*gate.Decision)
 }
 
 // PlaygroundUpstream is the upstream call of a chat-mode run.
@@ -120,14 +127,20 @@ type PlaygroundError struct {
 func (e *PlaygroundError) Error() string { return e.Message }
 
 // playgroundBody is the OpenAI chat completion a run stands for: the upstream call of chat mode
-// (always stream:false, D12; ForwardBody drops the gateway's members), and the request the gate
-// reads its evidence from.
+// (stream:true with its usage for a streamed run, D69; stream:false otherwise; ForwardBody drops
+// the gateway's members), and the request the gate reads its evidence from.
 type playgroundBody struct {
-	Model        string               `json:"model,omitempty"`
-	Messages     []PlaygroundMessage  `json:"messages"`
-	Stream       bool                 `json:"stream"`
-	TrustAgent   *playgroundExtension `json:"trustagent,omitempty"`
-	TestResponse *string              `json:"test_response,omitempty"`
+	Model         string                   `json:"model,omitempty"`
+	Messages      []PlaygroundMessage      `json:"messages"`
+	Stream        bool                     `json:"stream"`
+	StreamOptions *playgroundStreamOptions `json:"stream_options,omitempty"`
+	TrustAgent    *playgroundExtension     `json:"trustagent,omitempty"`
+	TestResponse  *string                  `json:"test_response,omitempty"`
+}
+
+// playgroundStreamOptions asks a streamed answer for its token usage (the last chunk).
+type playgroundStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type playgroundExtension struct {
@@ -145,22 +158,32 @@ type playgroundExtension struct {
 //     ModeOverride; source and audit selection are playground, so every run with an answer gets
 //     a deep audit (disabled without an engine);
 //   - audit mode answers through the test_response path (scriptedAnswer, no upstream call);
-//     chat mode calls the upstream of the OpenAI family with stream:false, and only with the
-//     gateway's own key (inject mode): without one the run is refused with 503
-//     credentials_unavailable, so no dashboard credential ever goes upstream;
-//   - the answer is gated synchronously, even on an observe route, and enforceJSON (with the
-//     route's fallback) decides what the app would have received;
+//     chat mode calls the upstream of the OpenAI family, and only with a key the gateway sends
+//     itself (inject mode: the upstream set in effect, whose key comes from the environment or
+//     a credential connected in the dashboard): without one the run is refused with 503
+//     credentials_unavailable, so nothing from the caller's browser session goes upstream;
+//   - the answer is gated synchronously, even on an observe route, as the JSON answer an app
+//     would have read (meta.stream none), and enforceJSON (with the route's fallback) decides
+//     what the app would have received. The decision-model calls are advisory: they never spend
+//     the enforcing reserve (D82);
 //   - decided records it once; the headers are the ones setDecisionHeaders writes on /v1.
 //
 // ctx is the run's context: the upstream and fallback calls run on it, so a caller that goes
-// away cancels them; the trace is still recorded. onToken, when set, receives the checked answer
-// in pieces before the gate runs (a streamed run; real token streaming is P4). A refused run
+// away cancels them; the trace is still recorded. onToken, when set, makes the run streamed
+// (D69): in chat mode the upstream is called with stream:true and each piece of the answer
+// reaches onToken as the upstream sends it; an audit-mode answer, or an upstream that answers
+// with JSON anyway, reaches it in synthesized pieces. Every piece comes before the gate runs;
+// in.OnDecision then receives the decision before the fallback call and the record. A refused run
 // records nothing; a run whose upstream failed records its trace and returns a PlaygroundError
 // that names it.
 func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundInput, onToken func(text string)) (*PlaygroundResult, error) {
 	start := h.now()
 	chat := in.Mode == PlaygroundChat
-	body := playgroundBody{Model: in.Model, Messages: in.Messages}
+	streamed := chat && onToken != nil
+	body := playgroundBody{Model: in.Model, Messages: in.Messages, Stream: streamed}
+	if streamed {
+		body.StreamOptions = &playgroundStreamOptions{IncludeUsage: true}
+	}
 	if body.Messages == nil {
 		body.Messages = []PlaygroundMessage{}
 	}
@@ -210,13 +233,17 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 	}
 	if chat && (f.up == nil || !f.up.Injecting()) {
 		return nil, &PlaygroundError{Status: http.StatusServiceUnavailable, Code: CodeCredentialsUnavailable,
-			Message: "Chat mode needs the gateway's own upstream key (TRUTHTABLE_UPSTREAM_API_KEY): the Playground never sends a dashboard credential upstream. Use audit mode to check an answer you paste."}
+			Message: "Chat mode needs an upstream key the gateway sends itself: connect one in Settings → Connections, or set TRUTHTABLE_UPSTREAM_API_KEY. Nothing from your browser session is sent upstream. To check an answer you already have, use audit mode."}
 	}
 
 	if route != f.route {
 		h.useRoute(f, route)
 	}
 	t.Mode, t.Source, t.KeyLabel = mode, gate.SourcePlayground, in.KeyLabel
+	// The run is checked as the JSON answer an app would have read; a stream only carries the
+	// answer to the dashboard as it arrives.
+	t.Stream = false
+	x.Advisory = true
 	t.Scenario = ""
 	if h.testMode && scenarioID.MatchString(in.Scenario) {
 		t.Scenario = in.Scenario
@@ -237,6 +264,7 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 
 	var ans *answer
 	var up gate.Upstream // audit mode: no upstream call
+	relayed := false     // the answer reached onToken as the upstream streamed it
 	if chat {
 		f.upStart = h.now()
 		resp, cancel, err := f.up.Do(ctx, http.MethodPost, playgroundPath, "", f.c.Request.Header, f.forward)
@@ -244,7 +272,13 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 			return nil, h.playgroundUpstreamFailed(ctx, f, 0, err)
 		}
 		status := resp.StatusCode
-		if ans, err = h.upstreamAnswer(f, resp, cancel); err != nil {
+		if streamed && isEventStream(resp) {
+			ans, err = h.streamedAnswer(f, resp, cancel, onToken)
+			relayed = true
+		} else {
+			ans, err = h.upstreamAnswer(f, resp, cancel)
+		}
+		if err != nil {
 			return nil, h.playgroundUpstreamFailed(ctx, f, status, err)
 		}
 		up = ans.upstreamRecord()
@@ -253,7 +287,7 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 	}
 	defer ans.close()
 	f.takeAnswer(ans)
-	if onToken != nil {
+	if onToken != nil && !relayed {
 		for _, piece := range playgroundPieces(ans.text) {
 			onToken(piece)
 		}
@@ -261,10 +295,17 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 
 	// As on /v1, the gate waits on the record context: only its own deadline stops it.
 	res := h.evaluate(f.record, f)
+	answered := ans.status >= 200 && ans.status <= 299 && ans.broken == ""
+	if in.OnDecision != nil && answered {
+		in.OnDecision(res.Decision)
+	}
 	out := h.enforceJSON(ctx, f, res, ans)
 	audit := h.decided(f, res, up, h.now(), out.final)
 
-	if ans.status < 200 || ans.status > 299 {
+	if ans.broken != "" {
+		return nil, &PlaygroundError{Status: http.StatusBadGateway, Code: CodeUpstreamError, TraceID: t.TraceID, Message: ans.broken}
+	}
+	if !answered {
 		return nil, &PlaygroundError{
 			Status: http.StatusBadGateway, Code: CodeUpstreamError, TraceID: t.TraceID, UpstreamStatus: ans.status,
 			Message: fmt.Sprintf("The upstream LLM API answered HTTP %d%s", ans.status, upstreamHint(ans.status)),
@@ -351,7 +392,7 @@ func (h *Handler) playgroundUpstreamFailed(ctx context.Context, f *flow, status 
 func upstreamHint(status int) string {
 	switch {
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
-		return ": check the gateway's upstream key (TRUTHTABLE_UPSTREAM_API_KEY)."
+		return ": check the upstream key in Settings → Connections (or TRUTHTABLE_UPSTREAM_API_KEY)."
 	case status == http.StatusNotFound:
 		return ": check the model id."
 	case status == http.StatusTooManyRequests:
@@ -376,6 +417,101 @@ func playgroundHeaders(res *gate.Result, audit string) map[string]string {
 		}
 	}
 	return out
+}
+
+// safeCode is an upstream error code the Playground may quote: a short identifier, never free text
+// (which can quote a credential).
+var safeCode = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+
+// streamedAnswer reads the event stream an upstream answered a streamed chat-mode run with (D69):
+// every piece of choice 0's text goes to onToken as it arrives, and the whole stream becomes the
+// run's answer, read as upstreamAnswer reads a JSON one: its text, usage and choices, and a skip
+// reason when it cannot be gated (an error inside the stream or a stream cut before its finish:
+// upstream_error; past TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES: upstream_error, and an enforcing
+// route blocks it as an oversized JSON answer; no text: no_text). Its body is the equivalent JSON
+// answer. A stream whose read failed is an *answerError, as for a JSON body.
+//
+// A piece ends before a character the upstream split across two events, so the pieces always add
+// up to the start of the answer; whatever is left is sent once the stream ends.
+func (h *Handler) streamedAnswer(f *flow, resp *http.Response, cancel context.CancelFunc, onToken func(string)) (*answer, error) {
+	body := f.up.StreamBody(resp, cancel)
+	a := &answer{status: resp.StatusCode, header: resp.Header, close: func() { _ = body.Close(); cancel() }}
+	asm, err := llmapi.NewStreamAssembler(f.format)
+	if err != nil {
+		a.close()
+		return nil, err
+	}
+	asm.SetMaxBytes(h.maxBytes)
+	rd := llmapi.NewReader(body)
+	if h.maxBytes < llmapi.DefaultMaxEventBytes {
+		rd.SetMaxEventBytes(int(h.maxBytes))
+	}
+	sent := ""
+	relay := func(final bool) {
+		text := asm.Text()
+		if !final {
+			text = strings.TrimSuffix(text, string(utf8.RuneError))
+		}
+		if len(text) > len(sent) && strings.HasPrefix(text, sent) {
+			onToken(text[len(sent):])
+			sent = text
+		}
+	}
+	var readErr error
+	tooLarge := false
+	for !asm.Terminated() {
+		ev, err := rd.Next()
+		if errors.Is(err, llmapi.ErrEventTooLarge) {
+			tooLarge = true
+			break
+		}
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				readErr = err
+			}
+			break
+		}
+		if k := asm.Add(ev); k == llmapi.EventDelta || k == llmapi.EventFinish {
+			relay(false)
+		}
+	}
+	ms := h.now().Sub(f.upStart).Milliseconds()
+	a.ms = &ms
+	if readErr != nil {
+		a.close()
+		return nil, &answerError{status: resp.StatusCode, err: readErr}
+	}
+	r := asm.Response()
+	a.resp, a.usage, a.multiChoice = r, r.Usage, r.MultiChoice()
+	switch {
+	case tooLarge || asm.TooLarge():
+		a.skip = gate.SkipUpstreamError
+		// Not read whole: like the unread rest of an oversized JSON body, an enforcing route
+		// never delivers it.
+		a.rest = http.NoBody
+	case asm.Err() != nil:
+		a.skip, a.unenforced = gate.SkipUpstreamError, true
+		a.broken = "The upstream LLM API reported an error in the middle of its answer."
+		if code := asm.Err().Code; code != "" && safeCode.MatchString(code) {
+			a.broken = fmt.Sprintf("The upstream LLM API reported an error (%s) in the middle of its answer.", h.redact(code))
+		}
+	case !asm.Terminated() && !asm.Finished():
+		a.skip = gate.SkipUpstreamError // the stream ended before its answer did
+		a.broken = "The upstream LLM API's stream ended before its answer did."
+	default:
+		relay(true)
+		if c, ok := r.Gated(); ok && c.Text != "" {
+			a.text = c.Text
+		} else {
+			a.skip, a.unenforced = gate.SkipNoText, true
+		}
+	}
+	model := r.Model
+	if model == "" && f.req != nil {
+		model = f.req.Model
+	}
+	a.body = llmapi.SyntheticResponse(f.format, f.x.Trace.TraceID, model, f.start.Unix(), a.text)
+	return a, nil
 }
 
 // playgroundPieces splits an answer into the token events of a streamed run: each word with the

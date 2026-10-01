@@ -171,6 +171,9 @@ type answer struct {
 	ms          *int64
 	usage       *llmapi.Usage
 	close       func()
+	// broken says why a streamed 2xx answer has no answer to show (an error inside the stream, a
+	// stream cut short); "" otherwise. Only the Playground reads it (streamedAnswer).
+	broken string
 }
 
 // takeAnswer hands a JSON answer to the exchange before it is gated: the gated text, the skip
