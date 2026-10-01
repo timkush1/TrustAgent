@@ -1,7 +1,8 @@
 /**
  * Evaluator validation beyond the JSON Schema (SPEC §2.8): the hard rules (severity "error") and
  * the lints (severity "warning"), shown in Studio. Built-in templates must be lint-clean. Pinned by
- * contracts/vectors/lint.
+ * contracts/vectors/lint; backend-go/internal/decision/lint.go is the reference (P4-PLAN D54) and
+ * adds the JSON Schema checks the server runs before saving.
  *
  * The SPEC names two hard-rule codes (unresolved_state_reference, no_id_reference) and every lint
  * id; the remaining hard rules use the codes defined here. Three lints have no SPEC definition beyond
