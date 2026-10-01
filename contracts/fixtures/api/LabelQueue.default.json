@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "trace_id": "01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64",
+      "created_at": "2026-09-28T10:11:02.000Z",
+      "route": "support-bot",
+      "evaluator_ref": "groundedness@1",
+      "risk_raw": 0.58,
+      "level": "ok",
+      "user_request": "Do you ship to Canada?",
+      "response_text": "Yes, shipping to Canada is free on every order and arrives next day.",
+      "evidence_labels": [
+        "shipping.md"
+      ]
+    },
+    {
+      "trace_id": "01a0e782-4e9a-7c13-8d2f-6a0b1c9e7d35",
+      "created_at": "2026-09-28T10:09:40.000Z",
+      "route": "support-bot",
+      "evaluator_ref": "groundedness@1",
+      "risk_raw": 0.64,
+      "level": "warn",
+      "user_request": null,
+      "response_text": null,
+      "evidence_labels": []
+    }
+  ]
+}

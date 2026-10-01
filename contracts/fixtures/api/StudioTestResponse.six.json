@@ -1,0 +1,181 @@
+{
+  "run_id": "st_01a0e7a1",
+  "results": [
+    {
+      "sample_id": "s1",
+      "status": "assessed",
+      "reason": null,
+      "answer": {
+        "type": "choice",
+        "choice": "no_blame",
+        "probabilities": {
+          "no_blame": 0.96,
+          "implied_blame": 0.0,
+          "explicit_blame": 0.04
+        }
+      },
+      "probabilities": {
+        "no_blame": 0.96,
+        "implied_blame": 0.0,
+        "explicit_blame": 0.04
+      },
+      "risk_raw": 0.04,
+      "risk": 0.04,
+      "level": "ok",
+      "escalate": null,
+      "fires": false,
+      "latency_ms": 180,
+      "cost_usd": 4.1e-06,
+      "expected": "no_fire",
+      "agrees": true
+    },
+    {
+      "sample_id": "s2",
+      "status": "assessed",
+      "reason": null,
+      "answer": {
+        "type": "choice",
+        "choice": "explicit_blame",
+        "probabilities": {
+          "no_blame": 0.03,
+          "implied_blame": 0.0,
+          "explicit_blame": 0.97
+        }
+      },
+      "probabilities": {
+        "no_blame": 0.03,
+        "implied_blame": 0.0,
+        "explicit_blame": 0.97
+      },
+      "risk_raw": 0.97,
+      "risk": 0.97,
+      "level": "critical",
+      "escalate": null,
+      "fires": true,
+      "latency_ms": 187,
+      "cost_usd": 4.1e-06,
+      "expected": "fire",
+      "agrees": true
+    },
+    {
+      "sample_id": "s3",
+      "status": "assessed",
+      "reason": null,
+      "answer": {
+        "type": "choice",
+        "choice": "no_blame",
+        "probabilities": {
+          "no_blame": 0.98,
+          "implied_blame": 0.0,
+          "explicit_blame": 0.02
+        }
+      },
+      "probabilities": {
+        "no_blame": 0.98,
+        "implied_blame": 0.0,
+        "explicit_blame": 0.02
+      },
+      "risk_raw": 0.02,
+      "risk": 0.02,
+      "level": "ok",
+      "escalate": null,
+      "fires": false,
+      "latency_ms": 194,
+      "cost_usd": 4.1e-06,
+      "expected": "no_fire",
+      "agrees": true
+    },
+    {
+      "sample_id": "s4",
+      "status": "assessed",
+      "reason": null,
+      "answer": {
+        "type": "choice",
+        "choice": "explicit_blame",
+        "probabilities": {
+          "no_blame": 0.12,
+          "implied_blame": 0.0,
+          "explicit_blame": 0.88
+        }
+      },
+      "probabilities": {
+        "no_blame": 0.12,
+        "implied_blame": 0.0,
+        "explicit_blame": 0.88
+      },
+      "risk_raw": 0.88,
+      "risk": 0.88,
+      "level": "warn",
+      "escalate": null,
+      "fires": true,
+      "latency_ms": 201,
+      "cost_usd": 4.1e-06,
+      "expected": "fire",
+      "agrees": true
+    },
+    {
+      "sample_id": "s5",
+      "status": "assessed",
+      "reason": null,
+      "answer": {
+        "type": "choice",
+        "choice": "no_blame",
+        "probabilities": {
+          "no_blame": 0.94,
+          "implied_blame": 0.0,
+          "explicit_blame": 0.06
+        }
+      },
+      "probabilities": {
+        "no_blame": 0.94,
+        "implied_blame": 0.0,
+        "explicit_blame": 0.06
+      },
+      "risk_raw": 0.06,
+      "risk": 0.06,
+      "level": "ok",
+      "escalate": null,
+      "fires": false,
+      "latency_ms": 208,
+      "cost_usd": 4.1e-06,
+      "expected": "no_fire",
+      "agrees": true
+    },
+    {
+      "sample_id": "s6",
+      "status": "assessed",
+      "reason": null,
+      "answer": {
+        "type": "choice",
+        "choice": "no_blame",
+        "probabilities": {
+          "no_blame": 0.59,
+          "implied_blame": 0.0,
+          "explicit_blame": 0.41
+        }
+      },
+      "probabilities": {
+        "no_blame": 0.59,
+        "implied_blame": 0.0,
+        "explicit_blame": 0.41
+      },
+      "risk_raw": 0.41,
+      "risk": 0.41,
+      "level": "ok",
+      "escalate": null,
+      "fires": false,
+      "latency_ms": 215,
+      "cost_usd": 4.1e-06,
+      "expected": "fire",
+      "agrees": false
+    }
+  ],
+  "summary": {
+    "n": 6,
+    "assessed": 6,
+    "agreement": 0.833,
+    "cost_usd": 2.46e-05,
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "backend": "openrouter-decisions"
+  }
+}

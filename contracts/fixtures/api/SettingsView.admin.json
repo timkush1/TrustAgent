@@ -1,0 +1,225 @@
+{
+  "version": 7,
+  "etag": "\"s7\"",
+  "groups": [
+    {
+      "name": "Decision model",
+      "keys": [
+        {
+          "key": "TRUTHTABLE_JEV_BACKEND",
+          "env": null,
+          "value": "auto",
+          "default": "auto",
+          "source": "default",
+          "secret": false,
+          "advanced": false,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "proxy"
+          ]
+        },
+        {
+          "key": "TRUTHTABLE_JEV_MODEL",
+          "env": null,
+          "value": "",
+          "default": "",
+          "source": "default",
+          "secret": false,
+          "advanced": false,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "proxy"
+          ]
+        },
+        {
+          "key": "TRUTHTABLE_JEV_BASE_URL",
+          "env": null,
+          "value": "",
+          "default": "",
+          "source": "default",
+          "secret": false,
+          "advanced": true,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "proxy"
+          ]
+        },
+        {
+          "key": "OPENROUTER_API_KEY",
+          "env": null,
+          "value": "",
+          "default": "",
+          "source": "default",
+          "secret": true,
+          "advanced": false,
+          "restart_required": true,
+          "editable": false,
+          "services": [
+            "proxy",
+            "engine"
+          ]
+        },
+        {
+          "key": "TYPESAFE_API_KEY",
+          "env": null,
+          "value": "",
+          "default": "",
+          "source": "default",
+          "secret": true,
+          "advanced": true,
+          "restart_required": true,
+          "editable": false,
+          "services": [
+            "proxy"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Engine: judge",
+      "keys": [
+        {
+          "key": "LLM_PROVIDER",
+          "env": null,
+          "value": "openrouter",
+          "default": "auto",
+          "source": "dashboard",
+          "secret": false,
+          "advanced": false,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "engine"
+          ]
+        },
+        {
+          "key": "LLM_MODEL",
+          "env": null,
+          "value": "anthropic/claude-haiku-4.5",
+          "default": "",
+          "source": "dashboard",
+          "secret": false,
+          "advanced": true,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "engine"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Budgets, Studio",
+      "keys": [
+        {
+          "key": "TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY",
+          "env": null,
+          "value": "2.00",
+          "default": "2.00",
+          "source": "default",
+          "secret": false,
+          "advanced": false,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "proxy"
+          ]
+        },
+        {
+          "key": "TRUTHTABLE_SPEND_CAP_LLM_USD_DAY",
+          "env": null,
+          "value": "5.00",
+          "default": "5.00",
+          "source": "default",
+          "secret": false,
+          "advanced": false,
+          "restart_required": false,
+          "editable": true,
+          "services": [
+            "proxy"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Core",
+      "keys": [
+        {
+          "key": "TRUTHTABLE_PUBLIC_URL",
+          "env": null,
+          "value": "http://localhost:3000",
+          "default": "http://localhost:3000",
+          "source": "default",
+          "secret": false,
+          "advanced": false,
+          "restart_required": true,
+          "editable": false,
+          "services": [
+            "proxy"
+          ]
+        },
+        {
+          "key": "TRUTHTABLE_LOG_LEVEL",
+          "env": null,
+          "value": "info",
+          "default": "info",
+          "source": "default",
+          "secret": false,
+          "advanced": true,
+          "restart_required": true,
+          "editable": false,
+          "services": [
+            "proxy",
+            "engine"
+          ]
+        }
+      ]
+    }
+  ],
+  "runtime": {
+    "decision_model": {
+      "backend": "auto",
+      "model": null,
+      "base_url": null,
+      "path": null
+    },
+    "judge": {
+      "provider": "openrouter",
+      "model": "anthropic/claude-haiku-4.5"
+    },
+    "upstream": {
+      "default": {
+        "url": "https://api.openai.com/v1",
+        "credential": null,
+        "auth_header": "authorization"
+      },
+      "anthropic": {
+        "url": null,
+        "credential": null,
+        "auth_header": "x-api-key"
+      },
+      "fallback": {
+        "url": null,
+        "credential": null,
+        "auth_header": "authorization",
+        "format": "openai"
+      }
+    },
+    "bindings": {
+      "decision_model": "openrouter",
+      "judge": "openrouter",
+      "upstream_default": null
+    },
+    "budgets": {
+      "decision_usd_day": 2.0,
+      "llm_usd_day": 5.0
+    },
+    "pricing_overrides": []
+  },
+  "env_managed": [],
+  "warnings": [],
+  "dotenv_path": "/app/.env"
+}

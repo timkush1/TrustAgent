@@ -21,9 +21,9 @@ import { OutcomeTimeSeries } from '@/components/charts/OutcomeTimeSeries';
 import { DegradedState } from '@/components/common/DegradedState';
 import { LabelledRateView } from '@/components/common/LabelledRate';
 import { PageHeader } from '@/components/common/PageHeader';
-import { PhasePlaceholder } from '@/components/layout/PhasePlaceholder';
 import { NAV_ITEMS } from '@/components/layout/nav';
 import { ErrorState } from '@/components/common/StateViews';
+import { SavingsPanel } from '@/components/savings/SavingsPanel';
 import { Term } from '@/components/common/Term';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { Card, CardContent } from '@/components/ui/card';
@@ -151,25 +151,6 @@ function ConnectAnotherApp(props: { origin: string; demo: boolean; received: boo
   );
 }
 
-function SavingsTab({ timeWindow }: { timeWindow: TimeWindow }) {
-  return (
-    <div className="space-y-5">
-      <SavingsStrip timeWindow={timeWindow} />
-      <PhasePlaceholder
-        question={NAV_ITEMS[0].question}
-        phase="P4"
-        phaseName="security, credentials, Studio, ROI"
-        planned={[
-          'Your measured cost per 1,000 answers over time, against what an LLM would have cost for the same checks',
-          'A component table where every number says whether it is measured, an estimate, vendor or simulated',
-          'Fast-check p50 / p95 and how often the deadline was missed',
-          'Sampling status: uniform audits today and budget caps reached',
-        ]}
-      />
-    </div>
-  );
-}
-
 /** The static build's stand-in for the time window: the recording is one fixed stretch of time. */
 function RecordingChip() {
   const info = useReplayInfo();
@@ -245,7 +226,7 @@ export function OverviewPage({ search }: { search: OverviewSearchParams }) {
         </TabsList>
         <TabPanel value="summary">{summary}</TabPanel>
         <TabPanel value="savings">
-          <SavingsTab timeWindow={timeWindow} />
+          <SavingsPanel timeWindow={timeWindow} />
         </TabPanel>
       </Tabs>
     </div>

@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "conflict",
+    "message": "This is the last admin key; revoking it would lock everyone out.",
+    "details": {
+      "reason": "last_admin_key"
+    }
+  },
+  "trace_id": null
+}

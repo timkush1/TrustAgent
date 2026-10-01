@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "budget_exhausted",
+    "message": "Today's deep-audit budget is used up.",
+    "details": {
+      "cap": "llm"
+    },
+    "retry_after_ms": 3600000
+  },
+  "trace_id": null
+}

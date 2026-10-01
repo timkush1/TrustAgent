@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_nonce",
+    "message": "This sign-in link expired or was already used. Start Connect again."
+  },
+  "trace_id": null
+}
