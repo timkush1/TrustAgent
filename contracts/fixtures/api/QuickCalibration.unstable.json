@@ -1,0 +1,58 @@
+{
+  "n": 9,
+  "n_pos": 4,
+  "n_neg": 5,
+  "enough": true,
+  "message": "Based on 9 labels the threshold moves a lot when one label changes; label more before relying on it.",
+  "threshold": 0.55,
+  "precision": {
+    "point": 0.8,
+    "ci95": [
+      0.38,
+      0.96
+    ]
+  },
+  "recall": {
+    "point": 1.0,
+    "ci95": [
+      0.51,
+      1.0
+    ]
+  },
+  "loo_range": [
+    0.35,
+    0.8
+  ],
+  "unstable": true,
+  "mapping": {
+    "method": "platt",
+    "table": null,
+    "platt": {
+      "a": 6.1,
+      "b": -3.2
+    }
+  },
+  "grid": [
+    {
+      "threshold": 0.3,
+      "tp": 4,
+      "fp": 2,
+      "tn": 3,
+      "fn": 0
+    },
+    {
+      "threshold": 0.55,
+      "tp": 4,
+      "fp": 1,
+      "tn": 4,
+      "fn": 0
+    },
+    {
+      "threshold": 0.8,
+      "tp": 2,
+      "fp": 0,
+      "tn": 5,
+      "fn": 2
+    }
+  ]
+}

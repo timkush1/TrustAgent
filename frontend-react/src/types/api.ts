@@ -1475,7 +1475,8 @@ export interface Recording {
   calibration_state: CalibrationState;
   answer_sources: { scripted: number; generated: number };
   totals: { traces: number; decision_usd: number; llm_usd: number };
-  roi: RoiSummary;
+  /** recording.v1 `roi`: the headline only (Go recording.ROI); the full RoiSummary is recomputed from the traces. */
+  roi: Pick<RoiSummary, 'window' | 'gated_responses' | 'simulated'>;
   // details in traces/<id>.json as TraceDetail incl. scripted/generated bodies
   traces: TraceSummary[];
   events: { t_ms: number; type: WsEvent['type']; trace_id?: TraceId; data: unknown }[];

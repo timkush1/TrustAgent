@@ -4335,6 +4335,65 @@
       ],
       "type": "object"
     },
+    "PlaygroundResult": {
+      "additionalProperties": false,
+      "properties": {
+        "audit_status": {
+          "$ref": "#/$defs/TraceAuditStatus"
+        },
+        "decision": {
+          "$ref": "#/$defs/GateDecisionView"
+        },
+        "delivered_text": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "response_text": {
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "upstream": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ms": {
+                  "type": "number"
+                },
+                "status": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "status",
+                "ms"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "trace_id",
+        "upstream",
+        "response_text",
+        "delivered_text",
+        "headers",
+        "decision",
+        "audit_status"
+      ],
+      "type": "object"
+    },
     "PolicyMode": {
       "enum": [
         "observe",
@@ -4747,6 +4806,200 @@
       "required": [
         "status",
         "components"
+      ],
+      "type": "object"
+    },
+    "Recording": {
+      "additionalProperties": false,
+      "properties": {
+        "answer_sources": {
+          "additionalProperties": false,
+          "properties": {
+            "generated": {
+              "type": "number"
+            },
+            "scripted": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "scripted",
+            "generated"
+          ],
+          "type": "object"
+        },
+        "calibration_state": {
+          "$ref": "#/$defs/CalibrationState"
+        },
+        "decision_model": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "$ref": "#/$defs/DecisionBackend"
+            },
+            "snapshot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        "events": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "data": {},
+              "t_ms": {
+                "type": "number"
+              },
+              "trace_id": {
+                "$ref": "#/$defs/TraceId"
+              },
+              "type": {
+                "enum": [
+                  "hello",
+                  "hb",
+                  "trace_started",
+                  "gate_decision",
+                  "audit_queued",
+                  "audit_started",
+                  "audit_completed",
+                  "audit_failed",
+                  "audit_dropped",
+                  "gap",
+                  "policy_updated",
+                  "policy_error",
+                  "evaluator_updated",
+                  "calibration_updated",
+                  "decision_model_changed",
+                  "status",
+                  "credentials_changed",
+                  "settings_updated"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "t_ms",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "git_sha": {
+          "type": "string"
+        },
+        "judge": {
+          "additionalProperties": false,
+          "properties": {
+            "fallback_active": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "fallback_active"
+          ],
+          "type": "object"
+        },
+        "kind": {
+          "enum": [
+            "recorded",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "roi": {
+          "additionalProperties": false,
+          "description": "recording.v1 `roi`: the headline only (Go recording.ROI); the full RoiSummary is recomputed from the traces.",
+          "properties": {
+            "gated_responses": {
+              "type": "number"
+            },
+            "simulated": {
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/$defs/TimeWindow"
+            }
+          },
+          "required": [
+            "window",
+            "gated_responses",
+            "simulated"
+          ],
+          "type": "object"
+        },
+        "schema": {
+          "const": "trustagent.recording/v1",
+          "type": "string"
+        },
+        "totals": {
+          "additionalProperties": false,
+          "properties": {
+            "decision_usd": {
+              "type": "number"
+            },
+            "llm_usd": {
+              "type": "number"
+            },
+            "traces": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "traces",
+            "decision_usd",
+            "llm_usd"
+          ],
+          "type": "object"
+        },
+        "traces": {
+          "items": {
+            "$ref": "#/$defs/TraceSummary"
+          },
+          "type": "array"
+        },
+        "trustagent_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "kind",
+        "label",
+        "recorded_at",
+        "git_sha",
+        "trustagent_version",
+        "decision_model",
+        "judge",
+        "calibration_state",
+        "answer_sources",
+        "totals",
+        "roi",
+        "traces",
+        "events"
       ],
       "type": "object"
     },
