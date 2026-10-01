@@ -1,0 +1,14 @@
+{
+  "v": 2,
+  "seq": 862,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "settings_updated",
+  "ts": "2026-09-28T09:58:13.405Z",
+  "data": {
+    "version": 7,
+    "keys": [
+      "bindings.decision_model",
+      "bindings.judge"
+    ]
+  }
+}

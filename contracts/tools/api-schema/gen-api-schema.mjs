@@ -85,6 +85,10 @@ export const ROOTS = [
   'AdminAuditEntry',
   'Page<AdminAuditEntry>',
   'StatusWarning',
+  // P3 control plane (fixtures added in P4 Step 0b)
+  'PlaygroundResult',
+  'ReliabilityResponse',
+  'Recording',
   // P4: costs
   'RoiSummary',
   'RoiTimeseries',

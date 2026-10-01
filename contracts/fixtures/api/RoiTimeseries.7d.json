@@ -1,0 +1,55 @@
+{
+  "window": "7d",
+  "bucket": "1d",
+  "points": [
+    {
+      "t": "2026-09-22T00:00:00.000Z",
+      "decision_usd": 0.0081,
+      "llm_usd": 0.142,
+      "same_checks_usd": 0.39,
+      "gated": 180
+    },
+    {
+      "t": "2026-09-23T00:00:00.000Z",
+      "decision_usd": 0.0093,
+      "llm_usd": 0.161,
+      "same_checks_usd": 0.45,
+      "gated": 207
+    },
+    {
+      "t": "2026-09-24T00:00:00.000Z",
+      "decision_usd": 0.0072,
+      "llm_usd": 0.118,
+      "same_checks_usd": 0.34,
+      "gated": 160
+    },
+    {
+      "t": "2026-09-25T00:00:00.000Z",
+      "decision_usd": 0.011,
+      "llm_usd": 0.205,
+      "same_checks_usd": 0.53,
+      "gated": 244
+    },
+    {
+      "t": "2026-09-26T00:00:00.000Z",
+      "decision_usd": 0.0099,
+      "llm_usd": 0.177,
+      "same_checks_usd": 0.48,
+      "gated": 221
+    },
+    {
+      "t": "2026-09-27T00:00:00.000Z",
+      "decision_usd": 0.0046,
+      "llm_usd": 0.071,
+      "same_checks_usd": 0.21,
+      "gated": 102
+    },
+    {
+      "t": "2026-09-28T00:00:00.000Z",
+      "decision_usd": 0.0038,
+      "llm_usd": 0.06,
+      "same_checks_usd": 0.17,
+      "gated": 85
+    }
+  ]
+}
