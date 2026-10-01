@@ -102,20 +102,25 @@ interface ScenarioJson {
 /** The roles the form's message picker offers. */
 const FORM_ROLES: ReadonlySet<string> = new Set<ChatMessage['role']>(['system', 'user', 'assistant']);
 
+/** Scenario phase tags after P3, the phase of the gateway this dashboard ships with: not served yet. */
+const LATER_PHASES: ReadonlySet<string> = new Set(['p4', 'p5']);
+
 /**
  * Whether the form holds a scenario's request exactly (contracts/README.md: a consumer picks the
  * scenarios it can represent by `api_format`, `stream` and the phase and `knowledge` tags): a
  * non-streaming OpenAI chat body of only `model` and `messages`, each message plain text with a role
  * the form offers, on a route the running gateway already serves. That leaves out Anthropic system
  * blocks, a completions `prompt`, tool calls (`content: null`), `developer` messages, the
- * `trustagent` extension, and the `p3` and `knowledge` scenarios.
+ * `trustagent` extension, the `knowledge` scenarios and any tagged with a phase after P3. The P3
+ * gateway enforces block and fallback, so the `p3` scenarios on those routes (payments-fallback)
+ * are examples too.
  */
 function formHolds(s: ScenarioJson): boolean {
   const { messages, ...rest } = s.request;
   return (
     s.api_format === 'openai_chat' &&
     !s.stream &&
-    !s.sets.includes('p3') &&
+    !s.sets.some((tag) => LATER_PHASES.has(tag)) &&
     !s.sets.includes('knowledge') &&
     Object.keys(rest).every((k) => k === 'model') &&
     Array.isArray(messages) &&

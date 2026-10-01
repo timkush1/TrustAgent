@@ -71,7 +71,7 @@ describe('Playground model', () => {
   it('offers only the scenarios the form holds as they are', () => {
     const ids = EXAMPLES.map((e) => e.id);
     expect(ids.slice(0, 3)).toEqual(['grounded-pass', 'refund-contradiction-flag', 'no-evidence-not-assessed']);
-    // Another request shape, tool calls, a developer message, the extension, streaming, P3 or knowledge.
+    // Another request shape, tool calls, a developer message, the extension, streaming or knowledge.
     for (const id of [
       'anthropic-system-grounded',
       'completions-extension-grounded',
@@ -79,11 +79,18 @@ describe('Playground model', () => {
       'developer-role-unsupported',
       'extension-misquote-flag',
       'stream-passthrough-flag',
-      'payments-fallback',
+      'help-center-link-block',
       'knowledge-only-capped',
     ]) {
       expect(ids).not.toContain(id);
     }
+    // The P3 gateway enforces block and fallback: the p3 chat scenarios on those routes are examples.
+    expect(ids).toEqual(expect.arrayContaining(['payments-fallback', 'help-center-uncalibrated-flag']));
+    expect(EXAMPLES.find((e) => e.id === 'payments-fallback')?.form).toMatchObject({
+      mode: 'audit',
+      route: 'payments-faq',
+      scenario: 'payments-fallback',
+    });
     for (const e of EXAMPLES) {
       for (const m of e.form.messages) {
         expect(['system', 'user', 'assistant']).toContain(m.role);
