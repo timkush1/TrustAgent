@@ -48,12 +48,17 @@
       },
       "no_credits": {
         "title": "Your OpenRouter account has no credits",
-        "body": "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"
+        "body": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits"
       },
       "breaker_open": {
         "title": "Fast check paused after repeated errors",
         "body": "Route {route} enforces decisions; until the fast check recovers it follows its fail mode ({fail}).",
         "action": "See Settings → Models for the last error."
+      },
+      "llm_exhausted": {
+        "title": "Deep audits paused: today's deep-audit budget is used up",
+        "body": "Fast checks keep running. Deep audits start again tomorrow, or as soon as the budget is raised.",
+        "action": "Raise the deep-audit budget in Settings → Budgets."
       }
     },
     "health": {
@@ -88,14 +93,32 @@
         "title": "Connect OpenRouter",
         "primary": "Connect OpenRouter",
         "paste_key": "Paste a key instead",
-        "simulated": "Explore with simulated checks (mock, labelled)",
+        "simulated": "Try it without a key (simulated checks, $0)",
         "privacy": "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out.",
         "probe_ready": "Ready · {latency_ms} ms · {cost}",
-        "no_credits": "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"
+        "no_credits": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits",
+        "prerequisite": "You need an OpenRouter account with about $5 of credit (≈1,600 answers at default settings, estimate).",
+        "prerequisite_link": "Add credits at openrouter.ai/settings/credits",
+        "simulated_note": "Simulated checks use a mock model: results are labelled Simulated and never block an answer.",
+        "simulated_on": "Simulated checks are on. Connect a key any time to check answers for real.",
+        "simulated_off": "Simulated checks are now off",
+        "check_again": "I added credits — check again",
+        "no_limit": "This key has no spending limit. Set one at openrouter.ai/settings/keys so a mistake can't run up costs.",
+        "connected": "Connected · fast check {used_for}",
+        "judge_env_managed": "The deep-audit judge is set by the environment, so it was left as it is.",
+        "callback_origin_mismatch": "This sign-in started at a different address. Open the dashboard at {public_url} and connect again.",
+        "callback_expired": "This sign-in link has expired or was already used. Start Connect OpenRouter again.",
+        "callback_missing": "No sign-in is waiting in this tab. Open the dashboard at {public_url} and connect again.",
+        "callback_working": "Finishing the OpenRouter sign-in…"
       },
       "step_see_it_work": {
         "title": "See it work",
         "body": "Try a refund question whose answer says 60 days while the policy says 30. No upstream key needed."
+      },
+      "step_try": {
+        "title": "See it work",
+        "disabled_reason": "Connect a key or turn on simulated checks first.",
+        "ingest_key": "Copy this app key now. Your app sends it as X-TrustAgent-Key. It is shown only once."
       }
     },
     "connect_app": {
@@ -225,7 +248,11 @@
       "dry_run": "Test on past traffic (paid)",
       "dry_run_result": "Would have fired {fired} times ({rate}, 95% CI {lo}–{hi}) on the last {window}; this test cost {cost}.",
       "save_and_watch": "Save and watch on route {route}",
-      "make_active": "Make active"
+      "make_active": "Make active",
+      "dry_run_confirm": "This test costs about {estimate} ({samples} of {population} past answers). {budget_left} of today's fast-check budget is left.",
+      "dry_run_cancelled": "Test stopped. You're charged only for the checks that already ran ({cost}).",
+      "static_soon": "Coming soon to the online demo. Run TrustAgent yourself to use Studio: {command:demo}",
+      "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft."
     },
     "recording": {
       "recorded": "Recorded {date} · {snapshot} + {judge} · {answer_source} answers · replayed, not live",
@@ -237,6 +264,40 @@
       "Needs documents for groundedness; otherwise the answer is marked not checked.",
       "English-first.",
       "Not a security boundary."
-    ]
+    ],
+    "settings": {
+      "env_managed": "Set in .env ({keys}); change it there and restart.",
+      "engine_env_managed": "Set in the engine's .env. Check it with {command:doctor}.",
+      "credential_remove_impact": "Removing {name} also disconnects it from {used_for}.",
+      "credential_undecryptable": "This saved key can't be read with the current master key. Paste it again, or restore the old TRUTHTABLE_SECRET_KEY.",
+      "store_unavailable": "Keys can't be saved here yet. Set TRUTHTABLE_SECRET_KEY (or let TrustAgent generate one) and restart.",
+      "no_database": "Keys can't be saved without a database. Keys set in .env still work.",
+      "master_key_changed": "The master key changed, so {names} can't be read. Paste those keys again, or restore the previous TRUTHTABLE_SECRET_KEY.",
+      "fail_closed_confirm": "These routes fail closed and would block every answer without a fast check: {routes}. Continue anyway?",
+      "last_admin_key": "This is the last admin key. Create another admin key first, or you'll lose access to Settings.",
+      "current_session_key": "You're signed in with this key. Revoking it signs you out.",
+      "reenter_secret": "The address changed, so paste the {names} key again to send it there.",
+      "secret_once": "Copy this key now. It is shown only once.",
+      "sign_out_everywhere": "Sign out everywhere",
+      "sign_out_everywhere_confirm": "Every dashboard session, including this one, will need to sign in again.",
+      "stale_version": "Settings changed in another tab. Reload to see the latest, then try again.",
+      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill."
+    },
+    "labels": {
+      "title": "Label queue",
+      "intro": "Was each flag right? Your answers calibrate the check so it can block safely.",
+      "empty": "Nothing to label right now. New answers near the flag line show up here.",
+      "keys_hint": "C correct · F false alarm · S skip",
+      "correct": "Correct",
+      "false_alarm": "False alarm",
+      "skip": "Skip",
+      "was_this_right": "Was this right?",
+      "saved": "Saved. Thanks — {n} more and this check can be calibrated.",
+      "body_expired": "This answer's text has expired, so it can't be labelled."
+    },
+    "badges": {
+      "simulated_checks": "Simulated checks",
+      "simulated_checks_hint": "The fast check uses a mock model: results are labelled Simulated and never block."
+    }
   }
 }

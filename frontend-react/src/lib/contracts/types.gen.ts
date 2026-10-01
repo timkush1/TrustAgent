@@ -855,9 +855,16 @@ export interface DecideInput {
   }[];
   calibration: {
     [k: string]: {
-      table: CalibrationTable;
-      quality: CalibrationQuality;
-      state: CalibrationState;
+      table?: CalibrationTable;
+      quality?: CalibrationQuality;
+      /**
+       * common.v1 CalibrationState plus other_snapshot: the target is calibrated only on other snapshots, so the entry carries no table (P4-PLAN D56). decision.v1 calibration_state never takes other_snapshot.
+       */
+      state: CalibrationState | 'other_snapshot';
+      /**
+       * The state fields the calibration was fitted with (P4-PLAN D56). When they differ from the evaluator's own, decide() sets calibration_warning and still applies the calibration.
+       */
+      fit_state_fields?: string[];
     };
   };
   meta: {

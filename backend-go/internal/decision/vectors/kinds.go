@@ -33,8 +33,8 @@ var Kinds = map[string]Kind{
 	"calibrate_fit":     {Mechanical: true, run: runCalibrateFit},
 	"detectors":         {run: runDetectors},
 	"evidence":          {Skip: "run by internal/evidence (TestEvidenceVectors) until the anthropic_messages and openai_completions formats land (P2)"},
-	"lint":              {Skip: "evaluator validation and lints land in the P2 decision package"},
-	"cost":              {Mechanical: true, Skip: "the cost calculator lands with internal/costs in P4"},
+	"lint":              lintKind, // vectors/lint.go (GEVAL, P4-PLAN D54)
+	"cost":              costKind, // vectors/cost.go (GCOST, P4-PLAN D85)
 	"pkce":              {Skip: "PKCE vectors are TypeScript-only (SPEC §7.6: no Go runner)"},
 }
 

@@ -7,6 +7,9 @@
  * detector, compile and usage fields.
  */
 import type {
+  CalibrationQuality,
+  CalibrationState,
+  CalibrationTable,
   DecideInput,
   DeepAuditClass,
   Degraded,
@@ -65,7 +68,14 @@ export class DecideError extends Error {
 }
 
 type EvaluatorInput = DecideInput['evaluators'][number];
-type CalibrationEntry = DecideInput['calibration'][string];
+type CalibrationInputEntry = DecideInput['calibration'][string];
+/** A calibration for the current snapshot (an other_snapshot entry calibrates nothing; P4-PLAN D56). */
+type CalibrationEntry = CalibrationInputEntry & { table: CalibrationTable; quality: CalibrationQuality; state: CalibrationState };
+
+/** The entry that applies to this snapshot, if any: other_snapshot entries carry no table. */
+function currentCalibration(entry: CalibrationInputEntry | undefined): CalibrationEntry | undefined {
+  return entry === undefined || entry.state === 'other_snapshot' ? undefined : (entry as CalibrationEntry);
+}
 
 /** The working state of one evaluator. */
 interface EvalState {
@@ -266,7 +276,7 @@ function assess(
 ): EvalState {
   const th = ev.thresholds;
   const space: ThresholdSpace = th.space || 'raw';
-  const cal: CalibrationEntry | undefined = own(input.calibration, ev.ref);
+  const cal: CalibrationEntry | undefined = currentCalibration(own(input.calibration, ev.ref));
   const warn = th.warn_at ?? spec.outcomes.warnAt;
   // An explicit null overrides the spec value; only an absent key falls back to it.
   const crit = has(th, 'critical_at') ? (th.critical_at ?? null) : spec.outcomes.criticalAt;
@@ -514,8 +524,12 @@ function checkInput(input: DecideInput): void {
     if (space && space !== 'raw' && space !== 'calibrated') throw new DecideError(`evaluator ${e.ref}: unknown threshold space ${JSON.stringify(space)}`);
   }
   for (const [ref, c] of Object.entries(input.calibration)) {
+    if (c.state === 'other_snapshot') {
+      if (c.table !== undefined && c.table.length > 0) throw new DecideError(`calibration for ${ref}: an other_snapshot entry has no table`);
+      continue;
+    }
     try {
-      checkCalibrationTable(c.table);
+      checkCalibrationTable(c.table as CalibrationTable);
     } catch (err) {
       throw new DecideError(`calibration for ${ref}: ${(err as Error).message}`);
     }

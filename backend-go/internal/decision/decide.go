@@ -104,10 +104,18 @@ type Exclusion struct {
 
 // CalibrationEntry is the calibration that applies to an evaluator for the current snapshot.
 type CalibrationEntry struct {
-	Table   []float64 `json:"table"`
-	Quality string    `json:"quality"`
-	State   string    `json:"state"`
+	Table   []float64 `json:"table,omitempty"`
+	Quality string    `json:"quality,omitempty"`
+	// State is a calibration state, or CalibrationOtherSnapshot when the target is calibrated
+	// only on other snapshots; such an entry has no table and calibrates nothing (P4-PLAN D56).
+	State string `json:"state"`
+	// FitStateFields are the state fields the calibration was fitted with (D56).
+	FitStateFields []string `json:"fit_state_fields,omitempty"`
 }
+
+// CalibrationOtherSnapshot is decide-input.v1 CalibrationEntryState "other_snapshot" (D56). It
+// never appears in decision.v1 calibration_state.
+const CalibrationOtherSnapshot = "other_snapshot"
 
 // Meta describes how the gate ran.
 type Meta struct {
@@ -542,6 +550,9 @@ func assessEvaluator(e *evalState, in *Input, qid string, excluded map[string]st
 		r.ThresholdSpace = SpaceRaw
 	}
 	cal, hasCal := in.Calibration[e.in.Ref]
+	if hasCal && cal.State == CalibrationOtherSnapshot {
+		cal, hasCal = CalibrationEntry{}, false // calibrated only on other snapshots: nothing applies here
+	}
 	if hasCal {
 		r.CalibrationState = cal.State
 	}
@@ -849,6 +860,12 @@ func checkInput(in *Input) error {
 		}
 	}
 	for ref, c := range in.Calibration {
+		if c.State == CalibrationOtherSnapshot {
+			if len(c.Table) > 0 {
+				return fmt.Errorf("decide: calibration for %s: an other_snapshot entry has no table", ref)
+			}
+			continue
+		}
 		if err := CheckCalibrationTable(c.Table); err != nil {
 			return fmt.Errorf("decide: calibration for %s: %w", ref, err)
 		}
