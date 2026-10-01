@@ -66,9 +66,10 @@ test.describe('skeleton', () => {
     await expect(page.getByRole('region', { name: 'Answer' })).toBeVisible();
     await expect(page.getByRole('list', { name: 'Checks' }).getByRole('meter')).toHaveCount(2);
 
-    // "Deep audit running…" until audit_completed arrives, then the claims.
+    // "Deep audit running…" until audit_completed arrives, then the claims (some flagged
+    // refund answers have more than one contradicted claim).
     const claims = page.getByRole('list', { name: 'Claims' });
-    await expect(claims.getByText('Contradicted', { exact: true }), 'a Contradicted claim').toBeVisible({
+    await expect(claims.getByText('Contradicted', { exact: true }).first(), 'a Contradicted claim').toBeVisible({
       timeout: AUDIT_TIMEOUT,
     });
     expect(await seriousViolations(page), 'trace detail').toEqual([]);

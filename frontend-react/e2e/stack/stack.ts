@@ -80,8 +80,9 @@ export async function signInAsAdmin(page: Page): Promise<void> {
   const setupUrl = process.env.TRUSTAGENT_SETUP_URL;
   if (key) {
     await page.goto('/app/setup');
-    await page.getByLabel('Key').fill(key);
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    // Exact names: the form itself is labelled "Sign in with a key".
+    await page.getByRole('textbox', { name: 'Key', exact: true }).fill(key);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   } else if (setupUrl) {
     // Only the fragment matters: the page is served by the dashboard under test.
     await page.goto(`/app/setup${new URL(setupUrl).hash}`);
