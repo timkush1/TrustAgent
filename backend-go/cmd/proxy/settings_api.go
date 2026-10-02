@@ -325,10 +325,30 @@ func (s *server) settingsWarnings(snap *runtimecfg.Snapshot) []settingsWarning {
 	}
 	_, risks := upstreamRisks(snap.Settings, snap.Credentials)
 	for _, r := range risks {
-		out = append(out, settingsWarning{Key: "TRUTHTABLE_UPSTREAM_URL", Code: r.Code, Message: apiRedact(r.Message),
-			Hint: "Review the upstream settings.", Details: detailsOf(r.Details)})
+		hint := r.Hint
+		if hint == "" {
+			hint = "Review the upstream settings."
+		}
+		out = append(out, settingsWarning{Key: upstreamRiskKey(r.Path), Code: r.Code, Message: apiRedact(r.Message),
+			Hint: apiRedact(hint), Details: detailsOf(r.Details)})
 	}
 	return out
+}
+
+// upstreamRiskKey is the registry key an upstream warning belongs to, so the dashboard shows it
+// next to that setting: the env var that seeds the setting at path, or, for an upstream's
+// credential (upstream.<name>.credential), the env var of that upstream's key (D29).
+func upstreamRiskKey(path string) string {
+	if l, ok := runtimecfg.LookupLeaf(path); ok && l.Key != "" {
+		return l.Key
+	}
+	if rest, ok := strings.CutPrefix(path, "upstream."); ok {
+		name, _, _ := strings.Cut(rest, ".")
+		if spec, ok := credentials.Lookup("upstream-" + name); ok {
+			return spec.EnvVar
+		}
+	}
+	return "TRUTHTABLE_UPSTREAM_URL"
 }
 
 // runtimeWarnings are the snapshot's warnings and, when it applies, fail_closed_unprotected.
