@@ -85,10 +85,16 @@ func AAD(name, provider string, origins []string) []byte {
 
 // Seal encrypts secret for the credential name of provider with allowed origins (used in the AAD
 // for compatible and upstream-* only). It returns the ciphertext, a fresh random 12-byte nonce
-// and the master key id to store with them.
+// and the master key id to store with them. provider must be the name's provider
+// (ErrProviderMismatch, D29): the AAD binds it, so a row sealed under another provider would open
+// and present itself as that provider.
 func (c *Cipher) Seal(name, provider string, origins []string, secret string) (ct, nonce []byte, keyID string, err error) {
-	if _, ok := Lookup(name); !ok {
-		return nil, nil, "", fmt.Errorf("credentials: unknown credential name %q", name)
+	spec, ok := Lookup(name)
+	if !ok {
+		return nil, nil, "", fmt.Errorf("%w %q", ErrUnknownName, name)
+	}
+	if provider != spec.Provider {
+		return nil, nil, "", fmt.Errorf("%w: %s takes provider %s", ErrProviderMismatch, name, spec.Provider)
 	}
 	if secret == "" {
 		return nil, nil, "", errors.New("credentials: an empty secret cannot be stored")

@@ -51,8 +51,15 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	if got, err := testCipher(t, 1).Open(Sealed{Name: NameOpenRouter, Provider: ProviderOpenRouter, Ciphertext: ct, Nonce: nonce, KeyID: keyID}, nil); err != nil || got != secret {
 		t.Fatalf("open after restart: %v", err)
 	}
-	if _, _, _, err := c.Seal("nope", ProviderGeneric, nil, secret); err == nil {
-		t.Error("an unknown name is refused")
+	if _, _, _, err := c.Seal("nope", ProviderGeneric, nil, secret); !errors.Is(err, ErrUnknownName) {
+		t.Errorf("an unknown name is refused: %v", err)
+	}
+	// The provider is part of the AAD, so it must be the name's own (D29).
+	if _, _, _, err := c.Seal(NameOpenRouter, ProviderGeneric, nil, secret); !errors.Is(err, ErrProviderMismatch) {
+		t.Errorf("another provider is refused: %v", err)
+	}
+	if _, _, _, err := c.Seal(NameUpstreamDefault, ProviderOpenAI, []string{"https://api.openai.com"}, secret); !errors.Is(err, ErrProviderMismatch) {
+		t.Errorf("an upstream credential is generic: %v", err)
 	}
 	if _, _, _, err := c.Seal(NameOpenRouter, ProviderOpenRouter, nil, ""); err == nil {
 		t.Error("an empty secret is refused")
