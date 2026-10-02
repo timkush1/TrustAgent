@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -221,6 +222,9 @@ func TestStreamAssemblerJoinsCharactersSplitAcrossDeltas(t *testing.T) {
 		if c, _ := asm.Response().Gated(); c.Text != tc.want {
 			t.Errorf("%s: text %q, want %q", tc.name, c.Text, tc.want)
 		}
+		if got := asm.Text(); got != tc.want {
+			t.Errorf("%s: Text %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -311,5 +315,54 @@ func TestIsTerminal(t *testing.T) {
 	}
 	if EventTerminal.String() != "terminal" || EventKind(42).String() != "EventKind(42)" {
 		t.Error("EventKind names")
+	}
+}
+
+// TestStreamAssemblerTextSoFar: Text is the gated text at every point of the stream, a split
+// character showing as U+FFFD until its rest arrives, and nothing once the stream is too large.
+func TestStreamAssemblerTextSoFar(t *testing.T) {
+	chat := func(index int, content string) Event {
+		data := `{"id":"c","choices":[{"index":` + strconv.Itoa(index) + `,"delta":{"content":"` + content + `"},"finish_reason":null}]}`
+		return Event{Data: []byte(data), HasData: true}
+	}
+	asm, err := NewStreamAssembler(FormatOpenAIChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []struct {
+		ev   Event
+		want string
+	}{
+		{chat(0, "Hello"), "Hello"},
+		{chat(1, "other choice"), "Hello"},
+		{chat(0, ` \ud83d`), "Hello �"},
+		{chat(0, `\ude00!`), "Hello 😀!"},
+	}
+	for i, st := range steps {
+		asm.Add(st.ev)
+		if got := asm.Text(); got != st.want {
+			t.Errorf("step %d: Text %q, want %q", i, got, st.want)
+		}
+	}
+	asm.SetMaxBytes(1)
+	asm.Add(chat(0, "more"))
+	if !asm.TooLarge() || asm.Text() != "" {
+		t.Errorf("too large: %v, Text %q", asm.TooLarge(), asm.Text())
+	}
+
+	anth, err := NewStreamAssembler(FormatAnthropicMessages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range []struct{ name, data string }{
+		{"content_block_start", `{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}`},
+		{"content_block_delta", `{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"world"}}`},
+		{"content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`},
+		{"content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello "}}`},
+	} {
+		anth.Add(Event{Name: ev.name, Data: []byte(ev.data), HasData: true})
+	}
+	if got := anth.Text(); got != "Hello world" {
+		t.Errorf("anthropic Text %q, want the text blocks in index order", got)
 	}
 }
