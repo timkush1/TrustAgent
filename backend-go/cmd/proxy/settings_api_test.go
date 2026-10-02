@@ -604,3 +604,35 @@ func TestSettingsSurfaceOtherChecks(t *testing.T) {
 		t.Errorf("a price warning saves and warns: %+v", v.Warnings)
 	}
 }
+
+// TestSettingsEngineEnvManaged (D33, D80): the keys the engine reports set in its env
+// (EngineInfo.env_managed) show with source env, a secret as "set" (the proxy never sees the
+// engine's values), and the judge paths they pin are read-only.
+func TestSettingsEngineEnvManaged(t *testing.T) {
+	env := newSettingsEnv(t, envOpts{})
+	env.srv.rt.manager.SetEngineEnvManaged([]string{"LLM_PROVIDER", "ANTHROPIC_API_KEY"})
+	v, etag := env.settings(settingsAdminKey)
+	if !slices.Contains(v.EnvManaged, "judge.provider") || !slices.Contains(v.EnvManaged, "bindings.judge") {
+		t.Errorf("env_managed %v", v.EnvManaged)
+	}
+	if k := v.key(t, "LLM_PROVIDER"); k.Source != "env" || k.Editable || k.Env == nil || *k.Env != "LLM_PROVIDER" {
+		t.Errorf("LLM_PROVIDER %+v", k)
+	}
+	if k := v.key(t, "ANTHROPIC_API_KEY"); k.Source != "env" || k.Value != "set" {
+		t.Errorf("ANTHROPIC_API_KEY %+v", k)
+	}
+	if k := v.key(t, "LLM_MODEL"); !k.Editable || k.Source != "default" {
+		t.Errorf("LLM_MODEL stays editable: %+v", k)
+	}
+	resp, body := env.patchSettings(etag, `{"judge":{"provider":"openrouter"}}`, "")
+	e := apiErr(t, body)
+	if resp.StatusCode != http.StatusConflict || e.Code != codeEnvManaged {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+	if keys, _ := e.Details["keys"].([]any); len(keys) != 1 || keys[0] != "LLM_PROVIDER" {
+		t.Errorf("details.keys %v", e.Details)
+	}
+	if v := env.patched(env.patchSettings(etag, `{"judge":{"model":"anthropic/claude-haiku-4.5"}}`, "")); *v.Runtime.Judge.Model != "anthropic/claude-haiku-4.5" {
+		t.Errorf("judge.model %v", v.Runtime.Judge.Model)
+	}
+}
