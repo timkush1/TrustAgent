@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -190,6 +191,14 @@ func (m *memStore) ListTraces(_ context.Context, f store.TraceFilter) ([]store.T
 			continue
 		}
 		if f.Outcome != "" && store.Outcome(outcomeFields(&t)) != f.Outcome {
+			continue
+		}
+		if f.Since != nil && t.CreatedAt.Before(*f.Since) {
+			continue
+		}
+		if f.Reason != "" && !slices.ContainsFunc(t.Reasons, func(r string) bool {
+			return r == f.Reason || store.ReasonPrefix(f.Reason) && strings.HasPrefix(r, f.Reason)
+		}) {
 			continue
 		}
 		all = append(all, t)

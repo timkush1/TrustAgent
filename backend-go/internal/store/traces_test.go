@@ -576,3 +576,65 @@ func TestRecordLateDecisionReplacesItsAttemptRow(t *testing.T) {
 		t.Error("RecordLateDecision accepted nil")
 	}
 }
+
+// TestListTracesReasonFilter: reason=<code> matches a whole reason code and reason=<prefix>:
+// every code it starts (P4-PLAN D68), within since; LIKE wildcards in the prefix stay literal.
+func TestListTracesReasonFilter(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Add(-time.Hour)
+	reasons := [][]string{
+		{"contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"},
+		{"det:urls_not_in_evidence"},
+		{"groundedness:warn"},
+		{"needs_second_signal"},
+		nil,
+		{"det_x:warn"}, // "det_" must not match "det:" through a LIKE wildcard
+	}
+	ids := make([]string, len(reasons))
+	for i, r := range reasons {
+		tr := pendingTrace("support-bot", base.Add(time.Duration(i)*time.Second))
+		ids[i] = tr.TraceID
+		d, rec := decided(tr, "flag", "flag", "unsupported", 0.7, r)
+		if err := s.RecordDecision(ctx, d, rec, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	since := base.Add(-time.Minute)
+	list := func(reason string, since *time.Time) string {
+		t.Helper()
+		items, _, err := s.ListTraces(ctx, TraceFilter{Reason: reason, Since: since})
+		if err != nil {
+			t.Fatalf("reason %q: %v", reason, err)
+		}
+		var out []string
+		for _, it := range items {
+			out = append(out, it.TraceID)
+		}
+		return strings.Join(out, ",")
+	}
+	join := func(ids ...string) string { return strings.Join(ids, ",") }
+	for _, tc := range []struct{ reason, want string }{
+		{"det:numbers_not_in_evidence", join(ids[0])},
+		{"groundedness:warn", join(ids[2])},
+		{"needs_second_signal", join(ids[3])},
+		{"det:", join(ids[1], ids[0])},
+		{"groundedness:", join(ids[2], ids[0])},
+		{"contradiction:", join(ids[0])},
+		{"det", ""},          // a whole code, not a prefix
+		{"groundedness", ""}, // likewise
+		{"det_", ""},
+		{"zzz:", ""},
+	} {
+		if got := list(tc.reason, &since); got != tc.want {
+			t.Errorf("reason %q: got %s, want %s", tc.reason, got, tc.want)
+		}
+	}
+	late := base.Add(500 * time.Millisecond)
+	if got := list("det:", &late); got != ids[1] {
+		t.Errorf("reason det: since the second trace: got %s, want %s", got, ids[1])
+	}
+	if !ReasonPrefix("det:") || ReasonPrefix("det:secret_pattern") {
+		t.Error("ReasonPrefix")
+	}
+}

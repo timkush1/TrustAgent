@@ -472,6 +472,55 @@ func TestPlaygroundRunStream(t *testing.T) {
 	}
 }
 
+// TestPlaygroundRunStreamsTheUpstream: a streamed chat-mode run relays the upstream's own stream
+// as token events, one per upstream chunk, then decision and done (D69), and the trace records
+// the run.
+func TestPlaygroundRunStreamsTheUpstream(t *testing.T) {
+	pieces := []string{"You can get ", "a full refund ", "within 60 days ", "of purchase."}
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, p := range pieces {
+			content, _ := json.Marshal(p)
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-s","object":"chat.completion.chunk","created":1,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":`+string(content)+`},"finish_reason":null}]}`+"\n\n")
+			w.(http.Flusher).Flush()
+		}
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-s","object":"chat.completion.chunk","created":1,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	t.Cleanup(up.Close)
+	env := newPlaygroundEnv(t, func(c *config.Config) { c.UpstreamURL, c.UpstreamAPIKey = up.URL, "sk-test-gateway-own-key" })
+	run := playRun(t, "refund-contradiction-flag", "chat")
+	run["stream"] = true
+	events := readEvents(t, post(t, env, playAdminKey, run))
+
+	var names, tokens []string
+	for _, ev := range events {
+		names = append(names, ev.name)
+		if ev.name == "token" {
+			var tok struct {
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal(ev.data, &tok); err != nil {
+				t.Fatal(err)
+			}
+			tokens = append(tokens, tok.Text)
+		}
+	}
+	if want := []string{"token", "token", "token", "token", "decision", "done"}; !slices.Equal(names, want) {
+		t.Fatalf("events %v, want %v", names, want)
+	}
+	if !slices.Equal(tokens, pieces) {
+		t.Errorf("tokens %q, want the upstream's chunks %q", tokens, pieces)
+	}
+	contractstest.ValidateJSON(t, schemaDecisionV1, events[4].data)
+	res, d := decodeResult(t, events[5].data)
+	if res.ResponseText != strings.Join(pieces, "") || res.Upstream == nil || res.Upstream.Status != http.StatusOK || d["action"] != "flag" {
+		t.Errorf("result %+v, action %v", res, d["action"])
+	}
+	if tr := env.settledTrace(res.TraceID); tr.Source != "playground" || tr.AnswerSource == nil || *tr.AnswerSource != "live" {
+		t.Errorf("trace source %s answer source %v", tr.Source, tr.AnswerSource)
+	}
+}
+
 // TestPlaygroundRunStreamError: a streamed run whose upstream fails once the stream has started
 // ends with an error event (an ApiErrorBody naming the trace), and the trace is recorded.
 func TestPlaygroundRunStreamError(t *testing.T) {

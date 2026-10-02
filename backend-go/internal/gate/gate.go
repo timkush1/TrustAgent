@@ -6,8 +6,8 @@
 //
 // Retries, hedging, spend and rate limits run inside the decision-model client (internal/jev); a
 // refusal before any vendor request becomes the gate's skip reason. Each evaluator's calibration
-// is looked up for the snapshot that answered (Config.Calibrations). Knowledge retrieval on the
-// hot path is P4.
+// is looked up for the snapshot that answered (Config.Calibrations). Knowledge documents arrive
+// in Exchange.Evidence: the handler retrieves them next to the upstream call (SPEC §7.1).
 package gate
 
 import (
@@ -144,6 +144,10 @@ type Exchange struct {
 	// KnowledgeOnly marks evidence that came only from knowledge retrieval (decision
 	// meta.knowledge_only): a critical grounding level is capped to warn.
 	KnowledgeOnly bool
+	// Advisory marks an exchange whose decision reaches no app (a Playground run): its
+	// decision-model calls never spend the enforcing reserve, whatever the mode (jev
+	// CallOptions.Enforcing false, P4-PLAN D82).
+	Advisory bool
 }
 
 // hasText reports whether there is an answer to check against a parsed request.

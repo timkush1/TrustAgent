@@ -226,9 +226,10 @@ func TestPlaygroundChatModeNeedsTheGatewaysKey(t *testing.T) {
 	}
 }
 
-// TestPlaygroundChatMode: chat mode asks the upstream with the gateway's own key and
-// stream:false, without the gateway's members or the dashboard's headers, and streams the answer
-// to onToken before the gate decides.
+// TestPlaygroundChatMode: chat mode asks the upstream with the gateway's own key, without the
+// gateway's members or the dashboard's headers. A streamed run asks for a stream (with its usage);
+// an upstream that answers JSON anyway reaches onToken in synthesized pieces, before the gate
+// decides.
 func TestPlaygroundChatMode(t *testing.T) {
 	e := newEnv(t, envOpts{testMode: true, policyYAML: blockPolicy("flag", "")})
 	e.injecting(t, e.up.URL)
@@ -271,8 +272,26 @@ func TestPlaygroundChatMode(t *testing.T) {
 	if err := json.Unmarshal(body, &sent); err != nil {
 		t.Fatal(err)
 	}
-	if string(sent["stream"]) != "false" || string(sent["model"]) != `"gpt-4o-mini"` || sent["trustagent"] != nil || sent["test_response"] != nil {
+	if string(sent["stream"]) != "true" || string(sent["stream_options"]) != `{"include_usage":true}` ||
+		string(sent["model"]) != `"gpt-4o-mini"` || sent["trustagent"] != nil || sent["test_response"] != nil {
 		t.Errorf("upstream body %s", body)
+	}
+	if r.Trace.Stream {
+		t.Error("the run is recorded as a streamed request: it is checked as a JSON answer")
+	}
+
+	// Without onToken the run is not streamed: the upstream is asked for a JSON answer.
+	if _, err := e.handler.Playground(context.Background(), playgroundContext(), in, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.sink.result(t)
+	_, body = e.up.last(t)
+	sent = nil
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if string(sent["stream"]) != "false" || sent["stream_options"] != nil {
+		t.Errorf("unstreamed upstream body %s", body)
 	}
 }
 

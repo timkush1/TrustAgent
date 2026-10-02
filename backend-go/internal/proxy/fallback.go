@@ -118,7 +118,7 @@ func (h *Handler) fallback(ctx context.Context, f *flow, res0 *gate.Result) *fal
 	x := f.x
 	res1 := h.gate.Evaluate(f.record, &gate.Exchange{
 		Trace: x.Trace, Policy: x.Policy, Route: x.Route, Request: x.Request, Evidence: x.Evidence,
-		Response: text, Stream: x.Stream, Attempt: 1, NoAudit: true, KnowledgeOnly: x.KnowledgeOnly,
+		Response: text, Stream: x.Stream, Attempt: 1, NoAudit: true, KnowledgeOnly: x.KnowledgeOnly, Advisory: x.Advisory,
 	})
 	delivered := func(action string) *fallbackOut {
 		return &fallbackOut{

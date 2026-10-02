@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,9 @@ var (
 	auditSelections   = []string{"high", "sample", "error_sample", "uniform", "direct", "playground", "studio"}
 	traceSources      = []string{"proxy", "direct", "playground", "test", "trafficgen"}
 	searchWindowLimit = 7 * 24 * time.Hour
+	// reasonFilterPattern is the shape of a gate reason code ("groundedness:critical",
+	// "det:numbers_not_in_evidence", "needs_second_signal") or of a prefix of one ("det:").
+	reasonFilterPattern = regexp.MustCompile(`^[A-Za-z0-9_.@/-]+(:[A-Za-z0-9_.@/-]+)*:?$`)
 )
 
 // tracesAPI serves GET /api/traces and GET /api/traces/:id (SPEC §2.4 endpoints 10 and 11).
@@ -133,6 +137,17 @@ func (a *tracesAPI) traceFilter(c *gin.Context) (store.TraceFilter, bool) {
 	if f.Q != "" && (f.Since == nil || a.now().Sub(*f.Since) > searchWindowLimit) {
 		badParam(c, "q", "text search needs since within the last 7 days")
 		return f, false
+	}
+	// reason is a whole code or a prefix ending in a colon, bounded by since (P4-PLAN D68).
+	if f.Reason = c.Query("reason"); f.Reason != "" {
+		if len(f.Reason) > 128 || !reasonFilterPattern.MatchString(f.Reason) {
+			badParam(c, "reason", "must be a reason code such as det:secret_pattern, or a prefix ending in a colon such as det:")
+			return f, false
+		}
+		if f.Since == nil {
+			badParam(c, "reason", "the reason filter needs since")
+			return f, false
+		}
 	}
 	return f, true
 }

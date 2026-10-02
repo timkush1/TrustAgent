@@ -16,6 +16,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/llmapi"
 	"github.com/truthtable/backend-go/internal/proxy"
 )
@@ -38,12 +39,14 @@ var (
 	messageNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 
-// playgroundAPI serves POST /api/playground/run (SPEC §2.4 row 61, §3.3; D12): an admin runs a
-// conversation through the gateway's check without an app. The run itself is
+// playgroundAPI serves POST /api/playground/run (SPEC §2.4 row 61, §3.3; D12, D69): an admin runs
+// a conversation through the gateway's check without an app. The run itself is
 // proxy.Handler.Playground; this layer reads and checks the PlaygroundRequest and answers with a
-// PlaygroundResult, or, with stream:true, an event stream: token events (the checked answer in
-// pieces), then decision (the attempt-0 decision) and done (the PlaygroundResult), or error (an
-// ApiErrorBody) when the run fails once the stream has started.
+// PlaygroundResult, or, with stream:true, an event stream: token events (the answer in pieces: in
+// chat mode as the upstream streams it, in audit mode synthesized), then decision (the attempt-0
+// decision, sent as soon as the gate decides, so it can arrive while a fallback call still runs)
+// and done (the PlaygroundResult), or error (an ApiErrorBody) when the run fails once the stream
+// has started.
 type playgroundAPI struct {
 	h *proxy.Handler
 	// maxTextChars caps each message, document and answer (TRUTHTABLE_MAX_TEXT_CHARS).
@@ -164,6 +167,11 @@ func (p *playgroundAPI) stream(c *gin.Context, in proxy.PlaygroundInput) {
 		// A caller that went away makes every write fail; the run is recorded all the same.
 		_ = sw.WriteEvent(llmapi.DataEvent(event, data))
 	}
+	decided := false
+	in.OnDecision = func(d *gate.Decision) {
+		decided = true
+		send("decision", d)
+	}
 	res, err := p.h.Playground(c.Request.Context(), c, in, func(text string) { send("token", playgroundToken{Text: text}) })
 	switch {
 	case err != nil && !sw.Committed():
@@ -173,7 +181,9 @@ func (p *playgroundAPI) stream(c *gin.Context, in proxy.PlaygroundInput) {
 		_, body := p.errorBody(err)
 		send("error", body)
 	default:
-		send("decision", res.Decision)
+		if !decided {
+			send("decision", res.Decision)
+		}
 		send("done", res)
 	}
 	_ = sw.Finish(nil, nil)
