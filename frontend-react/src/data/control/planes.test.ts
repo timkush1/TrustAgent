@@ -35,16 +35,15 @@ describe('P4 control planes', () => {
     }
   });
 
-  it('rejects a method without a body yet with 404 not_implemented', async () => {
-    await expect(plane().listCredentials()).rejects.toMatchObject({ status: 404, code: 'not_implemented' });
-    await expect(plane().getRoiTimeseries({ window: '7d' })).rejects.toMatchObject({ code: 'not_implemented' });
-    await expect(plane().getLabelQueue({})).rejects.toMatchObject({ code: 'not_implemented' });
-    await expect(plane().draftEvaluator({ description: 'x' })).rejects.toMatchObject({ code: 'not_implemented' });
-    await expect(unavailableControlPlane('Not in the static build.').getSettings()).rejects.toMatchObject({
-      status: 404,
-      code: 'not_implemented',
-      message: 'Not in the static build.',
-    });
+  it('rejects every method of the unavailable plane with 404 not_implemented and its message', async () => {
+    // Every live plane method has a body since I-1; the static build's plane still refuses them all.
+    const unavailable = unavailableControlPlane('Not in the static build.');
+    const refused = { status: 404, code: 'not_implemented', message: 'Not in the static build.' };
+    await expect(unavailable.listCredentials()).rejects.toMatchObject(refused);
+    await expect(unavailable.getRoiTimeseries({ window: '7d' })).rejects.toMatchObject(refused);
+    await expect(unavailable.getLabelQueue({})).rejects.toMatchObject(refused);
+    await expect(unavailable.draftEvaluator({ description: 'x' })).rejects.toMatchObject(refused);
+    await expect(unavailable.getSettings()).rejects.toMatchObject(refused);
   });
 
   it('reads the settings and patches them with If-Match, bumping the version', async () => {
@@ -97,7 +96,7 @@ describe('P4 control planes', () => {
       expect(status, code).toBeGreaterThanOrEqual(400);
       expect(hint, code).not.toBe('');
     }
-    const err = await plane()
+    const err = await unavailableControlPlane('x')
       .listApiKeys()
       .catch((e: unknown) => e);
     expect(errorCodeHint(err)).toBe(P4_ERROR_CODES.not_implemented.hint);
