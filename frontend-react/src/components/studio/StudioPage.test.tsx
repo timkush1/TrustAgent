@@ -19,7 +19,7 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { API, installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
-import type { EvaluatorCreateRequest, EvaluatorDraft, EvaluatorSpec, EvaluatorVersion, EvaluatorVersionCreateRequest, StudioDraftResponse } from '@/types/api';
+import type { DryRunResult, EvaluatorCreateRequest, EvaluatorDraft, EvaluatorSpec, EvaluatorVersion, EvaluatorVersionCreateRequest, StudioDraftResponse } from '@/types/api';
 
 installMswServer();
 afterEach(() => {
@@ -383,7 +383,7 @@ describe('Studio', { timeout: 30_000 }, () => {
     const user = userEvent.setup();
     const control = createControlApi({ studioDryRunConfirm: null });
     control.state.studioDryRun = {
-      ...control.state.studioDryRun,
+      ...(control.state.studioDryRun as DryRunResult),
       window: '24h',
       sampled: 0,
       population: 0,
