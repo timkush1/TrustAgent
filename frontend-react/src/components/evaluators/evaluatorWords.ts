@@ -6,6 +6,7 @@ import type { CustomReason } from '@/components/common/DisabledReason';
 import { calibrationStateView } from '@/domain/controlPresentation';
 import { formatCount } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
+import { MIN_FIT_LABELS } from '@/lib/decision/calibrate';
 import type { CalibrationProgress, EvaluatorSpec } from '@/types/api';
 
 /** "Labels 43/200 (31 correct, 12 false alarms)". */
@@ -71,9 +72,21 @@ export function evidenceNeedLabel(requires: string | undefined): string {
   }
 }
 
-/** Why "Calibrate now" is not available yet, or null (the server says when a first fit is possible). */
+/** Your own labels alone are enough for a first fit (the server's count, #45's minimum). */
+export function canFitOnOwnLabels(p: CalibrationProgress): boolean {
+  return p.can_fit_provisional || p.can_fit_measured;
+}
+
+/**
+ * Why "Calibrate now" is not available yet, or null. The server says when your own labels allow a
+ * first fit; a fit may also add the deep-audit labels (a Proxy calibration), so it is offered once
+ * both together reach the fit's minimum. Their split between kinds is the server's to check: too
+ * few of one kind answers 422, which the dialog explains with the counts.
+ */
 export function calibrateReason(p: CalibrationProgress): CustomReason | null {
   if (p.snapshot === null) return { text: 'No fast-check version has checked traffic for this check yet, so there is nothing to calibrate.' };
-  if (!p.can_fit_provisional && !p.can_fit_measured) return { text: 'Not enough labels for a first fit yet: label a few answers in the queue.' };
+  if (!canFitOnOwnLabels(p) && p.human_labels.n + p.proxy_labels < MIN_FIT_LABELS) {
+    return { text: 'Not enough labels for a first fit yet: label a few answers in the queue.' };
+  }
   return null;
 }

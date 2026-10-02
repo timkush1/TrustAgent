@@ -95,10 +95,26 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     expect(alert).not.toHaveTextContent(/groundedness@1|should fire|validation_failed|The fit failed/);
   });
 
+  it('offers a fit on the deep-audit labels when your own are too few, preselected and labelled Proxy', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', {
+      calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, proxy_labels: 58, can_fit_provisional: false }),
+    });
+    renderPage('/app/evaluators/groundedness', { control });
+    await user.click(await screen.findByRole('button', { name: 'Calibrate now for Groundedness' }));
+    const d = await dialog('Calibrate Groundedness');
+    expect(within(d).getByRole('radio', { name: /Your labels and the deep-audit sample/ })).toBeChecked();
+    expect(within(d).getByText('Not enough of your own labels for a fit yet: it needs 8, with 3 of each kind.')).toBeInTheDocument();
+    await user.click(within(d).getByRole('button', { name: 'Fit calibration (free)' }));
+    await waitFor(() => expect(control.callsTo('/api/calibration/fit')).toHaveLength(1));
+    expect(control.callsTo('/api/calibration/fit')[0].body).toMatchObject({ sources: ['labels', 'uniform_audit'], activate: false });
+  });
+
   it('says why Calibrate now is not available without labels or an admin', async () => {
     const control = createControlApi();
     control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', {
-      calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, can_fit_provisional: false }),
+      calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, proxy_labels: 5, can_fit_provisional: false }),
     });
     renderPage('/app/evaluators/groundedness', { control });
     const button = await screen.findByRole('button', { name: 'Calibrate now' });

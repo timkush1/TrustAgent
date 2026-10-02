@@ -31,8 +31,10 @@ import { useAppMode } from '@/data/useSystem';
 import { formatCount, formatRisk } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import { EVAL_CRITICAL_NULL_TEXT, EVAL_FIT_HONESTY, evalNotEnoughLabelsText, evalQualityView } from '@/domain/words/evaluators';
+import { MIN_FIT_LABELS, MIN_FIT_PER_CLASS } from '@/lib/decision/calibrate';
 import type { CalibrationFitResponse, EvaluatorDetail } from '@/types/api';
 import { AdoptPanel } from './AdoptPanel';
+import { canFitOnOwnLabels } from './evaluatorWords';
 import { ReliabilityChart } from './ReliabilityChart';
 
 type Sources = 'labels' | 'labels_and_audit';
@@ -123,7 +125,9 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'form' | 'result' | 'adopt'>('form');
   const [route, setRoute] = useState<string>(detail.attached_routes[0]?.route ?? ALL_ROUTES);
-  const [sources, setSources] = useState<Sources>('labels');
+  // Without enough labels of your own, a fit needs the deep-audit labels too (calibrateReason).
+  const defaultSources = (): Sources => (canFitOnOwnLabels(detail.calibration_progress) ? 'labels' : 'labels_and_audit');
+  const [sources, setSources] = useState<Sources>(defaultSources);
   const ref = `${detail.id}@${detail.latest.version}`;
   const progress = detail.calibration_progress;
   const routes = [...new Set(detail.attached_routes.map((r) => r.route))];
@@ -158,6 +162,7 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
     setOpen(next);
     if (next) {
       setStep('form');
+      setSources(defaultSources());
       fit.reset();
       activate.reset();
     }
@@ -206,7 +211,15 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
               value={sources}
               onValueChange={setSources}
               options={[
-                { value: 'labels', label: 'Your labels only', description: progress.can_fit_measured ? 'Enough for a Measured calibration.' : 'Provisional until you have 200 labels with 30 of each kind.' },
+                {
+                  value: 'labels',
+                  label: 'Your labels only',
+                  description: progress.can_fit_measured
+                    ? 'Enough for a Measured calibration.'
+                    : canFitOnOwnLabels(progress)
+                      ? 'Provisional until you have 200 labels with 30 of each kind.'
+                      : `Not enough of your own labels for a fit yet: it needs ${MIN_FIT_LABELS}, with ${MIN_FIT_PER_CLASS} of each kind.`,
+                },
                 { value: 'labels_and_audit', label: 'Your labels and the deep-audit sample', description: 'More labels, but the result is a Proxy: it can flag, never block.' },
               ]}
             />
