@@ -391,6 +391,15 @@ func TestEvaluatorWritesReadonlyAndCSRF(t *testing.T) {
 		t.Errorf("read-only validate: %d %s", resp.StatusCode, body)
 	}
 
+	// CONFIG_LOCK pins the policy to its file, not the evaluators (D57).
+	locked, _ := evalEnv(t, func(o *envOpts) {
+		inner := o.mutate
+		o.mutate = func(c *config.Config) { inner(c); c.ConfigLock = true }
+	})
+	if resp, body := locked.call(http.MethodPost, "/api/evaluators", evalAdminKey, map[string]any{"spec": toneSpec(t, "house_tone", 1), "changelog": ""}); resp.StatusCode != http.StatusCreated {
+		t.Errorf("create under CONFIG_LOCK: %d %s", resp.StatusCode, body)
+	}
+
 	// A session cookie needs the CSRF header on writes.
 	env, _ = evalEnv(t, nil)
 	resp, body = env.call(http.MethodPost, "/api/session", evalAdminKey, map[string]string{"key": evalAdminKey}, csrf...)

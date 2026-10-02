@@ -12,6 +12,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/store"
 )
 
 const (
@@ -363,6 +364,48 @@ func TestCalibrationImportAPI(t *testing.T) {
 	_ = db.QueryRow(t.Context(), `SELECT count(*) FROM admin_audit_log WHERE action = 'calibration.import'`).Scan(&n)
 	if n != 1 {
 		t.Errorf("%d import audit rows, want 1 (refused imports write none)", n)
+	}
+	found := false
+	for _, f := range env.wsFrames(t, 300) {
+		var ev struct {
+			Type string `json:"type"`
+			Data struct {
+				Snapshot string `json:"snapshot"`
+				Imported int    `json:"imported"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(f, &ev) == nil && ev.Type == "calibration_updated" && ev.Data.Snapshot == liveSnapshot && ev.Data.Imported == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the import did not broadcast calibration_updated {snapshot, imported: 1}")
+	}
+}
+
+// TestCalibrationNotificationReachesTheLookup: a calibration written by another replica reaches
+// this one's lookup through the config notification and the hub (D84), long before the poll.
+func TestCalibrationNotificationReachesTheLookup(t *testing.T) {
+	every := calibrationReload
+	calibrationReload = time.Hour
+	t.Cleanup(func() { calibrationReload = every })
+	env, _ := evalEnv(t, nil)
+	entry := importEntry(t, env, "contradiction@1", decision.LabelSourceCounts{PublicDataset: 300}, 100, 200)
+	doc, _ := json.Marshal(entry)
+	rec := &store.CalibrationRecord{CreatedBy: "replica-2", Origin: store.CalibrationOriginImport, Backend: "openrouter-decisions",
+		Snapshot: liveSnapshot, Family: decision.SnapshotFamily(liveSnapshot), TargetKind: "evaluator", TargetKey: entry.Target.Key(),
+		Quality: "measured", LabelSource: json.RawMessage(`{"human":0,"public_dataset":300,"uniform_audit":0}`), Entry: doc}
+	// The server's lookup does not see this write: only the notification tells it.
+	if err := env.srv.pg.InsertCalibrations(t.Context(), "", []*store.CalibrationRecord{rec}, true,
+		store.AdminAuditEntry{Actor: "replica-2", Action: "calibration.import"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for env.srv.calib.Lookup("contradiction@1", nil, liveSnapshot).State != "measured" {
+		if time.Now().After(deadline) {
+			t.Fatal("the notification did not reload the lookup")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
