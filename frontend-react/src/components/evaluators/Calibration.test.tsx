@@ -203,6 +203,36 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     await waitFor(() => expect(control.callsTo('/api/calibration/7/deactivate')).toHaveLength(1));
   });
 
+  it('adopts an active calibration from the list: Preview impact, then the policy save without activating again', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/groundedness?tab=calibration');
+    const row = (await screen.findByText('Calibration #3')).closest('li') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Adopt…' }));
+    const d = await dialog(/Adopt calibration: Groundedness/);
+    expect(await within(d).findByTestId('preview-impact')).toBeInTheDocument();
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(within(d).getByRole('button', { name: 'Adopt calibration' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    expect(control.callsTo('/api/calibration/3')).toHaveLength(1);
+    expect(control.callsTo('/api/policies/dry-run')[0].body).toMatchObject({ calibration_ids: [3] });
+    // #3 is already active: only the policy changes.
+    expect(control.callsTo('/api/calibration/3/activate')).toHaveLength(0);
+    const put = control.callsTo('/api/policies', 'PUT')[0];
+    const saved = parse((put.body as { yaml: string }).yaml) as { routes: { name: string; evaluators: { ref: string; thresholds?: object }[] }[] };
+    expect(saved.routes.find((r) => r.name === 'support-bot')?.evaluators.find((e) => e.ref === 'groundedness@1')?.thresholds).toMatchObject({ space: 'calibrated' });
+  });
+
+  it('does not adopt a calibration fitted for another fast-check version', async () => {
+    const control = createControlApi();
+    const list = control.state.calibrations as { items: { snapshot: string }[] };
+    list.items[0].snapshot = 'typesafe/jev-1.12-20260601';
+    renderPage('/app/evaluators/groundedness?tab=calibration', { control });
+    const row = (await screen.findByText('Calibration #3')).closest('li') as HTMLElement;
+    expect(within(row).getByRole('button', { name: 'Adopt…' })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(row).getByText(/This one is for fast-check version typesafe\/jev-1\.12-20260601; the check now runs on typesafe\/jev-1\.13-20260917/)).toBeInTheDocument();
+  });
+
   it('imports a calibration file and says what was refused and why', async () => {
     const user = userEvent.setup();
     const { control, container } = renderPage('/app/evaluators/groundedness?tab=calibration');

@@ -157,6 +157,9 @@ function ImportAction({ disabledReason }: { disabledReason: ReturnType<typeof us
           </Button>
         )}
       </DisabledAction>
+      <p className="text-xs text-fg-muted">
+        An imported calibration becomes the active one for its check and fast-check version. Routes that read raw scores are unchanged until you adopt it.
+      </p>
       {parseError ? (
         <p role="alert" className="text-xs text-fg">
           {parseError}
@@ -188,6 +191,14 @@ function RecordRow({ meta, detail, writeReason, onAdopt }: { meta: CalibrationRe
   });
   // A file row is never changed from here (D55): files are managed on disk.
   const deactivateReason = writeReason ?? (meta.origin === 'file' ? { text: 'This one comes from a calibration file: remove or replace the file instead.' } : null);
+  // A calibration applies to one fast-check version: adopting one fitted for another would leave the
+  // route reading raw scores against calibrated thresholds, capped to Flag (SPEC §2.11).
+  const current = detail.calibration_progress.snapshot;
+  const adoptReason =
+    writeReason ??
+    (current !== null && meta.snapshot !== current
+      ? { text: `This one is for fast-check version ${meta.snapshot}; the check now runs on ${current}. Fit a new calibration for it.` }
+      : null);
   return (
     <li className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 py-3" data-calibration={meta.id}>
       <div className="min-w-0 space-y-1">
@@ -213,7 +224,7 @@ function RecordRow({ meta, detail, writeReason, onAdopt }: { meta: CalibrationRe
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <DisabledAction reason={writeReason}>
+        <DisabledAction reason={adoptReason} layout="stacked" className="items-end">
           {(p) => (
             <Button size="sm" onClick={onAdopt} {...p}>
               Adopt…
