@@ -632,7 +632,7 @@ type Format interface {
 **Timeouts (M12):**
 - The client `Timeout` is removed. The transport gets `ResponseHeaderTimeout` (`TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT`, 60 s).
 - The non-streaming context gets `TRUTHTABLE_UPSTREAM_TIMEOUT` (5 m); streams use the idle timeout.
-- Server `WriteTimeout` defaults to 0, and `ReadHeaderTimeout` is 10 s. A `middleware.Deadline` sets a default write deadline per route (60 s for `/api`), which handlers extend: LLM calls get the upstream timeout + 30 s, and `/api/upload` gets `TRUTHTABLE_INGEST_TIMEOUT` (6 m) + 30 s.
+- Server `WriteTimeout` defaults to 0, and `ReadHeaderTimeout` is 10 s. A `middleware.Deadline` sets a default write deadline per route (60 s for `/api`), which handlers extend: LLM calls get the upstream timeout + 30 s, and `POST /api/kb/documents` gets `TRUTHTABLE_INGEST_TIMEOUT` (6 m) + 30 s.
 - Config validation rejects `IngestTimeout ≥ write deadline`.
 
 ### 6.4 Bug fixes (all verified in source)

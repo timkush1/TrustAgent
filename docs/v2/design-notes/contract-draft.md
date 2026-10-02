@@ -797,7 +797,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_events_time ON cost_events (occurred_at DESC
 | 58 | GET `/api/kb/claims` | read | `limit (≤200), offset, status: accepted|quarantined, q` | `{claims: KBClaim[], total:number}` | 409 `knowledge_disabled`, 503 |
 | 59 | GET `/api/kb/conflicts` | read | `limit` | `{conflicts: ConflictPair[], total}` | 409, 503 |
 | 60 | GET `/api/kb/stats` | read | — | `KBStats` | 409, 503 |
-| 61 | POST `/api/kb/documents` (alias POST `/api/upload`) | admin | multipart `file`: JSON array `[{content:string, metadata?:Record<string,string>}]` (≤1000 documents, ≤50,000 chars each) | `IngestResult` | 409, 413, 422 |
+| 61 | POST `/api/kb/documents` (the 1.0 alias POST `/api/upload` was removed in 2.0) | admin | multipart `file`: JSON array `[{content:string, metadata?:Record<string,string>}]` (≤1000 documents, ≤50,000 chars each) | `IngestResult` | 409, 413, 422 |
 | 62 | GET `/api/export/replay` | admin | `since, until, limit ≤200, source?` | `Recording` (§E, `trustagent.recording/v1`, sanitised) | 503 |
 | 63 | GET `/api/keys` | admin | — | `{items: ApiKeyView[]}` | — |
 | 64 | POST `/api/keys` | admin | `{label:string, scopes:Scope[]}` | 201 `{key: ApiKeyView, secret:string}` (shown once) | 503 |

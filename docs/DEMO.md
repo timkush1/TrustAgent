@@ -46,7 +46,7 @@ make demo-clean                # stop and delete the demo data
 The demo publishes the same ports as `make up` (3000, 8080): stop one stack before starting the
 other.
 
-## 2. A three-minute tour
+## 2. A five-minute tour
 
 1. **Overview.** The demo banner says the checks are simulated. *At a glance* and *What was
    caught* count what the gateway did with each answer: passed, flagged, blocked, replaced,
@@ -70,6 +70,18 @@ other.
 6. **Playground.** Pick a route, paste the documents and the answer to check (or try an
    example), optionally act as a stricter mode, and see the decision and the deep audit for
    exactly that text.
+7. **Was this right?** On the flagged refund trace, answer *Was this right?* with **Correct** or
+   **False alarm**: each answer is a label that calibration learns from. Under **Details**,
+   **Show exact Jev request** shows the exact questions the gateway asked, recompiled from the
+   stored answer.
+8. **Evaluator Studio.** Under Evaluators → Studio, describe a new check ("Does the answer promise
+   a discount?"), draft it with AI (the mock judge drafts it: labelled Simulated, $0), adjust it in
+   the form, try it with **Test on samples**, and **Save and watch on route …** to run it in shadow
+   on that route.
+9. **Savings.** What the checks cost next to what the same checks would cost with an LLM judge,
+   every figure with its label; in the demo the spend is simulated and labelled so.
+10. **Settings.** Connections shows that no key is connected (the demo is simulated on purpose);
+    Budgets shows today's spend against the daily budgets; Access lists the API keys.
 
 ## 3. The scenarios
 
@@ -97,7 +109,9 @@ make doctor ARGS="--expect demo"
 Every check should pass: the containers, the proxy, engine and dashboard, demo mode with no
 vendor keys, the fast check (`backend mock, state mock`), at least two calibrated targets (the
 simulated calibration), the policy, both metrics endpoints (`trustagent_gateway_*` on the proxy,
-`trustagent_engine_*` on the engine), recent traces and a completed deep audit. Two warnings are
+`trustagent_engine_*` on the engine), the credential store, the engine running the gateway's
+settings, the mock judge (it needs no key), today's spend within the budgets ($0: simulated
+checks never count), recent traces and a completed deep audit. Two warnings are
 expected: "no admin yet" until you claim the setup link, and a downgrade on the `help-center`
 route in `policy.state`, which keeps raw thresholds on purpose (the *block route that is not
 calibrated* scenario). Only a `FAIL` makes the command exit 1.
@@ -139,6 +153,13 @@ Expect `X-TrustAgent-Action: flag`, `X-TrustAgent-Would-Action: block` and, in
   `make test-e2e-static`, or `make build-static && cd frontend-react && npx vite preview --mode
   static` and open <http://localhost:4173/TrustAgent/>. This is the safest thing to send
   someone.
+- **Record your own session** for the replay site: `make export-replay REPLAY_OUT=<dir>` writes a
+  sanitized recording of the newest stored traces (the manifest alone is also served by
+  `GET /api/export/replay`, admin). A recording names the build it came from: `make
+  export-replay` reads the revision from your checkout, and when the proxy cannot tell its own,
+  the endpoint answers 409 and asks for `?git_sha=<revision>` (the one the image was built from:
+  images built by `make` carry it as the `org.opencontainers.image.revision` label, which
+  `docker inspect` shows).
 - **The live demo on a public URL.** [Cloudflare quick
   tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) need
   no account. The dashboard's nginx serves `/api`, `/v1`, `/ws` and `/health` on the same

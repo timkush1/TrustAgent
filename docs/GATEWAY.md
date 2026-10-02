@@ -69,6 +69,10 @@ client = Anthropic(
   prompt, a `Context:` block in the user message, tool results, or the body
   extension below. There is no retrieval by default; with no evidence,
   groundedness is `not_assessed` and Jev is never asked about it.
+  With the optional knowledge base on (`TRUTHTABLE_KNOWLEDGE_ENABLED`, the
+  `knowledge` profile), retrieval starts together with the upstream call and
+  must finish within `TRUTHTABLE_KNOWLEDGE_DEADLINE`; a miss means no
+  knowledge evidence for that answer, never a failure.
 
   ```json
   {"model": "gpt-4o-mini", "messages": [...],
@@ -86,7 +90,8 @@ client = Anthropic(
 | `POST /v1/messages` | yes | Anthropic Messages, JSON and SSE; errors in Anthropic's shape |
 | `POST /v1/messages/count_tokens` | no | Passed to the Anthropic upstream |
 | `/v1/responses*` | no | Passed through with `X-TrustAgent-Status: skipped:unsupported_api` |
-| `/v1/models*`, `/v1/embeddings` | no | Passed through to `TRUTHTABLE_UPSTREAM_URL`, also for an Anthropic SDK (choosing the upstream from its headers is planned) |
+| `/v1/models*` | no | Passed through: to the Anthropic upstream when the request carries `anthropic-version` or an `x-api-key` that is not a proxy key (what the Anthropic SDK sends), otherwise to `TRUTHTABLE_UPSTREAM_URL` |
+| `/v1/embeddings` | no | Passed through to `TRUTHTABLE_UPSTREAM_URL` |
 | `GET /v1/trustagent/decisions/:trace_id` | — | The decision of an earlier request ([§5](#5-reading-a-decision-later-long-poll)) |
 
 ---
@@ -112,9 +117,19 @@ Each route has a `mode` (`TRUTHTABLE_GATE_DEFAULT_MODE` seeds the default,
     (`stream_not_buffered`): the answer is already on its way. Use
     `streaming: buffer` ([§4](#4-streaming)).
   - With `require_calibration: true` (the default), a block needs every
-    block-set evaluator to be calibrated for the current Jev snapshot;
-    otherwise the action is capped at `flag` (`uncalibrated_snapshot`). A
-    detector in `detectors.block_on` still blocks: it needs no calibration.
+    block-set evaluator to have a usable, adopted calibration for the current
+    Jev snapshot; otherwise the action is capped at `flag`, and the reason
+    says why:
+    - `calibration_missing`: at least one of those checks has no calibration
+      that can enable blocking for this snapshot (none at all, a quality below
+      `measured`, or route thresholds not yet switched to the calibrated
+      space, which adopting a calibration does). Label answers, calibrate and
+      adopt.
+    - `uncalibrated_snapshot`: each check that lacks one has calibrations, but
+      only for other snapshots: the decision model changed since they were
+      fitted. Recalibrate for the new snapshot.
+
+    A detector in `detectors.block_on` still blocks: it needs no calibration.
     See [EVALUATORS.md](EVALUATORS.md#calibration).
 - **Client override.** With `overrides.client_mode: stricter_only`, a client
   may ask for a stricter mode with `X-TrustAgent-Mode` (observe → flag →
@@ -260,7 +275,7 @@ overload, missing credentials): `X-TrustAgent-Status` says so
 
 | Upstream answer | What your client gets | Status |
 |---|---|---|
-| Non-2xx | The upstream's own status and body, unchanged | `skipped:upstream_error` |
+| Non-2xx | The upstream's own status and body (in inject mode, with the injected key masked: see [§9](#9-credentials-passthrough-and-inject-mode)) | `skipped:upstream_error` |
 | Transport error or timeout | 502 `upstream_error` / 504 `upstream_timeout`, in the route's error shape | `skipped:upstream_error` |
 | 2xx that is not JSON, too large, or an undecodable stream | Gated as a skip: passes on observe, flag and `fail: open`; **blocks** on closed block/fallback routes | `skipped:<reason>` |
 
@@ -364,6 +379,25 @@ Each upstream decides on its own:
   (`TRUTHTABLE_INGEST_AUTH=open`) is refused: anonymous callers would spend
   your upstream credential.
 - The proxy key is never forwarded, whatever the mode.
+- **Keys in the dashboard.** Each upstream key can also be saved on
+  **Settings → Connections** (stored encrypted as `upstream-default`,
+  `upstream-anthropic`, `upstream-fallback`) and bound to its upstream there.
+  An environment key wins and makes that binding read-only. A saved key is
+  bound to the URL's origin: it is only ever sent there, and pointing the
+  upstream at another origin requires entering the key again
+  ([SECURITY.md](SECURITY.md#encryption-and-origin-binding)).
+  `TRUTHTABLE_UPSTREAM_URL` in `.env` pins the upstream for good: the
+  dashboard cannot move it.
+- **Rules the dashboard enforces.** Turning inject mode on needs an ingest key
+  first (409 `ingest_key_required`): a dashboard key with the `ingest` scope
+  (the setup wizard mints one), or an environment ingest or admin key, so your
+  apps are never locked out. A fallback upstream on another host
+  needs its own key (422 `fallback_key_required`), so your main key never goes
+  to a third party.
+- **Upstream error bodies.** In inject mode the upstream may echo the key it
+  received in an error. A non-2xx body is masked before it reaches your
+  client (the injected key and every key-shaped string become `[redacted]`)
+  and cut to 64 KiB.
 
 ---
 
@@ -428,10 +462,19 @@ evaluators (they are questions of the same call).
 - `TRUTHTABLE_GATE_JEV_MAX_INFLIGHT` (64) caps concurrent decision calls and
   `TRUTHTABLE_GATE_MAX_CONCURRENCY` (256) concurrent asynchronous gates;
   overflow is `skipped:overload`.
-- **Spend.** Past `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY`, fast checks stop
-  (`skipped:budget`): observe and flag routes stop at 75% of the cap
-  (`TRUTHTABLE_SPEND_ENFORCING_RESERVE`), so enforcing routes keep a reserve.
-  Costs are in [JEV-ACCESS.md](JEV-ACCESS.md) (estimates).
+- **Spend.** Every decision call and every deep audit is recorded with its
+  cost in the cost ledger (the vendor's reported cost where it gives one,
+  otherwise estimated from tokens). Past the daily fast-check budget
+  (Settings → Budgets, seeded by `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY`),
+  fast checks stop (`skipped:budget`): observe and flag routes stop at 75% of
+  it (`TRUTHTABLE_SPEND_ENFORCING_RESERVE`), so enforcing routes keep a
+  reserve. Playground, Studio and key-check calls can never spend that
+  reserve. The deep-audit budget (`TRUTHTABLE_SPEND_CAP_LLM_USD_DAY`) is hard
+  in every lane: past it, sampled audits are dropped (`audit_dropped`,
+  reason `llm_budget`) and `POST /api/audit` answers 503 `budget_exhausted`.
+  The **Savings** page shows what was spent, each figure labelled (a cost
+  the vendor did not report is an estimate); typical costs are in
+  [JEV-ACCESS.md](JEV-ACCESS.md).
 
 ---
 
@@ -472,9 +515,13 @@ there is no model label.
 | Gate | `gate_decisions_total{route,mode,action,status}`, `gate_seconds{stage}`, `gate_errors_total{kind}`, `evaluator_levels_total{evaluator,level,stage}`, `detector_fired_total{detector}` |
 | Fast check | `jev_requests_total{backend,outcome}`, `jev_seconds{backend}`, `jev_cost_usd_total{backend,component}`, `jev_breaker_state{backend}`, `jev_snapshot_info{snapshot}`, ... |
 | Audits and fallback | `fallback_total{outcome}`, `audit_jobs_total{lane,selection,outcome}`, `audit_queue_depth{lane}`, `audit_roundtrip_seconds`, `uniform_samples_today` |
-| WebSocket, policy, storage, spend | `ws_clients`, `ws_gaps_total{reason}`, `policy_version`, `trace_write_dropped_total`, `retention_lag_seconds`, `spend_usd_today{kind}` |
+| WebSocket, policy, storage | `ws_clients`, `ws_gaps_total{reason}`, `policy_version`, `trace_write_dropped_total`, `retention_lag_seconds` |
+| Spend | `spend_usd_today{kind}`, `spend_reserved_usd{kind}`, `cost_write_dropped_total` (cost-ledger rows lost: above zero, spend undercounts) |
 
 `COMPOSE_PROFILES=observability make up` adds Prometheus and Grafana
-(<http://localhost:3001>); every dashboard query filters by `job="proxy"` or
-`job="engine"`. `make doctor` checks that each endpoint serves only its own
+(<http://localhost:3001>, with a Spend row: today's spend and reservations,
+fast-check spend by component, audits paused by the budget, dropped cost
+rows); every dashboard query filters by `job="proxy"` or `job="engine"`, and
+`scripts/tests/test_grafana.py` fails on a query naming a metric the code does
+not register. `make doctor` checks that each endpoint serves only its own
 prefix.

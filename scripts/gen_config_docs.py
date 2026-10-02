@@ -46,9 +46,8 @@ ENV_EXAMPLE_REL = ".env.example"
 MAX_BASIC_KEYS = 15
 # .env.example comment lines stay within this width ("# " included).
 ENV_WIDTH = 80
-# Runtime-settable keys are edited on the dashboard's Settings page, which ships in P4
-# (SPEC §4.2). Set this to "" once it has landed; the generated docs then drop the tag.
-SETTINGS_PHASE = "P4"
+# Where runtime-settable keys are also edited while the stack runs (registry `runtime: settable`).
+SETTINGS_PAGE = "dashboard Settings"
 
 # Plain-language names for the registry's service ids (schema: ConfigKey.services).
 SERVICE_TEXT: Dict[str, str] = {
@@ -455,7 +454,7 @@ def md_details(key: Mapping[str, Any]) -> str:
         pairs = [f"{_md_code(s)} = {_md_code(v)}" for s, v in key["shorthands"].items()]
         sentences.append(f"Shorthands: {', '.join(pairs)}.")
     if key.get("runtime") == "settable":
-        sentences.append(f"Also editable while running in {_settings_page()}.")
+        sentences.append(f"Also editable while running in {SETTINGS_PAGE}.")
     elif key.get("runtime") == "seed":
         sentences.append("Seeds a value that is then edited in the dashboard or policy file.")
     return " ".join(sentences)
@@ -474,11 +473,6 @@ def _restart(key: Mapping[str, Any]) -> str:
 def _slug(title: str) -> str:
     """The anchor GitHub gives a Markdown heading."""
     return re.sub(r"[^\w\- ]", "", title.strip().lower()).replace(" ", "-")
-
-
-def _settings_page() -> str:
-    """Where runtime-settable keys are edited, with the phase that ships it while pending."""
-    return "dashboard Settings" + (f" *(from {SETTINGS_PHASE})*" if SETTINGS_PHASE else "")
 
 
 # ----------------------------------------------------------------------------- renderers
@@ -553,7 +547,7 @@ def render_markdown(registry: Registry) -> str:
         groups=len(registry.groups),
         basic=len(registry.basic_keys()),
         services=services,
-        settings_page=_settings_page(),
+        settings_page=SETTINGS_PAGE,
     ).splitlines()
     out.append("")
     for group in registry.groups:

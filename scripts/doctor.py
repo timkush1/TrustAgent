@@ -28,6 +28,17 @@ Checks (SPEC §3.4, §6 "Verify: make doctor"), in the order they run:
                         needs at least 2: the demo's mock calibration)
   policy.state          GET /api/status and /api/policies: the version in
                         effect, its source, the policy file, route downgrades
+  credentials.store     GET /api/status: the encrypted credential store is
+                        ready, and every saved key decrypts (a changed master
+                        key leaves rows that need re-entering)
+  runtime_config.version
+                        GET /api/settings and /api/status: the engine applied
+                        the settings version the gateway holds (and its epoch)
+  judge.credential_source
+                        GET /api/status: the deep-audit judge, and whether its
+                        key comes from .env, the dashboard or nowhere
+  budgets.today         GET /api/status: today's real spend against the daily
+                        fast-check and deep-audit budgets
   metrics.gateway       the proxy's :8002/metrics exposes trustagent_gateway_*
                         and no other trustagent_ name (docker target)
   metrics.engine        the engine's :8001/metrics exposes trustagent_engine_*
@@ -92,6 +103,14 @@ DECISION_MODEL_FAILED = frozenset(
     {"unauthorized", "no_credits", "budget_exhausted", "misconfigured", "unreachable"}
 )
 DECISION_MODEL_DEGRADED = frozenset({"checking", "degraded", "breaker_open"})
+# The judge providers that need a vendor key, and the engine env var that supplies one.
+JUDGE_KEY_VARS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+JEV_DOC = "docs/JEV-ACCESS.md"
+SECURITY_DOC = "docs/SECURITY.md"
 # The in-container fetch of the engine's metrics (its image has Python, not wget); the URL is
 # passed as an argument, never interpolated into the code.
 ENGINE_METRICS_FETCH = (
@@ -667,6 +686,303 @@ class Doctor:
             return Check("policy.state", "WARN", summary, detail, self.read_fix(0, "/api/policies"))
         return Check("policy.state", "PASS", summary, detail)
 
+    def check_credentials(self) -> Check:
+        status, failure = self.system_status("credentials.store")
+        if failure is not None:
+            return failure
+        assert status is not None
+        creds = status.get("credentials")
+        if not isinstance(creds, dict):
+            return Check(
+                "credentials.store",
+                "SKIP",
+                "this proxy build reports no credential store (it predates encrypted keys)",
+            )
+        store = str(creds.get("store") or "unknown")
+        undecryptable = [str(n) for n in creds.get("undecryptable") or [] if isinstance(n, str)]
+        changed = [
+            w
+            for w in status.get("warning_details") or []
+            if isinstance(w, dict) and w.get("code") == "master_key_changed"
+        ]
+        if store == "unavailable":
+            return Check(
+                "credentials.store",
+                "FAIL",
+                "the credential store is unavailable: keys saved in the dashboard cannot be used",
+                "the master key (TRUTHTABLE_SECRET_KEY, else the trustagent-secrets volume) "
+                "could not be loaded",
+                f"{self.logs_hint('proxy')}; see the master key section of {SECURITY_DOC}",
+            )
+        if undecryptable or changed:
+            names = undecryptable or [
+                str(n) for w in changed for n in (w.get("details") or {}).get("names") or []
+            ]
+            listed = ", ".join(names) if names else "some saved keys"
+            return Check(
+                "credentials.store",
+                "FAIL",
+                f"{len(names) or 'some'} saved key(s) cannot be decrypted ({listed}): "
+                "the master key changed since they were saved",
+                "a new TRUTHTABLE_SECRET_KEY, or a lost trustagent-secrets volume, makes "
+                "every stored key unreadable",
+                "restore the old master key (TRUTHTABLE_SECRET_KEY or the trustagent-secrets "
+                "volume), or re-enter those keys in Settings > Connections "
+                f"({SECURITY_DOC})",
+            )
+        if store == "no_database":
+            return Check(
+                "credentials.store",
+                "WARN",
+                "no database: keys can come from .env only (the dashboard cannot save any)",
+                fix="set TRUTHTABLE_DATABASE_URL (the compose stack sets it)",
+            )
+        if store != "ready":
+            return Check("credentials.store", "WARN", f"credential store state {store!r}")
+        return Check(
+            "credentials.store", "PASS", "credential store ready; every saved key decrypts"
+        )
+
+    def check_runtime_config(self) -> Check:
+        status, failure = self.system_status("runtime_config.version")
+        if failure is not None:
+            return failure
+        assert status is not None
+        settings, error, code = self.get_json("/api/settings")
+        if code == 404:
+            return Check(
+                "runtime_config.version",
+                "SKIP",
+                "this proxy build has no /api/settings (runtime settings arrived later)",
+            )
+        version = settings.get("version") if isinstance(settings, dict) else None
+        if not isinstance(version, int) or isinstance(version, bool):
+            return Check(
+                "runtime_config.version",
+                "WARN",
+                error or "/api/settings has no version",
+                fix=self.read_fix(code, "/api/settings"),
+            )
+        engine = status.get("engine") if isinstance(status.get("engine"), dict) else {}
+        raw = engine.get("runtime_config_version")
+        # The proxy leaves out version 0 (nothing pushed or nothing saved yet).
+        applied = raw if isinstance(raw, int) and not isinstance(raw, bool) else 0
+        epoch = engine.get("runtime_config_epoch")
+        detail = f"gateway settings version {version}, engine applied {applied}"
+        if isinstance(epoch, str) and epoch:
+            detail += f" (epoch {epoch})"
+        if engine.get("version"):
+            detail += f"; engine {engine['version']}"
+        # The gateway's own words about the push (runtimecfg: "The audit engine ...").
+        engine_notes = [
+            str(w) for w in status.get("warnings") or [] if "audit engine" in str(w).lower()
+        ]
+        if engine_notes:
+            detail += "; " + "; ".join(engine_notes)
+        if applied == version and not engine_notes:
+            summary = (
+                "the engine runs the gateway's settings (none saved yet)"
+                if version == 0
+                else f"the engine runs settings version {version}"
+            )
+            return Check("runtime_config.version", "PASS", summary, detail)
+        if applied == version:
+            return Check(
+                "runtime_config.version",
+                "WARN",
+                f"the engine runs settings version {version}, but: {engine_notes[0]}",
+                detail,
+                self.logs_hint("engine"),
+            )
+        if raw is None and version > 0:
+            return Check(
+                "runtime_config.version",
+                "WARN",
+                "the engine reports no applied settings: it is older than the gateway or has "
+                "not been reached yet",
+                detail,
+                "rebuild and restart both (make up UP_ARGS=--build), then run doctor again",
+            )
+        return Check(
+            "runtime_config.version",
+            "WARN",
+            f"the engine applied settings version {applied}, the gateway holds {version}: "
+            "the push is pending or failed",
+            detail,
+            "the gateway retries by itself; if this stays, " + self.logs_hint("engine"),
+        )
+
+    def check_judge(self) -> Check:
+        status, failure = self.system_status("judge.credential_source")
+        if failure is not None:
+            return failure
+        assert status is not None
+        judge = status.get("judge")
+        if not isinstance(judge, dict) or "credential_source" not in judge:
+            return Check(
+                "judge.credential_source",
+                "SKIP",
+                "this proxy build does not report where the judge's key comes from",
+            )
+        provider = str(judge.get("provider") or "none")
+        model = judge.get("model")
+        source = str(judge.get("credential_source") or "none")
+        state = str(judge.get("state") or "unknown")
+        name = provider + (f" / {model}" if model else "")
+        detail = f"provider {provider}, model {model or 'default'}, state {state}, key {source}"
+        if judge.get("fallback_active"):
+            detail += f"; fallback: {judge.get('fallback_reason') or 'active'}"
+        if judge.get("provider") is None and state == "unknown":
+            # The proxy has no engine health yet (starting, or unreachable): nothing is known about
+            # the judge, so blaming a missing key would send the operator the wrong way.
+            return Check(
+                "judge.credential_source",
+                "WARN",
+                "the audit engine has not reported its judge yet (it is starting or "
+                "unreachable; see engine.health)",
+                detail,
+                self.logs_hint("engine"),
+            )
+        if self.expect == "demo":
+            if provider != "mock":
+                return Check(
+                    "judge.credential_source",
+                    "FAIL",
+                    f"judge {name}: the demo runs the mock judge",
+                    detail,
+                    "make demo-down && make demo (docker-compose.demo.yml sets LLM_PROVIDER=mock)",
+                )
+            return Check(
+                "judge.credential_source",
+                "PASS",
+                "judge mock (simulated verdicts, $0); it needs no key",
+                detail,
+            )
+        connect = (
+            "connect OpenRouter in Settings > Connections, or set OPENROUTER_API_KEY in .env "
+            f"and make up ({JEV_DOC})"
+        )
+        if provider == "none":
+            return Check(
+                "judge.credential_source",
+                "WARN",
+                "no deep-audit judge: answers get the fast check only, no claim-level audits",
+                detail,
+                connect,
+            )
+        if provider == "mock":
+            return Check(
+                "judge.credential_source",
+                "WARN",
+                "the judge is the mock: deep-audit verdicts are simulated, not measured",
+                detail,
+                # Simulated checks come from .env (LLM_PROVIDER=mock, read-only in the dashboard)
+                # or from the dashboard, where binding a key to the judge turns them off (D76).
+                "if .env sets LLM_PROVIDER=mock, set it to auto and make up; otherwise "
+                + connect
+                + " (binding a key to the judge turns simulated checks off)",
+            )
+        env_var = JUDGE_KEY_VARS.get(provider)
+        if env_var and source == "none":
+            return Check(
+                "judge.credential_source",
+                "FAIL",
+                f"judge {name} has no key: deep audits cannot run",
+                detail,
+                f"bind a key to the judge in Settings > Connections, or set {env_var} in .env "
+                "and make up",
+            )
+        where = {
+            "env": "its key comes from the engine's .env (read-only in the dashboard)",
+            "dashboard": "its key is saved in the dashboard (encrypted)",
+        }.get(source, "it needs no key")
+        if judge.get("fallback_active"):
+            return Check(
+                "judge.credential_source",
+                "WARN",
+                f"judge {name} is running its fallback; {where}",
+                detail,
+                self.logs_hint("engine"),
+            )
+        if state in ("down", "degraded"):
+            return Check(
+                "judge.credential_source",
+                "WARN",
+                f"judge {name} is {state}; {where}",
+                detail,
+                self.logs_hint("engine"),
+            )
+        return Check("judge.credential_source", "PASS", f"judge {name}; {where}", detail)
+
+    def check_budgets(self) -> Check:
+        status, failure = self.system_status("budgets.today")
+        if failure is not None:
+            return failure
+        assert status is not None
+        b = status.get("budgets")
+        if not isinstance(b, dict):
+            return Check("budgets.today", "SKIP", "this proxy build reports no budgets")
+
+        def usd(key: str) -> float:
+            value = b.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return 0.0
+            return float(value)
+
+        def line(label: str, spent: float, cap: float) -> str:
+            limit = f"${cap:.2f}" if cap > 0 else "no budget set"
+            return f"{label} ${spent:.4f} of {limit}"
+
+        # SystemStatus.budgets counts real calls only (simulated checks never count), each at the
+        # vendor's reported cost where it gives one and otherwise priced from tokens with the price
+        # table: the total is an estimate, not a measurement (honest labels, CLAUDE.md).
+        label = "estimate: the vendor's reported cost where given, else priced from tokens"
+        if self.expect == "demo":
+            label += "; the demo's simulated checks cost $0"
+        detail = (
+            line("fast checks", usd("decision_spent_today_usd"), usd("decision_usd_day"))
+            + "; "
+            + line("deep audits", usd("llm_spent_today_usd"), usd("llm_usd_day"))
+            + f" ({label})"
+        )
+        settings = "raise it in Settings > Budgets, or wait for tomorrow's reset"
+        if b.get("llm_exhausted") is True and b.get("decision_exhausted") is True:
+            return Check(
+                "budgets.today",
+                "WARN",
+                "both daily budgets are used up: fast checks pass answers through unchecked "
+                "and deep audits are paused",
+                detail,
+                settings,
+            )
+        if b.get("decision_exhausted") is True:
+            return Check(
+                "budgets.today",
+                "WARN",
+                "today's fast-check budget is used up: answers pass through unchecked "
+                "(fail-closed block routes block)",
+                detail,
+                settings,
+            )
+        if b.get("llm_exhausted") is True:
+            return Check(
+                "budgets.today",
+                "WARN",
+                "Deep audits paused: today's deep-audit budget is used up",
+                detail,
+                settings,
+            )
+        if b.get("decision_reserve_only") is True:
+            return Check(
+                "budgets.today",
+                "WARN",
+                "the fast-check budget is nearly used up: only block and fallback routes are "
+                "still checked (observe and flag routes skip)",
+                detail,
+                settings,
+            )
+        return Check("budgets.today", "PASS", "within today's budgets", detail)
+
     # ---------- Prometheus endpoints (inside the containers: the ports are not published) ----------
 
     def check_metrics(self, service: str, prefix: str) -> Check:
@@ -831,6 +1147,10 @@ class Doctor:
             ("decision_model.state", self.check_decision_model),
             ("calibration.targets", self.check_calibration),
             ("policy.state", self.check_policy),
+            ("credentials.store", self.check_credentials),
+            ("runtime_config.version", self.check_runtime_config),
+            ("judge.credential_source", self.check_judge),
+            ("budgets.today", self.check_budgets),
             ("metrics.gateway", self.check_gateway_metrics),
             ("metrics.engine", self.check_engine_metrics),
         ]
