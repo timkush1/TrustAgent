@@ -125,6 +125,19 @@ func (e *cached) auditUpdate(u store.TraceAuditUpdate, now time.Time) {
 	e.rec.UpdatedAt = now.UTC()
 }
 
+// auditDropped records DropTraceAudit: the audit status becomes dropped and flag (when set) joins
+// the flags once.
+func (e *cached) auditDropped(flag string, now time.Time) {
+	if e.rec == nil {
+		return
+	}
+	e.rec.AuditStatus = store.TraceAuditDropped
+	if flag != "" && !slices.Contains(e.rec.Flags, flag) {
+		e.rec.Flags = append(slices.Clone(e.rec.Flags), flag)
+	}
+	e.rec.UpdatedAt = now.UTC()
+}
+
 // auditSaved records SaveAuditResult: the trace points at the audit with its status, and the
 // summary joins the audit's verdict, score, grade and claim counts as GetTrace does.
 func (e *cached) auditSaved(a *store.AuditRecord, status string, now time.Time) {

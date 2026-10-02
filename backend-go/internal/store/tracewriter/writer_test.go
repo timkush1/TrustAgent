@@ -686,3 +686,101 @@ func TestWriterCountsDropsInTheGatewayMetric(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// linkedFake is a batch store with the Postgres store's linked-cost save and dropped-audit
+// record (worker.LinkedCostStore and the sink's auditDropper find them by interface).
+type linkedFake struct{ batchStore }
+
+func (l linkedFake) SaveAuditResultWithCosts(ctx context.Context, r *store.AuditRecord, status string, costs []store.CostEvent) error {
+	if err := l.SaveAuditResult(ctx, r, status); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.log[r.TraceID] = append(l.log[r.TraceID], fmt.Sprintf("costs:%d", len(costs)))
+	return nil
+}
+
+func (l linkedFake) DropTraceAudit(ctx context.Context, traceID, flag string) error {
+	if err := l.gate(ctx, traceID); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.log[traceID] = append(l.log[traceID], "dropped:"+flag)
+	if rec := l.traces[traceID]; rec != nil {
+		rec.AuditStatus, rec.Flags = store.TraceAuditDropped, append(rec.Flags, flag)
+	}
+	return nil
+}
+
+// TestWriterLinkedCostsAndDroppedAuditsWaitForTheTrace (D45, D48, D83): an audit saved with its
+// linked cost rows, and an audit the LLM cap dropped, reach the inner store's own methods after
+// the trace's queued writes, so no queued decision can overwrite them; the memory copy shows the
+// dropped audit and its flag at once.
+func TestWriterLinkedCostsAndDroppedAuditsWaitForTheTrace(t *testing.T) {
+	fake := newFake()
+	w, _ := newWriter(t, linkedFake{batchStore{fake}}, Config{Interval: time.Hour})
+	ctx := context.Background()
+	for _, id := range []string{"t1", "t2"} {
+		rec, d := decidedRec(id)
+		if err := w.StartTrace(ctx, startRec(id)); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.RecordDecision(ctx, rec, d, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.SaveAuditResultWithCosts(ctx, auditRec("t1"), "completed", []store.CostEvent{{Component: "deep_audit_verify"}, {Component: "deep_audit_score"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.written("t1"); !slices.Equal(got, []string{"start", "decision", "saved:completed", "costs:2"}) {
+		t.Errorf("t1 written %v", got)
+	}
+	if err := w.SaveAuditResultWithCosts(ctx, auditRec("t1"), "completed", nil); !errors.Is(err, store.ErrDuplicate) {
+		t.Errorf("duplicate: %v", err)
+	}
+	if err := w.DropTraceAudit(ctx, "t2", "llm_budget"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.written("t2"); !slices.Equal(got, []string{"start", "decision", "dropped:llm_budget"}) {
+		t.Errorf("t2 written %v", got)
+	}
+	got, err := w.GetTrace(ctx, "t2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AuditStatus != store.TraceAuditDropped || !slices.Contains(got.Flags, "llm_budget") {
+		t.Errorf("t2 reads audit %q flags %v", got.AuditStatus, got.Flags)
+	}
+}
+
+// TestWriterLinkedCostsFallBack: over an inner store without the linked save or the dropped-audit
+// record, the writer stores the audit through SaveAuditResult and the dropped status through
+// SetTraceAudit, still after the trace's queued writes.
+func TestWriterLinkedCostsFallBack(t *testing.T) {
+	fake := newFake()
+	w, _ := newWriter(t, batchStore{fake}, Config{Interval: time.Hour})
+	ctx := context.Background()
+	for _, id := range []string{"t1", "t2"} {
+		rec, d := decidedRec(id)
+		if err := w.StartTrace(ctx, startRec(id)); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.RecordDecision(ctx, rec, d, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.SaveAuditResultWithCosts(ctx, auditRec("t1"), "completed", []store.CostEvent{{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.DropTraceAudit(ctx, "t2", "llm_budget"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.written("t1"); !slices.Equal(got, []string{"start", "decision", "saved:completed"}) {
+		t.Errorf("t1 written %v", got)
+	}
+	if got := fake.written("t2"); !slices.Equal(got, []string{"start", "decision", "audit:dropped"}) {
+		t.Errorf("t2 written %v", got)
+	}
+}

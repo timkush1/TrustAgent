@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/store/tracewriter"
 	"github.com/truthtable/backend-go/internal/storetest"
+	"github.com/truthtable/backend-go/internal/worker"
 )
 
 // The Postgres store behind the writer keeps every other interface it is found by: the API keys
@@ -89,6 +91,31 @@ func TestWrapTraceWriterPostgres(t *testing.T) {
 	}
 	if _, err := pg.GetTrace(ctx, id); err != nil {
 		t.Errorf("the barrier wrote the trace to Postgres: %v", err)
+	}
+
+	// The audit pool and the sink find the linked-cost save and the dropped-audit record by
+	// interface; through the wrapper they wait for the trace's queued writes (D83). A drop right
+	// after a queued start lands after it, so the stored trace keeps it.
+	if _, ok := st.(worker.LinkedCostStore); !ok {
+		t.Fatalf("%T is not a worker.LinkedCostStore", st)
+	}
+	dropper, ok := st.(auditDropper)
+	if !ok {
+		t.Fatalf("%T is not an auditDropper", st)
+	}
+	dropped := store.NewID()
+	if err := st.StartTrace(ctx, &store.TraceRecord{TraceID: dropped, Source: "proxy", APIFormat: "openai_chat", Route: "default", Mode: "observe"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dropper.DropTraceAudit(ctx, dropped, flagLLMBudget); err != nil {
+		t.Fatal(err)
+	}
+	got, err := pg.GetTrace(ctx, dropped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AuditStatus != store.TraceAuditDropped || !slices.Contains(got.Flags, flagLLMBudget) {
+		t.Errorf("stored trace audit %q flags %v, want dropped with %s", got.AuditStatus, got.Flags, flagLLMBudget)
 	}
 }
 

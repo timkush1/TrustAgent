@@ -71,6 +71,17 @@ func (p *pgTraceWriter) SaveAuditResult(ctx context.Context, r *store.AuditRecor
 	return p.w.SaveAuditResult(ctx, r, status)
 }
 
+// SaveAuditResultWithCosts and DropTraceAudit go through the writer too (the worker and the sink
+// find them by interface): the embedded Postgres store's own would skip the D83 barrier, so a
+// queued decision write could overwrite the audit status, and the memory copy would miss them.
+func (p *pgTraceWriter) SaveAuditResultWithCosts(ctx context.Context, r *store.AuditRecord, status string, costs []store.CostEvent) error {
+	return p.w.SaveAuditResultWithCosts(ctx, r, status, costs)
+}
+
+func (p *pgTraceWriter) DropTraceAudit(ctx context.Context, traceID, flag string) error {
+	return p.w.DropTraceAudit(ctx, traceID, flag)
+}
+
 func (p *pgTraceWriter) GetTrace(ctx context.Context, traceID string) (*store.TraceRecord, error) {
 	return p.w.GetTrace(ctx, traceID)
 }

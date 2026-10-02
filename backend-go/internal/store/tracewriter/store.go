@@ -87,6 +87,68 @@ func (w *Writer) SaveAuditResult(ctx context.Context, r *store.AuditRecord, stat
 	return err
 }
 
+// linkedCostStore is a store that writes an audit's cost rows in the audit's transaction
+// (store.PostgresStore, worker.LinkedCostStore).
+type linkedCostStore interface {
+	SaveAuditResultWithCosts(ctx context.Context, r *store.AuditRecord, status string, costs []store.CostEvent) error
+}
+
+// auditDropper is a store that records a dropped audit with a trace flag (store.PostgresStore).
+type auditDropper interface {
+	DropTraceAudit(ctx context.Context, traceID, flag string) error
+}
+
+// SaveAuditResultWithCosts is SaveAuditResult with the audit's linked cost rows (P4-PLAN D45),
+// behind the same barrier and memory update (D83). An inner store that cannot link the rows
+// stores the audit through SaveAuditResult, which derives them from the record.
+func (w *Writer) SaveAuditResultWithCosts(ctx context.Context, r *store.AuditRecord, status string, costs []store.CostEvent) error {
+	ls, ok := w.inner.(linkedCostStore)
+	if !ok {
+		return w.SaveAuditResult(ctx, r, status)
+	}
+	traceID := auditTraceID(r)
+	err := w.auditBarrier(ctx, traceID)
+	if err == nil {
+		err = ls.SaveAuditResultWithCosts(ctx, r, status, costs)
+	}
+	if errors.Is(err, store.ErrDuplicate) {
+		return err
+	}
+	w.mu.Lock()
+	if e := w.cache.peek(traceID); e != nil {
+		e.auditSaved(r, status, w.cfg.Now())
+		if err != nil {
+			e.lost = true
+		}
+	}
+	w.mu.Unlock()
+	return err
+}
+
+// DropTraceAudit records that a trace's audit was not queued (its audit status becomes dropped and
+// flag joins its flags once) behind the barrier (D83), so no queued write of the trace overwrites
+// it; memory takes it either way. An inner store without the method records the dropped status
+// through SetTraceAudit.
+func (w *Writer) DropTraceAudit(ctx context.Context, traceID, flag string) error {
+	err := w.auditBarrier(ctx, traceID)
+	if err == nil {
+		if d, ok := w.inner.(auditDropper); ok {
+			err = d.DropTraceAudit(ctx, traceID, flag)
+		} else {
+			err = w.inner.SetTraceAudit(ctx, traceID, store.TraceAuditUpdate{Status: store.TraceAuditDropped})
+		}
+	}
+	w.mu.Lock()
+	if e := w.cache.peek(traceID); e != nil {
+		e.auditDropped(flag, w.cfg.Now())
+		if err != nil {
+			e.lost = true
+		}
+	}
+	w.mu.Unlock()
+	return err
+}
+
 // auditTraceID is the trace an audit belongs to (SaveAudit's default: the audit id).
 func auditTraceID(r *store.AuditRecord) string {
 	if r == nil {

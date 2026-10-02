@@ -252,6 +252,9 @@ func newServer(d serverDeps) (*server, error) {
 		sink.store = d.store
 	}
 	s.sink = sink
+	// The D83 barrier of the batched trace writer (nil without it): a later read or write through
+	// the Postgres store sees a trace's queued writes.
+	s.traceBarrier = traceBarrierOf(d.store)
 	// The calibration lookup comes before the policy services: block readiness reads it.
 	s.initCalibration()
 	// P4: the notification hub, the runtime configuration and the cost ledger come before the
