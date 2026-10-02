@@ -71,11 +71,13 @@ other.
    example), optionally act as a stricter mode, and see the decision and the deep audit for
    exactly that text.
 7. **Was this right?** On the flagged refund trace, answer *Was this right?* with **Correct** or
-   **False alarm**: each answer is a label that calibration learns from. *What was sent to Jev*
-   shows the exact questions the gateway asked, recompiled from the stored answer.
+   **False alarm**: each answer is a label that calibration learns from. Under **Details**,
+   **Show exact Jev request** shows the exact questions the gateway asked, recompiled from the
+   stored answer.
 8. **Evaluator Studio.** Under Evaluators → Studio, describe a new check ("Does the answer promise
    a discount?"), draft it with AI (the mock judge drafts it: labelled Simulated, $0), adjust it in
-   the form, run it on recent traffic in the test bench, and save it to watch on a route in shadow.
+   the form, try it with **Test on samples**, and **Save and watch on route …** to run it in shadow
+   on that route.
 9. **Savings.** What the checks cost next to what the same checks would cost with an LLM judge,
    every figure with its label; in the demo the spend is simulated and labelled so.
 10. **Settings.** Connections shows that no key is connected (the demo is simulated on purpose);

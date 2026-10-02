@@ -86,8 +86,11 @@ Connections. Rotation without re-entering is planned for v2.1.
 
 - AES-256-GCM with a fresh 12-byte nonce per seal, under an HKDF subkey of the master key.
 - The additional authenticated data binds the ciphertext to its row:
-  `trustagent/credential/v1|<name>|<provider>|<allowed origins>`. A row copied under another name or
-  provider, or with edited origins, fails to decrypt instead of being used somewhere else.
+  `trustagent/credential/v1|<name>|<provider>|<allowed origins>`. The origins part holds the fixed
+  origins of a compatible-gateway or upstream key; a vendor key binds none, because its origins are
+  recomputed at every load and the stored column is never trusted for it. A row copied under another
+  name or provider, or a gateway or upstream row with edited origins, fails to decrypt instead of
+  being used somewhere else.
 - **Origin binding.** Every outbound call checks the destination's canonical origin
   (`scheme://host[:port]`) against the key's allowed origins before the key is attached. Vendor
   keys are allowed only at their vendor (for OpenRouter, also the origin of an env

@@ -123,7 +123,7 @@ Labels freeze the stored answer they refer to, so it outlives the body retention
 
 ## The glass box
 
-**Trace detail → What was sent to Jev** recompiles, from the stored answer and the policy of the
+**Trace detail → Details → Show exact Jev request** recompiles, from the stored answer and the policy of the
 time, exactly the request the gateway sent: every question, the model, and a hash per request.
 `matches_recorded` says whether the recompiled request is byte-for-byte the one that was sent
 (it is not when the stored body was truncated, or the policy or evaluator version is gone).
