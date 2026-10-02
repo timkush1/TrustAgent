@@ -124,12 +124,14 @@ type studioAPI struct {
 	// budget is the gate's base compile budget (the env token budget).
 	budget decision.Budget
 	// drafter is nil without an engine; judge reports the judge the engine uses and judgePrice
-	// its price (ok false: unknown).
-	drafter    studioDrafter
-	judge      func() (provider, model string)
-	judgePrice func(provider, model string) (decision.PriceEntry, bool)
-	now        func() time.Time
-	log        *slog.Logger
+	// its price (ok false: unknown); referencePrice is the reference judge's price, which a draft
+	// cost no price covers counts at (D91).
+	drafter        studioDrafter
+	judge          func() (provider, model string)
+	judgePrice     func(provider, model string) (decision.PriceEntry, bool)
+	referencePrice func() (decision.PriceEntry, bool)
+	now            func() time.Time
+	log            *slog.Logger
 }
 
 // newStudioAPI wires the Studio endpoints to the server.
@@ -171,6 +173,7 @@ func (s *server) newStudioAPI() *studioAPI {
 		book = l.Prices()
 	}
 	a.judgePrice = func(provider, model string) (decision.PriceEntry, bool) { return judgePriceOf(book, provider, model) }
+	a.referencePrice = func() (decision.PriceEntry, bool) { return referenceJudgePrice(book) }
 	return a
 }
 
@@ -206,12 +209,21 @@ func judgePriceOf(book *costs.PriceBook, provider, model string) (decision.Price
 	if decision.IsLocalProvider(provider) {
 		return decision.PriceEntry{}, true
 	}
-	if a, err := costs.ContractsAssumptions(); err == nil {
-		if e, _, ok := book.Lookup(a.Judge.Provider, a.Judge.Model); ok {
-			return e, true
-		}
+	return referenceJudgePrice(book)
+}
+
+// referenceJudgePrice is the reference judge's price in book, overrides applied (Claude Haiku 4.5,
+// assumptions.v1.json; D47). ok is false without a price book or when the book does not price it.
+func referenceJudgePrice(book *costs.PriceBook) (decision.PriceEntry, bool) {
+	if book == nil {
+		return decision.PriceEntry{}, false
 	}
-	return decision.PriceEntry{}, false
+	a, err := costs.ContractsAssumptions()
+	if err != nil {
+		return decision.PriceEntry{}, false
+	}
+	e, _, ok := book.Lookup(a.Judge.Provider, a.Judge.Model)
+	return e, ok
 }
 
 // mountStudioAPI mounts the decision request, Studio and evidence-suggestion endpoints (SPEC §2.4
@@ -1193,7 +1205,7 @@ func (a *studioAPI) draft(c *gin.Context) {
 	if resp.GetCost() != nil {
 		records = append(records, resp.GetCost())
 	}
-	settle(costs.RealCostUSD(records))
+	settle(a.draftCapCostUSD(records, estimate))
 	a.costs.record(context.WithoutCancel(c.Request.Context()), records, CostLink{Route: in.RouteName, KeyLabel: actor(c)})
 
 	out := studioDraftResponse{
@@ -1234,6 +1246,35 @@ func (a *studioAPI) draftEstimate(in studio.DraftInput) (float64, error) {
 		return 0, fmt.Errorf("no price for the judge %s/%s nor the reference judge", provider, model)
 	}
 	return studio.DraftReserveUSD(chars, decision.DefaultCPT, price)
+}
+
+// draftCapCostUSD is what a draft's cost records count against the LLM cap (D48, D91): a
+// simulated record $0; a record no price covers (cost_source unknown) its tokens at the reference
+// judge's price, or the reservation when that price is not known either; any other its reported
+// or computed cost, never below $0. An engine that reports no record keeps the reservation spent,
+// so the cap stays hard. The stored record keeps its own cost_source and cost: only the cap counts
+// this. It is the draft's case of costs.LLMBudget.CapCostUSD (COST-6).
+func (a *studioAPI) draftCapCostUSD(records []*pb.CostRecord, reserved float64) float64 {
+	if len(records) == 0 {
+		return reserved
+	}
+	usd := 0.0
+	for _, r := range records {
+		switch r.GetCostSource() {
+		case decision.CostSimulated:
+		case decision.CostUnknown:
+			if p, ok := a.referencePrice(); ok {
+				usd += decision.TokenCostUSD(r.GetInputTokens(), r.GetOutputTokens(), p.InputPerMTok, p.OutputPerMTok)
+			} else {
+				usd += reserved
+			}
+		default:
+			if c := r.GetCostUsd(); finiteNonNegative(c) {
+				usd += c
+			}
+		}
+	}
+	return usd
 }
 
 // existingIDs are the ids of the registry's evaluators (archived ones left out), sorted: the only

@@ -220,6 +220,9 @@ func newStudioRig(t *testing.T, tune func(r *studioRig)) *studioRig {
 		judgePrice: func(string, string) (decision.PriceEntry, bool) {
 			return decision.PriceEntry{InputPerMTok: 1, OutputPerMTok: 5}, true
 		},
+		referencePrice: func() (decision.PriceEntry, bool) {
+			return decision.PriceEntry{InputPerMTok: 1, OutputPerMTok: 5}, true
+		},
 		now: time.Now, log: slog.New(slog.DiscardHandler),
 	}
 	if tune != nil {
@@ -1200,6 +1203,64 @@ func TestStudioDraftReservesAndSettlesTheRealCost(t *testing.T) {
 	}
 	if len(settled) != 1 || settled[0] != 0.0042 || len(recorded) != 1 || recorded[0].GetCostUsd() != 0.0042 {
 		t.Errorf("settled %v recorded %v", settled, recorded)
+	}
+}
+
+// A draft cost no price covers counts at the reference judge's price for the cap (D91); one the
+// engine did not report keeps the reservation; a simulated one counts $0.
+func TestStudioDraftSettlesTheCapCost(t *testing.T) {
+	cases := []struct {
+		name    string
+		cost    *pb.CostRecord
+		noRef   bool
+		settled func(reserved float64) float64
+	}{
+		{name: "unknown at the reference price",
+			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "acme", InputTokens: 2000, OutputTokens: 400, CostSource: "unknown"},
+			settled: func(float64) float64 { return (2000*1 + 400*5) / 1e6 }},
+		{name: "unknown without a reference price keeps the reservation", noRef: true,
+			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "acme", InputTokens: 2000, OutputTokens: 400, CostSource: "unknown"},
+			settled: func(reserved float64) float64 { return reserved }},
+		{name: "no record keeps the reservation", settled: func(reserved float64) float64 { return reserved }},
+		{name: "simulated counts nothing",
+			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "mock", InputTokens: 2000, OutputTokens: 400, CostUsd: 0.003, CostSource: "simulated"},
+			settled: func(float64) float64 { return 0 }},
+		{name: "a negative reported cost counts nothing",
+			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "openrouter", CostUsd: -1, CostSource: "reported"},
+			settled: func(float64) float64 { return 0 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var reserved float64
+			var settled []float64
+			r := newStudioRig(t, func(r *studioRig) {
+				r.api.drafter = fakeDrafter(func(context.Context, *pb.DraftEvaluatorRequest) (*pb.DraftEvaluatorResponse, error) {
+					return &pb.DraftEvaluatorResponse{SpecJson: draftFixture(t), Model: "acme/judge-1", Attempts: 1, Cost: tc.cost}, nil
+				})
+				r.api.costs.reserveLLM = func(_ context.Context, usd float64, _ string) (func(float64), error) {
+					reserved = usd
+					return func(v float64) { settled = append(settled, v) }, nil
+				}
+				if tc.noRef {
+					r.api.referencePrice = func() (decision.PriceEntry, bool) { return decision.PriceEntry{}, false }
+				}
+			})
+			code, body := studioDo(t, r.url, http.MethodPost, "/api/studio/draft", "", `{"description":"Catch blame."}`)
+			if code != http.StatusOK {
+				t.Fatalf("HTTP %d %s", code, body)
+			}
+			want := tc.settled(reserved)
+			if reserved <= 0 || len(settled) != 1 || math.Abs(settled[0]-want) > 1e-12 {
+				t.Errorf("reserved %v settled %v, want %v", reserved, settled, want)
+			}
+			var resp studioDraftResponse
+			if err := json.Unmarshal(body, &resp); err != nil {
+				t.Fatal(err)
+			}
+			if wantSource := tc.cost.GetCostSource(); (wantSource == "" && resp.CostSource != decision.CostUnknown) || (wantSource != "" && resp.CostSource != wantSource) || resp.CostUSD < 0 {
+				t.Errorf("response cost %v %q", resp.CostUSD, resp.CostSource)
+			}
+		})
 	}
 }
 
