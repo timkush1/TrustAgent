@@ -3,12 +3,12 @@
  * time series behind the Savings tab and the effective price table behind Budgets → Prices.
  * (#47 `getRoiSummary` stays on the P3 ControlPlane.)
  *
- * Step 0b declares the signatures; every method rejects with 404 `not_implemented` until WEB-SV
- * lands its body. The signatures are fixed (P4-PLAN §0 rule 3); the bodies and COST_SHAPES belong to WEB-SV.
+ * The signatures are fixed (P4-PLAN §0 rule 3); the bodies and COST_SHAPES belong to WEB-SV. A proxy
+ * from before P4 answers 404 to both, which the pages show as "not reported by this proxy".
  */
 import type { PricingTable, RoiTimeseries, TimeWindow } from '@/types/api';
 import type { HttpClient } from '../http';
-import type { NestedShape } from '../normalize';
+import { normalizeShaped, type NestedShape } from '../normalize';
 import { rejectNotImplemented } from './shared';
 
 /** GET /api/roi/timeseries (#48). */
@@ -26,15 +26,22 @@ export interface CostPlane {
 
 /** What each cost response must carry (see normalizeShaped). */
 export const COST_SHAPES = {
-  roiTimeseries: { strings: ['window', 'bucket'], lists: ['points'] },
-  pricing: { strings: ['version'], lists: ['entries'] },
+  roiTimeseries: { strings: ['window', 'bucket'], lists: ['points'], each: { points: { strings: ['t'] } } },
+  pricing: { strings: ['version'], lists: ['entries'], each: { entries: { strings: ['match', 'provider'] } } },
 } as const satisfies Record<string, NestedShape>;
 
 /** The cost plane over HTTP. */
-export function liveCostPlane(_http: HttpClient): CostPlane {
+export function liveCostPlane(http: HttpClient): CostPlane {
   return {
-    getRoiTimeseries: rejectNotImplemented(),
-    getPricing: rejectNotImplemented(),
+    async getRoiTimeseries(params, signal) {
+      const query = params.bucket ? { window: params.window, bucket: params.bucket } : { window: params.window };
+      const raw = await http.get<unknown>('/api/roi/timeseries', { query, signal });
+      return normalizeShaped<RoiTimeseries>(raw, 'GET /api/roi/timeseries', COST_SHAPES.roiTimeseries);
+    },
+    async getPricing(signal) {
+      const raw = await http.get<unknown>('/api/pricing', { signal });
+      return normalizeShaped<PricingTable>(raw, 'GET /api/pricing', COST_SHAPES.pricing);
+    },
   };
 }
 
