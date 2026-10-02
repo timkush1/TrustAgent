@@ -629,7 +629,9 @@ func TestCredentialEnvRowsAreReadOnly(t *testing.T) {
 		t.Fatalf("verify the env key: %d %s", code, b)
 	}
 	res := decodeWriteResult(t, b)
-	if res.Stored || res.Verification == nil || !res.Verification.OK || res.Credential.Source != "env" ||
+	// stored is false only when a failed check kept the key in use (api.ts); checking the env key
+	// replaces nothing, so the dashboard must not say "nothing was saved".
+	if !res.Stored || res.Verification == nil || !res.Verification.OK || res.Credential.Source != "env" ||
 		res.Credential.LastVerifyStatus == nil || *res.Credential.LastVerifyStatus != "ok" {
 		t.Fatalf("env verify: %+v", res)
 	}

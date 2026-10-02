@@ -481,7 +481,9 @@ func (s *server) bindStoredCredential(ctx context.Context, snap *runtimecfg.Snap
 }
 
 // verifyEnvCredential checks a proxy-side env key (#57 on an env row, D80): the outcome is kept
-// in memory (an env key has no row) and nothing is stored or bound.
+// in memory (an env key has no row) and nothing is written or bound. stored stays true: it is
+// false only when a failed check left the key in use in place of a new one (api.ts
+// CredentialWriteResult), and a check of the env key replaces nothing.
 func (s *server) verifyEnvCredential(ctx context.Context, snap *runtimecfg.Snapshot, spec credentials.Spec) CredentialWriteResult {
 	cs := s.apply.creds
 	cred := snap.Credentials[spec.Name]
@@ -491,7 +493,7 @@ func (s *server) verifyEnvCredential(ctx context.Context, snap *runtimecfg.Snaps
 		cs.envChecks[spec.Name] = envCredentialCheck{fingerprint: cred.Fingerprint, at: cs.now().UTC(), status: v.Status}
 		cs.mu.Unlock()
 	}
-	return CredentialWriteResult{Credential: s.envCredentialView(snap, spec), Stored: false, Verification: verificationResult(&v),
+	return CredentialWriteResult{Credential: s.envCredentialView(snap, spec), Stored: true, Verification: verificationResult(&v),
 		Bindings: CredentialWriteBindings{Applied: []string{}, Skipped: []CredentialBindSkip{}}}
 }
 
