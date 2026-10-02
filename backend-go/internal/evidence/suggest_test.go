@@ -2,8 +2,10 @@ package evidence
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const doc = "Annual plans can be refunded within 30 days of purchase. Monthly plans are not refundable."
@@ -169,20 +171,86 @@ func TestShapesKeepOffsetsWithCaseChangingText(t *testing.T) {
 			t.Errorf("%q: shapes = %d, want a shape %v", text[:12], len(got), wantShape)
 		}
 	}
-	if i := indexFoldASCII("xⱥ</KB_NOTE>", "</kb_note>"); i != len("xⱥ") {
-		t.Errorf("indexFoldASCII = %d", i)
-	}
-	if i := indexFoldASCII("</kb_not", "</kb_note>"); i != -1 {
-		t.Errorf("indexFoldASCII on a cut tag = %d", i)
+	if got := closingTags("xⱥ</KB_NOTE></kb_not"); len(got) != 1 || !slices.Equal(got["kb_note"], []int{len("xⱥ")}) {
+		t.Errorf("closingTags = %v", got)
 	}
 }
 
-// Many open tags of one name before a single far closing tag are scanned in linear time: each
-// open tag reuses the closing offset the first one found.
+// Many open tags of one name before a single far closing tag all close there, and the shape is
+// returned once.
 func TestShapesManyOpenTagsShareOneClose(t *testing.T) {
 	text := strings.Repeat("<note>", 20000) + doc + "</note>"
 	got := shapesOf(text)
-	if len(got) == 0 || got[0].kind != SuggestTagPattern {
-		t.Fatalf("shapes = %d", len(got))
+	if len(got) != 1 || got[0].kind != SuggestTagPattern || got[0].label != "<note> blocks" {
+		t.Fatalf("shapes = %+v", got)
+	}
+}
+
+// A message made to be slow to scan (any client writes request content): tens of thousands of
+// distinct unclosed tags, or of "Title:" lines with no blank line between them. Searching the
+// rest of the text for each one took about 3 s for 128 KiB of tags; the indexed scan is linear.
+// The bound is generous (race detector, a loaded machine); the quadratic scan of these 256 KiB
+// took minutes under -race.
+func TestShapesScanAdversarialTextInLinearTime(t *testing.T) {
+	var tags, titles strings.Builder
+	for i := 0; tags.Len() < 256<<10; i++ {
+		fmt.Fprintf(&tags, "<t%05d>", i)
+	}
+	for i := 0; titles.Len() < 256<<10; i++ {
+		fmt.Fprintf(&titles, "Ab%03d:\n", i%1000)
+	}
+	start := time.Now()
+	for _, c := range []struct {
+		text string
+		want int
+	}{
+		{tags.String(), 0},      // nothing closes
+		{titles.String(), 1000}, // Ab000: to Ab999:, each followed by the rest of the text
+		// One far close after a long run of white space, which every open tag's block ends with.
+		{strings.Repeat("<note> ", 30000) + strings.Repeat(" ", 30000) + "x</note>", 1},
+	} {
+		if got := shapesOf(c.text); len(got) != c.want {
+			t.Errorf("%q...: %d shapes, want %d", c.text[:16], len(got), c.want)
+		}
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("the scans took %v", d)
+	}
+}
+
+func TestTextIndexBlock(t *testing.T) {
+	text := "  \n" + strings.Repeat("a", minBlockChars-1) + "  \n" + "b" + "\t "
+	ix := newTextIndex(text)
+	end := strings.Index(text, "b")
+	for _, c := range []struct {
+		from, to int
+		want     bool
+	}{
+		{0, len(text), true},              // 39 a's, white space, b: 39+3+1 bytes trimmed
+		{0, end, false},                   // the 39 a's alone
+		{0, end + 1, true},                // up to and with the b
+		{3, 3 + minBlockChars - 1, false}, // 39 bytes
+		{len(text), len(text), false},     // empty at the end
+		{end + 1, len(text), false},       // white space only
+		{0, 3, false},                     // white space only
+		{1, len(text) - 1, true},          // trimmed both sides
+	} {
+		if got := ix.block(c.from, c.to); got != c.want {
+			t.Errorf("block(%d, %d) = %v, want %v", c.from, c.to, got, c.want)
+		}
+	}
+	if got := occurrences("a\n\n\nb\n\n", "\n\n"); !slices.Equal(got, []int{1, 2, 5}) {
+		t.Errorf("occurrences = %v", got)
+	}
+	for _, c := range []struct{ from, want int }{{0, 2}, {2, 2}, {3, 9}, {10, -1}} {
+		if got := firstAtOrAfter([]int{2, 9}, c.from); got != c.want {
+			t.Errorf("firstAtOrAfter(%d) = %d, want %d", c.from, got, c.want)
+		}
+	}
+	if got := sectionEnd([]int{4, 9}, 4, 20); got != 9 {
+		t.Errorf("a stop at the section start belongs to the line before: %d", got)
+	}
+	if got := sectionEnd([]int{4}, 5, 20); got != 20 {
+		t.Errorf("no stop after: %d", got)
 	}
 }

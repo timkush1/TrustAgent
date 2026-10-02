@@ -247,85 +247,132 @@ func chatOf(msgs []ScanMessage) *llmapi.ChatRequest {
 // shapesOf finds the document shapes of one message text: unknown tags wrapping at least
 // minBlockChars of text, markdown headings and "Title:" header lines followed by that much text.
 // Shapes named like instructions (rules, examples, persona, ...) are left out: they hold what the
-// app tells the model, not documents to check answers against.
+// app tells the model, not documents to check answers against. Each shape is returned once.
+//
+// The text is request content any client sends, so the scan stays linear in its length whatever
+// it holds: the closing tags and the section ends are indexed in one pass each, and every block
+// test is a constant-time lookup (an earlier version searched the rest of the text per tag or
+// header, which took seconds per body for text made of many distinct unclosed tags).
 func shapesOf(text string) []*shape {
 	var out []*shape
-	// closeAt caches, per lower-cased tag name, the offset of the first closing tag at or after the
-	// last open tag searched from (-1: none), so a text with many tags is still scanned in linear
-	// time: an open tag before that offset closes there too.
-	closeAt := map[string]int{}
+	seen := map[string]bool{}
+	add := func(sh *shape) {
+		if !seen[sh.pattern.Pattern] {
+			seen[sh.pattern.Pattern] = true
+			out = append(out, sh)
+		}
+	}
+	ix := newTextIndex(text)
+	closes := closingTags(text)
 	for _, m := range tagOpenShape.FindAllStringSubmatchIndex(text, -1) {
 		name := text[m[2]:m[3]]
 		key := strings.ToLower(name) // tag names are ASCII (tagOpenShape)
 		if instructionLike[key] {
 			continue
 		}
-		at, cached := closeAt[key]
-		if !cached || (at >= 0 && at < m[1]) {
-			at = -1
-			if i := indexFoldASCII(text[m[1]:], "</"+key+">"); i >= 0 {
-				at = m[1] + i
-			}
-			closeAt[key] = at
-		}
-		if at < 0 || len(strings.TrimSpace(text[m[1]:at])) < minBlockChars {
+		at := firstAtOrAfter(closes[key], m[1])
+		if at < 0 || !ix.block(m[1], at) {
 			continue
 		}
 		q := regexp.QuoteMeta(name)
-		out = append(out, &shape{kind: SuggestTagPattern,
+		add(&shape{kind: SuggestTagPattern,
 			pattern: SuggestedPattern{Pattern: "<" + q + `(?:[\t\n\f\r ][^>]*)?>(.*?)</` + q + ">", Flags: "is"},
 			label:   "<" + name + "> blocks"})
 	}
+	headingEnds := occurrences(text, "\n#")
 	for _, m := range headingShape.FindAllStringSubmatchIndex(text, -1) {
 		title := strings.TrimSpace(text[m[2]:m[3]])
-		if title == "" || instructionLike[strings.ToLower(title)] || len(strings.TrimSpace(sectionAfter(text, m[1], "\n#"))) < minBlockChars {
+		if title == "" || instructionLike[strings.ToLower(title)] || !ix.block(m[1], sectionEnd(headingEnds, m[1], len(text))) {
 			continue
 		}
-		out = append(out, &shape{kind: SuggestLineHeader,
+		add(&shape{kind: SuggestLineHeader,
 			pattern: SuggestedPattern{Pattern: `^#{1,6}[\t\f\r ]*` + regexp.QuoteMeta(title) + `[\t\f\r ]*\n(.*?)(?:\n#{1,6}[\t\f\r ]|\z)`, Flags: "ims"},
 			label:   fmt.Sprintf("%q sections", "## "+title)})
 	}
+	paragraphEnds := occurrences(text, "\n\n")
 	for _, m := range colonShape.FindAllStringSubmatchIndex(text, -1) {
 		title := text[m[2]:m[3]]
-		if instructionLike[strings.ToLower(title)] || len(strings.TrimSpace(sectionAfter(text, m[1], "\n\n"))) < minBlockChars {
+		if instructionLike[strings.ToLower(title)] || !ix.block(m[1], sectionEnd(paragraphEnds, m[1], len(text))) {
 			continue
 		}
-		out = append(out, &shape{kind: SuggestLineHeader,
+		add(&shape{kind: SuggestLineHeader,
 			pattern: SuggestedPattern{Pattern: `^` + regexp.QuoteMeta(title) + `:[\t\f\r ]*\n(.*?)(?:\n[\t\f\r ]*\n|\z)`, Flags: "ims"},
 			label:   fmt.Sprintf("%q sections", title+":")})
 	}
 	return out
 }
 
-// indexFoldASCII is the byte offset in s of the first occurrence of sub (ASCII, lower case), ASCII
-// letters matching either case, or -1. Unlike searching a lower-cased copy of s, it keeps the
-// offsets of s: lower-casing can change a non-ASCII character's length in bytes.
-func indexFoldASCII(s, sub string) int {
-	n := len(sub)
-	for i := 0; i+n <= len(s); i++ {
-		j := 0
-		for j < n {
-			c := s[i+j]
-			if 'A' <= c && c <= 'Z' {
-				c += 'a' - 'A'
-			}
-			if c != sub[j] {
-				break
-			}
-			j++
+// closeTagShape is a closing tag with a name tagOpenShape accepts.
+var closeTagShape = regexp.MustCompile(`</([A-Za-z][A-Za-z0-9_.:-]{0,47})>`)
+
+// closingTags indexes the closing tags of text: per lower-cased name, the byte offsets where they
+// start, ascending. Closing tags cannot overlap, so one pass finds them all.
+func closingTags(text string) map[string][]int {
+	out := map[string][]int{}
+	for _, m := range closeTagShape.FindAllStringSubmatchIndex(text, -1) {
+		key := strings.ToLower(text[m[2]:m[3]])
+		out[key] = append(out[key], m[0])
+	}
+	return out
+}
+
+// occurrences are the byte offsets of every occurrence of sub (two bytes or more) in text,
+// overlapping ones included, ascending.
+func occurrences(text, sub string) []int {
+	var out []int
+	for from := 0; ; {
+		i := strings.Index(text[from:], sub)
+		if i < 0 {
+			return out
 		}
-		if j == n {
-			return i
-		}
+		out = append(out, from+i)
+		from += i + 1
+	}
+}
+
+// firstAtOrAfter is the first offset of sorted that is at least from, or -1.
+func firstAtOrAfter(sorted []int, from int) int {
+	if i, _ := slices.BinarySearch(sorted, from); i < len(sorted) {
+		return sorted[i]
 	}
 	return -1
 }
 
-// sectionAfter is the text from offset from to the next stop (or the end).
-func sectionAfter(text string, from int, stop string) string {
-	rest := text[from:]
-	if i := strings.Index(rest[min(1, len(rest)):], stop); i >= 0 {
-		return rest[:i+min(1, len(rest))]
+// sectionEnd is where the section that starts at offset from ends: at the first of stops after
+// from (a stop at from itself belongs to the line before), else at the end of the text.
+func sectionEnd(stops []int, from, end int) int {
+	if at := firstAtOrAfter(stops, from+1); at >= 0 {
+		return at
 	}
-	return rest
+	return end
+}
+
+// textIndex answers in constant time whether a span of a text holds a block: at least
+// minBlockChars bytes once the ASCII white space around it is trimmed.
+type textIndex struct {
+	// next[i] is the offset of the first byte at or after i that is not ASCII white space
+	// (len(text) when there is none).
+	next []int32
+}
+
+func newTextIndex(text string) *textIndex {
+	next := make([]int32, len(text)+1)
+	next[len(text)] = int32(len(text)) // #nosec G115 -- a message is far below 2 GiB
+	for i := len(text) - 1; i >= 0; i-- {
+		switch text[i] {
+		case ' ', '\t', '\n', '\v', '\f', '\r':
+			next[i] = next[i+1]
+		default:
+			next[i] = int32(i) // #nosec G115 -- a message is far below 2 GiB
+		}
+	}
+	return &textIndex{next: next}
+}
+
+// block reports whether text[from:to] holds at least minBlockChars bytes once trimmed: its first
+// non-space byte f is before to, and so is a non-space byte at f+minBlockChars-1 or later.
+func (ix *textIndex) block(from, to int) bool {
+	f := int(ix.next[from])
+	last := f + minBlockChars - 1
+	return f < to && last < to && int(ix.next[last]) < to
 }
