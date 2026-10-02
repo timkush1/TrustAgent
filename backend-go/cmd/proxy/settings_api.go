@@ -236,7 +236,9 @@ func (s *server) settingKey(k *config.Key, e config.Entry, hasEntry bool, entrie
 			v.Env = stringPtr(e.Var)
 		}
 	}
-	if k.Kind == config.KindURL {
+	// A URL shows no userinfo and no query. A secret URL (the database, Redis) is already masked
+	// or "set" by now; parsing the mask as a URL would only percent-encode its ellipsis.
+	if k.Kind == config.KindURL && !k.Secret {
 		v.Value, v.Default = redactURL(v.Value), redactURL(v.Default)
 	}
 	v.Editable = editableBase && path != "" && !snap.IsEnvManaged(path)

@@ -259,6 +259,10 @@ func TestSettingsETagRoundTrip(t *testing.T) {
 // a query.
 func TestSettingsMaskingByCaller(t *testing.T) {
 	t.Setenv("TYPESAFE_API_KEY", "sk-test-typesafe-0123456789")
+	// A secret URL: the harness never connects to it (it clears cfg.DatabaseURL), but the
+	// settings view lists it from the loaded entries.
+	const dbURL = "postgres://tt:pw-cmp0e2eZq7Lw4Rt9@db.example.com:5432/truthtable"
+	t.Setenv("TRUTHTABLE_DATABASE_URL", dbURL)
 	env := newSettingsEnv(t, envOpts{mutate: func(c *config.Config) {
 		c.EnvFile = "/app/.env"
 		c.UpstreamURL = "https://user:pw@gw.example.com/v1?api-key=q"
@@ -283,6 +287,14 @@ func TestSettingsMaskingByCaller(t *testing.T) {
 	admin, _ := env.settings(settingsAdminKey)
 	if k := admin.key(t, "TYPESAFE_API_KEY"); k.Value != config.MaskSecret("sk-test-typesafe-0123456789") || strings.Contains(k.Value, "0123456") {
 		t.Errorf("admin TYPESAFE_API_KEY %+v", k)
+	}
+	// A secret URL shows the same mask as any secret (never a percent-encoded one), and "set" to
+	// a reader; neither shows its password.
+	if k := admin.key(t, "TRUTHTABLE_DATABASE_URL"); k.Value != config.MaskSecret(dbURL) || !strings.Contains(k.Value, "…") || strings.Contains(k.Value, "pw-") {
+		t.Errorf("admin TRUTHTABLE_DATABASE_URL %q", k.Value)
+	}
+	if k := reader.key(t, "TRUTHTABLE_DATABASE_URL"); k.Value != "set" {
+		t.Errorf("reader TRUTHTABLE_DATABASE_URL %q", k.Value)
 	}
 	for _, v := range []settingsView{reader, admin} {
 		u := *v.Runtime.Upstream.Default.URL
