@@ -290,16 +290,25 @@ export function securityHandlers(state: SecurityState, kit: HandlerKit): HttpHan
   const verification = (name: string, status: CredentialVerifyStatus): CredentialVerification => {
     const ok = status === 'ok' || status === 'unknown';
     const openrouter = name === 'openrouter';
+    // OpenRouter's key check (GET /api/v1/key) answers only for a working key: the proxy then sends
+    // the key fields, null included (limit_usd null = no spending limit, hint no_limit), and leaves
+    // them out otherwise (credentials_service.go CredentialVerificationResult.MarshalJSON).
+    const keyChecked = openrouter && status === 'ok';
+    const hints: Record<CredentialVerifyStatus, string | null> = {
+      ok: keyChecked && state.keyLimitUsd === null ? 'no_limit' : null,
+      no_credits: 'no_credits',
+      unauthorized: null,
+      unreachable: 'retryable',
+      unknown: 'not_checked',
+    };
     return {
       ok,
       status,
-      hint: status === 'no_credits' ? 'no_credits' : null,
+      hint: hints[status],
       latency_ms: status === 'unreachable' || status === 'unknown' ? null : 231,
       cost_usd: ok && status === 'ok' ? 0.00001 : null,
       cost_source: ok && status === 'ok' ? 'reported' : null,
-      // As the proxy serializes it (Go `omitempty` on pointers): a key with no limit has no limit fields.
-      ...(openrouter ? { key_label: 'TrustAgent dev' } : {}),
-      ...(openrouter && state.keyLimitUsd !== null ? { limit_usd: state.keyLimitUsd, limit_remaining_usd: state.keyLimitUsd } : {}),
+      ...(keyChecked ? { key_label: 'TrustAgent dev', limit_usd: state.keyLimitUsd, limit_remaining_usd: state.keyLimitUsd } : {}),
     };
   };
 

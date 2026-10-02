@@ -102,6 +102,20 @@ export function secVerifyView(status: CredentialVerifyStatus | null | undefined)
   return status ? (VERIFY[status] ?? NEVER_TESTED) : NEVER_TESTED;
 }
 
+const VERIFY_HINTS: Readonly<Record<string, string>> = copy.settings.verify_hint;
+
+/**
+ * Words for CredentialVerification.hint, the code the proxy sends with a key check (D86: the web
+ * renders words by code): `no_credits`, `probe_skipped`, `not_checked` or the decision-model error
+ * kind (`data_policy`, `not_found`, `timeout`, …). Null for `no_limit` (the no-limit callout says
+ * it), for no hint, and for a code without words here (the status words stand alone then).
+ */
+export function secVerifyHintText(hint: string | null | undefined): string | null {
+  if (!hint || hint === 'no_limit') return null;
+  if (hint === 'no_credits') return copy.setup.step_connect.no_credits;
+  return Object.hasOwn(VERIFY_HINTS, hint) ? VERIFY_HINTS[hint] : null;
+}
+
 type UsedBy = CredentialView['used_by'][number];
 
 const USED_BY: Record<UsedBy, string> = {

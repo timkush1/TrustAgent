@@ -26,6 +26,7 @@ import {
   secSkipReasonText,
   secStoreView,
   secUsedByLabel,
+  secVerifyHintText,
   secVerifyView,
   secWarningText,
 } from './security';
@@ -46,6 +47,21 @@ describe('security words', () => {
     expect(secUsedByLabel('decision_model')).toBe(copy.tiers.fast_check);
     for (const s of ['ingest', 'read', 'content', 'admin'] satisfies Scope[]) notRaw(secScopeView(s).label, s);
     expect(secScopeView('content').label.toLowerCase()).toContain('prompts and answers');
+  });
+
+  it('words every hint code a key check sends (credentials/verify.go Hint*, jev error kinds)', () => {
+    const kinds = ['not_checked', 'probe_skipped', 'off', 'breaker_open', 'rate_limited', 'overload', 'budget', 'credentials_unavailable', 'timeout', 'data_policy', 'not_found', 'too_large', 'bad_request', 'retryable', 'bad_content_type', 'bad_response'];
+    for (const k of kinds) {
+      const text = secVerifyHintText(k);
+      expect(text, k).toBe(copy.settings.verify_hint[k as keyof typeof copy.settings.verify_hint]);
+      notRaw(text ?? '', k);
+    }
+    expect(secVerifyHintText('no_credits')).toBe(copy.setup.step_connect.no_credits);
+    // The no-limit callout says it; no hint, or a code without words, leaves the status words alone.
+    expect(secVerifyHintText('no_limit')).toBeNull();
+    expect(secVerifyHintText(null)).toBeNull();
+    expect(secVerifyHintText('mock_fixture_missing')).toBeNull();
+    expect(secVerifyHintText('toString')).toBeNull();
   });
 
   it('has words for every admin audit action of D44', () => {
