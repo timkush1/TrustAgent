@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -203,4 +204,51 @@ func TestTriggerWakesWatch(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// TestWithIsSafeForConcurrentPreviews: two Preview impacts at once each build an overlay on the
+// same loaded calibrations while the gate keeps reading them; neither overlay writes to the
+// store's index (run with -race).
+func TestWithIsSafeForConcurrentPreviews(t *testing.T) {
+	dir := t.TempDir()
+	const snap, other = "typesafe/jev-1.13-20260917", "typesafe/jev-1.12-20260801"
+	writeCal(t, dir, "a.json", snap, day, calEntry(t, "groundedness@1", nil, decision.QualityMeasured, ramp(0, 0.9)))
+	writeCal(t, dir, "b.json", other, day, calEntry(t, "contradiction@1", nil, decision.QualityMeasured, ramp(0, 0.8)))
+	s := newStore(t, Config{Dir: dir})
+	rec := apiRecord(t, store.CalibrationOriginFit, snap, calEntry(t, "groundedness@1", nil, decision.QualityProvisional, ramp(0.2, 0.8)))
+	rec.ID = 1
+	before := s.idx.Load()
+	digests := map[string]string{}
+	for name, sc := range before.snapshots {
+		digests[name] = sc.digest
+	}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 20 {
+				l, err := s.With([]store.CalibrationRecord{*rec})
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if c := l.Lookup("contradiction@1", nil, other); c.State != policy.CalibrationMeasured {
+					t.Errorf("overlay lost the other snapshot: %+v", c)
+				}
+				if c := s.Lookup("groundedness@1", nil, snap); c.State != policy.CalibrationMeasured {
+					t.Errorf("the store changed: %+v", c)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if s.idx.Load() != before {
+		t.Fatal("With replaced the store's index")
+	}
+	for name, sc := range before.snapshots {
+		if sc.digest != digests[name] {
+			t.Errorf("With rewrote the digest of %s", name)
+		}
+	}
 }

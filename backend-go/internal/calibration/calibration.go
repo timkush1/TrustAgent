@@ -391,8 +391,11 @@ func (s *Store) With(rows []store.CalibrationRecord) (policy.CalibrationLookup, 
 	base := s.idx.Load()
 	next := &index{snapshots: map[string]*snapshotCal{}, families: map[string][]*snapshotCal{}}
 	if base != nil {
+		// Copies: finish() writes each snapshot's digest, and the store's own index is shared with
+		// the gate and with concurrent previews. The entries maps are only read.
 		for name, sc := range base.snapshots {
-			next.snapshots[name] = sc
+			cp := *sc
+			next.snapshots[name] = &cp
 		}
 	}
 	for i := range rows {
