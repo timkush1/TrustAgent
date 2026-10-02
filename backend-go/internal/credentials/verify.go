@@ -160,9 +160,9 @@ func (v *Verifier) Verify(ctx context.Context, t VerifyTarget) Verification {
 	case t.Name == "compatible":
 		out = v.probe(ctx, t, jev.BackendCompatible, false)
 	case t.Name == "anthropic":
-		out = v.listModels(ctx, t, orDefault(v.AnthropicBaseURL, anthropicAPIBase), true)
+		out = v.listModels(ctx, t, defaultIfBlank(v.AnthropicBaseURL, anthropicAPIBase), true)
 	case t.Name == "openai":
-		out = v.listModels(ctx, t, orDefault(v.OpenAIBaseURL, openAIAPIBase), false)
+		out = v.listModels(ctx, t, defaultIfBlank(v.OpenAIBaseURL, openAIAPIBase), false)
 	case strings.HasPrefix(t.Name, "upstream-"):
 		// An upstream key is the client's own LLM key: checking it would need a paid call to an
 		// arbitrary gateway, so it is stored unchecked.
@@ -206,7 +206,7 @@ func (v *Verifier) probe(ctx context.Context, t VerifyTarget, backend string, op
 		}
 	}()
 	info := c.Info()
-	out := Verification{Backend: info.Backend, Model: info.Model, EndpointHost: hostOf(info.Endpoint)}
+	out := Verification{Backend: info.Backend, Model: info.Model, EndpointHost: hostOfURL(info.Endpoint)}
 	if info.Backend == jev.BackendOff {
 		out.Status, out.Hint, out.Kind, out.Message = VerifyUnknown, HintNotChecked, jev.KindOff, info.Reason
 		return out
@@ -221,7 +221,7 @@ func (v *Verifier) probe(ctx context.Context, t VerifyTarget, backend string, op
 				out.KeyLabel, out.LimitUSD, out.LimitRemainingUSD = keyInfo(ki)
 			case !errors.Is(err, jev.ErrKeyCheckUnsupported):
 				out.Checked = true
-				return failed(out, err)
+				return failedVerification(out, err)
 			}
 		}
 	}
@@ -234,10 +234,10 @@ func (v *Verifier) probe(ctx context.Context, t VerifyTarget, backend string, op
 		if _, local := jev.SkipReason(err); local && keyOK {
 			// OpenRouter proved the key; only our own budget, limiter or breaker held the probe.
 			out.OK, out.Status, out.Hint = true, VerifyOK, HintProbeSkipped
-			out.Kind, out.Message = jev.ErrorKind(err), errText(err)
+			out.Kind, out.Message = jev.ErrorKind(err), jevMessage(err)
 			return out
 		}
-		return failed(out, err)
+		return failedVerification(out, err)
 	}
 	out.OK, out.Status = true, VerifyOK
 	if openRouter && keyOK && out.LimitUSD == nil {
@@ -246,15 +246,15 @@ func (v *Verifier) probe(ctx context.Context, t VerifyTarget, backend string, op
 	return out
 }
 
-// failed fills out from a decision-model error.
-func failed(out Verification, err error) Verification {
+// failedVerification fills out from a decision-model error.
+func failedVerification(out Verification, err error) Verification {
 	var je *jev.Error
 	if errors.As(err, &je) {
 		out.HTTPStatus = je.Status
 	}
 	out.Kind = jev.ErrorKind(err)
 	out.Status = statusOfKind(out.Kind)
-	out.Message = errText(err)
+	out.Message = jevMessage(err)
 	out.Hint = hintFor(out.Status, out.Kind)
 	return out
 }
@@ -328,7 +328,7 @@ func (v *Verifier) listModels(ctx context.Context, t VerifyTarget, base string, 
 	resp, err := hc.Do(req)
 	if err != nil {
 		out.Status = VerifyUnreachable
-		out.Kind, out.Message = jev.KindRetryable, "network error: "+unwrapURL(err).Error()
+		out.Kind, out.Message = jev.KindRetryable, "network error: "+unwrapURLErr(err).Error()
 		if ctx.Err() != nil {
 			out.Kind, out.Message = jev.KindTimeout, "the vendor did not answer in time"
 		}
@@ -468,8 +468,8 @@ func truncateChars(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// errText is the message of a decision-model error without the "jev <kind>" prefix.
-func errText(err error) string {
+// jevMessage is the message of a decision-model error without the "jev <kind>" prefix.
+func jevMessage(err error) string {
 	var je *jev.Error
 	if errors.As(err, &je) && je.Message != "" {
 		return je.Message
@@ -477,8 +477,8 @@ func errText(err error) string {
 	return err.Error()
 }
 
-// unwrapURL drops *url.Error's "Get <url>:" prefix, which repeats the URL.
-func unwrapURL(err error) error {
+// unwrapURLErr drops *url.Error's "Get <url>:" prefix, which repeats the URL.
+func unwrapURLErr(err error) error {
 	var ue *url.Error
 	if errors.As(err, &ue) {
 		return ue.Err
@@ -486,14 +486,14 @@ func unwrapURL(err error) error {
 	return err
 }
 
-func hostOf(raw string) string {
+func hostOfURL(raw string) string {
 	if u, err := url.Parse(raw); err == nil {
 		return u.Hostname()
 	}
 	return ""
 }
 
-func orDefault(s, def string) string {
+func defaultIfBlank(s, def string) string {
 	if strings.TrimSpace(s) == "" {
 		return def
 	}

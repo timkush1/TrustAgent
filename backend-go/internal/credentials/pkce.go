@@ -255,7 +255,7 @@ func ValidateReturnTo(raw string) (string, error) {
 // dashboard's /connect/callback as callback_url and the S256 challenge. openRouterBase is
 // TRUTHTABLE_OPENROUTER_BASE_URL ("" = https://openrouter.ai).
 func ConnectAuthURL(openRouterBase, callbackOrigin, challenge string) (string, error) {
-	base := connectOrigin(orDefault(openRouterBase, jev.DefaultOpenRouterBaseURL))
+	base := connectOrigin(defaultIfBlank(openRouterBase, jev.DefaultOpenRouterBaseURL))
 	if base == "" {
 		return "", errors.New("credentials: the OpenRouter base URL is not an http(s) URL")
 	}
@@ -286,7 +286,7 @@ func (e *ExchangeError) Error() string {
 // 15 s timeout; redirects are never followed. The key is returned as received and must join the
 // process redactor before any other use (D42).
 func ExchangeConnectCode(ctx context.Context, hc *http.Client, openRouterBase string, allowed []string, code, verifier string) (string, error) {
-	origin := connectOrigin(orDefault(openRouterBase, jev.DefaultOpenRouterBaseURL))
+	origin := connectOrigin(defaultIfBlank(openRouterBase, jev.DefaultOpenRouterBaseURL))
 	if origin == "" || !slices.Contains(canonicalOrigins(allowed), origin) {
 		return "", fmt.Errorf("%w: %s", errVerifyOriginRefused, origin)
 	}
@@ -304,7 +304,7 @@ func ExchangeConnectCode(ctx context.Context, hc *http.Client, openRouterBase st
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", &ExchangeError{Message: cleanText(unwrapURL(err).Error(), "")}
+		return "", &ExchangeError{Message: cleanText(unwrapURLErr(err).Error(), "")}
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
