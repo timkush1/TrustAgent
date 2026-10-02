@@ -23,6 +23,11 @@ func (o *jsObject) get(key string) (any, bool) {
 	return v, ok
 }
 
+func (o *jsObject) has(key string) bool {
+	_, ok := o.vals[key]
+	return ok
+}
+
 // entries returns the keys in JavaScript property order.
 func (o *jsObject) entries() []string {
 	var index, other []string

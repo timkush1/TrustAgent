@@ -54,6 +54,12 @@ export const LINT_CODES = [
 export const NOT_ATTACHED = 'reference_not_attached';
 
 const MAX_INSTRUCTIONS = 600;
+/**
+ * The schema's limit on choice options (criteria maxProperties): near_duplicate_options compares at
+ * most the first this many, so a document with thousands of options (which the schema refuses
+ * anyway) costs bounded work. lint.go maxComparedOptions.
+ */
+const MAX_COMPARED_OPTIONS = 255;
 const ESCAPE_KEY = /^(no_|nothing_|not_|too_short|too_generic)/;
 const ESCAPE_WHAT = /greeting|too short|nothing to|not about|no .*(subject|facts|content)/i;
 const DOUBLE_NEGATIVE = /\bnot\b.*\b(no|not|never|without)\b/;
@@ -130,10 +136,10 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
   }
 
   const criteria = question.criteria;
-  const optionKeys = spec.question.type === 'choice' && isObj(criteria) ? Object.keys(criteria) : [];
+  const optionKeys = new Set(spec.question.type === 'choice' && isObj(criteria) ? Object.keys(criteria) : []);
   if (spec.signal.riskWeights !== null && spec.question.type === 'choice') {
     for (const k of spec.signal.riskWeights.keys()) {
-      if (!optionKeys.includes(k)) error('unknown_risk_weight_option', `signal.risk_weights.${k}`, `${k} is not an option of the question`);
+      if (!optionKeys.has(k)) error('unknown_risk_weight_option', `signal.risk_weights.${k}`, `${k} is not an option of the question`);
     }
   }
   if (spec.signal.riskLevels !== null && spec.question.type === 'score' && Array.isArray(criteria)) {
@@ -185,12 +191,17 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
         warn('non_descriptive_key', `question.criteria.${k}`, `${k} does not say what the option means; the key is part of the question`);
       }
     }
-    for (let i = 0; i < entries.length; i++) {
-      for (let j = i + 1; j < entries.length; j++) {
-        const [ka, a] = entries[i];
-        const [kb, b] = entries[j];
-        if (hasNotFor(a) || hasNotFor(b)) continue;
-        if (jaccard(tokens(optionWhat(a)), tokens(optionWhat(b))) > 0.5) {
+    // An option with a not_for is never a near-duplicate (null tokens).
+    const compared = entries.slice(0, MAX_COMPARED_OPTIONS);
+    const toks = compared.map(([, o]) => (hasNotFor(o) ? null : tokens(optionWhat(o))));
+    for (let i = 0; i < compared.length; i++) {
+      for (let j = i + 1; j < compared.length; j++) {
+        const a = toks[i];
+        const b = toks[j];
+        if (a === null || b === null) continue;
+        if (jaccard(a, b) > 0.5) {
+          const [ka] = compared[i];
+          const [kb] = compared[j];
           warn('near_duplicate_options', `question.criteria.${kb}`, `${ka} and ${kb} are described almost the same way; add not_for to separate them`);
         }
       }

@@ -157,15 +157,31 @@ var draftOnly = []string{"rationale", "split_suggestions", "test_samples"}
 // maxSchemaFindings caps the schema findings of one document.
 const maxSchemaFindings = 50
 
+// maxSpecDepth bounds how deeply a document may nest objects and arrays. The schema's text trees
+// may nest without limit, and validating them costs time and memory quadratic in the depth (about
+// 1 GB of allocations for a 20 KB document nested 10,000 deep), so a deeper document is refused
+// before the schema runs. Real specs and drafts nest at most about 7 levels.
+const maxSpecDepth = 32
+
 // ValidateSpec validates an evaluator document: the JSON Schema (evaluator.v1, or
 // evaluator-draft.v1 with opts.Draft), then the hard rules and lints of LintSpec. The lints run
 // whenever the document parses as a spec, so a schema error does not hide them. A document that
-// passes the schema but not the spec parser is reported as the single hard error invalid_spec.
+// passes the schema but not the spec parser is reported as the single hard error invalid_spec. A
+// document nested more than 32 levels deep is refused with a single finding before the schema
+// runs, and near_duplicate_options compares at most the first 255 options, so the work stays
+// bounded by the document's size.
 func ValidateSpec(doc []byte, opts LintOptions) Validation {
 	v := Validation{Errors: []FieldError{}, Lints: []Lint{}}
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(doc))
 	if err != nil {
 		v.Errors = append(v.Errors, FieldError{Message: "not valid JSON: " + err.Error()})
+		return v
+	}
+	if loc := tooDeep(inst, nil); loc != nil {
+		v.Errors = append(v.Errors, FieldError{
+			Path:    instancePath(inst, loc),
+			Message: "is nested more than " + strconv.Itoa(maxSpecDepth) + " levels deep",
+		})
 		return v
 	}
 	schema, err := evaluatorSchema(opts.Draft)
@@ -206,6 +222,32 @@ func ValidateSpec(doc []byte, opts LintOptions) Validation {
 		}
 	}
 	return v
+}
+
+// tooDeep returns the location of the first object or array nested deeper than maxSpecDepth
+// (the document itself is level 1), or nil.
+func tooDeep(v any, loc []string) []string {
+	switch x := v.(type) {
+	case map[string]any:
+		if len(loc) >= maxSpecDepth {
+			return loc
+		}
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			if found := tooDeep(x[k], append(slices.Clip(loc), k)); found != nil {
+				return found
+			}
+		}
+	case []any:
+		if len(loc) >= maxSpecDepth {
+			return loc
+		}
+		for i, e := range x {
+			if found := tooDeep(e, append(slices.Clip(loc), strconv.Itoa(i))); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
 }
 
 // draftSpec turns a draft into a spec document: the draft-only members go, and the placeholder
@@ -280,14 +322,18 @@ func schemaFindings(root *jsonschema.ValidationError, inst any) []FieldError {
 			out = append(out, f)
 		}
 	}
+	owners := &keyOwners{inst: inst}
 	var walk func(e *jsonschema.ValidationError)
 	walk = func(e *jsonschema.ValidationError) {
+		if len(out) >= maxSchemaFindings {
+			return // the rest is not reported, so it is not worth locating
+		}
 		switch k := e.ErrorKind.(type) {
 		case *kind.PropertyNames:
 			// The causes validate the key as a value of its own, so their location is empty, and
 			// jsonschema v6.0.3 does not copy the object's location (it aliases a buffer that later
 			// properties overwrite): the object is found in the instance instead.
-			loc := append(keyOwner(inst, k.Property, e.SchemaURL), k.Property)
+			loc := append(slices.Clip(owners.owner(k.Property, e.SchemaURL)), k.Property)
 			if len(e.Causes) == 0 {
 				add(loc, "invalid key: '"+k.Property+"' is not allowed")
 				return
@@ -410,29 +456,18 @@ func allowedShapes(e *jsonschema.ValidationError) ([]string, string, bool) {
 	return nil, "", false
 }
 
-// keyOwner returns the location of the object that has the key: the one the schema location
-// names ("…#/properties/question/oneOf/1/properties/criteria/propertyNames" names
-// question.criteria) when it has the key, otherwise the first such object in key order.
-func keyOwner(inst any, key, schemaURL string) []string {
-	var owners [][]string
-	var find func(v any, loc []string)
-	find = func(v any, loc []string) {
-		switch x := v.(type) {
-		case map[string]any:
-			if _, ok := x[key]; ok {
-				owners = append(owners, slices.Clone(loc))
-			}
-			names := slices.Sorted(maps.Keys(x))
-			for _, k := range names {
-				find(x[k], append(loc, k))
-			}
-		case []any:
-			for i, e := range x {
-				find(e, append(loc, strconv.Itoa(i)))
-			}
-		}
-	}
-	find(inst, nil)
+// keyOwners finds the object that has a key, for the propertyNames findings. It is built for
+// one document, and indexes the document's keys on first use, so a document with many refused
+// keys costs one pass rather than one per key.
+type keyOwners struct {
+	inst  any
+	index map[string][][]string // key -> the locations of the objects that have it, in key order
+}
+
+// owner returns the location of the object that has the key: the one the schema location names
+// ("...#/properties/question/oneOf/1/properties/criteria/propertyNames" names question.criteria)
+// when it has the key, otherwise the first such object in key order.
+func (o *keyOwners) owner(key, schemaURL string) []string {
 	var named []string
 	if _, frag, ok := strings.Cut(schemaURL, "#"); ok {
 		toks := strings.Split(strings.TrimPrefix(frag, "/"), "/")
@@ -443,12 +478,38 @@ func keyOwner(inst any, key, schemaURL string) []string {
 			}
 		}
 	}
-	for _, o := range owners {
-		if slices.Equal(o, named) {
-			return o
+	cur := o.inst
+	for _, tok := range named {
+		m, _ := cur.(map[string]any)
+		cur = m[tok]
+	}
+	if m, ok := cur.(map[string]any); ok {
+		if _, has := m[key]; has {
+			return named
 		}
 	}
-	if len(owners) > 0 {
+	if o.index == nil {
+		o.index = map[string][][]string{}
+		var walk func(v any, loc []string)
+		walk = func(v any, loc []string) {
+			switch x := v.(type) {
+			case map[string]any:
+				keys := slices.Sorted(maps.Keys(x))
+				for _, k := range keys {
+					o.index[k] = append(o.index[k], loc)
+				}
+				for _, k := range keys {
+					walk(x[k], append(slices.Clip(loc), k))
+				}
+			case []any:
+				for i, e := range x {
+					walk(e, append(slices.Clip(loc), strconv.Itoa(i)))
+				}
+			}
+		}
+		walk(o.inst, nil)
+	}
+	if owners := o.index[key]; len(owners) > 0 {
 		return owners[0]
 	}
 	return nil
@@ -517,6 +578,10 @@ func instancePath(inst any, loc []string) string {
 
 const (
 	maxInstructions = 600
+	// maxComparedOptions is the schema's limit on choice options (criteria maxProperties):
+	// near_duplicate_options compares at most the first this many, so a document with thousands
+	// of options (which the schema refuses anyway) costs bounded work. lint.ts MAX_COMPARED_OPTIONS.
+	maxComparedOptions = 255
 	// jsDot is JavaScript's "." without the s flag: any character but a line terminator.
 	jsDot = `[^\n\r\x{2028}\x{2029}]`
 )
@@ -722,7 +787,7 @@ func LintSpec(s *Spec, opts LintOptions) []Lint {
 	}
 	if s.Signal.RiskWeights != nil && s.Question.Type == QuestionChoice {
 		for _, k := range riskWeightKeys(s) {
-			if !slices.Contains(optionKeys, k) {
+			if options == nil || !options.has(k) {
 				fail(CodeUnknownRiskWeightOption, "signal.risk_weights."+k, k+" is not an option of the question")
 			}
 		}
@@ -806,14 +871,21 @@ func LintSpec(s *Spec, opts LintOptions) []Lint {
 				warn(LintNonDescriptiveKey, "question.criteria."+k, k+" does not say what the option means; the key is part of the question")
 			}
 		}
-		for i := 0; i < len(optionKeys); i++ {
-			for j := i + 1; j < len(optionKeys); j++ {
-				ka, kb := optionKeys[i], optionKeys[j]
-				a, b := options.vals[ka], options.vals[kb]
-				if hasNotFor(a) || hasNotFor(b) {
+		// An option with a not_for is never a near-duplicate (nil tokens).
+		compared := optionKeys[:min(len(optionKeys), maxComparedOptions)]
+		toks := make([]map[string]bool, len(compared))
+		for i, k := range compared {
+			if o := options.vals[k]; !hasNotFor(o) {
+				toks[i] = lowerTokens(optionWhat(o))
+			}
+		}
+		for i := range compared {
+			for j := i + 1; j < len(compared); j++ {
+				if toks[i] == nil || toks[j] == nil {
 					continue
 				}
-				if jaccard(lowerTokens(optionWhat(a)), lowerTokens(optionWhat(b))) > 0.5 {
+				if jaccard(toks[i], toks[j]) > 0.5 {
+					ka, kb := compared[i], compared[j]
 					warn(LintNearDuplicateOptions, "question.criteria."+kb, ka+" and "+kb+" are described almost the same way; add not_for to separate them")
 				}
 			}

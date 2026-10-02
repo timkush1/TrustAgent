@@ -2,6 +2,7 @@ package decision
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"maps"
 	"reflect"
@@ -195,6 +196,54 @@ func TestValidateSpecLintsDespiteSchemaErrors(t *testing.T) {
 	v = ValidateSpec(withSpec(t, map[string]any{"outcomes.critical_at": 0.5}), LintOptions{})
 	if len(v.Errors) != 0 || v.Valid() || v.Hashes != nil || len(v.HardErrors()) != 1 {
 		t.Errorf("threshold order: %+v", v)
+	}
+}
+
+// TestValidateSpecBoundsWork pins the bounds that keep validation cheap on hostile documents: the
+// nesting limit (refused before the schema runs), the cap on schema findings, and the 255 options
+// that near_duplicate_options compares at most.
+func TestValidateSpecBoundsWork(t *testing.T) {
+	nested := func(depth int) []byte {
+		inner := strings.Repeat("[", depth) + `"Is it rude?"` + strings.Repeat("]", depth)
+		return withSpec(t, map[string]any{"question.instructions": json.RawMessage(inner)})
+	}
+	// The document is level 1 and question.instructions level 3, so 30 nested arrays reach level
+	// 32 and the 31st goes over it.
+	if v := ValidateSpec(nested(30), LintOptions{}); len(v.Errors) != 0 || v.Spec == nil {
+		t.Errorf("30 nested arrays are within the limit: %+v", v.Errors)
+	}
+	v := ValidateSpec(nested(10000-3), LintOptions{})
+	want := []FieldError{{Path: "question.instructions" + strings.Repeat("[0]", 30), Message: "is nested more than 32 levels deep"}}
+	if !reflect.DeepEqual(v.Errors, want) || len(v.Lints) != 0 || v.Spec != nil || v.Valid() {
+		t.Errorf("deep nesting: %+v", v)
+	}
+	if v := ValidateSpec(nested(31), LintOptions{Draft: true}); !reflect.DeepEqual(v.Errors, want) {
+		t.Errorf("deep draft: %+v", v.Errors)
+	}
+
+	// 2,000 options with invalid keys, all described the same way.
+	criteria := map[string]any{}
+	for i := range 2000 {
+		criteria[fmt.Sprintf("Same_reply_%d", i)] = "The same description"
+	}
+	doc := withSpec(t, map[string]any{
+		"question": map[string]any{"type": "choice", "instructions": "Which fits `assistant_response`?", "criteria": criteria},
+		"signal":   map[string]any{"risk_weights": map[string]any{"Same_reply_0": 1}},
+	})
+	v = ValidateSpec(doc, LintOptions{})
+	if len(v.Errors) != maxSchemaFindings {
+		t.Errorf("%d schema findings, want the cap %d", len(v.Errors), maxSchemaFindings)
+	}
+	if got := len(pathsOf(v.Lints, LintNearDuplicateOptions)); got != 255*254/2 {
+		t.Errorf("%d near-duplicate findings, want the %d pairs among the first 255 options", got, 255*254/2)
+	}
+
+	// A refused key in a text tree: the schema location names no member, so the key index finds
+	// the object (the first in key order that has the key).
+	long := strings.Repeat("k", 65)
+	v = ValidateSpec(withSpec(t, map[string]any{"question.instructions": map[string]any{"intro": "Is `assistant_response` rude?", long: "x"}}), LintOptions{})
+	if len(v.Errors) == 0 || v.Errors[0].Path != "question.instructions."+long || !strings.HasPrefix(v.Errors[0].Message, "invalid key: '"+long+"'") {
+		t.Errorf("text tree key: %+v", v.Errors)
 	}
 }
 
