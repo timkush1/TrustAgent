@@ -65,10 +65,13 @@ func (s *server) handleConnectStart(c *gin.Context) {
 	}
 	origin, err := credentials.ConnectCallbackOrigin(c.GetHeader("Origin"), s.auth.keys.AllowsOrigin, s.cfg.PublicURL)
 	if err != nil {
-		abortAPIDetails(c, http.StatusConflict, codeConflict,
-			"This dashboard address is not one the gateway allows, so OpenRouter could not return here. Open the dashboard at "+
-				s.cfg.PublicURL+" and connect again, or add this address to TRUTHTABLE_ALLOWED_ORIGINS.",
-			map[string]any{"public_url": s.cfg.PublicURL, "reason": "callback_origin"})
+		msg := "This dashboard address is not one the gateway allows, so OpenRouter could not return here. "
+		if s.cfg.PublicURL != "" {
+			msg += "Open the dashboard at " + s.cfg.PublicURL + " and connect again, or add this address to TRUTHTABLE_ALLOWED_ORIGINS."
+		} else {
+			msg += "Add this address to TRUTHTABLE_ALLOWED_ORIGINS (or set TRUTHTABLE_PUBLIC_URL) and connect again."
+		}
+		abortAPIDetails(c, http.StatusConflict, codeConflict, msg, map[string]any{"public_url": s.cfg.PublicURL, "reason": "callback_origin"})
 		return
 	}
 	nonce, pending, err := s.apply.creds.connects.Start(connectActor(c), origin, returnTo)

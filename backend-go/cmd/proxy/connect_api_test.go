@@ -238,8 +238,17 @@ func TestConnectStartRefusals(t *testing.T) {
 	}
 
 	code, b := r.call(http.MethodPost, "/api/connect/openrouter/start", credAdminKey, nil, "Origin", "https://evil.example")
-	if code != http.StatusConflict || errorCodeOf(t, b) != codeConflict || !strings.Contains(string(b), `"public_url":"`+r.env.srv.cfg.PublicURL+`"`) {
+	if code != http.StatusConflict || errorCodeOf(t, b) != codeConflict || !strings.Contains(string(b), `"public_url":"`+r.env.srv.cfg.PublicURL+`"`) ||
+		!strings.Contains(string(b), "Open the dashboard at "+r.env.srv.cfg.PublicURL+" and connect again") {
 		t.Errorf("an Origin the gateway does not allow: %d %s", code, b)
+	}
+	// Without TRUTHTABLE_PUBLIC_URL the message names no blank address.
+	public := r.env.srv.cfg.PublicURL
+	r.env.srv.cfg.PublicURL = ""
+	code, b = r.call(http.MethodPost, "/api/connect/openrouter/start", credAdminKey, nil, "Origin", "https://evil.example")
+	r.env.srv.cfg.PublicURL = public
+	if code != http.StatusConflict || strings.Contains(string(b), "dashboard at ") || !strings.Contains(string(b), "TRUTHTABLE_ALLOWED_ORIGINS") {
+		t.Errorf("no public URL: %d %s", code, b)
 	}
 
 	for _, bad := range []string{
