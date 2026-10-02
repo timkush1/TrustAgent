@@ -214,11 +214,11 @@ function RecordRow({ meta, detail, writeReason, onAdopt }: { meta: CalibrationRe
       <div className="min-w-0 space-y-1">
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium text-fg">Calibration #{meta.id}</span>
-          <Badge size="sm" icon={quality.icon} emphasis="outline">
+          <Badge size="sm" icon={quality.icon} emphasis="quiet">
             {quality.label}
           </Badge>
           {meta.active ? (
-            <Badge size="sm" emphasis="solid" icon={Gauge}>
+            <Badge size="sm" emphasis="quiet" icon={Gauge}>
               Active
             </Badge>
           ) : (

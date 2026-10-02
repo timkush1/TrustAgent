@@ -80,7 +80,7 @@ function MatchBadge({ view, decision }: { view: DecisionRequestView; decision: G
       : evalMismatchText(view.mismatch_reason);
   return (
     <div className="space-y-1">
-      <Badge icon={matches ? CheckCheck : CircleAlert} emphasis="outline">
+      <Badge icon={matches ? CheckCheck : CircleAlert} emphasis="quiet">
         {evalRecompileText(matches)}
       </Badge>
       {why ? <p className="text-xs text-fg-muted">{why}</p> : null}

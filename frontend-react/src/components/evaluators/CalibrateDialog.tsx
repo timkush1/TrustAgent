@@ -54,7 +54,7 @@ export function FitResult({ fit, simulated }: { fit: CalibrationFitResponse; sim
     <div className="space-y-4">
       <div className="space-y-1">
         <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
-          <Badge icon={QualityIcon} emphasis="outline">
+          <Badge icon={QualityIcon} emphasis="quiet">
             {quality.label}
           </Badge>
           <span>Calibration #{fit.record.id}</span>
