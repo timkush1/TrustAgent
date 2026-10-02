@@ -137,6 +137,32 @@ func (m *Manager) Reload(ctx context.Context) error {
 	return nil
 }
 
+// Stored returns the snapshot in effect and the settings rows it was built from, as stored (each
+// row holds only the fields written to it), as one consistent pair: a write builds its rows on
+// them (RowsWithLeaves) under If-Match of the snapshot's version. Without a store, or before the
+// first successful read, there are no rows.
+func (m *Manager) Stored() (*Snapshot, map[string]json.RawMessage) {
+	m.reloadMu.Lock()
+	defer m.reloadMu.Unlock()
+	rows := map[string]json.RawMessage{}
+	if m.loaded != nil {
+		for k, v := range m.loaded.rows {
+			rows[k] = slices.Clone(v)
+		}
+	}
+	return m.Current(), rows
+}
+
+// Effective returns the settings in effect for the persisted settings p: every env-managed path
+// laid over it (D33), as a snapshot would show them. A write validates its result with it.
+func (m *Manager) Effective(p RuntimeSettings) RuntimeSettings {
+	m.mu.RLock()
+	engineEnv := slices.Clone(m.engineEnv)
+	m.mu.RUnlock()
+	eff, _, _ := applyEnv(m.opts.Config, cloneSettings(p), engineEnv)
+	return eff
+}
+
 // Kick asks the reload loop (Run) for a reload without waiting for it; requests made while one
 // is pending coalesce. It never blocks, so a notification callback may call it.
 func (m *Manager) Kick() {
