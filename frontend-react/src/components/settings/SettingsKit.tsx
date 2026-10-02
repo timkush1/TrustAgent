@@ -6,6 +6,7 @@
 import { Link } from '@tanstack/react-router';
 import { CircleAlert, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { DegradedState } from '@/components/common/DegradedState';
 import { describeError } from '@/components/common/describeError';
 import { errorCodeHint, isApiError, P4_FIELD_ERROR_CODES } from '@/data/errors';
@@ -138,4 +139,22 @@ export function SettingsWarnings({ warnings, skip = [] }: { warnings: SettingsVi
       ))}
     </ul>
   );
+}
+
+/**
+ * A disabled action whose reason is written once for a group of actions (a card footer), so three
+ * buttons do not repeat the same sentence: with `reasonId`, the control is disabled and described by
+ * that element; without it, <DisabledAction> writes the reason beside the control as usual.
+ */
+export function GroupedAction({
+  reason,
+  reasonId,
+  children,
+}: {
+  reason: Reason | null;
+  reasonId?: string;
+  children: (props: { disabled: boolean; 'aria-describedby'?: string }) => ReactNode;
+}) {
+  if (reason && reasonId) return <>{children({ disabled: true, 'aria-describedby': reasonId })}</>;
+  return <DisabledAction reason={reason}>{children}</DisabledAction>;
 }
