@@ -60,8 +60,11 @@ type policyServices struct {
 	reload time.Duration
 	// evalTrigger asks run to reload the evaluators (an evaluator notification arrived).
 	evalTrigger chan struct{}
-	onPolicy    func(*policy.Policy)
-	log         *slog.Logger
+	// reloadMu serializes evaluator reloads (the poll, notifications and the writes' synchronous
+	// reload), so each change is announced exactly once.
+	reloadMu sync.Mutex
+	onPolicy func(*policy.Policy)
+	log      *slog.Logger
 }
 
 // newPolicyServices loads the evaluator registry (built-ins, files, database) and the policy
@@ -119,6 +122,13 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 		return nil, err
 	}
 	ps.evals = newEvaluatorsAPI(reg, engine.Current, labels, w.runtime, log)
+	ps.evals.includeMock = w.cfg.DemoMode
+	if w.cfg.Jev.CharsPerToken > 0 {
+		ps.evals.cpt = w.cfg.Jev.CharsPerToken
+	}
+	if w.pg != nil {
+		ps.evals.writes = &evaluatorWrites{store: w.pg, channel: w.channel, reload: ps.reloadNow}
+	}
 	return ps, nil
 }
 
@@ -167,27 +177,35 @@ func (ps *policyServices) notified(payload string) {
 	}
 }
 
-// reloadEvaluators re-reads the stored evaluators, announces new versions, and has the engine
-// retry a policy version that named an evaluator this replica had not loaded yet.
+// reloadEvaluators re-reads the stored evaluators in the background (the poll and notifications).
 func (ps *policyServices) reloadEvaluators(ctx context.Context) {
-	before := ps.Registry.Refs()
 	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	changed, err := ps.Registry.Reload(rctx)
-	if err != nil {
-		if ctx.Err() == nil { // not shutting down
-			ps.log.Warn("evaluator reload failed", "err", err)
-		}
-		return
+	if err := ps.reloadNow(rctx); err != nil && ctx.Err() == nil { // not shutting down
+		ps.log.Warn("evaluator reload failed", "err", err)
 	}
-	if !changed {
-		return
+}
+
+// reloadNow re-reads the stored evaluators, announces new versions and archive changes
+// (evaluator_updated, D61), and has the engine retry a policy version that named an evaluator
+// this replica had not loaded yet. The evaluator writes call it before they reply.
+func (ps *policyServices) reloadNow(ctx context.Context) error {
+	ps.reloadMu.Lock()
+	defer ps.reloadMu.Unlock()
+	before := ps.Registry.Refs()
+	archived := map[string]bool{}
+	for _, e := range ps.Registry.Evaluators(true) {
+		archived[e.ID] = e.Archived
+	}
+	changed, err := ps.Registry.Reload(ctx)
+	if err != nil || !changed {
+		return err
 	}
 	if ps.Engine != nil {
 		ps.Engine.Revalidate()
 	}
 	if ps.hub == nil {
-		return
+		return nil
 	}
 	known := map[string]bool{}
 	for _, ref := range before {
@@ -207,6 +225,12 @@ func (ps *policyServices) reloadEvaluators(ctx context.Context) {
 		}
 		ps.publish("evaluator_updated", map[string]any{"id": id, "version": v, "origin": origin})
 	}
+	for _, e := range ps.Registry.Evaluators(true) {
+		if was, ok := archived[e.ID]; ok && was != e.Archived {
+			ps.publish("evaluator_updated", map[string]any{"id": e.ID, "version": e.LatestVersion, "origin": e.Origin})
+		}
+	}
+	return nil
 }
 
 func (ps *policyServices) policyUpdated(u policy.Update) {

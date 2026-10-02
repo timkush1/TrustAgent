@@ -202,19 +202,177 @@ func (s *PostgresStore) EvaluatorsFingerprint(ctx context.Context) (string, erro
 	return fmt.Sprintf("%d|%s|%d|%s", nEval, at(evalAt), nVer, at(verAt)), nil
 }
 
-// LabelCounts are the human labels of one labels target.
-type LabelCounts struct {
-	N   int
-	Pos int
-	Neg int
+// Errors of the evaluator writes (SPEC §2.4 rows 31-33, P4-PLAN D57).
+var (
+	// ErrEvaluatorExists: POST /api/evaluators named an id that is already registered.
+	ErrEvaluatorExists = errors.New("store: an evaluator with this id exists")
+	// ErrEvaluatorBuiltin: built-in evaluators take no dashboard versions ("Duplicate & edit"
+	// forks them instead).
+	ErrEvaluatorBuiltin = errors.New("store: built-in evaluators are read-only")
+	// ErrEvaluatorFileManaged: an evaluator from config/evaluators changes through its file.
+	ErrEvaluatorFileManaged = errors.New("store: the evaluator is file-managed")
+)
+
+// StaleEvaluatorError is returned when a new version's base is not the latest version any more
+// (another writer saved one first).
+type StaleEvaluatorError struct {
+	ID     string
+	Base   int
+	Latest int
 }
 
-// HumanLabelCounts counts the human and public-dataset labels of target ("<id>@<version>"):
-// should_fire labels are positives, should_not_fire negatives (SPEC §2.3 labels).
-func (s *PostgresStore) HumanLabelCounts(ctx context.Context, target string) (LabelCounts, error) {
-	var c LabelCounts
-	err := s.pool.QueryRow(ctx, `SELECT count(*),
-		count(*) FILTER (WHERE label = 'should_fire'), count(*) FILTER (WHERE label = 'should_not_fire')
-		FROM labels WHERE target = $1 AND label IN ('should_fire', 'should_not_fire')`, target).Scan(&c.N, &c.Pos, &c.Neg)
-	return c, err
+func (e *StaleEvaluatorError) Error() string {
+	return fmt.Sprintf("store: evaluator %s is at version %d, not %d", e.ID, e.Latest, e.Base)
+}
+
+// evaluatorColumns are the evaluators columns scanEvaluator reads.
+const evaluatorColumns = `id, name, category, origin, latest_version, archived, created_at, updated_at`
+
+func scanEvaluator(row pgx.Row) (*EvaluatorRecord, error) {
+	var e EvaluatorRecord
+	if err := row.Scan(&e.ID, &e.Name, &e.Category, &e.Origin, &e.LatestVersion, &e.Archived, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		return nil, err
+	}
+	e.CreatedAt, e.UpdatedAt = e.CreatedAt.UTC(), e.UpdatedAt.UTC()
+	return &e, nil
+}
+
+// insertEvaluatorVersion adds one version row in tx, fills v.CreatedAt and notifies
+// "evaluator_versions:<ref>" on channel at commit.
+func insertEvaluatorVersion(ctx context.Context, tx pgx.Tx, channel string, v *EvaluatorVersionRecord) error {
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO evaluator_versions (evaluator_id, version, spec, spec_sha256, question_sha256, calibration_key, created_by, changelog)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at`,
+		v.EvaluatorID, v.Version, v.Spec, v.SpecSHA256, v.QuestionSHA256, v.CalibrationKey, v.CreatedBy, v.Changelog,
+	).Scan(&v.CreatedAt); err != nil {
+		return fmt.Errorf("insert evaluator version %s: %w", v.Ref(), err)
+	}
+	v.CreatedAt = v.CreatedAt.UTC()
+	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, configChannel(channel), "evaluator_versions:"+v.Ref()); err != nil {
+		return fmt.Errorf("notify evaluator version: %w", err)
+	}
+	return nil
+}
+
+func configChannel(channel string) string {
+	if channel == "" {
+		return ConfigChannel
+	}
+	return channel
+}
+
+// CreateEvaluator stores a new dashboard evaluator with its first version and the admin audit row,
+// in one transaction (POST /api/evaluators). An id that is already stored, archived or not, is
+// ErrEvaluatorExists. v.CreatedAt is filled in.
+func (s *PostgresStore) CreateEvaluator(ctx context.Context, channel string, e EvaluatorRecord, v *EvaluatorVersionRecord, audit AdminAuditEntry) error {
+	if e.ID == "" || e.ID != v.EvaluatorID || v.Version < 1 || len(v.Spec) == 0 {
+		return fmt.Errorf("create evaluator: invalid version %q@%d", v.EvaluatorID, v.Version)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("create evaluator: begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO evaluators (id, name, category, origin, latest_version)
+		VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
+		e.ID, e.Name, e.Category, EvaluatorOriginDashboard, v.Version)
+	if err != nil {
+		return fmt.Errorf("create evaluator %s: %w", e.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEvaluatorExists
+	}
+	if err := insertEvaluatorVersion(ctx, tx, channel, v); err != nil {
+		return err
+	}
+	if err := InsertAdminAudit(ctx, tx, audit); err != nil {
+		return fmt.Errorf("create evaluator: audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("create evaluator: commit: %w", err)
+	}
+	return nil
+}
+
+// CreateEvaluatorVersion stores the next version of a dashboard evaluator with the admin audit row,
+// in one transaction (POST /api/evaluators/:id/versions). The evaluator row is locked, so of two
+// writers that start from the same base the second gets a *StaleEvaluatorError (compare and swap
+// on latest_version); v.Version must be base+1. It refuses built-in evaluators
+// (ErrEvaluatorBuiltin) and file ones (ErrEvaluatorFileManaged); an unknown id is ErrNotFound.
+// v.CreatedAt is filled in.
+func (s *PostgresStore) CreateEvaluatorVersion(ctx context.Context, channel string, base int, name, category string, v *EvaluatorVersionRecord, audit AdminAuditEntry) error {
+	if v.EvaluatorID == "" || v.Version != base+1 || base < 1 || len(v.Spec) == 0 {
+		return fmt.Errorf("create evaluator version: invalid version %q@%d on base %d", v.EvaluatorID, v.Version, base)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("create evaluator version: begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	var origin string
+	var latest int
+	err = tx.QueryRow(ctx, `SELECT origin, latest_version FROM evaluators WHERE id = $1 FOR UPDATE`, v.EvaluatorID).Scan(&origin, &latest)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return ErrNotFound
+	case err != nil:
+		return fmt.Errorf("create evaluator version: %w", err)
+	case origin == EvaluatorOriginBuiltin:
+		return ErrEvaluatorBuiltin
+	case origin == EvaluatorOriginFile:
+		return ErrEvaluatorFileManaged
+	case latest != base:
+		return &StaleEvaluatorError{ID: v.EvaluatorID, Base: base, Latest: latest}
+	}
+	if err := insertEvaluatorVersion(ctx, tx, channel, v); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE evaluators SET name = $2, category = $3, latest_version = $4, updated_at = now() WHERE id = $1`,
+		v.EvaluatorID, name, category, v.Version); err != nil {
+		return fmt.Errorf("create evaluator version: %w", err)
+	}
+	if err := InsertAdminAudit(ctx, tx, audit); err != nil {
+		return fmt.Errorf("create evaluator version: audit: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("create evaluator version: commit: %w", err)
+	}
+	return nil
+}
+
+// SetEvaluatorArchived archives or restores an evaluator with the admin audit row, in one
+// transaction (POST /api/evaluators/:id/archive), and notifies "evaluators:<id>". Setting the flag
+// it already has changes nothing and writes no audit row. An unknown id is ErrNotFound.
+func (s *PostgresStore) SetEvaluatorArchived(ctx context.Context, channel, id string, archived bool, audit AdminAuditEntry) (*EvaluatorRecord, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("archive evaluator: begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	cur, err := scanEvaluator(tx.QueryRow(ctx, `SELECT `+evaluatorColumns+` FROM evaluators WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("archive evaluator: %w", err)
+	}
+	if cur.Archived == archived {
+		return cur, nil
+	}
+	rec, err := scanEvaluator(tx.QueryRow(ctx, `UPDATE evaluators SET archived = $2, updated_at = now() WHERE id = $1
+		RETURNING `+evaluatorColumns, id, archived))
+	if err != nil {
+		return nil, fmt.Errorf("archive evaluator: %w", err)
+	}
+	if err := InsertAdminAudit(ctx, tx, audit); err != nil {
+		return nil, fmt.Errorf("archive evaluator: audit: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, configChannel(channel), "evaluators:"+id); err != nil {
+		return nil, fmt.Errorf("notify evaluator: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("archive evaluator: commit: %w", err)
+	}
+	return rec, nil
 }

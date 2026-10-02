@@ -348,6 +348,15 @@ func (d TraceDetail) Redact() TraceDetail {
 		a := d.AuditDetail.Redact()
 		d.AuditDetail = &a
 	}
+	if d.Labels != nil {
+		// A label note is free text that can quote the answer (SPEC §2.1: text needs content).
+		labels := make([]LabelView, len(d.Labels))
+		for i, l := range d.Labels {
+			l.Note = nil
+			labels[i] = l
+		}
+		d.Labels = labels
+	}
 	return d
 }
 

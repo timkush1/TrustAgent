@@ -424,8 +424,8 @@ func (d *DryRun) input(p *Policy, row *store.ReplayRow, rec *recordedDecision, o
 			in.Answers[qid] = sr.Answer
 		}
 		in.Evaluators = append(in.Evaluators, decision.EvaluatorInput{Ref: ref, Spec: spec, Stage: stage, Internal: internal, Thresholds: th})
-		if cal := d.Calibrations.Lookup(ref, resolvedParams(spec, params), snapshot); cal.Table != nil {
-			in.Calibration[ref] = decision.CalibrationEntry{Table: cal.Table, Quality: cal.Quality, State: cal.State}
+		if cal, ok := DecideCalibration(d.Calibrations.Lookup(ref, resolvedParams(spec, params), snapshot)); ok {
+			in.Calibration[ref] = cal
 		}
 		return ""
 	}
@@ -565,9 +565,19 @@ func (d *DryRun) caveats(res *DryRunResult, notes map[string]bool, skipped map[s
 
 // Preview replays proposed against the active policy over the window (POST /api/policies/dry-run).
 func (e *Engine) Preview(ctx context.Context, src ReplaySource, proposed *Policy, window string, limit int) (*DryRunResult, error) {
+	return e.PreviewWith(ctx, src, proposed, window, limit, nil)
+}
+
+// PreviewWith is Preview with cal as the calibration lookup of both replays instead of the
+// runtime's (nil keeps the runtime's): the dry-run's calibration_ids, which preview a calibration
+// before it is activated (D62).
+func (e *Engine) PreviewWith(ctx context.Context, src ReplaySource, proposed *Policy, window string, limit int, cal CalibrationLookup) (*DryRunResult, error) {
 	rt := e.Runtime()
+	if cal == nil {
+		cal = rt.Calibrations
+	}
 	d := &DryRun{
-		Current: e.Current(), Proposed: proposed, Specs: e.cfg.Env.Specs, Calibrations: rt.Calibrations,
+		Current: e.Current(), Proposed: proposed, Specs: e.cfg.Env.Specs, Calibrations: cal,
 		Recorded: e.recordedPolicy, Window: window, Limit: limit, Now: e.cfg.Now(),
 	}
 	res, err := d.Run(ctx, src)

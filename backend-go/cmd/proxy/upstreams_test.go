@@ -7,12 +7,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/runtimecfg"
 	"github.com/truthtable/backend-go/internal/upstream"
 )
 
@@ -133,5 +136,107 @@ func TestNewUpstreamsWithoutFallbackAndBadURLs(t *testing.T) {
 		if _, err := newUpstreams(cfg, auth, nil, quiet); err == nil || !strings.HasPrefix(err.Error(), key+": ") {
 			t.Errorf("%s=%s: %v", key, value, err)
 		}
+	}
+}
+
+// TestUpstreamsFollowTheRuntimeSettings (D41): binding a dashboard credential to an upstream
+// rebuilds the set atomically and turns inject mode on (the authenticator then refuses open
+// ingest); a snapshot that changes nothing keeps the set; an env key wins over a binding; and
+// unbinding returns the upstream to passthrough.
+func TestUpstreamsFollowTheRuntimeSettings(t *testing.T) {
+	probe := newUpstreamsProbe(t)
+	cfg := config.LoadWith(config.LoadOptions{Environ: []string{
+		"TRUTHTABLE_UPSTREAM_URL=" + probe.URL + "/openai",
+		"TRUTHTABLE_ANTHROPIC_UPSTREAM_URL=" + probe.URL + "/anthropic",
+		"TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY=sk-ant-env-0001",
+	}})
+	auth := authz.New(nil, "open")
+	src, err := newUpstreams(cfg, auth, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := strings.TrimSuffix(probe.URL, "/")
+	secrets := runtimecfg.CredentialSet{}
+	src.keyFunc = func(name string) jev.KeyFunc {
+		return func(_ context.Context, o string) (string, error) {
+			c, ok := secrets[name]
+			if !ok {
+				return "", runtimecfg.ErrCredentialNotFound
+			}
+			if !slices.Contains(c.AllowedOrigins, o) {
+				return "", runtimecfg.ErrHostNotAllowed
+			}
+			return c.Secret, nil
+		}
+	}
+	snap := runtimecfg.NewStatic(cfg).Current()
+	src.apply(snap)
+	boot := src.Current()
+	if boot.OpenAI.Injecting() || !boot.Anthropic.Injecting() {
+		t.Fatalf("boot: openai inject %v, anthropic inject %v", boot.OpenAI.Injecting(), boot.Anthropic.Injecting())
+	}
+
+	secrets["upstream-default"] = runtimecfg.Credential{Name: "upstream-default", Secret: "sk-test-upstream-dash-0001", AllowedOrigins: []string{origin}}
+	secrets["upstream-anthropic"] = runtimecfg.Credential{Name: "upstream-anthropic", Secret: "sk-test-anthropic-dash-0001", AllowedOrigins: []string{origin}}
+	bound := *snap
+	name, anth := "upstream-default", "upstream-anthropic"
+	bound.Settings.Upstream.Default.Credential = &name
+	bound.Settings.Upstream.Anthropic.Credential = &anth
+	src.apply(&bound)
+	set := src.Current()
+	if set == boot || !set.OpenAI.Injecting() {
+		t.Fatal("binding a credential did not rebuild the default upstream in inject mode")
+	}
+	if !auth.Injecting() || auth.IngestMode() != authz.IngestKeys {
+		t.Fatalf("authenticator: injecting %v, ingest %s; want inject mode and keys", auth.Injecting(), auth.IngestMode())
+	}
+	client := http.Header{"Authorization": {"Bearer sk-client-own-0001"}, "X-Api-Key": {"sk-ant-client-own"}}
+	if h := probe.call(t, set.OpenAI, client); h.Get("Authorization") != "Bearer sk-test-upstream-dash-0001" {
+		t.Errorf("default upstream got Authorization %q, want the dashboard key", h.Get("Authorization"))
+	}
+	if h := probe.call(t, set.Anthropic, client); h.Get("X-Api-Key") != "sk-ant-env-0001" {
+		t.Errorf("anthropic upstream got %q, want the env key (env wins over the binding)", h.Get("X-Api-Key"))
+	}
+
+	same := bound
+	same.Version++
+	same.Settings.Budgets.DecisionUSDDay = 7
+	src.apply(&same)
+	if src.Current() != set {
+		t.Fatal("an unrelated change rebuilt the upstreams")
+	}
+
+	// D41b: bindings.upstream_default is the same field.
+	viaBinding := *snap
+	viaBinding.Settings.Bindings.UpstreamDefault = &name
+	src.apply(&viaBinding)
+	if h := probe.call(t, src.Current().OpenAI, client); h.Get("Authorization") != "Bearer sk-test-upstream-dash-0001" {
+		t.Errorf("bindings.upstream_default: Authorization %q", h.Get("Authorization"))
+	}
+
+	src.apply(snap)
+	if src.Current().OpenAI.Injecting() {
+		t.Fatal("unbinding left the default upstream in inject mode")
+	}
+	if h := probe.call(t, src.Current().OpenAI, client); h.Get("Authorization") != "Bearer sk-client-own-0001" {
+		t.Errorf("passthrough after unbinding: Authorization %q, want the client's own", h.Get("Authorization"))
+	}
+}
+
+// TestUpstreamsRebuildFailureKeepsTheSet: a snapshot whose URL the client refuses leaves the set in
+// effect alone.
+func TestUpstreamsRebuildFailureKeepsTheSet(t *testing.T) {
+	cfg := config.LoadWith(config.LoadOptions{Environ: []string{}})
+	src, err := newUpstreams(cfg, authz.New(nil, "keys"), nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := src.Current()
+	bad := *runtimecfg.NewStatic(cfg).Current()
+	u := "ftp://files.example"
+	bad.Settings.Upstream.Default.URL = &u
+	src.apply(&bad)
+	if src.Current() != set {
+		t.Fatal("a refused URL replaced the upstream set")
 	}
 }
