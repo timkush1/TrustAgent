@@ -295,8 +295,33 @@ func (b *LLMBudget) Reserve(usd float64, component string) (settle func(actualUS
 // HeadroomUSD is the LLM spend still allowed today (+Inf without a cap).
 func (b *LLMBudget) HeadroomUSD() float64 { return b.l.llm.Headroom(true) }
 
-// ObserveAudit folds the real cost of an audit the engine answered into the audit estimate.
-func (b *LLMBudget) ObserveAudit(records []*pb.CostRecord) { b.l.audits.Observe(RealCostUSD(records)) }
+// ObserveAudit folds the real cost of an audit the engine answered into the audit estimate. An
+// audit whose cost is not known is no observation: one without cost records (an engine that does
+// not report them) or with a record no price covers (cost_source unknown). Counting those as $0
+// would wear the estimate down to nothing for a judge the price table does not know, where D48
+// holds the reference price instead.
+func (b *LLMBudget) ObserveAudit(records []*pb.CostRecord) {
+	if !costKnown(records) {
+		return
+	}
+	b.l.audits.Observe(RealCostUSD(records))
+}
+
+// costKnown reports whether records carry a known cost: at least one record, and none whose cost
+// no price covers. Simulated records are known ($0).
+func costKnown(records []*pb.CostRecord) bool {
+	n := 0
+	for _, r := range records {
+		if r == nil {
+			continue
+		}
+		if r.GetCostSource() == decision.CostUnknown {
+			return false
+		}
+		n++
+	}
+	return n > 0
+}
 
 // State is the LLM budget's day.
 func (b *LLMBudget) State() BudgetState { return b.l.llm.State() }

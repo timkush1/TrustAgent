@@ -348,3 +348,36 @@ func TestSeedLedgerAfterARestart(t *testing.T) {
 		t.Error("a capped ledger reported unlimited headroom")
 	}
 }
+
+// Only audits whose cost is known teach the audit estimate (D48): an audit without cost records,
+// or with a record no price covers, leaves the estimate where it was; a simulated record is a
+// known $0.
+func TestCostLedgerObservesOnlyKnownAuditCosts(t *testing.T) {
+	l := newTestLedger(t, LedgerConfig{Judge: func() (string, string) { return "anthropic", "claude-haiku-4-5" }})
+	llm := l.LLM()
+	seed := llm.EstimateAuditUSD()
+	if !near(seed, 0.0355) {
+		t.Fatalf("seed = %v", seed)
+	}
+	llm.ObserveAudit(nil)
+	llm.ObserveAudit([]*pb.CostRecord{nil})
+	llm.ObserveAudit([]*pb.CostRecord{
+		{Component: "deep_audit_decompose", CostUsd: 0.01, CostSource: decision.CostComputed},
+		{Component: "deep_audit_verify", CostSource: decision.CostUnknown},
+	})
+	if got := llm.EstimateAuditUSD(); got != seed {
+		t.Errorf("audits of unknown cost moved the estimate to %v", got)
+	}
+	llm.ObserveAudit([]*pb.CostRecord{
+		{Component: "deep_audit_decompose", CostUsd: 0.01, CostSource: decision.CostReported},
+		{Component: "deep_audit_verify", CostUsd: 0.0055, CostSource: decision.CostComputed},
+	})
+	want := 0.2*0.0155 + 0.8*seed
+	if got := llm.EstimateAuditUSD(); !near(got, want) {
+		t.Errorf("after a known audit = %v, want %v", got, want)
+	}
+	llm.ObserveAudit([]*pb.CostRecord{{Component: "deep_audit_verify", CostUsd: 5, CostSource: decision.CostSimulated}})
+	if got := llm.EstimateAuditUSD(); !near(got, 0.8*want) {
+		t.Errorf("after a simulated audit = %v, want %v", got, 0.8*want)
+	}
+}
