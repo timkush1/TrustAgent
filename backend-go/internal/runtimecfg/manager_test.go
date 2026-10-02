@@ -236,9 +236,12 @@ func TestApplyBindingsBackendPinnedComesFirst(t *testing.T) {
 	if !slices.Equal(applied, []string{TargetJudge}) || !slices.Equal(skipped, []BindingSkip{{TargetDecisionModel, SkipBackendPinned}}) {
 		t.Errorf("applied %v skipped %v", applied, skipped)
 	}
-	// The env-pinned mock backend is not flipped; a persisted mock judge is (D76).
+	// A stored mock backend under the env pin is not flipped; a persisted mock judge is (D76).
 	p := s.Persisted
-	p.Judge.Provider = "mock"
+	if p.DecisionModel.Backend != "auto" {
+		t.Errorf("the write base holds the built-in backend, not the env one: %q", p.DecisionModel.Backend)
+	}
+	p.DecisionModel.Backend, p.Judge.Provider = "mock", "mock"
 	out, _, _ := ApplyBindings(p, credentials.NameOpenRouter, []string{TargetJudge}, s.EnvManaged, false)
 	if out.DecisionModel.Backend != "mock" || out.Judge.Provider != "auto" {
 		t.Errorf("after the bind %+v %+v", out.DecisionModel, out.Judge)
@@ -290,6 +293,105 @@ func TestChangedFieldsCarriesOnlyTheChangedFields(t *testing.T) {
 	if rows, err := ChangedFields(out, out); err != nil || len(rows) != 0 {
 		t.Errorf("no change %s %v", rows, err)
 	}
+}
+
+// TestPersistedNeverHoldsEnvValues: the write base (Snapshot.Persisted) is the built-in defaults
+// and the stored rows; an env value shows only in Settings, so a whole-row write to a sibling
+// field (ChangedRows) never copies it into a row, where it would outlive the env var (D33).
+func TestPersistedNeverHoldsEnvValues(t *testing.T) {
+	cfg := loadCfg("TRUTHTABLE_JEV_MODEL=env-model", "TRUTHTABLE_JEV_BACKEND=typesafe", "TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY=9",
+		"TRUTHTABLE_UPSTREAM_AUTH_HEADER=api-key")
+	builtin := NewStatic(loadCfg()).Current().Settings
+	fs := newFakeStore()
+	fs.rows.Rows["budgets"] = json.RawMessage(`{"llm_usd_day":4}`)
+	m := New(Options{Config: cfg, Store: fs, Master: master(t, 9), Log: quietLog()})
+	if err := m.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Current()
+	if *s.Settings.DecisionModel.Model != "env-model" || s.Settings.DecisionModel.Backend != "typesafe" ||
+		s.Settings.Budgets.DecisionUSDDay != 9 || s.Settings.Upstream.Default.AuthHeader != "api-key" {
+		t.Errorf("settings in effect %+v %+v %+v", s.Settings.DecisionModel, s.Settings.Budgets, s.Settings.Upstream.Default)
+	}
+	p := s.Persisted
+	if p.DecisionModel.Model != nil || p.DecisionModel.Backend != builtin.DecisionModel.Backend ||
+		p.Budgets.DecisionUSDDay != builtin.Budgets.DecisionUSDDay || p.Budgets.LLMUSDDay != 4 ||
+		p.Upstream.Default.AuthHeader != builtin.Upstream.Default.AuthHeader {
+		t.Errorf("persisted %+v %+v %+v: built-in defaults and the stored row only", p.DecisionModel, p.Budgets, p.Upstream.Default)
+	}
+	// A write to sibling fields starts from Persisted: the env values never reach the rows.
+	after := p
+	path := "/v2/decide"
+	after.DecisionModel.Path = &path
+	after.Budgets.LLMUSDDay = 5
+	after.Upstream.Default.URL = &path
+	rows, err := ChangedRows(p, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, raw := range rows {
+		for _, envValue := range []string{"env-model", "typesafe", `"decision_usd_day":9`, `"auth_header":"api-key"`} {
+			if strings.Contains(string(raw), envValue) {
+				t.Errorf("row %s = %s copies the env value %q", k, raw, envValue)
+			}
+		}
+	}
+	if len(rows) != 3 {
+		t.Errorf("rows %s", rows)
+	}
+}
+
+// TestEnvCompatibleKeyFollowsTheBackendInEffect: TRUTHTABLE_JEV_API_KEY serves an explicit backend
+// (SPEC §7.5), whether the env or a settings row chose it, and goes only to that backend's vendor
+// origin or to the env base URL; a base URL from a settings row never widens its origins.
+func TestEnvCompatibleKeyFollowsTheBackendInEffect(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		env   []string
+		row   string
+		allow []string
+		deny  []string
+	}{
+		{"row backend openrouter", nil, `{"backend":"openrouter-decisions"}`, []string{"https://openrouter.ai"}, []string{"https://api.typesafe.ai"}},
+		{"row backend typesafe", nil, `{"backend":"typesafe"}`, []string{"https://api.typesafe.ai"}, []string{"https://openrouter.ai"}},
+		{"row base URL", nil, `{"backend":"compatible","base_url":"https://evil.example.com","model":"m"}`, nil,
+			[]string{"https://evil.example.com", "https://openrouter.ai"}},
+		{"env base URL wins over a row backend", []string{"TRUTHTABLE_JEV_BASE_URL=https://gw.example.com"}, `{"backend":"typesafe"}`,
+			[]string{"https://gw.example.com"}, []string{"https://api.typesafe.ai"}},
+		{"auto", nil, `{}`, nil, []string{"https://openrouter.ai", "https://api.typesafe.ai"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := newFakeStore()
+			fs.rows.Rows["decision_model"] = json.RawMessage(tc.row)
+			env := append([]string{"TRUTHTABLE_JEV_API_KEY=" + noPatternSecret}, tc.env...)
+			m := New(Options{Config: loadCfg(env...), Store: fs, Master: master(t, 10), Log: quietLog()})
+			if err := m.Reload(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if c := m.Current().Credentials[credentials.NameCompatible]; c.Source != credentials.SourceEnv || !slices.Equal(c.AllowedOrigins, nonNil(tc.allow)) {
+				t.Errorf("origins %v, want %v", c.AllowedOrigins, tc.allow)
+			}
+			key := m.KeyFunc(credentials.NameCompatible)
+			for _, o := range tc.allow {
+				if got, err := key(ctx, o); err != nil || got != noPatternSecret {
+					t.Errorf("%s refused: %v", o, err)
+				}
+			}
+			for _, o := range tc.deny {
+				if _, err := key(ctx, o); !errors.Is(err, ErrHostNotAllowed) {
+					t.Errorf("%s: %v, want ErrHostNotAllowed", o, err)
+				}
+			}
+		})
+	}
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func TestStoredCredentialsOpenAndUndecryptableAreListed(t *testing.T) {

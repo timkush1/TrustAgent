@@ -74,6 +74,37 @@ func envKeysSet(cfg *config.Config) map[string]bool {
 	return out
 }
 
+// defaultsConfig loads the registry defaults alone: no process env and no .env file.
+func defaultsConfig(cfg *config.Config) *config.Config {
+	if cfg == nil {
+		return nil
+	}
+	off := false
+	return config.LoadWith(config.LoadOptions{Environ: []string{}, AutoDotenv: &off, Registry: cfg.Registry()})
+}
+
+// builtinSettings are the runtime settings before any env var or settings row: the env seed with
+// every path that a non-empty env var sets put back to its registry default. A non-empty env var
+// always wins over a row (D33), so the env seed never shows under a row; leaving it out of the
+// write base (Snapshot.Persisted) keeps an env value from being copied into a row by a write to a
+// sibling field. Each call returns fresh pointers, so overlaying rows never writes through to a
+// shared value.
+func (m *Manager) builtinSettings() RuntimeSettings {
+	cfg := m.opts.Config
+	s := seedSettings(cfg)
+	if cfg == nil || m.defaults == nil {
+		return s
+	}
+	def := seedSettings(m.defaults)
+	set := envKeysSet(cfg)
+	for _, p := range envPaths {
+		if p.key != "" && set[p.key] {
+			p.set(&s, &def)
+		}
+	}
+	return s
+}
+
 // applyEnv lays every env-managed value over persisted and returns the settings in effect, the
 // env-managed paths in display order, and the env vars behind each.
 func applyEnv(cfg *config.Config, persisted RuntimeSettings, engineEnv []string) (RuntimeSettings, []string, map[string][]string) {
@@ -201,10 +232,11 @@ func jevAPIKeyVar(cfg *config.Config) string {
 }
 
 // envCredentials are the Go-side env credentials (D29), which win over dashboard rows of the same
-// name. Vendor keys go to their vendor origins; the compatible key to the env decision endpoint;
-// an upstream key to the origin of its env (or default) upstream URL. Those URLs come from the
-// operator's env, so they are trusted as given; a dashboard URL never widens an env key's origins.
-func (m *Manager) envCredentials() CredentialSet {
+// name. Vendor keys go to their vendor origins; the compatible key to the env decision endpoint,
+// or to the vendor endpoint of the decision backend in effect (backend); an upstream key to the
+// origin of its env (or default) upstream URL. Those URLs come from the operator's env, so they
+// are trusted as given; a dashboard URL never widens an env key's origins.
+func (m *Manager) envCredentials(backend string) CredentialSet {
 	cfg := m.opts.Config
 	out := CredentialSet{}
 	if cfg == nil {
@@ -220,7 +252,7 @@ func (m *Manager) envCredentials() CredentialSet {
 	}
 	add(credentials.NameOpenRouter, cfg.Jev.OpenRouterKey, credentials.VendorOrigins(credentials.NameOpenRouter, cfg.Jev.OpenRouterBaseURL))
 	add(credentials.NameTypeSafe, cfg.Jev.TypeSafeKey, credentials.VendorOrigins(credentials.NameTypeSafe, ""))
-	add(credentials.NameCompatible, cfg.Jev.APIKey, compatibleEnvOrigins(cfg))
+	add(credentials.NameCompatible, cfg.Jev.APIKey, compatibleEnvOrigins(cfg, backend))
 	upstreamURL := cfg.UpstreamURL
 	if upstreamURL == "" {
 		upstreamURL = config.DefaultUpstreamURL
@@ -231,13 +263,16 @@ func (m *Manager) envCredentials() CredentialSet {
 	return out
 }
 
-// compatibleEnvOrigins are where TRUTHTABLE_JEV_API_KEY may go: the env decision base URL when
-// one is set, otherwise the vendor endpoint of an explicitly chosen vendor backend.
-func compatibleEnvOrigins(cfg *config.Config) []string {
+// compatibleEnvOrigins are where TRUTHTABLE_JEV_API_KEY may go (SPEC §7.5: only for an explicit
+// backend or compatible): the env decision base URL when one is set, otherwise the vendor
+// endpoint of the vendor backend in effect, whether the env or a settings row chose it. A vendor
+// origin is a fixed table, so a dashboard choice of backend cannot send the key anywhere else; a
+// dashboard base URL never counts.
+func compatibleEnvOrigins(cfg *config.Config, backend string) []string {
 	if cfg.Jev.BaseURL != "" {
 		return originOf(cfg.Jev.BaseURL)
 	}
-	switch cfg.Jev.Backend {
+	switch backend {
 	case jev.BackendOpenRouterDecisions, jev.BackendOpenRouterSystemOne:
 		return credentials.VendorOrigins(credentials.NameOpenRouter, cfg.Jev.OpenRouterBaseURL)
 	case jev.BackendTypeSafe:

@@ -52,10 +52,9 @@ type loadedState struct {
 	epoch   string
 	rows    map[string]json.RawMessage
 	// dashboard holds the opened dashboard credentials (shadowed rows excluded), undecryptable the
-	// rows that did not open, stored every row's name.
+	// rows that did not open.
 	dashboard     CredentialSet
 	undecryptable []string
-	stored        []string
 }
 
 // New builds a Manager. Its first snapshot comes from the env and the built-in defaults; with a
@@ -70,6 +69,7 @@ func New(opts Options) *Manager {
 	m := &Manager{
 		opts:       opts,
 		fp:         credentials.NewFingerprinter(opts.Master),
+		defaults:   defaultsConfig(opts.Config),
 		localEpoch: newEpoch(),
 		subs:       map[int]func(*Snapshot){},
 		kick:       make(chan struct{}, 1),
@@ -180,14 +180,13 @@ func (m *Manager) Wait() { m.touchWG.Wait() }
 // opened (env wins, D33); a row that does not open is listed as undecryptable (D32).
 func (m *Manager) open(rows *store.SettingsRows, creds []store.CredentialRecord) *loadedState {
 	ls := &loadedState{version: rows.Version, epoch: rows.Epoch, rows: rows.Rows, dashboard: CredentialSet{},
-		undecryptable: []string{}, stored: []string{}}
-	env := m.envCredentials()
+		undecryptable: []string{}}
+	env := m.envCredentials("") // which names an env var sets; their origins do not matter here
 	orBase := ""
 	if m.opts.Config != nil {
 		orBase = m.opts.Config.Jev.OpenRouterBaseURL
 	}
 	for _, rec := range creds {
-		ls.stored = append(ls.stored, rec.Name)
 		if _, shadowed := env[rec.Name]; shadowed {
 			continue
 		}
@@ -239,12 +238,12 @@ func (m *Manager) build() *Snapshot {
 		}
 		snap.Undecryptable = slices.Clone(ls.undecryptable)
 	}
-	for name, c := range m.envCredentials() {
-		snap.Credentials[name] = c
-	}
-	persisted, badRows := overlayRows(seedSettings(cfg), rows)
+	persisted, badRows := overlayRows(m.builtinSettings(), rows)
 	snap.Persisted = persisted
 	snap.Settings, snap.EnvManaged, snap.EnvSources = applyEnv(cfg, persisted, engineEnv)
+	for name, c := range m.envCredentials(snap.Settings.DecisionModel.Backend) {
+		snap.Credentials[name] = c
+	}
 	sort.Strings(snap.Undecryptable)
 
 	switch {

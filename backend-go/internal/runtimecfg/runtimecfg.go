@@ -153,8 +153,9 @@ type Snapshot struct {
 	// Settings are the settings in effect: the env seed, the stored rows over it, and every
 	// env-managed path over those (D33).
 	Settings RuntimeSettings
-	// Persisted is the env seed with the stored rows over it, without the env-managed overlay: the
-	// base a write starts from, so that an env value is never copied into a row (ChangedRows).
+	// Persisted is the built-in defaults with the stored rows over it, without any env value: the
+	// base a write starts from, so that an env value is never copied into a row (ChangedRows,
+	// ChangedFields). Settings is Persisted with the env-managed paths laid over it.
 	Persisted RuntimeSettings
 	// EnvManaged lists the dotted RuntimeSettings paths a non-empty env var pins (D33).
 	EnvManaged []string
@@ -224,6 +225,9 @@ type Manager struct {
 	fp   credentials.Fingerprinter
 	// cipher opens stored credentials; nil while the store is not ready (D32).
 	cipher *credentials.Cipher
+	// defaults is the configuration of the registry defaults alone (no env, no .env file): the
+	// built-in values of the env-managed paths (builtinSettings).
+	defaults *config.Config
 	// localEpoch is the epoch of a snapshot without a database (D31: random per process).
 	localEpoch string
 
