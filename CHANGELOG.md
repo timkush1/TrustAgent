@@ -29,6 +29,14 @@ phase (P0 → P7).
   `{credential, stored, bindings: {applied, skipped}, verification}` (complete
   adds `return_to`) instead of a bare `CredentialView`. Bindings apply only when
   the key's check passes; a failed check never replaces a key in use.
+- **A new calibration cap reason, `calibration_missing` (D56).** A block
+  capped at flag because a block-set check has no usable, adopted calibration
+  for the current snapshot now reports `calibration_missing`;
+  `uncalibrated_snapshot` is kept for checks calibrated only on other
+  snapshots (the decision model changed). Clients and alerts that match
+  `uncalibrated_snapshot` to find every calibration cap should match both.
+  A calibration fitted with different state fields still applies and sets the
+  evaluator result's `calibration_warning`.
 - **The engine implements `ApplyRuntimeConfig` and `DraftEvaluator`.** The
   gateway pushes its runtime settings (judge, the judge's key, prices) as
   `(epoch, version)`, and the Studio drafts through the engine. An engine from
@@ -255,10 +263,12 @@ phase (P0 → P7).
   and the paid `POST /api/studio/dry-run` (SSE, with an estimate and a
   confirmation above `TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD`); evaluator writes
   (`POST /api/evaluators`, `/api/evaluators/:id/versions`, `/archive`) validated
-  by the Go linter, the reference for the TypeScript one; labels
+  by the Go linter, the reference for the TypeScript one, which
+  `POST /api/evaluators/validate` runs without saving; labels
   (`PUT|DELETE /api/labels`, `GET /api/labels/queue`); calibrations stored in
-  the database (`GET|POST /api/calibration`, `POST /api/calibration/fit`,
-  `/:id/activate`, `/:id/deactivate`) and the adopt flow, with
+  the database (`GET|POST /api/calibration`, `GET /api/calibration/:id`,
+  `POST /api/calibration/fit`, `/:id/activate`, `/:id/deactivate`) and the
+  adopt flow, with
   `calibration_ids` in `POST /api/policies/dry-run` for a free preview.
   `GET /api/traces/:id/decision-request` recompiles the exact Jev request (the
   glass box); `GET /api/evidence/suggestions` proposes evidence patterns.
