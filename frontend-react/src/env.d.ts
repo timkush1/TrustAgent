@@ -28,3 +28,8 @@ declare module 'virtual:trustagent/scenario/*' {
   };
   export default scenario;
 }
+
+/** Parts of contracts/ui/copy.v1.json, served by vite.site.ts copyModules(); the importer types them. */
+declare module 'virtual:trustagent/copy/*' {
+  export const copy: unknown;
+}

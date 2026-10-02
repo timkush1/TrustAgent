@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/truthtable/backend-go/internal/recording"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
 )
 
@@ -111,8 +112,32 @@ func (s *server) handleExportReplay(c *gin.Context) {
 		s.exportFailed(c, "sanitize the recording", err)
 		return
 	}
+	// The export is audited before it leaves (D44): without its audit row it is not sent.
+	if err := s.pg.AppendAdminAudit(ctx, store.AdminAuditEntry{Actor: actor(c), Action: "export.replay",
+		Diff: exportAuditDiff(f, len(rec.Traces))}); err != nil {
+		s.exportFailed(c, "record the export in the audit log", err)
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "application/json; charset=utf-8", b)
+}
+
+// exportAuditDiff is the export.replay audit diff: the filter and how many traces left.
+func exportAuditDiff(f recording.Filter, traces int) map[string]any {
+	d := map[string]any{"traces": traces, "limit": f.Limit}
+	if f.Since != nil {
+		d["since"] = f.Since.UTC().Format(time.RFC3339)
+	}
+	if f.Until != nil {
+		d["until"] = f.Until.UTC().Format(time.RFC3339)
+	}
+	if f.Route != "" {
+		d["route"] = f.Route
+	}
+	if f.Source != "" {
+		d["source"] = f.Source
+	}
+	return d
 }
 
 // engineJudge is the judge the audit engine reports: the recording's judge when no exported audit

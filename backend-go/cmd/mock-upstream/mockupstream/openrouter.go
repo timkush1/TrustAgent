@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -301,8 +302,20 @@ func maskKey(k string) string {
 	return k[:10] + "…" + k[len(k)-3:]
 }
 
+// issuedCode is a PKCE code issued by /auth: the challenge it was issued for and the optional
+// mock_key marker its key will carry.
+type issuedCode struct {
+	method, challenge, mockKey string
+}
+
+// mockKeyMarker is the shape of /auth's mock_key parameter: a keyProblem marker such as
+// nocredits, forbidden or invalid.
+var mockKeyMarker = regexp.MustCompile(`^[a-z0-9]{1,32}$`)
+
 // handleAuthorize is the mock of openrouter.ai/auth: it issues a code for the PKCE challenge and
-// redirects to callback_url?code=….
+// redirects to callback_url?code=…. A mock_key parameter (test only, e.g. mock_key=nocredits)
+// is recorded with the code, and the key /api/v1/auth/keys then hands out carries it
+// (sk-or-v1-mock-nocredits-<hex>), so a connect test can pick the key's behaviour (keyProblem).
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	cb, err := url.Parse(q.Get("callback_url"))
@@ -318,11 +331,16 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mock-upstream: code_challenge and code_challenge_method (S256|plain) are required", http.StatusBadRequest)
 		return
 	}
+	mockKey := q.Get("mock_key")
+	if mockKey != "" && !mockKeyMarker.MatchString(mockKey) {
+		http.Error(w, "mock-upstream: mock_key must be 1-32 lowercase letters or digits (e.g. nocredits)", http.StatusBadRequest)
+		return
+	}
 	var nonce [12]byte
 	_, _ = rand.Read(nonce[:])
 	code := "mockcode_" + hex.EncodeToString(nonce[:])
 	s.mu.Lock()
-	s.codes[code] = method + "|" + challenge
+	s.codes[code] = issuedCode{method: method, challenge: challenge, mockKey: mockKey}
 	s.mu.Unlock()
 	v := cb.Query()
 	v.Set("code", code)
@@ -348,24 +366,27 @@ func (s *Server) handleAuthKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	stored, ok := s.codes[req.Code]
+	issued, ok := s.codes[req.Code]
 	delete(s.codes, req.Code)
 	s.mu.Unlock()
 	if !ok {
 		writeError(w, envOpenRouter, http.StatusBadRequest, "invalid_request_error", "Invalid code", nil)
 		return
 	}
-	method, challenge, _ := strings.Cut(stored, "|")
 	got := req.CodeVerifier
-	if method == "S256" {
+	if issued.method == "S256" {
 		sum := sha256.Sum256([]byte(req.CodeVerifier))
 		got = base64.RawURLEncoding.EncodeToString(sum[:])
 	}
-	if req.CodeVerifier == "" || got != challenge || req.CodeChallengeMethod != "" && req.CodeChallengeMethod != method {
+	if req.CodeVerifier == "" || got != issued.challenge || req.CodeChallengeMethod != "" && req.CodeChallengeMethod != issued.method {
 		writeError(w, envOpenRouter, http.StatusForbidden, "permission_error", "Invalid code_verifier", nil)
 		return
 	}
 	var k [16]byte
 	_, _ = rand.Read(k[:])
-	writeJSON(w, http.StatusOK, map[string]any{"key": "sk-or-v1-mock-" + hex.EncodeToString(k[:]), "user_id": "user_mock"})
+	key := "sk-or-v1-mock-"
+	if issued.mockKey != "" {
+		key += issued.mockKey + "-"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"key": key + hex.EncodeToString(k[:]), "user_id": "user_mock"})
 }

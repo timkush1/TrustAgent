@@ -93,6 +93,31 @@ func TestStrictConfigExitCode(t *testing.T) {
 	}
 }
 
+// TestCheckConfigStrictAutoWithoutKeys (P4-PLAN DX-1): a fresh onboarding stack, backend auto and
+// no key anywhere, passes -check-config under TRUTHTABLE_STRICT_CONFIG: a missing key is a
+// state the dashboard fixes (Connect OpenRouter, or simulated checks), not a configuration error.
+func TestCheckConfigStrictAutoWithoutKeys(t *testing.T) {
+	clearProxyEnv(t)
+	for _, k := range []string{"TYPESAFE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "LLM_PROVIDER"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("TRUTHTABLE_STRICT_CONFIG", "true")
+	t.Setenv("TRUTHTABLE_JEV_BACKEND", "auto")
+	// An empty .env of its own, so the repository's .env (if any) cannot add keys.
+	envFile := t.TempDir() + "/.env"
+	if err := os.WriteFile(envFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TRUTHTABLE_ENV_FILE", envFile)
+	_, code, exit, out, errOut := boot(t, "-check-config")
+	if !exit || code != 0 || !strings.Contains(out, "No warnings.") {
+		t.Errorf("check-config: exit %v code %d\n%s%s", exit, code, out, errOut)
+	}
+	if cfg, code, exit, _, errOut := boot(t); exit || cfg == nil || code != 0 {
+		t.Errorf("strict boot: exit %v code %d\n%s", exit, code, errOut)
+	}
+}
+
 func TestNewSetupTokenNeedsADatabase(t *testing.T) {
 	clearProxyEnv(t)
 	_, code, exit, out, errOut := boot(t, "-new-setup-token")
@@ -135,5 +160,16 @@ func TestNewSetupTokenCLIPostgres(t *testing.T) {
 	}
 	if _, _, err := a.Setup().Claim(ctx, strings.TrimSpace(strings.TrimPrefix(out, prefix))); err != nil {
 		t.Errorf("claim the recovery token: %v", err)
+	}
+	// Each CLI mint is in the admin audit log (D44): the normal one and the forced recovery token,
+	// with when they expire, never the token or its hash.
+	mints := readAudit(t, schema, "setup_token.mint")
+	if len(mints) != 2 || mints[0].Actor != "cli" || mints[0].Diff["forced"] != false || mints[1].Diff["forced"] != true {
+		t.Fatalf("setup_token.mint rows %+v", mints)
+	}
+	for _, m := range mints {
+		if _, ok := m.Diff["expires_at"]; !ok || len(m.Diff) != 2 {
+			t.Errorf("mint diff %v: expires_at and forced only", m.Diff)
+		}
 	}
 }

@@ -3,14 +3,23 @@
  * example, outcome words, commands and limits as the product (SPEC §8.1).
  */
 import commandsDoc from '@contracts/ui/commands.v1.json';
-import { copy } from '@contracts/ui/copy.v1.json';
+import type { copy as contractCopy } from '@contracts/ui/copy.v1.json';
 import outcomesDoc from '@contracts/ui/outcomes.v1.json';
 import commitments from '@contracts/evaluators/commitments.v1.json';
 import examplePolicy from '@contracts/policies/example.policies.yaml?raw';
 // Only this scenario, not the whole pack (vite.site.ts scenarioModules): it keeps the landing small.
 import refundScenario from 'virtual:trustagent/scenario/refund-contradiction-flag';
+// Only the words the page shows, not the whole tree (vite.site.ts copyModules): the dashboard's
+// copy grows every phase and would eat the landing's 110 KB budget. Keep the list and LandingCopy
+// in step; landing.test.tsx checks them against the contract.
+import { copy as landingCopy } from 'virtual:trustagent/copy/product,tiers,value_labels,limits,playground_static,savings,setup.step_connect.privacy';
 
-export { copy };
+type ContractCopy = typeof contractCopy;
+/** The parts of contracts/ui/copy.v1.json the landing page reads. */
+export type LandingCopy = Pick<ContractCopy, 'product' | 'tiers' | 'value_labels' | 'limits' | 'playground_static' | 'savings'> & {
+  setup: { step_connect: Pick<ContractCopy['setup']['step_connect'], 'privacy'> };
+};
+export const copy = landingCopy as LandingCopy;
 
 const base = import.meta.env.BASE_URL;
 export const APP_MODE: 'full' | 'static' = import.meta.env.VITE_APP_MODE === 'static' ? 'static' : 'full';

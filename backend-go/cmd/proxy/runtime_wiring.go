@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc/status"
 
+	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/runtimecfg"
 	"github.com/truthtable/backend-go/internal/store"
 )
@@ -37,6 +40,13 @@ func (s *server) initRuntime(d serverDeps) {
 	}
 	m := runtimecfg.New(opts)
 	s.rt = &runtimeParts{manager: m, store: d.pg}
+	// /api/status reads the credential store's state, the decision credential and the runtime
+	// warnings from the snapshot in effect (D32, D77, D79).
+	s.status.runtime = m.Current
+	s.status.credentials = func() statusCredentials {
+		snap := m.Current()
+		return statusCredentials{Store: snap.StoreState, Undecryptable: append([]string{}, snap.Undecryptable...)}
+	}
 	if d.pg == nil {
 		return
 	}
@@ -48,10 +58,48 @@ func (s *server) initRuntime(d serverDeps) {
 	}
 }
 
-// mountSecurityAPI mounts the settings endpoints (SPEC §2.4 rows 52 and 53). They arrive with
-// SEC-5; until then it registers nothing.
+// mountSecurityAPI mounts the settings endpoints (SPEC §2.4 rows 52 and 53, settings_api.go).
 func (s *server) mountSecurityAPI(api *gin.RouterGroup, g apiGuards) {
-	_, _ = api, g
+	s.mountSettings(api, g)
+}
+
+// processRedactor is the Redactor every REST error message passes through (apiRedact, D42):
+// the process Redactor, which learns each secret the runtime configuration decrypts or receives.
+// nil leaves only the built-in credential patterns.
+var processRedactor atomic.Pointer[config.Redactor]
+
+// patternRedactor masks the credential patterns while no process Redactor is installed.
+var patternRedactor = config.NewRedactor()
+
+func init() {
+	apiRedact = func(text string) string {
+		if r := processRedactor.Load(); r != nil {
+			return r.Redact(text)
+		}
+		return patternRedactor.Redact(text)
+	}
+}
+
+// installRedaction makes REST error messages (abortAPI, field errors) pass through r (D42) and
+// returns the function that restores the previous Redactor. main installs the process Redactor
+// once at startup.
+func installRedaction(r *config.Redactor) (restore func()) {
+	prev := processRedactor.Swap(r)
+	return func() { processRedactor.Store(prev) }
+}
+
+// redactErr is the text of err as it may leave the process (D42): a gRPC status error gives its
+// status message (without the "rpc error: code = ..." prefix), and the text passes through the
+// redactor, so a secret an engine or a vendor echoes never reaches a client or the WS stream.
+func (s *server) redactErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+	return apiRedact(s.redact(msg))
 }
 
 // startRuntimeLoops runs the runtime configuration's reload loop until ctx ends: a reload on
