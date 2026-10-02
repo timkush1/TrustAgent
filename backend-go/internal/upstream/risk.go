@@ -20,14 +20,14 @@ const (
 	CodeUpstreamPassthrough = "upstream_passthrough"
 	// CodeFallbackCredentialUnused warns that the fallback upstream's key is never sent: there is
 	// no fallback upstream.
-	CodeFallbackCredentialUnused = "fallback_credential_unused"
+	CodeFallbackCredentialUnused = "fallback_credential_unused" // #nosec G101 -- an error code, not a credential
 )
 
 // Credential names of the upstream rows (P4-PLAN D29); an env upstream key shows as the row of
 // the same name with source env.
 const (
 	CredentialDefault   = "upstream-default"
-	CredentialAnthropic = "upstream-anthropic"
+	CredentialAnthropic = "upstream-anthropic" // #nosec G101 -- a credential name, not a credential
 	CredentialFallback  = "upstream-fallback"
 )
 
