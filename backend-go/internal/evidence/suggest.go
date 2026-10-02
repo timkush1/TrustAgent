@@ -250,14 +250,25 @@ func chatOf(msgs []ScanMessage) *llmapi.ChatRequest {
 // app tells the model, not documents to check answers against.
 func shapesOf(text string) []*shape {
 	var out []*shape
+	// closeAt caches, per lower-cased tag name, the offset of the first closing tag at or after the
+	// last open tag searched from (-1: none), so a text with many tags is still scanned in linear
+	// time: an open tag before that offset closes there too.
+	closeAt := map[string]int{}
 	for _, m := range tagOpenShape.FindAllStringSubmatchIndex(text, -1) {
 		name := text[m[2]:m[3]]
-		if instructionLike[strings.ToLower(name)] {
+		key := strings.ToLower(name) // tag names are ASCII (tagOpenShape)
+		if instructionLike[key] {
 			continue
 		}
-		closeTag := "</" + name + ">"
-		end := strings.Index(strings.ToLower(text[m[1]:]), strings.ToLower(closeTag))
-		if end < 0 || len(strings.TrimSpace(text[m[1]:m[1]+end])) < minBlockChars {
+		at, cached := closeAt[key]
+		if !cached || (at >= 0 && at < m[1]) {
+			at = -1
+			if i := indexFoldASCII(text[m[1]:], "</"+key+">"); i >= 0 {
+				at = m[1] + i
+			}
+			closeAt[key] = at
+		}
+		if at < 0 || len(strings.TrimSpace(text[m[1]:at])) < minBlockChars {
 			continue
 		}
 		q := regexp.QuoteMeta(name)
@@ -284,6 +295,30 @@ func shapesOf(text string) []*shape {
 			label:   fmt.Sprintf("%q sections", title+":")})
 	}
 	return out
+}
+
+// indexFoldASCII is the byte offset in s of the first occurrence of sub (ASCII, lower case), ASCII
+// letters matching either case, or -1. Unlike searching a lower-cased copy of s, it keeps the
+// offsets of s: lower-casing can change a non-ASCII character's length in bytes.
+func indexFoldASCII(s, sub string) int {
+	n := len(sub)
+	for i := 0; i+n <= len(s); i++ {
+		j := 0
+		for j < n {
+			c := s[i+j]
+			if 'A' <= c && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != sub[j] {
+				break
+			}
+			j++
+		}
+		if j == n {
+			return i
+		}
+	}
+	return -1
 }
 
 // sectionAfter is the text from offset from to the next stop (or the end).

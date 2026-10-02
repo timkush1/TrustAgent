@@ -144,3 +144,45 @@ func TestValidSuggestion(t *testing.T) {
 		}
 	}
 }
+
+// A character whose lower case is longer in bytes (Ⱥ, 2 bytes, lowers to ⱥ, 3 bytes) inside a
+// block once made the scan slice past the text and panic, failing every suggestions request whose
+// window held that body. The closing tag is still found in either case, at the right offset.
+func TestShapesKeepOffsetsWithCaseChangingText(t *testing.T) {
+	block := strings.Repeat("Ⱥ", 60)
+	for _, text := range []string{
+		"<kb_note>" + block + "</kb_note>",
+		"<KB_Note>" + block + "</kb_note>",
+		"<kb_note>short</kb_note> " + block,
+	} {
+		var got []*shape
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%q: panic %v", text[:12], r)
+				}
+			}()
+			got = shapesOf(text)
+		}()
+		wantShape := !strings.Contains(text, "short")
+		if (len(got) == 1) != wantShape {
+			t.Errorf("%q: shapes = %d, want a shape %v", text[:12], len(got), wantShape)
+		}
+	}
+	if i := indexFoldASCII("xⱥ</KB_NOTE>", "</kb_note>"); i != len("xⱥ") {
+		t.Errorf("indexFoldASCII = %d", i)
+	}
+	if i := indexFoldASCII("</kb_not", "</kb_note>"); i != -1 {
+		t.Errorf("indexFoldASCII on a cut tag = %d", i)
+	}
+}
+
+// Many open tags of one name before a single far closing tag are scanned in linear time: each
+// open tag reuses the closing offset the first one found.
+func TestShapesManyOpenTagsShareOneClose(t *testing.T) {
+	text := strings.Repeat("<note>", 20000) + doc + "</note>"
+	got := shapesOf(text)
+	if len(got) == 0 || got[0].kind != SuggestTagPattern {
+		t.Fatalf("shapes = %d", len(got))
+	}
+}
