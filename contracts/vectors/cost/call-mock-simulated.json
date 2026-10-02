@@ -1,0 +1,28 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-mock-simulated",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "The mock judge calls nothing: $0 with cost_source simulated, even when a reported cost is present.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "mock",
+    "model": "mock-judge",
+    "input_tokens": 5000,
+    "output_tokens": 900,
+    "reported_cost_usd": 0.5,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"cost_source": "simulated", "cost_usd": 0, "price_table_version": "2026-09-27"}
+}
