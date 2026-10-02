@@ -66,9 +66,6 @@ func TestApplyBindings(t *testing.T) {
 	if *s.Bindings.DecisionModel != "openrouter" || *s.Bindings.Judge != "openrouter" || s.DecisionModel.Backend != "auto" || s.Judge.Provider != "auto" {
 		t.Errorf("a bind leaves simulated mode (D76): %+v", s)
 	}
-	if base.Bindings.DecisionModel != nil {
-		t.Error("ApplyBindings is pure")
-	}
 
 	s, applied, skipped = ApplyBindings(base, "openrouter", []string{TargetDecisionModel, TargetJudge}, []string{"bindings.judge", "judge.provider"}, true)
 	if len(applied) != 0 || !slices.Equal(skipped, []BindingSkip{{TargetDecisionModel, SkipBackendPinned}, {TargetJudge, SkipEnvManaged}}) {
@@ -118,6 +115,10 @@ func TestApplyBindingsUsesTheBoundKey(t *testing.T) {
 	for _, c := range cases {
 		in := base
 		in.DecisionModel.Backend, in.Judge.Provider = c.backend, c.provider
+		// The settings already bind other keys: the caller's settings share these strings, so a
+		// bind must replace the pointers, never write through them.
+		oldDecision, oldJudge := "earlier-decision-key", "earlier-judge-key"
+		in.Bindings.DecisionModel, in.Bindings.Judge = &oldDecision, &oldJudge
 		out, applied, _ := ApplyBindings(in, c.cred, c.targets, c.envManaged, false)
 		if len(applied) == 0 {
 			t.Errorf("%s: nothing applied", c.name)
@@ -125,8 +126,17 @@ func TestApplyBindingsUsesTheBoundKey(t *testing.T) {
 		if out.DecisionModel.Backend != c.wantBack || out.Judge.Provider != c.wantJudg {
 			t.Errorf("%s: backend %q judge %q, want %q %q", c.name, out.DecisionModel.Backend, out.Judge.Provider, c.wantBack, c.wantJudg)
 		}
-		if in.DecisionModel.Backend != c.backend || in.Judge.Provider != c.provider {
-			t.Errorf("%s: ApplyBindings is pure", c.name)
+		for _, target := range applied {
+			bound := out.Bindings.DecisionModel
+			if target == TargetJudge {
+				bound = out.Bindings.Judge
+			}
+			if bound == nil || *bound != c.cred {
+				t.Errorf("%s: %s is not bound to %s", c.name, target, c.cred)
+			}
+		}
+		if oldDecision != "earlier-decision-key" || oldJudge != "earlier-judge-key" {
+			t.Errorf("%s: ApplyBindings wrote through the caller's binding pointers; it must be pure", c.name)
 		}
 	}
 	// A bind that applies nothing changes nothing.
