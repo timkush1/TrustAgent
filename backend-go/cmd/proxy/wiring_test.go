@@ -190,8 +190,9 @@ func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
 	if !sawTrace {
 		t.Errorf("wsFrames did not replay trace_started of %s (%d frames)", traceID, len(frames))
 	}
-	// /api/settings (SEC-5) and /api/credentials (CN-7) are mounted since CP-SEC2+CP-SEC3.
-	for _, path := range []string{"/api/labels/queue", "/api/studio/samples", "/api/roi/timeseries"} {
+	// /api/settings (SEC-5) and /api/credentials (CN-7) are mounted since CP-SEC2+CP-SEC3,
+	// /api/labels/queue (EV-3) since CP-EVAL.
+	for _, path := range []string{"/api/studio/samples", "/api/roi/timeseries"} {
 		if code, _ := env.get(path, testKey); code != http.StatusNotFound {
 			t.Errorf("GET %s = %d before its owner mounts it, want 404", path, code)
 		}
