@@ -83,10 +83,16 @@ class InternalTokenSource:
         token: str = _NO_TOKEN,
         path: Optional[Path] = None,
         clock: Callable[[], float] = time.monotonic,
+        on_token: Optional[Callable[[str], None]] = None,
     ):
         self._token = token.strip()
         self.path = path
         self._clock = clock
+        # Told every token the source yields, a rotated file's included (the
+        # engine registers them with its log redactor, D42).
+        self._on_token = on_token
+        if self._token and on_token is not None:
+            on_token(self._token)
         self._file_token = _NO_TOKEN
         self._file_stamp: Optional[_FileStamp] = None
         self._checked_at: Optional[float] = None
@@ -124,6 +130,8 @@ class InternalTokenSource:
         token = self._read_file() if stamp is not None else _NO_TOKEN
         if token:
             if token != self._file_token:
+                if self._on_token is not None:
+                    self._on_token(token)
                 replaced = bool(self._file_token)
                 logger.info(
                     f"Internal token {'reloaded' if replaced else 'loaded'} from {self.path}"
@@ -156,10 +164,15 @@ class InternalTokenSource:
         return False
 
 
-def token_source(token: str, token_file: str) -> InternalTokenSource:
-    """The token source for TRUTHTABLE_INTERNAL_TOKEN and TRUTHTABLE_INTERNAL_TOKEN_FILE."""
+def token_source(
+    token: str, token_file: str, on_token: Optional[Callable[[str], None]] = None
+) -> InternalTokenSource:
+    """
+    The token source for TRUTHTABLE_INTERNAL_TOKEN and TRUTHTABLE_INTERNAL_TOKEN_FILE
+    (`on_token` is told every token it yields, see InternalTokenSource).
+    """
     path = Path(token_file).expanduser() if token_file.strip() else None
-    return InternalTokenSource(token=token, path=path)
+    return InternalTokenSource(token=token, path=path, on_token=on_token)
 
 
 async def check_bind(

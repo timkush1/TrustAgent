@@ -272,7 +272,12 @@ async def main() -> None:
     load_price_table(settings, logger)
 
     # A non-loopback bind needs the internal token (waits for the proxy's file).
-    tokens = token_source(settings.internal_token.get_secret_value(), settings.internal_token_file)
+    # Every token it yields (a rotated file's too) joins the log redactor.
+    tokens = token_source(
+        settings.internal_token.get_secret_value(),
+        settings.internal_token_file,
+        on_token=redactor.add,
+    )
     try:
         await check_bind(settings.grpc_host, tokens)
     except InternalTokenError as exc:
@@ -280,7 +285,6 @@ async def main() -> None:
         raise SystemExit(STRICT_CONFIG_EXIT_CODE) from None
 
     judge: JudgeSelection = await resolve_judge(settings, log=logger)
-    redactor.add(tokens.current())
     limiter = configure_process_limiter(settings.judge_max_inflight)
     # Every judge call goes through one swappable slot: a runtime-config push
     # (ApplyRuntimeConfig) may replace the judge while the engine runs.
