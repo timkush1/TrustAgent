@@ -233,6 +233,17 @@ defaults:
 				if d.Message == "" || d.Fix == nil || d.Fix.Target == "" {
 					t.Errorf("downgrade %+v lacks a message or a fix", d)
 				}
+				// Both calibration downgrades link to the evaluator's calibration tab, which the
+				// dashboard's evaluators/$id route opens from ?tab=calibration.
+				if d.Code == DowngradeUncalibrated || d.Code == DowngradeSnapshotChanged {
+					id := "groundedness"
+					if strings.Contains(c.doc, "on_no_evidence: block") {
+						id = decision.FactualClaimsID
+					}
+					if d.Fix.Kind != "link" || d.Fix.Target != "/app/evaluators/"+id+"?tab=calibration" {
+						t.Errorf("%s fix %+v, want a link to %s's calibration tab", d.Code, d.Fix, id)
+					}
+				}
 			}
 		})
 	}

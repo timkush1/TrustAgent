@@ -147,15 +147,43 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]APIKeyRecord, error)
 	return out, rows.Err()
 }
 
+// ErrLastAdminKey: revoking the key would leave no active api_keys row with the admin scope
+// (D81). The caller refuses it unless an env admin key exists.
+var ErrLastAdminKey = errors.New("store: the last active admin key cannot be revoked")
+
 // RevokeAPIKey sets revoked_at on an active key and logs api_key.revoke, in one transaction. It
 // returns the row and whether this call revoked it (false for a key that was already revoked), or
 // ErrNotFound.
 func (s *PostgresStore) RevokeAPIKey(ctx context.Context, id, actor string) (*APIKeyRecord, bool, error) {
+	return s.revokeAPIKey(ctx, id, actor, false)
+}
+
+// RevokeAPIKeyKeepingAdmin is RevokeAPIKey that refuses, with ErrLastAdminKey, to revoke the last
+// active admin key (D81). It locks the active admin rows first, so two revocations running at once
+// cannot each leave the other's key as the last one and then revoke it too.
+func (s *PostgresStore) RevokeAPIKeyKeepingAdmin(ctx context.Context, id, actor string) (*APIKeyRecord, bool, error) {
+	return s.revokeAPIKey(ctx, id, actor, true)
+}
+
+func (s *PostgresStore) revokeAPIKey(ctx context.Context, id, actor string, keepAdmin bool) (*APIKeyRecord, bool, error) {
 	var (
 		out     *APIKeyRecord
 		revoked bool
 	)
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if keepAdmin {
+			rows, err := tx.Query(ctx, `SELECT id FROM api_keys WHERE 'admin' = ANY (scopes) AND revoked_at IS NULL ORDER BY id FOR UPDATE`)
+			if err != nil {
+				return err
+			}
+			admins, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			if err != nil {
+				return err
+			}
+			if len(admins) == 1 && admins[0] == id {
+				return ErrLastAdminKey
+			}
+		}
 		k, err := scanAPIKey(tx.QueryRow(ctx, `
 			UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
 			RETURNING `+apiKeyColumns, id))
