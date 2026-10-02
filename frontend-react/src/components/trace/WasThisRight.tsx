@@ -79,6 +79,8 @@ export function WasThisRight({
       ]);
     },
     onError: (err) => {
+      // Take the optimistic labels back at once; the refetch below shows any that were saved.
+      setLabels((current) => current.filter((l) => !(targets.includes(l.target) && l.labeled_by === 'you')));
       const { message, code } = describeError(err);
       setError({ message: isApiError(err) && err.code === 'body_expired' ? copy.labels.body_expired : `The label was not saved: ${message}`, code: code ?? null });
     },
@@ -120,9 +122,10 @@ export function WasThisRight({
               </time>
             </span>
           </span>
+          {/* Undo waits for the save it would undo, so the delete never overtakes the write. */}
           <DisabledAction reason={writeReason}>
             {(p) => (
-              <Button size="sm" variant="ghost" pending={undo.isPending} onClick={() => undo.mutate()} {...p}>
+              <Button size="sm" variant="ghost" pending={undo.isPending || put.isPending} onClick={() => undo.mutate()} {...p}>
                 <Undo2 aria-hidden="true" />
                 Undo
               </Button>

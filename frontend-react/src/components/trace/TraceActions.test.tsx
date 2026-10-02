@@ -76,6 +76,29 @@ describe('Was this right?', { timeout: 20_000 }, () => {
     expect(await within(outcome()).findByRole('button', { name: copy.trace.false_alarm })).toBeInTheDocument();
   });
 
+  it('shows the label at once, but lets Undo wait until the save has landed', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { control } = setup();
+    server.use(
+      http.put(`${API}/api/labels`, async ({ request }) => {
+        control.state.labels.push((await request.json()) as (typeof control.state.labels)[number]);
+        await gate;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await user.click(await within(await screen.findByRole('region', { name: 'Outcome' })).findByRole('button', { name: copy.trace.correct }));
+    expect(await within(outcome()).findByText(/Labelled correct/)).toHaveTextContent('by you');
+    // Focusable while it waits (aria-disabled), so a keyboard user keeps their place.
+    expect(within(outcome()).getByRole('button', { name: 'Undo' })).toHaveAttribute('aria-disabled', 'true');
+    release();
+    await waitFor(() => expect(within(outcome()).getByRole('button', { name: 'Undo' })).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(control.callsTo('/api/labels', 'DELETE')).toHaveLength(0);
+  });
+
   it('writes should_not_fire for a false alarm', async () => {
     const user = userEvent.setup();
     const { control } = setup();
@@ -112,6 +135,8 @@ describe('Was this right?', { timeout: 20_000 }, () => {
     setup(fresh, { control: createControlApi({ expiredTraces: [fresh.trace_id] }) });
     await user.click(await within(await screen.findByRole('region', { name: 'Outcome' })).findByRole('button', { name: copy.trace.correct }));
     expect(await within(outcome()).findByRole('alert')).toHaveTextContent(copy.labels.body_expired);
+    // Nothing was saved: the answers are offered again, not a label that does not exist.
+    expect(within(outcome()).queryByText(/Labelled correct/)).toBeNull();
   });
 
   it('is not offered when no check reached Elevated risk', async () => {
