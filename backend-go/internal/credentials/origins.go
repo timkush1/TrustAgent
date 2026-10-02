@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 // Vendor origins (D78; SPEC §7.5 host binding).
@@ -151,17 +152,13 @@ func CheckURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// metadataV6 is the AWS instance-metadata IPv6 address (D78).
-var metadataV6 = netip.MustParseAddr("fd00:ec2::254")
-
 // forbiddenHost reports a link-local or metadata target (host lowercased, no trailing dot).
 func forbiddenHost(host string) bool {
 	if host == "metadata.google.internal" || host == "metadata" {
 		return true
 	}
 	if ip, err := netip.ParseAddr(host); err == nil {
-		ip = ip.Unmap()
-		return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip == metadataV6
+		return netguard.Forbidden(ip)
 	}
 	return numericIPv4Spelling(host)
 }

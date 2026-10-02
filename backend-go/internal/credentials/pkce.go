@@ -27,6 +27,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 // Connect OpenRouter limits (D38).
@@ -301,7 +302,7 @@ func ExchangeConnectCode(ctx context.Context, hc *http.Client, openRouterBase st
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	client := http.Client{Timeout: 15 * time.Second}
+	client := http.Client{Timeout: 15 * time.Second, Transport: netguard.Transport()}
 	if hc != nil {
 		client = *hc
 	}

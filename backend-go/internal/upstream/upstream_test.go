@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 func newClient(t *testing.T, base string) *Client {
@@ -385,5 +387,21 @@ func TestSetFor(t *testing.T) {
 	s.Anthropic = nil
 	if s.For(llmapi.FamilyAnthropic) != openai {
 		t.Error("without an Anthropic upstream the default one answers")
+	}
+}
+
+// An upstream at a link-local or cloud-metadata address is refused at dial time (D78), so the
+// gateway never sends a key there, however the upstream URL spells the host.
+func TestUpstreamRefusesMetadataAtDialTime(t *testing.T) {
+	c, err := New(Config{BaseURL: "http://169.254.169.254/v1", APIKey: "sk-test-upstream-0123456789", Timeout: 5 * time.Second}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, cancel, err := c.Do(context.Background(), http.MethodPost, "/v1/chat/completions", "", http.Header{}, []byte(`{}`))
+	if cancel != nil {
+		cancel()
+	}
+	if !errors.Is(err, netguard.ErrForbiddenTarget) {
+		t.Fatalf("Do against the metadata address = %v, want netguard.ErrForbiddenTarget", err)
 	}
 }

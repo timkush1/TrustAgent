@@ -35,6 +35,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 // DefaultBaseURL is the upstream when TRUTHTABLE_UPSTREAM_URL is empty.
@@ -113,7 +114,9 @@ func New(cfg Config, isProxyKey func(string) bool) (*Client, error) {
 	}
 	t := cfg.Transport
 	if t == nil {
-		dt := http.DefaultTransport.(*http.Transport).Clone()
+		// The upstream URL is the operator's or an admin's choice: the guarded dialer refuses a
+		// link-local or cloud-metadata address however the host is spelled (D78).
+		dt := netguard.Transport()
 		dt.ResponseHeaderTimeout = cfg.HeaderTimeout
 		dt.MaxIdleConnsPerHost = 64
 		dt.IdleConnTimeout = 90 * time.Second

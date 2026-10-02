@@ -99,7 +99,10 @@ Connections. Rotation without re-entering is planned for v2.1.
   origin requires entering the key again.
 - **URL rules.** A URL that receives a saved key must be https (http only for local hosts), carry
   no user name or password, and not target link-local or cloud-metadata addresses (169.254.0.0/16,
-  fe80::/10, `fd00:ec2::254`, `metadata.google.internal`).
+  fe80::/10, `fd00:ec2::254`, `metadata.google.internal`). The same addresses are refused again at
+  dial time, after DNS, by every outbound client that calls an admin-chosen address (the upstream
+  proxy, the decision model and key checks, the OpenRouter key exchange): a host name that
+  resolves to 169.254.169.254 is refused before a byte is sent.
 - **Fingerprints.** The dashboard identifies a key by `fp_` plus 12 hex characters of an HMAC (keyed
   from the master key), and shows it masked (`sk-…3f2a`). Read-only callers see neither. The
   fingerprint alone also reaches `content`-scope dashboards in the `credentials_changed` event: an
@@ -221,10 +224,6 @@ Accepted findings:
 - **Budgets and PKCE nonces are per process** (above): multi-replica deployments overspend by up to
   a minute and need sticky sessions for Connect.
 - **No master-key rotation** before v2.1: rotating means re-entering saved keys.
-- **Metadata addresses are refused by how the URL is written.** The URL rules above refuse a
-  link-local or cloud-metadata host written as such, but not a DNS name that resolves to one (for
-  example to 169.254.169.254). Only an admin can set these URLs; a dial-time check in the
-  outbound transports would close the gap and is planned.
 - **The static demo shares an origin.** The GitHub Pages demo runs at `timkush1.github.io`, an origin
   shared with any other Pages site of that account. A visitor's own OpenRouter key, if they try Jev
   live there, stays in that tab's `sessionStorage` and is sent only to openrouter.ai, under a strict
