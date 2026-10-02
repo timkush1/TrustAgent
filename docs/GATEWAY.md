@@ -472,7 +472,8 @@ evaluators (they are questions of the same call).
   reserve. The deep-audit budget (`TRUTHTABLE_SPEND_CAP_LLM_USD_DAY`) is hard
   in every lane: past it, sampled audits are dropped (`audit_dropped`,
   reason `llm_budget`) and `POST /api/audit` answers 503 `budget_exhausted`.
-  The **Savings** page shows the measured spend; estimates are in
+  The **Savings** page shows what was spent, each figure labelled (a cost
+  the vendor did not report is an estimate); typical costs are in
   [JEV-ACCESS.md](JEV-ACCESS.md).
 
 ---

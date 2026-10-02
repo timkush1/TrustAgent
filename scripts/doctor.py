@@ -918,10 +918,12 @@ class Doctor:
             limit = f"${cap:.2f}" if cap > 0 else "no budget set"
             return f"{label} ${spent:.4f} of {limit}"
 
-        # SystemStatus.budgets counts real spend only: simulated checks never count.
-        label = (
-            "measured; the demo's simulated checks cost $0" if self.expect == "demo" else "measured"
-        )
+        # SystemStatus.budgets counts real calls only (simulated checks never count), each at the
+        # vendor's reported cost where it gives one and otherwise priced from tokens with the price
+        # table: the total is an estimate, not a measurement (honest labels, CLAUDE.md).
+        label = "estimate: the vendor's reported cost where given, else priced from tokens"
+        if self.expect == "demo":
+            label += "; the demo's simulated checks cost $0"
         detail = (
             line("fast checks", usd("decision_spent_today_usd"), usd("decision_usd_day"))
             + "; "

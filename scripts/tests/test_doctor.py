@@ -830,7 +830,9 @@ class RuntimeChecksTest(unittest.TestCase):
         self.assertEqual(check.status, "PASS")
         self.assertIn("fast checks $0.0123 of $2.00", check.detail)
         self.assertIn("deep audits $0.3500 of $5.00", check.detail)
-        self.assertIn("(measured)", check.detail)
+        # Costs the vendor does not report are priced from the table: the total is an estimate.
+        self.assertIn("(estimate: the vendor's reported cost where given", check.detail)
+        self.assertNotIn("measured", check.summary + check.detail)
         demo = self.stack(status_body(), expect="demo").check_budgets()
         self.assertEqual(demo.status, "PASS")
         self.assertIn("simulated checks cost $0", demo.detail)

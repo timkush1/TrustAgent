@@ -162,7 +162,8 @@ These are TrustAgent's own costs. Your upstream LLM calls are billed separately,
 $5 of credit covers about 1,600 answers at the default settings, or about 24,000 fast checks with
 deep audits off. The default fast-check budget of $2 a day covers roughly 7,000 answers a day on
 observe and flag routes (they stop at 75% of the budget); raise it before sending more traffic than
-that. The **Savings** page shows what was actually spent (measured) next to these estimates.
+that. The **Savings** page shows what was actually spent next to these estimates, each figure
+labelled: the vendor's reported cost where it gives one, otherwise an estimate from the price table.
 
 ## Errors and fixes
 
