@@ -9,6 +9,7 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { copy } from '@/domain/presentation';
+import { EVAL_CRITICAL_NULL_TEXT } from '@/domain/words/evaluators';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { calibrationProgress, dryRunResult, evaluatorDetail } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
@@ -48,7 +49,9 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     });
     expect(within(d).getByText('Provisional')).toBeInTheDocument();
     expect(within(d).getByText('0.14 → 0.06')).toBeInTheDocument();
-    expect(within(d).getByText('Fewer than 30 positive labels: no critical threshold is recommended yet.')).toBeInTheDocument();
+    // No block threshold: said in the dashboard's words, never the server's technical phrase.
+    expect(within(d).getByText(EVAL_CRITICAL_NULL_TEXT)).toBeInTheDocument();
+    expect(within(d).queryByText(/Fewer than 30 positive labels/)).toBeNull();
     expect(within(d).getByText('agreement with labels, not ground truth', { exact: false })).toBeInTheDocument();
 
     await user.click(within(d).getByRole('button', { name: 'Activate only' }));

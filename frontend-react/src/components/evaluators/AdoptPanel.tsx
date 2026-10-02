@@ -37,7 +37,7 @@ import { policiesQuery, qkc } from '@/data/queries';
 import { qkcEvaluators } from '@/data/queries/evaluators';
 import { formatRisk } from '@/domain/format';
 import { copy } from '@/domain/presentation';
-import { evalCriticalNullText, evalQualityView } from '@/domain/words/evaluators';
+import { EVAL_CRITICAL_NULL_TEXT, evalQualityView } from '@/domain/words/evaluators';
 import type { CalibrationRecommended, CalibrationRecordMeta, PolicyState, TimeWindow } from '@/types/api';
 
 const PREVIEW_WINDOWS = [
@@ -197,7 +197,7 @@ export function AdoptPanel({ evaluatorRef, name, routes, initialRoute, record, r
             label: 'Blocks from',
             value: `${thresholdText(current?.critical_at, current?.threshold_space ?? null)} → ${thresholdText(recommended?.critical_at?.value ?? null, 'calibrated')}`,
             numeric: true,
-            hint: recommended && !recommended.critical_at ? evalCriticalNullText(recommended.critical_null_reason) : undefined,
+            hint: recommended && !recommended.critical_at ? EVAL_CRITICAL_NULL_TEXT : undefined,
           },
         ]}
       />

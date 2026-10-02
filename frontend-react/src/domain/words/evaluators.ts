@@ -111,10 +111,12 @@ export const EVAL_FIT_HONESTY = [
   'Fitting is free and changes nothing on its own: answers keep their current thresholds until you adopt it.',
 ] as const;
 
-/** Why the server has no blocking threshold to recommend (its own sentence, else the SPEC §2.11 rule). */
-export function evalCriticalNullText(reason: string | null): string {
-  return reason ?? 'There is not enough evidence yet that blocks would be right at least 95% of the time.';
-}
+/**
+ * Why a fit recommends no blocking threshold (SPEC §2.11: no threshold whose 95% lower bound on
+ * precision reaches the target). The server's `critical_null_reason` is a fixed technical phrase
+ * ("insufficient evidence to block"), so the dashboard says it in its own words and never shows it.
+ */
+export const EVAL_CRITICAL_NULL_TEXT = 'There is not enough evidence yet that blocks would be right at least 95% of the time.';
 
 /** Why an import skipped an entry (copy.evaluators.calibration_import_rejected, D86). */
 const IMPORT_REJECTIONS: Record<CalibrationImportResult['rejected'][number]['reason'], string> = copy.evaluators.calibration_import_rejected;

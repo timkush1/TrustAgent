@@ -30,7 +30,7 @@ import { qkcEvaluators } from '@/data/queries/evaluators';
 import { useAppMode } from '@/data/useSystem';
 import { formatCount, formatRisk } from '@/domain/format';
 import { copy } from '@/domain/presentation';
-import { EVAL_FIT_HONESTY, evalCriticalNullText, evalNotEnoughLabelsText, evalQualityView } from '@/domain/words/evaluators';
+import { EVAL_CRITICAL_NULL_TEXT, EVAL_FIT_HONESTY, evalNotEnoughLabelsText, evalQualityView } from '@/domain/words/evaluators';
 import type { CalibrationFitResponse, EvaluatorDetail } from '@/types/api';
 import { AdoptPanel } from './AdoptPanel';
 import { ReliabilityChart } from './ReliabilityChart';
@@ -99,7 +99,7 @@ export function FitResult({ fit, simulated }: { fit: CalibrationFitResponse; sim
               numeric: true,
               hint: rec.critical_at
                 ? `precision at least ${formatRisk(rec.critical_at.precision_lb95)} (95% lower bound) on ${formatCount(rec.critical_at.predicted_pos)} answers`
-                : evalCriticalNullText(rec.critical_null_reason),
+                : EVAL_CRITICAL_NULL_TEXT,
             },
           ]}
         />
