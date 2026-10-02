@@ -348,7 +348,7 @@ func TestAdminAuditScrubsSecretsAndURLs(t *testing.T) {
 	}
 	t.Cleanup(AddAuditRedactor(config.NewRedactor(noPattern)))
 	diff := map[string]any{
-		"url":     "https://user:" + noPattern + "@gw.example.com/v1?api_key=" + noPattern,
+		"url":     "https://user:" + noPattern + "@gw.example.com/v1?key=" + noPattern,
 		"token":   "https://" + noPattern + "@gw.example.com",
 		"plain":   "https://gw.example.com/v1",
 		"note":    "rotated " + noPattern + " and Bearer sk-or-v1-e2e-0123456789",
@@ -364,7 +364,7 @@ func TestAdminAuditScrubsSecretsAndURLs(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT diff::text FROM admin_audit_log`).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
-	for _, leak := range []string{noPattern, "sk-or-v1-e2e", "api_key"} {
+	for _, leak := range []string{noPattern, "sk-or-v1-e2e", "?key"} {
 		if strings.Contains(raw, leak) {
 			t.Errorf("the stored diff still holds %q", leak)
 		}

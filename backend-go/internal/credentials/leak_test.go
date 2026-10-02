@@ -32,7 +32,7 @@ func TestErrorsNeverCarryTheSecret(t *testing.T) {
 		_, e3 := a.Open(Sealed{Name: NameCompatible, Provider: ProviderGeneric, Ciphertext: flip(ct), Nonce: nonce, KeyID: keyID}, []string{"https://gw.example.com"})
 		_, _, _, e4 := a.Seal("unknown-name", ProviderGeneric, nil, secret)
 		_, e5 := CheckURL("https://user:" + secret + "@gw.example.com/v1")
-		_, e6 := CheckURL("http://gw.example.com/v1?api_key=" + secret)
+		_, e6 := CheckURL("http://gw.example.com/v1?key=" + secret)
 		_, e7 := AllowedOrigins(NameCompatible, ProviderGeneric, "https://"+secret+":x@gw.example.com", "")
 		_, e8 := Canonical("::" + secret)
 		errs = append(errs, e1, e2, e3, e4, e5, e6, e7, e8)
