@@ -21,8 +21,11 @@ type AdminAuditRecord struct {
 // the next page ("" at the end). limit is clamped to [1, 200] (default 50); a cursor this store
 // did not issue is ErrBadCursor.
 func (s *PostgresStore) ListAdminAudit(ctx context.Context, limit int, cursor string) ([]AdminAuditRecord, string, error) {
-	if limit <= 0 || limit > 200 {
+	switch {
+	case limit <= 0:
 		limit = 50
+	case limit > 200:
+		limit = 200
 	}
 	before := int64(0)
 	if cursor != "" {
