@@ -377,6 +377,9 @@ test.describe('onboarding', () => {
   });
 
   test('9 · no serious accessibility violations in the wizard, the callback and Settings', async () => {
+    // Fifteen page loads, each with a full axe run: about a minute on a quiet machine, and close to
+    // the suite's two minutes on a busy one.
+    test.setTimeout(240_000);
     // A callback with no sign-in waiting in this tab: the code leaves the address bar, and the page
     // says where to open the dashboard.
     await page.goto('/connect/callback?code=not-a-real-code');
