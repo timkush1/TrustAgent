@@ -695,7 +695,6 @@ func noEvidenceApplies(in *Input, evals, active []*evalState, excluded map[strin
 	return fired(DetNumbers) || fired(DetDates)
 }
 
-// findFactualClaims returns the factual_claims evaluator (internal or attached), if any.
 // sameFieldSet reports whether two lists name the same state fields (order and repeats aside).
 func sameFieldSet(a, b []string) bool {
 	x, y := slices.Clone(a), slices.Clone(b)
@@ -704,6 +703,7 @@ func sameFieldSet(a, b []string) bool {
 	return slices.Equal(slices.Compact(x), slices.Compact(y))
 }
 
+// findFactualClaims returns the factual_claims evaluator (internal or attached), if any.
 func findFactualClaims(evals []*evalState) *evalState {
 	for _, e := range evals {
 		if e.in.Spec.ID == FactualClaimsID {
