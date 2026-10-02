@@ -118,6 +118,26 @@ describe('Simple edits', () => {
     expect(isSavable(checkSpecDocument(edited))).toBe(true);
   });
 
+  it("renames an option with what it is not for, its examples and its weight, in its place", () => {
+    const spec = choice();
+    (spec.question.criteria as Record<string, Record<string, unknown>>).implied_blame.examples = ['You should have read the manual.'];
+    const f = form(spec);
+    const edited = applySimpleForm(spec, { ...f, options: f.options.map((o) => (o.key === 'implied_blame' ? { ...o, key: 'hinted_blame' } : o)) });
+    expect(Object.keys(edited.question.criteria)).toEqual(['no_blame', 'hinted_blame', 'explicit_blame']);
+    expect((edited.question.criteria as Record<string, unknown>).hinted_blame).toEqual({
+      what: 'Hints that the customer is at fault, without saying it outright',
+      not_for: 'Plain instructions that do not judge the customer',
+      examples: ['You should have read the manual.'],
+    });
+    expect(edited.signal.risk_weights).toEqual({ explicit_blame: 1, hinted_blame: 0.5 });
+    // An option the form adds under a key the spec used before starts fresh: plain text, no weight.
+    const readded = applySimpleForm(edited, {
+      ...form(edited),
+      options: [...form(edited).options.filter((o) => o.key !== 'no_blame'), { key: 'no_blame', what: 'Neutral wording', weight: 0 }],
+    });
+    expect((readded.question.criteria as Record<string, unknown>).no_blame).toBe('Neutral wording');
+  });
+
   it('turns documents on and off together with the evidence state field', () => {
     const spec = noul();
     const on = applySimpleForm(spec, { ...form(spec), needsDocuments: true });

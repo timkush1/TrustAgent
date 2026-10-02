@@ -31,6 +31,12 @@ export interface SimpleOption {
   what: string;
   /** Its risk weight (0 when the spec gives none). */
   weight: number;
+  /**
+   * The key this option has in the spec, when it came from the spec. A renamed option keeps it, so
+   * the rename carries the option's other members (not_for, examples) and its place in
+   * `risk_weights` instead of starting a new option. Absent for an option the form added.
+   */
+  from?: string;
 }
 
 export interface SimpleForm {
@@ -109,7 +115,7 @@ export function readSimpleForm(spec: unknown): SimpleRead {
     const what = optionText(value);
     if (what === null) return { ok: false, reason: `Option ${key} is structured text. Edit it in the JSON tab.` };
     const w = weights[key];
-    form.options.push({ key, what, weight: typeof w === 'number' ? w : 0 });
+    form.options.push({ key, what, weight: typeof w === 'number' ? w : 0, from: key });
   }
   return { ok: true, form };
 }
@@ -128,7 +134,7 @@ function questionFor(form: SimpleForm, previous: Obj): Obj {
   }
   const old = isObj(previous.criteria) && previous.type === 'choice' ? previous.criteria : {};
   const criteria: Obj = {};
-  for (const o of form.options) criteria[o.key] = withWhat(old[o.key], o.what);
+  for (const o of form.options) criteria[o.key] = withWhat(o.from === undefined ? undefined : old[o.from], o.what);
   return { ...previous, type: 'choice', instructions: form.instructions, criteria };
 }
 
@@ -148,7 +154,7 @@ function signalFor(form: SimpleForm, previous: Obj, converted: boolean): Obj {
   const weights: Obj = {};
   for (const o of form.options) {
     // An option without a weight in the spec stays without one while it is Fine.
-    if (o.weight !== 0 || o.key in old) weights[o.key] = o.weight;
+    if (o.weight !== 0 || (o.from !== undefined && o.from in old)) weights[o.key] = o.weight;
   }
   out.risk_weights = weights;
   return out;
