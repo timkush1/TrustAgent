@@ -46,11 +46,14 @@ RUN npm run build
 FROM nginxinc/nginx-unprivileged:${NGINX_VERSION}-alpine
 
 ARG VERSION=dev
+# The git revision the image was built from (make passes `git rev-parse --short HEAD`).
+ARG GIT_SHA=""
 LABEL org.opencontainers.image.title="truthtable-dashboard" \
       org.opencontainers.image.description="TrustAgent dashboard" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}"
 
 # Container settings (SPEC §2.7, dashboard keys). The entrypoint first checks
 # and normalises them (nginx/entrypoint.d/12-dashboard-env.envsh), then renders

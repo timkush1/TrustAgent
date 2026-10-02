@@ -232,6 +232,8 @@ services:
       dockerfile: backend-go/Dockerfile
       args:
         VERSION: ${TRUSTAGENT_VERSION:-edge}
+        # The git revision (make sets it): GET /api/export/replay names it in a recording.
+        GIT_SHA: ${GIT_SHA:-}
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${PROXY_HOST_PORT:-8080}:8080"
     # Metrics (:8002) stay on the compose network (prometheus scrapes proxy:8002).
@@ -294,6 +296,7 @@ services:
       dockerfile: backend-python/Dockerfile
       args:
         VERSION: ${TRUSTAGENT_VERSION:-edge}
+        GIT_SHA: ${GIT_SHA:-}
         EXTRAS: ${ENGINE_EXTRAS:-}
     # gRPC (:50051) and metrics (:8001) stay on the compose network.
     expose:
@@ -368,6 +371,7 @@ services:
       dockerfile: frontend-react/Dockerfile
       args:
         VERSION: ${TRUSTAGENT_VERSION:-edge}
+        GIT_SHA: ${GIT_SHA:-}
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${DASHBOARD_HOST_PORT:-3000}:3000"
     # Written to /config.json and the nginx template at start (no secrets).

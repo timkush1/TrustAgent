@@ -63,8 +63,12 @@ COPY backend-go/ ./
 COPY --from=proto /out/ ./
 
 # VERSION is stamped into internal/version (compose passes TRUSTAGENT_VERSION).
+# GIT_SHA (make passes `git rev-parse --short HEAD`; the build context has no
+# .git, so Go's own VCS stamp is empty) is stamped next to it: the git revision
+# a recording names (GET /api/export/replay). Empty leaves it unset.
 # CMDS lists the ./cmd/<name> packages to ship; each lands at /<name>.
 ARG VERSION=dev
+ARG GIT_SHA=""
 ARG CMDS="proxy trafficgen mock-upstream"
 ARG TARGETOS
 ARG TARGETARCH
@@ -73,7 +77,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     mkdir -p /out \
  && for cmd in ${CMDS}; do \
       CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH}" go build -trimpath \
-        -ldflags="-s -w -X github.com/truthtable/backend-go/internal/version.Version=${VERSION}" \
+        -ldflags="-s -w -X github.com/truthtable/backend-go/internal/version.Version=${VERSION} -X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}" \
         -o "/out/${cmd}" "./cmd/${cmd}" || exit 1; \
     done
 
@@ -81,11 +85,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM alpine:${ALPINE_VERSION}
 
 ARG VERSION=dev
+ARG GIT_SHA=""
 LABEL org.opencontainers.image.title="truthtable-proxy" \
       org.opencontainers.image.description="TrustAgent gateway proxy, demo traffic generator and mock vendor APIs" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}"
 
 # ca-certificates: HTTPS upstreams and decision-model backends.
 # uid/gid 1001 is shared with the engine image: the proxy writes the internal

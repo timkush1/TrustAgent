@@ -30,6 +30,11 @@ ALIASES: Dict[str, str] = {
     alias: entry["name"] for entry in REGISTRY["keys"] for alias in entry.get("aliases", [])
 }
 
+# Build inputs that make computes and compose interpolates, waiting for their entry in
+# contracts/config/keys.v1.json (the registry is lead-owned). The test below fails once a name here
+# is registered, so this set empties itself.
+PENDING_REGISTRY = {"GIT_SHA"}
+
 # Container wiring: set explicitly per service in docker-compose.yml, so a
 # host-oriented .env cannot point a container at localhost.
 WIRED = {
@@ -89,9 +94,13 @@ class ComposeTest(unittest.TestCase):
         ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
+                if var in PENDING_REGISTRY:
+                    continue
                 self.assertTrue(
                     var in KEYS or var in ALIASES, f"{name}: ${{{var}}} is not in the registry"
                 )
+        for var in PENDING_REGISTRY:
+            self.assertNotIn(var, KEYS, f"{var} is registered now: drop it from PENDING_REGISTRY")
 
     def test_explicit_environment_keys_are_registry_keys(self) -> None:
         # `      KEY: value` lines (six spaces: inside a service's environment map).
@@ -291,6 +300,21 @@ class ComposeTest(unittest.TestCase):
         self.assertIn("--url-only --project $(ONBOARDING_PROJECT)", url)
         check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(ONBOARDING_COMPOSE) config -q", check)
+
+    def test_images_are_built_with_their_git_revision(self) -> None:
+        # GET /api/export/replay names the revision in a recording; the build context has no .git,
+        # so make passes `git rev-parse --short HEAD` and the Dockerfiles stamp it.
+        self.assertEqual(COMPOSE.count("        GIT_SHA: ${GIT_SHA:-}\n"), 3)
+        self.assertRegex(
+            DX_MK, r"(?m)^GIT_SHA := \$\(shell git rev-parse --short HEAD 2>/dev/null\)$"
+        )
+        self.assertRegex(DX_MK, r"(?m)^export GIT_SHA$")
+        for dockerfile in ("backend-go", "backend-python", "frontend-react"):
+            text = (ROOT / dockerfile / "Dockerfile").read_text(encoding="utf-8")
+            self.assertIn('ARG GIT_SHA=""', text, dockerfile)
+            self.assertIn('org.opencontainers.image.revision="${GIT_SHA}"', text, dockerfile)
+        go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("-X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}", go)
 
 
 if __name__ == "__main__":

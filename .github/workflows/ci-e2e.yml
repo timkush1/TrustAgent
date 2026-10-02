@@ -63,10 +63,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # docker-compose.yml tags the app images with TRUSTAGENT_VERSION (make
-      # exports the contents of VERSION the same way).
+      # docker-compose.yml tags the app images with TRUSTAGENT_VERSION and builds
+      # them with GIT_SHA (make exports both the same way: the contents of VERSION
+      # and `git rev-parse --short HEAD`).
       - name: Image tag
-        run: echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+        run: |
+          echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+          echo "GIT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -78,7 +81,9 @@ jobs:
         with:
           context: .
           file: backend-go/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           tags: ghcr.io/timkush1/truthtable-proxy:${{ env.TRUSTAGENT_VERSION }}
           load: true
           cache-from: type=gha,scope=proxy
@@ -89,7 +94,9 @@ jobs:
         with:
           context: .
           file: backend-python/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           tags: ghcr.io/timkush1/truthtable-engine:${{ env.TRUSTAGENT_VERSION }}
           load: true
           cache-from: type=gha,scope=engine
@@ -100,7 +107,9 @@ jobs:
         with:
           context: .
           file: frontend-react/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           tags: ghcr.io/timkush1/truthtable-dashboard:${{ env.TRUSTAGENT_VERSION }}
           load: true
           cache-from: type=gha,scope=dashboard

@@ -52,11 +52,14 @@ RUN .venv/bin/python -m grpc_tools.protoc -I/tmp/proto \
 FROM python:${PYTHON_VERSION}-slim
 
 ARG VERSION=dev
+# The git revision the image was built from (make passes `git rev-parse --short HEAD`).
+ARG GIT_SHA=""
 LABEL org.opencontainers.image.title="truthtable-engine" \
       org.opencontainers.image.description="TrustAgent deep-audit engine (gRPC)" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}"
 
 # uid/gid 1001 is shared with the proxy image: the proxy writes the internal
 # token into the trustagent-internal volume (mounted read-only here) and the
