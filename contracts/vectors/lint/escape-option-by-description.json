@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "escape-option-by-description",
-  "status": "draft",
+  "status": "frozen",
   "description": "The same three options plus small_talk, whose key does not look like an escape but whose description mentions a greeting: that counts as an escape option, so no lint fires.",
   "input": {
     "spec": {

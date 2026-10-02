@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/truthtable/backend-go/internal/upstream"
 )
 
 // TestScopeMatrix: what each credential kind may do (SPEC §2.4): admin implies content implies
@@ -158,10 +156,10 @@ func TestKeyLookupCache(t *testing.T) {
 	}
 }
 
-// TestB1ProxyKeyNeverForwarded: every TrustAgent key is recognised (env keys, and minted keys by
-// shape, even while the database is down), so the upstream client strips it wherever a client
-// put it; the client's own credential passes through in passthrough mode.
-func TestB1ProxyKeyNeverForwarded(t *testing.T) {
+// TestB1ProxyKeyRecognised: every TrustAgent key is recognised (env keys, and minted keys by
+// shape, even while the database is down), so the upstream client can strip it wherever a client
+// put it (proxykey_upstream_test.go checks the stripping).
+func TestB1ProxyKeyRecognised(t *testing.T) {
 	f := newFixture(t, nil)
 	minted, _ := f.mint(t, "ci", ScopeIngest)
 	f.st.SetErr(errors.New("db down"))
@@ -174,29 +172,6 @@ func TestB1ProxyKeyNeverForwarded(t *testing.T) {
 		if f.a.IsProxyKey(k) {
 			t.Errorf("%q is taken for a proxy key", k)
 		}
-	}
-	up, err := upstream.New(upstream.Config{BaseURL: "https://api.openai.com"}, f.a.IsProxyKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range []string{appKey, minted} {
-		out := up.OutboundHeaders(http.Header{
-			"Authorization":    {"Bearer " + key},
-			"X-Api-Key":        {key},
-			"X-Trustagent-Key": {key},
-			"Cookie":           {CookieName + "=abc"},
-		})
-		for name, values := range out {
-			for _, v := range values {
-				if strings.Contains(v, key) {
-					t.Errorf("%s: %s forwards the proxy key", key, name)
-				}
-			}
-		}
-	}
-	out := up.OutboundHeaders(http.Header{"Authorization": {"Bearer sk-upstream-1234567890"}, "X-Trustagent-Key": {appKey}})
-	if out.Get("Authorization") != "Bearer sk-upstream-1234567890" || out.Get("X-Trustagent-Key") != "" {
-		t.Errorf("passthrough: %v", out)
 	}
 }
 

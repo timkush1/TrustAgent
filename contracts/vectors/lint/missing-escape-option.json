@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "missing-escape-option",
-  "status": "draft",
+  "status": "frozen",
   "description": "A choice question with three options and no escape: no key starts with no_, nothing_, not_, too_short or too_generic, and no option description mentions a greeting, \"too short\", \"nothing to\", \"not about\" or \"no ... subject/facts/content\". Fires missing_escape_option.",
   "input": {
     "spec": {

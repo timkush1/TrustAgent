@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "unresolved-state-reference",
-  "status": "draft",
+  "status": "frozen",
   "description": "The instructions reference `evidence` and `rules.tone`, but state_fields declares neither evidence nor rules (and there is no tone param): hard-rule error unresolved_state_reference.",
   "input": {
     "spec": {

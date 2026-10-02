@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "builtin-unsafe-policy-is-clean",
-  "status": "draft",
+  "status": "frozen",
   "description": "The shipped unsafe_policy@1 template (SPEC §2.8) passes the hard rules and fires no lint; built-ins must stay lint-clean in CI.",
   "input": {
     "spec": {
