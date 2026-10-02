@@ -226,6 +226,49 @@ func TestCredentialPutRotateDeleteWithUnbind(t *testing.T) {
 	}
 }
 
+// TestCredentialPutMergesThePatch: a credential write's settings patch carries only the fields it
+// changes; the other stored fields of those rows survive, including ones written after the writer
+// read the settings (D75, D76).
+func TestCredentialPutMergesThePatch(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	v := settingsVersion(t, s)
+	if _, err := s.PatchSettings(ctx, "", v, map[string]json.RawMessage{
+		"decision_model":    json.RawMessage(`{"backend":"mock","model":"jev-small"}`),
+		"bindings":          json.RawMessage(`{"upstream_default":"upstream-default"}`),
+		"pricing_overrides": json.RawMessage(`[{"match":"a","provider":"openrouter","input_per_mtok":1,"output_per_mtok":2}]`),
+	}, "admin:root", nil); err != nil {
+		t.Fatal(err)
+	}
+	patch := map[string]json.RawMessage{
+		"bindings":          json.RawMessage(`{"decision_model":"openrouter","judge":"openrouter"}`),
+		"decision_model":    json.RawMessage(`{"backend":"auto"}`),
+		"pricing_overrides": json.RawMessage(`[]`),
+	}
+	if _, err := s.PutCredential(ctx, "", sealedRecord("openrouter", "openrouter"), patch, "admin:root", CredentialAudit{}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dm, bindings map[string]any
+	var overrides []any
+	if json.Unmarshal(st.Rows["decision_model"], &dm) != nil || json.Unmarshal(st.Rows["bindings"], &bindings) != nil ||
+		json.Unmarshal(st.Rows["pricing_overrides"], &overrides) != nil {
+		t.Fatalf("rows %s %s %s", st.Rows["decision_model"], st.Rows["bindings"], st.Rows["pricing_overrides"])
+	}
+	if dm["backend"] != "auto" || dm["model"] != "jev-small" {
+		t.Errorf("decision_model %v: the patched field changes and the stored model stays", dm)
+	}
+	if bindings["decision_model"] != "openrouter" || bindings["judge"] != "openrouter" || bindings["upstream_default"] != "upstream-default" {
+		t.Errorf("bindings %v: the new bindings join the stored upstream binding", bindings)
+	}
+	if len(overrides) != 0 {
+		t.Errorf("pricing_overrides %v: an array replaces its row", overrides)
+	}
+}
+
 func TestCredentialPutIsAtomic(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()

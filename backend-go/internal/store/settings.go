@@ -177,7 +177,7 @@ func (s *PostgresStore) PatchSettings(ctx context.Context, channel string, ifVer
 		if cur != ifVersion {
 			return ErrStaleVersion
 		}
-		keys, err := writeSettingsRows(ctx, tx, channel, rows, actor)
+		keys, err := writeSettingsRows(ctx, tx, channel, rows, actor, false)
 		if err != nil {
 			return err
 		}
@@ -213,8 +213,10 @@ func checkSettingsRows(rows map[string]json.RawMessage) error {
 }
 
 // writeSettingsRows upserts rows inside tx (bumping each row's own version) and notifies
-// "settings:<key>" for each, in key order. It returns the keys written.
-func writeSettingsRows(ctx context.Context, tx pgx.Tx, channel string, rows map[string]json.RawMessage, actor string) ([]string, error) {
+// "settings:<key>" for each, in key order. It returns the keys written. With merge, a value that is
+// a JSON object is merged into a stored object row (its top-level fields replace the stored ones,
+// the other stored fields stay); any other value replaces its row.
+func writeSettingsRows(ctx context.Context, tx pgx.Tx, channel string, rows map[string]json.RawMessage, actor string, merge bool) ([]string, error) {
 	keys := make([]string, 0, len(rows))
 	for k := range rows {
 		keys = append(keys, k)
@@ -223,8 +225,11 @@ func writeSettingsRows(ctx context.Context, tx pgx.Tx, channel string, rows map[
 	for _, k := range keys {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO settings (key, value, updated_by) VALUES ($1, $2::jsonb, $3)
-			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, version = settings.version + 1,
-				updated_by = EXCLUDED.updated_by, updated_at = now()`, k, string(rows[k]), actor); err != nil {
+			ON CONFLICT (key) DO UPDATE SET
+				value = CASE WHEN $4 AND jsonb_typeof(settings.value) = 'object' AND jsonb_typeof(EXCLUDED.value) = 'object'
+					THEN settings.value || EXCLUDED.value ELSE EXCLUDED.value END,
+				version = settings.version + 1, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+			k, string(rows[k]), actor, merge); err != nil {
 			return nil, fmt.Errorf("store: write settings %s: %w", k, err)
 		}
 		if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, notifySettingsPrefix+k); err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/credentials"
+	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/store"
 )
 
@@ -246,6 +247,48 @@ func TestApplyBindingsBackendPinnedComesFirst(t *testing.T) {
 	if err != nil || len(rows) != 2 || string(rows["bindings"]) != `{"decision_model":null,"judge":"openrouter","upstream_default":null}` ||
 		string(rows["judge"]) != `{"provider":"auto","model":null}` {
 		t.Errorf("changed rows %s %v", rows, err)
+	}
+}
+
+// TestChangedFieldsCarriesOnlyTheChangedFields: a credential write's patch holds the fields the
+// bind changed and never an env-seeded sibling (TRUTHTABLE_JEV_MODEL here), so the env value is
+// not copied into a row and a concurrent write to another field survives the merge.
+func TestChangedFieldsCarriesOnlyTheChangedFields(t *testing.T) {
+	s := NewStatic(loadCfg("TRUTHTABLE_JEV_MODEL=jev-env-model", "TRUTHTABLE_SPEND_CAP_LLM_USD_DAY=3")).Current()
+	p := s.Persisted
+	p.DecisionModel.Backend, p.Judge.Provider = "mock", "mock"
+	up := "upstream-default"
+	p.Bindings.UpstreamDefault = &up
+	out, applied, _ := ApplyBindings(p, credentials.NameOpenRouter, []string{TargetDecisionModel, TargetJudge}, s.EnvManaged, false)
+	if len(applied) != 2 {
+		t.Fatalf("applied %v", applied)
+	}
+	rows, err := ChangedFields(p, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"decision_model": `{"backend":"auto"}`,
+		"judge":          `{"provider":"auto"}`,
+		"bindings":       `{"decision_model":"openrouter","judge":"openrouter"}`,
+	}
+	if len(rows) != len(want) {
+		t.Errorf("rows %s", rows)
+	}
+	for k, w := range want {
+		if string(rows[k]) != w {
+			t.Errorf("%s = %s, want %s", k, rows[k], w)
+		}
+	}
+	// pricing_overrides is an array: a change carries it whole.
+	q := out
+	q.PricingOverrides = append(q.PricingOverrides, decision.PriceEntry{Match: "m", Provider: "openrouter", InputPerMTok: 1, OutputPerMTok: 2})
+	rows, err = ChangedFields(out, q)
+	if err != nil || len(rows) != 1 || !strings.HasPrefix(string(rows["pricing_overrides"]), `[{"match":"m"`) {
+		t.Errorf("overrides %s %v", rows, err)
+	}
+	if rows, err := ChangedFields(out, out); err != nil || len(rows) != 0 {
+		t.Errorf("no change %s %v", rows, err)
 	}
 }
 

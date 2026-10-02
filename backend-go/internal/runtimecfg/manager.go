@@ -408,3 +408,35 @@ func ChangedRows(before, after RuntimeSettings) (map[string]json.RawMessage, err
 	}
 	return out, nil
 }
+
+// ChangedFields is ChangedRows reduced to the fields that changed: each object row holds only its
+// top-level fields whose value differs (a nested object such as upstream.default whole), and the
+// pricing_overrides array is whole. It is the settings patch of a credential write
+// (store.PutCredential merges object rows), so a concurrent write to a sibling field is kept.
+func ChangedFields(before, after RuntimeSettings) (map[string]json.RawMessage, error) {
+	rows, err := ChangedRows(before, after)
+	if err != nil {
+		return nil, err
+	}
+	prev, err := ChangedRows(after, before)
+	if err != nil {
+		return nil, err
+	}
+	for key, raw := range rows {
+		var a, b map[string]json.RawMessage
+		if json.Unmarshal(raw, &a) != nil || json.Unmarshal(prev[key], &b) != nil {
+			continue // not an object: the whole value
+		}
+		for f, v := range a {
+			if string(b[f]) == string(v) {
+				delete(a, f)
+			}
+		}
+		out, err := json.Marshal(a)
+		if err != nil {
+			return nil, err
+		}
+		rows[key] = out
+	}
+	return rows, nil
+}

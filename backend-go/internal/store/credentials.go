@@ -111,11 +111,14 @@ type CredentialPutResult struct {
 }
 
 // PutCredential stores rec in one transaction (D31, D75): it upserts the row (replacing one sets
-// rotated_at and clears last_used_at), writes settingsPatch (the bindings a verified write
-// applies, D76's leave-simulated flip; only RuntimeSettingKeys), bumps the runtime-config version,
-// appends the credential's audit row and, when settings were patched, a settings.update row, and
-// notifies "credentials:<name>" and "settings:<key>" on channel (ConfigChannel when empty).
-// rec.LastVerifiedAt and LastVerifyStatus are stored as given (nil: not checked).
+// rotated_at and clears last_used_at), applies settingsPatch (the bindings a verified write
+// applies and D76's leave-simulated flip; only RuntimeSettingKeys), bumps the runtime-config
+// version, appends the credential's audit row and, when settings were patched, a settings.update
+// row, and notifies "credentials:<name>" and "settings:<key>" on channel (ConfigChannel when
+// empty). Each patch value that is a JSON object is merged into its stored row: its top-level
+// fields replace the stored ones and the other stored fields stay, so a patch holds only the
+// fields it changes (runtimecfg.ChangedFields) and a concurrent write to a sibling field is not
+// lost. rec.LastVerifiedAt and LastVerifyStatus are stored as given (nil: not checked).
 func (s *PostgresStore) PutCredential(ctx context.Context, channel string, rec *CredentialRecord, settingsPatch map[string]json.RawMessage,
 	actor string, audit CredentialAudit) (*CredentialPutResult, error) {
 	if err := checkCredentialRecord(rec); err != nil {
@@ -158,7 +161,7 @@ func (s *PostgresStore) PutCredential(ctx context.Context, channel string, rec *
 		out.Rotated = !inserted
 		var keys []string
 		if len(settingsPatch) > 0 {
-			if keys, err = writeSettingsRows(ctx, tx, channel, settingsPatch, actor); err != nil {
+			if keys, err = writeSettingsRows(ctx, tx, channel, settingsPatch, actor, true); err != nil {
 				return err
 			}
 		}
@@ -236,7 +239,7 @@ func (s *PostgresStore) DeleteCredential(ctx context.Context, channel, name, act
 		out.Unbound = unbound
 		var keys []string
 		if len(patch) > 0 {
-			if keys, err = writeSettingsRows(ctx, tx, channel, patch, actor); err != nil {
+			if keys, err = writeSettingsRows(ctx, tx, channel, patch, actor, false); err != nil {
 				return err
 			}
 		}
