@@ -27,7 +27,7 @@ export function TopBar() {
   const isStatic = useRuntimeConfig().appMode === 'static';
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
-      <div className="flex h-12 items-center gap-3 px-6 max-sm:px-4">
+      <div className="flex h-12 items-center gap-3 px-6 max-sm:gap-2 max-sm:px-4">
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-fg">{title}</h1>
         {isStatic ? <ReplayStatus /> : <ModeBadge />}
         {isStatic ? null : <HealthPill />}

@@ -21,6 +21,8 @@ function useSimulatedChecks(demo: boolean): boolean {
 /**
  * "Demo", "Read-only" and "Simulated checks" markers in the top bar. The banner explains demo and
  * read-only; the simulated badge stays put (D89) and says why its numbers are labelled Simulated.
+ * Below 640px the demo and read-only badges keep their icon and hide their word visually (the
+ * banner right under the top bar says it), so the page title is not cut to a few letters.
  */
 export function ModeBadge() {
   const { demo, readonly } = useAppMode();
@@ -31,7 +33,7 @@ export function ModeBadge() {
       {demo ? (
         <span className={badgeClass}>
           <FlaskConical aria-hidden="true" className="size-3.5" />
-          Demo
+          <span className="max-sm:sr-only">Demo</span>
           <span className="sr-only">: {copy.banners.demo.body}</span>
         </span>
       ) : null}
@@ -45,7 +47,7 @@ export function ModeBadge() {
       {readonly ? (
         <span className={badgeClass}>
           <Eye aria-hidden="true" className="size-3.5" />
-          Read-only
+          <span className="max-sm:sr-only">Read-only</span>
         </span>
       ) : null}
     </span>
