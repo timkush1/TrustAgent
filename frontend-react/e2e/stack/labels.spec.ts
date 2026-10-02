@@ -12,7 +12,7 @@
  * stack's scripted traffic); without them the tests skip with the reason, and fail in CI.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { canSignInAsAdmin, requireStack, seriousViolations, signInAsAdmin, skipOrFail } from './stack';
+import { canSignInAsAdmin, cookieWriteHeaders, requireStack, seriousViolations, signInAsAdmin, skipOrFail } from './stack';
 
 const TIMEOUT = 60_000;
 
@@ -37,7 +37,7 @@ async function labelCount(page: Page, evaluatorId: string): Promise<number> {
 
 /** Removes a label this spec may have left behind (after a failure). */
 async function removeLabel(page: Page, traceId: string, target: string): Promise<void> {
-  await page.request.delete('/api/labels', { data: { trace_id: traceId, target }, headers: { 'X-TrustAgent-CSRF': '1' }, failOnStatusCode: false });
+  await page.request.delete('/api/labels', { data: { trace_id: traceId, target }, headers: cookieWriteHeaders(), failOnStatusCode: false });
 }
 
 /** The newest flagged request whose text is stored, with the checks at Elevated or above. */

@@ -10,7 +10,7 @@
  * either the test skips with the reason, and fails in CI. It first runs live at integration (I-5).
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { canSignInAsAdmin, requireStack, signInAsAdmin, skipOrFail } from './stack';
+import { canSignInAsAdmin, cookieWriteHeaders, requireStack, signInAsAdmin, skipOrFail } from './stack';
 
 const TIMEOUT = 30_000;
 const ROUTE = 'support-bot';
@@ -59,6 +59,7 @@ test.describe('studio', () => {
     const id = `e2e_${Date.now().toString(36)}`;
     expect(id).toMatch(ID_PATTERN);
     let saved = false;
+    let archived: number | null = null;
 
     try {
       // 1. Draft with AI (the mock drafter on the demo stack).
@@ -132,9 +133,11 @@ test.describe('studio', () => {
       // 8. Roll the policy back as policy-edit.spec.ts does, then archive the e2e check.
       if ((await policyState(page)).id !== before.id) await rollBackTo(page, before.id);
       if (saved) {
-        await page.request.post(`/api/evaluators/${id}/archive`, { data: { archived: true }, headers: { 'X-TrustAgent-CSRF': '1' } });
+        const res = await page.request.post(`/api/evaluators/${id}/archive`, { data: { archived: true }, headers: cookieWriteHeaders() });
+        archived = res.status();
       }
     }
+    expect(archived, `POST /api/evaluators/${id}/archive answered HTTP ${archived}`).toBe(200);
     const after = await policyState(page);
     expect(after.effective_routes.find((r) => r.name === ROUTE)?.evaluators.some((e) => e.ref.startsWith(`${id}@`))).toBe(false);
   });
