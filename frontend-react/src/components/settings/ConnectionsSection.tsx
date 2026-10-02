@@ -29,7 +29,7 @@ function UpstreamKeys({ items, writeReason }: { items: readonly CredentialView[]
   if (items.length === 0) return null;
   return (
     <Card>
-      <CardHeader level={2} title="Upstream keys" description="Keys the gateway adds when it forwards your app's requests to your model provider. Choose where they are used in Models." />
+      <CardHeader level={2} title="Upstream keys" description="Keys the gateway adds when it forwards your app's requests to your model provider. Each is sent only to the addresses listed." />
       <CardContent>
         <ul aria-label="Upstream keys" className="divide-y divide-border">
           {items.map((c) => (
