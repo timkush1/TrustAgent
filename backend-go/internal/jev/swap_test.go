@@ -183,6 +183,36 @@ func TestSwappableClosesTheReplacedClientAfterTheGrace(t *testing.T) {
 	}
 }
 
+// TestSwappableSwapBackCancelsThePendingClose: a client swapped back in during its grace period
+// serves again and is never closed by its old timer; the one it replaced is.
+func TestSwappableSwapBackCancelsThePendingClose(t *testing.T) {
+	a, b := &fakeClient{name: "a"}, &fakeClient{name: "b"}
+	s := NewSwappable(a)
+	s.grace = 20 * time.Millisecond
+	s.Swap(b)
+	s.Swap(a)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, closed := b.state(); closed == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the replaced client was not closed after the grace period")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(4 * s.grace) // well past a's old timer
+	if _, closed := a.state(); closed != 0 || s.Info().Backend != "a" {
+		t.Fatalf("the client swapped back in was closed %d times while in effect (%q)", closed, s.Info().Backend)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, closed := a.state(); closed != 1 {
+		t.Fatalf("Close closed the client in effect %d times, want once", closed)
+	}
+}
+
 // TestSwappableSameClientIsANoOp: swapping in the client in effect neither stops its keep-warm
 // nor schedules it for closing.
 func TestSwappableSameClientIsANoOp(t *testing.T) {

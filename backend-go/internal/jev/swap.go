@@ -75,6 +75,14 @@ func (s *Swappable) Swap(next Client) (prev Client) {
 	if sameClient(prev, next) {
 		return prev
 	}
+	// A client swapped back in before its grace period ended is in effect again: its pending
+	// close is cancelled, or it would be closed while it serves.
+	for t, c := range s.retired {
+		if sameClient(c, next) {
+			t.Stop()
+			delete(s.retired, t)
+		}
+	}
 	if s.warmSet {
 		if kw, ok := next.(KeepWarmer); ok {
 			kw.SetKeepWarm(s.warm)
