@@ -21,7 +21,7 @@ import { valueLabelView } from '@/domain/controlPresentation';
 import { costRange } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import type { RoiTimeseries, ValueLabel } from '@/types/api';
-import { availableBands, bandWords, bucketLabel, chartMax, costBandSummary, type BandKind, type CostBandPoint } from './savingsModel';
+import { availableBands, bandWords, bucketLabel, chartMax, costBandSummary, countOf, type BandKind, type CostBandPoint } from './savingsModel';
 
 export interface CostBandChartProps {
   points: readonly CostBandPoint[];
@@ -168,7 +168,7 @@ export function CostBandChart({
         { key: 'measured', label: 'your cost', value: formatUsd(point.measured), color: MEASURED_COLOR },
         ...(band ? [{ key: 'band', label: BAND_OPTION[band].toLowerCase() + ', LLM', value: activeBand ? costRange(activeBand.low, activeBand.high) : '—', color: BAND_COLOR, muted: !activeBand }] : []),
       ]}
-      footer={`${formatCount(point.gated)} answers checked`}
+      footer={`${countOf(point.gated, 'answer')} checked`}
     />
   ) : null;
   /** The readout of bucket `i` in words (the slider's value text). */
@@ -177,7 +177,7 @@ export function CostBandChart({
     if (!p) return '';
     const b = band ? p[band] : null;
     const bandPart = band ? `, ${BAND_OPTION[band].toLowerCase()} LLM ${b ? costRange(b.low, b.high) : 'not estimated'}` : '';
-    return `${bucketLabel(bucket, p.t)}: your cost ${formatUsd(p.measured)}${bandPart}, ${formatCount(p.gated)} answers checked.`;
+    return `${bucketLabel(bucket, p.t)}: your cost ${formatUsd(p.measured)}${bandPart}, ${countOf(p.gated, 'answer')} checked.`;
   };
   const current = active ?? Math.max(0, n - 1);
 

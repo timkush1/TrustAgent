@@ -42,6 +42,11 @@ export interface CostBandPoint {
 
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 
+/** "1 answer", "1,199 answers". */
+export function countOf(n: number, one: string, many = `${one}s`): string {
+  return `${formatCount(n)} ${n === 1 ? one : many}`;
+}
+
 export function counterfactual(roi: RoiSummary | undefined, kind: Counterfactual['kind']): Counterfactual | null {
   return roi?.counterfactuals.find((c) => c.kind === kind) ?? null;
 }
@@ -118,7 +123,7 @@ export function bandWords(kind: BandKind): string {
 export function costBandSummary(points: readonly CostBandPoint[], band: BandKind | null, bandLabel: ValueLabel): string {
   const spent = points.reduce((s, p) => s + p.measured, 0);
   const answers = points.reduce((s, p) => s + p.gated, 0);
-  let line = `Checking ${formatCount(answers)} answers cost ${formatUsd(spent)} over ${points.length} intervals.`;
+  let line = `Checking ${countOf(answers, 'answer')} cost ${formatUsd(spent)} over ${countOf(points.length, 'interval')}.`;
   if (band) {
     const present = points.flatMap((p) => (p[band] ? [p[band]] : []));
     if (present.length > 0) {
@@ -161,7 +166,7 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
     {
       key: 'fast_check',
       label: 'Fast check (Jev)',
-      detail: `${n.toLocaleString('en-US')} answers checked`,
+      detail: `${countOf(n, 'answer')} checked`,
       total: formatUsd(roi.decision_cost.usd),
       per1k: formatUsd(decisionPer1k),
       valueLabel: costLabel(sim, roi.decision_cost.label),

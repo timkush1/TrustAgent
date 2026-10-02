@@ -33,7 +33,7 @@ import { formatPercent } from '@/domain/rates';
 import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
 import { CostBandChart } from './CostBandChart';
-import { componentRows, costBandPoints, outcomeSplit, samplingLines, savingsRange, type SavingsRange } from './savingsModel';
+import { componentRows, costBandPoints, countOf, outcomeSplit, samplingLines, savingsRange, type SavingsRange } from './savingsModel';
 
 const linkClass = 'inline-flex items-center gap-0.5 text-sm font-medium text-fg underline underline-offset-2';
 
@@ -221,7 +221,8 @@ function OutcomesAndSpeed({ roi }: { roi: RoiSummary }) {
           </dl>
           <p className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
             <span>
-              Stopped counts blocked answers and fallback answers only. {formatCount(split.notAssessed)} answers could not be assessed.
+              Stopped counts blocked answers and fallback answers only. {countOf(split.notAssessed, 'answer')}{' '}
+              {split.notAssessed === 1 ? 'was' : 'were'} not assessed.
             </span>
             <EvidenceBadge label={split.label} subject="Stopped and flagged answers" />
           </p>

@@ -140,6 +140,7 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(stopped.closest('div')).toHaveTextContent('7');
     expect(screen.getByText('Flagged to your app').closest('div')).toHaveTextContent('34');
     expect(badge('Measured', 'Stopped and flagged answers')).toBeInTheDocument();
+    expect(screen.getByText(/answers? (was|were) not assessed\.$/)).toHaveTextContent(/72 answers were not assessed\.$/);
     expect(screen.getByText('p95').nextElementSibling).toHaveTextContent('480 ms');
     expect(screen.getByText('Missed the deadline').nextElementSibling).toHaveTextContent('0.4%');
     expect(screen.getByText('Uniform sampling: 4 of 50 audits today (1% of answers)')).toBeInTheDocument();

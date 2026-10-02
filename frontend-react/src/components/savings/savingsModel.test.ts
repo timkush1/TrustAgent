@@ -60,6 +60,7 @@ describe('Savings bands (D73)', () => {
       'Checking 250 answers cost $0.21 over 2 intervals. An LLM asking the same questions would have cost $0.53–$0.70 (estimate).',
     );
     expect(costBandSummary(points, null, 'estimate')).toBe('Checking 250 answers cost $0.21 over 2 intervals.');
+    expect(costBandSummary([{ ...points[0], gated: 1 }], null, 'estimate')).toMatch(/^Checking 1 answer cost \$[\d.]+ over 1 interval\.$/);
   });
 });
 
