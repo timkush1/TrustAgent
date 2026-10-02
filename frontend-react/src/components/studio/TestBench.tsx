@@ -17,7 +17,7 @@ import { Slider } from '@/components/ui/slider';
 import { STUDIO_TEST_MAX_SAMPLES } from '@/data/control/studioPlane';
 import { errorCodeHint } from '@/data/errors';
 import { formatCount, formatDurationMs, formatRisk, formatUsd } from '@/domain/format';
-import { decisionBackendLabel } from '@/domain/presentation';
+import { copy, decisionBackendLabel } from '@/domain/presentation';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
 import type { DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse } from '@/types/api';
@@ -155,7 +155,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
     <StudioStep
       n={3}
       id="step-test"
-      title="Test on samples"
+      title={copy.studio.test_on_samples}
       description="Label what the check should catch, then run it on the fast check. Each sample is one call."
     >
       <SampleList samples={samples} onChange={onSamplesChange} disabled={test.isPending} />
