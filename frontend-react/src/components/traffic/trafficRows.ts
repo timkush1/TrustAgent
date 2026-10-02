@@ -6,9 +6,13 @@
  */
 import { mergeTraceSummary } from '@/data/normalize';
 import type { TraceListParams } from '@/data/source';
+import { outcomesContract } from '@/domain/contracts';
 import {
   checkedAgainst,
   evidenceSourceLabel,
+  fillTemplate,
+  glossaryTerm,
+  humanizeId,
   headlineReason,
   outcomeOf,
   reasonCopy,
@@ -28,11 +32,13 @@ export function hasFilters(f: TrafficFilters): boolean {
 }
 
 /**
- * `reason` matches a whole reason (`contradiction:critical`, `det:numbers_not_in_evidence`) or an
- * evaluator at any level (`contradiction`).
+ * `reason` as the proxy reads it (P4-PLAN D68): a whole code (`contradiction:critical`,
+ * `det:numbers_not_in_evidence`, `disagreement`) matches only that code; a prefix ending in a colon
+ * (`contradiction:`, `det:`) matches every code it starts, so `contradiction:` is the evaluator at
+ * any level.
  */
 export function hasReason(reasons: readonly string[], reason: string): boolean {
-  return reasons.some((r) => r === reason || r.startsWith(`${reason}:`));
+  return reason.endsWith(':') ? reasons.some((r) => r.startsWith(reason)) : reasons.includes(reason);
 }
 
 export function matchesFilters(t: TraceSummary, f: TrafficFilters): boolean {
@@ -43,12 +49,40 @@ export function matchesFilters(t: TraceSummary, f: TrafficFilters): boolean {
   return true;
 }
 
-/** GET /api/traces parameters for the filters. The API has no reason filter: that one is local. */
-export function traceListParams(f: TrafficFilters): TraceListParams {
+/** The words of a reason filter: the reason, or for a prefix the check at any level. */
+export function reasonFilterLabel(reason: string): string {
+  if (!reason.endsWith(':')) return reasonCopy(reason);
+  if (reason === 'det:') return `${glossaryTerm('instant_checks')?.term ?? 'Instant checks'}, any finding`;
+  // The evaluator's own words ("contradiction:*" → "Contradicts your documents"), else its name.
+  const entry = outcomesContract.reasons.find((r) => r.match === `${reason}*`);
+  return `${entry ? fillTemplate(entry.copy, {}) : humanizeId(reason.slice(0, -1))}, any level`;
+}
+
+/**
+ * How far back the reason filter looks: the proxy bounds it by `since` (D68), and 30 days is the
+ * default retention (TRUTHTABLE_RETENTION_DAYS), so by default nothing kept is left out.
+ */
+export const REASON_LOOKBACK_DAYS = 30;
+
+/** The `since` of a reason filter applied at `now`: the start of that minute, REASON_LOOKBACK_DAYS back. */
+export function reasonSince(now: number): string {
+  const minute = Math.floor(now / 60_000) * 60_000;
+  return new Date(minute - REASON_LOOKBACK_DAYS * 86_400_000).toISOString();
+}
+
+/**
+ * GET /api/traces parameters for the filters. The reason goes to the proxy with its `since`
+ * (`reasonSince`); live traces and an older proxy that ignores it are still filtered here.
+ */
+export function traceListParams(f: TrafficFilters, since?: string): TraceListParams {
   const params: TraceListParams = { limit: TRAFFIC_PAGE_SIZE };
   if (f.outcome) params.outcome = f.outcome;
   if (f.route) params.route = f.route;
   if (f.model) params.model = f.model;
+  if (f.reason && since) {
+    params.reason = f.reason;
+    params.since = since;
+  }
   return params;
 }
 

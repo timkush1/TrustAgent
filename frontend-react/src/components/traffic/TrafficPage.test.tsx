@@ -110,7 +110,7 @@ describe('Traffic list', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('filters by outcome through the API and by reason locally', async () => {
+  it('filters by outcome and reason through the API, and by reason locally too', async () => {
     const api = createFakeApi({ traces: s0Traces() });
     const { router } = renderLive('/app/traffic?outcome=flagged', api);
     await waitFor(() => expect(dataRows()).toHaveLength(1));
@@ -123,7 +123,12 @@ describe('Traffic list', () => {
     await router.navigate({ to: '/app/traffic', search: { reason: 'det:numbers_not_in_evidence' } });
     await waitFor(() => expect(dataRows()).toHaveLength(1));
     expect(screen.getByText('Mentions a number not in your documents')).toBeInTheDocument();
-    expect(api.traceQueries.at(-1)?.has('reason')).toBe(false);
+    // The reason goes to the proxy with its 30-day since (D68).
+    const q = api.traceQueries.at(-1);
+    expect(q?.get('reason')).toBe('det:numbers_not_in_evidence');
+    const since = Date.parse(q?.get('since') ?? '');
+    expect(Date.now() - since).toBeGreaterThanOrEqual(30 * 86_400_000);
+    expect(Date.now() - since).toBeLessThan(30 * 86_400_000 + 120_000);
 
     await userEvent.click(screen.getByRole('link', { name: 'Remove the reason filter' }));
     await waitFor(() => expect(dataRows()).toHaveLength(3));

@@ -3,14 +3,18 @@
  * (trafficRows.ts). REST rows are also handed to streamStore, so later stream events (audit
  * queued, started, completed, …) update them in place. While the list is paused the REST pages
  * stop refreshing too, so nothing new slides in; loading older pages at the bottom still works.
+ *
+ * A reason filter goes to the proxy (D68) with `since` REASON_LOOKBACK_DAYS before the page opened,
+ * fixed for the visit so the query stays put. The static replay has no proxy to ask: it filters by
+ * reason here, like the live rows.
  */
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
-import { useDataSource } from '@/app/services';
+import { useEffect, useMemo, useState } from 'react';
+import { useDataSource, useRuntimeConfig } from '@/app/services';
 import { useStreamStore } from '@/data/stream/streamStore';
 import type { TraceSummary } from '@/types/api';
 import { tracePagesQuery } from './trafficQuery';
-import { combineTrafficRows, traceListParams, type TrafficFilters } from './trafficRows';
+import { combineTrafficRows, reasonSince, traceListParams, type TrafficFilters } from './trafficRows';
 
 export function useTrafficRows(filters: TrafficFilters) {
   const ds = useDataSource();
@@ -21,7 +25,10 @@ export function useTrafficRows(filters: TrafficFilters) {
   const visibleOrder = useStreamStore((s) => s.visibleOrder);
   const decisions = useStreamStore((s) => s.decisions);
 
-  const params = useMemo(() => traceListParams({ outcome, route, model }), [outcome, route, model]);
+  const replay = useRuntimeConfig().appMode === 'static';
+  const [openedAt] = useState(() => Date.now());
+  const since = reason && !replay ? reasonSince(openedAt) : undefined;
+  const params = useMemo(() => traceListParams({ outcome, route, model, reason }, since), [outcome, route, model, reason, since]);
   const query = useInfiniteQuery({
     ...tracePagesQuery(ds, params),
     // Paused: keep the pages on screen (a first load for new filters still runs).
