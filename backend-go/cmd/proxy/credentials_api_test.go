@@ -58,11 +58,16 @@ type credRigOpts struct {
 	mutate func(*config.Config)
 	// ephemeral leaves the master key ephemeral (store unavailable, D32).
 	ephemeral bool
+	// pg, when set, is the rig's Postgres store (default: a fresh schema of its own).
+	pg *store.PostgresStore
 }
 
 func newCredRig(t *testing.T, o credRigOpts) *credRig {
 	t.Helper()
-	pg := runtimePG(t)
+	pg := o.pg
+	if pg == nil {
+		pg = runtimePG(t)
+	}
 	mu, err := mockupstream.New(mockupstream.Config{})
 	if err != nil {
 		t.Fatal(err)
