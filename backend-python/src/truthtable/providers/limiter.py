@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
 
 from .base import CompletionRequest, CompletionResponse, LLMProvider
+from .swappable import SwappableProvider
 
 DEFAULT_JUDGE_MAX_INFLIGHT = 16
 
@@ -120,7 +121,14 @@ class LimitedProvider(LLMProvider):
 
 
 def unwrap(provider: LLMProvider) -> LLMProvider:
-    """The provider inside any LimitedProvider wrappers."""
-    while isinstance(provider, LimitedProvider):
-        provider = provider.inner
-    return provider
+    """
+    The provider inside any LimitedProvider and SwappableProvider wrappers (a
+    SwappableProvider without a judge is returned as is).
+    """
+    while True:
+        if isinstance(provider, LimitedProvider):
+            provider = provider.inner
+        elif isinstance(provider, SwappableProvider) and provider.current is not None:
+            provider = provider.current
+        else:
+            return provider
