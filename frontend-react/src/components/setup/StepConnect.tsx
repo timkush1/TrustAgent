@@ -21,6 +21,7 @@ import { usePutCredential, useVerifyCredential } from '@/components/settings/use
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { isApiError } from '@/data/errors';
 import { qk } from '@/data/queries';
 import { qkcSecurity } from '@/data/queries/security';
 import { copy } from '@/domain/presentation';
@@ -62,6 +63,10 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
     onSuccess: (next) => {
       qc.setQueryData(qkcSecurity.settings, next);
       void qc.invalidateQueries({ queryKey: qk.status });
+    },
+    // Someone saved first (412): read the settings again, so the next click sends the new version.
+    onError: (err) => {
+      if (isApiError(err) && err.status === 412) void qc.invalidateQueries({ queryKey: qkcSecurity.settings });
     },
   });
 

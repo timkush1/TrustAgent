@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router';
 import { configure, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import connectNoCredits from '@contracts/fixtures/api/ConnectCompleteResponse.no-credits.json';
 import { ServicesContext, type AppServices } from '@/app/services';
@@ -119,6 +120,27 @@ describe('Setup wizard, step 1: secure this dashboard', { timeout: 30_000 }, () 
     await user.click(screen.getByRole('button', { name: 'Next' }));
     expect(await panel(copy.setup.step_connect.title)).toBeTruthy();
     expect(screen.getByRole('link', { name: /Secure this dashboard.*Done/ })).toBeInTheDocument();
+  });
+
+  it('keeps the admin key on screen while the new admin session reads the settings', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const control = signedOut({ settings: unbound() });
+    window.history.replaceState(null, '', '/app/setup#token=setup-token-123');
+    renderPage('/app/setup', { control, status: fresh() });
+    server.use(
+      http.get(`${API}/api/settings`, async () => {
+        await held;
+        return HttpResponse.json(unbound());
+      }),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Create the admin key' }));
+    expect(await screen.findByText(/Admin actions are available/)).toBeInTheDocument();
+    // The settings are still on their way: the key shown once and its "I saved it" stay put.
+    expect(screen.getByText(CLAIMED_ADMIN_KEY)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: copy.setup.step_secure.saved_confirm })).toBeInTheDocument();
+    release();
   });
 
   it('keeps the created key on screen when the browser does not keep the session cookie', async () => {
@@ -298,6 +320,17 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('reads the settings again after a 412, so the next try sends the new version', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ settings: unbound(), settingsPatch: errorReply(412, 'stale_version', 'The settings changed since you loaded them.') });
+    renderPage('/app/setup?step=connect', { control, status: fresh() });
+    const button = await screen.findByRole('button', { name: copy.setup.step_connect.simulated });
+    const gets = control.callsTo('/api/settings', 'GET').length;
+    await user.click(button);
+    expect(await screen.findByText(copy.settings.stale_version)).toBeInTheDocument();
+    await waitFor(() => expect(control.callsTo('/api/settings', 'GET').length).toBeGreaterThan(gets));
+  });
+
   it('says the fast check already runs on a key from .env, and keeps Connect and Paste off', async () => {
     const status = { decision_model: { ...adminStatus().decision_model, credential: { source: 'env' as const, name: 'openrouter', masked: 'sk-…9c1e' } } };
     renderPage('/app/setup?step=connect', { control: createControlApi({ settings: unbound() }), status });
@@ -348,6 +381,19 @@ describe('Setup wizard, step 3: see it work', { timeout: 30_000 }, () => {
     // An app key exists already: it is named, never minted again.
     expect(within(step).getByText(/“ci-ingest”/)).toBeInTheDocument();
     expect(within(step).queryByRole('button', { name: 'Create an app key' })).not.toBeInTheDocument();
+  });
+
+  it('offers no app key when the key list cannot be read, only another try', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ apiKeys: errorReply(503, 'persistence_disabled', 'API keys need the database.') });
+    renderPage('/app/setup?step=try', { control });
+    const step = await panel(copy.setup.step_see_it_work.title);
+    expect(await within(step).findByText(/The API keys could not be read/)).toBeInTheDocument();
+    expect(within(step).queryByRole('button', { name: 'Create an app key' })).not.toBeInTheDocument();
+    const gets = control.callsTo('/api/keys', 'GET').length;
+    await user.click(within(step).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(control.callsTo('/api/keys', 'GET').length).toBeGreaterThan(gets));
+    expect(control.callsTo('/api/keys', 'POST')).toHaveLength(0);
   });
 
   it('mints an app key only when none is active, and shows it once', async () => {

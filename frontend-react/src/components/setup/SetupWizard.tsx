@@ -90,12 +90,14 @@ export function SetupWizard({ step }: { step?: SetupStep }) {
   const progress = useSetupProgress();
   const mode = useAppMode();
   const writeReason = useSettingsWriteReason();
-  const pending = setup.isPending || progress.pending;
-  const showLoading = useDelayedLoading(pending);
 
   // Stay on step 1 after a sign-in or a claim here, so the viewer sees it worked (and saves the key).
   const stay = auth.createdKey !== null || auth.signIn.isSuccess;
   const current: SetupStep = step ?? (stay ? 'secure' : progress.next);
+  // Step 1 needs only who is signed in: the settings an admin session starts reading must not hide
+  // the admin key that is shown once.
+  const pending = setup.isPending || (current === 'secure' ? progress.sessionPending : progress.pending);
+  const showLoading = useDelayedLoading(pending);
   const done: Record<SetupStep, boolean> = { secure: progress.secured, connect: progress.canTry, try: false };
   const go = (to: SetupStep) => void navigate({ to: '/app/setup', search: { step: to } });
 

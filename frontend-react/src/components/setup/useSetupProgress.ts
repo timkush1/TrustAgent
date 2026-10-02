@@ -17,8 +17,10 @@ export const SETUP_STEPS = ['secure', 'connect', 'try'] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 export interface SetupProgress {
-  /** Still reading who is signed in. */
+  /** Still reading who is signed in, or (for an admin) the settings that decide steps 2 and 3. */
   pending: boolean;
+  /** Still reading who is signed in: all step 1 needs. */
+  sessionPending: boolean;
   session: SessionInfo | null;
   admin: boolean;
   secured: boolean;
@@ -34,7 +36,7 @@ export interface SetupProgress {
   next: SetupStep;
 }
 
-export function setupProgress(input: { session: SessionInfo | null; settings: SettingsView | undefined; status: SystemStatus | undefined }): Omit<SetupProgress, 'pending'> {
+export function setupProgress(input: { session: SessionInfo | null; settings: SettingsView | undefined; status: SystemStatus | undefined }): Omit<SetupProgress, 'pending' | 'sessionPending'> {
   const { session, settings, status } = input;
   const admin = session?.scopes.includes('admin') ?? false;
   const runtime = settings?.runtime;
@@ -56,5 +58,5 @@ export function useSetupProgress(): SetupProgress {
   const status = useQuery(statusQuery(ds));
   const progress = setupProgress({ session: signedIn, settings: settings.data, status: status.data });
   const pending = session.isPending || (admin && settings.isPending && !settings.isError);
-  return { ...progress, pending };
+  return { ...progress, pending, sessionPending: session.isPending };
 }

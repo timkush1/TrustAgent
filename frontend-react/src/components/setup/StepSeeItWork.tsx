@@ -10,7 +10,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, KeyRound, Play } from 'lucide-react';
+import { ArrowRight, KeyRound, Play, RotateCw } from 'lucide-react';
 import { useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
@@ -64,6 +64,18 @@ function AppKey({ writeReason }: { writeReason: Reason | null }) {
         </p>
       ) : keys.isPending ? (
         <p className="text-sm text-fg-muted">{copy.states.loading}</p>
+      ) : keys.isError ? (
+        // Without the list it is unknown whether an app key exists: no second key on a guess (D87).
+        <ProblemNote
+          error={keys.error}
+          title="The API keys could not be read"
+          action={
+            <Button size="sm" onClick={() => void keys.refetch()} pending={keys.isFetching}>
+              <RotateCw aria-hidden="true" />
+              Try again
+            </Button>
+          }
+        />
       ) : (
         <>
           <p className="text-sm text-fg-muted">Your apps send their requests with an app key (it can only send requests, never read them back).</p>
