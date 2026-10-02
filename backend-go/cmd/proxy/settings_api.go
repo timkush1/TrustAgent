@@ -807,10 +807,36 @@ func (s *server) checkSettings(snap *runtimecfg.Snapshot, after runtimecfg.Runti
 		has("decision_model.base_url"), has("bindings.decision_model"), true)
 	for _, u := range upstreamSlots {
 		up := upstreams[u.slot]
-		s.checkURL(&fields, snap, "upstream."+u.slot+".url", up.URL, up.Credential,
+		target := up.URL
+		if target == nil && up.Credential != nil {
+			// A null URL is the built-in one: the bound key must be allowed to go there too.
+			target = s.builtinUpstreamURL(u.slot)
+		}
+		s.checkURL(&fields, snap, "upstream."+u.slot+".url", target, up.Credential,
 			has("upstream."+u.slot+".url"), has("upstream."+u.slot+".credential"), up.Credential != nil)
 	}
 	return fields, unavailable
+}
+
+// builtinUpstreamURL is the URL an upstream uses when its setting is null: the registry default
+// of its env key (the OpenAI API for the default upstream, the Anthropic API for anthropic); nil
+// for the fallback, which a null URL turns off.
+func (s *server) builtinUpstreamURL(slot string) *string {
+	def := ""
+	switch slot {
+	case "default":
+		def = config.DefaultUpstreamURL
+	case "anthropic":
+		if reg := s.cfg.Registry(); reg != nil {
+			if k, ok := reg.Lookup("TRUTHTABLE_ANTHROPIC_UPSTREAM_URL"); ok {
+				def = k.DefaultValue()
+			}
+		}
+	}
+	if def == "" {
+		return nil
+	}
+	return &def
 }
 
 // isHTTP reports a URL with the http scheme.

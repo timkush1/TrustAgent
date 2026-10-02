@@ -648,3 +648,36 @@ func TestSettingsEngineEnvManaged(t *testing.T) {
 		t.Errorf("judge.model %v", v.Runtime.Judge.Model)
 	}
 }
+
+// TestSettingsNullUpstreamURLKeepsTheBoundKey (D37, D78): a null upstream URL means the built-in
+// one (the OpenAI API for the default upstream), so clearing the URL while a key saved for another
+// address is bound answers reenter_secret instead of saving a key that can no longer be sent.
+func TestSettingsNullUpstreamURLKeepsTheBoundKey(t *testing.T) {
+	env := newSettingsEnv(t, envOpts{})
+	putSealed(t, env.pg, env.master, "upstream-default", "sk-test-upstream-0123456789", nil, "https://gw.example.com")
+	if err := env.srv.rt.manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, etag := env.settings(settingsAdminKey)
+	v := env.patched(env.patchSettings(etag, `{"upstream":{"default":{"url":"https://gw.example.com/v1","credential":"upstream-default"}}}`, ""))
+
+	for _, body := range []string{`{"upstream":{"default":{"url":null}}}`, `{"upstream":{"default":{"url":""}}}`} {
+		resp, b := env.patchSettings(v.ETag, body, "")
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("%s: %d, want 422", body, resp.StatusCode)
+		}
+		e := apiErr(t, b)
+		if !slices.Equal(fieldCodes(e), []string{"upstream.default.url=reenter_secret"}) {
+			t.Fatalf("%s: %s %v", body, e.Code, fieldCodes(e))
+		}
+		if names, _ := e.FieldErrors[0].Details["names"].([]any); len(names) != 1 || names[0] != "upstream-default" {
+			t.Errorf("%s: details %v", body, e.FieldErrors[0].Details)
+		}
+	}
+	// Unbound, the URL may go back to the built-in one.
+	v = env.patched(env.patchSettings(v.ETag, `{"upstream":{"default":{"credential":null}}}`, ""))
+	v = env.patched(env.patchSettings(v.ETag, `{"upstream":{"default":{"url":null}}}`, ""))
+	if v.Runtime.Upstream.Default.URL != nil || v.Runtime.Upstream.Default.Credential != nil || v.Runtime.Bindings.UpstreamDefault != nil {
+		t.Errorf("after unbinding and clearing: %+v %+v", v.Runtime.Upstream.Default, v.Runtime.Bindings)
+	}
+}
