@@ -59,6 +59,13 @@ already carries (documents in the system prompt, a `Context:` block, tool result
 `trustagent.context` extension). With nothing to check against, it says **not checked** instead
 of guessing. A verified knowledge base is an optional add-on.
 
+**In the dashboard:** live traffic with one outcome per answer and its claims marked inline;
+versioned policies with a free preview of their impact; an **Evaluator Studio** that drafts a new
+check from one sentence, tests it on your own traffic and calibrates it from your labels;
+**Savings**, which shows what the checks actually cost (measured) next to labelled estimates of
+what the same checks would cost with an LLM judge; and **Settings**, where you connect OpenRouter,
+set daily budgets and manage API keys.
+
 ## How it works
 
 ```
@@ -117,15 +124,26 @@ make demo-down                     # stop (make demo-clean also deletes the demo
 ### 2. Real mode (your own OpenRouter key)
 
 One OpenRouter key runs both the fast check (Jev) and the deep-audit judge (Claude Haiku). With
-the shipped defaults that costs about $3 per 1,000 answers **[estimate]**, under daily caps of $2
-for fast checks and $5 for deep audits. [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) has the steps
+the shipped defaults that costs about $3 per 1,000 answers **[estimate]**, under daily budgets of
+$2 for fast checks and $5 for deep audits. [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) has the steps
 and the costs.
 
 ```bash
-echo 'OPENROUTER_API_KEY=sk-or-v1-...' >> .env   # .env is gitignored
-make up                                          # proxy, engine, Postgres, dashboard; opens the setup link
-make doctor                                      # shows the fast-check backend, why it was chosen, snapshot, latency and cost
+make up        # proxy, engine, Postgres, dashboard; opens the one-time setup link
 ```
+
+The setup wizard creates your admin key, then offers **Connect OpenRouter**: sign in on
+openrouter.ai, approve, and you are back with a key that is stored encrypted and never reaches the
+browser. You can also paste a key, put `OPENROUTER_API_KEY=…` in `.env` (an environment key always
+wins), or answer hidden prompts with `make configure WITH_SECRETS=1`. No account yet? **Try it
+without a key (simulated checks, $0)**. Then:
+
+```bash
+make doctor    # the fast-check backend and why, snapshot, latency and cost; saved keys; budgets
+```
+
+Before saving keys in the dashboard on a stack you keep, back up the `trustagent-secrets` Docker
+volume or set `TRUTHTABLE_SECRET_KEY` ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
 
 ## Use it from your app
 
@@ -210,17 +228,20 @@ generated secrets. The settings most people touch:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENROUTER_API_KEY` | — | Runs the fast check and the judge |
+| `OPENROUTER_API_KEY` | — | Runs the fast check and the judge (or connect it in the dashboard) |
 | `TRUTHTABLE_JEV_BACKEND` | `auto` | `openrouter-decisions`, `typesafe`, `compatible`, `mock` or `off`; `auto` picks from your keys |
 | `LLM_PROVIDER` | `auto` | The deep-audit judge |
 | `TRUTHTABLE_UPSTREAM_URL` / `_API_KEY` | api.openai.com / — | The LLM API the gateway forwards to; a key turns on inject mode |
 | `TRUTHTABLE_API_KEYS` / `TRUTHTABLE_ADMIN_KEYS` | — | Client keys (`label=key,...`) and admin keys |
 | `TRUTHTABLE_GATE_DEFAULT_MODE` | `observe` | The mode of routes that do not set one |
-| `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY` / `_LLM_USD_DAY` | 2.00 / 5.00 | Daily caps for fast checks and deep audits |
+| `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY` / `_LLM_USD_DAY` | 2.00 / 5.00 | Daily budgets for fast checks and deep audits |
 | `COMPOSE_PROFILES` | — | Add-ons: `knowledge`, `local-llm`, `observability`, `redis` |
 
-Every key, with its default and who reads it, is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
-(generated from `contracts/config/keys.v1.json`; `proxy -check-config` checks a configuration).
+Most of these can also be changed while the stack runs, on the dashboard's **Settings** page
+(Connections, Models, Budgets and prices, Access); a non-empty environment value wins and shows
+there as read-only. Every key, with its default and who reads it, is in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md) (generated from `contracts/config/keys.v1.json`;
+`proxy -check-config` checks a configuration).
 
 ## Testing and evaluation
 
@@ -256,7 +277,8 @@ The gateway's metrics are `trustagent_gateway_*` (job `proxy`, port 8002) and th
   `trustagent_gateway_overhead_seconds{route,mode}`,
   `trustagent_gateway_gate_decisions_total{route,mode,action,status}`,
   `trustagent_gateway_jev_requests_total{backend,outcome}`,
-  `trustagent_gateway_fallback_total{outcome}`, `trustagent_gateway_audit_jobs_total`, ...
+  `trustagent_gateway_fallback_total{outcome}`, `trustagent_gateway_audit_jobs_total`,
+  `trustagent_gateway_spend_usd_today{kind}`, `trustagent_gateway_jev_cost_usd_total{component}`, ...
 - Engine: `trustagent_engine_audits_total{status}`, `trustagent_engine_claims_total{verdict}`,
   `trustagent_engine_stage_duration_seconds{stage}`,
   `trustagent_engine_judge_requests_total{provider,outcome}`,
@@ -271,14 +293,17 @@ Controls map to the [OWASP LLM Top 10](https://owasp.org/www-project-top-10-for-
 ([docs/SECURITY.md](docs/SECURITY.md)):
 
 - **Keys:** the proxy key (`X-TrustAgent-Key`) is never forwarded upstream; in inject mode every
-  client credential is stripped. Vendor keys stay server-side and never reach the browser.
+  client credential is stripped. Vendor keys saved in the dashboard are encrypted (AES-256-GCM,
+  bound to their name, provider and the origins they may be sent to), masked everywhere, and
+  never reach the browser; logs, API errors and WebSocket events are redacted.
 - **Access:** scoped keys (ingest, read, content, admin), a one-time setup link for the first
   admin, sessions with CSRF protection, per-key rate limits, 127.0.0.1-only ports by default,
   an authenticated internal gRPC channel.
 - **Prompt injection:** untrusted evidence is delimiter-tagged, the judge treats it as data, and
   output is schema-validated; a manipulated answer degrades to UNKNOWN, never to a verdict.
-- **Blocking CI scanners:** gosec, bandit, npm audit, and a checker that fails on superseded
-  identifiers.
+- **Accountability:** an append-only admin audit log of every key, setting and evaluator change.
+- **Blocking CI scanners:** gosec, bandit, npm audit, gitleaks over the whole history, and a
+  checker that fails on superseded identifiers.
 
 ## Project structure
 
@@ -303,8 +328,9 @@ TrustAgent/
 | [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | From a fresh laptop to the demo and real mode, with troubleshooting |
 | [docs/DEMO.md](docs/DEMO.md) | Running and presenting the zero-key demo |
 | [docs/GATEWAY.md](docs/GATEWAY.md) | The gateway reference: modes, headers, streaming, failures, block, fallback, credentials, errors |
-| [docs/EVALUATORS.md](docs/EVALUATORS.md) | Evaluators, routes and calibration |
-| [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) | Getting Jev access: OpenRouter key, costs, settings, errors |
+| [docs/EVALUATORS.md](docs/EVALUATORS.md) | Evaluators, routes, the Evaluator Studio, labels and calibration |
+| [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) | Getting Jev access: Connect OpenRouter or a key, costs, settings, errors |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The tiers, the control plane, failure modes and ports |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every configuration key (generated) |
 | [docs/EVALUATION.md](docs/EVALUATION.md) · [docs/SECURITY.md](docs/SECURITY.md) | Evaluation methodology · threat model |
 | [docs/v2/SPEC.md](docs/v2/SPEC.md) | The 2.0 specification |
@@ -319,12 +345,12 @@ The full index is [docs/README.md](docs/README.md). Component guides:
 
 - **Done:** the walking skeleton, the fast-check backends, access control, versioned policies and
   evaluators, the deep-audit engine v2, the dashboard shell and trace detail, the static replay
-  site.
-- **P3 (now):** enforcement on `/v1` (block and fallback, streaming with trailers, Anthropic
-  Messages and completions), the Traffic, Policies and Playground pages, doctor checks, the
-  renamed metrics.
-- **Next:** encrypted credentials and Connect OpenRouter, Evaluator Studio and calibration in the
-  dashboard, ROI (P4); release images and the measured benchmark (P5-P6).
+  site; enforcement on `/v1` (block and fallback, streaming with trailers, Anthropic Messages and
+  completions), the Traffic, Policies and Playground pages (P3); encrypted credentials and
+  Connect OpenRouter, dashboard Settings, the cost ledger with daily budgets and the Savings page,
+  the Evaluator Studio, labels and calibration in the dashboard, the admin audit log (P4).
+- **Next:** the landing page and a richer static demo (P5); release images and the measured
+  benchmark (P6).
 
 ## Honest limitations
 
