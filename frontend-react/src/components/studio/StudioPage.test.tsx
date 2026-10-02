@@ -5,6 +5,7 @@
  * the policy review dialog, and "Test on past traffic" (the D82 confirmation, SSE progress, cancel).
  * The evaluator writes are spied on the data source: their plane belongs to WEB-EV.
  */
+import { EditorView } from '@codemirror/view';
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -175,6 +176,32 @@ describe('Studio', { timeout: 30_000 }, () => {
     await user.click(within(test).getByRole('button', { name: 'Use 0.40 as the threshold' }));
     expect(within(step(/Step 2/)).getByRole('slider', { name: 'Flag when the risk reaches' })).toHaveAttribute('aria-valuenow', '0.4');
     expect(await within(test).findByText(/The check or the samples changed since this run/)).toBeInTheDocument();
+  });
+
+  it('shows a threshold adopted in step 3 in the open JSON tab, so the editor never holds an older spec', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const review = step(/Step 2: Review the check/);
+    await user.click(within(review).getByRole('tab', { name: 'JSON' }));
+    const editor = await within(review).findByRole('textbox', { name: 'Evaluator spec (JSON)' });
+    // The whole document (CodeMirror renders only the lines in view).
+    const editorText = () => EditorView.findFromDOM(editor)?.state.doc.toString() ?? '';
+    expect(editorText()).toContain('"warn_at": 0.6');
+
+    const test = step(/Step 3: Test on samples/);
+    await user.click(within(test).getByRole('button', { name: 'Run test' }));
+    const whatIf = await within(test).findByRole('slider', { name: 'What if it flagged at' });
+    whatIf.focus();
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(whatIf, { key: 'ArrowLeft' });
+    await user.click(await within(test).findByRole('button', { name: 'Use 0.40 as the threshold' }));
+
+    await waitFor(() => expect(editorText()).toContain('"warn_at": 0.4'));
+    expect(editorText()).not.toContain('"warn_at": 0.6');
+    // The step 3 run goes out with the adopted threshold.
+    await user.click(within(test).getByRole('button', { name: 'Run again' }));
+    await waitFor(() => expect(control.callsTo('/api/studio/test')).toHaveLength(2));
+    expect((control.callsTo('/api/studio/test')[1].body as { spec: EvaluatorSpec }).spec.outcomes.warn_at).toBe(0.4);
   });
 
   it('gates quick calibration on 8 labels with 3 of each, and never says calibrated', async () => {

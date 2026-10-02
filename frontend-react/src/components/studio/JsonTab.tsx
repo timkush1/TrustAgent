@@ -4,6 +4,10 @@
  * rules and lints), each problem marked on its range and listed as text. Valid JSON is taken over at
  * once, so the other tabs and the test bench follow; while the text is not valid JSON the rest of
  * Studio keeps the last version that was.
+ *
+ * A change made elsewhere while the tab is open (a threshold adopted in step 3 or 4, a new id after
+ * a 409, the version a save returns) replaces the text, so the editor always shows the spec Studio
+ * will test and save, and a later keystroke here never writes an older spec back over that change.
  */
 import { lazy, Suspense, useId, useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,16 +19,26 @@ import { ProblemList } from './ProblemList';
 const CodeMirrorJson = lazy(() => import('./editor/CodeMirrorJson'));
 
 export function JsonTab({ spec, onChange, options, disabled = false }: { spec: EvaluatorSpec; onChange: (spec: EvaluatorSpec) => void; options: CheckOptions; disabled?: boolean }) {
-  // The editor owns its text while this tab is open; it starts from the spec.
+  // The editor's text, and the spec it was last in step with: the one it was seeded from, or the
+  // one its own last valid edit produced.
   const [text, setText] = useState(() => specJson(spec));
+  const [synced, setSynced] = useState<EvaluatorSpec>(spec);
+  if (spec !== synced) {
+    // Changed outside the tab: show it (React's "adjust state when a prop changes" pattern).
+    setSynced(spec);
+    setText(specJson(spec));
+  }
   const problemsId = useId();
   const check = useMemo(() => checkSpecJson(text, options), [text, options]);
 
   const onText = (next: string) => {
+    if (next === text) return;
     setText(next);
     const result = checkSpecJson(next, options);
     if (result.parsed && typeof result.data === 'object' && result.data !== null && !Array.isArray(result.data)) {
-      onChange(result.data as EvaluatorSpec);
+      const parsed = result.data as EvaluatorSpec;
+      setSynced(parsed);
+      onChange(parsed);
     }
   };
 
