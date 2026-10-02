@@ -35,8 +35,10 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from ..config import Settings
 from ..grpc.pb import evaluator_pb2 as pb
 from ..judge import (
+    CREDENTIAL_DASHBOARD,
     CREDENTIAL_ENV,
     CREDENTIAL_NONE,
+    KEYED_PROVIDERS,
     MOCK,
     NO_JUDGE,
     OLLAMA,
@@ -59,11 +61,7 @@ ENV_MANAGED = "env_managed"
 NO_JUDGE_STATUS = "no_judge"
 INVALID = "invalid"
 
-# JudgeInfo.credential_source of a judge bound to a dashboard credential.
-CREDENTIAL_DASHBOARD = "dashboard"
-
-# Providers a push may name with a credential, and without one.
-KEYED_PROVIDERS = ("anthropic", "openrouter", "openai")
+# Providers a push may name with a credential (judge.KEYED_PROVIDERS), and without one.
 KEYLESS_PROVIDERS = (OLLAMA, MOCK)
 
 # Engine registry keys that pin the judge when set non-empty, reported by name

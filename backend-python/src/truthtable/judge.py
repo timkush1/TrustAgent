@@ -52,10 +52,12 @@ OLLAMA = "ollama"
 # `auto` resolution order of the providers that need a key.
 KEYED_PROVIDERS = ("anthropic", "openrouter", "openai")
 
-# JudgeInfo.credential_source values (dashboard credentials arrive with
-# ApplyRuntimeConfig in P4).
+# JudgeInfo.credential_source values: the engine's env, none (keyless or no
+# judge), or a dashboard credential pushed with ApplyRuntimeConfig
+# (runtime/manager.py).
 CREDENTIAL_ENV = "env"
 CREDENTIAL_NONE = "none"
+CREDENTIAL_DASHBOARD = "dashboard"
 
 
 @dataclass
@@ -69,7 +71,7 @@ class JudgeSelection:
         effective: The provider in use (anthropic, openrouter, openai, ollama,
             mock) or "none".
         model: The judge model ("" without a judge).
-        credential_source: env | none (JudgeInfo.credential_source).
+        credential_source: env | none | dashboard (JudgeInfo.credential_source).
         fallback_active: LLM_FALLBACK replaced the chosen judge.
         fallback_reason: Why the chosen judge was replaced.
         healthy: The startup health check result (None when not probed).
