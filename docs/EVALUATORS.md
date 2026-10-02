@@ -66,15 +66,68 @@ routes:
   evaluator before it counts.
 - `thresholds: {space: raw|calibrated, warn_at, critical_at}` overrides the
   evaluator's thresholds for this route.
-- Your own evaluators go in `config/evaluators/*.json` (policy as code);
-  `make contracts-check` validates the built-ins, and the proxy validates
-  yours at load. Evaluator Studio (drafting and testing evaluators in the
-  dashboard) comes in P4.
+- Your own evaluators come from two places: files in `config/evaluators/*.json`
+  (policy as code; the proxy validates them at load and shows them read-only
+  in the dashboard) and the **Evaluator Studio** (below), which saves new
+  versions in the database. Built-ins are never edited: copy one into the
+  Studio instead. `make contracts-check` validates the built-ins.
 
 The dashboard's **Policies** page shows each route's evaluators, their
 calibration state and the block-readiness checklist, and `make doctor` lists
 each route's downgrades (unmet checklist items) and which routes run below
 their configured mode.
+
+## Evaluator Studio
+
+**Evaluators → Studio** (`/app/evaluators/studio`, admin) takes you from "what should TrustAgent
+check?" to a calibrated evaluator in one place. Nothing it makes is attached to a route until you
+say so.
+
+1. **Describe.** Write what the check should catch and pick a route. **Draft with AI** asks the
+   deep-audit judge for a first version (about $0.005 **[estimate]**; labelled Simulated with the
+   mock judge); without a judge, start from a template.
+2. **Review.** A simple form (what it catches, Yes/No or Pick one, which answers are a problem,
+   whether it needs the app's documents, sensitivity, and whether it may block), an Advanced
+   section with every other field, and a JSON tab. Lints run as you type; the proxy runs the same
+   lints and hard rules on save (Go is the reference), and a version that breaks a hard rule never
+   loads.
+3. **Test bench.** Run the draft on pasted samples, the draft's own samples, or recent traffic
+   (flagged, random, or where checks disagreed). The cost is shown before every run (paid: one Jev
+   call per sample, at most 50). Each row says whether it fired and whether that matches your label.
+   Moving the threshold replays the stored answers for free.
+4. **Quick calibration.** With at least 8 labels (3 of each kind), the Studio suggests a threshold
+   with its uncertainty ("Suggested threshold from 12 labels", with a 95% range). It never calls
+   this "calibrated" and never sets a critical level.
+5. **Save** creates an immutable new version with a changelog. **Save and watch on route X** adds it
+   to that route as `stage: shadow`.
+6. **Test on past traffic (paid)** replays up to `TRUTHTABLE_DRYRUN_MAX_SAMPLES` stored answers
+   (200) through the real Jev and reports how often it would have fired (with a 95% interval), its
+   overlap with other evaluators and its agreement with deep audits, and what the test cost. Above
+   `TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD` ($0.10) it asks first. Studio runs never spend the part of
+   the fast-check budget kept for enforcing routes.
+7. **Make active** creates a new policy version; rollback is one click on the Policies page.
+
+Every Studio run and save is recorded in the admin audit log, dry-runs with their cost.
+
+## Labels: "Was this right?"
+
+Calibration needs human labels. Two places collect them:
+
+- **Trace detail → "Was this right?"** appears when a check fired at warn or above. **Correct**
+  records `should_fire` and **False alarm** records `should_not_fire`, one label per evaluator that
+  fired.
+- **Evaluators → (an evaluator) → Label queue** shows the answers the evaluator is least sure about
+  first (closest to its warn threshold). Keys: **C** correct, **F** false alarm, **S** skip.
+
+Labels freeze the stored answer they refer to, so it outlives the body retention window.
+
+## The glass box
+
+**Trace detail → What was sent to Jev** recompiles, from the stored answer and the policy of the
+time, exactly the request the gateway sent: every question, the model, and a hash per request.
+`matches_recorded` says whether the recompiled request is byte-for-byte the one that was sent
+(it is not when the stored body was truncated, or the policy or evaluator version is gone).
+`GET /api/traces/:id/decision-request` serves it (content scope).
 
 ## Calibration
 
@@ -82,9 +135,13 @@ A raw Jev probability is not a precision. **Calibration** maps it to a
 measured one for one Jev **snapshot** (the model version the vendor reports),
 so that "critical" can mean "at least 95% of these are real problems".
 
-- Files: `config/calibration/*.json` (`trustagent.calibration/v1`), read from
-  `TRUTHTABLE_CALIBRATION_DIR` at start and re-read every 30 s; a change
-  sends the WebSocket event `calibration_updated`.
+- Where they live: files in `config/calibration/*.json`
+  (`trustagent.calibration/v1`, read from `TRUTHTABLE_CALIBRATION_DIR`, re-read
+  every 30 s) and, with a database, calibrations imported or fitted in the
+  dashboard. File entries are mirrored into the database; a calibration fitted
+  or imported in the dashboard takes precedence over the file entry for the
+  same evaluator and snapshot until you deactivate it. A change sends the
+  WebSocket event `calibration_updated`.
 - **Quality** decides whether a calibration may enable blocking:
 
   | Quality | Made from | Enables block |
@@ -94,7 +151,21 @@ so that "critical" can mean "at least 95% of these are real problems".
   | `proxy` | Deep-audit or judge labels | no |
   | `mock` | The mock decision model | only in demo mode with the mock backend |
 
-- **Fitting one** (paid: it needs labelled data scored by the real Jev):
+- **Fitting one in the dashboard** (the adopt flow): **Evaluators → (an
+  evaluator) → Calibrate now** fits from the labels (at least 8; `measured`
+  from 200 labels with 30 of each class, otherwise `provisional`) without
+  activating it, then:
+  1. **Preview impact (free)** replays the stored answers with the new
+     calibration and shows which actions would change;
+  2. you confirm;
+  3. the calibration is activated;
+  4. the route's thresholds switch to the calibrated space with the
+     recommended values, as a new policy version.
+
+  A calibration file can also be imported (`POST /api/calibration`, admin):
+  the proxy re-derives its quality and refuses unknown evaluator versions, a
+  mismatched `calibration_key`, and mock snapshots outside the demo.
+- **Fitting one from the command line** (paid: it needs labelled data scored by the real Jev):
 
   ```bash
   make gate-eval                                      # the scorer the fit uses
