@@ -260,6 +260,7 @@ func newServer(d serverDeps) (*server, error) {
 	}
 	s.policies = ps
 	s.status.policies = ps.Engine
+	s.status.evaluatorWarnings = ps.Registry.Warnings // excluded versions (D54)
 	s.initEval(d)
 
 	gw, err := newGateway(cfg, sink, auth, ps, gatewayHooks{
