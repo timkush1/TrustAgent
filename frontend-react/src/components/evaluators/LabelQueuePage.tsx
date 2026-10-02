@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/data/errors';
 import { evaluatorQuery, evaluatorsQuery, isNotServed, qkc, statusQuery } from '@/data/queries';
 import { bumpProgress, invalidateAfterLabel, LABEL_QUEUE_DEFAULTS, labelQueueQuery } from '@/data/queries/evaluators';
+import { useAppMode } from '@/data/useSystem';
 import { formatCount, formatDateTime, formatRelativeTime, formatRisk } from '@/domain/format';
 import { copy, fillTemplate, levelWord } from '@/domain/presentation';
 import { evalLabelsStillNeeded, evalLabelWord, evalRefId, evalSavedText, type EvalFireLabel } from '@/domain/words/evaluators';
@@ -101,6 +102,7 @@ function ItemView({
   headingRef: React.RefObject<HTMLHeadingElement | null>;
 }) {
   const now = useNow();
+  const { demo } = useAppMode();
   const level = item.level ? levelWord(item.level) : null;
   const sources = item.evidence_labels.length > 0 ? fillTemplate(copy.trace.checked_against, { sources: item.evidence_labels.join(' · ') }) : 'No documents came with this request.';
   return (
@@ -120,7 +122,9 @@ function ItemView({
           {item.risk_raw !== null ? (
             <>
               {' '}
-              · The fast check said {level ? level.label.toLowerCase() : 'risk'} <span className="tabular">{formatRisk(item.risk_raw)}</span> (raw score)
+              · The fast check said {level ? level.label.toLowerCase() : 'risk'} <span className="tabular">{formatRisk(item.risk_raw)}</span> (raw score
+              {/* The zero-key demo's fast check is a mock: its scores are made up. */}
+              {demo ? ` · ${copy.value_labels.simulated.toLowerCase()}` : ''})
             </>
           ) : null}
         </p>
@@ -437,6 +441,14 @@ export function LabelQueuePage({ search }: { search: LabelQueueSearch }) {
             <DisabledReason reason="needs_admin" />
           </p>
         </EmptyState>
+      ) : isApiError(q.error) && q.error.code === 'persistence_disabled' ? (
+        <DegradedState
+          title="Labelling needs a database"
+          reason="This proxy runs without Postgres, so it keeps no answers to label and no labels."
+          stillWorks="Checks still run, and calibration files in TRUTHTABLE_CALIBRATION_DIR still apply."
+        />
+      ) : isApiError(q.error) && q.error.code === 'not_implemented' ? (
+        <DegradedState title="Labelling needs a running gateway" reason={q.error.message} />
       ) : isNotServed(q.error) ? (
         <DegradedState
           title="The label queue is not available on this proxy"

@@ -280,6 +280,12 @@ export function CalibrationRecords({ detail }: { detail: EvaluatorDetail }) {
           reason="This proxy runs without Postgres, so it reads calibrations only from TRUTHTABLE_CALIBRATION_DIR."
           stillWorks="Calibration files in that directory still apply; fitting, importing and adopting need a database."
         />
+      ) : isApiError(q.error) && q.error.code === 'not_implemented' ? (
+        <DegradedState
+          title="Calibration records need a running gateway"
+          reason={q.error.message}
+          stillWorks="Each check's calibration state and reliability still show from the recording."
+        />
       ) : isNotServed(q.error) ? (
         <DegradedState
           title="Calibration records are not available on this proxy"

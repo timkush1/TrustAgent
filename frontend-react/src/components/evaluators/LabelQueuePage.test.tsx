@@ -213,6 +213,37 @@ describe('Label queue', { timeout: 20_000 }, () => {
     expect(readonly.control.callsTo('/api/labels/queue')).toHaveLength(0);
   });
 
+  it('says a proxy without a database keeps no labels, and a build without a gateway has no queue', async () => {
+    renderPage('/app/evaluators/labels', {
+      control: createControlApi({ labelQueue: errorReply(503, 'persistence_disabled', 'Labels need a database.') }),
+    });
+    expect(await screen.findByText('Labelling needs a database')).toBeInTheDocument();
+    expect(screen.getByText(/calibration files in TRUTHTABLE_CALIBRATION_DIR still apply/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull();
+    stopLive();
+    cleanup();
+
+    renderPage('/app/evaluators/labels', {
+      control: createControlApi({ labelQueue: errorReply(404, 'not_implemented', 'The static demo replays a recording, so there is no gateway to ask.') }),
+    });
+    expect(await screen.findByText('Labelling needs a running gateway')).toBeInTheDocument();
+    expect(screen.getByText('The static demo replays a recording, so there is no gateway to ask.')).toBeInTheDocument();
+    expect(screen.queryByText(/older version/)).toBeNull();
+  });
+
+  it('labels the fast check’s score as simulated on the demo stack', async () => {
+    renderPage('/app/evaluators/labels', { status: { demo: true } });
+    await firstItem();
+    expect(screen.getByText(/\(raw score · simulated\)/)).toBeInTheDocument();
+    stopLive();
+    cleanup();
+
+    renderPage('/app/evaluators/labels');
+    await firstItem();
+    expect(screen.getByText(/\(raw score\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/simulated/)).toBeNull();
+  });
+
   it('shows a loading state after 200 ms, then the first answer', async () => {
     renderPage('/app/evaluators/labels');
     server.use(

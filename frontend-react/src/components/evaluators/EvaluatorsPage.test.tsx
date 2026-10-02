@@ -1,11 +1,13 @@
 import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
+import { copy } from '@/domain/presentation';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { calibrationProgress, evaluatorDetail, evaluatorMeta, evaluatorMetas, evaluatorVersion, reliability } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
-import { installMswServer } from '@/test/msw';
+import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 
 installMswServer();
@@ -79,6 +81,24 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     control.state.evaluators = evaluatorMetas();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await card('Groundedness')).toBeInTheDocument();
+  });
+
+  it('shows a loading state after 200 ms, then the cards', async () => {
+    renderPage('/app/evaluators');
+    server.use(
+      http.get(`${API}/api/evaluators`, async () => {
+        await delay(600);
+        return HttpResponse.json({ items: evaluatorMetas() });
+      }),
+    );
+    expect(await screen.findByText(copy.states.loading)).toBeInTheDocument();
+    expect(await card('Groundedness')).toBeInTheDocument();
+  });
+
+  it('has an empty state with a next step when the proxy loaded no evaluators', async () => {
+    renderPage('/app/evaluators', { control: createControlApi({ evaluators: [] }) });
+    expect(await screen.findByText('No evaluators yet')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Describe a check in Studio' })).toHaveAttribute('href', '/app/evaluators/studio');
   });
 
   it('degrades when the library is not served', async () => {

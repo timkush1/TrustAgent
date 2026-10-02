@@ -81,7 +81,12 @@ export function EvaluatorsPage() {
   } else if (items.length === 0) {
     body = (
       <EmptyState icon={ListChecks} title="No evaluators yet">
-        <p>Built-in checks appear here when the proxy loads them from contracts/evaluators.</p>
+        <p>
+          Built-in checks appear here when the proxy loads them from contracts/evaluators.{' '}
+          <Link to="/app/evaluators/studio" className="font-medium text-fg underline underline-offset-2">
+            Describe a check in Studio
+          </Link>
+        </p>
       </EmptyState>
     );
   } else if (visible.length === 0) {

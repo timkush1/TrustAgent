@@ -303,6 +303,15 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
     stopLive();
     cleanup();
+    // The static build has no gateway: it says so, not that the proxy is old.
+    renderPage('/app/evaluators/groundedness?tab=calibration', {
+      control: createControlApi({ calibrations: errorReply(404, 'not_implemented', 'The static demo replays a recording, so there is no gateway to ask.') }),
+    });
+    expect(await screen.findByText('Calibration records need a running gateway')).toBeInTheDocument();
+    expect(screen.getByText('The static demo replays a recording, so there is no gateway to ask.')).toBeInTheDocument();
+    expect(screen.queryByText(/older version/)).toBeNull();
+    stopLive();
+    cleanup();
     renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: { items: [] } }) });
     expect(await screen.findByText('No calibrations for this check yet')).toBeInTheDocument();
   });
