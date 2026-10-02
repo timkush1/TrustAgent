@@ -621,3 +621,58 @@ func TestLateDecisionThroughTheGateAndTheSink(t *testing.T) {
 		t.Errorf("late event: late %v trace action %v", d.Late, *sum.Action)
 	}
 }
+
+// flaggingStore is a memStore that records the flag of each dropped audit (auditDropper).
+type flaggingStore struct {
+	*memStore
+	mu    sync.Mutex
+	flags map[string]string
+}
+
+func (f *flaggingStore) DropTraceAudit(ctx context.Context, traceID, flag string) error {
+	f.mu.Lock()
+	if f.flags == nil {
+		f.flags = map[string]string{}
+	}
+	f.flags[traceID] = flag
+	f.mu.Unlock()
+	return f.SetTraceAudit(ctx, traceID, store.TraceAuditUpdate{Status: store.TraceAuditDropped})
+}
+
+// TestSinkAuditPastTheLLMCap: a gated answer whose audit the day's LLM cap refuses (D48) records
+// the audit dropped with the trace flag llm_budget, and audit_dropped says llm_budget. The job
+// carried the trace's key label for its cost rows. Other refusals add no flag.
+func TestSinkAuditPastTheLLMCap(t *testing.T) {
+	st, pub := &flaggingStore{memStore: newMemStore()}, &events{}
+	q := &fakeQueue{engine: true, err: worker.ErrLLMBudget}
+	s := newSink(st, q, pub)
+	r := flaggedResult()
+	r.Trace.KeyLabel = "support-app"
+	s.TraceStarted(context.Background(), r.Trace)
+	if got := s.GateDecided(context.Background(), r); got != gate.AuditDropped {
+		t.Fatalf("audit %q", got)
+	}
+	if len(q.jobs) != 1 || q.jobs[0].KeyLabel != "support-app" {
+		t.Fatalf("jobs %+v", q.jobs)
+	}
+	if tr, _ := st.GetTrace(context.Background(), r.Trace.TraceID); tr.AuditStatus != store.TraceAuditDropped {
+		t.Errorf("trace audit status %q", tr.AuditStatus)
+	}
+	if st.flags[r.Trace.TraceID] != flagLLMBudget {
+		t.Errorf("flags %v", st.flags)
+	}
+	pub.mu.Lock()
+	last := pub.evs[len(pub.evs)-1]
+	pub.mu.Unlock()
+	if last.Type != "audit_dropped" || !strings.Contains(string(last.Data), `"reason":"llm_budget"`) {
+		t.Errorf("last event %s %s", last.Type, last.Data)
+	}
+
+	st2 := &flaggingStore{memStore: newMemStore()}
+	s = newSink(st2, &fakeQueue{engine: true, err: worker.ErrQueueFull}, &events{})
+	r = flaggedResult()
+	s.GateDecided(context.Background(), r)
+	if len(st2.flags) != 0 {
+		t.Errorf("a full queue flagged the trace: %v", st2.flags)
+	}
+}

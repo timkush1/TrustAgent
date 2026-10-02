@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"slices"
@@ -133,11 +134,12 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	if job == nil {
 		return rec.AuditStatus
 	}
+	job.KeyLabel = r.Trace.KeyLabel
 	lane, err := s.audits.Submit(job)
 	if err != nil {
 		s.log.Warn("deep audit: not queued", "trace_id", r.Trace.TraceID, "err", err)
 		if s.store != nil {
-			if err := s.store.SetTraceAudit(ctx, r.Trace.TraceID, store.TraceAuditUpdate{Status: gate.AuditDropped}); err != nil {
+			if err := dropTraceAudit(ctx, s.store, r.Trace.TraceID, err); err != nil {
 				metrics.TraceWriteDropped.Inc()
 				s.log.Error("trace: recording a dropped audit failed", "trace_id", r.Trace.TraceID, "err", err)
 			}
@@ -155,6 +157,28 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 		}
 	}
 	return gate.AuditQueued
+}
+
+// flagLLMBudget is the trace flag of an audit the day's LLM cap refused (P4-PLAN D48).
+const flagLLMBudget = "llm_budget"
+
+// auditDropper records a dropped audit with a trace flag (store.PostgresStore.DropTraceAudit).
+type auditDropper interface {
+	DropTraceAudit(ctx context.Context, traceID, flag string) error
+}
+
+// dropTraceAudit records that a trace's audit was not queued (submitErr says why): its audit
+// status becomes dropped and, when the LLM cap refused it, the trace gains the flag llm_budget.
+// A store that cannot flag a trace records the status only.
+func dropTraceAudit(ctx context.Context, st interface {
+	SetTraceAudit(ctx context.Context, traceID string, u store.TraceAuditUpdate) error
+}, traceID string, submitErr error) error {
+	if errors.Is(submitErr, worker.ErrLLMBudget) {
+		if d, ok := st.(auditDropper); ok {
+			return d.DropTraceAudit(ctx, traceID, flagLLMBudget)
+		}
+	}
+	return st.SetTraceAudit(ctx, traceID, store.TraceAuditUpdate{Status: gate.AuditDropped})
 }
 
 // AttemptDecided records a later attempt of a trace (the fallback re-gate): its gate_decisions
@@ -404,7 +428,8 @@ func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 	rec.PromptTokens, rec.CompletionTokens = r.Upstream.PromptTokens, r.Upstream.CompletionTokens
 	rec.ResponsePreview = store.Preview(r.ResponseText, store.ResponsePreviewRunes)
 	if r.ResponseText != "" {
-		// The rune count of the gated text (0005 traces.response_chars; cost per answer, P4).
+		// The rune count of the gated text (0005 traces.response_chars): fitted_from_audits
+		// applies its cost-per-length line to it (roi_api.go).
 		n := utf8.RuneCountInString(r.ResponseText)
 		rec.ResponseChars = &n
 	}

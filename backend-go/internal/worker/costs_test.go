@@ -106,7 +106,8 @@ func (b fixedBudget) EstimateAuditUSD() float64 { return b.est }
 func (b fixedBudget) Reserve(float64, string) (func(float64), error) {
 	return func(float64) {}, nil
 }
-func (b fixedBudget) HeadroomUSD() float64 { return math.Inf(1) }
+func (b fixedBudget) HeadroomUSD() float64                 { return math.Inf(1) }
+func (b fixedBudget) PriceTableVersion(_, _ string) string { return "2026-09-27" }
 
 // SetBudget is safe before Start and from other goroutines while audits run.
 func TestBudgetSetBeforeStartAndConcurrently(t *testing.T) {

@@ -295,6 +295,12 @@ func (b *LLMBudget) Reserve(usd float64, component string) (settle func(actualUS
 // HeadroomUSD is the LLM spend still allowed today (+Inf without a cap).
 func (b *LLMBudget) HeadroomUSD() float64 { return b.l.llm.Headroom(true) }
 
+// PriceTableVersion is the price_table_version an LLM cost of model on provider records:
+// "override" when a dashboard override prices it, else the version of the table in force.
+func (b *LLMBudget) PriceTableVersion(provider, model string) string {
+	return b.l.priceVersion(provider, model)
+}
+
 // ObserveAudit folds the real cost of an audit the engine answered into the audit estimate. An
 // audit whose cost is not known is no observation: one without cost records (an engine that does
 // not report them) or with a record no price covers (cost_source unknown). Counting those as $0

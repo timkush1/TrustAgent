@@ -69,28 +69,33 @@ func (s *PostgresStore) InsertCostEvents(ctx context.Context, rows []CostEvent) 
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		batch := &pgx.Batch{}
 		for i := range rows {
-			r := &rows[i]
-			occurred := r.OccurredAt
-			if occurred.IsZero() {
-				occurred = time.Now()
-			}
-			batch.Queue(`
-				INSERT INTO cost_events (occurred_at, trace_id, audit_id, route, key_label, component, kind, provider,
-					model, attempt, input_tokens, output_tokens, cost_usd, cost_source, price_table_version, latency_ms,
-					status, questions, selection, hedge, late, estimated)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
-				occurred.UTC(), nilIfEmpty(r.TraceID), nilIfEmpty(r.AuditID), nilIfEmpty(r.Route), nilIfEmpty(r.KeyLabel),
-				r.Component, r.Kind, nilIfEmpty(r.Provider), nilIfEmpty(r.Model), clampInt16(r.Attempt),
-				clampInt32Ptr(r.InputTokens), clampInt32Ptr(r.OutputTokens), storedCost(r.CostUSD),
-				defaultString(r.CostSource, "unknown"), nilIfEmpty(r.PriceTableVersion), clampInt32Ptr(r.LatencyMs),
-				nilIfEmpty(r.Status), clampQuestions(r.Questions), nilIfEmpty(r.Selection), r.Hedge, r.Late, r.Estimated,
-			)
+			queueCostEvent(batch, &rows[i])
 		}
 		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 			return fmt.Errorf("insert cost events: %w", err)
 		}
 		return nil
 	})
+}
+
+// queueCostEvent queues the insert of one cost_events row (InsertCostEvents, and an audit's rows
+// in the audit's own transaction).
+func queueCostEvent(batch *pgx.Batch, r *CostEvent) {
+	occurred := r.OccurredAt
+	if occurred.IsZero() {
+		occurred = time.Now()
+	}
+	batch.Queue(`
+		INSERT INTO cost_events (occurred_at, trace_id, audit_id, route, key_label, component, kind, provider,
+			model, attempt, input_tokens, output_tokens, cost_usd, cost_source, price_table_version, latency_ms,
+			status, questions, selection, hedge, late, estimated)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+		occurred.UTC(), nilIfEmpty(r.TraceID), nilIfEmpty(r.AuditID), nilIfEmpty(r.Route), nilIfEmpty(r.KeyLabel),
+		r.Component, r.Kind, nilIfEmpty(r.Provider), nilIfEmpty(r.Model), clampInt16(r.Attempt),
+		clampInt32Ptr(r.InputTokens), clampInt32Ptr(r.OutputTokens), storedCost(r.CostUSD),
+		defaultString(r.CostSource, "unknown"), nilIfEmpty(r.PriceTableVersion), clampInt32Ptr(r.LatencyMs),
+		nilIfEmpty(r.Status), clampQuestions(r.Questions), nilIfEmpty(r.Selection), r.Hedge, r.Late, r.Estimated,
+	)
 }
 
 // SpendTotals is the real spend of one UTC day (D46: simulated rows never count), by kind, with
@@ -181,9 +186,12 @@ func (s *PostgresStore) LastDecisionSnapshot(ctx context.Context, backend, model
 	return snap, nil
 }
 
-// storedCost is the cost_usd value of a row: NULL when unknown, at most what the column holds.
+// storedCost is the cost_usd value of a row: NULL when unknown or not a finite number, $0 below
+// $0, and at most what the column holds. An infinite cost is no amount at all, as it is for the
+// caps (costs.RealCostUSD): clamped to the column's maximum it would read back as $9,999.99 of
+// spend and exhaust a cap the next time the ledger seeds from the stored rows.
 func storedCost(usd *float64) *float64 {
-	if usd == nil || math.IsNaN(*usd) {
+	if usd == nil || math.IsNaN(*usd) || math.IsInf(*usd, 0) {
 		return nil
 	}
 	v := min(max(*usd, 0), maxCostUSD)

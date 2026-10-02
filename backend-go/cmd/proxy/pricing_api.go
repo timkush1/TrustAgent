@@ -4,19 +4,18 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/truthtable/backend-go/internal/decision"
 )
 
-// handlePricing serves GET /api/pricing (SPEC §2.4 endpoint 49): the price table costs are
-// computed with when a provider reports none (api.ts PricingTable). Each entry carries its source,
-// label and date. The table is contracts/pricing/prices.v1.json, decoded strictly
-// (decision.ParsePriceTable): a table that is not valid pricing.v1 is an error rather than a
-// partial answer.
+// handlePricing serves GET /api/pricing (SPEC §2.4 endpoint 49, P4-PLAN D53): the effective price
+// table costs are computed with when a provider reports none (api.ts PricingTable). The
+// dashboard's pricing overrides come first (label override; the first match wins), then the
+// TRUTHTABLE_PRICE_TABLE_FILE table when one is set, then the embedded contracts table, each entry
+// with its source, label and date. It is the price book's snapshot in force, the same table the
+// ledger prices with and the engine is pushed.
 func (s *server) handlePricing(c *gin.Context) {
-	t, err := decision.ContractsPrices()
-	if err != nil {
-		s.log.Error("api: the price table does not load", "err", err)
+	t := s.priceBook().Effective()
+	if len(t.Entries) == 0 {
+		s.log.Error("api: the price table is empty; the embedded table did not load")
 		abortAPI(c, http.StatusInternalServerError, codeInternal, "The price table could not be read; see the proxy log.")
 		return
 	}
