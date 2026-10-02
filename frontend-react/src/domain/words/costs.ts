@@ -142,11 +142,6 @@ export function costPriceSourceWord(label: PriceEntry['label']): string {
   return label === 'override' ? 'Your price' : 'Vendor list price';
 }
 
-/** The value label of a price: a vendor's list price is `vendor`; your override is your own estimate. */
-export function costPriceValueLabel(label: PriceEntry['label']): ValueLabel {
-  return label === 'override' ? 'estimate' : 'vendor';
-}
-
 /** "$0.042 / $0 per million tokens (in / out)". */
 export function costPricePair(entry: Pick<PriceEntry, 'input_per_mtok' | 'output_per_mtok'>): string {
   return `${formatUsd(entry.input_per_mtok)} in · ${formatUsd(entry.output_per_mtok)} out`;
