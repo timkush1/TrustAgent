@@ -3068,5 +3068,85 @@ The lead decisions D1-D28 of `docs/v2/P3-PLAN.md` §1 settled the gaps P3 found.
 - **Client disconnects (D7):** a client that leaves before the finish reason, or while the gate or a buffered fallback runs, is recorded unenforced with `skipped:client_disconnected`; after a finish reason the text is gated unenforced with the flag `client_disconnected` and audited.
 - **trafficgen (D18):** the default `--phase` is the build's (`p3`), and `--expect` exits 1 when it skips a selected scenario by phase, unless `--allow-skip` is given. Stack specs throw in CI instead of skipping.
 - **`/v1/models` (D26):** it stays on `TRUTHTABLE_UPSTREAM_URL` (§2.4 row 72); choosing the family from `anthropic-version` or `x-api-key` is P4.
-- **Checks that do not fit P3 (D17, D28):** the async ordered trace writer and its LRU fallback, `calibration_warning` and `calibration_missing` move to P4.
+- **Checks that do not fit P3 (D17, D28):** the async ordered trace writer and its LRU fallback, `calibration_warning` and `calibration_missing` move to P4. **Resolved in P4:** the trace writer is D66 and D83, the two calibration signals are D56 (Appendix F).
+- **`/v1/models` family:** resolved in P4 by D67 (Appendix F).
 - **superseded identifiers (Appendix A):** WS v1 (`ProtocolV1`, `v1Frame`, the frame type `audit_result`) and metric names without the service prefix are errors in `contracts/superseded.v1.json`; the metric rule matches metric-shaped names only, because `trustagent_error`, `trustagent_blocked` and similar are TrustAgent identifiers, not metrics.
+
+## Appendix F: P4 errata
+
+The lead decisions D29-D90 of `docs/v2/P4-PLAN.md` §1, and D91-D96 below, settled the gaps P4 found.
+Where a section above says otherwise, the decision cited for it here wins.
+
+| SPEC section | What changes | Decisions |
+|---|---|---|
+| §2.2 (proto) | `Credential.allowed_hosts`, `EngineInfo.env_managed` and `runtime_config_epoch`; the push carries `{version, epoch, credentials, judge, price_table_json}` and never `decision`; the engine resolves the judge from it, env first | D34 |
+| §2.3 (storage) | The settings version and epoch live in the `settings` table and bump only on runtime-config and credential writes; migration 0005 adds the cost-ledger columns (`audit_id`, `hedge`, `late`, `estimated`), `traces.response_chars`, the calibration mirror index and the append-only admin audit log; audit writes wait for their trace's queued writes (the per-trace barrier) | D31, D45, D83 |
+| §2.4 #10 | `reason=<code>` matches a whole code, `reason=<prefix>:` a prefix; both need `since` | D68 |
+| §2.4 #12 | `DecisionRequestView {requests, request_sha256, matches_recorded, cpt, mismatch_reason}` | D63 |
+| §2.4 #26, #45, #46b | #45 fits without activating; new #46b activates a calibration; #26 takes `calibration_ids` for a dry run | D62 |
+| §2.4 #31, #32 | 409 on an existing id; 403 for built-ins, 409 `file_managed`, 412 on a stale `base_version` | D57 |
+| §2.4 #34, #65 | The LLM cap is hard for every caller: a refused draft or upload answers 503 `budget_exhausted` | D48 |
+| §2.4 #35, #38 | Studio, dry-run, Playground and probe decision calls are non-enforcing and refused past the observe line | D82 |
+| §2.4 #39 | The label queue order and window | D60 |
+| §2.4 #53 | Changes that would block every answer on fail-closed routes need `?confirm=true`; an upstream key bound for every caller needs an app key | D77, D41 |
+| §2.4 #55, #57, #59 | One credential write returns `CredentialWriteResult {credential, stored, verification, bindings}` and binds on request | D75 |
+| §2.4 #56 | Deleting the fast check's key under a fail-closed route needs the confirmation | D77 |
+| §2.4 #58, #59 | Self-hosted PKCE: S256, a 10-minute in-memory nonce, at most 5 per actor, the callback origin checked | D38 |
+| §2.4 #69 | The last admin key cannot be revoked (409 `conflict`, `last_admin_key`) | D81 |
+| §2.5 (WS) | `status{component:"budget"}` carries the worse of the two caps and names them in `detail` | D49 |
+| §2.6 (types) | New wire types: `CredentialWriteResult`, `SettingsView`, `DecisionRequestView`, `PricingTable`, `RoiTimeseries`, `LabelQueue`, `CalibrationRecordMeta`, `StudioDraftResponse` and the rest in `frontend-react/src/types/api.ts` (generated into `contracts/schema/api.v1.schema.json`) | new types |
+| §2.7 (config) | No new `TRUTHTABLE_*` key: the PKCE TTL, per-actor cap and swap grace are constants; the upstream API keys of Anthropic and the fallback are runtime-null | D35 |
+| §2.11 (calibration) | File calibrations are mirrored into `calibrations`; a removed file's mirrored row stays active until another row replaces it; `calibration_missing` and `calibration_warning` | D55, D56 |
+| §3.1 (Go) | `runtimecfg` does not own the engine pinger; redaction lives in `config.Redactor`; files inside shared packages have owners | D90 |
+| §3.3 (web) | The Prices panel and `/api/pricing` follow override > file > contracts, provider first; the static build keeps Studio "Coming soon" and renders committed benchmark runs | D53, D72 |
+| §3.4 (infra) | The onboarding stack overlay; `make configure WITH_SECRETS=1` | D70, D74 |
+| §4.2 gate | Proofs run on two stacks: demo-shaped (studio, savings) and onboarding | D70 |
+| §6 (owner guide) | `configure --with-secrets`; the credit prerequisite is about $5 | D74, D86 |
+| §7.4 (savings) | Simulated spend never counts toward a cap; ROI's decision cost counts the gate component only; overrides > file > contracts | D46, D50, D53 |
+| §7.5 (credentials) | Fingerprints are an HMAC of the master key's subkey; secrets re-entered after an origin change; PKCE; credentials bound to canonical origins (and refused at dial time, D96); what non-admin callers see | D30, D37, D38, D78, D79 |
+| §7.6 (vectors) | Cost vectors (`call_cost`, `price_lookup`, `per_1k`), frozen and run in Go and Python; TypeScript in P5 | D85 |
+| Appendix B (metrics) | `trustagent_gateway_cost_write_dropped_total` | D51 |
+| Appendix D | The localhost PKCE callback stays unverified against the real openrouter.ai at the end of P4 (Connect primary, Paste always visible) | D88 |
+| P3-PLAN §13 | Knowledge runs next to the upstream call and is joined before the gate within the deadline | D65 |
+
+### Decisions made during the P4 integration (D91-D96)
+
+- **D91 (LLM cap cost of unpriced calls):** a cost record with `cost_source: unknown` counts toward
+  the LLM cap at the reference judge's price for its tokens (the price book's Claude Haiku 4.5 entry,
+  overrides applied). Audits, Studio drafts and knowledge uploads settle with it, and the restart seed
+  prices today's unpriced rows the same way. Stored rows keep `unknown` and no cost, so ROI and
+  Savings never count the reference price as spend.
+- **D92 (decision model's last 24 hours):** `/api/status` `calls_24h` and `cost_24h_usd` come from
+  the cost ledger (refreshed every minute), so they survive a restart and a hot swap.
+- **D93 (simulated mode's judge):** the mock judge answers only the scripted demo scenarios; a deep
+  audit of any other answer fails as `mock_fixture_missing` instead of inventing a verdict. The setup
+  wizard says so, and the trace and its figures are labelled Simulated (`mock_judge`).
+- **D94 (a bind moves the model too):** when a bind moves `decision_model.backend` or
+  `judge.provider` to auto (D76, D76b), a persisted model of the old provider becomes null (the new
+  provider's default), unless the model is env-managed; the audit diff names it.
+- **D95 (app keys for D41):** an upstream key bound for every caller needs a key that holds the
+  `ingest` scope itself, from the env or the dashboard; an admin key does not count.
+- **D96 (dial-time guard):** every outbound client that calls an operator- or admin-chosen address
+  (the upstream proxy, the decision model and key checks, the OpenRouter key exchange) refuses a
+  link-local or cloud-metadata address after DNS, at dial time (`internal/netguard`).
+- **D76b (lead text at CP-SEC2/3):** a bind that applies `decision_model` moves an explicit backend
+  the credential cannot serve to auto; one that applies `judge` moves an explicit provider other than
+  the credential's own to auto; env-managed paths stay.
+
+### Requests answered at the integration
+
+- The engine and decision-model details on the WS stream, the `/v1` relay's response headers in
+  inject mode, and a vendor message cut across an echoed key are all masked (D42).
+- `GET /api/session` names the key a session was opened with (`key_id`), and
+  `TraceDetail.labels[].mine` says which labels are the caller's (only those can be undone).
+- `GET /api/overview` `outcomes_series` counts `would_block` apart from `would_flag`.
+- The trace writer forwards linked audit cost rows and dropped audits behind its barrier.
+- A dashboard on another origin opens its live stream with a WS ticket (D71).
+- Kept as decided in the plan: verify-with-bind of an env row answers 409 `env_managed` (D29);
+  a vendor 429 maps to `unreachable` and a 402 to `no_credits` (D40); the per-name verify limit is
+  per replica; the fingerprint reaches `content`-scope dashboards in `credentials_changed` (D42).
+- Deferred to P5: machine-readable codes for policy warnings (the web words them by their text, with
+  the server text behind a disclosure), contract copy keys for the words that live in the prefixed
+  words modules (D86 allows them there), details on `price_far_above_contracts` warnings,
+  Studio's `Draft with AI` saying "out of credits" instead of "engine unavailable" for a 401 or 402
+  judge, and the Docker run of the `handbook` knowledge scenario (D65).
