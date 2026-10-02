@@ -355,6 +355,8 @@ func TestSettingsValidation(t *testing.T) {
 		{"D41b", `{"bindings":{"upstream_default":"upstream-default"},"upstream":{"default":{"credential":null}}}`,
 			[]string{"bindings.upstream_default=binding_mismatch", "upstream.default.credential=binding_mismatch"}},
 		{"D37", `{"decision_model":{"base_url":"https://other.example.com/v1"}}`, []string{"decision_model.base_url=reenter_secret"}},
+		{"D53", `{"pricing_overrides":[{"match":"jev-*","provider":"openrouter","input_per_mtok":0,"output_per_mtok":0}]}`,
+			[]string{"pricing_overrides[0].input_per_mtok=" + costs.CodePriceZeroNotLocal}},
 	}
 	for _, tc := range cases {
 		resp, body := env.patchSettings(etag, tc.body, "")

@@ -641,7 +641,7 @@ func (s *server) planSettingsWrite(ctx context.Context, snap *runtimecfg.Snapsho
 					Hint: "Check the price against the provider's price page."})
 				continue
 			}
-			fields = append(fields, fieldError{Path: f.Path, Message: f.Message, Code: f.Code})
+			fields = append(fields, fieldError{Path: f.Path, Message: f.Message, Code: f.Code, Details: f.Details})
 		}
 	}
 	if touchesUpstream(plan.changed) {
