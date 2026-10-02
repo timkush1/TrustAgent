@@ -1,0 +1,35 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "lookup-no-match",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "No layer prices openai gpt-5 (local catch-alls never price other providers): entry null, so a call to it is priced unknown.",
+  "input": {
+    "fn": "price_lookup",
+    "provider": "openai",
+    "model": "gpt-5",
+    "overrides": [
+      {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.05, "output_per_mtok": 0}
+    ],
+    "file": {
+      "version": "acme-2026-10",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.04, "output_per_mtok": 0, "note": "Negotiated rate."}
+      ]
+    },
+    "contracts": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"entry": null, "price_table_version": "acme-2026-10"}
+}

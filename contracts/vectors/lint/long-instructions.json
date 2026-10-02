@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "long-instructions",
-  "status": "draft",
+  "status": "frozen",
   "description": "Instructions of 659 characters exceed the 600-character limit: long_instructions (move detail into the option descriptions). The text has no digits, counting words or double negatives.",
   "input": {
     "spec": {

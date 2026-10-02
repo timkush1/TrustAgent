@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/pricing.v1.schema.json",
   "title": "PricingTable",
-  "description": "contracts/pricing/prices.v1.json, overridable by TRUTHTABLE_PRICE_TABLE_FILE and Settings -> Pricing (SPEC §7.4). Cost is usage.cost when the provider reports it, otherwise tokens x the first matching entry (provider equal, model matched against the glob in match). A note starting with \"[A]\" marks a price that must be re-verified before bench-publish.",
+  "description": "contracts/pricing/prices.v1.json, layered under TRUTHTABLE_PRICE_TABLE_FILE and the price overrides in Settings -> Budgets (precedence override > file > contracts; SPEC §7.4, P4-PLAN D53). Cost is usage.cost when the provider reports it, otherwise tokens x the first entry whose match glob matches the model, trying the call's own provider's entries first and then those of any other paid provider (free local and mock entries never price another provider). A note starting with \"[A]\" marks a price that must be re-verified before bench-publish.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "currency", "entries"],

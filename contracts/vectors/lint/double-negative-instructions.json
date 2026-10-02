@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "double-negative-instructions",
-  "status": "draft",
+  "status": "frozen",
   "description": "The instructions match \\bnot\\b.*\\b(no|not|never|without)\\b (\"not ... without\"): double_negative. Criteria text is not checked by this lint.",
   "input": {
     "spec": {
