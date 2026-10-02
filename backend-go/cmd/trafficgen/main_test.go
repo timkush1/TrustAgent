@@ -612,7 +612,7 @@ func TestPhases(t *testing.T) {
 		}
 	}
 	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows("p2", "p3") ||
-		!phaseAllows(defaultPhase, "p3") || phaseAllows(defaultPhase, "p4") {
+		!phaseAllows(defaultPhase, "p3") || !phaseAllows(defaultPhase, "p4") || phaseAllows(defaultPhase, "p5") {
 		t.Error("phaseAllows")
 	}
 }
