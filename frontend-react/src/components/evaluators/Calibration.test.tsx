@@ -207,6 +207,21 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     expect(control.callsTo('/api/calibration/7/activate')).toHaveLength(1);
   });
 
+  it('says the policy moved on when the save answers 412, and never claims the activation did nothing', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ save: errorReply(412, 'stale_version', 'The policy changed since you loaded it.') });
+    renderPage('/app/evaluators/groundedness', { control });
+    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    const d = await dialog(/Adopt calibration: Groundedness/);
+    await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(within(d).getByRole('button', { name: 'Adopt calibration' }));
+    expect(await within(d).findByRole('alert')).toHaveTextContent(
+      'The policy changed while you were reviewing, so it was not saved (the calibration is active, but routes that read raw scores are unchanged). Close this and adopt again to preview the latest policy.',
+    );
+    expect(control.callsTo('/api/calibration/7/activate')).toHaveLength(1);
+  });
+
   it('cannot adopt for a check that runs on no route', async () => {
     const control = createControlApi();
     control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', { attached_routes: [] });

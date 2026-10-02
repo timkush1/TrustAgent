@@ -10,7 +10,8 @@
  *   4. #46b activates the record;
  *   5. PUT /api/policies saves the new thresholds (If-Match: the policy the preview used).
  *
- * A failed save after a successful activation says so plainly: activation alone changes nothing.
+ * A failed save after a successful activation says so plainly: the calibration is active, and
+ * routes that read raw scores are unchanged (SPEC §2.11), this one included.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, RotateCw } from 'lucide-react';
@@ -238,7 +239,7 @@ export function AdoptPanel({ evaluatorRef, name, routes, initialRoute, record, r
 
       {stale ? (
         <p role="alert" className="text-sm text-fg">
-          The policy changed while you were reviewing, so nothing was saved{activated ? ' (the calibration is active, which changes nothing on its own)' : ''}. Close this and adopt again to preview the latest policy.
+          The policy changed while you were reviewing, so it was not saved{activated ? ' (the calibration is active, but routes that read raw scores are unchanged)' : ''}. Close this and adopt again to preview the latest policy.
         </p>
       ) : failure ? (
         <div role="alert" className="flex items-start gap-2 rounded-md border border-border bg-surface px-3 py-2">
