@@ -236,7 +236,7 @@ class ComposeTest(unittest.TestCase):
             self.assertIn(line, DEMO)
 
     def test_onboarding_starts_a_fresh_install_on_mock_upstream(self) -> None:
-        # P4 D70: no decision-model settings and no env admin key (whatever .env holds), so the
+        # No decision-model settings and no env admin key (whatever .env holds), so the
         # dashboard opens on the setup wizard; sign-in required; debug logs for the leak check.
         proxy = ONBOARDING.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0] + "\n"
         for key in (

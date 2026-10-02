@@ -16,7 +16,7 @@ needs but nobody should have to invent (SPEC §3.4):
 It never overwrites a non-empty value and never prints a secret. The file is
 written atomically with mode 0600.
 
-``--with-secrets`` (``make configure WITH_SECRETS=1``, P4 D74) does the same and
+``--with-secrets`` (``make configure WITH_SECRETS=1``) does the same and
 then asks for the vendor keys a real stack needs, at hidden prompts (getpass):
 the OpenRouter key that runs the fast check and the deep-audit judge, and the
 optional TypeSafe, Anthropic and OpenAI keys. Enter keeps a key that is already

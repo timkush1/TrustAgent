@@ -31,7 +31,7 @@ from envfile import EnvFile  # noqa: E402
 
 EXAMPLE = "# TrustAgent settings\n# TRUTHTABLE_API_KEYS=\n# BIND_ADDR=127.0.0.1\n"
 REPO = Path(__file__).resolve().parents[2]
-# Fake keys only (P4 §0 rule 8): one in OpenRouter's shape, and one that matches no key pattern
+# Fake keys only: one in OpenRouter's shape, and one that matches no key pattern
 # at all, so an assertion on its absence cannot pass because something masked it.
 FAKE_OPENROUTER = "sk-or-v1-e2e-0123456789abcdef0123456789abcdef"
 UNMATCHED = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
@@ -284,7 +284,7 @@ class MainTest(unittest.TestCase):
 
 
 class WithSecretsTest(unittest.TestCase):
-    """``--with-secrets`` (P4 D74): hidden prompts, never a value in any output."""
+    """``--with-secrets``: hidden prompts, never a value in any output."""
 
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
