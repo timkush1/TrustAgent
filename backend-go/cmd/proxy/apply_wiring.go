@@ -81,6 +81,9 @@ func (s *server) mountConnectAPI(api *gin.RouterGroup, g apiGuards) {
 	api.PUT("/credentials/:name", g.writable, g.admin, g.rateLimit, g.bodyLimit, s.handlePutCredential)
 	api.DELETE("/credentials/:name", g.writable, g.admin, g.rateLimit, s.handleDeleteCredential)
 	api.POST("/credentials/:name/verify", g.writable, g.admin, s.apply.creds.verifyLimit, g.bodyLimit, s.handleVerifyCredential)
+	// #58, #59 (connect_api.go)
+	api.POST("/connect/openrouter/start", g.writable, g.admin, g.rateLimit, g.bodyLimit, s.handleConnectStart)
+	api.POST("/connect/openrouter/complete", g.writable, g.admin, g.rateLimit, g.bodyLimit, s.handleConnectComplete)
 	// #60: one probe per caller every 10 s (it costs ≈ $0.00001 each).
 	api.POST("/decision-model/test", g.writable, g.admin, g.limitBy(1, decisionModelTestEvery), s.handleDecisionModelTest)
 	// #70

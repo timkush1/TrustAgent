@@ -136,3 +136,23 @@ func TestEnginePushFollowsEngineHealth(t *testing.T) {
 		t.Fatalf("re-push epoch %q, want the snapshot's %q", last.GetEpoch(), snap.Epoch)
 	}
 }
+
+// TestEnginePushAtBootWithDatabase (D31, D34): with a settings store, the boot push carries the
+// stored epoch and a version of at least 1 (the epoch row's), so an engine restart (version 0)
+// is told the configuration in effect.
+func TestEnginePushAtBootWithDatabase(t *testing.T) {
+	pg := runtimePG(t)
+	re := newReportingEngine(t)
+	env := newTestEnv(t, envOpts{pg: pg, master: durableMaster(t, 41), engine: re.eng})
+	epoch, version, err := pg.RuntimeEpoch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	push := re.waitPushes(t, 1)[0]
+	if push.GetVersion() < 1 || push.GetVersion() != version || push.GetEpoch() != epoch {
+		t.Fatalf("boot push (version %d, epoch %q), want the store's (%d, %q)", push.GetVersion(), push.GetEpoch(), version, epoch)
+	}
+	if snap := env.srv.rt.manager.Current(); snap.Version != version || snap.Epoch != epoch {
+		t.Errorf("snapshot (%d, %q) is not the store's", snap.Version, snap.Epoch)
+	}
+}
