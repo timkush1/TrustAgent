@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -178,6 +179,7 @@ type credWriteWire struct {
 	} `json:"verification"`
 	ReturnTo string `json:"return_to"`
 	raw      map[string]json.RawMessage
+	body     []byte
 }
 
 func decodeWriteResult(t *testing.T, b []byte) credWriteWire {
@@ -188,6 +190,7 @@ func decodeWriteResult(t *testing.T, b []byte) credWriteWire {
 		t.Fatal(err)
 	}
 	_ = json.Unmarshal(b, &w.raw)
+	w.body = b
 	return w
 }
 
@@ -322,6 +325,14 @@ func TestCredentialPutBindsTheFastCheckAndSkipsAnEnvManagedJudge(t *testing.T) {
 	}
 	if _, ok := res.raw["verification"]; !ok || !bytes.Contains(res.raw["verification"], []byte(`"limit_usd":null`)) {
 		t.Errorf("an OpenRouter check reports its (missing) spending limit as null: %s", res.raw["verification"])
+	}
+	// The same fields as the contract fixture of this very case, which the web is built against.
+	fixture, err := os.ReadFile(config.RepoPath("contracts/fixtures/api/CredentialWriteResult.judge-env-skipped.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := jsonShape(t, res.body), jsonShape(t, fixture); !slices.Equal(got, want) {
+		t.Errorf("response fields %v, fixture fields %v", got, want)
 	}
 	c := res.Credential
 	if c.Source != "dashboard" || c.Masked != config.MaskSecret(credGoodKey) || !strings.HasPrefix(c.Fingerprint, "fp_") ||
