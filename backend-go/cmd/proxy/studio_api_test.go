@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc/codes"
@@ -1184,6 +1185,38 @@ func TestStudioDraftRefusals(t *testing.T) {
 	noEngine := newStudioRig(t, func(r *studioRig) { r.api.drafter = nil })
 	if code, body := studioDo(t, noEngine.url, http.MethodPost, "/api/studio/draft", "", `{"description":"Catch blame."}`); code != http.StatusServiceUnavailable || errorCodeOf(t, body) != codeEngineUnavailable {
 		t.Errorf("no engine: %d %s", code, body)
+	}
+}
+
+// An engine error can quote the judge provider's answer, which may echo the key it was sent: the
+// draft's 503 masks every secret the gateway knows (by value and by shape) before it cuts the text.
+func TestStudioDraftMasksSecretsInEngineErrors(t *testing.T) {
+	const shaped = "sk-or-v1-e2e-0123456789abcdef0123"
+	if config.NewRedactor().Redact(dmUnmatchedSecret) != dmUnmatchedSecret {
+		t.Fatal("the unmatched secret matches a redaction pattern")
+	}
+	redactor := config.NewRedactor(dmUnmatchedSecret)
+	// The unmatched secret straddles the 300-character cut: masked first, no prefix of it is left.
+	msg := "judge refused: " + strings.Repeat("x", maxEngineText-30) + " key " + dmUnmatchedSecret + " and " + shaped
+	r := newStudioRig(t, func(r *studioRig) {
+		r.api.redact = redactor.Redact
+		r.api.drafter = fakeDrafter(func(context.Context, *pb.DraftEvaluatorRequest) (*pb.DraftEvaluatorResponse, error) {
+			return nil, status.Error(codes.Internal, msg)
+		})
+	})
+	code, body := studioDo(t, r.url, http.MethodPost, "/api/studio/draft", "", `{"description":"Catch blame."}`)
+	if code != http.StatusServiceUnavailable || errorCodeOf(t, body) != codeEngineUnavailable {
+		t.Errorf("HTTP %d", code)
+	}
+	for _, leak := range []string{dmUnmatchedSecret, dmUnmatchedSecret[:8], shaped, "sk-or-v1-e2e"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("the answer carries a secret or its prefix (%d characters)", len(leak))
+		}
+	}
+	var e apiErrorBody
+	if err := json.Unmarshal(body, &e); err != nil || !strings.Contains(e.Error.Message, "judge refused") ||
+		utf8.RuneCountInString(e.Error.Message) > len("The audit engine could not draft: ")+maxEngineText+1 {
+		t.Errorf("message of %d characters (err %v)", utf8.RuneCountInString(e.Error.Message), err)
 	}
 }
 

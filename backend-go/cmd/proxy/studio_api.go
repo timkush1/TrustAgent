@@ -130,8 +130,10 @@ type studioAPI struct {
 	judge          func() (provider, model string)
 	judgePrice     func(provider, model string) (decision.PriceEntry, bool)
 	referencePrice func() (decision.PriceEntry, bool)
-	now            func() time.Time
-	log            *slog.Logger
+	// redact masks the secrets and credential shapes the gateway knows (nil: none).
+	redact func(string) string
+	now    func() time.Time
+	log    *slog.Logger
 }
 
 // newStudioAPI wires the Studio endpoints to the server.
@@ -150,9 +152,10 @@ func (s *server) newStudioAPI() *studioAPI {
 			Tokens: cfg.Jev.TokenBudget, CPT: cfg.Jev.CharsPerToken, MaxQuestions: cfg.Jev.MaxQuestionsPerCall,
 			Overhead: decision.Overhead, MaxResponseTokens: cfg.Jev.MaxResponseTokens, EvidenceMaxTokens: 8000,
 		},
-		judge: func() (string, string) { return "", "" },
-		now:   time.Now,
-		log:   s.log,
+		judge:  func() (string, string) { return "", "" },
+		redact: s.redact,
+		now:    time.Now,
+		log:    s.log,
 	}
 	if a.budget.CPT == 0 {
 		a.budget = decision.DefaultBudget()
@@ -1203,7 +1206,7 @@ func (a *studioAPI) draft(c *gin.Context) {
 		default:
 			settle(0)
 			a.log.Warn("studio: draft failed", "code", st.Code().String(), "err", err)
-			abortAPI(c, http.StatusServiceUnavailable, codeEngineUnavailable, "The audit engine could not draft: "+st.Message())
+			abortAPI(c, http.StatusServiceUnavailable, codeEngineUnavailable, "The audit engine could not draft: "+a.engineText(st.Message()))
 		}
 		return
 	}
@@ -1238,6 +1241,23 @@ func (a *studioAPI) draft(c *gin.Context) {
 		out.Draft = json.RawMessage("null")
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// maxEngineText is the most characters of an engine error message an API answer carries.
+const maxEngineText = 300
+
+// engineText is an engine error message as an answer may carry it: every secret and credential
+// shape the gateway knows masked, then cut to maxEngineText characters. The engine's message can
+// quote the judge provider's error, which may echo the key it was sent; masking before cutting
+// never leaves a cut-off secret's prefix unmasked.
+func (a *studioAPI) engineText(msg string) string {
+	if a.redact != nil {
+		msg = a.redact(msg)
+	}
+	if utf8.RuneCountInString(msg) > maxEngineText {
+		msg = string([]rune(msg)[:maxEngineText]) + "…"
+	}
+	return msg
 }
 
 // draftEstimate is what a draft reserves of the LLM budget: its prompt at the judge's prices.
