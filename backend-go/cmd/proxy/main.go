@@ -170,14 +170,20 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 	return runErr
 }
 
-// redactURL is a URL safe to log: a password becomes xxxxx and the query is dropped (a base URL
-// may carry an api-key parameter).
+// redactURL is a URL safe to log and to show (D79): a password becomes xxxxx, so does a user name
+// that stands alone (it is often a token), and the query is dropped (a base URL may carry an
+// api-key parameter).
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "(unparseable URL)"
 	}
-	u.RawQuery, u.Fragment = "", ""
+	u.RawQuery, u.ForceQuery, u.Fragment = "", false, ""
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); !hasPassword {
+			u.User = url.User("xxxxx")
+		}
+	}
 	return u.Redacted()
 }
 

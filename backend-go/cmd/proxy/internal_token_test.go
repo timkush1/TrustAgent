@@ -54,6 +54,9 @@ func TestRedactURL(t *testing.T) {
 		"https://api.openai.com":                         "https://api.openai.com",
 		"https://user:secret@llm.example/v1?api-key=abc": "https://user:xxxxx@llm.example/v1",
 		"http://ollama:11434":                            "http://ollama:11434",
+		"https://sk-test-token-0123@gw.example.com/v1":   "https://xxxxx@gw.example.com/v1",
+		"https://gw.example.com/v1?":                     "https://gw.example.com/v1",
+		"":                                               "",
 	} {
 		if got := redactURL(in); got != want {
 			t.Errorf("redactURL(%q) = %q, want %q", in, got, want)
