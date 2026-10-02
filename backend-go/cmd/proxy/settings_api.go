@@ -40,10 +40,10 @@ const (
 	fieldInvalidType         = "invalid_type"
 	fieldInvalidValue        = "invalid_value"
 	fieldBindingMismatch     = "binding_mismatch"
-	fieldUnknownCredential   = "unknown_credential"
-	fieldCredentialKind      = "credential_kind"
-	fieldCredentialMissing   = "credential_missing"
-	fieldCredentialUndecrypt = "credential_undecryptable"
+	fieldUnknownCredential   = "unknown_credential"       // #nosec G101 -- a field-error code, not a credential
+	fieldCredentialKind      = "credential_kind"          // #nosec G101 -- a field-error code, not a credential
+	fieldCredentialMissing   = "credential_missing"       // #nosec G101 -- a field-error code, not a credential
+	fieldCredentialUndecrypt = "credential_undecryptable" // #nosec G101 -- a field-error code, not a credential
 	fieldBackendPinned       = "backend_pinned"
 	fieldReenterSecret       = "reenter_secret"
 	fieldOriginNotAllowed    = "origin_not_allowed"
