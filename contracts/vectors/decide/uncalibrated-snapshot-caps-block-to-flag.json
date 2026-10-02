@@ -3,7 +3,7 @@
   "kind": "decide",
   "name": "uncalibrated-snapshot-caps-block-to-flag",
   "status": "frozen",
-  "description": "Block route, require_calibration true, groundedness@1 and contradiction@1 are calibrated only on other snapshots of the family (calibration entries with state other_snapshot and no table, P4-PLAN D56), so nothing calibrates them on this snapshot. groundedness 0.96 and contradiction 0.98 form the block set, so block mode gives block; neither block-set member is calibrated and no detector blocks, so the cap lowers the action to flag with degraded uncalibrated and reason uncalibrated_snapshot, because every uncalibrated block-set member is calibrated on another snapshot (the decision model moved on). would_action keeps block, and calibration_state stays none: decision.v1 never reports other_snapshot.",
+  "description": "Block route, require_calibration true. groundedness@1 and contradiction@1 are calibrated only on other snapshots of the family (entries with state other_snapshot and no table, P4-PLAN D56). groundedness 0.96 and contradiction 0.98 form the block set, so block mode gives block; neither member is calibrated and no detector blocks, so the cap lowers the action to flag with degraded uncalibrated and reason uncalibrated_snapshot (every uncalibrated member is calibrated on another snapshot). would_action keeps block; calibration_state stays none.",
   "input": {
     "policy": {
       "configured_mode": "block",
