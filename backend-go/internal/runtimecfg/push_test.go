@@ -395,10 +395,11 @@ func TestPusherNeverLeaksTheSecret(t *testing.T) {
 	red.Add(pushUnmatchedSecret)
 	eng := newFakeEngine(func(n int, rc *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error) {
 		if n == 1 {
-			return nil, status.Error(codes.InvalidArgument, "bad credential "+rc.GetCredentials()["openrouter"].GetSecret())
+			// The secret straddles the 300-byte cut: cut first, its prefix would survive masking.
+			return nil, status.Error(codes.InvalidArgument, "bad credential "+strings.Repeat("x", 275)+rc.GetCredentials()["openrouter"].GetSecret())
 		}
 		return &pb.ApplyRuntimeConfigResponse{AppliedVersion: rc.GetVersion(), AppliedEpoch: rc.GetEpoch(), JudgeStatus: "invalid",
-			Warnings: []string{"judge key rejected: " + rc.GetCredentials()["openrouter"].GetSecret()}}, nil
+			Warnings: []string{"judge key rejected: " + strings.Repeat("y", 270) + rc.GetCredentials()["openrouter"].GetSecret()}}, nil
 	})
 	var logs syncBuffer
 	p := NewPusher(PusherConfig{Engine: eng, Redact: red.Redact, Logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))})
@@ -426,8 +427,10 @@ func TestPusherNeverLeaksTheSecret(t *testing.T) {
 		t.Fatalf("warning after the refusal: %q", warnings)
 	}
 	for _, text := range append(warnings, st.Warning, logs.String()) {
-		if strings.Contains(text, pushUnmatchedSecret) {
-			t.Fatal("the pushed secret leaked into a warning or the log")
+		for i := 6; i <= len(pushUnmatchedSecret); i++ {
+			if strings.Contains(text, pushUnmatchedSecret[:i]) {
+				t.Fatalf("a %d-character prefix of the pushed secret leaked into a warning or the log", i)
+			}
 		}
 	}
 	if !strings.Contains(st.Warning, "could not use the judge settings") {

@@ -288,7 +288,7 @@ func (p *Pusher) push(ctx context.Context, snap *Snapshot) error {
 	if resp.GetJudgeStatus() == "invalid" {
 		p.state.Warning = "The audit engine could not use the judge settings from the dashboard, so deep audits keep the engine's own judge."
 		if w := resp.GetWarnings(); len(w) > 0 {
-			p.state.Warning += " " + p.redact(pushTruncate(w[0], 300))
+			p.state.Warning += " " + pushTruncate(p.redact(w[0]), 300)
 		}
 	}
 	p.log.Info("runtime configuration pushed to the audit engine", "version", p.state.Version, "epoch", p.state.Epoch,
@@ -313,7 +313,7 @@ func (p *Pusher) unimplemented() {
 // failed records a failed push. An unreachable engine already shows as down in the status, so
 // only an engine that answers and refuses gets a status warning.
 func (p *Pusher) failed(snap *Snapshot, err error, failures int) {
-	msg := p.redact(pushTruncate(status.Convert(err).Message(), 300))
+	msg := pushTruncate(p.redact(status.Convert(err).Message()), 300)
 	code := status.Code(err)
 	p.mu.Lock()
 	switch code {
@@ -338,7 +338,8 @@ func (p *Pusher) backoff(n int) time.Duration {
 	return time.Duration(p.jitter() * float64(ceiling))
 }
 
-// pushTruncate cuts s to at most n bytes on a rune boundary.
+// pushTruncate cuts s to at most n bytes on a rune boundary. Callers redact first: a secret cut
+// in half before masking would no longer match, and its prefix would stay behind.
 func pushTruncate(s string, n int) string {
 	if len(s) <= n {
 		return s
