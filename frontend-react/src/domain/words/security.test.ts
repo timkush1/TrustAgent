@@ -18,6 +18,7 @@ import {
   secCredentialLabel,
   secDecisionStateView,
   secEnvKeyOfPath,
+  secFieldErrorText,
   secJoinWords,
   secJudgeSettingLabel,
   secProbeReadyText,
@@ -47,6 +48,24 @@ describe('security words', () => {
     expect(secUsedByLabel('decision_model')).toBe(copy.tiers.fast_check);
     for (const s of ['ingest', 'read', 'content', 'admin'] satisfies Scope[]) notRaw(secScopeView(s).label, s);
     expect(secScopeView('content').label.toLowerCase()).toContain('prompts and answers');
+  });
+
+  it('words every field-error code a refused write sends, with the names and host it carries', () => {
+    const codes = ['unknown_setting', 'invalid_type', 'invalid_value', 'binding_mismatch', 'unknown_credential', 'credential_undecryptable', 'invalid_url', 'url_credentials', 'insecure_url', 'forbidden_target'];
+    for (const code of codes) {
+      const text = secFieldErrorText({ code, message: 'server words' });
+      expect(text, code).not.toBe('server words');
+      notRaw(text, code);
+    }
+    expect(secFieldErrorText({ code: 'credential_missing', message: 'm', details: { names: ['typesafe'] } })).toBe('No TypeSafe key is saved. Add it under Connections first.');
+    expect(secFieldErrorText({ code: 'reenter_secret', message: 'm', details: { names: ['compatible'] } })).toBe(
+      'The address changed, so paste the Other gateway key again to send it there.',
+    );
+    expect(secFieldErrorText({ code: 'fallback_key_required', message: 'm', details: { host: 'api.example.com' } })).toContain('api.example.com');
+    // A sentence whose names or host are missing falls back to the server's own words.
+    expect(secFieldErrorText({ code: 'origin_not_allowed', message: 'This key cannot go there.' })).toBe('This key cannot go there.');
+    expect(secFieldErrorText({ code: 'something_new', message: 'The proxy says why.' })).toBe('The proxy says why.');
+    expect(secFieldErrorText({ code: 'toString', message: 'The proxy says why.' })).toBe('The proxy says why.');
   });
 
   it('words every hint code a key check sends (credentials/verify.go Hint*, jev error kinds)', () => {

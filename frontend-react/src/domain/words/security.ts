@@ -478,6 +478,47 @@ export function secAuditChangeSummary(action: string, diff: unknown): string {
   return parts.length > 0 ? parts.join(' · ') : '—';
 }
 
+// --------------------------------------------------------------------------- field errors
+
+/**
+ * The words for each field-error code of a refused settings or key write (FieldError.code: Go
+ * settings_api.go field* and credentials/origins.go Code*; D37, D41, D78, D86).
+ */
+const FIELD_ERRORS: Readonly<Record<string, string>> = {
+  unknown_setting: copy.settings.unknown_setting,
+  invalid_type: copy.settings.invalid_type,
+  invalid_value: copy.settings.invalid_value,
+  binding_mismatch: copy.settings.binding_mismatch,
+  unknown_credential: copy.settings.unknown_credential,
+  credential_kind: copy.settings.credential_kind,
+  credential_missing: copy.settings.credential_missing,
+  credential_undecryptable: copy.settings.credential_undecryptable,
+  backend_pinned: copy.settings.backend_pinned,
+  reenter_secret: copy.settings.reenter_secret,
+  origin_not_allowed: copy.settings.origin_not_allowed,
+  fallback_key_required: copy.settings.fallback_key_required,
+  invalid_url: copy.settings.invalid_url,
+  url_credentials: copy.settings.url_credentials,
+  insecure_url: copy.settings.insecure_url,
+  forbidden_target: copy.settings.forbidden_target,
+};
+
+/**
+ * One refused field in words: the contract sentence for its code, filled with the credential
+ * names (`details.names`) or the host (`details.host`) it carries; the server's own message for a
+ * code without words here, or when the details the sentence needs are missing.
+ */
+export function secFieldErrorText(fieldError: { code?: string; message: string; details?: Record<string, unknown> }): string {
+  const { code, message, details } = fieldError;
+  const template = code && Object.hasOwn(FIELD_ERRORS, code) ? FIELD_ERRORS[code] : null;
+  if (!template) return message;
+  const rawNames = details?.names;
+  const names = Array.isArray(rawNames) ? rawNames.map(String).filter((n) => n !== '').map(secCredentialLabel) : [];
+  const host = typeof details?.host === 'string' ? details.host : '';
+  if ((template.includes('{names}') && names.length === 0) || (template.includes('{host}') && host === '')) return message || fillTemplate(template, {});
+  return fillTemplate(template, { names: secJoinWords(names), host });
+}
+
 // ------------------------------------------------------------------------------- warnings
 
 /**

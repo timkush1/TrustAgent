@@ -1,5 +1,6 @@
 import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import settingsEnvManaged from '@contracts/fixtures/api/SettingsView.env-managed.json';
 import { copy } from '@/domain/presentation';
@@ -7,7 +8,7 @@ import { axeViolations, formatViolations } from '@/test/axe';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { settingsView } from '@/test/control/securityHandlers';
-import { installMswServer } from '@/test/msw';
+import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import type { SettingsView } from '@/types/api';
 
@@ -64,6 +65,39 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
     await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
     expect(control.callsTo('/api/settings', 'PATCH')[0].body).toEqual({ decision_model: { model: 'typesafe/jev-1.13' } });
+  });
+
+  it('says in words why each refused field was refused (D37, D78)', async () => {
+    const user = userEvent.setup();
+    renderPage(PATH);
+    server.use(
+      http.patch(`${API}/api/settings`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'validation_failed',
+              message: 'Some settings are not valid.',
+              field_errors: [
+                { path: 'decision_model.base_url', code: 'reenter_secret', message: 'paste the key again', details: { names: ['openrouter'] } },
+                { path: 'decision_model.base_url', code: 'insecure_url', message: 'http is not allowed here' },
+                { path: 'decision_model.path', code: 'something_new', message: 'The path must start with a slash.' },
+              ],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Advanced' }));
+    await user.type(screen.getByLabelText(/Base URL/), 'http://gateway.example.com');
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
+    const note = await screen.findByRole('alert');
+    expect(note).toHaveTextContent('Not saved: Some settings are not valid.');
+    expect(within(note).getByText('The address changed, so paste the OpenRouter key again to send it there.')).toBeInTheDocument();
+    expect(within(note).getByText(copy.settings.insecure_url)).toBeInTheDocument();
+    // A code without words of its own still says what the proxy said, never the raw code.
+    expect(within(note).getByText('The path must start with a slash.')).toBeInTheDocument();
+    expect(note).not.toHaveTextContent('something_new');
   });
 
   it('offers to reload when someone saved first (412)', async () => {

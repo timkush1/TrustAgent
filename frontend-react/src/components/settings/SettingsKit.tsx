@@ -9,9 +9,9 @@ import type { ReactNode } from 'react';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { DegradedState } from '@/components/common/DegradedState';
 import { describeError } from '@/components/common/describeError';
-import { errorCodeHint, isApiError, P4_FIELD_ERROR_CODES } from '@/data/errors';
+import { errorCodeHint, isApiError } from '@/data/errors';
 import { useSystemStatus } from '@/data/useSystem';
-import { commandText, copy, fillTemplate, secCredentialLabel, secJoinWords, secStoreView, secWarningText } from '@/domain/presentation';
+import { commandText, copy, fillTemplate, secCredentialLabel, secFieldErrorText, secJoinWords, secStoreView, secWarningText } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import type { SettingsView } from '@/types/api';
 
@@ -34,15 +34,11 @@ function failureDetails(error: unknown): string[] {
   // where to open the dashboard, and the generic "something else changed this first" would mislead.
   const explained = error.code === 'conflict' && details.reason === 'callback_origin';
   if (error.code === 'stale_version') lines.push(copy.settings.stale_version);
+  // Each refused field in words (D37 reenter_secret, D41, D78 URL checks, …); a field that only
+  // repeats the top-line message adds nothing.
   for (const fe of error.fieldErrors) {
-    const code = fe.code;
-    if (code === 'reenter_secret') {
-      const raw = fe.details?.names;
-      const names = (Array.isArray(raw) ? raw.map(String) : []).map(secCredentialLabel);
-      lines.push(fillTemplate(copy.settings.reenter_secret, { names: secJoinWords(names) }));
-    } else if (code && Object.hasOwn(P4_FIELD_ERROR_CODES, code)) {
-      lines.push(P4_FIELD_ERROR_CODES[code as keyof typeof P4_FIELD_ERROR_CODES]);
-    }
+    const line = secFieldErrorText(fe);
+    if (line && line !== error.message && !lines.includes(line)) lines.push(line);
   }
   if (lines.length === 0 && !explained) {
     const hint = errorCodeHint(error);
