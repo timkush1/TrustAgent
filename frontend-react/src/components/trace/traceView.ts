@@ -233,6 +233,26 @@ function checkRow(r: EvaluatorResult, names?: ReadonlyMap<string, string>): Chec
   return { ...row, kind: 'error', note: why ? `Check failed — ${why}` : 'Check failed' };
 }
 
+/**
+ * The check "Open evaluator" and "Adjust threshold" point at: the riskiest active check that fired
+ * (High before Elevated, then by risk), else the riskiest assessed one; null when none was assessed.
+ */
+export function primaryCheck(decision: GateDecisionView | null): EvaluatorResult | null {
+  if (!decision) return null;
+  const assessed = Object.values(decision.evaluators).filter((r) => r.status === 'assessed' && r.risk !== null && !r.internal);
+  if (assessed.length === 0) return null;
+  const rank = (r: EvaluatorResult) => (r.stage === 'active' && r.level ? LEVEL_RANK[r.level] : 0);
+  return [...assessed].sort((a, b) => rank(b) - rank(a) || (b.risk ?? 0) - (a.risk ?? 0))[0];
+}
+
+/** The checks a "Was this right?" label goes to: attempt-0 checks at Elevated or High risk (D59). */
+export function labelTargets(decision: GateDecisionView | null): string[] {
+  if (!decision || decision.attempt !== 0) return [];
+  return Object.values(decision.evaluators)
+    .filter((r) => r.status === 'assessed' && (r.level === 'warn' || r.level === 'critical'))
+    .map((r) => r.ref);
+}
+
 /** One row per evaluator, in route order (the decision's key order), named from the library when given. */
 export function checkRows(decision: GateDecisionView | null, names?: ReadonlyMap<string, string>): CheckRow[] {
   if (!decision) return [];

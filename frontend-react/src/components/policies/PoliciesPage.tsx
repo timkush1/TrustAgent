@@ -44,6 +44,7 @@ import {
   DEFAULT_ROUTE,
   DraftError,
   draftRouteNames,
+  setEvaluatorThresholds,
   setRouteMode,
   stopTrustingUserContext,
   yamlDiffers,
@@ -52,6 +53,8 @@ import {
 import { PresetsDialog } from './PresetsDialog';
 import { ReviewSaveDialog } from './ReviewSaveDialog';
 import { RouteCard, type RouteFix } from './RouteCard';
+import { PolicyWarningList } from './PolicyWarningList';
+import { isDivergedWarning, policyWarningView } from './policyWarnings';
 import { evaluatorId, policyWriteReason } from './routeWords';
 import { VersionsSheet } from './VersionsSheet';
 import { YamlEditorDialog } from './YamlEditorDialog';
@@ -146,7 +149,13 @@ function DraftBar({
   );
 }
 
-export function PoliciesPage() {
+export interface PoliciesSearch {
+  /** With `evaluator`: open that check's threshold editor on this route ("Adjust threshold"). */
+  route?: string;
+  evaluator?: string;
+}
+
+export function PoliciesPage({ search = {} }: { search?: PoliciesSearch }) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const { demo } = useAppMode();
@@ -178,20 +187,31 @@ export function PoliciesPage() {
       new Map<string, CalibrationProgress>(results.flatMap((r) => (r.data ? [[r.data.id, r.data.calibration_progress] as const] : []))),
   });
 
+  // In plain words; the diverged-file warning is the banner's job.
+  const warnings = useMemo(() => {
+    if (!state) return [];
+    const ctx = { routes: draftRouteNames(state.yaml).slice(1), names };
+    return state.warnings.filter((w) => !(state.file.status === 'diverged' && isDivergedWarning(w))).map((w) => policyWarningView(w, ctx));
+  }, [state, names]);
+
   const draftModes = useMemo(() => (draft ? modesIn(draft.yaml) : new Map<string, PolicyMode>()), [draft]);
 
-  const applyEdit = (change: (yaml: string) => string, done?: string) => {
-    if (!state) return;
+  /** Applies a change to the draft; true when the draft now differs from the saved policy. */
+  const applyEdit = (change: (yaml: string) => string, done?: string): boolean => {
+    if (!state) return false;
     try {
       const next = change(draftYaml);
-      if (!yamlDiffers(next, state.yaml)) {
+      const differs = yamlDiffers(next, state.yaml);
+      if (!differs) {
         setDraft(null);
       } else {
         setDraft({ yaml: next, baseEtag: draft?.baseEtag ?? state.etag });
       }
       if (done) notify.success(done, { description: 'Review and save to apply it.' });
+      return differs;
     } catch (err) {
       notify.error("Couldn't change the draft", err instanceof DraftError ? err : new Error(String(err)));
+      return false;
     }
   };
 
@@ -292,13 +312,7 @@ export function PoliciesPage() {
           </p>
         ) : null}
         {state.persisted ? null : <p className="text-sm text-fg-muted">{copy.states.applies_until_restart}</p>}
-        {state.warnings.length > 0 ? (
-          <ul className="space-y-1 text-sm text-fg-muted">
-            {state.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        ) : null}
+        <PolicyWarningList warnings={warnings} className="rounded-lg border border-border bg-surface px-4 py-3" />
         <Section title="Routes" description="A request follows the first route whose matchers all fit; the default route takes the rest.">
         {routes.length === 0 ? (
           <EmptyState icon={RouteIcon} title="No routes yet: every request uses the defaults">
@@ -316,6 +330,10 @@ export function PoliciesPage() {
                 writeReason={writeReason}
                 onModeChange={(mode) => applyEdit((y) => setRouteMode(y, route.name, mode))}
                 onFix={onFix(route.name)}
+                onThresholds={(ref, edit) => {
+                  if (applyEdit((y) => setEvaluatorThresholds(y, route.name, ref, edit))) setReviewOpen(true);
+                }}
+                focusEvaluator={search.route === route.name ? (search.evaluator ?? null) : null}
               />
             ))}
           </div>
