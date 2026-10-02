@@ -20,18 +20,24 @@ import (
 var calibrationReload = calibration.ReloadInterval
 
 // initCalibration sets s.calib, the calibration lookup of the gate and the policy readiness
-// checks: the files of TRUTHTABLE_CALIBRATION_DIR (SPEC §2.11, D14), read once here and re-read
-// by the decision loops. The status reporter shows the current snapshot's state from it.
+// checks: the files of TRUTHTABLE_CALIBRATION_DIR (SPEC §2.11, D14) and, with a database, the
+// calibrations table they are mirrored into, whose active rows then apply (D55). It is read once
+// here and re-read by the decision loops (the poll, and the "calibrations:" notifications
+// eval_wiring.go subscribes to). The status reporter shows the current snapshot's state from it.
 func (s *server) initCalibration() {
 	dir, family := calibrationSettings(s.cfg)
-	st := calibration.New(calibration.Config{
+	cfg := calibration.Config{
 		Dir: dir, FamilyFallback: family, AllowMock: allowMockCalibration(s.cfg),
 		Specs: s.evaluatorSpecs, Current: s.currentSnapshot, Logger: s.log,
-	})
+	}
+	if s.pg != nil {
+		cfg.DB = s.pg
+	}
+	st := calibration.New(cfg)
 	changes, err := st.Reload()
 	switch {
 	case err != nil:
-		s.log.Warn("calibration: the directory cannot be read; every evaluator is uncalibrated until it can", "dir", dir, "err", err)
+		s.log.Warn("calibration: the calibrations cannot be read; every evaluator is uncalibrated until they can", "dir", dir, "err", err)
 	case len(changes) == 0:
 		s.log.Info("calibration: no calibration files", "dir", dir)
 	}

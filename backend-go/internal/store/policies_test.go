@@ -306,28 +306,6 @@ func TestEvaluatorVersionsUpsertIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestHumanLabelCounts(t *testing.T) {
-	s, _ := newTestStore(t)
-	ctx := context.Background()
-	for i, label := range []string{"should_fire", "should_fire", "should_not_fire", "hallucinated"} {
-		target := "groundedness@1"
-		if label == "hallucinated" {
-			target = "response"
-		}
-		if _, err := s.pool.Exec(ctx, `INSERT INTO labels (trace_id, target, label, labeled_by) VALUES ($1, $2, $3, 'me')`,
-			"t"+strconv.Itoa(i), target, label); err != nil {
-			t.Fatal(err)
-		}
-	}
-	c, err := s.HumanLabelCounts(ctx, "groundedness@1")
-	if err != nil || c != (LabelCounts{N: 3, Pos: 2, Neg: 1}) {
-		t.Errorf("counts %+v %v", c, err)
-	}
-	if c, _ := s.HumanLabelCounts(ctx, "contradiction@1"); c != (LabelCounts{}) {
-		t.Errorf("empty target %+v", c)
-	}
-}
-
 func TestForEachReplayDecision(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()

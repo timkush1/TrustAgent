@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +34,9 @@ type policiesAPI struct {
 	// replay reads recorded decisions for the dry-run; nil without a database.
 	replay  policy.ReplaySource
 	presets json.RawMessage
-	log     *slog.Logger
+	// calibrations is the lookup of a dry-run's calibration_ids (D62); nil refuses them.
+	calibrations func(ctx context.Context, ids []int64) (policy.CalibrationLookup, error)
+	log          *slog.Logger
 }
 
 // newPoliciesAPI builds the policy endpoints. replay may be nil (no database: no dry-run).
@@ -271,8 +275,16 @@ func (a *policiesAPI) dryRun(c *gin.Context) {
 		Version *int64 `json:"version"`
 		Window  string `json:"window"`
 		Limit   *int   `json:"limit"`
+		// CalibrationIDs replay with these calibration records in place of the active ones of
+		// their targets: the Adopt flow previews a fitted calibration before activating it (D62).
+		CalibrationIDs []int64 `json:"calibration_ids"`
 	}
 	if !bindJSON(c, &body, false) {
+		return
+	}
+	if len(body.CalibrationIDs) > maxPreviewCalibrations || slices.ContainsFunc(body.CalibrationIDs, func(id int64) bool { return id < 1 }) {
+		abortAPI(c, http.StatusBadRequest, codeBadRequest, "calibration_ids takes up to 50 calibration record ids.",
+			fieldError{Path: "calibration_ids", Message: "up to 50 positive ids"})
 		return
 	}
 	if _, ok := policy.ParseWindow(body.Window); !ok {
@@ -299,7 +311,25 @@ func (a *policiesAPI) dryRun(c *gin.Context) {
 		a.fail(c, err)
 		return
 	}
-	res, err := a.engine.Preview(c.Request.Context(), a.replay, proposed, body.Window, limit)
+	var cal policy.CalibrationLookup
+	if len(body.CalibrationIDs) > 0 {
+		if a.calibrations == nil {
+			abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "Calibration records need a database (TRUTHTABLE_DATABASE_URL).")
+			return
+		}
+		var unknown *errUnknownCalibrations
+		cal, err = a.calibrations(c.Request.Context(), body.CalibrationIDs)
+		switch {
+		case errors.As(err, &unknown):
+			abortAPIDetails(c, http.StatusUnprocessableEntity, codeValidationFailed, "Some calibration_ids name no calibration record.",
+				map[string]any{"ids": unknown.ids}, fieldError{Path: "calibration_ids", Message: "unknown ids"})
+			return
+		case err != nil:
+			a.internal(c, "preview calibrations", err)
+			return
+		}
+	}
+	res, err := a.engine.PreviewWith(c.Request.Context(), a.replay, proposed, body.Window, limit, cal)
 	if err != nil {
 		a.internal(c, "policy dry-run", err)
 		return
