@@ -51,10 +51,9 @@ func (s *server) initRuntime(d serverDeps) {
 	}
 }
 
-// mountSecurityAPI mounts the settings endpoints (SPEC §2.4 rows 52 and 53). They arrive with
-// SEC-5; until then it registers nothing.
+// mountSecurityAPI mounts the settings endpoints (SPEC §2.4 rows 52 and 53, settings_api.go).
 func (s *server) mountSecurityAPI(api *gin.RouterGroup, g apiGuards) {
-	_, _ = api, g
+	s.mountSettings(api, g)
 }
 
 // processRedactor is the Redactor every REST error message passes through (apiRedact, D42):
