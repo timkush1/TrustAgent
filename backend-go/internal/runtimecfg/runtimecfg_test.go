@@ -142,8 +142,49 @@ func TestApplyBindingsUsesTheBoundKey(t *testing.T) {
 	// A bind that applies nothing changes nothing.
 	in := base
 	in.DecisionModel.Backend, in.Judge.Provider = "typesafe", "anthropic"
+	tsModel, haiku := "jev-1.13.0", "claude-haiku-4-5"
+	in.DecisionModel.Model, in.Judge.Model = &tsModel, &haiku
 	out, applied, _ := ApplyBindings(in, "openrouter", []string{TargetDecisionModel, TargetJudge}, []string{"bindings.judge"}, true)
-	if len(applied) != 0 || out.DecisionModel.Backend != "typesafe" || out.Judge.Provider != "anthropic" {
+	if len(applied) != 0 || out.DecisionModel.Backend != "typesafe" || out.Judge.Provider != "anthropic" ||
+		out.DecisionModel.Model != &tsModel || out.Judge.Model != &haiku {
 		t.Errorf("nothing applied, nothing moves: %v %+v %+v", applied, out.DecisionModel, out.Judge)
+	}
+}
+
+// TestApplyBindingsDropsTheOldProvidersModel (D76b): a model id is the provider's it was written
+// for (TypeSafe's jev-1.13.0 is typesafe/jev-1.13 on OpenRouter), so when a bind moves the backend
+// or the judge provider to auto, the persisted model becomes null (the new provider's default).
+// A backend or provider that stays keeps its model, and an env-managed model is never touched.
+func TestApplyBindingsDropsTheOldProvidersModel(t *testing.T) {
+	base := NewStatic(nil).Current().Settings
+	tsModel, haiku := "jev-1.13.0", "claude-haiku-4-5"
+	cases := []struct {
+		name                string
+		backend, provider   string
+		cred                string
+		targets, envManaged []string
+		keepModel, keepJudg bool
+	}{
+		{"typesafe to auto with an openrouter key", "typesafe", "anthropic", "openrouter", []string{TargetDecisionModel, TargetJudge}, nil, false, false},
+		{"mock to auto (D76)", "mock", "mock", "openrouter", []string{TargetDecisionModel}, nil, false, false},
+		{"the backend and provider stay", "typesafe", "anthropic", "typesafe", []string{TargetDecisionModel}, nil, true, true},
+		{"env-managed models", "typesafe", "anthropic", "openrouter", []string{TargetDecisionModel, TargetJudge},
+			[]string{"decision_model.model", "judge.model"}, true, true},
+		{"only the judge moves", "openrouter-decisions", "anthropic", "openrouter", []string{TargetDecisionModel, TargetJudge}, nil, true, false},
+	}
+	for _, c := range cases {
+		in := base
+		in.DecisionModel.Backend, in.Judge.Provider = c.backend, c.provider
+		in.DecisionModel.Model, in.Judge.Model = &tsModel, &haiku
+		out, _, _ := ApplyBindings(in, c.cred, c.targets, c.envManaged, false)
+		if kept := out.DecisionModel.Model != nil; kept != c.keepModel {
+			t.Errorf("%s: decision_model.model kept %v, want %v", c.name, kept, c.keepModel)
+		}
+		if kept := out.Judge.Model != nil; kept != c.keepJudg {
+			t.Errorf("%s: judge.model kept %v, want %v", c.name, kept, c.keepJudg)
+		}
+		if tsModel != "jev-1.13.0" || haiku != "claude-haiku-4-5" {
+			t.Fatalf("%s: ApplyBindings wrote through the caller's model pointers", c.name)
+		}
 	}
 }

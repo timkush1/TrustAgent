@@ -377,7 +377,9 @@ func (m *Manager) SetEngineEnvManaged(names []string) {
 // decision_model applies, and a persisted explicit judge provider other than the credential's own
 // (anthropic, ollama or none with an openrouter key) becomes auto when judge applies. An
 // env-managed decision_model.backend or judge.provider is never changed: the env value is the one
-// in effect. Pass the persisted settings to get the rows to write. It is pure.
+// in effect. A backend or provider moved to auto also drops its persisted model (null: the new
+// provider's default), since a model id is the old provider's, unless the model is env-managed.
+// Pass the persisted settings to get the rows to write. It is pure.
 func ApplyBindings(s RuntimeSettings, name string, targets, envManaged []string, backendPinned bool) (RuntimeSettings, []string, []BindingSkip) {
 	applied, skipped := []string{}, []BindingSkip{}
 	for _, t := range []string{TargetDecisionModel, TargetJudge} {
@@ -402,13 +404,22 @@ func ApplyBindings(s RuntimeSettings, name string, targets, envManaged []string,
 		}
 	}
 	if len(applied) > 0 {
+		// A model id belongs to the backend or provider it was written for (TypeSafe's jev-1.13.0
+		// is typesafe/jev-1.13 on OpenRouter): when the backend or provider moves to auto, a
+		// persisted model moves to the new provider's default too (null), unless the env sets it.
 		if leavesBackend(s.DecisionModel.Backend, name, slices.Contains(applied, TargetDecisionModel)) &&
 			!slices.Contains(envManaged, "decision_model.backend") {
 			s.DecisionModel.Backend = jev.BackendAuto
+			if !slices.Contains(envManaged, "decision_model.model") {
+				s.DecisionModel.Model = nil
+			}
 		}
 		if leavesJudgeProvider(s.Judge.Provider, name, slices.Contains(applied, TargetJudge)) &&
 			!slices.Contains(envManaged, "judge.provider") {
 			s.Judge.Provider = judgeProviderAuto
+			if !slices.Contains(envManaged, "judge.model") {
+				s.Judge.Model = nil
+			}
 		}
 	}
 	return s, applied, skipped

@@ -538,7 +538,9 @@ func bindingChanges(before, after runtimecfg.RuntimeSettings) ([]string, map[str
 		{"bindings.decision_model", str(before.Bindings.DecisionModel), str(after.Bindings.DecisionModel)},
 		{"bindings.judge", str(before.Bindings.Judge), str(after.Bindings.Judge)},
 		{"decision_model.backend", before.DecisionModel.Backend, after.DecisionModel.Backend},
+		{"decision_model.model", str(before.DecisionModel.Model), str(after.DecisionModel.Model)},
 		{"judge.provider", before.Judge.Provider, after.Judge.Provider},
+		{"judge.model", str(before.Judge.Model), str(after.Judge.Model)},
 	}
 	changed := []string{}
 	diff := map[string]any{}

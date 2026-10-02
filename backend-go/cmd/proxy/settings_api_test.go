@@ -434,10 +434,14 @@ func TestSettingsBindingsLeaveSimulatedMode(t *testing.T) {
 	// auto, in the same write and the same audit diff. (Unbinding the fast check's key stops it on
 	// the fail-closed route, so that write needs the D77 confirmation.)
 	v = env.patched(env.patchSettingsAs(admin, v.ETag,
-		`{"decision_model":{"backend":"typesafe"},"judge":{"provider":"anthropic"},"bindings":{"decision_model":null,"judge":null}}`, "?confirm=true"))
+		`{"decision_model":{"backend":"typesafe","model":"jev-1.13.0"},"judge":{"provider":"anthropic","model":"claude-haiku-4-5"},"bindings":{"decision_model":null,"judge":null}}`, "?confirm=true"))
 	v = env.patched(env.patchSettingsAs(admin, v.ETag, `{"bindings":{"decision_model":"openrouter","judge":"openrouter"}}`, ""))
 	if v.Runtime.DecisionModel.Backend != "auto" || v.Runtime.Judge.Provider != "auto" {
 		t.Errorf("a bind leaves a backend and a judge the key does not serve: %+v %+v", v.Runtime.DecisionModel, v.Runtime.Judge)
+	}
+	// The old providers' model ids go with them: OpenRouter would refuse TypeSafe's jev-1.13.0.
+	if v.Runtime.DecisionModel.Model != nil || v.Runtime.Judge.Model != nil {
+		t.Errorf("a bind kept the old providers' models: %v %v", v.Runtime.DecisionModel.Model, v.Runtime.Judge.Model)
 	}
 	audits := env.auditRows(t, "settings.update")
 	fields, _ := audits[len(audits)-1]["fields"].(map[string]any)
@@ -445,6 +449,11 @@ func TestSettingsBindingsLeaveSimulatedMode(t *testing.T) {
 		ch, _ := fields[path].(map[string]any)
 		if ch == nil || ch["to"] == nil || (from != "" && (ch["from"] != from || ch["to"] != "auto")) {
 			t.Errorf("the bind's audit diff misses %s: %v", path, fields)
+		}
+	}
+	for path, from := range map[string]string{"decision_model.model": "jev-1.13.0", "judge.model": "claude-haiku-4-5"} {
+		if ch, _ := fields[path].(map[string]any); ch == nil || ch["from"] != from || ch["to"] != nil {
+			t.Errorf("the bind's audit diff misses the dropped %s: %v", path, fields)
 		}
 	}
 
@@ -694,7 +703,7 @@ func TestSettingsFallbackNeedsItsOwnKey(t *testing.T) {
 	}
 	// Without a fallback URL the bound key is never sent: saved, with a warning on its key's setting.
 	v = env.patched(env.patchSettings(v.ETag, `{"upstream":{"fallback":{"url":null}}}`, ""))
-	if w := warning(v, "fallback_credential_unused", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"); w == nil || !strings.Contains(w.Hint, "upstream.fallback.url") {
+	if w := warning(v, "fallback_credential_unused", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"); w == nil || !strings.Contains(w.Hint, "fallback upstream address") {
 		t.Errorf("a fallback key without a fallback URL: %+v", v.Warnings)
 	}
 }
