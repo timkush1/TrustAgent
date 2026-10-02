@@ -307,7 +307,7 @@ graceful). **Twelve-factor style**: same binary everywhere, behavior injected by
 |---|---|
 | `POST /v1/chat/completions` | The interception point (OpenAI-compatible) |
 | `POST /api/audit` | Audit text directly without proxying (dashboard's "try it" box) |
-| `POST /api/upload` | Upload documents into the knowledge base (Gate-1 vetted) |
+| `POST /api/kb/documents` | Upload documents into the knowledge base (Gate-1 vetted; admin) |
 | `GET /api/audits` | Paged audit history from Postgres |
 | `GET /api/kb/claims`, `/api/kb/conflicts`, `/api/kb/stats` | KB inspection |
 | `GET /ws` | WebSocket upgrade for the dashboard |
@@ -403,7 +403,7 @@ frontend-react/src/
     ├── history/  HistoryView        ← reads GET /api/audits
     ├── kb/       KnowledgeBaseView  ← reads /api/kb/*
     ├── layout/   Header
-    └── upload/   FileUpload         ← POST /api/upload
+    └── upload/   FileUpload         ← POST /api/kb/documents
 ```
 
 Concepts if frontend is not your home turf:
