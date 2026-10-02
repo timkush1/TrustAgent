@@ -88,7 +88,8 @@ key**: it is always offered on the same screen and needs nothing else.
 
 ### Which value wins
 
-For every setting, the order is: built-in default, then the environment, then the dashboard.
+For every setting, the first of these that has a value is used: a non-empty environment variable,
+then the value saved in the dashboard, then the built-in default.
 
 - A **non-empty** environment variable always wins. The dashboard shows that setting as read-only
   ("Set in .env") and refuses to change it. To edit it in the dashboard, remove it from `.env` and
