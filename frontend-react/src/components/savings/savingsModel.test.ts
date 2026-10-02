@@ -80,7 +80,13 @@ describe('Savings figures', () => {
 
   it('says when checking cost more than asking an LLM', () => {
     expect(savingsRange(roiSummary())).toEqual({ text: '$0.60–$0.97', label: 'estimate', negative: false });
-    expect(savingsRange(roiSummary({ savings_vs_same_checks: { usd_low: -0.2, usd_high: -0.1, label: 'estimate' } }))?.negative).toBe(true);
+    // Cost more: the amounts read as positive after "Cost … more than".
+    expect(savingsRange(roiSummary({ savings_vs_same_checks: { usd_low: -0.2, usd_high: -0.1, label: 'estimate' } }))).toEqual({
+      text: '$0.10–$0.20',
+      label: 'estimate',
+      negative: true,
+    });
+    expect(savingsRange(roiSummary({ savings_vs_same_checks: { usd_low: null, usd_high: -0.3, label: 'estimate' } }))?.text).toBe('$0.30');
     expect(savingsRange(roiSummary({ savings_vs_same_checks: { usd_low: null, usd_high: null, label: 'estimate' } }))).toBeNull();
   });
 

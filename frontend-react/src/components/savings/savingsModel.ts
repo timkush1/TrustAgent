@@ -208,10 +208,10 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
 // ---------------------------------------------------------------------------------------- savings
 
 export interface SavingsRange {
-  /** "$0.60–$0.97". */
+  /** "$0.60–$0.97": how much was saved or, when `negative`, how much more it cost (as amounts). */
   text: string;
   label: ValueLabel;
-  /** Negative when checking with Jev cost more than asking an LLM. */
+  /** Checking with Jev cost more than asking an LLM across the whole range. */
   negative: boolean;
 }
 
@@ -219,10 +219,13 @@ export interface SavingsRange {
 export function savingsRange(roi: RoiSummary): SavingsRange | null {
   const { usd_low, usd_high, label } = roi.savings_vs_same_checks;
   if (usd_low === null && usd_high === null) return null;
+  const negative = (usd_high ?? usd_low ?? 0) < 0;
+  // "Cost $0.10–$0.20 more than …", never "Cost -$0.20–-$0.10 more than …".
+  const flip = (v: number | null) => (v === null ? null : -v);
   return {
-    text: costRange(usd_low, usd_high),
+    text: negative ? costRange(flip(usd_high), flip(usd_low)) : costRange(usd_low, usd_high),
     label: costLabel(roi.simulated, label),
-    negative: (usd_high ?? usd_low ?? 0) < 0,
+    negative,
   };
 }
 

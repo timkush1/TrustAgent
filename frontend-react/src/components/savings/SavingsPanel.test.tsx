@@ -70,6 +70,17 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(within(rows[1]).getAllByRole('cell').map((c) => c.textContent)).toEqual(['180', '$0.15', '$0.34–$0.45']);
   });
 
+  it('labels the spend line like the total when the deep-audit cost is an estimate', async () => {
+    const base = roiSummary();
+    const control = createControlApi({
+      roi: roiSummary({ llm_cost: { ...base.llm_cost, label: 'estimate' }, total_per_1k: { ...base.total_per_1k, label: 'estimate' } }),
+    });
+    renderPage('/app/overview?tab=savings', { control });
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    const legend = within(chart).getByRole('list', { name: 'Legend' });
+    expect(within(legend).getByText('What checking cost you (Estimate)')).toBeInTheDocument();
+  });
+
   it('switches the band to a full audit of every answer when that estimate exists', async () => {
     const user = userEvent.setup();
     const control = createControlApi({ roi: roiSummary({ counterfactuals: [...roiSummary().counterfactuals, FULL_AUDIT] }) });
@@ -183,6 +194,12 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     const one: RoiTimeseries = { window: '1h', bucket: '1h', points: [{ t: '2026-09-28T10:00:00.000Z', decision_usd: 0.01, llm_usd: 0.1, same_checks_usd: 0.3, gated: 40 }] };
     renderPage('/app/overview?tab=savings&window=1h', { control: createControlApi({ roiTimeseries: one }) });
     expect(await screen.findByText(/Only one hour in this window so far/)).toBeInTheDocument();
+  });
+
+  it('says when a window has no bucket yet', async () => {
+    const none: RoiTimeseries = { window: '7d', bucket: '1d', points: [] };
+    renderPage('/app/overview?tab=savings&window=7d', { control: createControlApi({ roiTimeseries: none }) });
+    expect(await screen.findByText(/^No days in this window so far: switch to Table/)).toBeInTheDocument();
   });
 
   it('has no axe violations', async () => {

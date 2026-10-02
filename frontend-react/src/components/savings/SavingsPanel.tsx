@@ -28,7 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { isNotServed, roiSummaryQuery } from '@/data/queries';
 import { roiTimeseriesQuery } from '@/data/queries/costs';
 import { formatCount, formatDurationMs } from '@/domain/format';
-import { copy } from '@/domain/presentation';
+import { copy, costLabel } from '@/domain/presentation';
 import { formatPercent } from '@/domain/rates';
 import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
@@ -108,7 +108,8 @@ function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWind
       <CostBandChart
         points={costBandPoints(q.data, roi)}
         bucket={q.data.bucket}
-        measuredLabel={roi.simulated ? 'simulated' : roi.decision_cost.label}
+        // The line is fast check plus deep audit: the weaker label of the two, as the total's (D46).
+        measuredLabel={costLabel(roi.simulated, roi.total_per_1k.label)}
         bandLabel={roi.simulated ? 'simulated' : 'estimate'}
         headingLevel={2}
       />

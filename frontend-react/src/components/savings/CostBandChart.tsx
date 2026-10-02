@@ -203,7 +203,8 @@ export function CostBandChart({
     >
       {n < 2 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-fg-muted">
-          Only {n === 1 ? 'one' : 'no'} {bucket === '1d' ? 'day' : 'hour'} in this window so far: switch to Table, or pick a longer window to see a trend.
+          {n === 1 ? `Only one ${bucket === '1d' ? 'day' : 'hour'}` : `No ${bucket === '1d' ? 'days' : 'hours'}`} in this window so far: switch
+          to Table, or pick a longer window to see a trend.
         </p>
       ) : (
         <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
