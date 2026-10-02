@@ -303,8 +303,29 @@ phase (P0 → P7).
   [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md), [docs/GATEWAY.md](docs/GATEWAY.md),
   [docs/EVALUATORS.md](docs/EVALUATORS.md) and the getting-started and demo
   guides cover the new pages.
+- **Integration (P4):** `GET /api/session` names the key a session was opened
+  with (`key_id`), so Access marks exactly one key "This browser";
+  `TraceDetail.labels[].mine` says which labels are yours (only those can be
+  undone); `GET /api/overview` counts `would_block` apart from `would_flag`, and
+  the Overview chart draws both; a deep audit a mock judge gave flags its trace
+  `mock_judge` (Simulated, and out of the measured figures); Benchmarks renders
+  in the static build; a cross-origin dashboard's live stream uses a WS ticket.
 
 ### Changed
+- **Security (P4 integration):** link-local and cloud-metadata addresses are
+  refused at dial time, after DNS, by the upstream proxy, the decision-model
+  client and key checks, and the OpenRouter key exchange; inject mode masks the
+  gateway's key in upstream response headers as well as bodies; WS status
+  details pass through the redactor; a vendor message cut across an echoed key
+  leaves no prefix of it.
+- **Costs (P4 integration):** an LLM call no price covers counts toward the
+  daily LLM cap at the reference judge's price (D91); `/api/status`
+  `decision_model.calls_24h` and `cost_24h_usd` come from the cost ledger and
+  survive a restart (D92).
+- **Settings (P4 integration):** a bind that moves the fast-check backend or the
+  judge to auto also resets that model to the new provider's default (D94);
+  binding an upstream key for every caller needs an app key (the `ingest`
+  scope itself; an admin key does not count, D95).
 - **Scoring v2** (ADR-001 in [docs/DECISIONS.md](docs/DECISIONS.md)): per-claim
   verdict distributions, flags, `p_hallucinated`, coverage and a trust score that
   is absent (never 0) when it cannot be computed; an audit fails with
