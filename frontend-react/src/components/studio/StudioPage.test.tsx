@@ -6,7 +6,7 @@
  * The evaluator writes are spied on the data source: their plane belongs to WEB-EV.
  */
 import { EditorView } from '@codemirror/view';
-import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import draftFixture from '@contracts/fixtures/api/StudioDraftResponse.ok.json';
@@ -202,6 +202,26 @@ describe('Studio', { timeout: 30_000 }, () => {
     await user.click(within(test).getByRole('button', { name: 'Run again' }));
     await waitFor(() => expect(control.callsTo('/api/studio/test')).toHaveLength(2));
     expect((control.callsTo('/api/studio/test')[1].body as { spec: EvaluatorSpec }).spec.outcomes.warn_at).toBe(0.4);
+  });
+
+  it('keeps the other steps on the last workable spec while the JSON lacks what they read', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const review = step(/Step 2: Review the check/);
+    await user.click(within(review).getByRole('tab', { name: 'JSON' }));
+    const view = EditorView.findFromDOM(await within(review).findByRole('textbox', { name: 'Evaluator spec (JSON)' }));
+    if (!view) throw new Error('The JSON tab has no editor.');
+    const doc = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
+    delete doc.outcomes;
+    act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: JSON.stringify(doc, null, 2) } }));
+
+    expect(await within(review).findByText(/The other tabs show the last version with an id, a name/)).toBeInTheDocument();
+    expect(within(review).getByText(/is missing 'outcomes'/)).toBeInTheDocument();
+    // The steps below still read the last spec that had its outcomes.
+    expect(within(step(/Step 3: Test on samples/)).getByRole('button', { name: 'Run test' })).toBeInTheDocument();
+    await user.click(within(review).getByRole('tab', { name: 'Simple' }));
+    expect(within(review).getByRole('slider', { name: 'Flag when the risk reaches' })).toHaveAttribute('aria-valuenow', '0.6');
   });
 
   it('gates quick calibration on 8 labels with 3 of each, and never says calibrated', async () => {

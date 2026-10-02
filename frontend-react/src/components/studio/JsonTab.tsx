@@ -2,8 +2,9 @@
  * Studio's JSON tab (SPEC §7.3 step 2: "JSON tab (CodeMirror plus ajv)"): the whole spec as JSON in
  * a lazily loaded CodeMirror editor, checked as you type (syntax, the evaluator.v1 schema, the hard
  * rules and lints), each problem marked on its range and listed as text. Valid JSON is taken over at
- * once, so the other tabs and the test bench follow; while the text is not valid JSON the rest of
- * Studio keeps the last version that was.
+ * once, so the other tabs and the test bench follow, as long as it still has what they read (an id,
+ * a name, the question, the evidence, the state fields and the outcomes with `warn_at`); until the
+ * text is valid JSON with those again, the rest of Studio keeps the last version that was.
  *
  * A change made elsewhere while the tab is open (a threshold adopted in step 3 or 4, a new id after
  * a 409, the version a save returns) replaces the text, so the editor always shows the spec Studio
@@ -12,7 +13,7 @@
 import { lazy, Suspense, useId, useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { checkSpecJson, type CheckOptions } from '@/lib/evaluator/checkSpec';
-import { specJson } from '@/lib/studio/specFields';
+import { isWorkableSpec, specJson } from '@/lib/studio/specFields';
 import type { EvaluatorSpec } from '@/types/api';
 import { ProblemList } from './ProblemList';
 
@@ -35,10 +36,9 @@ export function JsonTab({ spec, onChange, options, disabled = false }: { spec: E
     if (next === text) return;
     setText(next);
     const result = checkSpecJson(next, options);
-    if (result.parsed && typeof result.data === 'object' && result.data !== null && !Array.isArray(result.data)) {
-      const parsed = result.data as EvaluatorSpec;
-      setSynced(parsed);
-      onChange(parsed);
+    if (result.parsed && isWorkableSpec(result.data)) {
+      setSynced(result.data);
+      onChange(result.data);
     }
   };
 
@@ -61,7 +61,13 @@ export function JsonTab({ spec, onChange, options, disabled = false }: { spec: E
           check={(t) => checkSpecJson(t, options).problems}
         />
       </Suspense>
-      {!check.parsed ? <p className="text-xs text-fg-muted">The other tabs show the last version that was valid JSON.</p> : null}
+      {!check.parsed ? (
+        <p className="text-xs text-fg-muted">The other tabs show the last version that was valid JSON.</p>
+      ) : !isWorkableSpec(check.data) ? (
+        <p className="text-xs text-fg-muted">
+          The other tabs show the last version with an id, a name, the question, the evidence, the state fields and the outcomes with warn_at.
+        </p>
+      ) : null}
       <ProblemList id={problemsId} items={check.problems} />
     </div>
   );

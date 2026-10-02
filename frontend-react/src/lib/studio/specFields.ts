@@ -53,6 +53,18 @@ export function specJson(spec: unknown): string {
   return `${JSON.stringify(spec, null, 2)}\n`;
 }
 
+/**
+ * Whether a document carries what Studio's steps read from a spec: a string id and name, the
+ * question, the evidence, the state fields, and the outcomes with a numeric `warn_at`. The JSON tab
+ * hands only such a document to the other steps; anything else is still checked and listed there,
+ * while the steps keep the last document that had them.
+ */
+export function isWorkableSpec(doc: unknown): doc is EvaluatorSpec {
+  if (!isObj(doc) || typeof doc.id !== 'string' || typeof doc.name !== 'string') return false;
+  if (!isObj(doc.question) || !isObj(doc.evidence) || !Array.isArray(doc.state_fields) || !isObj(doc.outcomes)) return false;
+  return typeof doc.outcomes.warn_at === 'number' && Number.isFinite(doc.outcomes.warn_at);
+}
+
 /** Whether two specs say the same apart from their version number (member order counts). */
 export function sameSpec(a: EvaluatorSpec, b: EvaluatorSpec): boolean {
   return JSON.stringify({ ...a, version: 0 }) === JSON.stringify({ ...b, version: 0 });
