@@ -85,13 +85,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM alpine:${ALPINE_VERSION}
 
 ARG VERSION=dev
-ARG GIT_SHA=""
 LABEL org.opencontainers.image.title="truthtable-proxy" \
       org.opencontainers.image.description="TrustAgent gateway proxy, demo traffic generator and mock vendor APIs" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${GIT_SHA}"
+      org.opencontainers.image.version="${VERSION}"
 
 # ca-certificates: HTTPS upstreams and decision-model backends.
 # uid/gid 1001 is shared with the engine image: the proxy writes the internal
@@ -120,3 +118,8 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
     CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
 
 CMD ["/proxy"]
+
+# The git revision the image was built from (make passes `git rev-parse --short HEAD`). Declared
+# and labelled last: a label is metadata only, so a new commit rebuilds no layer above it.
+ARG GIT_SHA=""
+LABEL org.opencontainers.image.revision="${GIT_SHA}"

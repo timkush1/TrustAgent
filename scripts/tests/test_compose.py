@@ -315,6 +315,19 @@ class ComposeTest(unittest.TestCase):
             text = (ROOT / dockerfile / "Dockerfile").read_text(encoding="utf-8")
             self.assertIn('ARG GIT_SHA=""', text, dockerfile)
             self.assertIn('org.opencontainers.image.revision="${GIT_SHA}"', text, dockerfile)
+            # In the runtime stage the revision is declared and labelled last, after every RUN
+            # and COPY: a new commit must not rebuild (or re-download) the layers above it.
+            final = text.rsplit("\nFROM ", 1)[1]
+            instructions = re.findall(r"(?m)^([A-Z]+)\s+(.*)$", final)
+            self.assertEqual(
+                instructions[-2:],
+                [
+                    ("ARG", 'GIT_SHA=""'),
+                    ("LABEL", 'org.opencontainers.image.revision="${GIT_SHA}"'),
+                ],
+                dockerfile,
+            )
+            self.assertEqual(final.count("GIT_SHA"), 2, dockerfile)
         go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("-X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}", go)
 

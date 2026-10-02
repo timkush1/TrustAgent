@@ -46,14 +46,11 @@ RUN npm run build
 FROM nginxinc/nginx-unprivileged:${NGINX_VERSION}-alpine
 
 ARG VERSION=dev
-# The git revision the image was built from (make passes `git rev-parse --short HEAD`).
-ARG GIT_SHA=""
 LABEL org.opencontainers.image.title="truthtable-dashboard" \
       org.opencontainers.image.description="TrustAgent dashboard" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${GIT_SHA}"
+      org.opencontainers.image.version="${VERSION}"
 
 # Container settings (SPEC §2.7, dashboard keys). The entrypoint first checks
 # and normalises them (nginx/entrypoint.d/12-dashboard-env.envsh), then renders
@@ -85,3 +82,8 @@ EXPOSE 3000
 # /healthz is answered by nginx itself (it does not depend on the proxy).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
     CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/healthz"]
+
+# The git revision the image was built from (make passes `git rev-parse --short HEAD`). Declared
+# and labelled last: a label is metadata only, so a new commit rebuilds no layer above it.
+ARG GIT_SHA=""
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
