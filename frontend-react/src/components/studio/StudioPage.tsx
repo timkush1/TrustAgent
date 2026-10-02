@@ -209,14 +209,15 @@ export function StudioVersionPage({ id, version: param }: { id: string; version:
   const versionQ = useQuery({ ...evaluatorVersionQuery(ds, id, version), enabled: version > 0 });
   const detailQ = useQuery(evaluatorQuery(ds, id));
   const evaluators = useQuery(evaluatorsQuery(ds, true));
-  const loading = useDelayedLoading(versionQ.isPending || detailQ.isPending);
+  // The library's ids too: a copy of a built-in or file check takes an id none of them has.
+  const loading = useDelayedLoading(versionQ.isPending || detailQ.isPending || evaluators.isPending);
 
   if (version === 0) {
     return <ErrorState error={new Error(`“${param}” is not a version number. Open Studio from a version on the check's page.`)} />;
   }
   // Once the editor is up it stays: a later refetch that fails (a reload after a 412, a refocus)
   // keeps the cached version and the viewer's edits instead of swapping the page for an error.
-  if (!versionQ.data || !detailQ.data) {
+  if (!versionQ.data || !detailQ.data || evaluators.isPending) {
     const error = versionQ.error ?? detailQ.error;
     if (error) {
       return (

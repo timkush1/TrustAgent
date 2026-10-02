@@ -8,15 +8,16 @@
 import { EditorView } from '@codemirror/view';
 import { act, configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import draftFixture from '@contracts/fixtures/api/StudioDraftResponse.ok.json';
 import { notify } from '@/components/common/notify';
 import { ApiError } from '@/data/errors';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { evaluatorDetail, evaluatorVersion } from '@/test/control/fixtures';
+import { evaluatorDetail, evaluatorMeta, evaluatorMetas, evaluatorVersion } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
-import { installMswServer } from '@/test/msw';
+import { API, installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import type { EvaluatorCreateRequest, EvaluatorDraft, EvaluatorSpec, EvaluatorVersion, EvaluatorVersionCreateRequest, StudioDraftResponse } from '@/types/api';
 
@@ -588,6 +589,20 @@ describe('Studio on a saved version', { timeout: 30_000 }, () => {
     expect(within(save).getByText('refusal_custom')).toBeInTheDocument();
     expect(within(save).getByRole('button', { name: 'Save as a new check' })).toBeInTheDocument();
     expect(evaluatorVersion('refusal').spec.builtin).toBe(true);
+  });
+
+  it('gives the copy an id the library does not have, waiting for the library when it answers last', async () => {
+    const control = createControlApi();
+    const library = [...evaluatorMetas(), evaluatorMeta('refusal', { id: 'refusal_custom', name: 'My refusal', origin: 'dashboard', latest_version: 2 })];
+    control.handlers.unshift(
+      http.get(`${API}/api/evaluators`, async () => {
+        await delay(300);
+        return HttpResponse.json({ items: library });
+      }),
+    );
+    renderPage('/app/evaluators/studio/refusal/1', { control });
+    const save = await screen.findByRole('region', { name: /Step 5: Save a version/ });
+    expect(within(save).getByText('refusal_custom_2')).toBeInTheDocument();
   });
 
   it('shows the error with Retry for a version that does not load', async () => {
