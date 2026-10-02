@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { diffTexts, summarizeDiff } from '@/domain/lineDiff';
 import {
+  addTagPattern,
   allowUncalibratedBlocking,
   applyPreset,
   bufferStreams,
@@ -12,6 +13,8 @@ import {
   effectiveEvidenceSources,
   keepOriginalFormatting,
   PRESETS,
+  SCHEMA_DEFAULT_EVALUATORS,
+  setEvaluatorThresholds,
   setRouteMode,
   stopTrustingUserContext,
   yamlDiffers,
@@ -94,5 +97,51 @@ describe('policy draft edits', () => {
     expect(yamlDiffers('a: 1\n', 'a:  1\n')).toBe(false);
     expect(yamlDiffers('a: 1\n', 'a: 2\n')).toBe(true);
     expect(keepOriginalFormatting('a:   1 # c\nb: 2\n', 'a: 1 # c\nb: 3\n')).toBe('a:   1 # c\nb: 3\n');
+  });
+
+  it('sets one evaluator\'s thresholds on a route that lists its evaluators, touching nothing else', () => {
+    const next = setEvaluatorThresholds(exampleYaml, 'support-bot', 'groundedness@1', { warn_at: 0.7, critical_at: 0.9 });
+    const evaluators = route(next, 'support-bot').evaluators as { ref: string; thresholds?: object }[];
+    expect(evaluators[0]).toEqual({ ref: 'groundedness@1', thresholds: { warn_at: 0.7, critical_at: 0.9 } });
+    expect(evaluators[2]).toMatchObject({ ref: 'commitments@1', params: { allowed_commitments: expect.stringMatching(/^Annual plans/) } });
+    expect(evaluators[3]).not.toHaveProperty('thresholds');
+    expect(next).toContain('# end users cannot inject "documents"');
+    // Adopt writes the calibrated space and a null block threshold when none is recommended.
+    const adopted = setEvaluatorThresholds(next, 'support-bot', 'groundedness@1', { space: 'calibrated', warn_at: 0.5, critical_at: null });
+    expect((route(adopted, 'support-bot').evaluators as { thresholds?: object }[])[0].thresholds).toEqual({ warn_at: 0.5, critical_at: null, space: 'calibrated' });
+  });
+
+  it('copies inherited evaluators to the route before changing one, since lists replace', () => {
+    const next = setEvaluatorThresholds(exampleYaml, 'payments-faq', 'contradiction@1', { warn_at: 0.6 });
+    const evaluators = route(next, 'payments-faq').evaluators as { ref: string; thresholds?: object }[];
+    expect(evaluators.map((e) => e.ref)).toEqual(['groundedness@1', 'contradiction@1', 'refusal@1', 'pii_secret_leak@1']);
+    expect(evaluators[1].thresholds).toEqual({ warn_at: 0.6 });
+    // The defaults themselves stay as they were.
+    expect((parse(next) as { defaults: { evaluators: object[] } }).defaults.evaluators).toEqual([
+      { ref: 'groundedness@1' },
+      { ref: 'contradiction@1' },
+      { ref: 'refusal@1' },
+      { ref: 'pii_secret_leak@1' },
+    ]);
+    // Without a defaults list, the route gets policy.v1's own default list.
+    const bare = 'version: 1\ndefaults: {mode: flag}\nroutes:\n  - name: r\n    match: {paths: [/x]}\n';
+    const fromSchema = route(setEvaluatorThresholds(bare, 'r', 'refusal@1', { warn_at: 0.4 }), 'r').evaluators as { ref: string }[];
+    expect(fromSchema.map((e) => e.ref)).toEqual(SCHEMA_DEFAULT_EVALUATORS.map((e) => e.ref));
+  });
+
+  it('refuses a threshold for a check the route does not run', () => {
+    expect(() => setEvaluatorThresholds(exampleYaml, 'support-bot', 'refusal@1', { warn_at: 0.5 })).toThrow('Route support-bot does not run refusal@1.');
+  });
+
+  it('adds an evidence tag pattern to the list a route inherits, once', () => {
+    const pattern = { pattern: '<kb_article id="([^"]+)">([\\s\\S]*?)</kb_article>', flags: 'i' };
+    const next = addTagPattern(exampleYaml, 'payments-faq', pattern);
+    expect(route(next, 'payments-faq').evidence).toEqual({ sources: ['request_system', 'tool_results', 'extension'], tag_patterns: [pattern] });
+    expect(() => addTagPattern(next, 'payments-faq', pattern)).toThrow(/already reads documents with this pattern/);
+    const withDefault = addTagPattern(exampleYaml, DEFAULT_ROUTE, { pattern: '<doc>(.*)</doc>' });
+    expect((parse(withDefault) as { defaults: { evidence: { tag_patterns: object[] } } }).defaults.evidence.tag_patterns).toEqual([{ pattern: '<doc>(.*)</doc>' }]);
+    // A route inherits the defaults' patterns and keeps them when it adds its own.
+    const both = addTagPattern(withDefault, 'support-bot', pattern);
+    expect((route(both, 'support-bot').evidence as { tag_patterns: object[] }).tag_patterns).toEqual([{ pattern: '<doc>(.*)</doc>' }, pattern]);
   });
 });

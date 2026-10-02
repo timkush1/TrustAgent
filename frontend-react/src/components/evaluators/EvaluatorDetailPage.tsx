@@ -1,8 +1,14 @@
 /**
- * One evaluator (SPEC §3.3 Evaluators detail): what it asks and how its answer becomes a risk,
- * where it runs, its calibration progress, the reliability chart ("agreement with labels, not
- * ground truth"), and its versions with a diff between any two. Writing a new version, adopting a
- * calibration and labelling arrive in P4; their buttons say so.
+ * One evaluator (SPEC §3.3 Evaluators detail), in three tabs kept in the URL (`?tab=`):
+ *
+ * - Overview: what it asks and how its answer becomes a risk, where it runs, its calibration
+ *   progress, the reliability chart ("agreement with labels, not ground truth") and the spec;
+ * - Calibration: progress with Label queue and Calibrate now, and the calibration records
+ *   (deactivate, adopt, import);
+ * - Versions: every version with a diff between any two.
+ *
+ * "Duplicate and edit" opens this version in Studio; "Adopt calibration" fits, previews the impact
+ * and only then adopts (P4-PLAN D62).
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -11,7 +17,7 @@ import { useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { DiffView } from '@/components/common/DiffView';
-import { DisabledAction } from '@/components/common/DisabledReason';
+import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { KeyValueList } from '@/components/common/KeyValue';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -20,13 +26,16 @@ import { DegradedState } from '@/components/common/DegradedState';
 import { Term } from '@/components/common/Term';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { useNow } from '@/components/common/useNow';
+import { useWriteReason } from '@/components/common/useWriteAccess';
 import { Chip } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button-variants';
 import { Card, CardContent, CardHeader, Section } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tab, TabPanel, Tabs, TabsList } from '@/components/ui/tabs';
 import { isApiError } from '@/data/errors';
 import { evaluatorQuery, evaluatorVersionQuery, isNotServed, reliabilityQuery } from '@/data/queries';
 import { useAppMode } from '@/data/useSystem';
@@ -34,9 +43,13 @@ import { evaluatorCategoryLabel, evaluatorOriginLabel, stageLabel } from '@/doma
 import { formatCount, formatDateTime, formatRelativeTime, formatRisk } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import type { EvaluatorDetail, TimeWindow } from '@/types/api';
+import { CalibrateDialog } from './CalibrateDialog';
 import { CalibrationMeter } from './CalibrationMeter';
-import { evidenceNeedLabel, P4_REASONS, questionTypeLabel } from './evaluatorWords';
+import { CalibrationRecords } from './CalibrationRecords';
+import { calibrateReason, evidenceNeedLabel, questionTypeLabel } from './evaluatorWords';
 import { ReliabilityChart } from './ReliabilityChart';
+
+export type EvaluatorTab = 'overview' | 'calibration' | 'versions';
 
 type LabelSource = 'human' | 'uniform_audit' | 'all';
 
@@ -199,7 +212,7 @@ function Versions({ detail }: { detail: EvaluatorDetail }) {
   );
 }
 
-function Detail({ detail }: { detail: EvaluatorDetail }) {
+function Overview({ detail }: { detail: EvaluatorDetail }) {
   const spec = detail.latest.spec;
   const outcomes = spec.outcomes as { warn_at?: number; critical_at?: number | null; block_eligible?: boolean };
   return (
@@ -251,7 +264,7 @@ function Detail({ detail }: { detail: EvaluatorDetail }) {
             </Link>
             <div className="border-t border-border pt-3">
               <h4 className="mb-2 text-xs font-medium text-fg-muted">Calibration</h4>
-              <CalibrationMeter progress={detail.calibration_progress} />
+              <CalibrationMeter progress={detail.calibration_progress} detail={detail} />
             </div>
           </CardContent>
         </Card>
@@ -260,13 +273,40 @@ function Detail({ detail }: { detail: EvaluatorDetail }) {
       <Section collapsible title="The question it asks" description="The evaluator/v1 spec sent to the fast check, as stored.">
         <CodeBlock label={`${detail.id}@${detail.latest.version}`} code={specText(spec)} maxHeight="28rem" />
       </Section>
-      <Versions detail={detail} />
     </div>
   );
 }
 
-export function EvaluatorDetailPage({ id }: { id: string }) {
+function CalibrationTab({ detail }: { detail: EvaluatorDetail }) {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader title="Labels toward a measured calibration" description="A check can block only once it is calibrated on enough of your own labels for the current fast-check version." />
+        <CardContent>
+          <CalibrationMeter progress={detail.calibration_progress} detail={detail} />
+        </CardContent>
+      </Card>
+      <CalibrationRecords detail={detail} />
+    </div>
+  );
+}
+
+/** Why "Adopt calibration" is not available, or null. */
+function adoptReason(detail: EvaluatorDetail, writeReason: Reason | null): Reason | null {
+  if (writeReason) return writeReason;
+  if (detail.attached_routes.length === 0) return { text: 'Attach this check to a route in Policies first.' };
+  return calibrateReason(detail.calibration_progress);
+}
+
+const TABS: { id: EvaluatorTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'calibration', label: 'Calibration' },
+  { id: 'versions', label: 'Versions' },
+];
+
+export function EvaluatorDetailPage({ id, tab = 'overview', onTabChange }: { id: string; tab?: EvaluatorTab; onTabChange?: (tab: EvaluatorTab) => void }) {
   const ds = useDataSource();
+  const writeReason = useWriteReason('admin');
   const q = useQuery(evaluatorQuery(ds, id));
   const showLoading = useDelayedLoading(q.isPending);
   const detail = q.data;
@@ -296,9 +336,23 @@ export function EvaluatorDetailPage({ id }: { id: string }) {
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       );
   } else if (detail) {
-    body = <Detail detail={detail} />;
+    body = (
+      <Tabs value={tab} onValueChange={(next) => onTabChange?.(next as EvaluatorTab)}>
+        <TabsList aria-label="Evaluator views" className="mb-1">
+          {TABS.map((t) => (
+            <Tab key={t.id} value={t.id}>
+              {t.label}
+            </Tab>
+          ))}
+        </TabsList>
+        <TabPanel value="overview">{tab === 'overview' ? <Overview detail={detail} /> : null}</TabPanel>
+        <TabPanel value="calibration">{tab === 'calibration' ? <CalibrationTab detail={detail} /> : null}</TabPanel>
+        <TabPanel value="versions">{tab === 'versions' ? <Versions detail={detail} /> : null}</TabPanel>
+      </Tabs>
+    );
   }
 
+  const adopt = detail ? adoptReason(detail, writeReason) : null;
   return (
     <div>
       <Link to="/app/evaluators" className="mb-3 inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg">
@@ -311,20 +365,22 @@ export function EvaluatorDetailPage({ id }: { id: string }) {
         actions={
           detail ? (
             <>
-              <DisabledAction reason={P4_REASONS.studio} layout="stacked">
-                {(p) => (
-                  <Button {...p}>
-                    <Copy aria-hidden="true" />
-                    Duplicate and edit
-                  </Button>
-                )}
-              </DisabledAction>
-              <DisabledAction reason={P4_REASONS.adopt} layout="stacked">
-                {(p) => (
-                  <Button {...p}>
-                    {copy.evaluators.adopt_calibration}
-                  </Button>
-                )}
+              <Link
+                to="/app/evaluators/studio/$id/$version"
+                params={{ id: detail.id, version: String(detail.latest.version) }}
+                className={buttonVariants({ variant: 'secondary' })}
+              >
+                <Copy aria-hidden="true" />
+                Duplicate and edit
+              </Link>
+              <DisabledAction reason={adopt} layout="stacked">
+                {(p) =>
+                  p.disabled ? (
+                    <Button {...p}>{copy.evaluators.adopt_calibration}</Button>
+                  ) : (
+                    <CalibrateDialog detail={detail} intent="adopt" trigger={<Button variant="primary">{copy.evaluators.adopt_calibration}</Button>} />
+                  )
+                }
               </DisabledAction>
             </>
           ) : null

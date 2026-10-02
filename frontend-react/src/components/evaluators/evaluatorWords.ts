@@ -1,6 +1,6 @@
 /**
  * Words for the Evaluators pages (SPEC §3.3 Evaluators, §2.8): calibration progress in the
- * contract's phrasing, question types and evidence needs, and why the P4 actions are not here yet.
+ * contract's phrasing, question types and evidence needs, and when Calibrate now is possible.
  */
 import type { CustomReason } from '@/components/common/DisabledReason';
 import { calibrationStateView } from '@/domain/controlPresentation';
@@ -71,9 +71,9 @@ export function evidenceNeedLabel(requires: string | undefined): string {
   }
 }
 
-/** The P4 actions this page shows but cannot run yet (no dead buttons: they say why). */
-export const P4_REASONS = {
-  labelling: { text: 'The label queue and calibration from labels arrive in P4.' },
-  adopt: { text: 'Adopting a calibration arrives in P4 (it runs Preview impact first).' },
-  studio: { text: 'Studio arrives in P4.' },
-} satisfies Record<string, CustomReason>;
+/** Why "Calibrate now" is not available yet, or null (the server says when a first fit is possible). */
+export function calibrateReason(p: CalibrationProgress): CustomReason | null {
+  if (p.snapshot === null) return { text: 'No fast-check version has checked traffic for this check yet, so there is nothing to calibrate.' };
+  if (!p.can_fit_provisional && !p.can_fit_measured) return { text: 'Not enough labels for a first fit yet: label a few answers in the queue.' };
+  return null;
+}

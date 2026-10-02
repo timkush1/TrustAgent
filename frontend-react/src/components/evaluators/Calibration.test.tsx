@@ -1,0 +1,247 @@
+/**
+ * Calibrate now, Adopt calibration (P4-PLAN D62) and the calibration records, against the real data
+ * layer over msw: the fit dialog's honesty note and result, Adopt blocked until Preview impact has
+ * loaded, the exact call order of an adoption, deactivation, import, and the page states.
+ */
+import { configure, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { afterEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+import { axeViolations, formatViolations } from '@/test/axe';
+import { calibrationProgress, dryRunResult, evaluatorDetail } from '@/test/control/fixtures';
+import { createControlApi, errorReply } from '@/test/control/handlers';
+import { renderPage } from '@/test/control/renderPage';
+import { API, installMswServer, server } from '@/test/msw';
+import { stopLive } from '@/test/renderLive';
+
+installMswServer();
+afterEach(() => stopLive());
+configure({ asyncUtilTimeout: 4000 });
+
+const dialog = async (name: RegExp | string) => (await screen.findByRole('dialog', { name })) as HTMLElement;
+
+describe('Calibrate now', { timeout: 20_000 }, () => {
+  it('says what a fit can claim, fits without activating, and shows what came out', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/groundedness');
+    await user.click(await screen.findByRole('button', { name: 'Calibrate now for Groundedness' }));
+    const d = await dialog('Calibrate Groundedness');
+    expect(within(d).getByText(/measures agreement with labels, not ground truth/)).toBeInTheDocument();
+    expect(within(d).getByText(/Deep-audit labels make it a Proxy, which can flag but never block/)).toBeInTheDocument();
+    expect(within(d).getByText(/You have 43 labels \(31 correct, 12 false alarms\) and 58 deep-audit labels/)).toBeInTheDocument();
+    await user.click(within(d).getByRole('radio', { name: /Your labels and the deep-audit sample/ }));
+    await user.click(within(d).getByRole('button', { name: 'Fit calibration (free)' }));
+
+    expect(await within(d).findByText('Calibration #7')).toBeInTheDocument();
+    const [fit] = control.callsTo('/api/calibration/fit');
+    expect(fit.body).toEqual({
+      target: 'groundedness@1',
+      route: 'support-bot',
+      snapshot: 'typesafe/jev-1.13-20260917',
+      sources: ['labels', 'uniform_audit'],
+      method: 'auto',
+      activate: false,
+    });
+    expect(within(d).getByText('Provisional')).toBeInTheDocument();
+    expect(within(d).getByText('0.14 → 0.06')).toBeInTheDocument();
+    expect(within(d).getByText('Fewer than 30 positive labels: no critical threshold is recommended yet.')).toBeInTheDocument();
+    expect(within(d).getByText('agreement with labels, not ground truth', { exact: false })).toBeInTheDocument();
+
+    await user.click(within(d).getByRole('button', { name: 'Activate only' }));
+    await waitFor(() => expect(control.callsTo('/api/calibration/7/activate')).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(control.callsTo('/api/policies', 'PUT')).toHaveLength(0);
+  });
+
+  it('keeps the dialog open with the server message when the fit fails', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ calibrationFit: errorReply(503, 'persistence_disabled', 'Calibration needs a database.') });
+    renderPage('/app/evaluators/groundedness', { control });
+    await user.click(await screen.findByRole('button', { name: 'Calibrate now for Groundedness' }));
+    const d = await dialog('Calibrate Groundedness');
+    await user.click(within(d).getByRole('button', { name: 'Fit calibration (free)' }));
+    const alert = await within(d).findByRole('alert');
+    expect(alert).toHaveTextContent('The fit failed: Calibration needs a database.');
+    expect(alert).toHaveTextContent('persistence_disabled');
+  });
+
+  it('says why Calibrate now is not available without labels or an admin', async () => {
+    const control = createControlApi();
+    control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', {
+      calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, can_fit_provisional: false }),
+    });
+    renderPage('/app/evaluators/groundedness', { control });
+    const button = await screen.findByRole('button', { name: 'Calibrate now' });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    // Beside Calibrate now, and beside Adopt calibration in the header.
+    expect(screen.getAllByText('Not enough labels for a first fit yet: label a few answers in the queue.')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
+    stopLive();
+
+    renderPage('/app/evaluators/groundedness', { status: { auth: { ingest: 'keys', read: 'keys', setup_required: false, caller_scopes: ['read'] } } });
+    const label = await screen.findByRole('button', { name: 'Label queue' });
+    expect(label).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getAllByText('Needs an admin key').length).toBeGreaterThan(0);
+  });
+});
+
+describe('Adopt calibration', { timeout: 20_000 }, () => {
+  it('stays disabled until Preview impact has loaded, then activates and saves, in that order', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { control } = renderPage('/app/evaluators/groundedness');
+    server.use(
+      http.post(`${API}/api/policies/dry-run`, async ({ request }) => {
+        control.calls.push({ method: 'POST', path: '/api/policies/dry-run', query: new URL(request.url).searchParams, body: await request.json(), headers: request.headers });
+        await gate;
+        return HttpResponse.json(dryRunResult());
+      }),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    const d = await dialog(/Adopt calibration: Groundedness/);
+    await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
+
+    const adopt = await within(d).findByRole('button', { name: 'Adopt calibration' });
+    expect(adopt).toHaveAttribute('aria-disabled', 'true');
+    expect(within(d).getByText('Wait for Preview impact to finish: Adopt runs it first.')).toBeInTheDocument();
+    await user.click(adopt);
+    expect(control.callsTo('/api/calibration/7/activate')).toHaveLength(0);
+
+    release();
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
+    expect(within(d).getByTestId('preview-impact')).toBeInTheDocument();
+    expect(within(d).getByText(/This calibration is provisional/)).toBeInTheDocument();
+    await user.click(within(d).getByRole('button', { name: 'Adopt calibration' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    const order = control.calls.map((c) => `${c.method} ${c.path}`).filter((c) => /calibration|dry-run|PUT \/api\/policies/.test(c));
+    expect(order).toEqual(['POST /api/calibration/fit', 'POST /api/policies/dry-run', 'POST /api/calibration/7/activate', 'PUT /api/policies']);
+    expect(control.callsTo('/api/calibration/fit')[0].body).toMatchObject({ activate: false });
+    expect(control.callsTo('/api/policies/dry-run')[0].body).toMatchObject({ window: '7d', calibration_ids: [7] });
+    const put = control.callsTo('/api/policies', 'PUT')[0];
+    expect(put.headers.get('if-match')).toBe('"v3"');
+    const saved = parse((put.body as { yaml: string }).yaml) as { routes: { name: string; evaluators: { ref: string; thresholds?: object }[] }[] };
+    const support = saved.routes.find((r) => r.name === 'support-bot');
+    expect(support?.evaluators.find((e) => e.ref === 'groundedness@1')?.thresholds).toEqual({ space: 'calibrated', warn_at: 0.5, critical_at: null });
+    expect((put.body as { message: string }).message).toBe('Adopt calibration #7 for groundedness@1 on support-bot');
+  });
+
+  it('keeps Adopt off after a failed preview until it is tried again', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ dryRun: errorReply(429, 'rate_limited', 'At most 6 previews a minute.') });
+    renderPage('/app/evaluators/groundedness', { control });
+    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    const d = await dialog(/Adopt calibration: Groundedness/);
+    await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
+    expect(await within(d).findByText('The preview failed: At most 6 previews a minute.')).toBeInTheDocument();
+    expect(within(d).getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
+    control.state.dryRun = dryRunResult();
+    await user.click(within(d).getByRole('button', { name: 'Try the preview again' }));
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
+  });
+
+  it('says the calibration is active but the policy unchanged when the save is refused', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ save: errorReply(409, 'file_managed', 'The policy is managed by policies.yaml.') });
+    renderPage('/app/evaluators/groundedness', { control });
+    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    const d = await dialog(/Adopt calibration: Groundedness/);
+    await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
+    await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
+    await user.click(within(d).getByRole('button', { name: 'Adopt calibration' }));
+    expect(await within(d).findByRole('alert')).toHaveTextContent('The calibration is active, but the policy was not changed: The policy is managed by policies.yaml.');
+    // A retry saves again without activating twice.
+    control.state.save = 'echo';
+    await user.click(within(d).getByRole('button', { name: 'Adopt calibration' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(control.callsTo('/api/calibration/7/activate')).toHaveLength(1);
+  });
+
+  it('cannot adopt for a check that runs on no route', async () => {
+    const control = createControlApi();
+    control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', { attached_routes: [] });
+    renderPage('/app/evaluators/groundedness', { control });
+    expect(await screen.findByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Attach this check to a route in Policies first.')).toBeInTheDocument();
+  });
+});
+
+describe('Calibration records', { timeout: 20_000 }, () => {
+  it('lists this check’s calibrations in the Calibration tab, kept in the URL', async () => {
+    const user = userEvent.setup();
+    const { router } = renderPage('/app/evaluators/groundedness');
+    await user.click(await screen.findByRole('tab', { name: 'Calibration' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: 'calibration' }));
+    const list = await screen.findByRole('list', { name: 'Calibrations' });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent('Calibration #3');
+    expect(rows[0]).toHaveTextContent('Measured');
+    expect(rows[0]).toHaveTextContent('Active');
+    expect(rows[0]).toHaveTextContent('From a calibration file');
+    // A file row is managed on disk.
+    expect(within(rows[0]).getByRole('button', { name: 'Deactivate' })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(rows[0]).getByText(/remove or replace the file instead/)).toBeInTheDocument();
+  });
+
+  it('deactivates a fitted calibration after a confirmation', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    const list = control.state.calibrations as { items: { target_key: string; active: boolean; origin: string }[] };
+    list.items[1] = { ...list.items[1], target_key: 'groundedness@1', active: true, origin: 'fit' };
+    list.items[0].active = false;
+    renderPage('/app/evaluators/groundedness?tab=calibration', { control });
+    const row = (await screen.findByText('Calibration #7')).closest('li') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: 'Deactivate' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Deactivate calibration #7?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Deactivate' }));
+    await waitFor(() => expect(control.callsTo('/api/calibration/7/deactivate')).toHaveLength(1));
+  });
+
+  it('imports a calibration file and says what was refused and why', async () => {
+    const user = userEvent.setup();
+    const { control, container } = renderPage('/app/evaluators/groundedness?tab=calibration');
+    await screen.findByRole('list', { name: 'Calibrations' });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File([JSON.stringify({ schema: 'trustagent.calibration/v1', entries: [] })], 'jev.json', { type: 'application/json' });
+    await user.upload(input, file);
+    expect(await screen.findByText('Imported 1 calibration; 2 refused.')).toBeInTheDocument();
+    expect(screen.getByText(/The file calibrates an evaluator version this proxy does not have/)).toBeInTheDocument();
+    expect(screen.getByText(/Simulated \(mock\) calibrations are only accepted on the demo and test stacks/)).toBeInTheDocument();
+    expect(control.callsTo('/api/calibration', 'POST')[0].body).toMatchObject({ activate: true, file: { schema: 'trustagent.calibration/v1' } });
+
+    await user.upload(input, new File(['not json'], 'notes.txt', { type: 'application/json' }));
+    expect(await screen.findByText(/notes.txt is not JSON/)).toBeInTheDocument();
+  });
+
+  it('explains a proxy without a database, an older proxy, an error and an empty list', async () => {
+    renderPage('/app/evaluators/groundedness?tab=calibration', {
+      control: createControlApi({ calibrations: errorReply(503, 'persistence_disabled', 'No database.') }),
+    });
+    expect(await screen.findByText('Calibration records need a database')).toBeInTheDocument();
+    stopLive();
+    renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: undefined }) });
+    expect(await screen.findByText('Calibration records are not available on this proxy')).toBeInTheDocument();
+    stopLive();
+    renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: errorReply(500, 'internal', 'Boom.') }) });
+    expect(await screen.findByText(/Boom\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+    stopLive();
+    renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: { items: [] } }) });
+    expect(await screen.findByText('No calibrations for this check yet')).toBeInTheDocument();
+  });
+
+  it('has no axe violations in the Calibration tab and the fit dialog', async () => {
+    const user = userEvent.setup();
+    const { container } = renderPage('/app/evaluators/groundedness?tab=calibration');
+    await screen.findByRole('list', { name: 'Calibrations' });
+    expect(formatViolations(await axeViolations(container))).toEqual([]);
+    await user.click(screen.getAllByRole('button', { name: 'Calibrate now for Groundedness' })[0]);
+    const d = await dialog('Calibrate Groundedness');
+    expect(formatViolations(await axeViolations(d))).toEqual([]);
+  });
+});

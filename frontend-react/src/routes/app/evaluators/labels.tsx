@@ -1,27 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { PhasePlaceholder, SeeTraffic } from '@/components/layout/PhasePlaceholder';
+import { z } from 'zod/mini';
+import { LabelQueuePage } from '@/components/evaluators/LabelQueuePage';
 
-/**
- * The label queue (SPEC §3.3 Evaluators; P4-PLAN D59-D60). WEB-EV replaces the placeholder with
- * the queue (P4-PLAN §11 EVW-2).
- */
+/** `?evaluator=groundedness@1` narrows the queue to one check (the Label queue links pass it). */
+const LabelsSearch = z.object({
+  evaluator: z.catch(z.optional(z.string().check(z.regex(/^[a-z0-9_]+@[0-9]+$/))), undefined),
+});
+
 function LabelsRoute() {
-  return (
-    <PhasePlaceholder
-      question="Was the fast check right?"
-      phase="P4"
-      phaseName="labels and calibration"
-      planned={[
-        'One answer at a time, the most uncertain first',
-        'Correct, False alarm or Skip, with the keys C, F and S',
-        'Each label counts toward calibrating that check',
-      ]}
-      meanwhile={<SeeTraffic />}
-    />
-  );
+  return <LabelQueuePage search={Route.useSearch()} />;
 }
 
 export const Route = createFileRoute('/app/evaluators/labels')({
+  validateSearch: LabelsSearch,
   staticData: { title: 'Label queue' },
   component: LabelsRoute,
 });
