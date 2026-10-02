@@ -315,20 +315,15 @@ class RenderMarkdownTest(unittest.TestCase):
         md = self.render([key("A_DIR", default="/x", compose_default="")])
         self.assertEqual(table_rows(md)["A_DIR"][1], "`/x`<br>compose: *empty*")
 
-    def test_runtime_settings_carry_the_phase_of_the_settings_page(self) -> None:
+    def test_runtime_settings_name_the_settings_page(self) -> None:
         keys = [key("LIVE_KEY", restart=False, runtime="settable")]
-        with mock.patch.object(gen, "SETTINGS_PHASE", "P9"):
-            md = self.render(keys)
+        md = self.render(keys)
         self.assertIn(
-            "Also editable while running in dashboard Settings *(from P9)*.",
-            table_rows(md)["LIVE_KEY"][6],
+            "Also editable while running in dashboard Settings.", table_rows(md)["LIVE_KEY"][6]
         )
-        self.assertIn("`no` = nothing when changed in dashboard Settings *(from P9)*;", md)
-        self.assertIn("also get a value in dashboard Settings *(from P9)*.", md)
-        with mock.patch.object(gen, "SETTINGS_PHASE", ""):
-            md = self.render(keys)
-        self.assertIn("Also editable while running in dashboard Settings.", md)
-        self.assertNotIn("*(from", md)
+        self.assertIn("`no` = nothing when changed in dashboard Settings;", md)
+        self.assertIn("also get a value in dashboard Settings.", md)
+        self.assertNotIn("*(from", md, "the Settings page has shipped: no phase tag")
 
     def test_md_prose_keeps_spaces_around_code_spans(self) -> None:
         self.assertEqual(
