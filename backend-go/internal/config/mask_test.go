@@ -259,3 +259,18 @@ func TestUpstreamCredentialsAreMasked(t *testing.T) {
 		}
 	}
 }
+
+// TestRedactorAddIsIdempotent: a reload adds the same secrets again; the list must not grow.
+func TestRedactorAddIsIdempotent(t *testing.T) {
+	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+	r := NewRedactor(secret)
+	for i := 0; i < 100; i++ {
+		r.Add(secret, "sk-test-another-secret")
+	}
+	if len(r.secrets) != 2 {
+		t.Errorf("%d secrets registered, want 2", len(r.secrets))
+	}
+	if got := r.Redact("x " + secret + " y"); got != "x "+Masked+" y" {
+		t.Errorf("Redact = %q", got)
+	}
+}
