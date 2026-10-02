@@ -277,6 +277,15 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(test).getByRole('button', { name: 'Run test' })).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('labels every test cost Simulated on a mock fast check (the demo stack)', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio', { status: { demo: true, decision_model: { ...adminStatus().decision_model, backend: 'mock', state: 'mock' } } });
+    await draftWithAi(user);
+    const test = step(/Step 3/);
+    expect(await within(test).findByRole('button', { name: /Simulated: how “Cost of this test” was produced/ })).toBeInTheDocument();
+    expect(within(test).getByText('$0')).toBeInTheDocument();
+  });
+
   it('says the fast check is not connected, with the fix', async () => {
     const user = userEvent.setup();
     renderPage('/app/evaluators/studio', { status: { decision_model: { ...adminStatus().decision_model, backend: 'off', state: 'off' } } });
@@ -346,6 +355,12 @@ describe('Studio on a saved version', { timeout: 30_000 }, () => {
     renderPage('/app/evaluators/studio/refusal/1', { control });
     expect(await screen.findByText(/No evaluator refusal\./)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+  });
+
+  it('shows a skeleton while the version loads', async () => {
+    renderPage('/app/evaluators/studio/refusal/1', { control: createControlApi({ latencyMs: 800 }) });
+    expect(await within(await screen.findByRole('main')).findByText('Loading…')).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: /Step 1: Start from a saved version/ })).toBeInTheDocument();
   });
 
   it('refuses a version that is not a number', async () => {
