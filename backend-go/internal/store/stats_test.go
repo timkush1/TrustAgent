@@ -68,10 +68,22 @@ func seedStats(t *testing.T, s *PostgresStore, now time.Time) {
 		now.Add(-time.Minute))
 }
 
+// midBucket is a whole second in the middle of a bucket and in the past: rows seeded around it and
+// a window [now-24h, now+1m] never straddle a bucket boundary however close to one the test starts,
+// so the bucket count and each row's bucket do not depend on the wall clock.
+func midBucket(bucket time.Duration) time.Time {
+	now := time.Now().UTC()
+	mid := now.Truncate(bucket).Add(bucket / 2)
+	if mid.After(now) {
+		mid = mid.Add(-bucket)
+	}
+	return mid
+}
+
 func TestOverviewAggregates(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
-	now := time.Now().UTC()
+	now := midBucket(15 * time.Minute)
 	seedStats(t, s, now)
 	f := StatsFilter{From: now.Add(-24 * time.Hour), To: now.Add(time.Minute)}
 
@@ -95,9 +107,10 @@ func TestOverviewAggregates(t *testing.T) {
 	if len(o.ByModel) != 1 || o.ByModel[0].Key != "gpt-4o-mini" {
 		t.Errorf("by model %+v", o.ByModel)
 	}
-	// 24h of 15-minute buckets, plus the partial ones at either end.
-	if want := (f.To.Unix()-1)/900 - f.From.Unix()/900 + 1; int64(len(o.Series)) != want {
-		t.Errorf("%d buckets, want %d", len(o.Series), want)
+	// 24h of 15-minute buckets, plus the partial ones at either end: from mid-bucket to mid-bucket
+	// plus a minute that is always 97.
+	if len(o.Series) != 97 {
+		t.Errorf("%d buckets, want 97", len(o.Series))
 	}
 	var flagged, passed int64
 	for _, p := range o.Series {
