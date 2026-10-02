@@ -147,6 +147,9 @@ function Body({ traceId, decision, redacted, names }: { traceId: string; decisio
         <p className="text-sm text-fg-muted">This request&apos;s stored text has expired, so the exact request can&apos;t be rebuilt.</p>
       ) : status === 401 || status === 403 ? (
         <DisabledReason reason={contentReason} />
+      ) : code === 'not_implemented' ? (
+        // This build has no gateway to ask (the static demo says how to run one).
+        <p className="text-sm text-fg-muted">{err.message}</p>
       ) : status === 404 || status === 501 ? (
         <p className="text-sm text-fg-muted">This proxy can&apos;t rebuild the request: it is an older version, or it kept no decision for this attempt.</p>
       ) : (
