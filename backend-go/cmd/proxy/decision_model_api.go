@@ -49,19 +49,36 @@ type decisionModelTestError struct {
 // whether the key, the endpoint and the model work, and what it cost. Error text passes through
 // the redactor (D42).
 //
-// An admin's test is a fresh attempt: it closes the breaker first, so "I added credits — check
-// again" really checks instead of answering breaker_open for the rest of the cooldown. A failure
-// opens it again; the per-caller limit (one per 10 s) keeps this from hammering the vendor.
+// A breaker the key or the credits opened (the auth cooldown) is closed first, so "I added
+// credits — check again" really checks instead of answering breaker_open for the rest of the
+// cooldown; a rejected key or an empty account opens it again at once. A breaker that vendor
+// faults opened stays open: closing it would send live traffic back to a failing vendor, so the
+// test then answers breaker_open without a call. The per-caller limit (one per 10 s) keeps this
+// from hammering the vendor.
 func (s *server) handleDecisionModelTest(c *gin.Context) {
 	client := s.gateway.client
-	if r, ok := client.(jev.BreakerResetter); ok {
-		r.ResetBreaker()
+	if pausedByKey(client) {
+		if r, ok := client.(jev.BreakerResetter); ok {
+			r.ResetBreaker()
+		}
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), decisionModelTestTimeout)
 	defer cancel()
 	start := time.Now()
 	resp, err := jev.Probe(ctx, client)
 	c.JSON(http.StatusOK, s.decisionModelTestResult(client.Info(), resp, err, time.Since(start)))
+}
+
+// pausedByKey reports a decision model whose breaker is open because the vendor rejected the key
+// or found no credits (jev status unauthorized or no_credits): something the admin fixes outside
+// the gateway, and the only pause an admin's test may lift.
+func pausedByKey(client jev.Client) bool {
+	r, ok := client.(jev.StatusReporter)
+	if !ok {
+		return false
+	}
+	st := r.Status()
+	return st.Breaker != jev.BreakerClosed && (st.State == "unauthorized" || st.State == "no_credits")
 }
 
 // decisionModelTestResult maps a probe outcome to the wire result.

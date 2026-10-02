@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/truthtable/backend-go/cmd/mock-upstream/mockupstream"
 	"github.com/truthtable/backend-go/internal/config"
@@ -140,6 +142,47 @@ func TestDecisionModelTestNoCredits(t *testing.T) {
 	}
 	if strings.Contains(string(body), "nocredits-0123456789") {
 		t.Error("the result carries the key")
+	}
+}
+
+// TestDecisionModelTestKeepsAFaultBreakerOpen: a breaker that vendor faults opened stays open. The
+// test answers breaker_open without calling the vendor, so an admin's check never sends live
+// traffic back to a failing vendor (a key or credits pause is lifted: TestDecisionModelTestNoCredits).
+func TestDecisionModelTestKeepsAFaultBreakerOpen(t *testing.T) {
+	var calls atomic.Int32
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": 500, "message": "upstream down"}})
+	}))
+	defer vendor.Close()
+	env := newTestEnv(t, envOpts{adminKey: dmTestAdminKey, mutate: func(cfg *config.Config) {
+		cfg.Jev.Backend, cfg.Jev.OpenRouterKey, cfg.Jev.OpenRouterBaseURL = jev.BackendOpenRouterDecisions, "sk-or-v1-e2e-good-0123456789", vendor.URL
+		cfg.Jev.KeepAlive, cfg.Jev.MaxRetries, cfg.Jev.StartupProbe = 0, 0, false
+		cfg.Jev.BreakerFailures, cfg.Jev.BreakerCooldown = 1, time.Hour
+	}})
+	client := env.srv.gateway.client
+	if _, err := jev.Probe(context.Background(), client); err == nil {
+		t.Fatal("a probe against a failing vendor succeeded")
+	}
+	if st := client.(jev.StatusReporter).Status(); st.Breaker != jev.BreakerOpen || st.State != "breaker_open" {
+		t.Fatalf("after a vendor fault: breaker %s, state %s; want open, breaker_open", st.Breaker, st.State)
+	}
+	before := calls.Load()
+	resp, body := postDecisionModelTest(t, env, dmTestAdminKey)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP %d: %s", resp.StatusCode, body)
+	}
+	res := decodeDecisionModelTest(t, body)
+	if res.OK || res.Error == nil || res.Error.Kind != jev.KindBreakerOpen || res.LatencyMs != nil {
+		t.Fatalf("result = %s, want breaker_open with no latency (nothing was sent)", body)
+	}
+	if calls.Load() != before {
+		t.Error("the test called a vendor the breaker had paused")
+	}
+	if st := client.(jev.StatusReporter).Status(); st.Breaker != jev.BreakerOpen {
+		t.Errorf("breaker after the test = %s, want still open", st.Breaker)
 	}
 }
 
