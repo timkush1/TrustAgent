@@ -64,10 +64,10 @@ COPY --from=proto /out/ ./
 
 # VERSION is stamped into internal/version (compose passes TRUSTAGENT_VERSION).
 # GIT_SHA (make passes `git rev-parse --short HEAD`; the build context has no
-# .git, so Go's own VCS stamp is empty) goes to internal/version.GitSHA, for
-# the git revision a recording names (GET /api/export/replay). Until that
-# package declares GitSHA the linker ignores it, and the image label below is
-# where the revision shows. Empty leaves it unset.
+# .git, so Go's own VCS stamp is empty) goes to internal/version.GitSHA: the
+# proxy reports it as status build_sha and names it as the git revision of a
+# recording (GET /api/export/replay); the image label below carries it too.
+# Empty leaves it unset.
 # CMDS lists the ./cmd/<name> packages to ship; each lands at /<name>.
 ARG VERSION=dev
 ARG GIT_SHA=""

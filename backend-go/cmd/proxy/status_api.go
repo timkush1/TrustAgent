@@ -677,8 +677,18 @@ func (s *statusReporter) policyStatus() statusPolicy {
 	return statusPolicy(s.policies.Status())
 }
 
-var buildSHAOnce = sync.OnceValue(func() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
+var buildSHAOnce = sync.OnceValue(func() string { return resolveBuildSHA(version.GitSHA, debug.ReadBuildInfo) })
+
+func buildSHA() string { return buildSHAOnce() }
+
+// resolveBuildSHA is the revision the binary was built from: the one the build stamped into
+// version.GitSHA (the Docker images, whose build context has no .git) when it is a git revision,
+// else Go's own VCS stamp (a build from a checkout), else "unknown".
+func resolveBuildSHA(stamped string, readInfo func() (*debug.BuildInfo, bool)) string {
+	if gitRevision.MatchString(stamped) {
+		return stamped
+	}
+	if info, ok := readInfo(); ok {
 		for _, s := range info.Settings {
 			if s.Key == "vcs.revision" && s.Value != "" {
 				return s.Value
@@ -686,9 +696,7 @@ var buildSHAOnce = sync.OnceValue(func() string {
 		}
 	}
 	return "unknown"
-})
-
-func buildSHA() string { return buildSHAOnce() }
+}
 
 // engineStatusEvent is the data of the WS status event for an engine transition.
 func engineStatusEvent(h grpc.EngineHealth) map[string]any {

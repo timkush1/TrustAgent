@@ -296,8 +296,9 @@ phase (P0 → P7).
   engine's settings version, the judge's key source and today's budgets;
   Grafana gains a Spend row; nginx never logs `/connect/callback`; gitleaks scans
   the whole history in CI (`.gitleaks.toml`); `make gen-evaluator-validator`;
-  images are labelled with their git revision (`GIT_SHA`, as
-  `org.opencontainers.image.revision`). [docs/SECURITY.md](docs/SECURITY.md) and
+  images carry their git revision (`GIT_SHA`): the proxy reports it as
+  `build_sha` and `/api/export/replay` names it, and every image has it as
+  `org.opencontainers.image.revision`. [docs/SECURITY.md](docs/SECURITY.md) and
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) are rewritten for 2.0;
   [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md), [docs/GATEWAY.md](docs/GATEWAY.md),
   [docs/EVALUATORS.md](docs/EVALUATORS.md) and the getting-started and demo

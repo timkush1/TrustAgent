@@ -2190,6 +2190,19 @@
       "description": "Compose project name."
     },
     {
+      "name": "GIT_SHA",
+      "aliases": [],
+      "services": ["compose"],
+      "kind": "string",
+      "default": null,
+      "default_note": "git rev-parse --short HEAD (make sets it)",
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Git revision the app images are built from: stamped into the proxy (status build_sha, the git_sha of /api/export/replay) and the image labels."
+    },
+    {
       "name": "POSTGRES_PASSWORD",
       "aliases": [],
       "services": ["compose"],

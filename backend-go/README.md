@@ -128,7 +128,8 @@ overhead with k6 against `mock-upstream` ([GATEWAY.md §13](../docs/GATEWAY.md#1
   its first use, and test with fake keys only (`sk-test-…`, `sk-or-v1-e2e-…`, plus
   `cmp0e2eZq7Lw4Rt9Yx2Vb6Nm`, which no pattern matches).
 - Docker builds get the git revision as the `GIT_SHA` build arg (set by make), because the build
-  context has no `.git`, and label the image with it (`org.opencontainers.image.revision`).
+  context has no `.git`: it is stamped into `internal/version.GitSHA` (status `build_sha`, the
+  `git_sha` of `/api/export/replay`) and labels the image (`org.opencontainers.image.revision`).
 - Decision logic changes start in `internal/decision` (the reference): update the golden vectors,
   then the TypeScript core in `frontend-react/src/lib/decision` must pass the same vectors.
 - Never edit `api/audit/v1`: change `proto/evaluator.proto` and run `make proto`.

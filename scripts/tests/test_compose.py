@@ -30,10 +30,6 @@ ALIASES: Dict[str, str] = {
     alias: entry["name"] for entry in REGISTRY["keys"] for alias in entry.get("aliases", [])
 }
 
-# Build inputs that make computes and compose interpolates, waiting for their entry in
-# contracts/config/keys.v1.json (the registry is lead-owned). The test below fails once a name here
-# is registered, so this set empties itself.
-PENDING_REGISTRY = {"GIT_SHA"}
 
 # Container wiring: set explicitly per service in docker-compose.yml, so a
 # host-oriented .env cannot point a container at localhost.
@@ -94,13 +90,9 @@ class ComposeTest(unittest.TestCase):
         ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
-                if var in PENDING_REGISTRY:
-                    continue
                 self.assertTrue(
                     var in KEYS or var in ALIASES, f"{name}: ${{{var}}} is not in the registry"
                 )
-        for var in PENDING_REGISTRY:
-            self.assertNotIn(var, KEYS, f"{var} is registered now: drop it from PENDING_REGISTRY")
 
     def test_explicit_environment_keys_are_registry_keys(self) -> None:
         # `      KEY: value` lines (six spaces: inside a service's environment map).

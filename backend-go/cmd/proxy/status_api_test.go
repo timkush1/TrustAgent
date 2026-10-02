@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -318,6 +319,31 @@ func TestKnowledgeStatusWhileTheEngineIsSilent(t *testing.T) {
 	} {
 		if k := knowledgeStatus(tc.h); k.State != tc.want {
 			t.Errorf("%s: knowledge %s, want %s", tc.name, k.State, tc.want)
+		}
+	}
+}
+
+// The build revision is the one the Docker build stamped into version.GitSHA when it is a git
+// revision, else Go's VCS stamp, else "unknown" (the GIT_SHA build arg; /api/export/replay needs it).
+func TestBuildSHAPrefersTheStampedRevision(t *testing.T) {
+	vcs := func(rev string) func() (*debug.BuildInfo, bool) {
+		return func() (*debug.BuildInfo, bool) {
+			return &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: rev}}}, true
+		}
+	}
+	none := func() (*debug.BuildInfo, bool) { return nil, false }
+	for _, c := range []struct {
+		name, stamped string
+		info          func() (*debug.BuildInfo, bool)
+		want          string
+	}{
+		{"stamped", "0123abc", vcs("fedcba9876543210fedcba9876543210fedcba98"), "0123abc"},
+		{"not a revision", "HEAD", vcs("fedcba9876543210fedcba9876543210fedcba98"), "fedcba9876543210fedcba9876543210fedcba98"},
+		{"vcs only", "", vcs("abcdef1"), "abcdef1"},
+		{"nothing", "", none, "unknown"},
+	} {
+		if got := resolveBuildSHA(c.stamped, c.info); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
 	}
 }

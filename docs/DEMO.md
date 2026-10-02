@@ -156,10 +156,9 @@ Expect `X-TrustAgent-Action: flag`, `X-TrustAgent-Would-Action: block` and, in
 - **Record your own session** for the replay site: `make export-replay REPLAY_OUT=<dir>` writes a
   sanitized recording of the newest stored traces (the manifest alone is also served by
   `GET /api/export/replay`, admin). A recording names the build it came from: `make
-  export-replay` reads the revision from your checkout, and when the proxy cannot tell its own,
-  the endpoint answers 409 and asks for `?git_sha=<revision>` (the one the image was built from:
-  images built by `make` carry it as the `org.opencontainers.image.revision` label, which
-  `docker inspect` shows).
+  export-replay` reads the revision from your checkout, and images built by `make` know theirs
+  (`GIT_SHA`, also on the `org.opencontainers.image.revision` label). A proxy built without it
+  answers 409 and asks for `?git_sha=<revision>`.
 - **The live demo on a public URL.** [Cloudflare quick
   tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) need
   no account. The dashboard's nginx serves `/api`, `/v1`, `/ws` and `/health` on the same
