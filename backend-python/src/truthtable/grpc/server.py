@@ -571,7 +571,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                     )
                 except Exception as exc:
                     logger.error(f"Audit {audit_id} failed: {exc}", exc_info=True)
-                    failure = (_failure_kind(exc), str(exc) or type(exc).__name__)
+                    failure = (
+                        _failure_kind(exc),
+                        self.redactor.redact(str(exc)) or type(exc).__name__,
+                    )
             if mock_judge.misses:
                 # A mock miss inside the verifier is swallowed into an UNKNOWN
                 # claim; the audit still fails rather than scoring a fixture gap.
@@ -780,7 +783,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             logger.error(f"Audit failed: {e}", exc_info=True)
             AUDITS_TOTAL.labels(status="error").inc()
             # Store error result
-            _store_result(audit_id, {"error": str(e), "request_id": request.request_id})
+            _store_result(
+                audit_id, {"error": self.redactor.redact(str(e)), "request_id": request.request_id}
+            )
             return evaluator_pb2.AuditSubmission(
                 audit_id=audit_id, status="failed", queue_position=0
             )
@@ -1212,7 +1217,9 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
         except Exception as e:
             logger.error(f"Document ingestion failed: {e}", exc_info=True)
-            return evaluator_pb2.IngestResponse(documents_ingested=0, status=f"error: {str(e)}")
+            return evaluator_pb2.IngestResponse(
+                documents_ingested=0, status=self.redactor.redact(f"error: {e}")
+            )
         finally:
             # The knowledge base may have changed (even by a partial ingest):
             # RetrieveContext must not keep serving results cached before it.
