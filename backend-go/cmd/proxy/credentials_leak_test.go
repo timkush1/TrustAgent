@@ -21,6 +21,7 @@ import (
 
 	"github.com/truthtable/backend-go/cmd/mock-upstream/mockupstream"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/jev"
 )
 
@@ -136,6 +137,7 @@ func TestCredentialLeakWithoutDatabase(t *testing.T) {
 	}
 	vendor, calls := echoVendor(t)
 	t.Setenv("TRUTHTABLE_JEV_API_KEY", noPatternSecret)
+	t.Setenv("OPENROUTER_API_KEY", leakOpenRouterKey) // an env row that nothing calls
 	var logs bytes.Buffer
 	env := newTestEnv(t, envOpts{logs: &logs, adminKey: leakAdminKey, mutate: func(cfg *config.Config) {
 		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Model = jev.BackendCompatible, vendor.URL, "jev-leak-test"
@@ -189,6 +191,50 @@ func TestCredentialLeakWithoutDatabase(t *testing.T) {
 	}
 	// A settings write without a database is refused; its error carries no secret either.
 	sink.call(env, http.MethodPatch, "/api/settings", leakAdminKey, []byte(`{"budgets":{"llm_usd_day":1}}`), "If-Match", `"s0"`)
+	// The credential endpoints without a database (D29, D31, D80): the env key is checked again
+	// against the refusing vendor (one check per name every 10 s), a bind of an env key is
+	// env_managed, a name no source holds is not found, and a write that would store a key is
+	// persistence_disabled. No answer carries a secret.
+	for _, tc := range []struct {
+		method, path, body string
+		want               int
+		code               string // the error code, or the schema of a 200 body
+	}{
+		{http.MethodGet, "/api/credentials", "", http.StatusOK, schemaCredentialList},
+		{http.MethodPost, "/api/credentials/compatible/verify", `{}`, http.StatusOK, schemaCredentialWriteResult},
+		{http.MethodPost, "/api/credentials/openrouter/verify", `{"bind":["judge"]}`, http.StatusConflict, codeEnvManaged},
+		{http.MethodPost, "/api/credentials/typesafe/verify", `{}`, http.StatusNotFound, "not_found"},
+		{http.MethodPut, "/api/credentials/compatible", `{"provider":"generic","secret":"sk-test-leak-0123456789","base_url":"https://llm.example.com/v1"}`,
+			http.StatusConflict, codeEnvManaged},
+		{http.MethodPut, "/api/credentials/upstream-fallback", `{"provider":"generic","secret":"sk-test-leak-0123456789","base_url":"https://llm.example.com/v1"}`,
+			http.StatusServiceUnavailable, codePersistenceDisabled},
+		{http.MethodDelete, "/api/credentials/upstream-fallback", "", http.StatusServiceUnavailable, codePersistenceDisabled},
+	} {
+		var body []byte
+		if tc.body != "" {
+			body = []byte(tc.body)
+		}
+		code, out := sink.call(env, tc.method, tc.path, leakAdminKey, body)
+		if code != tc.want {
+			t.Errorf("%s %s %s: HTTP %d, want %d", tc.method, tc.path, tc.body, code, tc.want)
+			continue
+		}
+		if code != http.StatusOK {
+			if got := errorCodeOf(t, out); got != tc.code {
+				t.Errorf("%s %s %s: code %s, want %s", tc.method, tc.path, tc.body, got, tc.code)
+			}
+			continue
+		}
+		contractstest.ValidateJSON(t, tc.code, out)
+		var res struct {
+			Verification *struct {
+				Status string `json:"status"`
+			} `json:"verification"`
+		}
+		if tc.method == http.MethodPost && (json.Unmarshal(out, &res) != nil || res.Verification == nil || res.Verification.Status != "unauthorized") {
+			t.Error("the env key's check did not hear the vendor's refusal, so its echo never reached the answer")
+		}
+	}
 	refusal := false
 	for i, f := range env.wsFrames(t, 500) {
 		sink.add(fmt.Sprintf("WS frame %d", i), f)
@@ -199,6 +245,7 @@ func TestCredentialLeakWithoutDatabase(t *testing.T) {
 	}
 	sink.add("the log", []byte(env.logText()))
 	sink.assertAbsent(noPatternSecret)
+	sink.assertAbsent(leakOpenRouterKey)
 }
 
 // TestRESTErrorsPassThroughTheProcessRedactor: abortAPI masks the loaded secrets of the installed
