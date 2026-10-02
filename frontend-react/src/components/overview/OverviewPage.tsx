@@ -38,7 +38,8 @@ import type { OverviewStats, TimeWindow } from '@/types/api';
 import { AtAGlance } from './AtAGlance';
 import { ConnectYourApp } from './ConnectYourApp';
 import { EvidenceCoverageCard } from './EvidenceCoverageCard';
-import { bucketDescription, bucketFormatter, DEFAULT_WINDOW, outcomeBuckets, setupChecklist, TIME_WINDOWS } from './overviewModel';
+import { bucketFormatter, DEFAULT_WINDOW, outcomeBuckets, setupChecklist, TIME_WINDOWS } from './overviewModel';
+import { heroDescription } from './heroChart';
 import { PerformanceSection } from './PerformanceSection';
 import { SavingsStrip } from './SavingsStrip';
 import { SetupChecklist } from './SetupChecklist';
@@ -100,7 +101,7 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
             <CardContent>
               <OutcomeTimeSeries
                 title={copy.overview.hero_chart}
-                description={replay ? `${bucketDescription(stats).split(',')[0]}, over the replayed traffic` : bucketDescription(stats)}
+                description={heroDescription(stats, replay)}
                 buckets={outcomeBuckets(stats.outcomes_series)}
                 formatBucket={bucketFormatter(stats.bucket)}
                 headingLevel={2}

@@ -7,6 +7,7 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { heroDescription } from './heroChart';
 
 installMswServer();
 afterEach(() => stopLive());
@@ -17,6 +18,8 @@ describe('Overview page', { timeout: 20_000 }, () => {
   it('shows the numbers, the hero chart and what was caught', async () => {
     const { control } = renderPage('/app/overview');
     expect(await screen.findByRole('heading', { name: 'Requests by outcome' })).toBeInTheDocument();
+    // The proxy counts would-block answers in the would_flag series: the chart says so.
+    expect(screen.getByText(/Would flag also counts answers an observe-only route would have blocked/)).toBeInTheDocument();
     const glance = screen.getByLabelText('At a glance');
     expect(within(glance).getByText('612')).toBeInTheDocument();
     // Blocked 4 + fallback 0 stopped; the flagged count sits under it.
@@ -157,5 +160,16 @@ describe('Overview page', { timeout: 20_000 }, () => {
     await screen.findByRole('heading', { name: 'Requests by outcome' });
     await screen.findByText(/Your cost:/);
     expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
+});
+
+describe('Overview hero chart', () => {
+  it('says that Would flag also counts would-block answers, when it has any', () => {
+    const stats = overviewStats();
+    expect(stats.outcomes_series.some((p) => p.would_flag > 0)).toBe(true);
+    expect(heroDescription(stats, false)).toMatch(/\. Would flag also counts answers an observe-only route would have blocked\.$/);
+    const none = { ...stats, outcomes_series: stats.outcomes_series.map((p) => ({ ...p, would_flag: 0 })) };
+    expect(heroDescription(none, false)).not.toMatch(/Would flag/);
+    expect(heroDescription(none, true)).toMatch(/over the replayed traffic$/);
   });
 });
