@@ -163,3 +163,57 @@ func TestStatusPushHook(t *testing.T) {
 		t.Errorf("engine %+v warnings %v", st.Engine, st.Warnings)
 	}
 }
+
+// statusOnlyClient is a decision-model client that only reports its status (jev.StatusReporter).
+type statusOnlyClient struct {
+	jev.Client
+	st jev.Status
+}
+
+func (c statusOnlyClient) Status() jev.Status { return c.st }
+
+// TestStatusErrorTextIsRedacted (D42): the decision model's last error and hint, the judge's
+// fallback reason and the verifier's reason are text a vendor or the engine wrote, so they leave
+// /api/status through the process Redactor: a key they echo is masked even when it matches no
+// credential pattern.
+func TestStatusErrorTextIsRedacted(t *testing.T) {
+	if config.NewRedactor().Redact(noPatternSecret) != noPatternSecret {
+		t.Fatal("the leak secret must match no redaction pattern, so only the loaded-secret list can mask it")
+	}
+	defer installRedaction(config.NewRedactor(noPatternSecret))()
+
+	s := &statusReporter{jevClient: statusOnlyClient{st: jev.Status{
+		Info: jev.Info{Backend: jev.BackendCompatible}, State: "unauthorized",
+		LastError: &jev.StatusError{Kind: "unauthorized", Message: "invalid api key " + noPatternSecret,
+			Hint: "the gateway refused " + noPatternSecret, At: time.Now()},
+	}}}
+	d := s.decisionModel()
+	if d.LastError == nil || d.LastError.Message != "invalid api key "+config.Masked ||
+		strings.Contains(d.LastError.Hint, noPatternSecret) || !strings.Contains(d.LastError.Hint, config.Masked) {
+		t.Errorf("last_error is not redacted: %q", strings.ReplaceAll(fmtLastError(d), noPatternSecret, "<secret>"))
+	}
+
+	h := grpc.EngineHealth{State: grpc.StateUp,
+		Response: &pb.HealthResponse{Healthy: true, JudgeProvider: "anthropic", JudgeFallbackActive: true,
+			Dependencies: map[string]bool{"judge": true}},
+		Info: &pb.EngineInfo{
+			Judge:             &pb.JudgeInfo{EffectiveProvider: "openrouter", FallbackReason: "anthropic said: bad key " + noPatternSecret},
+			VerifierEffective: "llm", VerifierReason: "the judge verifies claims; last error " + noPatternSecret,
+		}}
+	if j := judgeStatus(h); j.FallbackReason == nil || strings.Contains(*j.FallbackReason, noPatternSecret) ||
+		!strings.Contains(*j.FallbackReason, config.Masked) {
+		t.Error("the judge's fallback reason is not redacted")
+	}
+	if v := verifierStatus(h); strings.Contains(v.Reason, noPatternSecret) || !strings.Contains(v.Reason, config.Masked) {
+		t.Error("the verifier's reason is not redacted")
+	}
+}
+
+// fmtLastError is a last error's message and hint, for a failure message (the caller hides the
+// secret).
+func fmtLastError(d decisionModelStatus) string {
+	if d.LastError == nil {
+		return "<nil>"
+	}
+	return d.LastError.Message + " | " + d.LastError.Hint
+}

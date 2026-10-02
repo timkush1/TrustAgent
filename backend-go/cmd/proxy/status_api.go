@@ -541,6 +541,7 @@ func judgeStatus(h grpc.EngineHealth) statusJudge {
 			j.CredentialSource = src
 		}
 		if why := ji.GetFallbackReason(); why != "" && j.FallbackActive {
+			why = apiRedact(why) // the engine's own words may quote a provider's error (D42)
 			j.FallbackReason = &why
 		}
 	}
@@ -556,7 +557,7 @@ func verifierStatus(h grpc.EngineHealth) statusVerifier {
 	if st := judgeState(h); st == stateDown || st == stateDisabled {
 		v.Effective, v.Reason = "off", "no deep-audit judge is available"
 	} else if why := h.Info.GetVerifierReason(); why != "" && h.Info.GetVerifierEffective() == "llm" {
-		v.Reason = why
+		v.Reason = apiRedact(why)
 	}
 	return v
 }
@@ -625,7 +626,8 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 		}
 	}
 	if e := st.LastError; e != nil {
-		d.LastError = &decisionModelError{Kind: e.Kind, Message: e.Message, Hint: e.Hint, At: e.At.UTC()}
+		// A vendor's error text may echo a key; it leaves through the process Redactor (D42).
+		d.LastError = &decisionModelError{Kind: e.Kind, Message: apiRedact(e.Message), Hint: apiRedact(e.Hint), At: e.At.UTC()}
 	}
 	return d
 }
