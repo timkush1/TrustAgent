@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { STUDIO_TEST_MAX_SAMPLES } from '@/data/control/studioPlane';
 import { errorCodeHint } from '@/data/errors';
-import { formatCount, formatDurationMs, formatRisk, formatUsd } from '@/domain/format';
+import { formatCount, formatDurationMs, formatRisk } from '@/domain/format';
 import { copy, decisionBackendLabel } from '@/domain/presentation';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
@@ -53,7 +53,34 @@ export interface TestBenchProps {
 
 const pct = (p: number) => `${Math.floor(p * 100 + 0.5)}%`;
 
-function ResultRow({ index, row, sample, fires, agrees, snapshot }: { index: number; row: StudioTestResponse['results'][number]; sample: StudioSample | undefined; fires: boolean | null; agrees: boolean | null; snapshot: string | null }) {
+interface RunCost {
+  label: 'simulated' | 'estimate';
+  basis: string;
+}
+
+function runCostOf(response: StudioTestResponse): RunCost {
+  return response.summary.backend === 'mock'
+    ? { label: 'simulated', basis: 'A mock fast check answered; nothing was billed.' }
+    : { label: 'estimate', basis: "Tokens × the price table's price for the fast-check model." };
+}
+
+function ResultRow({
+  index,
+  row,
+  sample,
+  fires,
+  agrees,
+  snapshot,
+  cost,
+}: {
+  index: number;
+  row: StudioTestResponse['results'][number];
+  sample: StudioSample | undefined;
+  fires: boolean | null;
+  agrees: boolean | null;
+  snapshot: string | null;
+  cost: RunCost;
+}) {
   const fire = studioFireWords(fires, row.status);
   const agreement = studioAgreementWords(agrees);
   const probabilities = Object.entries(row.probabilities ?? {}).sort(([, a], [, b]) => b - a);
@@ -102,7 +129,9 @@ function ResultRow({ index, row, sample, fires, agrees, snapshot }: { index: num
           <dt className="text-fg-muted">Latency</dt>
           <dd className="tabular text-fg">{formatDurationMs(row.latency_ms)}</dd>
           <dt className="text-fg-muted">Cost</dt>
-          <dd className="tabular text-fg">{formatUsd(row.cost_usd)}</dd>
+          <dd>
+            <CostFigure usd={row.cost_usd} label={cost.label} basis={cost.basis} subject={`Cost of sample ${index + 1}`} approximate={false} />
+          </dd>
           <dt className="text-fg-muted">Model snapshot</dt>
           <dd className="font-mono text-2xs text-fg">{snapshot ?? '—'}</dd>
         </dl>
@@ -149,7 +178,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
   const summary = run ? benchAt(run.response.results, labels, threshold) : null;
   const bySample = new Map(samples.map((s) => [s.id, s]));
   const failure = test.error ? describeError(test.error) : null;
-  const runCostLabel = run?.response.summary.backend === 'mock' ? 'simulated' : 'estimate';
+  const runCost = run ? runCostOf(run.response) : null;
 
   return (
     <StudioStep
@@ -197,13 +226,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
               {summary.labelled > 0 ? `${formatCount(summary.matched)} of ${formatCount(summary.labelled)} match` : 'No labelled samples'}
               <span className="font-normal text-fg-muted"> · fires on {formatCount(summary.fired)} of {formatCount(summary.assessed)}</span>
             </p>
-            <CostFigure
-              usd={run.response.summary.cost_usd}
-              label={runCostLabel}
-              basis={runCostLabel === 'simulated' ? 'A mock fast check answered; nothing was billed.' : "Tokens × the price table's price for the fast-check model."}
-              subject="Cost of this run"
-              approximate={false}
-            />
+            {runCost ? <CostFigure usd={run.response.summary.cost_usd} label={runCost.label} basis={runCost.basis} subject="Cost of this run" approximate={false} /> : null}
           </div>
           {stale ? <p className="text-sm text-fg-muted">The check or the samples changed since this run. Run it again to see the new answers.</p> : null}
           <ol className="space-y-2">
@@ -216,6 +239,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
                 fires={summary.rows[i].fires}
                 agrees={summary.rows[i].agrees}
                 snapshot={run.response.summary.snapshot}
+                cost={runCostOf(run.response)}
               />
             ))}
           </ol>

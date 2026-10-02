@@ -198,6 +198,7 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(test).getAllByText('Matches your label')).toHaveLength(5);
     expect(within(test).getByText("Doesn't match")).toBeInTheDocument();
     expect(within(test).getByRole('button', { name: /Estimate: how “Cost of this run” was produced/ })).toBeInTheDocument();
+    expect(within(test).getByRole('button', { name: /Estimate: how “Cost of sample 1” was produced/ })).toBeInTheDocument();
 
     const whatIf = within(test).getByRole('slider', { name: 'What if it flagged at' });
     whatIf.focus();
