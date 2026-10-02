@@ -28,7 +28,10 @@ export function askedCount(decision: GateDecisionView): number {
   return Object.values(decision.evaluators).filter((r) => r.status !== 'not_assessed').length;
 }
 
-/** The recompile matches when the server says so and its fingerprints are the ones recorded with the decision. */
+/**
+ * The recompile matches when the server says so and its fingerprints are the ones recorded with the
+ * decision. A decision without compile info (null) has nothing to compare, so the server's word stands.
+ */
 export function recompileMatches(view: DecisionRequestView, decision: GateDecisionView): boolean {
   if (!view.matches_recorded) return false;
   const recorded = decision.compile?.request_sha256;

@@ -8,8 +8,8 @@
  *   the cost labelled with where it comes from;
  * - how the fast check split its answer across each question's options (ProbabilityBars);
  * - the state and questions it was sent, and the raw request;
- * - a match badge: the recompile is cross-checked against the request fingerprints recorded with
- *   the decision (`CompileInfo.request_sha256`), never taken on trust.
+ * - a match badge: the server's `matches_recorded`, cross-checked against the request fingerprints
+ *   recorded with the decision (`CompileInfo.request_sha256`) whenever the decision carries them.
  *
  * States: a key without the content scope (not fetched), stored text that expired (409), a proxy
  * that cannot recompile (404), redacted text, and a simulated (mock) fast check.
