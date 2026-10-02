@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -42,8 +41,8 @@ func (s *PostgresStore) NoEvidenceBodies(ctx context.Context, f ScanFilter) ([]S
 		FROM traces t JOIN trace_bodies b ON b.trace_id = t.trace_id
 		WHERE t.created_at >= $2 AND ($3 = '' OR t.route = $3) AND t.source <> 'direct'
 			AND b.expires_at > $1 AND `+evidenceUsedSQL+` = 0
-		ORDER BY t.created_at DESC, t.trace_id DESC LIMIT `+strconv.Itoa(limit),
-		f.Now.UTC(), f.Since.UTC(), f.Route)
+		ORDER BY t.created_at DESC, t.trace_id DESC LIMIT $4`,
+		f.Now.UTC(), f.Since.UTC(), f.Route, limit)
 	if err != nil {
 		return nil, fmt.Errorf("no-evidence bodies: %w", err)
 	}

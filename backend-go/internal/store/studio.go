@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -163,8 +162,8 @@ func (s *PostgresStore) StudioSampleTraces(ctx context.Context, f StudioSampleFi
 		JOIN trace_bodies b ON b.trace_id = gd.trace_id
 		WHERE gd.attempt = 0 AND gd.created_at >= $2 AND ($3 = '' OR gd.route = $3) AND `+liveBodySQL+`
 			AND `+pred+`
-		ORDER BY `+order+` LIMIT `+strconv.Itoa(limit),
-		f.Now.UTC(), f.Since.UTC(), f.Route)
+		ORDER BY `+order+` LIMIT $4`,
+		f.Now.UTC(), f.Since.UTC(), f.Route, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -225,8 +224,8 @@ func (s *PostgresStore) DryRunSample(ctx context.Context, f DryRunFilter, limit 
 		LEFT JOIN traces t ON t.trace_id = gd.trace_id
 		LEFT JOIN audits a ON a.audit_id = t.audit_id
 		WHERE gd.attempt = 0 AND gd.created_at >= $2 AND gd.route = $3 AND `+liveBodySQL+`
-		ORDER BY random() LIMIT `+strconv.Itoa(limit),
-		f.Now.UTC(), f.Since.UTC(), f.Route)
+		ORDER BY random() LIMIT $4`,
+		f.Now.UTC(), f.Since.UTC(), f.Route, limit)
 	if err != nil {
 		return nil, err
 	}

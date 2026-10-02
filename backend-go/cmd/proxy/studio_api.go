@@ -1178,7 +1178,7 @@ func (a *studioAPI) draft(c *gin.Context) {
 		case st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), codeNoJudge):
 			settle(0)
 			abortAPI(c, http.StatusServiceUnavailable, codeNoJudge, "No judge is configured, so Draft with AI is off. Start from a template instead.")
-		case st.Code() == codes.DeadlineExceeded:
+		case st.Code() == codes.DeadlineExceeded || st.Code() == codes.Canceled:
 			// The judge may have been called and billed: the estimate stays spent (D48).
 			settle(estimate)
 			abortAPI(c, http.StatusServiceUnavailable, codeEngineUnavailable, "The audit engine did not finish the draft in time.")
@@ -1194,7 +1194,7 @@ func (a *studioAPI) draft(c *gin.Context) {
 		records = append(records, resp.GetCost())
 	}
 	settle(costs.RealCostUSD(records))
-	a.costs.record(context.WithoutCancel(c.Request.Context()), records, CostLink{KeyLabel: actor(c)})
+	a.costs.record(context.WithoutCancel(c.Request.Context()), records, CostLink{Route: in.RouteName, KeyLabel: actor(c)})
 
 	out := studioDraftResponse{
 		Errors: []decision.FieldError{}, Lints: []decision.Lint{}, Model: resp.GetModel(),
