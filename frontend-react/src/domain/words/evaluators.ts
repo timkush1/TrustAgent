@@ -24,6 +24,7 @@ import { copy, outcomesContract } from '../contracts';
 /** The two answers to "Was this right?" for an evaluator target (D59): Correct fires, False alarm does not. */
 export type EvalFireLabel = Extract<LabelValue, 'should_fire' | 'should_not_fire'>;
 
+/** Every label PUT /api/labels accepts (D59; claim labels are only the four verdicts the gateway takes). */
 const LABEL_WORDS: Record<string, string> = {
   should_fire: copy.labels.correct,
   should_not_fire: copy.labels.false_alarm,
@@ -33,8 +34,6 @@ const LABEL_WORDS: Record<string, string> = {
   CONTRADICTED: 'Contradicted',
   UNSUPPORTED: 'Unsupported',
   PARTIALLY_SUPPORTED: 'Partly supported',
-  UNKNOWN: 'Unknown',
-  NOT_CHECKED: 'Not checked',
 };
 
 /** "Correct", "False alarm", a claim verdict in words, … (never the raw value). */
