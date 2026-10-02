@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-ollama-free-local",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "A local Ollama judge is not priced: the free ollama entry gives $0 with cost_source free_local, whatever the token counts.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "ollama",
+    "model": "llama3.1:8b",
+    "input_tokens": 5000,
+    "output_tokens": 900,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"cost_source": "free_local", "cost_usd": 0, "price_table_version": "2026-09-27"}
+}

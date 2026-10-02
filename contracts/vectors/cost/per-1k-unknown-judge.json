@@ -1,0 +1,48 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "per-1k-unknown-judge",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "A judge no entry prices leaves the deep-audit cost and the total unknown (null) rather than $0; the fast-check cost is still known.",
+  "input": {
+    "fn": "per_1k",
+    "decision_model": {"provider": "openrouter", "model": "typesafe/jev-1.13"},
+    "judge": {"provider": "openai", "model": "gpt-4o-mini"},
+    "settings": {
+      "fast_check_input_tokens": 5000,
+      "fast_check_output_tokens": 0,
+      "claims_per_answer": 8,
+      "decompose_input_tokens": 1000,
+      "decompose_output_tokens": 300,
+      "evidence_context_tokens": 3000,
+      "verifier_prompt_tokens": 450,
+      "claim_tokens": 75,
+      "verify_output_tokens": 120,
+      "grounding_flag_rate": 0.05,
+      "pass_sample_rate": 0.02,
+      "uniform_sample_rate": 0.01
+    },
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {
+    "audit_rate": 0.079,
+    "decision_cost_source": "computed",
+    "deep_audit_per_1k": null,
+    "deep_audit_usd": null,
+    "fast_check_per_1k": 0.21,
+    "fast_check_usd": 0.00021,
+    "judge_cost_source": "unknown",
+    "total_per_1k": null
+  }
+}

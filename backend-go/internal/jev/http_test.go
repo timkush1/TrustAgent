@@ -258,6 +258,59 @@ func TestResponseAccounting(t *testing.T) {
 	}
 }
 
+// A reported usage.cost below $0 is not a cost (the wire decoder drops it, as decision.PriceCall
+// ignores it): the attempt is priced from its input tokens, so a malformed report can never lower
+// the day's spend.
+func TestNegativeReportedCostIsComputed(t *testing.T) {
+	h := newHarness(t, mockupstream.Config{})
+	// Between the client and the mock: every answer reports usage.cost = -0.5.
+	neg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, h.srv.URL+r.URL.RequestURI(), r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		req.Header = r.Header.Clone()
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer res.Body.Close()
+		var body map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		if u, ok := body["usage"].(map[string]any); ok {
+			u["cost"] = -0.5
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(res.StatusCode)
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	defer neg.Close()
+
+	cl := h.client(BackendOpenRouterDecisions, func(c *Config) { c.OpenRouterBaseURL = neg.URL })
+	resp, err := decide(t, cl, testRequest(""), CallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.InputTokens == nil || resp.CostUSD == nil {
+		t.Fatalf("response %+v", resp)
+	}
+	want := decision.TokenCostUSD(int64(*resp.InputTokens), 0, 0.042, 0)
+	if resp.CostSource != CostComputed || *resp.CostUSD != want || want <= 0 {
+		t.Errorf("cost %v (%s), want %v computed", *resp.CostUSD, resp.CostSource, want)
+	}
+	if ev := h.waitEvents(1)[0]; ev.CostSource != CostComputed || ev.CostUSD != want {
+		t.Errorf("cost event %+v", ev)
+	}
+	if st := cl.Status(); st.Spend == nil || st.Spend.SpentUSD != want {
+		t.Errorf("spend %+v, want %v", st.Spend, want)
+	}
+}
+
 func TestFaultClassification(t *testing.T) {
 	cases := []struct {
 		fault     string
