@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/truthtable/backend-go/internal/decision/vectors"
 )
 
 func TestFormat(t *testing.T) {
@@ -218,8 +220,14 @@ func TestGenerateCheckFreeze(t *testing.T) {
 
 func TestRunUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	// lint has no Go runner yet and cost's runner is skipped: neither can be processed.
-	for _, args := range [][]string{{"-kinds", "lint"}, {"-kinds", "cost"}, {"-kinds", "nonsense"}, {"-check", "-freeze"}, {"extra"}, {"-nope"}} {
+	// A kind without a Go runner (vectors.Kinds Skip) cannot be processed.
+	usage := [][]string{{"-kinds", "nonsense"}, {"-check", "-freeze"}, {"extra"}, {"-nope"}}
+	for k, info := range vectors.Kinds {
+		if info.Skip != "" {
+			usage = append(usage, []string{"-kinds", k})
+		}
+	}
+	for _, args := range usage {
 		if code := run(args, &stdout, &stderr); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}

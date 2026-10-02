@@ -4,10 +4,11 @@
 // consumers (the decision-model swap, the upstream rebuild, the engine push, the cost caps)
 // subscribe to them.
 //
-// At P4 Step 0 this file holds the fixed seam: the types, NewStatic (the env seed, no database)
-// and the Manager methods other streams call. GSEC fills in the database-backed Manager;
-// push*.go belongs to GCONN. runtimecfg imports decision and jev; it never imports upstream or
-// costs (D90).
+// This file holds the seam other streams call (frozen at CP-SEC1): the types, NewStatic (no
+// database), Current, Subscribe, KeyFunc, SetEngineEnvManaged and ApplyBindings. manager.go is the
+// database-backed Manager (Reload, the reload loop), envmanaged.go the D33 env precedence, and
+// push*.go belongs to GCONN. runtimecfg imports decision, jev, credentials and store; it never
+// imports upstream or costs (D90).
 package runtimecfg
 
 import (
@@ -16,10 +17,12 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/credentials"
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/jev"
 )
@@ -102,7 +105,7 @@ type Budgets struct {
 type Credential struct {
 	Name     string
 	Provider string
-	// Source is env or dashboard.
+	// Source is env (credentials.SourceEnv) or dashboard (credentials.SourceDashboard).
 	Source      string
 	Secret      string `json:"-"`
 	Masked      string
@@ -122,14 +125,38 @@ type Warning struct {
 	Details map[string]any
 }
 
+// Warning codes a snapshot carries. fail_closed_unprotected (D77) depends on the policy in effect
+// and the decision model's live state, so the status and settings handlers add it when they
+// answer; WarnFailClosedUnprotected is its code.
+const (
+	// WarnMasterKeyChanged: stored credentials cannot be opened with the current master key
+	// (D32); details.names lists them.
+	WarnMasterKeyChanged = "master_key_changed"
+	// WarnStoreUnavailable: a database but no durable master key, so dashboard credentials can be
+	// neither stored nor read (D32); details.names lists the stored rows that are unusable.
+	WarnStoreUnavailable = "store_unavailable"
+	// WarnSettingsUnreadable: the last reload could not read the settings store; the previous
+	// snapshot (or the env seed at boot) stays in effect until a reload succeeds.
+	WarnSettingsUnreadable = "settings_unreadable"
+	// WarnFailClosedUnprotected: an enforcing fail-closed route has no usable decision model
+	// (D77); details.routes lists the routes.
+	WarnFailClosedUnprotected = "fail_closed_unprotected"
+)
+
 // Snapshot is the runtime configuration in effect. Consumers treat it as immutable.
 type Snapshot struct {
 	// Version is the global runtime-config version (the settings row epoch's version column,
 	// D31); 0 without a database.
 	Version int64
 	// Epoch identifies the settings store (D31): a random one per process without a database.
-	Epoch    string
+	Epoch string
+	// Settings are the settings in effect: the env seed, the stored rows over it, and every
+	// env-managed path over those (D33).
 	Settings RuntimeSettings
+	// Persisted is the built-in defaults with the stored rows over it, without any env value: the
+	// base a write starts from, so that an env value is never copied into a row (ChangedRows,
+	// ChangedFields). Settings is Persisted with the env-managed paths laid over it.
+	Persisted RuntimeSettings
 	// EnvManaged lists the dotted RuntimeSettings paths a non-empty env var pins (D33).
 	EnvManaged []string
 	// Credentials are the usable credentials; Undecryptable names the stored rows that cannot be
@@ -137,6 +164,44 @@ type Snapshot struct {
 	Credentials   CredentialSet
 	Undecryptable []string
 	Warnings      []Warning
+	// StoreState is the credential store's state: ready, unavailable or no_database (D32).
+	StoreState string
+	// EnvSources maps each EnvManaged path to the env var names that pin it (a 409 env_managed
+	// carries them as details.keys, D33).
+	EnvSources map[string][]string
+	// EngineEnv names the engine registry keys set non-empty in the engine's env, as the engine
+	// last reported them (EngineInfo.env_managed, D34/D80): anthropic and openai keys there show
+	// as env credentials.
+	EngineEnv []string
+}
+
+// IsEnvManaged reports whether a non-empty env var pins the dotted RuntimeSettings path (D33).
+func (s *Snapshot) IsEnvManaged(path string) bool { return slices.Contains(s.EnvManaged, path) }
+
+// BackendPinned reports whether binding the credential called name to the decision model would be
+// skipped as backend_pinned (D33, D75): decision_model.backend is pinned in the env to mock, off,
+// or a backend that does not use that credential.
+func (s *Snapshot) BackendPinned(name string) bool {
+	b := s.Settings.DecisionModel.Backend
+	if !s.IsEnvManaged("decision_model.backend") || b == jev.BackendAuto {
+		return false
+	}
+	return !slices.Contains(DecisionBackends(name), b)
+}
+
+// DecisionBackends are the decision backends a credential can serve: an OpenRouter key the two
+// OpenRouter endpoints, a TypeSafe key TypeSafe, the compatible key the compatible gateway, and
+// any other credential none.
+func DecisionBackends(name string) []string {
+	switch name {
+	case credentials.NameOpenRouter:
+		return []string{jev.BackendOpenRouterDecisions, jev.BackendOpenRouterSystemOne}
+	case credentials.NameTypeSafe:
+		return []string{jev.BackendTypeSafe}
+	case credentials.NameCompatible:
+		return []string{jev.BackendCompatible}
+	}
+	return nil
 }
 
 // BindingSkip is a binding target that was not applied, with its reason (api.ts
@@ -153,21 +218,44 @@ var ErrCredentialNotFound = errors.New("runtimecfg: credential not available")
 // origins (D78).
 var ErrHostNotAllowed = errors.New("runtimecfg: origin not allowed for this credential")
 
-// Manager publishes runtime configuration snapshots.
+// Manager publishes runtime configuration snapshots. New builds it; NewStatic is the one of a
+// gateway without a settings store.
 type Manager struct {
+	opts Options
+	fp   credentials.Fingerprinter
+	// cipher opens stored credentials; nil while the store is not ready (D32).
+	cipher *credentials.Cipher
+	// defaults is the configuration of the registry defaults alone (no env, no .env file): the
+	// built-in values of the env-managed paths (builtinSettings).
+	defaults *config.Config
+	// localEpoch is the epoch of a snapshot without a database (D31: random per process).
+	localEpoch string
+
+	// reloadMu serializes building and publishing, so subscribers see snapshots in order.
+	reloadMu sync.Mutex
+	// loaded is the last state read from the store (nil before the first successful read).
+	loaded *loadedState
+	// loadErr is the error of the last read ("" after a success).
+	loadErr string
+
 	mu        sync.RWMutex
 	cur       *Snapshot
 	subs      map[int]func(*Snapshot)
 	nextSub   int
 	engineEnv []string
+
+	// kick asks the reload loop for a reload (hub notifications).
+	kick chan struct{}
+
+	touchMu sync.Mutex
+	touched map[string]time.Time
+	touchWG sync.WaitGroup
 }
 
-// NewStatic is the Manager of a gateway without a settings store: one snapshot from the env seed
-// (version 0, a random epoch, no stored credentials). It never changes on its own.
-func NewStatic(cfg *config.Config) *Manager {
-	return &Manager{cur: &Snapshot{Epoch: newEpoch(), Settings: seedSettings(cfg), Credentials: CredentialSet{}},
-		subs: map[int]func(*Snapshot){}}
-}
+// NewStatic is the Manager of a gateway without a settings store: one snapshot from the built-in
+// defaults and the env (version 0, a random epoch, env credentials only). Only
+// SetEngineEnvManaged changes it.
+func NewStatic(cfg *config.Config) *Manager { return New(Options{Config: cfg}) }
 
 // newEpoch is a UUIDv7 epoch (D31).
 func newEpoch() string {
@@ -223,7 +311,9 @@ func (m *Manager) Current() *Snapshot {
 }
 
 // Subscribe registers fn for every new snapshot and returns the function that removes it. fn
-// runs on the publishing goroutine and must not block.
+// runs on the publishing goroutine, in publication order, and must not block: hand slow work
+// (a client rebuild, an engine push) to a goroutine of its own. fn must not call Reload or
+// SetEngineEnvManaged, which publish under the same lock.
 func (m *Manager) Subscribe(fn func(*Snapshot)) (cancel func()) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -238,7 +328,10 @@ func (m *Manager) Subscribe(fn func(*Snapshot)) (cancel func()) {
 }
 
 // KeyFunc returns the credential called name from the snapshot in effect at each call, refusing
-// an origin outside its allowed origins (D78).
+// an origin outside its allowed origins (D78). origin is a canonical origin
+// (jev.CanonicalOrigin). A dashboard credential's use is recorded in last_used_at, at most once a
+// minute per name and in the background. Errors name the credential and the origin, never the
+// secret.
 func (m *Manager) KeyFunc(name string) jev.KeyFunc {
 	return func(_ context.Context, origin string) (string, error) {
 		c, ok := m.Current().Credentials[name]
@@ -246,25 +339,40 @@ func (m *Manager) KeyFunc(name string) jev.KeyFunc {
 			return "", fmt.Errorf("%w: %s", ErrCredentialNotFound, name)
 		}
 		if !slices.Contains(c.AllowedOrigins, origin) {
-			return "", fmt.Errorf("%w: %s", ErrHostNotAllowed, name)
+			return "", fmt.Errorf("%w: %s may not be sent to %s", ErrHostNotAllowed, name, origin)
+		}
+		if c.Source == credentials.SourceDashboard {
+			m.touch(name)
 		}
 		return c.Secret, nil
 	}
 }
 
 // SetEngineEnvManaged records the engine registry keys set in the engine's env
-// (EngineInfo.env_managed, D34/D80); they join the snapshot's env-managed paths.
+// (EngineInfo.env_managed, D34/D80). They join the snapshot's env-managed paths (judge.*,
+// bindings.judge) and its engine env credentials; a change publishes a new snapshot at once,
+// from the last state read (no database round trip).
 func (m *Manager) SetEngineEnvManaged(names []string) {
+	names = slices.Clone(names)
+	slices.Sort(names)
+	names = slices.Compact(names)
+	m.reloadMu.Lock()
+	defer m.reloadMu.Unlock()
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.engineEnv = append([]string(nil), names...)
+	same := slices.Equal(m.engineEnv, names)
+	m.engineEnv = names
+	m.mu.Unlock()
+	if !same {
+		m.publishLocked(m.build())
+	}
 }
 
 // ApplyBindings binds the credential called name to targets (D75) and returns the new settings,
-// the targets applied and those skipped. A target whose bindings.<target> path is env-managed is
-// skipped (env_managed); decision_model is skipped when the backend is env-pinned to one that
-// does not use the credential (backend_pinned). When any target applies, a persisted mock
-// backend or mock judge becomes auto (D76). It is pure.
+// the targets applied and those skipped. decision_model is skipped when the backend is env-pinned
+// to one that does not use the credential (backend_pinned: pass Snapshot.BackendPinned(name));
+// otherwise a target whose bindings.<target> path is env-managed is skipped (env_managed). When
+// any target applies, a persisted mock backend or mock judge becomes auto (D76), unless that path
+// is env-managed. Pass the persisted settings to get the rows to write. It is pure.
 func ApplyBindings(s RuntimeSettings, name string, targets, envManaged []string, backendPinned bool) (RuntimeSettings, []string, []BindingSkip) {
 	applied, skipped := []string{}, []BindingSkip{}
 	for _, t := range []string{TargetDecisionModel, TargetJudge} {
@@ -272,10 +380,12 @@ func ApplyBindings(s RuntimeSettings, name string, targets, envManaged []string,
 			continue
 		}
 		switch {
-		case slices.Contains(envManaged, "bindings."+t):
-			skipped = append(skipped, BindingSkip{Target: t, Reason: SkipEnvManaged})
+		// A pinned backend is the more specific reason: D33 lists bindings.decision_model as
+		// env-managed when the backend is pinned to mock or off, and the write reports why.
 		case t == TargetDecisionModel && backendPinned:
 			skipped = append(skipped, BindingSkip{Target: t, Reason: SkipBackendPinned})
+		case slices.Contains(envManaged, "bindings."+t):
+			skipped = append(skipped, BindingSkip{Target: t, Reason: SkipEnvManaged})
 		default:
 			n := name
 			if t == TargetDecisionModel {
