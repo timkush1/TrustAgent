@@ -110,11 +110,11 @@
     },
     {
       "match": "uncalibrated_snapshot",
-      "copy": "Would have blocked — blocking stays off until this check is calibrated"
+      "copy": "Would have blocked — the decision model changed since this check was calibrated, so it can only flag until you recalibrate"
     },
     {
       "match": "calibration_missing",
-      "copy": "Would have blocked — this check has no calibration yet, so it can only flag (label some answers, then calibrate)"
+      "copy": "Would have blocked — this check isn't calibrated for blocking yet, so it can only flag (label answers, calibrate, then adopt)"
     },
     {"match": "fallback_failed", "copy": "Couldn't get a usable fallback answer from your model"},
     {
