@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -14,6 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/store"
+	"github.com/truthtable/contracts"
 )
 
 const (
@@ -386,5 +388,32 @@ func TestRoiTimeseries(t *testing.T) {
 	if code, body := newTestEnv(t, envOpts{}).get("/api/roi/timeseries", testKey); code != http.StatusServiceUnavailable ||
 		errorCodeOf(t, body) != codePersistenceDisabled {
 		t.Errorf("without a database: HTTP %d %s", code, body)
+	}
+}
+
+// The committed ROI, time-series and budget-error fixtures are valid answers, and decode strictly
+// into the shapes the handlers serve.
+func TestRoiFixturesMatchTheHandlers(t *testing.T) {
+	for _, c := range []struct {
+		file, schema string
+		into         any
+	}{
+		{"RoiSummary.24h.json", schemaRoiSummary, &roiSummary{}},
+		{"RoiTimeseries.7d.json", schemaRoiTimeseries, &roiTimeseries{}},
+		{"ApiErrorBody.budget-exhausted.json", schemaError, nil},
+	} {
+		raw, err := contracts.FS.ReadFile("fixtures/api/" + c.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		contractstest.ValidateJSON(t, c.schema, raw)
+		if c.into == nil {
+			continue
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(c.into); err != nil {
+			t.Errorf("%s: %v", c.file, err)
+		}
 	}
 }
