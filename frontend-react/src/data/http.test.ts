@@ -1,8 +1,8 @@
 import { http, HttpResponse, delay } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { API, server, installMswServer } from '@/test/msw';
 import { ApiError, apiErrorFromResponse, parseRetryAfter } from './errors';
-import { buildQuery, createHttpClient } from './http';
+import { buildQuery, clearDashboardKey, createHttpClient, DASHBOARD_KEY_STORAGE, readDashboardKey, storeDashboardKey } from './http';
 
 installMswServer();
 
@@ -145,5 +145,67 @@ describe('errors helpers', () => {
   it('builds repeated keys for arrays and skips empty values', () => {
     expect(buildQuery({ a: [1, 2], b: '', c: null, d: false })).toBe('?a=1&a=2&d=false');
     expect(buildQuery({})).toBe('');
+  });
+});
+
+describe('cross-origin dashboard key (P4-PLAN D71)', () => {
+  afterEach(() => clearDashboardKey());
+
+  function recordHeaders() {
+    const seen: { key: string | null; csrf: string | null; cookie: string | null }[] = [];
+    const record = ({ request }: { request: Request }) => {
+      seen.push({ key: request.headers.get('x-trustagent-key'), csrf: request.headers.get('x-trustagent-csrf'), cookie: request.headers.get('cookie') });
+      return HttpResponse.json({});
+    };
+    server.use(http.get(`${API}/api/status`, record), http.post(`${API}/api/keys`, record));
+    return seen;
+  }
+
+  it('keeps the key in sessionStorage for this tab, never in localStorage', () => {
+    expect(readDashboardKey()).toBeNull();
+    expect(storeDashboardKey('  ta_admin_key  ')).toBe(true);
+    expect(sessionStorage.getItem(DASHBOARD_KEY_STORAGE)).toBe('ta_admin_key');
+    expect(readDashboardKey()).toBe('ta_admin_key');
+    expect(Object.keys(localStorage).some((k) => localStorage.getItem(k)?.includes('ta_admin_key'))).toBe(false);
+    clearDashboardKey();
+    expect(readDashboardKey()).toBeNull();
+  });
+
+  it('sends the stored key as X-TrustAgent-Key on every cross-origin request, without CSRF or cookies', async () => {
+    const seen = recordHeaders();
+    await client(true).get('/api/status');
+    storeDashboardKey('ta_admin_key');
+    await client(true).get('/api/status');
+    await client(true).request('/api/keys', { method: 'POST', body: {} });
+    expect(seen).toEqual([
+      { key: null, csrf: null, cookie: null },
+      { key: 'ta_admin_key', csrf: null, cookie: null },
+      { key: 'ta_admin_key', csrf: null, cookie: null },
+    ]);
+  });
+
+  it('never sends the stored key to a same-origin proxy, which uses the session cookie', async () => {
+    const seen = recordHeaders();
+    storeDashboardKey('ta_admin_key');
+    await client(false).get('/api/status');
+    await client(false).request('/api/keys', { method: 'POST', body: {} });
+    expect(seen.map((s) => s.key)).toEqual([null, null]);
+    expect(seen.map((s) => s.csrf)).toEqual([null, '1']);
+  });
+
+  it('leaves an explicit key header alone (validating a key before keeping it)', async () => {
+    const seen = recordHeaders();
+    storeDashboardKey('ta_old');
+    await client(true).get('/api/status', { headers: { 'X-TrustAgent-Key': 'ta_candidate' } });
+    expect(seen[0].key).toBe('ta_candidate');
+  });
+
+  it('has no other way to carry a key: no ?api_key=, no bearer subprotocol, no build-time key', () => {
+    // Every source file of the dashboard (tests excluded), as text.
+    const sources = import.meta.glob(['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    expect(Object.keys(sources).length).toBeGreaterThan(100);
+    const forbidden = [/[?&]api_key=/, /['"`]bearer\./i, /VITE_TRUTHTABLE_API_KEY/];
+    const hits = Object.entries(sources).flatMap(([file, text]) => forbidden.filter((re) => re.test(text)).map((re) => `${file}: ${re.source}`));
+    expect(hits).toEqual([]);
   });
 });

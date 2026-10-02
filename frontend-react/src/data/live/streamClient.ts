@@ -9,11 +9,16 @@
  * - Reconnects with full-jitter backoff, floor 250 ms, cap 30 s, and never gives up. `online` and a
  *   `visibilitychange` to visible retry at once. After the first `hb`, 45 s of silence forces a
  *   reconnect.
+ * - Cross origin (P4-PLAN D71): a browser WebSocket cannot send the key header, so with `ticket`
+ *   set it asks for a one-use ticket (POST /api/ws-ticket) before every (re)connect and connects
+ *   with `?ticket=`. A refused ticket (401) shows as unauthorized and keeps retrying with backoff.
+ *   Never an api_key query parameter and never a bearer subprotocol: the key is never in a URL.
  * - Knows nothing about React: events go to `onEvent` (the ring buffer), state to `onConnection`.
  *   One instance per page lives in module scope (see liveStream.ts), so StrictMode double
  *   mounting cannot open a second socket.
  */
-import type { WsEvent, WsHello } from '@/types/api';
+import type { WsEvent, WsHello, WsTicket } from '@/types/api';
+import { readDashboardKey } from '../http';
 import { parseWsFrame } from '../normalize';
 import type { ConnectionState, ResyncEvent, ResyncReason, StreamEvent } from '../stream/types';
 import { INITIAL_CONNECTION } from '../stream/types';
@@ -60,6 +65,31 @@ export interface StreamClientOptions {
   resyncOverlapMs?: number;
   /** Reports the first ignored frame of each kind (default console.warn). */
   warn?: (message: string) => void;
+  /**
+   * A fresh one-use WebSocket ticket for the next connect (D71), or null to connect without one.
+   * Called before every (re)connect; a rejection counts as a failed attempt (status 401 as
+   * unauthorized). See wsTicketSource.
+   */
+  ticket?: (signal: AbortSignal) => Promise<string | null>;
+}
+
+/**
+ * The `ticket` option of a dashboard on another origin than its proxy (D71): while this tab is
+ * signed in with a key, a fresh ticket from POST /api/ws-ticket before every (re)connect; without a
+ * key, none (a proxy with public read accepts the socket as it is). Same origin needs no ticket:
+ * the session cookie rides on the WebSocket handshake.
+ */
+export function wsTicketSource(
+  crossOrigin: boolean,
+  createTicket: (signal?: AbortSignal) => Promise<WsTicket>,
+): StreamClientOptions['ticket'] {
+  if (!crossOrigin) return undefined;
+  return async (signal) => (readDashboardKey() === null ? null : (await createTicket(signal)).ticket);
+}
+
+function isUnauthorized(err: unknown): boolean {
+  const status = typeof err === 'object' && err !== null ? (err as { status?: unknown }).status : undefined;
+  return status === 401;
 }
 
 const CONNECTING = 0;
@@ -100,6 +130,8 @@ export class StreamClient {
   private readonly timers: Timers;
 
   private ws: SocketLike | null = null;
+  /** A ticket request in flight for the next connect (D71). */
+  private ticketing: AbortController | null = null;
   private started = false;
   private disposed = false;
   private everOpened = false;
@@ -161,7 +193,7 @@ export class StreamClient {
   /** Connects now if not connected (the "Retry now" button, `online`, tab becomes visible). */
   retryNow(): void {
     if (!this.started || this.disposed) return;
-    if (this.ws && this.ws.readyState <= OPEN) return;
+    if (this.ticketing || (this.ws && this.ws.readyState <= OPEN)) return;
     this.clearTimer('retryTimer');
     this.connect();
   }
@@ -172,6 +204,8 @@ export class StreamClient {
     this.clearTimer('retryTimer');
     this.clearTimer('silenceTimer');
     this.clearTimer('resyncTimer');
+    this.ticketing?.abort();
+    this.ticketing = null;
     this.unlisten.forEach((fn) => fn());
     this.unlisten = [];
     const ws = this.ws;
@@ -185,28 +219,52 @@ export class StreamClient {
 
   // ------------------------------------------------------------------------------------ socket
 
-  private buildUrl(): string {
+  private buildUrl(ticket: string | null): string {
     const url = new URL(this.opts.url);
     url.searchParams.set('protocol', '2');
     if (this.epoch !== null && this.lastSeq !== null) {
       url.searchParams.set('since_seq', String(this.lastSeq));
       url.searchParams.set('epoch', this.epoch);
     }
+    if (ticket) url.searchParams.set('ticket', ticket);
     return url.toString();
   }
 
   private connect(): void {
     if (this.disposed) return;
-    // CONNECTING or OPEN: never a second socket (UI #8).
-    if (this.ws && this.ws.readyState <= OPEN) return;
+    // CONNECTING or OPEN, or a ticket on its way: never a second socket (UI #8).
+    if (this.ticketing || (this.ws && this.ws.readyState <= OPEN)) return;
     this.setState({
       ...this.state,
       phase: this.everOpened || this.attempt > 0 ? this.reconnectPhase() : 'connecting',
       nextRetryAt: null,
     });
+    const getTicket = this.opts.ticket;
+    if (!getTicket) {
+      this.open(null);
+      return;
+    }
+    const pending = new AbortController();
+    this.ticketing = pending;
+    getTicket(pending.signal).then(
+      (ticket) => {
+        if (this.ticketing !== pending) return; // Disposed meanwhile.
+        this.ticketing = null;
+        this.open(ticket);
+      },
+      (err: unknown) => {
+        if (this.ticketing !== pending) return;
+        this.ticketing = null;
+        this.scheduleReconnect(isUnauthorized(err) ? CLOSE_UNAUTHORIZED : null);
+      },
+    );
+  }
+
+  private open(ticket: string | null): void {
+    if (this.disposed) return;
     let ws: SocketLike;
     try {
-      ws = this.createSocket(this.buildUrl());
+      ws = this.createSocket(this.buildUrl(ticket));
     } catch {
       // Invalid URL or a blocked constructor: treat as a failed attempt.
       this.scheduleReconnect(null);

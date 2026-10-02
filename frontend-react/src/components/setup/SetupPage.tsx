@@ -14,7 +14,7 @@
  * Page contract: loading, the server's message on errors (a used or expired token says what to
  * do next), read-only and database-less instances explained, and no dead buttons.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, KeyRound, LogOut, ShieldCheck } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
@@ -30,12 +30,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { SessionRequest } from '@/data/controlPlane';
 import { isApiError } from '@/data/errors';
-import { sessionQuery, setupStatusQuery } from '@/data/queries';
-import { commandText } from '@/domain/presentation';
+import { setupStatusQuery } from '@/data/queries';
+import { commandText, secScopeView } from '@/domain/presentation';
 import type { SessionInfo } from '@/types/api';
 import { takeSetupToken } from './setupToken';
+import { useDashboardAuth } from './useDashboardAuth';
 
 /** What to do after a refused claim or sign-in, in words. */
 function failureHint(error: unknown, claiming: boolean): string | null {
@@ -85,15 +85,30 @@ function CreatedKey({ value }: { value: string }) {
   );
 }
 
-function SignedIn({ session, onSignOut, signingOut }: { session: SessionInfo; onSignOut: () => void; signingOut: boolean }) {
+function SignedIn({
+  session,
+  onSignOut,
+  signingOut,
+  forThisTab,
+}: {
+  session: SessionInfo;
+  onSignOut: () => void;
+  signingOut: boolean;
+  forThisTab: boolean;
+}) {
   const admin = session.scopes.includes('admin');
   return (
     <div className="space-y-3">
       <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
         <ShieldCheck aria-hidden="true" className="size-4 text-fg-muted" />
-        Signed in as <span className="font-medium">{session.actor}</span>
-        <span className="text-fg-muted">({session.scopes.join(', ')})</span>
+        {forThisTab ? 'Signed in for this tab as' : 'Signed in as'} <span className="font-medium">{session.actor}</span>
+        <span className="text-fg-muted">({session.scopes.map((s) => secScopeView(s).label).join(', ')})</span>
       </p>
+      {forThisTab ? (
+        <p className="text-sm text-fg-muted">
+          The proxy is on another origin, so this tab keeps the key and sends it with each request. Closing the tab or signing out forgets it.
+        </p>
+      ) : null}
       <p className="text-sm text-fg-muted">
         {admin
           ? 'Admin actions are available: edit policies, run the Playground and manage keys.'
@@ -121,45 +136,19 @@ function SignedIn({ session, onSignOut, signingOut }: { session: SessionInfo; on
 
 export function SetupPage() {
   const ds = useDataSource();
-  const qc = useQueryClient();
   // Read once: the token leaves the address bar on the first render.
   const [token] = useState(takeSetupToken);
   const [key, setKey] = useState('');
-  const [createdKey, setCreatedKey] = useState<string | null>(null);
   const setup = useQuery(setupStatusQuery(ds));
-  const session = useQuery(sessionQuery(ds));
+  const { crossOrigin, session, signedIn, signIn, signOut, createdKey, cookieLost } = useDashboardAuth();
 
-  const signIn = useMutation({
-    mutationFn: (request: SessionRequest) => ds.createSession(request),
-    onSuccess: async (info) => {
-      if (info.created_admin_key) setCreatedKey(info.created_admin_key);
-      setKey('');
-      // Scopes changed: every page re-reads what this session may see and do, and the session
-      // is read back to confirm the browser kept the cookie.
-      await qc.invalidateQueries();
-    },
-  });
-  const signOut = useMutation({
-    mutationFn: () => ds.deleteSession(),
-    onSuccess: async () => {
-      setCreatedKey(null);
-      qc.removeQueries({ queryKey: sessionQuery(ds).queryKey });
-      await qc.invalidateQueries();
-    },
-  });
-
-  // A failed read (401 after the session ended) means signed out, whatever was read before.
-  const signedIn = session.isError ? null : (session.data ?? null);
   const setupRequired = setup.data?.setup_required === true;
   const readonly = setup.data?.readonly === true;
   const claiming = signIn.variables !== undefined && 'setup_token' in signIn.variables;
-  // The proxy accepted the sign-in but the next read has no session: the browser did not keep
-  // the cookie (a dashboard that reaches the proxy on another origin, where sessions are not used).
-  const cookieLost = signIn.isSuccess && !signedIn && session.isError && !session.isFetching;
 
   const onSubmitKey = (e: FormEvent) => {
     e.preventDefault();
-    if (key.trim() !== '') signIn.mutate({ key: key.trim() });
+    if (key.trim() !== '') signIn.mutate({ key: key.trim() }, { onSuccess: () => setKey('') });
   };
 
   let body;
@@ -173,7 +162,7 @@ export function SetupPage() {
   } else if (signedIn) {
     body = (
       <div className="space-y-4">
-        <SignedIn session={signedIn} onSignOut={() => signOut.mutate()} signingOut={signOut.isPending} />
+        <SignedIn session={signedIn} onSignOut={() => signOut.mutate()} signingOut={signOut.isPending} forThisTab={crossOrigin} />
         {signOut.isError ? <Failure error={signOut.error} claiming={false} /> : null}
       </div>
     );
@@ -240,9 +229,9 @@ export function SetupPage() {
           {cookieLost ? (
             <DegradedState
               title="This browser did not keep the session"
-              reason="The proxy accepted the sign-in, but the dashboard reaches it on another origin (DASHBOARD_API_BASE), where session cookies are not used."
+              reason="The proxy accepted the sign-in, but the browser did not keep its session cookie (cookies are blocked for this site, or a secure cookie on an http address)."
               stillWorks="Keys still work for API calls: send one in X-TrustAgent-Key."
-              action={<p className="text-sm text-fg-muted">Serve the dashboard and the proxy on one origin to sign in here.</p>}
+              action={<p className="text-sm text-fg-muted">Allow cookies for this site, or open the dashboard at its public URL, then sign in again.</p>}
             />
           ) : null}
           {signIn.isError ? <Failure error={signIn.error} claiming={claiming} /> : null}
