@@ -149,7 +149,7 @@ describe('Overview page', { timeout: 20_000 }, () => {
   it('opens the Savings tab from the deep link', async () => {
     renderPage('/app/savings');
     expect(await screen.findByRole('tab', { name: 'Savings', selected: true })).toBeInTheDocument();
-    expect(await screen.findByText(/Arrives in P4/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: /^Your cost: \$0\.80 per 1,000 answers/ })).toBeInTheDocument();
   });
 
   it('has no axe violations', async () => {
