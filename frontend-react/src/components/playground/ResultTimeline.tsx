@@ -2,13 +2,16 @@
  * What happened to a Playground request, in order (SPEC §3.3 Playground): your model's answer,
  * the fast check's decision, what your app received (the block message or a fallback answer in
  * place of the model's, next to it; and every response header the run returned), and the deep
- * audit, which keeps updating from the live stream until it finishes.
+ * audit, which keeps updating from the live stream until it finishes. A streamed run also says
+ * when the first token arrived and when the fast check decided (D69: possibly before the answer
+ * finished), as measured in this browser.
  */
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Bot, Gavel, Inbox, Search } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { RiskBar, RiskBarLegend } from '@/components/charts/RiskBar';
 import { CodeBlock } from '@/components/common/CodeBlock';
+import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { Spinner } from '@/components/ui/spinner';
 import { AuditState } from '@/components/outcome/AuditState';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
@@ -29,6 +32,16 @@ import { cn } from '@/lib/cn';
 import type { GateAction, GateDecisionView, PlaygroundResult, TraceAuditStatus } from '@/types/api';
 import { deliveredAction, receivedCaption } from './playgroundModel';
 
+/** When a streamed run's events arrived, in ms after the request was sent (null: not yet). */
+export interface RunTiming {
+  /** Time to first token. */
+  firstTokenMs: number | null;
+  /** When the fast check's decision arrived. */
+  decisionMs: number | null;
+  /** More of the answer streamed after the decision: the check decided before the answer ended. */
+  decidedMidStream: boolean;
+}
+
 export interface TimelineState {
   mode: 'chat' | 'audit';
   /** Streamed text so far (chat mode with streaming). */
@@ -36,6 +49,21 @@ export interface TimelineState {
   decision: GateDecisionView | null;
   result: PlaygroundResult | null;
   running: boolean;
+  /** The answer came as token events. */
+  streamed?: boolean;
+  timing?: RunTiming;
+}
+
+const BROWSER_BASIS = 'Measured in this browser from sending the request, so it includes the network to the gateway.';
+
+/** "First token after 340 ms" or "Decided after 820 ms, …", with its value label. */
+function Timing({ text, subject }: { text: string; subject: string }) {
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted tabular">
+      <span>{text}</span>
+      <EvidenceBadge label="measured" basis={BROWSER_BASIS} subject={subject} />
+    </p>
+  );
 }
 
 function Step({
@@ -209,8 +237,10 @@ function DeepAudit({ result }: { result: PlaygroundResult }) {
 }
 
 export function ResultTimeline({ state }: { state: TimelineState }) {
-  const { mode, tokens, decision, result, running } = state;
+  const { mode, tokens, decision, result, running, streamed = false, timing } = state;
   const d = result?.decision ?? decision;
+  const firstToken = streamed && timing?.firstTokenMs != null ? timing.firstTokenMs : null;
+  const decidedAt = streamed && timing?.decisionMs != null ? timing.decisionMs : null;
   return (
     <ol aria-label="What happened to the request" className="min-w-0">
       <Step
@@ -225,9 +255,16 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
             HTTP {String(result.upstream.status)} · {formatDurationMs(result.upstream.ms)}
           </p>
         ) : null}
+        {firstToken !== null ? <Timing text={`First token after ${formatDurationMs(firstToken)}`} subject="Time to first token" /> : null}
         {tokens && !result ? <p className="rounded-md border border-border bg-surface px-3 py-2 text-md whitespace-pre-wrap text-fg">{tokens}</p> : null}
       </Step>
       <Step icon={Search} title={copy.tiers.fast_check} status={d ? 'done' : running ? 'active' : 'waiting'}>
+        {decidedAt !== null ? (
+          <Timing
+            text={`Decided after ${formatDurationMs(decidedAt)}${timing?.decidedMidStream ? ', while the answer was still streaming' : ''}`}
+            subject="When the fast check decided"
+          />
+        ) : null}
         {d ? <DecisionView d={d} delivered={deliveredAction(result)} /> : running ? <p className="text-sm text-fg-muted">Checking the answer…</p> : null}
       </Step>
       <Step icon={Inbox} title="What your app received" status={result ? 'done' : running ? 'active' : 'waiting'}>

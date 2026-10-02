@@ -102,8 +102,13 @@ interface ScenarioJson {
 /** The roles the form's message picker offers. */
 const FORM_ROLES: ReadonlySet<string> = new Set<ChatMessage['role']>(['system', 'user', 'assistant']);
 
-/** Scenario phase tags after P3, the phase of the gateway this dashboard ships with: not served yet. */
-const LATER_PHASES: ReadonlySet<string> = new Set(['p4', 'p5']);
+/** Scenario phase tags after P4, the phase of the gateway this dashboard ships with: not served yet. */
+const LATER_PHASES: ReadonlySet<string> = new Set(['p5']);
+
+export interface ExampleOptions {
+  /** The knowledge add-on is on (`status.knowledge.enabled`): its scenarios have documents to find. */
+  knowledge?: boolean;
+}
 
 /**
  * Whether the form holds a scenario's request exactly (contracts/README.md: a consumer picks the
@@ -111,17 +116,16 @@ const LATER_PHASES: ReadonlySet<string> = new Set(['p4', 'p5']);
  * non-streaming OpenAI chat body of only `model` and `messages`, each message plain text with a role
  * the form offers, on a route the running gateway already serves. That leaves out Anthropic system
  * blocks, a completions `prompt`, tool calls (`content: null`), `developer` messages, the
- * `trustagent` extension, the `knowledge` scenarios and any tagged with a phase after P3. The P3
- * gateway enforces block and fallback, so the `p3` scenarios on those routes (payments-fallback)
- * are examples too.
+ * `trustagent` extension and any scenario tagged with a phase after P4. The `knowledge` scenarios
+ * are examples only while the knowledge add-on is on, since their documents come from it.
  */
-function formHolds(s: ScenarioJson): boolean {
+function formHolds(s: ScenarioJson, options: ExampleOptions): boolean {
   const { messages, ...rest } = s.request;
   return (
     s.api_format === 'openai_chat' &&
     !s.stream &&
     !s.sets.some((tag) => LATER_PHASES.has(tag)) &&
-    !s.sets.includes('knowledge') &&
+    (options.knowledge === true || !s.sets.includes('knowledge')) &&
     Object.keys(rest).every((k) => k === 'model') &&
     Array.isArray(messages) &&
     messages.every((m) => FORM_ROLES.has(m.role) && typeof m.content === 'string')
@@ -134,14 +138,10 @@ export interface PlaygroundExample {
   form: PlaygroundForm;
 }
 
-/**
- * The demo scenarios the form holds, as audit-mode examples: no upstream model is needed to try them. Each keeps
- * its scenario id until the viewer edits what the scenario scripts (the conversation, documents,
- * answer, mode or route), so a demo stack plays it exactly as trafficgen does.
- */
-export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown as { scenarios: ScenarioJson[] }).scenarios
-  .filter(formHolds)
-  .map((s) => ({
+const SCENARIOS = (scenarioPack as unknown as { scenarios: ScenarioJson[] }).scenarios;
+
+function toExample(s: ScenarioJson): PlaygroundExample {
+  return {
     id: s.id,
     title: s.title,
     form: {
@@ -153,7 +153,23 @@ export const EXAMPLES: readonly PlaygroundExample[] = (scenarioPack as unknown a
       response: s.response,
       scenario: s.id,
     },
-  }));
+  };
+}
+
+const WITHOUT_KNOWLEDGE: readonly PlaygroundExample[] = SCENARIOS.filter((s) => formHolds(s, {})).map(toExample);
+const WITH_KNOWLEDGE: readonly PlaygroundExample[] = SCENARIOS.filter((s) => formHolds(s, { knowledge: true })).map(toExample);
+
+/**
+ * The demo scenarios the form holds, as audit-mode examples: no upstream model is needed to try them. Each keeps
+ * its scenario id until the viewer edits what the scenario scripts (the conversation, documents,
+ * answer, mode or route), so a demo stack plays it exactly as trafficgen does.
+ */
+export function playgroundExamples(options: ExampleOptions = {}): readonly PlaygroundExample[] {
+  return options.knowledge ? WITH_KNOWLEDGE : WITHOUT_KNOWLEDGE;
+}
+
+/** The examples of a stack without the knowledge add-on. */
+export const EXAMPLES: readonly PlaygroundExample[] = WITHOUT_KNOWLEDGE;
 
 /** A response header by name, case-insensitively. */
 export function headerValue(headers: Record<string, string>, name: string): string | null {
