@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "no-id-reference",
-  "status": "draft",
+  "status": "frozen",
   "description": "The false criterion mentions another question by its question id (groundedness__v1). Questions are independent, so question ids must never appear in question text: hard-rule error no_id_reference.",
   "input": {
     "spec": {

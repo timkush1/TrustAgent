@@ -1,0 +1,36 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "lookup-provider-match-beats-override",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "An OpenRouter override for *jev* does not price TypeSafe-direct Jev: the provider's own contracts entry (jev-*) is found first, even below an override.",
+  "input": {
+    "fn": "price_lookup",
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "overrides": [
+      {"match": "*jev*", "provider": "openrouter", "input_per_mtok": 0.05, "output_per_mtok": 0}
+    ],
+    "contracts": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {
+    "entry": {
+      "input_per_mtok": 0.042,
+      "match": "jev-*",
+      "output_per_mtok": 0,
+      "provider": "typesafe"
+    },
+    "price_table_version": "2026-09-27"
+  }
+}
