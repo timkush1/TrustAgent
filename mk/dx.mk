@@ -33,6 +33,13 @@ E2E_PHASE     ?=
 # all: every answer comes from mock-upstream through the upstream path (no
 # test_response); none: scripted answers, as in the demo.
 E2E_UPSTREAM  ?= all
+
+# The onboarding stack (docker-compose.onboarding.yml, P4 D70): the e2e stack with no admin key and
+# no decision-model key, so the dashboard opens on the setup wizard. `down -v` on the way out.
+ONBOARDING_PROJECT ?= truthtable-onboarding
+ONBOARDING_COMPOSE  = $(COMPOSE) -p $(ONBOARDING_PROJECT) -f docker-compose.yml -f docker-compose.e2e.yml \
+	-f docker-compose.onboarding.yml --profile e2e
+ONBOARDING_BUILD   ?= --build
 # trafficgen flags shared by the scenario targets.
 TRAFFICGEN_CHECK = /trafficgen --once --expect --base-url http://127.0.0.1:8080
 # Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
@@ -112,6 +119,26 @@ e2e-down: ## Stop the e2e stack and delete its volumes (it holds test data only)
 	$(E2E_COMPOSE) down --volumes --remove-orphans
 	@echo "✅ E2E stack and its volumes removed"
 
+##@ Onboarding stack (a fresh install: setup wizard, Connect OpenRouter on mock-upstream)
+
+onboarding-up: ## Start the onboarding stack (no admin key, no fast-check key, vendors on mock-upstream), wait until healthy
+	$(PYTHON) scripts/configure.py --ensure
+	$(ONBOARDING_COMPOSE) up -d $(ONBOARDING_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT)
+	@echo "✅ Onboarding stack running (project $(ONBOARDING_PROJECT): no admin and no keys yet, every vendor is mock-upstream, \$$0)"
+	@echo "   Setup link: make -s onboarding-setup-url   Stop: make onboarding-down"
+
+onboarding-setup-url: ## Print only a new one-time setup URL of the onboarding stack (for TRUSTAGENT_SETUP_URL: make -s onboarding-setup-url)
+	@$(PYTHON) scripts/setup_url.py --url-only --project $(ONBOARDING_PROJECT) $(SETUP_URL_ARGS)
+
+onboarding-logs: ## Follow the onboarding stack's logs (SERVICE=proxy for one service)
+	$(ONBOARDING_COMPOSE) logs -f $(SERVICE)
+
+onboarding-down: ## Stop the onboarding stack and delete its volumes (every run starts fresh)
+	$(ONBOARDING_COMPOSE) down -v --remove-orphans
+	@echo "✅ Onboarding stack and its volumes removed"
+
+##@ Logs, setup links and status
+
 logs: ## Follow the stack's logs (SERVICE=proxy for one service)
 	$(COMPOSE) logs -f $(SERVICE)
 
@@ -150,13 +177,14 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-compose-check: ## Validate the compose files: every profile and the demo, e2e and load overrides (docker compose config -q)
+compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding and load overrides (docker compose config -q)
 	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \
 	set -e; for p in $(COMPOSE_CHECK_PROFILES); do \
 		$(COMPOSE) $${p:+--profile "$$p"} config -q; echo "compose config ok: profile $${p:-default}"; \
 	done; \
 	$(DEMO_COMPOSE) config -q; echo "compose config ok: demo override"; \
 	$(E2E_COMPOSE) config -q; echo "compose config ok: e2e override"; \
+	$(ONBOARDING_COMPOSE) config -q; echo "compose config ok: onboarding override"; \
 	$(LOAD_COMPOSE) config -q; echo "compose config ok: load override"; \
 	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) config -q; echo "compose config ok: load override, slow fast check"
 
