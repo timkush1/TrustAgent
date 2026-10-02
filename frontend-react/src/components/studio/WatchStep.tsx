@@ -24,10 +24,11 @@ import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { evaluatorsQuery, policiesQuery, qkc } from '@/data/queries';
 import { useAppMode } from '@/data/useSystem';
-import { copy, studioSaveAndWatchLabel } from '@/domain/presentation';
+import { copy } from '@/domain/presentation';
 import { stageLabel } from '@/domain/controlPresentation';
 import { attachEvaluator, findEvaluator, refId, replaceEvaluatorRef, setEvaluatorStage, type RouteEvaluatorEntry } from '@/lib/studio/policyEdits';
 import type { EvaluatorSpec } from '@/types/api';
+import { studioSaveAndWatchLabel } from './studioWords';
 import { DryRunPanel } from './DryRunPanel';
 import { StudioStep } from './StudioStep';
 

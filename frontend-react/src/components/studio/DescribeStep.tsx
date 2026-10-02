@@ -19,12 +19,13 @@ import { Select } from '@/components/ui/select';
 import { STUDIO_DRAFT_MAX_CHARS } from '@/data/control/studioPlane';
 import { errorCodeHint, isApiError } from '@/data/errors';
 import { formatCount } from '@/domain/format';
-import { copy, judgeProviderLabel, studioCostLabel, studioLintTitle } from '@/domain/presentation';
+import { copy, judgeProviderLabel, studioLintTitle } from '@/domain/presentation';
 import { evaluatorCategoryLabel } from '@/domain/controlPresentation';
 import { draftSamples, draftToSpec } from '@/lib/studio/draftToSpec';
 import { draftEstimate } from '@/lib/studio/estimate';
 import { BLANK_TEMPLATE, blankSpec, specFromTemplate, STUDIO_TEMPLATES } from '@/lib/studio/templates';
 import type { EvaluatorSpec, StudioDraftResponse, StudioSample, SystemStatus } from '@/types/api';
+import { studioCostLabel } from './studioWords';
 import { CostFigure } from './CostFigure';
 import { StudioStep } from './StudioStep';
 

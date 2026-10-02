@@ -21,8 +21,9 @@ import { SegmentedControl } from '@/components/ui/segmented-control';
 import { STUDIO_DRY_RUN_MAX_SAMPLES } from '@/data/control/studioPlane';
 import { errorCodeHint, isApiError } from '@/data/errors';
 import { formatCount, formatRisk, formatUsd } from '@/domain/format';
-import { copy, levelWord, studioDryRunCancelledText, studioDryRunConfirmText, studioDryRunResultText } from '@/domain/presentation';
+import { copy, levelWord } from '@/domain/presentation';
 import type { DryRunResult, EvaluatorSpec, StudioDryRunEvent, StudioDryRunRequest } from '@/types/api';
+import { studioDryRunCancelledText, studioDryRunConfirmText, studioDryRunResultText } from './studioWords';
 import { CostFigure } from './CostFigure';
 
 type Estimate = Extract<StudioDryRunEvent, { event: 'estimate' }>['data'];

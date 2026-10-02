@@ -19,8 +19,8 @@ import { Select } from '@/components/ui/select';
 import { Tab, TabPanel, Tabs, TabsList } from '@/components/ui/tabs';
 import { STUDIO_TEST_MAX_SAMPLES } from '@/data/control/studioPlane';
 import { formatCount } from '@/domain/format';
-import { STUDIO_SAMPLE_FILTERS, studioExpectedWords, studioSampleFilterWords, type StudioSampleFilter } from '@/domain/presentation';
 import type { StudioSample } from '@/types/api';
+import { STUDIO_SAMPLE_FILTERS, studioExpectedWords, studioSampleFilterWords, type StudioSampleFilter } from './studioWords';
 
 type LabelValue = 'fire' | 'no_fire' | 'none';
 const LABELS: readonly { value: LabelValue; label: string }[] = [

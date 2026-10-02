@@ -15,7 +15,6 @@ import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { formatRisk } from '@/domain/format';
-import { studioCorroboratorName } from '@/domain/presentation';
 import {
   applySimpleForm,
   optionKeyProblem,
@@ -29,6 +28,7 @@ import {
   type SimpleOption,
 } from '@/lib/studio/simpleForm';
 import type { EvaluatorSpec } from '@/types/api';
+import { studioCorroboratorName } from './studioWords';
 
 const ANSWER_TYPES = [
   { value: 'yes_no', label: 'Yes/No' },

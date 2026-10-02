@@ -33,9 +33,10 @@ describe('Studio plane', () => {
     expect(api.callsTo('/api/studio/draft')[0].body).toEqual({ description: 'Blames the customer', route: 'support-bot' });
     expect(api.callsTo('/api/studio/draft')[0].headers.get('x-trustagent-csrf')).toBe('1');
 
-    const test = await p.testEvaluator({ ref: SPEC_REF, samples: [{ id: 's1', assistant_response: 'Hi' }] });
-    expect(test.results).toHaveLength(6);
-    expect(test.summary.n).toBe(6);
+    const test = await p.testEvaluator({ ref: SPEC_REF, samples: [{ id: 'mine', assistant_response: 'Hi', expected: 'no_fire' }] });
+    expect(test.results.map((r) => [r.sample_id, r.expected, r.agrees])).toEqual([['mine', 'no_fire', true]]);
+    expect(test.summary.n).toBe(1);
+    expect(api.callsTo('/api/studio/test')[0].body).toEqual({ ref: SPEC_REF, samples: [{ id: 'mine', assistant_response: 'Hi', expected: 'no_fire' }] });
 
     const samples = await p.getStudioSamples({ window: '7d', filter: 'flagged', limit: 20 });
     expect(samples.samples.map((s) => s.id)).toEqual(['t1', 't2']);
