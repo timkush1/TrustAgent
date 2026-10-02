@@ -368,6 +368,26 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     expect((await screen.findAllByText(copy.disabled_reasons.readonly)).length).toBeGreaterThan(0);
   });
 
+  it('says why keys cannot be saved without a credentials store, and still offers simulated checks (D32)', async () => {
+    renderPage('/app/setup?step=connect', {
+      control: createControlApi({ settings: unbound() }),
+      status: { ...fresh(), credentials: { store: 'unavailable', undecryptable: [] } },
+    });
+    expect(await screen.findByRole('button', { name: copy.setup.step_connect.primary })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: copy.setup.step_connect.paste_key })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText("Keys can't be saved yet")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: copy.setup.step_connect.simulated })).toHaveAttribute('aria-disabled', 'false');
+    stopLive();
+    document.body.innerHTML = '';
+
+    renderPage('/app/setup?step=connect', {
+      control: createControlApi({ settings: unbound() }),
+      status: { ...fresh(), credentials: { store: 'no_database', undecryptable: [] } },
+    });
+    expect(await screen.findByRole('button', { name: copy.setup.step_connect.simulated })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getAllByText(copy.disabled_reasons.needs_database).length).toBeGreaterThan(0);
+  });
+
   it('has no axe violations', async () => {
     const { container } = renderPage('/app/setup?step=connect', { control: createControlApi({ settings: unbound() }), status: fresh() });
     await panel(copy.setup.step_connect.title);

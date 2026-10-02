@@ -18,6 +18,7 @@ import { DisabledAction, DisabledReason, type Reason } from '@/components/common
 import { CredentialResult } from '@/components/settings/CredentialResult';
 import { EnvManagedNote, ProblemNote } from '@/components/settings/SettingsKit';
 import { usePutCredential, useVerifyCredential } from '@/components/settings/useCredentialWrites';
+import { useCredentialWriteReason } from '@/components/settings/useSettingsAccess';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -72,9 +73,13 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
 
   const envKey = progress.status?.decision_model.credential.source === 'env';
   const openrouterEnv = envKey && progress.status?.decision_model.credential.name === 'openrouter';
-  const keyReason: Reason | null = writeReason ?? (openrouterEnv ? 'env_managed' : null);
+  // Saving a key also needs the credentials store (D32): a database and a master key.
+  const credentialReason = useCredentialWriteReason();
+  const keyReason: Reason | null = writeReason ?? credentialReason ?? (openrouterEnv ? 'env_managed' : null);
   const simPatch = simulatedPatch(settings?.env_managed ?? []);
-  const simReason: Reason | null = writeReason ?? (!settings ? { text: 'Reading the settings…' } : simPatch ? null : 'env_managed');
+  const noDatabase = progress.status?.credentials.store === 'no_database';
+  const simReason: Reason | null =
+    writeReason ?? (noDatabase ? 'needs_database' : !settings ? { text: 'Reading the settings…' } : simPatch ? null : 'env_managed');
   const reasonId = useId();
 
   const record = (result: CredentialWriteResult, wasSimulated: boolean) => setOutcome({ result, wasSimulated });
