@@ -136,4 +136,15 @@ func TestNewSetupTokenCLIPostgres(t *testing.T) {
 	if _, _, err := a.Setup().Claim(ctx, strings.TrimSpace(strings.TrimPrefix(out, prefix))); err != nil {
 		t.Errorf("claim the recovery token: %v", err)
 	}
+	// Each CLI mint is in the admin audit log (D44): the normal one and the forced recovery token,
+	// with when they expire, never the token or its hash.
+	mints := readAudit(t, schema, "setup_token.mint")
+	if len(mints) != 2 || mints[0].Actor != "cli" || mints[0].Diff["forced"] != false || mints[1].Diff["forced"] != true {
+		t.Fatalf("setup_token.mint rows %+v", mints)
+	}
+	for _, m := range mints {
+		if _, ok := m.Diff["expires_at"]; !ok || len(m.Diff) != 2 {
+			t.Errorf("mint diff %v: expires_at and forced only", m.Diff)
+		}
+	}
 }
