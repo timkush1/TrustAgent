@@ -321,3 +321,56 @@ func TestResolveSources(t *testing.T) {
 		}
 	}
 }
+
+// TestRevokeKeyKeepsTheLastAdminKey (D81): without an env admin key the last active admin api key
+// is not revoked; another admin key, or an env admin key, lets it go.
+func TestRevokeKeyKeepsTheLastAdminKey(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, func(o *Options) { o.Keys = o.Keys[:2] }) // app and viewer: no env admin
+	_, readerID := f.mint(t, "dash-reader", ScopeRead)
+	_, first := f.mint(t, "ops", ScopeAdmin)
+	if _, err := f.a.RevokeKey(ctx, readerID, "test"); err != nil {
+		t.Fatalf("a key without the admin scope: %v", err)
+	}
+	if _, err := f.a.RevokeKey(ctx, first, "test"); !errors.Is(err, ErrLastAdminKey) {
+		t.Fatalf("the last admin key: %v", err)
+	}
+	_, second := f.mint(t, "ops-2", ScopeAdmin)
+	if _, err := f.a.RevokeKey(ctx, first, "test"); err != nil {
+		t.Fatalf("with another admin key: %v", err)
+	}
+	if _, err := f.a.RevokeKey(ctx, second, "test"); !errors.Is(err, ErrLastAdminKey) {
+		t.Errorf("ops-2 is the last now: %v", err)
+	}
+	if _, err := f.a.RevokeKey(ctx, first, "test"); err != nil {
+		t.Errorf("revoking a revoked key is not an error: %v", err)
+	}
+
+	withEnv := newFixture(t, nil) // root is an env admin key
+	_, only := withEnv.mint(t, "ops", ScopeAdmin)
+	if _, err := withEnv.a.RevokeKey(ctx, only, "test"); err != nil {
+		t.Errorf("with an env admin key: %v", err)
+	}
+}
+
+// TestAuditSignIn: a sign-in is recorded with the caller and its scopes (session.sign_in, D44).
+func TestAuditSignIn(t *testing.T) {
+	f := newFixture(t, nil)
+	id, err := f.a.AuthenticateContext(context.Background(), viewerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.a.AuditSignIn(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	got := f.st.Audit[len(f.st.Audit)-1]
+	if got.Action != "session.sign_in" || got.Actor != "viewer" || got.Target != "viewer" {
+		t.Errorf("audit %+v", got)
+	}
+	if scopes, _ := got.Diff.(map[string]any)["scopes"].([]string); len(scopes) != 2 {
+		t.Errorf("scopes %v", got.Diff)
+	}
+	if err := newFixture(t, func(o *Options) { o.Store = nil }).a.AuditSignIn(context.Background(), id); err != nil {
+		t.Errorf("without a store: %v", err)
+	}
+}

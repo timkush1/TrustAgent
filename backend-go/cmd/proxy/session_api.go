@@ -256,6 +256,12 @@ func (h *authzAPI) createSession(c *gin.Context) {
 		abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "The session cannot be started right now.")
 		return
 	}
+	if !hasToken {
+		// An interactive sign-in with a key is audited (D44); the setup claim has its own row.
+		if err := h.auth.AuditSignIn(ctx, id); err != nil {
+			h.log.Warn("sign-in not recorded in the admin audit log", "actor", id.Label, "err", err)
+		}
+	}
 	http.SetCookie(c.Writer, cookie)
 	noStore(c)
 	c.JSON(http.StatusOK, h.info(sess, created))
