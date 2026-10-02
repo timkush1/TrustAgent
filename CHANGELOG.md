@@ -8,6 +8,33 @@ RAG by default), Evaluator Studio, and a redesigned dashboard. The full
 specification is [docs/v2/SPEC.md](docs/v2/SPEC.md); progress is tracked by
 phase (P0 → P7).
 
+### Breaking changes (P4)
+- **CORS allows exactly the SPEC request headers (D43).** A cross-origin browser
+  may send `Content-Type`, `If-Match`, `X-TrustAgent-Key`, `X-TrustAgent-CSRF`,
+  `X-TrustAgent-Route`, `X-TrustAgent-Mode` and `X-Request-ID`; `Authorization`
+  and `X-API-Key` are no longer allowed cross-origin, so such a preflight fails.
+  Browser clients send their key as `X-TrustAgent-Key`. SDK and server clients
+  are unaffected: the gateway still reads `Authorization: Bearer` and
+  `X-API-Key` on `/api` (and on `/v1` in inject mode).
+- **Upstream keys are environment or credential store only (D35).**
+  `TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY` and
+  `TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY` are not runtime settings; the
+  dashboard keeps such keys as the encrypted `upstream-anthropic` and
+  `upstream-fallback` credentials. No secret registry key may be runtime
+  settable (`contracts/validate.mjs` refuses it). New compose key
+  `MOCK_UPSTREAM_HOST_PORT` (default 18090).
+- **Credential writes return `CredentialWriteResult` (D75).**
+  `PUT /api/credentials/:name`, `POST /api/credentials/:name/verify` and
+  `POST /api/connect/openrouter/complete` answer
+  `{credential, stored, bindings: {applied, skipped}, verification}` (complete
+  adds `return_to`) instead of a bare `CredentialView`. Bindings apply only when
+  the key's check passes; a failed check never replaces a key in use.
+- **The engine implements `ApplyRuntimeConfig` and `DraftEvaluator`.** The
+  gateway pushes its runtime settings (judge, the judge's key, prices) as
+  `(epoch, version)`, and the Studio drafts through the engine. An engine from
+  before this phase answers `UNIMPLEMENTED`: the gateway logs one warning and
+  retries, but the dashboard judge and Studio drafts need both upgraded.
+
 ### Breaking changes (P3)
 - **Metric renames (M11).** Both services exported the same `trustagent_*`
   names, so Prometheus counted every audit twice. The engine's metrics are now
@@ -189,6 +216,83 @@ phase (P0 → P7).
   [docs/EVALUATORS.md](docs/EVALUATORS.md); the README and
   [docs/DEMO.md](docs/DEMO.md) describe 2.0.
 
+### Added (P4: security, credentials, Studio, ROI)
+- **Keys in the dashboard.** **Connect OpenRouter** (self-hosted PKCE: the
+  verifier and the key never reach the browser) and **Paste a key** for
+  OpenRouter, TypeSafe, Anthropic, OpenAI, a compatible gateway and the
+  upstreams. Keys are sealed with AES-256-GCM under the master key, with the
+  name, provider and allowed origins as authenticated data; every outbound call
+  checks the destination origin first. Each key is checked with its provider
+  before use (OpenRouter: key lookup plus one probe; a 402 stores it unbound with
+  "no credits"). A non-empty environment value always wins and is read-only in
+  the dashboard. Endpoints: `GET /api/credentials`,
+  `PUT|DELETE /api/credentials/:name` (deleting a key that fail-closed routes
+  depend on needs `?confirm=true`), `POST /api/credentials/:name/verify`,
+  `POST /api/connect/openrouter/start|complete`, `POST /api/decision-model/test`.
+- **Runtime settings.** `GET /api/settings` and `PATCH /api/settings`
+  (`If-Match: "s<version>"`; 428 without it, 412 when stale, 409 `env_managed`):
+  the decision model, the judge, upstreams, bindings, budgets and price
+  overrides apply without a restart and are pushed to the engine. **Try it
+  without a key (simulated checks, $0)** switches both checks to mocks, labelled
+  Simulated everywhere, and turns off by itself when a key is bound.
+- **Access.** `GET|POST /api/keys`, `DELETE /api/keys/:id` (the last admin key
+  cannot be revoked), `DELETE /api/session?all=true` (sign out everywhere), and
+  the append-only admin audit log (`GET /api/admin/audit-log`) of setup,
+  sign-ins, keys, settings, credentials, evaluators, calibrations, Studio
+  dry-runs, uploads and exports. Redaction covers every received or decrypted
+  key in Go logs and errors, gRPC and WS status details, upstream error bodies
+  relayed in inject mode, and every root log handler of the engine.
+- **Costs and budgets.** A cost ledger records every decision call (hedge losers
+  included) and every judge call, linked to its trace or audit, with its source
+  (reported, estimated or simulated; simulated never counts). The daily budgets
+  reserve before a call and settle after it; the deep-audit budget is hard in
+  every lane (`POST /api/audit` answers 503 `budget_exhausted`, sampled audits
+  are dropped with `audit_dropped{reason: llm_budget}`). Savings and ROI:
+  `GET /api/roi/summary`, `GET /api/roi/timeseries`; `GET /api/pricing` serves
+  the effective table (overrides, then `TRUTHTABLE_PRICE_TABLE_FILE`, then the
+  contracts). Metrics `spend_reserved_usd{kind}` and `cost_write_dropped_total`.
+- **Evaluator Studio and calibration.** `POST /api/studio/draft|test|samples|calibrate`
+  and the paid `POST /api/studio/dry-run` (SSE, with an estimate and a
+  confirmation above `TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD`); evaluator writes
+  (`POST /api/evaluators`, `/api/evaluators/:id/versions`, `/archive`) validated
+  by the Go linter, the reference for the TypeScript one; labels
+  (`PUT|DELETE /api/labels`, `GET /api/labels/queue`); calibrations stored in
+  the database (`GET|POST /api/calibration`, `POST /api/calibration/fit`,
+  `/:id/activate`, `/:id/deactivate`) and the adopt flow, with
+  `calibration_ids` in `POST /api/policies/dry-run` for a free preview.
+  `GET /api/traces/:id/decision-request` recompiles the exact Jev request (the
+  glass box); `GET /api/evidence/suggestions` proposes evidence patterns.
+- **WebSocket events:** `credentials_changed {name, action, fingerprint}`
+  (the fingerprint only, never the key), `settings_updated {version, keys}`,
+  `evaluator_updated` on an archive change, and `status {component: "budget"}`
+  naming the cap (`decision`, `llm` or both).
+- **Gateway (P3 leftovers).** Traces are written in ordered batches by default
+  (`TRUTHTABLE_TRACE_FLUSH=async`; a 2,000-trace memory copy serves reads
+  meanwhile); knowledge retrieval runs alongside the upstream call within
+  `TRUTHTABLE_KNOWLEDGE_DEADLINE`; `/v1/models` goes to the Anthropic upstream
+  for Anthropic clients; the Playground streams chat answers from the upstream;
+  `GET /api/traces?reason=` filters by gate reason.
+- **`/api/status`** adds the credential store's state and undecryptable keys,
+  real spend against both budgets, the settings version and epoch the engine
+  applied, and the warnings `master_key_changed` and `fail_closed_unprotected`.
+- **Migration 0005**: cost-event links (`audit_id`, `hedge`, `late`,
+  `estimated`), `traces.response_chars`, unique file calibrations, and the
+  append-only trigger on `admin_audit_log`.
+- **Developer experience (P4):** `make configure WITH_SECRETS=1` asks for the
+  vendor keys at hidden prompts (never echoed, `.env` mode 0600);
+  `make onboarding-up` / `onboarding-setup-url` / `onboarding-down` run a fresh
+  install (no admin, no keys) against mock-upstream's OpenRouter, which CI walks
+  with the onboarding spec; `make doctor` adds the credential store, the
+  engine's settings version, the judge's key source and today's budgets;
+  Grafana gains a Spend row; nginx never logs `/connect/callback`; gitleaks scans
+  the whole history in CI (`.gitleaks.toml`); `make gen-evaluator-validator`;
+  images carry their git revision (`GIT_SHA`), so `GET /api/export/replay`
+  names it. [docs/SECURITY.md](docs/SECURITY.md) and
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) are rewritten for 2.0;
+  [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md), [docs/GATEWAY.md](docs/GATEWAY.md),
+  [docs/EVALUATORS.md](docs/EVALUATORS.md) and the getting-started and demo
+  guides cover the new pages.
+
 ### Changed
 - **Scoring v2** (ADR-001 in [docs/DECISIONS.md](docs/DECISIONS.md)): per-claim
   verdict distributions, flags, `p_hallucinated`, coverage and a trust score that
@@ -232,6 +336,20 @@ phase (P0 → P7).
   to an existing audit.
 
 ### Migration notes
+- **Before saving keys in the dashboard,** back up the `trustagent-secrets`
+  volume or set `TRUTHTABLE_SECRET_KEY` in `.env`: saved keys decrypt only with
+  the master key they were sealed with, and a Postgres backup alone means
+  entering them again ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
+- **Migration 0005** applies at proxy start and, like 0002-0004, has no
+  downgrade. Upgrade the proxy and the engine together.
+- **Production origins:** the default `TRUTHTABLE_ALLOWED_ORIGINS` includes
+  `http://localhost:5173` for the Vite dev server; set the variable explicitly
+  in production.
+- **Cross-origin browser clients** that sent `Authorization` or `X-API-Key` send
+  `X-TrustAgent-Key` instead (CORS above).
+- **Several proxy replicas** need sticky sessions for Connect OpenRouter (its
+  nonce lives in one process for 10 minutes), and each enforces the budgets on
+  its own between 60 s resyncs.
 - **Metrics:** replace the 1.0 names in dashboards and alerts using the table
   under *Breaking changes (P3)*, and add a `job` filter to every query
   (`config/grafana/dashboards/trustagent.json` shows the pattern). The
