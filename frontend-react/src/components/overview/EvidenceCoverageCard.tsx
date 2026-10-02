@@ -3,22 +3,31 @@
  * only be judged against documents the request carried, so the card explains the rest in a
  * "Why not?" panel: which sources supplied documents, why the other requests had none, suggested
  * fixes from the proxy (admin, when it serves them), and the `trustagent.context` snippet that
- * attaches documents to any request.
+ * attaches documents to any request. A suggested tag pattern goes into a route's
+ * `evidence.tag_patterns` in one step: it becomes a policy draft and opens the policy review (diff,
+ * validation, Preview impact) right here, and nothing changes until it is saved.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, FileSearch } from 'lucide-react';
-import { useId, useState } from 'react';
+import { ChevronDown, FilePlus2, FileSearch } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { CopyButton } from '@/components/common/CopyButton';
 import { DegradedState } from '@/components/common/DegradedState';
+import { DisabledAction } from '@/components/common/DisabledReason';
 import { Term } from '@/components/common/Term';
+import { useWriteReason } from '@/components/common/useWriteAccess';
+import { addTagPattern, DraftError, draftRouteNames } from '@/components/policies/policyDraft';
+import { ReviewSaveDialog } from '@/components/policies/ReviewSaveDialog';
+import { policyWriteReason, routeTitle } from '@/components/policies/routeWords';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/data/errors';
-import { evidenceCoverageQuery, evidenceSuggestionsQuery } from '@/data/queries';
+import { evaluatorsQuery, evidenceCoverageQuery, evidenceSuggestionsQuery, isNotServed, policiesQuery } from '@/data/queries';
+import { useAppMode } from '@/data/useSystem';
 import { formatCount } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import { formatPercent } from '@/domain/rates';
@@ -69,9 +78,94 @@ function Gaps({ summary }: { summary: CoverageSummary }) {
   );
 }
 
+/**
+ * "Add to a route": the suggested pattern goes into a draft of the current policy, then into the
+ * policy review (ReviewSaveDialog), which validates it, replays past answers and saves it.
+ */
+function AddPatternAction({ pattern }: { pattern: NonNullable<EvidenceSuggestion['pattern']> }) {
+  const ds = useDataSource();
+  const { demo } = useAppMode();
+  const instanceReason = useWriteReason('admin');
+  const postReason = useWriteReason('post');
+  const policies = useQuery({ ...policiesQuery(ds), retry: false });
+  const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
+  const names = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
+  const [route, setRoute] = useState('default');
+  const [draft, setDraft] = useState<{ yaml: string; baseEtag: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (policies.isPending) return <Skeleton className="h-8 w-48" />;
+  if (policies.isError) {
+    return isNotServed(policies.error) ? (
+      <Link to="/app/policies" className="text-xs font-medium text-fg underline underline-offset-2">
+        Add it to a route’s evidence.tag_patterns
+      </Link>
+    ) : (
+      <p className="text-xs text-fg-muted">The policy could not be read, so the pattern cannot be added here: {policies.error.message}</p>
+    );
+  }
+  const state = policies.data;
+  const writeReason = policyWriteReason(state, instanceReason);
+  const routes = draftRouteNames(state.yaml);
+
+  const review = () => {
+    setError(null);
+    try {
+      setDraft({ yaml: addTagPattern(state.yaml, route, pattern), baseEtag: state.etag });
+    } catch (err) {
+      setError(err instanceof DraftError ? err.message : String(err));
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          aria-label="Route for this pattern"
+          value={route}
+          onValueChange={(v) => v && setRoute(v)}
+          options={routes.map((r) => ({ value: r, label: r === 'default' ? 'Default route (every route without its own list)' : routeTitle(r) }))}
+          className="w-64"
+        />
+        <DisabledAction reason={writeReason}>
+          {(p) => (
+            <Button size="sm" onClick={review} {...p}>
+              <FilePlus2 aria-hidden="true" />
+              Add to this route…
+            </Button>
+          )}
+        </DisabledAction>
+      </div>
+      {error ? (
+        <p role="alert" className="text-xs text-fg">
+          {error}
+        </p>
+      ) : null}
+      {draft ? (
+        <ReviewSaveDialog
+          open
+          onOpenChange={(open) => !open && setDraft(null)}
+          state={state}
+          draftYaml={draft.yaml}
+          baseEtag={draft.baseEtag}
+          names={names}
+          writeReason={writeReason}
+          postReason={postReason}
+          simulated={demo}
+          onSaved={() => setDraft(null)}
+          onReloadLatest={() => {
+            setDraft(null);
+            void policies.refetch();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function SuggestionItem({ s }: { s: EvidenceSuggestion }) {
   return (
-    <li className="space-y-1 rounded-md border border-border px-3 py-2">
+    <li className="space-y-1.5 rounded-md border border-border px-3 py-2">
       <p className="text-sm font-medium text-fg">{s.label}</p>
       <p className="text-xs text-fg-muted">
         {formatCount(s.would_gain)} of your last {formatCount(s.sample)} requests would gain documents.
@@ -85,16 +179,14 @@ function SuggestionItem({ s }: { s: EvidenceSuggestion }) {
           <CopyButton value={s.pattern.pattern} label="Copy pattern" />
         </div>
       ) : null}
-      <p className="flex flex-wrap gap-x-3 text-xs">
-        <Link to="/app/policies" className="font-medium text-fg underline underline-offset-2">
-          Add it to a route’s evidence.tag_patterns
-        </Link>
-        {s.example_trace_id ? (
+      {s.pattern && s.kind === 'tag_pattern' ? <AddPatternAction pattern={s.pattern} /> : null}
+      {s.example_trace_id ? (
+        <p className="text-xs">
           <Link to="/app/traffic/$traceId" params={{ traceId: s.example_trace_id }} className="font-medium text-fg underline underline-offset-2">
             See an example request
           </Link>
-        ) : null}
-      </p>
+        </p>
+      ) : null}
     </li>
   );
 }
