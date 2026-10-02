@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/websocket"
 )
 
 // Status-event components (api.ts WsEvent status).
@@ -18,7 +21,7 @@ const (
 	componentBudget        = "budget"
 )
 
-// Decision budget states of the budget component.
+// Budget states of the budget component (the worse of the two caps, D49).
 const (
 	budgetOK          = "ok"
 	budgetReserveOnly = "reserve_only"
@@ -96,9 +99,38 @@ func (s *server) watchStatus() {
 	}
 	st := s.status.jevStatus()
 	s.hub.PublishStatus(componentDecisionModel, s.status.decisionModel().State, decisionModelDetail(st))
-	if state, detail, ok := budgetState(st.Spend); ok {
-		s.hub.PublishStatus(componentBudget, state, detail)
+	if state, detail, ok := s.budgetStatus(st.Spend); ok {
+		s.publishBudget(state, detail)
 	}
+}
+
+// lastBudgetDetail remembers, per hub, the detail of the last budget status broadcast. The hub
+// deduplicates status events by state alone, and D49 needs a change of the caps named at the same
+// state (the LLM cap exhausted, then the decision cap too) to reach the web, which refetches
+// /api/status on every budget event.
+var lastBudgetDetail sync.Map // *websocket.Hub → string
+
+// publishBudget broadcasts the budget status when its state or the caps it names changed.
+func (s *server) publishBudget(state, detail string) {
+	prev, seen := lastBudgetDetail.Load(s.hub)
+	if s.hub.PublishStatus(componentBudget, state, detail) {
+		lastBudgetDetail.Store(s.hub, detail)
+		return
+	}
+	if !seen || prev == detail {
+		return
+	}
+	data := map[string]string{"component": componentBudget, "state": state}
+	if detail != "" {
+		data["detail"] = detail
+	}
+	ev, err := websocket.NewEvent("status", "", data, nil)
+	if err != nil {
+		s.log.Error("ws: event does not marshal", "type", "status", "component", componentBudget, "err", err)
+		return
+	}
+	lastBudgetDetail.Store(s.hub, detail)
+	s.hub.Publish(ev)
 }
 
 // decisionModelDetail is the last error's message while the decision model is not working.
@@ -113,29 +145,81 @@ func decisionModelDetail(st jev.Status) string {
 	return ""
 }
 
+// The caps a budget status names (D49).
+const (
+	capDecision = "decision"
+	capLLM      = "llm"
+)
+
+// budgetRank orders the budget states: a worse state outranks a better one.
+var budgetRank = map[string]int{budgetOK: 0, budgetReserveOnly: 1, budgetExhausted: 2}
+
+// budgetStatus is the WS status of the daily caps (P4-PLAN D49): the worse state of the decision
+// cap and the LLM cap (ok < reserve_only < exhausted), with detail naming the caps in that state
+// ("decision", "llm" or "decision,llm"; "" when both are ok). The cost ledger reports both caps;
+// without one the decision client's own budget reports the decision cap. ok is false when no cap
+// is kept at all. The web refetches /api/status on any budget event.
+func (s *server) budgetStatus(sp *jev.SpendStatus) (state, detail string, ok bool) {
+	type capState struct{ name, state string }
+	var caps []capState
+	if l := s.ledger(); l != nil {
+		v := l.Budgets()
+		caps = append(caps, capState{capDecision, ledgerBudgetState(v.Decision)}, capState{capLLM, ledgerBudgetState(v.LLM)})
+	} else if st, ok := budgetState(sp); ok {
+		caps = append(caps, capState{capDecision, st})
+	}
+	if len(caps) == 0 {
+		return "", "", false
+	}
+	state = budgetOK
+	for _, c := range caps {
+		if budgetRank[c.state] > budgetRank[state] {
+			state = c.state
+		}
+	}
+	if state == budgetOK {
+		return state, "", true
+	}
+	var names []string
+	for _, c := range caps {
+		if c.state == state {
+			names = append(names, c.name)
+		}
+	}
+	return state, strings.Join(names, ","), true
+}
+
+// ledgerBudgetState is a ledger cap's status: exhausted once the day's spend reaches the cap,
+// reserve_only once only enforcing calls still spend (the decision cap's observe line), else ok.
+func ledgerBudgetState(b costs.BudgetState) string {
+	switch {
+	case b.Exhausted:
+		return budgetExhausted
+	case b.ReserveOnly:
+		return budgetReserveOnly
+	}
+	return budgetOK
+}
+
 // budgetCapEps absorbs float rounding in the cap comparisons (jev's budgetEps).
 const budgetCapEps = 1e-8
 
-// budgetState is the decision model's daily budget as a status: exhausted once the day's spend
-// reaches the cap, reserve_only once observe and flag calls stop at (1 − reserve)·cap while
+// budgetState is the decision client's own daily budget as a status: exhausted once the day's
+// spend reaches the cap, reserve_only once observe and flag calls stop at (1 − reserve)·cap while
 // enforcing routes still spend the reserve, ok otherwise. ok is false when the client keeps no
 // budget.
 //
 // jev.SpendStatus.Exhausted is already true at that soft cap (it answers "may a non-enforcing
 // call spend?"), so only the spend against CapUSD says whether enforcing routes are still checked.
-func budgetState(sp *jev.SpendStatus) (state, detail string, ok bool) {
-	const (
-		exhausted   = "the decision model's daily budget is spent: checks are skipped until tomorrow (UTC)"
-		reserveOnly = "the decision budget's share for observe and flag routes is spent: only enforcing routes are checked"
-	)
+func budgetState(sp *jev.SpendStatus) (state string, ok bool) {
 	switch {
 	case sp == nil:
-		return "", "", false
+		return "", false
 	case sp.CapUSD > 0 && sp.SpentUSD >= sp.CapUSD-budgetCapEps, sp.CapUSD <= 0 && sp.Exhausted:
-		return budgetExhausted, exhausted, true
+		return budgetExhausted, true
 	case sp.CapUSD > 0 && sp.SoftCapUSD < sp.CapUSD-budgetCapEps &&
 		(sp.Exhausted || sp.SpentUSD+sp.ReservedUSD >= sp.SoftCapUSD-budgetCapEps):
-		return budgetReserveOnly, reserveOnly, true
+		return budgetReserveOnly, true
 	}
-	return budgetOK, "", true
+	return budgetOK, true
 }

@@ -192,6 +192,11 @@ func TestEvidenceCoverageAndRoi(t *testing.T) {
 	if now.Add(-9*time.Minute).Truncate(24*time.Hour) == now.Truncate(24*time.Hour) && math.Abs(sf.LLMSpentTodayUSD-0.01) > 1e-9 {
 		t.Errorf("llm spend today %v", sf.LLMSpentTodayUSD)
 	}
+	// The last 24 hours of decision calls (first attempts) and their real cost: the seeded rows
+	// within the day, simulated ones counted as calls but not as cost; the probe row counts too.
+	if sf.Decision24h.Calls != 6 || math.Abs(sf.Decision24h.CostUSD-(0.0027+0.5+0.3)) > 1e-9 {
+		t.Errorf("decision 24h %+v", sf.Decision24h)
+	}
 
 	if now.Add(-10*time.Minute).Truncate(24*time.Hour) != now.Truncate(24*time.Hour) {
 		return // the uniform trace was drawn yesterday (UTC)
