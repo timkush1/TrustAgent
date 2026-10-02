@@ -189,8 +189,13 @@ func TestCredentialLeakWithoutDatabase(t *testing.T) {
 	}
 	// A settings write without a database is refused; its error carries no secret either.
 	sink.call(env, http.MethodPatch, "/api/settings", leakAdminKey, []byte(`{"budgets":{"llm_usd_day":1}}`), "If-Match", `"s0"`)
+	refusal := false
 	for i, f := range env.wsFrames(t, 500) {
 		sink.add(fmt.Sprintf("WS frame %d", i), f)
+		refusal = refusal || isDecisionRefusalFrame(f)
+	}
+	if !refusal {
+		t.Fatal("no WS status frame carried the decision model's refusal, so the echo never reached the stream")
 	}
 	sink.add("the log", []byte(env.logText()))
 	sink.assertAbsent(noPatternSecret)
@@ -514,8 +519,13 @@ func TestCredentialLeakWithPostgres(t *testing.T) {
 	if len(frames) == 0 {
 		t.Fatal("no WS frame was published")
 	}
+	refusal := false
 	for i, f := range frames {
 		sink.add(fmt.Sprintf("WS frame %d", i), f)
+		refusal = refusal || isDecisionRefusalFrame(f)
+	}
+	if !refusal {
+		t.Fatal("no WS status frame carried the decision model's refusal, so the echo never reached the stream")
 	}
 	sink.add("the log", []byte(env.logText()))
 	for _, s := range secrets {
@@ -524,7 +534,8 @@ func TestCredentialLeakWithPostgres(t *testing.T) {
 }
 
 // waitDecisionRefusal waits until /api/status reports the decision model refused with the vendor's
-// echo masked: the echo travelled the path the test watches.
+// echo masked: the echo travelled the path the test watches. It then runs one pass of the status
+// watch (startStatusWatch runs it every 5 s), which broadcasts the refusal as a WS status frame.
 func waitDecisionRefusal(t *testing.T, env *testEnv) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -541,6 +552,7 @@ func waitDecisionRefusal(t *testing.T, env *testEnv) {
 		_ = json.Unmarshal(body, &st)
 		if e := st.DecisionModel.LastError; st.DecisionModel.State == "unauthorized" && e != nil &&
 			strings.Contains(e.Message, "invalid api key "+config.Masked) {
+			env.srv.watchStatus()
 			return
 		}
 		if time.Now().After(deadline) {
@@ -548,4 +560,19 @@ func waitDecisionRefusal(t *testing.T, env *testEnv) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// isDecisionRefusalFrame reports whether a WS frame is the decision model's unauthorized status,
+// whose detail is the vendor's message with the echoed key masked.
+func isDecisionRefusalFrame(frame []byte) bool {
+	var f struct {
+		Type string `json:"type"`
+		Data struct {
+			Component string `json:"component"`
+			State     string `json:"state"`
+			Detail    string `json:"detail"`
+		} `json:"data"`
+	}
+	return json.Unmarshal(frame, &f) == nil && f.Type == "status" && f.Data.Component == componentDecisionModel &&
+		f.Data.State == "unauthorized" && strings.Contains(f.Data.Detail, "invalid api key "+config.Masked)
 }
