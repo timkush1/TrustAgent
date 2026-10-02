@@ -140,8 +140,14 @@ so that "critical" can mean "at least 95% of these are real problems".
   every 30 s) and, with a database, calibrations imported or fitted in the
   dashboard. File entries are mirrored into the database; a calibration fitted
   or imported in the dashboard takes precedence over the file entry for the
-  same evaluator and snapshot until you deactivate it. A change sends the
-  WebSocket event `calibration_updated`.
+  same evaluator and snapshot until you deactivate it. With a database, the
+  proxy uses the active database rows: deleting a file from
+  `TRUTHTABLE_CALIBRATION_DIR` does not withdraw its mirrored calibration,
+  which stays active until another calibration for the same evaluator and
+  snapshot replaces it (deactivate it in the dashboard to stop using it now).
+  Without a database the files are the only source, and a deleted file stops
+  applying at the next re-read. A change sends the WebSocket event
+  `calibration_updated`.
 - **Quality** decides whether a calibration may enable blocking:
 
   | Quality | Made from | Enables block |
@@ -175,6 +181,20 @@ so that "critical" can mean "at least 95% of these are real problems".
 
   `make bench-lite` produces labelled scores from RAGTruth (hard cost cap);
   see [EVALUATION.md](EVALUATION.md).
+- **When a block is capped at flag.** With `require_calibration: true` (the
+  default), every check in a route's block set needs a calibration that can
+  enable blocking (see the quality table) for the current snapshot, and the
+  route's thresholds in the calibrated space (adopting does that). Otherwise
+  the gateway flags instead of blocking and says why:
+  - `calibration_missing`: a check has no such calibration for this snapshot
+    (never calibrated, or only with a quality that cannot enable blocking).
+    Label answers, calibrate and adopt.
+  - `uncalibrated_snapshot`: the checks that lack one were calibrated only on
+    other snapshots (see the next point).
+
+  A calibration whose fit used different state fields than the evaluator now
+  declares still applies; that check's result carries `calibration_warning`
+  ("calibrated with different state fields") so you know to refit.
 - **Snapshot changes.** When the vendor changes the snapshot, the dashboard
   shows a banner, calibrations of the old snapshot stop applying, and
   enforcing routes are capped at flag (`uncalibrated_snapshot`) until you

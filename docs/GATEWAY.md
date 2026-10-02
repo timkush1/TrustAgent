@@ -117,9 +117,19 @@ Each route has a `mode` (`TRUTHTABLE_GATE_DEFAULT_MODE` seeds the default,
     (`stream_not_buffered`): the answer is already on its way. Use
     `streaming: buffer` ([§4](#4-streaming)).
   - With `require_calibration: true` (the default), a block needs every
-    block-set evaluator to be calibrated for the current Jev snapshot;
-    otherwise the action is capped at `flag` (`uncalibrated_snapshot`). A
-    detector in `detectors.block_on` still blocks: it needs no calibration.
+    block-set evaluator to have a usable, adopted calibration for the current
+    Jev snapshot; otherwise the action is capped at `flag`, and the reason
+    says why:
+    - `calibration_missing`: at least one of those checks has no calibration
+      that can enable blocking for this snapshot (none at all, a quality below
+      `measured`, or route thresholds not yet switched to the calibrated
+      space, which adopting a calibration does). Label answers, calibrate and
+      adopt.
+    - `uncalibrated_snapshot`: each check that lacks one has calibrations, but
+      only for other snapshots: the decision model changed since they were
+      fitted. Recalibrate for the new snapshot.
+
+    A detector in `detectors.block_on` still blocks: it needs no calibration.
     See [EVALUATORS.md](EVALUATORS.md#calibration).
 - **Client override.** With `overrides.client_mode: stricter_only`, a client
   may ask for a stricter mode with `X-TrustAgent-Mode` (observe → flag →
