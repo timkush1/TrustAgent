@@ -95,6 +95,20 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     expect(screen.getByRole('button', { name: 'Test the fast check' })).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('labels the test cost, and drops the 429 once the wait is over', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    renderPage(PATH, { control });
+    await user.click(await screen.findByRole('button', { name: 'Test the fast check' }));
+    expect(await screen.findByRole('button', { name: /Vendor.*Test cost/ })).toBeInTheDocument();
+    control.state.decisionModelTest = errorReply(429, 'rate_limited', 'Wait a moment.', 600);
+    await user.click(screen.getByRole('button', { name: 'Test the fast check' }));
+    expect(await screen.findByText(/Checked a moment ago: try again in \d s/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test the fast check' })).toHaveAttribute('aria-disabled', 'false'), { timeout: 3000 });
+    expect(screen.queryByText('Wait a moment.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('disconnects after naming the fail-closed routes (D77)', async () => {
     const user = userEvent.setup();
     const control = createControlApi({ enforcingRoutes: ['payments-faq'] });
@@ -122,7 +136,46 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     expect(await screen.findByText("Uses the Anthropic key from the engine's .env.")).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: 'Save' })[1]);
     await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
-    expect(control.callsTo('/api/settings', 'PATCH')[0].body).toEqual({ judge: { provider: 'anthropic', model: null }, bindings: { judge: null } });
+    // Only what changed: the model stays as it is, and the engine's own key needs no binding.
+    expect(control.callsTo('/api/settings', 'PATCH')[0].body).toEqual({ judge: { provider: 'anthropic' }, bindings: { judge: null } });
+  });
+
+  it('changes the judge model alone without resending the provider or the binding (D33, D76)', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage(PATH);
+    const model = await screen.findByRole('textbox', { name: /^Model/ });
+    // Wait for the keys, so the binding is known to stay as it is.
+    expect(await screen.findByText(/Uses the OpenRouter key \(/)).toBeInTheDocument();
+    await user.clear(model);
+    await user.type(model, 'anthropic/claude-sonnet-4.5');
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[1]);
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+    expect(control.callsTo('/api/settings', 'PATCH')[0].body).toEqual({ judge: { model: 'anthropic/claude-sonnet-4.5' } });
+  });
+
+  it('keeps the judge provider editable when only LLM_MODEL is set, and never sends the model (D33)', async () => {
+    const user = userEvent.setup();
+    const settings = settingsView({ env_managed: ['judge.model'] });
+    settings.runtime.judge = { provider: 'auto', model: 'anthropic/claude-haiku-4.5' };
+    const { control } = renderPage(PATH, { control: createControlApi({ settings }) });
+    const model = await screen.findByRole('textbox', { name: /^Model/ });
+    expect(model).toBeDisabled();
+    expect(screen.getByText(/Set in \.env \(LLM_MODEL\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: 'Provider' }));
+    await user.click(await screen.findByRole('option', { name: 'OpenRouter' }));
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[1]);
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+    expect(control.callsTo('/api/settings', 'PATCH')[0].body).toEqual({ judge: { provider: 'openrouter' } });
+  });
+
+  it('switches the backend without the binding when the environment decides it (D33)', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage(PATH, { control: createControlApi({ settings: settingsView({ env_managed: ['bindings.decision_model'] }) }) });
+    const backend = await screen.findByRole('radiogroup', { name: 'Backend' });
+    await user.click(within(backend).getByRole('radio', { name: /TypeSafe direct/ }));
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+    expect(control.callsTo('/api/settings', 'PATCH')[0].body).toEqual({ decision_model: { backend: 'typesafe' } });
   });
 
   it('locks what the environment sets (D33)', async () => {

@@ -15,6 +15,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
+import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { KeyValueList } from '@/components/common/KeyValue';
 import { PageHeader } from '@/components/common/PageHeader';
 import { QueryState } from '@/components/common/QueryState';
@@ -48,7 +49,7 @@ import {
   type SecBackendCard,
 } from '@/domain/presentation';
 import type { CredentialView, DecisionModelTestResult, RuntimeSettings, RuntimeSettingsPatch, SettingsView, SystemStatus } from '@/types/api';
-import { confirmationRoutes } from './credentialModel';
+import { confirmationRoutes, probeCostBasis, probeCostLabel } from './credentialModel';
 import { EnvManagedNote, ProblemNote, SettingsWarnings } from './SettingsKit';
 import { useSettingsWriteReason } from './useSettingsAccess';
 
@@ -91,9 +92,14 @@ function SaveProblem({ error, onReload }: { error: unknown; onReload: () => void
   );
 }
 
+/** Whether the environment sets `path` (D33): the path itself or a parent of it is env-managed. */
+function isLocked(settings: SettingsView, path: string): boolean {
+  return settings.env_managed.some((m) => path === m || path.startsWith(`${m}.`));
+}
+
 /** Env-managed paths among `paths` (D33), with their env vars for the note. */
 function envManaged(settings: SettingsView, paths: readonly string[]): { locked: (path: string) => boolean; keys: string[] } {
-  const locked = (path: string) => settings.env_managed.some((m) => path === m || path.startsWith(`${m}.`));
+  const locked = (path: string) => isLocked(settings, path);
   const keys = paths.filter(locked).map((p) => secEnvKeyOfPath(p)).filter((k): k is string => k !== null);
   return { locked, keys: [...new Set(keys)] };
 }
@@ -137,7 +143,11 @@ function fastPatch(settings: SettingsView, draft: FastDraft): RuntimeSettingsPat
   // The backend changes only when the choice did: a model pin alone leaves `auto` as it is.
   if (card && (draft.card !== before.card || draft.systemone !== before.systemone)) {
     decision.backend = card.id === 'openrouter' && draft.systemone ? 'openrouter-systemone' : card.backend;
-    patch.bindings = { decision_model: card.credential };
+    // The binding follows the card unless the environment decides it (D33: an env decision key or a
+    // pinned backend); sending it then would be refused with 409 env_managed.
+    if (!isLocked(settings, 'bindings.decision_model') && settings.runtime.bindings.decision_model !== card.credential) {
+      patch.bindings = { decision_model: card.credential };
+    }
   }
   const text = (v: string) => (v.trim() === '' ? null : v.trim());
   if (draft.model !== before.model) decision.model = text(draft.model);
@@ -167,9 +177,15 @@ function LastError({ status }: { status: SystemStatus['decision_model'] }) {
 
 function TestResult({ result }: { result: DecisionModelTestResult }) {
   if (result.ok) {
+    // A cost is shown only with its label (vendor, estimate, simulated).
+    const costLabel = probeCostLabel(result.cost_source);
+    const cost = result.cost_usd !== null && costLabel ? formatUsd(result.cost_usd) : null;
     return (
       <div role="status" className="space-y-1 rounded-md border border-border px-3 py-2 text-sm">
-        <p className="text-fg tabular">{secProbeReadyText(result.latency_ms, result.cost_usd === null ? null : formatUsd(result.cost_usd))}</p>
+        <p className="flex flex-wrap items-center gap-1.5 text-fg">
+          <span className="tabular">{secProbeReadyText(result.latency_ms, cost)}</span>
+          {cost && costLabel ? <EvidenceBadge label={costLabel} basis={probeCostBasis(costLabel)} subject="Test cost" /> : null}
+        </p>
         <p className="text-xs text-fg-muted">
           {secBackendSettingLabel(result.backend)}
           {result.snapshot ? <> · <span className="font-mono">{result.snapshot}</span></> : null}
@@ -199,15 +215,20 @@ function TestButton({ reason }: { reason: Reason | null }) {
       if (isApiError(err) && err.status === 429 && err.retryAfterMs) setWaitUntil(Date.now() + err.retryAfterMs);
     },
   });
+  const { reset } = test;
   useEffect(() => {
     if (waitUntil === null) return;
     const timer = setInterval(() => {
       const t = Date.now();
       setNow(t);
-      if (t >= waitUntil) setWaitUntil(null);
+      if (t >= waitUntil) {
+        setWaitUntil(null);
+        // The wait is over: the 429 it came from is no longer news.
+        reset();
+      }
     }, 500);
     return () => clearInterval(timer);
-  }, [waitUntil]);
+  }, [waitUntil, reset]);
   const waitS = waitUntil === null ? 0 : Math.max(1, Math.ceil((waitUntil - now) / 1000));
   const waitReason: Reason | null = waitUntil !== null ? { text: `Checked a moment ago: try again in ${waitS} s` } : null;
   return (
@@ -320,7 +341,7 @@ function FastCheckCard({ settings, status, credentials, writeReason, onReload }:
       <CardHeader
         level={2}
         title={copy.tiers.fast_check}
-        description="Checks every answer before your app gets it, in one call to TypeSafe AI's decision model."
+        description="Checks every answer before your app gets it, with one call to Jev, TypeSafe AI's checking model."
         actions={stateView ? <Badge tone={stateView.tone} emphasis={stateView.tone === 'neutral' ? 'quiet' : 'tint'}>{stateView.label}</Badge> : null}
       />
       <CardContent className="space-y-4">
@@ -403,6 +424,8 @@ function JudgeCard({ settings, status, credentials, writeReason, onReload }: { s
   const env = envManaged(settings, ['judge.provider', 'judge.model']);
   const engineEnv = env.locked('judge.provider') || env.locked('bindings.judge');
   const reason = writeReason ?? (engineEnv ? 'env_managed' : null);
+  // LLM_MODEL alone pins the model; the provider stays editable.
+  const modelReason = reason ?? (env.locked('judge.model') ? 'env_managed' : null);
   const keyName = secJudgeCredential(shown.provider);
   const key = keyName ? credentials?.find((c) => c.name === keyName && !c.undecryptable) : undefined;
   // A key in the engine's own .env (D80) is used there as is: nothing to bind.
@@ -410,9 +433,17 @@ function JudgeCard({ settings, status, credentials, writeReason, onReload }: { s
   const bound = settings.runtime.bindings.judge;
   const judgeState = status ? secComponentStateView(status.judge.state) : null;
 
+  // Only what changed goes in the PATCH: an unchanged env-managed field would be refused (409
+  // env_managed, D33), and a binding sent again would still count as a bind (D76 turns simulated
+  // checks off).
   const submit = () => {
-    const patch: RuntimeSettingsPatch = { judge: { provider: shown.provider, model: shown.model.trim() === '' ? null : shown.model.trim() } };
-    if (shown.provider !== 'auto') patch.bindings = { judge: key && !engineKey ? key.name : null };
+    const judge: NonNullable<RuntimeSettingsPatch['judge']> = {};
+    if (shown.provider !== base.provider) judge.provider = shown.provider;
+    if (shown.model !== base.model && !env.locked('judge.model')) judge.model = shown.model.trim() === '' ? null : shown.model.trim();
+    const patch: RuntimeSettingsPatch = Object.keys(judge).length > 0 ? { judge } : {};
+    // The binding moves only once the saved keys are known: an unread list must never unbind a key.
+    const wanted = shown.provider === 'auto' ? bound : key && !engineKey ? key.name : null;
+    if (credentials !== undefined && wanted !== bound) patch.bindings = { judge: wanted };
     save.mutate({ patch, etag: shown.etag }, { onSuccess: () => setDraft(null) });
   };
   const reload = () => {
@@ -463,12 +494,13 @@ function JudgeCard({ settings, status, credentials, writeReason, onReload }: { s
               disabled={reason !== null}
             />
           </Field>
-          <Field label="Model" optional description="Leave empty for the provider's default judge." disabled={reason !== null}>
-            <Input value={shown.model} onValueChange={(model) => setDraft({ ...shown, model })} placeholder="anthropic/claude-haiku-4.5" autoComplete="off" spellCheck={false} disabled={reason !== null} />
+          <Field label="Model" optional description="Leave empty for the provider's default judge." disabled={modelReason !== null}>
+            <Input value={shown.model} onValueChange={(model) => setDraft({ ...shown, model })} placeholder="anthropic/claude-haiku-4.5" autoComplete="off" spellCheck={false} disabled={modelReason !== null} />
           </Field>
         </div>
         <p className="text-sm text-fg-muted">{keyLine}</p>
         {engineEnv ? <EnvManagedNote keys={env.keys.length > 0 ? env.keys : ['LLM_PROVIDER']} engine={!env.locked('judge.provider')} /> : null}
+        {!engineEnv && env.keys.length > 0 ? <EnvManagedNote keys={env.keys} /> : null}
         {save.isError ? <SaveProblem error={save.error} onReload={reload} /> : null}
       </CardContent>
       <CardFooter className="flex flex-col items-end gap-1">
