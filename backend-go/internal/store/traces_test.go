@@ -166,6 +166,21 @@ func TestTraceLifecycle(t *testing.T) {
 	}
 }
 
+func TestTraceDetailRedactBlanksLabelNotes(t *testing.T) {
+	note := "says 60 days; the policy says 30"
+	d := TraceDetail{Labels: []LabelView{{Target: "groundedness@1", Label: "should_fire", LabeledBy: "admin", Note: &note}}}
+	red := d.Redact()
+	if len(red.Labels) != 1 || red.Labels[0].Note != nil || red.Labels[0].Label != "should_fire" || red.Labels[0].LabeledBy != "admin" {
+		t.Errorf("redacted labels %+v", red.Labels)
+	}
+	if d.Labels[0].Note == nil || *d.Labels[0].Note != note {
+		t.Errorf("Redact changed the caller's labels: %+v", d.Labels)
+	}
+	if empty := (TraceDetail{Labels: []LabelView{}}).Redact(); empty.Labels == nil || len(empty.Labels) != 0 {
+		t.Errorf("an empty label list must stay an empty list: %v", empty.Labels)
+	}
+}
+
 func TestNotAssessedTraceReportsNotAssessedAudit(t *testing.T) {
 	r := &TraceRecord{TraceID: "t", Route: "support-bot", Mode: "flag", GateStatus: "not_assessed", AuditStatus: TraceAuditNotAssessed}
 	if v := r.Summary().Audit.Verdict; v == nil || *v != VerdictNotAssessed {

@@ -3,7 +3,7 @@
   "kind": "decide",
   "name": "uncalibrated-snapshot-caps-block-to-flag",
   "status": "frozen",
-  "description": "Block route, require_calibration true, no calibration for the snapshot. groundedness 0.96 and contradiction 0.98 form the block set, so block mode gives block; neither block-set member is calibrated and no detector blocks, so the cap lowers the action to flag with degraded uncalibrated and reason uncalibrated_snapshot. would_action keeps block.",
+  "description": "Block route, require_calibration true. groundedness@1 and contradiction@1 are calibrated only on other snapshots of the family (entries with state other_snapshot and no table, P4-PLAN D56). groundedness 0.96 and contradiction 0.98 form the block set, so block mode gives block; neither member is calibrated and no detector blocks, so the cap lowers the action to flag with degraded uncalibrated and reason uncalibrated_snapshot (every uncalibrated member is calibrated on another snapshot). would_action keeps block; calibration_state stays none.",
   "input": {
     "policy": {
       "configured_mode": "block",
@@ -220,7 +220,10 @@
       "pii_secret_leak__v1": "pii_secret_leak@1"
     },
     "excluded": [],
-    "calibration": {},
+    "calibration": {
+      "groundedness@1": {"state": "other_snapshot"},
+      "contradiction@1": {"state": "other_snapshot"}
+    },
     "meta": {
       "backend": "openrouter-decisions",
       "stream": "none",
@@ -253,7 +256,11 @@
     "would_action": "block",
     "calibration": "none",
     "degraded": "uncalibrated",
-    "reasons": ["contradiction:critical", "groundedness:critical", "uncalibrated_snapshot"]
+    "reasons": ["contradiction:critical", "groundedness:critical", "uncalibrated_snapshot"],
+    "evaluators": {
+      "groundedness@1": {"level": "critical", "calibrated": false, "calibration_state": "none", "calibration_warning": null},
+      "contradiction@1": {"level": "critical", "calibrated": false, "calibration_state": "none", "calibration_warning": null}
+    }
   },
   "tolerance": 1e-9
 }

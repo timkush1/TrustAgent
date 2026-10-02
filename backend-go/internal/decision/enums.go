@@ -145,7 +145,14 @@ const (
 	ReasonStreamNotBuffered    = "stream_not_buffered"
 	ReasonFailClosed           = "fail_closed"
 	ReasonUncalibratedSnapshot = "uncalibrated_snapshot"
+	// ReasonCalibrationMissing caps a block whose uncalibrated block-set evaluators are not all
+	// calibrated on another snapshot (P4-PLAN D56): they were never calibrated (or not adopted).
+	ReasonCalibrationMissing = "calibration_missing"
 )
+
+// CalibrationWarningStateFields is EvaluatorResult.calibration_warning when the calibration was
+// fitted with other state fields than the evaluator sends (SPEC §2.11, D56); it still applies.
+const CalibrationWarningStateFields = "calibrated with different state fields"
 
 // Exclusion reasons (ExclusionReason): why compile() did not ask an evaluator.
 const (

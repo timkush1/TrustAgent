@@ -70,6 +70,50 @@ export function scenarioModules(contractsDir: string): Plugin {
   };
 }
 
+/**
+ * `import { copy } from 'virtual:trustagent/copy/<path>,<path>'`: only those parts of
+ * contracts/ui/copy.v1.json (dotted paths under `copy`).
+ */
+export const COPY_MODULE = 'virtual:trustagent/copy/';
+
+/**
+ * Serves the listed parts of contracts/ui/copy.v1.json as `copy`, so the landing page ships the
+ * words it shows instead of the whole tree, which grows with every dashboard page and would eat
+ * the landing's 110 KB budget. An unknown path fails the build.
+ */
+export function copyModules(contractsDir: string): Plugin {
+  const file = join(contractsDir, 'ui/copy.v1.json');
+  return {
+    name: 'trustagent:copy-modules',
+    resolveId(source) {
+      return source.startsWith(COPY_MODULE) ? `\0${source}` : undefined;
+    },
+    load(id) {
+      if (!id.startsWith(`\0${COPY_MODULE}`)) return undefined;
+      this.addWatchFile(file);
+      const all = (JSON.parse(readFileSync(file, 'utf8')) as { copy: Record<string, unknown> }).copy;
+      return `export const copy = ${JSON.stringify(pickCopy(all, id.slice(1 + COPY_MODULE.length).split(','), (path) => this.error(`contracts/ui/copy.v1.json has no copy.${path}`)))};\n`;
+    },
+  };
+}
+
+/** The parts of `all` at `paths` (dotted), in the same nesting; `missing` is called for a bad path. */
+export function pickCopy(all: Record<string, unknown>, paths: string[], missing: (path: string) => never): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const path of paths) {
+    const keys = path.split('.');
+    let value: unknown = all;
+    for (const k of keys) {
+      if (value === null || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, k)) missing(path);
+      value = (value as Record<string, unknown>)[k];
+    }
+    let into = out;
+    for (const k of keys.slice(0, -1)) into = (into[k] ??= {}) as Record<string, unknown>;
+    into[keys[keys.length - 1]] = value;
+  }
+  return out;
+}
+
 export function sitePages(mode: AppMode): Plugin[] {
   let config: ResolvedConfig;
   const paths = pagePaths(mode);
