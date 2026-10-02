@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -753,6 +754,19 @@ class RuntimeChecksTest(unittest.TestCase):
         self.assertEqual(check.status, "WARN")
         self.assertIn("reports no applied settings", check.summary)
         self.assertIn("UP_ARGS=--build", check.fix)
+
+    def test_doctor_reads_every_push_warning_the_gateway_sets(self) -> None:
+        # doctor tells the push warnings apart from the other SystemStatus.warnings by their
+        # wording ("the audit engine"); a rewording in the gateway would hide a failed push.
+        push = Path(__file__).resolve().parents[2] / "backend-go/internal/runtimecfg/push.go"
+        texts = re.findall(r'state\.Warning = "([^"]+)"', push.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(texts), 3, "the pattern still finds the pusher's warnings")
+        for text in texts:
+            body = self.with_status(
+                engine={"state": "up", "runtime_config_version": 7}, warnings=[text]
+            )
+            check = self.stack(body, **{"/api/settings": settings_view(7)}).check_runtime_config()
+            self.assertEqual(check.status, "WARN", text)
 
     def test_settings_endpoint_missing_or_refused(self) -> None:
         old = self.stack(status_body(), **{"/api/settings": HttpResult(status=404)})
