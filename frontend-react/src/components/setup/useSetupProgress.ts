@@ -17,7 +17,7 @@ export const SETUP_STEPS = ['secure', 'connect', 'try'] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 export interface SetupProgress {
-  /** Still reading who is signed in, or (for an admin) the settings that decide steps 2 and 3. */
+  /** Still reading who is signed in, or (for an admin) the settings and status that decide steps 2 and 3. */
   pending: boolean;
   /** Still reading who is signed in: all step 1 needs. */
   sessionPending: boolean;
@@ -57,6 +57,8 @@ export function useSetupProgress(): SetupProgress {
   const settings = useQuery({ ...settingsQuery(ds), enabled: admin });
   const status = useQuery(statusQuery(ds));
   const progress = setupProgress({ session: signedIn, settings: settings.data, status: status.data });
-  const pending = session.isPending || (admin && settings.isPending && !settings.isError);
+  // An admin's steps 2 and 3 also read the status (a key set in .env, simulated mode, the store):
+  // without waiting for it, the wizard would open step 2 and then jump to step 3.
+  const pending = session.isPending || (admin && ((settings.isPending && !settings.isError) || status.isPending));
   return { ...progress, pending, sessionPending: session.isPending };
 }
