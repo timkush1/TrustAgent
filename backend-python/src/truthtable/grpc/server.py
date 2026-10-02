@@ -968,7 +968,23 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         info.max_audits = self.max_audits
         if not info.max_rpcs:
             info.max_rpcs = DEFAULT_MAX_RPCS
+        self._redact_info(info)
         return info
+
+    def _redact_info(self, info: evaluator_pb2.EngineInfo) -> None:
+        """
+        Mask secrets in the free text of an EngineInfo answer (D42): warnings
+        and reasons may quote an exception or a provider's error body, and the
+        gateway shows them on the dashboard.
+        """
+        warnings = [self.redactor.redact(w) for w in info.warnings]
+        del info.warnings[:]
+        info.warnings.extend(warnings)
+        info.verifier_reason = self.redactor.redact(info.verifier_reason)
+        if info.HasField("judge"):
+            info.judge.fallback_reason = self.redactor.redact(info.judge.fallback_reason)
+        if info.HasField("knowledge"):
+            info.knowledge.reason = self.redactor.redact(info.knowledge.reason)
 
     @_inflight("RetrieveContext")
     async def RetrieveContext(

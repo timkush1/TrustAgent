@@ -694,6 +694,38 @@ async def test_info_reports_env_managed_names_and_the_env_credential_source() ->
         assert_absent(secret, wire, "EngineInfo")
 
 
+async def test_info_masks_secrets_in_its_warnings_and_reasons() -> None:
+    # A startup health failure can quote a provider's error body; a pushed
+    # judge's build error can quote its exception. Neither reaches the gateway.
+    leaked = f"openrouter answered 401 for key {UNMATCHED_SECRET}"
+    servicer = engine_servicer(None, redactor=Redactor([UNMATCHED_SECRET]))
+    assert servicer.engine is not None
+    servicer.engine.judge = JudgeSelection(
+        FakeJudge(),
+        "openrouter",
+        "ollama",
+        "fake-model",
+        fallback_active=True,
+        fallback_reason=leaked,
+        warnings=[leaked],
+    )
+    servicer.runtime.warnings = (leaked,)  # type: ignore[union-attr]
+    async with serving(servicer) as stub:
+        info = await stub.GetEngineInfo(pb.EngineInfoRequest(), timeout=RPC_TIMEOUT_S)
+
+    # Booleans only: a failing assert must not print the secret it found.
+    quoted = [w for w in info.warnings if "openrouter answered 401" in w]
+    count = len(quoted)
+    masked = all(w.endswith(f"key {MASKED}") for w in quoted)
+    reason_masked = info.judge.fallback_reason.endswith(f"key {MASKED}")
+    assert count == 2, "the judge and runtime warnings are reported"
+    assert masked, "the warnings keep their text with the secret masked"
+    assert reason_masked, "fallback_reason is masked"
+    assert_absent(
+        UNMATCHED_SECRET, info.SerializeToString().decode("utf-8", "replace"), "EngineInfo"
+    )
+
+
 async def test_a_pushed_mock_judge_runs_audits_on_an_engine_started_without_one() -> None:
     from test_server_v2 import _scenario, _scenario_request
 
