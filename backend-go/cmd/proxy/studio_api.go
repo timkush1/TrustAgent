@@ -124,12 +124,10 @@ type studioAPI struct {
 	// budget is the gate's base compile budget (the env token budget).
 	budget decision.Budget
 	// drafter is nil without an engine; judge reports the judge the engine uses and judgePrice
-	// its price (ok false: unknown); referencePrice is the reference judge's price, which a draft
-	// cost no price covers counts at (D91).
-	drafter        studioDrafter
-	judge          func() (provider, model string)
-	judgePrice     func(provider, model string) (decision.PriceEntry, bool)
-	referencePrice func() (decision.PriceEntry, bool)
+	// its price (ok false: unknown).
+	drafter    studioDrafter
+	judge      func() (provider, model string)
+	judgePrice func(provider, model string) (decision.PriceEntry, bool)
 	// redact masks the secrets and credential shapes the gateway knows (nil: none).
 	redact func(string) string
 	now    func() time.Time
@@ -176,7 +174,6 @@ func (s *server) newStudioAPI() *studioAPI {
 		book = l.Prices()
 	}
 	a.judgePrice = func(provider, model string) (decision.PriceEntry, bool) { return judgePriceOf(book, provider, model) }
-	a.referencePrice = func() (decision.PriceEntry, bool) { return referenceJudgePrice(book) }
 	return a
 }
 
@@ -1277,33 +1274,16 @@ func (a *studioAPI) draftEstimate(in studio.DraftInput) (float64, error) {
 	return studio.DraftReserveUSD(chars, decision.DefaultCPT, price)
 }
 
-// draftCapCostUSD is what a draft's cost records count against the LLM cap (D48, D91): a
-// simulated record $0; a record no price covers (cost_source unknown) its tokens at the reference
-// judge's price, or the reservation when that price is not known either; any other its reported
-// or computed cost, never below $0. An engine that reports no record keeps the reservation spent,
-// so the cap stays hard. The stored record keeps its own cost_source and cost: only the cap counts
-// this. It is the draft's case of costs.LLMBudget.CapCostUSD (COST-6).
+// draftCapCostUSD is what a draft's cost records count against the LLM cap (D48, D91): the cost
+// ledger's cap cost (s.costs.capCost: a simulated record $0, a record no price covers its tokens at
+// the reference judge's price, any other its cost, never below $0). An engine that reports no
+// record keeps the reservation spent, so the cap stays hard. The stored record keeps its own
+// cost_source and cost: only the cap counts this.
 func (a *studioAPI) draftCapCostUSD(records []*pb.CostRecord, reserved float64) float64 {
 	if len(records) == 0 {
 		return reserved
 	}
-	usd := 0.0
-	for _, r := range records {
-		switch r.GetCostSource() {
-		case decision.CostSimulated:
-		case decision.CostUnknown:
-			if p, ok := a.referencePrice(); ok {
-				usd += decision.TokenCostUSD(r.GetInputTokens(), r.GetOutputTokens(), p.InputPerMTok, p.OutputPerMTok)
-			} else {
-				usd += reserved
-			}
-		default:
-			if c := r.GetCostUsd(); finiteNonNegative(c) {
-				usd += c
-			}
-		}
-	}
-	return usd
+	return a.costs.capCost(records)
 }
 
 // existingIDs are the ids of the registry's evaluators (archived ones left out), sorted: the only

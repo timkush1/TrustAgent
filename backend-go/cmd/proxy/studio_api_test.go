@@ -28,6 +28,7 @@ import (
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/contractstest"
+	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
@@ -221,9 +222,6 @@ func newStudioRig(t *testing.T, tune func(r *studioRig)) *studioRig {
 		budget: decision.DefaultBudget(),
 		judge:  func() (string, string) { return "openrouter", "anthropic/claude-haiku-4.5" },
 		judgePrice: func(string, string) (decision.PriceEntry, bool) {
-			return decision.PriceEntry{InputPerMTok: 1, OutputPerMTok: 5}, true
-		},
-		referencePrice: func() (decision.PriceEntry, bool) {
 			return decision.PriceEntry{InputPerMTok: 1, OutputPerMTok: 5}, true
 		},
 		now: time.Now, log: slog.New(slog.DiscardHandler),
@@ -1283,21 +1281,24 @@ func TestStudioDraftReservesAndSettlesTheRealCost(t *testing.T) {
 	}
 }
 
-// A draft cost no price covers counts at the reference judge's price for the cap (D91); one the
-// engine did not report keeps the reservation; a simulated one counts $0.
+// A draft settles at the cost ledger's cap cost (D91): a cost no price covers counts at the
+// reference judge's price (dashboard overrides of it applied); one the engine did not report keeps
+// the reservation; a simulated one counts $0.
 func TestStudioDraftSettlesTheCapCost(t *testing.T) {
 	cases := []struct {
-		name    string
-		cost    *pb.CostRecord
-		noRef   bool
-		settled func(reserved float64) float64
+		name      string
+		cost      *pb.CostRecord
+		overrides []decision.PriceEntry
+		settled   func(reserved float64) float64
 	}{
 		{name: "unknown at the reference price",
 			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "acme", InputTokens: 2000, OutputTokens: 400, CostSource: "unknown"},
 			settled: func(float64) float64 { return (2000*1 + 400*5) / 1e6 }},
-		{name: "unknown without a reference price keeps the reservation", noRef: true,
+		{name: "unknown at an overridden reference price",
+			overrides: []decision.PriceEntry{{Provider: "anthropic", Match: "claude-haiku-4-5*", InputPerMTok: 2, OutputPerMTok: 10,
+				Label: decision.PriceLabelOverride, AsOf: "2026-10-01"}},
 			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "acme", InputTokens: 2000, OutputTokens: 400, CostSource: "unknown"},
-			settled: func(reserved float64) float64 { return reserved }},
+			settled: func(float64) float64 { return (2000*2 + 400*10) / 1e6 }},
 		{name: "no record keeps the reservation", settled: func(reserved float64) float64 { return reserved }},
 		{name: "simulated counts nothing",
 			cost:    &pb.CostRecord{Component: "studio_draft", Kind: "llm", Provider: "mock", InputTokens: 2000, OutputTokens: 400, CostUsd: 0.003, CostSource: "simulated"},
@@ -1318,9 +1319,16 @@ func TestStudioDraftSettlesTheCapCost(t *testing.T) {
 					reserved = usd
 					return func(v float64) { settled = append(settled, v) }, nil
 				}
-				if tc.noRef {
-					r.api.referencePrice = func() (decision.PriceEntry, bool) { return decision.PriceEntry{}, false }
+				book, err := costs.LoadPriceBook("")
+				if err != nil {
+					t.Fatal(err)
 				}
+				ledger, err := costs.NewLedger(costs.LedgerConfig{Prices: book, Logger: slog.New(slog.DiscardHandler)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ledger.ApplySettings(costs.Caps{}, tc.overrides)
+				r.api.costs.capCostLLM = ledger.CapCostUSD
 			})
 			code, body := studioDo(t, r.url, http.MethodPost, "/api/studio/draft", "", `{"description":"Catch blame."}`)
 			if code != http.StatusOK {

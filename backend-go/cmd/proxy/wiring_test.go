@@ -190,11 +190,15 @@ func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
 	if !sawTrace {
 		t.Errorf("wsFrames did not replay trace_started of %s (%d frames)", traceID, len(frames))
 	}
-	// /api/settings (SEC-5) and /api/credentials (CN-7) are mounted since CP-SEC2+CP-SEC3,
-	// /api/labels/queue (EV-3) since CP-EVAL, /api/roi/timeseries (COST-9) since I-1.
-	for _, path := range []string{"/api/studio/samples"} {
-		if code, _ := env.get(path, testKey); code != http.StatusNotFound {
-			t.Errorf("GET %s = %d before its owner mounts it, want 404", path, code)
+	// Every P4 seam has its owner's handler now: /api/settings (SEC-5) and /api/credentials
+	// (CN-7) since CP-SEC2+CP-SEC3, /api/labels/queue (EV-3) since CP-EVAL, /api/roi/timeseries
+	// (COST-9) and /api/studio/samples (ST-4) since I-1. None answers the unmounted 404.
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/settings"}, {http.MethodGet, "/api/credentials"}, {http.MethodGet, "/api/labels/queue"},
+		{http.MethodGet, "/api/roi/timeseries"}, {http.MethodPost, "/api/studio/samples"},
+	} {
+		if code, body := env.do(route.method, route.path, testKey, []byte(`{}`)); code == http.StatusNotFound && strings.Contains(string(body), "No endpoint here") {
+			t.Errorf("%s %s = the unknown-route 404: its owner's handler is not mounted", route.method, route.path)
 		}
 	}
 	if !strings.Contains(env.logText(), "level=") || strings.Contains(env.logText(), secret) {
