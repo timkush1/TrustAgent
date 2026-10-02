@@ -111,5 +111,6 @@ Per-project:
   `trustagent-secrets` volume): a fresh volume makes them undecryptable (`make doctor` reports it).
 - Windows/WSL dev environment: Docker Desktop needs WSL integration enabled; prefer cross-platform
   commands in Makefile/scripts. The dev laptop is small (~8 GB RAM): avoid running several heavy
-  builds/test suites at once.
+  builds/test suites at once, and run `make check VITEST_FLAGS=--maxWorkers=2` (with every vitest
+  worker, the axe tests in `kit.a11y.test.tsx` can exceed vitest's 5 s timeout under load).
 - Curated public docs live in `docs/`; historical build-journal material is under `docs/archive/`.
