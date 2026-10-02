@@ -201,10 +201,15 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
     setNote('');
   };
 
-  /** Moves this check's progress by one label at once; returns the undo. */
+  /**
+   * Moves this check's progress by one label at once. The progress counts one evaluator version, so
+   * a label for another version (an older one still in the window) is left to the refetch.
+   */
   const moveProgress = (item: LabelQueueItem, label: EvalFireLabel, by: 1 | -1) => {
     const key = qkc.evaluators.detail(evalRefId(item.evaluator_ref));
-    queryClient.setQueryData<EvaluatorDetail>(key, (d) => (d ? { ...d, calibration_progress: bumpProgress(d.calibration_progress, label, by) } : d));
+    queryClient.setQueryData<EvaluatorDetail>(key, (d) =>
+      d && d.calibration_progress.evaluator_ref === item.evaluator_ref ? { ...d, calibration_progress: bumpProgress(d.calibration_progress, label, by) } : d,
+    );
   };
 
   const stillNeeded = (item: LabelQueueItem) => {
@@ -224,25 +229,26 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
     const text = note.trim();
     moveProgress(item, value, 1);
     go(at + 1);
-    put.mutate(
-      { item, label: value, note: text },
-      {
-        onSuccess: () => {
-          setTally((t) => ({ ...t, labelled: t.labelled + 1 }));
-          setStatus({ kind: 'saved', text: `${evalLabelWord(value)}. ${evalSavedText(stillNeeded(item))}`, undo: { index: at, item, label: value } });
-          invalidateAfterLabel(queryClient, { traceId: item.trace_id, evaluatorIds: [evalRefId(item.evaluator_ref)] });
-        },
-        onError: (err) => {
-          moveProgress(item, value, -1);
-          if (isApiError(err) && err.code === 'body_expired') {
-            setStatus({ kind: 'expired', text: `${copy.labels.body_expired} It was left out.` });
-            return;
-          }
-          const { message, code } = describeError(err);
-          setStatus({ kind: 'error', text: `The label was not saved: ${message}`, code: code ?? null });
-          go(at);
-          setNote(text);
-        },
+    // Per-call promise handlers, not mutate()'s callbacks: those fire only for the latest call, so a
+    // quick C, C would drop the first label's rollback (and its body_expired) without them.
+    put.mutateAsync({ item, label: value, note: text }).then(
+      () => {
+        setTally((t) => ({ ...t, labelled: t.labelled + 1 }));
+        setStatus({ kind: 'saved', text: `${evalLabelWord(value)}. ${evalSavedText(stillNeeded(item))}`, undo: { index: at, item, label: value } });
+        invalidateAfterLabel(queryClient, { traceId: item.trace_id, evaluatorIds: [evalRefId(item.evaluator_ref)] });
+      },
+      (err: unknown) => {
+        moveProgress(item, value, -1);
+        // A refetch that landed while this label was in flight never counted it: read the truth again.
+        void queryClient.invalidateQueries({ queryKey: qkc.evaluators.detail(evalRefId(item.evaluator_ref)) });
+        if (isApiError(err) && err.code === 'body_expired') {
+          setStatus({ kind: 'expired', text: `${copy.labels.body_expired} It was left out.` });
+          return;
+        }
+        const { message, code } = describeError(err);
+        setStatus({ kind: 'error', text: `The label was not saved: ${message}`, code: code ?? null });
+        go(at);
+        setNote(text);
       },
     );
   };

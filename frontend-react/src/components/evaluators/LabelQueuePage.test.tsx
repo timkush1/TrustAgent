@@ -14,7 +14,7 @@ import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import labelQueueFixture from '@contracts/fixtures/api/LabelQueue.default.json';
-import type { EvaluatorDetail, LabelPut } from '@/types/api';
+import type { EvaluatorDetail, LabelPut, LabelQueue } from '@/types/api';
 
 installMswServer();
 afterEach(() => stopLive());
@@ -114,6 +114,37 @@ describe('Label queue', { timeout: 20_000 }, () => {
     expect(await screen.findByText(`${copy.labels.body_expired} It was left out.`)).toBeInTheDocument();
     await waitFor(() => expect(labelsMeter()).toHaveAttribute('aria-valuenow', '43'));
     expect(screen.getByText("This answer's text is hidden")).toBeInTheDocument();
+  });
+
+  it('keeps the outcome of every label when the keys come faster than the server answers', async () => {
+    const user = userEvent.setup();
+    const [first] = labelQueueFixture.items;
+    const items = [
+      first,
+      { ...first, trace_id: '01a0e783-1b2c-7d3e-8f40-5a6b7c8d9e0f', user_request: 'Is there a store in Lyon?' },
+      { ...first, trace_id: '01a0e784-2c3d-7e4f-9051-6b7c8d9e0f1a', user_request: 'Can I pay in euros?' },
+    ];
+    const control = createControlApi({ labelQueue: { items } as LabelQueue });
+    renderPage('/app/evaluators/labels', { control });
+    // The first answer's text expires while it is being saved, and its answer comes back last.
+    server.use(
+      http.put(`${API}/api/labels`, async ({ request }) => {
+        const put = (await request.json()) as LabelPut;
+        if (put.trace_id === FIRST) {
+          await delay(300);
+          return HttpResponse.json({ error: { code: 'body_expired', message: 'expired' } }, { status: 409 });
+        }
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await firstItem();
+    await user.keyboard('c');
+    expect(await screen.findByText('Is there a store in Lyon?')).toBeInTheDocument();
+    await user.keyboard('c');
+    expect(await screen.findByText('Can I pay in euros?')).toBeInTheDocument();
+    // The second label is saved first; the first one's 409 still reaches the page afterwards.
+    expect(await screen.findByText(`${copy.labels.body_expired} It was left out.`)).toBeInTheDocument();
+    expect(screen.getByText('This session: 1 labelled · 0 skipped')).toBeInTheDocument();
   });
 
   it('goes back to the answer with the server message when the save fails', async () => {
