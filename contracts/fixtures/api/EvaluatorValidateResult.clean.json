@@ -1,0 +1,14 @@
+{
+  "errors": [],
+  "lints": [
+    {
+      "code": "missing_not_for",
+      "severity": "warning",
+      "path": "question.criteria.too_short_to_judge",
+      "message": "Say what this option is not for, so the decision model can tell it apart from the others."
+    }
+  ],
+  "question_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+  "calibration_key": "9b1f4c0e2a7d5b3c8e6f1a2d4c7b9e0f3a5d8c1b6e2f4a7c9d0b3e5f8a1c2d4e",
+  "question_tokens": 118
+}
