@@ -1409,7 +1409,7 @@
     {
       "id": "help-center-uncalibrated-flag",
       "title": "Block route without calibration acts as a flag",
-      "description": "help-center (block). The answer gives the paid-plan limit for the free plan; 1,000 occurs in api-limits.md, so no detector fires. contradiction 0.98 and groundedness 0.95 are critical and corroborate each other: would block. The route keeps raw thresholds (it has not adopted a calibration) and require_calibration holds, so the block is capped to a flag with degraded uncalibrated and reason uncalibrated_snapshot, whichever calibration the backend has. Reasons: contradiction:critical, groundedness:critical, uncalibrated_snapshot. Verdict contradicted, deep_audit high. Judge: one CONTRADICTED claim, audit HALLUCINATED.",
+      "description": "help-center (block). The answer gives the paid-plan limit for the free plan; 1,000 occurs in api-limits.md, so no detector fires. contradiction 0.98 and groundedness 0.95 are critical and corroborate each other: would block. The route keeps raw thresholds (it has not adopted a calibration) and require_calibration holds, so the block is capped to a flag with degraded uncalibrated and reason calibration_missing, whichever calibration the backend has. Reasons: contradiction:critical, groundedness:critical, calibration_missing. Verdict contradicted, deep_audit high. Judge: one CONTRADICTED claim, audit HALLUCINATED.",
       "sets": ["p3", "demo", "e2e"],
       "route": "help-center",
       "api_format": "openai_chat",
@@ -1450,7 +1450,7 @@
         "status": "ok",
         "verdict": "contradicted",
         "max_risk": 0.98,
-        "reasons": ["contradiction:critical", "groundedness:critical", "uncalibrated_snapshot"],
+        "reasons": ["contradiction:critical", "groundedness:critical", "calibration_missing"],
         "checked_against": "request_system:1",
         "deep_audit": "high",
         "audit": "queued",
