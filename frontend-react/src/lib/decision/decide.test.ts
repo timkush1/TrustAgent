@@ -104,7 +104,8 @@ describe('the decision core end to end', () => {
 
   it('caps an uncalibrated block to flag and records would_action in observe', () => {
     expect(gate('block', contradicted).decision).toMatchObject({ action: 'flag', degraded: 'uncalibrated' });
-    expect(gate('block', contradicted).decision.reasons.at(-1)).toBe('uncalibrated_snapshot');
+    // No calibration entry at all: the calibration is missing, not a snapshot change (D56).
+    expect(gate('block', contradicted).decision.reasons.at(-1)).toBe('calibration_missing');
     expect(gate('observe', contradicted).decision).toMatchObject({ action: 'observe', would_action: 'block', enforced: false });
   });
 
@@ -174,5 +175,54 @@ describe('the decision core end to end', () => {
     const { input } = gate('flag', contradicted);
     expect(() => decide(mutate(input))).toThrow(DecideError);
     expect(() => decide(mutate(input))).toThrow(message);
+  });
+});
+
+describe('calibration signals (P4-PLAN D56)', () => {
+  const measured = Array.from({ length: 101 }, (_, i) => Math.min(1, (i + 2) / 100));
+  const otherSnapshot = { state: 'other_snapshot' as const };
+
+  it('says uncalibrated_snapshot only when every uncalibrated block-set member is calibrated on another snapshot', () => {
+    const { input } = gate('block', contradicted);
+    const moved = decide({ ...input, calibration: { 'groundedness@1': otherSnapshot, 'contradiction@1': otherSnapshot } });
+    expect(moved).toMatchObject({ action: 'flag', degraded: 'uncalibrated' });
+    expect(moved.reasons.at(-1)).toBe('uncalibrated_snapshot');
+    const mixed = decide({ ...input, calibration: { 'groundedness@1': otherSnapshot } });
+    expect(mixed.reasons.at(-1)).toBe('calibration_missing');
+    expect(mixed.reasons).not.toContain('uncalibrated_snapshot');
+  });
+
+  it('never reports other_snapshot as a calibration_state', () => {
+    const { input } = gate('block', contradicted);
+    const inputs: DecideInput['calibration'][] = [{}, { 'groundedness@1': otherSnapshot }, { 'groundedness@1': otherSnapshot, 'contradiction@1': otherSnapshot }];
+    for (const calibration of inputs) {
+      const d = decide({ ...input, calibration });
+      for (const r of Object.values(d.evaluators)) {
+        expect(r.calibration_state).toBe('none');
+        expect(r.calibrated).toBe(false);
+      }
+    }
+  });
+
+  it('warns when a calibration was fitted with other state fields, and still applies it', () => {
+    const { input } = gate('block', contradicted);
+    const calibrated = {
+      ...input,
+      evaluators: input.evaluators.map((e) => ({ ...e, thresholds: { space: 'calibrated' as const } })),
+      calibration: {
+        'groundedness@1': { table: measured, quality: 'measured' as const, state: 'measured' as const, fit_state_fields: ['assistant_response', 'evidence', 'user_request'] },
+        'contradiction@1': { table: measured, quality: 'measured' as const, state: 'measured' as const, fit_state_fields: ['evidence', 'assistant_response'] },
+      },
+    };
+    const d = decide(calibrated);
+    expect(d.evaluators['groundedness@1']).toMatchObject({ calibrated: true, calibration_warning: 'calibrated with different state fields' });
+    expect(d.evaluators['contradiction@1']).toMatchObject({ calibrated: true, calibration_warning: null });
+    expect(d).toMatchObject({ action: 'block', calibration: 'all' });
+    expect(d.reasons).not.toContain('calibration_missing');
+  });
+
+  it('rejects an other_snapshot entry that carries a table', () => {
+    const { input } = gate('block', contradicted);
+    expect(() => decide({ ...input, calibration: { 'groundedness@1': { state: 'other_snapshot', table: measured } as never } })).toThrow(DecideError);
   });
 });

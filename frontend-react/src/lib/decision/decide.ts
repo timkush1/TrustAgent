@@ -25,7 +25,7 @@ import type {
   WouldAction,
 } from '@/lib/contracts/types.gen';
 import { applyCalibration, checkCalibrationTable } from './calibration';
-import { FACTUAL_CLAIMS_ID } from './compile';
+import { FACTUAL_CLAIMS_ID, FACTUAL_CLAIMS_REF } from './compile';
 import { EPS } from './floats';
 import { normalize, type RawAnswerInput } from './normalize';
 import { parseSpec, questionId, type Spec } from './spec';
@@ -71,6 +71,18 @@ type EvaluatorInput = DecideInput['evaluators'][number];
 type CalibrationInputEntry = DecideInput['calibration'][string];
 /** A calibration for the current snapshot (an other_snapshot entry calibrates nothing; P4-PLAN D56). */
 type CalibrationEntry = CalibrationInputEntry & { table: CalibrationTable; quality: CalibrationQuality; state: CalibrationState };
+
+/** EvaluatorResult.calibration_warning when the calibration was fitted with other state fields (SPEC §2.11, D56). */
+export const CALIBRATION_WARNING_STATE_FIELDS = 'calibrated with different state fields';
+
+/** Whether a calibration was fitted with other state fields than the evaluator sends (order and repeats aside). */
+function fitWithOtherStateFields(cal: CalibrationEntry, spec: Spec): boolean {
+  const fit = cal.fit_state_fields;
+  if (fit === undefined || fit.length === 0) return false;
+  const a = [...new Set(fit)].sort();
+  const b = [...new Set(spec.stateFields)].sort();
+  return a.length !== b.length || a.some((f, i) => f !== b[i]);
+}
 
 /** The entry that applies to this snapshot, if any: other_snapshot entries carry no table. */
 function currentCalibration(entry: CalibrationInputEntry | undefined): CalibrationEntry | undefined {
@@ -191,18 +203,22 @@ export function decide(input: DecideInput): DecisionCore {
     }
   }
 
-  // CALIBRATION CAP
+  // CALIBRATION CAP. The reason says why (P4-PLAN D56): uncalibrated_snapshot when every
+  // uncalibrated member is calibrated only on another snapshot, otherwise calibration_missing.
   let uncalibratedCap = false;
+  let capReason: 'uncalibrated_snapshot' | 'calibration_missing' = 'calibration_missing';
   if ((action === 'block' || action === 'fallback') && !failClosed && input.policy.require_calibration && !detBlock) {
-    let uncalibrated = blockSet.some((e) => !e.calibrated);
+    const uncalibratedRefs = blockSet.filter((e) => !e.calibrated).map((e) => e.ref);
     if (noEvidence) {
       const fc = evals.find((e) => e.spec.id === FACTUAL_CLAIMS_ID);
-      uncalibrated ||= fc === undefined || !fc.calibrated;
+      if (fc === undefined) uncalibratedRefs.push(FACTUAL_CLAIMS_REF);
+      else if (!fc.calibrated) uncalibratedRefs.push(fc.ref);
     }
-    if (uncalibrated) {
+    if (uncalibratedRefs.length > 0) {
       action = 'flag';
       degraded ??= 'uncalibrated';
       uncalibratedCap = true;
+      if (uncalibratedRefs.every((ref) => own(input.calibration, ref)?.state === 'other_snapshot')) capReason = 'uncalibrated_snapshot';
     }
   }
 
@@ -243,7 +259,7 @@ export function decide(input: DecideInput): DecisionCore {
     [noEvidence, 'no_evidence'],
     [streamNotBuffered, 'stream_not_buffered'],
     [failClosed, 'fail_closed'],
-    [uncalibratedCap, 'uncalibrated_snapshot'],
+    [uncalibratedCap, capReason],
   ];
   for (const [on, reason] of fixed) if (on) reasons.push(reason);
 
@@ -295,7 +311,7 @@ function assess(
     threshold_space: space,
     calibrated: false,
     calibration_state: cal?.state ?? 'none',
-    calibration_warning: null,
+    calibration_warning: cal !== undefined && fitWithOtherStateFields(cal, spec) ? CALIBRATION_WARNING_STATE_FIELDS : null,
     level: null,
     capped: null,
     top: null,

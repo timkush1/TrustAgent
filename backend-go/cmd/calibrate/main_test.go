@@ -296,15 +296,25 @@ func TestSourceAPI(t *testing.T) {
 		auth = r.Header.Get("Authorization")
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &got)
+		// The request is what the gateway's POST /api/calibration/fit accepts (api.v1).
+		contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/CalibrationFitRequest", b)
 		if got.Target == "refusal@1" {
-			w.WriteHeader(http.StatusConflict)
-			_, _ = w.Write([]byte(`{"error":{"code":"not_enough_labels","message":"Label 3 more responses."}}`))
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"error":{"code":"validation_failed","message":"Not enough labels to calibrate refusal@1: 5 (2 should fire, 3 should not); a fit needs 8 with at least 3 of each."}}`))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"record": calibrationRecord{
-			ID: 7, Origin: "fit", Backend: "openrouter-decisions", Snapshot: snapshot, Family: "typesafe/jev-1.13",
-			TargetKind: "evaluator", TargetKey: target.Key(), Quality: entry.Quality, Entry: *entry,
-		}})
+		// The answer has the gateway's full CalibrationFitResponse shape.
+		resp, _ := json.Marshal(map[string]any{
+			"record": calibrationRecord{
+				ID: 7, CreatedAt: time.Date(2026, 9, 28, 10, 15, 22, 0, time.UTC), Origin: "fit", Backend: "openrouter-decisions",
+				Snapshot: snapshot, Family: "typesafe/jev-1.13", TargetKind: "evaluator", TargetKey: target.Key(), Quality: entry.Quality, Entry: *entry,
+			},
+			"reliability": map[string]any{"evaluator": "groundedness@1", "snapshot": snapshot, "window": "30d",
+				"n_by_source": map[string]int{"human": 8, "uniform_audit": 0}, "bins": fit.Reliability, "ece": fit.Metrics.ECEBefore, "n": 8},
+			"metrics": fit.Metrics, "recommended": fit.Recommended,
+		})
+		contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/CalibrationFitResponse", resp)
+		_, _ = w.Write(resp)
 	}))
 	defer srv.Close()
 	keyFile := filepath.Join(t.TempDir(), "key")
@@ -332,7 +342,7 @@ func TestSourceAPI(t *testing.T) {
 	}
 
 	code, _, stderr = runCLI(t, "", e, "--source", "api", "--api", srv.URL, "--evaluator", "refusal@1", "--out", dir)
-	if code != exitFailed || !strings.Contains(stderr, "409 not_enough_labels: Label 3 more responses.") {
+	if code != exitFailed || !strings.Contains(stderr, "422 validation_failed: Not enough labels to calibrate refusal@1") {
 		t.Errorf("api error: exit %d %s", code, stderr)
 	}
 	code, _, stderr = runCLI(t, "", e, "--source", "api", "--api", "ftp://x", "--evaluator", "groundedness@1", "--out", dir)

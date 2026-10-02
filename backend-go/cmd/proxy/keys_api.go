@@ -120,6 +120,11 @@ func (h *authzAPI) revokeKey(c *gin.Context) {
 	case errors.Is(err, authz.ErrKeyNotFound):
 		abortAPI(c, http.StatusNotFound, codeNotFound, "No key has this id.")
 		return
+	case errors.Is(err, authz.ErrLastAdminKey):
+		abortAPIDetails(c, http.StatusConflict, codeConflict,
+			"This is the last admin key; revoking it would lock everyone out. Create another admin key first.",
+			map[string]any{"reason": "last_admin_key"})
+		return
 	case err != nil:
 		h.log.Error("api key not revoked", "err", err)
 		abortAPI(c, http.StatusInternalServerError, codeInternal, "The key could not be revoked.")

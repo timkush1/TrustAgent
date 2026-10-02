@@ -89,7 +89,7 @@ type Server struct {
 
 	mu       sync.Mutex
 	counts   map[string]int
-	codes    map[string]string // PKCE code → challenge
+	codes    map[string]issuedCode // PKCE code → its challenge and mock key marker
 	recorded []Recorded
 	snapshot string
 }
@@ -141,7 +141,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg: cfg, log: log, scenarios: map[string]*Scenario{},
 		byConversation: map[string]*Scenario{}, byPrompt: map[string]*Scenario{}, byFallbackPrompt: map[string]*Scenario{},
-		counts: map[string]int{}, codes: map[string]string{}, snapshot: cfg.Snapshot,
+		counts: map[string]int{}, codes: map[string]issuedCode{}, snapshot: cfg.Snapshot,
 	}
 	first := func(m map[string]*Scenario, key string, sc *Scenario) {
 		if _, dup := m[key]; key != "" && !dup {
@@ -223,7 +223,7 @@ func (s *Server) Requests() []Recorded {
 func (s *Server) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.recorded, s.counts, s.codes = nil, map[string]int{}, map[string]string{}
+	s.recorded, s.counts, s.codes = nil, map[string]int{}, map[string]issuedCode{}
 }
 
 // SetSnapshot changes the model id decision responses report ("" = derived from the request).

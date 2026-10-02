@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -530,10 +531,49 @@ func TestPKCE(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("reused code: %d", resp.StatusCode)
 	}
-	for _, q := range []string{"/auth?callback_url=javascript:x&code_challenge=c", "/auth?callback_url=http://x/cb", "/auth?callback_url=http://x/cb&code_challenge=c&code_challenge_method=MD5"} {
+	for _, q := range []string{"/auth?callback_url=javascript:x&code_challenge=c", "/auth?callback_url=http://x/cb", "/auth?callback_url=http://x/cb&code_challenge=c&code_challenge_method=MD5",
+		"/auth?callback_url=http://x/cb&code_challenge=c&code_challenge_method=S256&mock_key=No-Credits", "/auth?callback_url=http://x/cb&code_challenge=c&code_challenge_method=S256&mock_key=" + strings.Repeat("a", 33)} {
 		if resp, _ := do(t, srv, call{method: http.MethodGet, path: q}); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s: %d", q, resp.StatusCode)
 		}
+	}
+}
+
+// TestPKCEMockKey: a mock_key on /auth picks the behaviour of the key the exchange hands out.
+func TestPKCEMockKey(t *testing.T) {
+	_, srv := newTestServer(t, Config{})
+	verifier := "another-long-random-code-verifier-0123456789"
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+	exchange := func(mockKey string) string {
+		t.Helper()
+		path := "/auth?callback_url=" + url.QueryEscape("http://127.0.0.1:3000/connect/callback") + "&code_challenge=" + challenge + "&code_challenge_method=S256"
+		if mockKey != "" {
+			path += "&mock_key=" + mockKey
+		}
+		resp, _ := do(t, srv, call{method: http.MethodGet, path: path})
+		loc, _ := url.Parse(resp.Header.Get("Location"))
+		resp, b := do(t, srv, call{path: "/api/v1/auth/keys", body: `{"code":"` + loc.Query().Get("code") + `","code_verifier":"` + verifier + `","code_challenge_method":"S256"}`})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("exchange: %d %s", resp.StatusCode, b)
+		}
+		return decodeJSON(t, b)["key"].(string)
+	}
+	key := exchange("nocredits")
+	if !regexp.MustCompile(`^sk-or-v1-mock-nocredits-[0-9a-f]{32}$`).MatchString(key) {
+		t.Fatalf("key %q, want sk-or-v1-mock-nocredits-<hex>", key[:24])
+	}
+	// The marker drives the key policy: the key check shows an exhausted limit, a decision is 402.
+	_, b := do(t, srv, call{method: http.MethodGet, path: "/api/v1/key", header: map[string]string{"Authorization": "Bearer " + key}})
+	if d := decodeJSON(t, b)["data"].(map[string]any); d["limit_remaining"] != 0.0 {
+		t.Errorf("key data %v, want an exhausted limit", d)
+	}
+	resp, _ := do(t, srv, call{path: "/api/alpha/decisions", header: map[string]string{"Authorization": "Bearer " + key}, body: decisionBody("typesafe/jev", "")})
+	if resp.StatusCode != http.StatusPaymentRequired {
+		t.Errorf("decision with a nocredits key: %d, want 402", resp.StatusCode)
+	}
+	if key := exchange(""); !regexp.MustCompile(`^sk-or-v1-mock-[0-9a-f]{32}$`).MatchString(key) {
+		t.Errorf("key without a marker has the wrong shape")
 	}
 }
 

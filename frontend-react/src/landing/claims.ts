@@ -6,7 +6,7 @@
  */
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import measuredDoc from '@contracts/claims/measured.json';
-import { copy } from '@contracts/ui/copy.v1.json';
+import { copy } from './content';
 
 export type ClaimLabel = 'measured' | 'estimate' | 'third_party' | 'vendor' | 'simulated';
 

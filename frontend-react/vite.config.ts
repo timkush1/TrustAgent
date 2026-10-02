@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
-import { scenarioModules, sitePages, type AppMode } from './vite.site.ts'
+import { copyModules, scenarioModules, sitePages, type AppMode } from './vite.site.ts'
 
 const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
@@ -37,6 +37,7 @@ export default defineConfig(({ mode, isPreview }) => {
       react(),
       tailwindcss(),
       scenarioModules(contractsDir),
+      copyModules(contractsDir),
       ...sitePages(appMode),
     ],
     build: {

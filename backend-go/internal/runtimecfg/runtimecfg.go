@@ -312,8 +312,8 @@ func (m *Manager) Current() *Snapshot {
 
 // Subscribe registers fn for every new snapshot and returns the function that removes it. fn
 // runs on the publishing goroutine, in publication order, and must not block: hand slow work
-// (a client rebuild, an engine push) to a goroutine of its own. fn must not call Reload or
-// SetEngineEnvManaged, which publish under the same lock.
+// (a client rebuild, an engine push) to a goroutine of its own. fn must not call Reload,
+// SetEngineEnvManaged or Stored, which take the same lock; the snapshot it gets is current.
 func (m *Manager) Subscribe(fn func(*Snapshot)) (cancel func()) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

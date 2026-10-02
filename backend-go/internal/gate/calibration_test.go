@@ -77,7 +77,7 @@ func TestPaymentsFallbackNeedsTheCalibration(t *testing.T) {
 		exchange(t, p, sc.Headers, sc.Request, sc.Response, sc.ID))
 	d := r.Decision
 	if d.Action != decision.ActionFallback || d.Calibration != decision.CalibrationAll || d.Degraded != nil ||
-		slices.Contains(d.Reasons, decision.ReasonUncalibratedSnapshot) {
+		slices.Contains(d.Reasons, decision.ReasonUncalibratedSnapshot) || slices.Contains(d.Reasons, decision.ReasonCalibrationMissing) {
 		t.Errorf("calibrated: action %s calibration %s degraded %v reasons %v", d.Action, d.Calibration, d.Degraded, d.Reasons)
 	}
 	for _, ref := range []string{"groundedness@1", "contradiction@1"} {
@@ -87,12 +87,12 @@ func TestPaymentsFallbackNeedsTheCalibration(t *testing.T) {
 		}
 	}
 
-	// Without it: capped to flag, uncalibrated_snapshot.
+	// Without it: capped to flag, calibration_missing (no entry at all, D56).
 	for name, cal := range map[string]policy.CalibrationLookup{"nil": nil, "none": policy.NoCalibration{}} {
 		r := calibratedGate(t, strictMock(t, 0).Client, cal).Evaluate(context.Background(),
 			exchange(t, p, sc.Headers, sc.Request, sc.Response, sc.ID))
 		d := r.Decision
-		if d.Action != decision.ActionFlag || d.WouldAction != decision.ActionBlock || !slices.Contains(d.Reasons, decision.ReasonUncalibratedSnapshot) ||
+		if d.Action != decision.ActionFlag || d.WouldAction != decision.ActionBlock || !slices.Contains(d.Reasons, decision.ReasonCalibrationMissing) ||
 			d.Degraded == nil || *d.Degraded != decision.DegradedUncalibrated || d.Calibration != decision.CalibrationNone {
 			t.Errorf("%s: action %s reasons %v degraded %v calibration %s", name, d.Action, d.Reasons, d.Degraded, d.Calibration)
 		}
