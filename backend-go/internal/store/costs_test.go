@@ -161,3 +161,143 @@ func TestCostKnownSnapshot(t *testing.T) {
 		t.Errorf("last snapshot = %q, %v", snap, err)
 	}
 }
+
+// An audit's cost rows are linked by audit_id and stamped at completion (D45): SaveAuditResult
+// derives them from the record, SaveAuditResultWithCosts writes the caller's rows (key label,
+// price table version) in the audit's transaction, and the audit reads back only its own rows
+// even when another audit of the same trace completed at the same moment.
+func TestAuditCostRowsLinkByAuditID(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	tr := pendingTrace("support-bot", time.Now().UTC())
+	if err := s.StartTrace(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	created := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+	completed := created.Add(4 * time.Second)
+	calls := []CostRecord{
+		{Component: "deep_audit_decompose", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", InputTokens: 900,
+			OutputTokens: 250, CostUSD: 0.00215, CostSource: "computed", LatencyMs: 700, Status: "ok"},
+		{Component: "deep_audit_verify", Kind: "llm", Provider: "acme", Model: "private", InputTokens: 10, OutputTokens: 2,
+			CostSource: "unknown", Status: "ok"},
+	}
+	derived := sampleAudit(NewID(), 0.2, true)
+	derived.TraceID, derived.Costs, derived.CreatedAt, derived.CompletedAt = tr.TraceID, calls, created, &completed
+	derived.Route, derived.Selection = strp("support-bot"), strp("high")
+	if err := s.SaveAuditResult(ctx, derived, AuditCompleted); err != nil {
+		t.Fatal(err)
+	}
+	in, out, latency, q := int64(400), int64(60), int64(900), 3
+	usd := 0.0007
+	given := sampleAudit(NewID(), 0.9, false)
+	given.TraceID, given.Costs, given.CreatedAt, given.CompletedAt = tr.TraceID, calls[:1], created, &completed
+	rows := []CostEvent{{OccurredAt: completed, TraceID: tr.TraceID, AuditID: given.AuditID, Route: "support-bot",
+		KeyLabel: "support-app", Component: "deep_audit_verify", Kind: CostKindLLM, Provider: "anthropic",
+		Model: "claude-haiku-4-5", InputTokens: &in, OutputTokens: &out, CostUSD: &usd, CostSource: "computed",
+		PriceTableVersion: "override", LatencyMs: &latency, Status: "ok", Questions: &q, Selection: "uniform"}}
+	if err := s.SaveAuditResultWithCosts(ctx, given, AuditCompleted, rows); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetAudit(ctx, derived.AuditID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Costs) != 2 || got.Costs[0] != calls[0] || got.Costs[1].CostSource != "unknown" || got.Costs[1].CostUSD != 0 {
+		t.Errorf("derived costs %+v", got.Costs)
+	}
+	got, _ = s.GetAudit(ctx, given.AuditID)
+	if len(got.Costs) != 1 || got.Costs[0].Model != "claude-haiku-4-5" || got.Costs[0].CostUSD != 0.0007 || got.Costs[0].Questions != 3 {
+		t.Errorf("given costs %+v", got.Costs)
+	}
+
+	type stored struct {
+		audit, key, version, selection string
+		attempt                        int
+		occurred                       time.Time
+		nullCost                       bool
+	}
+	r, err := s.pool.Query(ctx, `SELECT audit_id, COALESCE(key_label, ''), COALESCE(price_table_version, ''),
+		COALESCE(selection, ''), attempt, occurred_at, cost_usd IS NULL FROM cost_events ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var all []stored
+	for r.Next() {
+		var x stored
+		if err := r.Scan(&x.audit, &x.key, &x.version, &x.selection, &x.attempt, &x.occurred, &x.nullCost); err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, x)
+	}
+	r.Close()
+	if len(all) != 3 {
+		t.Fatalf("rows %+v", all)
+	}
+	for i, x := range all {
+		if !x.occurred.Equal(completed) || x.attempt != 0 {
+			t.Errorf("row %d is not stamped at completion: %+v", i, x)
+		}
+	}
+	if all[0].audit != derived.AuditID || all[0].selection != "high" || all[0].nullCost || !all[1].nullCost {
+		t.Errorf("derived rows %+v", all[:2])
+	}
+	if all[2].audit != given.AuditID || all[2].key != "support-app" || all[2].version != "override" || all[2].selection != "uniform" {
+		t.Errorf("given row %+v", all[2])
+	}
+}
+
+// Rows written before 0005 have no audit_id: the audit still finds them by the old rule (its
+// trace's deep-audit rows stamped with its created_at).
+func TestAuditCostsReadPre0005Rows(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	a := sampleAudit(NewID(), 0.5, false)
+	a.TraceID, a.CreatedAt = NewID(), time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	if err := s.SaveAudit(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	for _, component := range []string{"deep_audit_verify", "gate"} {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO cost_events (occurred_at, trace_id, component, kind, cost_usd, cost_source)
+			VALUES ($1, $2, $3, 'llm', 0.001, 'computed')`, a.CreatedAt, a.TraceID, component); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.GetAudit(ctx, a.AuditID)
+	if err != nil || len(got.Costs) != 1 || got.Costs[0].Component != "deep_audit_verify" {
+		t.Errorf("legacy costs %+v %v", got, err)
+	}
+}
+
+// DropTraceAudit drops the trace's audit and adds the flag once; an empty flag adds none.
+func TestDropTraceAuditFlagsOnce(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	tr := pendingTrace("support-bot", time.Now().UTC())
+	tr.Flags = []string{"uniform_sample"}
+	if err := s.StartTrace(ctx, tr); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := s.DropTraceAudit(ctx, tr.TraceID, "llm_budget"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.GetTrace(ctx, tr.TraceID)
+	if err != nil || got.AuditStatus != TraceAuditDropped || len(got.Flags) != 2 || got.Flags[1] != "llm_budget" {
+		t.Fatalf("trace %+v %v", got, err)
+	}
+	other := pendingTrace("support-bot", time.Now().UTC())
+	if err := s.StartTrace(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DropTraceAudit(ctx, other.TraceID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTrace(ctx, other.TraceID); got.AuditStatus != TraceAuditDropped || len(got.Flags) != len(other.Flags) {
+		t.Errorf("no flag: %+v", got.Flags)
+	}
+	if err := s.DropTraceAudit(ctx, NewID(), "llm_budget"); err != nil {
+		t.Errorf("an unknown trace: %v", err)
+	}
+}

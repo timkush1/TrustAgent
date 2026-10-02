@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/websocket"
 )
@@ -143,6 +144,43 @@ func resultRecord(job *Job, lane string, res *pb.AuditResult, started, finished 
 		rec.Claims = append(rec.Claims, claimRecord(c))
 	}
 	return rec
+}
+
+// costRows are the cost_events rows of an answered audit's cost records (D45): linked to the
+// audit by audit_id, stamped when the audit completed (finished), with the trace, route, key
+// label and selection of the job, attempt 0 (an audit is one engine call), and the
+// price_table_version version names. A record no price covers keeps a NULL cost.
+func costRows(job *Job, records []*pb.CostRecord, finished time.Time, version func(provider, model string) string) []store.CostEvent {
+	req := job.Request
+	rows := make([]store.CostEvent, 0, len(records))
+	for _, r := range records {
+		if r == nil {
+			continue
+		}
+		in, out, latency := r.GetInputTokens(), r.GetOutputTokens(), r.GetLatencyMs()
+		row := store.CostEvent{
+			OccurredAt: finished.UTC(), TraceID: req.GetTraceId(), AuditID: req.GetAuditId(), Route: req.GetRoute(),
+			KeyLabel: job.KeyLabel, Component: r.GetComponent(), Kind: r.GetKind(), Provider: r.GetProvider(),
+			Model: r.GetModel(), InputTokens: &in, OutputTokens: &out, CostSource: r.GetCostSource(),
+			PriceTableVersion: version(r.GetProvider(), r.GetModel()), LatencyMs: &latency, Status: r.GetStatus(),
+			Selection: job.Selection,
+		}
+		if row.Kind == "" {
+			row.Kind = store.CostKindLLM
+		}
+		if row.CostSource == "" {
+			row.CostSource = decision.CostUnknown
+		}
+		if row.CostSource != decision.CostUnknown {
+			c := r.GetCostUsd()
+			row.CostUSD = &c
+		}
+		if q := int(r.GetQuestions()); q > 0 {
+			row.Questions = &q
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 func claimRecord(c *pb.ClaimVerification) store.ClaimRecord {

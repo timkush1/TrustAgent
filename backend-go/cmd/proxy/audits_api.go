@@ -169,8 +169,8 @@ const maxDirectContext = maxAuditDocs
 // low lane with selection direct. It records the trace the audit belongs to (source and api_format
 // direct, gate_status skipped: the fast check does not run; the route from the request, else
 // direct), broadcasts trace_started, then queues the audit (audit_queued follows). An engine
-// without a working judge is refused with 503 no_judge; an audit that is not queued leaves its
-// trace dropped.
+// without a working judge is refused with 503 no_judge, an audit past the day's LLM cap with 503
+// budget_exhausted (D48, details.cap llm); an audit that is not queued leaves its trace dropped.
 func (a *auditsAPI) direct(c *gin.Context) {
 	var req directAuditRequest
 	dec := json.NewDecoder(c.Request.Body)
@@ -224,24 +224,34 @@ func (a *auditsAPI) direct(c *gin.Context) {
 	// for longer than directWriteTimeout: a stalled database must not hold the handler forever.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), directWriteTimeout)
 	defer cancel()
-	a.recordTrace(ctx, directTrace(traceID, auditID, &req, opts.MockScenario, callerIdentity(c)))
+	trace := directTrace(traceID, auditID, &req, opts.MockScenario, callerIdentity(c))
+	a.recordTrace(ctx, trace)
+	keyLabel := ""
+	if trace.KeyLabel != nil {
+		keyLabel = *trace.KeyLabel
+	}
 	job := &worker.Job{
 		Request: &pb.AuditRequest{
 			RequestId: traceID, TraceId: traceID, AuditId: auditID, Query: req.Query, Response: req.Response,
 			Context: docs, Model: req.Model, Provider: "direct", TimestampMs: time.Now().UnixMilli(), Route: req.Route,
 			Source: gate.SourceDirect, Priority: gate.LaneLow, Options: opts,
 		},
-		Lane: gate.LaneLow, Selection: selectionDirect, InclusionProb: 1,
+		Lane: gate.LaneLow, Selection: selectionDirect, InclusionProb: 1, KeyLabel: keyLabel,
 	}
 	job.ContextUsed, _ = json.Marshal(items)
 	lane, err := a.audits.Submit(job)
 	if err != nil {
 		a.dropped(ctx, traceID, auditID, err)
-		code := codeQueueFull
-		if errors.Is(err, worker.ErrNoEngine) {
-			code = codeEngineUnavailable
+		switch {
+		case errors.Is(err, worker.ErrLLMBudget):
+			abortAPIDetails(c, http.StatusServiceUnavailable, codeBudgetExhausted,
+				"Today's deep-audit budget is used up: deep audits start again at midnight UTC, or as soon as the budget is raised.",
+				map[string]any{"cap": "llm"})
+		case errors.Is(err, worker.ErrNoEngine):
+			abortAPI(c, http.StatusServiceUnavailable, codeEngineUnavailable, "The audit was not queued: "+err.Error())
+		default:
+			abortAPI(c, http.StatusServiceUnavailable, codeQueueFull, "The audit was not queued: "+err.Error())
 		}
-		abortAPI(c, http.StatusServiceUnavailable, code, "The audit was not queued: "+err.Error())
 		return
 	}
 	c.JSON(http.StatusAccepted, directAuditAccepted{TraceID: traceID, AuditID: auditID, Status: "queued", Lane: lane})
@@ -316,10 +326,10 @@ func (a *auditsAPI) recordTrace(ctx context.Context, t *store.TraceRecord) {
 }
 
 // dropped settles the trace of a direct audit that was not queued: its audit status becomes
-// dropped and audit_dropped is broadcast.
+// dropped (with the flag llm_budget when the LLM cap refused it) and audit_dropped is broadcast.
 func (a *auditsAPI) dropped(ctx context.Context, traceID, auditID string, err error) {
 	if a.store != nil {
-		if werr := a.store.SetTraceAudit(ctx, traceID, store.TraceAuditUpdate{Status: gate.AuditDropped}); werr != nil {
+		if werr := dropTraceAudit(ctx, a.store, traceID, err); werr != nil {
 			metrics.TraceWriteDropped.Inc()
 			a.log.Error("trace: recording a dropped direct audit failed", "trace_id", traceID, "err", werr)
 		}
