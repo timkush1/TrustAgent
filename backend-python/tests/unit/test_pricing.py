@@ -262,6 +262,18 @@ def test_from_json_rejects_malformed_json() -> None:
         PriceTable.from_json(b"{")
 
 
+def test_a_price_no_float_can_hold_is_a_table_error_not_a_crash() -> None:
+    # A JSON integer beyond any float (1 and 400 zeros) is refused like any other bad price,
+    # so ApplyRuntimeConfig and the startup load report it instead of raising OverflowError.
+    huge = "1" + "0" * 400
+    document = (
+        '{"version": "v", "currency": "USD", "entries": [{"match": "*", "provider": "p", '
+        f'"input_per_mtok": {huge}, "output_per_mtok": 0}}]}}'
+    )
+    with pytest.raises(PriceTableError, match=r"input_per_mtok must be a finite"):
+        PriceTable.from_json(document)
+
+
 def test_price_table_file_overrides_the_contracts_table(tmp_path: Path) -> None:
     override = tmp_path / "prices.json"
     override.write_text(

@@ -147,13 +147,15 @@ class PriceTableError(ValueError):
 
 def _number(entry: Mapping[str, Any], key: str, where: str) -> float:
     value = entry.get(key)
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not _valid_amount(float(value))
-    ):
+    number = math.nan
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            number = float(value)
+        except OverflowError:  # an integer beyond any float: not a finite price
+            pass
+    if not _valid_amount(number):
         raise PriceTableError(f"{where}.{key} must be a finite non-negative number")
-    return float(value)
+    return number
 
 
 @dataclass(frozen=True)
