@@ -17,7 +17,7 @@ import type {
   DecisionRequestView,
   LabelValue,
 } from '@/types/api';
-import { copy } from '../contracts';
+import { copy, outcomesContract } from '../contracts';
 
 // ------------------------------------------------------------------------------------- labels
 
@@ -58,11 +58,8 @@ export function evalLabelsStillNeeded(p: { human_labels: { n: number; pos: numbe
 
 // -------------------------------------------------------------------------------- calibration
 
-const ORIGINS: Record<CalibrationRecordMeta['origin'], string> = {
-  file: 'From a calibration file',
-  import: 'Imported in the dashboard',
-  fit: 'Fitted from labels',
-};
+/** Where a calibration record came from (copy.evaluators.calibration_origin, D86). */
+const ORIGINS: Record<CalibrationRecordMeta['origin'], string> = copy.evaluators.calibration_origin;
 
 export function evalCalibrationOriginLabel(origin: CalibrationRecordMeta['origin']): string {
   return ORIGINS[origin] ?? 'Other source';
@@ -120,15 +117,39 @@ export function evalCriticalNullText(reason: string | null): string {
   return reason ?? 'There is not enough evidence yet that blocks would be right at least 95% of the time.';
 }
 
-const IMPORT_REJECTIONS: Record<CalibrationImportResult['rejected'][number]['reason'], string> = {
-  unknown_version: 'The file calibrates an evaluator version this proxy does not have.',
-  calibration_key_mismatch: 'The file was fitted for a different question than this evaluator version asks.',
-  mock_snapshot: 'Simulated (mock) calibrations are only accepted on the demo and test stacks.',
-  invalid: 'The entry does not match the calibration format.',
-};
+/** Why an import skipped an entry (copy.evaluators.calibration_import_rejected, D86). */
+const IMPORT_REJECTIONS: Record<CalibrationImportResult['rejected'][number]['reason'], string> = copy.evaluators.calibration_import_rejected;
 
 export function evalImportRejectionText(reason: CalibrationImportResult['rejected'][number]['reason']): string {
-  return IMPORT_REJECTIONS[reason] ?? 'The server refused this entry.';
+  return IMPORT_REJECTIONS[reason] ?? 'Skipped: the gateway refused this entry.';
+}
+
+/**
+ * EvaluatorResult.calibration_warning in words (D56): the server sends one sentence today
+ * ("calibrated with different state fields"); the dashboard says it with the contract's words and
+ * never shows the server text. Null when there is no warning.
+ */
+export function evalCalibrationWarningText(warning: string | null | undefined): string | null {
+  if (!warning) return null;
+  const words = outcomesContract.status_reasons.calibration_warning ?? 'its calibration was fitted under different conditions (it still applies)';
+  return `Calibration note: ${words}.`;
+}
+
+/**
+ * The fit's 422 "not enough labels" answer (#45) in words, from its details
+ * ({n, pos, neg, needed: {n, per_class}}); null for any other failure.
+ */
+export function evalNotEnoughLabelsText(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null;
+  const d = details as { n?: unknown; pos?: unknown; neg?: unknown; needed?: { n?: unknown; per_class?: unknown } | null };
+  const nums = [d.n, d.pos, d.neg, d.needed?.n, d.needed?.per_class];
+  if (!nums.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const [n, pos, neg, needN, perClass] = nums as number[];
+  const fmt = (v: number) => v.toLocaleString('en-US');
+  return (
+    `Not enough labels to fit yet: ${fmt(n)} so far (${fmt(pos)} ${copy.labels.correct.toLowerCase()}, ${fmt(neg)} ${neg === 1 ? 'false alarm' : 'false alarms'}). ` +
+    `A fit needs at least ${fmt(needN)} labels with ${fmt(perClass)} of each kind. Label more answers in the label queue, then try again.`
+  );
 }
 
 /** "groundedness@1" from a target key "groundedness@1#<key>#<params>" (SPEC §2.11). */

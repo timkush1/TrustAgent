@@ -66,6 +66,7 @@ function CheckItem({ row, route }: { row: CheckRow; route: string }) {
       ) : (
         <p className="text-xs text-fg-muted">{row.note}</p>
       )}
+      {row.calibrationNote ? <p className="text-xs text-fg-muted">{row.calibrationNote}</p> : null}
     </li>
   );
 }

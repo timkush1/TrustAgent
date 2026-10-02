@@ -7,6 +7,7 @@
 import { applyAuditToTrace, auditRank, mergeTraceSummary } from '@/data/normalize';
 import type { MarkFinding } from '@/domain/segmentClaims';
 import { formatDurationMs, formatRisk } from '@/domain/format';
+import { evalCalibrationWarningText } from '@/domain/words/evaluators';
 import {
   copy,
   fillTemplate,
@@ -203,6 +204,8 @@ export interface CheckRow {
   criticalAt: number | null;
   /** Why it was not assessed or failed, in words. */
   note: string | null;
+  /** A calibration caveat that still lets the calibration apply (EvaluatorResult.calibration_warning, D56), in words. */
+  calibrationNote: string | null;
 }
 
 /**
@@ -224,6 +227,7 @@ function checkRow(r: EvaluatorResult, names?: ReadonlyMap<string, string>): Chec
     risk: r.risk,
     warnAt: r.thresholds.warn_at,
     criticalAt: r.thresholds.critical_at,
+    calibrationNote: evalCalibrationWarningText(r.calibration_warning),
   };
   if (r.status === 'assessed' && r.risk !== null && r.level !== null) return { ...row, kind: 'assessed', note: null };
   if (r.status === 'not_assessed' && (r.reason === null || NO_DOCUMENTS.has(r.reason))) {

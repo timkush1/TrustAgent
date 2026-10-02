@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { outcomesContract } from '@/domain/contracts';
 import { decision, trace } from '@/test/fixtures';
 import { renderWithRouter } from '@/test/renderWithRouter';
 import { s0Decision, s0Trace } from '@/test/scenarios';
@@ -72,5 +73,21 @@ describe('ChecksList', () => {
     expect(within(items[2]).getByRole('link', { name: 'Factual claims' })).toBeInTheDocument();
     expect(within(items[2]).queryByRole('button', { name: /Adjust threshold/ })).toBeNull();
     expect(within(items[0]).getByRole('button', { name: 'Adjust threshold: Groundedness' })).toBeInTheDocument();
+  });
+
+  it('says in words when a calibration was fitted with other state fields, and never shows the server text', async () => {
+    const d = s0Decision('refund-contradiction-flag');
+    const warned = {
+      ...d,
+      evaluators: {
+        ...d.evaluators,
+        'groundedness@1': { ...d.evaluators['groundedness@1'], calibration_warning: 'fit_state_fields differ: [plan] vs [plan, region]' },
+      },
+    };
+    await renderWithRouter(<ChecksList summary={s0Trace('refund-contradiction-flag')} decision={warned} />);
+    const items = within(screen.getByRole('list', { name: 'Checks' })).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent(`Calibration note: ${outcomesContract.status_reasons.calibration_warning}.`);
+    expect(items[0]).not.toHaveTextContent('fit_state_fields');
+    expect(items[1]).not.toHaveTextContent('Calibration note');
   });
 });

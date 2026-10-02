@@ -164,6 +164,20 @@ describe('Open evaluator and Adjust threshold', { timeout: 20_000 }, () => {
       expect.stringMatching(/^\/app\/policies\?route=support-bot&evaluator=contradiction(%40|@)1$/),
     );
   });
+
+  it.each(['calibration_missing', 'uncalibrated_snapshot'])('open the Calibration tab when %s capped a block', async (reason) => {
+    const detail = traceDetail('refund');
+    detail.reasons = [...detail.reasons, reason];
+    setup(detail);
+    const region = await screen.findByRole('region', { name: 'Outcome' });
+    expect(await within(region).findByRole('link', { name: `${copy.trace.open_evaluator}: Contradiction` })).toHaveAttribute(
+      'href',
+      '/app/evaluators/contradiction?tab=calibration',
+    );
+    // The cap reads as words from outcomes.v1.json, never the raw reason.
+    expect(within(region).getByRole('list', { name: 'Reasons' })).toHaveTextContent(/Would have blocked/);
+    expect(region).not.toHaveTextContent(reason);
+  });
 });
 
 describe('Show exact Jev request', { timeout: 20_000 }, () => {

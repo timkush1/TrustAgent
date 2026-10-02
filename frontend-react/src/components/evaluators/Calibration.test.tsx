@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { copy } from '@/domain/presentation';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { calibrationProgress, dryRunResult, evaluatorDetail } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
@@ -18,6 +19,8 @@ import { stopLive } from '@/test/renderLive';
 installMswServer();
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
+
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const dialog = async (name: RegExp | string) => (await screen.findByRole('dialog', { name })) as HTMLElement;
 
@@ -64,6 +67,29 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     const alert = await within(d).findByRole('alert');
     expect(alert).toHaveTextContent('The fit failed: Calibration needs a database.');
     expect(alert).toHaveTextContent('persistence_disabled');
+  });
+
+  it('says how many more labels a fit needs when the gateway has too few (422), without its refs', async () => {
+    const user = userEvent.setup();
+    // The gateway's body for #45 below 8 labels or 3 of each kind (cmd/proxy/calibration_api.go).
+    const control = createControlApi({
+      calibrationFit: errorReply(
+        422,
+        'validation_failed',
+        'Not enough labels to calibrate groundedness@1: 5 (2 should fire, 3 should not); a fit needs 8 with at least 3 of each.',
+        undefined,
+        { names: ['groundedness@1'], n: 5, pos: 2, neg: 3, needed: { n: 8, per_class: 3 } },
+      ),
+    });
+    renderPage('/app/evaluators/groundedness', { control });
+    await user.click(await screen.findByRole('button', { name: 'Calibrate now for Groundedness' }));
+    const d = await dialog('Calibrate Groundedness');
+    await user.click(within(d).getByRole('button', { name: 'Fit calibration (free)' }));
+    const alert = await within(d).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Not enough labels to fit yet: 5 so far (2 correct, 3 false alarms). A fit needs at least 8 labels with 3 of each kind. Label more answers in the label queue, then try again.',
+    );
+    expect(alert).not.toHaveTextContent(/groundedness@1|should fire|validation_failed|The fit failed/);
   });
 
   it('says why Calibrate now is not available without labels or an admin', async () => {
@@ -183,7 +209,7 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     expect(rows[0]).toHaveTextContent('Calibration #3');
     expect(rows[0]).toHaveTextContent('Measured');
     expect(rows[0]).toHaveTextContent('Active');
-    expect(rows[0]).toHaveTextContent('From a calibration file');
+    expect(rows[0]).toHaveTextContent(copy.evaluators.calibration_origin.file);
     // A file row is managed on disk.
     expect(within(rows[0]).getByRole('button', { name: 'Deactivate' })).toHaveAttribute('aria-disabled', 'true');
     expect(within(rows[0]).getByText(/remove or replace the file instead/)).toBeInTheDocument();
@@ -197,6 +223,7 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     list.items[0].active = false;
     renderPage('/app/evaluators/groundedness?tab=calibration', { control });
     const row = (await screen.findByText('Calibration #7')).closest('li') as HTMLElement;
+    expect(row).toHaveTextContent(copy.evaluators.calibration_origin.fit);
     await user.click(within(row).getByRole('button', { name: 'Deactivate' }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Deactivate calibration #7?' });
     await user.click(within(confirm).getByRole('button', { name: 'Deactivate' }));
@@ -240,9 +267,16 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File([JSON.stringify({ schema: 'trustagent.calibration/v1', entries: [] })], 'jev.json', { type: 'application/json' });
     await user.upload(input, file);
-    expect(await screen.findByText('Imported 1 calibration; 2 refused.')).toBeInTheDocument();
-    expect(screen.getByText(/The file calibrates an evaluator version this proxy does not have/)).toBeInTheDocument();
-    expect(screen.getByText(/Simulated \(mock\) calibrations are only accepted on the demo and test stacks/)).toBeInTheDocument();
+    const status = (await screen.findByText('Imported 1 calibration; 2 skipped.')).closest('[role="status"]') as HTMLElement;
+    // Each skipped entry in the contract's words (copy.evaluators.calibration_import_rejected), never the raw reason.
+    expect(within(status).getByText(new RegExp(escapeRe(copy.evaluators.calibration_import_rejected.unknown_version)))).toBeInTheDocument();
+    expect(within(status).getByText(new RegExp(escapeRe(copy.evaluators.calibration_import_rejected.mock_snapshot)))).toBeInTheDocument();
+    expect(status).not.toHaveTextContent(/unknown_version|mock_snapshot/);
+    // The server's own sentence stays behind "Technical detail".
+    const details = within(status).getAllByText('Technical detail');
+    expect(details).toHaveLength(2);
+    expect(details[0].closest('details')).not.toHaveAttribute('open');
+    expect(within(status).getByText('refusal has no version 2 on this gateway.').closest('details')).not.toBeNull();
     expect(control.callsTo('/api/calibration', 'POST')[0].body).toMatchObject({ activate: true, file: { schema: 'trustagent.calibration/v1' } });
 
     await user.upload(input, new File(['not json'], 'notes.txt', { type: 'application/json' }));

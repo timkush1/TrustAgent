@@ -2,8 +2,9 @@
  * The top of a trace (SPEC §3.3 "Trace detail" 1): the outcome pill and headline, what the answer
  * was checked against, the reasons in plain words, the next step, a link to what the user received
  * when it was not the model's answer, "Was this right?" (labels, P4-PLAN D59), and the links to the
- * check that drove the outcome: "Open evaluator" and "Adjust threshold" (its route in Policies, with
- * the threshold editor open).
+ * check that drove the outcome: "Open evaluator" (its Calibration tab when a block was capped for
+ * want of a calibration) and "Adjust threshold" (its route in Policies, with the threshold editor
+ * open).
  */
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUpRight, SlidersHorizontal } from 'lucide-react';
@@ -16,6 +17,9 @@ import { evalRefId } from '@/domain/words/evaluators';
 import type { GateDecisionView, LabelView, TraceDetail, TraceSummary } from '@/types/api';
 import { evaluatorName, primaryCheck, type Delivered } from './traceView';
 import { WasThisRight } from './WasThisRight';
+
+/** Reasons that capped a block to Flag because the check has no usable calibration (D56). */
+const CALIBRATION_CAPS: ReadonlySet<string> = new Set(['calibration_missing', 'uncalibrated_snapshot']);
 
 const linkClass = 'inline-flex items-center gap-1 text-sm font-medium text-fg underline underline-offset-2';
 
@@ -55,6 +59,8 @@ export function OutcomeCard({
   const evidence = checkedAgainst(summary.checked_against ?? decision?.evidence_summary);
   const reasons = reasonLines(summary.reasons, decision);
   const check = primaryCheck(decision);
+  // A block capped for want of a calibration (D56) is fixed on the check's Calibration tab.
+  const needsCalibration = summary.reasons.some((r) => CALIBRATION_CAPS.has(r));
   return (
     <section aria-labelledby="outcome-title" className="space-y-3 rounded-lg border border-border bg-surface p-4">
       <h2 id="outcome-title" className="sr-only">
@@ -88,7 +94,12 @@ export function OutcomeCard({
       ) : null}
       {check ? (
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <Link to="/app/evaluators/$id" params={{ id: evalRefId(check.ref) }} className={linkClass}>
+          <Link
+            to="/app/evaluators/$id"
+            params={{ id: evalRefId(check.ref) }}
+            search={needsCalibration ? { tab: 'calibration' } : {}}
+            className={linkClass}
+          >
             {copy.trace.open_evaluator}
             <span className="sr-only">: {evaluatorName(check.ref, names)}</span>
             <ArrowUpRight aria-hidden="true" className="size-3.5" />

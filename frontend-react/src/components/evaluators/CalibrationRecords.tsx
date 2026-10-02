@@ -6,7 +6,7 @@
  * them). The server re-derives each import's quality, so a file cannot claim to be Measured.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleAlert, FileUp, Gauge } from 'lucide-react';
+import { ChevronRight, CircleAlert, FileUp, Gauge } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -72,7 +72,7 @@ function ImportResult({ result }: { result: CalibrationImportResult }) {
     <div role="status" className="space-y-2 rounded-md border border-border px-3 py-2 text-sm">
       <p className="text-fg">
         Imported {result.imported.length} {result.imported.length === 1 ? 'calibration' : 'calibrations'}
-        {result.rejected.length > 0 ? `; ${result.rejected.length} refused` : ''}.
+        {result.rejected.length > 0 ? `; ${result.rejected.length} skipped` : ''}.
       </p>
       {result.imported.length > 0 ? (
         <ul className="space-y-0.5 text-xs text-fg-muted">
@@ -89,10 +89,20 @@ function ImportResult({ result }: { result: CalibrationImportResult }) {
           {result.rejected.map((r, i) => (
             <li key={`${r.target_key ?? 'entry'}-${i}`} className="flex items-start gap-1.5 text-xs text-fg">
               <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-tone-warning" />
-              <span>
-                {r.target_key ? <span className="font-mono">{evalTargetRef(r.target_key)}</span> : 'One entry'}: {evalImportRejectionText(r.reason)}{' '}
-                <span className="text-fg-muted">({r.message})</span>
-              </span>
+              <div className="min-w-0 space-y-0.5">
+                <p>
+                  {r.target_key ? <span className="font-mono">{evalTargetRef(r.target_key)}</span> : 'One entry'}: {evalImportRejectionText(r.reason)}
+                </p>
+                {r.message ? (
+                  <details className="group/detail">
+                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+                      <ChevronRight aria-hidden="true" className="size-3 transition-transform group-open/detail:rotate-90" />
+                      Technical detail
+                    </summary>
+                    <p className="mt-0.5 break-words text-fg-muted">{r.message}</p>
+                  </details>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

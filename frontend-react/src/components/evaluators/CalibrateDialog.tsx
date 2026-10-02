@@ -24,12 +24,13 @@ import { Dialog, DialogContent, DialogFooter, DialogTrigger } from '@/components
 import { Field } from '@/components/ui/field';
 import { RadioGroup } from '@/components/ui/radio-group';
 import { Select } from '@/components/ui/select';
+import { isApiError } from '@/data/errors';
 import { qkc } from '@/data/queries';
 import { qkcEvaluators } from '@/data/queries/evaluators';
 import { useAppMode } from '@/data/useSystem';
 import { formatCount, formatRisk } from '@/domain/format';
 import { copy } from '@/domain/presentation';
-import { EVAL_FIT_HONESTY, evalCriticalNullText, evalQualityView } from '@/domain/words/evaluators';
+import { EVAL_FIT_HONESTY, evalCriticalNullText, evalNotEnoughLabelsText, evalQualityView } from '@/domain/words/evaluators';
 import type { CalibrationFitResponse, EvaluatorDetail } from '@/types/api';
 import { AdoptPanel } from './AdoptPanel';
 import { ReliabilityChart } from './ReliabilityChart';
@@ -162,7 +163,15 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
     }
   };
 
-  const failure = fit.error ? describeError(fit.error) : activate.error ? describeError(activate.error) : null;
+  // Too few labels is the fit's usual refusal (422): say it with the counts, not the server's refs.
+  const tooFew = isApiError(fit.error) && fit.error.status === 422 ? evalNotEnoughLabelsText(fit.error.details) : null;
+  const failure = tooFew
+    ? { message: tooFew, code: null }
+    : fit.error
+      ? describeError(fit.error)
+      : activate.error
+        ? describeError(activate.error)
+        : null;
   const result = fit.data;
 
   return (
@@ -215,7 +224,8 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
               <p role="alert" className="flex items-start gap-2 text-sm text-fg">
                 <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-tone-danger" />
                 <span>
-                  The fit failed: {failure.message}
+                  {tooFew ? null : 'The fit failed: '}
+                  {failure.message}
                   {failure.code ? <span className="ml-1 font-mono text-2xs text-fg-subtle">{failure.code}</span> : null}
                 </span>
               </p>
