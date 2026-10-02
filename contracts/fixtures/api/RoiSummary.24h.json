@@ -1,0 +1,68 @@
+{
+  "window": "24h",
+  "gated_responses": 540,
+  "simulated": false,
+  "decision_cost": {
+    "value": 0.0243,
+    "label": "measured",
+    "basis": "reported by OpenRouter per call",
+    "usd": 0.0243,
+    "per_1k": 0.045
+  },
+  "llm_cost": {
+    "value": 0.41,
+    "label": "measured",
+    "basis": "deep-audit judge calls, reported cost",
+    "usd": 0.41,
+    "audits": 58,
+    "by_selection": {
+      "high": 44,
+      "sample": 10,
+      "uniform": 4
+    }
+  },
+  "total_per_1k": {
+    "value": 0.8,
+    "label": "measured",
+    "basis": "fast check plus deep audit, per 1,000 gated answers"
+  },
+  "counterfactuals": [
+    {
+      "kind": "llm_same_checks",
+      "method": "token_model",
+      "usd": 1.22,
+      "low": 1.05,
+      "high": 1.4,
+      "per_1k": 2.26,
+      "n": 540,
+      "label": "estimate",
+      "basis": "the same questions asked of Claude Haiku 4.5 at list price"
+    }
+  ],
+  "savings_vs_same_checks": {
+    "usd_low": 0.6,
+    "usd_high": 0.97,
+    "label": "estimate"
+  },
+  "outcomes": {
+    "flagged": 34,
+    "blocked": 4,
+    "fallback": 0,
+    "not_assessed": 72,
+    "label": "measured"
+  },
+  "latency_ms": {
+    "gate_p50": 212,
+    "gate_p95": 480,
+    "deadline_miss_rate": 0.004,
+    "label": "measured"
+  },
+  "sampling": {
+    "uniform_rate": 0.01,
+    "uniform_today": 4,
+    "uniform_cap": 50,
+    "uniform_stopped_at": null,
+    "llm_cap_hit_at": null
+  },
+  "third_party": []
+}

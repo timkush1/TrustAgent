@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "confirmation_required",
+    "message": "Removing this key turns the fast check off; these routes block on failure, so every answer would be blocked.",
+    "details": {
+      "routes": [
+        "payments-faq"
+      ]
+    }
+  },
+  "trace_id": null
+}

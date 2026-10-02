@@ -2,6 +2,9 @@
  * The control-plane endpoints over HTTP (SPEC §2.4 #3-#6, #9, #17-#29, #47, #50-#51, #61-#65). Every body
  * passes through the single normalizer (normalize.ts) before a page sees it. LiveDataSource extends
  * this class, so pages reach these methods through the one DataSource they already have.
+ *
+ * The P4 planes (data/control/*Plane.ts) are spread onto each instance in the constructor; their
+ * methods, shapes and bodies live in the plane files, never here.
  */
 import type {
   EvaluatorDetail,
@@ -41,6 +44,10 @@ import type {
   ReliabilityParams,
   SessionRequest,
 } from '../controlPlane';
+import { liveCostPlane, type CostPlane } from '../control/costPlane';
+import { liveEvaluatorPlane, type EvaluatorPlane } from '../control/evaluatorPlane';
+import { liveSecurityPlane, type SecurityPlane } from '../control/securityPlane';
+import { liveStudioPlane, type StudioPlane } from '../control/studioPlane';
 import { ApiError, apiErrorFromResponse } from '../errors';
 import type { HttpClient, Query } from '../http';
 import { normalizeShaped, normalizeShapedPage, type NestedShape } from '../normalize';
@@ -114,11 +121,18 @@ const DRY_RUN_TIMEOUT_MS = 120_000;
 const PLAYGROUND_TIMEOUT_MS = 120_000;
 const UPLOAD_TIMEOUT_MS = 300_000;
 
+// The P4 plane methods are own properties assigned in the constructor (Object.assign below); this
+// declaration tells TypeScript the instance has them.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export interface LiveControlPlane extends SecurityPlane, CostPlane, EvaluatorPlane, StudioPlane {}
+
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class LiveControlPlane implements ControlPlane {
   protected readonly api: HttpClient;
 
   constructor(http: HttpClient) {
     this.api = http;
+    Object.assign(this, liveSecurityPlane(http), liveCostPlane(http), liveEvaluatorPlane(http), liveStudioPlane(http));
   }
 
   async getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {

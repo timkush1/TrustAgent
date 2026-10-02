@@ -1,0 +1,5 @@
+{
+  "auth_url": "https://openrouter.ai/auth?callback_url=http%3A%2F%2Flocalhost%3A3000%2Fconnect%2Fcallback&code_challenge=Vq3kM1yYl0d9Zr2oJcQx8w6a4tH5sFbN7uEpLgCiKjA&code_challenge_method=S256",
+  "nonce": "q2Xw9fLr0aZk7TcVb3NmYg",
+  "expires_in": 600
+}

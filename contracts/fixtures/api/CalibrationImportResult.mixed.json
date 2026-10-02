@@ -1,0 +1,28 @@
+{
+  "imported": [
+    {
+      "id": 8,
+      "created_at": "2026-09-28T10:15:22.000Z",
+      "origin": "import",
+      "backend": "openrouter-decisions",
+      "snapshot": "typesafe/jev-1.13-20260917",
+      "family": "typesafe/jev-1.13",
+      "target_kind": "evaluator",
+      "target_key": "groundedness@1",
+      "quality": "measured",
+      "active": true
+    }
+  ],
+  "rejected": [
+    {
+      "target_key": "refusal@2",
+      "reason": "unknown_version",
+      "message": "refusal has no version 2 on this gateway."
+    },
+    {
+      "target_key": null,
+      "reason": "mock_snapshot",
+      "message": "mock/* calibrations load only in demo or test mode."
+    }
+  ]
+}
