@@ -53,8 +53,9 @@ type SpendStatus struct {
 type SpendReporter interface{ Spend() SpendStatus }
 
 // MemoryBudget is the in-memory Budget: a UTC-daily decision cap with an enforcing reserve and an
-// optional per-key cap. Spend restarts at 0 each UTC day and on restart; the persisted ledger
-// (P4) seeds and replaces it.
+// optional per-key cap. Spend restarts at 0 each UTC day and on restart. The server uses the cost
+// ledger (internal/costs), which is seeded from the stored rows, in its place; MemoryBudget is the
+// client's default when no budget is given.
 type MemoryBudget struct {
 	now func() time.Time
 

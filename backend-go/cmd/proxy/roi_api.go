@@ -52,9 +52,9 @@ const (
 // Same-checks token model (SPEC §7.4): per gated answer, (input tokens + 400) at the input price
 // and 40 output tokens per question at the output price.
 const (
-	sameChecksExtraInputTokens   = 400
-	sameChecksOutputPerQuestion  = 40
-	sameChecksTokenModelFormulaS = "(fast-check input tokens + 400) × input price + 40 output tokens per question × output price"
+	sameChecksExtraInputTokens  = 400
+	sameChecksOutputPerQuestion = 40
+	sameChecksFormula           = "(fast-check input tokens + 400) × input price + 40 output tokens per question × output price"
 )
 
 // roiSummary is api.ts RoiSummary.
@@ -255,7 +255,7 @@ func (s *server) handleRoiSummary(c *gin.Context) {
 // price is known.
 func sameChecksCounterfactual(calls, inputTokens, questions int64, price judgePriceInfo, check tokenModelCheck) counterfactual {
 	cf := counterfactual{Kind: "llm_same_checks", Method: "token_model", N: calls, Label: labelEstimate,
-		Basis: "the same questions asked of " + price.describe() + ": " + sameChecksTokenModelFormulaS + ". " + check.basis()}
+		Basis: "the same questions asked of " + price.describe() + ": " + sameChecksFormula + ". " + check.basis()}
 	if !price.ok {
 		return cf
 	}

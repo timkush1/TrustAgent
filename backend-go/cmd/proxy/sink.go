@@ -428,7 +428,8 @@ func decidedRecord(r *gate.Result, now time.Time) *store.TraceRecord {
 	rec.PromptTokens, rec.CompletionTokens = r.Upstream.PromptTokens, r.Upstream.CompletionTokens
 	rec.ResponsePreview = store.Preview(r.ResponseText, store.ResponsePreviewRunes)
 	if r.ResponseText != "" {
-		// The rune count of the gated text (0005 traces.response_chars; cost per answer, P4).
+		// The rune count of the gated text (0005 traces.response_chars): fitted_from_audits
+		// applies its cost-per-length line to it (roi_api.go).
 		n := utf8.RuneCountInString(r.ResponseText)
 		rec.ResponseChars = &n
 	}

@@ -47,7 +47,8 @@ type CostEvent struct {
 	Late bool
 }
 
-// CostSink receives cost events. It must not block for long; the ledger (P4) buffers them.
+// CostSink receives cost events. It must not block for long: the cost ledger (internal/costs)
+// buffers them for its row writer.
 type CostSink interface {
 	RecordCost(CostEvent)
 }

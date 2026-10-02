@@ -36,7 +36,7 @@ func linearSamples(n int) []store.FitSample {
 }
 
 // llm_full_claim_audit takes the first method the data allows: 30 costed uniform audits, else 10
-// costed deep audits to fit, else the static assumption (never shadow_sample).
+// costed deep audits to fit, else the static assumption; there is no shadow-sample method.
 func TestFullAuditMethodOrder(t *testing.T) {
 	uniform := &store.RoiData{UniformCosted: minRateN, UniformMeanUSD: 0.03, UniformStddevUSD: 0.01, FitSamples: linearSamples(40)}
 	fitted := &store.RoiData{UniformCosted: minRateN - 1, UniformMeanUSD: 0.03, FitSamples: linearSamples(fitMinN),
