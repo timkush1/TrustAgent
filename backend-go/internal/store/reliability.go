@@ -29,6 +29,9 @@ type ReliabilityFilter struct {
 	Evaluator string
 	// Snapshot keeps the samples of one decision-model snapshot; "" keeps every snapshot.
 	Snapshot string
+	// Route keeps the samples of one route's traces (a calibration fit of an evaluator with
+	// params: its target key depends on the route's params); "" keeps every route.
+	Route string
 	// From and To bound the time of the label (human) or of the decision (uniform audits).
 	From, To time.Time
 	// Labels includes the labels table; UniformAudits the uniform-sample deep audits.
@@ -58,7 +61,8 @@ func (s *PostgresStore) ReliabilitySamples(ctx context.Context, f ReliabilityFil
 			WHERE (l.target = $1 OR split_part(l.target, '@', 1) = $1)
 				AND l.label IN ('should_fire', 'should_not_fire') AND l.risk_raw IS NOT NULL
 				AND l.created_at >= $2 AND l.created_at < $3 AND ($4 = '' OR l.snapshot = $4)
-			ORDER BY l.created_at, l.trace_id, l.labeled_by`, f.Evaluator, f.From, f.To, f.Snapshot)
+				AND ($5 = '' OR EXISTS (SELECT 1 FROM traces t WHERE t.trace_id = l.trace_id AND t.route = $5))
+			ORDER BY l.created_at, l.trace_id, l.labeled_by`, f.Evaluator, f.From, f.To, f.Snapshot, f.Route)
 		if err != nil {
 			return nil, fmt.Errorf("reliability labels: %w", err)
 		}
@@ -77,8 +81,8 @@ func (s *PostgresStore) ReliabilitySamples(ctx context.Context, f ReliabilityFil
 				AND jsonb_typeof(e.value->'risk_raw') = 'number'
 				AND a.selection = 'uniform' AND a.verdict IN ('HALLUCINATED', 'GROUNDED')
 				AND gd.created_at >= $2 AND gd.created_at < $3 AND ($4 = '' OR gd.decision_snapshot = $4)
-				AND ($5::BOOLEAN OR NOT `+mockTraceSQL+`)
-			ORDER BY gd.created_at, gd.trace_id, e.key`, f.Evaluator, f.From, f.To, f.Snapshot, f.IncludeMock)
+				AND ($5::BOOLEAN OR NOT `+mockTraceSQL+`) AND ($6 = '' OR gd.route = $6)
+			ORDER BY gd.created_at, gd.trace_id, e.key`, f.Evaluator, f.From, f.To, f.Snapshot, f.IncludeMock, f.Route)
 		if err != nil {
 			return nil, fmt.Errorf("reliability uniform audits: %w", err)
 		}

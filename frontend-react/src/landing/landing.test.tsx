@@ -11,7 +11,7 @@ import { axeViolations, formatViolations } from '@/test/axe';
 import { recordingFetch } from '@/test/recording';
 import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
 import { COST_FIGURES, monthlyCost, perAnswer, statedPer1k } from './costModel';
-import { REFUND } from './content';
+import { copy as landingCopy, REFUND } from './content';
 import { HeroCard } from './HeroCard';
 import { Landing } from './Landing';
 
@@ -235,5 +235,20 @@ describe('landing entry', () => {
       expect(packages.has(banned), `the landing imports ${banned}`).toBe(false);
     }
     expect([...seen].some((f) => f.includes('/components/ui/'))).toBe(false);
+  });
+});
+
+describe('landing copy', () => {
+  it('ships exactly the contract words it reads, nothing else', () => {
+    // vite.site.ts copyModules serves only the listed parts; each must equal the contract's.
+    expect(landingCopy).toEqual({
+      product: copy.product,
+      tiers: copy.tiers,
+      value_labels: copy.value_labels,
+      limits: copy.limits,
+      playground_static: copy.playground_static,
+      savings: copy.savings,
+      setup: { step_connect: { privacy: copy.setup.step_connect.privacy } },
+    });
   });
 });

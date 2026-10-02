@@ -3,7 +3,7 @@
   "kind": "decide",
   "name": "calibration-active-but-not-adopted-uses-raw-risk",
   "status": "frozen",
-  "description": "Measured calibrations exist for groundedness and contradiction (a table that would halve the risk), but the route thresholds are still space raw (activated, not adopted). risk = risk_raw (0.96 and 0.98, both critical) and calibrated is false, so the block is capped to flag as uncalibrated. Activating a calibration does not change live decisions.",
+  "description": "Measured calibrations exist for groundedness and contradiction (a table that would halve the risk), but the route thresholds are still space raw (activated, not adopted). risk = risk_raw (0.96 and 0.98, both critical) and calibrated is false, so the block is capped to flag as uncalibrated. The reason is calibration_missing (P4-PLAN D56): the block-set members have entries for this snapshot, not only other_snapshot ones, so this is not a snapshot change. Activating a calibration does not change live decisions.",
   "input": {
     "policy": {
       "configured_mode": "block",
@@ -161,7 +161,7 @@
     "calibration": "none",
     "degraded": "uncalibrated",
     "max_risk": 0.98,
-    "reasons": ["contradiction:critical", "groundedness:critical", "uncalibrated_snapshot"],
+    "reasons": ["contradiction:critical", "groundedness:critical", "calibration_missing"],
     "evaluators": {
       "groundedness@1": {
         "level": "critical",

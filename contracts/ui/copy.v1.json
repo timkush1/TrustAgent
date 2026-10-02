@@ -241,7 +241,18 @@
       "calibrate_now": "Calibrate now",
       "reliability_caption": "agreement with labels, not ground truth",
       "adopt_calibration": "Adopt calibration",
-      "benchmarks_empty": "No measured benchmark runs yet. Run {command:bench_lite} to create one."
+      "benchmarks_empty": "No measured benchmark runs yet. Run {command:bench_lite} to create one.",
+      "calibration_origin": {
+        "file": "From a calibration file",
+        "import": "Imported",
+        "fit": "Fitted from your labels"
+      },
+      "calibration_import_rejected": {
+        "unknown_version": "Skipped: this gateway has no such evaluator version. Create or import that version first.",
+        "calibration_key_mismatch": "Skipped: it was fitted on a different question than this evaluator version asks. Calibrate it again from labels.",
+        "mock_snapshot": "Skipped: calibrations of the simulated decision model apply only to the zero-key demo and the test stacks.",
+        "invalid": "Skipped: this entry doesn't validate, or the file calibrates the same check twice."
+      }
     },
     "studio": {
       "describe": "Describe a check in plain English",
