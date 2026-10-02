@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/data/errors';
+import { ConfirmAgain } from './confirmAgain';
 import { ConfirmDialog } from './ConfirmDialog';
 
 function renderConfirm(props: Partial<Parameters<typeof ConfirmDialog>[0]> = {}) {
@@ -91,6 +92,27 @@ describe('ConfirmDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The policy changed since you opened it');
     expect(screen.getByText('HTTP 409 · stale_version')).toBeInTheDocument();
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    await userEvent.click(confirm());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays open without a failure when the action asks to confirm again (D77)', async () => {
+    let first = true;
+    const onConfirm = vi.fn(async () => {
+      if (first) {
+        first = false;
+        throw new ConfirmAgain();
+      }
+    });
+    renderConfirm({ onConfirm });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove key' }));
+    const dialog = await screen.findByRole('alertdialog');
+    const confirm = () => screen.getAllByRole('button', { name: 'Remove key' }).find((b) => dialog.contains(b)) as HTMLElement;
+    await userEvent.click(confirm());
+    await waitFor(() => expect(confirm()).toBeEnabled());
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
     await userEvent.click(confirm());
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(onConfirm).toHaveBeenCalledTimes(2);

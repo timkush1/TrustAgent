@@ -188,13 +188,17 @@ export function coverageSummary(
 // ---------------------------------------------------------------------------------- checklist
 
 export interface ChecklistItem {
-  id: 'fast_check' | 'judge' | 'database' | 'first_request' | 'evidence';
+  id: 'secure' | 'fast_check' | 'judge' | 'database' | 'first_request' | 'evidence';
   label: string;
   done: boolean;
   /** Shown while not done: what to do next. */
   hint: string;
-  /** Where the fix is (a route inside the app). */
-  fix: { to: '/app/settings/$section'; section: 'connections' | 'models' | 'addons' } | { to: '/app/playground' | '/app/policies' | '/app/overview' } | null;
+  /** Where the fix is (a route inside the app); a setup-wizard fix names its step and its link words. */
+  fix:
+    | { to: '/app/settings/$section'; section: 'connections' | 'models' | 'addons' }
+    | { to: '/app/playground' | '/app/policies' | '/app/overview' }
+    | { to: '/app/setup'; search: { step: 'secure' | 'connect' }; label: string }
+    | null;
 }
 
 /**
@@ -212,11 +216,19 @@ export function setupChecklist(input: {
   if (status) {
     const dm = status.decision_model.state;
     items.push({
+      id: 'secure',
+      label: copy.setup.step_secure.title,
+      // An admin key exists: the one-time setup link is used up.
+      done: !status.auth.setup_required,
+      hint: 'Claim the one-time setup link to create the admin key.',
+      fix: { to: '/app/setup', search: { step: 'secure' }, label: 'Open setup' },
+    });
+    items.push({
       id: 'fast_check',
       label: `${copy.tiers.fast_check} connected`,
       done: dm === 'ready' || dm === 'mock' || dm === 'degraded',
       hint: 'Connect OpenRouter so every answer gets a fast check.',
-      fix: { to: '/app/settings/$section', section: 'connections' },
+      fix: { to: '/app/setup', search: { step: 'connect' }, label: 'Connect OpenRouter' },
     });
     items.push({
       id: 'judge',

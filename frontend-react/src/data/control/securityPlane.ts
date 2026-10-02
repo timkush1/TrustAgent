@@ -3,8 +3,9 @@
  * D75-D81): settings, credentials, Connect OpenRouter, the decision-model test, API keys, the admin
  * audit log and WebSocket tickets.
  *
- * Step 0b wires the settings pair (#52 GET, #53 PATCH with If-Match) because WEB-ON and WEB-SV both
- * need it; every other method rejects with 404 `not_implemented` until WEB-ON lands its body.
+ * Every response is checked against SECURITY_SHAPES before a page sees it, so a proxy that answers
+ * something else fails with `invalid_response` instead of rendering half a card. Writes that may
+ * take a provider round trip (verify, Connect, the decision-model probe) get a 30 s timeout.
  * The method signatures are fixed (P4-PLAN §0 rule 3); the bodies and SECURITY_SHAPES belong to WEB-ON.
  */
 import type {
@@ -27,9 +28,9 @@ import type {
   WsTicket,
 } from '@/types/api';
 import type { HttpClient } from '../http';
-import { normalizeShaped, type NestedShape } from '../normalize';
+import { normalizeShaped, normalizeShapedPage, type NestedShape } from '../normalize';
 import type { PageParams } from '../source';
-import { rejectNotImplemented } from './shared';
+import { enc, rejectNotImplemented } from './shared';
 
 /** D77: a write that would leave fail-closed routes without a decision model needs `?confirm=true`. */
 export interface ConfirmOption {
@@ -76,6 +77,19 @@ export interface SecurityPlane {
   listAdminAudit(params: PageParams, signal?: AbortSignal): Promise<Page<AdminAuditEntry>>;
 }
 
+/** A provider round trip (key check, OpenRouter code exchange, the probe) may take longer than a plain read. */
+export const PROVIDER_TIMEOUT_MS = 30_000;
+
+const credential: NestedShape = {
+  strings: ['name', 'provider', 'source', 'masked', 'fingerprint'],
+  lists: ['allowed_hosts', 'used_by'],
+};
+const credentialWrite: NestedShape = {
+  records: ['credential', 'bindings'],
+  inner: { credential, bindings: { lists: ['applied', 'skipped'] } },
+};
+const apiKey: NestedShape = { strings: ['id', 'label', 'prefix'], lists: ['scopes'] };
+
 /** What each security response must carry (see normalizeShaped). */
 export const SECURITY_SHAPES = {
   settings: {
@@ -90,13 +104,30 @@ export const SECURITY_SHAPES = {
       },
     },
   },
+  credential,
+  credentialList: { lists: ['items'], each: { items: credential } },
+  credentialWrite,
+  connectStart: { strings: ['auth_url', 'nonce'] },
+  connectComplete: { ...credentialWrite, strings: ['return_to'] },
+  decisionModelTest: { strings: ['backend'] },
+  apiKey,
+  apiKeyList: { lists: ['items'], each: { items: apiKey } },
+  createdApiKey: { ...apiKey, strings: [...(apiKey.strings ?? []), 'secret'] },
+  adminAuditEntry: { strings: ['at', 'actor', 'action'] },
+  wsTicket: { strings: ['ticket'] },
 } as const satisfies Record<string, NestedShape>;
 
 /** The security plane over HTTP. */
 export function liveSecurityPlane(http: HttpClient): SecurityPlane {
+  const confirmQuery = (options?: ConfirmOption) => (options?.confirm ? { confirm: true } : undefined);
   return {
-    signOutEverywhere: rejectNotImplemented(),
-    createWsTicket: rejectNotImplemented(),
+    async signOutEverywhere() {
+      await http.request<unknown>('/api/session', { method: 'DELETE', query: { all: true } });
+    },
+    async createWsTicket(signal) {
+      const raw = await http.request<unknown>('/api/ws-ticket', { method: 'POST', signal, timeoutMs: 5_000 });
+      return normalizeShaped<WsTicket>(raw, 'POST /api/ws-ticket', SECURITY_SHAPES.wsTicket);
+    },
 
     async getSettings(signal) {
       const raw = await http.get<unknown>('/api/settings', { signal });
@@ -106,23 +137,68 @@ export function liveSecurityPlane(http: HttpClient): SecurityPlane {
       const raw = await http.request<unknown>('/api/settings', {
         method: 'PATCH',
         headers: { 'If-Match': etag },
-        query: options?.confirm ? { confirm: true } : undefined,
+        query: confirmQuery(options),
         body: patch,
       });
       return normalizeShaped<SettingsView>(raw, 'PATCH /api/settings', SECURITY_SHAPES.settings);
     },
 
-    listCredentials: rejectNotImplemented(),
-    putCredential: rejectNotImplemented(),
-    deleteCredential: rejectNotImplemented(),
-    verifyCredential: rejectNotImplemented(),
-    startConnect: rejectNotImplemented(),
-    completeConnect: rejectNotImplemented(),
-    testDecisionModel: rejectNotImplemented(),
-    listApiKeys: rejectNotImplemented(),
-    createApiKey: rejectNotImplemented(),
-    revokeApiKey: rejectNotImplemented(),
-    listAdminAudit: rejectNotImplemented(),
+    async listCredentials(signal) {
+      const raw = await http.get<unknown>('/api/credentials', { signal });
+      return normalizeShaped<CredentialList>(raw, 'GET /api/credentials', SECURITY_SHAPES.credentialList);
+    },
+    async putCredential(name, request) {
+      const raw = await http.request<unknown>(`/api/credentials/${enc(name)}`, {
+        method: 'PUT',
+        body: request,
+        timeoutMs: PROVIDER_TIMEOUT_MS,
+      });
+      return normalizeShaped<CredentialWriteResult>(raw, 'PUT /api/credentials/:name', SECURITY_SHAPES.credentialWrite);
+    },
+    async deleteCredential(name, options) {
+      await http.request<unknown>(`/api/credentials/${enc(name)}`, { method: 'DELETE', query: confirmQuery(options) });
+    },
+    async verifyCredential(name, request) {
+      const raw = await http.request<unknown>(`/api/credentials/${enc(name)}/verify`, {
+        method: 'POST',
+        body: request ?? {},
+        timeoutMs: PROVIDER_TIMEOUT_MS,
+      });
+      return normalizeShaped<CredentialWriteResult>(raw, 'POST /api/credentials/:name/verify', SECURITY_SHAPES.credentialWrite);
+    },
+    async startConnect(request) {
+      const raw = await http.request<unknown>('/api/connect/openrouter/start', { method: 'POST', body: request });
+      return normalizeShaped<ConnectStartResponse>(raw, 'POST /api/connect/openrouter/start', SECURITY_SHAPES.connectStart);
+    },
+    async completeConnect(request) {
+      const raw = await http.request<unknown>('/api/connect/openrouter/complete', {
+        method: 'POST',
+        body: request,
+        timeoutMs: PROVIDER_TIMEOUT_MS,
+      });
+      return normalizeShaped<ConnectCompleteResponse>(raw, 'POST /api/connect/openrouter/complete', SECURITY_SHAPES.connectComplete);
+    },
+    async testDecisionModel() {
+      const raw = await http.request<unknown>('/api/decision-model/test', { method: 'POST', timeoutMs: PROVIDER_TIMEOUT_MS });
+      return normalizeShaped<DecisionModelTestResult>(raw, 'POST /api/decision-model/test', SECURITY_SHAPES.decisionModelTest);
+    },
+
+    async listApiKeys(signal) {
+      const raw = await http.get<unknown>('/api/keys', { signal });
+      return normalizeShaped<ApiKeyList>(raw, 'GET /api/keys', SECURITY_SHAPES.apiKeyList);
+    },
+    async createApiKey(request) {
+      const raw = await http.request<unknown>('/api/keys', { method: 'POST', body: request });
+      return normalizeShaped<CreatedApiKey>(raw, 'POST /api/keys', SECURITY_SHAPES.createdApiKey);
+    },
+    async revokeApiKey(id) {
+      await http.request<unknown>(`/api/keys/${enc(id)}`, { method: 'DELETE' });
+    },
+
+    async listAdminAudit(params, signal) {
+      const raw = await http.get<unknown>('/api/admin/audit-log', { query: { limit: params.limit, cursor: params.cursor }, signal });
+      return normalizeShapedPage<AdminAuditEntry>(raw, 'GET /api/admin/audit-log', SECURITY_SHAPES.adminAuditEntry);
+    },
   };
 }
 

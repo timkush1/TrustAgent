@@ -68,6 +68,7 @@ describe('overview model', () => {
   it('builds the setup checklist from status and traffic', () => {
     const items = setupChecklist({ status: adminStatus(), requests: 0, firstRequestSeen: false, evidenceRequests: null });
     expect(items.map((i) => [i.id, i.done])).toEqual([
+      ['secure', true],
       ['fast_check', true],
       ['judge', true],
       ['database', true],
@@ -89,5 +90,13 @@ describe('overview model', () => {
       evidenceRequests: 1,
     });
     expect(off.find((i) => i.id === 'fast_check')?.done).toBe(false);
+  });
+
+  it('asks to secure the dashboard while the setup link is unused, and sends both fixes to the setup wizard', () => {
+    const base = adminStatus();
+    const items = setupChecklist({ status: { ...base, auth: { ...base.auth, setup_required: true } }, requests: 0, firstRequestSeen: false, evidenceRequests: null });
+    const secure = items.find((i) => i.id === 'secure');
+    expect(secure).toMatchObject({ done: false, label: 'Secure this dashboard', fix: { to: '/app/setup', search: { step: 'secure' } } });
+    expect(items.find((i) => i.id === 'fast_check')?.fix).toEqual({ to: '/app/setup', search: { step: 'connect' }, label: 'Connect OpenRouter' });
   });
 });
