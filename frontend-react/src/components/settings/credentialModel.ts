@@ -4,7 +4,7 @@
  * which checks a key can be bound to, and the state of a saved key. Pure functions, so the rules
  * are tested without rendering.
  */
-import type { BindingTarget, CredentialProvider, CredentialView, SettingsView } from '@/types/api';
+import type { BindingTarget, CredentialProvider, CredentialView, SettingsView, ValueLabel } from '@/types/api';
 import { isApiError } from '@/data/errors';
 import { copy } from '@/domain/presentation';
 
@@ -148,4 +148,26 @@ export function confirmationRoutes(error: unknown): string[] | null {
   if (!isApiError(error) || error.code !== 'confirmation_required') return null;
   const routes = (error.details as { routes?: unknown }).routes;
   return Array.isArray(routes) ? routes.map(String) : [];
+}
+
+const PROBE_COST_LABELS: Partial<Record<string, ValueLabel>> = { reported: 'vendor', computed: 'estimate', simulated: 'simulated' };
+
+/**
+ * The honest-number label of what one key check or fast-check probe cost (CostRecord cost_source;
+ * DESIGN.md §8): vendor-reported, computed from the price table, or simulated. Null for any other
+ * source, and a cost without a label is not shown as a number.
+ */
+export function probeCostLabel(source: string | null | undefined): ValueLabel | null {
+  return (source ? PROBE_COST_LABELS[source] : undefined) ?? null;
+}
+
+const PROBE_COST_BASIS: Record<'vendor' | 'estimate' | 'simulated', string> = {
+  vendor: 'As the provider reported it for this one call.',
+  estimate: 'Computed from the token counts and the price table: an estimate.',
+  simulated: 'From the mock model of simulated checks: nothing was charged.',
+};
+
+/** How a labelled probe cost was produced, for its badge. */
+export function probeCostBasis(label: ValueLabel): string {
+  return label === 'vendor' || label === 'estimate' || label === 'simulated' ? PROBE_COST_BASIS[label] : '';
 }

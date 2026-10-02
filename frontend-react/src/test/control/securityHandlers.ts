@@ -297,7 +297,9 @@ export function securityHandlers(state: SecurityState, kit: HandlerKit): HttpHan
       latency_ms: status === 'unreachable' || status === 'unknown' ? null : 231,
       cost_usd: ok && status === 'ok' ? 0.00001 : null,
       cost_source: ok && status === 'ok' ? 'reported' : null,
-      ...(openrouter ? { key_label: 'TrustAgent dev', limit_usd: state.keyLimitUsd, limit_remaining_usd: state.keyLimitUsd } : {}),
+      // As the proxy serializes it (Go `omitempty` on pointers): a key with no limit has no limit fields.
+      ...(openrouter ? { key_label: 'TrustAgent dev' } : {}),
+      ...(openrouter && state.keyLimitUsd !== null ? { limit_usd: state.keyLimitUsd, limit_remaining_usd: state.keyLimitUsd } : {}),
     };
   };
 

@@ -9,9 +9,8 @@ import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { Button } from '@/components/ui/button';
 import { formatUsd } from '@/domain/format';
 import { copy, secBindingLabel, secJoinWords, secProbeReadyText, secSkipReasonText, secVerifyView } from '@/domain/presentation';
-import type { CredentialWriteResult, ValueLabel } from '@/types/api';
-
-const COST_LABELS: Partial<Record<string, ValueLabel>> = { reported: 'vendor', computed: 'estimate', simulated: 'simulated' };
+import type { CredentialWriteResult } from '@/types/api';
+import { probeCostBasis, probeCostLabel } from './credentialModel';
 
 export interface CredentialResultProps {
   result: CredentialWriteResult;
@@ -26,13 +25,19 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
   const v = result.verification;
   const { applied, skipped } = result.bindings;
   const verify = secVerifyView(v?.status);
-  const costLabel = v?.cost_source ? COST_LABELS[v.cost_source] : undefined;
+  // A cost is shown only with its label (vendor, estimate, simulated).
+  const costLabel = probeCostLabel(v?.cost_source);
+  const cost = v?.cost_usd != null && costLabel ? formatUsd(v.cost_usd) : null;
+  // Only OpenRouter keys carry a spending limit (D40, GET /api/v1/key). The proxy leaves
+  // `limit_usd` out when the key has none (Go `omitempty`), and api.ts documents null: both mean
+  // "no limit" for a passed OpenRouter check, and neither means anything for other providers.
+  const noLimit = v?.ok === true && v.status === 'ok' && result.credential.provider === 'openrouter' && v.limit_usd == null;
   const Icon = v === null ? Info : v.ok ? CircleCheck : CircleAlert;
   const tone = v === null ? 'text-fg-muted' : v.ok ? 'text-tone-success' : v.status === 'unauthorized' ? 'text-tone-danger' : 'text-tone-warning';
 
   let headline: string;
   if (v === null) headline = 'Saved without a check.';
-  else if (v.ok && v.status === 'ok') headline = secProbeReadyText(v.latency_ms, v.cost_usd === null ? null : formatUsd(v.cost_usd));
+  else if (v.ok && v.status === 'ok') headline = secProbeReadyText(v.latency_ms, cost);
   else if (v.ok) headline = `Saved. ${verify.hint ?? ''}`.trim();
   else if (v.status === 'no_credits') headline = copy.setup.step_connect.no_credits;
   else headline = `${verify.label}. ${verify.hint ?? ''}`.trim();
@@ -42,8 +47,8 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
       <p className="flex flex-wrap items-start gap-1.5 text-fg">
         <Icon aria-hidden="true" className={`mt-0.5 size-4 shrink-0 ${tone}`} />
         <span className="tabular">{headline}</span>
-        {v?.ok && v.cost_usd !== null && costLabel ? (
-          <EvidenceBadge label={costLabel} basis="The cost of this one key check, as the provider reported it." subject="Key check cost" />
+        {v?.ok && v.status === 'ok' && cost && costLabel ? (
+          <EvidenceBadge label={costLabel} basis={probeCostBasis(costLabel)} subject="Key check cost" />
         ) : null}
       </p>
       {!result.stored ? (
@@ -60,7 +65,7 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
           ))}
         </ul>
       ) : null}
-      {v?.ok && v.status === 'ok' && v.limit_usd === null ? (
+      {noLimit ? (
         <p className="flex items-start gap-1.5 rounded-sm bg-surface-sunken px-2 py-1.5 text-fg">
           <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
           <span>
