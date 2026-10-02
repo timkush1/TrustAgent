@@ -15,6 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/store"
 )
 
 func TestJudgeStateFromEngineHealth(t *testing.T) {
@@ -83,6 +84,22 @@ func TestDecisionModelStatusIsLive(t *testing.T) {
 	b := s.budgets()
 	if b.DecisionSpentTodayUSD != 1.6 || b.DecisionExhausted || !b.DecisionReserveOnly || b.DecisionUSDDay != 2 || b.LLMUSDDay != 5 {
 		t.Errorf("budgets %+v", b)
+	}
+
+	// D92: the ledger's 24-hour figures win once read; before that, the client's counters stay.
+	ledger := store.DecisionDay{}
+	read := false
+	s.decisionDay = func() (store.DecisionDay, bool) { return ledger, read }
+	if d := s.decisionModel(); d.Calls24h != 12 || d.Cost24hUSD != 0.0003 {
+		t.Errorf("an unread ledger keeps the client's counters: %d %v", d.Calls24h, d.Cost24hUSD)
+	}
+	ledger, read = store.DecisionDay{Calls: 3120, CostUSD: 0.0815}, true
+	if d := s.decisionModel(); d.Calls24h != 3120 || d.Cost24hUSD != 0.0815 {
+		t.Errorf("the ledger's figures survive a restart: %d %v", d.Calls24h, d.Cost24hUSD)
+	}
+	ledger = store.DecisionDay{}
+	if d := s.decisionModel(); d.Calls24h != 0 || d.Cost24hUSD != 0 {
+		t.Errorf("a quiet day in the ledger is zero, not the client's counters: %d %v", d.Calls24h, d.Cost24hUSD)
 	}
 
 	// Without a status-reporting client, the resolved backend alone.

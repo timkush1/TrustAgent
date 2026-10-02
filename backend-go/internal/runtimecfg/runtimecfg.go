@@ -371,8 +371,13 @@ func (m *Manager) SetEngineEnvManaged(names []string) {
 // the targets applied and those skipped. decision_model is skipped when the backend is env-pinned
 // to one that does not use the credential (backend_pinned: pass Snapshot.BackendPinned(name));
 // otherwise a target whose bindings.<target> path is env-managed is skipped (env_managed). When
-// any target applies, a persisted mock backend or mock judge becomes auto (D76), unless that path
-// is env-managed. Pass the persisted settings to get the rows to write. It is pure.
+// any target applies, a persisted mock backend or mock judge becomes auto (D76). An applied target
+// also uses the key it reports (D76b): a persisted explicit backend that the credential cannot
+// serve (DecisionBackends; typesafe with an openrouter key, or off) becomes auto when
+// decision_model applies, and a persisted explicit judge provider other than the credential's own
+// (anthropic, ollama or none with an openrouter key) becomes auto when judge applies. An
+// env-managed decision_model.backend or judge.provider is never changed: the env value is the one
+// in effect. Pass the persisted settings to get the rows to write. It is pure.
 func ApplyBindings(s RuntimeSettings, name string, targets, envManaged []string, backendPinned bool) (RuntimeSettings, []string, []BindingSkip) {
 	applied, skipped := []string{}, []BindingSkip{}
 	for _, t := range []string{TargetDecisionModel, TargetJudge} {
@@ -397,12 +402,44 @@ func ApplyBindings(s RuntimeSettings, name string, targets, envManaged []string,
 		}
 	}
 	if len(applied) > 0 {
-		if s.DecisionModel.Backend == jev.BackendMock && !slices.Contains(envManaged, "decision_model.backend") {
-			s.DecisionModel.Backend = "auto"
+		if leavesBackend(s.DecisionModel.Backend, name, slices.Contains(applied, TargetDecisionModel)) &&
+			!slices.Contains(envManaged, "decision_model.backend") {
+			s.DecisionModel.Backend = jev.BackendAuto
 		}
-		if s.Judge.Provider == "mock" && !slices.Contains(envManaged, "judge.provider") {
-			s.Judge.Provider = "auto"
+		if leavesJudgeProvider(s.Judge.Provider, name, slices.Contains(applied, TargetJudge)) &&
+			!slices.Contains(envManaged, "judge.provider") {
+			s.Judge.Provider = judgeProviderAuto
 		}
 	}
 	return s, applied, skipped
+}
+
+// judgeProviderAuto is the judge.provider that resolves to the bound credential's provider.
+const judgeProviderAuto = "auto"
+
+// leavesBackend reports whether a bind of the credential called name moves a persisted
+// decision_model.backend to auto: a mock backend whenever a target applies (D76), and an explicit
+// backend the credential cannot serve when decision_model applies (D76b).
+func leavesBackend(backend, name string, decisionApplied bool) bool {
+	switch backend {
+	case jev.BackendAuto, "":
+		return false
+	case jev.BackendMock:
+		return true
+	}
+	return decisionApplied && !slices.Contains(DecisionBackends(name), backend)
+}
+
+// leavesJudgeProvider reports whether a bind of the credential called name moves a persisted
+// judge.provider to auto: a mock judge whenever a target applies (D76), and an explicit provider
+// other than the credential's own when judge applies (D76b).
+func leavesJudgeProvider(provider, name string, judgeApplied bool) bool {
+	switch provider {
+	case judgeProviderAuto, "":
+		return false
+	case "mock":
+		return true
+	}
+	spec, ok := credentials.Lookup(name)
+	return judgeApplied && (!ok || spec.Provider != provider)
 }

@@ -430,6 +430,24 @@ func TestSettingsBindingsLeaveSimulatedMode(t *testing.T) {
 		t.Errorf("an explicit provider in the same patch wins: %+v", v.Runtime.Judge)
 	}
 
+	// D76b: a bind moves a stored backend or judge provider that would not use the bound key to
+	// auto, in the same write and the same audit diff. (Unbinding the fast check's key stops it on
+	// the fail-closed route, so that write needs the D77 confirmation.)
+	v = env.patched(env.patchSettingsAs(admin, v.ETag,
+		`{"decision_model":{"backend":"typesafe"},"judge":{"provider":"anthropic"},"bindings":{"decision_model":null,"judge":null}}`, "?confirm=true"))
+	v = env.patched(env.patchSettingsAs(admin, v.ETag, `{"bindings":{"decision_model":"openrouter","judge":"openrouter"}}`, ""))
+	if v.Runtime.DecisionModel.Backend != "auto" || v.Runtime.Judge.Provider != "auto" {
+		t.Errorf("a bind leaves a backend and a judge the key does not serve: %+v %+v", v.Runtime.DecisionModel, v.Runtime.Judge)
+	}
+	audits := env.auditRows(t, "settings.update")
+	fields, _ := audits[len(audits)-1]["fields"].(map[string]any)
+	for path, from := range map[string]string{"decision_model.backend": "typesafe", "judge.provider": "anthropic", "bindings.judge": ""} {
+		ch, _ := fields[path].(map[string]any)
+		if ch == nil || ch["to"] == nil || (from != "" && (ch["from"] != from || ch["to"] != "auto")) {
+			t.Errorf("the bind's audit diff misses %s: %v", path, fields)
+		}
+	}
+
 	// The default upstream binding needs a key callers authenticate with (D41).
 	resp, body := env.patchSettingsAs(admin, v.ETag, `{"upstream":{"default":{"credential":"upstream-default"}}}`, "")
 	if resp.StatusCode != http.StatusConflict {
@@ -614,6 +632,70 @@ func TestSettingsSurfaceOtherChecks(t *testing.T) {
 	v = env.patched(env.patchSettings(etag, `{"pricing_overrides":[{"match":"x","provider":"openrouter","input_per_mtok":5000,"output_per_mtok":1}]}`, ""))
 	if !slices.ContainsFunc(v.Warnings, func(w settingsWarning) bool { return w.Code == "price_far_above" }) || len(v.Runtime.PricingOverrides) != 1 {
 		t.Errorf("a price warning saves and warns: %+v", v.Warnings)
+	}
+}
+
+// TestSettingsFallbackNeedsItsOwnKey runs PATCH /api/settings through GCONN's real upstream checks
+// (upstream.RuntimeRisks; D41, P3 D23 and D15). A fallback upstream on another origin than the
+// default upstream, with no key of its own, is refused: the callers' keys would go to a server they
+// never chose. At the default upstream's origin it needs none. With its own key it saves, and the
+// default upstream that still forwards the callers' keys is a warning next to its key's setting.
+// A fallback key with no fallback URL is never sent, which is a warning too.
+func TestSettingsFallbackNeedsItsOwnKey(t *testing.T) {
+	env := newSettingsEnv(t, envOpts{})
+	v, etag := env.settings(settingsAdminKey)
+	resp, body := env.patchSettings(etag, `{"upstream":{"fallback":{"url":"https://fallback.example.com/v1"}}}`, "")
+	e := apiErr(t, body)
+	if resp.StatusCode != http.StatusUnprocessableEntity || e.Code != codeValidationFailed ||
+		!slices.Equal(fieldCodes(e), []string{"upstream.fallback.url=fallback_key_required"}) ||
+		e.FieldErrors[0].Details["host"] != "fallback.example.com" {
+		t.Fatalf("D23: a keyless fallback on another host is refused: %d %s", resp.StatusCode, body)
+	}
+	if after, _ := env.settings(settingsAdminKey); after.Version != v.Version || after.Runtime.Upstream.Fallback.URL != nil {
+		t.Fatalf("a refused write saves nothing: version %d -> %d, fallback %v", v.Version, after.Version, after.Runtime.Upstream.Fallback.URL)
+	}
+
+	// At the default upstream's origin (http://127.0.0.1:1 in the tests) the callers' keys go where
+	// they were meant to, so no key of its own is needed.
+	v = env.patched(env.patchSettings(etag, `{"upstream":{"fallback":{"url":"http://127.0.0.1:1/v2"}}}`, ""))
+
+	// With a key of its own, another host saves.
+	putSealed(t, env.pg, env.master, "upstream-fallback", "sk-test-fallback-0123456789", nil, "https://fallback.example.com")
+	if err := env.srv.rt.manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	v, etag = env.settings(settingsAdminKey)
+	v = env.patched(env.patchSettings(etag, `{"upstream":{"fallback":{"url":"https://fallback.example.com/v1","credential":"upstream-fallback"}}}`, ""))
+	if u := v.Runtime.Upstream.Fallback; u.URL == nil || *u.URL != "https://fallback.example.com/v1" || u.Credential == nil || *u.Credential != "upstream-fallback" {
+		t.Fatalf("the keyed fallback was not saved: %+v", u)
+	}
+	// warning finds the warning with code on the setting of the registry key key.
+	warning := func(v settingsView, code, key string) *settingsWarning {
+		for i := range v.Warnings {
+			if v.Warnings[i].Code == code && v.Warnings[i].Key == key {
+				return &v.Warnings[i]
+			}
+		}
+		return nil
+	}
+	for key, upstreamName := range map[string]string{"TRUTHTABLE_UPSTREAM_API_KEY": "default", "TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY": "Anthropic"} {
+		if w := warning(v, "upstream_passthrough", key); w == nil || !strings.Contains(w.Hint, "the "+upstreamName+" upstream") {
+			t.Errorf("D15: the %s upstream forwards the callers' keys while the fallback injects one: %+v", upstreamName, v.Warnings)
+		}
+	}
+	if w := warning(v, "upstream_passthrough", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"); w != nil {
+		t.Errorf("the fallback upstream has its own key: %+v", w)
+	}
+
+	// Unbinding the key while the URL stays is refused again.
+	resp, body = env.patchSettings(v.ETag, `{"upstream":{"fallback":{"credential":null}}}`, "")
+	if e := apiErr(t, body); resp.StatusCode != http.StatusUnprocessableEntity || !slices.Equal(fieldCodes(e), []string{"upstream.fallback.url=fallback_key_required"}) {
+		t.Errorf("unbinding the fallback key on another host: %d %s", resp.StatusCode, body)
+	}
+	// Without a fallback URL the bound key is never sent: saved, with a warning on its key's setting.
+	v = env.patched(env.patchSettings(v.ETag, `{"upstream":{"fallback":{"url":null}}}`, ""))
+	if w := warning(v, "fallback_credential_unused", "TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY"); w == nil || !strings.Contains(w.Hint, "upstream.fallback.url") {
+		t.Errorf("a fallback key without a fallback URL: %+v", v.Warnings)
 	}
 }
 
