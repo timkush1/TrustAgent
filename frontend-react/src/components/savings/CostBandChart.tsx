@@ -18,10 +18,10 @@ import { niceTicks } from '@/components/charts/scale';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { formatCount, formatUsd } from '@/domain/format';
 import { valueLabelView } from '@/domain/controlPresentation';
-import { costCounterfactualView, costRange } from '@/domain/presentation';
+import { costRange } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import type { RoiTimeseries, ValueLabel } from '@/types/api';
-import { availableBands, chartMax, type BandKind, type CostBandPoint } from './savingsModel';
+import { availableBands, bandWords, bucketLabel, chartMax, costBandSummary, type BandKind, type CostBandPoint } from './savingsModel';
 
 export interface CostBandChartProps {
   points: readonly CostBandPoint[];
@@ -46,36 +46,6 @@ const BAND_OPTION: Record<BandKind, string> = {
   same_checks: 'Same questions',
   full_audit: 'Full audit',
 };
-
-const dayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-const hourFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-
-/** A bucket's name: the UTC day ("Mon 22 Sep") or the local hour ("Mon 14:00"). */
-export function bucketLabel(bucket: RoiTimeseries['bucket'], iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso;
-  return (bucket === '1d' ? dayFormat : hourFormat).format(t);
-}
-
-function bandWords(kind: BandKind): string {
-  return costCounterfactualView(kind === 'same_checks' ? 'llm_same_checks' : 'llm_full_claim_audit').label;
-}
-
-/** The chart in one sentence, for screen readers and the figure description. */
-export function costBandSummary(points: readonly CostBandPoint[], band: BandKind | null, bandLabel: ValueLabel): string {
-  const spent = points.reduce((s, p) => s + p.measured, 0);
-  const answers = points.reduce((s, p) => s + p.gated, 0);
-  let line = `Checking ${formatCount(answers)} answers cost ${formatUsd(spent)} over ${points.length} intervals.`;
-  if (band) {
-    const present = points.flatMap((p) => (p[band] ? [p[band]] : []));
-    if (present.length > 0) {
-      const low = present.reduce((s, b) => s + b.low, 0);
-      const high = present.reduce((s, b) => s + b.high, 0);
-      line += ` ${bandWords(band)} would have cost ${costRange(low, high)} (${valueLabelView(bandLabel).label.toLowerCase()}).`;
-    }
-  }
-  return line;
-}
 
 /** Positions of the points across the plot, in %. */
 function xAt(i: number, n: number): number {
@@ -201,9 +171,15 @@ export function CostBandChart({
       footer={`${formatCount(point.gated)} answers checked`}
     />
   ) : null;
-  const readoutText = point
-    ? `${bucketLabel(bucket, point.t)}: your cost ${formatUsd(point.measured)}${band ? `, ${BAND_OPTION[band].toLowerCase()} LLM ${activeBand ? costRange(activeBand.low, activeBand.high) : 'not estimated'}` : ''}, ${formatCount(point.gated)} answers checked.`
-    : '';
+  /** The readout of bucket `i` in words (the slider's value text). */
+  const readoutText = (i: number): string => {
+    const p = points[i];
+    if (!p) return '';
+    const b = band ? p[band] : null;
+    const bandPart = band ? `, ${BAND_OPTION[band].toLowerCase()} LLM ${b ? costRange(b.low, b.high) : 'not estimated'}` : '';
+    return `${bucketLabel(bucket, p.t)}: your cost ${formatUsd(p.measured)}${bandPart}, ${formatCount(p.gated)} answers checked.`;
+  };
+  const current = active ?? Math.max(0, n - 1);
 
   return (
     <ChartFrame
@@ -240,14 +216,18 @@ export function CostBandChart({
             ))}
           </div>
           <div
-            // The plot is one tab stop; arrow keys move the readout across the buckets.
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            // The plot reads like a slider over the intervals: one tab stop, arrow keys move the
+            // readout, and the value text says what the readout shows.
             tabIndex={0}
-            role="group"
-            aria-roledescription="chart"
-            aria-label="What checking cost, against asking an LLM. Use the arrow keys to read each interval."
+            role="slider"
+            aria-label="What checking cost per interval"
             aria-describedby={summaryId}
+            aria-valuemin={0}
+            aria-valuemax={n - 1}
+            aria-valuenow={current}
+            aria-valuetext={readoutText(current)}
             onKeyDown={move}
+            onFocus={() => setActive((a) => a ?? n - 1)}
             onBlur={() => setActive(null)}
             onPointerMove={onPointerMove}
             onPointerLeave={() => setActive(null)}
@@ -256,9 +236,6 @@ export function CostBandChart({
           >
             <span id={summaryId} className="sr-only">
               {summary}
-            </span>
-            <span aria-live="polite" className="sr-only">
-              {readoutText}
             </span>
             <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
               {ticks.map((t) => (

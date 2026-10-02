@@ -4,7 +4,8 @@
  * component table where every figure keeps its value label, the outcome split (stopped is block
  * and fallback only; flagged is separate) and the sampling status line.
  */
-import { formatDateTime, formatUsd } from '@/domain/format';
+import { valueLabelView } from '@/domain/controlPresentation';
+import { formatCount, formatDateTime, formatUsd } from '@/domain/format';
 import {
   costCounterfactualView,
   costIsMeasuredMethod,
@@ -95,6 +96,38 @@ export function chartMax(points: readonly CostBandPoint[], band: BandKind | null
     if (b) max = Math.max(max, b.high);
   }
   return max;
+}
+
+// ------------------------------------------------------------------------------------ chart words
+
+const dayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const hourFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+
+/** A bucket's name: the UTC day ("Mon 22 Sep") or the local hour ("Mon 14:00"). */
+export function bucketLabel(bucket: RoiTimeseries['bucket'], iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  return (bucket === '1d' ? dayFormat : hourFormat).format(t);
+}
+
+export function bandWords(kind: BandKind): string {
+  return costCounterfactualView(kind === 'same_checks' ? 'llm_same_checks' : 'llm_full_claim_audit').label;
+}
+
+/** The chart in one sentence, for screen readers and the figure description. */
+export function costBandSummary(points: readonly CostBandPoint[], band: BandKind | null, bandLabel: ValueLabel): string {
+  const spent = points.reduce((s, p) => s + p.measured, 0);
+  const answers = points.reduce((s, p) => s + p.gated, 0);
+  let line = `Checking ${formatCount(answers)} answers cost ${formatUsd(spent)} over ${points.length} intervals.`;
+  if (band) {
+    const present = points.flatMap((p) => (p[band] ? [p[band]] : []));
+    if (present.length > 0) {
+      const low = present.reduce((s, b) => s + b.low, 0);
+      const high = present.reduce((s, b) => s + b.high, 0);
+      line += ` ${bandWords(band)} would have cost ${costRange(low, high)} (${valueLabelView(bandLabel).label.toLowerCase()}).`;
+    }
+  }
+  return line;
 }
 
 // ------------------------------------------------------------------------------- component table

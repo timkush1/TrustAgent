@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { roiSummary } from '@/test/control/fixtures';
 import type { Counterfactual, RoiTimeseries } from '@/types/api';
-import { costBandSummary } from './CostBandChart';
-import { availableBands, chartMax, componentRows, costBandPoints, rangeRatio, samplingLines, savingsRange } from './savingsModel';
+import { availableBands, costBandSummary, chartMax, componentRows, costBandPoints, rangeRatio, samplingLines, savingsRange } from './savingsModel';
 
 const full: Counterfactual = {
   kind: 'llm_full_claim_audit',

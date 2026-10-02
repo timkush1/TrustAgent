@@ -85,14 +85,23 @@ describe('Savings tab', { timeout: 20_000 }, () => {
 
   it('reads each interval with the arrow keys', async () => {
     renderPage('/app/overview?tab=savings&window=7d');
-    const plot = await screen.findByRole('group', { name: /Use the arrow keys/ });
+    const plot = await screen.findByRole('slider', { name: 'What checking cost per interval' });
+    expect(plot).toHaveAttribute('aria-valuemax', '6');
+    expect(plot).toHaveAccessibleDescription(
+      'Checking 1,199 answers cost $0.99 over 7 intervals. An LLM asking the same questions would have cost $2.21–$2.95 (estimate).',
+    );
     plot.focus();
     fireEvent.keyDown(plot, { key: 'Home' });
-    expect(within(plot).getByText(/your cost \$0\.15, same questions LLM \$0\.34–\$0\.45, 180 answers checked/)).toBeInTheDocument();
+    expect(plot).toHaveAttribute('aria-valuenow', '0');
+    expect(plot.getAttribute('aria-valuetext')).toMatch(/: your cost \$0\.15, same questions LLM \$0\.34–\$0\.45, 180 answers checked\.$/);
+    // The readout shows next to the point.
+    expect(within(plot).getByText('180 answers checked')).toBeInTheDocument();
     fireEvent.keyDown(plot, { key: 'ArrowRight' });
-    expect(within(plot).getByText(/: your cost \$0\.17, .*207 answers checked\.$/)).toBeInTheDocument();
+    expect(plot.getAttribute('aria-valuetext')).toMatch(/: your cost \$0\.17, .*207 answers checked\.$/);
+    fireEvent.keyDown(plot, { key: 'End' });
+    expect(plot).toHaveAttribute('aria-valuenow', '6');
     fireEvent.keyDown(plot, { key: 'Escape' });
-    expect(within(plot).queryByText(/answers checked\./)).toBeNull();
+    expect(within(plot).queryByText(/answers checked$/)).toBeNull();
   });
 
   it('labels every component with where its number comes from', async () => {
