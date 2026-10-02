@@ -59,8 +59,10 @@ type Usage struct {
 type Outcome struct {
 	// Skipped is set when the Spend cap stopped the run before this sample; nothing else is set.
 	Skipped bool
-	// Err is set when a stage failed (detectors, compile or decide); its message names the stage.
-	Err error
+	// Err is set when a stage failed; its message starts with the stage, which Stage names
+	// (StageDetectors, StageCompile or StageDecide).
+	Err   error
+	Stage string
 	// Detectors and Excluded are never nil.
 	Detectors []decision.DetectorResult
 	Excluded  []decision.Exclusion
@@ -77,6 +79,19 @@ type Outcome struct {
 	CostUSD float64
 	// LatencyMs is the wall time of the sample's pipeline, calls included.
 	LatencyMs int64
+}
+
+// Pipeline stages an Outcome.Stage names.
+const (
+	StageDetectors = "detectors"
+	StageCompile   = "compile"
+	StageDecide    = "decide"
+)
+
+// fail records a stage's error.
+func (o *Outcome) fail(stage string, err error) *Outcome {
+	o.Err, o.Stage = fmt.Errorf("%s: %w", stage, err), stage
+	return o
 }
 
 // Failed reports whether a request of the sample failed with the error kind (jev.KindBudget, ...).
@@ -142,20 +157,17 @@ func (r *Runner) Evaluate(ctx context.Context, s *Sample) *Outcome {
 		PreDedupItems: len(s.Evidence), MaxMarker: s.MaxMarker, MinInteger: r.Route.Detectors.MinInteger,
 	})
 	if err != nil {
-		o.Err = fmt.Errorf("detectors: %w", err)
-		return o
+		return o.fail(StageDetectors, err)
 	}
 	o.Detectors = detectors
 
 	compiled, err := r.Compile(s)
 	if err != nil {
-		o.Err = fmt.Errorf("compile: %w", err)
-		return o
+		return o.fail(StageCompile, err)
 	}
 	evs, err := compiled.DecideEvaluators(r.Specs, r.Thresholds())
 	if err != nil {
-		o.Err = fmt.Errorf("compile: %w", err)
-		return o
+		return o.fail(StageCompile, err)
 	}
 	if compiled.Excluded != nil {
 		o.Excluded = compiled.Excluded
@@ -186,7 +198,9 @@ func (r *Runner) Evaluate(ctx context.Context, s *Sample) *Outcome {
 				reserved += r.EstimateUSD(t) * ReserveFactor
 			}
 			if !r.Spend.Reserve(reserved) {
-				return &Outcome{Skipped: true, Detectors: []decision.DetectorResult{}, Excluded: []decision.Exclusion{}, RequestStatus: map[string]string{}}
+				o.Skipped, o.Compiled = true, nil
+				o.Detectors, o.Excluded = []decision.DetectorResult{}, []decision.Exclusion{}
+				return o
 			}
 			var u *Usage
 			u, in.Answers, in.Meta.RequestStatus = r.call(ctx, s, compiled)
@@ -197,8 +211,7 @@ func (r *Runner) Evaluate(ctx context.Context, s *Sample) *Outcome {
 	}
 	core, err := decision.Decide(in)
 	if err != nil {
-		o.Err = fmt.Errorf("decide: %w", err)
-		return o
+		return o.fail(StageDecide, err)
 	}
 	o.Decision = core
 	return o
