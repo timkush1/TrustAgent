@@ -39,9 +39,17 @@ describe('testEstimate', () => {
 });
 
 describe('draftEstimate', () => {
-  it('is ≈ $0.005 as an estimate, or simulated with a mock judge', () => {
+  it('is ≈ $0.005 as an estimate on the default judge, or simulated with a mock judge', () => {
     expect(draftEstimate({ provider: 'openrouter', model: 'anthropic/claude-haiku-4.5' })).toMatchObject({ usd: DRAFT_ESTIMATE_USD, label: 'estimate' });
+    expect(draftEstimate({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' })).toMatchObject({ usd: DRAFT_ESTIMATE_USD, label: 'estimate' });
     expect(DRAFT_ESTIMATE_USD).toBe(0.005);
     expect(draftEstimate({ provider: 'mock', model: 'mock' })).toMatchObject({ usd: 0, label: 'simulated' });
+  });
+
+  it("prices another judge at its own table price, and gives no figure for a model the table does not price", () => {
+    expect(draftEstimate({ provider: 'ollama', model: 'llama3.1:8b' })).toMatchObject({ usd: 0, label: 'estimate', basis: expect.stringMatching(/no API fee/) });
+    const unknown = draftEstimate({ provider: 'openai', model: 'gpt-5-mini' });
+    expect(unknown).toMatchObject({ usd: null, label: 'estimate' });
+    expect(unknown.basis).toMatch(/gpt-5-mini is not in the price table/);
   });
 });

@@ -17,7 +17,9 @@ export interface CostEstimate {
   basis: string;
 }
 
-/** SPEC §7.3's figure for one draft: about 1,500 prompt and 700 answer tokens on the default judge. */
+/** One draft: about 1,500 prompt and 700 answer tokens (the drafter prompt, temperature 0.2). */
+export const DRAFT_TOKENS = { input: 1500, output: 700 } as const;
+/** SPEC §7.3's figure for one draft on the default judge (anthropic/claude-haiku-4.5 at $1 / $5 per million). */
 export const DRAFT_ESTIMATE_USD = 0.005;
 
 const PROVIDERS: Partial<Record<DecisionBackend, string>> = {
@@ -41,13 +43,27 @@ export function priceEntryFor(model: string, provider: string | null): PriceEntr
 
 const tokens = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
-/** The estimate for one draft by the judge (Simulated when the judge is a mock). */
+/**
+ * The estimate for one draft by the judge, at the judge model's table price (≈ $0.005 on the default
+ * judge); Simulated when the judge is a mock, and no figure when the model has no known price.
+ */
 export function draftEstimate(judge: { provider: string | null; model: string | null }): CostEstimate {
   if (judge.provider === 'mock') return { usd: 0, label: 'simulated', basis: 'The mock judge drafts for free; its draft is simulated.' };
+  const entry = judge.model ? priceEntryFor(judge.model, judge.provider) : null;
+  if (!entry) {
+    return {
+      usd: null,
+      label: 'estimate',
+      basis: `One drafting call of about 1,500 prompt and 700 answer tokens; the price of ${judge.model ?? 'the judge model'} is not in the price table.`,
+    };
+  }
+  if (entry.input_per_mtok === 0 && entry.output_per_mtok === 0) {
+    return { usd: 0, label: 'estimate', basis: `A local model (${judge.model}): no API fee; compute is not priced.` };
+  }
   return {
-    usd: DRAFT_ESTIMATE_USD,
+    usd: (DRAFT_TOKENS.input * entry.input_per_mtok + DRAFT_TOKENS.output * entry.output_per_mtok) / 1e6,
     label: 'estimate',
-    basis: `One drafting call${judge.model ? ` to ${judge.model}` : ''}: about 1,500 prompt and 700 answer tokens at the judge's price.`,
+    basis: `One drafting call to ${judge.model}: about 1,500 prompt and 700 answer tokens at $${entry.input_per_mtok} and $${entry.output_per_mtok} per million (${entry.match}, price table).`,
   };
 }
 
