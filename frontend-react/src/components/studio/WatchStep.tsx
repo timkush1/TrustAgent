@@ -126,8 +126,13 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
     >
       {policies.isPending ? (
         <Skeleton className="h-8 w-64" />
-      ) : policies.isError ? (
-        <p className="text-sm text-fg">The policy could not be loaded: {policies.error.message}</p>
+      ) : !state && policies.isError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-fg">
+          <span>The policy could not be loaded: {policies.error.message}</span>
+          <Button size="sm" onClick={() => void policies.refetch()}>
+            Retry
+          </Button>
+        </div>
       ) : (
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Route" className="min-w-48">

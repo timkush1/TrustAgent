@@ -9,6 +9,7 @@ import { configure, fireEvent, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import draftFixture from '@contracts/fixtures/api/StudioDraftResponse.ok.json';
+import { notify } from '@/components/common/notify';
 import { ApiError } from '@/data/errors';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { evaluatorDetail, evaluatorVersion } from '@/test/control/fixtures';
@@ -19,7 +20,10 @@ import { stopLive } from '@/test/renderLive';
 import type { EvaluatorCreateRequest, EvaluatorDraft, EvaluatorSpec, EvaluatorVersion, EvaluatorVersionCreateRequest, StudioDraftResponse } from '@/types/api';
 
 installMswServer();
-afterEach(() => stopLive());
+afterEach(() => {
+  stopLive();
+  vi.restoreAllMocks();
+});
 configure({ asyncUtilTimeout: 5000 });
 
 const DESCRIPTION = 'Flag answers that blame the customer.';
@@ -295,6 +299,23 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(await within(test).findByText('No fast-check model is connected')).toBeInTheDocument();
     expect(within(test).getByRole('link', { name: 'Connect one' })).toHaveAttribute('href', '/app/settings/connections');
   });
+
+  it('says the policy did not load in step 6, and Retry loads it', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    const policy = control.state.policies;
+    control.state.policies = errorReply(503, 'persistence_disabled', 'The policy store is unavailable.');
+    renderPage('/app/evaluators/studio', { control });
+    await user.click(within(await screen.findByRole('region', { name: /Step 1/ })).getByRole('button', { name: 'Use this template' }));
+    const watch = await screen.findByRole('region', { name: /Step 6: Watch it on a route/ });
+    const alert = await within(watch).findByRole('alert');
+    expect(alert).toHaveTextContent('The policy could not be loaded: The policy store is unavailable.');
+
+    control.state.policies = policy;
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await within(watch).findByRole('combobox', { name: 'Route' })).toBeInTheDocument();
+    expect(within(watch).queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
 
 describe('Studio on a saved version', { timeout: 30_000 }, () => {
@@ -337,6 +358,31 @@ describe('Studio on a saved version', { timeout: 30_000 }, () => {
     await user.click(await within(save).findByRole('button', { name: 'Save version 3' }));
     expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
     expect(createVersion.mock.calls[1][1]).toMatchObject({ base_version: 2, spec: expect.objectContaining({ version: 3, name: 'Blames the user' }) });
+  });
+
+  it('says so when reloading after a 412 fails, and keeps the edit and the way to retry', async () => {
+    const user = userEvent.setup();
+    const v1 = dashboardCheck(1);
+    const control = createControlApi({ evaluatorDetails: { blames: v1.detail }, evaluatorVersions: { 'blames@1': v1.version } });
+    const { dataSource } = renderPage('/app/evaluators/studio/blames/1', { control });
+    vi.spyOn(dataSource, 'createEvaluatorVersion').mockRejectedValue(new ApiError({ kind: 'http', status: 412, code: 'stale_version', message: 'A newer version exists.' }));
+    const failed = vi.spyOn(notify, 'error').mockImplementation(() => '');
+
+    expect(await screen.findByText('Editing version 1 of Blames the customer')).toBeInTheDocument();
+    const save = step(/Step 5: Save a version/);
+    const name = within(step(/Step 2/)).getByRole('textbox', { name: 'Name' });
+    await user.clear(name);
+    await user.type(name, 'Blames the user');
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'Say user');
+    await user.click(within(save).getByRole('button', { name: 'Save version 2' }));
+    expect(await within(save).findByText(/Someone saved a newer version of this check/)).toBeInTheDocument();
+
+    vi.spyOn(dataSource, 'getEvaluator').mockRejectedValueOnce(new ApiError({ kind: 'network', status: 0, code: 'network', message: 'The gateway did not answer.' }));
+    await user.click(within(save).getByRole('button', { name: 'Reload the latest version' }));
+    await waitFor(() => expect(failed).toHaveBeenCalledWith("Couldn't load the latest version", expect.objectContaining({ code: 'network' })));
+    expect(within(save).getByText(/Someone saved a newer version of this check/)).toBeInTheDocument();
+    expect(within(save).getByRole('button', { name: 'Reload the latest version' })).toBeEnabled();
+    expect(within(step(/Step 2/)).getByRole('textbox', { name: 'Name' })).toHaveValue('Blames the user');
   });
 
   it('copies a built-in check as a new check of your own', async () => {

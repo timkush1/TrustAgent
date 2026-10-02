@@ -213,19 +213,23 @@ export function StudioVersionPage({ id, version: param }: { id: string; version:
   if (version === 0) {
     return <ErrorState error={new Error(`“${param}” is not a version number. Open Studio from a version on the check's page.`)} />;
   }
-  const error = versionQ.error ?? detailQ.error;
-  if (error) {
-    return (
-      <ErrorState
-        error={error}
-        onRetry={() => {
-          void versionQ.refetch();
-          void detailQ.refetch();
-        }}
-      />
-    );
+  // Once the editor is up it stays: a later refetch that fails (a reload after a 412, a refocus)
+  // keeps the cached version and the viewer's edits instead of swapping the page for an error.
+  if (!versionQ.data || !detailQ.data) {
+    const error = versionQ.error ?? detailQ.error;
+    if (error) {
+      return (
+        <ErrorState
+          error={error}
+          onRetry={() => {
+            void versionQ.refetch();
+            void detailQ.refetch();
+          }}
+        />
+      );
+    }
+    return loading ? <LoadingState rows={4} /> : null;
   }
-  if (!versionQ.data || !detailQ.data) return loading ? <LoadingState rows={4} /> : null;
 
   const taken = [...Object.values(BUILTIN_TEMPLATES).map((t) => t.id), ...(evaluators.data?.items ?? []).map((e) => e.id)];
   const initial = sessionFrom(versionQ.data, detailQ.data, taken);

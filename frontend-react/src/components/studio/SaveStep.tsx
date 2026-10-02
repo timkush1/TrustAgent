@@ -101,6 +101,8 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
     try {
       await onReloadLatest();
       save.reset();
+    } catch (e) {
+      notify.error("Couldn't load the latest version", e);
     } finally {
       setReloading(false);
     }
