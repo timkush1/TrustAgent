@@ -1,0 +1,53 @@
+{
+  "items": [
+    {
+      "id": 41,
+      "at": "2026-09-28T10:02:31.118Z",
+      "actor": "setup-admin",
+      "action": "settings.update",
+      "target": "budgets",
+      "diff": {
+        "budgets.llm_usd_day": {
+          "from": 5.0,
+          "to": 3.0
+        }
+      }
+    },
+    {
+      "id": 40,
+      "at": "2026-09-28T09:58:13.311Z",
+      "actor": "setup-admin",
+      "action": "credential.put",
+      "target": "openrouter",
+      "diff": {
+        "fingerprint": "fp_5d0c41e9a7b2",
+        "bind": [
+          "decision_model",
+          "judge"
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "at": "2026-09-28T09:57:02.006Z",
+      "actor": "setup-admin",
+      "action": "api_key.create",
+      "target": "ci-ingest",
+      "diff": {
+        "scopes": [
+          "ingest"
+        ],
+        "prefix": "ta_q7Hd2x"
+      }
+    },
+    {
+      "id": 38,
+      "at": "2026-09-28T09:55:40.880Z",
+      "actor": "setup",
+      "action": "setup.claim",
+      "target": null,
+      "diff": null
+    }
+  ],
+  "next_cursor": null
+}

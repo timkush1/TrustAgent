@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "ingest_key_required",
+    "message": "Create an ingest API key first: with an upstream key bound, unauthenticated clients could spend it.",
+    "details": {
+      "field": "bindings.upstream_default"
+    }
+  },
+  "trace_id": null
+}

@@ -1,0 +1,87 @@
+{
+  "draft": {
+    "spec_version": "evaluator/v1",
+    "name": "Blames the customer",
+    "category": "quality",
+    "state_fields": [
+      "assistant_response"
+    ],
+    "question": {
+      "type": "choice",
+      "instructions": "Does `assistant_response` blame the customer for the problem they describe?",
+      "criteria": {
+        "no_blame": {
+          "what": "Neutral or supportive wording; no suggestion the customer caused the problem",
+          "not_for": "Replies that say the customer did something wrong"
+        },
+        "implied_blame": {
+          "what": "Hints that the customer is at fault, without saying it outright",
+          "not_for": "Plain instructions that do not judge the customer"
+        },
+        "explicit_blame": {
+          "what": "Says the customer caused the problem or should have known better"
+        }
+      }
+    },
+    "evidence": {
+      "requires": "none"
+    },
+    "signal": {
+      "risk_weights": {
+        "explicit_blame": 1,
+        "implied_blame": 0.5
+      }
+    },
+    "outcomes": {
+      "warn_at": 0.6,
+      "critical_at": null,
+      "block_eligible": false,
+      "requires_corroboration": [],
+      "implies": []
+    },
+    "escalation": {
+      "escalate_from": null,
+      "numeric_or_date": false,
+      "on_error": "ignore"
+    },
+    "rationale": "One choice question with three graded options separates mild hints from outright blame, so warn_at can sit between them.",
+    "test_samples": [
+      {
+        "user_request": "My order never arrived.",
+        "assistant_response": "Sorry about that. I have reshipped it at no cost.",
+        "should_fire": false
+      },
+      {
+        "user_request": "The app crashed and I lost my notes.",
+        "assistant_response": "You should have backed them up. That is on you.",
+        "should_fire": true
+      },
+      {
+        "user_request": "I was charged twice.",
+        "assistant_response": "I see two charges; I have refunded the duplicate.",
+        "should_fire": false
+      },
+      {
+        "user_request": "I can't log in.",
+        "assistant_response": "Most people manage to type their password correctly, so please try harder.",
+        "should_fire": true
+      },
+      {
+        "user_request": "The package was damaged.",
+        "assistant_response": "Please send a photo and we will replace it.",
+        "should_fire": false
+      },
+      {
+        "user_request": "My discount code failed.",
+        "assistant_response": "Codes only fail when customers ignore the expiry date.",
+        "should_fire": true
+      }
+    ]
+  },
+  "errors": [],
+  "lints": [],
+  "model": "anthropic/claude-haiku-4.5",
+  "cost_usd": 0.0048,
+  "cost_source": "reported",
+  "attempts": 1
+}

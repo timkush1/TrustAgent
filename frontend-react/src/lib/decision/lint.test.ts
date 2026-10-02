@@ -79,4 +79,14 @@ describe('lintSpec', () => {
     const unresolved = { ...noul, question: { ...noul.question, criteria: { true: ['`rules.tone` is ignored'], false: 'ok' } } };
     expect(codes(unresolved).errors).toEqual(['unresolved_state_reference']);
   });
+
+  it('compares at most the first 255 options for near-duplicates (bounded work, like lint.go)', () => {
+    // 600 options described the same way: every pair is a near-duplicate, but only the pairs among
+    // the first 255 (the schema's limit) are compared and reported.
+    const criteria = Object.fromEntries(Array.from({ length: 600 }, (_, i) => [`same_reply_${i}`, 'The same description']));
+    const spec = { ...noul, question: { type: 'choice', instructions: 'Which fits `assistant_response`?', criteria }, signal: { risk_weights: { same_reply_0: 1 } } };
+    const found = lintSpec(spec).filter((l) => l.code === 'near_duplicate_options');
+    expect(found).toHaveLength((255 * 254) / 2);
+    expect(found.at(-1)?.message).toBe('same_reply_253 and same_reply_254 are described almost the same way; add not_for to separate them');
+  });
 });

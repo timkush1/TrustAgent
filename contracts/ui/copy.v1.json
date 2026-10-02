@@ -109,7 +109,8 @@
         "callback_origin_mismatch": "This sign-in started at a different address. Open the dashboard at {public_url} and connect again.",
         "callback_expired": "This sign-in link has expired or was already used. Start Connect OpenRouter again.",
         "callback_missing": "No sign-in is waiting in this tab. Open the dashboard at {public_url} and connect again.",
-        "callback_working": "Finishing the OpenRouter sign-in…"
+        "callback_working": "Finishing the OpenRouter sign-in…",
+        "exchange_failed": "OpenRouter didn't accept this sign-in. Start Connect OpenRouter again."
       },
       "step_see_it_work": {
         "title": "See it work",
@@ -252,7 +253,26 @@
       "dry_run_confirm": "This test costs about {estimate} ({samples} of {population} past answers). {budget_left} of today's fast-check budget is left.",
       "dry_run_cancelled": "Test stopped. You're charged only for the checks that already ran ({cost}).",
       "static_soon": "Coming soon to the online demo. Run TrustAgent yourself to use Studio: {command:demo}",
-      "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft."
+      "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft.",
+      "lint": {
+        "invalid_spec": "Doesn't match the evaluator format",
+        "unresolved_state_reference": "Refers to a field the check doesn't read",
+        "no_id_reference": "Mentions an internal question id",
+        "unknown_risk_weight_option": "Risk weight for an option that doesn't exist",
+        "risk_level_out_of_range": "Risk level past the last answer level",
+        "threshold_order": "Thresholds are out of order",
+        "unknown_evaluator_reference": "Refers to an evaluator that doesn't exist",
+        "unknown_detector": "Refers to an instant check that doesn't exist",
+        "reference_not_attached": "Refers to an evaluator this route doesn't run",
+        "missing_escape_option": "No option for answers with nothing to judge",
+        "non_descriptive_key": "An option's name doesn't say what it means",
+        "double_negative": "Double negative in the instructions",
+        "counting_or_arithmetic": "Asks the model to count or do arithmetic",
+        "near_duplicate_options": "Two options read almost the same",
+        "numeric_only_score_levels": "Score levels described only by a number",
+        "long_instructions": "Instructions over 600 characters",
+        "score_used_for_policy": "A score question used for a policy decision"
+      }
     },
     "recording": {
       "recorded": "Recorded {date} · {snapshot} + {judge} · {answer_source} answers · replayed, not live",
@@ -281,7 +301,43 @@
       "sign_out_everywhere": "Sign out everywhere",
       "sign_out_everywhere_confirm": "Every dashboard session, including this one, will need to sign in again.",
       "stale_version": "Settings changed in another tab. Reload to see the latest, then try again.",
-      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill."
+      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill.",
+      "price_invalid_entry": "Check this price: {message}",
+      "price_zero_not_local": "$0 is only allowed for local models. {provider} bills its calls.",
+      "price_duplicate_override": "Price {n} already covers this model, so this one would never apply.",
+      "price_far_above_contracts": "This is {ratio}× the built-in price of ${contracts_per_mtok} per million tokens. Check the units: USD per million tokens.",
+      "unknown_setting": "This isn't a setting that can be changed here.",
+      "invalid_type": "This value has the wrong type for this setting.",
+      "invalid_value": "This value isn't allowed here.",
+      "binding_mismatch": "The default upstream's key and its binding must name the same key. Set one of them, or set both to the same key.",
+      "unknown_credential": "There is no key with this name.",
+      "credential_kind": "The {names} key can't be used for this.",
+      "credential_missing": "No {names} key is saved. Add it under Connections first.",
+      "backend_pinned": "The fast-check backend is set in .env (TRUTHTABLE_JEV_BACKEND) and doesn't use the {names} key. Change it there and restart.",
+      "origin_not_allowed": "The {names} key can't be sent to this address.",
+      "fallback_key_required": "The fallback upstream at {host} is on another host, so it needs its own key. Save an upstream-fallback key first.",
+      "invalid_url": "Enter a full address that starts with https://.",
+      "url_credentials": "Take the user name and password out of the address. Save the key under Connections instead.",
+      "insecure_url": "Use an https:// address. Plain http:// is allowed only for localhost and single-word service names such as ollama.",
+      "forbidden_target": "This address points at a link-local or cloud-metadata target, which never receives a key.",
+      "verify_hint": {
+        "not_checked": "Not checked: nothing was sent to the provider. Upstream keys are saved without a check.",
+        "probe_skipped": "OpenRouter accepted the key, but TrustAgent's own budget or rate limit held the test request back, so the credits aren't confirmed yet. Check again later.",
+        "not_found": "The provider doesn't serve the configured model. Check the model in Settings → Models.",
+        "bad_request": "The provider refused the test request. Check the model and the address in Settings → Models.",
+        "data_policy": "Your OpenRouter privacy settings rule out every provider for this model. Allow one at openrouter.ai/settings/privacy, or unset TRUTHTABLE_JEV_ZDR.",
+        "too_large": "The test request was too large for this model.",
+        "timeout": "The provider didn't answer in time. Try again in a minute.",
+        "retryable": "The provider couldn't be reached or had a temporary error. Try again in a minute.",
+        "rate_limited": "TrustAgent's own rate limit held the test request back. Try again in a minute.",
+        "overload": "TrustAgent is busy with other checks, so the test request wasn't sent. Try again in a minute.",
+        "budget": "Today's fast-check budget is used up, so the test request wasn't sent. Raise it in Settings → Budgets.",
+        "breaker_open": "The fast check is paused after repeated errors, so the test request wasn't sent. Try again in a minute.",
+        "off": "The fast check is off, so the key wasn't tested.",
+        "credentials_unavailable": "This key may not be sent to the provider's address, so nothing was sent.",
+        "bad_content_type": "The address answered with a web page instead of the API. Check the address in Settings → Models.",
+        "bad_response": "The provider's answer couldn't be read. Try again, or check the model in Settings → Models."
+      }
     },
     "labels": {
       "title": "Label queue",

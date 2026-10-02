@@ -1,14 +1,20 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/truthtable/backend-go/internal/config"
 )
 
 // APIKeyRecord is one api_keys row (migration 0004). The key itself is never stored: SHA256 is the
@@ -79,11 +85,12 @@ func InsertAdminAudit(ctx context.Context, q Execer, e AdminAuditEntry) error {
 	return insertAdminAudit(ctx, q, e)
 }
 
-// insertAdminAudit appends one admin_audit_log row.
+// insertAdminAudit appends one admin_audit_log row. The diff is scrubbed rather than refused
+// (D44): see scrubAuditDiff.
 func insertAdminAudit(ctx context.Context, q Execer, e AdminAuditEntry) error {
 	var diff []byte
 	if e.Diff != nil {
-		b, err := json.Marshal(e.Diff)
+		b, err := scrubAuditDiff(e.Diff)
 		if err != nil {
 			return fmt.Errorf("store: admin audit diff: %w", err)
 		}
@@ -140,15 +147,43 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]APIKeyRecord, error)
 	return out, rows.Err()
 }
 
+// ErrLastAdminKey: revoking the key would leave no active api_keys row with the admin scope
+// (D81). The caller refuses it unless an env admin key exists.
+var ErrLastAdminKey = errors.New("store: the last active admin key cannot be revoked")
+
 // RevokeAPIKey sets revoked_at on an active key and logs api_key.revoke, in one transaction. It
 // returns the row and whether this call revoked it (false for a key that was already revoked), or
 // ErrNotFound.
 func (s *PostgresStore) RevokeAPIKey(ctx context.Context, id, actor string) (*APIKeyRecord, bool, error) {
+	return s.revokeAPIKey(ctx, id, actor, false)
+}
+
+// RevokeAPIKeyKeepingAdmin is RevokeAPIKey that refuses, with ErrLastAdminKey, to revoke the last
+// active admin key (D81). It locks the active admin rows first, so two revocations running at once
+// cannot each leave the other's key as the last one and then revoke it too.
+func (s *PostgresStore) RevokeAPIKeyKeepingAdmin(ctx context.Context, id, actor string) (*APIKeyRecord, bool, error) {
+	return s.revokeAPIKey(ctx, id, actor, true)
+}
+
+func (s *PostgresStore) revokeAPIKey(ctx context.Context, id, actor string, keepAdmin bool) (*APIKeyRecord, bool, error) {
 	var (
 		out     *APIKeyRecord
 		revoked bool
 	)
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if keepAdmin {
+			rows, err := tx.Query(ctx, `SELECT id FROM api_keys WHERE 'admin' = ANY (scopes) AND revoked_at IS NULL ORDER BY id FOR UPDATE`)
+			if err != nil {
+				return err
+			}
+			admins, err := pgx.CollectRows(rows, pgx.RowTo[string])
+			if err != nil {
+				return err
+			}
+			if len(admins) == 1 && admins[0] == id {
+				return ErrLastAdminKey
+			}
+		}
 		k, err := scanAPIKey(tx.QueryRow(ctx, `
 			UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
 			RETURNING `+apiKeyColumns, id))
@@ -190,4 +225,120 @@ func (s *PostgresStore) AdminKeyExists(ctx context.Context) (bool, error) {
 // AppendAdminAudit appends one admin_audit_log row.
 func (s *PostgresStore) AppendAdminAudit(ctx context.Context, e AdminAuditEntry) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error { return insertAdminAudit(ctx, tx, e) })
+}
+
+// IngestKeyExists reports whether an active api_keys row holds the ingest scope (D41: binding the
+// default upstream credential needs a key that callers authenticate with).
+func (s *PostgresStore) IngestKeyExists(ctx context.Context) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM api_keys WHERE 'ingest' = ANY (scopes) AND revoked_at IS NULL)`).Scan(&ok)
+	return ok, err
+}
+
+// ActiveAdminKeyCount counts the active api_keys rows that hold the admin scope (D81: the last one
+// is not revoked while no env admin key exists).
+func (s *PostgresStore) ActiveAdminKeyCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM api_keys WHERE 'admin' = ANY (scopes) AND revoked_at IS NULL`).Scan(&n)
+	return n, err
+}
+
+// auditRedactors scrub every admin_audit_log diff (D44). The credential patterns always apply;
+// AddAuditRedactor adds the process Redactor, which also knows every loaded, received and
+// decrypted secret.
+var auditRedactors = struct {
+	sync.RWMutex
+	next int
+	set  map[int]*config.Redactor
+}{set: map[int]*config.Redactor{}}
+
+// patternRedactor masks the credential patterns only (no loaded secrets).
+var patternRedactor = config.NewRedactor()
+
+// AddAuditRedactor makes r scrub every admin_audit_log diff written from now on, in addition to
+// the credential patterns, and returns the function that removes it. The gateway adds its process
+// Redactor once at startup; tests add their own and remove it at cleanup.
+func AddAuditRedactor(r *config.Redactor) (remove func()) {
+	if r == nil {
+		return func() {}
+	}
+	auditRedactors.Lock()
+	defer auditRedactors.Unlock()
+	id := auditRedactors.next
+	auditRedactors.next++
+	auditRedactors.set[id] = r
+	return func() {
+		auditRedactors.Lock()
+		defer auditRedactors.Unlock()
+		delete(auditRedactors.set, id)
+	}
+}
+
+// scrubAuditDiff marshals an audit diff with every string value scrubbed (D44): a URL-shaped value
+// loses its userinfo (a password becomes xxxxx, a bare user name, which is often a token, too)
+// and its query, then the credential patterns and every registered Redactor mask what is left.
+// Scrubbing works value by value, so the result stays valid JSON whatever a pattern matches. Map
+// keys are field names and stay as they are.
+func scrubAuditDiff(diff any) ([]byte, error) {
+	raw, err := json.Marshal(diff)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	auditRedactors.RLock()
+	reds := make([]*config.Redactor, 0, len(auditRedactors.set)+1)
+	reds = append(reds, patternRedactor)
+	for _, r := range auditRedactors.set {
+		reds = append(reds, r)
+	}
+	auditRedactors.RUnlock()
+	return json.Marshal(scrubValue(v, reds))
+}
+
+func scrubValue(v any, reds []*config.Redactor) any {
+	switch t := v.(type) {
+	case string:
+		s := scrubURL(t)
+		for _, r := range reds {
+			s = r.Redact(s)
+		}
+		return s
+	case []any:
+		for i := range t {
+			t[i] = scrubValue(t[i], reds)
+		}
+		return t
+	case map[string]any:
+		for k, x := range t {
+			t[k] = scrubValue(x, reds)
+		}
+		return t
+	}
+	return v
+}
+
+// scrubURL returns an absolute URL without its userinfo secrets and query; any other string is
+// returned unchanged.
+func scrubURL(s string) string {
+	if !strings.Contains(s, "://") {
+		return s
+	}
+	u, err := url.Parse(strings.TrimSpace(s))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return s
+	}
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			u.User = url.UserPassword(u.User.Username(), "xxxxx")
+		} else {
+			u.User = url.User("xxxxx")
+		}
+	}
+	u.RawQuery, u.ForceQuery = "", false
+	return u.String()
 }

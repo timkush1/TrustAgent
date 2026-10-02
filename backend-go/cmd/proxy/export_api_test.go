@@ -14,6 +14,7 @@ import (
 	"github.com/truthtable/backend-go/internal/recording"
 	"github.com/truthtable/backend-go/internal/recording/recordingtest"
 	"github.com/truthtable/backend-go/internal/store"
+	"github.com/truthtable/backend-go/internal/storetest"
 )
 
 const exportAdminKey = "export-admin-secret"
@@ -83,7 +84,13 @@ func TestExportReplayNeedsAdminAndTheDatabase(t *testing.T) {
 }
 
 func TestExportReplay(t *testing.T) {
-	env, pg := pgEnv(t, envOpts{adminKey: exportAdminKey})
+	schema := storetest.New(t)
+	pg, err := store.NewPostgresStore(context.Background(), schema.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pg.Close)
+	env := newTestEnv(t, envOpts{adminKey: exportAdminKey, store: pg})
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	seedRecordable(t, pg, base.Add(-48*time.Hour), "scripted", true) // outside since
 	first := seedRecordable(t, pg, base, "scripted", true)
@@ -121,6 +128,12 @@ func TestExportReplay(t *testing.T) {
 	}
 	if judge, _ := m["judge"].(map[string]any); judge["provider"] != "mock" {
 		t.Errorf("judge %v", m["judge"])
+	}
+	// The export is in the admin audit log (D44), with its filter and how many traces left.
+	exports := readAudit(t, schema, "export.replay")
+	if len(exports) != 1 || exports[0].Actor != "admin" || exports[0].Diff["traces"] != float64(2) ||
+		exports[0].Diff["source"] != "trafficgen" || exports[0].Diff["since"] == nil {
+		t.Errorf("export.replay rows %+v", exports)
 	}
 	// Sanitized: the email in the question preview is masked.
 	if strings.Contains(string(body), "jane@acme-corp.com") || strings.Contains(string(body), "acme-corp") {
