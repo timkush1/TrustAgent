@@ -1,0 +1,28 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-negative-reported-cost-ignored",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@e9974b3bd8af",
+  "description": "A reported usage.cost below $0 is not a cost: it is ignored and the Haiku verify call is priced from the table (cost_source computed), so a malformed report can never lower the day's spend.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "openrouter",
+    "model": "anthropic/claude-haiku-4.5",
+    "input_tokens": 3525,
+    "output_tokens": 120,
+    "reported_cost_usd": -0.0041,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"cost_source": "computed", "cost_usd": 0.004125, "price_table_version": "2026-09-27"}
+}

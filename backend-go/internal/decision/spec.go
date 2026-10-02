@@ -61,6 +61,9 @@ type Spec struct {
 	Escalation  Escalation
 
 	raw map[string]any
+	// ordered is the document again with its object members in JavaScript property order: the
+	// lints read the question text trees and the risk weights in the order lint.ts sees them.
+	ordered *jsObject
 }
 
 // Param is one declared rules parameter.
@@ -168,6 +171,11 @@ func (s *Spec) UnmarshalJSON(doc []byte) error {
 	if err := json.Unmarshal(doc, &w); err != nil {
 		return fmt.Errorf("evaluator spec: %w", err)
 	}
+	ov, err := decodeOrdered(doc)
+	if err != nil {
+		return fmt.Errorf("evaluator spec: %w", err)
+	}
+	ordered, _ := ov.(*jsObject)
 	if !evaluatorIDPattern.MatchString(w.ID) {
 		return fmt.Errorf("evaluator spec: invalid id %q", w.ID)
 	}
@@ -205,6 +213,7 @@ func (s *Spec) UnmarshalJSON(doc []byte) error {
 		},
 		Escalation: Escalation{OnError: OnErrorEscalate},
 		raw:        raw,
+		ordered:    ordered,
 	}
 	if w.VerdictRole != nil {
 		out.VerdictRole = *w.VerdictRole

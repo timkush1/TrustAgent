@@ -578,7 +578,7 @@ type judgePriceEntry struct {
 
 var judgePrice = sync.OnceValue(func() judgePriceEntry {
 	p := judgePriceEntry{name: "Claude Haiku 4.5"}
-	table, err := prices()
+	table, err := decision.ContractsPrices()
 	if err != nil {
 		return p
 	}

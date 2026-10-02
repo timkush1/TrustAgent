@@ -252,7 +252,26 @@
       "dry_run_confirm": "This test costs about {estimate} ({samples} of {population} past answers). {budget_left} of today's fast-check budget is left.",
       "dry_run_cancelled": "Test stopped. You're charged only for the checks that already ran ({cost}).",
       "static_soon": "Coming soon to the online demo. Run TrustAgent yourself to use Studio: {command:demo}",
-      "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft."
+      "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft.",
+      "lint": {
+        "invalid_spec": "Doesn't match the evaluator format",
+        "unresolved_state_reference": "Refers to a field the check doesn't read",
+        "no_id_reference": "Mentions an internal question id",
+        "unknown_risk_weight_option": "Risk weight for an option that doesn't exist",
+        "risk_level_out_of_range": "Risk level past the last answer level",
+        "threshold_order": "Thresholds are out of order",
+        "unknown_evaluator_reference": "Refers to an evaluator that doesn't exist",
+        "unknown_detector": "Refers to an instant check that doesn't exist",
+        "reference_not_attached": "Refers to an evaluator this route doesn't run",
+        "missing_escape_option": "No option for answers with nothing to judge",
+        "non_descriptive_key": "An option's name doesn't say what it means",
+        "double_negative": "Double negative in the instructions",
+        "counting_or_arithmetic": "Asks the model to count or do arithmetic",
+        "near_duplicate_options": "Two options read almost the same",
+        "numeric_only_score_levels": "Score levels described only by a number",
+        "long_instructions": "Instructions over 600 characters",
+        "score_used_for_policy": "A score question used for a policy decision"
+      }
     },
     "recording": {
       "recorded": "Recorded {date} · {snapshot} + {judge} · {answer_source} answers · replayed, not live",
@@ -281,7 +300,11 @@
       "sign_out_everywhere": "Sign out everywhere",
       "sign_out_everywhere_confirm": "Every dashboard session, including this one, will need to sign in again.",
       "stale_version": "Settings changed in another tab. Reload to see the latest, then try again.",
-      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill."
+      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill.",
+      "price_invalid_entry": "Check this price: {message}",
+      "price_zero_not_local": "$0 is only allowed for local models. {provider} bills its calls.",
+      "price_duplicate_override": "Price {n} already covers this model, so this one would never apply.",
+      "price_far_above_contracts": "This is {ratio}× the built-in price of ${contracts_per_mtok} per million tokens. Check the units: USD per million tokens."
     },
     "labels": {
       "title": "Label queue",
