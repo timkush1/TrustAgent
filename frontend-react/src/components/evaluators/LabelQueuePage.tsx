@@ -406,9 +406,10 @@ export function LabelQueuePage({ search }: { search: LabelQueueSearch }) {
 
   let body;
   if (writeReason) {
+    const readonly = writeReason === 'readonly';
     body = (
-      <EmptyState icon={ListChecks} title="Labelling needs an admin key">
-        <p>Labels change how checks are calibrated, so only admins can add them.</p>
+      <EmptyState icon={ListChecks} title={readonly ? 'Labelling is off on a read-only instance' : 'Labelling needs an admin key'}>
+        <p>Labels change how checks are calibrated, so only admins can add them{readonly ? ', on an instance that accepts changes' : ''}.</p>
         <p className="mt-2">
           <DisabledReason reason={writeReason} />
         </p>

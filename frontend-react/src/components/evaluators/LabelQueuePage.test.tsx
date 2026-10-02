@@ -192,6 +192,13 @@ describe('Label queue', { timeout: 20_000 }, () => {
     expect(await screen.findByText('Labelling needs an admin key')).toBeInTheDocument();
     expect(within(screen.getByText('Labelling needs an admin key').closest('div')!.parentElement!).getByRole('link', { name: 'Sign in as an admin' })).toBeInTheDocument();
     expect(control.callsTo('/api/labels/queue')).toHaveLength(0);
+    stopLive();
+    cleanup();
+
+    const readonly = renderPage('/app/evaluators/labels', { status: { readonly: true } });
+    expect(await screen.findByText('Labelling is off on a read-only instance')).toBeInTheDocument();
+    expect(screen.getByText(copy.disabled_reasons.readonly)).toBeInTheDocument();
+    expect(readonly.control.callsTo('/api/labels/queue')).toHaveLength(0);
   });
 
   it('shows a loading state after 200 ms, then the first answer', async () => {
