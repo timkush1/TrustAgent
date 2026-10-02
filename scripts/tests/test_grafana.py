@@ -213,6 +213,9 @@ class GrafanaTest(unittest.TestCase):
             if panel.get("fieldConfig", {}).get("defaults", {}).get("unit") == "currencyUSD":
                 # Honest numbers: a dollar figure says where it comes from.
                 self.assertRegex(panel["description"], r"(?i)real spend|estimated|budget held")
+                # The ledger prices a call from its tokens when the vendor reports no cost, so a
+                # dollar total is reported or estimated, never "measured".
+                self.assertNotRegex(panel["title"] + " " + panel["description"], r"(?i)measured")
 
 
 if __name__ == "__main__":

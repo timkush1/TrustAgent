@@ -745,7 +745,7 @@
       "id": 23
     },
     {
-      "title": "Spend Today by Kind (measured)",
+      "title": "Spend Today by Kind (reported or estimated)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -773,7 +773,7 @@
           "unit": "currencyUSD"
         }
       },
-      "description": "Real spend today (UTC day) from the cost ledger, the figure the daily budgets count. Simulated checks never count; it resets at 00:00 UTC.",
+      "description": "Real spend today (UTC day) from the cost ledger, the figure the daily budgets count: the vendor's reported cost where it gives one, otherwise estimated from tokens and the price table. Simulated checks never count; it resets at 00:00 UTC.",
       "id": 24
     },
     {
