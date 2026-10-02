@@ -365,7 +365,7 @@ func TestLookupPrice(t *testing.T) {
 func TestPricingProvider(t *testing.T) {
 	for backend, want := range map[string]string{
 		BackendOpenRouterDecisions: "openrouter", BackendOpenRouterSystemOne: "openrouter",
-		BackendTypeSafe: "typesafe", BackendMock: "mock", BackendCompatible: "", BackendOff: "", "": "",
+		BackendTypeSafe: "typesafe", BackendMock: "mock", BackendCompatible: "compatible", BackendOff: "", "": "",
 	} {
 		if got := PricingProvider(backend); got != want {
 			t.Errorf("PricingProvider(%q) = %q, want %q", backend, got, want)

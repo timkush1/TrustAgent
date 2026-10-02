@@ -87,6 +87,19 @@ func TestPricingBookOverrides(t *testing.T) {
 	if p, _, _ := b.JevPrices(jev.BackendOpenRouterDecisions, "typesafe/jev-1.13"); p != 0.042 {
 		t.Errorf("clearing the overrides restores the table price: %v", p)
 	}
+
+	// A compatible endpoint is priced by its own provider's override first, even when another
+	// provider's override listed earlier matches too; without one it borrows a paid price.
+	if p, v, ok := b.JevPrices(jev.BackendCompatible, "jev-latest"); !ok || p != 0.042 || v != b.Version() {
+		t.Errorf("compatible Jev without overrides = %v %s %v", p, v, ok)
+	}
+	b.SetOverrides([]decision.PriceEntry{
+		{Match: "*jev*", Provider: "openrouter", InputPerMTok: 0.05},
+		{Match: "jev-latest", Provider: "compatible", InputPerMTok: 0.03},
+	})
+	if p, v, ok := b.JevPrices(jev.BackendCompatible, "jev-latest"); !ok || p != 0.03 || v != decision.PriceVersionOverride {
+		t.Errorf("the compatible override must win = %v %s %v", p, v, ok)
+	}
 }
 
 func writeFile(t *testing.T, body string) string {

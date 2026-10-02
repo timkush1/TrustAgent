@@ -2,6 +2,7 @@ package jev
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/truthtable/backend-go/internal/decision"
@@ -67,25 +68,32 @@ func (discardCosts) RecordCost(CostEvent) {}
 type PriceFunc func(backend, model string) (perMTok float64, version string, ok bool)
 
 // PricingProvider is the price table provider of a decision backend: openrouter for both
-// OpenRouter endpoints, typesafe for TypeSafe direct, mock for the mock. Other backends (a
-// compatible endpoint) have none, and their models are priced by any provider's entry
-// (decision.LookupPrice).
+// OpenRouter endpoints, typesafe for TypeSafe direct, compatible for a compatible endpoint, mock
+// for the mock. An entry of that provider prices the call first; when the provider has none, any
+// paid provider's matching entry does (decision.LookupPrice), so a compatible endpoint serving a
+// Jev model is priced like Jev while an override written for provider compatible wins over it.
 func PricingProvider(backend string) string {
 	switch backend {
 	case BackendOpenRouterDecisions, BackendOpenRouterSystemOne:
 		return "openrouter"
 	case BackendTypeSafe:
 		return "typesafe"
+	case BackendCompatible:
+		return "compatible"
 	case BackendMock:
 		return "mock"
 	}
 	return ""
 }
 
+// contractsTable is the embedded contracts price table, parsed and copied once: decision calls
+// are priced from it on every call, and nothing modifies it.
+var contractsTable = sync.OnceValues(decision.ContractsPrices)
+
 // ContractsPrices prices decision calls from the embedded contracts table with the shared
 // calculator (decision.LookupPrice). It is what a client without Config.Prices uses.
 func ContractsPrices(backend, model string) (perMTok float64, version string, ok bool) {
-	t, err := decision.ContractsPrices()
+	t, err := contractsTable()
 	if err != nil {
 		return 0, "", false
 	}
@@ -93,10 +101,7 @@ func ContractsPrices(backend, model string) (perMTok float64, version string, ok
 	if !ok {
 		return 0, "", false
 	}
-	if e.Label == decision.PriceLabelOverride {
-		return e.InputPerMTok, decision.PriceVersionOverride, true
-	}
-	return e.InputPerMTok, t.Version, true
+	return e.InputPerMTok, t.VersionOf(e), true
 }
 
 // priceOf is the input price of model for this client's computed costs: the
