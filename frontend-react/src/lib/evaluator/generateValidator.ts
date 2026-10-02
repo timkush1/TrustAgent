@@ -68,6 +68,22 @@ function equal(a, b) {
 }
 `;
 
+/**
+ * scripts/check-forbidden.mjs flags a quoted `numeric_or_date` that is not an object key, because the
+ * superseded escalate value of that name is now `numeric_or_date_unverified`. Here it is only ever
+ * the spec field `escalation.numeric_or_date` (ajv's additionalProperties key test), so the lines the
+ * scanner would match carry its ignore marker, with the reason.
+ */
+const SPEC_FIELD_AS_VALUE = /(?<![A-Za-z]:)["']numeric_or_date["'](?!\s*:)/;
+const SPEC_FIELD_MARKER = ' // check-forbidden: ignore (the spec field escalation.numeric_or_date)';
+
+function markSpecFieldLines(code: string): string {
+  return code
+    .split('\n')
+    .map((line) => (SPEC_FIELD_AS_VALUE.test(line) ? `${line}${SPEC_FIELD_MARKER}` : line))
+    .join('\n');
+}
+
 function schemaId(schema: unknown, file: string): string {
   const id = (schema as { $id?: unknown } | null)?.$id;
   if (typeof id !== 'string' || id === '') throw new Error(`${file} has no $id`);
@@ -95,5 +111,5 @@ export function generateEvaluatorValidator(read: SchemaReader): string {
     .replace(/const (\w+) = require\("ajv\/dist\/runtime\/ucs2length"\)\.default;?/g, 'const $1 = ucs2length;')
     .replace(/const (\w+) = require\("ajv\/dist\/runtime\/equal"\)\.default;?/g, 'const $1 = equal;');
   if (/\brequire\(/.test(code)) throw new Error('The standalone evaluator validator needs an ajv runtime helper that is not inlined.');
-  return `${BANNER}${HELPERS}\n${code.trim()}\n`;
+  return `${BANNER}${HELPERS}\n${markSpecFieldLines(code.trim())}\n`;
 }

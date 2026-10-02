@@ -2353,7 +2353,7 @@ if(data.escalation !== undefined){
 let data64 = data.escalation;
 if(data64 && typeof data64 == "object" && !Array.isArray(data64)){
 for(const key15 in data64){
-if(!(((key15 === "escalate_from") || (key15 === "numeric_or_date")) || (key15 === "on_error"))){
+if(!(((key15 === "escalate_from") || (key15 === "numeric_or_date")) || (key15 === "on_error"))){ // check-forbidden: ignore (the spec field escalation.numeric_or_date)
 const err144 = {instancePath:instancePath+"/escalation",schemaPath:"#/properties/escalation/additionalProperties",keyword:"additionalProperties",params:{additionalProperty: key15},message:"must NOT have additional properties"};
 if(vErrors === null){
 vErrors = [err144];
@@ -4684,7 +4684,7 @@ if(data.escalation !== undefined){
 let data44 = data.escalation;
 if(data44 && typeof data44 == "object" && !Array.isArray(data44)){
 for(const key8 in data44){
-if(!(((key8 === "escalate_from") || (key8 === "numeric_or_date")) || (key8 === "on_error"))){
+if(!(((key8 === "escalate_from") || (key8 === "numeric_or_date")) || (key8 === "on_error"))){ // check-forbidden: ignore (the spec field escalation.numeric_or_date)
 const err93 = {instancePath:instancePath+"/escalation",schemaPath:"evaluator.v1.schema.json#/properties/escalation/additionalProperties",keyword:"additionalProperties",params:{additionalProperty: key8},message:"must NOT have additional properties"};
 if(vErrors === null){
 vErrors = [err93];

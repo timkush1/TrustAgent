@@ -5,7 +5,9 @@
  * `node scripts/gen-evaluator-validator.ts` in frontend-react and commit the result.
  */
 import { describe, expect, it } from 'vitest';
+import { blankSpec } from '@/lib/studio/templates';
 import committed from './evaluatorValidator.gen.ts?raw';
+import { validateEvaluatorSpec as generated } from './evaluatorValidator.gen';
 import { DRAFT_SCHEMA, EVALUATOR_SCHEMA, generateEvaluatorValidator, VALIDATOR_EXPORTS } from './generateValidator';
 
 const schemaFiles = import.meta.glob<unknown>('@contracts/schema/*.schema.json', { eager: true, import: 'default' });
@@ -29,5 +31,25 @@ describe('evaluatorValidator.gen.ts', () => {
     for (const name of Object.keys(VALIDATOR_EXPORTS)) expect(committed).toMatch(new RegExp(`export const ${name} = `));
     expect(committed).not.toMatch(/\brequire\(|new Function|\beval\(/);
     expect(committed).not.toMatch(/from ['"]ajv/);
+  });
+
+  it('marks for the forbidden-identifier scan exactly the lines that test the spec field escalation.numeric_or_date', () => {
+    const asValue = /(?<![A-Za-z]:)["']numeric_or_date["'](?!\s*:)/;
+    const lines = committed.split('\n');
+    const marked = lines.filter((l) => l.includes('check-forbidden: ignore'));
+    expect(marked.length).toBeGreaterThan(0);
+    for (const line of marked) expect(line).toMatch(asValue);
+    for (const line of lines) if (asValue.test(line)) expect(line).toContain('check-forbidden: ignore (the spec field escalation.numeric_or_date)');
+  });
+
+  it('still checks the marked field: a boolean, next to the other escalation keys only', () => {
+    // The generated file is @ts-nocheck: ajv sets `errors` on the function after each call.
+    const validateEvaluatorSpec = generated as unknown as ((data: unknown) => boolean) & { errors?: unknown[] | null };
+    const spec = blankSpec([]);
+    expect(validateEvaluatorSpec({ ...spec, escalation: { numeric_or_date: true } })).toBe(true);
+    expect(validateEvaluatorSpec({ ...spec, escalation: { numeric_or_date: 'yes' } })).toBe(false);
+    expect(validateEvaluatorSpec.errors).toContainEqual(expect.objectContaining({ instancePath: '/escalation/numeric_or_date', keyword: 'type' }));
+    expect(validateEvaluatorSpec({ ...spec, escalation: { numeric_or_dates: true } })).toBe(false);
+    expect(validateEvaluatorSpec.errors).toContainEqual(expect.objectContaining({ instancePath: '/escalation', keyword: 'additionalProperties' }));
   });
 });

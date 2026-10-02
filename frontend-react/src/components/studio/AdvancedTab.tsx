@@ -38,6 +38,9 @@ const ON_ERROR = [
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** The spec field escalation.numeric_or_date (not the superseded escalate value of that name). */
+const NUMERIC_OR_DATE = ['escalation', 'numeric_or_date'] as const; // check-forbidden: ignore (a spec field path)
+
 const thresholdText = (v: unknown) => (typeof v === 'number' ? String(v) : '');
 const listText = (v: unknown) => (Array.isArray(v) ? v.join(', ') : '');
 
@@ -161,9 +164,9 @@ export function AdvancedTab({ spec, onChange, idLocked, disabled = false }: { sp
         <Checkbox
           label="Numbers or dates decide it"
           description="Lets the number and date checks escalate an answer they disagree with."
-          checked={fieldAt(spec, ['escalation', 'numeric_or_date']) === true}
+          checked={fieldAt(spec, NUMERIC_OR_DATE) === true}
           disabled={disabled}
-          onCheckedChange={(checked) => set(['escalation', 'numeric_or_date'], checked)}
+          onCheckedChange={(checked) => set(NUMERIC_OR_DATE, checked)}
         />
         <Field label="When the fast check fails">
           <Select
