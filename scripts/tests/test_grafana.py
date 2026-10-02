@@ -3,7 +3,11 @@
 Every query selects its series by `job` (the proxy's and the engine's scrape
 jobs in config/prometheus.yml), so a name can never be counted twice, and uses
 only the renamed metrics: trustagent_gateway_* from the proxy (job="proxy")
-and trustagent_engine_* from the engine (job="engine"). Standard library only.
+and trustagent_engine_* from the engine (job="engine"). Every metric a query
+names is one the code registers: the gateway's in backend-go/internal/metrics,
+the engine's in backend-python/src/truthtable/metrics.py, read as text so a
+renamed or removed metric fails here instead of leaving an empty panel.
+Standard library only.
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ import json
 import re
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Tuple
+from typing import Any, Dict, Iterator, List, Set, Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 GRAFANA = ROOT / "config" / "grafana"
@@ -27,6 +31,43 @@ KEYWORDS = frozenset(
     {"by", "without", "on", "ignoring", "group_left", "group_right", "and", "or", "unless", "bool"}
 )
 _IDENT = re.compile(r"[A-Za-z_:][A-Za-z0-9_:]*")
+GO_METRICS = ROOT / "backend-go" / "internal" / "metrics"
+ENGINE_METRICS = ROOT / "backend-python" / "src" / "truthtable" / "metrics.py"
+# The series a histogram exposes besides its name.
+HISTOGRAM_SERIES = ("_bucket", "_sum", "_count")
+
+
+def registered_metrics() -> Dict[str, str]:
+    """Every metric name the gateway and the engine register, mapped to its type."""
+    found: Dict[str, str] = {}
+    namespace = re.search(
+        r'const namespace = "([a-z_]+)"', (GO_METRICS / "metrics.go").read_text(encoding="utf-8")
+    )
+    assert namespace is not None, "backend-go/internal/metrics/metrics.go declares no namespace"
+    for path in sorted(GO_METRICS.glob("*.go")):
+        if path.name.endswith("_test.go"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for ctor in re.finditer(r"promauto\.New(Counter|Gauge|Histogram|Summary)(?:Vec)?\(", text):
+            name = re.compile(r'Name:\s*"(\w+)"').search(text, ctor.end())
+            assert name is not None, f"{path.name}: a metric without a Name"
+            found[f"{namespace.group(1)}_{name.group(1)}"] = ctor.group(1).lower()
+    engine = ENGINE_METRICS.read_text(encoding="utf-8")
+    for match in re.finditer(
+        r'\b(Counter|Gauge|Histogram|Summary)\(\s*"(trustagent_engine_\w+)"', engine
+    ):
+        found[match.group(2)] = match.group(1).lower()
+    return found
+
+
+def exposed_series(registered: Dict[str, str]) -> Set[str]:
+    """The series names a scrape shows for the registered metrics."""
+    names: Set[str] = set()
+    for name, kind in registered.items():
+        names.add(name)
+        if kind in ("histogram", "summary"):
+            names.update(name + suffix for suffix in HISTOGRAM_SERIES)
+    return names
 
 
 def panels(items: List[Dict[str, Any]]) -> Iterator[Dict[str, Any]]:
@@ -129,6 +170,49 @@ class GrafanaTest(unittest.TestCase):
         ratio = 'sum(rate(a_total[5m])) / sum(rate(b_total{job="engine"}[5m]))'
         self.assertEqual(metric_names(ratio), ["a_total", "b_total"])
         self.assertEqual(selectors(ratio, "a_total"), [""])
+
+    def test_every_queried_metric_is_registered(self) -> None:
+        registered = registered_metrics()
+        # The reader found both sides (a broken pattern would make every check below vacuous).
+        self.assertEqual(registered.get("trustagent_gateway_cost_write_dropped_total"), "counter")
+        self.assertEqual(registered.get("trustagent_gateway_overhead_seconds"), "histogram")
+        self.assertEqual(registered.get("trustagent_engine_audits_total"), "counter")
+        series = exposed_series(registered)
+        for path in DASHBOARDS:
+            dashboard = json.loads(path.read_text(encoding="utf-8"))
+            for title, expr in queries(dashboard):
+                for name in metric_names(expr):
+                    self.assertIn(
+                        name, series, f"{path.name} {title!r}: {name} is not registered ({expr})"
+                    )
+
+    def test_the_spend_row_shows_the_ledger_and_the_budgets(self) -> None:
+        dashboard = json.loads((GRAFANA / "dashboards" / "trustagent.json").read_text("utf-8"))
+        items = dashboard["panels"]
+        start = next(i for i, p in enumerate(items) if p["type"] == "row" and "Spend" in p["title"])
+        row: List[Dict[str, Any]] = []
+        for panel in items[start + 1 :]:
+            if panel["type"] == "row":
+                break
+            row.append(panel)
+        exprs = [t["expr"] for p in row for t in p.get("targets") or []]
+        compact = [re.sub(r"\s+", "", e) for e in exprs]
+        for wanted in (
+            'sumby(kind)(trustagent_gateway_spend_usd_today{job="proxy"})',
+            'sumby(kind)(trustagent_gateway_spend_reserved_usd{job="proxy"})',
+            'sumby(component)(increase(trustagent_gateway_jev_cost_usd_total{job="proxy"}[24h]))',
+            'sum(trustagent_gateway_uniform_samples_today{job="proxy"})',
+            'trustagent_gateway_audit_jobs_total{job="proxy",outcome="llm_budget"}',
+            'trustagent_gateway_cost_write_dropped_total{job="proxy"}',
+        ):
+            self.assertTrue(any(wanted in e for e in compact), wanted)
+        ids = [p["id"] for p in panels(items)]
+        self.assertEqual(len(ids), len(set(ids)), "panel ids are unique")
+        for panel in row:
+            self.assertTrue(panel.get("description"), f"{panel['title']}: says what it counts")
+            if panel.get("fieldConfig", {}).get("defaults", {}).get("unit") == "currencyUSD":
+                # Honest numbers: a dollar figure says where it comes from.
+                self.assertRegex(panel["description"], r"(?i)real spend|estimated|budget held")
 
 
 if __name__ == "__main__":
