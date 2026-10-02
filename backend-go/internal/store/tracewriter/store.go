@@ -13,6 +13,9 @@ import (
 // Shutdown first).
 const closeTimeout = 10 * time.Second
 
+// bodyBarrierTimeout bounds how long a body read waits for its trace's queued writes.
+const bodyBarrierTimeout = time.Second
+
 // StartTrace queues a pending trace.
 func (w *Writer) StartTrace(ctx context.Context, t *store.TraceRecord) error {
 	return w.enqueue(ctx, store.TraceWrite{Kind: store.WriteStart, Trace: t})
@@ -152,10 +155,13 @@ func (w *Writer) TraceDecisions(ctx context.Context, traceID string) ([]json.Raw
 	return nil, err
 }
 
-// GetTraceBody waits for the trace's queued writes (the body is not kept in memory), then reads
-// the database. A barrier that times out still reads: the body may simply not be there yet.
+// GetTraceBody waits for the trace's queued writes (bodies are not kept in memory) for at most
+// bodyBarrierTimeout, then reads the database: while it is unreachable the read is not held up
+// any longer, and the body may simply not be there yet.
 func (w *Writer) GetTraceBody(ctx context.Context, traceID string) (*store.BodyRecord, error) {
-	_ = w.Barrier(ctx, traceID)
+	bctx, cancel := context.WithTimeout(ctx, bodyBarrierTimeout)
+	_ = w.Barrier(bctx, traceID)
+	cancel()
 	return w.inner.GetTraceBody(ctx, traceID)
 }
 

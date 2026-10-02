@@ -509,3 +509,28 @@ func TestCacheEvictsTheOldest(t *testing.T) {
 		t.Errorf("late decision overwritten: %s %v", e.decisions[0], e.rec.Flags)
 	}
 }
+
+// TestWriterBodyReadWaitsBriefly: a body read waits for the trace's queued writes, so a body
+// written a moment ago is found, but not longer than bodyBarrierTimeout while the database is
+// down.
+func TestWriterBodyReadWaitsBriefly(t *testing.T) {
+	fake := newFake()
+	w, _ := newWriter(t, batchStore{fake}, Config{Interval: time.Hour})
+	ctx := context.Background()
+	if err := w.StartTrace(ctx, startRec("t1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.GetTraceBody(ctx, "t1"); !errors.Is(err, store.ErrNotFound) || w.Pending("t1") {
+		t.Fatalf("the body read flushed the trace first: pending %v, %v", w.Pending("t1"), err)
+	}
+	fake.setDown(true)
+	if err := w.StartTrace(ctx, startRec("t2")); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, _ = w.GetTraceBody(ctx, "t2")
+	if took := time.Since(start); took > bodyBarrierTimeout+time.Second {
+		t.Errorf("a body read during an outage took %v", took)
+	}
+	fake.setDown(false)
+}

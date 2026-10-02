@@ -16,6 +16,12 @@ const gatewayEnforces = true
 // count_tokens, models (on the client's SDK family) and embeddings passed through; the Responses
 // API passed through ungated.
 func (s *server) mountV1(r *gin.Engine, v1RateLimit, bodyLimit gin.HandlerFunc) {
+	// The /v1 traffic writes traces through the batched writer when TRUTHTABLE_TRACE_FLUSH=async;
+	// its barrier lets a later read or write through the Postgres store see them (D83). newServer
+	// has no GGW init step, so it is set here, before the server serves anything.
+	if s.traceBarrier == nil && s.status != nil {
+		s.traceBarrier = traceBarrierOf(s.status.db)
+	}
 	h := s.gateway.handler
 	// /v1/models tells an Anthropic client's own x-api-key from a proxy key (D67).
 	h.ProxyKeys(s.gateway.auth.IsProxyKey)
