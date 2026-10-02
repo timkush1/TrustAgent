@@ -235,7 +235,6 @@ class ComposeTest(unittest.TestCase):
         ):
             self.assertIn(line, DEMO)
 
-
     def test_onboarding_starts_a_fresh_install_on_mock_upstream(self) -> None:
         # P4 D70: no decision-model settings and no env admin key (whatever .env holds), so the
         # dashboard opens on the setup wizard; sign-in required; debug logs for the leak check.
@@ -263,7 +262,9 @@ class ComposeTest(unittest.TestCase):
         self.assertIn("      TRUTHTABLE_LOG_LEVEL: debug\n", engine)
         # The browser reaches mock-upstream's sign-in page on MOCK_UPSTREAM_HOST_PORT.
         mock = ONBOARDING.split("\n  mock-upstream:\n", 1)[1]
-        self.assertIn('      - "${BIND_ADDR:-127.0.0.1}:${MOCK_UPSTREAM_HOST_PORT:-18090}:8090"', mock)
+        self.assertIn(
+            '      - "${BIND_ADDR:-127.0.0.1}:${MOCK_UPSTREAM_HOST_PORT:-18090}:8090"', mock
+        )
         key = KEYS["MOCK_UPSTREAM_HOST_PORT"]
         self.assertEqual((key["services"], key["default"]), (["compose"], "18090"))
 
@@ -277,7 +278,12 @@ class ComposeTest(unittest.TestCase):
         self.assertIn("--profile e2e", compose.group(1) if compose else "")
         self.assertRegex(DX_MK, r"(?m)^ONBOARDING_PROJECT \?= truthtable-onboarding$")
         self.assertRegex(DX_MK, r"(?m)^ONBOARDING_BUILD\s+\?= --build$")
-        for target in ("onboarding-up", "onboarding-down", "onboarding-logs", "onboarding-setup-url"):
+        for target in (
+            "onboarding-up",
+            "onboarding-down",
+            "onboarding-logs",
+            "onboarding-setup-url",
+        ):
             self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
         down = DX_MK.split("\nonboarding-down:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(ONBOARDING_COMPOSE) down -v", down)

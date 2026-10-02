@@ -160,8 +160,12 @@ clean-data: ## Stop the stack and delete its volumes (WARNING: deletes all data)
 
 ##@ Setup tools
 
-configure: ## Create or complete .env: generated secrets only, never overwrites (interactive setup comes later)
-	$(PYTHON) scripts/configure.py --ensure
+# WITH_SECRETS=1 also asks for the vendor keys (OpenRouter, TypeSafe, Anthropic, OpenAI) at hidden
+# prompts: nothing typed is shown, and .env stays mode 0600 (P4 D74).
+WITH_SECRETS ?=
+
+configure: ## Create or complete .env (generated values, never overwrites); WITH_SECRETS=1 also asks for vendor keys at hidden prompts
+	$(PYTHON) scripts/configure.py --ensure$(if $(filter 1,$(WITH_SECRETS)), --with-secrets)
 
 doctor: ## Diagnose the running stack (make doctor ARGS="--expect demo --json")
 	$(PYTHON) scripts/doctor.py $(ARGS)
