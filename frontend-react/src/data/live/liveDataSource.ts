@@ -24,7 +24,7 @@ import type {
 } from '../source';
 import type { ResyncEvent, ResyncReason } from '../stream/types';
 import { LiveControlPlane } from './liveControlPlane';
-import { StreamClient, type StreamClientOptions } from './streamClient';
+import { StreamClient, wsTicketSource, type StreamClientOptions } from './streamClient';
 
 /** Page size of each resync request (the API maximum). */
 export const RESYNC_LIMIT = 200;
@@ -90,6 +90,8 @@ export class LiveDataSource extends LiveControlPlane implements DataSource {
   subscribe(sink: StreamSink): LiveControl {
     this.client?.dispose();
     const client = new StreamClient({
+      // A dashboard on another origin than its proxy connects with a one-use ticket (D71).
+      ticket: wsTicketSource(this.config.crossOrigin, (signal) => this.createWsTicket(signal)),
       ...this.options.stream,
       url: this.config.wsUrl,
       onEvent: (ev) => sink.onEvent(ev),

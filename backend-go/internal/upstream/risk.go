@@ -94,7 +94,7 @@ func RuntimeRisks(settings runtimecfg.RuntimeSettings, creds runtimecfg.Credenti
 		warnings = append(warnings, Warning{
 			Code: CodeFallbackCredentialUnused, Path: "upstream.fallback.credential",
 			Message: "The fallback upstream's key is never sent: no fallback upstream URL is set.",
-			Hint:    "Set upstream.fallback.url, or remove the fallback key.",
+			Hint:    "Set a fallback upstream address, or remove the fallback key.",
 		})
 	}
 	if keyed["default"] || keyed["anthropic"] || keyed["fallback"] {

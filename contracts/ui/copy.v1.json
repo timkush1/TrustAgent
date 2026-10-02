@@ -99,7 +99,7 @@
         "no_credits": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits",
         "prerequisite": "You need an OpenRouter account with about $5 of credit (≈1,600 answers at default settings, estimate).",
         "prerequisite_link": "Add credits at openrouter.ai/settings/credits",
-        "simulated_note": "Simulated checks use a mock model: results are labelled Simulated and never block an answer.",
+        "simulated_note": "Simulated checks use a mock model: results are labelled Simulated and never block an answer. The mock judge knows only the built-in examples, so deep audits of your own answers wait for a real key.",
         "simulated_on": "Simulated checks are on. Connect a key any time to check answers for real.",
         "simulated_off": "Simulated checks are now off",
         "check_again": "I added credits — check again",
@@ -110,7 +110,8 @@
         "callback_expired": "This sign-in link has expired or was already used. Start Connect OpenRouter again.",
         "callback_missing": "No sign-in is waiting in this tab. Open the dashboard at {public_url} and connect again.",
         "callback_working": "Finishing the OpenRouter sign-in…",
-        "exchange_failed": "OpenRouter didn't accept this sign-in. Start Connect OpenRouter again."
+        "exchange_failed": "OpenRouter didn't accept this sign-in. Start Connect OpenRouter again.",
+        "callback_refused": "OpenRouter did not finish the sign-in, so nothing was connected."
       },
       "step_see_it_work": {
         "title": "See it work",
@@ -185,7 +186,8 @@
         "mock_judge": "Simulated deep audit (mock judge)",
         "uniform_sample": "In the uniform deep-audit sample",
         "body_expired": "Stored text has expired",
-        "text_redacted": "Text redacted before it was stored"
+        "text_redacted": "Text redacted before it was stored",
+        "llm_budget": "Deep audit skipped: today's deep-audit budget was used up"
       },
       "disagreement": "Fast check passed it; deep audit found {count} contradicted claim(s).",
       "details": "Details",

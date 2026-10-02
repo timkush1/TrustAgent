@@ -44,7 +44,7 @@ function Failure({ error, publicUrl }: { error: unknown; publicUrl: string | nul
   if (code === MISSING) headline = callbackMissingText(publicUrl);
   else if (code === 'invalid_nonce') headline = copy.setup.step_connect.callback_expired;
   else if (exchangeFailed) headline = copy.setup.step_connect.exchange_failed;
-  else if (code === 'openrouter_refused') headline = 'OpenRouter did not finish the sign-in, so nothing was connected.';
+  else if (code === 'openrouter_refused') headline = copy.setup.step_connect.callback_refused;
   else headline = 'The OpenRouter sign-in could not be finished.';
   const { message, code: detail } = describeError(error);
   return (

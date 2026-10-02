@@ -193,6 +193,8 @@ describe('copy helpers', () => {
     expect(flagWord('multi_choice')).toBe('Several answers in one response: only the first was checked');
     expect(flagWord('client_disconnected')).toBe('The client disconnected before the answer finished');
     expect(flagWord('late_decision')).toBe('The fast check answered late: recorded, not enforced');
+    // The gateway's flag for an audit the day's LLM cap refused (D48).
+    expect(flagWord('llm_budget')).toBe("Deep audit skipped: today's deep-audit budget was used up");
     expect(flagWord('brand_new_flag')).toBe('Brand new flag');
     expect(flagWord('toString')).toBe('ToString');
   });

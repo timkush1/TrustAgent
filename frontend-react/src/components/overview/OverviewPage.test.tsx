@@ -146,7 +146,15 @@ describe('Overview page', { timeout: 20_000 }, () => {
       status: { persistence: { state: 'down', configured: false, migration: null } },
     });
     expect(await screen.findByText('History saved in a database')).toBeInTheDocument();
-    expect(screen.getByText(/of 5 done/)).toBeInTheDocument();
+    expect(screen.getByText(/of 6 done/)).toBeInTheDocument();
+  });
+
+  it('opens the setup wizard at the step a setup item needs', async () => {
+    renderPage('/app/overview', {
+      status: { auth: { ingest: 'keys', read: 'public', setup_required: true, caller_scopes: ['read'] } },
+    });
+    const link = await screen.findByRole('link', { name: /Open setup/ });
+    expect(link.getAttribute('href')).toMatch(/^\/app\/setup\?step=secure$/);
   });
 
   it('opens the Savings tab from the deep link', async () => {
