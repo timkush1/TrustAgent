@@ -26,15 +26,16 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `compile` | 34 (34 + 0) | 1 per template + 12 (23) | generated | `internal/decision` |
 | `calibration_apply` | 15 (15 + 0) | 10 | generated | `internal/decision` |
 | `calibrate_fit` | 38 (38 + 0) | 10 | generated | `internal/decision` |
-| `decide` | 55 at P3; P4 adds at least 3 (58+) | 40 | hand-authored | `internal/decision` |
+| `decide` | 58 (58 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
 | `lint` | 19 (19 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
 | `cost` | 18 (18 + 0) | 8 | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
 
-P4 adds the `decide` vectors for `calibration_missing`, an `other_snapshot` calibration entry and
-`calibration_warning` (P4-PLAN D56). `lint` runs in Go since EV-1 (D54) and `cost` since COST-2 (D85,
-`backend-go/internal/decision/vectors/cost.go`); TypeScript skips `cost` until P5. `pkce` vectors are TypeScript-only
+The `decide` vectors cover `calibration_missing`, an `other_snapshot` calibration entry and
+`calibration_warning` (D56). `lint` runs in Go (`backend-go/internal/decision/vectors/lint.go`, D54) and
+TypeScript; `cost` runs in Go for every `fn` (`backend-go/internal/decision/vectors/cost.go`, D85) and in
+Python for `call_cost`; TypeScript skips `cost` until P5. `pkce` vectors are TypeScript-only
 and arrive with `src/lib/openrouter/pkce.ts` in P5.
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
@@ -234,7 +235,7 @@ at that risk. Input order matters: every sum runs in input order.
     `factual_claims` as uncalibrated.
 - The `s0-*` vectors are the three S0 demo scenarios (`../demo/scenarios.v1.json`) on the `support-bot`
   route of `config/policies.yaml`.
-- Calibration entries (P4-PLAN D56): an entry's `state` is a calibration state or `other_snapshot` (the
+- Calibration entries (D56): an entry's `state` is a calibration state or `other_snapshot` (the
   target is calibrated only on other snapshots). An `other_snapshot` entry has no `table` and no `quality`
   and calibrates nothing; `decision.v1` `calibration_state` never takes that value. Reasons, as D56 states
   them: an uncalibrated block-set evaluator gives `uncalibrated_snapshot` when every entry is
@@ -281,13 +282,13 @@ at that risk. Input order matters: every sum runs in input order.
   (`unresolved_state_reference`, `no_id_reference`); `lints` holds the SPEC §2.8 lint ids. Token Jaccard
   for `near_duplicate_options` uses lowercase `[a-z0-9]+` tokens of each option's `what`.
 - Every built-in template has a `builtin-*-is-clean` vector: built-ins must stay lint-clean.
-- Runners: Go `internal/decision/lint.go` is the reference (P4-PLAN D54); TypeScript
+- Runners: Go `internal/decision/lint.go` is the reference (D54); TypeScript
   `src/lib/decision/lint.ts` runs the same vectors.
 
 ### `cost`
 
 - `input`: `{fn, ...}`. `fn` names the pure function of the calculator in
-  `backend-go/internal/decision/cost.go` (P4-PLAN D52, D85): `call_cost` (the cost of one call from its
+  `backend-go/internal/decision/cost.go` (D52, D85): `call_cost` (the cost of one call from its
   token counts and a price table), `per_1k` (the cost of 1,000 answers at given settings) or
   `price_lookup` (which `PriceEntry` a provider and model resolve to across the layers override >
   `TRUTHTABLE_PRICE_TABLE_FILE` > contracts: first the call's own provider's entries in that order, then
