@@ -14,6 +14,8 @@ export const qkcSecurity = {
   credentials: ['security', 'credentials'] as const,
   apiKeys: ['security', 'api-keys'] as const,
   adminAudit: (params: PageParams) => ['security', 'admin-audit', params] as const,
+  /** The outcome of the last Connect OpenRouter in this tab, handed from /connect/callback to the page it returns to. */
+  connectResult: ['security', 'connect-result'] as const,
 };
 
 /**

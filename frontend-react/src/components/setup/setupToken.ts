@@ -15,3 +15,18 @@ export function takeSetupToken(): string | null {
   }
   return token && token.trim() !== '' ? token : null;
 }
+
+/** The token in what was pasted: the token itself, or a SETUP line / setup URL with `#token=`. */
+export function tokenFromPaste(text: string): string | null {
+  const trimmed = text.trim();
+  const hash = trimmed.indexOf('#token=');
+  if (hash >= 0) {
+    const raw = trimmed.slice(hash + '#token='.length).split(/[\s&]/)[0];
+    try {
+      return decodeURIComponent(raw) || null;
+    } catch {
+      return raw || null;
+    }
+  }
+  return trimmed === '' || /\s/.test(trimmed) ? null : trimmed;
+}

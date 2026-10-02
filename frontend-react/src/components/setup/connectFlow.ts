@@ -12,6 +12,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useDataSource } from '@/app/services';
 import { ApiError } from '@/data/errors';
+import type { CredentialWriteResult, RuntimeSettingsPatch } from '@/types/api';
 
 export const CONNECT_PENDING_KEY = 'ta.connect.pending';
 
@@ -78,4 +79,28 @@ export function useStartConnect(returnTo: string) {
       return start;
     },
   });
+}
+
+/** What a Connect OpenRouter or a pasted key left for the wizard's step 2 (set by /connect/callback too). */
+export interface ConnectOutcome {
+  result: CredentialWriteResult;
+  /** Simulated checks were on before (D76: the UI then says they are now off). */
+  wasSimulated: boolean;
+}
+
+/** The simulated-mode patch (D39): only the paths the environment does not set; null when it sets both. */
+export function simulatedPatch(envManaged: readonly string[]): RuntimeSettingsPatch | null {
+  const locked = (path: string) => envManaged.some((m) => path === m || path.startsWith(`${m}.`));
+  const patch: RuntimeSettingsPatch = {};
+  if (!locked('decision_model.backend')) patch.decision_model = { backend: 'mock' };
+  if (!locked('judge.provider')) patch.judge = { provider: 'mock' };
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+/** A dashboard path the browser may be sent to: under /app/, with nothing that leaves the origin. */
+export function safeReturnPath(path: string | null | undefined): string | null {
+  if (!path || !path.startsWith('/app/')) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/\/\/|\\|%2f|%5c|\.\.|[\u0000-\u001f\u007f]/i.test(path)) return null;
+  return path;
 }
