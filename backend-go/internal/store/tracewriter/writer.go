@@ -155,6 +155,7 @@ func (w *Writer) enqueue(ctx context.Context, tw store.TraceWrite) error {
 	if err := tw.Check(); err != nil {
 		return err
 	}
+	tw = detach(tw)
 	id := tw.TraceID()
 	w.mu.Lock()
 	if w.closed {
@@ -475,6 +476,24 @@ func (w *Writer) logDrops() {
 	w.dropsToLog, w.lastDropLog = 0, now
 	w.mu.Unlock()
 	w.log.Warn("trace writes dropped (trustagent_gateway_trace_write_dropped_total)", "writes", n)
+}
+
+// detach copies a write's records, so a caller that changes its record after the call cannot
+// change the queued write (the records' slices and documents are never changed in place).
+func detach(tw store.TraceWrite) store.TraceWrite {
+	if tw.Trace != nil {
+		t := *tw.Trace
+		tw.Trace = &t
+	}
+	if tw.Decision != nil {
+		d := *tw.Decision
+		tw.Decision = &d
+	}
+	if tw.Body != nil {
+		b := *tw.Body
+		tw.Body = &b
+	}
+	return tw
 }
 
 func indexOf(ops []*op, o *op) int {
