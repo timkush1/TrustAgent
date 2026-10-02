@@ -103,9 +103,12 @@ type Verification struct {
 	// CostUSD and CostSource are the probe's cost (nil and "" without a probe answer).
 	CostUSD    *float64
 	CostSource string
-	// KeyLabel, LimitUSD and LimitRemainingUSD come from OpenRouter's GET /api/v1/key.
+	// KeyLabel, LimitUSD and LimitRemainingUSD come from OpenRouter's GET /api/v1/key;
+	// KeyChecked reports that it answered, so a nil LimitUSD then means the key has no spending
+	// limit (rather than that nobody asked).
 	KeyLabel                    *string
 	LimitUSD, LimitRemainingUSD *float64
+	KeyChecked                  bool
 }
 
 // Verifier checks credentials with their providers (D40). The zero value works against the real
@@ -217,7 +220,7 @@ func (v *Verifier) probe(ctx context.Context, t VerifyTarget, backend string, op
 			ki, err := kc.CheckKey(ctx)
 			switch {
 			case err == nil:
-				keyOK = true
+				keyOK, out.KeyChecked = true, true
 				out.KeyLabel, out.LimitUSD, out.LimitRemainingUSD = keyInfo(ki)
 			case !errors.Is(err, jev.ErrKeyCheckUnsupported):
 				_, local := jev.SkipReason(err) // a refused origin: nothing was sent

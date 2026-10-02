@@ -110,8 +110,8 @@ func TestVerifyOpenRouterOKReadsKeyInfoAndBooksANonEnforcingProbe(t *testing.T) 
 	if got.Hint != HintNoLimit {
 		t.Errorf("hint = %q, want %q (the mock key has no spending limit)", got.Hint, HintNoLimit)
 	}
-	if got.KeyLabel == nil || *got.KeyLabel == "" {
-		t.Errorf("key label not filled: %+v", got)
+	if got.KeyLabel == nil || *got.KeyLabel == "" || !got.KeyChecked || got.LimitUSD != nil {
+		t.Errorf("key info not filled (a checked key without a limit): %+v", got)
 	}
 	if got.Backend != jev.BackendOpenRouterDecisions || got.Snapshot == "" || got.InputTokens == nil {
 		t.Errorf("probe details missing: %+v", got)
@@ -185,7 +185,7 @@ func TestVerifyTypeSafeAndCompatibleProbe(t *testing.T) {
 	v := &Verifier{HTTP: fastHTTP(), TypeSafeBaseURL: hs.URL, Timeout: 5 * time.Second}
 
 	got := v.Verify(context.Background(), VerifyTarget{Name: "typesafe", Secret: "sk-test-typesafe-0123456789", AllowedOrigins: []string{origin}})
-	if !got.OK || got.Backend != jev.BackendTypeSafe || got.KeyLabel != nil || got.Hint != "" {
+	if !got.OK || got.Backend != jev.BackendTypeSafe || got.KeyLabel != nil || got.KeyChecked || got.Hint != "" {
 		t.Errorf("typesafe = %+v, want ok without key info", got)
 	}
 	got = v.Verify(context.Background(), VerifyTarget{Name: "typesafe", Secret: "sk-test-forbidden-0123456789", AllowedOrigins: []string{origin}})

@@ -18,6 +18,8 @@ import (
 type applyParts struct {
 	// pusher pushes the runtime configuration to the audit engine; nil without an engine.
 	pusher *runtimecfg.Pusher
+	// creds is the state of the credential and Connect OpenRouter endpoints.
+	creds *credentialService
 
 	mu sync.Mutex
 	// engineEnv is the last EngineInfo.env_managed handed to the Manager (engineEnvSeen once
@@ -30,7 +32,7 @@ type applyParts struct {
 // runtime snapshot and every engine health answer, and its state shows in /api/status.
 func (s *server) initApply(d serverDeps) {
 	_ = d
-	s.apply = &applyParts{}
+	s.apply = &applyParts{creds: newCredentialService(s)}
 	if s.engine == nil || s.rt == nil || s.rt.manager == nil {
 		return
 	}
@@ -73,6 +75,12 @@ func (s *server) engineReported(h grpc.EngineHealth) {
 // mountConnectAPI mounts the credential, Connect OpenRouter, decision-model test and admin audit
 // log endpoints (SPEC §2.4 rows 54-60 and 70).
 func (s *server) mountConnectAPI(api *gin.RouterGroup, g apiGuards) {
+	// #54-#57 (credentials_api.go): the verify has its own limit, one check per key name every
+	// 10 s, since each may cost a probe (D40).
+	api.GET("/credentials", g.admin, g.rateLimit, s.handleListCredentials)
+	api.PUT("/credentials/:name", g.writable, g.admin, g.rateLimit, g.bodyLimit, s.handlePutCredential)
+	api.DELETE("/credentials/:name", g.writable, g.admin, g.rateLimit, s.handleDeleteCredential)
+	api.POST("/credentials/:name/verify", g.writable, g.admin, s.apply.creds.verifyLimit, g.bodyLimit, s.handleVerifyCredential)
 	// #60: one probe per caller every 10 s (it costs ≈ $0.00001 each).
 	api.POST("/decision-model/test", g.writable, g.admin, g.limitBy(1, decisionModelTestEvery), s.handleDecisionModelTest)
 	// #70
