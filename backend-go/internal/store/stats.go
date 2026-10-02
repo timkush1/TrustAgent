@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -148,6 +149,13 @@ func (s *PostgresStore) Overview(ctx context.Context, f StatsFilter, bucket time
 	if err := s.claimStats(ctx, f, out); err != nil {
 		return nil, err
 	}
+	// The spend is the ledger's, counted as ROI counts it (D50): fast-check calls of the gate,
+	// hedge losers and late attempts included, and the deep audits' LLM calls.
+	sums, err := s.costSums(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	out.Totals.DecisionCostUSD, out.LLMCostUSD = sums.DecisionUSD, sums.LLMUSD
 	rows, err := s.pool.Query(ctx, `SELECT t.decision_backend, count(*) FROM traces t
 		WHERE `+traceWhere+` AND t.decision_backend IS NOT NULL GROUP BY 1`, f.args()...)
 	if err != nil {
@@ -173,7 +181,7 @@ func (s *PostgresStore) trafficTotals(ctx context.Context, f StatsFilter, latenc
 	var over, gate, up Percentiles
 	dest := []any{
 		&t.Requests, &t.Observed, &t.Passed, &t.Flagged, &t.Blocked, &t.Fallback, &t.NotAssessed, &t.GateErrors,
-		&t.Audited, &t.AuditsFailed, &t.DecisionCostUSD, &t.Mock, &e.WithEvidence, &e.GroundednessAssessed,
+		&t.Audited, &t.AuditsFailed, &t.Mock, &e.WithEvidence, &e.GroundednessAssessed,
 	}
 	for i := range src {
 		dest = append(dest, &src[i])
@@ -196,7 +204,6 @@ func (s *PostgresStore) trafficTotals(ctx context.Context, f StatsFilter, latenc
 		count(*) FILTER (WHERE t.gate_status IN ('error', 'timeout')),
 		count(*) FILTER (WHERE t.audit_status IN ('completed', 'degraded')),
 		count(*) FILTER (WHERE t.audit_status = 'failed'),
-		COALESCE(sum(t.decision_cost_usd), 0)::FLOAT8,
 		count(*) FILTER (WHERE `+mockTraceSQL+`),
 		count(*) FILTER (WHERE `+evidenceUsedSQL+` > 0),
 		count(*) FILTER (WHERE `+groundednessAssessedSQL+`)`+bySource+`,
@@ -221,16 +228,15 @@ const auditedTracesFrom = `audits a JOIN traces t ON t.trace_id = COALESCE(a.tra
 // assessedVerdictSQL holds for an audit that reached a verdict about the answer.
 const assessedVerdictSQL = `a.status IN ('completed', 'degraded') AND a.verdict IN ('GROUNDED', 'HALLUCINATED', 'UNVERIFIABLE', 'NO_CLAIMS')`
 
-// auditRates reads the hallucination-rate counts overall and the deep-audit spend.
+// auditRates reads the hallucination-rate counts overall.
 func (s *PostgresStore) auditRates(ctx context.Context, f StatsFilter, out *OverviewData) error {
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FILTER (WHERE a.selection = 'uniform' AND `+assessedVerdictSQL+`),
 		count(*) FILTER (WHERE a.selection = 'uniform' AND `+assessedVerdictSQL+` AND a.verdict = 'HALLUCINATED'),
 		count(*) FILTER (WHERE `+assessedVerdictSQL+`),
-		count(*) FILTER (WHERE `+assessedVerdictSQL+` AND a.verdict = 'HALLUCINATED'),
-		COALESCE(sum(a.cost_usd), 0)::FLOAT8
+		count(*) FILTER (WHERE `+assessedVerdictSQL+` AND a.verdict = 'HALLUCINATED')
 		FROM `+auditedTracesFrom+` WHERE `+traceWhere, f.args()...).Scan(
-		&out.Uniform.Assessed, &out.Uniform.Hallucinated, &out.Audited.Assessed, &out.Audited.Hallucinated, &out.LLMCostUSD)
+		&out.Uniform.Assessed, &out.Uniform.Hallucinated, &out.Audited.Assessed, &out.Audited.Hallucinated)
 	if err != nil {
 		return fmt.Errorf("audit rates: %w", err)
 	}
@@ -524,10 +530,73 @@ func (s *PostgresStore) EvidenceCoverage(ctx context.Context, f StatsFilter) (*C
 	return out, rows.Err()
 }
 
-// CostCounts count rows by cost source (reported, computed, simulated; anything else is Other).
+// CostCounts count cost rows by cost source: reported by the provider, computed from tokens and
+// the price table, simulated (mock), free_local (a local model, no charge), unknown (no price
+// covers the call: it counts $0) and anything else.
 type CostCounts struct {
-	Reported, Computed, Simulated, Other int64
+	Reported, Computed, Simulated, FreeLocal, Unknown, Other int64
 }
+
+// costCountsSQL counts the rows matching filter by cost source, in CostCounts order.
+func costCountsSQL(filter string) string {
+	if filter != "" {
+		filter += " AND "
+	}
+	out := ""
+	for i, src := range []string{"reported", "computed", "simulated", "free_local", "unknown"} {
+		if i > 0 {
+			out += ", "
+		}
+		out += "count(*) FILTER (WHERE " + filter + "c.cost_source = '" + src + "')"
+	}
+	return out + ", count(*) FILTER (WHERE " + filter + "c.cost_source NOT IN ('reported', 'computed', 'simulated', 'free_local', 'unknown'))"
+}
+
+func (c *CostCounts) dest() []any {
+	return []any{&c.Reported, &c.Computed, &c.Simulated, &c.FreeLocal, &c.Unknown, &c.Other}
+}
+
+// CostSums are the ledger's spend on the traces of a filter (D50): the decision model's calls for
+// the gate (every attempt: hedge losers and late attempts included; Studio, dry-run, Playground
+// and probe calls are not the gate's) and the deep audits' LLM calls.
+type CostSums struct {
+	DecisionUSD     float64
+	DecisionSources CostCounts
+	LLMUSD          float64
+	LLMSources      CostCounts
+}
+
+// gateCostSQL selects the gate's decision-model rows (cost_events aliased c).
+const gateCostSQL = `c.kind = 'decision' AND c.component = 'gate'`
+
+// costSums reads the spend of the traces of f from cost_events. A row is never stamped before its
+// trace started, so the rows are bounded by the window start as well as joined to the traces.
+func (s *PostgresStore) costSums(ctx context.Context, f StatsFilter) (CostSums, error) {
+	var out CostSums
+	dest := []any{&out.DecisionUSD}
+	dest = append(dest, out.DecisionSources.dest()...)
+	dest = append(dest, &out.LLMUSD)
+	dest = append(dest, out.LLMSources.dest()...)
+	err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(c.cost_usd) FILTER (WHERE `+gateCostSQL+`), 0)::FLOAT8, `+costCountsSQL(gateCostSQL)+`,
+		COALESCE(sum(c.cost_usd) FILTER (WHERE c.kind = 'llm'), 0)::FLOAT8, `+costCountsSQL("c.kind = 'llm'")+`
+		FROM cost_events c JOIN traces t ON t.trace_id = c.trace_id
+		WHERE `+traceWhere+` AND c.occurred_at >= $1`, f.args()...).Scan(dest...)
+	if err != nil {
+		return out, fmt.Errorf("cost sums: %w", err)
+	}
+	return out, nil
+}
+
+// FitSample is one deep audit of fitted_from_audits: the length of the answer it checked and
+// what it cost.
+type FitSample struct {
+	ResponseChars float64
+	CostUSD       float64
+}
+
+// maxFitSamples bounds the deep audits fitted_from_audits reads (the newest first).
+const maxFitSamples = 5000
 
 // RoiData is what GET /api/roi/summary counts.
 type RoiData struct {
@@ -539,18 +608,22 @@ type RoiData struct {
 	// Decisions counts the gate decisions (every attempt); DeadlineMisses those that timed out or
 	// arrived late.
 	Decisions, DeadlineMisses int64
-	DecisionUSD               float64
-	DecisionSources           CostCounts
+	// CostSums is the spend (cost_events, D50).
+	CostSums
 	// SameChecks are the inputs of the same-checks token model: the decisions that called the
-	// model, their input tokens and the evaluators they assessed.
+	// model (one per answer and attempt; hedge losers are not answers), their input tokens and
+	// the evaluators they assessed.
 	SameChecksCalls, SameChecksInputTokens, SameChecksQuestions int64
-	LLMUSD                                                      float64
-	LLMSources                                                  CostCounts
 	Audits                                                      int64
 	AuditsBySelection                                           map[string]int64
 	// UniformCosted, UniformMeanUSD and UniformStddevUSD describe the cost of uniform audits.
 	UniformCosted                    int64
 	UniformMeanUSD, UniformStddevUSD float64
+	// FitSamples are the costed deep audits whose answer length is known (fitted_from_audits);
+	// CheckedChars sums the answer length of the CheckedWithChars checked answers that recorded
+	// one (answers stored before 0005 did not).
+	FitSamples                     []FitSample
+	CheckedChars, CheckedWithChars int64
 }
 
 // Roi counts the costs and outcomes of the traces of f.
@@ -560,39 +633,28 @@ func (s *PostgresStore) Roi(ctx context.Context, f StatsFilter) (*RoiData, error
 		SELECT count(*) FILTER (WHERE t.gate_status IN ('ok', 'partial')), count(*) FILTER (WHERE `+mockTraceSQL+`),
 		count(*) FILTER (WHERE t.action = 'flag'), count(*) FILTER (WHERE t.action = 'block'),
 		count(*) FILTER (WHERE t.action = 'fallback'), count(*) FILTER (WHERE t.gate_status IN ('not_assessed', 'skipped')),
-		`+pctSQL("t.gate_ms", "t.gate_status IN ('ok', 'partial')")+`
+		`+pctSQL("t.gate_ms", "t.gate_status IN ('ok', 'partial')")+`,
+		COALESCE(sum(t.response_chars) FILTER (WHERE t.gate_status IN ('ok', 'partial')), 0),
+		count(t.response_chars) FILTER (WHERE t.gate_status IN ('ok', 'partial'))
 		FROM traces t WHERE `+traceWhere, f.args()...).Scan(
-		&out.Checked, &out.Mock, &out.Flagged, &out.Blocked, &out.Fallback, &out.NotAssessed, &out.GateLatency.P50, &out.GateLatency.P95)
+		&out.Checked, &out.Mock, &out.Flagged, &out.Blocked, &out.Fallback, &out.NotAssessed, &out.GateLatency.P50, &out.GateLatency.P95,
+		&out.CheckedChars, &out.CheckedWithChars)
 	if err != nil {
 		return nil, fmt.Errorf("roi outcomes: %w", err)
 	}
 	err = s.pool.QueryRow(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE d.status = 'timeout' OR d.late),
-		COALESCE(sum(d.cost_usd), 0)::FLOAT8,
-		count(*) FILTER (WHERE d.decision->'decision_model'->>'cost_source' = 'reported'),
-		count(*) FILTER (WHERE d.decision->'decision_model'->>'cost_source' = 'computed'),
-		count(*) FILTER (WHERE d.decision->'decision_model'->>'cost_source' = 'simulated'),
-		count(*) FILTER (WHERE d.cost_usd IS NOT NULL AND COALESCE(d.decision->'decision_model'->>'cost_source', '') NOT IN ('reported', 'computed', 'simulated')),
 		count(*) FILTER (WHERE d.input_tokens > 0),
 		COALESCE(sum(d.input_tokens) FILTER (WHERE d.input_tokens > 0), 0),
 		COALESCE(sum((SELECT count(*) FROM jsonb_each(CASE WHEN jsonb_typeof(d.decision->'evaluators') = 'object'
 			THEN d.decision->'evaluators' ELSE '{}'::JSONB END) ev WHERE ev.value->>'status' = 'assessed')) FILTER (WHERE d.input_tokens > 0), 0)
 		FROM gate_decisions d JOIN traces t ON t.trace_id = d.trace_id WHERE `+traceWhere, f.args()...).Scan(
-		&out.Decisions, &out.DeadlineMisses, &out.DecisionUSD, &out.DecisionSources.Reported, &out.DecisionSources.Computed,
-		&out.DecisionSources.Simulated, &out.DecisionSources.Other, &out.SameChecksCalls, &out.SameChecksInputTokens,
-		&out.SameChecksQuestions)
+		&out.Decisions, &out.DeadlineMisses, &out.SameChecksCalls, &out.SameChecksInputTokens, &out.SameChecksQuestions)
 	if err != nil {
 		return nil, fmt.Errorf("roi decisions: %w", err)
 	}
-	err = s.pool.QueryRow(ctx, `
-		SELECT COALESCE(sum(c.cost_usd), 0)::FLOAT8,
-		count(*) FILTER (WHERE c.cost_source = 'reported'), count(*) FILTER (WHERE c.cost_source = 'computed'),
-		count(*) FILTER (WHERE c.cost_source = 'simulated'),
-		count(*) FILTER (WHERE c.cost_source NOT IN ('reported', 'computed', 'simulated'))
-		FROM cost_events c JOIN traces t ON t.trace_id = c.trace_id WHERE `+traceWhere+` AND c.kind <> 'decision'`,
-		f.args()...).Scan(&out.LLMUSD, &out.LLMSources.Reported, &out.LLMSources.Computed, &out.LLMSources.Simulated, &out.LLMSources.Other)
-	if err != nil {
-		return nil, fmt.Errorf("roi llm costs: %w", err)
+	if out.CostSums, err = s.costSums(ctx, f); err != nil {
+		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT COALESCE(a.selection, ''), count(*) FROM `+auditedTracesFrom+`
 		WHERE `+traceWhere+` GROUP BY 1`, f.args()...)
@@ -628,6 +690,135 @@ func (s *PostgresStore) Roi(ctx context.Context, f StatsFilter) (*RoiData, error
 	}
 	if stddev != nil {
 		out.UniformStddevUSD = *stddev
+	}
+	if out.FitSamples, err = s.fitSamples(ctx, f); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// fitSamples reads the costed deep audits of the window whose answer length is known, newest
+// first, at most maxFitSamples.
+func (s *PostgresStore) fitSamples(ctx context.Context, f StatsFilter) ([]FitSample, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT t.response_chars::FLOAT8, a.cost_usd::FLOAT8 FROM `+auditedTracesFrom+`
+		WHERE `+traceWhere+` AND a.cost_usd IS NOT NULL AND t.response_chars IS NOT NULL
+			AND a.status IN ('completed', 'degraded')
+		ORDER BY a.created_at DESC LIMIT `+strconv.Itoa(maxFitSamples), f.args()...)
+	if err != nil {
+		return nil, fmt.Errorf("roi fit samples: %w", err)
+	}
+	defer rows.Close()
+	out := []FitSample{}
+	for rows.Next() {
+		var fs FitSample
+		if err := rows.Scan(&fs.ResponseChars, &fs.CostUSD); err != nil {
+			return nil, err
+		}
+		out = append(out, fs)
+	}
+	return out, rows.Err()
+}
+
+// RoiPoint is one bucket of GET /api/roi/timeseries: the spend on the traces created in it and
+// the same-checks inputs of their decisions.
+type RoiPoint struct {
+	T                                                           time.Time
+	DecisionUSD, LLMUSD                                         float64
+	Gated                                                       int64
+	SameChecksCalls, SameChecksInputTokens, SameChecksQuestions int64
+}
+
+// RoiSeries counts the spend and the checked answers of the traces of f per bucket of the UTC
+// clock (an hour or a day), every bucket of the window present.
+func (s *PostgresStore) RoiSeries(ctx context.Context, f StatsFilter, bucket time.Duration) ([]RoiPoint, error) {
+	secs := int64(bucket / time.Second)
+	if secs < 1 {
+		return nil, fmt.Errorf("roi series: bucket %s is shorter than a second", bucket)
+	}
+	points := map[int64]*RoiPoint{}
+	at := func(b int64) *RoiPoint {
+		p := points[b]
+		if p == nil {
+			p = &RoiPoint{}
+			points[b] = p
+		}
+		return p
+	}
+	bucketSQL := `floor(extract(EPOCH FROM t.created_at) / $5::BIGINT)::BIGINT`
+	// Gated answers.
+	rows, err := s.pool.Query(ctx, `SELECT `+bucketSQL+`, count(*) FROM traces t
+		WHERE `+traceWhere+` AND t.gate_status IN ('ok', 'partial') GROUP BY 1`, f.args(secs)...)
+	if err != nil {
+		return nil, fmt.Errorf("roi series gated: %w", err)
+	}
+	for rows.Next() {
+		var b, n int64
+		if err := rows.Scan(&b, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		at(b).Gated = n
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Spend (D50: the gate's decision calls and the deep audits' LLM calls).
+	rows, err = s.pool.Query(ctx, `SELECT `+bucketSQL+`,
+		COALESCE(sum(c.cost_usd) FILTER (WHERE `+gateCostSQL+`), 0)::FLOAT8,
+		COALESCE(sum(c.cost_usd) FILTER (WHERE c.kind = 'llm'), 0)::FLOAT8
+		FROM cost_events c JOIN traces t ON t.trace_id = c.trace_id
+		WHERE `+traceWhere+` AND c.occurred_at >= $1 GROUP BY 1`, f.args(secs)...)
+	if err != nil {
+		return nil, fmt.Errorf("roi series spend: %w", err)
+	}
+	for rows.Next() {
+		var b int64
+		var d, l float64
+		if err := rows.Scan(&b, &d, &l); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		p := at(b)
+		p.DecisionUSD, p.LLMUSD = d, l
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Same-checks inputs.
+	rows, err = s.pool.Query(ctx, `SELECT `+bucketSQL+`, count(*),
+		COALESCE(sum(d.input_tokens), 0),
+		COALESCE(sum((SELECT count(*) FROM jsonb_each(CASE WHEN jsonb_typeof(d.decision->'evaluators') = 'object'
+			THEN d.decision->'evaluators' ELSE '{}'::JSONB END) ev WHERE ev.value->>'status' = 'assessed')), 0)
+		FROM gate_decisions d JOIN traces t ON t.trace_id = d.trace_id
+		WHERE `+traceWhere+` AND d.input_tokens > 0 GROUP BY 1`, f.args(secs)...)
+	if err != nil {
+		return nil, fmt.Errorf("roi series same checks: %w", err)
+	}
+	for rows.Next() {
+		var b, calls, tokens, questions int64
+		if err := rows.Scan(&b, &calls, &tokens, &questions); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		p := at(b)
+		p.SameChecksCalls, p.SameChecksInputTokens, p.SameChecksQuestions = calls, tokens, questions
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	first, last := f.From.Unix()/secs, (f.To.Unix()-1)/secs
+	out := make([]RoiPoint, 0, last-first+1)
+	for b := first; b <= last; b++ {
+		p := RoiPoint{}
+		if got := points[b]; got != nil {
+			p = *got
+		}
+		p.T = time.Unix(b*secs, 0).UTC()
+		out = append(out, p)
 	}
 	return out, nil
 }

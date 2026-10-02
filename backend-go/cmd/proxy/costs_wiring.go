@@ -159,10 +159,9 @@ func budgetsView(v costs.BudgetsView) *spendView {
 	}
 }
 
-// mountCostAPI mounts the ROI time series (SPEC §2.4 row 48). Step-0 stub: it registers nothing
-// yet.
+// mountCostAPI mounts the ROI time series (SPEC §2.4 row 48, roi_api.go; read scope).
 func (s *server) mountCostAPI(api *gin.RouterGroup, g apiGuards) {
-	_, _ = api, g
+	api.GET("/roi/timeseries", g.read, g.rateLimit, s.handleRoiTimeseries)
 }
 
 // startCostLoops runs the ledger until ctx ends: the cost_events writer (every 250 ms or 200

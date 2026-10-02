@@ -53,6 +53,19 @@ func seedStats(t *testing.T, s *PostgresStore, now time.Time) {
 		('a-flag', 0, 'Refunds within 60 days.', 'CONTRADICTED', 0.9), ('a-flag', 1, 'Shipping is free.', 'SUPPORTED', 0.8)`)
 	exec(`INSERT INTO cost_events (occurred_at, trace_id, route, component, kind, cost_usd, cost_source)
 		VALUES ($1, 't-flag', 'support-bot', 'verify', 'llm', 0.01, 'reported')`, now.Add(-9*time.Minute))
+	// The ledger's decision rows (D50): the gate's attempts count, a hedge loser and a late
+	// attempt included; a Studio test of the same trace and a probe do not.
+	gateRow := `INSERT INTO cost_events (occurred_at, trace_id, route, component, kind, attempt, cost_usd, cost_source, hedge, late)
+		VALUES ($1, $2, 'support-bot', $3, 'decision', $4, $5, $6, $7, $8)`
+	exec(gateRow, now.Add(-10*time.Minute), "t-flag", "gate", 0, 0.001, "computed", false, false)
+	exec(gateRow, now.Add(-10*time.Minute), "t-flag", "gate", 1, 0.0005, "computed", true, false)
+	exec(gateRow, now.Add(-5*time.Minute), "t-pass", "gate", 0, 0.001, "computed", false, false)
+	exec(gateRow, now.Add(-4*time.Minute), "t-pass", "gate", 0, 0.0002, "computed", false, true)
+	exec(gateRow, now.Add(-4*time.Minute), "t-pass", "studio_test", 0, 0.5, "computed", false, false)
+	exec(gateRow, now.Add(-3*time.Minute), "t-mock", "gate", 0, 0.004, "simulated", false, false)
+	exec(gateRow, now.Add(-48*time.Hour), "t-old", "gate", 0, 0.001, "computed", false, false)
+	exec(`INSERT INTO cost_events (occurred_at, component, kind, cost_usd, cost_source) VALUES ($1, 'probe', 'decision', 0.3, 'computed')`,
+		now.Add(-time.Minute))
 }
 
 func TestOverviewAggregates(t *testing.T) {
@@ -67,7 +80,7 @@ func TestOverviewAggregates(t *testing.T) {
 		t.Fatal(err)
 	}
 	tot := o.Totals
-	if tot.Requests != 2 || tot.Flagged != 1 || tot.Passed != 1 || tot.Observed != 0 || tot.Audited != 1 || math.Abs(tot.DecisionCostUSD-0.002) > 1e-9 {
+	if tot.Requests != 2 || tot.Flagged != 1 || tot.Passed != 1 || tot.Observed != 0 || tot.Audited != 1 || math.Abs(tot.DecisionCostUSD-0.0027) > 1e-9 {
 		t.Errorf("totals without mock %+v", tot)
 	}
 	if e := o.Evidence; e.WithEvidence != 1 || e.GroundednessAssessed != 1 || e.BySource["request_system"] != 1 || e.BySource["knowledge"] != 0 {
@@ -82,8 +95,9 @@ func TestOverviewAggregates(t *testing.T) {
 	if len(o.ByModel) != 1 || o.ByModel[0].Key != "gpt-4o-mini" {
 		t.Errorf("by model %+v", o.ByModel)
 	}
-	if len(o.Series) != 97 {
-		t.Errorf("24h of 15-minute buckets plus the partial one: %d", len(o.Series))
+	// 24h of 15-minute buckets, plus the partial ones at either end.
+	if want := (f.To.Unix()-1)/900 - f.From.Unix()/900 + 1; int64(len(o.Series)) != want {
+		t.Errorf("%d buckets, want %d", len(o.Series), want)
 	}
 	var flagged, passed int64
 	for _, p := range o.Series {
@@ -153,10 +167,12 @@ func TestEvidenceCoverageAndRoi(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Checked != 2 || r.Flagged != 1 || r.Decisions != 2 || r.DeadlineMisses != 0 || math.Abs(r.DecisionUSD-0.002) > 1e-9 {
+	// The decision spend is the gate's rows: both answers' attempts, the hedge loser and the late
+	// attempt, not the Studio test, the probe, the mock trace or yesterday's trace.
+	if r.Checked != 2 || r.Flagged != 1 || r.Decisions != 2 || r.DeadlineMisses != 0 || math.Abs(r.DecisionUSD-0.0027) > 1e-9 {
 		t.Errorf("roi traffic %+v", r)
 	}
-	if r.DecisionSources != (CostCounts{Computed: 2}) || r.SameChecksCalls != 2 || r.SameChecksInputTokens != 1500 || r.SameChecksQuestions != 2 {
+	if r.DecisionSources != (CostCounts{Computed: 4}) || r.SameChecksCalls != 2 || r.SameChecksInputTokens != 1500 || r.SameChecksQuestions != 2 {
 		t.Errorf("roi decisions %+v", r)
 	}
 	if math.Abs(r.LLMUSD-0.01) > 1e-9 || r.LLMSources != (CostCounts{Reported: 1}) || r.Audits != 1 || r.AuditsBySelection["uniform"] != 1 {
@@ -218,5 +234,68 @@ func TestAggregatesLeaveOutDirectAudits(t *testing.T) {
 		after.ByRoute[0].Requests != before.ByRoute[0].Requests {
 		t.Errorf("a direct audit changed the gateway aggregates:\nbefore %+v %+v\nafter  %+v %+v", before.Totals, before.Audited,
 			after.Totals, after.Audited)
+	}
+}
+
+// fitted_from_audits reads the costed deep audits whose answer length is known, and the length of
+// the checked answers; the series zero-fills every bucket and puts each trace's spend, checked
+// answer and same-checks inputs in the bucket it was created in.
+func TestRoiFitSamplesAndSeries(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	seedStats(t, s, now)
+	if _, err := s.pool.Exec(ctx, `UPDATE traces SET response_chars = CASE trace_id WHEN 't-flag' THEN 1200 WHEN 't-pass' THEN 300 END`); err != nil {
+		t.Fatal(err)
+	}
+	f := StatsFilter{From: now.Add(-24 * time.Hour), To: now.Add(time.Minute)}
+	r, err := s.Roi(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.CheckedChars != 1500 || r.CheckedWithChars != 2 || len(r.FitSamples) != 1 ||
+		r.FitSamples[0] != (FitSample{ResponseChars: 1200, CostUSD: 0.01}) {
+		t.Errorf("fit inputs: chars %d over %d, samples %+v", r.CheckedChars, r.CheckedWithChars, r.FitSamples)
+	}
+
+	series, err := s.RoiSeries(ctx, f, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, last := f.From.Unix()/3600, (f.To.Unix()-1)/3600
+	if int64(len(series)) != last-first+1 {
+		t.Fatalf("%d points, want %d", len(series), last-first+1)
+	}
+	var gated int64
+	var decision, llm float64
+	for i, p := range series {
+		if p.T.Unix() != (first+int64(i))*3600 || p.T.Location() != time.UTC {
+			t.Errorf("point %d at %v", i, p.T)
+		}
+		gated += p.Gated
+		decision += p.DecisionUSD
+		llm += p.LLMUSD
+	}
+	if gated != 2 || math.Abs(decision-0.0027) > 1e-9 || math.Abs(llm-0.01) > 1e-9 {
+		t.Errorf("series totals: gated %d decision %v llm %v", gated, decision, llm)
+	}
+	flagBucket := now.Add(-10*time.Minute).Unix()/3600 - first
+	if p := series[flagBucket]; p.Gated < 1 || p.SameChecksCalls < 1 || p.SameChecksInputTokens < 500 {
+		t.Errorf("the flagged trace's bucket %+v", p)
+	}
+	f.IncludeMock = true
+	withMock, err := s.RoiSeries(ctx, f, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mockDecision float64
+	for _, p := range withMock {
+		mockDecision += p.DecisionUSD
+	}
+	if math.Abs(mockDecision-0.0067) > 1e-9 {
+		t.Errorf("include_mock decision spend %v", mockDecision)
+	}
+	if _, err := s.RoiSeries(ctx, f, time.Millisecond); err == nil {
+		t.Error("a bucket shorter than a second was accepted")
 	}
 }
