@@ -105,7 +105,7 @@ func TestPriceCall(t *testing.T) {
 	table := PriceTable{Version: "2026-09-27", Currency: "USD", Entries: append([]PriceEntry{
 		{Match: "anthropic/claude-sonnet-*", Provider: "openrouter", InputPerMTok: 3, OutputPerMTok: 15, Label: PriceLabelOverride},
 	}, testEntries()...)}
-	reported := 0.0031
+	reported, negative, free := 0.0031, -0.002, 0.0
 	for _, c := range []struct {
 		name    string
 		in      CallCostInput
@@ -117,6 +117,8 @@ func TestPriceCall(t *testing.T) {
 		{"reported wins", CallCostInput{Provider: "openrouter", Model: "anthropic/claude-haiku-4.5", InputTokens: 3525, OutputTokens: 120, ReportedUSD: &reported}, ptr(0.0031), CostReported, "2026-09-27"},
 		{"override", CallCostInput{Provider: "openrouter", Model: "anthropic/claude-sonnet-4.5", InputTokens: 1000, OutputTokens: 100}, ptr(0.0045), CostComputed, "override"},
 		{"local", CallCostInput{Provider: "ollama", Model: "llama3.1:8b", InputTokens: 5000, OutputTokens: 500}, ptr(0.0), CostFreeLocal, "2026-09-27"},
+		{"reported $0", CallCostInput{Provider: "openrouter", Model: "anthropic/claude-haiku-4.5", InputTokens: 3525, OutputTokens: 120, ReportedUSD: &free}, ptr(0.0), CostReported, "2026-09-27"},
+		{"negative report ignored", CallCostInput{Provider: "openrouter", Model: "anthropic/claude-haiku-4.5", InputTokens: 3525, OutputTokens: 120, ReportedUSD: &negative}, ptr(0.004125), CostComputed, "2026-09-27"},
 		{"mock beats reported", CallCostInput{Provider: "mock", Model: "mock-judge", InputTokens: 5000, ReportedUSD: &reported}, ptr(0.0), CostSimulated, "2026-09-27"},
 		{"unknown", CallCostInput{Provider: "openai", Model: "gpt-4o-mini", InputTokens: 5000}, nil, CostUnknown, "2026-09-27"},
 	} {
@@ -125,6 +127,13 @@ func TestPriceCall(t *testing.T) {
 		if got.Source != c.source || got.PriceTableVersion != c.version || (got.USD == nil) != (c.usd == nil) ||
 			got.USD != nil && *got.USD != *c.usd {
 			t.Errorf("%s: %+v (usd %v), want %v %s %s", c.name, got, usdOf(got.USD), usdOf(c.usd), c.source, c.version)
+		}
+	}
+	// A report that is not a number of dollars is ignored too.
+	for _, bad := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		got := PriceCall(CallCostInput{Provider: "openai", Model: "gpt-4o-mini", ReportedUSD: &bad, Table: table})
+		if got.Source != CostUnknown || got.USD != nil {
+			t.Errorf("reported %v: %+v", bad, got)
 		}
 	}
 	// A local provider whose own entry has a price is computed like any other.

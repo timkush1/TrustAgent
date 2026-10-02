@@ -393,13 +393,16 @@ type CallCost struct {
 //	a local provider with no or a free entry  → $0, free_local
 //	no entry prices the model (LookupPrice)   → unknown (no cost)
 //	otherwise                                 → tokens × the entry's prices, computed
+//
+// A reported cost below $0 (or not finite) is not a cost: it is ignored and the call is priced
+// from the table, so a malformed report can never lower the day's spend.
 func PriceCall(in CallCostInput) CallCost {
 	out := CallCost{PriceTableVersion: in.Table.Version}
 	switch {
 	case IsSimulatedProvider(in.Provider):
 		out.USD, out.Source = ptr(0.0), CostSimulated
 		return out
-	case in.ReportedUSD != nil:
+	case in.ReportedUSD != nil && validPrice(*in.ReportedUSD):
 		out.USD, out.Source = ptr(*in.ReportedUSD), CostReported
 		return out
 	}
