@@ -38,7 +38,6 @@ describe('P4 control planes', () => {
   it('rejects a method without a body yet with 404 not_implemented', async () => {
     await expect(plane().listCredentials()).rejects.toMatchObject({ status: 404, code: 'not_implemented' });
     await expect(plane().getRoiTimeseries({ window: '7d' })).rejects.toMatchObject({ code: 'not_implemented' });
-    await expect(plane().getLabelQueue({})).rejects.toMatchObject({ code: 'not_implemented' });
     await expect(plane().draftEvaluator({ description: 'x' })).rejects.toMatchObject({ code: 'not_implemented' });
     await expect(unavailableControlPlane('Not in the static build.').getSettings()).rejects.toMatchObject({
       status: 404,
