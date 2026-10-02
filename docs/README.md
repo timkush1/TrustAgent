@@ -18,7 +18,7 @@ Start with the [project README](../README.md) for the overview and quick start. 
 | Doc | What's inside |
 |---|---|
 | [GETTING-STARTED.md](GETTING-STARTED.md) | Running TrustAgent locally on WSL: the zero-key `make demo`, real mode with your keys, signing in with the one-time setup link, memory, troubleshooting |
-| [DEMO.md](DEMO.md) | The zero-key demo: starting it, the setup link, a three-minute tour, the 26 scenarios, checking it from the terminal, sharing it (static replay site or a tunnel) |
+| [DEMO.md](DEMO.md) | The zero-key demo: starting it, the setup link, a five-minute tour (Studio, Savings and Settings included), the 26 scenarios, checking it from the terminal, sharing it (static replay site or a tunnel) |
 | [JEV-ACCESS.md](JEV-ACCESS.md) | Getting Jev access for the fast check: Connect OpenRouter, paste a key, `.env` or `make configure WITH_SECRETS=1`; which value wins, simulated mode, credit limits, costs, settings, errors and fixes |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every configuration key with its default, who reads it, whether it is secret and whether it needs a restart (generated from the key registry; `proxy -check-config` checks a configuration against it) |
 | [CI-CD.md](CI-CD.md) | The GitHub Actions pipelines (CI, Security, Eval) and Dependabot — what each job does and how to read a failure |
