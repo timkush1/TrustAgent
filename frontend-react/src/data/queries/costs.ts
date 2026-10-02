@@ -15,17 +15,23 @@ export const qkcCosts = {
   pricing: ['costs', 'pricing'] as const,
 };
 
-/** The bucket a window is drawn in: hours up to a day, days beyond (the pairs #48 serves). */
-export function roiBucket(window: TimeWindow): RoiTimeseries['bucket'] {
+/**
+ * The bucket a window is drawn in: hours up to a day, days beyond (the pairs #48 serves). A window
+ * shorter than an hour has none (#48 answers 422 for it), so there is no series to ask for.
+ */
+export function roiBucket(window: TimeWindow): RoiTimeseries['bucket'] | null {
+  if (window === '15m') return null;
   return window === '7d' || window === '30d' ? '1d' : '1h';
 }
 
 /** GET /api/roi/timeseries (#48): spend and the same-checks counterfactual per bucket. */
 export function roiTimeseriesQuery(ds: DataSource, window: TimeWindow) {
-  const params: RoiTimeseriesParams = { window, bucket: roiBucket(window) };
+  const bucket = roiBucket(window);
+  const params: RoiTimeseriesParams = bucket ? { window, bucket } : { window };
   return queryOptions({
     queryKey: qkcCosts.roiTimeseries(params),
     queryFn: ({ signal }) => ds.getRoiTimeseries(params, signal),
+    enabled: bucket !== null,
   });
 }
 

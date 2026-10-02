@@ -208,25 +208,32 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
 // ---------------------------------------------------------------------------------------- savings
 
 export interface SavingsRange {
-  /** "$0.60–$0.97": how much was saved or, when `negative`, how much more it cost (as amounts). */
+  /**
+   * The amounts, always positive: "$0.60–$0.97" saved, "$0.10–$0.20" more, or for a range that
+   * crosses zero "$0.10 more and $0.20 less".
+   */
   text: string;
   label: ValueLabel;
-  /** Checking with Jev cost more than asking an LLM across the whole range. */
-  negative: boolean;
+  /**
+   * `saved`: checking with Jev cost less across the whole range; `cost_more`: it cost more across
+   * the whole range; `mixed`: the range runs from costing more to saving.
+   */
+  direction: 'saved' | 'cost_more' | 'mixed';
 }
 
 /** What the fast check saved against an LLM asking the same questions, or null without an estimate. */
 export function savingsRange(roi: RoiSummary): SavingsRange | null {
-  const { usd_low, usd_high, label } = roi.savings_vs_same_checks;
-  if (usd_low === null && usd_high === null) return null;
-  const negative = (usd_high ?? usd_low ?? 0) < 0;
+  const { usd_low, usd_high } = roi.savings_vs_same_checks;
+  const lo = usd_low ?? usd_high;
+  const hi = usd_high ?? usd_low;
+  if (lo === null || hi === null) return null;
+  const low = Math.min(lo, hi);
+  const high = Math.max(lo, hi);
+  const label = costLabel(roi.simulated, roi.savings_vs_same_checks.label);
   // "Cost $0.10–$0.20 more than …", never "Cost -$0.20–-$0.10 more than …".
-  const flip = (v: number | null) => (v === null ? null : -v);
-  return {
-    text: negative ? costRange(flip(usd_high), flip(usd_low)) : costRange(usd_low, usd_high),
-    label: costLabel(roi.simulated, label),
-    negative,
-  };
+  if (low < 0 && high <= 0) return { text: costRange(-high, -low), label, direction: 'cost_more' };
+  if (low < 0) return { text: `${formatUsd(-low)} more and ${formatUsd(high)} less`, label, direction: 'mixed' };
+  return { text: costRange(low, high), label, direction: 'saved' };
 }
 
 // ------------------------------------------------------------------------------------- sampling

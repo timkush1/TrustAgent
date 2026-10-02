@@ -26,14 +26,14 @@ import { savingsLine, windowLong } from '@/components/overview/overviewModel';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isNotServed, roiSummaryQuery } from '@/data/queries';
-import { roiTimeseriesQuery } from '@/data/queries/costs';
+import { roiBucket, roiTimeseriesQuery } from '@/data/queries/costs';
 import { formatCount, formatDurationMs } from '@/domain/format';
 import { copy, costLabel } from '@/domain/presentation';
 import { formatPercent } from '@/domain/rates';
 import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
 import { CostBandChart } from './CostBandChart';
-import { componentRows, costBandPoints, outcomeSplit, samplingLines, savingsRange } from './savingsModel';
+import { componentRows, costBandPoints, outcomeSplit, samplingLines, savingsRange, type SavingsRange } from './savingsModel';
 
 const linkClass = 'inline-flex items-center gap-0.5 text-sm font-medium text-fg underline underline-offset-2';
 
@@ -53,6 +53,13 @@ function SavingsSkeleton() {
   );
 }
 
+/** The words around the savings amounts, by which way the range points. */
+const SAVED_WORDS: Record<SavingsRange['direction'], [string, string]> = {
+  saved: ['Saved ', ' against'],
+  cost_more: ['Cost ', ' more than'],
+  mixed: ['Between ', ' than'],
+};
+
 /** The headline, the savings range and the early-data sentence. */
 function Headline({ roi }: { roi: RoiSummary }) {
   const line = savingsLine(roi);
@@ -68,9 +75,9 @@ function Headline({ roi }: { roi: RoiSummary }) {
         <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
           <PiggyBank aria-hidden="true" className="size-4 text-fg-muted" />
           <span>
-            {saved.negative ? 'Cost ' : 'Saved '}
+            {SAVED_WORDS[saved.direction][0]}
             <span className="font-medium tabular">{saved.text}</span>
-            {saved.negative ? ' more than' : ' against'} an LLM asking the same questions
+            {SAVED_WORDS[saved.direction][1]} an LLM asking the same questions
           </span>
           <EvidenceBadge label={saved.label} basis={same?.basis} subject="Savings against an LLM asking the same questions" />
         </p>
@@ -91,7 +98,14 @@ function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWind
   const ds = useDataSource();
   const q = useQuery(roiTimeseriesQuery(ds, timeWindow));
   let body: ReactNode;
-  if (q.isPending) {
+  if (roiBucket(timeWindow) === null) {
+    body = (
+      <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-fg-muted">
+        Spend over time starts at the 1-hour window: pick 1h or longer to see it. The totals above and the table below cover{' '}
+        {windowLong(timeWindow)}.
+      </p>
+    );
+  } else if (q.isPending) {
     body = <Skeleton className="h-64 w-full" />;
   } else if (q.isError) {
     body = isNotServed(q.error) ? (

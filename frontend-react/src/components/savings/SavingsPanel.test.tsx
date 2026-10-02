@@ -47,6 +47,13 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(screen.getByText(/So far: 540 answers checked/)).toBeInTheDocument();
   });
 
+  it('words a savings range that crosses zero as both ways', async () => {
+    const control = createControlApi({ roi: roiSummary({ savings_vs_same_checks: { usd_low: -0.1, usd_high: 0.2, label: 'estimate' } }) });
+    renderPage('/app/overview?tab=savings', { control });
+    expect(await screen.findByText(/^Between/)).toHaveTextContent('Between $0.10 more and $0.20 less than an LLM asking the same questions');
+    expect(screen.queryByText(/^Saved/)).toBeNull();
+  });
+
   it('asks for the time series in the window’s bucket and draws the bands with a table', async () => {
     const user = userEvent.setup();
     const { control } = renderPage('/app/overview?tab=savings&window=7d');
@@ -196,6 +203,13 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(await screen.findByText(/Only one hour in this window so far/)).toBeInTheDocument();
   });
 
+  it('asks for no time series in a window shorter than an hour, and says why', async () => {
+    const { control } = renderPage('/app/overview?tab=savings&window=15m');
+    expect(await screen.findByText(/^Spend over time starts at the 1-hour window/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /^Your cost:/ })).toBeInTheDocument();
+    expect(control.callsTo('/api/roi/timeseries')).toHaveLength(0);
+  });
+
   it('says when a window has no bucket yet', async () => {
     const none: RoiTimeseries = { window: '7d', bucket: '1d', points: [] };
     renderPage('/app/overview?tab=savings&window=7d', { control: createControlApi({ roiTimeseries: none }) });
@@ -213,7 +227,8 @@ describe('Savings tab', { timeout: 20_000 }, () => {
 
 describe('cost queries', () => {
   it('draws hours up to a day and days beyond', () => {
-    expect(['15m', '1h', '24h', '7d', '30d'].map((w) => roiBucket(w as never))).toEqual(['1h', '1h', '1h', '1d', '1d']);
+    // #48 has no bucket for a 15-minute window (it answers 422): the chart asks for none.
+    expect(['15m', '1h', '24h', '7d', '30d'].map((w) => roiBucket(w as never))).toEqual([null, '1h', '1h', '1d', '1d']);
   });
 
   it('refetches status, ROI and spend on a budget event (D49), and prices when overrides change', () => {
