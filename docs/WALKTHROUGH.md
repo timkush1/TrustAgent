@@ -6,6 +6,13 @@ and the CI. Written assuming you know how to code but may be new to some of the
 infrastructure concepts (CORS, gRPC, Prometheus, GitHub Actions...). Every concept is
 explained the first time it appears.*
 
+> **Which version this describes.** Most sections still describe TrustAgent 1.0 (an audit proxy
+> with a React feed); the 2.0 gateway (tiered checks, the decision model, policies, the setup
+> wizard, dashboard keys, the cost ledger and the Studio) is documented in
+> [ARCHITECTURE.md](ARCHITECTURE.md), [GATEWAY.md](GATEWAY.md), [EVALUATORS.md](EVALUATORS.md)
+> and [SECURITY.md](SECURITY.md). "Changed in 2.0" notes mark the places that moved; the full
+> rewrite of this tour is planned for P5.
+
 **Total reading time: ~2.5–3 hours.** Suggested split into three sittings:
 
 | Sitting | Sections | Time | You'll understand |
@@ -390,6 +397,15 @@ so they deliberately skip Gate-1), with deterministic IDs so re-seeding never du
 ---
 
 ## 7. The React dashboard
+
+> **Changed in 2.0.** The dashboard was rebuilt: React 19 with TanStack Router and Query, data
+> access through `src/data/` (a DataSource for REST and StreamClient v2 for the WebSocket), the
+> pages under `src/routes/app/` (Overview, Traffic, traces, Policies, Evaluators with their
+> Studio and labels, Playground, Savings, Knowledge, Settings and the setup wizard) and their
+> components under
+> `src/components/`. Knowledge uploads go to `POST /api/kb/documents`. The tree below is the
+> 1.0 layout; [ARCHITECTURE.md](ARCHITECTURE.md) and `frontend-react/DESIGN.md` describe the
+> current one.
 
 ```
 frontend-react/src/
