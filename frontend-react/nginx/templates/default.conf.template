@@ -121,6 +121,17 @@ server {
         add_header Cache-Control "no-store" always;
     }
 
+    # Connect OpenRouter returns here with ?code=<one-time sign-in code>. The app
+    # exchanges the code at once, but the access log would keep the whole request
+    # line, so this page logs nothing. The requests it makes next carry no
+    # Referer with the code either (Referrer-Policy no-referrer, in the snippet).
+    location = /connect/callback {
+        access_log off;
+        include /etc/nginx/conf.d/snippets/security-headers.conf;
+        add_header Cache-Control "no-store" always;
+        try_files /index.html =404;
+    }
+
     # Fingerprinted build output: cache forever.
     location /assets/ {
         include /etc/nginx/conf.d/snippets/security-headers.conf;
