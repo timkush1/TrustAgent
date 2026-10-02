@@ -392,12 +392,7 @@ func vendorMessage(body []byte, status int) string {
 // candidateKey is the KeyFunc of a candidate secret: it releases the secret only for one of its
 // allowed origins (D78), so a check can never send it anywhere else.
 func candidateKey(secret string, allowed []string) jev.KeyFunc {
-	origins := make([]string, 0, len(allowed))
-	for _, a := range allowed {
-		if u, err := url.Parse(strings.TrimSpace(a)); err == nil && u.Scheme != "" && u.Host != "" {
-			origins = append(origins, jev.CanonicalOrigin(u))
-		}
-	}
+	origins := canonicalOrigins(allowed)
 	return func(_ context.Context, origin string) (string, error) {
 		if !slices.Contains(origins, origin) {
 			return "", fmt.Errorf("%w: %s (allowed: %s)", errVerifyOriginRefused, origin, strings.Join(origins, ", "))
