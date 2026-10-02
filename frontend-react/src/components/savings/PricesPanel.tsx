@@ -113,10 +113,13 @@ interface OverrideEditorProps {
   showProblems: boolean;
   /** The server's findings on `pricing_overrides[i]`, by row index. */
   serverFindings: Map<number, FieldError[]>;
-  disabled: boolean;
+  /** Saving is off here (read-only, not an admin, no database): the rows are shown, not edited. */
+  readOnly: boolean;
+  /** A save is in flight. */
+  busy: boolean;
 }
 
-function OverrideEditor({ rows, onChange, showProblems, serverFindings, disabled }: OverrideEditorProps) {
+function OverrideEditor({ rows, onChange, showProblems, serverFindings, readOnly, busy }: OverrideEditorProps) {
   const listId = useId();
   const set = (id: string, patch: Partial<OverrideRow>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   if (rows.length === 0) {
@@ -144,31 +147,33 @@ function OverrideEditor({ rows, onChange, showProblems, serverFindings, disabled
           <li key={row.id} data-override-row={index} className="space-y-2 rounded-md border border-border p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-medium text-fg-muted">Override {index + 1}</p>
-              <IconButton
-                icon={Trash2}
-                size="sm"
-                aria-label={`Remove override ${index + 1}`}
-                disabled={disabled}
-                onClick={() => onChange(rows.filter((r) => r.id !== row.id))}
-              />
+              {readOnly ? null : (
+                <IconButton
+                  icon={Trash2}
+                  size="sm"
+                  aria-label={`Remove override ${index + 1}`}
+                  disabled={busy}
+                  onClick={() => onChange(rows.filter((r) => r.id !== row.id))}
+                />
+              )}
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
               <Field label="Provider" error={byField('provider')}>
-                <Input value={row.provider} onValueChange={(v) => set(row.id, { provider: v })} list={listId} autoComplete="off" />
+                <Input value={row.provider} onValueChange={(v) => set(row.id, { provider: v })} readOnly={readOnly} list={listId} autoComplete="off" />
               </Field>
               <Field label="Model" description="A * matches any ending." error={byField('match')}>
-                <Input value={row.match} onValueChange={(v) => set(row.id, { match: v })} placeholder="gpt-4o-mini*" className="font-mono" />
+                <Input value={row.match} onValueChange={(v) => set(row.id, { match: v })} readOnly={readOnly} placeholder="gpt-4o-mini*" className="font-mono" />
               </Field>
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               <Field label="Input, USD per million tokens" error={byField('input_per_mtok')}>
-                <Input value={row.input} onValueChange={(v) => set(row.id, { input: v })} inputMode="decimal" className="tabular" />
+                <Input value={row.input} onValueChange={(v) => set(row.id, { input: v })} readOnly={readOnly} inputMode="decimal" className="tabular" />
               </Field>
               <Field label="Output, USD per million tokens" error={byField('output_per_mtok')}>
-                <Input value={row.output} onValueChange={(v) => set(row.id, { output: v })} inputMode="decimal" className="tabular" />
+                <Input value={row.output} onValueChange={(v) => set(row.id, { output: v })} readOnly={readOnly} inputMode="decimal" className="tabular" />
               </Field>
               <Field label="Note" optional error={byField('note')}>
-                <Input value={row.note} onValueChange={(v) => set(row.id, { note: v })} placeholder="negotiated rate" />
+                <Input value={row.note} onValueChange={(v) => set(row.id, { note: v })} readOnly={readOnly} placeholder="negotiated rate" />
               </Field>
             </div>
             {rowLevel.length > 0 ? (
@@ -254,7 +259,14 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
           </h3>
           <p className="text-xs text-fg-muted">{costOverrideNote} The first one that matches a model wins.</p>
         </div>
-        <OverrideEditor rows={rows} onChange={setRows} showProblems={showProblems} serverFindings={byRow} disabled={pending || writeReason !== null} />
+        <OverrideEditor
+          rows={rows}
+          onChange={setRows}
+          showProblems={showProblems}
+          serverFindings={byRow}
+          readOnly={writeReason !== null}
+          busy={pending}
+        />
         {warnings.length > 0 ? (
           <ul aria-label="Check these prices" className="space-y-1">
             {warnings.map((w, i) => (
@@ -292,10 +304,13 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="ghost" disabled={pending || writeReason !== null} onClick={() => setRows([...rows, emptyRow()])}>
-            <Plus aria-hidden="true" />
-            Add a price
-          </Button>
+          {/* Where saving is off, the Save button says why; adding a row there would be a dead end. */}
+          {writeReason === null ? (
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => setRows([...rows, emptyRow()])}>
+              <Plus aria-hidden="true" />
+              Add a price
+            </Button>
+          ) : null}
           <DisabledAction reason={reason}>
             {(p) => (
               <Button size="sm" variant="primary" pending={pending} onClick={() => void save()} {...p}>

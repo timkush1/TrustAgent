@@ -238,6 +238,22 @@ describe('Settings → Budgets', { timeout: 20_000 }, () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save budgets' })).toHaveAccessibleDescription('Not available on a read-only instance'));
   });
 
+  it('shows the price overrides without editing them where saving is off', async () => {
+    const mine: PriceEntry = { provider: 'openai', match: 'gpt-4o-mini*', input_per_mtok: 0.12, output_per_mtok: 0.5, label: 'override' };
+    const base = settingsView();
+    const control = createControlApi({ settings: { ...base, runtime: { ...base.runtime, pricing_overrides: [mine] } } });
+    renderPage(PATH, { control, status: { readonly: true } });
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-override-row="0"]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    for (const box of within(row).getAllByRole('textbox')) expect(box).toHaveAttribute('readonly');
+    expect(within(row).queryByRole('button', { name: 'Remove override 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a price' })).toBeNull();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save prices' })).toHaveAccessibleDescription('Not available on a read-only instance'));
+  });
+
   it('says why saving is off for a viewer without the admin scope', async () => {
     renderPage(PATH, { status: { auth: { ...systemStatus().auth, read: 'keys', caller_scopes: ['read'] } } });
     expect(await decisionInput()).toHaveAttribute('readonly');
