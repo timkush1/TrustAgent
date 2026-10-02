@@ -6,16 +6,24 @@ Starts the gRPC server for the audit engine.
 This is where everything gets wired together:
 1. Load configuration (contracts registry keys; warnings, strict mode)
 2. Check the bind address against the internal token (non-loopback needs one)
-3. Resolve the audit judge (judge.py) and cap its in-flight calls
+3. Resolve the audit judge (judge.py), put it in the swappable slot that
+   runtime-config pushes may change (runtime/manager.py), and cap its
+   in-flight calls
 4. Initialize the knowledge add-on (embeddings + Qdrant) if enabled; its heavy
    dependencies are imported only then
 5. Build the LangGraph audit workflow with the scoring, claim and policy
-   settings (TRUTHTABLE_SCORING_*, TRUTHTABLE_MAX_CLAIMS, ...)
+   settings (TRUTHTABLE_SCORING_*, TRUTHTABLE_MAX_CLAIMS, ...); without a judge
+   it is built when a pushed judge first needs it
 6. Start the metrics endpoint and the gRPC server (internal-token interceptor,
    TRUTHTABLE_ENGINE_MAX_RPCS)
+
+Log records are redacted from the first line on: every secret the engine
+loads or is pushed is masked, with the gateway's credential patterns
+(runtime/redaction.py).
 """
 
 import asyncio
+import functools
 import logging
 import os
 import platform
@@ -50,6 +58,9 @@ from truthtable.providers.pricing import (
     load_default_price_table,
     set_active_price_table,
 )
+from truthtable.providers.swappable import SwappableProvider
+from truthtable.runtime.manager import ProviderManager
+from truthtable.runtime.redaction import install_redaction, process_redactor, settings_secrets
 from truthtable.contracts import ContractsNotFoundError
 from truthtable.scoring import ScoringConfig
 
@@ -199,7 +210,8 @@ def init_knowledge(
 
     # Knowledge-base components (VERITAS-lite): claim-level ingestion with the
     # Gate-1 entailment check, contradiction detection, and hybrid (BM25 +
-    # dense RRF) retrieval. Ingestion needs the judge.
+    # dense RRF) retrieval. Claim-level ingestion needs a judge: while the
+    # engine has none, IngestDocuments stores plain chunks instead.
     from truthtable.kb.hybrid import HybridClaimRetriever
 
     hybrid_retriever = HybridClaimRetriever(
@@ -236,6 +248,9 @@ async def main() -> None:
     loaded = load_settings()
     settings = loaded.settings
     setup_logging(settings.effective_log_level)
+    redactor = process_redactor()
+    redactor.add(*settings_secrets(settings))
+    install_redaction(redactor)
 
     logger = logging.getLogger(__name__)
     logger.info(f"Starting TrustAgent Audit Engine {__version__}")
@@ -265,37 +280,45 @@ async def main() -> None:
         raise SystemExit(STRICT_CONFIG_EXIT_CODE) from None
 
     judge: JudgeSelection = await resolve_judge(settings, log=logger)
+    redactor.add(tokens.current())
     limiter = configure_process_limiter(settings.judge_max_inflight)
-    provider: Optional[LLMProvider] = (
-        LimitedProvider(judge.provider, limiter) if judge.provider is not None else None
-    )
-    if provider is not None and judge.effective == OLLAMA:
+    # Every judge call goes through one swappable slot: a runtime-config push
+    # (ApplyRuntimeConfig) may replace the judge while the engine runs.
+    swappable = SwappableProvider(judge.provider)
+    provider: LLMProvider = LimitedProvider(swappable, limiter)
+    runtime = ProviderManager(settings, judge, swappable, redactor=redactor)
+    if judge.provider is not None and judge.effective == OLLAMA:
         await warm_up(provider, logger)
 
     embedding_service, qdrant_store, hybrid_retriever, ingestor, knowledge = init_knowledge(
         settings, provider, logger
     )
 
+    graph_factory = functools.partial(
+        build_audit_graph,
+        provider=provider,
+        embedding_service=embedding_service,
+        qdrant_store=qdrant_store,
+        hybrid_retriever=hybrid_retriever,
+        verifier_concurrency=settings.verifier_concurrency,
+        scoring=ScoringConfig.from_settings(settings),
+        max_claims=settings.max_claims,
+        unsupported_policy=settings.unsupported_policy,
+        extract_claims_without_evidence=settings.audit_extract_claims_without_evidence,
+        retriever_top_k=settings.retriever_top_k,
+        retriever_score_threshold=settings.retriever_score_threshold,
+        verify_context_scope=settings.verify_context_scope,
+    )
     audit_graph = None
-    if provider is not None:
+    if judge.provider is not None:
         logger.info("Building audit graph...")
-        audit_graph = build_audit_graph(
-            provider=provider,
-            embedding_service=embedding_service,
-            qdrant_store=qdrant_store,
-            hybrid_retriever=hybrid_retriever,
-            verifier_concurrency=settings.verifier_concurrency,
-            scoring=ScoringConfig.from_settings(settings),
-            max_claims=settings.max_claims,
-            unsupported_policy=settings.unsupported_policy,
-            extract_claims_without_evidence=settings.audit_extract_claims_without_evidence,
-            retriever_top_k=settings.retriever_top_k,
-            retriever_score_threshold=settings.retriever_score_threshold,
-            verify_context_scope=settings.verify_context_scope,
-        )
+        audit_graph = graph_factory()
         logger.info("Audit graph ready")
     else:
-        logger.warning("No audit judge: every deep audit is NOT_ASSESSED (no_judge)")
+        logger.warning(
+            "No audit judge: every deep audit is NOT_ASSESSED (no_judge) until one is "
+            "configured (engine env, or the dashboard's Settings)"
+        )
 
     start_metrics(settings, logger)
 
@@ -312,6 +335,9 @@ async def main() -> None:
         embedding_service=embedding_service,
         ingestor=ingestor,
         engine=engine,
+        runtime=runtime,
+        graph_factory=graph_factory,
+        redactor=redactor,
     )
     server = create_server(
         servicer,

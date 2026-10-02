@@ -13,9 +13,10 @@ stubbed or run with a scripted judge (the mock provider, or a fake one).
 
 Evaluate is implemented in S0; its behaviour tests replay the S0 scenarios of
 contracts/demo/scenarios.v1.json through the mock judge and check the audit
-outcome each scenario expects. The other new v2 RPCs are not implemented yet:
-the servicer inherits the generated UNIMPLEMENTED handlers, and the phases that
-implement them replace the corresponding cases here with behaviour tests.
+outcome each scenario expects. Every v2 RPC is implemented by P4:
+ApplyRuntimeConfig and DraftEvaluator are covered here at the RPC boundary
+(status codes and response shape); their behaviour is pinned in
+test_runtime_config.py and test_drafter.py.
 """
 
 import asyncio
@@ -42,21 +43,26 @@ from truthtable.grpc.pb import evaluator_pb2_grpc as pb_grpc
 from truthtable.grpc.server import AuditServicer
 from truthtable.judge import JudgeSelection
 from truthtable.providers.base import CompletionRequest, CompletionResponse, LLMProvider
+from truthtable.providers.errors import ProviderError
+from truthtable.providers.limiter import LimitedProvider
 from truthtable.providers.mock import MockLLMProvider, parse_scenario_pack
+from truthtable.providers.swappable import SwappableProvider
+from truthtable.runtime.manager import ProviderManager
+from truthtable.runtime.redaction import Redactor
 from truthtable.scoring import ScoringConfig
 
 RPC_TIMEOUT_S = 5
 
 # New in v2 and implemented (SPEC section 4): Evaluate in S0, GetEngineInfo in
 # P2 (behaviour tests in test_engine_info.py), RetrieveContext in P3 (behaviour
-# tests in test_retrieve_context.py).
-IMPLEMENTED_V2_RPCS = {"Evaluate", "GetEngineInfo", "RetrieveContext"}
-
-# New in v2; implemented in later phases (SPEC section 4): ApplyRuntimeConfig
-# and DraftEvaluator in P4.
-NEW_RPCS: Dict[str, Any] = {
-    "ApplyRuntimeConfig": pb.RuntimeConfig(version=1, epoch="epoch-1"),
-    "DraftEvaluator": pb.DraftEvaluatorRequest(description="Flags refund promises"),
+# tests in test_retrieve_context.py), ApplyRuntimeConfig and DraftEvaluator in
+# P4 (behaviour tests in test_runtime_config.py and test_drafter.py).
+IMPLEMENTED_V2_RPCS = {
+    "Evaluate",
+    "GetEngineInfo",
+    "RetrieveContext",
+    "ApplyRuntimeConfig",
+    "DraftEvaluator",
 }
 
 LEGACY_RPCS = {
@@ -110,7 +116,7 @@ def _stub_run_audit(monkeypatch: pytest.MonkeyPatch, result: Dict[str, Any]) -> 
 def test_service_declares_legacy_and_v2_rpcs() -> None:
     methods = {m.name: m for m in pb.DESCRIPTOR.services_by_name["AuditService"].methods}
 
-    assert set(methods) == LEGACY_RPCS | IMPLEMENTED_V2_RPCS | set(NEW_RPCS)
+    assert set(methods) == LEGACY_RPCS | IMPLEMENTED_V2_RPCS
 
     # The legacy polling pair is deprecated for external callers, not removed.
     deprecated = {name for name, m in methods.items() if m.GetOptions().deprecated}
@@ -312,7 +318,7 @@ def test_optional_fields_track_presence() -> None:
 
 
 # ---------------------------------------------------------------------------
-# New RPCs not implemented yet: UNIMPLEMENTED
+# The P4 RPCs at the RPC boundary: ApplyRuntimeConfig, DraftEvaluator
 # ---------------------------------------------------------------------------
 
 
@@ -321,17 +327,110 @@ def test_implemented_v2_rpc_is_overridden(method: str) -> None:
     assert getattr(AuditServicer, method) is not getattr(pb_grpc.AuditServiceServicer, method)
 
 
-@pytest.mark.parametrize("method, message", sorted(NEW_RPCS.items()), ids=sorted(NEW_RPCS))
-async def test_new_rpc_is_unimplemented(
-    stub: pb_grpc.AuditServiceStub, method: str, message: Any
+async def test_apply_runtime_config_needs_the_runtime_manager(
+    stub: pb_grpc.AuditServiceStub,
 ) -> None:
-    # The servicer must not shadow the generated default handler yet.
-    assert getattr(AuditServicer, method) is getattr(pb_grpc.AuditServiceServicer, method)
-
+    # A bare servicer (no swappable judge) cannot apply a push; main.py always
+    # wires one (behaviour in test_runtime_config.py).
     with pytest.raises(aio.AioRpcError) as exc_info:
-        await getattr(stub, method)(message, timeout=RPC_TIMEOUT_S)
+        await stub.ApplyRuntimeConfig(
+            pb.RuntimeConfig(version=1, epoch="epoch-1"), timeout=RPC_TIMEOUT_S
+        )
 
-    assert exc_info.value.code() == grpc.StatusCode.UNIMPLEMENTED
+    assert exc_info.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+    assert exc_info.value.details() == "runtime_config_unavailable"
+
+
+async def test_apply_runtime_config_answers_the_applied_version() -> None:
+    swappable = SwappableProvider(None)
+    servicer = AuditServicer(
+        audit_graph=None,
+        provider=LimitedProvider(swappable),
+        engine=EngineContext(
+            settings=Settings(_env_file=None),
+            judge=JudgeSelection.no_judge("auto", "no judge configured"),
+        ),
+        runtime=ProviderManager(
+            Settings(_env_file=None),
+            JudgeSelection.no_judge("auto", "no judge configured"),
+            swappable,
+            redactor=Redactor(),
+        ),
+    )
+    async with serving(servicer) as audit_stub:
+        response = await audit_stub.ApplyRuntimeConfig(
+            pb.RuntimeConfig(version=3, epoch="epoch-1"), timeout=RPC_TIMEOUT_S
+        )
+
+    assert (response.applied_version, response.applied_epoch) == (3, "epoch-1")
+    assert (response.judge_status, response.decision_status) == ("no_judge", "unset")
+
+
+DRAFT_REQUEST = pb.DraftEvaluatorRequest(
+    description="Flag replies that promise a refund the policy does not allow.",
+    route_name="support-bot",
+    existing_ids=["groundedness", "contradiction", "commitments"],
+)
+
+
+async def test_draft_evaluator_without_a_judge_is_no_judge() -> None:
+    engine = EngineContext(
+        settings=Settings(_env_file=None),
+        judge=JudgeSelection.no_judge("none", "LLM_PROVIDER=none"),
+    )
+    async with serving(AuditServicer(audit_graph=None, engine=engine)) as audit_stub:
+        with pytest.raises(aio.AioRpcError) as exc_info:
+            await audit_stub.DraftEvaluator(DRAFT_REQUEST, timeout=RPC_TIMEOUT_S)
+
+    assert exc_info.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+    assert exc_info.value.details() == "no_judge"
+
+
+async def test_draft_evaluator_needs_a_description(stub: pb_grpc.AuditServiceStub) -> None:
+    with pytest.raises(aio.AioRpcError) as exc_info:
+        await stub.DraftEvaluator(pb.DraftEvaluatorRequest(description="  "), timeout=RPC_TIMEOUT_S)
+
+    assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert exc_info.value.details() == "description_required"
+
+
+async def test_draft_evaluator_with_the_mock_judge_is_a_simulated_draft() -> None:
+    judge = MockLLMProvider(model="mock")
+    async with serving(AuditServicer(audit_graph=None, provider=judge)) as audit_stub:
+        response = await audit_stub.DraftEvaluator(DRAFT_REQUEST, timeout=RPC_TIMEOUT_S)
+
+    expected = load_contract("prompts/evaluator-drafter.v1.json")["examples"][0]["output"]
+    assert json.loads(response.spec_json) == expected
+    assert list(response.schema_errors) == []
+    assert (response.attempts, response.model) == (1, "mock")
+    assert (response.cost.component, response.cost.kind) == ("studio_draft", "llm")
+    assert (response.cost.cost_usd, response.cost.cost_source) == (0.0, "simulated")
+
+
+class FailingJudge(LLMProvider):
+    """A judge whose every call fails like an unreachable provider."""
+
+    provider_name = "openrouter"
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        raise ProviderError(
+            "openrouter is unreachable (Connection refused)",
+            kind="connection",
+            provider="openrouter",
+        )
+
+    async def health_check(self) -> bool:
+        return False
+
+
+async def test_draft_evaluator_judge_failure_is_unavailable() -> None:
+    servicer = AuditServicer(audit_graph=None, provider=FailingJudge(model="m"))
+    async with serving(servicer) as audit_stub:
+        with pytest.raises(aio.AioRpcError) as exc_info:
+            await audit_stub.DraftEvaluator(DRAFT_REQUEST, timeout=RPC_TIMEOUT_S)
+
+    assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
+    assert exc_info.value.details().startswith("judge_unavailable: ")
 
 
 # ---------------------------------------------------------------------------

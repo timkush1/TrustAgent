@@ -44,8 +44,13 @@ from ..graphs.state import (
     VerificationStatus,
     coerce_status,
 )
-from ..providers.costs import CallCost, cost_ledger
+from ..providers.costs import KB_INGEST, CallCost, cost_ledger
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
+from ..providers.pricing import PriceTable, PriceTableError, set_active_price_table
+from ..runtime.manager import ProviderManager
+from ..runtime.redaction import Redactor, process_redactor
+from ..runtime.state import RuntimeState
+from ..studio.drafter import DraftRequest, EvaluatorDrafter, NoJudgeError
 from ..scoring.aggregate import SCORING_VERSION
 from .retrieve import (
     DEFAULT_MIN_SCORE,
@@ -386,10 +391,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
     - GetEngineInfo: What the engine runs with (judge, knowledge, limits)
     - RetrieveContext: Knowledge-base evidence for the gate (knowledge add-on only)
-
-    The other v2 RPCs (ApplyRuntimeConfig, DraftEvaluator) are not overridden
-    yet, so they inherit the generated handlers and return UNIMPLEMENTED until
-    their phase lands.
+    - ApplyRuntimeConfig: The gateway's runtime-config push (judge, prices; P4)
+    - DraftEvaluator: Evaluator Studio "Draft with AI" through the judge (P4)
     """
 
     def __init__(
@@ -403,6 +406,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         engine: Optional[EngineContext] = None,
         max_audits: Optional[int] = None,
         knowledge_retriever: Optional[KnowledgeRetriever] = None,
+        runtime: Optional[ProviderManager] = None,
+        graph_factory: Optional[Callable[[], Any]] = None,
+        drafter: Optional[EvaluatorDrafter] = None,
+        redactor: Optional[Redactor] = None,
     ):
         """
         Initialize the servicer.
@@ -421,6 +428,14 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             knowledge_retriever: RetrieveContext's retriever; by default one
                     over embedding_service and qdrant_store (None, i.e.
                     knowledge_disabled, without them)
+            runtime: Applies ApplyRuntimeConfig's judge; `provider` must be the
+                    engine's swappable judge (main.py). Without it the
+                    servicer refuses pushes (FAILED_PRECONDITION).
+            graph_factory: Builds the audit graph over `provider` when the
+                    first audit needs it (an engine started without a judge
+                    may gain one from a push)
+            drafter: DraftEvaluator's drafter (default: the contracts prompt)
+            redactor: Masks secrets in error details (default: the process redactor)
         """
         self.audit_graph = audit_graph
         self.provider = provider
@@ -444,13 +459,26 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                 ),
             )
         self.knowledge_retriever = knowledge_retriever
+        self.runtime = runtime
+        self.graph_factory = graph_factory
+        self.drafter = drafter
+        self.redactor = redactor if redactor is not None else process_redactor()
+        self.runtime_state = RuntimeState()
+        self._apply_lock = asyncio.Lock()
         JUDGE_FALLBACK_ACTIVE.set(1 if engine is not None and engine.judge.fallback_active else 0)
         logger.info(f"AuditServicer initialized (max {max_audits} concurrent audits)")
 
     @property
     def _no_judge(self) -> bool:
-        """The engine was started without a judge (LLM_PROVIDER=none, or none found)."""
+        """The engine has no judge (LLM_PROVIDER=none, none found, or none pushed)."""
         return self.engine is not None and not self.engine.has_judge
+
+    def _audit_graph(self) -> Any:
+        """The audit graph, built on first use when the engine started without a judge."""
+        if self.audit_graph is None and self.graph_factory is not None:
+            logger.info("Building audit graph...")
+            self.audit_graph = self.graph_factory()
+        return self.audit_graph
 
     @_inflight("Evaluate")
     async def Evaluate(
@@ -464,13 +492,15 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         """
         if self._no_judge:
             return self._not_assessed_without_judge(request)
+        # The judge this audit starts with (a push may replace it meanwhile).
+        selection = self.engine.judge if self.engine is not None else None
         async with self._audit_slots:
             result = await self._evaluate(request, context)
-        if self.engine is not None:
+        if selection is not None:
             # JudgeInfo.healthy describes this audit: false only when it failed
             # because the judge did not answer.
             judge_failed = result.error_kind in _JUDGE_FAILURE_KINDS
-            result.judge.CopyFrom(judge_info(self.engine.judge, not judge_failed))
+            result.judge.CopyFrom(judge_info(selection, not judge_failed))
         return result
 
     def _not_assessed_without_judge(
@@ -527,7 +557,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             with mock_judge_scope(options.mock_scenario) as mock_judge, cost_ledger() as ledger:
                 try:
                     state = await run_audit(
-                        graph=self.audit_graph,
+                        graph=self._audit_graph(),
                         request_id=request_id,
                         user_query=request.query,
                         llm_response=request.response,
@@ -717,7 +747,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
             # Run the audit
             result = await run_audit(
-                graph=self.audit_graph,
+                graph=self._audit_graph(),
                 request_id=request.request_id,
                 user_query=request.query,
                 llm_response=request.response,
@@ -823,7 +853,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
     async def _probe_judge(self) -> Optional[bool]:
         """The judge's health (bounded); None without a judge to probe."""
-        if not self.provider:
+        if not self.provider or self._no_judge:
             return None
         try:
             healthy = bool(
@@ -897,6 +927,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             response.judge_fallback_active = judge.fallback_active
             response.knowledge_enabled = self.engine.knowledge.enabled
             JUDGE_FALLBACK_ACTIVE.set(1 if judge.fallback_active else 0)
+        response.runtime_config_version = self.runtime_state.version
+        response.runtime_config_epoch = self.runtime_state.epoch
         return response
 
     @_inflight("GetEngineInfo")
@@ -917,9 +949,17 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                 judge_healthy=judge_healthy,
                 qdrant_reachable=qdrant_reachable,
                 kb_claims=kb_points,
+                runtime_config_version=self.runtime_state.version,
+                runtime_config_epoch=self.runtime_state.epoch,
+                env_managed=self.runtime.env_managed() if self.runtime is not None else (),
+                runtime_warnings=self.runtime.warnings if self.runtime is not None else (),
             )
         else:
-            info = evaluator_pb2.EngineInfo(version=self._version)
+            info = evaluator_pb2.EngineInfo(
+                version=self._version,
+                runtime_config_version=self.runtime_state.version,
+                runtime_config_epoch=self.runtime_state.epoch,
+            )
         info.max_audits = self.max_audits
         if not info.max_rpcs:
             info.max_rpcs = DEFAULT_MAX_RPCS
@@ -961,6 +1001,129 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             return evaluator_pb2.RetrieveContextResponse()
         return _retrieve_response(outcome, int((time.monotonic() - started) * 1000))
 
+    @_inflight("ApplyRuntimeConfig")
+    async def ApplyRuntimeConfig(
+        self, request: evaluator_pb2.RuntimeConfig, context: Any
+    ) -> evaluator_pb2.ApplyRuntimeConfigResponse:
+        """
+        The gateway's runtime-config push (SPEC section 3.2; P4-PLAN D34).
+
+        Applied when it carries a new epoch or a version above the applied one
+        (runtime/state.py); otherwise nothing changes and the answer reports
+        what is applied, with `judge_status` `unchanged`. An applied push
+        installs `price_table_json` as the price table and hands the judge to
+        the ProviderManager (no LLM call); the decision config is unused in
+        2.0 (`decision_status` `unset`). Pushes are applied one at a time.
+        """
+        if self.runtime is None:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details("runtime_config_unavailable")
+            return evaluator_pb2.ApplyRuntimeConfigResponse()
+        async with self._apply_lock:
+            # Every secret received joins the redactor before anything is logged.
+            self.redactor.add(*(c.secret for c in request.credentials.values()))
+            state = self.runtime_state
+            if not state.accepts(request.epoch, request.version):
+                logger.info(
+                    f"Runtime config v{request.version} ignored: v{state.version} of the same "
+                    "epoch is applied"
+                )
+                return self._apply_response(
+                    "unchanged",
+                    [f"push v{request.version} ignored: v{state.version} is already applied"],
+                )
+            warnings: List[str] = []
+            if request.price_table_json:
+                try:
+                    table = PriceTable.from_json(request.price_table_json)
+                except PriceTableError as exc:
+                    warnings.append(f"price table not applied: {exc}")
+                else:
+                    set_active_price_table(table)
+            if request.HasField("decision"):
+                warnings.append(
+                    "decision config ignored: the engine does not run the decision model"
+                )
+            outcome = await self.runtime.apply(request)
+            warnings.extend(outcome.warnings)
+            if self.engine is not None:
+                self.engine.judge = self.runtime.selection
+                JUDGE_FALLBACK_ACTIVE.set(1 if self.engine.judge.fallback_active else 0)
+            if outcome.rebuilt:
+                self._judge_healthy = None
+            state.apply(request.epoch, request.version)
+            logger.info(
+                f"Runtime config v{request.version} applied: judge {outcome.judge_status} "
+                f"({self.runtime.selection.effective}, credential {self.runtime.selection.credential_source})"
+            )
+            return self._apply_response(outcome.judge_status, warnings)
+
+    def _apply_response(
+        self, judge_status: str, warnings: Sequence[str]
+    ) -> evaluator_pb2.ApplyRuntimeConfigResponse:
+        return evaluator_pb2.ApplyRuntimeConfigResponse(
+            applied_version=self.runtime_state.version,
+            applied_epoch=self.runtime_state.epoch,
+            judge_status=judge_status,
+            decision_status="unset",
+            warnings=[self.redactor.redact(w) for w in warnings],
+        )
+
+    @_inflight("DraftEvaluator")
+    async def DraftEvaluator(
+        self, request: evaluator_pb2.DraftEvaluatorRequest, context: Any
+    ) -> evaluator_pb2.DraftEvaluatorResponse:
+        """
+        Evaluator Studio "Draft with AI" (SPEC sections 2.4 row 34 and 7.3;
+        studio/drafter.py).
+
+        FAILED_PRECONDITION `no_judge` without a judge, INVALID_ARGUMENT
+        `description_required` without a description, UNAVAILABLE
+        `judge_unavailable` when the judge call fails. A draft that is still
+        invalid after the repair turn is a normal answer with its errors.
+        """
+        if not request.description.strip():
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("description_required")
+            return evaluator_pb2.DraftEvaluatorResponse()
+        if self._no_judge or self.provider is None:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details("no_judge")
+            return evaluator_pb2.DraftEvaluatorResponse()
+        if self.drafter is None:
+            self.drafter = EvaluatorDrafter()
+        draft = DraftRequest(
+            description=request.description,
+            route_name=request.route_name,
+            route_description=request.route_description,
+            existing_ids=list(request.existing_ids),
+            model_override=request.model_override,
+        )
+        try:
+            result = await self.drafter.draft(self.provider, draft)
+        except NoJudgeError:
+            context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+            context.set_details("no_judge")
+            return evaluator_pb2.DraftEvaluatorResponse()
+        except Exception as exc:
+            logger.warning(f"Draft with AI failed: {exc}")
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
+            context.set_details(self.redactor.redact(f"judge_unavailable: {exc}"))
+            return evaluator_pb2.DraftEvaluatorResponse()
+        logger.info(
+            f"Draft with AI: {'valid' if result.valid else f'{len(result.errors)} error(s)'} "
+            f"after {result.attempts} call(s) ({result.model})"
+        )
+        response = evaluator_pb2.DraftEvaluatorResponse(
+            spec_json=result.spec_json,
+            schema_errors=result.errors,
+            model=result.model,
+            attempts=result.attempts,
+        )
+        if result.cost is not None:
+            response.cost.CopyFrom(_cost_record(result.cost))
+        return response
+
     @_inflight("IngestDocuments")
     async def IngestDocuments(
         self, request: evaluator_pb2.IngestRequest, context
@@ -968,9 +1131,10 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         """
         Ingest documents into the knowledge base.
 
-        With a ClaimIngestor configured (the default when RAG is enabled),
-        documents are decomposed into atomic claims that must pass the Gate-1
-        entailment check; otherwise falls back to legacy chunk ingestion.
+        With a ClaimIngestor and a judge, documents are decomposed into atomic
+        claims that must pass the Gate-1 entailment check; otherwise falls
+        back to legacy chunk ingestion (no LLM call). Every judge call is
+        returned in `costs` (component kb_ingest), a failed ingest's included.
         """
         logger.info(f"Ingesting {len(request.documents)} documents")
 
@@ -982,10 +1146,16 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
                 status="unavailable: embedding service or vector store not configured",
             )
 
+        with cost_ledger(KB_INGEST) as ledger:
+            response = await self._ingest(request)
+        response.costs.extend(_cost_record(call) for call in ledger.calls)
+        return response
+
+    async def _ingest(self, request: evaluator_pb2.IngestRequest) -> evaluator_pb2.IngestResponse:
         try:
             await self.qdrant_store.aensure_collection()
 
-            if self.ingestor is not None:
+            if self.ingestor is not None and not self._no_judge:
                 documents = []
                 for doc in request.documents:
                     meta = dict(doc.metadata) if doc.metadata else {}
