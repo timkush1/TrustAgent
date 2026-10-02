@@ -100,11 +100,6 @@ export function evaluatorSideEffects(event: StreamEvent, queryClient: QueryClien
       void queryClient.invalidateQueries({ queryKey: qkcEvaluators.calibrationLists, refetchType: 'active' });
       void queryClient.invalidateQueries({ queryKey: qkcEvaluators.calibrationRecords, refetchType: 'active' });
       break;
-    case 'hello':
-    case 'resync':
-      // A reconnect may have missed calibration changes.
-      void queryClient.invalidateQueries({ queryKey: qkcEvaluators.calibrationLists, refetchType: 'active' });
-      break;
     default:
       break;
   }

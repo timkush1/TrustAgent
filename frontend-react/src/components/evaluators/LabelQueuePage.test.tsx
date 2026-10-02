@@ -5,7 +5,7 @@
  */
 import { cleanup, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
 import { copy } from '@/domain/presentation';
 import { axeViolations, formatViolations } from '@/test/axe';
@@ -13,6 +13,7 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import labelQueueFixture from '@contracts/fixtures/api/LabelQueue.default.json';
 import type { EvaluatorDetail, LabelPut } from '@/types/api';
 
 installMswServer();
@@ -160,6 +161,18 @@ describe('Label queue', { timeout: 20_000 }, () => {
     expect(await screen.findByText('Labelling needs an admin key')).toBeInTheDocument();
     expect(within(screen.getByText('Labelling needs an admin key').closest('div')!.parentElement!).getByRole('link', { name: 'Sign in as an admin' })).toBeInTheDocument();
     expect(control.callsTo('/api/labels/queue')).toHaveLength(0);
+  });
+
+  it('shows a loading state after 200 ms, then the first answer', async () => {
+    renderPage('/app/evaluators/labels');
+    server.use(
+      http.get(`${API}/api/labels/queue`, async () => {
+        await delay(600);
+        return HttpResponse.json(labelQueueFixture);
+      }),
+    );
+    expect(await screen.findByText(copy.states.loading)).toBeInTheDocument();
+    expect(await screen.findByText(QUESTION, {}, { timeout: 3000 })).toBeInTheDocument();
   });
 
   it('shows the Evaluators sections with the queue current', async () => {

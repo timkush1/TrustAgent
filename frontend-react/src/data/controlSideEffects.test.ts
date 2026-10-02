@@ -18,8 +18,9 @@ describe('control-plane side effects of stream events', () => {
   });
 
   it('refetches evaluators and block readiness on calibration and snapshot changes', () => {
-    expect(keysInvalidated([ev('calibration_updated')])).toEqual(['evaluators', 'policies']);
-    expect(keysInvalidated([ev('decision_model_changed')])).toEqual(['evaluators', 'policies']);
+    // The evaluator plane also refreshes its calibration lists and records (EVW-1).
+    expect(keysInvalidated([ev('calibration_updated')])).toEqual(['evaluator-plane', 'evaluator-plane', 'evaluators', 'policies']);
+    expect(keysInvalidated([ev('decision_model_changed')])).toEqual(['evaluator-plane', 'evaluator-plane', 'evaluators', 'policies']);
   });
 
   it('refreshes the overview, its evidence coverage and the policy after a (re)connect or resync', () => {
