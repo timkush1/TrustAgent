@@ -26,17 +26,21 @@ import { isNotServed } from '@/data/queries';
 import { pricingQuery } from '@/data/queries/costs';
 import { qkcSecurity } from '@/data/queries/security';
 import { costOverrideFinding, costOverrideNote, costPricePair, costPriceSourceWord } from '@/domain/presentation';
-import type { FieldError, SettingsView } from '@/types/api';
+import type { FieldError, PriceEntry, SettingsView } from '@/types/api';
 import {
   emptyRow,
   overrideFindings,
   overridesFromRows,
+  rebaseOverrides,
   rowProblems,
   rowsFromOverrides,
   sameOverrides,
   type OverrideRow,
   type RowField,
 } from './budgetsModel';
+import { useSettingsDraft } from './useSettingsDraft';
+
+const readOverrides = (s: SettingsView): PriceEntry[] => s.runtime.pricing_overrides;
 
 const KNOWN_PROVIDERS = ['openrouter', 'typesafe', 'anthropic', 'openai', 'ollama'];
 
@@ -81,7 +85,8 @@ function EffectiveTable() {
               </th>
               <td className="px-3 py-1.5 text-right align-top text-fg tabular">{costPricePair(e)}</td>
               <td className="px-3 py-1.5 align-top">
-                {e.label === 'override' ? (
+                {e.label !== 'vendor_price' ? (
+                  // Your override, or an entry with no vendor behind it: never labelled Vendor.
                   <Badge size="sm">{costPriceSourceWord(e.label)}</Badge>
                 ) : (
                   <EvidenceBadge
@@ -188,21 +193,21 @@ export interface PricesPanelProps {
 export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
-  const saved = settings.runtime.pricing_overrides;
-  const [rows, setRows] = useState<OverrideRow[]>(() => rowsFromOverrides(saved));
-  const [basis, setBasis] = useState(settings.version);
+  // The rows as edited, over the version they were based on (its ETag is the save's If-Match).
+  const form = useSettingsDraft<PriceEntry[], OverrideRow[]>(settings, {
+    read: readOverrides,
+    toDraft: rowsFromOverrides,
+    rebase: rebaseOverrides,
+  });
+  const rows = form.draft;
+  const setRows = (next: OverrideRow[]) => form.setDraft(() => next);
   const [showProblems, setShowProblems] = useState(false);
   const [findings, setFindings] = useState<FieldError[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
 
-  const dirty = !sameOverrides(rows, saved);
-  // A newer version from elsewhere (another tab, a live update) replaces an unedited form.
-  if (settings.version !== basis && !dirty) {
-    setBasis(settings.version);
-    setRows(rowsFromOverrides(saved));
-  }
+  const dirty = !sameOverrides(rows, form.base);
 
   const byRow = new Map<number, FieldError[]>();
   for (const f of overrideFindings(findings)) byRow.set(f.index, [...(byRow.get(f.index) ?? []), f.finding]);
@@ -215,17 +220,19 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
     setFindings([]);
     setWarnings([]);
     try {
-      const view = await ds.patchSettings({ pricing_overrides: overridesFromRows(rows) }, settings.etag);
+      const view = await ds.patchSettings({ pricing_overrides: overridesFromRows(rows) }, form.etag);
       queryClient.setQueryData(qkcSecurity.settings, view);
-      setBasis(view.version);
-      setRows(rowsFromOverrides(view.runtime.pricing_overrides));
+      form.reset(view);
       setShowProblems(false);
       setWarnings(view.warnings.filter((w) => w.key === 'pricing_overrides').map((w) => costOverrideFinding({ code: w.code, message: w.message })));
       void queryClient.invalidateQueries({ queryKey: pricingQuery(ds).queryKey });
       notify.success('Prices saved');
     } catch (err) {
-      if (isApiError(err) && err.status === 422 && overrideFindings(err.fieldErrors).length > 0) setFindings(err.fieldErrors);
-      else setError(err);
+      if (isApiError(err) && err.status === 422 && overrideFindings(err.fieldErrors).length > 0) {
+        setFindings(err.fieldErrors);
+        // Findings on no row (the list as a whole) are shown with the save's failure, never dropped.
+        if (err.fieldErrors.length > overrideFindings(err.fieldErrors).length) setError(err);
+      } else setError(err);
     } finally {
       setPending(false);
     }
@@ -233,6 +240,8 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
 
   const reason: Reason | null = writeReason ?? (dirty ? null : { text: 'Nothing to save yet' });
   const failure = error ? describeError(error) : null;
+  const onRow = new Set(isApiError(error) ? overrideFindings(error.fieldErrors).map((f) => f.finding) : []);
+  const listFindings = isApiError(error) ? error.fieldErrors.filter((f) => !onRow.has(f)) : [];
   const stale = isApiError(error) && error.code === 'stale_version';
 
   return (
@@ -259,9 +268,24 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
         {failure ? (
           <div role="alert" className="space-y-1 rounded-md border border-border bg-surface px-3 py-2 text-sm">
             <p className="text-fg">Couldn’t save the prices: {failure.message}</p>
+            {listFindings.map((f, i) => (
+              <p key={i} className="text-fg">
+                {costOverrideFinding(f)}
+              </p>
+            ))}
             {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
             {stale ? (
-              <Button size="sm" onClick={() => void queryClient.invalidateQueries({ queryKey: qkcSecurity.settings })}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  // Drop the edits and follow the latest version (the refetch brings anything newer).
+                  form.reset(settings);
+                  setFindings([]);
+                  setShowProblems(false);
+                  setError(null);
+                  void queryClient.invalidateQueries({ queryKey: qkcSecurity.settings });
+                }}
+              >
                 Reload settings
               </Button>
             ) : null}
@@ -285,9 +309,10 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
               variant="ghost"
               disabled={pending}
               onClick={() => {
-                setRows(rowsFromOverrides(saved));
+                form.reset(settings);
                 setFindings([]);
                 setShowProblems(false);
+                setError(null);
               }}
             >
               Discard changes

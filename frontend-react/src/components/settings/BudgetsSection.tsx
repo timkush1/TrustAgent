@@ -29,14 +29,20 @@ import {
   BUDGET_KINDS,
   budgetEnvManaged,
   budgetsPatch,
+  capDrafts,
   capOf,
+  capsOf,
   capText,
   enforcingReserve,
   parseCap,
+  rebaseCaps,
   spendToday,
+  type CapDrafts,
+  type Caps,
 } from '@/components/savings/budgetsModel';
 import { PricesPanel } from '@/components/savings/PricesPanel';
 import { SpendBar } from '@/components/savings/SpendBar';
+import { useSettingsDraft } from '@/components/savings/useSettingsDraft';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
@@ -48,11 +54,7 @@ import { qkcSecurity, settingsQuery } from '@/data/queries/security';
 import { useSystemStatus } from '@/data/useSystem';
 import { formatUsd } from '@/domain/format';
 import { copy, costBudgetView, fillTemplate, type CostBudgetKind } from '@/domain/presentation';
-import type { RuntimeSettingsPatch, SettingsView, SystemStatus } from '@/types/api';
-
-type Drafts = Record<CostBudgetKind, string>;
-
-const draftsOf = (s: SettingsView): Drafts => ({ decision: capText(capOf(s, 'decision')), llm: capText(capOf(s, 'llm')) });
+import type { FieldError, RuntimeSettingsPatch, SettingsView, SystemStatus } from '@/types/api';
 
 /** What crossing today's spend does, per cap. */
 const BELOW_SPEND: Record<CostBudgetKind, string> = {
@@ -68,8 +70,9 @@ interface Pending {
 function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView; status: SystemStatus | null; writeReason: Reason | null }) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
-  const [drafts, setDrafts] = useState<Drafts>(() => draftsOf(settings));
-  const [basis, setBasis] = useState(settings.version);
+  // The caps as typed, over the version they were based on (its ETag is the save's If-Match).
+  const form = useSettingsDraft<Caps, CapDrafts>(settings, { read: capsOf, toDraft: capDrafts, rebase: rebaseCaps });
+  const drafts = form.draft;
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
@@ -83,12 +86,8 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
   }
   const invalid = BUDGET_KINDS.some((k) => 'error' in parsed[k] && !budgetEnvManaged(settings, k));
   const patch = invalid ? null : budgetsPatch(settings, values);
-  const dirty = BUDGET_KINDS.some((k) => drafts[k] !== draftsOf(settings)[k]);
-  // A newer version from elsewhere replaces an unedited form.
-  if (settings.version !== basis && !dirty) {
-    setBasis(settings.version);
-    setDrafts(draftsOf(settings));
-  }
+  const edited = (kind: CostBudgetKind) => drafts[kind] !== capText(form.base[kind]);
+  const dirty = BUDGET_KINDS.some(edited);
   const serverErrors = isApiError(error) ? error.fieldErrors : [];
   const reserve = enforcingReserve(settings);
   const allEnv = BUDGET_KINDS.every((k) => budgetEnvManaged(settings, k));
@@ -97,8 +96,7 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
     queryClient.setQueryData(qkcSecurity.settings, view);
     // /api/status carries the caps the banner and the spend bars read.
     void queryClient.invalidateQueries({ queryKey: qk.status });
-    setBasis(view.version);
-    setDrafts(draftsOf(view));
+    form.reset(view);
     setTouched(false);
     setConfirm(null);
     notify.success('Budgets saved');
@@ -110,7 +108,7 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
     setSaving(true);
     setError(null);
     try {
-      applied(await ds.patchSettings(patch, settings.etag));
+      applied(await ds.patchSettings(patch, form.etag));
     } catch (err) {
       if (isApiError(err) && err.code === 'confirmation_required') {
         const routes = Array.isArray(err.details.routes) ? err.details.routes.filter((r): r is string => typeof r === 'string') : [];
@@ -126,7 +124,9 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
   const reason: Reason | null =
     writeReason ??
     (allEnv ? 'env_managed' : invalid ? { text: 'Fix the amounts above first' } : patch ? null : { text: 'Nothing to save yet' });
-  const failure = error && !(isApiError(error) && error.status === 422) ? describeError(error) : null;
+  // A 422 shows on the cap it names; one that names neither cap is shown here, never dropped.
+  const onCap = (f: FieldError) => BUDGET_KINDS.some((k) => f.path === costBudgetView(k).path);
+  const failure = error && !(isApiError(error) && error.status === 422 && error.fieldErrors.some(onCap)) ? describeError(error) : null;
   const stale = isApiError(error) && error.code === 'stale_version';
 
   return (
@@ -142,16 +142,15 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
           const env = budgetEnvManaged(settings, kind);
           const p = parsed[kind];
           const spend = spendToday(status, kind);
-          const edited = drafts[kind] !== capText(capOf(settings, kind));
           const fieldError =
-            serverErrors.find((f) => f.path === view.path)?.message ?? ((touched || edited) && !env && 'error' in p ? p.error : undefined);
+            serverErrors.find((f) => f.path === view.path)?.message ?? ((touched || edited(kind)) && !env && 'error' in p ? p.error : undefined);
           const below = !env && 'value' in p && p.value > 0 && spend !== null && p.value < spend.spent;
           return (
             <div key={kind} data-budget={kind} className="space-y-2">
               <Field label={`${view.title}, USD per day`} description={view.description} error={fieldError}>
                 <Input
                   value={env ? capText(capOf(settings, kind)) : drafts[kind]}
-                  onValueChange={(v) => setDrafts((d) => ({ ...d, [kind]: v }))}
+                  onValueChange={(v) => form.setDraft((d) => ({ ...d, [kind]: v }))}
                   readOnly={env || writeReason !== null}
                   inputMode="decimal"
                   className="max-w-40 tabular"
@@ -172,9 +171,25 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
             <p className="text-fg">
               Couldn’t save the budgets: {stale ? copy.settings.stale_version : failure.message}
             </p>
+            {serverErrors
+              .filter((f) => !onCap(f))
+              .map((f, i) => (
+                <p key={i} className="text-fg">
+                  {f.message}
+                </p>
+              ))}
             {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
             {stale ? (
-              <Button size="sm" onClick={() => void queryClient.invalidateQueries({ queryKey: qkcSecurity.settings })}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  // Drop the edits and follow the latest version (the refetch brings anything newer).
+                  form.reset(settings);
+                  setTouched(false);
+                  setError(null);
+                  void queryClient.invalidateQueries({ queryKey: qkcSecurity.settings });
+                }}
+              >
                 Reload settings
               </Button>
             ) : null}
@@ -193,7 +208,7 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
               variant="ghost"
               disabled={saving}
               onClick={() => {
-                setDrafts(draftsOf(settings));
+                form.reset(settings);
                 setTouched(false);
                 setError(null);
               }}
@@ -212,7 +227,7 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
           confirmLabel="Save anyway"
           onConfirm={async () => {
             if (!confirm) return;
-            applied(await ds.patchSettings(confirm.patch, settings.etag, { confirm: true }));
+            applied(await ds.patchSettings(confirm.patch, form.etag, { confirm: true }));
           }}
         >
           <p className="text-sm text-fg-muted">

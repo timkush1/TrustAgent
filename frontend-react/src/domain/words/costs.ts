@@ -137,9 +137,13 @@ export function costBudgetView(kind: CostBudgetKind): CostBudgetView {
 
 // ----------------------------------------------------------------------------------------- prices
 
-/** Where a price comes from: the vendor's list price, or your own override. */
+/**
+ * Where a price comes from: the vendor's list price, your own override, or neither (an entry the
+ * table carries without a source, such as a local model whose compute is not priced): an assumption.
+ */
 export function costPriceSourceWord(label: PriceEntry['label']): string {
-  return label === 'override' ? 'Your price' : 'Vendor list price';
+  if (label === 'override') return 'Your price';
+  return label === 'vendor_price' ? 'Vendor list price' : 'Assumed price';
 }
 
 /** "$0.042 / $0 per million tokens (in / out)". */

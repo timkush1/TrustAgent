@@ -10,6 +10,8 @@ import {
   overrideFindings,
   overridesFromRows,
   parseCap,
+  rebaseCaps,
+  rebaseOverrides,
   rowProblems,
   rowsFromOverrides,
   sameOverrides,
@@ -51,6 +53,22 @@ describe('budgets model', () => {
     expect(enforcingReserve(withReserve('0.1'))).toBe(0.1);
     expect(enforcingReserve(withReserve('2'))).toBe(0.25);
     expect(enforcingReserve(withReserve('x'))).toBe(0.25);
+    // An empty value is unset, never a reserve of 0: the key's own default applies.
+    const unset = (fallback: string) => ({
+      groups: [{ name: 'Budgets', keys: [{ ...base.groups[0].keys[0], key: 'TRUTHTABLE_SPEND_ENFORCING_RESERVE', value: '', default: fallback }] }],
+    });
+    expect(enforcingReserve(unset('0.3'))).toBe(0.3);
+    expect(enforcingReserve(unset(''))).toBe(0.25);
+  });
+
+  it('carries cap drafts over to a newer version, and calls an edited cap changed elsewhere a conflict', () => {
+    const base = { decision: 2, llm: 5 };
+    // Nothing changed underneath: the drafts stay as typed.
+    expect(rebaseCaps({ decision: '3', llm: '5' }, base, base)).toEqual({ decision: '3', llm: '5' });
+    // The other cap changed elsewhere: it follows, the edit stays.
+    expect(rebaseCaps({ decision: '3', llm: '5' }, base, { decision: 2, llm: 9 })).toEqual({ decision: '3', llm: '9' });
+    // The edited cap changed elsewhere too: a conflict, never a silent overwrite.
+    expect(rebaseCaps({ decision: '3', llm: '5' }, base, { decision: 4, llm: 5 })).toBeNull();
   });
 
   it('takes today’s spend from status, real spend only', () => {
@@ -68,6 +86,19 @@ describe('price overrides', () => {
     expect(overridesFromRows(rows)).toEqual(saved);
     expect(sameOverrides([{ ...rows[0], input: '0.2' }], saved)).toBe(false);
     expect(sameOverrides([], saved)).toBe(false);
+  });
+
+  it('carries override rows over to a newer list only when that loses no edit', () => {
+    const mine = { provider: 'openai', match: 'gpt-4o-mini*', input_per_mtok: 0.12, output_per_mtok: 0.5, label: 'override' as const };
+    const theirs = { ...mine, match: 'gpt-4o*', input_per_mtok: 2.5 };
+    const rows = rowsFromOverrides([mine]);
+    // The list did not change underneath: the rows stay, edited or not.
+    const edited = [{ ...rows[0], input: '0.2' }];
+    expect(rebaseOverrides(edited, [mine], [{ ...mine }])).toBe(edited);
+    // Unedited rows follow the newer list.
+    expect(overridesFromRows(rebaseOverrides(rows, [mine], [theirs]) ?? [])).toEqual([theirs]);
+    // Edited rows over a changed list: a conflict.
+    expect(rebaseOverrides(edited, [mine], [theirs])).toBeNull();
   });
 
   it('checks a row against the pricing.v1 rules', () => {

@@ -1,7 +1,10 @@
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import type { QueryClient } from '@tanstack/react-query';
+import { act, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
+import pricingFixture from '@contracts/fixtures/api/PricingTable.default.json';
+import { qkcSecurity } from '@/data/queries/security';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
@@ -9,7 +12,7 @@ import { settingsView } from '@/test/control/securityHandlers';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { systemStatus } from '@/test/status';
-import type { SettingsView } from '@/types/api';
+import type { PriceEntry, PricingTable, SettingsView } from '@/types/api';
 
 installMswServer();
 afterEach(() => stopLive());
@@ -19,6 +22,32 @@ const PATH = '/app/settings/budgets';
 const spentStatus = (decision: number, llm = 0.41) => ({
   budgets: { ...systemStatus().budgets, decision_usd_day: 2, llm_usd_day: 5, decision_spent_today_usd: decision, llm_spent_today_usd: llm },
 });
+
+/** The settings fixture one save later (version 8), with these caps and overrides. */
+function newerSettings(budgets: Partial<SettingsView['runtime']['budgets']>, overrides?: PriceEntry[]): SettingsView {
+  const base = settingsView();
+  return {
+    ...base,
+    version: 8,
+    etag: '"s8"',
+    runtime: {
+      ...base.runtime,
+      budgets: { ...base.runtime.budgets, ...budgets },
+      ...(overrides ? { pricing_overrides: overrides } : {}),
+    },
+  };
+}
+
+/**
+ * A newer settings version reaching the page (a live update, another tab's save), with React
+ * Query's batched notification flushed so the page has rendered it before the next assertion.
+ */
+async function pushSettings(queryClient: QueryClient, view: SettingsView) {
+  await act(async () => {
+    queryClient.setQueryData(qkcSecurity.settings, view);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
 
 async function decisionInput() {
   return screen.findByRole('textbox', { name: 'Fast-check budget, USD per day' });
@@ -136,6 +165,73 @@ describe('Settings → Budgets', { timeout: 20_000 }, () => {
     await waitFor(() => expect(control.callsTo('/api/settings', 'GET').length).toBeGreaterThan(1));
   });
 
+  it('takes in a cap changed elsewhere that you did not edit, and saves against that version', async () => {
+    const user = userEvent.setup();
+    const { control, queryClient } = renderPage(PATH);
+    const input = await decisionInput();
+    await user.clear(input);
+    await user.type(input, '3');
+    // Another tab raises the deep-audit cap (version 8).
+    const newer = newerSettings({ llm_usd_day: 9 });
+    control.state.settings = newer;
+    await pushSettings(queryClient, newer);
+    expect(screen.getByRole('textbox', { name: 'Deep-audit budget, USD per day' })).toHaveValue('9');
+    expect(input).toHaveValue('3');
+    await user.click(screen.getByRole('button', { name: 'Save budgets' }));
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+    const call = control.callsTo('/api/settings', 'PATCH')[0];
+    expect(call.body).toEqual({ budgets: { decision_usd_day: 3 } });
+    expect(call.headers.get('if-match')).toBe('"s8"');
+  });
+
+  it('never overwrites a cap changed elsewhere that you edited too, and Reload shows the latest', async () => {
+    const user = userEvent.setup();
+    const { control, queryClient } = renderPage(PATH);
+    const input = await decisionInput();
+    await user.clear(input);
+    await user.type(input, '4');
+    const newer = newerSettings({ decision_usd_day: 3 });
+    control.state.settings = newer;
+    await pushSettings(queryClient, newer);
+    expect(input).toHaveValue('4');
+    await user.click(screen.getByRole('button', { name: 'Save budgets' }));
+    // Sent against the version it was based on, so the proxy refuses it as stale.
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+    expect(control.callsTo('/api/settings', 'PATCH')[0].headers.get('if-match')).toBe('"s7"');
+    expect(await screen.findByText(/Settings changed in another tab/)).toBeInTheDocument();
+    expect(newer.runtime.budgets.decision_usd_day).toBe(3);
+    await user.click(screen.getByRole('button', { name: 'Reload settings' }));
+    expect(await decisionInput()).toHaveValue('3');
+    expect(screen.queryByText(/Settings changed in another tab/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save budgets' })).toHaveAccessibleDescription('Nothing to save yet');
+  });
+
+  it('shows a refusal that names neither cap instead of dropping it', async () => {
+    const user = userEvent.setup();
+    renderPage(PATH);
+    server.use(
+      http.patch(`${API}/api/settings`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'validation_failed',
+              message: 'Some settings are not valid.',
+              field_errors: [{ path: 'budgets', code: 'invalid_value', message: 'This value isn’t allowed here.' }],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const input = await decisionInput();
+    await user.clear(input);
+    await user.type(input, '3');
+    await user.click(screen.getByRole('button', { name: 'Save budgets' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t save the budgets: Some settings are not valid.');
+    expect(alert).toHaveTextContent('This value isn’t allowed here.');
+  });
+
   it('says why saving is off on a read-only stack', async () => {
     renderPage(PATH, { status: { readonly: true } });
     expect(await decisionInput()).toHaveAttribute('readonly');
@@ -173,6 +269,16 @@ describe('Settings → Budgets → Prices', { timeout: 20_000 }, () => {
     expect(within(rows[1]).getByRole('button', { name: 'Vendor: how “typesafe/jev* price” was produced' })).toBeInTheDocument();
   });
 
+  it('never calls a price without a source a vendor price', async () => {
+    const local: PriceEntry = { provider: 'ollama', match: '*', input_per_mtok: 0, output_per_mtok: 0, note: 'Local model: compute is not priced.' };
+    const control = createControlApi({ pricing: { ...pricingFixture, entries: [...pricingFixture.entries, local] } as PricingTable });
+    renderPage(PATH, { control });
+    const table = await screen.findByRole('table', { name: /^Prices in use/ });
+    const row = within(table).getAllByRole('row').at(-1)!;
+    expect(within(row).getByText('Assumed price')).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: /^Vendor:/ })).toBeNull();
+  });
+
   it('adds an override and saves the list labelled as yours', async () => {
     const user = userEvent.setup();
     const { control } = renderPage(PATH);
@@ -190,6 +296,31 @@ describe('Settings → Budgets → Prices', { timeout: 20_000 }, () => {
     });
     // The effective table is read again.
     await waitFor(() => expect(control.callsTo('/api/pricing').length).toBeGreaterThan(1));
+  });
+
+  it('replaces unedited overrides with a newer version, and keeps edited ones against their own', async () => {
+    const user = userEvent.setup();
+    const { control, queryClient } = renderPage(PATH);
+    await screen.findByText('No overrides: every estimate uses the prices above.');
+    const theirs: PriceEntry = { provider: 'openai', match: 'gpt-4o*', input_per_mtok: 2.5, output_per_mtok: 10, label: 'override' };
+    const v8 = newerSettings({}, [theirs]);
+    control.state.settings = v8;
+    await pushSettings(queryClient, v8);
+    const row = document.querySelector('[data-override-row="0"]') as HTMLElement;
+    expect(within(row).getByRole('textbox', { name: /^Model/ })).toHaveValue('gpt-4o*');
+    expect(screen.getByRole('button', { name: 'Save prices' })).toHaveAccessibleDescription('Nothing to save yet');
+
+    // Now an edit, and another change to the list elsewhere: the save goes against version 8.
+    await user.clear(within(row).getByRole('textbox', { name: 'Input, USD per million tokens' }));
+    await user.type(within(row).getByRole('textbox', { name: 'Input, USD per million tokens' }), '3');
+    const v9 = { ...newerSettings({}, [{ ...theirs, input_per_mtok: 2 }]), version: 9, etag: '"s9"' };
+    control.state.settings = v9;
+    await pushSettings(queryClient, v9);
+    expect(within(row).getByRole('textbox', { name: 'Input, USD per million tokens' })).toHaveValue('3');
+    await user.click(screen.getByRole('button', { name: 'Save prices' }));
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+    expect(control.callsTo('/api/settings', 'PATCH')[0].headers.get('if-match')).toBe('"s8"');
+    expect(await screen.findByText(/Couldn’t save the prices/)).toBeInTheDocument();
   });
 
   it('checks a row before sending it', async () => {

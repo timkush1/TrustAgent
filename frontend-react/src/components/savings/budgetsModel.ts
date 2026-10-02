@@ -44,7 +44,9 @@ export function enforcingReserve(settings: Pick<SettingsView, 'groups'>): number
   for (const g of settings.groups) {
     const key = g.keys.find((k) => k.key === RESERVE_KEY);
     if (!key) continue;
-    const v = Number(key.value);
+    // An empty value is unset (Number('') would read it as 0): the key's default applies.
+    const text = key.value.trim() !== '' ? key.value : key.default;
+    const v = text.trim() === '' ? Number.NaN : Number(text);
     return Number.isFinite(v) && v >= 0 && v <= 1 ? v : DEFAULT_RESERVE;
   }
   return DEFAULT_RESERVE;
@@ -79,6 +81,31 @@ export function parseCap(text: string): { value: number } | { error: string } {
 /** The text a cap shows in its input ("2", "2.5"). */
 export function capText(value: number): string {
   return String(Math.round(value * 100) / 100);
+}
+
+export type Caps = Record<CostBudgetKind, number>;
+export type CapDrafts = Record<CostBudgetKind, string>;
+
+export function capsOf(settings: Pick<SettingsView, 'runtime'>): Caps {
+  return { decision: capOf(settings, 'decision'), llm: capOf(settings, 'llm') };
+}
+
+export function capDrafts(caps: Caps): CapDrafts {
+  return { decision: capText(caps.decision), llm: capText(caps.llm) };
+}
+
+/**
+ * The cap drafts carried over to newer saved caps (useSettingsDraft): a cap changed elsewhere
+ * replaces an unedited draft, and is a conflict (null) when the viewer edited that cap too.
+ */
+export function rebaseCaps(drafts: CapDrafts, base: Caps, next: Caps): CapDrafts | null {
+  const out = { ...drafts };
+  for (const kind of BUDGET_KINDS) {
+    if (next[kind] === base[kind]) continue;
+    if (drafts[kind] !== capText(base[kind])) return null;
+    out[kind] = capText(next[kind]);
+  }
+  return out;
 }
 
 /** The patch a save sends: only the caps that changed (null when nothing did). */
@@ -153,20 +180,35 @@ export function overridesFromRows(rows: readonly OverrideRow[]): PriceEntry[] {
   }));
 }
 
+/** Two override lists price the same models the same way, in the same order. */
+export function sameEntries(a: readonly PriceEntry[], b: readonly PriceEntry[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((e, i) => {
+      const s = b[i];
+      return (
+        e.provider === s.provider &&
+        e.match === s.match &&
+        e.input_per_mtok === s.input_per_mtok &&
+        e.output_per_mtok === s.output_per_mtok &&
+        (e.note ?? '') === (s.note ?? '')
+      );
+    })
+  );
+}
+
 /** Rows and saved overrides say the same thing (so there is nothing to save). */
 export function sameOverrides(rows: readonly OverrideRow[], saved: readonly PriceEntry[]): boolean {
-  if (rows.length !== saved.length) return false;
-  const next = overridesFromRows(rows);
-  return next.every((e, i) => {
-    const s = saved[i];
-    return (
-      e.provider === s.provider &&
-      e.match === s.match &&
-      e.input_per_mtok === s.input_per_mtok &&
-      e.output_per_mtok === s.output_per_mtok &&
-      (e.note ?? '') === (s.note ?? '')
-    );
-  });
+  return rows.length === saved.length && sameEntries(overridesFromRows(rows), saved);
+}
+
+/**
+ * The override rows carried over to a newer saved list (useSettingsDraft): kept when the list did
+ * not change, replaced when the viewer had not edited it, and a conflict (null) otherwise.
+ */
+export function rebaseOverrides(rows: OverrideRow[], base: readonly PriceEntry[], next: readonly PriceEntry[]): OverrideRow[] | null {
+  if (sameEntries(next, base)) return rows;
+  return sameOverrides(rows, base) ? rowsFromOverrides(next) : null;
 }
 
 const OVERRIDE_PATH = /^pricing_overrides\[(\d+)\](?:\.([a-z_]+))?$/;
