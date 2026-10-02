@@ -40,6 +40,13 @@ func (s *server) initRuntime(d serverDeps) {
 	}
 	m := runtimecfg.New(opts)
 	s.rt = &runtimeParts{manager: m, store: d.pg}
+	// /api/status reads the credential store's state, the decision credential and the runtime
+	// warnings from the snapshot in effect (D32, D77, D79).
+	s.status.runtime = m.Current
+	s.status.credentials = func() statusCredentials {
+		snap := m.Current()
+		return statusCredentials{Store: snap.StoreState, Undecryptable: append([]string{}, snap.Undecryptable...)}
+	}
 	if d.pg == nil {
 		return
 	}

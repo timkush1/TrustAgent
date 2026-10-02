@@ -7,6 +7,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/runtimecfg"
 )
 
@@ -20,10 +21,18 @@ import (
 // enforcingRoutes lists the enforcing fail-closed routes of the policy in effect, in policy order
 // (the default route last).
 func (s *server) enforcingRoutes() []string {
-	if s.policies == nil || s.policies.Engine == nil {
+	if s.policies == nil {
 		return nil
 	}
-	p := s.policies.Engine.Current()
+	return enforcingRoutesOf(s.policies.Engine)
+}
+
+// enforcingRoutesOf lists the enforcing fail-closed routes of the policy e has in effect.
+func enforcingRoutesOf(e *policy.Engine) []string {
+	if e == nil {
+		return nil
+	}
+	p := e.Current()
 	if p == nil {
 		return nil
 	}
@@ -90,10 +99,16 @@ func (s *server) failClosedWarning() *runtimecfg.Warning {
 	if s.status == nil {
 		return nil
 	}
-	if !slices.Contains(unusableDecisionStates, s.status.decisionModel().State) {
+	return s.status.failClosedWarning()
+}
+
+// failClosedWarning is the fail_closed_unprotected warning of the decision model's live state and
+// the policy in effect.
+func (r *statusReporter) failClosedWarning() *runtimecfg.Warning {
+	if !slices.Contains(unusableDecisionStates, r.decisionModel().State) {
 		return nil
 	}
-	routes := s.enforcingRoutes()
+	routes := enforcingRoutesOf(r.policies)
 	if len(routes) == 0 {
 		return nil
 	}
