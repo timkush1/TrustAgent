@@ -12,7 +12,10 @@ import {
   secAuditActionLabel,
   secBackendCardOf,
   secBackendSettingLabel,
+  secComponentStateView,
   secCredentialLabel,
+  secDecisionStateView,
+  secEnvKeyOfPath,
   secJoinWords,
   secJudgeSettingLabel,
   secProbeReadyText,
@@ -71,6 +74,15 @@ describe('security words', () => {
     expect(secBackendCardOf('mock')).toBeNull();
     for (const b of ['auto', 'mock', 'off', 'compatible'] as const) notRaw(secBackendSettingLabel(b), b);
     for (const p of SEC_JUDGE_PROVIDERS) notRaw(secJudgeSettingLabel(p), p);
+  });
+
+  it('names the fast check and component states, and the env var behind a settings path (D33)', () => {
+    const states = ['off', 'mock', 'checking', 'ready', 'degraded', 'breaker_open', 'unauthorized', 'no_credits', 'budget_exhausted', 'misconfigured', 'unreachable'] as const;
+    for (const st of states) notRaw(secDecisionStateView(st).label, st);
+    for (const st of ['up', 'degraded', 'down', 'disabled', 'unknown'] as const) notRaw(secComponentStateView(st).label, st);
+    expect(secEnvKeyOfPath('decision_model.backend')).toBe('TRUTHTABLE_JEV_BACKEND');
+    expect(secEnvKeyOfPath('judge.provider')).toBe('LLM_PROVIDER');
+    expect(secEnvKeyOfPath('bindings.judge')).toBeNull();
   });
 
   it('fills warnings and the probe line', () => {

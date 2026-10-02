@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import type {
   BindingSkipReason,
+  ComponentStateName,
+  DecisionModelStatus,
   BindingTarget,
   CredentialProvider,
   CredentialVerifyStatus,
@@ -248,6 +250,60 @@ export function secJudgeSettingLabel(provider: RuntimeSettings['judge']['provide
 /** Which credential a judge provider uses, for the "uses key" hint; null for the ones that need none. */
 export function secJudgeCredential(provider: RuntimeSettings['judge']['provider']): SecVendorName | null {
   return provider === 'openrouter' || provider === 'anthropic' || provider === 'openai' ? provider : null;
+}
+
+const DECISION_STATES: Record<DecisionModelStatus['state'], { label: string; tone: Tone }> = {
+  ready: { label: 'Ready', tone: 'success' },
+  mock: { label: 'Simulated checks', tone: 'info' },
+  checking: { label: 'Checking the connection…', tone: 'neutral' },
+  off: { label: 'Off: answers pass unchecked', tone: 'warning' },
+  degraded: { label: 'Degraded', tone: 'warning' },
+  breaker_open: { label: 'Paused after repeated errors', tone: 'warning' },
+  unauthorized: { label: 'Key rejected', tone: 'danger' },
+  no_credits: { label: 'No OpenRouter credits', tone: 'danger' },
+  budget_exhausted: { label: "Today's budget is used up", tone: 'warning' },
+  misconfigured: { label: 'Misconfigured', tone: 'danger' },
+  unreachable: { label: 'Unreachable', tone: 'warning' },
+};
+
+/** Words and tone for the fast check's live state (SystemStatus.decision_model.state). */
+export function secDecisionStateView(state: DecisionModelStatus['state']): { label: string; tone: Tone } {
+  return DECISION_STATES[state] ?? { label: humanizeId(state), tone: 'neutral' };
+}
+
+const COMPONENT_STATES: Record<ComponentStateName, { label: string; tone: Tone }> = {
+  up: { label: 'Ready', tone: 'success' },
+  degraded: { label: 'Degraded', tone: 'warning' },
+  down: { label: 'Down', tone: 'danger' },
+  disabled: { label: 'Off', tone: 'neutral' },
+  unknown: { label: 'Unknown', tone: 'neutral' },
+};
+
+/** Words and tone for a component state (the judge, the engine). */
+export function secComponentStateView(state: ComponentStateName): { label: string; tone: Tone } {
+  return COMPONENT_STATES[state] ?? COMPONENT_STATES.unknown;
+}
+
+/** The env vars behind env-managed settings paths (P4-PLAN D33), for "Set in .env (…)". */
+const PATH_ENV: Record<string, string> = {
+  'decision_model.backend': 'TRUTHTABLE_JEV_BACKEND',
+  'decision_model.model': 'TRUTHTABLE_JEV_MODEL',
+  'decision_model.base_url': 'TRUTHTABLE_JEV_BASE_URL',
+  'decision_model.path': 'TRUTHTABLE_JEV_PATH',
+  'judge.provider': 'LLM_PROVIDER',
+  'judge.model': 'LLM_MODEL',
+  'upstream.default.url': 'TRUTHTABLE_UPSTREAM_URL',
+  'upstream.default.auth_header': 'TRUTHTABLE_UPSTREAM_AUTH_HEADER',
+  'upstream.anthropic.url': 'TRUTHTABLE_ANTHROPIC_UPSTREAM_URL',
+  'upstream.fallback.url': 'TRUTHTABLE_FALLBACK_UPSTREAM_URL',
+  'upstream.fallback.format': 'TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT',
+  'budgets.decision_usd_day': 'TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY',
+  'budgets.llm_usd_day': 'TRUTHTABLE_SPEND_CAP_LLM_USD_DAY',
+};
+
+/** The env var that pins a RuntimeSettings path (D33), or null (bindings follow a key, not one var). */
+export function secEnvKeyOfPath(path: string): string | null {
+  return PATH_ENV[path] ?? null;
 }
 
 // ------------------------------------------------------------------------------ API keys
