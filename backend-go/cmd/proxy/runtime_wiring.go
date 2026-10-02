@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc/status"
 
+	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/runtimecfg"
 	"github.com/truthtable/backend-go/internal/store"
 )
@@ -52,6 +55,45 @@ func (s *server) initRuntime(d serverDeps) {
 // SEC-5; until then it registers nothing.
 func (s *server) mountSecurityAPI(api *gin.RouterGroup, g apiGuards) {
 	_, _ = api, g
+}
+
+// processRedactor is the Redactor every REST error message passes through (apiRedact, D42):
+// the process Redactor, which learns each secret the runtime configuration decrypts or receives.
+// nil leaves only the built-in credential patterns.
+var processRedactor atomic.Pointer[config.Redactor]
+
+// patternRedactor masks the credential patterns while no process Redactor is installed.
+var patternRedactor = config.NewRedactor()
+
+func init() {
+	apiRedact = func(text string) string {
+		if r := processRedactor.Load(); r != nil {
+			return r.Redact(text)
+		}
+		return patternRedactor.Redact(text)
+	}
+}
+
+// installRedaction makes REST error messages (abortAPI, field errors) pass through r (D42) and
+// returns the function that restores the previous Redactor. main installs the process Redactor
+// once at startup.
+func installRedaction(r *config.Redactor) (restore func()) {
+	prev := processRedactor.Swap(r)
+	return func() { processRedactor.Store(prev) }
+}
+
+// redactErr is the text of err as it may leave the process (D42): a gRPC status error gives its
+// status message (without the "rpc error: code = ..." prefix), and the text passes through the
+// redactor, so a secret an engine or a vendor echoes never reaches a client or the WS stream.
+func (s *server) redactErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+	return apiRedact(s.redact(msg))
 }
 
 // startRuntimeLoops runs the runtime configuration's reload loop until ctx ends: a reload on
