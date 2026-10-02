@@ -43,6 +43,9 @@ const (
 	// minDroppedIDs is the least number of dropped trace groups remembered (their later writes are
 	// dropped too).
 	minDroppedIDs = 4096
+	// shutdownGrace is how long Shutdown waits past its deadline for the drain to count what it
+	// dropped.
+	shutdownGrace = 250 * time.Millisecond
 	// dropLogEvery spaces the warnings about dropped writes.
 	dropLogEvery = 10 * time.Second
 )
@@ -218,7 +221,8 @@ func (w *Writer) Pending(traceID string) bool {
 }
 
 // Shutdown stops taking writes into the queue, writes what waits within ctx and drops the rest
-// (counted). Later writes run inline. It returns an error naming how many writes were dropped.
+// (counted). Later writes run inline. It returns an error naming how many writes were dropped, and
+// returns at ctx's end even when a write under way still waits for the database.
 func (w *Writer) Shutdown(ctx context.Context) error {
 	w.mu.Lock()
 	if w.closed {
@@ -229,7 +233,17 @@ func (w *Writer) Shutdown(ctx context.Context) error {
 	w.closed = true
 	w.mu.Unlock()
 	w.stop <- ctx
-	<-w.done
+	select {
+	case <-w.done:
+	case <-ctx.Done():
+		// The drain gives up at ctx's end and counts what it dropped; a write already under way
+		// may still wait for the database, and the process need not wait for it.
+		select {
+		case <-w.done:
+		case <-time.After(shutdownGrace):
+			return fmt.Errorf("tracewriter: trace writes were still being sent at the shutdown deadline: %w", ctx.Err())
+		}
+	}
 	w.mu.Lock()
 	n := w.unwritten
 	w.mu.Unlock()

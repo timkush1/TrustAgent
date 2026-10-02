@@ -534,3 +534,37 @@ func TestWriterBodyReadWaitsBriefly(t *testing.T) {
 	}
 	fake.setDown(false)
 }
+
+// stuckStore's trace starts wait for release whatever their context says.
+type stuckStore struct {
+	*fakeStore
+	entered, release chan struct{}
+}
+
+func (s stuckStore) StartTrace(ctx context.Context, t *store.TraceRecord) error {
+	close(s.entered)
+	<-s.release
+	return s.fakeStore.StartTrace(ctx, t)
+}
+
+// TestWriterShutdownReturnsAtItsDeadline: a write that ignores its context does not hold the
+// process past the shutdown deadline.
+func TestWriterShutdownReturnsAtItsDeadline(t *testing.T) {
+	inner := stuckStore{fakeStore: newFake(), entered: make(chan struct{}), release: make(chan struct{})}
+	defer close(inner.release)
+	w, _ := newWriter(t, inner, Config{BatchRows: 1, Interval: time.Hour})
+	if err := w.StartTrace(context.Background(), startRec("t1")); err != nil {
+		t.Fatal(err)
+	}
+	<-inner.entered
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := w.Shutdown(ctx)
+	if err == nil || !strings.Contains(err.Error(), "still being sent") {
+		t.Errorf("Shutdown with a write under way: %v", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("Shutdown took %v past a 50 ms deadline", took)
+	}
+}
