@@ -62,4 +62,15 @@ describe('ChecksList', () => {
     expect(router.state.location.pathname).toBe('/app/policies');
     expect(router.state.location.search).toEqual({ route: s0Trace('refund-contradiction-flag').route, evaluator: 'contradiction@1' });
   });
+
+  it('offers no threshold for a check the gateway added itself (it is not on the route)', async () => {
+    const d = s0Decision('refund-contradiction-flag');
+    const internal = { ...d, evaluators: { ...d.evaluators, 'factual_claims@1': { ...d.evaluators['groundedness@1'], ref: 'factual_claims@1', internal: true } } };
+    await renderWithRouter(<ChecksList summary={s0Trace('refund-contradiction-flag')} decision={internal} />);
+    const items = within(screen.getByRole('list', { name: 'Checks' })).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(within(items[2]).getByRole('link', { name: 'Factual claims' })).toBeInTheDocument();
+    expect(within(items[2]).queryByRole('button', { name: /Adjust threshold/ })).toBeNull();
+    expect(within(items[0]).getByRole('button', { name: 'Adjust threshold: Groundedness' })).toBeInTheDocument();
+  });
 });

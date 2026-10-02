@@ -55,7 +55,7 @@ import { ReviewSaveDialog } from './ReviewSaveDialog';
 import { RouteCard, type RouteFix } from './RouteCard';
 import { PolicyWarningList } from './PolicyWarningList';
 import { isDivergedWarning, policyWarningView } from './policyWarnings';
-import { evaluatorId, policyWriteReason } from './routeWords';
+import { evaluatorDisplayName, evaluatorId, policyWriteReason, routeTitle } from './routeWords';
 import { VersionsSheet } from './VersionsSheet';
 import { YamlEditorDialog } from './YamlEditorDialog';
 
@@ -313,6 +313,13 @@ export function PoliciesPage({ search = {} }: { search?: PoliciesSearch }) {
         ) : null}
         {state.persisted ? null : <p className="text-sm text-fg-muted">{copy.states.applies_until_restart}</p>}
         <PolicyWarningList warnings={warnings} className="rounded-lg border border-border bg-surface px-4 py-3" />
+        {search.route && search.evaluator && !routes.some((r) => r.name === search.route && r.evaluators.some((e) => e.ref === search.evaluator)) ? (
+          // "Adjust threshold" from an older request: the policy has moved on since.
+          <p role="status" className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-fg">
+            {evaluatorDisplayName(search.evaluator, names)} ({search.evaluator}) no longer runs on {routeTitle(search.route)}, so there is no threshold of it to
+            adjust there. The routes below show what runs now.
+          </p>
+        ) : null}
         <Section title="Routes" description="A request follows the first route whose matchers all fit; the default route takes the rest.">
         {routes.length === 0 ? (
           <EmptyState icon={RouteIcon} title="No routes yet: every request uses the defaults">

@@ -1,4 +1,4 @@
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -329,6 +329,20 @@ describe('Policies page', { timeout: 20_000 }, () => {
     await user.type(within(dialog).getByRole('textbox', { name: 'What changed and why' }), 'Flag groundedness earlier');
     await user.click(within(dialog).getByRole('button', { name: 'Save version' }));
     await waitFor(() => expect(control.callsTo('/api/policies', 'PUT')).toHaveLength(1));
+  });
+
+  it('says so when an Adjust threshold link names a check the route no longer runs', async () => {
+    renderPage('/app/policies?route=support-bot&evaluator=groundedness@7');
+    const support = await card('support-bot');
+    expect(await screen.findByText(/\(groundedness@7\) no longer runs on support-bot, so there is no threshold of it to adjust there\./)).toBeInTheDocument();
+    expect(within(support).queryByTestId('threshold-editor')).toBeNull();
+    stopLive();
+    cleanup();
+
+    // A link that matches says nothing extra.
+    renderPage('/app/policies?route=support-bot&evaluator=groundedness@1');
+    await within(await card('support-bot')).findByTestId('threshold-editor');
+    expect(screen.queryByText(/no longer runs on/)).toBeNull();
   });
 
   it('opens a check\'s threshold editor from its card, with one thumb for a check that never blocks', async () => {

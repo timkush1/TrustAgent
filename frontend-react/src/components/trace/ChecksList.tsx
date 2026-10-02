@@ -3,7 +3,8 @@
  * from the evaluator library (GET /api/evaluators), with its level word and a risk bar with flag and
  * block ticks, or "Not checked — no documents". Shadow evaluators are labelled "Watching". A
  * decision that arrived after the deadline says so: it was recorded, never enforced. Each name
- * opens its evaluator; an assessed row also offers "Adjust threshold" on this request's route.
+ * opens its evaluator; an assessed row of a check the route lists also offers "Adjust threshold" on
+ * this request's route.
  */
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Clock, SlidersHorizontal } from 'lucide-react';
@@ -44,7 +45,8 @@ function CheckItem({ row, route }: { row: CheckRow; route: string }) {
             <span className="ml-2 text-fg-muted tabular">{formatRisk(row.risk)}</span>
           </span>
         ) : null}
-        {row.kind === 'assessed' ? (
+        {/* An internal check is not on the route, so it has no threshold there to adjust. */}
+        {row.kind === 'assessed' && !row.internal ? (
           <IconButton
             size="sm"
             icon={SlidersHorizontal}

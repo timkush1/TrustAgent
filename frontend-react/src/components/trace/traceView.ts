@@ -194,6 +194,8 @@ export interface CheckRow {
   name: string;
   /** Asked but never enforced ("Watching"). */
   shadow: boolean;
+  /** Added by the gateway (factual_claims when no documents came), not listed on the route. */
+  internal: boolean;
   kind: 'assessed' | 'no_documents' | 'not_assessed' | 'error';
   level: EvaluatorLevel | null;
   risk: number | null;
@@ -217,6 +219,7 @@ function checkRow(r: EvaluatorResult, names?: ReadonlyMap<string, string>): Chec
     ref: r.ref,
     name: evaluatorName(r.ref, names),
     shadow: r.stage === 'shadow',
+    internal: r.internal,
     level: r.level,
     risk: r.risk,
     warnAt: r.thresholds.warn_at,
