@@ -219,3 +219,63 @@ func TestCostWriterRetriesThenDrops(t *testing.T) {
 		t.Errorf("after %d failures: pending %d, dropped +%v", defaultMaxTries, w.Pending(), dropped()-before)
 	}
 }
+
+// The final flush (the writer stopped) goes on past a failed insert: the rows of the failed
+// insert are dropped and counted, and the rows after it are still written, so no row is lost
+// without a count (D51).
+func TestCostWriterFinalFlushWritesOrCountsEveryRow(t *testing.T) {
+	sink := newRowSink()
+	sink.failNext = 1
+	w := NewWriter(sink, WriterConfig{FlushEvery: time.Hour, FlushRows: 2, Logger: quietLog()})
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		w.Add(row(id))
+	}
+	before := dropped()
+	w.stop()
+	if got := sink.rows(); len(got) != 3 || got[0].TraceID != "c" || got[2].TraceID != "e" {
+		t.Errorf("rows written after the failed insert = %+v", got)
+	}
+	if w.Pending() != 0 || dropped() != before+2 {
+		t.Errorf("pending %d, dropped +%v, want 0 and +2", w.Pending(), dropped()-before)
+	}
+
+	// With the database down, every row left is dropped and counted, not only the first insert's.
+	down := newRowSink()
+	down.failAll = true
+	w = NewWriter(down, WriterConfig{FlushEvery: time.Hour, FlushRows: 2, Logger: quietLog()})
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		w.Add(row(id))
+	}
+	before = dropped()
+	w.stop()
+	if w.Pending() != 0 || dropped() != before+5 {
+		t.Errorf("database down at stop: pending %d, dropped +%v, want 0 and +5", w.Pending(), dropped()-before)
+	}
+}
+
+// A flush its own context cut short (shutdown) costs the rows no try: they stay buffered for the
+// final flush however often that happens.
+func TestCostWriterCanceledFlushKeepsTheRows(t *testing.T) {
+	sink := newRowSink()
+	sink.failAll = true
+	w := NewWriter(sink, WriterConfig{FlushEvery: time.Hour, FlushRows: 10, Logger: quietLog()})
+	w.Add(row("kept"))
+	before := dropped()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range defaultMaxTries + 1 {
+		if err := w.Flush(ctx); err == nil {
+			t.Fatal("a failed flush reported no error")
+		}
+	}
+	if w.Pending() != 1 || dropped() != before {
+		t.Fatalf("after canceled flushes: pending %d, dropped +%v", w.Pending(), dropped()-before)
+	}
+	sink.mu.Lock()
+	sink.failAll = false
+	sink.mu.Unlock()
+	w.stop()
+	if got := sink.rows(); len(got) != 1 || got[0].TraceID != "kept" || dropped() != before {
+		t.Errorf("the final flush = %+v, dropped +%v", got, dropped()-before)
+	}
+}

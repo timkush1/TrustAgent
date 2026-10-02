@@ -127,8 +127,8 @@ func (w *Writer) Run(ctx context.Context) {
 }
 
 // Flush writes every buffered row now (the drain at shutdown, while Run still runs). Rows that
-// fail stay buffered for a later flush, up to their third failure; the error is the first write
-// error.
+// fail stay buffered for a later flush, up to their third failure (a flush ctx cut short costs
+// them no try); the error is the first write error.
 func (w *Writer) Flush(ctx context.Context) error { return w.flush(ctx, false) }
 
 // stop marks the writer stopped and writes what is left; rows that fail now are dropped.
@@ -141,18 +141,21 @@ func (w *Writer) stop() {
 	_ = w.flush(ctx, true)
 }
 
-// flush writes the buffer in inserts of at most FlushRows rows, oldest first. A failed insert
-// puts its rows back at the front with one more try, or drops them once they failed
-// defaultMaxTries times (final: at once), and ends this flush.
+// flush writes the buffer in inserts of at most FlushRows rows, oldest first, and returns the
+// first write error. A failed insert puts its rows back at the front with one more try, or drops
+// them once they failed defaultMaxTries times, and ends this flush. The final flush (the writer
+// has stopped, so nothing would write them later) drops a failed insert's rows at once and goes
+// on with the rest, so every row is either written or counted as dropped.
 func (w *Writer) flush(ctx context.Context, final bool) error {
 	w.flushMu.Lock()
 	defer w.flushMu.Unlock()
+	var first error
 	for {
 		w.mu.Lock()
 		n := min(len(w.buf), w.cfg.FlushRows)
 		if n == 0 {
 			w.mu.Unlock()
-			return nil
+			return first
 		}
 		chunk := make([]pendingRow, n)
 		copy(chunk, w.buf[:n])
@@ -167,20 +170,29 @@ func (w *Writer) flush(ctx context.Context, final bool) error {
 		if err == nil {
 			continue
 		}
-		w.failed(chunk, err, final)
-		return err
+		// A flush cut short by its own context (shutdown) is not a failure of the rows.
+		w.failed(chunk, err, final, ctx.Err() != nil)
+		if first == nil {
+			first = err
+		}
+		if !final {
+			return first
+		}
 	}
 }
 
 // failed requeues the rows of a failed insert at the front of the buffer, dropping those that
-// used their tries (all of them when final) and those that no longer fit.
-func (w *Writer) failed(chunk []pendingRow, err error, final bool) {
+// used their tries (all of them when final) and those that no longer fit. An insert its context
+// cancelled (canceled) costs the rows no try: the final flush still writes them.
+func (w *Writer) failed(chunk []pendingRow, err error, final, canceled bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	var keep []pendingRow
 	dropped := 0
 	for _, p := range chunk {
-		p.tries++
+		if !canceled {
+			p.tries++
+		}
 		if final || p.tries >= defaultMaxTries {
 			dropped++
 			continue
