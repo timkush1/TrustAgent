@@ -47,6 +47,11 @@ ONBOARDING_PROJECT ?= truthtable-onboarding
 ONBOARDING_COMPOSE  = $(COMPOSE) -p $(ONBOARDING_PROJECT) -f docker-compose.yml -f docker-compose.e2e.yml \
 	-f docker-compose.onboarding.yml --profile e2e
 ONBOARDING_BUILD   ?= --build
+# What onboarding-check-config requires of the proxy's composed environment before it runs
+# -check-config: strict config on, the decision model on backend auto, and no key in any form.
+ONBOARDING_EXPECT = --expect TRUTHTABLE_STRICT_CONFIG=true \
+	$(foreach k,TRUTHTABLE_JEV_BACKEND TRUTHTABLE_JEV_API_KEY OPENROUTER_API_KEY TYPESAFE_API_KEY \
+		TRUTHTABLE_ADMIN_KEYS TRUTHTABLE_ADMIN_KEY TRUTHTABLE_API_KEYS TRUTHTABLE_SETUP_TOKEN,--expect-default $(k))
 # trafficgen flags shared by the scenario targets.
 TRAFFICGEN_CHECK = /trafficgen --once --expect --base-url http://127.0.0.1:8080
 # Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
@@ -143,6 +148,13 @@ onboarding-logs: ## Follow the onboarding stack's logs (SERVICE=proxy for one se
 onboarding-down: ## Stop the onboarding stack and delete its volumes (every run starts fresh)
 	$(ONBOARDING_COMPOSE) down -v --remove-orphans
 	@echo "✅ Onboarding stack and its volumes removed"
+
+onboarding-check-config: ## Prove, without a container, that the gateway accepts the onboarding stack's environment (strict config, backend auto, no key): proxy -check-config
+	@if ! docker compose version >/dev/null 2>&1; then echo "onboarding-check-config: skipped (docker compose not found)"; exit 0; fi; \
+	out="$$($(ONBOARDING_COMPOSE) config --format json \
+		| $(PYTHON) scripts/service_env.py proxy $(ONBOARDING_EXPECT) -- go -C backend-go run ./cmd/proxy -check-config)" \
+		|| { printf '%s\n' "$$out"; echo "onboarding-check-config: failed: the stack is not the fresh install it should be, or the gateway would refuse to start it (see above)"; exit 1; }; \
+	echo "✅ The onboarding stack's proxy configuration passes -check-config (strict config, backend auto, no key)"
 
 ##@ Logs, setup links and status
 
@@ -274,3 +286,4 @@ test: test-scripts
 lint: lint-scripts
 check: compose-check
 check: config-docs-check
+check: onboarding-check-config

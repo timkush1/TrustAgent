@@ -54,7 +54,10 @@ One workflow per stream (the job ids `go`, `python`, `frontend`, `docker`, `cont
   the key registry; the api.v1 schema matches `src/types/api.ts`.
 - **DX scripts** — `ruff`, `black` and the unit tests of `scripts/` (configure, doctor, setup
   link, config docs, compose files, Grafana, nginx, gitleaks config), then `docker compose config`
-  on every profile and override.
+  on every profile and override, then `make onboarding-check-config`: the gateway's
+  `-check-config` runs on the host with the environment compose gives the onboarding stack's
+  proxy, so a fresh install that strict config would refuse (or one that carries a key by
+  mistake) fails here with its warnings, before any container starts.
 - **E2E (compose stack)** — the zero-key demo stack: every scenario with `trafficgen --expect`,
   `doctor --expect demo`, the Playwright stack specs (M-Demo, Studio and Savings, one worker) and
   the static site's specs; then the e2e stack (every vendor on mock-upstream) and its scenarios;

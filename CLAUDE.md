@@ -48,6 +48,7 @@ make demo-down      # stop it (make demo-clean also deletes its volumes)
 make up / down      # the real stack (proxy, engine, postgres, dashboard); connect keys in the setup wizard or .env (docs/JEV-ACCESS.md)
 make configure WITH_SECRETS=1                     # .env plus vendor keys at hidden prompts (never echoed)
 make onboarding-up / onboarding-setup-url / onboarding-down   # fresh-install stack (no admin, no keys; mock-upstream OpenRouter)
+make onboarding-check-config   # proxy -check-config with that stack's environment, no container (part of make check)
 make e2e-up / e2e-scenarios / e2e-down            # every vendor on mock-upstream (real HTTP paths)
 make up-infra       # backing services only, for make dev-go / dev-python / dev-react
 make doctor         # diagnose a running stack (ARGS="--expect demo")

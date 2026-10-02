@@ -7,10 +7,11 @@ name: CI (E2E)
 # run), the static site's specs (built as the gate builds it and served by vite
 # preview), then the e2e stack (every vendor on mock-upstream) with its p3
 # scenarios, then the onboarding stack (a fresh install: setup link, Connect
-# OpenRouter on mock-upstream, the wizard); compose logs are uploaded on failure. The scripts job lints and
-# unit-tests the setup scripts the suite relies on and validates every compose
-# profile. No path filters on purpose: a required check that never reports
-# would block merges.
+# OpenRouter on mock-upstream, the wizard); compose logs are uploaded on
+# failure. The scripts job lints and unit-tests the setup scripts the suite
+# relies on, validates every compose profile and runs the gateway's
+# -check-config against the onboarding stack's environment. No path filters on
+# purpose: a required check that never reports would block merges.
 
 on:
   push:
@@ -32,7 +33,7 @@ jobs:
   scripts:
     name: DX scripts
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -56,6 +57,26 @@ jobs:
 
       - name: Compose files (every profile and the demo, e2e, onboarding and load overrides)
         run: make compose-check
+
+      # The onboarding stack must start under TRUTHTABLE_STRICT_CONFIG with backend auto and no
+      # key (D70): run the gateway's -check-config on the host with the environment compose
+      # gives its proxy, so a refusal shows here with its warnings instead of as an unhealthy
+      # container in the E2E job. Same Go and stub setup as ci-go.yml.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate gRPC stubs
+        run: make proto-tools proto-go
+
+      - name: Onboarding stack configuration (proxy -check-config, strict, no key)
+        run: make onboarding-check-config
 
   e2e:
     name: E2E (compose stack)
