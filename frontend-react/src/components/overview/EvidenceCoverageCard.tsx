@@ -21,15 +21,15 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/data/errors';
 import { evidenceCoverageQuery, evidenceSuggestionsQuery } from '@/data/queries';
-
-// The policy draft and review (YAML parsing, diffs) load only when a suggestion can use them.
-const AddTagPatternAction = lazy(() => import('@/components/policies/AddTagPatternAction'));
 import { formatCount } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import { formatPercent } from '@/domain/rates';
 import { contextExtensionSnippet } from '@/domain/snippets';
 import type { EvidenceSuggestion, OverviewStats, TimeWindow } from '@/types/api';
 import { coverageSummary, type CoverageSummary } from './overviewModel';
+
+// The policy draft and review (YAML parsing, diffs) load only when a suggestion can use them.
+const AddTagPatternAction = lazy(() => import('@/components/policies/AddTagPatternAction'));
 
 function SourceBreakdown({ summary }: { summary: CoverageSummary }) {
   const max = Math.max(1, ...summary.bySource.map((s) => s.count));
