@@ -106,30 +106,37 @@ func TestBudgetObserveLineAndEnforcingReserve(t *testing.T) {
 }
 
 // Many goroutines reserving and settling at once never take the spend past the cap by more than
-// one estimate (a settle above its hold), and every hold is released (-race).
+// one estimate, and every hold is released (-race). Admission keeps spend and holds within the cap,
+// so only settles above their hold can pass it, by their excess: with at most `goroutines` calls
+// in flight, each over by at most est/goroutines, the overshoot stays within one estimate. The
+// cap is also used: a refusal means spend and the other holds were within one estimate of the cap.
 func TestBudgetConcurrentReserveAndSettleStayWithinTheCap(t *testing.T) {
-	const capUSD, est = 1.0, 0.01
+	const capUSD, est, goroutines = 1.0, 0.01, 16
 	b := NewBudget(KindLLM, BudgetConfig{CapUSD: capUSD, Now: newClock(day1).Now})
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	admitted := 0
-	for g := range 16 {
+	admitted, refused := 0, 0
+	for g := range goroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range 50 {
 				h, err := b.Reserve(est, true, "")
+				mu.Lock()
+				if err != nil {
+					refused++
+				} else {
+					admitted++
+				}
+				mu.Unlock()
 				if err != nil {
 					continue
 				}
-				mu.Lock()
-				admitted++
-				mu.Unlock()
 				// Some calls cost more than held, some less.
 				actual := est
 				switch (g + i) % 3 {
 				case 0:
-					actual = est * 1.5
+					actual = est * (1 + 1.0/goroutines)
 				case 1:
 					actual = est * 0.5
 				}
@@ -143,11 +150,39 @@ func TestBudgetConcurrentReserveAndSettleStayWithinTheCap(t *testing.T) {
 	if st.ReservedUSD > 1e-9 {
 		t.Errorf("holds left after every settle: %v", st.ReservedUSD)
 	}
-	if st.SpentUSD > capUSD+est*1.5 {
+	if st.SpentUSD > capUSD+est+1e-9 {
 		t.Errorf("spent %v, past the cap plus one estimate", st.SpentUSD)
 	}
-	if admitted == 0 || st.SpentUSD < capUSD-est {
-		t.Errorf("admitted %d calls, spent %v: the cap was not used", admitted, st.SpentUSD)
+	if admitted == 0 || refused == 0 || st.SpentUSD < capUSD-goroutines*est-1e-9 {
+		t.Errorf("admitted %d, refused %d, spent %v: the cap was not used", admitted, refused, st.SpentUSD)
+	}
+}
+
+// With every call settling at or below its hold, concurrent reservations never take the spend
+// past the cap at all: a reservation is checked and taken under one lock (-race).
+func TestBudgetConcurrentReservationsNeverPassTheCap(t *testing.T) {
+	const capUSD, est = 0.5, 0.01
+	b := NewBudget(KindDecision, BudgetConfig{CapUSD: capUSD, EnforcingReserve: 0.2, Now: newClock(day1).Now})
+	var wg sync.WaitGroup
+	for g := range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 40 {
+				h, err := b.Reserve(est, g%2 == 0, "")
+				if err != nil {
+					continue
+				}
+				if st := b.State(); st.SpentUSD+st.ReservedUSD > capUSD+1e-9 {
+					t.Errorf("spend and holds %v past the cap", st.SpentUSD+st.ReservedUSD)
+				}
+				h.Settle(est * float64(1+i%2) / 2) // the hold, or half of it
+			}
+		}()
+	}
+	wg.Wait()
+	if st := b.State(); st.SpentUSD > capUSD+1e-9 || st.ReservedUSD > 1e-9 {
+		t.Errorf("state = %+v", st)
 	}
 }
 
