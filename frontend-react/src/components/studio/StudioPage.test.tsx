@@ -130,6 +130,36 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(review).getByText(/From the Refusal template/)).toBeInTheDocument();
   });
 
+  it('keeps a template start when a draft asked for before it lands afterwards', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    let land: () => void = () => {};
+    const landed = new Promise<void>((resolve) => {
+      land = resolve;
+    });
+    control.handlers.unshift(
+      http.post(`${API}/api/studio/draft`, async () => {
+        await landed;
+        return HttpResponse.json(draftFixture);
+      }),
+    );
+    renderPage('/app/evaluators/studio', { control });
+    await user.type(await screen.findByRole('textbox', { name: 'What should TrustAgent check?' }), DESCRIPTION);
+    await user.click(screen.getByRole('button', { name: 'Draft with AI' }));
+    await user.click(screen.getByRole('button', { name: 'Use this template' }));
+    const review = await screen.findByRole('region', { name: /Step 2: Review the check/ });
+    const fromTemplate = /^From the .+ template\. Change anything/;
+    expect(within(review).getByText(fromTemplate)).toBeInTheDocument();
+
+    await act(async () => {
+      land();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(within(review).getByText(fromTemplate)).toBeInTheDocument();
+    expect(screen.queryByText(/^Drafted “/)).not.toBeInTheDocument();
+    expect(within(review).getByRole('textbox', { name: 'Name' })).not.toHaveValue('Blames the customer');
+  });
+
   it('edits in Simple, Advanced and JSON with live lints, keeping one spec', async () => {
     const user = userEvent.setup();
     renderPage('/app/evaluators/studio');

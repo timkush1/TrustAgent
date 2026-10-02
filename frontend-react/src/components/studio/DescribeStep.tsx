@@ -8,7 +8,7 @@
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { CircleAlert, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { describeError } from '@/components/common/describeError';
@@ -111,11 +111,13 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
   const [template, setTemplate] = useState<string>(STUDIO_TEMPLATES[0]?.ref ?? BLANK_TEMPLATE);
   const noJudge = judgeMissing(judge);
   const routeOrNull = route === ANY_ROUTE ? null : route;
+  /** Bumped by every start, so a draft that arrives after a later start (a template) is dropped. */
+  const starts = useRef(0);
 
   const draft = useMutation({
-    mutationFn: () => ds.draftEvaluator({ description: description.trim(), ...(routeOrNull ? { route: routeOrNull } : {}) }),
-    onSuccess: (result) => {
-      if (!result.draft) return;
+    mutationFn: (_start: number) => ds.draftEvaluator({ description: description.trim(), ...(routeOrNull ? { route: routeOrNull } : {}) }),
+    onSuccess: (result, start) => {
+      if (!result.draft || start !== starts.current) return;
       onStart({
         spec: draftToSpec(result.draft, { taken }),
         samples: draftSamples(result.draft),
@@ -127,6 +129,9 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
   });
 
   const startFromTemplate = () => {
+    // A draft still on its way must not replace this check (or the edits made to it) when it lands.
+    starts.current += 1;
+    draft.reset();
     const spec = template === BLANK_TEMPLATE ? blankSpec(taken) : specFromTemplate(template, taken);
     const name = STUDIO_TEMPLATES.find((t) => t.ref === template)?.name;
     onStart({ spec, samples: [], draft: null, origin: name ? `From the ${name} template` : 'A blank check', route: routeOrNull });
@@ -191,7 +196,10 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
         <div className="space-y-1.5">
           <DisabledAction reason={draftReason} layout="stacked">
             {(p) => (
-              <Button variant={!noJudge && !hasCheck ? 'primary' : 'secondary'} pending={draft.isPending} onClick={() => draft.mutate()} {...p}>
+              <Button variant={!noJudge && !hasCheck ? 'primary' : 'secondary'} pending={draft.isPending} onClick={() => {
+                  starts.current += 1;
+                  draft.mutate(starts.current);
+                }} {...p}>
                 <Sparkles aria-hidden="true" />
                 {hasCheck ? 'Draft again with AI' : 'Draft with AI'}
               </Button>
