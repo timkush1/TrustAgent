@@ -9,7 +9,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { DegradedState } from '@/components/common/DegradedState';
 import { PageHeader } from '@/components/common/PageHeader';
-import { LoadingState } from '@/components/common/StateViews';
+import { ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -183,18 +183,25 @@ export function AllConfigSection() {
   const ds = useDataSource();
   const settings = useQuery(settingsQuery(ds));
   const [fallback, setFallback] = useState<Group[] | null>(null);
+  // The registry ships as its own chunk: when that load fails too, there is nothing to fall back to.
+  const [fallbackFailed, setFallbackFailed] = useState(false);
   const failed = settings.isError && settings.data === undefined;
   useEffect(() => {
-    if (!failed || fallback) return;
+    if (!failed || fallback || fallbackFailed) return;
     let live = true;
-    void registryGroups().then((g) => {
-      if (live) setFallback(g);
-    });
+    registryGroups().then(
+      (g) => {
+        if (live) setFallback(g);
+      },
+      () => {
+        if (live) setFallbackFailed(true);
+      },
+    );
     return () => {
       live = false;
     };
-  }, [failed, fallback]);
-  const showLoading = useDelayedLoading(settings.isPending || (failed && !fallback));
+  }, [failed, fallback, fallbackFailed]);
+  const showLoading = useDelayedLoading(settings.isPending || (failed && !fallback && !fallbackFailed));
 
   let body;
   if (settings.data) {
@@ -209,6 +216,16 @@ export function AllConfigSection() {
         />
         <ConfigView groups={fallback} view={null} />
       </>
+    );
+  } else if (failed && fallbackFailed) {
+    body = (
+      <ErrorState
+        error={settings.error}
+        onRetry={() => {
+          setFallbackFailed(false);
+          void settings.refetch();
+        }}
+      />
     );
   } else {
     body = showLoading ? <LoadingState rows={6} /> : null;
