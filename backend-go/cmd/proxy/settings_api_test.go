@@ -430,6 +430,24 @@ func TestSettingsBindingsLeaveSimulatedMode(t *testing.T) {
 		t.Errorf("an explicit provider in the same patch wins: %+v", v.Runtime.Judge)
 	}
 
+	// D76b: a bind moves a stored backend or judge provider that would not use the bound key to
+	// auto, in the same write and the same audit diff. (Unbinding the fast check's key stops it on
+	// the fail-closed route, so that write needs the D77 confirmation.)
+	v = env.patched(env.patchSettingsAs(admin, v.ETag,
+		`{"decision_model":{"backend":"typesafe"},"judge":{"provider":"anthropic"},"bindings":{"decision_model":null,"judge":null}}`, "?confirm=true"))
+	v = env.patched(env.patchSettingsAs(admin, v.ETag, `{"bindings":{"decision_model":"openrouter","judge":"openrouter"}}`, ""))
+	if v.Runtime.DecisionModel.Backend != "auto" || v.Runtime.Judge.Provider != "auto" {
+		t.Errorf("a bind leaves a backend and a judge the key does not serve: %+v %+v", v.Runtime.DecisionModel, v.Runtime.Judge)
+	}
+	audits := env.auditRows(t, "settings.update")
+	fields, _ := audits[len(audits)-1]["fields"].(map[string]any)
+	for path, from := range map[string]string{"decision_model.backend": "typesafe", "judge.provider": "anthropic", "bindings.judge": ""} {
+		ch, _ := fields[path].(map[string]any)
+		if ch == nil || ch["to"] == nil || (from != "" && (ch["from"] != from || ch["to"] != "auto")) {
+			t.Errorf("the bind's audit diff misses %s: %v", path, fields)
+		}
+	}
+
 	// The default upstream binding needs a key callers authenticate with (D41).
 	resp, body := env.patchSettingsAs(admin, v.ETag, `{"upstream":{"default":{"credential":"upstream-default"}}}`, "")
 	if resp.StatusCode != http.StatusConflict {

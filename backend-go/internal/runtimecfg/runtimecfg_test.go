@@ -78,3 +78,62 @@ func TestApplyBindings(t *testing.T) {
 		t.Errorf("nothing applied, so simulated mode stays: %+v", s)
 	}
 }
+
+// TestApplyBindingsUsesTheBoundKey (D76b): an applied target uses the key the write reports. A
+// persisted explicit backend the credential cannot serve, or an explicit judge provider other than
+// the credential's own, becomes auto when that target applies, and only then; a backend or provider
+// the credential serves, an env-managed path and a target that did not apply stay as stored.
+func TestApplyBindingsUsesTheBoundKey(t *testing.T) {
+	base := NewStatic(nil).Current().Settings
+	cases := []struct {
+		name               string
+		backend, provider  string
+		cred               string
+		targets            []string
+		envManaged         []string
+		wantBack, wantJudg string
+	}{
+		{"typesafe backend, openrouter key", "typesafe", "anthropic", "openrouter", []string{TargetDecisionModel}, nil, "auto", "anthropic"},
+		{"off backend, openrouter key", "off", "auto", "openrouter", []string{TargetDecisionModel}, nil, "auto", "auto"},
+		{"openrouter backend, typesafe key", "openrouter-systemone", "auto", "typesafe", []string{TargetDecisionModel}, nil, "auto", "auto"},
+		{"compatible backend, openrouter key", "compatible", "auto", "openrouter", []string{TargetDecisionModel}, nil, "auto", "auto"},
+		{"a backend the key serves", "openrouter-decisions", "openrouter", "openrouter", []string{TargetDecisionModel, TargetJudge}, nil, "openrouter-decisions", "openrouter"},
+		{"compatible backend, compatible key", "compatible", "auto", "compatible", []string{TargetDecisionModel}, nil, "compatible", "auto"},
+		{"typesafe backend, typesafe key", "typesafe", "auto", "typesafe", []string{TargetDecisionModel}, nil, "typesafe", "auto"},
+		{"anthropic judge, openrouter key", "auto", "anthropic", "openrouter", []string{TargetJudge}, nil, "auto", "auto"},
+		{"ollama judge, openrouter key", "auto", "ollama", "openrouter", []string{TargetJudge}, nil, "auto", "auto"},
+		{"no judge, openai key", "auto", "none", "openai", []string{TargetJudge}, nil, "auto", "auto"},
+		{"openai judge, openai key", "auto", "openai", "openai", []string{TargetJudge}, nil, "auto", "openai"},
+		{"anthropic judge, anthropic key", "auto", "anthropic", "anthropic", []string{TargetJudge}, nil, "auto", "anthropic"},
+		// Only the target that applies moves: the judge bind leaves the typesafe backend alone.
+		{"judge-only bind, typesafe backend", "typesafe", "anthropic", "openrouter", []string{TargetJudge}, nil, "typesafe", "auto"},
+		// A skipped target moves nothing of its own.
+		{"skipped judge", "typesafe", "anthropic", "openrouter", []string{TargetDecisionModel, TargetJudge}, []string{"bindings.judge"}, "auto", "anthropic"},
+		// An env-managed path is the one in effect and stays as stored.
+		{"env-managed backend", "typesafe", "anthropic", "openrouter", []string{TargetDecisionModel, TargetJudge},
+			[]string{"decision_model.backend", "judge.provider"}, "typesafe", "anthropic"},
+		// D76 still applies to mock whichever target applies.
+		{"mock backend, judge-only bind", "mock", "mock", "anthropic", []string{TargetJudge}, nil, "auto", "auto"},
+	}
+	for _, c := range cases {
+		in := base
+		in.DecisionModel.Backend, in.Judge.Provider = c.backend, c.provider
+		out, applied, _ := ApplyBindings(in, c.cred, c.targets, c.envManaged, false)
+		if len(applied) == 0 {
+			t.Errorf("%s: nothing applied", c.name)
+		}
+		if out.DecisionModel.Backend != c.wantBack || out.Judge.Provider != c.wantJudg {
+			t.Errorf("%s: backend %q judge %q, want %q %q", c.name, out.DecisionModel.Backend, out.Judge.Provider, c.wantBack, c.wantJudg)
+		}
+		if in.DecisionModel.Backend != c.backend || in.Judge.Provider != c.provider {
+			t.Errorf("%s: ApplyBindings is pure", c.name)
+		}
+	}
+	// A bind that applies nothing changes nothing.
+	in := base
+	in.DecisionModel.Backend, in.Judge.Provider = "typesafe", "anthropic"
+	out, applied, _ := ApplyBindings(in, "openrouter", []string{TargetDecisionModel, TargetJudge}, []string{"bindings.judge"}, true)
+	if len(applied) != 0 || out.DecisionModel.Backend != "typesafe" || out.Judge.Provider != "anthropic" {
+		t.Errorf("nothing applied, nothing moves: %v %+v %+v", applied, out.DecisionModel, out.Judge)
+	}
+}
