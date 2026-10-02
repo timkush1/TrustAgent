@@ -832,6 +832,17 @@ class Doctor:
         detail = f"provider {provider}, model {model or 'default'}, state {state}, key {source}"
         if judge.get("fallback_active"):
             detail += f"; fallback: {judge.get('fallback_reason') or 'active'}"
+        if judge.get("provider") is None and state == "unknown":
+            # The proxy has no engine health yet (starting, or unreachable): nothing is known about
+            # the judge, so blaming a missing key would send the operator the wrong way.
+            return Check(
+                "judge.credential_source",
+                "WARN",
+                "the audit engine has not reported its judge yet (it is starting or "
+                "unreachable; see engine.health)",
+                detail,
+                self.logs_hint("engine"),
+            )
         if self.expect == "demo":
             if provider != "mock":
                 return Check(
@@ -865,7 +876,11 @@ class Doctor:
                 "WARN",
                 "the judge is the mock: deep-audit verdicts are simulated, not measured",
                 detail,
-                "set LLM_PROVIDER=auto in .env and give the judge a key; " + connect,
+                # Simulated checks come from .env (LLM_PROVIDER=mock, read-only in the dashboard)
+                # or from the dashboard, where binding a key to the judge turns them off (D76).
+                "if .env sets LLM_PROVIDER=mock, set it to auto and make up; otherwise "
+                + connect
+                + " (binding a key to the judge turns simulated checks off)",
             )
         env_var = JUDGE_KEY_VARS.get(provider)
         if env_var and source == "none":

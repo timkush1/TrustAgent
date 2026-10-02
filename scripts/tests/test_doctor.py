@@ -791,7 +791,8 @@ class RuntimeChecksTest(unittest.TestCase):
             (judge(provider="anthropic", credential_source="dashboard"), "PASS", "dashboard"),
             (judge(provider="ollama", model="llama3.2:1b"), "PASS", "needs no key"),
             (judge(provider="openai", credential_source="none"), "FAIL", "has no key"),
-            (judge(provider=None, credential_source="none"), "WARN", "no deep-audit judge"),
+            # LLM_PROVIDER=none: the engine reports provider "none" and the proxy state disabled.
+            (judge(provider="none", state="disabled"), "WARN", "no deep-audit judge"),
             (judge(provider="mock"), "WARN", "simulated"),
             (
                 judge(
@@ -814,6 +815,23 @@ class RuntimeChecksTest(unittest.TestCase):
             self.with_status(judge=judge(provider="openai", credential_source="none"))
         ).check_judge()
         self.assertIn("OPENAI_API_KEY", check.fix)
+
+    def test_an_engine_that_has_not_reported_is_not_blamed_on_a_key(self) -> None:
+        # No engine health yet: the proxy reports provider null and state unknown.
+        unknown = judge(provider=None, model=None, state="unknown")
+        for expect in (None, "demo"):
+            with self.subTest(expect=expect):
+                check = self.stack(self.with_status(judge=unknown), expect=expect).check_judge()
+                self.assertEqual(check.status, "WARN", check.summary)
+                self.assertIn("has not reported its judge", check.summary)
+                self.assertIn("engine", check.fix)
+                self.assertNotIn("OPENROUTER_API_KEY", check.fix)
+
+    def test_the_mock_judge_fix_covers_env_and_dashboard(self) -> None:
+        check = self.stack(self.with_status(judge=judge(provider="mock"))).check_judge()
+        self.assertIn("LLM_PROVIDER=mock", check.fix)
+        self.assertIn("Settings > Connections", check.fix)
+        self.assertIn("turns simulated checks off", check.fix)
 
     def test_a_judge_without_credential_source_is_skipped(self) -> None:
         j = judge()
