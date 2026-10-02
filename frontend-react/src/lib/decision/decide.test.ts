@@ -194,7 +194,8 @@ describe('calibration signals (P4-PLAN D56)', () => {
 
   it('never reports other_snapshot as a calibration_state', () => {
     const { input } = gate('block', contradicted);
-    for (const calibration of [{}, { 'groundedness@1': otherSnapshot }, { 'groundedness@1': otherSnapshot, 'contradiction@1': otherSnapshot }]) {
+    const inputs: DecideInput['calibration'][] = [{}, { 'groundedness@1': otherSnapshot }, { 'groundedness@1': otherSnapshot, 'contradiction@1': otherSnapshot }];
+    for (const calibration of inputs) {
       const d = decide({ ...input, calibration });
       for (const r of Object.values(d.evaluators)) {
         expect(r.calibration_state).toBe('none');
