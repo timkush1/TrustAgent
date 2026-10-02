@@ -237,6 +237,57 @@ func TestDecisionModelTestRedactsErrorText(t *testing.T) {
 	}
 }
 
+// TestDecisionModelTestDropsAKeyTheVendorMessageCut (D40, D42): the decision client cuts a vendor
+// message to 300 characters before it masks the key it sent, so a key the vendor echoes across the
+// cut reaches the handler as a bare prefix that no exact-secret redaction recognises. The result
+// drops the word the cut left, whatever secret it belonged to.
+func TestDecisionModelTestDropsAKeyTheVendorMessageCut(t *testing.T) {
+	if got := config.NewRedactor().Redact(dmUnmatchedSecret); got != dmUnmatchedSecret {
+		t.Fatalf("the redaction patterns mask the unmatched secret (%q)", got)
+	}
+	// 290 characters and a space, then the key: the 300-character cut keeps its first 9.
+	padding := strings.Repeat("x", 290)
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": 400,
+			"message": padding + " " + dmUnmatchedSecret + " is not a valid key"}})
+	}))
+	defer vendor.Close()
+	env := newTestEnv(t, envOpts{adminKey: dmTestAdminKey, mutate: func(cfg *config.Config) {
+		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, vendor.URL, "/v1/systemone"
+		cfg.Jev.APIKey, cfg.Jev.Model = dmUnmatchedSecret, "typesafe/jev-1.13"
+		cfg.Jev.KeepAlive, cfg.Jev.MaxRetries, cfg.Jev.StartupProbe = 0, 0, false
+	}})
+	_, body := postDecisionModelTest(t, env, dmTestAdminKey)
+	res := decodeDecisionModelTest(t, body)
+	if res.OK || res.Error == nil {
+		t.Fatalf("result = %s, want an error", body)
+	}
+	if strings.Contains(res.Error.Message, dmUnmatchedSecret[:4]) {
+		t.Error("the message carries a prefix of the key")
+	}
+	if want := padding + "…"; res.Error.Message != want {
+		t.Errorf("message has %d characters, want the vendor's text up to the cut word (%d)",
+			len([]rune(res.Error.Message)), len([]rune(want)))
+	}
+}
+
+func TestDropCutWord(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"bad key", "bad key"},              // not cut: kept whole
+		{"bad key cmp0e2eZq…", "bad key…"},  // the cut word goes
+		{"bad key\tcmp0e2eZq…", "bad key…"}, // after any space
+		{"bad key  [redacted] near cmp0e…", "bad key  [redacted] near…"},
+		{"cmp0e2eZq…", "…"}, // a message of one cut word keeps nothing of it
+		{"…", "…"},
+	} {
+		if got := dropCutWord(c.in); got != c.want {
+			t.Errorf("dropCutWord(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestDecisionModelTestGuards(t *testing.T) {
 	env := newTestEnv(t, envOpts{adminKey: dmTestAdminKey})
 	if resp, _ := postDecisionModelTest(t, env, ""); resp.StatusCode != http.StatusUnauthorized {
