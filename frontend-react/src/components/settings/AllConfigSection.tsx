@@ -34,14 +34,27 @@ function sourceLabel(source: SettingKeyView['source']): string {
   return SOURCES[source] ?? 'Unknown';
 }
 
-/** What a value cell shows: never a secret (D79). */
+/**
+ * What a value cell shows: never a secret (D79). An admin gets the masked form (`sk-…3f2a`, D79
+ * `config.MaskSecret`); anything else in a secret's value reads "Set", so even a proxy that sent a
+ * secret by mistake never has it rendered here.
+ */
 function valueText(k: SettingKeyView): { text: string; muted: boolean } {
   if (k.secret) {
     if (k.value === '' || k.value === undefined) return { text: 'Not set', muted: true };
-    if (k.value === 'set') return { text: 'Set', muted: false };
-    return { text: k.value, muted: false };
+    return { text: isMasked(k.value) ? k.value : 'Set', muted: false };
   }
   return k.value === '' ? { text: 'Empty', muted: true } : { text: k.value, muted: false };
+}
+
+/**
+ * The masked forms of Go `config.Entry.DisplayValue`: `sk-…abcd` (first 3 and last 4 characters),
+ * `****` for a short secret, and for a key list `label=sk-…abcd,label2=****`.
+ */
+const MASKED = /^(?:[^=,]*=)?(?:\*{4}|[^…,=]{1,3}…[^…,=]{1,4})(?:,(?:[^=,]*=)?(?:\*{4}|[^…,=]{1,3}…[^…,=]{1,4}))*$/u;
+
+function isMasked(value: string): boolean {
+  return MASKED.test(value);
 }
 
 interface Group {

@@ -9,7 +9,7 @@ import { settingsView } from '@/test/control/securityHandlers';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { commandText } from '@/domain/presentation';
-import type { SettingsView } from '@/types/api';
+import type { SettingKeyView, SettingsView } from '@/types/api';
 
 installMswServer();
 afterEach(() => stopLive());
@@ -67,6 +67,40 @@ describe('Settings → All configuration', { timeout: 20_000 }, () => {
       const row = screen.getByRole('rowheader', { name: k.key }).closest('tr')!;
       expect(within(row).getByText(k.value === 'set' ? 'Set' : 'Not set')).toBeInTheDocument();
     }
+  });
+
+  it('shows an admin the masked forms, and never a secret the proxy sent unmasked (D79)', async () => {
+    const leaked = 'cmp0e2eZq7Lw4Rt9Yx2Vb6Nm';
+    const secret = (key: string, value: string): SettingKeyView => ({
+      key,
+      env: key,
+      value,
+      default: '',
+      source: 'env',
+      secret: true,
+      advanced: false,
+      restart_required: true,
+      editable: false,
+      services: ['proxy'],
+    });
+    const view = settingsView({
+      groups: [
+        {
+          name: 'Access',
+          keys: [
+            secret('TRUTHTABLE_ADMIN_KEYS', 'ops=sk-…ab12,ci=****'),
+            secret('OPENROUTER_API_KEY', 'sk-…3f2a'),
+            secret('TYPESAFE_API_KEY', leaked),
+          ],
+        },
+      ],
+    });
+    renderPage('/app/settings/all', { control: createControlApi({ settings: view }) });
+    const row = async (key: string) => (await screen.findByRole('rowheader', { name: key })).closest('tr')!;
+    expect(within(await row('TRUTHTABLE_ADMIN_KEYS')).getByText('ops=sk-…ab12,ci=****')).toBeInTheDocument();
+    expect(within(await row('OPENROUTER_API_KEY')).getByText('sk-…3f2a')).toBeInTheDocument();
+    expect(within(await row('TYPESAFE_API_KEY')).getByText('Set')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(leaked);
   });
 
   it('shows the settings warnings in words', async () => {
