@@ -63,8 +63,9 @@ func (a *studioAPI) decisionRequest(c *gin.Context) {
 	ctx := c.Request.Context()
 	// The trace's queued writes land before it is read (D83).
 	if err := a.barrier(ctx, traceID); err != nil {
-		a.log.Warn("decision request: the trace's queued writes did not land", "trace_id", traceID, "err", err)
-		abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "The trace is still being written; try again in a moment.")
+		// Not persistence_disabled: the database is there, the trace's writes just did not land.
+		a.log.Error("decision request: the trace's queued writes did not land", "trace_id", traceID, "err", err)
+		abortAPI(c, http.StatusInternalServerError, codeInternal, "The trace could not be written before it was read; try again in a moment.")
 		return
 	}
 	rec, err := a.db.GetRecordedCompile(ctx, traceID, attempt)

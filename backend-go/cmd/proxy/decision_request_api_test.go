@@ -311,7 +311,7 @@ func TestDecisionRequestWaitsForThePendingTrace(t *testing.T) {
 		t.Errorf("pending trace: %+v", v)
 	}
 	d.onBarrier.Store(func(string) error { return errors.New("database unreachable") })
-	if code, body := studioDo(t, d.url, http.MethodGet, "/api/traces/t1/decision-request", "", nil); code != http.StatusServiceUnavailable {
+	if code, body := studioDo(t, d.url, http.MethodGet, "/api/traces/t1/decision-request", "", nil); code != http.StatusInternalServerError || errorCodeOf(t, body) != codeInternal {
 		t.Errorf("barrier failed: %d %s", code, body)
 	}
 }
