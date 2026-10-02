@@ -64,6 +64,9 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 	}
 
 	d := serverDeps{cfg: cfg, log: log, redisState: stateDisabled, redactor: redactor}
+	// Admin audit diffs are scrubbed with the process Redactor, which learns every secret the
+	// runtime configuration loads or receives (D42, D44).
+	defer store.AddAuditRedactor(redactor)()
 
 	if cfg.DatabaseURL == "" {
 		log.Warn("TRUTHTABLE_DATABASE_URL is not set: traces and audits are not stored")
