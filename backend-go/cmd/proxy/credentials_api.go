@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -66,12 +67,19 @@ func (s *server) handlePutCredential(c *gin.Context) {
 	if !bindJSON(c, &body, false) {
 		return
 	}
+	// A key copied from a terminal or a .env line often carries a newline or spaces around it;
+	// as in the env loader, they are not part of the key. Inside a key they never are, and a
+	// control character would make every header that carries it invalid.
+	secret := strings.TrimSpace(body.Secret)
 	switch {
-	case body.Secret == "":
+	case secret == "":
 		s.abortCredential(c, "put credential", credentialInvalid("secret", "secret is required: paste the key."))
 		return
-	case len(body.Secret) > maxCredentialSecret:
+	case len(secret) > maxCredentialSecret:
 		s.abortCredential(c, "put credential", credentialInvalid("secret", fmt.Sprintf("secret is longer than %d characters; is that the key?", maxCredentialSecret)))
+		return
+	case !printableSecret(secret):
+		s.abortCredential(c, "put credential", credentialInvalid("secret", "secret contains spaces or non-printable characters; paste only the key."))
 		return
 	case body.Provider == "":
 		s.abortCredential(c, "put credential", credentialInvalid("provider", "provider is required."))
@@ -79,7 +87,7 @@ func (s *server) handlePutCredential(c *gin.Context) {
 	}
 	verify := body.Verify == nil || *body.Verify
 	res, err := s.writeCredential(c.Request.Context(), CredentialWrite{
-		Name: name, Provider: body.Provider, Secret: body.Secret, BaseURL: body.BaseURL,
+		Name: name, Provider: body.Provider, Secret: secret, BaseURL: body.BaseURL,
 		Verify: verify, Bind: body.Bind, Actor: actor(c),
 	})
 	if err != nil {
@@ -88,6 +96,17 @@ func (s *server) handlePutCredential(c *gin.Context) {
 	}
 	noStore(c)
 	c.JSON(http.StatusOK, res)
+}
+
+// printableSecret reports a key made of printable ASCII without spaces, which is what every API
+// key the gateway sends in a header is.
+func printableSecret(secret string) bool {
+	for i := 0; i < len(secret); i++ {
+		if b := secret[i]; b <= ' ' || b > '~' {
+			return false
+		}
+	}
+	return true
 }
 
 // handleVerifyCredential serves POST /api/credentials/:name/verify (SPEC §2.4 row 57, D40, D75):

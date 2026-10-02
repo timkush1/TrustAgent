@@ -412,6 +412,51 @@ func TestCredentialFailedCheckKeepsTheBoundKey(t *testing.T) {
 	r.assertNoLeak(credGoodKey)
 }
 
+// TestCredentialRotationSwapsTheKeyInUse (D75, CN-1): pasting a new key under the name the fast
+// check uses replaces it at once. The write is a rotation (audit credential.rotate, WS rotated),
+// the binding stays without a settings change, and the next gated request decides with the new
+// key. The spaces and the newline a copy from a terminal adds are not part of the key.
+func TestCredentialRotationSwapsTheKeyInUse(t *testing.T) {
+	r := newCredRig(t, credRigOpts{})
+	first := r.put("openrouter", map[string]any{"provider": "openrouter", "secret": credGoodKey, "bind": []string{"decision_model"}})
+	if !slices.Equal(first.Bindings.Applied, []string{"decision_model"}) || first.Credential.RotatedAt != nil {
+		t.Fatalf("first write: %+v", first)
+	}
+	if resp := r.gated(loadDemoScenarios(t)["grounded-pass"]); resp.StatusCode != http.StatusOK {
+		t.Fatalf("gated request: HTTP %d", resp.StatusCode)
+	}
+
+	res := r.put("openrouter", map[string]any{"provider": "openrouter", "secret": "  " + credOtherGoodKey + "\n"})
+	if !res.Stored || res.Verification == nil || !res.Verification.OK {
+		t.Fatalf("rotation: stored %v verification %+v", res.Stored, res.Verification)
+	}
+	c := res.Credential
+	if c.Masked != config.MaskSecret(credOtherGoodKey) || c.Fingerprint == first.Credential.Fingerprint || c.RotatedAt == nil ||
+		!slices.Equal(c.UsedBy, []string{"decision_model"}) {
+		t.Errorf("rotated credential: %+v", c)
+	}
+	before := len(r.decisionCalls())
+	if resp := r.gated(loadDemoScenarios(t)["grounded-pass"]); resp.StatusCode != http.StatusOK {
+		t.Fatalf("gated request after the rotation: HTTP %d", resp.StatusCode)
+	}
+	calls := r.decisionCalls()
+	if len(calls) <= before || calls[len(calls)-1] != "Bearer "+credOtherGoodKey {
+		t.Fatal("the gated request after the rotation did not decide with the new key")
+	}
+	changed := r.wsEvents("credentials_changed")
+	if len(changed) != 2 || changed[0]["action"] != "put" || changed[1]["action"] != "rotated" || changed[1]["fingerprint"] != c.Fingerprint {
+		t.Errorf("credentials_changed = %v", changed)
+	}
+	if updated := r.wsEvents("settings_updated"); len(updated) != 1 {
+		t.Errorf("a rotation that kept the binding announced a settings change: %v", updated)
+	}
+	if actions, _ := r.auditActions(); len(actions) == 0 || actions[0] != "credential.rotate" {
+		t.Errorf("audit log (newest first) = %v, want credential.rotate first", actions)
+	}
+	r.assertNoLeak(credGoodKey)
+	r.assertNoLeak(credOtherGoodKey)
+}
+
 // TestCredentialNoCreditsIsStoredUnbound (D75): a key without credits on a name nothing uses is
 // stored, unbound, with the no_credits hint, so "I added credits — check again" can bind it.
 func TestCredentialNoCreditsIsStoredUnbound(t *testing.T) {
@@ -624,6 +669,9 @@ func TestCredentialWriteValidation(t *testing.T) {
 		{"unknown name", "/api/credentials/github", map[string]any{"provider": "generic", "secret": "x"}, 404, codeNotFound, ""},
 		{"provider mismatch", "/api/credentials/openrouter", map[string]any{"provider": "typesafe", "secret": credGoodKey}, 422, codeValidationFailed, "provider"},
 		{"no secret", "/api/credentials/openrouter", map[string]any{"provider": "openrouter", "secret": ""}, 422, codeValidationFailed, "secret"},
+		{"only whitespace", "/api/credentials/openrouter", map[string]any{"provider": "openrouter", "secret": " \n\t "}, 422, codeValidationFailed, "secret"},
+		{"a space inside the key", "/api/credentials/openrouter", map[string]any{"provider": "openrouter", "secret": "sk-or-v1-e2e good-0123456789"}, 422, codeValidationFailed, "secret"},
+		{"a control character inside the key", "/api/credentials/openrouter", map[string]any{"provider": "openrouter", "secret": "sk-or-v1-e2e-good\r\nX-Evil: 1"}, 422, codeValidationFailed, "secret"},
 		{"vendor with base_url", "/api/credentials/openrouter", map[string]any{"provider": "openrouter", "secret": credGoodKey, "base_url": "https://or.example.com"}, 422, codeValidationFailed, "base_url"},
 		{"compatible without base_url", "/api/credentials/compatible", map[string]any{"provider": "generic", "secret": "sk-test-compat-0123456789"}, 422, codeValidationFailed, "base_url"},
 		{"plain http to a remote host", "/api/credentials/compatible", map[string]any{"provider": "generic", "secret": "sk-test-compat-0123456789", "base_url": "http://gw.example.com"}, 422, codeValidationFailed, "base_url"},
