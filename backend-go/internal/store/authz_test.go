@@ -248,3 +248,53 @@ func TestSessionEpochBump(t *testing.T) {
 		t.Errorf("audit %v", got)
 	}
 }
+
+// TestLastAdminKeyIsKept (D81): RevokeAPIKeyKeepingAdmin refuses the last active admin key, and two
+// revocations of the last two admin keys running at once leave exactly one of them.
+func TestLastAdminKeyIsKept(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	for _, k := range []*APIKeyRecord{
+		{ID: "a1", Label: "ops-1", Scopes: []string{"admin"}, SHA256: "a1", Prefix: "ta_a1", CreatedBy: "root"},
+		{ID: "a2", Label: "ops-2", Scopes: []string{"read", "admin"}, SHA256: "a2", Prefix: "ta_a2", CreatedBy: "root"},
+		{ID: "r1", Label: "viewer", Scopes: []string{"read"}, SHA256: "r1", Prefix: "ta_r1", CreatedBy: "root"},
+	} {
+		if err := s.CreateAPIKey(ctx, k, "root"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, revoked, err := s.RevokeAPIKeyKeepingAdmin(ctx, "r1", "root"); err != nil || !revoked {
+		t.Fatalf("a read key: %v %v", revoked, err)
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i, id := range []string{"a1", "a2"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, errs[i] = s.RevokeAPIKeyKeepingAdmin(ctx, id, "root")
+		}()
+	}
+	wg.Wait()
+	refused := 0
+	for _, err := range errs {
+		switch {
+		case errors.Is(err, ErrLastAdminKey):
+			refused++
+		case err != nil:
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.ActiveAdminKeyCount(ctx); err != nil || n != 1 || refused != 1 {
+		t.Fatalf("after two concurrent revocations: %d admin keys, %d refused (%v)", n, refused, err)
+	}
+	if _, _, err := s.RevokeAPIKey(ctx, "a1", "root"); err != nil {
+		t.Errorf("the unguarded revoke (an env admin exists) may revoke the last one: %v", err)
+	}
+	if _, _, err := s.RevokeAPIKey(ctx, "a2", "root"); err != nil {
+		t.Errorf("the unguarded revoke (an env admin exists) may revoke the last one: %v", err)
+	}
+	if n, _ := s.ActiveAdminKeyCount(ctx); n != 0 {
+		t.Errorf("admin keys left %d", n)
+	}
+}

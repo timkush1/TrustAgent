@@ -6,8 +6,9 @@
 // a lane, audit_started when a worker takes it (the trace's audit status is then persisted as
 // running), and audit_completed, audit_failed or audit_dropped at the end. Submit reports a full
 // queue or a stopped pool as an error (the trace records the audit as dropped), and Drain lets
-// queued audits finish within the drain timeout. The uniform-sample reserved capacity, LLM spend
-// reservations and retries are not part of the pool yet.
+// queued audits finish within the drain timeout. The cost recorder (SetCostRecorder) receives the
+// cost records of every answered audit. The uniform-sample reserved capacity, holding audits
+// against the LLM cap that SetBudget installs, and retries are not part of the pool yet.
 package worker
 
 import (
@@ -113,6 +114,28 @@ type Config struct {
 	Logger        *slog.Logger
 }
 
+// Budget is the daily LLM cap deep audits are held against (the cost ledger's LLM budget,
+// P4-PLAN D48): hard in every lane, with no admin bypass.
+type Budget interface {
+	// EstimateAuditUSD is what one audit is expected to cost: the amount an audit holds.
+	EstimateAuditUSD() float64
+	// Reserve holds usd of today's LLM cap for a call of component and returns the function that
+	// books the call's real cost (0 releases the hold); it fails once the cap cannot take usd.
+	Reserve(usd float64, component string) (settle func(actualUSD float64), err error)
+	// HeadroomUSD is the LLM spend still allowed today (+Inf without a cap).
+	HeadroomUSD() float64
+}
+
+// AuditCosts are the LLM cost records of one audit the engine answered.
+type AuditCosts struct {
+	TraceID, AuditID, Route, Selection string
+	Records                            []*pb.CostRecord
+}
+
+// CostRecorder receives the cost records of every audit the engine answered, once its result is
+// stored: the cost ledger learns what an audit costs from them (P4-PLAN D48). It must not block.
+type CostRecorder func(AuditCosts)
+
 // Pool runs deep audits.
 type Pool struct {
 	cfg    Config
@@ -129,6 +152,10 @@ type Pool struct {
 
 	// judgeCheck is the check behind JudgeReady (SetJudgeCheck); nil means none.
 	judgeCheck atomic.Pointer[func() error]
+	// budget is the LLM cap (SetBudget) and recorder the cost recorder (SetCostRecorder); nil
+	// means none.
+	budget   atomic.Pointer[Budget]
+	recorder atomic.Pointer[CostRecorder]
 }
 
 // New builds a pool; Start runs its workers.
@@ -174,6 +201,26 @@ func (p *Pool) SetJudgeCheck(check func() error) {
 		return
 	}
 	p.judgeCheck.Store(&check)
+}
+
+// SetBudget installs the daily LLM cap audits are held against (nil removes it). It is safe to
+// call before Start and while audits run.
+func (p *Pool) SetBudget(b Budget) {
+	if b == nil {
+		p.budget.Store(nil)
+		return
+	}
+	p.budget.Store(&b)
+}
+
+// SetCostRecorder installs the recorder of the audits' cost records (nil removes it). It is safe
+// to call before Start and while audits run.
+func (p *Pool) SetCostRecorder(r CostRecorder) {
+	if r == nil {
+		p.recorder.Store(nil)
+		return
+	}
+	p.recorder.Store(&r)
 }
 
 // JudgeReady reports whether the engine can judge a new audit (nil when no check is installed).
@@ -365,7 +412,21 @@ func (p *Pool) run(job *Job, lane string) {
 	}
 	metrics.AuditJobs.WithLabelValues(lane, job.Selection, status).Inc()
 	metrics.AuditRoundtrip.Observe(finished.Sub(job.enqueued).Seconds())
+	if err == nil {
+		p.recordCosts(job, res)
+	}
 	p.publish(rec)
+}
+
+// recordCosts hands an answered audit's cost records to the cost recorder, if one is installed.
+func (p *Pool) recordCosts(job *Job, res *pb.AuditResult) {
+	r := p.recorder.Load()
+	if r == nil {
+		return
+	}
+	req := job.Request
+	(*r)(AuditCosts{TraceID: req.GetTraceId(), AuditID: req.GetAuditId(), Route: req.GetRoute(), Selection: job.Selection,
+		Records: res.GetCosts()})
 }
 
 // announceStarted records that a worker took job at started: the trace's audit status becomes

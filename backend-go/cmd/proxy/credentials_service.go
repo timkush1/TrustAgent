@@ -241,12 +241,10 @@ func (s *server) credentialStoreRefusal(snap *runtimecfg.Snapshot) *credentialEr
 	return nil
 }
 
-// judgeCredentials are the credentials the deep-audit judge can use (the engine's providers).
-var judgeCredentials = []string{credentials.NameOpenRouter, credentials.NameAnthropic, credentials.NameOpenAI}
-
 // checkBindTargets validates a write's bind list (D75): decision_model and judge only (upstreams
 // bind through PATCH /api/settings, D41), each one the credential can serve, and only with a
 // check, because a key is bound only once it passed one. It returns the targets without repeats.
+// judgeCredentials (settings_api.go) lists the credentials the deep-audit judge can use.
 func checkBindTargets(name string, bind []string, verify bool) ([]string, *credentialError) {
 	out := []string{}
 	for _, t := range bind {
