@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/truthtable/backend-go/internal/store"
 )
 
@@ -566,5 +568,45 @@ func TestWriterShutdownReturnsAtItsDeadline(t *testing.T) {
 	}
 	if took := time.Since(start); took > time.Second {
 		t.Errorf("Shutdown took %v past a 50 ms deadline", took)
+	}
+}
+
+// droppedTotal reads trustagent_gateway_trace_write_dropped_total from the default registry.
+func droppedTotal(t *testing.T) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() == "trustagent_gateway_trace_write_dropped_total" {
+			return f.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	t.Fatal("trustagent_gateway_trace_write_dropped_total is not registered")
+	return 0
+}
+
+// TestWriterCountsDropsInTheGatewayMetric: by default a dropped write counts in
+// trustagent_gateway_trace_write_dropped_total.
+func TestWriterCountsDropsInTheGatewayMetric(t *testing.T) {
+	fake := newFake()
+	w := New(batchStore{fake}, Config{Capacity: 1, BatchRows: 1, Interval: time.Hour,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	ctx := context.Background()
+	entered, release := fake.holdNext()
+	if err := w.StartTrace(ctx, startRec("a")); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	before := droppedTotal(t)
+	_ = w.StartTrace(ctx, startRec("b")) // fills the queue
+	_ = w.StartTrace(ctx, startRec("c")) // dropped
+	if got := droppedTotal(t) - before; got != 1 {
+		t.Errorf("trace_write_dropped_total grew by %v, want 1", got)
+	}
+	release()
+	if err := w.Shutdown(ctx); err != nil {
+		t.Fatal(err)
 	}
 }
