@@ -684,11 +684,11 @@ func (a *studioAPI) test(c *gin.Context) {
 		Summary: studioTestSummary{N: len(samples), Backend: client.Info().Backend}}
 	rows := make([]store.StudioResult, 0, len(samples))
 	compared, agreed := 0, 0
+	budgetHit := false
 	for i, o := range outcomes {
 		if o.Failed(jev.KindBudget) {
-			abortAPIDetails(c, http.StatusServiceUnavailable, codeBudgetExhausted,
-				"Today's decision budget ran out during the test.", map[string]any{"decision_budget_left_usd": a.budgetLeft()})
-			return
+			budgetHit = true // the call was refused, not made: no result and no row
+			continue
 		}
 		r := studio.ResultOf(o, ev.ref)
 		res := studioTestResult{
@@ -726,6 +726,12 @@ func (a *studioAPI) test(c *gin.Context) {
 			// The results were paid for: they are still answered, only not kept.
 			a.log.Warn("studio: the test results could not be stored", "run_id", resp.RunID, "err", err)
 		}
+	}
+	if budgetHit {
+		// The samples that ran were paid for and are kept above; the bench shows no partial run.
+		abortAPIDetails(c, http.StatusServiceUnavailable, codeBudgetExhausted,
+			"Today's decision budget ran out during the test.", map[string]any{"decision_budget_left_usd": a.budgetLeft()})
+		return
 	}
 	c.JSON(http.StatusOK, resp)
 }

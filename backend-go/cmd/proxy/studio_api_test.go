@@ -55,10 +55,12 @@ type studioJev struct {
 	noul    float64
 	cost    float64
 	fail    error
-	delay   time.Duration
-	calls   atomic.Int64
-	mu      sync.Mutex
-	opts    []jev.CallOptions
+	// failFrom > 0 fails only the calls from that one on (1-based), with fail.
+	failFrom int64
+	delay    time.Duration
+	calls    atomic.Int64
+	mu       sync.Mutex
+	opts     []jev.CallOptions
 }
 
 func (f *studioJev) Info() jev.Info {
@@ -70,7 +72,7 @@ func (f *studioJev) Info() jev.Info {
 }
 
 func (f *studioJev) Decide(ctx context.Context, req *jev.Request, opt jev.CallOptions) (*jev.Response, error) {
-	f.calls.Add(1)
+	n := f.calls.Add(1)
 	f.mu.Lock()
 	f.opts = append(f.opts, opt)
 	f.mu.Unlock()
@@ -81,7 +83,7 @@ func (f *studioJev) Decide(ctx context.Context, req *jev.Request, opt jev.CallOp
 			return nil, &jev.Error{Kind: jev.KindTimeout, Err: ctx.Err()}
 		}
 	}
-	if f.fail != nil {
+	if f.fail != nil && (f.failFrom == 0 || n >= f.failFrom) {
 		return nil, f.fail
 	}
 	answers := map[string]*decision.RawAnswer{}
@@ -459,6 +461,12 @@ func TestStudioTestBudgetAndBackend(t *testing.T) {
 	code, body = studioDo(t, r.url, http.MethodPost, "/api/studio/test", "", map[string]any{"ref": "groundedness@1", "samples": benchSamples(2)})
 	if code != http.StatusServiceUnavailable || errorCodeOf(t, body) != codeBudgetExhausted || len(r.db.rows) != 0 {
 		t.Errorf("budget refusal: %d %s", code, body)
+	}
+	// The budget runs out after the first call: the sample that ran was paid for and keeps its row.
+	r = newStudioRig(t, func(r *studioRig) { r.jev.fail, r.jev.failFrom = &jev.Error{Kind: jev.KindBudget}, 2 })
+	code, body = studioDo(t, r.url, http.MethodPost, "/api/studio/test", "", map[string]any{"ref": "groundedness@1", "samples": benchSamples(2)})
+	if code != http.StatusServiceUnavailable || errorCodeOf(t, body) != codeBudgetExhausted || len(r.db.rows) != 1 || r.db.rows[0].CostUSD == nil {
+		t.Errorf("budget ran out mid-test: %d %s, rows %d", code, body, len(r.db.rows))
 	}
 
 	// The decision model is off.
