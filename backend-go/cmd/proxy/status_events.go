@@ -48,14 +48,16 @@ func (s *server) publishEngineStatus(h grpc.EngineHealth) {
 // its knowledge store: that is unknown, not disabled, so the stream neither announces the add-on
 // off before the first health check nor turns it off when the engine stops answering.
 func (s *server) publishEngineComponents(h grpc.EngineHealth) {
-	s.hub.PublishStatus(componentEngine, h.State, h.Detail)
+	// The engine's own words (an error from a judge or a vector store) may echo a key; WS status
+	// details leave through the process Redactor (D42).
+	s.hub.PublishStatus(componentEngine, h.State, s.redact(h.Detail))
 	judge := judgeState(h)
 	s.hub.PublishStatus(componentJudge, judge, judgeDetail(judge))
 	k := knowledgeStatus(h)
 	if h.Response == nil && h.State != stateDisabled {
 		k.State, k.Detail = stateUnknown, ""
 	}
-	s.hub.PublishStatus(componentKnowledge, k.State, k.Detail)
+	s.hub.PublishStatus(componentKnowledge, k.State, s.redact(k.Detail))
 }
 
 // judgeDetail explains a judge state that is not up.
@@ -98,7 +100,7 @@ func (s *server) watchStatus() {
 		s.publishEngineComponents(s.status.engineHealth())
 	}
 	st := s.status.jevStatus()
-	s.hub.PublishStatus(componentDecisionModel, s.status.decisionModel().State, decisionModelDetail(st))
+	s.hub.PublishStatus(componentDecisionModel, s.status.decisionModel().State, s.redact(decisionModelDetail(st)))
 	if state, detail, ok := s.budgetStatus(st.Spend); ok {
 		s.publishBudget(state, detail)
 	}

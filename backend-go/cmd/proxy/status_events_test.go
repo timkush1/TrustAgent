@@ -222,6 +222,47 @@ func TestStatusEventDetails(t *testing.T) {
 	s.expect(t)
 }
 
+// TestStatusEventDetailsAreRedacted: an engine or decision-model detail that echoes a loaded secret
+// reaches the stream masked (D42), including a secret no credential pattern matches.
+func TestStatusEventDetailsAreRedacted(t *testing.T) {
+	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+	if got := config.NewRedactor().Redact("key " + secret); !strings.Contains(got, secret) {
+		t.Fatal("the pattern set alone masks the no-pattern secret; the test would prove nothing")
+	}
+	s := newStatusStream(t)
+	s.srv.redactor = config.NewRedactor(secret)
+	s.jev.set(func(st *jev.Status) {
+		st.State = "unauthorized"
+		st.LastError = &jev.StatusError{Kind: "unauthorized", Message: "vendor said: bad key " + secret}
+		st.Spend = nil
+	})
+	s.engine.set(grpc.EngineHealth{State: "down", Detail: "judge refused key " + secret})
+	s.srv.watchStatus()
+	// Read every frame the transition broadcast (judge and knowledge stay unknown while the
+	// engine is down): the engine and the decision model each carry a masked detail.
+	details := map[string]string{}
+	for {
+		_ = s.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		_, msg, err := s.conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		if strings.Contains(string(msg), secret) {
+			t.Errorf("a status frame carries the secret")
+		}
+		var f struct {
+			Data struct{ Component, Detail string } `json:"data"`
+		}
+		_ = json.Unmarshal(msg, &f)
+		details[f.Data.Component] = f.Data.Detail
+	}
+	for _, c := range []string{"engine", "decision_model"} {
+		if d := details[c]; d == "" || !strings.Contains(d, "key") {
+			t.Errorf("%s detail %q, want the masked message", c, d)
+		}
+	}
+}
+
 // TestStatusFixture: the golden status event fixture is a valid WsEvent with a component and state.
 func TestStatusFixture(t *testing.T) {
 	for _, name := range []string{"WsEvent.status.json", "WsEvent.calibration_updated.json"} {
@@ -363,15 +404,18 @@ func TestBudgetStatusNamesTheCaps(t *testing.T) {
 	spend(decisionReserve(true), 0.25) // enforcing calls spend the reserve
 	expectBudget(budgetExhausted, capDecision+","+capLLM)
 
-	fixture, err := contracts.FS.ReadFile("fixtures/api/WsEvent.status.budget-llm.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	contractstest.ValidateJSON(t, schemaWsEvent, fixture)
-	var ev struct {
-		Data struct{ Component, State, Detail string } `json:"data"`
-	}
-	if err := json.Unmarshal(fixture, &ev); err != nil || ev.Data.Component != componentBudget || ev.Data.Detail != capLLM {
-		t.Errorf("fixture %+v %v", ev.Data, err)
+	// The budget fixtures name the caps as the gateway sends them (D49).
+	for name, detail := range map[string]string{"budget-llm": capLLM, "budget-decision": capDecision} {
+		fixture, err := contracts.FS.ReadFile("fixtures/api/WsEvent.status." + name + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		contractstest.ValidateJSON(t, schemaWsEvent, fixture)
+		var ev struct {
+			Data struct{ Component, State, Detail string } `json:"data"`
+		}
+		if err := json.Unmarshal(fixture, &ev); err != nil || ev.Data.Component != componentBudget || ev.Data.Detail != detail {
+			t.Errorf("fixture %s %+v %v", name, ev.Data, err)
+		}
 	}
 }
