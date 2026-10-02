@@ -13,8 +13,8 @@
 TRUSTAGENT_VERSION ?= $(shell cat VERSION 2>/dev/null)
 export TRUSTAGENT_VERSION
 # The git revision the app images are built from (docker-compose.yml passes GIT_SHA to the
-# Dockerfiles): the proxy names it in the recordings GET /api/export/replay builds. Read once;
-# empty outside a git checkout, and a value from the environment (CI) wins.
+# Dockerfiles, which label each image with it). Read once; empty outside a git checkout, and a
+# value from the environment (CI) wins.
 ifeq ($(origin GIT_SHA),undefined)
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null)
 endif
