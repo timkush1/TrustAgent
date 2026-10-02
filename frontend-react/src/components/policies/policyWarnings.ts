@@ -61,6 +61,10 @@ function rephrase(message: string, ctx: PolicyWarningContext): string | null {
   m = /^sample_rate applies to observe routes only; this (\w+) route checks every request$/.exec(message);
   if (m) return `The sample rate only applies to Observe routes; this ${modeWord(m[1])} route checks every request.`;
   if (/^the \w+ route trusts user-message context/.test(message)) return copy.downgrades.trusts_user_context;
+  m = /^client_rules lets end users rewrite rules on the enforcing route "([^"]+)"$/.exec(message);
+  if (m) {
+    return `Client rules are on, so each request can bring its own check rules, and ${routeTitle(m[1])} blocks answers: a caller could loosen the rules that decide what it blocks. Turn client rules off, or keep this route from blocking.`;
+  }
   return null;
 }
 

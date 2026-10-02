@@ -28,6 +28,12 @@ describe('policy warnings in plain words', () => {
     expect(policyWarningView('routes[1].evidence.sources: the block route trusts user-message context: an end user could paste text (drop request_context)', ctx).text).toBe(
       'billing-bot: This route treats text pasted by users as documents; a user could make a false answer look supported.',
     );
+    const clientRules = policyWarningView('overrides.client_rules (line 4, col 3): client_rules lets end users rewrite rules on the enforcing route "billing-bot"', ctx);
+    expect(clientRules.route).toBeNull();
+    expect(clientRules.text).toBe(
+      'Client rules are on, so each request can bring its own check rules, and billing-bot blocks answers: a caller could loosen the rules that decide what it blocks. Turn client rules off, or keep this route from blocking.',
+    );
+    expect(clientRules.text).not.toMatch(/client_rules|enforcing/);
   });
 
   it('keeps the server sentence for a warning it does not know, without the path', () => {
