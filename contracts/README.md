@@ -200,8 +200,8 @@ sample and stores every body, so runs are deterministic.
 **Phases.** A scenario that needs a later gateway phase than the walking skeleton carries that phase as a
 set tag: `p3` for streaming gating, `/v1/messages`, `/v1/completions`, block and fallback bodies, and routes
 in `config/policies.pending.yaml`. `trafficgen` skips scenarios whose phase is later than `--phase`
-(default: the phase this build implements, `p3`), so a gateway of an earlier phase can still be driven
-with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
+(default: the phase this build implements, `p4`; no scenario carries `p4` yet), so a gateway of an earlier
+phase can still be driven with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
 that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 26 scenarios
 (6 of them `p3`) and the e2e set 23. A Go test fails when a scenario's tags do not match its features.
 
@@ -218,7 +218,7 @@ starts the e2e stack (`docker-compose.e2e.yml`, project `truthtable-e2e`): the `
 calls mock-upstream's `/v1/systemone` over HTTP, the OpenAI and Anthropic upstreams are mock-upstream too,
 the judge is the mock provider, and traces are written before the response returns
 (`TRUTHTABLE_TRACE_FLUSH=sync`). `make e2e-scenarios` sends set `e2e` with `--upstream all`, so every answer
-takes the upstream path; `make e2e-down` removes the stack. Both targets send trafficgen's default phase (`p3`);
+takes the upstream path; `make e2e-down` removes the stack. Both targets send trafficgen's default phase (`p4`);
 `DEMO_PHASE` and `E2E_PHASE` choose another.
 
 The pack (27 scenarios):
