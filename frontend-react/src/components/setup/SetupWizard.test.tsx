@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import connectNoCredits from '@contracts/fixtures/api/ConnectCompleteResponse.no-credits.json';
 import { ServicesContext, type AppServices } from '@/app/services';
 import { buildRuntimeConfig } from '@/config/runtime';
-import { clearDashboardKey, readDashboardKey } from '@/data/http';
+import { clearDashboardKey, readDashboardKey, storeDashboardKey } from '@/data/http';
 import { LiveDataSource } from '@/data/live/liveDataSource';
 import { copy } from '@/domain/presentation';
 import { routeTree } from '@/routeTree.gen';
@@ -67,7 +67,7 @@ function renderCrossOrigin(path: string, control = signedOut()) {
       </QueryClientProvider>
     </ServicesContext.Provider>,
   );
-  return { control };
+  return { control, router };
 }
 
 const panel = async (title: string) => (await screen.findByRole('heading', { level: 2, name: new RegExp(title) })).closest('.rounded-lg') as HTMLElement;
@@ -244,6 +244,22 @@ describe('Setup wizard on another origin (P4-PLAN D71)', { timeout: 30_000 }, ()
     expect(await screen.findByText(/Signed in for this tab as/)).toBeInTheDocument();
     expect(readDashboardKey()).toBe(CLAIMED_ADMIN_KEY);
     expect(screen.queryByText('This browser did not keep the session')).not.toBeInTheDocument();
+  });
+
+  it('forgets this tab’s key after Sign out everywhere, as the confirmation says', async () => {
+    const user = userEvent.setup();
+    storeDashboardKey('ta_admin-key');
+    const control = signedOut({ keySessions: { 'ta_admin-key': adminSession({ actor: 'admin', sliding: false }) } });
+    const { router } = renderCrossOrigin('/app/settings/access', control);
+    await user.click(await screen.findByRole('button', { name: copy.settings.sign_out_everywhere }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: copy.settings.sign_out_everywhere }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/app/setup'));
+    const [call] = control.callsTo('/api/session', 'DELETE');
+    expect(call.query.get('all')).toBe('true');
+    expect(call.headers.get('x-trustagent-key')).toBe('ta_admin-key');
+    expect(readDashboardKey()).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 });
 

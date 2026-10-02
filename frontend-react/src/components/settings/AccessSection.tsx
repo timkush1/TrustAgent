@@ -11,7 +11,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useNavigate } from '@tanstack/react-router';
 import { KeyRound, LogOut, Plus, ShieldOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { useDataSource } from '@/app/services';
+import { useDataSource, useRuntimeConfig } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/common/DataTable';
@@ -29,7 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { readDashboardKey } from '@/data/http';
+import { clearDashboardKey, readDashboardKey } from '@/data/http';
 import { sessionQuery, statusQuery } from '@/data/queries';
 import { adminAuditQuery, apiKeysQuery, qkcSecurity } from '@/data/queries/security';
 import { formatDateTime, formatRelativeTime } from '@/domain/format';
@@ -269,6 +269,7 @@ function SignOutEverywhere({ writeReason }: { writeReason: ReturnType<typeof use
   const ds = useDataSource();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { crossOrigin } = useRuntimeConfig();
   return (
     <DisabledAction reason={writeReason}>
       {(p) => (
@@ -284,6 +285,9 @@ function SignOutEverywhere({ writeReason }: { writeReason: ReturnType<typeof use
           confirmLabel={copy.settings.sign_out_everywhere}
           onConfirm={async () => {
             await ds.signOutEverywhere();
+            // On another origin this tab signs in with a key, not a session: forget it too, so
+            // "including this one" holds here as well (D71).
+            if (crossOrigin) clearDashboardKey();
             await qc.invalidateQueries();
             void navigate({ to: '/app/setup' });
           }}
