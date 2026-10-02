@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 )
 
@@ -154,5 +155,59 @@ func TestEnginePushAtBootWithDatabase(t *testing.T) {
 	}
 	if snap := env.srv.rt.manager.Current(); snap.Version != version || snap.Epoch != epoch {
 		t.Errorf("snapshot (%d, %q) is not the store's", snap.Version, snap.Epoch)
+	}
+}
+
+// TestEnginePushCarriesAPricingOverride (D34, D53): a pricing override saved through
+// PATCH /api/settings reaches the engine in the next push, without a restart: the pushed table is
+// the cost ledger's effective table, the override listed first and labelled override, so the
+// engine prices its judge calls as the gateway prices them.
+func TestEnginePushCarriesAPricingOverride(t *testing.T) {
+	pg := runtimePG(t)
+	re := newReportingEngine(t)
+	env := newTestEnv(t, envOpts{pg: pg, master: durableMaster(t, 43), engine: re.eng, adminKey: settingsAdminKey})
+	pushedTable := func(p *pb.RuntimeConfig) decision.PriceTable {
+		t.Helper()
+		var table decision.PriceTable
+		if err := json.Unmarshal(p.GetPriceTableJson(), &table); err != nil || len(table.Entries) == 0 {
+			t.Fatalf("pushed price table: %v %s", err, p.GetPriceTableJson())
+		}
+		return table
+	}
+	boot := re.waitPushes(t, 1)
+	if first := pushedTable(boot[len(boot)-1]).Entries[0]; first.Label == decision.PriceLabelOverride {
+		t.Fatalf("the boot push already carries an override: %+v", first)
+	}
+
+	_, etag := env.settings(settingsAdminKey)
+	resp, body := env.patchSettings(etag, `{"pricing_overrides":[{"provider":"anthropic","match":"claude-haiku-4-5*",
+		"input_per_mtok":1.1,"output_per_mtok":5.5,"label":"override","as_of":"2026-10-01"}]}`, "")
+	env.patched(resp, body)
+	version := env.srv.rt.manager.Current().Version
+
+	deadline := time.Now().Add(5 * time.Second)
+	var last *pb.RuntimeConfig
+	for {
+		if p := re.eng.Pushes(); len(p) > 0 && p[len(p)-1].GetVersion() >= version {
+			last = p[len(p)-1]
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no push of version %d reached the engine", version)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	table := pushedTable(last)
+	first := table.Entries[0]
+	if first.Provider != "anthropic" || first.Match != "claude-haiku-4-5*" || first.InputPerMTok != 1.1 || first.OutputPerMTok != 5.5 ||
+		first.Label != decision.PriceLabelOverride {
+		t.Errorf("the pushed table's first entry = %+v, want the override", first)
+	}
+	var vendor bool
+	for _, e := range table.Entries[1:] {
+		vendor = vendor || (e.Provider == "anthropic" && e.Match == "claude-haiku-4-5*" && e.Label != decision.PriceLabelOverride)
+	}
+	if !vendor {
+		t.Errorf("the contract's own entry is gone from the pushed table: %+v", table.Entries)
 	}
 }
