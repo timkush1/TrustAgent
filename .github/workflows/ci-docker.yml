@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The version tag, and the git revision the proxy stamps into the recordings it exports.
+      # The version tag, and the git revision the images are labelled with (GIT_SHA).
       - name: Image version
         run: |
           echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
