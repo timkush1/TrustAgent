@@ -14,6 +14,7 @@ the request between attempts.
 
 import email.utils
 import json
+import math
 import time
 from typing import Any, Dict, Mapping, Optional
 
@@ -319,16 +320,21 @@ def object_field(data: JsonObject, key: str) -> JsonObject:
 
 
 def int_field(data: JsonObject, key: str) -> int:
-    """data[key] as a non-negative int (0 when missing or not a number)."""
+    """data[key] as a non-negative int (0 when missing, not a number or not finite)."""
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0
+    if isinstance(value, float) and not math.isfinite(value):
+        return 0  # json.loads accepts NaN and Infinity, which no int can hold
     return max(0, int(value))
 
 
 def float_field(data: JsonObject, key: str) -> Optional[float]:
-    """data[key] as a float, or None when missing or not a number."""
+    """data[key] as a float, or None when missing, not a number or beyond the float range."""
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError:  # an integer no float can hold
+        return None

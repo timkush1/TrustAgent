@@ -9,7 +9,7 @@ into proto messages with the builders below. Everything here is pure: no I/O.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from . import __version__
 from .config import Settings
@@ -138,10 +138,17 @@ def engine_info(
     qdrant_reachable: bool,
     kb_claims: int,
     runtime_config_version: int = 0,
+    runtime_config_epoch: str = "",
+    env_managed: Sequence[str] = (),
+    runtime_warnings: Sequence[str] = (),
 ) -> "pb.EngineInfo":
-    """The GetEngineInfo answer."""
+    """
+    The GetEngineInfo answer. The runtime_* arguments describe the last
+    applied runtime-config push (version, epoch and its warnings); env_managed
+    names the judge keys set in the engine's env (names only, D34).
+    """
     configured, effective, reason = verifier_resolution(context.settings, context.judge)
-    warnings = list(context.warnings) + list(context.judge.warnings)
+    warnings = list(context.warnings) + list(context.judge.warnings) + list(runtime_warnings)
     knowledge = knowledge_info(context.knowledge, qdrant_reachable, kb_claims)
     if context.settings.knowledge_enabled and knowledge.reason:
         warnings.append(f"knowledge add-on enabled but not running: {knowledge.reason}")
@@ -159,4 +166,6 @@ def engine_info(
         runtime_config_version=runtime_config_version,
         max_audits=context.max_audits,
         max_rpcs=context.max_rpcs,
+        env_managed=list(env_managed),
+        runtime_config_epoch=runtime_config_epoch,
     )

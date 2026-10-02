@@ -12,6 +12,7 @@ import logging
 from typing import Any, Dict, List
 
 from ..providers.base import CompletionRequest, LLMProvider
+from ..providers.costs import KB_INGEST, complete_recorded
 from ..security import parse_json_strict, sanitize_text
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ async def check_contradiction(claim_a: str, claim_b: str, provider: LLMProvider)
     )
 
     try:
-        response = await provider.complete(request)
+        response = await complete_recorded(provider, request, KB_INGEST)
     except Exception as e:
         logger.error(f"Contradiction check failed: {e}")
         return 0.0

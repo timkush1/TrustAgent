@@ -36,6 +36,10 @@ template changes don't invalidate recorded fixtures:
 Every string in `match` must appear in the rendered prompt (system + user
 messages joined). The first fixture whose substrings all match wins. Match
 fixtures answer every prompt outside a scenario scope.
+
+Inside `mock_answer_scope(answer)` the mock answers every prompt with
+`answer`: the Studio drafter's simulated draft (the drafter prompt's first
+example), so "Draft with AI" works without a key.
 """
 
 import json
@@ -214,6 +218,22 @@ def mock_judge_scope(scenario: str = "") -> Iterator[MockJudgeScope]:
         _SCOPE.reset(token)
 
 
+_ANSWER: ContextVar[Optional[str]] = ContextVar("truthtable_mock_answer", default=None)
+
+
+@contextmanager
+def mock_answer_scope(answer: str) -> Iterator[None]:
+    """
+    Make the mock judge answer every prompt inside the block with `answer`
+    (the Studio drafter's simulated draft). Other providers ignore it.
+    """
+    token = _ANSWER.set(answer)
+    try:
+        yield
+    finally:
+        _ANSWER.reset(token)
+
+
 class MockLLMProvider(LLMProvider):
     """Deterministic fixture-replay provider for evaluation, testing and the demo."""
 
@@ -326,8 +346,11 @@ class MockLLMProvider(LLMProvider):
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         scope = _SCOPE.get()
+        answer = _ANSWER.get()
         try:
-            if scope is not None and scope.scenario and self.scenarios is not None:
+            if answer is not None:
+                content = answer
+            elif scope is not None and scope.scenario and self.scenarios is not None:
                 user_text = "\n".join(
                     message.content
                     for message in request.messages
