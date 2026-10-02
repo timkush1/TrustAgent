@@ -123,7 +123,11 @@ describe('Setup wizard, step 1: secure this dashboard', { timeout: 30_000 }, () 
     const next = screen.getByRole('button', { name: 'Next' });
     expect(next).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText('Tick “I saved it” first')).toBeInTheDocument();
+    // The steps cannot be skipped either while the key waits to be saved.
+    const steps = screen.getByRole('navigation', { name: 'Setup steps' });
+    expect(within(steps).queryAllByRole('link')).toHaveLength(0);
     await user.click(screen.getByRole('checkbox', { name: copy.setup.step_secure.saved_confirm }));
+    expect(within(steps).getAllByRole('link')).toHaveLength(3);
     await user.click(screen.getByRole('button', { name: 'Next' }));
     expect(await panel(copy.setup.step_connect.title)).toBeTruthy();
     expect(screen.getByRole('link', { name: /Secure this dashboard.*Done/ })).toBeInTheDocument();

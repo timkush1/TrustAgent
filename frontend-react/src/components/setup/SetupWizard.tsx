@@ -40,37 +40,48 @@ const TITLES: Record<SetupStep, string> = {
   try: copy.setup.step_see_it_work.title,
 };
 
-function Stepper({ current, done }: { current: SetupStep; done: Record<SetupStep, boolean> }) {
+function Stepper({ current, done, locked }: { current: SetupStep; done: Record<SetupStep, boolean>; locked: boolean }) {
   return (
     <nav aria-label="Setup steps">
       <ol className="grid gap-2 sm:grid-cols-3">
         {SETUP_STEPS.map((step, i) => {
           const isCurrent = step === current;
-          return (
-            <li key={step}>
-              <Link
-                to="/app/setup"
-                search={{ step }}
-                aria-current={isCurrent ? 'step' : undefined}
+          const inner = (
+            <>
+              <span
+                aria-hidden="true"
                 className={cn(
-                  'flex items-center gap-2 rounded-md border px-3 py-2 text-sm',
-                  isCurrent ? 'border-fg bg-surface text-fg' : 'border-border text-fg-muted hover:bg-surface-hover hover:text-fg',
+                  'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs tabular',
+                  done[step] ? 'border-tone-success text-tone-success' : isCurrent ? 'border-fg text-fg' : 'border-border-strong',
                 )}
               >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs tabular',
-                    done[step] ? 'border-tone-success text-tone-success' : isCurrent ? 'border-fg text-fg' : 'border-border-strong',
-                  )}
+                {done[step] ? <Check className="size-3.5" /> : i + 1}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-medium">{TITLES[step]}</span>
+                <span className="block text-xs">{done[step] ? 'Done' : isCurrent ? 'Now' : 'Not yet'}</span>
+              </span>
+            </>
+          );
+          const box = cn('flex items-center gap-2 rounded-md border px-3 py-2 text-sm', isCurrent ? 'border-fg bg-surface text-fg' : 'border-border text-fg-muted');
+          return (
+            <li key={step}>
+              {/* While a key shown once waits for "I saved it", the steps are progress only: leaving
+                  this step would take the key off the screen before it is saved. */}
+              {locked ? (
+                <span aria-current={isCurrent ? 'step' : undefined} className={box}>
+                  {inner}
+                </span>
+              ) : (
+                <Link
+                  to="/app/setup"
+                  search={{ step }}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  className={cn(box, isCurrent ? null : 'hover:bg-surface-hover hover:text-fg')}
                 >
-                  {done[step] ? <Check className="size-3.5" /> : i + 1}
-                </span>
-                <span className="min-w-0">
-                  <span className="block font-medium">{TITLES[step]}</span>
-                  <span className="block text-xs">{done[step] ? 'Done' : isCurrent ? 'Now' : 'Not yet'}</span>
-                </span>
-              </Link>
+                  {inner}
+                </Link>
+              )}
             </li>
           );
         })}
@@ -143,7 +154,7 @@ export function SetupWizard({ step }: { step?: SetupStep }) {
           <CommandText text={fillTemplate(copy.connect_app.demo_stack)} />
         </p>
       ) : null}
-      <Stepper current={current} done={done} />
+      <Stepper current={current} done={done} locked={current === 'secure' && auth.createdKey !== null && !saved} />
       <Card>
         <CardHeader level={2} title={`${index + 1}. ${TITLES[current]}`} />
         <CardContent>{body}</CardContent>
