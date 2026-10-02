@@ -313,7 +313,7 @@ describe('Studio', { timeout: 30_000 }, () => {
 
     expect(await within(watch).findByText('Watching on support-bot')).toBeInTheDocument();
     expect(within(watch).getByRole('button', { name: 'Make active' })).toBeInTheDocument();
-    expect(within(step(/Step 7: Calibrate for blocking/)).getByRole('link', { name: /Calibrate on the check's page/ })).toHaveAttribute('href', '/app/evaluators/blames_the_customer');
+    expect(within(step(/Step 7: Calibrate for blocking/)).getByRole('link', { name: /Calibrate on the check's page/ })).toHaveAttribute('href', '/app/evaluators/blames_the_customer?tab=calibration');
   });
 
   it('keeps an edit made while a save is on its way, against the version it saved', async () => {

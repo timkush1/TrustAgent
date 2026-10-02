@@ -23,7 +23,7 @@ export function CalibrateStep({ evaluatorId }: { evaluatorId: string | null }) {
             <Tags aria-hidden="true" />
             Label answers in the label queue
           </Link>
-          <Link to="/app/evaluators/$id" params={{ id: evaluatorId }} className={buttonVariants({ variant: 'secondary' })}>
+          <Link to="/app/evaluators/$id" params={{ id: evaluatorId }} search={{ tab: 'calibration' }} className={buttonVariants({ variant: 'secondary' })}>
             <Scale aria-hidden="true" />
             Calibrate on the check's page
           </Link>
