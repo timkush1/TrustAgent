@@ -16,7 +16,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useDataSource } from '@/app/services';
 import { DisabledAction, DisabledReason, type Reason } from '@/components/common/DisabledReason';
 import { CredentialResult } from '@/components/settings/CredentialResult';
-import { EnvManagedNote, ProblemNote } from '@/components/settings/SettingsKit';
+import { EnvManagedNote, ProblemNote, StoreNotice } from '@/components/settings/SettingsKit';
 import { usePutCredential, useVerifyCredential } from '@/components/settings/useCredentialWrites';
 import { useCredentialWriteReason } from '@/components/settings/useSettingsAccess';
 import { Button } from '@/components/ui/button';
@@ -114,6 +114,9 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
           <ExternalLink aria-hidden="true" className="size-3" />
         </a>
       </p>
+
+      {/* Why keys cannot be saved here (no database, no master key) and how to fix it (D32). */}
+      <StoreNotice stillWorks="Keys set in .env keep working." />
 
       {openrouterEnv ? (
         <div className="space-y-1">

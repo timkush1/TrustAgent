@@ -30,6 +30,9 @@ function failureDetails(error: unknown): string[] {
     lines.push(fillTemplate(copy.settings.env_managed, { keys: details.keys.map(String).join(', ') }));
   }
   if (error.code === 'conflict' && details.reason === 'last_admin_key') lines.push(copy.settings.last_admin_key);
+  // Connect OpenRouter refused this dashboard's address (D38): the proxy's message already says
+  // where to open the dashboard, and the generic "something else changed this first" would mislead.
+  const explained = error.code === 'conflict' && details.reason === 'callback_origin';
   if (error.code === 'stale_version') lines.push(copy.settings.stale_version);
   for (const fe of error.fieldErrors) {
     const code = fe.code;
@@ -41,7 +44,7 @@ function failureDetails(error: unknown): string[] {
       lines.push(P4_FIELD_ERROR_CODES[code as keyof typeof P4_FIELD_ERROR_CODES]);
     }
   }
-  if (lines.length === 0) {
+  if (lines.length === 0 && !explained) {
     const hint = errorCodeHint(error);
     if (hint) lines.push(hint);
   }
@@ -96,7 +99,7 @@ export function EnvManagedNote({ keys, engine = false, className }: { keys: read
 }
 
 /** The credentials store, when keys cannot be saved here (D32), and keys the master key cannot read. */
-export function StoreNotice() {
+export function StoreNotice({ stillWorks = 'Keys set in .env keep working, and you can still test them here.' }: { stillWorks?: string }) {
   const { status } = useSystemStatus();
   if (!status) return null;
   const { store, undecryptable } = status.credentials;
@@ -107,7 +110,7 @@ export function StoreNotice() {
         <DegradedState
           title={view.title}
           reason={view.body}
-          stillWorks="Keys set in .env keep working, and you can still test them here."
+          stillWorks={stillWorks}
           action={
             <Link to="/app/settings/$section" params={{ section: 'all' }} className={cn(linkClass, 'text-sm')}>
               See where each setting comes from

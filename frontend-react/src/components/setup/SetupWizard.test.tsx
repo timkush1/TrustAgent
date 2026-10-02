@@ -293,6 +293,25 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     expect(control.callsTo('/api/connect/openrouter/start')[0].body).toEqual({ return_to: '/app/setup?step=connect' });
   });
 
+  it('says where to open the dashboard when Connect refuses its address, without the generic conflict hint (D38)', async () => {
+    const user = userEvent.setup();
+    const assign = vi.spyOn(browserNavigation, 'assign').mockImplementation(() => {});
+    const message = 'This dashboard address is not one the gateway allows. Open the dashboard at http://localhost:3000 and connect again.';
+    renderPage('/app/setup?step=connect', {
+      control: createControlApi({
+        settings: unbound(),
+        connectStart: errorReply(409, 'conflict', message, undefined, { public_url: 'http://localhost:3000', reason: 'callback_origin' }),
+      }),
+      status: fresh(),
+    });
+    await user.click(await screen.findByRole('button', { name: copy.setup.step_connect.primary }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(message);
+    expect(alert).not.toHaveTextContent('Something else changed this first');
+    expect(assign).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(CONNECT_PENDING_KEY)).toBeNull();
+  });
+
   it('pastes a key in one call that verifies and binds both checks, then opens step 3', async () => {
     const user = userEvent.setup();
     const control = createControlApi({ settings: unbound() });
@@ -382,7 +401,9 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     });
     expect(await screen.findByRole('button', { name: copy.setup.step_connect.primary })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('button', { name: copy.setup.step_connect.paste_key })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText("Keys can't be saved yet")).toBeInTheDocument();
+    expect(screen.getAllByText("Keys can't be saved yet").length).toBeGreaterThan(0);
+    // The fix is on the page, not only the refusal.
+    expect(screen.getByText(copy.settings.store_unavailable)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: copy.setup.step_connect.simulated })).toHaveAttribute('aria-disabled', 'false');
     stopLive();
     document.body.innerHTML = '';
@@ -393,6 +414,7 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     });
     expect(await screen.findByRole('button', { name: copy.setup.step_connect.simulated })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getAllByText(copy.disabled_reasons.needs_database).length).toBeGreaterThan(0);
+    expect(screen.getByText(copy.settings.no_database)).toBeInTheDocument();
   });
 
   it('has no axe violations', async () => {
