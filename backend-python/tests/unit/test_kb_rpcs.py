@@ -20,7 +20,7 @@ from truthtable.grpc.pb import evaluator_pb2 as pb
 from truthtable.grpc.pb import evaluator_pb2_grpc as pb_grpc
 from truthtable.grpc.server import AuditServicer
 from truthtable.kb.ingestion import ClaimIngestor
-from truthtable.runtime.redaction import Redactor
+from truthtable.runtime.redaction import Redactor, redact_patterns
 
 RPC_TIMEOUT_S = 5
 
@@ -208,6 +208,8 @@ async def test_claim_ingest_returns_one_kb_ingest_cost_per_judge_call() -> None:
 
 
 async def test_a_failed_ingest_still_returns_its_costs_and_a_redacted_status() -> None:
+    # P4-PLAN section 0 rule 8: only its registration can mask the control secret.
+    assert redact_patterns(UNMATCHED_SECRET) == UNMATCHED_SECRET
     response = await _ingest_with_claims(
         ClaimStore(fail_with=f"store refused the write (token {UNMATCHED_SECRET})")
     )

@@ -92,6 +92,12 @@ def assert_absent(secret: str, text: str, where: str) -> None:
     assert not leaked, f"a secret leaked into {where}"
 
 
+def assert_unmatched(secret: str) -> None:
+    """P4-PLAN section 0 rule 8: a leak test's control secret matches no redaction pattern."""
+    untouched = redact_patterns(secret) == secret
+    assert untouched, "the control secret matches a redaction pattern"
+
+
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     for name in (
@@ -685,6 +691,7 @@ async def test_the_price_table_is_applied() -> None:
 
 
 async def test_info_reports_env_managed_names_and_the_env_credential_source() -> None:
+    assert_unmatched(UNMATCHED_SECRET)
     transport = openrouter_transport()
     env = OpenRouterProvider(model="env/model", api_key=ENV_KEY, transport=transport)
     servicer = engine_servicer(
@@ -709,6 +716,7 @@ async def test_info_reports_env_managed_names_and_the_env_credential_source() ->
 async def test_info_masks_secrets_in_its_warnings_and_reasons() -> None:
     # A startup health failure can quote a provider's error body; a pushed
     # judge's build error can quote its exception. Neither reaches the gateway.
+    assert_unmatched(UNMATCHED_SECRET)
     leaked = f"openrouter answered 401 for key {UNMATCHED_SECRET}"
     servicer = engine_servicer(None, redactor=Redactor([UNMATCHED_SECRET]))
     assert servicer.engine is not None
@@ -771,6 +779,7 @@ async def test_a_servicer_without_a_runtime_manager_refuses_pushes() -> None:
 
 def test_the_unmatched_secret_needs_registration() -> None:
     # The pattern set alone leaves it as it is: only a registered secret is masked.
+    assert_unmatched(UNMATCHED_SECRET)
     assert redact_patterns(f"key={UNMATCHED_SECRET}") == f"key={UNMATCHED_SECRET}"
     assert Redactor([UNMATCHED_SECRET]).redact(f"key={UNMATCHED_SECRET}") == f"key={MASKED}"
 
@@ -797,6 +806,7 @@ def test_settings_secrets_are_the_non_empty_secret_settings() -> None:
 
 
 async def test_logs_never_carry_a_secret(caplog: pytest.LogCaptureFixture) -> None:
+    assert_unmatched(UNMATCHED_SECRET)
     caplog.set_level(logging.DEBUG)
     root = logging.getLogger()
     saved = [(handler, handler.formatter, list(handler.filters)) for handler in root.handlers]
@@ -808,6 +818,7 @@ async def test_logs_never_carry_a_secret(caplog: pytest.LogCaptureFixture) -> No
         config = push(1, secret=DASHBOARD_KEY.replace("sk-or-v1-", "orkey-"))
         await manager.apply(config)
         pushed = config.credentials["openrouter"].secret
+        assert_unmatched(pushed)
 
         child = logging.getLogger("truthtable.tests.redaction.child")
         child.info("env key %s in use", UNMATCHED_SECRET)

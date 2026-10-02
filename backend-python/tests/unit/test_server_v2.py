@@ -48,7 +48,7 @@ from truthtable.providers.limiter import LimitedProvider
 from truthtable.providers.mock import MockLLMProvider, parse_scenario_pack
 from truthtable.providers.swappable import SwappableProvider
 from truthtable.runtime.manager import ProviderManager
-from truthtable.runtime.redaction import Redactor
+from truthtable.runtime.redaction import Redactor, redact_patterns
 from truthtable.scoring import ScoringConfig
 
 RPC_TIMEOUT_S = 5
@@ -431,6 +431,37 @@ async def test_draft_evaluator_judge_failure_is_unavailable() -> None:
 
     assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
     assert exc_info.value.details().startswith("judge_unavailable: ")
+
+
+# Fake; matches no redaction pattern, so only its registration masks it (P4-PLAN section 0 rule 8).
+UNMATCHED_SECRET = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+
+
+class LeakingJudge(FailingJudge):
+    """A judge whose failure quotes the key it was called with."""
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        raise ProviderError(
+            f"openrouter answered 401 for key {UNMATCHED_SECRET}",
+            kind="auth",
+            provider="openrouter",
+        )
+
+
+async def test_draft_evaluator_failure_details_never_carry_a_secret() -> None:
+    assert redact_patterns(UNMATCHED_SECRET) == UNMATCHED_SECRET
+    servicer = AuditServicer(
+        audit_graph=None, provider=LeakingJudge(model="m"), redactor=Redactor([UNMATCHED_SECRET])
+    )
+    async with serving(servicer) as audit_stub:
+        with pytest.raises(aio.AioRpcError) as exc_info:
+            await audit_stub.DraftEvaluator(DRAFT_REQUEST, timeout=RPC_TIMEOUT_S)
+
+    details = exc_info.value.details()
+    assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
+    assert details.startswith("judge_unavailable: ") and "[redacted]" in details
+    leaked = UNMATCHED_SECRET in details
+    assert not leaked, "a secret leaked into the DraftEvaluator status details"
 
 
 # ---------------------------------------------------------------------------
