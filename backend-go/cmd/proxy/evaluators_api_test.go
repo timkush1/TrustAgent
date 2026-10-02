@@ -79,8 +79,8 @@ func (e *testEnv) call(method, path, key string, body any, headers ...string) (*
 	return resp, b
 }
 
-// apiErr decodes an ApiErrorBody.
-type apiErr struct {
+// evalAPIErr decodes an ApiErrorBody.
+type evalAPIErr struct {
 	Error struct {
 		Code        string         `json:"code"`
 		Message     string         `json:"message"`
@@ -89,9 +89,9 @@ type apiErr struct {
 	} `json:"error"`
 }
 
-func decodeErr(t *testing.T, body []byte) apiErr {
+func decodeErr(t *testing.T, body []byte) evalAPIErr {
 	t.Helper()
-	var e apiErr
+	var e evalAPIErr
 	if err := json.Unmarshal(body, &e); err != nil {
 		t.Fatalf("not an error body: %s", body)
 	}
