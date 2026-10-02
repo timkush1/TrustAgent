@@ -1037,6 +1037,9 @@ func (a *studioAPI) dryRun(c *gin.Context) {
 				continue // never started: the caller went away first
 			}
 			r := tally.Add(traces[i], o)
+			if o.Skipped {
+				continue // the spend cap stopped the run first: never evaluated, so no row either
+			}
 			rows = append(rows, studioRow(runID, store.StudioKindDryRun, traces[i].TraceID, ev.resultRef, o, r))
 			budgetHit = budgetHit || o.Failed(jev.KindBudget)
 		}

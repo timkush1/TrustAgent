@@ -849,6 +849,42 @@ func TestStudioDryRunStreamsInOrderAndExtrapolates(t *testing.T) {
 	}
 }
 
+// The calls cost far more than their estimate: the run stops once it has spent about twice what
+// the caller confirmed, and reports what ran. The samples the cap skipped were never evaluated, so
+// they count nowhere: not in the result, not in a studio_results row.
+func TestStudioDryRunStopsAtTwiceItsEstimate(t *testing.T) {
+	r := newStudioRig(t, func(r *studioRig) {
+		r.jev.noul, r.jev.cost = 0.9, 1 // $1 a call, against an estimate of a fraction of a cent
+		r.db.population, r.db.candidates = 24, dryRunCandidates(24, func(int) float64 { return 1 })
+		r.api.cfg.StudioConfirmAboveUSD = 10
+	})
+	resp := studioCall(t, context.Background(), r.url, http.MethodPost, "/api/studio/dry-run", "", dryRunBody(nil))
+	events := readStudioEvents(t, resp, nil)
+	if len(events) != 3 || events[1].name != "progress" || events[2].name != "done" {
+		t.Fatalf("events = %+v", events)
+	}
+	var done dryRunResult
+	_ = json.Unmarshal(events[2].data, &done)
+	calls := int(r.jev.calls.Load())
+	if done.Sampled == 0 || done.Sampled >= dryRunBatch || done.Sampled != calls || done.Fired != done.Sampled {
+		t.Errorf("sampled %d, fired %d, calls %d", done.Sampled, done.Fired, calls)
+	}
+	if math.Abs(done.CostUSD-float64(calls)) > 1e-9 {
+		t.Errorf("cost %v for %d calls", done.CostUSD, calls)
+	}
+	if len(r.db.rows) != done.Sampled {
+		t.Errorf("%d rows for %d evaluated samples", len(r.db.rows), done.Sampled)
+	}
+	for _, row := range r.db.rows {
+		if row.Status == nil || *row.Status != decision.EvalAssessed || row.CostUSD == nil {
+			t.Errorf("row %+v", row)
+		}
+	}
+	if audits := r.db.auditRows(); len(audits) != 1 || audits[0].Diff.(map[string]any)["sampled"] != done.Sampled {
+		t.Errorf("audit = %+v", audits)
+	}
+}
+
 func TestStudioDryRunWeightsBodiesKeptLessOften(t *testing.T) {
 	// The answers kept with probability 0.25 pass; the always-kept ones fire.
 	r := newStudioRig(t, func(r *studioRig) {
