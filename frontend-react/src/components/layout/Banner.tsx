@@ -1,8 +1,10 @@
-import { CircleAlert, Info } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { ArrowRight, CircleAlert, ExternalLink, Info } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { useRuntimeConfig } from '@/app/services';
 import { ReplayBanner } from '@/components/replay/ReplayBanner';
 import { useBanner } from '@/data/useSystem';
+import type { BannerFix } from '@/domain/banner';
 import { splitCommands, toneVar } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 
@@ -44,7 +46,34 @@ function GatewayBanner() {
             )}
           </span>
         ) : null}
+        {banner.fix ? (
+          <>
+            {' '}
+            <FixLink fix={banner.fix} />
+          </>
+        ) : null}
       </p>
     </div>
+  );
+}
+
+const fixClass = 'inline-flex items-center gap-0.5 font-medium whitespace-nowrap text-fg underline underline-offset-2';
+
+/** Where the banner's problem is fixed: a Settings section, or OpenRouter's credits page. */
+function FixLink({ fix }: { fix: BannerFix }) {
+  if (fix.kind === 'external') {
+    return (
+      <a href={fix.href} target="_blank" rel="noopener noreferrer" className={fixClass}>
+        {fix.label}
+        <ExternalLink aria-hidden="true" className="size-3.5" />
+        <span className="sr-only"> (opens in a new tab)</span>
+      </a>
+    );
+  }
+  return (
+    <Link to="/app/settings/$section" params={{ section: fix.section }} className={fixClass}>
+      {fix.label}
+      <ArrowRight aria-hidden="true" className="size-3.5" />
+    </Link>
   );
 }
