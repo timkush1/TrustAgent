@@ -356,6 +356,114 @@ export function secAuditActionLabel(action: string): string {
   return AUDIT_ACTIONS[action] ?? humanizeId(action.replace(/[._]/g, ' '));
 }
 
+/** Words for a settings group an admin changed (the first segment of a RuntimeSettings path). */
+const SETTINGS_GROUPS: Record<string, string> = {
+  decision_model: copy.tiers.fast_check,
+  judge: `${copy.tiers.deep_audit} judge`,
+  upstream: 'Upstreams',
+  bindings: 'Which key runs which check',
+  budgets: 'Daily budgets',
+  pricing_overrides: 'Prices',
+};
+
+/** The diff fields of a settings.update entry that describe it rather than name a setting. */
+const SETTINGS_DIFF_META = new Set(['keys', 'paths', 'fields', 'credential', 'unbound', 'reason']);
+
+function diffRecord(diff: unknown): Record<string, unknown> | null {
+  return diff !== null && typeof diff === 'object' && !Array.isArray(diff) ? (diff as Record<string, unknown>) : null;
+}
+
+function diffString(d: Record<string, unknown>, key: string): string | null {
+  const v = d[key];
+  return typeof v === 'string' && v !== '' ? v : null;
+}
+
+function diffStrings(d: Record<string, unknown>, key: string): string[] {
+  const v = d[key];
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
+}
+
+function usedByWords(targets: readonly string[]): string {
+  return secJoinWords(targets.map((t) => secUsedByLabel(t as UsedBy)));
+}
+
+function settingsGroups(d: Record<string, unknown>): string[] {
+  const named = diffStrings(d, 'keys');
+  const paths = named.length > 0 ? named : diffStrings(d, 'paths').length > 0 ? diffStrings(d, 'paths') : Object.keys(d).filter((k) => !SETTINGS_DIFF_META.has(k));
+  const groups = [...new Set(paths.map((path) => path.split('.')[0]))];
+  return groups.map((g) => SETTINGS_GROUPS[g] ?? humanizeId(g));
+}
+
+/**
+ * What an admin audit entry acted on (AdminAuditEntry.target): a saved key or a settings group in
+ * words, anything else (a key id, an evaluator) as the id it is, shown in mono.
+ */
+export function secAuditTargetView(action: string, target: string | null | undefined): { text: string; mono: boolean } {
+  if (!target) return { text: '—', mono: false };
+  const credential = action.startsWith('credential.') || (action === 'settings.update' && target in CREDENTIAL_NAMES);
+  if (credential) return { text: secCredentialLabel(target), mono: false };
+  if (action === 'settings.update' && target in SETTINGS_GROUPS) return { text: SETTINGS_GROUPS[target], mono: false };
+  return { text: target, mono: true };
+}
+
+/**
+ * What an admin audit entry changed, in words for the activity table (D44): the key's label and
+ * scopes, a saved key's masked form, check result and checks, or the settings groups. The entry's
+ * dialog keeps the full record. Entries with nothing to add read "—".
+ */
+export function secAuditChangeSummary(action: string, diff: unknown): string {
+  const d = diffRecord(diff);
+  if (!d || Object.keys(d).length === 0) return action === 'session.revoke_all' ? 'Every dashboard session ended' : '—';
+  const parts: string[] = [];
+  const label = diffString(d, 'label');
+  const scopes = diffStrings(d, 'scopes').map((sc) => secScopeView(sc as Scope).label);
+  switch (action) {
+    case 'setup.claim':
+    case 'api_key.create':
+    case 'api_key.revoke':
+    case 'session.sign_in':
+      if (label) parts.push(`“${label}”`);
+      if (scopes.length > 0) parts.push(secJoinWords(scopes));
+      break;
+    case 'session.revoke_all':
+      parts.push('Every dashboard session ended');
+      break;
+    case 'setup_token.mint':
+      parts.push(d.forced === true ? 'Recovery link (an admin already existed)' : 'First-run link');
+      break;
+    case 'credential.put':
+    case 'credential.rotate':
+    case 'credential.connect_openrouter':
+    case 'credential.verify': {
+      const masked = diffString(d, 'masked');
+      const status = diffString(d, 'verify') ?? diffString(d, 'status');
+      const bound = action === 'credential.verify' ? [] : diffStrings(d, 'bindings');
+      const asked = diffStrings(d, 'bind');
+      if (masked) parts.push(masked);
+      if (status) parts.push(secVerifyView(status as CredentialVerifyStatus).label);
+      if (bound.length > 0) parts.push(`now used for ${usedByWords(bound)}`);
+      else if (asked.length > 0 && !status) parts.push(`for ${usedByWords(asked)}`);
+      break;
+    }
+    case 'credential.delete': {
+      const unbound = diffStrings(d, 'unbound');
+      parts.push(unbound.length > 0 ? `was used for ${usedByWords(unbound)}` : 'was not in use');
+      break;
+    }
+    case 'settings.update': {
+      const groups = settingsGroups(d);
+      if (groups.length > 0) parts.push(secJoinWords(groups));
+      if (diffString(d, 'reason') === 'credential.delete') parts.push('after a key was removed');
+      break;
+    }
+    default: {
+      const keys = Object.keys(d).map((k) => humanizeId(k.replace(/\./g, ' ')));
+      parts.push(keys.slice(0, 3).join(', ') + (keys.length > 3 ? ` +${keys.length - 3}` : ''));
+    }
+  }
+  return parts.length > 0 ? parts.join(' · ') : '—';
+}
+
 // ------------------------------------------------------------------------------- warnings
 
 /**

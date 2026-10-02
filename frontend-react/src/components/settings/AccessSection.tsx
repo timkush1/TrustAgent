@@ -33,7 +33,7 @@ import { clearDashboardKey, readDashboardKey } from '@/data/http';
 import { sessionQuery, statusQuery } from '@/data/queries';
 import { adminAuditQuery, apiKeysQuery, qkcSecurity } from '@/data/queries/security';
 import { formatDateTime, formatRelativeTime } from '@/domain/format';
-import { copy, SEC_SCOPES, secAuditActionLabel, secScopeView } from '@/domain/presentation';
+import { copy, SEC_SCOPES, secAuditActionLabel, secAuditChangeSummary, secAuditTargetView, secScopeView } from '@/domain/presentation';
 import type { AdminAuditEntry, ApiKeyView, CreatedApiKey, Scope } from '@/types/api';
 import { ProblemNote } from './SettingsKit';
 import { useSettingsWriteReason } from './useSettingsAccess';
@@ -299,13 +299,9 @@ function SignOutEverywhere({ writeReason }: { writeReason: ReturnType<typeof use
 
 // ---------------------------------------------------------------------- admin activity
 
-function diffSummary(entry: AdminAuditEntry): string {
-  const diff = entry.diff;
-  if (diff && typeof diff === 'object' && !Array.isArray(diff)) {
-    const keys = Object.keys(diff);
-    if (keys.length > 0) return keys.slice(0, 3).join(', ') + (keys.length > 3 ? ` +${keys.length - 3}` : '');
-  }
-  return '—';
+function targetValue(entry: AdminAuditEntry): { value: string; mono: boolean } {
+  const target = secAuditTargetView(entry.action, entry.target);
+  return { value: target.text, mono: target.mono };
 }
 
 const AUDIT_COLUMNS: readonly DataTableColumn<AdminAuditEntry>[] = [
@@ -321,8 +317,16 @@ const AUDIT_COLUMNS: readonly DataTableColumn<AdminAuditEntry>[] = [
   },
   { id: 'actor', header: 'Who', width: 'minmax(6rem,1fr)', cell: (e) => <span className="truncate">{e.actor}</span> },
   { id: 'action', header: 'What', width: 'minmax(10rem,2fr)', cell: (e) => <span className="truncate">{secAuditActionLabel(e.action)}</span> },
-  { id: 'target', header: 'On', width: 'minmax(6rem,1fr)', cell: (e) => <span className="truncate font-mono text-xs">{e.target ?? '—'}</span> },
-  { id: 'diff', header: 'Changed', width: 'minmax(8rem,2fr)', cell: (e) => <span className="truncate font-mono text-xs text-fg-muted">{diffSummary(e)}</span> },
+  {
+    id: 'target',
+    header: 'On',
+    width: 'minmax(6rem,1fr)',
+    cell: (e) => {
+      const target = secAuditTargetView(e.action, e.target);
+      return <span className={target.mono ? 'truncate font-mono text-xs' : 'truncate'}>{target.text}</span>;
+    },
+  },
+  { id: 'diff', header: 'Changed', width: 'minmax(8rem,2fr)', cell: (e) => <span className="truncate text-xs text-fg-muted">{secAuditChangeSummary(e.action, e.diff)}</span> },
 ];
 
 function AdminActivity() {
@@ -357,7 +361,7 @@ function AdminActivity() {
               <KeyValueList
                 items={[
                   { label: 'Who', value: open.actor },
-                  { label: 'On', value: open.target, mono: true },
+                  { label: 'On', ...targetValue(open) },
                   { label: 'Entry', value: String(open.id), mono: true },
                 ]}
               />

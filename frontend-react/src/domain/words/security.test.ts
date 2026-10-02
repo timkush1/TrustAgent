@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { copy } from '@/domain/presentation';
 import type { BindingSkipReason, CredentialProvider, CredentialVerifyStatus, CredentialView, Scope } from '@/types/api';
 import {
+  secAuditChangeSummary,
+  secAuditTargetView,
   SEC_AUDIT_ACTIONS,
   SEC_BACKEND_CARDS,
   SEC_JUDGE_PROVIDERS,
@@ -93,5 +95,57 @@ describe('security words', () => {
     expect(secProbeReadyText(null, '$0.00001')).toBe('Ready · $0.00001');
     expect(secProbeReadyText(231, null)).toBe('Ready · 231 ms');
     expect(secJoinWords(['A', 'B', 'C'])).toBe('A, B and C');
+  });
+
+  it('says in words what an admin audit entry changed, never a field name (D44)', () => {
+    // The diffs below are what the proxy records (a live run against mock-upstream).
+    expect(secAuditChangeSummary('api_key.create', { label: 'my-app', prefix: 'ta_rK_M_F', scopes: ['ingest'] })).toBe('“my-app” · Send requests');
+    expect(secAuditChangeSummary('setup.claim', { label: 'setup-admin', prefix: 'ta_a3lwhI', scopes: ['admin'] })).toBe('“setup-admin” · Admin');
+    expect(secAuditChangeSummary('api_key.revoke', { label: 'ci-bot' })).toBe('“ci-bot”');
+    expect(secAuditChangeSummary('session.sign_in', { scopes: ['read', 'content'] })).toBe('Read the dashboard and See prompts and answers');
+    expect(secAuditChangeSummary('session.revoke_all', { session_epoch: 3 })).toBe('Every dashboard session ended');
+    expect(secAuditChangeSummary('setup_token.mint', { forced: false, expires_at: '2026-10-02T17:24:59Z' })).toBe('First-run link');
+    expect(secAuditChangeSummary('setup_token.mint', { forced: true, expires_at: '2026-10-02T17:24:59Z' })).toBe('Recovery link (an admin already existed)');
+    expect(
+      secAuditChangeSummary('credential.connect_openrouter', {
+        masked: 'sk-…335b',
+        verify: 'ok',
+        skipped: [{ reason: 'env_managed', target: 'judge' }],
+        bindings: ['decision_model'],
+        provider: 'openrouter',
+        fingerprint: 'fp_c6768b909533',
+      }),
+    ).toBe(`sk-…335b · Working · now used for ${copy.tiers.fast_check}`);
+    expect(secAuditChangeSummary('credential.put', { masked: 'sk-…cdef', verify: 'no_credits', bindings: [], provider: 'openrouter' })).toBe('sk-…cdef · No credits');
+    expect(secAuditChangeSummary('credential.put', { fingerprint: 'fp_5d0c41e9a7b2', bind: ['decision_model', 'judge'] })).toBe(
+      `for ${copy.tiers.fast_check} and ${copy.tiers.deep_audit} judge`,
+    );
+    expect(secAuditChangeSummary('credential.verify', { bind: [], status: 'unauthorized' })).toBe('Key rejected');
+    expect(secAuditChangeSummary('credential.delete', { provider: 'openrouter', unbound: ['decision_model'] })).toBe(`was used for ${copy.tiers.fast_check}`);
+    expect(secAuditChangeSummary('credential.delete', { provider: 'anthropic', unbound: [] })).toBe('was not in use');
+    expect(
+      secAuditChangeSummary('settings.update', {
+        keys: ['bindings', 'decision_model'],
+        credential: 'openrouter',
+        'decision_model.backend': { to: 'auto', from: 'mock' },
+      }),
+    ).toBe(`Which key runs which check and ${copy.tiers.fast_check}`);
+    expect(secAuditChangeSummary('settings.update', { keys: ['decision_model'], paths: ['decision_model.backend'], fields: {} })).toBe(copy.tiers.fast_check);
+    expect(secAuditChangeSummary('settings.update', { 'budgets.llm_usd_day': { from: 5, to: 3 } })).toBe('Daily budgets');
+    expect(secAuditChangeSummary('settings.update', { keys: ['bindings'], unbound: ['judge'], reason: 'credential.delete' })).toBe(
+      'Which key runs which check · after a key was removed',
+    );
+    // Actions this page has no special words for read their changed fields in words.
+    expect(secAuditChangeSummary('evaluator.version', { from_version: 2, to_version: 3 })).toBe('From version, To version');
+    expect(secAuditChangeSummary('setup.claim', null)).toBe('—');
+    expect(secAuditChangeSummary('settings.update', {})).toBe('—');
+  });
+
+  it('names what an admin audit entry acted on: keys and settings groups in words, ids as ids', () => {
+    expect(secAuditTargetView('credential.put', 'openrouter')).toEqual({ text: 'OpenRouter', mono: false });
+    expect(secAuditTargetView('settings.update', 'openrouter')).toEqual({ text: 'OpenRouter', mono: false });
+    expect(secAuditTargetView('settings.update', 'budgets')).toEqual({ text: 'Daily budgets', mono: false });
+    expect(secAuditTargetView('api_key.create', '01a0fd70-5a2b-7141-ad05-40fb4be57a1a')).toEqual({ text: '01a0fd70-5a2b-7141-ad05-40fb4be57a1a', mono: true });
+    expect(secAuditTargetView('setup_token.mint', null)).toEqual({ text: '—', mono: false });
   });
 });

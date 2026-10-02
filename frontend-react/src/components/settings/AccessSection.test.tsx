@@ -118,6 +118,12 @@ describe('Settings → Access', { timeout: 20_000 }, () => {
     expect(within(table).getByText('Saved a key')).toBeInTheDocument();
     expect(within(table).getByText('Claimed the setup link')).toBeInTheDocument();
     expect(within(table).queryByText('settings.update')).not.toBeInTheDocument();
+    // What changed, in words: no field names such as budgets.llm_usd_day in the table.
+    // The budgets change, in its On and Changed cells.
+    expect(within(table).getAllByText('Daily budgets')).toHaveLength(2);
+    expect(within(table).getByText('OpenRouter')).toBeInTheDocument();
+    expect(within(table).getByText('Send requests')).toBeInTheDocument();
+    expect(within(table).queryByText(/[a-z]+_[a-z_]+/)).not.toBeInTheDocument();
     await user.click(within(table).getByText('Changed settings'));
     const dialog = await screen.findByRole('dialog', { name: 'Changed settings' });
     expect(within(dialog).getByText(/budgets\.llm_usd_day/)).toBeInTheDocument();
