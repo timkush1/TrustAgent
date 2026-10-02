@@ -128,6 +128,17 @@ func TestLabelsAPI(t *testing.T) {
 		t.Errorf("TraceDetail.labels: %d %+v", code, detail.Labels)
 	}
 	contractstest.ValidateJSON(t, schemaTrace, body)
+	// mine: the admin who labelled sees the label as theirs; another caller does not (#41 removes
+	// only the caller's own).
+	if len(detail.Labels) == 1 && detail.Labels[0].Mine {
+		t.Error("a label another key gave reads as the caller's")
+	}
+	_, adminBody := env.get("/api/traces/"+flagged, evalAdminKey)
+	var adminView store.TraceDetail
+	_ = json.Unmarshal(adminBody, &adminView)
+	if len(adminView.Labels) != 1 || !adminView.Labels[0].Mine {
+		t.Errorf("the labeller's own label: %+v", adminView.Labels)
+	}
 	// The labelled result leaves the caller's queue; #17 human now has the sample, at the label's risk.
 	if hasItem(labelQueue(t, env, ""), flagged, "groundedness@1") {
 		t.Error("a labelled result is still queued")

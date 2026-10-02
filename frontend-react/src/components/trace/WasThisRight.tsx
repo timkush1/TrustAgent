@@ -63,7 +63,10 @@ export function WasThisRight({
   const [error, setError] = useState<{ message: string; code: string | null } | null>(null);
   const reasonId = useId();
   const targets = labelTargets(decision);
-  const given = labels.filter((l) => targets.includes(l.target) && isFireLabel(l.label));
+  // Labels are per labeller: the caller's own can be undone; another admin's is shown, and the
+  // caller can still add their own.
+  const given = labels.filter((l) => targets.includes(l.target) && isFireLabel(l.label) && l.mine);
+  const others = labels.filter((l) => targets.includes(l.target) && isFireLabel(l.label) && !l.mine);
 
   const setLabels = (change: (current: LabelView[]) => LabelView[]) =>
     queryClient.setQueryData<TraceDetail>(qk.traces.detail(traceId), (d) => (d ? { ...d, labels: change(d.labels ?? []) } : d));
@@ -74,13 +77,13 @@ export function WasThisRight({
       setError(null);
       const at = new Date().toISOString();
       setLabels((current) => [
-        ...current.filter((l) => !targets.includes(l.target)),
-        ...targets.map((target) => ({ target, label, labeled_by: 'you', created_at: at, note: null })),
+        ...current.filter((l) => !(targets.includes(l.target) && l.mine)),
+        ...targets.map((target) => ({ target, label, labeled_by: 'you', created_at: at, note: null, mine: true })),
       ]);
     },
     onError: (err) => {
       // Take the optimistic labels back at once; the refetch below shows any that were saved.
-      setLabels((current) => current.filter((l) => !(targets.includes(l.target) && l.labeled_by === 'you')));
+      setLabels((current) => current.filter((l) => !(targets.includes(l.target) && l.mine && l.labeled_by === 'you')));
       const { message, code } = describeError(err);
       setError({ message: isApiError(err) && err.code === 'body_expired' ? copy.labels.body_expired : `The label was not saved: ${message}`, code: code ?? null });
     },
@@ -91,7 +94,7 @@ export function WasThisRight({
     mutationFn: () => Promise.all(given.map((l) => ds.deleteLabel({ trace_id: traceId, target: l.target }))),
     onMutate: () => {
       setError(null);
-      setLabels((current) => current.filter((l) => !targets.includes(l.target)));
+      setLabels((current) => current.filter((l) => !(targets.includes(l.target) && l.mine)));
     },
     onError: (err) => {
       const { message, code } = describeError(err);
@@ -106,6 +109,8 @@ export function WasThisRight({
   const reason = writeReason ?? bodyReason(body);
   const kinds = [...new Set(given.map((l) => l.label))];
   const latest = given.reduce<LabelView | null>((a, l) => (!a || l.created_at > a.created_at ? l : a), null);
+  const otherKinds = [...new Set(others.map((l) => l.label))];
+  const otherLatest = others.reduce<LabelView | null>((a, l) => (!a || l.created_at > a.created_at ? l : a), null);
 
   return (
     <div className="space-y-2 border-t border-border pt-3" data-testid="was-this-right">
@@ -134,6 +139,16 @@ export function WasThisRight({
         </div>
       ) : (
         <div className="space-y-1.5">
+          {otherLatest ? (
+            <p className="text-sm text-fg-muted">
+              {otherKinds.length === 1 ? `Labelled ${evalLabelWord(otherKinds[0]).toLowerCase()}` : 'Labelled differently per check'} by{' '}
+              {evalLabelerName(otherLatest.labeled_by)} ·{' '}
+              <time dateTime={otherLatest.created_at} title={formatDateTime(otherLatest.created_at)}>
+                {formatRelativeTime(otherLatest.created_at, now)}
+              </time>
+              . Your own label counts too.
+            </p>
+          ) : null}
           <div role="group" aria-label={copy.trace.was_this_right} className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-fg">{copy.trace.was_this_right}</span>
             <Button

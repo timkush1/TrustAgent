@@ -323,6 +323,8 @@ export interface LabelView {
   labeled_by: string;
   created_at: ISODateTime;
   note: string | null;
+  /** The caller gave this label: labels are per labeller, and DELETE /api/labels removes only the caller's own. */
+  mine: boolean;
 }
 export interface TraceDetail extends TraceSummary {
   body: {

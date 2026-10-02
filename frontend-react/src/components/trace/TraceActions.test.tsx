@@ -39,7 +39,7 @@ function setup(detail: TraceDetail = traceDetail('refund'), options: { control?:
       if (!stored) return HttpResponse.json({ error: { code: 'not_found', message: 'No trace with this id.' } }, { status: 404 });
       const written = page.control.state.labels
         .filter((l) => l.trace_id === stored.trace_id)
-        .map((l) => ({ target: l.target, label: l.label, labeled_by: 'setup-admin', created_at: new Date().toISOString(), note: l.note ?? null }));
+        .map((l) => ({ target: l.target, label: l.label, labeled_by: 'setup-admin', created_at: new Date().toISOString(), note: l.note ?? null, mine: true }));
       return HttpResponse.json({ ...stored, labels: [...stored.labels.filter((l) => !written.some((w) => w.target === l.target)), ...written] });
     }),
   );
@@ -107,12 +107,12 @@ describe('Was this right?', { timeout: 20_000 }, () => {
     expect(control.callsTo('/api/labels', 'PUT').every((c) => (c.body as { label: string }).label === 'should_not_fire')).toBe(true);
   });
 
-  it('shows labels already given, by whom, with Undo', async () => {
+  it('shows the labels this caller gave, by whom, with Undo', async () => {
     const detail = traceDetail('refund');
     detail.labels = [
       ...detail.labels,
-      { target: 'groundedness@1', label: 'should_not_fire', labeled_by: 'ops-lead', created_at: detail.created_at, note: null },
-      { target: 'contradiction@1', label: 'should_not_fire', labeled_by: 'ops-lead', created_at: detail.created_at, note: null },
+      { target: 'groundedness@1', label: 'should_not_fire', labeled_by: 'ops-lead', created_at: detail.created_at, note: null, mine: true },
+      { target: 'contradiction@1', label: 'should_not_fire', labeled_by: 'ops-lead', created_at: detail.created_at, note: null, mine: true },
     ];
     setup(detail);
     expect(await within(await screen.findByRole('region', { name: 'Outcome' })).findByText(/Labelled false alarm/)).toHaveTextContent('by ops-lead');
@@ -120,12 +120,26 @@ describe('Was this right?', { timeout: 20_000 }, () => {
     expect(within(outcome()).queryByRole('button', { name: copy.trace.correct })).toBeNull();
   });
 
+  it("shows another admin's label without Undo, and offers this caller their own", async () => {
+    const detail = traceDetail('refund');
+    detail.labels = [
+      ...detail.labels,
+      { target: 'groundedness@1', label: 'should_not_fire', labeled_by: 'ops-lead', created_at: detail.created_at, note: null, mine: false },
+      { target: 'contradiction@1', label: 'should_not_fire', labeled_by: 'ops-lead', created_at: detail.created_at, note: null, mine: false },
+    ];
+    setup(detail);
+    expect(await within(await screen.findByRole('region', { name: 'Outcome' })).findByText(/Labelled false alarm/)).toHaveTextContent('by ops-lead');
+    // DELETE /api/labels removes only the caller's own label: an Undo here would remove nothing.
+    expect(within(outcome()).queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(within(outcome()).getByRole('button', { name: copy.trace.correct })).toBeInTheDocument();
+  });
+
   it('names who labelled by their key, never a session fingerprint or key id', async () => {
     const detail = traceDetail('refund');
     detail.labels = [
       ...detail.labels,
-      { target: 'groundedness@1', label: 'should_fire', labeled_by: 'env:admin#3fa9c1d2e4b5a6f7', created_at: detail.created_at, note: null },
-      { target: 'contradiction@1', label: 'should_fire', labeled_by: 'env:admin#3fa9c1d2e4b5a6f7', created_at: detail.created_at, note: null },
+      { target: 'groundedness@1', label: 'should_fire', labeled_by: 'env:admin#3fa9c1d2e4b5a6f7', created_at: detail.created_at, note: null, mine: true },
+      { target: 'contradiction@1', label: 'should_fire', labeled_by: 'env:admin#3fa9c1d2e4b5a6f7', created_at: detail.created_at, note: null, mine: true },
     ];
     setup(detail);
     const line = await within(await screen.findByRole('region', { name: 'Outcome' })).findByText(/Labelled correct/);

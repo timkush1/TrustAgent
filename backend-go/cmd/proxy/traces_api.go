@@ -184,6 +184,10 @@ func (a *tracesAPI) get(c *gin.Context) {
 			return
 		}
 		if labels != nil {
+			me := labeler(c)
+			for i := range labels {
+				labels[i].Mine = labels[i].LabeledBy == me
+			}
 			d.Labels = labels
 		}
 	}

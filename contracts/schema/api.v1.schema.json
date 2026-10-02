@@ -4167,6 +4167,10 @@
         "labeled_by": {
           "type": "string"
         },
+        "mine": {
+          "description": "The caller gave this label: labels are per labeller, and DELETE /api/labels removes only the caller's own.",
+          "type": "boolean"
+        },
         "note": {
           "type": [
             "string",
@@ -4182,7 +4186,8 @@
         "label",
         "labeled_by",
         "created_at",
-        "note"
+        "note",
+        "mine"
       ],
       "type": "object"
     },

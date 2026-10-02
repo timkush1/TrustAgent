@@ -166,6 +166,9 @@ type LabelView struct {
 	LabeledBy string    `json:"labeled_by"`
 	CreatedAt time.Time `json:"created_at"`
 	Note      *string   `json:"note"`
+	// Mine is whether the caller gave the label (labeled_by is the caller's labeller): labels are
+	// per labeller, and DELETE /api/labels removes only the caller's own (#41).
+	Mine bool `json:"mine"`
 }
 
 // TraceDetail is GET /api/traces/:id (api.ts TraceDetail).
