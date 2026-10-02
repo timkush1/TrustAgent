@@ -1,0 +1,42 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "lookup-file-beats-contracts",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "Without an override the price table file ($0.04/M) wins over the contracts price ($0.042/M), and the effective version is the file's.",
+  "input": {
+    "fn": "price_lookup",
+    "provider": "openrouter",
+    "model": "typesafe/jev-1.13-20260917",
+    "overrides": [],
+    "file": {
+      "version": "acme-2026-10",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.04, "output_per_mtok": 0, "note": "Negotiated rate."}
+      ]
+    },
+    "contracts": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {
+    "entry": {
+      "input_per_mtok": 0.04,
+      "match": "typesafe/jev-1.13*",
+      "note": "Negotiated rate.",
+      "output_per_mtok": 0,
+      "provider": "openrouter"
+    },
+    "price_table_version": "acme-2026-10"
+  }
+}

@@ -69,6 +69,9 @@ type statusReporter struct {
 	credentials func() statusCredentials
 	spend       func() *spendView
 	push        func() pushState
+	// evaluatorWarnings lists what the evaluator registry excluded while loading (skipped files,
+	// versions that break a hard rule, P4-PLAN D54); nil means none.
+	evaluatorWarnings func() []string
 }
 
 // spendView is SystemStatus.budgets as the cost ledger reports it (P4, D46: real spend only).
@@ -350,7 +353,7 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 }
 
 // applyHooks overlays the P4 hooks that are set on st: the credential store's state, the
-// ledger's budgets and the engine push.
+// ledger's budgets, the engine push and the evaluator registry's warnings.
 func (s *statusReporter) applyHooks(st *systemStatus) {
 	if s.credentials != nil {
 		st.Credentials = s.credentials()
@@ -371,6 +374,11 @@ func (s *statusReporter) applyHooks(st *systemStatus) {
 		}
 		if p.Warning != "" {
 			st.Warnings = append(st.Warnings, p.Warning)
+		}
+	}
+	if s.evaluatorWarnings != nil {
+		for _, w := range s.evaluatorWarnings() {
+			st.Warnings = append(st.Warnings, "Evaluators: "+w)
 		}
 	}
 }

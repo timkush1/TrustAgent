@@ -167,7 +167,8 @@ func TestSetupTokenClaimOutcomes(t *testing.T) {
 	if err := s.ClaimSetupToken(ctx, "h4", now, true, admin("a4")); err != nil {
 		t.Errorf("a forced token works despite admins: %v", err)
 	}
-	want := []string{"setup.claim:a1:setup", "setup.claim:a4:setup"}
+	mint := "setup_token.mint::startup"
+	want := []string{mint, mint, "setup.claim:a1:setup", mint, mint, "setup.claim:a4:setup"}
 	if got := adminActions(t, s); !reflect.DeepEqual(got, want) {
 		t.Errorf("audit %v", got)
 	}
