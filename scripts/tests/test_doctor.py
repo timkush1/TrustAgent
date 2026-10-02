@@ -172,7 +172,37 @@ def decision_model(**overrides: Any) -> Dict[str, Any]:
     return dm
 
 
-def system_status(dm: Optional[Dict[str, Any]] = None, **policy: Any) -> HttpResult:
+def judge(**overrides: Any) -> Dict[str, Any]:
+    j: Dict[str, Any] = {
+        "state": "up",
+        "provider": "mock",
+        "model": "mock-judge",
+        "credential_source": "none",
+        "fallback_active": False,
+        "fallback_reason": None,
+        "warnings": [],
+    }
+    j.update(overrides)
+    return j
+
+
+def budgets(**overrides: Any) -> Dict[str, Any]:
+    b: Dict[str, Any] = {
+        "decision_usd_day": 2.0,
+        "decision_spent_today_usd": 0.0,
+        "llm_usd_day": 5.0,
+        "llm_spent_today_usd": 0.0,
+        "decision_exhausted": False,
+        "decision_reserve_only": False,
+        "llm_exhausted": False,
+    }
+    b.update(overrides)
+    return b
+
+
+def status_body(dm: Optional[Dict[str, Any]] = None, **policy: Any) -> Dict[str, Any]:
+    """A /api/status body as a demo stack serves it (runtime settings never saved: version 0,
+    which the proxy leaves out of engine.runtime_config_version)."""
     pol: Dict[str, Any] = {
         "version": 3,
         "source": "file",
@@ -183,9 +213,25 @@ def system_status(dm: Optional[Dict[str, Any]] = None, **policy: Any) -> HttpRes
         "file_error": None,
     }
     pol.update(policy)
-    return ok_json(
-        {"version": "2.0.0", "demo": True, "decision_model": dm or decision_model(), "policy": pol}
-    )
+    return {
+        "version": "2.0.0",
+        "demo": True,
+        "decision_model": dm or decision_model(),
+        "policy": pol,
+        "engine": {"state": "up", "version": "2.0.0"},
+        "judge": judge(),
+        "budgets": budgets(),
+        "credentials": {"store": "ready", "undecryptable": []},
+        "warnings": [],
+    }
+
+
+def system_status(dm: Optional[Dict[str, Any]] = None, **policy: Any) -> HttpResult:
+    return ok_json(status_body(dm, **policy))
+
+
+def settings_view(version: int = 0) -> HttpResult:
+    return ok_json({"version": version, "etag": f'"s{version}"', "env_managed": []})
 
 
 def policies(*downgraded: Tuple[str, str, str, str]) -> HttpResult:
@@ -231,6 +277,7 @@ def demo_routes(trace_result: Any) -> Dict[str, Any]:
         f"{PROXY}/api/setup/status": setup_status(),
         f"{PROXY}/api/status": system_status(),
         f"{PROXY}/api/policies": policies(),
+        f"{PROXY}/api/settings": settings_view(),
         f"{PROXY}/api/traces?limit=50": trace_result,
     }
 
@@ -282,6 +329,10 @@ class DemoDoctorTest(unittest.TestCase):
                 "decision_model.state",
                 "calibration.targets",
                 "policy.state",
+                "credentials.store",
+                "runtime_config.version",
+                "judge.credential_source",
+                "budgets.today",
                 "metrics.gateway",
                 "metrics.engine",
                 "traces.recent",
@@ -585,6 +636,204 @@ class StatusChecksTest(unittest.TestCase):
         check = self.doctor_with(routes).check_setup()
         self.assertEqual(check.status, "FAIL")
         self.assertIn("no /api/setup/status", check.fix)
+
+
+class RuntimeChecksTest(unittest.TestCase):
+    """credentials.store, runtime_config.version, judge.credential_source and budgets.today."""
+
+    def stack(self, status: Dict[str, Any], expect: Optional[str] = None, **routes: Any) -> Doctor:
+        all_routes = demo_routes(traces("completed"))
+        all_routes[f"{PROXY}/api/status"] = ok_json(status)
+        all_routes.update({f"{PROXY}{path}": result for path, result in routes.items()})
+        return make_doctor(
+            FakeDocker(demo_containers()),
+            FakeHttp(all_routes),
+            FakeClock(),
+            project="truthtable",
+            expect=expect,
+        )
+
+    def with_status(self, **fields: Any) -> Dict[str, Any]:
+        body = status_body()
+        body.update(fields)
+        return body
+
+    # ---------- credentials.store ----------
+
+    def test_credentials_ready(self) -> None:
+        check = self.stack(status_body()).check_credentials()
+        self.assertEqual(check.status, "PASS")
+        self.assertIn("every saved key decrypts", check.summary)
+
+    def test_undecryptable_keys_fail_by_name_with_the_way_back(self) -> None:
+        body = self.with_status(
+            credentials={"store": "ready", "undecryptable": ["openrouter", "judge-anthropic"]}
+        )
+        check = self.stack(body).check_credentials()
+        self.assertEqual(check.status, "FAIL")
+        self.assertIn(
+            "2 saved key(s) cannot be decrypted (openrouter, judge-anthropic)", check.summary
+        )
+        self.assertIn("master key changed", check.summary)
+        self.assertIn("trustagent-secrets", check.fix)
+        self.assertIn("Settings > Connections", check.fix)
+
+    def test_a_master_key_warning_names_the_keys_too(self) -> None:
+        body = self.with_status(
+            warning_details=[
+                {"code": "master_key_changed", "message": "m", "details": {"names": ["typesafe"]}}
+            ]
+        )
+        check = self.stack(body).check_credentials()
+        self.assertEqual(check.status, "FAIL")
+        self.assertIn("(typesafe)", check.summary)
+
+    def test_store_states(self) -> None:
+        for store, expected in (("unavailable", "FAIL"), ("no_database", "WARN")):
+            with self.subTest(store=store):
+                body = self.with_status(credentials={"store": store, "undecryptable": []})
+                self.assertEqual(self.stack(body).check_credentials().status, expected)
+        body = status_body()
+        del body["credentials"]
+        self.assertEqual(self.stack(body).check_credentials().status, "SKIP")
+
+    # ---------- runtime_config.version ----------
+
+    def test_engine_applied_the_gateway_settings(self) -> None:
+        check = self.stack(status_body()).check_runtime_config()
+        self.assertEqual(check.status, "PASS", check.summary)
+        self.assertIn("none saved yet", check.summary)
+        body = self.with_status(
+            engine={
+                "state": "up",
+                "version": "2.0.0",
+                "runtime_config_version": 7,
+                "runtime_config_epoch": "0190a8c4-epoch",
+            }
+        )
+        check = self.stack(body, **{"/api/settings": settings_view(7)}).check_runtime_config()
+        self.assertEqual(check.status, "PASS")
+        self.assertIn("settings version 7", check.summary)
+        self.assertIn("epoch 0190a8c4-epoch", check.detail)
+
+    def test_an_engine_behind_the_gateway_warns(self) -> None:
+        body = self.with_status(
+            engine={"state": "up", "runtime_config_version": 6},
+            warnings=["Engine push failed: deadline exceeded", "unrelated"],
+        )
+        check = self.stack(body, **{"/api/settings": settings_view(7)}).check_runtime_config()
+        self.assertEqual(check.status, "WARN")
+        self.assertIn("applied settings version 6, the gateway holds 7", check.summary)
+        self.assertIn("Engine push failed", check.detail)
+        self.assertNotIn("unrelated", check.detail)
+        self.assertIn("make logs SERVICE=engine", check.fix)
+
+    def test_an_engine_that_reports_no_version_warns_once_settings_exist(self) -> None:
+        check = self.stack(
+            status_body(), **{"/api/settings": settings_view(3)}
+        ).check_runtime_config()
+        self.assertEqual(check.status, "WARN")
+        self.assertIn("reports no applied settings", check.summary)
+        self.assertIn("UP_ARGS=--build", check.fix)
+
+    def test_settings_endpoint_missing_or_refused(self) -> None:
+        old = self.stack(status_body(), **{"/api/settings": HttpResult(status=404)})
+        self.assertEqual(old.check_runtime_config().status, "SKIP")
+        refused = self.stack(status_body(), **{"/api/settings": HttpResult(status=401)})
+        check = refused.check_runtime_config()
+        self.assertEqual(check.status, "WARN")
+        self.assertIn("TRAFFICGEN_API_KEY", check.fix)
+
+    # ---------- judge.credential_source ----------
+
+    def test_demo_judge_is_the_mock(self) -> None:
+        check = self.stack(status_body(), expect="demo").check_judge()
+        self.assertEqual(check.status, "PASS")
+        self.assertIn("simulated", check.summary)
+        body = self.with_status(judge=judge(provider="openrouter", credential_source="env"))
+        self.assertEqual(self.stack(body, expect="demo").check_judge().status, "FAIL")
+
+    def test_judge_key_sources_on_a_real_stack(self) -> None:
+        cases = [
+            (judge(provider="openrouter", credential_source="env"), "PASS", "engine's .env"),
+            (judge(provider="anthropic", credential_source="dashboard"), "PASS", "dashboard"),
+            (judge(provider="ollama", model="llama3.2:1b"), "PASS", "needs no key"),
+            (judge(provider="openai", credential_source="none"), "FAIL", "has no key"),
+            (judge(provider=None, credential_source="none"), "WARN", "no deep-audit judge"),
+            (judge(provider="mock"), "WARN", "simulated"),
+            (
+                judge(
+                    provider="openrouter",
+                    credential_source="env",
+                    fallback_active=True,
+                    fallback_reason="primary unreachable",
+                ),
+                "WARN",
+                "fallback",
+            ),
+            (judge(provider="openrouter", credential_source="env", state="down"), "WARN", "down"),
+        ]
+        for j, expected, words in cases:
+            with self.subTest(judge=j):
+                check = self.stack(self.with_status(judge=j)).check_judge()
+                self.assertEqual(check.status, expected, check.summary)
+                self.assertIn(words, check.summary + check.detail)
+        check = self.stack(
+            self.with_status(judge=judge(provider="openai", credential_source="none"))
+        ).check_judge()
+        self.assertIn("OPENAI_API_KEY", check.fix)
+
+    def test_a_judge_without_credential_source_is_skipped(self) -> None:
+        j = judge()
+        del j["credential_source"]
+        self.assertEqual(self.stack(self.with_status(judge=j)).check_judge().status, "SKIP")
+
+    # ---------- budgets.today ----------
+
+    def test_budgets_within_limits_label_real_spend(self) -> None:
+        body = self.with_status(
+            budgets=budgets(decision_spent_today_usd=0.0123, llm_spent_today_usd=0.35)
+        )
+        check = self.stack(body).check_budgets()
+        self.assertEqual(check.status, "PASS")
+        self.assertIn("fast checks $0.0123 of $2.00", check.detail)
+        self.assertIn("deep audits $0.3500 of $5.00", check.detail)
+        self.assertIn("(measured)", check.detail)
+        demo = self.stack(status_body(), expect="demo").check_budgets()
+        self.assertEqual(demo.status, "PASS")
+        self.assertIn("simulated checks cost $0", demo.detail)
+        unlimited = self.stack(self.with_status(budgets=budgets(llm_usd_day=0))).check_budgets()
+        self.assertIn("deep audits $0.0000 of no budget set", unlimited.detail)
+
+    def test_exhausted_budgets_warn_in_plain_words(self) -> None:
+        cases = [
+            (
+                budgets(llm_exhausted=True),
+                "Deep audits paused: today's deep-audit budget is used up",
+            ),
+            (budgets(decision_exhausted=True), "pass through unchecked"),
+            (budgets(decision_reserve_only=True), "only block and fallback routes"),
+            (budgets(decision_exhausted=True, llm_exhausted=True), "both daily budgets"),
+        ]
+        for b, words in cases:
+            with self.subTest(budgets=b):
+                check = self.stack(self.with_status(budgets=b)).check_budgets()
+                self.assertEqual(check.status, "WARN")
+                self.assertIn(words, check.summary)
+                self.assertIn("Settings > Budgets", check.fix)
+        body = status_body()
+        del body["budgets"]
+        self.assertEqual(self.stack(body).check_budgets().status, "SKIP")
+
+    def test_a_failed_status_read_is_reported_once(self) -> None:
+        d = self.stack(status_body(), **{"/api/status": HttpResult(status=500)})
+        first, rest = d.check_credentials(), [
+            d.check_runtime_config(),
+            d.check_judge(),
+            d.check_budgets(),
+        ]
+        self.assertEqual(first.status, "FAIL")
+        self.assertEqual([c.status for c in rest], ["SKIP"] * 3)
 
 
 class MetricsChecksTest(unittest.TestCase):
