@@ -423,21 +423,35 @@ func Decide(in *Input) (*Core, error) {
 		}
 	}
 
-	// CALIBRATION CAP
+	// CALIBRATION CAP. The reason says why (D56): uncalibrated_snapshot when every uncalibrated
+	// member is calibrated only on another snapshot (the decision model moved on), otherwise
+	// calibration_missing.
 	uncalibratedCap := false
+	capReason := ReasonCalibrationMissing
 	if (action == ActionBlock || action == ActionFallback) && !failClosed && in.Policy.RequireCalibration && !detBlock {
-		uncal := slices.ContainsFunc(blockSet, func(e *evalState) bool { return !e.calib })
-		if noEvidence {
-			fc := findFactualClaims(evals)
-			uncal = uncal || fc == nil || !fc.calib
+		var uncalRefs []string
+		for _, e := range blockSet {
+			if !e.calib {
+				uncalRefs = append(uncalRefs, e.in.Ref)
+			}
 		}
-		if uncal {
+		if noEvidence {
+			if fc := findFactualClaims(evals); fc == nil {
+				uncalRefs = append(uncalRefs, FactualClaimsRef)
+			} else if !fc.calib {
+				uncalRefs = append(uncalRefs, fc.in.Ref)
+			}
+		}
+		if len(uncalRefs) > 0 {
 			action = ActionFlag
 			if degraded == nil {
 				d := DegradedUncalibrated
 				degraded = &d
 			}
 			uncalibratedCap = true
+			if !slices.ContainsFunc(uncalRefs, func(ref string) bool { return in.Calibration[ref].State != CalibrationOtherSnapshot }) {
+				capReason = ReasonUncalibratedSnapshot
+			}
 		}
 	}
 
@@ -524,7 +538,7 @@ func Decide(in *Input) (*Core, error) {
 		{noEvidence, ReasonNoEvidence},
 		{streamNotBuffered, ReasonStreamNotBuffered},
 		{failClosed, ReasonFailClosed},
-		{uncalibratedCap, ReasonUncalibratedSnapshot},
+		{uncalibratedCap, capReason},
 	} {
 		if r.on {
 			out.Reasons = append(out.Reasons, r.reason)
@@ -555,6 +569,9 @@ func assessEvaluator(e *evalState, in *Input, qid string, excluded map[string]st
 	}
 	if hasCal {
 		r.CalibrationState = cal.State
+		if len(cal.FitStateFields) > 0 && !sameFieldSet(cal.FitStateFields, spec.StateFields) {
+			r.CalibrationWarning = ptr(CalibrationWarningStateFields)
+		}
 	}
 	warn := spec.Outcomes.WarnAt
 	if e.in.Thresholds.WarnAt != nil {
@@ -679,6 +696,14 @@ func noEvidenceApplies(in *Input, evals, active []*evalState, excluded map[strin
 }
 
 // findFactualClaims returns the factual_claims evaluator (internal or attached), if any.
+// sameFieldSet reports whether two lists name the same state fields (order and repeats aside).
+func sameFieldSet(a, b []string) bool {
+	x, y := slices.Clone(a), slices.Clone(b)
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(slices.Compact(x), slices.Compact(y))
+}
+
 func findFactualClaims(evals []*evalState) *evalState {
 	for _, e := range evals {
 		if e.in.Spec.ID == FactualClaimsID {
