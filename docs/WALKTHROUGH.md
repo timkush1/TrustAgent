@@ -274,8 +274,9 @@ The worker gets the result back over gRPC and does two things
 
 The browser keeps one **WebSocket** open to `ws://localhost:8080/ws`. A WebSocket is a
 TCP connection that starts as HTTP and then stays open both ways — the server can *push*
-without the browser asking (no polling). [useWebSocket.ts](../frontend-react/src/hooks/useWebSocket.ts)
-parses each message and feeds the Zustand store; React re-renders; a new audit card
+without the browser asking (no polling). In 1.0 a `useWebSocket` hook parsed each message and fed
+the Zustand store (in 2.0, [liveStream.ts](../frontend-react/src/data/liveStream.ts) feeds the
+stream store); React re-renders; a new audit card
 appears with its grade, claims, and evidence. Elapsed wall time from request to verdict
 on screen: a few seconds to ~30s depending on the judge model and your CPU.
 
