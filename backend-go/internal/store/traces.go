@@ -16,8 +16,9 @@ import (
 
 // Traces, gate decisions and trace bodies (SPEC §2.3, migration 0002). Go is the only writer.
 //
-// Writes run inline (TRUTHTABLE_TRACE_FLUSH=sync semantics): the ordered, batched async writer
-// with its in-memory LRU fallback lands in P2 and keeps these statements as its row writers.
+// The write methods run inline, each in its own transaction. With TRUTHTABLE_TRACE_FLUSH=async the
+// ordered, batched writer (internal/store/tracewriter) fronts them: it sends its batches through
+// WriteTraceBatch, which runs the same statements, and falls back to these methods row by row.
 
 // ErrNotFound is returned by the readers when the row does not exist.
 var ErrNotFound = pgx.ErrNoRows
@@ -512,7 +513,14 @@ type TraceFilter struct {
 	Outcome      string
 	// Q matches the question and answer previews (case-insensitive substring).
 	Q string
+	// Reason matches the gate reasons (P4-PLAN D68): a whole code ("det:secret_pattern") matches
+	// that reason, a prefix that ends in a colon ("det:") matches every reason it starts. The API
+	// asks for Since with it, which bounds the scan.
+	Reason string
 }
+
+// ReasonPrefix reports whether a reason filter is a prefix ("det:") rather than a whole code.
+func ReasonPrefix(reason string) bool { return strings.HasSuffix(reason, ":") }
 
 // ErrBadCursor is returned for a cursor this store did not issue.
 var ErrBadCursor = errors.New("store: invalid cursor")
@@ -563,6 +571,13 @@ func (s *PostgresStore) ListTraces(ctx context.Context, f TraceFilter) ([]TraceR
 			return nil, "", err
 		}
 		eq(expr, f.Outcome)
+	}
+	switch {
+	case f.Reason == "":
+	case ReasonPrefix(f.Reason):
+		where = append(where, "EXISTS (SELECT 1 FROM unnest(t.reasons) AS r(code) WHERE r.code LIKE "+arg(escapeLike(f.Reason)+"%")+")")
+	default:
+		where = append(where, "t.reasons @> ARRAY["+arg(f.Reason)+"]::text[]")
 	}
 	if f.Q != "" {
 		p := arg("%" + escapeLike(f.Q) + "%")
