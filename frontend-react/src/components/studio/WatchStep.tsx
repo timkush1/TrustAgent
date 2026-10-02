@@ -43,6 +43,8 @@ export interface WatchStepProps {
   simulated: boolean;
   /** Why the fast check cannot run at all (not connected), or null. */
   modelReason: Reason | null;
+  /** This is the step to do next: its action is the page's one primary button. */
+  primary: boolean;
 }
 
 function safeFind(yaml: string, route: string, id: string): RouteEvaluatorEntry | undefined {
@@ -53,7 +55,7 @@ function safeFind(yaml: string, route: string, id: string): RouteEvaluatorEntry 
   }
 }
 
-export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated, modelReason }: WatchStepProps) {
+export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated, modelReason, primary }: WatchStepProps) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const { demo } = useAppMode();
@@ -143,7 +145,7 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
         <div className="space-y-1.5">
           <DisabledAction reason={attachReason}>
             {(p) => (
-              <Button variant="primary" onClick={action.run} {...p}>
+              <Button variant={primary ? 'primary' : 'secondary'} onClick={action.run} {...p}>
                 {action.label}
               </Button>
             )}
@@ -161,7 +163,7 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
         // Nothing to do yet: the action stays visible with the reason it is not available.
         <DisabledAction reason={attachReason}>
           {(p) => (
-            <Button variant="primary" {...p}>
+            <Button variant={primary ? 'primary' : 'secondary'} {...p}>
               {route ? studioSaveAndWatchLabel(route) : 'Save and watch'}
             </Button>
           )}

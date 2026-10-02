@@ -191,7 +191,7 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
         <div className="space-y-1.5">
           <DisabledAction reason={draftReason} layout="stacked">
             {(p) => (
-              <Button variant={noJudge ? 'secondary' : 'primary'} pending={draft.isPending} onClick={() => draft.mutate()} {...p}>
+              <Button variant={!noJudge && !hasCheck ? 'primary' : 'secondary'} pending={draft.isPending} onClick={() => draft.mutate()} {...p}>
                 <Sparkles aria-hidden="true" />
                 {hasCheck ? 'Draft again with AI' : 'Draft with AI'}
               </Button>
@@ -211,7 +211,7 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
           <Field label="Start from a template" className="min-w-56">
             <Select value={template} onValueChange={(v) => setTemplate(v ?? BLANK_TEMPLATE)} options={templateOptions} />
           </Field>
-          <Button variant={noJudge ? 'primary' : 'secondary'} onClick={startFromTemplate}>
+          <Button variant={noJudge && !hasCheck ? 'primary' : 'secondary'} onClick={startFromTemplate}>
             {hasCheck ? 'Start over from this template' : 'Use this template'}
           </Button>
         </div>

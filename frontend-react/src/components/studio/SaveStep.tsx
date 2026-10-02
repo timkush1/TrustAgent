@@ -48,9 +48,11 @@ export interface SaveStepProps {
   onSaved: (version: EvaluatorVersion) => void;
   /** Reloads the latest saved version after a 412 (the working spec stays). */
   onReloadLatest: () => Promise<void>;
+  /** This is the step to do next: its action is the page's one primary button. */
+  primary: boolean;
 }
 
-export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, taken, onSaved, onReloadLatest }: SaveStepProps) {
+export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, taken, onSaved, onReloadLatest, primary }: SaveStepProps) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const [changelog, setChangelog] = useState('');
@@ -128,7 +130,7 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
       </Field>
       <DisabledAction reason={reason}>
         {(p) => (
-          <Button variant="primary" pending={save.isPending} onClick={() => save.mutate()} {...p}>
+          <Button variant={primary ? 'primary' : 'secondary'} pending={save.isPending} onClick={() => save.mutate()} {...p}>
             {asVersion ? `Save version ${nextVersion}` : 'Save as a new check'}
           </Button>
         )}

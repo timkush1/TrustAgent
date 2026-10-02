@@ -134,6 +134,9 @@ function StudioEditor({ initial }: { initial: Session }) {
     !savedRef ? 'waiting' : 'optional',
   ];
 
+  // The next step to do carries the page's one primary action (DESIGN.md: one primary per view).
+  const next = statuses.indexOf('todo');
+
   return (
     <div className="space-y-5">
       <StudioSteps statuses={statuses} />
@@ -166,9 +169,10 @@ function StudioEditor({ initial }: { initial: Session }) {
             defaultRoute={session.route}
             writeReason={writeReason}
             specReason={specReason}
+            primary={next === 2}
           />
           <QuickCalibrationStep spec={spec} results={run?.response.results ?? null} samples={samples} onSpecChange={setSpec} />
-          <SaveStep spec={spec} onSpecChange={setSpec} base={base} specReason={specReason} writeReason={writeReason} taken={taken} onSaved={onSaved} onReloadLatest={reloadLatest} />
+          <SaveStep spec={spec} onSpecChange={setSpec} base={base} specReason={specReason} writeReason={writeReason} taken={taken} onSaved={onSaved} onReloadLatest={reloadLatest} primary={next === 4} />
           <WatchStep
             savedRef={savedRef}
             spec={spec}
@@ -176,6 +180,7 @@ function StudioEditor({ initial }: { initial: Session }) {
             specReason={specReason}
             simulated={decisionModel?.backend === 'mock'}
             modelReason={modelReason}
+            primary={next === 5}
           />
           <CalibrateStep evaluatorId={base?.id ?? null} />
         </>

@@ -47,6 +47,8 @@ export interface TestBenchProps {
   writeReason: Reason | null;
   /** Why the spec cannot run yet (errors in step 2), or null. */
   specReason: Reason | null;
+  /** This is the step to do next: its action is the page's one primary button. */
+  primary: boolean;
 }
 
 const pct = (p: number) => `${Math.floor(p * 100 + 0.5)}%`;
@@ -109,7 +111,7 @@ function ResultRow({ index, row, sample, fires, agrees, snapshot }: { index: num
   );
 }
 
-export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecChange, decisionModel, routes, defaultRoute, writeReason, specReason }: TestBenchProps) {
+export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecChange, decisionModel, routes, defaultRoute, writeReason, specReason, primary }: TestBenchProps) {
   const ds = useDataSource();
   const [whatIf, setWhatIf] = useState<number | null>(null);
   const warnAt = spec.outcomes.warn_at;
@@ -162,7 +164,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <DisabledAction reason={runReason}>
           {(p) => (
-            <Button variant="primary" pending={test.isPending} onClick={() => test.mutate({ spec, samples })} {...p}>
+            <Button variant={primary ? 'primary' : 'secondary'} pending={test.isPending} onClick={() => test.mutate({ spec, samples })} {...p}>
               {run ? <RefreshCw aria-hidden="true" /> : null}
               {run ? 'Run again' : 'Run test'}
             </Button>
