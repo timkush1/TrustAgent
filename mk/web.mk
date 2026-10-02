@@ -103,14 +103,10 @@ test-e2e-static: ## Build the static site and run the Playwright static specs ag
 # `make check` runs eslint (lint) and vitest (test) already; this runs everything else CI does, one
 # step after another even under `make -j`: `npm run build` and `build:static` both write dist/, the
 # size budget reads the static build, and one build at a time suits a small machine.
-# The evaluator validator's generator comes with the Evaluator Studio: until that is merged into this
-# checkout the step says so instead of failing (the P4 turn-on, I-2, drops the guard).
-EVALUATOR_VALIDATOR_GEN = frontend-react/scripts/gen-evaluator-validator.ts
-
 check-web-ci: ## CI's other web gates in order: generated types, policy and evaluator validators, api.v1 schema, tsc -b, build, build-static, size, recording
 	@$(MAKE) --no-print-directory gen-types-check
 	@$(MAKE) --no-print-directory gen-policy-validator-check
-	@$(if $(wildcard $(EVALUATOR_VALIDATOR_GEN)),$(MAKE) --no-print-directory gen-evaluator-validator-check,echo "gen-evaluator-validator-check: not run, $(EVALUATOR_VALIDATOR_GEN) is not in this checkout yet")
+	@$(MAKE) --no-print-directory gen-evaluator-validator-check
 	@$(MAKE) --no-print-directory gen-api-schema-check
 	cd frontend-react && npx tsc -b
 	cd frontend-react && npm run build

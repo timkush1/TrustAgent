@@ -3038,7 +3038,7 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 
 | Assumption | Verified at |
 |---|---|
-| OpenRouter PKCE accepts `localhost` callbacks | P1g |
+| OpenRouter PKCE accepts `localhost` callbacks | P1g; at the end of P4 still unverified against the real openrouter.ai (the owner's §21 #1 check was not run), so Connect stays primary with Paste always visible (D88; verified only against the mock-upstream OpenRouter) |
 | OpenRouter PKCE accepts the Pages callback | P5, when Pages exists |
 | `GET /api/v1/key` response shape | P1g |
 | `usage.cost` on chat with `usage.include` | P1g |

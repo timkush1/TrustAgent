@@ -81,10 +81,11 @@ example `http://localhost:3000/connect/callback`. The dashboard address is the p
 from when the proxy allows that origin, otherwise `TRUTHTABLE_PUBLIC_URL` (compose sets both from
 `DASHBOARD_HOST_PORT`).
 
-**Status on localhost:** the end-to-end tests run Connect against a local fake of OpenRouter. The
-check against the real openrouter.ai with a `localhost` callback is recorded here once the
-maintainer has run it. If OpenRouter refuses the callback address on your machine, use **Paste a
-key**: it is always offered on the same screen and needs nothing else.
+**Status on localhost (2.0):** the end-to-end tests run the whole Connect flow (PKCE, the
+callback, the key exchange) against a local fake of OpenRouter. The check against the real
+openrouter.ai with a `localhost` callback has **not been run yet**, so it is not verified. Connect
+stays the primary button, as planned; if OpenRouter refuses the callback address on your machine,
+use **Paste a key**: it is always offered on the same screen and needs nothing else.
 
 ### Which value wins
 
