@@ -92,12 +92,14 @@ export function quickCalibrationOf(results: readonly TestRow[], labels: Readonly
 }
 
 /**
- * What a test ran on, to tell later whether the check or the samples changed since. Labels are left
- * out: relabelling a sample re-scores the run without a new call.
+ * What a test ran on, to tell later whether the check or the samples changed since. Labels and the
+ * flag threshold (`outcomes.warn_at`) are left out: relabelling a sample or moving the threshold
+ * re-scores the run's stored risks without a new call (the free what-if).
  */
 export function runKeys(spec: EvaluatorSpec, samples: readonly StudioSample[]): { specKey: string; samplesKey: string } {
+  const outcomes: unknown = spec.outcomes;
   return {
-    specKey: JSON.stringify(spec),
+    specKey: JSON.stringify(typeof outcomes === 'object' && outcomes !== null ? { ...spec, outcomes: { ...outcomes, warn_at: null } } : spec),
     samplesKey: JSON.stringify(samples.map(({ expected: _label, ...rest }) => rest)),
   };
 }

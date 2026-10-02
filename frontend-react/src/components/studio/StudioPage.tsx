@@ -107,7 +107,8 @@ function StudioEditor({ initial }: { initial: Session }) {
         }
       : null;
   const savedRef = spec && base && base.id === spec.id && sameSpec(base.spec, spec) ? `${base.id}@${base.latest}` : null;
-  const stale = run !== null && spec !== null && (run.specKey !== runKeys(spec, samples).specKey || run.samplesKey !== runKeys(spec, samples).samplesKey);
+  const keys = spec ? runKeys(spec, samples) : null;
+  const stale = run !== null && keys !== null && (run.specKey !== keys.specKey || run.samplesKey !== keys.samplesKey);
 
   const setSpec = (next: EvaluatorSpec) => setSession((s) => ({ ...s, spec: next }));
   const start = (st: StudioStart) => {

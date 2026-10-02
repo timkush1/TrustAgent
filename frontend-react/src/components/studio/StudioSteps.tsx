@@ -37,14 +37,14 @@ export function StudioSteps({ statuses }: { statuses: readonly StepStatus[] }) {
               {waiting ? (
                 <span className="inline-flex items-center gap-1.5 text-xs text-fg-subtle">
                   <Icon aria-hidden="true" className="size-3.5" />
-                  <span className="tabular">{i + 1}.</span> {step.title}
-                  <span className="sr-only"> ({status.label})</span>
+                  <span className="tabular">{i + 1}.</span> {step.title}{' '}
+                  <span className="sr-only">({status.label})</span>
                 </span>
               ) : (
                 <a href={`#${step.id}`} className={cn('inline-flex items-center gap-1.5 rounded-sm text-xs hover:text-fg', statuses[i] === 'done' ? 'text-fg' : 'text-fg-muted')}>
                   <Icon aria-hidden="true" className="size-3.5" />
-                  <span className="tabular">{i + 1}.</span> {step.title}
-                  <span className="sr-only"> ({status.label})</span>
+                  <span className="tabular">{i + 1}.</span> {step.title}{' '}
+                  <span className="sr-only">({status.label})</span>
                 </a>
               )}
             </li>

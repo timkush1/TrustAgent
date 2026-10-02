@@ -175,7 +175,18 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(control.callsTo('/api/studio/test')).toHaveLength(1);
     await user.click(within(test).getByRole('button', { name: 'Use 0.40 as the threshold' }));
     expect(within(step(/Step 2/)).getByRole('slider', { name: 'Flag when the risk reaches' })).toHaveAttribute('aria-valuenow', '0.4');
+    // A new threshold re-scores the stored risks: the run still stands, with no new call.
+    expect(await within(test).findByText('At 0.40: fires on 3 of 6 · 6 of 6 match your labels')).toBeInTheDocument();
+    expect((await within(test).findByText('6 of 6 match')).closest('p')).toHaveTextContent('6 of 6 match · fires on 3 of 6');
+    expect(within(test).queryByRole('button', { name: /as the threshold/ })).not.toBeInTheDocument();
+    expect(within(test).queryByText(/changed since this run/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /3\. Test \(Done\)/ })).toBeInTheDocument();
+    expect(control.callsTo('/api/studio/test')).toHaveLength(1);
+
+    // Changing what the check asks does need a new run.
+    await user.type(within(step(/Step 2/)).getByRole('textbox', { name: 'What should it catch?' }), ' Ignore greetings.');
     expect(await within(test).findByText(/The check or the samples changed since this run/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /3\. Test \(To do\)/ })).toBeInTheDocument();
   });
 
   it('shows a threshold adopted in step 3 in the open JSON tab, so the editor never holds an older spec', async () => {

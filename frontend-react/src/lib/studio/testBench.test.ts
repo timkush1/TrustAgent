@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import testFixture from '@contracts/fixtures/api/StudioTestResponse.six.json';
 import type { StudioTestResponse } from '@/types/api';
-import { benchAt, firesAt, quickCalibrationOf, type Expected, type TestRow } from './testBench';
+import { benchAt, firesAt, quickCalibrationOf, runKeys, type Expected, type TestRow } from './testBench';
+import { blankSpec } from './templates';
 
 const results = (testFixture as StudioTestResponse).results;
 
@@ -74,5 +75,23 @@ describe('quickCalibrationOf', () => {
     const q = quickCalibrationOf(rows, new Map(), 0.6);
     expect([q.result.n, q.result.n_pos, q.result.n_neg]).toEqual([1, 1, 0]);
     expect(q.needed).toEqual({ total: 7, fire: 2, noFire: 3 });
+  });
+});
+
+describe('runKeys', () => {
+  const spec = blankSpec();
+  const samples = [{ id: 'p1', assistant_response: 'Sorry, that is your fault.', expected: 'fire' as const }];
+
+  it('stays the same for a new threshold or new labels, which re-score the stored risks for free', () => {
+    const keys = runKeys(spec, samples);
+    expect(runKeys({ ...spec, outcomes: { ...spec.outcomes, warn_at: 0.35 } }, samples)).toEqual(keys);
+    expect(runKeys(spec, [{ ...samples[0], expected: 'no_fire' }])).toEqual(keys);
+  });
+
+  it('changes with anything else the answers depend on', () => {
+    const keys = runKeys(spec, samples);
+    expect(runKeys({ ...spec, question: { ...spec.question, instructions: 'Something else?' } }, samples).specKey).not.toBe(keys.specKey);
+    expect(runKeys({ ...spec, outcomes: { ...spec.outcomes, critical_at: 0.9 } }, samples).specKey).not.toBe(keys.specKey);
+    expect(runKeys(spec, [{ ...samples[0], assistant_response: 'Happy to help.' }]).samplesKey).not.toBe(keys.samplesKey);
   });
 });
