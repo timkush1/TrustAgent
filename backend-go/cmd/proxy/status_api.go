@@ -75,6 +75,11 @@ type statusReporter struct {
 	// evaluatorWarnings lists what the evaluator registry excluded while loading (skipped files,
 	// versions that break a hard rule, P4-PLAN D54); nil means none.
 	evaluatorWarnings func() []string
+	// decisionDay is the decision model's calls and cost over the last 24 hours from the cost
+	// ledger, which survive a restart (P4-PLAN D92; GCOST fills it from a value its own loop
+	// refreshes, so /api/status runs no query). nil, or ok false (no database, or not read yet),
+	// falls back to the decision-model client's in-memory counters.
+	decisionDay func() (store.DecisionDay, bool)
 	// runtime is the runtime configuration in effect (GSEC): the decision credential's name and
 	// the runtime warnings come from it; nil means none (a reporter built in a test).
 	runtime func() *runtimecfg.Snapshot
@@ -603,8 +608,8 @@ func (s *statusReporter) jevStatus() jev.Status {
 
 // decisionModel is SystemStatus.decision_model, from the client's live status: state, breaker,
 // last error with its hint, snapshot, rate use, the endpoint's host and the last 24 hours' calls and
-// cost (held in memory, so they restart with the proxy). Latency percentiles come with the cost
-// ledger (P4).
+// cost. Those two come from the cost ledger when the decisionDay hook has read it (D92), and
+// otherwise from the client's in-memory counters, which restart with the proxy.
 func (s *statusReporter) decisionModel() decisionModelStatus {
 	st := s.jevStatus()
 	d := decisionModelStatus{
@@ -615,6 +620,11 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 	}
 	if d.State == "" {
 		d.State = "off"
+	}
+	if s.decisionDay != nil {
+		if day, ok := s.decisionDay(); ok {
+			d.Calls24h, d.Cost24hUSD = int(day.Calls), day.CostUSD
+		}
 	}
 	// The calibration of the snapshot that answers; unknown until the first answer (HTTP backends).
 	if s.calib != nil && st.Snapshot != "" {
