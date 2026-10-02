@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-other-provider-fallback",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "A compatible endpoint has no entries of its own, so the first other provider's matching entry prices the model (OpenRouter's Haiku, $0.004125); the free ollama catch-all listed before it is skipped.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "compatible",
+    "model": "anthropic/claude-haiku-4.5",
+    "input_tokens": 3525,
+    "output_tokens": 120,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0},
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5}
+      ]
+    }
+  },
+  "expected": {"cost_source": "computed", "cost_usd": 0.004125, "price_table_version": "2026-09-27"}
+}

@@ -1,0 +1,32 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-exact-decimals",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "566 input tokens of Jev at $0.042/M is exactly $0.000023772. Costs are exact decimals: the naive double product 566 x 0.042 / 1e6 is 2.3772000000000002e-05, which tolerance 0 refuses.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "openrouter",
+    "model": "typesafe/jev-1.13-20260917",
+    "input_tokens": 566,
+    "output_tokens": 3,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {
+    "cost_source": "computed",
+    "cost_usd": 0.000023772,
+    "price_table_version": "2026-09-27"
+  },
+  "tolerance": 0
+}

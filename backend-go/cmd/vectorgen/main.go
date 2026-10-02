@@ -1,10 +1,11 @@
 // Command vectorgen maintains the golden vectors that the Go reference in internal/decision runs
 // (SPEC §7.6).
 //
-// Mechanical kinds (canonical, tokens, question_hash, normalize, compile, calibration_apply): vector
-// inputs are written by hand under contracts/vectors/<kind>/<name>.json with status draft (and
-// expected null). vectorgen fills in expected and generated_by; a person reviews the diff and then
-// freezes the vector (status frozen, by hand or with -freeze).
+// Mechanical kinds (canonical, tokens, question_hash, normalize, compile, calibration_apply,
+// calibrate_fit, cost): vector inputs are written by hand under
+// contracts/vectors/<kind>/<name>.json with status draft (and expected null). vectorgen fills in
+// expected and generated_by; a person reviews the diff and then freezes the vector (status frozen,
+// by hand or with -freeze).
 //
 // Semantic kinds with a Go runner (decide, detectors): expected is written by hand from the SPEC
 // and may be a subset of the output. vectorgen never writes it; it checks that the reference

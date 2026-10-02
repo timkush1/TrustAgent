@@ -34,8 +34,7 @@ func TestEstimateUSD(t *testing.T) {
 	}
 	info := Info{Backend: BackendOpenRouterDecisions, Model: "typesafe/jev-1.13"}
 	got, ok := EstimateUSD(info, 1_000_000)
-	want := priceFor(0, info.Backend, info.Model).perMTok
-	if !ok || got != want {
+	if want, _, _ := ContractsPrices(info.Backend, info.Model); !ok || got != want {
 		t.Errorf("EstimateUSD = %v, %v; want %v (one million tokens at the table price)", got, ok, want)
 	}
 }
@@ -60,7 +59,14 @@ func TestPriceOf(t *testing.T) {
 		t.Errorf("TRUTHTABLE_JEV_PRICE_PER_MTOK must win: %+v", p)
 	}
 	c.cfg.PricePerMTok, c.prices = 0, nil
-	if p, want := c.priceOf("typesafe/jev-1.13"), priceFor(0, BackendOpenRouterDecisions, "typesafe/jev-1.13"); p != want {
-		t.Errorf("nil Prices = %+v, want the embedded table %+v", p, want)
+	if p := c.priceOf("typesafe/jev-1.13"); p.perMTok != 0.042 || p.version != "2026-09-27" {
+		t.Errorf("nil Prices = %+v, want the contracts table (0.042, 2026-09-27)", p)
+	}
+	// The effective table sees the model without OpenRouter's "~" alias prefix.
+	var seen string
+	c.prices = func(_, model string) (float64, string, bool) { seen = model; return 0, "", false }
+	c.priceOf("~typesafe/jev-1.13")
+	if seen != "typesafe/jev-1.13" {
+		t.Errorf("Prices saw %q", seen)
 	}
 }
