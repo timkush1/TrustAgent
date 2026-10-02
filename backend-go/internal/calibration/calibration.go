@@ -185,8 +185,9 @@ func (s *Store) Reload() ([]Change, error) { return s.ReloadContext(context.Back
 // re-reads its active rows) and reports the snapshots whose calibrations changed, sorted by
 // snapshot; the first reload reports every snapshot it loads. A file whose new content does not
 // parse keeps its last good content, so a half-written file never drops a calibration; a removed
-// file drops its calibrations (without a database: a mirrored row stays until it is replaced or
-// deactivated). An unreadable directory or database is an error and keeps what is loaded.
+// file drops its calibrations without a database, while with one its mirrored row stays active
+// until another row replaces it or it is deactivated (D55). An unreadable directory or database is
+// an error and keeps what is loaded.
 func (s *Store) ReloadContext(ctx context.Context) ([]Change, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
