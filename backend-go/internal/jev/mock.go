@@ -187,10 +187,9 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 	if est, err := decision.Est(map[string]any{"model": req.Model, "state": req.State, "questions": req.Questions}, decision.DefaultCPT); err == nil {
 		tokens += est
 	}
-	// Priced in exact integer steps (tokens × $0.042 per 1e6 is tokens × 42 / 1e9), so the cost is the
-	// double nearest its decimal value and serializes as, say, 2.3772e-05 rather than
-	// 0.000023772000000000002.
-	cost := float64(tokens) * (DefaultPricePerMTok * 1e3) / 1e9
+	// What the call would cost at the list price, as the double nearest its decimal value (so it
+	// serializes as, say, 2.3772e-05 rather than 0.000023772000000000002); labelled simulated.
+	cost := price{perMTok: DefaultPricePerMTok}.usd(tokens)
 	snapshot := req.Model
 	if !strings.HasPrefix(snapshot, "mock/") {
 		snapshot = DefaultMockModel
