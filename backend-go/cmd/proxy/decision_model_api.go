@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -116,7 +118,7 @@ func (s *server) decisionModelTestResult(info jev.Info, resp *jev.Response, err 
 				e.Status = &status
 			}
 		}
-		e.Message = cutChars(s.redact(e.Message), maxTestMessage)
+		e.Message = cutChars(s.redact(dropCutWord(e.Message)), maxTestMessage)
 		out.Error = e
 	}
 	return out
@@ -132,6 +134,20 @@ func endpointHost(raw string) string {
 		return ""
 	}
 	return u.Hostname()
+}
+
+// dropCutWord removes the word a cut left at the end of a decision-model message, before its
+// "…". The decision client cuts a vendor message to 300 characters before it masks the key it sent
+// (jev scrub, then redactSecret), so a key the vendor echoed across the cut arrives as a bare
+// prefix that no exact-secret redaction recognises (D42). The cut word carries nothing worth
+// showing, so it goes whatever it was.
+func dropCutWord(msg string) string {
+	body, cut := strings.CutSuffix(msg, "…")
+	if !cut {
+		return msg
+	}
+	body = body[:strings.LastIndexFunc(body, unicode.IsSpace)+1]
+	return strings.TrimRightFunc(body, unicode.IsSpace) + "…"
 }
 
 // cutChars cuts s to at most n characters, ending with "…" when it cut.
