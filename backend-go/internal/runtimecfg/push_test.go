@@ -23,8 +23,8 @@ import (
 
 const (
 	fixtureSecret = "sk-or-v1-fixture-0000000000000000000000000000000000000000000000000000000000000000"
-	// noPatternSecret matches none of the redaction patterns (P4-PLAN §0 rule 8).
-	noPatternSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+	// pushUnmatchedSecret matches none of the redaction patterns (P4-PLAN §0 rule 8).
+	pushUnmatchedSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 )
 
 func sp(s string) *string { return &s }
@@ -389,10 +389,10 @@ func TestPusherBacksOff(t *testing.T) {
 // status warning and the log only redacted; the log never carries the push itself.
 func TestPusherNeverLeaksTheSecret(t *testing.T) {
 	red := config.NewRedactor()
-	if red.Redact(noPatternSecret) != noPatternSecret {
+	if red.Redact(pushUnmatchedSecret) != pushUnmatchedSecret {
 		t.Fatal("the no-pattern secret is masked by the patterns alone; pick another")
 	}
-	red.Add(noPatternSecret)
+	red.Add(pushUnmatchedSecret)
 	eng := newFakeEngine(func(n int, rc *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error) {
 		if n == 1 {
 			return nil, status.Error(codes.InvalidArgument, "bad credential "+rc.GetCredentials()["openrouter"].GetSecret())
@@ -415,7 +415,7 @@ func TestPusherNeverLeaksTheSecret(t *testing.T) {
 	runPusher(t, p)
 	snap := fixtureSnapshot()
 	cred := snap.Credentials["openrouter"]
-	cred.Secret = noPatternSecret
+	cred.Secret = pushUnmatchedSecret
 	snap.Credentials["openrouter"] = cred
 	p.Want(snap)
 	eng.waitPushes(t, 2)
@@ -426,7 +426,7 @@ func TestPusherNeverLeaksTheSecret(t *testing.T) {
 		t.Fatalf("warning after the refusal: %q", warnings)
 	}
 	for _, text := range append(warnings, st.Warning, logs.String()) {
-		if strings.Contains(text, noPatternSecret) {
+		if strings.Contains(text, pushUnmatchedSecret) {
 			t.Fatal("the pushed secret leaked into a warning or the log")
 		}
 	}
