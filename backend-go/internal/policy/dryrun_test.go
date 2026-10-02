@@ -417,4 +417,22 @@ func TestPreviewAgainstPostgres(t *testing.T) {
 	if _, err := e.Preview(ctx, pg, block, "1y", 0); err == nil {
 		t.Error("unknown window")
 	}
+
+	// Adopting calibrations (D62): calibrated space with calibration required. The runtime has
+	// no calibrations, so the block is capped to flag; previewed with calibrations given in its
+	// place (a dry-run's calibration_ids), the first trace would be blocked.
+	adoptYAML := strings.Replace(currentYAML, "mode: flag", "mode: block\n    streaming: buffer", 1)
+	adoptYAML = strings.Replace(adoptYAML, "[{ref: groundedness@1}, {ref: contradiction@1}]",
+		"[{ref: groundedness@1, thresholds: {space: calibrated}}, {ref: contradiction@1, thresholds: {space: calibrated}}]", 1)
+	adopt, err := e.Proposed(ctx, Source{YAML: adoptYAML}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err = e.Preview(ctx, pg, adopt, "1h", 10); err != nil || res.NewlyBlocked != 0 {
+		t.Errorf("adopt preview without calibrations: %+v %v", res, err)
+	}
+	with := fakeCalibrations{"groundedness@1": measured(), "contradiction@1": measured()}
+	if res, err = e.PreviewWith(ctx, pg, adopt, "1h", 10, with); err != nil || res.NewlyBlocked != 1 {
+		t.Errorf("adopt preview with calibrations: %+v %v", res, err)
+	}
 }

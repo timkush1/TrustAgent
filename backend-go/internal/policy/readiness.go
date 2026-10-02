@@ -113,6 +113,27 @@ type CalibrationStatus struct {
 	Table []float64
 	// Stale reports that a calibration exists only for an earlier snapshot.
 	Stale bool
+	// StateFields are the state fields the calibration was fitted with (fit_context.state_fields),
+	// nil without a record.
+	StateFields []string
+}
+
+// DecideCalibration is decide()'s calibration entry for a lookup result (decision.Input.calibration),
+// false when the target is calibrated nowhere. A target calibrated only on other snapshots of the
+// family (Stale, no table) gives state other_snapshot and no table (P4-PLAN D56), so decide() can
+// tell a snapshot change from a missing calibration.
+func DecideCalibration(c CalibrationStatus) (decision.CalibrationEntry, bool) {
+	if c.Table == nil {
+		if c.Stale {
+			return decision.CalibrationEntry{State: decision.CalibrationOtherSnapshot}, true
+		}
+		return decision.CalibrationEntry{}, false
+	}
+	state := c.State
+	if state == "" || state == CalibrationNone {
+		state = c.Quality
+	}
+	return decision.CalibrationEntry{Table: c.Table, Quality: c.Quality, State: state, FitStateFields: slices.Clone(c.StateFields)}, true
 }
 
 // CalibrationLookup finds the calibration of an evaluator ref (with the route's resolved params)
