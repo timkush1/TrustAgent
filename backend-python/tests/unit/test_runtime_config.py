@@ -424,6 +424,18 @@ async def test_a_push_with_only_foreign_origins_is_invalid_and_reverts() -> None
     await manager.swappable.drained()
 
 
+async def test_an_engine_url_that_is_no_valid_origin_makes_the_push_invalid() -> None:
+    # Userinfo passes the config's URL check but is never an origin: the push is
+    # reported invalid (no key is sent there) rather than failing the RPC.
+    manager = manager_for(None, openrouter_base_url="https://user:pw@openrouter.ai")
+
+    outcome = await manager.apply(push(1))
+
+    assert outcome.judge_status == INVALID
+    assert "not a valid origin" in outcome.warnings[-1]
+    assert manager.swappable.current is None
+
+
 async def test_the_env_openrouter_base_url_joins_the_engine_origins() -> None:
     transport = openrouter_transport()
     manager = manager_for(

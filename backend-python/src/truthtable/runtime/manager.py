@@ -49,7 +49,7 @@ from ..judge import (
 from ..providers.base import LLMProvider
 from ..providers.registry import get_provider
 from ..providers.swappable import SwappableProvider
-from .origins import canonical_origins, engine_origins, provider_base_url
+from .origins import canonical_origin, canonical_origins, engine_origins, provider_base_url
 from .redaction import Redactor, process_redactor
 
 logger = logging.getLogger(__name__)
@@ -283,13 +283,18 @@ class ProviderManager:
                 "origin of this engine"
             )
         origins = tuple(o for o in pushed_origins if o in own)
-        base_url = provider_base_url(provider, self.settings)
         if not origins:
             raise PushRejected(f"credential {name!r} has no allowed origin this engine calls")
-        if canonical_origins([base_url])[0][0] not in origins:
+        base_url = provider_base_url(provider, self.settings)
+        try:
+            base_origin = canonical_origin(base_url)
+        except ValueError:
+            # Userinfo or a bad port in the engine's own URL: never send a key there.
             raise PushRejected(
-                f"credential {name!r} may not be sent to {canonical_origins([base_url])[0][0]}"
-            )
+                f"the engine's {provider} URL is not a valid origin; fix its environment"
+            ) from None
+        if base_origin not in origins:
+            raise PushRejected(f"credential {name!r} may not be sent to {base_origin}")
         return JudgeKey(
             provider,
             model,
