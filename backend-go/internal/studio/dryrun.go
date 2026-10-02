@@ -92,8 +92,12 @@ func NewDryRunTally(ref string) *DryRunTally {
 }
 
 // Add counts one sample: the trace and the runner's outcome on it. It returns the sample's result.
+// A sample the spend cap skipped was never evaluated and is not counted.
 func (t *DryRunTally) Add(tr DryRunTrace, o *Outcome) Result {
 	res := ResultOf(o, t.ref)
+	if o.Skipped {
+		return res
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s := &t.s

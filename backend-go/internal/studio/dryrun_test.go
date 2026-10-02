@@ -78,6 +78,10 @@ func TestDryRunTallyMatchesWilsonAndExtrapolates(t *testing.T) {
 		tally.Add(tr, outcome(decision.EvalAssessed, decision.LevelOK, 0.1))
 	}
 	tally.Add(DryRunTrace{TraceID: "n", InclusionProb: 1}, outcome(decision.EvalNotAssessed, "", 0))
+	// A sample the spend cap skipped was never evaluated: it counts nowhere.
+	if r := tally.Add(DryRunTrace{TraceID: "s", InclusionProb: 1}, &Outcome{Skipped: true}); r.Reason == nil || *r.Reason != ReasonOverBudget {
+		t.Errorf("skipped result = %+v", r)
+	}
 	tally.Add(DryRunTrace{TraceID: "e", InclusionProb: 1}, (&Outcome{}).fail(StageCompile, errors.New("x")))
 
 	evaluated, fired, cost := tally.Progress()
