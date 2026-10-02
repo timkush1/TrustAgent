@@ -228,6 +228,10 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     const confirm = await screen.findByRole('alertdialog', { name: 'Deactivate calibration #7?' });
     await user.click(within(confirm).getByRole('button', { name: 'Deactivate' }));
     await waitFor(() => expect(control.callsTo('/api/calibration/7/deactivate')).toHaveLength(1));
+    // The list refreshes: the gateway brought the target's file calibration back (D55).
+    await waitFor(() => expect(within(row).getByText('Not active')).toBeInTheDocument());
+    const fileRow = screen.getByText('Calibration #3').closest('li') as HTMLElement;
+    expect(within(fileRow).getByText('Active')).toBeInTheDocument();
   });
 
   it('adopts an active calibration from the list: Preview impact, then the policy save without activating again', async () => {

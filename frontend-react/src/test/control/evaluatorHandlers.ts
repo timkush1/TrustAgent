@@ -94,6 +94,21 @@ const sameLabel = (a: { trace_id: string; target: string }, b: { trace_id: strin
 /** "groundedness" from "groundedness@1" (or "groundedness@1#key#params"). */
 const idOf = (ref: string) => ref.split('#')[0].split('@')[0];
 
+/** The gateway's target and label pairs (D59, cmd/proxy/labels_api.go): the reason a pair is refused, or null. */
+function invalidLabel(put: LabelPut): string | null {
+  if (typeof put.note === 'string' && [...put.note.trim()].length > 1000) return 'The note is too long: at most 1000 characters.';
+  if (/^[a-z][a-z0-9_]{1,47}@[1-9][0-9]{0,8}$/.test(put.target)) {
+    return put.label === 'should_fire' || put.label === 'should_not_fire' ? null : 'An evaluator label is should_fire or should_not_fire.';
+  }
+  if (/^claim:[0-9]+$/.test(put.target)) {
+    return ['SUPPORTED', 'PARTIALLY_SUPPORTED', 'CONTRADICTED', 'UNSUPPORTED'].includes(put.label)
+      ? null
+      : 'A claim label is SUPPORTED, PARTIALLY_SUPPORTED, CONTRADICTED or UNSUPPORTED.';
+  }
+  if (put.target === 'response') return put.label === 'hallucinated' || put.label === 'grounded' ? null : 'A response label is hallucinated or grounded.';
+  return 'The target is an evaluator ref (groundedness@1), claim:<n> or response.';
+}
+
 const noContent = () => new HttpResponse(null, { status: 204 });
 
 export function evaluatorHandlers(state: EvaluatorState & WithLibrary, kit: HandlerKit): HttpHandler[] {
@@ -169,7 +184,7 @@ export function evaluatorHandlers(state: EvaluatorState & WithLibrary, kit: Hand
       const queue = state.labelQueue;
       if (!queue || isError(queue)) return reply(queue);
       const evaluator = url.searchParams.get('evaluator');
-      const limit = Number(url.searchParams.get('limit') ?? 50);
+      const limit = Number(url.searchParams.get('limit') ?? 20);
       const items = queue.items
         .filter((item) => !evaluator || item.evaluator_ref === evaluator)
         .filter((item) => !state.labels.some((l) => sameLabel(l, { trace_id: item.trace_id, target: item.evaluator_ref })))
@@ -180,6 +195,8 @@ export function evaluatorHandlers(state: EvaluatorState & WithLibrary, kit: Hand
       const { body } = await kit.record(request);
       if (state.labelError) return reply(state.labelError);
       const put = body as LabelPut;
+      const invalid = invalidLabel(put);
+      if (invalid) return reply(errorReply(422, 'validation_failed', invalid));
       if (state.expiredTraces.includes(put.trace_id)) {
         return reply(errorReply(409, 'body_expired', "This answer's stored text has expired, so it can't be labelled."));
       }
@@ -259,8 +276,16 @@ export function evaluatorHandlers(state: EvaluatorState & WithLibrary, kit: Hand
         if (verb === 'activate') {
           for (const r of items) if (r.target_key === target.target_key && r.snapshot === target.snapshot) r.active = false;
           target.active = true;
-        } else {
+        } else if (target.active) {
           target.active = false;
+          // Like the gateway (D55): deactivating an imported or fitted record brings back the
+          // target's newest file record.
+          if (target.origin !== 'file') {
+            const file = items
+              .filter((r) => r.origin === 'file' && r.target_key === target.target_key && r.snapshot === target.snapshot)
+              .sort((a, b) => b.id - a.id)[0];
+            if (file) file.active = true;
+          }
         }
         const fit = state.calibrationFit;
         if (fit && !isError(fit) && fit.record.id === id) fit.record.active = target.active;
