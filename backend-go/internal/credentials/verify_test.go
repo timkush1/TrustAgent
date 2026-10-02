@@ -211,8 +211,8 @@ func TestVerifyNeverSendsTheKeyOutsideItsOrigins(t *testing.T) {
 	got := v.Verify(context.Background(), VerifyTarget{
 		Name: "openrouter", Secret: "sk-or-v1-e2e-good-0123456789abcdef", AllowedOrigins: []string{"https://openrouter.ai"},
 	})
-	if got.OK || got.Status != VerifyUnknown || got.Kind != jev.KindCredentialsUnavailable {
-		t.Fatalf("verification = %+v, want credentials_unavailable", got)
+	if got.OK || got.Status != VerifyUnknown || got.Kind != jev.KindCredentialsUnavailable || got.Checked {
+		t.Fatalf("verification = %+v, want credentials_unavailable with nothing sent", got)
 	}
 	if n := len(m.Requests()); n != 0 {
 		t.Fatalf("mock-upstream got %d requests; the key must not leave for an origin it is not bound to", n)
@@ -241,8 +241,8 @@ func TestVerifyProbeSkippedByTheBudget(t *testing.T) {
 	}
 	// TypeSafe has no free check: unknown, with the budget as the reason.
 	got = v.Verify(context.Background(), VerifyTarget{Name: "typesafe", Secret: "sk-test-typesafe-0123456789", AllowedOrigins: []string{origin}})
-	if got.OK || got.Status != VerifyUnknown || got.Hint != jev.KindBudget {
-		t.Errorf("typesafe with an exhausted budget = %+v, want unknown/budget", got)
+	if got.OK || got.Status != VerifyUnknown || got.Hint != jev.KindBudget || got.Checked {
+		t.Errorf("typesafe with an exhausted budget = %+v, want unknown/budget with nothing sent", got)
 	}
 }
 

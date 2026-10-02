@@ -220,18 +220,22 @@ func (v *Verifier) probe(ctx context.Context, t VerifyTarget, backend string, op
 				keyOK = true
 				out.KeyLabel, out.LimitUSD, out.LimitRemainingUSD = keyInfo(ki)
 			case !errors.Is(err, jev.ErrKeyCheckUnsupported):
-				out.Checked = true
+				_, local := jev.SkipReason(err) // a refused origin: nothing was sent
+				out.Checked = !local
 				return failedVerification(out, err)
 			}
 		}
 	}
 	resp, err := jev.Probe(ctx, c)
-	out.Checked = true
+	// A probe the gateway held back itself (budget, limiter, breaker, a refused origin) sent
+	// nothing; the key check, when it ran, did.
+	_, local := jev.SkipReason(err)
+	out.Checked = keyOK || !local
 	if resp != nil {
 		out.Snapshot, out.InputTokens, out.CostUSD, out.CostSource = resp.Snapshot, resp.InputTokens, resp.CostUSD, resp.CostSource
 	}
 	if err != nil {
-		if _, local := jev.SkipReason(err); local && keyOK {
+		if local && keyOK {
 			// OpenRouter proved the key; only our own budget, limiter or breaker held the probe.
 			out.OK, out.Status, out.Hint = true, VerifyOK, HintProbeSkipped
 			out.Kind, out.Message = jev.ErrorKind(err), jevMessage(err)
