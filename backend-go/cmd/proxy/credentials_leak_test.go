@@ -363,7 +363,8 @@ func (v *leakVendor) got(key string) (received, echoed bool) {
 // pasted key (#55), a key from Connect OpenRouter (#58, #59) and the gateway's env upstream key,
 // each echoed back by the vendor that refuses it, never reach the log, a body or header of #8,
 // #11, #52-#61 (with the Playground's SSE error event), #67-#70, /metrics, a WS frame or a row of
-// admin_audit_log.
+// admin_audit_log or cost_events. The credential checks book their probes as the component probe
+// (D82).
 func TestCredentialLeakWithPostgres(t *testing.T) {
 	secrets := []string{noPatternSecret, leakPKCESecret, leakUpstreamSecret, leakOpenRouterKey}
 	patterns := config.NewRedactor()
@@ -553,6 +554,42 @@ func TestCredentialLeakWithPostgres(t *testing.T) {
 	rows.Close()
 	if actions < 6 {
 		t.Fatalf("admin_audit_log holds %d rows; the writes above make more", actions)
+	}
+
+	// cost_events, row by row: the credential checks and #60 booked their probes as the component
+	// probe, outside any trace (D82), and no row holds a secret.
+	if err := env.srv.stopCosts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = env.schema.Pool(t).Query(context.Background(),
+		`SELECT component, trace_id IS NULL, row_to_json(c)::text FROM cost_events c ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var costRows, probes int
+	for rows.Next() {
+		var (
+			component string
+			untraced  bool
+			row       string
+		)
+		if err := rows.Scan(&component, &untraced, &row); err != nil {
+			t.Fatal(err)
+		}
+		costRows++
+		sink.add(fmt.Sprintf("cost_events row %d", costRows), []byte(row))
+		if component == jev.ComponentProbe {
+			probes++
+			if !untraced {
+				t.Errorf("cost_events row %d: a probe is booked against a trace", costRows)
+			}
+		}
+	}
+	rows.Close()
+	// At least the two checks that passed (#55's OpenRouter key and #59's exchanged key) booked a
+	// probe each; the refused ones of #57 and #60 may book theirs too.
+	if probes < 2 {
+		t.Fatalf("cost_events holds %d probe rows of %d; the credential checks book theirs as probe (D82)", probes, costRows)
 	}
 
 	// /metrics, the WS frames and the log.
