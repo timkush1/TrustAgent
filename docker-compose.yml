@@ -232,7 +232,8 @@ services:
       dockerfile: backend-go/Dockerfile
       args:
         VERSION: ${TRUSTAGENT_VERSION:-edge}
-        # The git revision (make sets it): GET /api/export/replay names it in a recording.
+        # The git revision (make sets it): the images' org.opencontainers.image.revision label, and
+        # the revision GET /api/export/replay names once the proxy reads internal/version.GitSHA.
         GIT_SHA: ${GIT_SHA:-}
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${PROXY_HOST_PORT:-8080}:8080"
