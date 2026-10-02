@@ -21,7 +21,7 @@ import { qk } from '@/data/queries';
 import { invalidateAfterLabel } from '@/data/queries/evaluators';
 import { formatDateTime, formatRelativeTime } from '@/domain/format';
 import { copy } from '@/domain/presentation';
-import { evalLabelWord, evalRefId, type EvalFireLabel } from '@/domain/words/evaluators';
+import { evalLabelerName, evalLabelWord, evalRefId, type EvalFireLabel } from '@/domain/words/evaluators';
 import type { GateDecisionView, LabelView, TraceDetail } from '@/types/api';
 import { evaluatorName, labelTargets } from './traceView';
 
@@ -116,7 +116,7 @@ export function WasThisRight({
             {kinds.length === 1 ? `Labelled ${evalLabelWord(kinds[0]).toLowerCase()}` : 'Labelled differently per check'}
             <span className="text-fg-muted">
               {' '}
-              by {latest.labeled_by} ·{' '}
+              by {evalLabelerName(latest.labeled_by)} ·{' '}
               <time dateTime={latest.created_at} title={formatDateTime(latest.created_at)}>
                 {formatRelativeTime(latest.created_at, now)}
               </time>

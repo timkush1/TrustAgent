@@ -41,6 +41,20 @@ export function evalLabelWord(label: string): string {
   return LABEL_WORDS[label] ?? 'Other label';
 }
 
+/**
+ * Who gave a label (LabelView.labeled_by, D59), in words. A dashboard session labels as its
+ * subject: `env:<key label>#<fingerprint>` for a key from TRUTHTABLE_ADMIN_KEYS, `key:<id>` for a
+ * key minted in the dashboard. A request signed with a key header labels as that key's label, and
+ * an instance without keys as `public`. The fingerprint and the id are never shown.
+ */
+export function evalLabelerName(labeledBy: string): string {
+  const env = /^env:(.+)#[0-9a-f]+$/.exec(labeledBy);
+  if (env) return env[1];
+  if (labeledBy.startsWith('key:')) return 'an API key';
+  if (labeledBy === 'public') return 'someone without a key';
+  return labeledBy;
+}
+
 /** The label queue's keys (D59): C = should_fire, F = should_not_fire, S = skip. */
 export const EVAL_QUEUE_KEYS = { c: 'should_fire', f: 'should_not_fire', s: 'skip' } as const;
 

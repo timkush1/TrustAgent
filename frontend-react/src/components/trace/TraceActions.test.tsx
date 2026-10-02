@@ -120,6 +120,19 @@ describe('Was this right?', { timeout: 20_000 }, () => {
     expect(within(outcome()).queryByRole('button', { name: copy.trace.correct })).toBeNull();
   });
 
+  it('names who labelled by their key, never a session fingerprint or key id', async () => {
+    const detail = traceDetail('refund');
+    detail.labels = [
+      ...detail.labels,
+      { target: 'groundedness@1', label: 'should_fire', labeled_by: 'env:admin#3fa9c1d2e4b5a6f7', created_at: detail.created_at, note: null },
+      { target: 'contradiction@1', label: 'should_fire', labeled_by: 'env:admin#3fa9c1d2e4b5a6f7', created_at: detail.created_at, note: null },
+    ];
+    setup(detail);
+    const line = await within(await screen.findByRole('region', { name: 'Outcome' })).findByText(/Labelled correct/);
+    expect(line).toHaveTextContent('by admin');
+    expect(line).not.toHaveTextContent(/env:|3fa9c1d2/);
+  });
+
   it('says why when the stored text expired, and when the server refuses with body_expired', async () => {
     const detail = traceDetail('refund');
     detail.body = { ...detail.body, available: false, unavailable_reason: 'expired' };
