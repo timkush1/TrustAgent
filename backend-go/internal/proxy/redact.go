@@ -19,18 +19,27 @@ import (
 // maxRedactedErrorBytes is how much of an upstream error body inject mode relays (64 KiB).
 const maxRedactedErrorBytes = 64 << 10
 
-// redactErrorBody is an upstream error body as inject mode relays it: at most
-// maxRedactedErrorBytes, with every known secret masked.
+// redactLookahead is how far past maxRedactedErrorBytes an error body is read and masked before it
+// is cut: longer than any secret, so a secret that starts before the cut is masked whole rather
+// than cut first and left unmatched (its first characters relayed).
+const redactLookahead = 4 << 10
+
+// redactErrorBody is an upstream error body as inject mode relays it: every known secret masked,
+// then at most maxRedactedErrorBytes.
 func (h *Handler) redactErrorBody(body []byte) []byte {
-	if len(body) > maxRedactedErrorBytes {
-		body = body[:maxRedactedErrorBytes]
+	if len(body) > maxRedactedErrorBytes+redactLookahead {
+		body = body[:maxRedactedErrorBytes+redactLookahead]
 	}
-	return []byte(h.redact(string(body)))
+	masked := h.redact(string(body))
+	if len(masked) > maxRedactedErrorBytes {
+		masked = masked[:maxRedactedErrorBytes]
+	}
+	return []byte(masked)
 }
 
 // redactingProxy masks the error bodies of a passthrough reverse proxy whose upstream injects its
-// own key: its non-2xx responses are read (decoded, at most maxRedactedErrorBytes), masked and
-// sent with their new length. A body that cannot be read fails the call like a failed upstream
+// own key: its non-2xx responses are read (decoded, at most maxRedactedErrorBytes plus the
+// lookahead), masked, cut and sent with their new length. A body that cannot be read fails the call like a failed upstream
 // (passthroughFailed, a 502).
 func (h *Handler) redactingProxy(c *upstream.Client) http.Handler {
 	rp := c.ReverseProxy(h.passthroughFailed)
@@ -47,7 +56,7 @@ func (h *Handler) redactingProxy(c *upstream.Client) http.Handler {
 		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			return nil
 		}
-		body, _, err := upstream.ReadBody(resp, maxRedactedErrorBytes)
+		body, _, err := upstream.ReadBody(resp, maxRedactedErrorBytes+redactLookahead)
 		_ = resp.Body.Close()
 		if err != nil {
 			return err

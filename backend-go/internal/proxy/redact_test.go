@@ -72,6 +72,25 @@ func TestLongUpstreamErrorsAreCut(t *testing.T) {
 	}
 	e.sink.result(t)
 
+	// A key that straddles the cut is masked before the body is cut: none of it is relayed, not
+	// even its first characters, for a key only the list knows and for one the patterns know.
+	for _, key := range []string{noPatternSecret, "sk-test-injected-3f2a9c1b7d"} {
+		e := newEnv(t, envOpts{injectKey: key, redact: config.NewRedactor(key).Redact})
+		pad := maxRedactedErrorBytes - len(`{"error":{"message":"`) - 6
+		e.up.status, e.up.body = http.StatusBadRequest, `{"error":{"message":"`+strings.Repeat("x", pad)+key+`"}}`
+		for _, w := range []*httptest.ResponseRecorder{
+			e.do(t, "/v1/chat/completions", defaultRouteBody, nil),
+			e.send(t, http.MethodPost, "/v1/embeddings", `{"model":"m","input":"x"}`, nil),
+		} {
+			got := w.Body.String()
+			if w.Code != http.StatusBadRequest || len(got) > maxRedactedErrorBytes || strings.Contains(got, key[:6]) {
+				t.Errorf("%s straddling the cut: status %d, %d bytes, key start relayed %v", key[:4], w.Code, len(got),
+					strings.Contains(got, key[:6]))
+			}
+		}
+		e.sink.result(t)
+	}
+
 	var gz bytes.Buffer
 	zw := gzip.NewWriter(&gz)
 	_, _ = io.WriteString(zw, echoingError(noPatternSecret))
