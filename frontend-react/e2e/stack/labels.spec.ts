@@ -54,20 +54,23 @@ async function flaggedRequest(page: Page): Promise<{ traceId: string; targets: s
           if (!detail.ok()) continue;
           const d = (await detail.json()) as {
             body: { available: boolean };
+            labels?: { target: string }[];
             decisions: { attempt: number; evaluators: Record<string, { ref: string; status: string; level: string | null }> }[];
           };
           const attempt0 = d.decisions.find((x) => x.attempt === 0);
           const targets = Object.values(attempt0?.evaluators ?? {})
             .filter((e) => e.status === 'assessed' && (e.level === 'warn' || e.level === 'critical'))
             .map((e) => e.ref);
-          if (d.body.available && targets.length > 0) {
+          // "Was this right?" offers its buttons only while none of these checks is labelled yet.
+          const labelled = (d.labels ?? []).some((l) => targets.includes(l.target));
+          if (d.body.available && targets.length > 0 && !labelled) {
             picked = { traceId: t.trace_id, targets };
             return 'found';
           }
         }
-        return 'no flagged request with stored text yet';
+        return 'no unlabelled flagged request with stored text yet';
       },
-      { timeout: TIMEOUT, message: 'a flagged request whose text is stored' },
+      { timeout: TIMEOUT, message: 'a flagged request whose text is stored and that has no label yet' },
     )
     .toBe('found');
   return picked;
@@ -87,9 +90,12 @@ test.describe('labels', () => {
   test('labels an answer in the queue with a key, moves the progress, and undoes it', async ({ page }) => {
     test.setTimeout(3 * TIMEOUT);
     await signInAsAdmin(page);
-    const items = (await queue(page)).filter((i) => i.response_text !== null);
-    skipOrFail(items.length === 0, 'the label queue is empty: run traffic with stored text first (make demo runs it)');
-    const first = items[0];
+    // The page narrowed to one check shows that check's answers in queue order, so pick a check
+    // whose first answer has text (a redacted one offers only Skip).
+    const items = await queue(page);
+    const first = items.find((item) => item.response_text !== null && items.find((i) => i.evaluator_ref === item.evaluator_ref) === item);
+    skipOrFail(first === undefined, 'the label queue has no answer with stored text first in line: run traffic with stored text (make demo runs it)');
+    if (!first) return;
     const evaluatorId = first.evaluator_ref.split('@')[0];
     const before = await labelCount(page, evaluatorId);
 
