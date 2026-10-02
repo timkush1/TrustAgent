@@ -50,7 +50,10 @@ from truthtable.providers.base import (
 )
 from truthtable.providers.errors import ProviderError
 from truthtable.providers.limiter import JudgeLimiter, LimitedProvider, unwrap
+from truthtable.providers.anthropic import AnthropicProvider
 from truthtable.providers.mock import MockLLMProvider
+from truthtable.providers.ollama import OllamaProvider
+from truthtable.providers.openai import OpenAIProvider
 from truthtable.providers.openrouter import OpenRouterProvider
 from truthtable.providers.pricing import active_price_table, set_active_price_table
 from truthtable.providers.swappable import SwappableProvider
@@ -440,6 +443,31 @@ async def test_the_env_openrouter_base_url_joins_the_engine_origins() -> None:
 
 
 @pytest.mark.parametrize(
+    "provider, origin, judge_type, credential_source",
+    [
+        ("anthropic", "https://api.anthropic.com", AnthropicProvider, "dashboard"),
+        ("openai", "https://api.openai.com", OpenAIProvider, "dashboard"),
+        ("ollama", None, OllamaProvider, "none"),
+    ],
+)
+async def test_every_supported_provider_can_be_pushed(
+    provider: str, origin: Optional[str], judge_type: type, credential_source: str
+) -> None:
+    manager = manager_for(None)
+    config = push(1, provider=provider, model="", origins=[origin] if origin else [])
+
+    outcome = await manager.apply(config)
+
+    assert (outcome.judge_status, outcome.warnings) == (CONFIGURED, ())
+    judge = unwrap(manager.swappable)
+    assert isinstance(judge, judge_type)
+    assert judge.model  # the provider's default model when the push names none
+    assert manager.selection.credential_source == credential_source
+    if origin is not None:
+        assert getattr(judge, "allowed_origins") == frozenset({origin})
+
+
+@pytest.mark.parametrize(
     "config, reason",
     [
         (push(1, provider="compatible"), "unknown judge provider"),
@@ -579,6 +607,7 @@ async def test_the_shared_fixture_push_configures_a_dashboard_judge() -> None:
 
     assert response.judge_status == "configured"
     assert response.decision_status == "unset"
+    assert list(response.warnings) == []
     assert (response.applied_version, response.applied_epoch) == (
         7,
         "0192f3a0-7c1e-7b2a-9d11-5b6c0e7f8a90",
