@@ -12,9 +12,18 @@
 import { useMutation } from '@tanstack/react-query';
 import { useDataSource } from '@/app/services';
 import { ApiError } from '@/data/errors';
+import { copy, fillTemplate } from '@/domain/presentation';
 import type { CredentialWriteResult, RuntimeSettingsPatch } from '@/types/api';
 
 export const CONNECT_PENDING_KEY = 'ta.connect.pending';
+
+/**
+ * What /connect/callback says when no sign-in waits in this tab: where to open the dashboard.
+ * SetupStatus.public_url is "" when TRUTHTABLE_PUBLIC_URL is unset, so the hint never has a blank.
+ */
+export function callbackMissingText(publicUrl: string | null | undefined): string {
+  return fillTemplate(copy.setup.step_connect.callback_missing, { public_url: publicUrl?.trim() || 'its usual address' });
+}
 
 /** Where the browser goes next; tests replace `assign`. */
 export const browserNavigation = {

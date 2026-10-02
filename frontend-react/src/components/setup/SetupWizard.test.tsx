@@ -20,7 +20,7 @@ import { API, installMswServer, server } from '@/test/msw';
 import { createTestQueryClient } from '@/test/renderApp';
 import { stopLive } from '@/test/renderLive';
 import type { ConnectCompleteResponse, SettingsView } from '@/types/api';
-import { browserNavigation, CONNECT_PENDING_KEY, safeReturnPath, simulatedPatch } from './connectFlow';
+import { browserNavigation, callbackMissingText, CONNECT_PENDING_KEY, safeReturnPath, simulatedPatch } from './connectFlow';
 import { takeSetupToken, tokenFromPaste } from './setupToken';
 
 installMswServer();
@@ -91,6 +91,13 @@ describe('setup helpers', () => {
     expect(simulatedPatch([])).toEqual({ decision_model: { backend: 'mock' }, judge: { provider: 'mock' } });
     expect(simulatedPatch(['judge.provider'])).toEqual({ decision_model: { backend: 'mock' } });
     expect(simulatedPatch(['decision_model.backend', 'judge'])).toBeNull();
+  });
+
+  it('says where to open the dashboard after a lost sign-in, with no blank when the proxy has no public URL', () => {
+    expect(callbackMissingText('http://localhost:3000')).toBe('No sign-in is waiting in this tab. Open the dashboard at http://localhost:3000 and connect again.');
+    for (const unset of ['', '  ', null, undefined]) {
+      expect(callbackMissingText(unset)).toBe('No sign-in is waiting in this tab. Open the dashboard at its usual address and connect again.');
+    }
   });
 
   it('follows only dashboard paths back from Connect (D38)', () => {

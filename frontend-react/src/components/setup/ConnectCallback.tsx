@@ -26,8 +26,8 @@ import { simulatedOn } from '@/components/settings/credentialModel';
 import { ApiError, isApiError } from '@/data/errors';
 import { setupStatusQuery } from '@/data/queries';
 import { qkcSecurity } from '@/data/queries/security';
-import { copy, fillTemplate } from '@/domain/presentation';
-import { safeReturnPath, takePendingConnect, type ConnectOutcome } from './connectFlow';
+import { copy } from '@/domain/presentation';
+import { callbackMissingText, safeReturnPath, takePendingConnect, type ConnectOutcome } from './connectFlow';
 
 const MISSING = 'connect_missing';
 
@@ -38,7 +38,7 @@ function missingNonce(): ApiError {
 function Failure({ error, publicUrl }: { error: unknown; publicUrl: string | null }) {
   const code = isApiError(error) ? error.code : null;
   let headline: string;
-  if (code === MISSING) headline = fillTemplate(copy.setup.step_connect.callback_missing, { public_url: publicUrl ?? 'its usual address' });
+  if (code === MISSING) headline = callbackMissingText(publicUrl);
   else if (code === 'invalid_nonce') headline = copy.setup.step_connect.callback_expired;
   else if (code === 'openrouter_refused') headline = 'OpenRouter did not finish the sign-in, so nothing was connected.';
   else headline = 'The OpenRouter sign-in could not be finished.';
