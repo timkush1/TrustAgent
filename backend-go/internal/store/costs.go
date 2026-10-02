@@ -186,9 +186,12 @@ func (s *PostgresStore) LastDecisionSnapshot(ctx context.Context, backend, model
 	return snap, nil
 }
 
-// storedCost is the cost_usd value of a row: NULL when unknown, at most what the column holds.
+// storedCost is the cost_usd value of a row: NULL when unknown or not a finite number, $0 below
+// $0, and at most what the column holds. An infinite cost is no amount at all, as it is for the
+// caps (costs.RealCostUSD): clamped to the column's maximum it would read back as $9,999.99 of
+// spend and exhaust a cap the next time the ledger seeds from the stored rows.
 func storedCost(usd *float64) *float64 {
-	if usd == nil || math.IsNaN(*usd) {
+	if usd == nil || math.IsNaN(*usd) || math.IsInf(*usd, 0) {
 		return nil
 	}
 	v := min(max(*usd, 0), maxCostUSD)

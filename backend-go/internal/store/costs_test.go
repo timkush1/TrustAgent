@@ -74,6 +74,39 @@ func TestCostEventsInsert(t *testing.T) {
 	}
 }
 
+// A cost that is not a finite number is stored as NULL, like an unknown one, so it never reads
+// back as spend: an infinite cost clamped to the column's maximum would exhaust a cap at the next
+// seed. A negative cost is stored as $0.
+func TestCostEventsStoreNoInfiniteCost(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	start := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	at := start.Add(9 * time.Hour)
+	if err := s.InsertCostEvents(ctx, []CostEvent{
+		{OccurredAt: at, Component: "gate", Kind: CostKindDecision, CostUSD: ptr(math.Inf(1)), CostSource: "reported"},
+		{OccurredAt: at, Component: "deep_audit_verify", Kind: CostKindLLM, CostUSD: ptr(math.NaN()), CostSource: "computed"},
+		{OccurredAt: at, Component: "deep_audit_verify", Kind: CostKindLLM, CostUSD: ptr(math.Inf(-1)), CostSource: "reported"},
+		{OccurredAt: at, Component: "deep_audit_score", Kind: CostKindLLM, CostUSD: ptr(-0.5), CostSource: "reported"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var nulls, zeros int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE cost_usd IS NULL), count(*) FILTER (WHERE cost_usd = 0)
+		FROM cost_events`).Scan(&nulls, &zeros); err != nil {
+		t.Fatal(err)
+	}
+	if nulls != 3 || zeros != 1 {
+		t.Errorf("%d NULL and %d $0 costs, want 3 and 1", nulls, zeros)
+	}
+	got, err := s.SpendToday(ctx, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DecisionUSD != 0 || got.LLMUSD != 0 {
+		t.Errorf("spend today = %+v, want none", got)
+	}
+}
+
 // SpendToday counts today's real spend by kind and per key: simulated rows, rows without a cost
 // and rows before the day's start never count (D46); every component counts (D50).
 func TestSpendTodayCountsRealRowsOnly(t *testing.T) {
