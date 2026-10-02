@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "near-duplicate-options",
-  "status": "draft",
+  "status": "frozen",
   "description": "promises_refund and promises_partial_refund have nearly the same description (lowercase [a-z0-9]+ token Jaccard 8/9 > 0.5) and neither has a not_for to separate them: near_duplicate_options. no_refund_promise is the escape option.",
   "input": {
     "spec": {

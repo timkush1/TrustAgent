@@ -15,6 +15,6 @@
 // Scope: canonical JSON, tokens, question hashes, spec parsing, compile, normalize, calibration
 // apply and fitting (calibrate*.go: isotonic, Platt, Wilson bounds, the calibration.v1 file
 // checks), decide() and the Tier-0 detectors (their patterns are read from the embedded contracts
-// rules files). The evaluator lints join with the Studio (P4); evidence extraction lives in
-// internal/evidence.
+// rules files), and evaluator validation (lint.go: the evaluator.v1 and evaluator-draft.v1
+// schemas, the hard rules and the lints). Evidence extraction lives in internal/evidence.
 package decision
