@@ -72,6 +72,7 @@ export function overviewStats(overrides: Partial<OverviewStats> = {}): OverviewS
     t: new Date(T0 - (95 - i) * QUARTER).toISOString(),
     passed: 4 + (i % 3),
     would_flag: i % 7 === 0 ? 1 : 0,
+    would_block: i % 11 === 0 ? 1 : 0,
     flagged: i % 3 === 0 ? 1 : 0,
     blocked: i % 24 === 0 ? 1 : 0,
     replaced: 0,

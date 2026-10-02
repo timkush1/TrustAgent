@@ -102,7 +102,7 @@ type SeriesKey = Exclude<keyof SeriesPoint, 't'>;
 const SERIES_OF: Record<string, SeriesKey | null> = {
   passed: 'passed',
   would_flag: 'would_flag',
-  would_block: 'would_flag',
+  would_block: 'would_block',
   flagged: 'flagged',
   blocked: 'blocked',
   replaced: 'replaced',
@@ -133,7 +133,7 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
 
   const series: SeriesPoint[] = [];
   for (let t = start; t <= end; t += step) {
-    series.push({ t: new Date(t).toISOString(), passed: 0, would_flag: 0, flagged: 0, blocked: 0, replaced: 0, not_checked: 0, error: 0 });
+    series.push({ t: new Date(t).toISOString(), passed: 0, would_flag: 0, would_block: 0, flagged: 0, blocked: 0, replaced: 0, not_checked: 0, error: 0 });
   }
   const caught = new Map<string, { count: number; latest: TraceSummary }>();
   for (const t of traces) {

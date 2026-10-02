@@ -14,7 +14,7 @@ import {
 describe('overview model', () => {
   it('maps the outcome series onto outcome ids', () => {
     const [first] = outcomeBuckets(overviewStats().outcomes_series);
-    expect(Object.keys(first.counts).sort()).toEqual(['blocked', 'error', 'flagged', 'not_checked', 'passed', 'replaced', 'would_flag']);
+    expect(Object.keys(first.counts).sort()).toEqual(['blocked', 'error', 'flagged', 'not_checked', 'passed', 'replaced', 'would_block', 'would_flag']);
   });
 
   it('describes the bucket and window', () => {

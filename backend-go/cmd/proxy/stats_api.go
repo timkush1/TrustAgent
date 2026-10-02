@@ -100,6 +100,7 @@ type outcomePoint struct {
 	T          time.Time `json:"t"`
 	Passed     int64     `json:"passed"`
 	WouldFlag  int64     `json:"would_flag"`
+	WouldBlock int64     `json:"would_block"`
 	Flagged    int64     `json:"flagged"`
 	Blocked    int64     `json:"blocked"`
 	Replaced   int64     `json:"replaced"`
@@ -236,6 +237,21 @@ func rate(n store.RateCounts, label, basis string) labelledRate {
 
 func pct(p store.Percentiles) percentiles { return percentiles{P50: p.P50, P95: p.P95} }
 
+// outcomeSeries is OverviewStats.outcomes_series: each bucket's count per outcome, the
+// observe-only answers the gate would have flagged and those it would have blocked apart.
+func outcomeSeries(points []store.OutcomePoint) []outcomePoint {
+	out := make([]outcomePoint, 0, len(points))
+	for _, p := range points {
+		out = append(out, outcomePoint{
+			T: p.T, Passed: p.Counts["passed"],
+			WouldFlag: p.Counts["would_flag"], WouldBlock: p.Counts["would_block"],
+			Flagged: p.Counts["flagged"], Blocked: p.Counts["blocked"], Replaced: p.Counts["replaced"],
+			NotChecked: p.Counts["not_checked"], Error: p.Counts["error"],
+		})
+	}
+	return out
+}
+
 // dataLabel is measured, or simulated when the counted traffic includes simulated traces.
 func (s *server) dataLabel(mock int64) string {
 	if s.cfg.DemoMode || mock > 0 {
@@ -285,15 +301,7 @@ func (s *server) handleOverview(c *gin.Context) {
 		StageLatencyMs:            map[string]percentiles{},
 		BackendMix:                o.BackendMix,
 	}
-	for _, p := range o.Series {
-		out.OutcomesSeries = append(out.OutcomesSeries, outcomePoint{
-			T: p.T, Passed: p.Counts["passed"],
-			// Observe-mode answers the gate would have acted on (would flag or would block).
-			WouldFlag: p.Counts["would_flag"] + p.Counts["would_block"],
-			Flagged:   p.Counts["flagged"], Blocked: p.Counts["blocked"], Replaced: p.Counts["replaced"],
-			NotChecked: p.Counts["not_checked"], Error: p.Counts["error"],
-		})
-	}
+	out.OutcomesSeries = append(out.OutcomesSeries, outcomeSeries(o.Series)...)
 	for _, r := range o.Caught {
 		out.WhatWasCaught = append(out.WhatWasCaught, caughtRow{Reason: r.Reason, Count: r.Count, LatestTraceID: r.LatestTraceID})
 	}

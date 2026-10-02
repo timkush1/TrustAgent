@@ -8,6 +8,7 @@ import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { heroDescription } from './heroChart';
+import { outcomeBuckets } from './overviewModel';
 
 installMswServer();
 afterEach(() => stopLive());
@@ -18,8 +19,8 @@ describe('Overview page', { timeout: 20_000 }, () => {
   it('shows the numbers, the hero chart and what was caught', async () => {
     const { control } = renderPage('/app/overview');
     expect(await screen.findByRole('heading', { name: 'Requests by outcome' })).toBeInTheDocument();
-    // The proxy counts would-block answers in the would_flag series: the chart says so.
-    expect(screen.getByText(/Would flag also counts answers an observe-only route would have blocked/)).toBeInTheDocument();
+    // Would flag and Would block are series of their own: no footnote about either.
+    expect(screen.queryByText(/also counts answers an observe-only route would have blocked/)).toBeNull();
     const glance = screen.getByLabelText('At a glance');
     expect(within(glance).getByText('612')).toBeInTheDocument();
     // Blocked 4 + fallback 0 stopped; the flagged count sits under it.
@@ -172,12 +173,15 @@ describe('Overview page', { timeout: 20_000 }, () => {
 });
 
 describe('Overview hero chart', () => {
-  it('says that Would flag also counts would-block answers, when it has any', () => {
+  it('describes the buckets, and names the replayed traffic in the static build', () => {
     const stats = overviewStats();
-    expect(stats.outcomes_series.some((p) => p.would_flag > 0)).toBe(true);
-    expect(heroDescription(stats, false)).toMatch(/\. Would flag also counts answers an observe-only route would have blocked\.$/);
-    const none = { ...stats, outcomes_series: stats.outcomes_series.map((p) => ({ ...p, would_flag: 0 })) };
-    expect(heroDescription(none, false)).not.toMatch(/Would flag/);
-    expect(heroDescription(none, true)).toMatch(/over the replayed traffic$/);
+    expect(heroDescription(stats, false)).not.toMatch(/Would flag/);
+    expect(heroDescription(stats, true)).toMatch(/over the replayed traffic$/);
+  });
+
+  it('draws Would block as its own series', () => {
+    const buckets = outcomeBuckets(overviewStats().outcomes_series);
+    expect(buckets.some((b) => (b.counts.would_block ?? 0) > 0)).toBe(true);
+    expect(buckets.reduce((n, b) => n + (b.counts.would_block ?? 0), 0)).toBe(9);
   });
 });

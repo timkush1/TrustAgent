@@ -669,6 +669,8 @@ export interface OverviewStats {
     t: ISODateTime;
     passed: number;
     would_flag: number;
+    /** Observe-only answers the gate would have blocked (counted apart from would_flag). */
+    would_block: number;
     flagged: number;
     blocked: number;
     replaced: number;

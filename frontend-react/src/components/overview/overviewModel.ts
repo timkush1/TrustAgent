@@ -67,6 +67,7 @@ export function outcomeBuckets(series: OverviewStats['outcomes_series']): Outcom
     counts: {
       passed: p.passed,
       would_flag: p.would_flag,
+      would_block: p.would_block,
       flagged: p.flagged,
       blocked: p.blocked,
       replaced: p.replaced,
