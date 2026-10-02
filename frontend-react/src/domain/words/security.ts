@@ -1,7 +1,7 @@
 /**
- * Words, icons and tones for the P4 security server values (provider, verify status, used_by, backend cards, store states and skip reasons).
+ * Words, icons and tones for the security server values (provider, verify status, used_by, backend cards, store states and skip reasons).
  * Owned by WEB-ON after Step 0b. presentation.ts re-exports this module with `export *`, so every
- * export here starts with `sec` (P4-PLAN D86) and can never collide with another plane's words.
+ * export here starts with `sec` (D86) and can never collide with another plane's words.
  * Sentences come from contracts/ui (copy.v1.json); the words for enum values live here, so a
  * component never renders a raw server value.
  *
@@ -38,7 +38,7 @@ import { fillTemplate, humanizeId } from '../presentation';
 
 // -------------------------------------------------------------------------------- credentials
 
-/** The credential names the gateway knows (P4-PLAN D29), in the order Connections shows them. */
+/** The credential names the gateway knows (D29), in the order Connections shows them. */
 export const SEC_VENDOR_NAMES = ['openrouter', 'typesafe', 'anthropic', 'openai'] as const;
 export type SecVendorName = (typeof SEC_VENDOR_NAMES)[number];
 
@@ -176,7 +176,7 @@ const STORE: Record<StoreState, SecStoreView> = {
   no_database: { writable: false, title: "Keys can't be saved without a database", body: copy.settings.no_database },
 };
 
-/** Words for SystemStatus.credentials.store (P4-PLAN D32). */
+/** Words for SystemStatus.credentials.store (D32). */
 export function secStoreView(store: StoreState): SecStoreView {
   return STORE[store] ?? STORE.unavailable;
 }
@@ -298,7 +298,7 @@ export function secComponentStateView(state: ComponentStateName): { label: strin
   return COMPONENT_STATES[state] ?? COMPONENT_STATES.unknown;
 }
 
-/** The env vars behind env-managed settings paths (P4-PLAN D33), for "Set in .env (…)". */
+/** The env vars behind env-managed settings paths (D33), for "Set in .env (…)". */
 const PATH_ENV: Record<string, string> = {
   'decision_model.backend': 'TRUTHTABLE_JEV_BACKEND',
   'decision_model.model': 'TRUTHTABLE_JEV_MODEL',
@@ -332,7 +332,7 @@ const SCOPES: Record<Scope, { label: string; description: string }> = {
 /** Scopes in the order the Access page lists them. */
 export const SEC_SCOPES: readonly Scope[] = ['ingest', 'read', 'content', 'admin'];
 
-/** Words for an API key scope. `content` reads "can see prompts and answers" (P4-PLAN ON-3). */
+/** Words for an API key scope. `content` reads "can see prompts and answers" (ON-3). */
 export function secScopeView(scope: Scope): { label: string; description: string } {
   return SCOPES[scope] ?? { label: humanizeId(scope), description: '' };
 }
@@ -362,7 +362,7 @@ const AUDIT_ACTIONS: Record<string, string> = {
   'export.replay': 'Exported a replay recording',
 };
 
-/** Every admin-audit action of P4-PLAN D44, for tests and filters. */
+/** Every admin-audit action of D44, for tests and filters. */
 export const SEC_AUDIT_ACTIONS = Object.keys(AUDIT_ACTIONS);
 
 /** Words for an admin audit-log action (`credential.put`, …, D44). */

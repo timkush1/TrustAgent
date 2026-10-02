@@ -1,6 +1,6 @@
 /**
  * What checking cost per day (or hour), over what an LLM would have cost for the same traffic
- * (SPEC §7.4 "measured cost over the counterfactual bands"; P4-PLAN D73). One axis, in USD per
+ * (SPEC §7.4 "measured cost over the counterfactual bands"; D73). One axis, in USD per
  * bucket: the measured spend is a 2px line, the counterfactual a neutral band from its low to its
  * high estimate. Colour carries no verdict here (DESIGN.md "Charts"): both series are the neutral
  * inks, told apart by mark (line vs area) and named in the legend.

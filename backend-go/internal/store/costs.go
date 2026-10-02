@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// The cost ledger's rows (SPEC §2.3 cost_events, §7.4; P4-PLAN D45, D46, D51): one row per
+// The cost ledger's rows (SPEC §2.3 cost_events, §7.4; D45, D46, D51): one row per
 // decision-model attempt (hedge losers and late attempts included) and one per LLM call the engine
 // reports in a CostRecord. internal/costs buffers them and writes them in batches; the reads here
 // seed the in-memory caps after a restart and fill the status counters.
@@ -26,7 +26,7 @@ const (
 const costSourceSimulated = "simulated"
 
 // costSourceUnknown is cost_events.cost_source of a call no price covered (decision.CostUnknown):
-// its cost is NULL, and the LLM cap counts its tokens at the reference price (P4-PLAN D91).
+// its cost is NULL, and the LLM cap counts its tokens at the reference price (D91).
 const costSourceUnknown = "unknown"
 
 // maxCostUSD is the largest cost cost_events.cost_usd (NUMERIC(14,10)) holds.
@@ -111,7 +111,7 @@ type SpendTotals struct {
 	DecisionByKey map[string]float64
 	// LLMUnpricedInputTokens and LLMUnpricedOutputTokens are the tokens of today's LLM rows no
 	// price covered (cost_source unknown, no cost): the ledger counts them at the reference price
-	// toward the LLM cap (P4-PLAN D91).
+	// toward the LLM cap (D91).
 	LLMUnpricedInputTokens  int64
 	LLMUnpricedOutputTokens int64
 }

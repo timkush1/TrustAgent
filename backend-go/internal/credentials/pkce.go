@@ -1,6 +1,6 @@
 package credentials
 
-// pkce.go is the core of Connect OpenRouter for a self-hosted gateway (SPEC §7.5, P4-PLAN D38):
+// pkce.go is the core of Connect OpenRouter for a self-hosted gateway (SPEC §7.5, D38):
 // the RFC 7636 verifier and S256 challenge, the in-memory store of pending sign-ins, the
 // return_to and callback-origin rules, the OpenRouter /auth URL and the code exchange. The key
 // never reaches browser JavaScript: the verifier stays on the server, keyed by a nonce the

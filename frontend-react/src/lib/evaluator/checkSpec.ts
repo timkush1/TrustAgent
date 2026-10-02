@@ -1,6 +1,6 @@
 /**
  * Checks an evaluator spec in the browser as Studio edits it, the way the gateway's
- * `POST /api/evaluators/validate` does (Go `decision.ValidateSpec` is the reference, P4-PLAN D54):
+ * `POST /api/evaluators/validate` does (Go `decision.ValidateSpec` is the reference, D54):
  * the JSON Schema (evaluator.v1, or evaluator-draft.v1 for a draft) through the precompiled
  * validator, then the hard rules and lints of `lintSpec` whenever the document parses as a spec, so
  * a schema error does not hide them. A document that passes the schema but not the spec parser is

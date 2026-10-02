@@ -1,6 +1,6 @@
 """
 LLM call pricing from the effective price table (SPEC sections 3.2 and 7.4,
-P4-PLAN D53 and D85), the Python port of backend-go/internal/decision/cost.go
+D53 and D85), the Python port of backend-go/internal/decision/cost.go
 `PriceCall` (the reference; the contracts `cost` vectors hold both to it).
 
 The table is `contracts/pricing/prices.v1.json` (schema pricing.v1), or the file

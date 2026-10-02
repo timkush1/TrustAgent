@@ -17,7 +17,7 @@ import (
 	"github.com/truthtable/backend-go/internal/storetest"
 )
 
-// noPatternSecret matches no redaction pattern (P4-PLAN §0 rule 8).
+// noPatternSecret matches no redaction pattern.
 const noPatternSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 
 // runtimePG opens a Postgres store on a schema of its own (TEST_DATABASE_URL).

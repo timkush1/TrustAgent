@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// notifyHub fans the config NOTIFY payloads out to their subscribers (P4-PLAN D84). There is one
+// notifyHub fans the config NOTIFY payloads out to their subscribers (D84). There is one
 // LISTEN connection: the policy engine's listener (policy/engine.go), whose OnNotify calls
 // Dispatch with every payload that is not a policy version. Subscribers register a payload prefix:
 // "evaluator" (the evaluator registry reload), "settings:" and "credentials:" (the runtime

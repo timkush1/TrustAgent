@@ -1,6 +1,6 @@
 /**
  * The static build has no gateway to draft, test or save with: Studio stays "Coming soon" until P5
- * (P4-PLAN D72), says how to run it yourself, and calls nothing.
+ * (D72), says how to run it yourself, and calls nothing.
  */
 import { configure, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';

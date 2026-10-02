@@ -1,6 +1,6 @@
 /**
  * /connect/callback: where OpenRouter sends the browser back after Connect OpenRouter (SPEC §7.5;
- * P4-PLAN ON-7e, D38). In order:
+ * ON-7e, D38). In order:
  *
  * 1. read `code` (the route passes it);
  * 2. take it out of the address bar (`history.replaceState`), so it never lands in history or a

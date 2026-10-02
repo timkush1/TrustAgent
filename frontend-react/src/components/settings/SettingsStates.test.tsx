@@ -35,6 +35,6 @@ describe('Settings sections: loading and degraded', { timeout: 30_000 }, () => {
     const nav = await screen.findByRole('navigation', { name: 'Settings sections' });
     expect(within(nav).getAllByRole('link').map((l) => l.textContent)).toEqual(['Connections', 'Models', 'Budgets', 'Access', 'Add-ons', 'All configuration']);
     await screen.findAllByRole('heading', { level: 2 });
-    expect(screen.queryByText(/Arrives in P4/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Arrives in P\d|Coming soon/)).not.toBeInTheDocument();
   });
 });

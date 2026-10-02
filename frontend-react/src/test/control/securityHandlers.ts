@@ -3,7 +3,7 @@
  * createControlApi (handlers.ts). Owned by WEB-ON after Step 0b.
  *
  * Served from the golden fixtures (contracts/fixtures/api) and kept consistent the way the gateway
- * keeps itself consistent (P4-PLAN D29-D41, D75-D81):
+ * keeps itself consistent (D29-D41, D75-D81):
  * - settings: GET, and PATCH with If-Match (428/412), env-managed paths (409) and the version bump;
  * - credentials: a key write runs a fake key check from the secret's text ("nocredits" → 402,
  *   "unauthorized" → 401, "unreachable" → network), stores per D75 (a failed check on a bound name

@@ -1,5 +1,5 @@
 """
-Hard rules of evaluator specs (SPEC section 2.8; P4-PLAN D54).
+Hard rules of evaluator specs (SPEC section 2.8; D54).
 
 The Go reference (`internal/decision/lint.go`) and the TypeScript port
 (`src/lib/decision/lint.ts`) run the hard rules and the lints; the engine

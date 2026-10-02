@@ -65,7 +65,7 @@ func (discardCosts) RecordCost(CostEvent) {}
 
 // PriceFunc returns the input price per million tokens of model on backend and the version of
 // the price table it came from ("override" for a dashboard override); ok is false when no entry
-// matches, and the default list price applies (P4-PLAN D53).
+// matches, and the default list price applies (D53).
 type PriceFunc func(backend, model string) (perMTok float64, version string, ok bool)
 
 // PricingProvider is the price table provider of a decision backend: openrouter for both

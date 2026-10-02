@@ -1,6 +1,6 @@
 package credentials
 
-// verify.go checks a credential with its provider before it is stored or bound (P4-PLAN D40):
+// verify.go checks a credential with its provider before it is stored or bound (D40):
 // PUT /api/credentials/:name (#55), POST /api/credentials/:name/verify (#57) and the key from
 // Connect OpenRouter (#59) all call Verifier.Verify. It belongs to GCONN; the rest of the package
 // (the cipher, the origins, the store state) to GSEC.

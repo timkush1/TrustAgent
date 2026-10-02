@@ -98,7 +98,7 @@ type auditDropper interface {
 	DropTraceAudit(ctx context.Context, traceID, flag string) error
 }
 
-// SaveAuditResultWithCosts is SaveAuditResult with the audit's linked cost rows (P4-PLAN D45),
+// SaveAuditResultWithCosts is SaveAuditResult with the audit's linked cost rows (D45),
 // behind the same barrier and memory update (D83). An inner store that cannot link the rows
 // stores the audit through SaveAuditResult, which derives them from the record.
 func (w *Writer) SaveAuditResultWithCosts(ctx context.Context, r *store.AuditRecord, status string, costs []store.CostEvent) error {

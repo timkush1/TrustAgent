@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The credential binding compares canonical origins (P4-PLAN D78).
+// The credential binding compares canonical origins (D78).
 func TestCanonicalOrigin(t *testing.T) {
 	for raw, want := range map[string]string{
 		"https://OpenRouter.ai/api/v1/decisions": "https://openrouter.ai",

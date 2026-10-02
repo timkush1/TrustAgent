@@ -32,7 +32,7 @@ export function hasFilters(f: TrafficFilters): boolean {
 }
 
 /**
- * `reason` as the proxy reads it (P4-PLAN D68): a whole code (`contradiction:critical`,
+ * `reason` as the proxy reads it (D68): a whole code (`contradiction:critical`,
  * `det:numbers_not_in_evidence`, `disagreement`) matches only that code; a prefix ending in a colon
  * (`contradiction:`, `det:`) matches every code it starts, so `contradiction:` is the evaluator at
  * any level.

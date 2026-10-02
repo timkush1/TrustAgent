@@ -23,7 +23,7 @@ import (
 
 const (
 	fixtureSecret = "sk-or-v1-fixture-0000000000000000000000000000000000000000000000000000000000000000"
-	// pushUnmatchedSecret matches none of the redaction patterns (P4-PLAN §0 rule 8).
+	// pushUnmatchedSecret matches none of the redaction patterns.
 	pushUnmatchedSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 )
 
@@ -91,7 +91,7 @@ func TestBuildRuntimeConfigSendsOnlyTheJudgeCredential(t *testing.T) {
 		t.Fatalf("credentials pushed: %v", keys(rc.GetCredentials()))
 	}
 	if rc.GetDecision() != nil {
-		t.Fatal("decision is set; P4 never pushes it")
+		t.Fatal("decision is set; the push never carries it")
 	}
 	if !bytes.Equal(rc.GetPriceTableJson(), pushContractsPriceTable()) || len(rc.GetPriceTableJson()) == 0 {
 		t.Fatal("without an effective table the contracts table is not pushed")

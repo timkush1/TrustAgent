@@ -66,17 +66,17 @@ type statusReporter struct {
 	// calib reports the calibration state of a snapshot (the calibration file lookup,
 	// decision_wiring.go); nil means none.
 	calib calibrationStater
-	// P4 hooks, used by system() when set: credentials is the credential store's state (GSEC),
+	// Hooks, used by system() when set: credentials is the credential store's state (GSEC),
 	// spend today's spend and caps from the cost ledger (GCOST, replacing the in-memory
 	// figures), push the engine push as last applied (GCONN).
 	credentials func() statusCredentials
 	spend       func() *spendView
 	push        func() pushState
 	// evaluatorWarnings lists what the evaluator registry excluded while loading (skipped files,
-	// versions that break a hard rule, P4-PLAN D54); nil means none.
+	// versions that break a hard rule, D54); nil means none.
 	evaluatorWarnings func() []string
 	// decisionDay is the decision model's calls and cost over the last 24 hours from the cost
-	// ledger, which survive a restart (P4-PLAN D92; GCOST fills it from a value its own loop
+	// ledger, which survive a restart (D92; GCOST fills it from a value its own loop
 	// refreshes, so /api/status runs no query). nil, or ok false (no database, or not read yet),
 	// falls back to the decision-model client's in-memory counters.
 	decisionDay func() (store.DecisionDay, bool)
@@ -85,10 +85,10 @@ type statusReporter struct {
 	runtime func() *runtimecfg.Snapshot
 }
 
-// spendView is SystemStatus.budgets as the cost ledger reports it (P4, D46: real spend only).
+// spendView is SystemStatus.budgets as the cost ledger reports it (D46: real spend only).
 type spendView statusBudgets
 
-// pushState is the engine push as the gateway last saw it (P4-PLAN D34): the settings version and
+// pushState is the engine push as the gateway last saw it (D34): the settings version and
 // epoch the engine applied, and a status warning ("" when none), e.g. an engine that predates
 // ApplyRuntimeConfig.
 type pushState struct {
@@ -270,7 +270,7 @@ type systemStatus struct {
 	Credentials   statusCredentials   `json:"credentials"`
 	Redis         statusRedis         `json:"redis"`
 	Warnings      []string            `json:"warnings"`
-	// WarningDetails are the warnings that carry a code and details (P4: master_key_changed,
+	// WarningDetails are the warnings that carry a code and details (master_key_changed,
 	// fail_closed_unprotected, ...); each one's message is also in Warnings.
 	WarningDetails []statusWarning `json:"warning_details,omitempty"`
 }
@@ -314,8 +314,9 @@ func (s *statusReporter) lite() statusLite {
 	}
 }
 
-// system builds the full status. Spend figures are zero until the cost ledger lands (P2), and the
-// decision model's call statistics until the Jev client tracks them (P2).
+// system builds the full status: the components' live states, the stored figures (latency and
+// today's LLM spend, with a database) and the owners' hooks (applyHooks: credentials, runtime
+// configuration, the cost ledger's budgets and the decision model's last 24 hours).
 func (s *statusReporter) system(ctx context.Context) systemStatus {
 	cfg := s.cfg
 	eng := s.engineHealth()
@@ -432,7 +433,7 @@ func (s *statusReporter) decisionCredential(source string, admin bool) decisionC
 	return c
 }
 
-// applyHooks overlays the P4 hooks that are set on st: the credential store's state, the
+// applyHooks overlays the hooks that are set on st: the credential store's state, the
 // ledger's budgets, the engine push and the evaluator registry's warnings.
 func (s *statusReporter) applyHooks(st *systemStatus) {
 	if s.credentials != nil {
@@ -521,8 +522,9 @@ func judgeState(h grpc.EngineHealth) string {
 	return stateUp
 }
 
-// judgeStatus is SystemStatus.judge. Judge credentials come only from the engine's environment
-// until dashboard credentials arrive (P4), so a cloud judge's source is env.
+// judgeStatus is SystemStatus.judge from the engine's health. The engine says where its judge's key
+// came from (env, or a dashboard key pushed to it, D34); for an engine that does not say, a cloud
+// judge's source is env.
 func judgeStatus(h grpc.EngineHealth) statusJudge {
 	j := statusJudge{State: judgeState(h), CredentialSource: "none", Warnings: []string{}}
 	r := h.Response
@@ -642,9 +644,10 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 	return d
 }
 
-// budgets is SystemStatus.budgets: the decision cap and today's spend from the decision-model
-// client's budget (in memory until the persisted ledger, P4). The LLM cap is enforced by the
-// engine; its spend today is read from cost_events when there is a database (system).
+// budgets is SystemStatus.budgets from the decision-model client's budget: what the status shows
+// when no cost ledger was built; otherwise the ledger's view (the spend hook, D46) replaces it.
+// The LLM cap is the gateway's own (the ledger, D48); its spend today is read from cost_events when
+// there is a database (system).
 //
 // The decision budget is exhausted once the day's spend reaches the cap, and reserve_only from the
 // soft cap, (1 − SPEND_ENFORCING_RESERVE)·cap, where observe and flag calls stop while enforcing

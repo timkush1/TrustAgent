@@ -10,7 +10,7 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
-// evalParts are the label and calibration services (P4, GEVAL). The evaluator writes live with
+// evalParts are the label and calibration services (GEVAL). The evaluator writes live with
 // the evaluator reads in the policy services (policy_wiring.go, evaluators_api.go).
 type evalParts struct {
 	labels *labelsAPI

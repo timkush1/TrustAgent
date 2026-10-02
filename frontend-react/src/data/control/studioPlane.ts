@@ -1,9 +1,9 @@
 /**
- * The Studio plane of the control plane (SPEC §2.4 #34-#38, §7.3; P4-PLAN D58, D82): draft with
+ * The Studio plane of the control plane (SPEC §2.4 #34-#38, §7.3; D58, D82): draft with
  * AI, the test bench, samples from past traffic, quick calibration and "Test on past traffic"
  * (an SSE dry run that is cancelled by aborting the request).
  *
- * Step 0b declared the signatures (fixed, P4-PLAN §0 rule 3); WEB-ST owns the bodies and
+ * Step 0b declared the signatures (fixed); WEB-ST owns the bodies and
  * STUDIO_SHAPES. Every response is shape-checked before a page sees it, and the dry run's events
  * are read with the shared SSE reader (data/sse.ts), the same one the Playground's stream uses.
  */

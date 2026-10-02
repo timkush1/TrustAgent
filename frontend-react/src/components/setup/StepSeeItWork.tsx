@@ -1,5 +1,5 @@
 /**
- * Step 3 of the setup wizard, "See it work" (SPEC §3.3; P4-PLAN ON-7d, D87):
+ * Step 3 of the setup wizard, "See it work" (SPEC §3.3; ON-7d, D87):
  *
  * - Disabled, with the reason and the way back, until a key runs the fast check or simulated checks
  *   are on.

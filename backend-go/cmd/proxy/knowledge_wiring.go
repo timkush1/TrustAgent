@@ -17,7 +17,7 @@ import (
 )
 
 // knowledgeRetriever is the gate's knowledge-base retriever over the engine's RetrieveContext
-// (SPEC §7.1, P4-PLAN D65): nil, so no request gets knowledge, unless the knowledge add-on is on
+// (SPEC §7.1, D65): nil, so no request gets knowledge, unless the knowledge add-on is on
 // (TRUTHTABLE_KNOWLEDGE_ENABLED) and there is an engine. Each call is bounded by
 // TRUTHTABLE_KNOWLEDGE_DEADLINE on top of the route's own deadline.
 func (s *server) knowledgeRetriever(d serverDeps) proxy.Retriever {

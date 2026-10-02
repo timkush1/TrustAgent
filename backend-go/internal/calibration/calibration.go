@@ -1,4 +1,4 @@
-// Package calibration is the gateway's calibration lookup (SPEC §2.11; P3 decision D14, P4 D55):
+// Package calibration is the gateway's calibration lookup (SPEC §2.11; P3 decision D14, D55):
 // the calibrations that apply, keyed by decision-model snapshot and calibration target, and
 // re-read by a poll. Store implements policy.CalibrationLookup for the gate (decide()'s calibration
 // input, Entries) and for the policy readiness checks.

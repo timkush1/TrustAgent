@@ -8,7 +8,7 @@ import (
 	"github.com/truthtable/backend-go/internal/upstream"
 )
 
-// Options.Upstreams is read per request (P4-PLAN §2.3j): a new set applies from the next request
+// Options.Upstreams is read per request: a new set applies from the next request
 // on, and the passthrough reverse proxies follow it.
 func TestUpstreamsAreReadPerRequest(t *testing.T) {
 	client := func(url string) *upstream.Client {

@@ -1,5 +1,5 @@
 /**
- * Settings → Models (SPEC §3.3, §6; P4-PLAN ON-6, D31, D33, D37, D77): which model runs each check.
+ * Settings → Models (SPEC §3.3, §6; ON-6, D31, D33, D37, D77): which model runs each check.
  *
  * - Fast check (Jev): its live state and last error (the "See the last error" link on Policies lands
  *   here), the backend as three choices (OpenRouter recommended, TypeSafe direct, another gateway),

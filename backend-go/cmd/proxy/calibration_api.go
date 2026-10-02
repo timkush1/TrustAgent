@@ -22,7 +22,7 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
-// Calibration records (SPEC §2.4 rows 42-46b, §2.11; P4-PLAN D55, D62): list and read the stored
+// Calibration records (SPEC §2.4 rows 42-46b, §2.11; D55, D62): list and read the stored
 // calibrations, import a calibration file, fit one from the label store, and activate or
 // deactivate a record. Activating changes which calibration applies to a target; it does not
 // change live decisions while the route's threshold space is raw ("Adopt" is a policy save).

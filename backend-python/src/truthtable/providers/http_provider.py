@@ -35,7 +35,7 @@ class HTTPProvider(LLMProvider):
         sleep: Awaitable sleep used between retries (tests pass a no-op).
         rng: Jitter source for the backoff.
         allowed_origins: Canonical origins the provider's credential may be
-            sent to (P4-PLAN D78). When given, base_url must be one of them and
+            sent to (D78). When given, base_url must be one of them and
             every request to another origin is refused before it is sent.
     """
 

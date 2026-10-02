@@ -1,5 +1,5 @@
 /**
- * Benchmarks (SPEC §3.3 Evaluators, §2.13; P4-PLAN D72): the committed benchmark runs in
+ * Benchmarks (SPEC §3.3 Evaluators, §2.13; D72): the committed benchmark runs in
  * docs/benchmarks/runs/*.json, bundled at build time, so the static build shows the same page. Only
  * measured runs are shown (`measured: true`, `mock: false`); every figure sits under a Measured
  * badge, costs carry their own source label, and a confidence interval is written next to a metric

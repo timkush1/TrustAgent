@@ -1,12 +1,12 @@
 /**
- * The security plane of the control plane (SPEC §2.4 #6-#7, #52-#60, #67-#70; P4-PLAN D29-D41,
+ * The security plane of the control plane (SPEC §2.4 #6-#7, #52-#60, #67-#70; D29-D41,
  * D75-D81): settings, credentials, Connect OpenRouter, the decision-model test, API keys, the admin
  * audit log and WebSocket tickets.
  *
  * Every response is checked against SECURITY_SHAPES before a page sees it, so a proxy that answers
  * something else fails with `invalid_response` instead of rendering half a card. Writes that may
  * take a provider round trip (verify, Connect, the decision-model probe) get a 30 s timeout.
- * The method signatures are fixed (P4-PLAN §0 rule 3); the bodies and SECURITY_SHAPES belong to WEB-ON.
+ * The method signatures are fixed; the bodies and SECURITY_SHAPES belong to WEB-ON.
  */
 import type {
   AdminAuditEntry,

@@ -17,7 +17,7 @@ import (
 // runtimeBootReload bounds the first read of the settings store in newServer.
 const runtimeBootReload = 10 * time.Second
 
-// runtimeParts are the runtime configuration's components (P4, GSEC): the Manager every consumer
+// runtimeParts are the runtime configuration's components (GSEC): the Manager every consumer
 // subscribes to, the settings store behind it, and the NOTIFY channel its writes use.
 type runtimeParts struct {
 	manager *runtimecfg.Manager

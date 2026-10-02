@@ -29,7 +29,7 @@ const (
 	schemaWsEventCred           = "api.v1.schema.json#/$defs/WsEvent"
 	credAdminKey                = "cred-test-admin-key-0001"
 
-	// Fake keys (P4-PLAN §0 rule 8). mock-upstream's key policy: a key containing "forbidden" is
+	// Fake keys. mock-upstream's key policy: a key containing "forbidden" is
 	// refused (403), "nocredits" has no credits (402); any other key works.
 	credGoodKey      = "sk-or-v1-e2e-good-6b1f0c9a2d4e7f3a"
 	credOtherGoodKey = "sk-or-v1-e2e-good-91d2c4e6f8a0b3c5"

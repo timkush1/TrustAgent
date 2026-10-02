@@ -11,14 +11,14 @@ import (
 )
 
 // SwapGrace is how long a replaced client keeps serving the calls it already started before it
-// is closed (P4-PLAN D35: a constant, no registry key).
+// is closed (D35: a constant, no registry key).
 const SwapGrace = 30 * time.Second
 
 // BreakerResetter closes a backend's circuit breaker: a credential that changed outside the
 // client's KeyFunc deserves a fresh try at once instead of waiting out an auth cooldown.
 type BreakerResetter interface{ ResetBreaker() }
 
-// Swappable is a decision-model Client whose backend is replaced at run time (P4-PLAN CN-1): a
+// Swappable is a decision-model Client whose backend is replaced at run time (CN-1): a
 // changed decision_model setting or binding builds a new client and swaps it in without a
 // restart. Every call goes to the client in effect when it starts; a replaced client finishes the
 // calls it already started and is closed after SwapGrace. The keep-warm wish survives a swap.

@@ -14,7 +14,7 @@ import (
 // defaultSuggestWindow is the suggestions' window when the request gives none.
 const defaultSuggestWindow = "7d"
 
-// GET /api/evidence/suggestions (SPEC §2.4 row 51, §7.1; P4-PLAN D64): a free scan of the 500
+// GET /api/evidence/suggestions (SPEC §2.4 row 51, §7.1; D64): a free scan of the 500
 // most recent answers in the window (on one route, or all) that were checked against no evidence.
 // It suggests route evidence.tag_patterns for the document shapes it finds, each with how many of
 // those requests would have carried evidence, and the trustagent.context extension. Admin only:

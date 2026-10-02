@@ -11,7 +11,7 @@ import (
 	"github.com/truthtable/backend-go/internal/runtimecfg"
 )
 
-// Changes that would block every answer on fail-closed routes (P4-PLAN D77). An enforcing route
+// Changes that would block every answer on fail-closed routes (D77). An enforcing route
 // is a route of the policy in effect with fail: closed and mode block or fallback: when the fast
 // check cannot answer, it blocks (or falls back on) every answer. Turning the decision model off,
 // unbinding its credential or lowering its daily budget below today's spend therefore needs an

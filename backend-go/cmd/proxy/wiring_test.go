@@ -149,8 +149,8 @@ func TestWriteDeadlinePerRoute(t *testing.T) {
 	}
 }
 
-// The P4 Step-0 seams change nothing yet (docs/v2/P4-PLAN.md §2.3): a gated request flows as
-// before, the stubs register no routes, and the harness options P4 tests use work (a custom
+// The owner seams change nothing on the gated path: a gated request flows as
+// before, the stubs register no routes, and the harness options the newer tests use work (a custom
 // engine, a config mutation, the redacting log, WS replay frames).
 func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
 	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm" // matches no redaction pattern
@@ -190,7 +190,7 @@ func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
 	if !sawTrace {
 		t.Errorf("wsFrames did not replay trace_started of %s (%d frames)", traceID, len(frames))
 	}
-	// Every P4 seam has its owner's handler now: /api/settings (SEC-5) and /api/credentials
+	// Every seam has its owner's handler: /api/settings (SEC-5) and /api/credentials
 	// (CN-7) since CP-SEC2+CP-SEC3, /api/labels/queue (EV-3) since CP-EVAL, /api/roi/timeseries
 	// (COST-9) and /api/studio/samples (ST-4) since I-1. None answers the unmounted 404.
 	for _, route := range []struct{ method, path string }{
@@ -207,7 +207,7 @@ func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
 }
 
 // TestStatusWarnsAboutExcludedEvaluators: a file version that breaks a hard rule is left out of
-// the registry and named in /api/status warnings (P4-PLAN D54), while the other versions stay.
+// the registry and named in /api/status warnings (D54), while the other versions stay.
 func TestStatusWarnsAboutExcludedEvaluators(t *testing.T) {
 	const spec = `{"spec_version":"evaluator/v1","id":"tone","version":%d,"name":"Tone","category":"quality",
   "state_fields":["assistant_response"],"question":{"type":"noul","instructions":"%s","criteria":{"true":"Rude","false":"Polite"}},

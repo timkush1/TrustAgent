@@ -140,7 +140,7 @@ type envOpts struct {
 	// adminKey, when set, is a TRUTHTABLE_ADMIN_KEYS entry (label admin).
 	adminKey string
 
-	// P4 (docs/v2/P4-PLAN.md §2.3h).
+	// The runtime configuration, credentials and costs.
 	// pg, when set, is the store and the Postgres store (storetest.New(t) and
 	// store.NewPostgresStore): policy versions, settings, credentials, keys and the ledger.
 	pg *store.PostgresStore

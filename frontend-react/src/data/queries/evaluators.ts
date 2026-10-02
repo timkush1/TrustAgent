@@ -3,7 +3,7 @@
  * Owned by WEB-EV; queries.ts re-exports this module and calls `evaluatorSideEffects`.
  * (The P3 evaluator list, detail and reliability keys stay in `qkc.evaluators`.)
  *
- * Labels have no live event (P4-PLAN D61): after a label is written or removed, the page that wrote
+ * Labels have no live event (D61): after a label is written or removed, the page that wrote
  * it calls `invalidateAfterLabel`, which refreshes the label queue, the evaluator's calibration
  * progress and reliability, and the trace. A new or changed calibration arrives as
  * `calibration_updated` and refreshes the calibration records.

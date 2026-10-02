@@ -1,5 +1,5 @@
 /**
- * Settings → Add-ons (SPEC §3.3; P4-PLAN ON-4): the optional compose profiles, each with whether it
+ * Settings → Add-ons (SPEC §3.3; ON-4): the optional compose profiles, each with whether it
  * is on here and the one command that turns it on. Add-ons change containers, so they are started
  * from the shell, never from the browser.
  */

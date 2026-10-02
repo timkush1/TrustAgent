@@ -16,7 +16,7 @@ import (
 	"github.com/truthtable/contracts"
 )
 
-// Push timing (P4-PLAN CN-3): full-jitter backoff from pushMinBackoff to pushMaxBackoff between
+// Push timing (CN-3): full-jitter backoff from pushMinBackoff to pushMaxBackoff between
 // failed pushes, each bounded by pushTimeout.
 const (
 	pushMinBackoff = 250 * time.Millisecond
@@ -33,7 +33,7 @@ type EngineApplier interface {
 	ApplyRuntimeConfig(ctx context.Context, cfg *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error)
 }
 
-// BuildRuntimeConfig is the engine push of snap (P4-PLAN D34): its version and epoch, the judge
+// BuildRuntimeConfig is the engine push of snap (D34): its version and epoch, the judge
 // and only the judge's bound credential, and priceTable (the effective price table, D53; nil
 // sends the contracts table). decision is never set.
 //
@@ -114,11 +114,11 @@ type PusherConfig struct {
 	Logger *slog.Logger
 }
 
-// Pusher pushes the runtime configuration to the audit engine (P4-PLAN CN-3, D34): on every new
+// Pusher pushes the runtime configuration to the audit engine (CN-3, D34): on every new
 // snapshot (Want), and again whenever the engine reports another version or epoch than the one
 // in effect (EngineReported: a restarted engine reports version 0). A failed push is retried with
-// full-jitter backoff from 250 ms to 30 s; an engine without the RPC (UNIMPLEMENTED: it predates
-// P4) is warned about once and retried at the poll interval. The secret in a push never reaches
+// full-jitter backoff from 250 ms to 30 s; an engine without the RPC (UNIMPLEMENTED: it is older than
+// this gateway) is warned about once and retried at the poll interval. The secret in a push never reaches
 // a log.
 type Pusher struct {
 	engine EngineApplier
@@ -305,7 +305,7 @@ func (p *Pusher) unimplemented() {
 	p.state.Warning = "The audit engine is older than this gateway, so it cannot apply settings from the dashboard (the judge key, prices). Update and restart the engine."
 	p.mu.Unlock()
 	if first {
-		p.log.Warn("the audit engine does not implement ApplyRuntimeConfig (it predates P4): dashboard judge settings and prices do not reach it; retrying at the poll interval",
+		p.log.Warn("the audit engine does not implement ApplyRuntimeConfig (it is older than this gateway): dashboard judge settings and prices do not reach it; retrying at the poll interval",
 			"poll", p.poll)
 	}
 }

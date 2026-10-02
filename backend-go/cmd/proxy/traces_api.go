@@ -54,7 +54,7 @@ type tracesAPI struct {
 	store traceReader // nil when persistence is disabled
 	now   func() time.Time
 	log   *slog.Logger
-	// labels reads a trace's labels for TraceDetail.labels (P4, eval_wiring.go traceLabels);
+	// labels reads a trace's labels for TraceDetail.labels (eval_wiring.go traceLabels);
 	// nil means none.
 	labels func(ctx context.Context, traceID string) ([]store.LabelView, error)
 }
@@ -138,7 +138,7 @@ func (a *tracesAPI) traceFilter(c *gin.Context) (store.TraceFilter, bool) {
 		badParam(c, "q", "text search needs since within the last 7 days")
 		return f, false
 	}
-	// reason is a whole code or a prefix ending in a colon, bounded by since (P4-PLAN D68).
+	// reason is a whole code or a prefix ending in a colon, bounded by since (D68).
 	if f.Reason = c.Query("reason"); f.Reason != "" {
 		if len(f.Reason) > 128 || !reasonFilterPattern.MatchString(f.Reason) {
 			badParam(c, "reason", "must be a reason code such as det:secret_pattern, or a prefix ending in a colon such as det:")

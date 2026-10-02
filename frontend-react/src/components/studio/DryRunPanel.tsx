@@ -1,5 +1,5 @@
 /**
- * "Test on past traffic (paid)" (SPEC §7.3 step 6, §2.4 #38; P4-PLAN D82): runs the check on up to
+ * "Test on past traffic (paid)" (SPEC §7.3 step 6, §2.4 #38; D82): runs the check on up to
  * 200 stored answers of a route over SSE. The first call never confirms the cost; when the server's
  * estimate is above the confirmation line it answers 409 with the estimate, the sample and today's
  * fast-check budget left, and the viewer confirms before anything is spent. While it runs: progress

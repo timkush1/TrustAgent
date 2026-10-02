@@ -11,7 +11,7 @@ import (
 	"github.com/truthtable/backend-go/internal/gate"
 )
 
-// Knowledge on the hot path (SPEC §7.1, P4-PLAN D65). A route whose evidence.sources name
+// Knowledge on the hot path (SPEC §7.1, D65). A route whose evidence.sources name
 // knowledge asks the knowledge add-on (Options.Knowledge) for documents about the user's request:
 // the retrieval starts together with the upstream call, with the query only, and is joined
 // before the gate within the route's evidence.knowledge.deadline_ms. The documents join the

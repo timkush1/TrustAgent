@@ -11,7 +11,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 )
 
-// TestPingerOnHealthSeesEveryCheck (P4 CN-3): OnHealth hooks get every check's result, unchanged
+// TestPingerOnHealthSeesEveryCheck (CN-3): OnHealth hooks get every check's result, unchanged
 // states included, with the runtime configuration the engine reports and its env-managed keys;
 // the transition callback still fires on transitions only.
 func TestPingerOnHealthSeesEveryCheck(t *testing.T) {

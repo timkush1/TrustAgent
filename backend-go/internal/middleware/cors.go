@@ -19,7 +19,7 @@ var ExposedHeaders = []string{
 }
 
 // allowedHeaders are the request headers a cross-origin browser may send: exactly the SPEC §2.4
-// list (P4-PLAN D43). Authorization and X-API-Key are not on it: a cross-origin dashboard
+// list (D43). Authorization and X-API-Key are not on it: a cross-origin dashboard
 // authenticates with X-TrustAgent-Key, and SDK clients, which send no preflight, still
 // authenticate with either (authz/resolve.go).
 var allowedHeaders = []string{

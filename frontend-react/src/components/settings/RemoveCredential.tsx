@@ -1,7 +1,7 @@
 /**
  * Remove a saved key (#56) behind the danger confirmation. The proxy answers 409
- * `confirmation_required` when the key runs the fast check for routes that fail closed (P4-PLAN
- * D77): the dialog then names those routes and asks again, and "Remove anyway" retries with
+ * `confirmation_required` when the key runs the fast check for routes that fail closed
+ * (D77): the dialog then names those routes and asks again, and "Remove anyway" retries with
  * `?confirm=true`.
  */
 import { Trash2 } from 'lucide-react';

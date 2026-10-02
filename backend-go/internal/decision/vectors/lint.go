@@ -10,7 +10,7 @@ import (
 )
 
 // lintKind runs the lint vectors through internal/decision/lint.go, the reference that
-// frontend-react/src/lib/decision/lint.ts ports (P4-PLAN D54).
+// frontend-react/src/lib/decision/lint.ts ports (D54).
 var lintKind = Kind{run: runLint}
 
 // lintResult is a lint vector's expected value: the sorted distinct codes of the hard-rule errors

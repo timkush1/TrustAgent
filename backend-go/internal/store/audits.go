@@ -52,7 +52,7 @@ func (s *PostgresStore) SaveAuditResult(ctx context.Context, record *AuditRecord
 
 // SaveAuditResultWithCosts is SaveAuditResult with the audit's cost_events rows as the caller
 // built them (worker.LinkedCostStore): linked by audit_id and stamped at completion, with their
-// key label and price table version (P4-PLAN D45). They are written in the audit's transaction,
+// key label and price table version (D45). They are written in the audit's transaction,
 // so the audit and its cost appear together; record.Costs is then only what the event carries.
 // nil rows fall back to the rows SaveAuditResult derives from record.Costs.
 func (s *PostgresStore) SaveAuditResultWithCosts(ctx context.Context, record *AuditRecord, traceAuditStatus string, costs []CostEvent) error {

@@ -30,7 +30,7 @@ const (
 	MasterEphemeralOnly = "ephemeral"
 )
 
-// MasterKey is the instance master key (SPEC §7.5). The P4 credential store derives
+// MasterKey is the instance master key (SPEC §7.5). The credential store derives
 // InfoCredentials from the same key; sessions derive InfoSession.
 type MasterKey struct {
 	key []byte

@@ -12,7 +12,7 @@ import (
 	"github.com/truthtable/backend-go/internal/runtimecfg"
 )
 
-// applyParts apply runtime configuration changes (P4, GCONN): the decision-model swap and the
+// applyParts apply runtime configuration changes (GCONN): the decision-model swap and the
 // upstream rebuild follow runtimecfg.Manager.Subscribe from the gateway (decision_client.go,
 // upstreams.go); the engine push lives here.
 type applyParts struct {

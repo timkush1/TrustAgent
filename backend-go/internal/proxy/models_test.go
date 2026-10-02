@@ -9,7 +9,7 @@ import (
 
 // TestModelsFollowTheClientsFamily: /v1/models goes to the Anthropic upstream for a request that
 // carries anthropic-version, or an x-api-key that is not a proxy key; to the OpenAI upstream
-// otherwise (P4-PLAN D67).
+// otherwise (D67).
 func TestModelsFollowTheClientsFamily(t *testing.T) {
 	cases := []struct {
 		name      string

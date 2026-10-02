@@ -1,4 +1,4 @@
-// Package tracewriter is the batched, ordered trace writer (SPEC §2.3 writers, P4-PLAN D66 and
+// Package tracewriter is the batched, ordered trace writer (SPEC §2.3 writers, D66 and
 // D83). It fronts a store.Store when TRUTHTABLE_TRACE_FLUSH=async:
 //
 //   - The trace-scoped writes (trace start, decision with its body, later attempt, late decision)

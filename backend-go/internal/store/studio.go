@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// The Evaluator Studio's storage (SPEC §2.4 rows 12, 35, 36 and 38; P4-PLAN §7): the outcomes of
+// The Evaluator Studio's storage (SPEC §2.4 rows 12, 35, 36 and 38): the outcomes of
 // test-bench and dry-run samples (studio_results), the traffic a test bench or a dry-run samples
 // from (attempt-0 decisions with a live trace body), and the recorded compile of a decision (the
 // decision-request recompile, D63).

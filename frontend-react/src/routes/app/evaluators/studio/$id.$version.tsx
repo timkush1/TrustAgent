@@ -7,7 +7,7 @@ import { StudioStaticNote } from '@/components/studio/StudioStaticNote';
 /**
  * Evaluator Studio on a saved evaluator version (SPEC §7.3, "Duplicate and edit"): a check made in
  * the dashboard gets its next version; a built-in or file check is copied as a new check. The static
- * build stays "Coming soon" until P5 (P4-PLAN D72).
+ * build stays "Coming soon" until P5 (D72).
  */
 function StudioVersionRoute() {
   const { id, version } = Route.useParams();

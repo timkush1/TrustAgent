@@ -241,7 +241,7 @@ func TestRunUsage(t *testing.T) {
 	}
 }
 
-// cost is mechanical (P4-PLAN D85): vectorgen writes the calculator's result as expected.
+// cost is mechanical (D85): vectorgen writes the calculator's result as expected.
 func TestRunCostVector(t *testing.T) {
 	dir := writeVector(t, t.TempDir(), "cost", `{
   "vector": "1",

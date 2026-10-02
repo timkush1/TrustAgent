@@ -1,10 +1,10 @@
 /**
- * The evaluator plane of the control plane (SPEC §2.4 #12, #30-#33, #39-#46b; P4-PLAN D54-D63):
+ * The evaluator plane of the control plane (SPEC §2.4 #12, #30-#33, #39-#46b; D54-D63):
  * evaluator writes, the label queue and labels, calibration records (import, fit, activate,
  * deactivate) and the glass-box decision request. #51 (evidence suggestions) is already live on the
  * P3 ControlPlane as `getEvidenceSuggestions`.
  *
- * The signatures are fixed by Step 0b (P4-PLAN §0 rule 3); the bodies and EVALUATOR_SHAPES are
+ * The signatures are fixed by Step 0b; the bodies and EVALUATOR_SHAPES are
  * WEB-EV's (EVW-1). Labels answer 204, so their methods resolve with nothing.
  */
 import type {

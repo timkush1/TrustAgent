@@ -1,5 +1,5 @@
 /**
- * The first-run wizard at /app/setup (SPEC §3.3; P4-PLAN ON-7, D87): three steps from the proxy's
+ * The first-run wizard at /app/setup (SPEC §3.3; ON-7, D87): three steps from the proxy's
  * one-time link to a checked answer.
  *
  * 1. Secure this dashboard: claim the link (or paste its token), save the admin key, or sign in.

@@ -19,7 +19,7 @@ import (
 	"github.com/truthtable/contracts"
 )
 
-// Evaluator validation (SPEC §2.8, P4-PLAN D54): the JSON Schema of evaluator.v1 or
+// Evaluator validation (SPEC §2.8, D54): the JSON Schema of evaluator.v1 or
 // evaluator-draft.v1, then the hard rules (severity error) and the lints (severity warning).
 // LintSpec ports frontend-react/src/lib/decision/lint.ts 1:1, with the same codes, paths and
 // messages, and Go is the reference for the lint vectors (contracts/vectors/lint). Built-in

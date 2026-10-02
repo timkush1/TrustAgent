@@ -149,7 +149,7 @@ func TestDecideRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// An other_snapshot entry (P4-PLAN D56) carries no table and calibrates nothing on this snapshot:
+// An other_snapshot entry (D56) carries no table and calibrates nothing on this snapshot:
 // decide() accepts it and decision.v1 calibration_state never takes the value other_snapshot.
 func TestDecideOtherSnapshotEntryCalibratesNothing(t *testing.T) {
 	specs := loadTemplates(t)

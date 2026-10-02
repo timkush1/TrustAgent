@@ -21,7 +21,7 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
-// noPatternSecret matches no redaction pattern (P4-PLAN §0 rule 8).
+// noPatternSecret matches no redaction pattern.
 const noPatternSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 
 type fakeStore struct {

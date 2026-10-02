@@ -1,6 +1,6 @@
 /**
  * A form over one part of SettingsView (the daily caps, the price overrides) that remembers which
- * version it was based on, so If-Match means what it says (SPEC §2.4 #53; P4-PLAN §13 SV-3):
+ * version it was based on, so If-Match means what it says (SPEC §2.4 #53; SV-3):
  *
  * - a save sends the ETag of the version the draft was based on, never simply the latest one
  *   in the cache, so it cannot silently overwrite a change made elsewhere;

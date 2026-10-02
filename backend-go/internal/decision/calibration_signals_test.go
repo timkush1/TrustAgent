@@ -13,7 +13,7 @@ import (
 )
 
 // TestDecisionNeverReportsOtherSnapshot: whatever the calibration input, decision.v1
-// calibration_state never takes the decide-input-only value other_snapshot (P4-PLAN D56). Every
+// calibration_state never takes the decide-input-only value other_snapshot (D56). Every
 // decide vector is replayed as written and with each evaluator calibrated only on another snapshot.
 func TestDecisionNeverReportsOtherSnapshot(t *testing.T) {
 	all, err := vectors.Load(contracts.FS, "vectors")

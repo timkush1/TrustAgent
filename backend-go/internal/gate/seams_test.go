@@ -9,7 +9,7 @@ import (
 	"github.com/truthtable/backend-go/internal/policy"
 )
 
-// SeedUniform carries today's uniform-sample count across a restart (P4-PLAN §2.3k).
+// SeedUniform carries today's uniform-sample count across a restart.
 func TestSeedUniformSetsTodaysCount(t *testing.T) {
 	cl, err := jev.New(jev.Config{Backend: jev.BackendMock})
 	if err != nil {

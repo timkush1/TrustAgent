@@ -1,7 +1,7 @@
 /**
  * A secret the server shows once (a new admin key, an API key): the value with a copy button, why
  * it must be saved now, and an "I saved it" box that the next step waits for (SPEC §3.3 setup
- * wizard; P4-PLAN ON-3, ON-7). The proxy keeps only a hash, so there is no second chance to copy it.
+ * wizard; ON-3, ON-7). The proxy keeps only a hash, so there is no second chance to copy it.
  */
 import { KeyRound } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';

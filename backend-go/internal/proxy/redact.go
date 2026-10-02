@@ -9,7 +9,7 @@ import (
 	"github.com/truthtable/backend-go/internal/upstream"
 )
 
-// Upstream error bodies in inject mode (P4-PLAN D42). An upstream that refuses the gateway's own
+// Upstream error bodies in inject mode (D42). An upstream that refuses the gateway's own
 // key often quotes it back ("Incorrect API key provided: sk-…"); the client never had that key, so
 // the gateway masks every secret it knows (Options.Redact) in a non-2xx body before relaying it,
 // on the gated routes and on the passthrough ones alike. Only the first maxRedactedErrorBytes are

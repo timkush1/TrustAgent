@@ -1,6 +1,6 @@
 /**
  * The glass box's numbers (JevRequestPanel): the summary line, how many questions were asked, and
- * whether a recompile of the request matches what was recorded with the decision (P4-PLAN D63).
+ * whether a recompile of the request matches what was recorded with the decision (D63).
  */
 import { formatUsd } from '@/domain/format';
 import { copy, costSourceLabel, fillTemplate } from '@/domain/presentation';

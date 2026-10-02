@@ -1,6 +1,6 @@
-// Package costs is the cost ledger, the spend caps, ROI and the effective price table (P4,
+// Package costs is the cost ledger, the spend caps, ROI and the effective price table (SPEC §7.4,
 // GCOST). It uses the pure calculator in internal/decision and never imports internal/runtimecfg
-// (P4-PLAN D90): the server adapts runtime settings into plain callbacks.
+// (D90): the server adapts runtime settings into plain callbacks.
 package costs
 
 import (
@@ -45,7 +45,7 @@ const FarAboveFactor = 100
 // overridesPath is the settings path of the overrides list.
 const overridesPath = "pricing_overrides"
 
-// ValidateOverrides checks pricing overrides before they are saved (P4-PLAN D53). Errors refuse
+// ValidateOverrides checks pricing overrides before they are saved (D53). Errors refuse
 // the write: an entry that breaks a pricing.v1 rule (an override's label may only be override),
 // $0 for a provider that is not local, and a repeat of an earlier override's provider and match.
 // A warning does not: a price more than 100 times the contracts price of the same model. Findings

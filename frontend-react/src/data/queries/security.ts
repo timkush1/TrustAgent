@@ -63,7 +63,7 @@ function invalidate(queryClient: QueryClient, keys: readonly (readonly unknown[]
 }
 
 /**
- * Keeps security queries in step with one live event (P4-PLAN §10 ON-1):
+ * Keeps security queries in step with one live event (ON-1):
  * - `settings_updated` (any runtime-config write, from this tab or another): settings and status;
  * - `credentials_changed` (put, delete, rotation): credentials, settings (bindings) and status.
  * Writes from this tab also invalidate directly, so the page never waits for the socket; after a

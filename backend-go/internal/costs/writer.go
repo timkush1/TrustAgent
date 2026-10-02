@@ -15,7 +15,7 @@ type RowStore interface {
 	InsertCostEvents(ctx context.Context, rows []store.CostEvent) error
 }
 
-// Writer defaults (P4-PLAN COST-4).
+// Writer defaults (COST-4).
 const (
 	DefaultFlushEvery  = 250 * time.Millisecond
 	DefaultFlushRows   = 200
@@ -42,7 +42,7 @@ type WriterConfig struct {
 // Writer buffers cost_events rows and writes them in batches, so a call never waits for the
 // database: every FlushEvery, or as soon as FlushRows are waiting. A row that does not fit in the
 // buffer, or that failed to write three times, is dropped and counted in
-// cost_write_dropped_total (P4-PLAN D51); the spend it carries was booked in memory already, so
+// cost_write_dropped_total (D51); the spend it carries was booked in memory already, so
 // the caps never miss it. Stop drains it.
 type Writer struct {
 	st  RowStore

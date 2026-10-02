@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Calibration records (SPEC §2.3 calibrations, §2.11; §2.4 rows 42-46b; P4-PLAN D55, D62). A row is
+// Calibration records (SPEC §2.3 calibrations, §2.11; §2.4 rows 42-46b; D55, D62). A row is
 // one calibrated target of one decision-model snapshot: the calibration.v1 entry, where it came
 // from (origin file, import or fit) and whether it is the one that applies (active). The partial
 // unique index one_active_calibration keeps at most one active row per (snapshot, target_kind,

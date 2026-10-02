@@ -1,5 +1,5 @@
 /**
- * The Overview "Savings" tab (SPEC §7.4 "Panel", §3.3; P4-PLAN §13 SV-2): what checking costs and
+ * The Overview "Savings" tab (SPEC §7.4 "Panel", §3.3; SV-2): what checking costs and
  * what it saves, where every number says where it comes from.
  *
  * Top to bottom: the headline ("Your cost: $X per 1,000 answers (fast check $a + deep audit $b)")

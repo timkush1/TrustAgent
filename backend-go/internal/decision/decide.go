@@ -107,7 +107,7 @@ type CalibrationEntry struct {
 	Table   []float64 `json:"table,omitempty"`
 	Quality string    `json:"quality,omitempty"`
 	// State is a calibration state, or CalibrationOtherSnapshot when the target is calibrated
-	// only on other snapshots; such an entry has no table and calibrates nothing (P4-PLAN D56).
+	// only on other snapshots; such an entry has no table and calibrates nothing (D56).
 	State string `json:"state"`
 	// FitStateFields are the state fields the calibration was fitted with (D56).
 	FitStateFields []string `json:"fit_state_fields,omitempty"`

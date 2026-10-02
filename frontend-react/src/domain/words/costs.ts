@@ -1,7 +1,7 @@
 /**
- * Words, icons and tones for the P4 costs server values (cost sources, budget states and price labels).
+ * Words, icons and tones for the costs server values (cost sources, budget states and price labels).
  * Owned by WEB-SV after Step 0b. presentation.ts re-exports this module with `export *`, so every
- * export here starts with `cost` (P4-PLAN D86) and can never collide with another plane's words.
+ * export here starts with `cost` (D86) and can never collide with another plane's words.
  * Text comes from contracts/ui (copy.v1.json, outcomes.v1.json) where a key exists; the words below
  * without one are listed for the lead to move into copy.v1.json at the next checkpoint (D86).
  */

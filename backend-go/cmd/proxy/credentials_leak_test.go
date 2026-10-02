@@ -25,7 +25,7 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 )
 
-// The credential leak test (P4-PLAN SEC-4, SEC-8; D42): a secret that matches no redaction
+// The credential leak test (SEC-4, SEC-8; D42): a secret that matches no redaction
 // pattern (noPatternSecret, so only the list of loaded secrets can mask it) must never reach a
 // log line, a REST body or header, or a WS frame, even when a vendor echoes it back. The test
 // grows with each endpoint: TestCredentialLeakWithoutDatabase needs no database, and
@@ -359,7 +359,7 @@ func (v *leakVendor) got(key string) (received, echoed bool) {
 	return v.seen[key], v.echoed[key]
 }
 
-// TestCredentialLeakWithPostgres (P4-PLAN SEC-8, D42): with the credential store on Postgres, a
+// TestCredentialLeakWithPostgres (SEC-8, D42): with the credential store on Postgres, a
 // pasted key (#55), a key from Connect OpenRouter (#58, #59) and the gateway's env upstream key,
 // each echoed back by the vendor that refuses it, never reach the log, a body or header of #8,
 // #11, #52-#61 (with the Playground's SSE error event), #67-#70, /metrics, a WS frame or a row of

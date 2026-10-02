@@ -117,7 +117,7 @@ func TestAdminAuditLogPagingAgainstPostgres(t *testing.T) {
 	}
 }
 
-// TestCORSOnConnectRoutes: a cross-origin dashboard's preflight on a P4 route gets exactly the
+// TestCORSOnConnectRoutes: a cross-origin dashboard's preflight on a settings or Connect route gets exactly the
 // SPEC §2.4 headers (D43).
 func TestCORSOnConnectRoutes(t *testing.T) {
 	env := newTestEnv(t, envOpts{adminKey: auditAdminKey, mutate: func(cfg *config.Config) {

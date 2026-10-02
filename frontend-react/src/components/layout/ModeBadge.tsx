@@ -7,7 +7,7 @@ const badgeClass =
   'inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-xs font-medium text-fg-muted';
 
 /**
- * Whether the fast check runs on the mock model outside the demo stack (P4-PLAN D39, D89): "Try it
+ * Whether the fast check runs on the mock model outside the demo stack (D39, D89): "Try it
  * without a key" or an env-pinned mock. From /api/status when it is served, otherwise from the
  * stream's `hello` summary.
  */

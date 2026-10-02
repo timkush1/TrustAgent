@@ -102,7 +102,7 @@ interface ScenarioJson {
 /** The roles the form's message picker offers. */
 const FORM_ROLES: ReadonlySet<string> = new Set<ChatMessage['role']>(['system', 'user', 'assistant']);
 
-/** Scenario phase tags after P4, the phase of the gateway this dashboard ships with: not served yet. */
+/** Scenario phase tags after the gateway this dashboard ships with: not served by it yet. */
 const LATER_PHASES: ReadonlySet<string> = new Set(['p5']);
 
 export interface ExampleOptions {
@@ -116,7 +116,7 @@ export interface ExampleOptions {
  * non-streaming OpenAI chat body of only `model` and `messages`, each message plain text with a role
  * the form offers, on a route the running gateway already serves. That leaves out Anthropic system
  * blocks, a completions `prompt`, tool calls (`content: null`), `developer` messages, the
- * `trustagent` extension and any scenario tagged with a phase after P4. The `knowledge` scenarios
+ * `trustagent` extension and any scenario tagged with a later phase (LATER_PHASES). The `knowledge` scenarios
  * are examples only while the knowledge add-on is on, since their documents come from it.
  */
 function formHolds(s: ScenarioJson, options: ExampleOptions): boolean {

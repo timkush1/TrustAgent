@@ -1,5 +1,5 @@
 """
-A judge that can be replaced while the engine runs (SPEC section 3.2 `runtime/`, P4-PLAN D34).
+A judge that can be replaced while the engine runs (SPEC section 3.2 `runtime/`, D34).
 
 The engine wraps its judge as `LimitedProvider(SwappableProvider(judge))`, and
 the audit graph, the knowledge-base ingestor and the Studio drafter all hold

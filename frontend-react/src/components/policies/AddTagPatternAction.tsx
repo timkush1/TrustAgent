@@ -1,5 +1,5 @@
 /**
- * The evidence-suggestion one-click fix (P4-PLAN EVW-7), shown in the Overview's evidence coverage
+ * The evidence-suggestion one-click fix (EVW-7), shown in the Overview's evidence coverage
  * card and loaded only there, on demand: a suggested tag pattern goes into a draft of the current
  * policy for the chosen route (policyDraft.addTagPattern), then into the policy review
  * (ReviewSaveDialog: validation, Preview impact, save with If-Match). Nothing changes until it is

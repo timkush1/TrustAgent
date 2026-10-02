@@ -1,4 +1,4 @@
-// Package runtimecfg is the gateway's runtime configuration (SPEC §2.7, P4-PLAN D31-D33): the
+// Package runtimecfg is the gateway's runtime configuration (SPEC §2.7, D31-D33): the
 // settings an admin edits on the dashboard over the env seed, the credentials from the encrypted
 // store and the env, and the snapshot every consumer reads. A Manager publishes snapshots;
 // consumers (the decision-model swap, the upstream rebuild, the engine push, the cost caps)

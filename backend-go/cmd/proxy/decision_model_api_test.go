@@ -20,7 +20,7 @@ import (
 const (
 	schemaDecisionModelTest = "api.v1.schema.json#/$defs/DecisionModelTestResult"
 	dmTestAdminKey          = "dm-test-admin-key-0001"
-	// dmUnmatchedSecret matches no redaction pattern (P4-PLAN §0 rule 8).
+	// dmUnmatchedSecret matches no redaction pattern.
 	dmUnmatchedSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 )
 

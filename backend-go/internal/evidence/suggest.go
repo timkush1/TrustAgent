@@ -11,7 +11,7 @@ import (
 	"github.com/truthtable/backend-go/internal/llmapi"
 )
 
-// Evidence suggestions (SPEC §7.1 "Coverage and suggestions", P4-PLAN D64): a free scan of recent
+// Evidence suggestions (SPEC §7.1 "Coverage and suggestions", D64): a free scan of recent
 // answers that were checked against no evidence, looking for document shapes the doc-blocks
 // rules do not know (an unknown <tag>, a markdown heading, a "Title:" header line). Each shape
 // becomes a candidate route evidence.tag_patterns entry, and would_gain counts the scanned

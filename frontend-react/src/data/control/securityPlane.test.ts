@@ -1,5 +1,5 @@
 /**
- * The security plane over HTTP (P4-PLAN §10 ON-1) against the msw seeds: request shapes (method,
+ * The security plane over HTTP (ON-1) against the msw seeds: request shapes (method,
  * path, query, body, If-Match), the D75 credential write, D76 leaving simulated mode, the D77
  * confirmation, the D81 last-admin refusal, paging, and shape checks on every response.
  */

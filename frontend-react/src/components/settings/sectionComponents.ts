@@ -1,6 +1,6 @@
 /**
  * The component of each Settings section (SPEC §3.3), rendered by routes/app/settings/$section.tsx.
- * Lead-owned and frozen after P4 Step 0b: each section's owner edits only its own file
+ * Lead-owned: each section's owner edits only its own file
  * (BudgetsSection.tsx is WEB-SV's; the other five are WEB-ON's).
  */
 import type { ComponentType } from 'react';

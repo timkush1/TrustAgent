@@ -9,7 +9,7 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 )
 
-// Env precedence (SPEC §2.7, P4-PLAN D33): built-in < env seed < settings row, and a non-empty env
+// Env precedence (SPEC §2.7, D33): built-in < env seed < settings row, and a non-empty env
 // var always wins (an empty one counts as unset). A path a non-empty env var pins is env-managed:
 // it shows with the env value, is read-only in the UI, and a write to it answers 409
 // env_managed.

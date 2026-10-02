@@ -146,7 +146,7 @@ const (
 	ReasonFailClosed           = "fail_closed"
 	ReasonUncalibratedSnapshot = "uncalibrated_snapshot"
 	// ReasonCalibrationMissing caps a block whose uncalibrated block-set evaluators are not all
-	// calibrated on another snapshot (P4-PLAN D56): they were never calibrated (or not adopted).
+	// calibrated on another snapshot (D56): they were never calibrated (or not adopted).
 	ReasonCalibrationMissing = "calibration_missing"
 )
 

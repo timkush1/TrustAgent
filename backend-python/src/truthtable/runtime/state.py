@@ -1,5 +1,5 @@
 """
-Which runtime-config push the engine has applied (SPEC section 3.2 `runtime/`, P4-PLAN D31, D34).
+Which runtime-config push the engine has applied (SPEC section 3.2 `runtime/`, D31, D34).
 
 The gateway pushes `RuntimeConfig{version, epoch, ...}` whenever an admin
 changes the runtime settings. `epoch` identifies the gateway's settings store

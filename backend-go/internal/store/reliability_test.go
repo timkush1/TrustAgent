@@ -12,7 +12,7 @@ import (
 
 const liveSnapshot = "typesafe/jev-1.13-20260917"
 
-// seedLabel inserts a labels row (the labels API arrives in P4).
+// seedLabel inserts a labels row (as PUT /api/labels writes it).
 func seedLabel(t *testing.T, s *PostgresStore, target, label, source string, risk *float64, snapshot string, at time.Time) {
 	t.Helper()
 	if _, err := s.pool.Exec(context.Background(), `

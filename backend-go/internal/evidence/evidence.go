@@ -6,7 +6,7 @@
 //
 // Requests of every API format arrive through llmapi.ParseRequest (OpenAI chat and completions,
 // Anthropic Messages mapped onto chat messages). The knowledge add-on's documents join the
-// request's evidence through Result.AddKnowledge (SPEC §7.1, P4-PLAN D65).
+// request's evidence through Result.AddKnowledge (SPEC §7.1, D65).
 package evidence
 
 import (
@@ -145,7 +145,7 @@ func (r *Result) KnowledgeOnly() bool {
 	return r.Trusted() && !r.HasRequestEvidence()
 }
 
-// AddKnowledge joins knowledge-base documents to the evidence (SPEC §7.1, P4-PLAN D65). sources is
+// AddKnowledge joins knowledge-base documents to the evidence (SPEC §7.1, D65). sources is
 // the route evidence.sources: the documents go where knowledge stands in it, after the items of the
 // sources before it and before those after it. A document keeps its id when that is a valid
 // evidence id no other item uses, else it gets kbN; it is labelled LabelKnowledge when it has no

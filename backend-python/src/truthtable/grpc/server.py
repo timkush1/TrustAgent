@@ -391,8 +391,8 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
 
     - GetEngineInfo: What the engine runs with (judge, knowledge, limits)
     - RetrieveContext: Knowledge-base evidence for the gate (knowledge add-on only)
-    - ApplyRuntimeConfig: The gateway's runtime-config push (judge, prices; P4)
-    - DraftEvaluator: Evaluator Studio "Draft with AI" through the judge (P4)
+    - ApplyRuntimeConfig: The gateway's runtime-config push (judge, prices)
+    - DraftEvaluator: Evaluator Studio "Draft with AI" through the judge
     """
 
     def __init__(
@@ -1027,7 +1027,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         self, request: evaluator_pb2.RuntimeConfig, context: Any
     ) -> evaluator_pb2.ApplyRuntimeConfigResponse:
         """
-        The gateway's runtime-config push (SPEC section 3.2; P4-PLAN D34).
+        The gateway's runtime-config push (SPEC section 3.2; D34).
 
         Applied when it carries a new epoch or a version above the applied one
         (runtime/state.py); otherwise nothing changes and the answer reports

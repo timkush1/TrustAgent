@@ -84,7 +84,7 @@ type dailyCounter struct {
 }
 
 // SeedUniform sets today's uniform-sample count to n, e.g. from the persisted count after a
-// restart (P4: the cost ledger seeds it), so the daily cap survives restarts. n below zero counts
+// restart (the cost ledger seeds it), so the daily cap survives restarts. n below zero counts
 // as zero.
 func (g *Gate) SeedUniform(n int) {
 	g.uniform.seed(g.cfg.Now(), max(n, 0))

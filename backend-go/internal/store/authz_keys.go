@@ -79,7 +79,7 @@ type Execer interface {
 }
 
 // InsertAdminAudit appends one admin_audit_log row through q, normally inside the transaction of
-// the write it records (P4-PLAN D44). Every admin_audit_log writer outside this package calls it;
+// the write it records (D44). Every admin_audit_log writer outside this package calls it;
 // the D44 scrubbing lives in insertAdminAudit.
 func InsertAdminAudit(ctx context.Context, q Execer, e AdminAuditEntry) error {
 	return insertAdminAudit(ctx, q, e)

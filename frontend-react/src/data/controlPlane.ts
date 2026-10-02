@@ -8,7 +8,7 @@
  * endpoint (the static replay build hides Policies and Knowledge) spreads `unavailableControlPlane`
  * so every call fails with a plain ApiError the page contract already renders.
  *
- * P4 adds four planes, one per web stream (P4-PLAN §2.4): security (WEB-ON), cost (WEB-SV),
+ * Four planes join it, one per owner: security (WEB-ON), cost (WEB-SV),
  * evaluator (WEB-EV) and Studio (WEB-ST). Each lives in data/control/<x>Plane.ts with its live and
  * unavailable implementations; this file and liveControlPlane.ts only spread them in.
  */

@@ -1,6 +1,6 @@
 /**
  * A server-sent events reader (WHATWG "text/event-stream" parsing) for REST endpoints that answer
- * with a stream: the Playground's `stream: true` run (SPEC §2.4 #61) and, in P4, the Studio dry run
+ * with a stream: the Playground's `stream: true` run (SPEC §2.4 #61) and the Studio dry run
  * (#38). It yields one message per blank-line-terminated block; comment lines (": …") are reported
  * separately because the gateway writes its decision summary as a `: trustagent {...}` comment.
  */

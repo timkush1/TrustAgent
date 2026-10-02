@@ -1,5 +1,5 @@
 /**
- * "Was this right?" (SPEC §3.3 "Trace detail" 1; P4-PLAN D59): on an answer where at least one
+ * "Was this right?" (SPEC §3.3 "Trace detail" 1; D59): on an answer where at least one
  * check of the model's answer (attempt 0, watching checks included) reached Elevated or High risk,
  * the viewer says whether the flag was right. Correct writes `should_fire` and False alarm writes
  * `should_not_fire`, one label per such check, each counting toward its calibration. Labels already

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The Simple form ↔ spec round trip (P4-PLAN §12 STW-2): reading and writing back an untouched form
+ * The Simple form ↔ spec round trip (STW-2): reading and writing back an untouched form
  * returns the same spec, unknown and JSON-only fields included, and each Simple control changes only
  * its own fields.
  */

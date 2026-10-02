@@ -93,7 +93,7 @@ func TestStrictConfigExitCode(t *testing.T) {
 	}
 }
 
-// TestCheckConfigStrictAutoWithoutKeys (P4-PLAN DX-1): a fresh onboarding stack, backend auto and
+// TestCheckConfigStrictAutoWithoutKeys (DX-1): a fresh onboarding stack, backend auto and
 // no key anywhere, passes -check-config under TRUTHTABLE_STRICT_CONFIG: a missing key is a
 // state the dashboard fixes (Connect OpenRouter, or simulated checks), not a configuration error.
 func TestCheckConfigStrictAutoWithoutKeys(t *testing.T) {

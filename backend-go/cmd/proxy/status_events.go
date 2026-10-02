@@ -156,7 +156,7 @@ const (
 // budgetRank orders the budget states: a worse state outranks a better one.
 var budgetRank = map[string]int{budgetOK: 0, budgetReserveOnly: 1, budgetExhausted: 2}
 
-// budgetStatus is the WS status of the daily caps (P4-PLAN D49): the worse state of the decision
+// budgetStatus is the WS status of the daily caps (D49): the worse state of the decision
 // cap and the LLM cap (ok < reserve_only < exhausted), with detail naming the caps in that state
 // ("decision", "llm" or "decision,llm"; "" when both are ok). The cost ledger reports both caps;
 // without one the decision client's own budget reports the decision cap. ok is false when no cap

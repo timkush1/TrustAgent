@@ -6,7 +6,7 @@
  * A state entry set to an ErrorReply answers with that error; `undefined` answers 404 (an older
  * proxy that does not serve the endpoint).
  *
- * The P4 planes add their own state and handlers from {security,cost,evaluator,studio}Handlers.ts
+ * The control planes add their own state and handlers from {security,cost,evaluator,studio}Handlers.ts
  * (one owner each, seeded from contracts/fixtures/api); ControlState is the P3 state plus theirs.
  */
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
@@ -58,7 +58,7 @@ import {
 
 export { errorReply, type ErrorReply, type Reply };
 
-/** The P3 control-plane state (the P4 planes' state is merged in by ControlState). */
+/** The P3 control-plane state (the planes' state is merged in by ControlState). */
 export interface P3ControlState {
   overview: Reply<OverviewStats>;
   roi: Reply<RoiSummary>;
@@ -292,7 +292,7 @@ export function createControlApi(overrides: Partial<ControlState> = {}): Control
       await record(request);
       return reply(state.kbUpload);
     }),
-    // P4 planes (one owner each).
+    // The control planes (one owner each).
     ...securityHandlers(state, { record }),
     ...costHandlers(state, { record }),
     ...evaluatorHandlers(state, { record }),

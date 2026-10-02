@@ -1,4 +1,4 @@
-// Package credentials is the encrypted credential store's core (SPEC §7.5, P4-PLAN D29-D32,
+// Package credentials is the encrypted credential store's core (SPEC §7.5, D29-D32,
 // D78): the credential names and providers, AES-256-GCM sealing under the master key's
 // credentials subkey, fingerprints, the origins a secret may be sent to, and the store's state.
 //

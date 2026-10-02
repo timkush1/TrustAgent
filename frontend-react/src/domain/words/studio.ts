@@ -1,7 +1,7 @@
 /**
- * Words for the P4 studio server values that other pages may show: the lint and hard-rule codes
+ * Words for the Studio server values that other pages may show: the lint and hard-rule codes
  * (contracts/ui copy.studio.lint). Owned by WEB-ST. presentation.ts re-exports this module with
- * `export *`, so every export here starts with `studio` (P4-PLAN D86) and can never collide with
+ * `export *`, so every export here starts with `studio` (D86) and can never collide with
  * another plane's words.
  *
  * presentation.ts sits in a chunk the landing page loads too (its 110 kB budget), so the words only

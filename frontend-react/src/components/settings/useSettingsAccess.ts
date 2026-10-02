@@ -5,7 +5,7 @@
  * 1. a read-only instance refuses every write;
  * 2. the demo stack runs mock checks with no keys of its own: writes point at `make up` instead;
  * 3. a caller without the admin scope signs in as an admin first;
- * 4. key writes also need the credentials store (P4-PLAN D32): without a database, or without a
+ * 4. key writes also need the credentials store (D32): without a database, or without a
  *    master key, they explain what to set.
  */
 import { useAppMode, useSystemStatus } from '@/data/useSystem';

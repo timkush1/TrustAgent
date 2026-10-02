@@ -1,5 +1,5 @@
 /**
- * Connect your app (P4-PLAN ON-8, D87): the key line names the app key and links to Settings →
+ * Connect your app (ON-8, D87): the key line names the app key and links to Settings →
  * Access; an admin with no app key creates one here, shown once; nobody else is asked for keys.
  */
 import { configure, screen, waitFor, within } from '@testing-library/react';

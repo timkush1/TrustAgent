@@ -1,5 +1,5 @@
 /**
- * "Calibrate now" and "Adopt calibration" (SPEC §3.3 Evaluators, §2.11; P4-PLAN D62): fit a
+ * "Calibrate now" and "Adopt calibration" (SPEC §3.3 Evaluators, §2.11; D62): fit a
  * calibration from labels (free, #45 with `activate: false`), read what came out of it, then keep it
  * active or adopt it on a route.
  *

@@ -1,5 +1,5 @@
 /**
- * Who this browser is signed in as, and signing in and out (SPEC §2.4 #3-#6, §7.5; P4-PLAN D71).
+ * Who this browser is signed in as, and signing in and out (SPEC §2.4 #3-#6, §7.5; D71).
  *
  * - Same origin: POST /api/session sets the HttpOnly session cookie; sign-out deletes it.
  * - Cross origin (the dashboard on another origin than the proxy): cookies are never sent, so the

@@ -1,5 +1,5 @@
 /**
- * Paste a key (#55, P4-PLAN D75): the key (and, for another gateway, its address), which checks to
+ * Paste a key (#55, D75): the key (and, for another gateway, its address), which checks to
  * use it for, then one PUT that stores, checks and binds it. The dialog shows the outcome in place
  * (CredentialResult), including "I added credits — check again". The key leaves the form as soon as
  * it is sent; only its masked form is ever shown again.

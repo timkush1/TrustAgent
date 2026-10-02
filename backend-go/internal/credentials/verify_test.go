@@ -18,7 +18,7 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 )
 
-// verifyUnmatchedSecret matches no redaction pattern (P4-PLAN §0 rule 8): only the literal
+// verifyUnmatchedSecret matches no redaction pattern: only the literal
 // masking of the candidate secret can hide it.
 const verifyUnmatchedSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 

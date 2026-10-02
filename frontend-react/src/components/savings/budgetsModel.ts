@@ -1,6 +1,6 @@
 /**
  * Settings → Budgets as pure functions (SPEC §3.3 "Budgets: two inputs with today's spend bars";
- * P4-PLAN D33, D46, D53, D77): reading the caps and what is env-managed from SettingsView, the
+ * D33, D46, D53, D77): reading the caps and what is env-managed from SettingsView, the
  * spend bars from /api/status (real spend only), the patch a save sends, and the price-override
  * rows with their checks and the server's findings.
  */

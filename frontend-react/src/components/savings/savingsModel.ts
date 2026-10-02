@@ -1,5 +1,5 @@
 /**
- * The Savings tab's numbers (SPEC §7.4; P4-PLAN D46, D73), as pure functions over RoiSummary
+ * The Savings tab's numbers (SPEC §7.4; D46, D73), as pure functions over RoiSummary
  * (#47) and RoiTimeseries (#48): the counterfactual bands under the measured spend line, the
  * component table where every figure keeps its value label, the outcome split (stopped is block
  * and fallback only; flagged is separate) and the sampling status line.

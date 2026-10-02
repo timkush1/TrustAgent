@@ -1,5 +1,5 @@
 /**
- * Step 1 of the setup wizard, "Secure this dashboard" (SPEC §3.3, §7.5; P4-PLAN ON-7b):
+ * Step 1 of the setup wizard, "Secure this dashboard" (SPEC §3.3, §7.5; ON-7b):
  *
  * - With the proxy's one-time link (`#token=`) it claims the token: the proxy creates the first
  *   admin key, shows it once, and signs this browser in. Copying the key and ticking "I saved it"

@@ -1,5 +1,5 @@
 """
-Canonical origins (P4-PLAN D78): `scheme://host[:port]` with the scheme and
+Canonical origins (D78): `scheme://host[:port]` with the scheme and
 host lowercased and the scheme's default port left out. Credentials are bound
 to origins, never to bare hosts (see truthtable.runtime.origins).
 """

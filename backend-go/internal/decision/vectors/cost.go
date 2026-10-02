@@ -8,8 +8,8 @@ import (
 	"github.com/truthtable/backend-go/internal/decision"
 )
 
-// costKind runs the cost vectors over the pure calculator in internal/decision/cost.go (P4-PLAN
-// D52, D85). The input's fn names the function; the other members are its arguments, named as the
+// costKind runs the cost vectors over the pure calculator in internal/decision/cost.go
+// (D52, D85). The input's fn names the function; the other members are its arguments, named as the
 // JSON tags of its input type, and every price table is inline in the pricing.v1 shape:
 //
 //	call_cost:    {fn, provider, model, input_tokens, output_tokens, reported_cost_usd?, table}

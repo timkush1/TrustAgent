@@ -10,7 +10,7 @@
 // Credentials (B1, D15): an upstream with a key of its own injects it (inject mode): the client's
 // Authorization, X-Api-Key and Api-Key headers are dropped and the key is sent on the upstream's
 // auth header. The key is the env's (Config.APIKey) or a dashboard credential bound to the
-// upstream (Config.Key, P4-PLAN D41), fetched per request for the upstream's canonical origin so
+// upstream (Config.Key, D41), fetched per request for the upstream's canonical origin so
 // the credentials store can refuse an origin the credential was not created for (D78). Without a
 // key the client's credential passes through untouched (passthrough mode). A TrustAgent key is
 // never forwarded, wherever the client put it.
@@ -46,7 +46,7 @@ const DefaultAnthropicBaseURL = "https://api.anthropic.com"
 
 // KeyFunc returns the credential to inject on a call to origin, the upstream's canonical origin
 // scheme://host[:port] (jev.CanonicalOrigin). The runtime configuration's KeyFunc refuses an
-// origin outside the bound credential's allowed origins (P4-PLAN D78).
+// origin outside the bound credential's allowed origins (D78).
 type KeyFunc func(ctx context.Context, origin string) (string, error)
 
 // ErrCredentialUnavailable is the failure of a call whose injected credential cannot be had (a

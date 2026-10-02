@@ -15,7 +15,7 @@ const (
 	// (X-TrustAgent-Status: skipped:unsupported_api, SPEC §2.4 row 73).
 	PathResponses = "/v1/responses"
 	// PathModels lists models; both API families serve it, so the client's headers pick the
-	// upstream (SPEC §2.4 row 72, P4-PLAN D67).
+	// upstream (SPEC §2.4 row 72, D67).
 	PathModels = "/v1/models"
 )
 

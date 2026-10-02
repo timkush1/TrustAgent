@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// The runtime configuration's rows in the settings table (P4-PLAN D31). Writing any of the
+// The runtime configuration's rows in the settings table (D31). Writing any of the
 // RuntimeSettingKeys, or any credential, bumps the global runtime-config version: the version
 // column of the epoch row, whose value is {"epoch":"<uuidv7>"}. The setup and session_epoch rows
 // are not runtime configuration and never bump it.

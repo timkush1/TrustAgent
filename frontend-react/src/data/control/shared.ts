@@ -1,10 +1,10 @@
 /**
- * Helpers shared by the P4 control planes (securityPlane, costPlane, evaluatorPlane, studioPlane).
+ * Helpers shared by the control planes (securityPlane, costPlane, evaluatorPlane, studioPlane).
  * Lead-owned like controlPlane.ts: a plane file imports these, it never edits them.
  */
 import { ApiError } from '../errors';
 
-/** The message of a plane method whose body has not landed yet (P4 Step 0b stubs). */
+/** The message of a plane method whose body has not landed yet (the static build's unavailable plane). */
 export const NOT_IMPLEMENTED_MESSAGE = 'This dashboard build does not call this endpoint yet.';
 
 /** 404 `not_implemented`: a plane method that is declared but not wired, or a build that never serves it. */

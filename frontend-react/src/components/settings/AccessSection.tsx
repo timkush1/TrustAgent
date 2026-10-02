@@ -1,5 +1,5 @@
 /**
- * Settings → Access (SPEC §3.3; P4-PLAN ON-3, D44, D53, D81): who can use this TrustAgent.
+ * Settings → Access (SPEC §3.3; ON-3, D44, D53, D81): who can use this TrustAgent.
  *
  * - API keys: list, create (scopes in plain words; "See prompts and answers" is its own scope), the
  *   secret shown once with "I saved it", and revoke behind a confirmation that warns about the key

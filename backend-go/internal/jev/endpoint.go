@@ -12,7 +12,7 @@ type endpoint struct {
 	backend string
 	// url is the decision endpoint; host its host; origin its canonical origin
 	// scheme://host[:port] (default port elided, host lowercased), which KeyFunc binds the
-	// credential to (P4-PLAN D78).
+	// credential to (D78).
 	url, host, origin string
 	// openRouter selects the OpenRouter body extras (session_id, provider preferences) and the
 	// attribution headers.
@@ -97,7 +97,7 @@ func resolveEndpoint(backend string, explicit bool, cfg Config, b *Binding) (end
 	return ep, warnings, nil
 }
 
-// CanonicalOrigin is the origin of u as credential binding compares it (P4-PLAN D78):
+// CanonicalOrigin is the origin of u as credential binding compares it (D78):
 // scheme://host[:port] with the scheme and host lowercased and the scheme's default port elided.
 func CanonicalOrigin(u *url.URL) string {
 	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()

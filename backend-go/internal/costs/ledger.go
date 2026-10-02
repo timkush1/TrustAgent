@@ -18,7 +18,7 @@ import (
 const DefaultResyncEvery = 60 * time.Second
 
 // ErrLLMCapReached refuses an LLM call (a deep audit, a Studio draft, a knowledge ingest) once
-// the day's LLM cap cannot take it (P4-PLAN D48).
+// the day's LLM cap cannot take it (D48).
 var ErrLLMCapReached = errors.New("daily LLM spend cap reached")
 
 // LedgerStore is the storage of the ledger (store.PostgresStore).
@@ -50,7 +50,7 @@ type LedgerConfig struct {
 	Logger      *slog.Logger
 }
 
-// Ledger is the cost ledger (SPEC §7.4, P4-PLAN COST-3, COST-4): the daily decision and LLM caps,
+// Ledger is the cost ledger (SPEC §7.4, COST-3, COST-4): the daily decision and LLM caps,
 // held in memory and seeded from cost_events, and the writer of cost_events rows. It is the
 // decision client's budget, spend reporter and cost sink (jev.Budget, jev.SpendReporter,
 // jev.CostSink); LLM returns the LLM cap the audit pool, Studio and the knowledge upload hold
@@ -138,8 +138,8 @@ type Caps struct {
 }
 
 // ApplySettings applies the runtime settings in effect: the daily caps and the pricing
-// overrides. The server adapts the runtime configuration's snapshots into calls of it (P4-PLAN
-// D90: costs never imports runtimecfg), and the env already won over the stored values there.
+// overrides. The server adapts the runtime configuration's snapshots into calls of it
+// (D90: costs never imports runtimecfg), and the env already won over the stored values there.
 // Overrides that ValidateOverrides would refuse are left out and logged.
 func (l *Ledger) ApplySettings(caps Caps, overrides []decision.PriceEntry) {
 	l.decision.SetCap(caps.DecisionUSDDay)
@@ -150,7 +150,7 @@ func (l *Ledger) ApplySettings(caps Caps, overrides []decision.PriceEntry) {
 }
 
 // Headroom is the decision spend still allowed today: up to the observe line when enforcing is
-// false, up to the cap when true (P4-PLAN D82); +Inf without a cap.
+// false, up to the cap when true (D82); +Inf without a cap.
 func (l *Ledger) Headroom(enforcing bool) float64 { return l.decision.Headroom(enforcing) }
 
 // CapHitAt is when today's cap of kind was first hit (nil when it was not, or for another kind).
@@ -207,7 +207,7 @@ func (l *Ledger) RecordCost(e jev.CostEvent) {
 	l.w.Add(row)
 }
 
-// Link ties LLM cost records to what they were spent on (cmd/proxy CostLink, P4-PLAN D45).
+// Link ties LLM cost records to what they were spent on (cmd/proxy CostLink, D45).
 type Link struct {
 	TraceID   string
 	AuditID   string
@@ -269,7 +269,7 @@ func RealCostUSD(records []*pb.CostRecord) float64 {
 	return usd
 }
 
-// CapCostUSD is what records count against the LLM cap (P4-PLAN D91, extending D47 and D48): the
+// CapCostUSD is what records count against the LLM cap (D91, extending D47 and D48): the
 // real cost of each record, with simulated (mock) records at $0, and records no price covers
 // (cost_source unknown) at the reference judge's price for their tokens, so a judge the price
 // table does not know cannot spend past the cap. The stored rows keep cost_source unknown and no
@@ -309,7 +309,7 @@ const (
 // LLM is the LLM cap as its callers use it.
 func (l *Ledger) LLM() *LLMBudget { return &LLMBudget{l: l} }
 
-// LLMBudget is the daily LLM cap (P4-PLAN D48): hard in every lane and for every caller, with no
+// LLMBudget is the daily LLM cap (D48): hard in every lane and for every caller, with no
 // reserve, no per-key cap and no admin bypass.
 type LLMBudget struct{ l *Ledger }
 

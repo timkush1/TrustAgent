@@ -1,5 +1,5 @@
 /**
- * The static build's note on Studio (contracts/ui copy.studio.static_soon, P4-PLAN D72): run
+ * The static build's note on Studio (contracts/ui copy.studio.static_soon, D72): run
  * TrustAgent yourself to use it, with the command shown as code.
  */
 import { copy, fillTemplate, splitCommands } from '@/domain/presentation';

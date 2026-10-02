@@ -1,5 +1,5 @@
 /**
- * The P4 trace actions against the real data layer over msw: "Was this right?" (labels, D59),
+ * The trace actions against the real data layer over msw: "Was this right?" (labels, D59),
  * "Open evaluator" and "Adjust threshold" (EVW-5), and the glass box "Show exact Jev request"
  * (EVW-4, D63) in its match, mismatch, expired, not-served, no-content-scope, redacted and simulated
  * states.

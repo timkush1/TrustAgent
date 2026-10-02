@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// handlePricing serves GET /api/pricing (SPEC §2.4 endpoint 49, P4-PLAN D53): the effective price
+// handlePricing serves GET /api/pricing (SPEC §2.4 endpoint 49, D53): the effective price
 // table costs are computed with when a provider reports none (api.ts PricingTable). The
 // dashboard's pricing overrides come first (label override; the first match wins), then the
 // TRUTHTABLE_PRICE_TABLE_FILE table when one is set, then the embedded contracts table, each entry

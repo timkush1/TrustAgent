@@ -1,5 +1,5 @@
 /**
- * Settings → Budgets (SPEC §3.3 "two inputs with today's spend bars"; P4-PLAN §13 SV-3, D33, D46,
+ * Settings → Budgets (SPEC §3.3 "two inputs with today's spend bars"; SV-3, D33, D46,
  * D53, D77): the daily caps of the fast check and the deep audit, each with today's real spend
  * (simulated checks never count) and, on the fast-check bar, the line where observe and flag
  * routes stop. Below them, the Prices panel: the table every cost estimate uses, and your

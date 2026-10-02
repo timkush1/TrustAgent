@@ -1,5 +1,5 @@
 /**
- * The calibration records of one evaluator (SPEC §2.4 #42-#46b; P4-PLAN D55, D62): every calibration
+ * The calibration records of one evaluator (SPEC §2.4 #42-#46b; D55, D62): every calibration
  * the proxy holds for it (from files, imported, or fitted from labels), which one is active for
  * each fast-check version, and the actions on them: deactivate an imported or fitted one (the
  * newest file takes over again), adopt one, or import a calibration file (`make calibrate` writes

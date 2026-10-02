@@ -1,5 +1,5 @@
 /**
- * "Adjust threshold" for one check on one route (SPEC §3.3 Policies; P4-PLAN EVW-5): a slider with
+ * "Adjust threshold" for one check on one route (SPEC §3.3 Policies; EVW-5): a slider with
  * the flag line and, when the check can block here, the block line, each with a "Now" mark. The
  * change goes into the page's draft and opens the review, which replays past answers (Preview
  * impact) before anything is saved. The thresholds stay in the space the route reads (raw score or

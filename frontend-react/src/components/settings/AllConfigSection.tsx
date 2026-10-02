@@ -1,5 +1,5 @@
 /**
- * Settings → All configuration (SPEC §3.3; P4-PLAN ON-4, D33, D79): every setting, its value and
+ * Settings → All configuration (SPEC §3.3; ON-4, D33, D79): every setting, its value and
  * where the value comes from, read-only. Secrets never appear: an admin sees the masked form, other
  * callers see "Set" or "Not set" (D79). When this proxy does not send its settings, the page falls
  * back to the built-in defaults from the key registry and says so.

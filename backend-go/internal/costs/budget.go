@@ -11,7 +11,7 @@ import (
 
 // Budget kinds: the decision model's cap and the LLM (deep-audit judge) cap. They are also the
 // kind label of spend_usd_today and spend_reserved_usd, and the names a WS budget status carries
-// (P4-PLAN D49).
+// (D49).
 const (
 	KindDecision = "decision"
 	KindLLM      = "llm"
@@ -24,7 +24,7 @@ const budgetEps = 1e-8
 // limit: the cap, the observe line below it, or the caller's per-key cap.
 var ErrCapReached = errors.New("daily spend cap reached")
 
-// Budget is one daily cap (SPEC §7.4 caps, P4-PLAN D46, D48): spend and holds of the UTC day, an
+// Budget is one daily cap (SPEC §7.4 caps, D46, D48): spend and holds of the UTC day, an
 // optional enforcing reserve that only enforcing callers may spend, and an optional per-key cap.
 // Spend restarts at 0 each UTC day; holds of calls still running survive the rollover and settle
 // into the new day. A cap of 0 is unlimited, but spend is still counted. The ledger seeds it from

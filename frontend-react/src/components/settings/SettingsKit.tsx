@@ -1,7 +1,7 @@
 /**
  * Pieces every Settings section shares: the failure note (the server's message with its code, the
- * plain hint for P4 codes, and the names and routes a code carries), the "set in .env" note, and the
- * credentials-store and settings warnings (P4-PLAN D32, D33, D37, D77).
+ * plain hint for the settings and credentials codes, and the names and routes a code carries), the "set in .env" note, and the
+ * credentials-store and settings warnings (D32, D33, D37, D77).
  */
 import { Link } from '@tanstack/react-router';
 import { CircleAlert, Lock } from 'lucide-react';

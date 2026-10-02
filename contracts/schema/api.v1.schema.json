@@ -3492,7 +3492,7 @@
       "additionalProperties": false,
       "properties": {
         "code": {
-          "description": "A machine code the web renders words for, e.g. reenter_secret (P4 D37) or fallback_key_required (D41).",
+          "description": "A machine code the web renders words for, e.g. reenter_secret (D37) or fallback_key_required (D41).",
           "type": "string"
         },
         "col": {
@@ -5965,7 +5965,7 @@
     },
     "StatusWarning": {
       "additionalProperties": false,
-      "description": "A status or settings warning with details (P4 D32, D77): the web renders words by code.",
+      "description": "A status or settings warning with details (D32, D77): the web renders words by code.",
       "properties": {
         "code": {
           "type": "string"
@@ -6007,7 +6007,7 @@
           "type": "number"
         },
         "cost_source": {
-          "description": "P4 D82: simulated for a mock judge, so the draft cost is labelled Simulated.",
+          "description": "D82: simulated for a mock judge, so the draft cost is labelled Simulated.",
           "enum": [
             "reported",
             "computed",
@@ -6536,7 +6536,7 @@
               "type": "number"
             },
             "runtime_config_epoch": {
-              "description": "P4 D34: the Go settings epoch of the last push the engine applied.",
+              "description": "D34: the Go settings epoch of the last push the engine applied.",
               "type": "string"
             },
             "runtime_config_version": {
@@ -6812,7 +6812,7 @@
           "type": "string"
         },
         "warning_details": {
-          "description": "P4: the warnings that carry details (master_key_changed, fail_closed_unprotected, ...); codes also appear in warnings.",
+          "description": "The warnings that carry details (master_key_changed, fail_closed_unprotected, ...); codes also appear in warnings.",
           "items": {
             "$ref": "#/$defs/StatusWarning"
           },

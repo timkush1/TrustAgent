@@ -1,5 +1,5 @@
 /**
- * Where the first-run wizard stands (SPEC §3.3 setup wizard; P4-PLAN ON-7, D39, D87):
+ * Where the first-run wizard stands (SPEC §3.3 setup wizard; ON-7, D39, D87):
  *
  * - secure: this browser is signed in with the admin scope;
  * - connect: a key runs the fast check (bound in the dashboard, or set in .env), or simulated

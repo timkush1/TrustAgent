@@ -146,7 +146,7 @@ type Exchange struct {
 	KnowledgeOnly bool
 	// Advisory marks an exchange whose decision reaches no app (a Playground run): its
 	// decision-model calls never spend the enforcing reserve, whatever the mode (jev
-	// CallOptions.Enforcing false, P4-PLAN D82).
+	// CallOptions.Enforcing false, D82).
 	Advisory bool
 }
 
@@ -399,7 +399,7 @@ func (g *Gate) compileInputs(x *Exchange, reqRules map[string]string) *decision.
 }
 
 // CompileInputsOf are the compile() inputs of an exchange with an answer, exactly as the gate
-// builds them. Exported so the decision-request recompile (SPEC §2.4 row 12, P4-PLAN D63) shares
+// builds them. Exported so the decision-request recompile (SPEC §2.4 row 12, D63) shares
 // the gate's code.
 func CompileInputsOf(x *Exchange, reqRules map[string]string) *decision.CompileInputs {
 	return &decision.CompileInputs{

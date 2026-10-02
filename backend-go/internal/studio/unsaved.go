@@ -13,7 +13,7 @@ import (
 // DraftRefMarker separates an unsaved spec's id from its hash in studio_results.evaluator_ref.
 const DraftRefMarker = "@draft:"
 
-// Unsaved is an unsaved Studio spec as a test or a dry-run runs it (P4-PLAN D58).
+// Unsaved is an unsaved Studio spec as a test or a dry-run runs it (D58).
 type Unsaved struct {
 	// Spec is the spec compiled as <id>@<latest+1>: the version a save would create.
 	Spec *decision.Spec

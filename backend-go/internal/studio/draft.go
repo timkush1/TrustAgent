@@ -17,7 +17,7 @@ import (
 const MaxDraftDescription = 2000
 
 // draftPrompt is the part of contracts/prompts/evaluator-drafter.v1.json the gateway reads: the
-// texts the engine sends, to price the call before it is made (P4-PLAN D48).
+// texts the engine sends, to price the call before it is made (D48).
 type draftPrompt struct {
 	Call struct {
 		MaxTokens int `json:"max_tokens"`
@@ -78,7 +78,7 @@ func DraftPromptChars(in DraftInput) (int, error) {
 	return utf8.RuneCountInString(strings.Join(p.System, "\n")) + utf8.RuneCountInString(user), nil
 }
 
-// DraftReserveUSD is what a draft reserves of the LLM cap (P4-PLAN D48): the prompt's tokens
+// DraftReserveUSD is what a draft reserves of the LLM cap (D48): the prompt's tokens
 // (promptChars / cpt) at the judge's input price plus the prompt's max_tokens of output at its
 // output price.
 func DraftReserveUSD(promptChars int, cpt float64, price decision.PriceEntry) (float64, error) {

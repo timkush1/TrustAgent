@@ -87,7 +87,7 @@ describe('LiveDataSource resync (SPEC §2.5)', () => {
   });
 });
 
-describe('LiveDataSource stream on another origin (P4-PLAN D71)', () => {
+describe('LiveDataSource stream on another origin (D71)', () => {
   afterEach(() => clearDashboardKey());
 
   const sink = { onEvent: () => {}, onConnection: () => {} };

@@ -1,5 +1,5 @@
 /**
- * The P4 Step-0b plane seams: the planes are spread onto LiveControlPlane and unavailableControlPlane,
+ * The control-plane seams: the planes are spread onto LiveControlPlane and unavailableControlPlane,
  * the settings pair is live (GET, PATCH with If-Match) against the msw seeds, and every other plane
  * method rejects with 404 `not_implemented` until its owner lands the body.
  */
@@ -23,7 +23,7 @@ installMswServer();
 const http = () => createHttpClient({ apiBase: API, crossOrigin: false });
 const plane = () => new LiveControlPlane(http());
 
-describe('P4 control planes', () => {
+describe('control planes', () => {
   it('puts every plane method on LiveControlPlane and on unavailableControlPlane', () => {
     const live = plane();
     const unavailable = unavailableControlPlane('Not here.');
@@ -91,7 +91,7 @@ describe('P4 control planes', () => {
     ]);
   });
 
-  it('describes every P4 error code', async () => {
+  it('describes every settings, credentials, cost and Studio error code', async () => {
     for (const [code, { status, hint }] of Object.entries(P4_ERROR_CODES)) {
       expect(status, code).toBeGreaterThanOrEqual(400);
       expect(hint, code).not.toBe('');

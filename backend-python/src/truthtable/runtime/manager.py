@@ -1,5 +1,5 @@
 """
-The engine's judge under runtime configuration (SPEC section 3.2 `runtime/`, P4-PLAN D34, D39, D78).
+The engine's judge under runtime configuration (SPEC section 3.2 `runtime/`, D34, D39, D78).
 
 At startup the engine resolves its judge from its own environment
 (truthtable.judge). Afterwards the gateway may push a judge chosen on the

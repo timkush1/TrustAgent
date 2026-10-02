@@ -115,7 +115,7 @@ func NewRedactor(secrets ...string) *Redactor {
 func (c *Config) Redactor() *Redactor { return NewRedactor(c.Secrets()...) }
 
 // Add registers more secrets: secrets received or decrypted after startup join it before their
-// first use (P4-PLAN D42). A secret already registered is not added twice, so callers may add the
+// first use (D42). A secret already registered is not added twice, so callers may add the
 // same secrets again at every reload.
 func (r *Redactor) Add(secrets ...string) {
 	r.mu.Lock()

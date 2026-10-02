@@ -69,7 +69,7 @@ export class DecideError extends Error {
 
 type EvaluatorInput = DecideInput['evaluators'][number];
 type CalibrationInputEntry = DecideInput['calibration'][string];
-/** A calibration for the current snapshot (an other_snapshot entry calibrates nothing; P4-PLAN D56). */
+/** A calibration for the current snapshot (an other_snapshot entry calibrates nothing; D56). */
 type CalibrationEntry = CalibrationInputEntry & { table: CalibrationTable; quality: CalibrationQuality; state: CalibrationState };
 
 /** EvaluatorResult.calibration_warning when the calibration was fitted with other state fields (SPEC §2.11, D56). */
@@ -203,7 +203,7 @@ export function decide(input: DecideInput): DecisionCore {
     }
   }
 
-  // CALIBRATION CAP. The reason says why (P4-PLAN D56): uncalibrated_snapshot when every
+  // CALIBRATION CAP. The reason says why (D56): uncalibrated_snapshot when every
   // uncalibrated member is calibrated only on another snapshot, otherwise calibration_missing.
   let uncalibratedCap = false;
   let capReason: 'uncalibrated_snapshot' | 'calibration_missing' = 'calibration_missing';

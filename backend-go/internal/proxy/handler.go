@@ -75,7 +75,7 @@ const TrafficgenKeyLabel = "trafficgen"
 type Options struct {
 	// Upstreams returns the upstreams in effect, by API family plus the optional fallback
 	// upstream. It is called once per request, so a rebuilt set (dashboard upstream settings and
-	// credentials, P4) applies from the next request on; nil, or a nil result, serves no upstream.
+	// credentials) applies from the next request on; nil, or a nil result, serves no upstream.
 	Upstreams func() *upstream.Set
 	// Policy returns the policy in effect; it is called once per request, so a saved, rolled back
 	// or hot-reloaded version applies from the next request on (policy.Engine.Current).
@@ -93,14 +93,14 @@ type Options struct {
 	// Now returns the current time; nil uses time.Now.
 	Now func() time.Time
 	// Knowledge retrieves knowledge-base context for gated answers on routes that read the
-	// knowledge source (P4-PLAN D65, knowledge.go); nil means the add-on is off.
+	// knowledge source (D65, knowledge.go); nil means the add-on is off.
 	Knowledge Retriever
 	// Redact masks secrets in text the handler relays: in inject mode, the body of an upstream
-	// error answer before it reaches the client (P4-PLAN D42, redact.go); nil is the identity.
+	// error answer before it reaches the client (D42, redact.go); nil is the identity.
 	Redact func(string) string
 }
 
-// Retriever fetches knowledge-base documents for an answer (P4-PLAN D65): the handler starts it
+// Retriever fetches knowledge-base documents for an answer (D65): the handler starts it
 // together with the upstream call and joins it before the gate within the knowledge deadline. An
 // error or no documents means no knowledge, never a failed request; ErrKnowledgeDisabled reports
 // the add-on off. response may be "" when the retrieval starts before the answer is known (the

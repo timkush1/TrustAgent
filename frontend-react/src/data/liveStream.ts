@@ -60,7 +60,7 @@ export function applyQuerySideEffects(queryClient: QueryClient, batch: readonly 
     void queryClient.invalidateQueries({ queryKey: qk.decisions.all, refetchType: 'active' });
   }
   if (status) void queryClient.invalidateQueries({ queryKey: qk.status, refetchType: 'active' });
-  // The control-plane pages, and per event the P4 planes (security, cost, evaluator, Studio side effects).
+  // The control-plane pages, and per event the control planes (security, cost, evaluator, Studio side effects).
   applyControlSideEffects(queryClient, batch);
 }
 

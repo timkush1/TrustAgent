@@ -1,5 +1,5 @@
 /**
- * The label queue (EVW-2, P4-PLAN D59-D61) against the real data layer over msw: the C/F/S keys,
+ * The label queue (EVW-2, D59-D61) against the real data layer over msw: the C/F/S keys,
  * optimistic calibration progress, focus after each step, notes, Undo, 409 body_expired, a redacted
  * answer, a failed save, and every page state.
  */

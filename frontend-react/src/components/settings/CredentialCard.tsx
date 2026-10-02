@@ -1,5 +1,5 @@
 /**
- * One provider on Settings → Connections (SPEC §3.3; P4-PLAN ON-5): whether a key is connected and
+ * One provider on Settings → Connections (SPEC §3.3; ON-5): whether a key is connected and
  * where it comes from, what it is used for, where it may be sent, how its last check went, and the
  * actions: Connect (OpenRouter), Paste, Test (with "check again" after a failure) and Remove.
  * A key set in .env is read-only here; one set in the engine's .env is invisible to the gateway, so

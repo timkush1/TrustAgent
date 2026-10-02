@@ -1,5 +1,5 @@
 /**
- * Calibrate now, Adopt calibration (P4-PLAN D62) and the calibration records, against the real data
+ * Calibrate now, Adopt calibration (D62) and the calibration records, against the real data
  * layer over msw: the fit dialog's honesty note and result, Adopt blocked until Preview impact has
  * loaded, the exact call order of an adoption, deactivation, import, and the page states.
  */

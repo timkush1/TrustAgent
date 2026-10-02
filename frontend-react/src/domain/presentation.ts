@@ -469,7 +469,7 @@ export function toneVar(tone: Tone): string {
 
 export { copy };
 
-// P4 words, one module per plane and owner, each prefixed (sec*, cost*, eval*, studio*; P4-PLAN D86).
+// The control planes' words, one module per plane and owner, each prefixed (sec*, cost*, eval*, studio*; D86).
 export * from './words/security';
 export * from './words/costs';
 export * from './words/evaluators';

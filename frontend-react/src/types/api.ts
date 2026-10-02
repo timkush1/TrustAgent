@@ -99,7 +99,7 @@ export interface FieldError {
   line?: number;
   col?: number;
   message: string;
-  /** A machine code the web renders words for, e.g. reenter_secret (P4 D37) or fallback_key_required (D41). */
+  /** A machine code the web renders words for, e.g. reenter_secret (D37) or fallback_key_required (D41). */
   code?: string;
   /** e.g. {names: [credential]} for reenter_secret, {host} for fallback_key_required. */
   details?: Record<string, unknown>;
@@ -523,7 +523,7 @@ export interface SystemStatus {
   engine: ComponentState & {
     version?: string;
     runtime_config_version?: number;
-    /** P4 D34: the Go settings epoch of the last push the engine applied. */
+    /** D34: the Go settings epoch of the last push the engine applied. */
     runtime_config_epoch?: string;
     max_audits?: number;
   };
@@ -560,10 +560,10 @@ export interface SystemStatus {
   credentials: { store: 'ready' | 'unavailable' | 'no_database'; undecryptable: string[] };
   redis: ComponentState & { configured: boolean };
   warnings: string[];
-  /** P4: the warnings that carry details (master_key_changed, fail_closed_unprotected, ...); codes also appear in warnings. */
+  /** The warnings that carry details (master_key_changed, fail_closed_unprotected, ...); codes also appear in warnings. */
   warning_details?: StatusWarning[];
 }
-/** A status or settings warning with details (P4 D32, D77): the web renders words by code. */
+/** A status or settings warning with details (D32, D77): the web renders words by code. */
 export interface StatusWarning {
   code: string;
   message: string;
@@ -1003,7 +1003,7 @@ export interface StudioDraftResponse {
   lints: Lint[];
   model: string;
   cost_usd: number;
-  /** P4 D82: simulated for a mock judge, so the draft cost is labelled Simulated. */
+  /** D82: simulated for a mock judge, so the draft cost is labelled Simulated. */
   cost_source: CostRecord['cost_source'];
   attempts: number;
 }
@@ -1161,7 +1161,7 @@ export interface ReliabilityResponse {
   n: number;
 }
 
-// P4: labels and calibration (P4-PLAN D55, D59-D62)
+// Labels and calibration (D55, D59-D62)
 /** <id>@<v> takes should_fire|should_not_fire; claim:<i> a claim verdict; response hallucinated|grounded (D59). */
 export type LabelValue = 'should_fire' | 'should_not_fire' | ClaimVerdict | 'hallucinated' | 'grounded';
 /** PUT /api/labels (#40). */
@@ -1310,7 +1310,7 @@ export interface DecisionModelTestResult {
   error: { kind: string; status: number | null; message: string; hint: string } | null;
 }
 
-// P4: settings writes, credentials, Connect OpenRouter, keys (P4-PLAN D29-D41, D75-D81)
+// Settings writes, credentials, Connect OpenRouter, keys (D29-D41, D75-D81)
 /** What a credential write or a verify may bind (D75): never the upstreams, which bind through PATCH. */
 export type BindingTarget = 'decision_model' | 'judge';
 /** PATCH /api/settings body (#53): any subset of RuntimeSettings, nested objects partial too. */

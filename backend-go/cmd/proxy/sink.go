@@ -159,7 +159,7 @@ func (s *traceSink) GateDecided(ctx context.Context, r *gate.Result) string {
 	return gate.AuditQueued
 }
 
-// flagLLMBudget is the trace flag of an audit the day's LLM cap refused (P4-PLAN D48).
+// flagLLMBudget is the trace flag of an audit the day's LLM cap refused (D48).
 const flagLLMBudget = "llm_budget"
 
 // auditDropper records a dropped audit with a trace flag (store.PostgresStore.DropTraceAudit).

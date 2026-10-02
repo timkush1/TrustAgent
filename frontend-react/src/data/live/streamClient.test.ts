@@ -340,7 +340,7 @@ describe('StreamClient resync', () => {
   });
 });
 
-describe('StreamClient cross-origin tickets (P4-PLAN D71)', () => {
+describe('StreamClient cross-origin tickets (D71)', () => {
   afterEach(() => clearDashboardKey());
 
   it('asks for a fresh ticket before every (re)connect and connects with ?ticket=', async () => {
@@ -411,7 +411,7 @@ describe('StreamClient cross-origin tickets (P4-PLAN D71)', () => {
   });
 });
 
-describe('LiveDataSource on another origin (P4-PLAN D71)', () => {
+describe('LiveDataSource on another origin (D71)', () => {
   afterEach(() => clearDashboardKey());
 
   it('connects its WebSocket with a fresh ticket from POST /api/ws-ticket while this tab holds a key', async () => {

@@ -1,5 +1,5 @@
 /**
- * The outcome of a key write or check (CredentialWriteResult, P4-PLAN D75, D76, D87), in words:
+ * The outcome of a key write or check (CredentialWriteResult, D75, D76, D87), in words:
  * "Ready · 231 ms · $0.00001", what the key is now used for, why a check was skipped, and what to do
  * when it failed. No credits gets "I added credits — check again"; a key with no spending limit gets
  * the callout to set one. Shared by Settings → Connections and the setup wizard.

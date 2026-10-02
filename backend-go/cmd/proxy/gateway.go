@@ -64,7 +64,7 @@ type gatewayHooks struct {
 	snapshotChanged func(jev.SnapshotChange)
 	// calibrations looks up evaluator calibrations per snapshot; nil means none.
 	calibrations policy.CalibrationLookup
-	// runtime is the runtime configuration (P4); nil in tests that build a gateway directly.
+	// runtime is the runtime configuration; nil in tests that build a gateway directly.
 	runtime *runtimecfg.Manager
 	// costs are the cost ledger's hooks (zero: no ledger, today's behaviour).
 	costs costHooks

@@ -1,6 +1,6 @@
 /**
  * What Settings → Connections and the setup wizard need to know about each credential (SPEC §7.5;
- * P4-PLAN D29, D75, D80): the cards and what each provider is for, the env var that can set it,
+ * D29, D75, D80): the cards and what each provider is for, the env var that can set it,
  * which checks a key can be bound to, and the state of a saved key. Pure functions, so the rules
  * are tested without rendering.
  */

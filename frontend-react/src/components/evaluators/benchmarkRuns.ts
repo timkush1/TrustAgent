@@ -1,6 +1,6 @@
 /**
  * The committed benchmark runs (docs/benchmarks/runs/*.json, SPEC §2.13), bundled at build time so
- * the static build has them too (P4-PLAN D72).
+ * the static build has them too (D72).
  */
 import type { BenchmarkRun } from '@/types/api';
 

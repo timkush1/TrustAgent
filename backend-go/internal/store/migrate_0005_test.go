@@ -8,7 +8,7 @@ import (
 	"github.com/truthtable/backend-go/internal/storetest"
 )
 
-// Migration 0005 (P4-PLAN D44, D45, D55) is a contract file. These tests pin
+// Migration 0005 (D44, D45, D55) is a contract file. These tests pin
 // what it adds: the cost ledger link and flag columns, traces.response_chars,
 // the two partial cost indexes, the calibrations file-entry unique index and
 // the append-only trigger on admin_audit_log. They also upgrade a database

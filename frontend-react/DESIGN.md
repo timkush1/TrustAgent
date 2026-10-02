@@ -348,10 +348,12 @@ SPEC §3.3 is the page list; these notes record how each page applies the rules 
   the address bar; claiming it is an explicit button (never on page load). The created admin key
   is shown once with a copy button and stays on screen even when the browser keeps no session
   (a cross-origin dashboard). Sign-in with a key is the fix every `needs_admin` reason links to;
-  key management in Settings → Access arrives in P4.
+  key management (create, revoke, sign out everywhere) is Settings → Access. The setup wizard
+  (secure, connect, see it work) lives on the same page.
 - **Evaluators** (`components/evaluators/`). Library cards, checks that run on a route first.
-  Calibration progress uses the contract copy and one meter per requirement. Writes that arrive
-  in P4 (label queue, calibrate, adopt, Studio) are shown disabled with one shared reason. The
+  Calibration progress uses the contract copy and one meter per requirement. The label queue,
+  Calibrate now, adopt and Studio need an admin key; without one they are shown disabled with the
+  shared `needs_admin` reason and its fix. The
   reliability chart is custom SVG: neutral ink bars at most 24px thick, a dashed diagonal, one
   focusable surface whose arrow keys move the readout, a table view, and the caption "agreement
   with labels, not ground truth".
@@ -389,7 +391,7 @@ the cost calculator is lazy, and the refund example comes from a virtual module
   yet measured" until a benchmark run publishes it; it never borrows an estimate. Contract copy
   with `{claim:id}` placeholders goes through `splitClaims`.
 - **Coming soon** is a dashed pill with an hourglass and words, never a control that does
-  nothing: the live in-browser playground (P5) and Studio drafting (P4) are described, with
+  nothing: the live in-browser playground (P5) and the static build's Studio (P5) are described, with
   `make demo` as the real thing to do meanwhile.
 - The comparison table's other-product cells are dated `TODO: verify · 2026-09` placeholders
   (`data-compare-todo`) until each is verified against the vendor's docs with a link (P6). No

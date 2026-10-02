@@ -1,5 +1,5 @@
 """
-Origin binding of judge credentials (SPEC section 7.5, P4-PLAN D34 and D78).
+Origin binding of judge credentials (SPEC section 7.5, D34 and D78).
 
 A credential may only be sent to its allowed origins. Origins are canonical
 `scheme://host[:port]`: the scheme and host lowercased, the default port of the

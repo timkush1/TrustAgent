@@ -349,10 +349,10 @@ message EngineInfo {
     int64 runtime_config_version = 12;
     int32 max_audits = 13;          // ENGINE_MAX_AUDITS
     int32 max_rpcs = 14;            // ENGINE_MAX_RPCS
-    // P4 (D34/D80): names of engine registry keys set non-empty in the
+    // D34/D80: names of engine registry keys set non-empty in the
     // engine's env (names only, never values)
     repeated string env_managed = 15;
-    // P4 (D34): the Go settings epoch of the last applied push ("" = none)
+    // D34: the Go settings epoch of the last applied push ("" = none)
     string runtime_config_epoch = 16;
 }
 
@@ -411,7 +411,7 @@ message Credential {
     string provider = 1;
     string secret = 2;
     string fingerprint = 3;
-    // P4 (D34/D78): canonical origins scheme://host[:port] the secret may be
+    // D34/D78: canonical origins scheme://host[:port] the secret may be
     // sent to; the engine intersects them with its own vendor table
     repeated string allowed_hosts = 4;
 }

@@ -155,11 +155,11 @@ func TestStatusPushHook(t *testing.T) {
 	s := &statusReporter{cfg: &config.Config{}, jev: jev.Info{Backend: jev.BackendMock}, now: time.Now,
 		auth: &apiAuth{keys: authz.New(nil, "keys")},
 		push: func() pushState {
-			return pushState{Version: 4, Epoch: "0190c0de-0000-7000-8000-000000000001", Warning: "The audit engine predates P4."}
+			return pushState{Version: 4, Epoch: "0190c0de-0000-7000-8000-000000000001", Warning: "The audit engine is older than this gateway."}
 		}}
 	st := s.system(context.Background())
 	if st.Engine.RuntimeConfigEpoch == nil || *st.Engine.RuntimeConfigEpoch != "0190c0de-0000-7000-8000-000000000001" ||
-		!slices.ContainsFunc(st.Warnings, func(w string) bool { return strings.Contains(w, "predates P4") }) {
+		!slices.ContainsFunc(st.Warnings, func(w string) bool { return strings.Contains(w, "older than this gateway") }) {
 		t.Errorf("engine %+v warnings %v", st.Engine, st.Warnings)
 	}
 }

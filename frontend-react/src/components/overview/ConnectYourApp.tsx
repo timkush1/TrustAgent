@@ -6,7 +6,7 @@
  *
  * The key line names the app key to use (its label and prefix, never the secret) and links to
  * Settings → Access; when no app key is active an admin can create one here, shown once
- * (P4-PLAN ON-8, D87).
+ * (ON-8, D87).
  *
  * On the demo stack the card says what the demo is instead (mock checks, $0) and how to switch to
  * real keys.

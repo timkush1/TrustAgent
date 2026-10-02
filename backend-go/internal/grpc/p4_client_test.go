@@ -15,7 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 )
 
-// The P4 RPC wrappers (P4-PLAN §2.3i) carry the internal token, and the fake engine records
+// The runtime-config, draft and retrieval RPC wrappers carry the internal token, and the fake engine records
 // every push.
 func TestApplyRuntimeConfigIsRecordedWithTheInternalToken(t *testing.T) {
 	eng := enginetest.Start(t, &enginetest.Engine{})

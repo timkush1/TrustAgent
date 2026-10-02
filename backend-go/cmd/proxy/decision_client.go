@@ -12,7 +12,7 @@ import (
 )
 
 // newDecisionClient builds the decision-model client the gateway gates with: a jev.Swappable over
-// the client the runtime configuration calls for (P4-PLAN CN-1). When the configuration changes
+// the client the runtime configuration calls for (CN-1). When the configuration changes
 // (the decision_model settings, or the credential bound to the decision model), a new client is
 // built and swapped in without a restart; the replaced one finishes its running calls and is
 // closed after jev.SwapGrace. Every rebuild reuses the cost ledger's sink, budget and prices

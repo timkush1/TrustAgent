@@ -148,7 +148,7 @@ describe('errors helpers', () => {
   });
 });
 
-describe('cross-origin dashboard key (P4-PLAN D71)', () => {
+describe('cross-origin dashboard key (D71)', () => {
   afterEach(() => clearDashboardKey());
 
   function recordHeaders() {

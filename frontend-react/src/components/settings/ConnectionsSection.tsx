@@ -1,5 +1,5 @@
 /**
- * Settings → Connections (SPEC §3.3; P4-PLAN ON-5): the keys TrustAgent uses to check answers.
+ * Settings → Connections (SPEC §3.3; ON-5): the keys TrustAgent uses to check answers.
  * Cards for OpenRouter, TypeSafe, Anthropic, OpenAI and another gateway, each with Connect or Paste,
  * Test, Remove and "Used for"; keys set in .env (the gateway's or the engine's) read-only; keys the
  * master key cannot read; and the credentials store when keys cannot be saved here (D32). Upstream

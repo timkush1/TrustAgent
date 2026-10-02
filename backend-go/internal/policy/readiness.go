@@ -131,7 +131,7 @@ func EvaluatorCalibrationLink(id string) string {
 
 // DecideCalibration is decide()'s calibration entry for a lookup result (decision.Input.calibration),
 // false when the target is calibrated nowhere. A target calibrated only on other snapshots of the
-// family (Stale, no table) gives state other_snapshot and no table (P4-PLAN D56), so decide() can
+// family (Stale, no table) gives state other_snapshot and no table (D56), so decide() can
 // tell a snapshot change from a missing calibration.
 func DecideCalibration(c CalibrationStatus) (decision.CalibrationEntry, bool) {
 	if c.Table == nil {
@@ -149,7 +149,7 @@ func DecideCalibration(c CalibrationStatus) (decision.CalibrationEntry, bool) {
 
 // CalibrationLookup finds the calibration of an evaluator ref (with the route's resolved params)
 // for a decision-model snapshot ("" = the current one). The P3 file lookup implements it
-// (internal/calibration, TRUTHTABLE_CALIBRATION_DIR); the P4 calibration store builds on it.
+// (internal/calibration, TRUTHTABLE_CALIBRATION_DIR); the calibration store builds on it.
 type CalibrationLookup interface {
 	Lookup(ref string, params map[string]string, snapshot string) CalibrationStatus
 }

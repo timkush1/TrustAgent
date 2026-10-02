@@ -26,14 +26,14 @@ const (
 	codeEngineUnavailable   = "engine_unavailable"
 	codeQueueFull           = "queue_full"
 
-	// Shared by several endpoint families (moved here at P4 Step 0).
+	// Shared by several endpoint families (moved here from the per-family files).
 	codeNoJudge              = "no_judge"
 	codeConflict             = "conflict"
 	codeFileManaged          = "file_managed"
 	codeStaleVersion         = "stale_version"
 	codePreconditionRequired = "precondition_required"
 
-	// P4 (docs/v2/P4-PLAN.md §2.3e; SPEC §2.4 error codes).
+	// Settings, credentials, costs and Studio (SPEC §2.4 error codes).
 	codeEnvManaged               = "env_managed"
 	codeIngestKeyRequired        = "ingest_key_required"
 	codeConfirmationRequired     = "confirmation_required"
@@ -44,7 +44,7 @@ const (
 	codeDecisionModelUnavailable = "decision_model_unavailable"
 )
 
-// apiRedact masks secrets in every REST error message (P4-PLAN D42). It is the identity until
+// apiRedact masks secrets in every REST error message (D42). It is the identity until
 // the credential store's redactor is wired (GSEC sets it to the process Redactor).
 var apiRedact = func(s string) string { return s }
 

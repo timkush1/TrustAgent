@@ -1,5 +1,5 @@
 /**
- * Evaluator Studio (SPEC §7.3, P4-PLAN §12): write a check in plain English and take it from a draft
+ * Evaluator Studio (SPEC §7.3): write a check in plain English and take it from a draft
  * to a watched, then active, evaluator. Seven steps on one page: describe (AI draft or template),
  * review (Simple / Advanced / JSON with live lints), test on samples (with the estimate first and a
  * free threshold what-if), quick calibration, save a version, watch it on a route (plus the paid

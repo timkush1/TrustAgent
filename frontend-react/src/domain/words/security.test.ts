@@ -1,5 +1,5 @@
 /**
- * Words for the security server values (P4-PLAN §10 ON-1, D44, D75, D86): every value the gateway can
+ * Words for the security server values (ON-1, D44, D75, D86): every value the gateway can
  * send has words, none of them is the raw value, and sentences come from contracts/ui.
  */
 import { describe, expect, it } from 'vitest';

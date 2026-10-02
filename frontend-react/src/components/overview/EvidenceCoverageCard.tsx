@@ -111,7 +111,7 @@ function Suggestions({ timeWindow }: { timeWindow: TimeWindow }) {
   const q = useQuery(evidenceSuggestionsQuery(ds, { window: timeWindow }));
   if (q.isPending) return <Skeleton className="h-12 w-full" />;
   if (q.isError) {
-    // Admin-only, and new in P4: say so plainly instead of showing an error.
+    // Admin-only, and missing on an older proxy: say so plainly instead of showing an error.
     const status = isApiError(q.error) ? q.error.status : 0;
     const text =
       status === 401 || status === 403

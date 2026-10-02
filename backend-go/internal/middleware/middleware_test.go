@@ -120,7 +120,7 @@ func TestCORSAllowsListedOrigin(t *testing.T) {
 }
 
 // TestCORSHeadersExact pins the cross-origin dashboard's CORS headers to the SPEC §2.4 lists
-// (P4-PLAN D43): no Authorization or X-API-Key, no wildcard, Max-Age 600.
+// (D43): no Authorization or X-API-Key, no wildcard, Max-Age 600.
 func TestCORSHeadersExact(t *testing.T) {
 	// Global middleware, as in production: it answers the preflight without an OPTIONS route.
 	router := gin.New()

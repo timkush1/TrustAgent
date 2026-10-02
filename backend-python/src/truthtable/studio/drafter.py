@@ -1,5 +1,5 @@
 """
-Evaluator Studio "Draft with AI" (SPEC sections 3.2 and 7.3; P4-PLAN D34, D54).
+Evaluator Studio "Draft with AI" (SPEC sections 3.2 and 7.3; D34, D54).
 
 The gateway's `POST /api/studio/draft` reaches the engine's DraftEvaluator,
 which asks the judge to turn a plain-English description into one

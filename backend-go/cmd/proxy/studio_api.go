@@ -32,7 +32,7 @@ import (
 	"github.com/truthtable/backend-go/internal/studio"
 )
 
-// The Evaluator Studio endpoints (SPEC §2.4 rows 34-38, §7.3; P4-PLAN §7), the decision request
+// The Evaluator Studio endpoints (SPEC §2.4 rows 34-38, §7.3), the decision request
 // (row 12, decision_request_api.go) and the evidence suggestions (row 51, evidence_api.go):
 //
 //   - POST /api/studio/draft drafts an evaluator from a description through the engine's judge;
@@ -227,7 +227,7 @@ func referenceJudgePrice(book *costs.PriceBook) (decision.PriceEntry, bool) {
 }
 
 // mountStudioAPI mounts the decision request, Studio and evidence-suggestion endpoints (SPEC §2.4
-// rows 12, 34-38 and 51; P4, GSTUDIO).
+// rows 12, 34-38 and 51; GSTUDIO).
 func (s *server) mountStudioAPI(api *gin.RouterGroup, g apiGuards) {
 	s.newStudioAPI().register(api, g)
 }

@@ -1,5 +1,5 @@
 /**
- * "Show exact Jev request" (SPEC §3.3 "Trace detail" 3, the glass box; §2.4 #12; P4-PLAN D63):
+ * "Show exact Jev request" (SPEC §3.3 "Trace detail" 3, the glass box; §2.4 #12; D63):
  * what the fast check was asked for one attempt. Collapsed, it costs nothing; opened, it asks the
  * proxy to recompile the request from the stored text (GET /api/traces/:id/decision-request) and
  * shows:

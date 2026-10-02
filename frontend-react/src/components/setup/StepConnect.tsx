@@ -1,5 +1,5 @@
 /**
- * Step 2 of the setup wizard, "Connect OpenRouter" (SPEC §3.3, §6, §7.5; P4-PLAN ON-7c, D38, D39,
+ * Step 2 of the setup wizard, "Connect OpenRouter" (SPEC §3.3, §6, §7.5; ON-7c, D38, D39,
  * D75, D76, D87, D88):
  *
  * - **Connect OpenRouter** (primary, D88): PKCE through the proxy; the browser leaves for OpenRouter

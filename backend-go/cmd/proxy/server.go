@@ -54,11 +54,11 @@ type serverDeps struct {
 	// policy is file-managed.
 	pg *store.PostgresStore
 	// redactor masks every loaded secret in logs and errors (config.Redactor); nil in tests that
-	// do not check redaction. Received and decrypted secrets join it (P4-PLAN D42).
+	// do not check redaction. Received and decrypted secrets join it (D42).
 	redactor *config.Redactor
 }
 
-// apiGuards are the middleware of the policy, evaluator, P3 and P4 routes.
+// apiGuards are the middleware of the /api routes.
 type apiGuards struct {
 	// read, content and admin authenticate callers with those scopes; writable refuses writes in
 	// read-only mode; rateLimit is the general per-caller limit; dryRunLimit is the policy
@@ -70,7 +70,7 @@ type apiGuards struct {
 }
 
 // costHooks are the cost ledger's hooks into the gateway, the audit pool, Studio and the engine
-// push (P4, GCOST fills them in initCosts). The zero value is no ledger: every field is optional
+// push (GCOST fills them in initCosts). The zero value is no ledger: every field is optional
 // and the methods below are the nil-safe way to call the function fields.
 type costHooks struct {
 	// decision receives the decision model's cost events; budget admits decision spend against
@@ -164,7 +164,7 @@ type server struct {
 	calib   policy.CalibrationLookup
 	waiters *decisionWaiters
 
-	// P4 seams (docs/v2/P4-PLAN.md §2.3a). redactor masks secrets (nil: identity); engine is the
+	// Seams the owners fill in. redactor masks secrets (nil: identity); engine is the
 	// audit engine client (nil without one); notify fans config notifications out (D84).
 	redactor *config.Redactor
 	engine   *grpc.AuditClient
@@ -176,7 +176,7 @@ type server struct {
 	apply *applyParts
 	costs costHooks
 	eval  *evalParts
-	// sink records traces and decisions (sink.go); the P4 init steps may wire hooks into it.
+	// sink records traces and decisions (sink.go); the init steps below may wire hooks into it.
 	sink *traceSink
 	// traceBarrier flushes a trace's pending writes before a later read or write of it (D83);
 	// nil while trace writes are inline (trace_writer.go sets it).
@@ -257,7 +257,7 @@ func newServer(d serverDeps) (*server, error) {
 	s.traceBarrier = traceBarrierOf(d.store)
 	// The calibration lookup comes before the policy services: block readiness reads it.
 	s.initCalibration()
-	// P4: the notification hub, the runtime configuration and the cost ledger come before the
+	// The notification hub, the runtime configuration and the cost ledger come before the
 	// policy services (the hub carries their notifications; the gateway reads the other two).
 	s.notify = newNotifyHub()
 	s.initRuntime(d)
@@ -376,7 +376,7 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	s.mountStats(api, read, rateLimit)
 	// The P3 REST endpoints (p3_api.go).
 	s.mountP3API(r, api, guards)
-	// The P4 REST endpoints, one mount per owner: settings (runtime_wiring.go), credentials and
+	// The settings, credentials, cost, evaluator and Studio endpoints, one mount per owner: settings (runtime_wiring.go), credentials and
 	// Connect OpenRouter (apply_wiring.go), ROI time series (costs_wiring.go), evaluator writes,
 	// labels and calibration (eval_wiring.go), Studio, the decision request and evidence
 	// suggestions (studio_api.go).
@@ -551,7 +551,7 @@ func (s *server) start() {
 	// Calibration reload and retention (decision_wiring.go), status transitions (status_events.go).
 	s.startDecisionLoops(ctx, &s.wg)
 	s.startStatusWatch(ctx, &s.wg)
-	// P4: the runtime configuration reload, the engine push and the cost ledger.
+	// The runtime configuration reload, the engine push and the cost ledger.
 	s.startRuntimeLoops(ctx, &s.wg)
 	s.startApplyLoops(ctx, &s.wg)
 	s.startCostLoops(ctx, &s.wg)

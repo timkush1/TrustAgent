@@ -49,7 +49,7 @@ func TestCostAssumptionsLoad(t *testing.T) {
 
 // The estimate starts from the assumptions at the judge's price: the Haiku reference ($0.0355)
 // for an unknown or unpriced judge, $0 for a mock or local judge, the judge's own price
-// otherwise (P4-PLAN D48).
+// otherwise (D48).
 func TestCostAuditEstimateSeed(t *testing.T) {
 	book, err := LoadPriceBook("")
 	if err != nil {

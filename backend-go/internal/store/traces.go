@@ -71,8 +71,8 @@ type TraceRecord struct {
 	QuestionPreview *string
 	ResponsePreview *string
 	Flags           []string
-	// ResponseChars is the rune count of the gated answer text (0005; NULL before P4 and for
-	// traces without an answer).
+	// ResponseChars is the rune count of the gated answer text (0005; NULL for traces written
+	// before migration 0005 and for traces without an answer).
 	ResponseChars *int
 
 	Audit AuditJoin
@@ -724,7 +724,7 @@ type TraceFilter struct {
 	Outcome      string
 	// Q matches the question and answer previews (case-insensitive substring).
 	Q string
-	// Reason matches the gate reasons (P4-PLAN D68): a whole code ("det:secret_pattern") matches
+	// Reason matches the gate reasons (D68): a whole code ("det:secret_pattern") matches
 	// that reason, a prefix that ends in a colon ("det:") matches every reason it starts. The API
 	// asks for Since with it, which bounds the scan.
 	Reason string

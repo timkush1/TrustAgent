@@ -3,7 +3,7 @@
  * passes through the single normalizer (normalize.ts) before a page sees it. LiveDataSource extends
  * this class, so pages reach these methods through the one DataSource they already have.
  *
- * The P4 planes (data/control/*Plane.ts) are spread onto each instance in the constructor; their
+ * The control planes (data/control/*Plane.ts) are spread onto each instance in the constructor; their
  * methods, shapes and bodies live in the plane files, never here.
  */
 import type {
@@ -121,7 +121,7 @@ const DRY_RUN_TIMEOUT_MS = 120_000;
 const PLAYGROUND_TIMEOUT_MS = 120_000;
 const UPLOAD_TIMEOUT_MS = 300_000;
 
-// The P4 plane methods are own properties assigned in the constructor (Object.assign below); this
+// The plane methods are own properties assigned in the constructor (Object.assign below); this
 // declaration tells TypeScript the instance has them.
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface LiveControlPlane extends SecurityPlane, CostPlane, EvaluatorPlane, StudioPlane {}

@@ -11,7 +11,7 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 )
 
-// PriceBook is the effective price table (P4-PLAN D53): the dashboard's pricing overrides, then
+// PriceBook is the effective price table (D53): the dashboard's pricing overrides, then
 // the TRUTHTABLE_PRICE_TABLE_FILE table when one is set, then the embedded contracts table, merged
 // by decision.EffectivePrices. The server keeps the overrides current from the runtime settings
 // (SetOverrides); every reader sees one immutable snapshot, swapped atomically, so a cost is never
@@ -78,7 +78,7 @@ func (b *PriceBook) Effective() decision.PriceTable {
 }
 
 // EffectiveJSON is the effective table with these overrides, as pricing.v1 JSON: what the engine
-// is pushed (RuntimeConfig.price_table_json, P4-PLAN D34). It is a pure function of overrides and
+// is pushed (RuntimeConfig.price_table_json, D34). It is a pure function of overrides and
 // does not change the book.
 func (b *PriceBook) EffectiveJSON(overrides []decision.PriceEntry) []byte {
 	raw, _ := json.Marshal(decision.EffectivePrices(b.contracts, b.file, usableOverrides(overrides))) // cannot fail: finite prices

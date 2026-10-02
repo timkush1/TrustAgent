@@ -90,7 +90,7 @@ const referenceAuditUSD = 0.0355
 type JudgeFunc func() (provider, model string)
 
 // AuditEstimator is what one deep audit is expected to cost, the amount the audit pool holds
-// against the LLM cap before it runs an audit (P4-PLAN D48). It is a running average (EWMA) of the
+// against the LLM cap before it runs an audit (D48). It is a running average (EWMA) of the
 // real cost of the audits the engine answered, started from the published assumptions at the
 // judge's price: $0 for a mock or local (Ollama) judge, and the Claude Haiku 4.5 list price for a
 // judge the price table does not cover (≈ $0.0355). A change of judge starts it over.

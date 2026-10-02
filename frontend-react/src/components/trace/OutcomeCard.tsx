@@ -1,7 +1,7 @@
 /**
  * The top of a trace (SPEC §3.3 "Trace detail" 1): the outcome pill and headline, what the answer
  * was checked against, the reasons in plain words, the next step, a link to what the user received
- * when it was not the model's answer, "Was this right?" (labels, P4-PLAN D59), and the links to the
+ * when it was not the model's answer, "Was this right?" (labels, D59), and the links to the
  * check that drove the outcome: "Open evaluator" (its Calibration tab when a block was capped for
  * want of a calibration) and "Adjust threshold" (its route in Policies, with the threshold editor
  * open).

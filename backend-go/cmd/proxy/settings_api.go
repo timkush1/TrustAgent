@@ -26,7 +26,7 @@ import (
 	"github.com/truthtable/backend-go/internal/websocket"
 )
 
-// The settings endpoints (SPEC §2.4 rows 52 and 53; P4-PLAN SEC-5): GET /api/settings shows every
+// The settings endpoints (SPEC §2.4 rows 52 and 53; SEC-5): GET /api/settings shows every
 // configuration key with where its value comes from and the runtime settings in effect; PATCH
 // /api/settings changes the runtime settings (D31-D33, D37, D41, D76, D77). A write is stored with
 // the version bump and its audit row in one transaction, then the runtime configuration reloads;

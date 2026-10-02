@@ -958,7 +958,7 @@ func TestKeyRotationResetsTheBreaker(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	// KeyFunc receives the endpoint's canonical origin, never a bare host (P4-PLAN D78).
+	// KeyFunc receives the endpoint's canonical origin, never a bare host (D78).
 	if len(hosts) == 0 || hosts[0] != h.srv.URL {
 		t.Errorf("KeyFunc origins %v, want %s", hosts, h.srv.URL)
 	}

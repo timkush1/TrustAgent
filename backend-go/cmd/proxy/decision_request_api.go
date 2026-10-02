@@ -15,7 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
-// GET /api/traces/:id/decision-request (SPEC §2.4 row 12, P4-PLAN D63): the glass box. The
+// GET /api/traces/:id/decision-request (SPEC §2.4 row 12, D63): the glass box. The
 // decision-model requests of a trace's decision, recompiled from its stored body with the policy
 // version and the evaluator versions it was gated with, the recorded chars-per-token and the
 // recorded model, through the gate's own compile inputs (gate.CompileInputsOf, CompileRouteOf,

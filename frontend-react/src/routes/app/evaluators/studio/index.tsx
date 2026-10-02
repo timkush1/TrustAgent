@@ -6,7 +6,7 @@ import { StudioStaticNote } from '@/components/studio/StudioStaticNote';
 
 /**
  * Evaluator Studio (SPEC §7.3): a new check. The static build has no gateway to draft, test or save
- * with, so it stays "Coming soon" until P5 (P4-PLAN D72).
+ * with, so it stays "Coming soon" until P5 (D72).
  */
 function StudioRoute() {
   const isStatic = useIsStatic();

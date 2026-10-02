@@ -578,7 +578,7 @@ func TestRecordLateDecisionReplacesItsAttemptRow(t *testing.T) {
 }
 
 // TestListTracesReasonFilter: reason=<code> matches a whole reason code and reason=<prefix>:
-// every code it starts (P4-PLAN D68), within since; LIKE wildcards in the prefix stay literal.
+// every code it starts (D68), within since; LIKE wildcards in the prefix stay literal.
 func TestListTracesReasonFilter(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()

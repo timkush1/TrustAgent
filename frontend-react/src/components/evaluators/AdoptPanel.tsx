@@ -1,5 +1,5 @@
 /**
- * "Adopt calibration" (SPEC §2.11 "Activation vs adoption"; P4-PLAN D62). Activating a calibration
+ * "Adopt calibration" (SPEC §2.11 "Activation vs adoption"; D62). Activating a calibration
  * changes nothing while a route reads raw scores; adopting it does: a new policy version moves the
  * route's thresholds for this check into calibrated space, at the recommended values. In order:
  *

@@ -8,7 +8,7 @@
  * - Versions: every version with a diff between any two.
  *
  * "Duplicate and edit" opens this version in Studio; "Adopt calibration" fits, previews the impact
- * and only then adopts (P4-PLAN D62).
+ * and only then adopts (D62).
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';

@@ -12,7 +12,7 @@ import (
 )
 
 // noPatternKey matches none of the redaction patterns: only the Redactor's list of loaded secrets
-// can mask it (P4-PLAN §0 rule 8).
+// can mask it.
 const noPatternKey = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 
 // TestV1RelaysUpstreamErrorsWithoutTheInjectedKey: an upstream that refuses the gateway's own key

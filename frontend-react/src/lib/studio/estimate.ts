@@ -31,7 +31,7 @@ const PROVIDERS: Partial<Record<DecisionBackend, string>> = {
 const ENTRIES = (prices as { entries: PriceEntry[] }).entries;
 
 /**
- * The price-table entry for a model (P4-PLAN D53 without the server's overrides): an entry for the
+ * The price-table entry for a model (D53 without the server's overrides): an entry for the
  * model's provider first, then another provider's entry that names the model (a catch-all "*",
  * such as the local models' $0, applies only to its own provider).
  */

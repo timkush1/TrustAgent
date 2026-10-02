@@ -8,7 +8,7 @@ import (
 	"github.com/truthtable/backend-go/internal/config"
 )
 
-// noPatternSecret matches none of the redaction patterns (P4-PLAN §0 rule 8): only the loaded
+// noPatternSecret matches none of the redaction patterns: only the loaded
 // secrets list can mask it, so a leak of it is never hidden by a pattern.
 const noPatternSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 

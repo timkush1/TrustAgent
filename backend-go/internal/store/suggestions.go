@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// GET /api/evidence/suggestions (SPEC §2.4 row 51, §7.1; P4-PLAN D64): the evidence suggestions
+// GET /api/evidence/suggestions (SPEC §2.4 row 51, §7.1; D64): the evidence suggestions
 // scan the most recent answers that were checked against no evidence.
 
 // MaxScanBodies is the most bodies one suggestion scan reads (D64).

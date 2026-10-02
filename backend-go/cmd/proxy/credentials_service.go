@@ -23,7 +23,7 @@ import (
 // errNotImplemented is what a Step-0 seam returns until its owner fills it in.
 var errNotImplemented = errors.New("not implemented")
 
-// CredentialWrite is one credential write (P4-PLAN D75): PUT /api/credentials/:name (#55), the
+// CredentialWrite is one credential write (D75): PUT /api/credentials/:name (#55), the
 // verify-and-bind of POST /api/credentials/:name/verify (#57) and the key from Connect OpenRouter
 // (#59) all go through writeCredential.
 type CredentialWrite struct {
@@ -120,7 +120,7 @@ type credentialView struct {
 // each check may cost a probe.
 const credentialVerifyEvery = 10 * time.Second
 
-// credentialService holds what the credential and Connect OpenRouter endpoints share (P4 CN-7,
+// credentialService holds what the credential and Connect OpenRouter endpoints share (CN-7,
 // CN-8): the verifier, the pending sign-ins, the per-name verify limit and the last checks of
 // env credentials.
 type credentialService struct {

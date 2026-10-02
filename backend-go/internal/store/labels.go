@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Human labels (SPEC §2.3 labels; §2.4 rows 39-41; P4-PLAN D59, D60). A label is one admin's
+// Human labels (SPEC §2.3 labels; §2.4 rows 39-41; D59, D60). A label is one admin's
 // judgement of one target of a trace:
 //
 //   - "<id>@<version>": should_fire or should_not_fire, the calibration labels of that evaluator;

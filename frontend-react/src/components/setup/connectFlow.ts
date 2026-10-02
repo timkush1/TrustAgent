@@ -1,5 +1,5 @@
 /**
- * Connect OpenRouter, the browser's half (SPEC §7.5 PKCE, self-hosted; P4-PLAN D38):
+ * Connect OpenRouter, the browser's half (SPEC §7.5 PKCE, self-hosted; D38):
  *
  * 1. POST /api/connect/openrouter/start (#58): the proxy keeps the PKCE verifier and answers the
  *    OpenRouter `auth_url` and a nonce.

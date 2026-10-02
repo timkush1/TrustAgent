@@ -98,7 +98,7 @@ var (
 	}, []string{"kind"})
 
 	// CostWritesDropped counts cost_events rows the ledger dropped because its buffer was full
-	// or the write failed (P4-PLAN D51, SPEC Appendix B erratum).
+	// or the write failed (D51, SPEC Appendix B erratum).
 	CostWritesDropped = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace, Name: "cost_write_dropped_total",
 		Help: "Cost ledger rows dropped (buffer full or write failed).",

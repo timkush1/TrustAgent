@@ -23,7 +23,7 @@ import (
 // Evaluator endpoints (SPEC §2.4 rows 27-33, plus a version diff for Studio's "Save version"):
 // the registry's evaluators with the routes that attach them, their versions and their
 // calibration progress; validation; and the dashboard writes: a new evaluator, a new version of a
-// dashboard evaluator, and archiving (P4-PLAN D57).
+// dashboard evaluator, and archiving (D57).
 
 // labelCounter counts the labels of a calibration target (*store.PostgresStore); nil without a
 // database.
@@ -354,7 +354,7 @@ func prettySpec(s *decision.Spec) (string, error) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Validation and writes (SPEC §2.4 rows 30-33, P4-PLAN D54, D57)
+// Validation and writes (SPEC §2.4 rows 30-33, D54, D57)
 
 // maxChangelogRunes bounds a version's changelog.
 const maxChangelogRunes = 1000

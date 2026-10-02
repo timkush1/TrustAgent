@@ -178,7 +178,7 @@ describe('the decision core end to end', () => {
   });
 });
 
-describe('calibration signals (P4-PLAN D56)', () => {
+describe('calibration signals (D56)', () => {
   const measured = Array.from({ length: 101 }, (_, i) => Math.min(1, (i + 2) / 100));
   const otherSnapshot = { state: 'other_snapshot' as const };
 

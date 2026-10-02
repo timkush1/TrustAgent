@@ -21,7 +21,7 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
-// Labels (SPEC §2.4 rows 39-41, P4-PLAN D59, D60): the label queue of an admin, and an admin's
+// Labels (SPEC §2.4 rows 39-41, D59, D60): the label queue of an admin, and an admin's
 // label of a trace target. A label freezes what it judged (the trace body, and the evaluator's raw
 // risk and snapshot of the trace's attempt-0 decision), so calibration fits keep working after
 // retention deletes the trace. There is no WebSocket event for labels (D61): the dashboard

@@ -25,7 +25,7 @@ const (
 	healthTimeout     = 2 * time.Second
 	engineInfoTimeout = 4 * time.Second
 	// applyRuntimeConfigTimeout bounds one ApplyRuntimeConfig: the engine makes no LLM call on
-	// apply (P4-PLAN D34).
+	// apply (D34).
 	applyRuntimeConfigTimeout = 4 * time.Second
 	// draftEvaluatorTimeout bounds one DraftEvaluator: the judge drafts the spec and may repair it.
 	draftEvaluatorTimeout = 60 * time.Second
@@ -87,7 +87,7 @@ func (c *AuditClient) EngineInfo(ctx context.Context) (*pb.EngineInfo, error) {
 }
 
 // ApplyRuntimeConfig pushes the dashboard's runtime configuration to the engine (SPEC §2.2,
-// P4-PLAN D34): the judge, its bound credential and the effective price table. An older engine
+// D34): the judge, its bound credential and the effective price table. An older engine
 // answers UNIMPLEMENTED.
 func (c *AuditClient) ApplyRuntimeConfig(ctx context.Context, cfg *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, applyRuntimeConfigTimeout)
@@ -103,7 +103,7 @@ func (c *AuditClient) DraftEvaluator(ctx context.Context, req *pb.DraftEvaluator
 	return c.client.DraftEvaluator(ctx, req)
 }
 
-// RetrieveContext fetches knowledge-base documents for an answer (P4-PLAN D65). deadline is the
+// RetrieveContext fetches knowledge-base documents for an answer (D65). deadline is the
 // knowledge deadline (TRUTHTABLE_KNOWLEDGE_DEADLINE); 0 or less leaves ctx's own deadline.
 func (c *AuditClient) RetrieveContext(ctx context.Context, req *pb.RetrieveContextRequest, deadline time.Duration) (*pb.RetrieveContextResponse, error) {
 	if deadline > 0 {

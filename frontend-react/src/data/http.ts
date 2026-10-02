@@ -3,7 +3,7 @@
  *
  * - Same origin (the default): cookies ride along, and non-GET requests carry
  *   `X-TrustAgent-CSRF: 1` as cookie-authenticated writes require.
- * - Cross origin (`apiBase` on another origin, P4-PLAN D71): no cookies. The key the viewer signed
+ * - Cross origin (`apiBase` on another origin, D71): no cookies. The key the viewer signed
  *   in with is kept for this tab only, in `sessionStorage["ta.dashboard.key"]` (never localStorage,
  *   never the URL), and goes on every request as `X-TrustAgent-Key`. The WebSocket cannot carry a
  *   header, so it connects with a one-use ticket instead (StreamClient `ticket`). Every other way of

@@ -219,7 +219,7 @@ describe('Setup wizard, step 1: secure this dashboard', { timeout: 30_000 }, () 
   });
 });
 
-describe('Setup wizard on another origin (P4-PLAN D71)', { timeout: 30_000 }, () => {
+describe('Setup wizard on another origin (D71)', { timeout: 30_000 }, () => {
   it('checks a key with GET /api/session, keeps it for this tab and sends it as X-TrustAgent-Key', async () => {
     const user = userEvent.setup();
     const control = signedOut({ setupStatus: setupStatus({ setup_required: false }), keySessions: { 'ta_admin-key': adminSession({ actor: 'admin', sliding: false }) } });
@@ -484,7 +484,7 @@ describe('Setup wizard, step 3: see it work', { timeout: 30_000 }, () => {
   });
 });
 
-describe('/connect/callback (P4-PLAN D38)', { timeout: 30_000 }, () => {
+describe('/connect/callback (D38)', { timeout: 30_000 }, () => {
   it('finishes the sign-in once, takes the code out of the address bar, and goes to the server’s return_to', async () => {
     sessionStorage.setItem(CONNECT_PENDING_KEY, JSON.stringify({ nonce: 'q2Xw9fLr0aZk7TcVb3NmYg' }));
     window.history.replaceState(null, '', '/connect/callback?code=abc123');

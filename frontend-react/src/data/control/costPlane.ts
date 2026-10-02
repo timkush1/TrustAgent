@@ -1,10 +1,10 @@
 /**
- * The cost plane of the control plane (SPEC §2.4 #48-#49, §7.4; P4-PLAN D46-D53, D73): the ROI
+ * The cost plane of the control plane (SPEC §2.4 #48-#49, §7.4; D46-D53, D73): the ROI
  * time series behind the Savings tab and the effective price table behind Budgets → Prices.
  * (#47 `getRoiSummary` stays on the P3 ControlPlane.)
  *
- * The signatures are fixed (P4-PLAN §0 rule 3); the bodies and COST_SHAPES belong to WEB-SV. A proxy
- * from before P4 answers 404 to both, which the pages show as "not reported by this proxy".
+ * The signatures are fixed; the bodies and COST_SHAPES belong to WEB-SV. A proxy
+ * from before 2.0 answers 404 to both, which the pages show as "not reported by this proxy".
  */
 import type { PricingTable, RoiTimeseries, TimeWindow } from '@/types/api';
 import type { HttpClient } from '../http';

@@ -8,12 +8,13 @@
 // queue or a stopped pool as an error (the trace records the audit as dropped), and Drain lets
 // queued audits finish within the drain timeout.
 //
-// Every audit is held against the daily LLM cap that SetBudget installs (P4-PLAN D48): Submit
+// Every audit is held against the daily LLM cap that SetBudget installs (D48): Submit
 // reserves the expected cost of one audit and refuses the audit with ErrLLMBudget when the cap
-// cannot take it, in every lane; the worker settles the hold with the real cost of the engine's
-// cost records, which are stored with the audit and linked to it by audit_id (D45). The cost
-// recorder (SetCostRecorder) then receives the records of every answered audit. The
-// uniform-sample reserved capacity and retries are not part of the pool yet.
+// cannot take it, in every lane; the worker settles the hold with what the engine's cost records
+// count against the cap (Budget.CapCostUSD, D91), and the records are stored with the audit and
+// linked to it by audit_id (D45). The cost recorder (SetCostRecorder) then receives the records
+// of every answered audit. The pool keeps no capacity aside for uniform samples and does not
+// retry a failed audit.
 package worker
 
 import (
@@ -153,7 +154,7 @@ type Config struct {
 }
 
 // Budget is the daily LLM cap deep audits are held against (the cost ledger's LLM budget,
-// P4-PLAN D48): hard in every lane, with no admin bypass.
+// D48): hard in every lane, with no admin bypass.
 type Budget interface {
 	// EstimateAuditUSD is what one audit is expected to cost: the amount an audit holds.
 	EstimateAuditUSD() float64
@@ -177,7 +178,7 @@ type AuditCosts struct {
 }
 
 // CostRecorder receives the cost records of every audit the engine answered, once its result is
-// stored: the cost ledger learns what an audit costs from them (P4-PLAN D48). It must not block.
+// stored: the cost ledger learns what an audit costs from them (D48). It must not block.
 type CostRecorder func(AuditCosts)
 
 // Pool runs deep audits.

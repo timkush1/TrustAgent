@@ -114,7 +114,7 @@
           "quality": {"$ref": "common.v1.schema.json#/$defs/CalibrationQuality"},
           "state": {"$ref": "#/$defs/CalibrationEntryState"},
           "fit_state_fields": {
-            "description": "The state fields the calibration was fitted with (P4-PLAN D56). When they differ from the evaluator's own, decide() sets calibration_warning and still applies the calibration.",
+            "description": "The state fields the calibration was fitted with (D56). When they differ from the evaluator's own, decide() sets calibration_warning and still applies the calibration.",
             "type": "array",
             "items": {"type": "string", "minLength": 1}
           }
@@ -176,7 +176,7 @@
   },
   "$defs": {
     "CalibrationEntryState": {
-      "description": "common.v1 CalibrationState plus other_snapshot: the target is calibrated only on other snapshots, so the entry carries no table (P4-PLAN D56). decision.v1 calibration_state never takes other_snapshot.",
+      "description": "common.v1 CalibrationState plus other_snapshot: the target is calibrated only on other snapshots, so the entry carries no table (D56). decision.v1 calibration_state never takes other_snapshot.",
       "anyOf": [
         {"$ref": "common.v1.schema.json#/$defs/CalibrationState"},
         {"const": "other_snapshot"}

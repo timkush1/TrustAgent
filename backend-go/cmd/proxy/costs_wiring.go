@@ -18,7 +18,7 @@ import (
 	"github.com/truthtable/backend-go/internal/worker"
 )
 
-// CostLink ties LLM cost records to what they were spent on (P4-PLAN D45): the trace, the audit
+// CostLink ties LLM cost records to what they were spent on (D45): the trace, the audit
 // (LLM rows link by audit_id and are stamped at completion), the route, the caller's key label,
 // the audit selection and the attempt.
 type CostLink struct {
@@ -34,7 +34,7 @@ type CostLink struct {
 // today's uniform samples and the last decision-model snapshot.
 const costsBootTimeout = 10 * time.Second
 
-// initCosts builds the cost ledger (SPEC §7.4, P4-PLAN COST-3..5) and fills s.costs:
+// initCosts builds the cost ledger (SPEC §7.4, COST-3..5) and fills s.costs:
 //
 //   - the price book: the dashboard overrides, then TRUTHTABLE_PRICE_TABLE_FILE, then the
 //     embedded contracts table (D53);

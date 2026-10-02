@@ -9,7 +9,7 @@
  * - Reconnects with full-jitter backoff, floor 250 ms, cap 30 s, and never gives up. `online` and a
  *   `visibilitychange` to visible retry at once. After the first `hb`, 45 s of silence forces a
  *   reconnect.
- * - Cross origin (P4-PLAN D71): a browser WebSocket cannot send the key header, so with `ticket`
+ * - Cross origin (D71): a browser WebSocket cannot send the key header, so with `ticket`
  *   set it asks for a one-use ticket (POST /api/ws-ticket) before every (re)connect and connects
  *   with `?ticket=`. A refused ticket (401) shows as unauthorized and keeps retrying with backoff.
  *   Never an api_key query parameter and never a bearer subprotocol: the key is never in a URL.

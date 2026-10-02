@@ -13,7 +13,7 @@ import (
 )
 
 // TestTracesReasonFilter: GET /api/traces?reason= takes a whole reason code or a prefix that ends
-// in a colon, needs since (P4-PLAN D68), and refuses anything that is not a reason code.
+// in a colon, needs since (D68), and refuses anything that is not a reason code.
 func TestTracesReasonFilter(t *testing.T) {
 	env := newTestEnv(t, envOpts{})
 	ctx := context.Background()

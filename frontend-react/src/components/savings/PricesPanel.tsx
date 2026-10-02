@@ -1,5 +1,5 @@
 /**
- * Settings → Budgets → Prices (P4-PLAN D53): the price table cost estimates use, and your
+ * Settings → Budgets → Prices (D53): the price table cost estimates use, and your
  * overrides on top of it. GET /api/pricing serves the effective table (your overrides first, then
  * a price file, then the built-in vendor prices); the overrides are `pricing_overrides` in the
  * runtime settings, saved with If-Match like every setting. The server's ValidateOverrides refuses

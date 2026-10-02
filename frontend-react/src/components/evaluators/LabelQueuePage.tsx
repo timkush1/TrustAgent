@@ -1,5 +1,5 @@
 /**
- * The label queue (SPEC §3.3 Evaluators; P4-PLAN D59-D61): one answer at a time, the most uncertain
+ * The label queue (SPEC §3.3 Evaluators; D59-D61): one answer at a time, the most uncertain
  * first (the server orders it by distance to the flag line, D60). For each answer the viewer says
  * whether the check should have fired: Correct (C), False alarm (F) or Skip (S), with an optional
  * note. Each label counts toward calibrating that check, so its progress moves at once (optimistic,

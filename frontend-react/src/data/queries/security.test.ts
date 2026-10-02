@@ -1,5 +1,5 @@
 /**
- * Security side effects (P4-PLAN §10 ON-1): a live `settings_updated` refreshes the settings and the
+ * Security side effects (ON-1): a live `settings_updated` refreshes the settings and the
  * status; `credentials_changed` also refreshes the credentials; other events change nothing here.
  */
 import { QueryClient } from '@tanstack/react-query';

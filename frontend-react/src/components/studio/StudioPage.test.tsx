@@ -1,5 +1,5 @@
 /**
- * Evaluator Studio through the real data layer (LiveDataSource over msw), SPEC §7.3 and P4-PLAN §12:
+ * Evaluator Studio through the real data layer (LiveDataSource over msw), SPEC §7.3:
  * draft with AI, review with live lints, the test bench (estimate first, results, free what-if),
  * quick calibration gating, saving (new check, next version, 412), save and watch on a route through
  * the policy review dialog, and "Test on past traffic" (the D82 confirmation, SSE progress, cancel).

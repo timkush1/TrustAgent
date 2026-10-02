@@ -202,7 +202,7 @@ func (s *PostgresStore) EvaluatorsFingerprint(ctx context.Context) (string, erro
 	return fmt.Sprintf("%d|%s|%d|%s", nEval, at(evalAt), nVer, at(verAt)), nil
 }
 
-// Errors of the evaluator writes (SPEC §2.4 rows 31-33, P4-PLAN D57).
+// Errors of the evaluator writes (SPEC §2.4 rows 31-33, D57).
 var (
 	// ErrEvaluatorExists: POST /api/evaluators named an id that is already registered.
 	ErrEvaluatorExists = errors.New("store: an evaluator with this id exists")

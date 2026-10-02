@@ -1,4 +1,4 @@
-"""Unit tests for scripts/service_env.py (the onboarding stack's -check-config proof, P4 DX-1)."""
+"""Unit tests for scripts/service_env.py (the onboarding stack's -check-config proof, DX-1)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import service_env  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
 
-# Fake secrets only (P4 §0 rule 8). UNMATCHED matches no redaction pattern, so only the code's own
+# Fake secrets only. UNMATCHED matches no redaction pattern, so only the code's own
 # care (never printing a value) keeps it out of the output.
 FAKE_KEY = "sk-or-v1-e2e-0123456789abcdef0123456789abcdef"
 UNMATCHED = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"

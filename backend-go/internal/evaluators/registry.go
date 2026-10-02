@@ -9,7 +9,7 @@
 // With a database, the built-in and file specs are registered at startup (insert-only), so the
 // database holds every version a decision, a calibration or a replay can refer to; a version
 // that is already stored keeps its stored spec (versions are immutable) and the registry reports
-// the mismatch as a warning. Dashboard-authored versions (P4 writes) join through Reload.
+// the mismatch as a warning. Dashboard-authored versions (the evaluator writes) join through Reload.
 package evaluators
 
 import (
@@ -265,7 +265,7 @@ func readDir(fsys fs.FS, dir, source string, strictNames bool) ([]*Version, erro
 }
 
 // newVersion parses a spec document and runs the hard rules that need no route (SPEC §2.8,
-// P4-PLAN D54): a version that breaks one is excluded, and the caller reports why. References to
+// D54): a version that breaks one is excluded, and the caller reports why. References to
 // other evaluators are checked where a route attaches them (policy check, Studio validate).
 func newVersion(doc []byte, source string) (*Version, error) {
 	spec, err := decision.ParseSpec(doc)

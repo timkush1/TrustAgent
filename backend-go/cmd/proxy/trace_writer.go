@@ -13,7 +13,7 @@ import (
 // traceFlushSync is TRUTHTABLE_TRACE_FLUSH=sync: every trace write runs inline (the test stacks).
 const traceFlushSync = "sync"
 
-// wrapTraceWriter puts the batched trace writer (internal/store/tracewriter, P4-PLAN D66) in front
+// wrapTraceWriter puts the batched trace writer (internal/store/tracewriter, D66) in front
 // of st unless TRUTHTABLE_TRACE_FLUSH is sync, and returns the store to use and the flush to call at
 // shutdown, after the HTTP drain: it writes what is still queued within its context. With sync, or
 // without a database, st is returned as it is and the flush has nothing to do.

@@ -66,7 +66,7 @@ type Pinger struct {
 
 // OnHealth registers fn for the result of every check, not only state transitions: the engine
 // push compares the runtime configuration the engine reports with the one in effect, and follows
-// the engine's env-managed keys (P4-PLAN CN-3). fn runs on the checking goroutine after the state
+// the engine's env-managed keys (CN-3). fn runs on the checking goroutine after the state
 // is recorded and must not block.
 func (p *Pinger) OnHealth(fn func(EngineHealth)) {
 	if fn == nil {

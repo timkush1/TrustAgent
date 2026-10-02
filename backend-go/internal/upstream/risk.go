@@ -23,7 +23,7 @@ const (
 	CodeFallbackCredentialUnused = "fallback_credential_unused" // #nosec G101 -- an error code, not a credential
 )
 
-// Credential names of the upstream rows (P4-PLAN D29); an env upstream key shows as the row of
+// Credential names of the upstream rows (D29); an env upstream key shows as the row of
 // the same name with source env.
 const (
 	CredentialDefault   = "upstream-default"
@@ -32,7 +32,7 @@ const (
 )
 
 // FieldError is a runtime upstream setting that is refused (a 422 validation_failed field error),
-// e.g. code fallback_key_required with details {host} (P4-PLAN D41).
+// e.g. code fallback_key_required with details {host} (D41).
 type FieldError struct {
 	Path    string
 	Code    string

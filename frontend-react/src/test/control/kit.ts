@@ -1,7 +1,7 @@
 /**
  * The pieces every control-plane msw handler file shares: the reply type (a value, an error, or
  * `undefined` for 404), the JSON reply, request recording, and body parsing. handlers.ts builds the
- * P3 handlers with them and passes a HandlerKit to each P4 plane's handler file
+ * P3 handlers with them and passes a HandlerKit to each plane's handler file
  * ({security,cost,evaluator,studio}Handlers.ts). Lead-owned like handlers.ts.
  */
 import { HttpResponse } from 'msw';

@@ -1,5 +1,5 @@
 """
-Secret redaction in the engine's logs (SPEC section 7.5, P4-PLAN D42).
+Secret redaction in the engine's logs (SPEC section 7.5, D42).
 
 The engine holds API keys from two places: its own environment (the judge
 keys, the internal token, LangSmith) and the gateway's runtime-config pushes.

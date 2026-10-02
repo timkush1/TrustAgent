@@ -1,6 +1,6 @@
 package decision
 
-// The pure cost calculator (SPEC §7.4, P4-PLAN D52, D53, D85): the price table types, the price
+// The pure cost calculator (SPEC §7.4, D52, D53, D85): the price table types, the price
 // lookup with its precedence, the cost of one call, and the cost of 1,000 answers at given
 // settings. internal/costs (the ledger, caps and ROI) and internal/jev use it; the engine prices its
 // LLM calls the same way (backend-python providers/pricing.py), and the cost vectors in
@@ -55,7 +55,7 @@ const (
 const PriceVersionOverride = "override"
 
 // PriceEntry is one price table entry: api.ts PriceEntry, the entries of contracts pricing.v1
-// and of the dashboard's pricing_overrides (P4-PLAN D52, D53, D90). It lives in the
+// and of the dashboard's pricing_overrides (D52, D53, D90). It lives in the
 // contract-owned decision package so runtimecfg and costs share it without importing each
 // other.
 type PriceEntry struct {
@@ -209,7 +209,7 @@ var contractsPrices = sync.OnceValues(func() (PriceTable, error) {
 	return t, nil
 })
 
-// EffectivePrices is the price table costs are computed with (P4-PLAN D53). Its entries are, in
+// EffectivePrices is the price table costs are computed with (D53). Its entries are, in
 // order: the dashboard overrides (labelled override), the TRUTHTABLE_PRICE_TABLE_FILE table when
 // one is set (file may be nil), then the contracts table. A lookup takes the first matching entry
 // of the provider, so an override wins over the file and the file over contracts; an entry a
@@ -258,7 +258,7 @@ func GlobMatch(pattern, s string) bool {
 	return strings.HasSuffix(s, last)
 }
 
-// LookupPrice resolves the entry that prices model on provider (P4-PLAN D53): the first entry of
+// LookupPrice resolves the entry that prices model on provider (D53): the first entry of
 // that provider whose glob matches, so the provider match comes first; when the provider has none,
 // the first matching entry of any other provider prices it, except that a local or mock provider
 // never borrows a paid price and a local or mock entry (a free "*" catch-all) never prices another

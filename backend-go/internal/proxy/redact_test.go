@@ -14,7 +14,7 @@ import (
 )
 
 // noPatternSecret matches none of the redaction patterns: only the Redactor's list of known
-// secrets can mask it (P4-PLAN §0 rule 8).
+// secrets can mask it.
 const noPatternSecret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 
 // echoingError is an upstream 401 that quotes the key it was sent, as OpenAI's does.

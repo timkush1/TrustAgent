@@ -1,7 +1,7 @@
 /**
- * Words, icons and tones for the P4 evaluators server values (label values, calibration origins and quality, mismatch reasons).
+ * Words, icons and tones for the evaluators server values (label values, calibration origins and quality, mismatch reasons).
  * Owned by WEB-EV. presentation.ts re-exports this module with `export *`, so every export here
- * starts with `eval` (P4-PLAN D86) and can never collide with another plane's words.
+ * starts with `eval` (D86) and can never collide with another plane's words.
  *
  * Contract text comes from contracts/ui (`copy.labels`, `copy.trace`, `copy.evaluators`). The few
  * sentences below that are not in copy.v1.json yet are listed in the WEB-EV checkpoint report for
