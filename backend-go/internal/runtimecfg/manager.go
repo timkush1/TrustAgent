@@ -140,7 +140,8 @@ func (m *Manager) Reload(ctx context.Context) error {
 // Stored returns the snapshot in effect and the settings rows it was built from, as stored (each
 // row holds only the fields written to it), as one consistent pair: a write builds its rows on
 // them (RowsWithLeaves) under If-Match of the snapshot's version. Without a store, or before the
-// first successful read, there are no rows.
+// first successful read, there are no rows. It waits for a reload in progress, so a Subscribe
+// callback must not call it.
 func (m *Manager) Stored() (*Snapshot, map[string]json.RawMessage) {
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
