@@ -8,6 +8,7 @@ import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { ConfirmAgain } from '@/components/common/confirmAgain';
 import type { Reason } from '@/components/common/DisabledReason';
 import { notify } from '@/components/common/notify';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,10 @@ export function RemoveCredential({ credential, writeReason, reasonId }: { creden
               await ds.deleteCredential(credential.name, routes ? { confirm: true } : undefined);
             } catch (err) {
               const needed = confirmationRoutes(err);
-              if (needed && !routes) setRoutes(needed);
+              if (needed && !routes) {
+                setRoutes(needed);
+                throw new ConfirmAgain();
+              }
               throw err;
             }
             await invalidate();

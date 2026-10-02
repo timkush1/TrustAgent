@@ -117,6 +117,7 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByRole('button', { name: 'Turn off' }));
     expect(await within(dialog).findByText(/These routes fail closed .*: payments-faq/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: 'Turn off anyway' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     const calls = control.callsTo('/api/settings', 'PATCH');

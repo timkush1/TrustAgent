@@ -14,6 +14,7 @@ import { FlaskConical, PlugZap, RotateCw, Save } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { ConfirmAgain } from '@/components/common/confirmAgain';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { KeyValueList } from '@/components/common/KeyValue';
@@ -272,7 +273,10 @@ function Disconnect({ settings, reason, onReload }: { settings: SettingsView; re
               await save.mutateAsync({ patch: { decision_model: { backend: 'off' } }, etag: settings.etag, confirm: routes !== null });
             } catch (err) {
               const needed = confirmationRoutes(err);
-              if (needed && !routes) setRoutes(needed);
+              if (needed && !routes) {
+                setRoutes(needed);
+                throw new ConfirmAgain();
+              }
               if (isStale(err)) onReload();
               throw err;
             }

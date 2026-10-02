@@ -154,6 +154,8 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     expect(within(dialog).getByText(/Removing OpenRouter also disconnects it from Fast check \(Jev\) and Deep audit judge\./)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Remove key' }));
     expect(await within(dialog).findByText(/These routes fail closed .*: payments-faq\. Continue anyway\?/)).toBeInTheDocument();
+    // The expected 409 is the question above, not a failure.
+    expect(within(dialog).queryByRole('alert')).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: 'Remove anyway' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(control.callsTo('/api/credentials/openrouter', 'DELETE').map((c) => c.query.get('confirm'))).toEqual([null, 'true']);
