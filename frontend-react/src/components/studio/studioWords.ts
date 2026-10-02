@@ -101,14 +101,15 @@ export function studioDryRunResultText(r: Pick<DryRunResult, 'fired' | 'extrapol
   });
 }
 
-/** copy.studio.dry_run_confirm filled from the 409's details (D82). */
+/**
+ * copy.studio.dry_run_confirm filled from the 409's details (D82). The gateway sends no budget left
+ * (null) when no daily fast-check budget is set, so the budget sentence then says that instead.
+ */
 export function studioDryRunConfirmText(d: { estimate_usd: number; samples: number; population: number; decision_budget_left_usd: number | null }): string {
-  return fillTemplate(copy.studio.dry_run_confirm, {
-    estimate: formatUsd(d.estimate_usd),
-    samples: formatCount(d.samples),
-    population: formatCount(d.population),
-    budget_left: d.decision_budget_left_usd === null ? 'Unknown' : formatUsd(d.decision_budget_left_usd),
-  });
+  const values = { estimate: formatUsd(d.estimate_usd), samples: formatCount(d.samples), population: formatCount(d.population) };
+  if (d.decision_budget_left_usd !== null) return fillTemplate(copy.studio.dry_run_confirm, { ...values, budget_left: formatUsd(d.decision_budget_left_usd) });
+  const sentences = copy.studio.dry_run_confirm.split(/(?<=\.)\s+/).filter((sentence) => !sentence.includes('{budget_left}'));
+  return `${fillTemplate(sentences.join(' '), values)} No daily fast-check budget is set.`;
 }
 
 /** The window of a dry run in words ("24 h", "7 days"). */
