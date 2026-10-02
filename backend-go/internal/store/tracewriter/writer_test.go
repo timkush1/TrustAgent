@@ -325,6 +325,42 @@ func TestWriterHoldsWritesThroughAnOutage(t *testing.T) {
 	}
 }
 
+// TestWriterHoldsAFailedBatchWhenTheDatabaseIsDown: a batch that fails because the database is
+// down is held whole after one ping, not retried write by write first (each write would wait for
+// its own timeout in a network outage).
+func TestWriterHoldsAFailedBatchWhenTheDatabaseIsDown(t *testing.T) {
+	fake := newFake()
+	fake.setDown(true)
+	w, drops := newWriter(t, batchStore{fake}, Config{BatchRows: 2, Interval: time.Hour})
+	ctx := context.Background()
+	for _, id := range []string{"t1", "t2"} {
+		if err := w.StartTrace(ctx, startRec(id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eventually(t, "the writer holds its queue", func() bool {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.held
+	})
+	fake.mu.Lock()
+	calls := fake.calls
+	fake.mu.Unlock()
+	if calls != 2 {
+		t.Errorf("%d calls reached the database, want the batch and one ping", calls)
+	}
+	if !w.Pending("t1") || !w.Pending("t2") || drops.get() != 0 {
+		t.Errorf("pending t1 %v, t2 %v, dropped %d: both writes must wait", w.Pending("t1"), w.Pending("t2"), drops.get())
+	}
+	fake.setDown(false)
+	if err := w.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fake.stored("t1") == nil || fake.stored("t2") == nil {
+		t.Error("the held batch was not written once the database answered")
+	}
+}
+
 // TestWriterAuditWriteEndsWhenAnOutageBegins: an audit write with no deadline of its own waits for
 // its trace's queued writes; when the flush it asked for finds the database down, the wait ends at
 // once instead of lasting as long as the outage.

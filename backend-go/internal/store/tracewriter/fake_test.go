@@ -36,6 +36,8 @@ type fakeStore struct {
 	// that write arrives.
 	hold, entered chan struct{}
 	reads         int
+	// calls counts the calls that reached the database: writes, batches and pings.
+	calls int
 }
 
 // batchStore is a fakeStore with the batch path.
@@ -88,6 +90,7 @@ func (f *fakeStore) gate(ctx context.Context, ids ...string) error {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls++
 	if f.down {
 		return errDown
 	}

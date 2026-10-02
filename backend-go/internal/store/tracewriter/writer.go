@@ -397,6 +397,11 @@ func (w *Writer) send(ctx context.Context, batch []*op) []*op {
 			w.settle(batch)
 			return nil
 		}
+		if w.unreachable(ctx) {
+			// The database is down, not refusing a write: the whole batch waits for the retry,
+			// without first timing out once per write.
+			return batch
+		}
 		w.log.Debug("trace batch failed; retrying write by write", "writes", len(live), "err", err)
 	}
 
