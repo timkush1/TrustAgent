@@ -304,3 +304,81 @@ func TestRoiFitSamplesAndSeries(t *testing.T) {
 		t.Error("a bucket shorter than a second was accepted")
 	}
 }
+
+// A mock judge's made-up cost counts only with include_mock (D46), even on a trace whose fast
+// check was real: without it, the LLM spend, its cost sources, the uniform-sample mean, the fitted
+// line's samples and the series leave the simulated audit out; with it, they count it.
+func TestRoiLeavesOutSimulatedCostsWithoutIncludeMock(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	seedStats(t, s, now)
+	if _, err := s.pool.Exec(ctx, `UPDATE traces SET response_chars = CASE trace_id WHEN 't-flag' THEN 1200 WHEN 't-pass' THEN 300 END`); err != nil {
+		t.Fatal(err)
+	}
+	f := StatsFilter{From: now.Add(-24 * time.Hour), To: now.Add(time.Minute)}
+	base, err := s.Roi(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, usd := "uniform", 0.5
+	audit := &AuditRecord{AuditID: "a-mock-judge", TraceID: "t-pass", Source: "proxy", Selection: &selection,
+		Status: AuditCompleted, ScoringVersion: "v2", CreatedAt: now.Add(-4 * time.Minute), CostUSD: &usd}
+	if err := s.SaveAuditResultWithCosts(ctx, audit, AuditCompleted, []CostEvent{{OccurredAt: now.Add(-3 * time.Minute),
+		TraceID: "t-pass", AuditID: "a-mock-judge", Route: "support-bot", Component: "deep_audit_verify", Kind: CostKindLLM,
+		Provider: "mock", Model: "mock", CostUSD: &usd, CostSource: costSourceSimulated}}); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := s.Roi(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(r.LLMUSD-base.LLMUSD) > 1e-9 || r.LLMSources != base.LLMSources || r.UniformCosted != base.UniformCosted ||
+		len(r.FitSamples) != len(base.FitSamples) {
+		t.Errorf("without include_mock the mock judge counts: llm %v %+v, uniform %d, fit %d (before: %v %+v, %d, %d)",
+			r.LLMUSD, r.LLMSources, r.UniformCosted, len(r.FitSamples), base.LLMUSD, base.LLMSources, base.UniformCosted, len(base.FitSamples))
+	}
+	if r.Audits != base.Audits+1 {
+		t.Errorf("the audit itself still ran: %d audits, %d before", r.Audits, base.Audits)
+	}
+	o, err := s.Overview(ctx, f, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(o.LLMCostUSD-base.LLMUSD) > 1e-9 {
+		t.Errorf("overview LLM spend %v, want %v", o.LLMCostUSD, base.LLMUSD)
+	}
+	series, err := s.RoiSeries(ctx, f, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var llm float64
+	for _, p := range series {
+		llm += p.LLMUSD
+	}
+	if math.Abs(llm-base.LLMUSD) > 1e-9 {
+		t.Errorf("series LLM spend %v, want %v", llm, base.LLMUSD)
+	}
+
+	f.IncludeMock = true
+	r, err = s.Roi(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(r.LLMUSD-(base.LLMUSD+usd)) > 1e-9 || r.LLMSources.Simulated != 1 || r.UniformCosted != base.UniformCosted+1 ||
+		len(r.FitSamples) != len(base.FitSamples)+1 {
+		t.Errorf("with include_mock: llm %v %+v, uniform %d, fit %d", r.LLMUSD, r.LLMSources, r.UniformCosted, len(r.FitSamples))
+	}
+	series, err = s.RoiSeries(ctx, f, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm = 0
+	for _, p := range series {
+		llm += p.LLMUSD
+	}
+	if math.Abs(llm-(base.LLMUSD+usd)) > 1e-9 {
+		t.Errorf("include_mock series LLM spend %v", llm)
+	}
+}

@@ -569,8 +569,18 @@ type CostSums struct {
 // gateCostSQL selects the gate's decision-model rows (cost_events aliased c).
 const gateCostSQL = `c.kind = 'decision' AND c.component = 'gate'`
 
-// costSums reads the spend of the traces of f from cost_events. A row is never stamped before its
-// trace started, so the rows are bounded by the window start as well as joined to the traces.
+// costRowWhere bounds the cost_events rows (aliased c) of the traces of traceWhere: a row is never
+// stamped before its trace started, and a simulated row (a mock backend's) counts only with
+// include_mock (D46), even on a trace that is not itself mock (a real fast check with a mock judge).
+const costRowWhere = `c.occurred_at >= $1 AND ($4::BOOLEAN OR c.cost_source <> 'simulated')`
+
+// realAuditSQL holds for an audit (aliased a) that may be counted without include_mock: none of
+// its linked cost rows is simulated (D46), so a mock judge's made-up cost never feeds the
+// uniform-sample mean or the fitted line as if it were a real one.
+const realAuditSQL = `($4::BOOLEAN OR NOT EXISTS (SELECT 1 FROM cost_events ce
+	WHERE ce.audit_id = a.audit_id AND ce.cost_source = 'simulated'))`
+
+// costSums reads the spend of the traces of f from cost_events (costRowWhere).
 func (s *PostgresStore) costSums(ctx context.Context, f StatsFilter) (CostSums, error) {
 	var out CostSums
 	dest := []any{&out.DecisionUSD}
@@ -581,7 +591,7 @@ func (s *PostgresStore) costSums(ctx context.Context, f StatsFilter) (CostSums, 
 		SELECT COALESCE(sum(c.cost_usd) FILTER (WHERE `+gateCostSQL+`), 0)::FLOAT8, `+costCountsSQL(gateCostSQL)+`,
 		COALESCE(sum(c.cost_usd) FILTER (WHERE c.kind = 'llm'), 0)::FLOAT8, `+costCountsSQL("c.kind = 'llm'")+`
 		FROM cost_events c JOIN traces t ON t.trace_id = c.trace_id
-		WHERE `+traceWhere+` AND c.occurred_at >= $1`, f.args()...).Scan(dest...)
+		WHERE `+traceWhere+` AND `+costRowWhere, f.args()...).Scan(dest...)
 	if err != nil {
 		return out, fmt.Errorf("cost sums: %w", err)
 	}
@@ -680,7 +690,8 @@ func (s *PostgresStore) Roi(ctx context.Context, f StatsFilter) (*RoiData, error
 	var mean, stddev *float64
 	err = s.pool.QueryRow(ctx, `
 		SELECT count(*), avg(a.cost_usd)::FLOAT8, stddev_samp(a.cost_usd)::FLOAT8 FROM `+auditedTracesFrom+`
-		WHERE `+traceWhere+` AND a.selection = 'uniform' AND a.cost_usd IS NOT NULL AND a.status IN ('completed', 'degraded')`,
+		WHERE `+traceWhere+` AND a.selection = 'uniform' AND a.cost_usd IS NOT NULL AND a.status IN ('completed', 'degraded')
+			AND `+realAuditSQL,
 		f.args()...).Scan(&out.UniformCosted, &mean, &stddev)
 	if err != nil {
 		return nil, fmt.Errorf("roi uniform audits: %w", err)
@@ -703,7 +714,7 @@ func (s *PostgresStore) fitSamples(ctx context.Context, f StatsFilter) ([]FitSam
 	rows, err := s.pool.Query(ctx, `
 		SELECT t.response_chars::FLOAT8, a.cost_usd::FLOAT8 FROM `+auditedTracesFrom+`
 		WHERE `+traceWhere+` AND a.cost_usd IS NOT NULL AND t.response_chars IS NOT NULL
-			AND a.status IN ('completed', 'degraded')
+			AND a.status IN ('completed', 'degraded') AND `+realAuditSQL+`
 		ORDER BY a.created_at DESC LIMIT `+strconv.Itoa(maxFitSamples), f.args()...)
 	if err != nil {
 		return nil, fmt.Errorf("roi fit samples: %w", err)
@@ -769,7 +780,7 @@ func (s *PostgresStore) RoiSeries(ctx context.Context, f StatsFilter, bucket tim
 		COALESCE(sum(c.cost_usd) FILTER (WHERE `+gateCostSQL+`), 0)::FLOAT8,
 		COALESCE(sum(c.cost_usd) FILTER (WHERE c.kind = 'llm'), 0)::FLOAT8
 		FROM cost_events c JOIN traces t ON t.trace_id = c.trace_id
-		WHERE `+traceWhere+` AND c.occurred_at >= $1 GROUP BY 1`, f.args(secs)...)
+		WHERE `+traceWhere+` AND `+costRowWhere+` GROUP BY 1`, f.args(secs)...)
 	if err != nil {
 		return nil, fmt.Errorf("roi series spend: %w", err)
 	}
