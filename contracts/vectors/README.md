@@ -29,13 +29,13 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `decide` | 55 at P3; P4 adds at least 3 (58+) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
-| `lint` | 19 (frozen once Go passes them) | 14 | hand-authored | Go `internal/decision/lint.go` (P4) |
-| `cost` | at least 8 (P4) | — | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
+| `lint` | 19 (19 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
+| `cost` | 18 (18 + 0) | 8 | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
 
 P4 adds the `decide` vectors for `calibration_missing`, an `other_snapshot` calibration entry and
-`calibration_warning` (P4-PLAN D56). Until a kind's P4 runner lands, `backend-go/internal/decision/vectors/`
-`lint.go` and `cost.go` keep it skipped. `pkce` vectors are TypeScript-only and arrive with
-`src/lib/openrouter/pkce.ts` in P5.
+`calibration_warning` (P4-PLAN D56). `lint` runs in Go since EV-1 (D54) and `cost` since COST-2 (D85,
+`backend-go/internal/decision/vectors/cost.go`); TypeScript skips `cost` until P5. `pkce` vectors are TypeScript-only
+and arrive with `src/lib/openrouter/pkce.ts` in P5.
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
 `github.com/truthtable/contracts` module): kinds with a Go runner must pass in full, draft and frozen alike;
@@ -289,8 +289,11 @@ at that risk. Input order matters: every sum runs in input order.
 - `input`: `{fn, ...}`. `fn` names the pure function of the calculator in
   `backend-go/internal/decision/cost.go` (P4-PLAN D52, D85): `call_cost` (the cost of one call from its
   token counts and a price table), `per_1k` (the cost of 1,000 answers at given settings) or
-  `price_lookup` (which `PriceEntry` a provider and model resolve to; provider match first, then the
-  first matching override). The other members are that function's arguments, named as its JSON tags in
+  `price_lookup` (which `PriceEntry` a provider and model resolve to across the layers override >
+  `TRUTHTABLE_PRICE_TABLE_FILE` > contracts: first the call's own provider's entries in that order, then
+  those of any other paid provider; free local and mock entries never price another provider). The file
+  is layered over contracts, not swapped for it, and the effective table carries the file's version
+  (`override` when an override priced the call). The other members are that function's arguments, named as its JSON tags in
   `cost.go` document them; a price table is given inline in the `pricing.v1` shape.
 - `expected`: the function's result as JSON, written by `cmd/vectorgen`.
 - Runners: Go runs every `fn`; Python runs `call_cost` only (`backend-python/tests/unit/test_contract_vectors.py`),
@@ -398,6 +401,13 @@ Every case SPEC §7.6 requires, and the vectors that pin it.
   `marker-blocks-dedup-and-max-marker`.
 - **lint** (14, every built-in clean): `builtin-<id>-is-clean` for all 11 built-ins, plus 8 lint and hard-rule
   cases.
+- **cost** (8): reported vs computed `call-reported-cost-wins`, `call-computed-from-table`,
+  `call-negative-reported-cost-ignored`; price-table precedence `lookup-override-beats-file-and-contracts`,
+  `lookup-file-beats-contracts`, `lookup-contracts-under-file`, `call-override-entry`, provider first
+  `lookup-provider-match-beats-override`, `call-provider-match-first`, `call-other-provider-fallback`,
+  `lookup-no-match`; cost sources `call-ollama-free-local`, `call-mock-simulated`, `call-unknown-model`;
+  exact decimals `call-exact-decimals`; the calculator with the default policy (about $3.0 per 1,000)
+  `per-1k-default-policy`, plus `per-1k-local-judge`, `per-1k-unknown-judge`.
 
 ## Writing a vector
 

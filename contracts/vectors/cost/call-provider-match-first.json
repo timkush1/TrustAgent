@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-provider-match-first",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "A bedrock entry for claude-* comes first, but the anthropic entry prices an anthropic call: entries of the call's own provider are tried before any other (P4-PLAN D53). 2,000 x $1/M + 400 x $5/M = $0.004.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "input_tokens": 2000,
+    "output_tokens": 400,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "claude-*", "provider": "bedrock", "input_per_mtok": 1.1, "output_per_mtok": 5.5},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"cost_source": "computed", "cost_usd": 0.004, "price_table_version": "2026-09-27"}
+}

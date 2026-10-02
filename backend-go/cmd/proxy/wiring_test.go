@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -194,5 +197,45 @@ func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
 	}
 	if !strings.Contains(env.logText(), "level=") || strings.Contains(env.logText(), secret) {
 		t.Errorf("the redacting test log is empty or leaks the secret")
+	}
+}
+
+// TestStatusWarnsAboutExcludedEvaluators: a file version that breaks a hard rule is left out of
+// the registry and named in /api/status warnings (P4-PLAN D54), while the other versions stay.
+func TestStatusWarnsAboutExcludedEvaluators(t *testing.T) {
+	const spec = `{"spec_version":"evaluator/v1","id":"tone","version":%d,"name":"Tone","category":"quality",
+  "state_fields":["assistant_response"],"question":{"type":"noul","instructions":"%s","criteria":{"true":"Rude","false":"Polite"}},
+  "evidence":{"requires":"none"},"signal":{"invert":false},"outcomes":{"warn_at":0.7},"changelog":"first"}`
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"tone-1.json": fmt.Sprintf(spec, 1, "Is it rude?"),
+		"tone-2.json": fmt.Sprintf(spec, 2, "Is it rude about `evidence`?"),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := newTestEnv(t, envOpts{mutate: func(c *config.Config) { c.EvaluatorsDir = dir }})
+	if _, ok := env.srv.policies.Registry.Get("tone@1"); !ok {
+		t.Fatal("tone@1 is clean and must load")
+	}
+	code, body := env.get("/api/status", testKey)
+	if code != http.StatusOK {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	var st struct {
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	var found int
+	for _, w := range st.Warnings {
+		if strings.HasPrefix(w, "Evaluators: ") && strings.Contains(w, "tone@2 breaks the hard rule unresolved_state_reference") {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Errorf("want one evaluator warning for tone@2, got %q", st.Warnings)
 	}
 }

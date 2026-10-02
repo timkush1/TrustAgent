@@ -280,7 +280,7 @@ export const KINDS: Readonly<Record<string, VectorKind>> = {
   decide: { run: runDecide, go: 'all' },
   detectors: { run: runDetectors, go: 'all' },
   evidence: { run: runEvidence, go: 'all (internal/evidence, every api_format through llmapi.ParseRequest)' },
-  lint: { run: runLint, go: 'Go: internal/decision/lint.go (P4)' },
+  lint: { run: runLint, go: 'all' },
   calibrate_fit: { run: runCalibrateFit, go: 'all' },
   cost: { skip: 'TS runner with the landing calculator (P5, D85)', go: 'all fn (internal/decision/cost.go, P4)' },
   pkce: { skip: 'src/lib/openrouter/pkce.ts (P5)', go: 'none (TS-only kind)' },

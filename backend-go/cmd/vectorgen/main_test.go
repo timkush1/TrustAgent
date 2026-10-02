@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/truthtable/backend-go/internal/decision/vectors"
 )
 
 func TestFormat(t *testing.T) {
@@ -218,8 +220,14 @@ func TestGenerateCheckFreeze(t *testing.T) {
 
 func TestRunUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	// lint has no Go runner yet and cost's runner is skipped: neither can be processed.
-	for _, args := range [][]string{{"-kinds", "lint"}, {"-kinds", "cost"}, {"-kinds", "nonsense"}, {"-check", "-freeze"}, {"extra"}, {"-nope"}} {
+	// A kind without a Go runner (vectors.Kinds Skip) cannot be processed.
+	usage := [][]string{{"-kinds", "nonsense"}, {"-check", "-freeze"}, {"extra"}, {"-nope"}}
+	for k, info := range vectors.Kinds {
+		if info.Skip != "" {
+			usage = append(usage, []string{"-kinds", k})
+		}
+	}
+	for _, args := range usage {
 		if code := run(args, &stdout, &stderr); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}
@@ -230,5 +238,33 @@ func TestRunUsage(t *testing.T) {
 	}
 	if code := run([]string{"-contracts", filepath.Join(dir, "missing")}, &stdout, &stderr); code != 1 {
 		t.Errorf("missing contracts directory: exit %d, want 1", code)
+	}
+}
+
+// cost is mechanical (P4-PLAN D85): vectorgen writes the calculator's result as expected.
+func TestRunCostVector(t *testing.T) {
+	dir := writeVector(t, t.TempDir(), "cost", `{
+  "vector": "1",
+  "kind": "cost",
+  "name": "sample",
+  "status": "draft",
+  "input": {
+    "fn": "call_cost", "provider": "openrouter", "model": "typesafe/jev-1.13", "input_tokens": 566, "output_tokens": 0,
+    "table": {"version": "v1", "currency": "USD", "entries": [{"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0}]}
+  },
+  "expected": null
+}
+`)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-contracts", dir, "-kinds", "cost", "-rev", "test"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "vectors", "cost", "sample.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"expected": {"cost_source": "computed", "cost_usd": 0.000023772, "price_table_version": "v1"}`
+	if !strings.Contains(string(b), want) {
+		t.Errorf("generated vector:\n%s\nwant it to contain %s", b, want)
 	}
 }

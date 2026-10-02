@@ -2,7 +2,7 @@
   "vector": "1",
   "kind": "lint",
   "name": "counting-or-arithmetic-instructions",
-  "status": "draft",
+  "status": "frozen",
   "description": "The instructions ask the model to count (\"more than\"). Jev is weak at counting and arithmetic, so the lint suggests the deterministic numeric_or_date escalation instead: counting_or_arithmetic.",
   "input": {
     "spec": {
