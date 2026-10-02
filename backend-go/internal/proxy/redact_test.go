@@ -32,7 +32,7 @@ func TestUpstreamErrorsNeverQuoteTheInjectedKey(t *testing.T) {
 	for _, key := range []string{noPatternSecret, "sk-test-injected-3f2a9c1b"} {
 		t.Run(key[:4], func(t *testing.T) {
 			e := newEnv(t, envOpts{injectKey: key, redact: config.NewRedactor(key).Redact})
-			e.up.status, e.up.body = http.StatusUnauthorized, echoingError(key)
+			e.up.status, e.up.body, e.up.echoHeader = http.StatusUnauthorized, echoingError(key), key
 			gated := e.do(t, "/v1/chat/completions", defaultRouteBody, nil)
 			e.sink.result(t)
 			passthrough := e.send(t, http.MethodGet, "/v1/models", "", nil)
@@ -43,6 +43,9 @@ func TestUpstreamErrorsNeverQuoteTheInjectedKey(t *testing.T) {
 				body := w.Body.String()
 				if strings.Contains(body, key) {
 					t.Errorf("%s: the injected key was relayed", name)
+				}
+				if got := w.Header().Get("WWW-Authenticate"); got == "" || strings.Contains(got, key) || !strings.Contains(got, config.Masked) {
+					t.Errorf("%s: WWW-Authenticate %q, want the upstream's header with the key masked", name, strings.ReplaceAll(got, key, "<key>"))
 				}
 				if !strings.Contains(body, "Incorrect API key provided: "+config.Masked) || !strings.Contains(body, `"code":"invalid_api_key"`) {
 					t.Errorf("%s: body %s, want the upstream's error with the key masked", name, body)
@@ -112,10 +115,14 @@ func TestLongUpstreamErrorsAreCut(t *testing.T) {
 // client's own, and so is what the upstream quotes: the body passes through unchanged.
 func TestPassthroughModeRelaysErrorsAsTheyCame(t *testing.T) {
 	e := newEnv(t, envOpts{redact: config.NewRedactor(upstreamKey).Redact})
-	e.up.status, e.up.body = http.StatusUnauthorized, echoingError(upstreamKey)
+	e.up.status, e.up.body, e.up.echoHeader = http.StatusUnauthorized, echoingError(upstreamKey), upstreamKey
 	w := e.do(t, "/v1/chat/completions", defaultRouteBody, nil)
 	e.sink.result(t)
 	if w.Code != http.StatusUnauthorized || w.Body.String() != echoingError(upstreamKey) {
 		t.Errorf("passthrough mode: %d %s", w.Code, w.Body)
+	}
+	// The client's own key, in its own headers, is the client's to see.
+	if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, upstreamKey) {
+		t.Errorf("passthrough mode WWW-Authenticate %q, want it as it came", got)
 	}
 }

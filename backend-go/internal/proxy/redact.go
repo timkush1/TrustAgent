@@ -37,8 +37,21 @@ func (h *Handler) redactErrorBody(body []byte) []byte {
 	return []byte(masked)
 }
 
-// redactingProxy masks the error bodies of a passthrough reverse proxy whose upstream injects its
-// own key: its non-2xx responses are read (decoded, at most maxRedactedErrorBytes plus the
+// redactHeaders masks every known secret in the header values of an upstream response, in place
+// (inject mode, D42). An upstream that refuses the gateway's own key may quote it in a header
+// (WWW-Authenticate, a debug echo) as well as in the body, and the client never had that key.
+func (h *Handler) redactHeaders(hdr http.Header) {
+	for name, values := range hdr {
+		for i, v := range values {
+			if masked := h.redact(v); masked != v {
+				hdr[name][i] = masked
+			}
+		}
+	}
+}
+
+// redactingProxy masks the header values of every response, and the error bodies, of a passthrough
+// reverse proxy whose upstream injects its own key: its non-2xx responses are read (decoded, at most maxRedactedErrorBytes plus the
 // lookahead), masked, cut and sent with their new length. A body that cannot be read fails the call like a failed upstream
 // (passthroughFailed, a 502).
 func (h *Handler) redactingProxy(c *upstream.Client) http.Handler {
@@ -53,6 +66,7 @@ func (h *Handler) redactingProxy(c *upstream.Client) http.Handler {
 				return err
 			}
 		}
+		h.redactHeaders(resp.Header)
 		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			return nil
 		}

@@ -123,6 +123,9 @@ type fakeUpstream struct {
 	// respond, when set, answers each request in place of status, ctype and body: n counts the
 	// requests before this one.
 	respond func(n int, body []byte) (status int, ctype, answer string)
+	// echoHeader, when set, is quoted back in a WWW-Authenticate header, as a refusing vendor
+	// may quote the key it was sent.
+	echoHeader string
 }
 
 func newFakeUpstream(t *testing.T) *fakeUpstream {
@@ -134,8 +137,11 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 		n := len(f.requests)
 		f.requests = append(f.requests, r.Clone(context.Background()))
 		f.bodies = append(f.bodies, b)
-		status, body, ctype, delay, encoding, respond := f.status, f.body, f.ctype, f.delay, f.encoding, f.respond
+		status, body, ctype, delay, encoding, respond, echo := f.status, f.body, f.ctype, f.delay, f.encoding, f.respond, f.echoHeader
 		f.mu.Unlock()
+		if echo != "" {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="key `+echo+` is invalid"`)
+		}
 		if respond != nil {
 			status, ctype, body = respond(n, b)
 		}

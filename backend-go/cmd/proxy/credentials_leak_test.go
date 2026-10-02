@@ -483,6 +483,12 @@ func TestCredentialLeakWithPostgres(t *testing.T) {
 	if b := mustCall(http.StatusOK, http.MethodPost, "/api/playground/run", run); !bytes.Contains(b, []byte("event: error")) {
 		t.Fatal("the refused Playground run did not end with an SSE error event")
 	}
+	// The /v1 relay (inject mode): the upstream refuses the gateway's own key and echoes it in its
+	// body and headers; the client gets the upstream's 401 with both masked (GW-6, D42).
+	if code, _ := sink.call(env.testEnv, http.MethodPost, "/v1/chat/completions", testKey,
+		[]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`)); code != http.StatusUnauthorized {
+		t.Fatalf("the refused /v1 call: HTTP %d, want the upstream's 401", code)
+	}
 	vendor.refuse.Store(false)
 	for i, s := range secrets {
 		if received, echoed := vendor.got(s); !received || (s != leakOpenRouterKey && !echoed) {

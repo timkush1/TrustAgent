@@ -425,6 +425,10 @@ func (h *Handler) Serve(c *gin.Context) {
 		h.upstreamFailed(f, err)
 		return
 	}
+	if f.up.Injecting() {
+		// The headers the client receives may quote the gateway's own key (redact.go, D42).
+		h.redactHeaders(resp.Header)
+	}
 	if isEventStream(resp) {
 		stream := f.up.StreamBody(resp, cancel)
 		defer func() { _ = stream.Close(); cancel() }()
