@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 
@@ -156,6 +158,26 @@ type kbUploadHooks struct {
 	log   *slog.Logger
 }
 
+// maxUploadTargetRunes bounds the file name the kb.upload audit row keeps.
+const maxUploadTargetRunes = 200
+
+// kbUploadTarget is the uploaded file's name as the kb.upload audit row's target: valid UTF-8
+// without control characters, at most maxUploadTargetRunes. The name is the client's to choose,
+// and a name the database refuses (invalid UTF-8) would otherwise leave the upload without its
+// audit row.
+func kbUploadTarget(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(name, "\uFFFD"))
+	if r := []rune(name); len(r) > maxUploadTargetRunes {
+		name = string(r[:maxUploadTargetRunes-1]) + "…"
+	}
+	return name
+}
+
 // handleFileUpload is POST /api/kb/documents over the server's engine (SPEC §2.4 row 65). It is
 // refused with 503 budget_exhausted while the day's LLM cap is spent, books the ingest's LLM cost
 // afterwards (it may pass the cap by one ingest, D48) and writes the admin audit row kb.upload.
@@ -299,7 +321,7 @@ func fileUpload(engine kbIngester, maxUploadBytes int64, hooks kbUploadHooks) gi
 			hooks.record(ctx, records, actor)
 		}
 		if hooks.audit != nil {
-			if err := hooks.audit(ctx, store.AdminAuditEntry{Actor: actor, Action: "kb.upload", Target: header.Filename,
+			if err := hooks.audit(ctx, store.AdminAuditEntry{Actor: actor, Action: "kb.upload", Target: kbUploadTarget(header.Filename),
 				Diff: map[string]any{
 					"documents_ingested": result.DocumentsIngested, "claims_accepted": result.ClaimsAccepted,
 					"claims_quarantined": result.ClaimsQuarantined, "conflicts_detected": result.ConflictsDetected,

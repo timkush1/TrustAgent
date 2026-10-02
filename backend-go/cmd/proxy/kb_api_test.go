@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -182,5 +183,22 @@ func TestKBUploadBooksItsCostAndAuditRow(t *testing.T) {
 		if w.Code != c.code || spy.reserved != 1 || len(spy.settled) != 1 || spy.settled[0] != 0 || len(spy.audits) != 0 {
 			t.Errorf("%s: HTTP %d, %d holds, settled %v, %d audit rows", c.name, w.Code, spy.reserved, spy.settled, len(spy.audits))
 		}
+	}
+}
+
+// The kb.upload row's target is the client's file name made storable: invalid UTF-8 (which the
+// database would refuse, leaving the upload without its audit row) is replaced, control
+// characters are dropped and a long name is cut.
+func TestKBUploadTargetIsStorable(t *testing.T) {
+	if got := kbUploadTarget("policies.json"); got != "policies.json" {
+		t.Errorf("a plain name became %q", got)
+	}
+	got := kbUploadTarget("pol\xffcies\r\n\x00.json")
+	if !utf8.ValidString(got) || got != "pol�cies.json" {
+		t.Errorf("an invalid name became %q", got)
+	}
+	long := kbUploadTarget(strings.Repeat("é", 5000) + ".json")
+	if n := utf8.RuneCountInString(long); n != maxUploadTargetRunes || !strings.HasSuffix(long, "…") {
+		t.Errorf("a long name kept %d runes", n)
 	}
 }
