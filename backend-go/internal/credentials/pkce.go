@@ -129,6 +129,10 @@ func NewConnectStore(ttl time.Duration, perActor int, now func() time.Time) *Con
 // verifier). callbackOrigin and returnTo must already be validated (ConnectCallbackOrigin,
 // ValidateReturnTo). Expired sign-ins are dropped, and an actor at the cap loses the oldest.
 func (s *ConnectStore) Start(actor, callbackOrigin, returnTo string) (string, PendingConnect, error) {
+	origin := connectOrigin(callbackOrigin)
+	if origin == "" {
+		return "", PendingConnect{}, ErrCallbackOrigin
+	}
 	verifier, err := NewCodeVerifier()
 	if err != nil {
 		return "", PendingConnect{}, err
@@ -138,7 +142,7 @@ func (s *ConnectStore) Start(actor, callbackOrigin, returnTo string) (string, Pe
 		return "", PendingConnect{}, err
 	}
 	now := s.now()
-	p := PendingConnect{Verifier: verifier, Actor: actor, CallbackOrigin: callbackOrigin, ReturnTo: returnTo, Expires: now.Add(s.ttl)}
+	p := PendingConnect{Verifier: verifier, Actor: actor, CallbackOrigin: origin, ReturnTo: returnTo, Expires: now.Add(s.ttl)}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var mine []*pendingEntry

@@ -85,6 +85,9 @@ func TestConnectStoreCompleteOnce(t *testing.T) {
 	if _, err := s.Complete("never-issued", adminA, dashOrigin); !errors.Is(err, ErrInvalidNonce) {
 		t.Errorf("unknown nonce: %v", err)
 	}
+	if _, _, err := s.Start(adminA, "not an origin", DefaultConnectReturnTo); !errors.Is(err, ErrCallbackOrigin) {
+		t.Errorf("start without a callback origin: %v, want ErrCallbackOrigin", err)
+	}
 }
 
 // TestConnectStoreFailedCompleteBurnsTheNonce: the first call consumes the nonce whatever the
