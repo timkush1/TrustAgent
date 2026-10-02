@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": 3,
+      "created_at": "2026-09-28T00:00:00.000Z",
+      "origin": "file",
+      "backend": "openrouter-decisions",
+      "snapshot": "typesafe/jev-1.13-20260917",
+      "family": "typesafe/jev-1.13",
+      "target_kind": "evaluator",
+      "target_key": "groundedness@1",
+      "quality": "measured",
+      "active": true
+    },
+    {
+      "id": 7,
+      "created_at": "2026-09-28T10:15:22.000Z",
+      "origin": "fit",
+      "backend": "openrouter-decisions",
+      "snapshot": "typesafe/jev-1.13-20260917",
+      "family": "typesafe/jev-1.13",
+      "target_kind": "evaluator",
+      "target_key": "contradiction@1",
+      "quality": "provisional",
+      "active": false
+    }
+  ]
+}

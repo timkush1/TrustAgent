@@ -3,9 +3,10 @@ import { PhasePlaceholder, SeeTraffic } from '@/components/layout/PhasePlacehold
 import { useIsStatic } from '@/components/replay/useReplay';
 
 /**
- * Evaluator Studio (SPEC §7.3) arrives in P4. The route exists now so the static build's "Studio"
- * item and links to /app/evaluators/studio land on an honest page instead of an evaluator named
- * "studio".
+ * Evaluator Studio (SPEC §7.3): a new check. The route exists so the static build's "Studio" item
+ * and links to /app/evaluators/studio land on an honest page instead of an evaluator named
+ * "studio". WEB-ST replaces the placeholder with the Studio steps (P4-PLAN §12 STW-3); the static
+ * build keeps "Coming soon" until P5 (D72).
  */
 function StudioRoute() {
   const isStatic = useIsStatic();
@@ -26,7 +27,7 @@ function StudioRoute() {
   );
 }
 
-export const Route = createFileRoute('/app/evaluators/studio')({
+export const Route = createFileRoute('/app/evaluators/studio/')({
   staticData: { title: 'Studio' },
   component: StudioRoute,
 });

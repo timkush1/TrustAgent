@@ -1,0 +1,42 @@
+{
+  "credential": {
+    "name": "openrouter",
+    "provider": "openrouter",
+    "source": "dashboard",
+    "masked": "sk-…3f2a",
+    "fingerprint": "fp_5d0c41e9a7b2",
+    "allowed_hosts": [
+      "https://openrouter.ai"
+    ],
+    "created_at": "2026-09-28T09:58:12.000Z",
+    "rotated_at": null,
+    "last_verified_at": "2026-09-28T09:58:13.204Z",
+    "last_verify_status": "ok",
+    "last_used_at": "2026-09-28T10:19:58.611Z",
+    "used_by": [
+      "decision_model",
+      "judge"
+    ],
+    "undecryptable": false
+  },
+  "stored": true,
+  "bindings": {
+    "applied": [
+      "decision_model",
+      "judge"
+    ],
+    "skipped": []
+  },
+  "verification": {
+    "ok": true,
+    "status": "ok",
+    "hint": null,
+    "latency_ms": 412,
+    "cost_usd": 1e-05,
+    "cost_source": "reported",
+    "key_label": "TrustAgent dev",
+    "limit_usd": 2.0,
+    "limit_remaining_usd": 1.97
+  },
+  "return_to": "/app/setup?step=try"
+}

@@ -1,0 +1,39 @@
+{
+  "run_id": "dr_01a0e7b4",
+  "evaluator_ref": "blames_customer@draft:3c9a1f0e7b2d",
+  "route": "support-bot",
+  "window": "7d",
+  "sampled": 200,
+  "population": 1840,
+  "assessed": 188,
+  "not_assessed": 9,
+  "errors": 3,
+  "fired": 11,
+  "fire_rate": 0.0585,
+  "fire_rate_ci95": [
+    0.033,
+    0.102
+  ],
+  "extrapolated_fires": 108,
+  "overlap": [
+    {
+      "evaluator_ref": "off_brand_tone@1",
+      "both_fired": 6
+    }
+  ],
+  "agreement_with_audit": null,
+  "examples": [
+    {
+      "trace_id": "01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64",
+      "risk": 0.93,
+      "level": "critical"
+    },
+    {
+      "trace_id": "01a0e782-4e9a-7c13-8d2f-6a0b1c9e7d35",
+      "risk": 0.71,
+      "level": "warn"
+    }
+  ],
+  "cost_usd": 0.00082,
+  "snapshot": "typesafe/jev-1.13-20260917"
+}
