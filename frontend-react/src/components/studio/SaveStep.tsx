@@ -45,7 +45,8 @@ export interface SaveStepProps {
   specReason: Reason | null;
   writeReason: Reason | null;
   taken: readonly string[];
-  onSaved: (version: EvaluatorVersion) => void;
+  /** A version was saved from `sent` (the spec as it was when the save started). */
+  onSaved: (version: EvaluatorVersion, sent: EvaluatorSpec) => void;
   /** Reloads the latest saved version after a 412 (the working spec stays). */
   onReloadLatest: () => Promise<void>;
   /** This is the step to do next: its action is the page's one primary button. */
@@ -62,15 +63,15 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
   const toSave: EvaluatorSpec = { ...spec, version: nextVersion };
 
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (sent: EvaluatorSpec) =>
       asVersion
-        ? ds.createEvaluatorVersion(spec.id, { spec: toSave, changelog: changelog.trim(), base_version: base.latest })
-        : ds.createEvaluator({ spec: toSave, changelog: changelog.trim() }),
-    onSuccess: (version) => {
+        ? ds.createEvaluatorVersion(sent.id, { spec: sent, changelog: changelog.trim(), base_version: base.latest })
+        : ds.createEvaluator({ spec: sent, changelog: changelog.trim() }),
+    onSuccess: (version, sent) => {
       void queryClient.invalidateQueries({ queryKey: qkc.evaluators.all });
       notify.success(`Saved ${version.spec.name}, version ${version.version}`, { description: 'Watch it on a route next: nothing changes for users until you do.' });
       setChangelog('');
-      onSaved(version);
+      onSaved(version, sent);
     },
   });
 
@@ -134,7 +135,7 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
       </Field>
       <DisabledAction reason={reason}>
         {(p) => (
-          <Button variant={primary ? 'primary' : 'secondary'} pending={save.isPending} onClick={() => save.mutate()} {...p}>
+          <Button variant={primary ? 'primary' : 'secondary'} pending={save.isPending} onClick={() => save.mutate(toSave)} {...p}>
             {asVersion ? `Save version ${nextVersion}` : 'Save as a new check'}
           </Button>
         )}

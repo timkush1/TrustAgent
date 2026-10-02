@@ -315,6 +315,31 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(step(/Step 7: Calibrate for blocking/)).getByRole('link', { name: /Calibrate on the check's page/ })).toHaveAttribute('href', '/app/evaluators/blames_the_customer');
   });
 
+  it('keeps an edit made while a save is on its way, against the version it saved', async () => {
+    const user = userEvent.setup();
+    const { dataSource } = renderPage('/app/evaluators/studio');
+    let finish: () => void = () => {};
+    vi.spyOn(dataSource, 'createEvaluator').mockImplementation(
+      (req: EvaluatorCreateRequest) =>
+        new Promise<EvaluatorVersion>((resolve) => {
+          finish = () => resolve(savedVersion(req.spec, req.changelog));
+        }),
+    );
+    await draftWithAi(user);
+    const save = step(/Step 5: Save a version/);
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'First version');
+    await user.click(within(save).getByRole('button', { name: 'Save as a new check' }));
+    const name = within(step(/Step 2/)).getByRole('textbox', { name: 'Name' });
+    await user.type(name, ' (v2)');
+    await act(async () => {
+      finish();
+      await Promise.resolve();
+    });
+    expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
+    expect(name).toHaveValue('Blames the customer (v2)');
+    expect(within(save).getByRole('button', { name: 'Save version 2' })).toBeInTheDocument();
+  });
+
   it('offers a free id after a 409, and clears the conflict once the viewer takes it', async () => {
     const user = userEvent.setup();
     const { dataSource } = renderPage('/app/evaluators/studio');

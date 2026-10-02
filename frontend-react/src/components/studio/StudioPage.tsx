@@ -115,8 +115,13 @@ function StudioEditor({ initial }: { initial: Session }) {
     setRun(null);
     setSession({ spec: st.spec, samples: st.samples, draft: st.draft, origin: st.origin, route: st.route, base: null });
   };
-  const onSaved = (version: EvaluatorVersion) =>
-    setSession((s) => ({ ...s, spec: version.spec, base: { id: version.evaluator_id, latest: version.version, spec: version.spec, origin: 'dashboard' } }));
+  /** The saved version becomes the base; an edit made while the save was on its way stays. */
+  const onSaved = (version: EvaluatorVersion, sent: EvaluatorSpec) =>
+    setSession((s) => ({
+      ...s,
+      spec: s.spec && !sameSpec(s.spec, sent) ? s.spec : version.spec,
+      base: { id: version.evaluator_id, latest: version.version, spec: version.spec, origin: 'dashboard' },
+    }));
   /** After a 412: the latest saved version becomes the base (the diff and base_version follow); the edits stay. */
   const reloadLatest = async () => {
     const id = session.base?.id ?? spec?.id;
