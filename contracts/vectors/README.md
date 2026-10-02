@@ -29,13 +29,13 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `decide` | 55 at P3; P4 adds at least 3 (58+) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
-| `lint` | 19 (frozen once Go passes them) | 14 | hand-authored | Go `internal/decision/lint.go` (P4) |
+| `lint` | 19 (19 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
 | `cost` | at least 8 (P4) | — | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
 
 P4 adds the `decide` vectors for `calibration_missing`, an `other_snapshot` calibration entry and
-`calibration_warning` (P4-PLAN D56). Until a kind's P4 runner lands, `backend-go/internal/decision/vectors/`
-`lint.go` and `cost.go` keep it skipped. `pkce` vectors are TypeScript-only and arrive with
-`src/lib/openrouter/pkce.ts` in P5.
+`calibration_warning` (P4-PLAN D56). `lint` runs in Go since EV-1 (D54); until the cost runner lands,
+`backend-go/internal/decision/vectors/cost.go` keeps `cost` skipped. `pkce` vectors are TypeScript-only
+and arrive with `src/lib/openrouter/pkce.ts` in P5.
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
 `github.com/truthtable/contracts` module): kinds with a Go runner must pass in full, draft and frozen alike;
