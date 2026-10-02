@@ -3,12 +3,14 @@
  * only be judged against documents the request carried, so the card explains the rest in a
  * "Why not?" panel: which sources supplied documents, why the other requests had none, suggested
  * fixes from the proxy (admin, when it serves them), and the `trustagent.context` snippet that
- * attaches documents to any request.
+ * attaches documents to any request. A suggested tag pattern goes into a route's
+ * `evidence.tag_patterns` in one step: it becomes a policy draft and opens the policy review (diff,
+ * validation, Preview impact) right here, and nothing changes until it is saved.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, FileSearch } from 'lucide-react';
-import { useId, useState } from 'react';
+import { lazy, Suspense, useId, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { CopyButton } from '@/components/common/CopyButton';
@@ -25,6 +27,9 @@ import { formatPercent } from '@/domain/rates';
 import { contextExtensionSnippet } from '@/domain/snippets';
 import type { EvidenceSuggestion, OverviewStats, TimeWindow } from '@/types/api';
 import { coverageSummary, type CoverageSummary } from './overviewModel';
+
+// The policy draft and review (YAML parsing, diffs) load only when a suggestion can use them.
+const AddTagPatternAction = lazy(() => import('@/components/policies/AddTagPatternAction'));
 
 function SourceBreakdown({ summary }: { summary: CoverageSummary }) {
   const max = Math.max(1, ...summary.bySource.map((s) => s.count));
@@ -71,7 +76,7 @@ function Gaps({ summary }: { summary: CoverageSummary }) {
 
 function SuggestionItem({ s }: { s: EvidenceSuggestion }) {
   return (
-    <li className="space-y-1 rounded-md border border-border px-3 py-2">
+    <li className="space-y-1.5 rounded-md border border-border px-3 py-2">
       <p className="text-sm font-medium text-fg">{s.label}</p>
       <p className="text-xs text-fg-muted">
         {formatCount(s.would_gain)} of your last {formatCount(s.sample)} requests would gain documents.
@@ -85,16 +90,18 @@ function SuggestionItem({ s }: { s: EvidenceSuggestion }) {
           <CopyButton value={s.pattern.pattern} label="Copy pattern" />
         </div>
       ) : null}
-      <p className="flex flex-wrap gap-x-3 text-xs">
-        <Link to="/app/policies" className="font-medium text-fg underline underline-offset-2">
-          Add it to a route’s evidence.tag_patterns
-        </Link>
-        {s.example_trace_id ? (
+      {s.pattern && s.kind === 'tag_pattern' ? (
+        <Suspense fallback={<Skeleton className="h-8 w-48" />}>
+          <AddTagPatternAction pattern={s.pattern} />
+        </Suspense>
+      ) : null}
+      {s.example_trace_id ? (
+        <p className="text-xs">
           <Link to="/app/traffic/$traceId" params={{ traceId: s.example_trace_id }} className="font-medium text-fg underline underline-offset-2">
             See an example request
           </Link>
-        ) : null}
-      </p>
+        </p>
+      ) : null}
     </li>
   );
 }

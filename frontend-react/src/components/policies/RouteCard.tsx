@@ -5,14 +5,15 @@
  * Changes made here go into the page's draft; nothing is saved until the viewer reviews it.
  */
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Check, CircleAlert, Eye, ListChecks, TriangleAlert } from 'lucide-react';
-import { useId } from 'react';
+import { ArrowRight, Check, CircleAlert, Eye, ListChecks, SlidersHorizontal, TriangleAlert } from 'lucide-react';
+import { useId, useState } from 'react';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { Term } from '@/components/common/Term';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { IconButton } from '@/components/ui/icon-button';
 import { Select } from '@/components/ui/select';
 import {
   actingAsText,
@@ -28,7 +29,9 @@ import { formatCount, formatRisk } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import type { BlockReadiness, CalibrationProgress, Downgrade, EffectiveRoute, PolicyMode } from '@/types/api';
+import type { ThresholdEdit } from './policyDraft';
 import { evaluatorDisplayName, evaluatorId, isDefaultRoute, matchSummary, routeTitle, settingFacts } from './routeWords';
+import { ThresholdEditor } from './ThresholdEditor';
 
 export type RouteFix = 'buffer_streams' | 'allow_uncalibrated' | 'stop_trusting_user_context';
 
@@ -43,6 +46,10 @@ export interface RouteCardProps {
   writeReason: Reason | null;
   onModeChange: (mode: PolicyMode) => void;
   onFix: (fix: RouteFix) => void;
+  /** Put a threshold change into the draft and open the review (Preview impact). */
+  onThresholds: (ref: string, edit: ThresholdEdit) => void;
+  /** Open this check's threshold editor at once ("Adjust threshold" from a trace). */
+  focusEvaluator?: string | null;
 }
 
 const linkClass = 'inline-flex items-center gap-0.5 text-xs font-medium text-fg underline underline-offset-2';
@@ -187,8 +194,10 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
   );
 }
 
-export function RouteCard({ route, draftMode, names, progress, writeReason, onModeChange, onFix }: RouteCardProps) {
+export function RouteCard({ route, draftMode, names, progress, writeReason, onModeChange, onFix, onThresholds, focusEvaluator = null }: RouteCardProps) {
   const headingId = useId();
+  const linked = focusEvaluator && route.evaluators.some((e) => e.ref === focusEvaluator) ? focusEvaluator : null;
+  const [editing, setEditing] = useState<string | null>(linked);
   const mode = modeView(route.mode);
   const acting = actingAsText(route.mode, route.effective_mode);
   const shownMode = draftMode ?? route.mode;
@@ -283,25 +292,52 @@ export function RouteCard({ route, draftMode, names, progress, writeReason, onMo
                 const id = evaluatorId(e.ref);
                 const cal = calibrationStateView(e.calibration_state);
                 return (
-                  <li key={e.ref} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Link to="/app/evaluators/$id" params={{ id }} className="truncate text-sm font-medium text-fg underline-offset-2 hover:underline">
-                        {evaluatorDisplayName(e.ref, names)}
-                      </Link>
-                      <Badge size="sm" emphasis={e.stage === 'shadow' ? 'outline' : 'quiet'} icon={e.stage === 'shadow' ? Eye : undefined}>
-                        {stageLabel(e.stage)}
-                      </Badge>
-                      {e.resolved ? null : (
-                        <span className="inline-flex items-center gap-1 text-xs text-fg">
-                          <TriangleAlert aria-hidden="true" className="size-3 text-tone-warning" />
-                          Not in the library
+                  <li key={e.ref} className="space-y-2 py-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Link to="/app/evaluators/$id" params={{ id }} className="truncate text-sm font-medium text-fg underline-offset-2 hover:underline">
+                          {evaluatorDisplayName(e.ref, names)}
+                        </Link>
+                        <Badge size="sm" emphasis={e.stage === 'shadow' ? 'outline' : 'quiet'} icon={e.stage === 'shadow' ? Eye : undefined}>
+                          {stageLabel(e.stage)}
+                        </Badge>
+                        {e.resolved ? null : (
+                          <span className="inline-flex items-center gap-1 text-xs text-fg">
+                            <TriangleAlert aria-hidden="true" className="size-3 text-tone-warning" />
+                            Not in the library
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-xs text-fg-muted tabular">
+                          {cal.label} · flag at {formatRisk(e.warn_at)}
+                          {e.critical_at !== null ? ` · block at ${formatRisk(e.critical_at)}` : ''}
                         </span>
-                      )}
-                    </span>
-                    <span className="text-xs text-fg-muted tabular">
-                      {cal.label} · flag at {formatRisk(e.warn_at)}
-                      {e.critical_at !== null ? ` · block at ${formatRisk(e.critical_at)}` : ''}
-                    </span>
+                        {e.resolved ? (
+                          <IconButton
+                            size="sm"
+                            icon={SlidersHorizontal}
+                            aria-label={`${copy.trace.adjust_threshold}: ${evaluatorDisplayName(e.ref, names)}`}
+                            aria-expanded={editing === e.ref}
+                            onClick={() => setEditing((cur) => (cur === e.ref ? null : e.ref))}
+                          />
+                        ) : null}
+                      </span>
+                    </div>
+                    {editing === e.ref ? (
+                      <ThresholdEditor
+                        route={route.name}
+                        evaluator={e}
+                        name={evaluatorDisplayName(e.ref, names)}
+                        writeReason={writeReason}
+                        focusOnOpen={linked === e.ref}
+                        onPreview={(edit) => {
+                          onThresholds(e.ref, edit);
+                          setEditing(null);
+                        }}
+                        onCancel={() => setEditing(null)}
+                      />
+                    ) : null}
                   </li>
                 );
               })}

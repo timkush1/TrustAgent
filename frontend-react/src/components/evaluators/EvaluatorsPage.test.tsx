@@ -1,11 +1,13 @@
 import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
+import { copy } from '@/domain/presentation';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { calibrationProgress, evaluatorDetail, evaluatorMeta, evaluatorMetas, evaluatorVersion, reliability } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
-import { installMswServer } from '@/test/msw';
+import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 
 installMswServer();
@@ -24,9 +26,15 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(await within(g).findByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
     expect(within(g).getByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
     expect(within(g).getByText(/Needs 157 more labels, 18 more false alarms/)).toBeInTheDocument();
-    // P4 actions say why they are not here yet.
-    expect(within(g).getByRole('button', { name: 'Label queue' })).toHaveAttribute('aria-disabled', 'true');
-    expect(within(g).getByText('The label queue and calibration from labels arrive in P4.')).toBeInTheDocument();
+    // Label queue (this check's answers) and Calibrate now are live for an admin.
+    expect(within(g).getByRole('link', { name: 'Label queue for Groundedness' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/app\/evaluators\/labels\?evaluator=groundedness(%40|@)1$/),
+    );
+    expect(within(g).getByRole('button', { name: 'Calibrate now for Groundedness' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: 'New check' })).toHaveAttribute('href', '/app/evaluators/studio');
+    expect(screen.getByRole('navigation', { name: 'Evaluators sections' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page');
     // Checks that run somewhere come first.
     const names = screen.getAllByRole('article').map((a) => a.getAttribute('aria-labelledby') && a.querySelector('h3')?.textContent);
     expect(names.slice(0, 4)).toEqual(['Contradiction', 'Groundedness', 'Unapproved commitments', 'Off-brand tone']);
@@ -75,6 +83,24 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(await card('Groundedness')).toBeInTheDocument();
   });
 
+  it('shows a loading state after 200 ms, then the cards', async () => {
+    renderPage('/app/evaluators');
+    server.use(
+      http.get(`${API}/api/evaluators`, async () => {
+        await delay(600);
+        return HttpResponse.json({ items: evaluatorMetas() });
+      }),
+    );
+    expect(await screen.findByText(copy.states.loading)).toBeInTheDocument();
+    expect(await card('Groundedness')).toBeInTheDocument();
+  });
+
+  it('has an empty state with a next step when the proxy loaded no evaluators', async () => {
+    renderPage('/app/evaluators', { control: createControlApi({ evaluators: [] }) });
+    expect(await screen.findByText('No evaluators yet')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Describe a check in Studio' })).toHaveAttribute('href', '/app/evaluators/studio');
+  });
+
   it('degrades when the library is not served', async () => {
     renderPage('/app/evaluators', { control: createControlApi({ evaluators: undefined }) });
     expect(await screen.findByText('The evaluator library is not available on this proxy')).toBeInTheDocument();
@@ -97,8 +123,9 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     expect(screen.getByText('0.80')).toBeInTheDocument();
     expect(screen.getByText('0.95')).toBeInTheDocument();
     expect(screen.getByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText(/Adopting a calibration arrives in P4/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: 'Duplicate and edit' })).toHaveAttribute('href', '/app/evaluators/studio/groundedness/1');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('draws the reliability chart with its caption, table and sources', async () => {
@@ -149,7 +176,7 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
       versions: [v1meta, v2meta],
       calibration_progress: calibrationProgress('groundedness@2'),
     });
-    renderPage('/app/evaluators/groundedness', { control });
+    renderPage('/app/evaluators/groundedness?tab=versions', { control });
     expect(await screen.findByText('Clearer criteria')).toBeInTheDocument();
     const diff = await screen.findByRole('region', { name: 'Version 1 → version 2' });
     expect(diff.textContent).toContain('A sharper description.');

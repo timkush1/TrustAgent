@@ -1,18 +1,22 @@
 /**
  * Calibration progress for one evaluator (SPEC §3.3 Evaluators): "Labels 43/200 (31 correct,
  * 12 false alarms)" with a meter per requirement (200 labels, 30 of each kind), the calibration
- * state, what is still missing, and the Label queue / Calibrate now actions, which arrive in P4
- * and say so once for both.
+ * state, what is still missing, and the actions: Label queue (this check's answers) and Calibrate
+ * now (the fit dialog). Each says why when it is not available.
  */
+import { Link } from '@tanstack/react-router';
 import { useId } from 'react';
-import { DisabledReason } from '@/components/common/DisabledReason';
+import { DisabledAction, DisabledReason } from '@/components/common/DisabledReason';
 import { Term } from '@/components/common/Term';
+import { useWriteReason } from '@/components/common/useWriteAccess';
 import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button-variants';
 import { formatCount } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
-import type { CalibrationProgress } from '@/types/api';
-import { P4_REASONS, progressParts, progressText } from './evaluatorWords';
+import type { CalibrationProgress, EvaluatorDetail } from '@/types/api';
+import { CalibrateDialog } from './CalibrateDialog';
+import { calibrateReason, progressParts, progressText } from './evaluatorWords';
 
 function Bar({ label, value, have, need }: { label: string; value: number; have: number; need: number }) {
   return (
@@ -38,17 +42,65 @@ function Bar({ label, value, have, need }: { label: string; value: number; have:
   );
 }
 
+function Actions({ progress, detail }: { progress: CalibrationProgress; detail: EvaluatorDetail }) {
+  const writeReason = useWriteReason('admin');
+  const reasonId = useId();
+  if (writeReason) {
+    // Both need an admin on a writable instance: one reason, referenced by both buttons.
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled aria-describedby={reasonId}>
+          {copy.evaluators.label_queue}
+        </Button>
+        <Button size="sm" disabled aria-describedby={reasonId}>
+          {copy.evaluators.calibrate_now}
+        </Button>
+        <DisabledReason id={reasonId} reason={writeReason} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      <Link to="/app/evaluators/labels" search={{ evaluator: progress.evaluator_ref }} className={buttonVariants({ size: 'sm' })}>
+        {copy.evaluators.label_queue}{' '}
+        <span className="sr-only">for {detail.name}</span>
+      </Link>
+      <DisabledAction reason={calibrateReason(progress)} layout="stacked">
+        {(p) =>
+          p.disabled ? (
+            <Button size="sm" {...p}>
+              {copy.evaluators.calibrate_now}
+            </Button>
+          ) : (
+            <CalibrateDialog
+              detail={detail}
+              trigger={
+                <Button size="sm">
+                  {copy.evaluators.calibrate_now}{' '}
+                  <span className="sr-only">for {detail.name}</span>
+                </Button>
+              }
+            />
+          )
+        }
+      </DisabledAction>
+    </div>
+  );
+}
+
 export function CalibrationMeter({
   progress,
+  detail,
   showActions = true,
   className,
 }: {
   progress: CalibrationProgress;
+  /** The evaluator, for the actions (Label queue, Calibrate now). Without it there are none. */
+  detail?: EvaluatorDetail;
   showActions?: boolean;
   className?: string;
 }) {
   const parts = progressParts(progress);
-  const reasonId = useId();
   return (
     <div className={cn('space-y-2', className)}>
       <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
@@ -63,18 +115,7 @@ export function CalibrationMeter({
         <Bar label="False alarms" value={parts.falseAlarms} have={progress.human_labels.neg} need={progress.needed.neg} />
       </div>
       {parts.missing ? <p className="text-xs text-fg-muted">{parts.missing}</p> : <p className="text-xs text-fg-muted">Enough labels to calibrate for blocking.</p>}
-      {showActions ? (
-        // Both actions arrive together in P4: one reason, referenced by both buttons.
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" disabled aria-describedby={reasonId}>
-            {copy.evaluators.label_queue}
-          </Button>
-          <Button size="sm" disabled aria-describedby={reasonId}>
-            {copy.evaluators.calibrate_now}
-          </Button>
-          <DisabledReason id={reasonId} reason={P4_REASONS.labelling} />
-        </div>
-      ) : null}
+      {showActions && detail ? <Actions progress={progress} detail={detail} /> : null}
     </div>
   );
 }

@@ -63,7 +63,7 @@ export function EvaluatorCard({ meta, detail }: { meta: EvaluatorMeta; detail: P
           ) : detail.isError ? (
             <p className="text-xs text-fg-muted">Calibration progress is not available: {detail.error?.message}</p>
           ) : detail.data ? (
-            <CalibrationMeter progress={detail.data.calibration_progress} />
+            <CalibrationMeter progress={detail.data.calibration_progress} detail={detail.data} />
           ) : null}
         </div>
       </article>

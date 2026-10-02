@@ -2,25 +2,33 @@
  * "Checks" (SPEC §3.3 "Trace detail" 2, right): one row per evaluator the fast check asked, named
  * from the evaluator library (GET /api/evaluators), with its level word and a risk bar with flag and
  * block ticks, or "Not checked — no documents". Shadow evaluators are labelled "Watching". A
- * decision that arrived after the deadline says so: it was recorded, never enforced.
+ * decision that arrived after the deadline says so: it was recorded, never enforced. Each name
+ * opens its evaluator; an assessed row of a check the route lists also offers "Adjust threshold" on
+ * this request's route.
  */
-import { Clock } from 'lucide-react';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { Clock, SlidersHorizontal } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { RiskBar, RiskBarLegend } from '@/components/outcome/RiskBar';
+import { IconButton } from '@/components/ui/icon-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { copy, levelWord, statusReason, statusReasonKey, toneVar } from '@/domain/presentation';
 import { formatRisk } from '@/domain/format';
+import { evalRefId } from '@/domain/words/evaluators';
 import { cn } from '@/lib/cn';
 import type { GateDecisionView, TraceSummary } from '@/types/api';
 import { checkRows, type CheckRow } from './traceView';
 
-function CheckItem({ row }: { row: CheckRow }) {
+function CheckItem({ row, route }: { row: CheckRow; route: string }) {
+  const navigate = useNavigate();
   const level = row.kind === 'assessed' && row.level ? levelWord(row.level) : null;
   return (
     <li className="space-y-1.5 py-2.5">
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-          {row.name}
+          <Link to="/app/evaluators/$id" params={{ id: evalRefId(row.ref) }} className="underline-offset-2 hover:underline">
+            {row.name}
+          </Link>
           {row.shadow ? (
             <>
               {' '}
@@ -37,6 +45,15 @@ function CheckItem({ row }: { row: CheckRow }) {
             <span className="ml-2 text-fg-muted tabular">{formatRisk(row.risk)}</span>
           </span>
         ) : null}
+        {/* An internal check is not on the route, so it has no threshold there to adjust. */}
+        {row.kind === 'assessed' && !row.internal ? (
+          <IconButton
+            size="sm"
+            icon={SlidersHorizontal}
+            aria-label={`${copy.trace.adjust_threshold}: ${row.name}`}
+            onClick={() => void navigate({ to: '/app/policies', search: { route, evaluator: row.ref } })}
+          />
+        ) : null}
       </div>
       {row.kind === 'assessed' && row.level && row.risk !== null ? (
         <RiskBar
@@ -49,6 +66,7 @@ function CheckItem({ row }: { row: CheckRow }) {
       ) : (
         <p className="text-xs text-fg-muted">{row.note}</p>
       )}
+      {row.calibrationNote ? <p className="text-xs text-fg-muted">{row.calibrationNote}</p> : null}
     </li>
   );
 }
@@ -97,7 +115,7 @@ export function ChecksList({
       <>
         <ul aria-label="Checks" className="divide-y divide-border">
           {rows.map((row) => (
-            <CheckItem key={row.ref} row={row} />
+            <CheckItem key={row.ref} row={row} route={summary.route} />
           ))}
         </ul>
         {rows.some((r) => r.kind === 'assessed') ? <RiskBarLegend className="pt-1" /> : null}

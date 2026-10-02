@@ -1,6 +1,7 @@
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { effectiveRoutes, policyState, policyVersion, policyVersionMeta } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
@@ -303,6 +304,76 @@ describe('Policies page', { timeout: 20_000 }, () => {
   it('degrades when the proxy does not serve policies', async () => {
     renderPage('/app/policies', { control: createControlApi({ policies: undefined }) });
     expect(await screen.findByText('Policies cannot be read from this proxy')).toBeInTheDocument();
+  });
+
+  it('opens the threshold editor from an Adjust threshold link, previews the change and saves it', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/policies?route=support-bot&evaluator=groundedness@1');
+    const support = await card('support-bot');
+    const editor = await within(support).findByTestId('threshold-editor');
+    await waitFor(() => expect(document.activeElement).toHaveTextContent('Thresholds for Groundedness on support-bot'));
+    const preview = within(editor).getByRole('button', { name: 'Preview impact (free — replays past answers)' });
+    expect(preview).toHaveAttribute('aria-disabled', 'true');
+    expect(within(editor).getByText('Move a threshold first.')).toBeInTheDocument();
+
+    const flag = within(editor).getByRole('slider', { name: 'Flags from' });
+    flag.focus();
+    await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}{ArrowLeft}{ArrowLeft}');
+    expect(flag).toHaveAttribute('aria-valuetext', expect.stringMatching(/^0\.75/));
+    await user.click(within(editor).getByRole('button', { name: 'Preview impact (free — replays past answers)' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Review and save a new policy version' });
+    await waitFor(() => expect(control.callsTo('/api/policies/dry-run')).toHaveLength(1));
+    const proposed = parse((control.callsTo('/api/policies/dry-run')[0].body as { yaml: string }).yaml) as { routes: { name: string; evaluators: { ref: string; thresholds?: object }[] }[] };
+    expect(proposed.routes.find((r) => r.name === 'support-bot')?.evaluators[0]).toEqual({ ref: 'groundedness@1', thresholds: { warn_at: 0.75, critical_at: 0.95 } });
+    await user.type(within(dialog).getByRole('textbox', { name: 'What changed and why' }), 'Flag groundedness earlier');
+    await user.click(within(dialog).getByRole('button', { name: 'Save version' }));
+    await waitFor(() => expect(control.callsTo('/api/policies', 'PUT')).toHaveLength(1));
+  });
+
+  it('says so when an Adjust threshold link names a check the route no longer runs', async () => {
+    renderPage('/app/policies?route=support-bot&evaluator=groundedness@7');
+    const support = await card('support-bot');
+    expect(await screen.findByText(/\(groundedness@7\) no longer runs on support-bot, so there is no threshold of it to adjust there\./)).toBeInTheDocument();
+    expect(within(support).queryByTestId('threshold-editor')).toBeNull();
+    stopLive();
+    cleanup();
+
+    // A link that matches says nothing extra.
+    renderPage('/app/policies?route=support-bot&evaluator=groundedness@1');
+    await within(await card('support-bot')).findByTestId('threshold-editor');
+    expect(screen.queryByText(/no longer runs on/)).toBeNull();
+  });
+
+  it('opens a check\'s threshold editor from its card, with one thumb for a check that never blocks', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/policies');
+    const support = await card('support-bot');
+    await user.click(within(support).getByRole('button', { name: 'Adjust threshold: Off-brand tone' }));
+    const editor = await within(support).findByTestId('threshold-editor');
+    expect(within(editor).getAllByRole('slider')).toHaveLength(1);
+    expect(within(editor).getByText(/This check never blocks on this route/)).toBeInTheDocument();
+    await user.click(within(editor).getByRole('button', { name: 'Cancel' }));
+    expect(within(support).queryByTestId('threshold-editor')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull();
+  });
+
+  it('says policy warnings in plain words, with the server text as technical detail', async () => {
+    const user = userEvent.setup();
+    const raw = 'routes[0].evaluators[2].ref (line 40, col 9): commitments@1 is corroborated by contradiction@2, which this route does not attach';
+    renderPage('/app/policies', {
+      control: createControlApi({
+        policies: policyState({
+          warnings: [raw, 'the newest policy version v5 no longer validates (routes[0].mode: unknown value "x"); running v4 until a valid version is saved'],
+        }),
+      }),
+    });
+    const list = await screen.findByRole('list', { name: 'Policy warnings' });
+    expect(within(list).getByText('support-bot: Unapproved commitments needs Contradiction to agree before it can block, but this route does not run Contradiction. Add Contradiction to the route so Unapproved commitments can block.')).toBeInTheDocument();
+    expect(within(list).getByText('Policy version 5 no longer passes validation, so version 4 stays in effect until a valid version is saved.')).toBeInTheDocument();
+    expect(within(list).getByText(raw)).not.toBeVisible();
+    await user.click(within(list).getAllByText('Technical detail')[0]);
+    expect(within(list).getByText(raw)).toBeVisible();
   });
 
   it('has no axe violations', async () => {

@@ -1,11 +1,12 @@
 /**
  * Words for the Evaluators pages (SPEC §3.3 Evaluators, §2.8): calibration progress in the
- * contract's phrasing, question types and evidence needs, and why the P4 actions are not here yet.
+ * contract's phrasing, question types and evidence needs, and when Calibrate now is possible.
  */
 import type { CustomReason } from '@/components/common/DisabledReason';
 import { calibrationStateView } from '@/domain/controlPresentation';
 import { formatCount } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
+import { MIN_FIT_LABELS } from '@/lib/decision/calibrate';
 import type { CalibrationProgress, EvaluatorSpec } from '@/types/api';
 
 /** "Labels 43/200 (31 correct, 12 false alarms)". */
@@ -71,9 +72,21 @@ export function evidenceNeedLabel(requires: string | undefined): string {
   }
 }
 
-/** The P4 actions this page shows but cannot run yet (no dead buttons: they say why). */
-export const P4_REASONS = {
-  labelling: { text: 'The label queue and calibration from labels arrive in P4.' },
-  adopt: { text: 'Adopting a calibration arrives in P4 (it runs Preview impact first).' },
-  studio: { text: 'Studio arrives in P4.' },
-} satisfies Record<string, CustomReason>;
+/** Your own labels alone are enough for a first fit (the server's count, #45's minimum). */
+export function canFitOnOwnLabels(p: CalibrationProgress): boolean {
+  return p.can_fit_provisional || p.can_fit_measured;
+}
+
+/**
+ * Why "Calibrate now" is not available yet, or null. The server says when your own labels allow a
+ * first fit; a fit may also add the deep-audit labels (a Proxy calibration), so it is offered once
+ * both together reach the fit's minimum. Their split between kinds is the server's to check: too
+ * few of one kind answers 422, which the dialog explains with the counts.
+ */
+export function calibrateReason(p: CalibrationProgress): CustomReason | null {
+  if (p.snapshot === null) return { text: 'No fast-check version has checked traffic for this check yet, so there is nothing to calibrate.' };
+  if (!canFitOnOwnLabels(p) && p.human_labels.n + p.proxy_labels < MIN_FIT_LABELS) {
+    return { text: 'Not enough labels for a first fit yet: label a few answers in the queue.' };
+  }
+  return null;
+}

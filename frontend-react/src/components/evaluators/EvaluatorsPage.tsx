@@ -1,20 +1,20 @@
 /**
  * Evaluators (SPEC §3.3): "What do we check, and how well?" The library: every check with its
  * category, the routes it runs on and how far its calibration is. Filters by name, category and
- * whether it runs anywhere; archived evaluators on request. Studio (new checks) arrives in P4 and
- * says so.
+ * whether it runs anywhere; archived evaluators on request. "New check" opens Studio.
  */
 import { useQueries, useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { ListChecks, SearchX, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { DegradedState } from '@/components/common/DegradedState';
-import { DisabledAction } from '@/components/common/DisabledReason';
 import { PageHeader } from '@/components/common/PageHeader';
 import { EmptyState, ErrorState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { NAV_ITEMS } from '@/components/layout/nav';
 import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button-variants';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +24,7 @@ import { evaluatorCategoryLabel } from '@/domain/controlPresentation';
 import { formatCount } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import { EvaluatorCard } from './EvaluatorCard';
-import { P4_REASONS } from './evaluatorWords';
+import { EvaluatorsTabs } from './EvaluatorsTabs';
 
 type Attached = 'all' | 'attached' | 'unused';
 
@@ -81,7 +81,12 @@ export function EvaluatorsPage() {
   } else if (items.length === 0) {
     body = (
       <EmptyState icon={ListChecks} title="No evaluators yet">
-        <p>Built-in checks appear here when the proxy loads them from contracts/evaluators.</p>
+        <p>
+          Built-in checks appear here when the proxy loads them from contracts/evaluators.{' '}
+          <Link to="/app/evaluators/studio" className="font-medium text-fg underline underline-offset-2">
+            Describe a check in Studio
+          </Link>
+        </p>
       </EmptyState>
     );
   } else if (visible.length === 0) {
@@ -116,17 +121,14 @@ export function EvaluatorsPage() {
 
   return (
     <div>
+      <EvaluatorsTabs current="library" />
       <PageHeader
         description={NAV_ITEMS[2].question}
         actions={
-          <DisabledAction reason={P4_REASONS.studio}>
-            {(p) => (
-              <Button {...p}>
-                <Sparkles aria-hidden="true" />
-                New check
-              </Button>
-            )}
-          </DisabledAction>
+          <Link to="/app/evaluators/studio" className={buttonVariants({ variant: 'primary' })}>
+            <Sparkles aria-hidden="true" />
+            New check
+          </Link>
         }
       >
         <div role="group" aria-label="Filters" className="flex flex-wrap items-center gap-2">

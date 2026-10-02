@@ -90,7 +90,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     <article aria-label="Request" className="@container space-y-5" data-trace-id={summary.trace_id}>
       <BackToTraffic />
       {partialError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
-      <OutcomeCard summary={summary} decision={decision} delivered={view.delivered} receivedTarget={receivedId(claimIdPrefix)} />
+      <OutcomeCard
+        summary={summary}
+        decision={decision}
+        delivered={view.delivered}
+        receivedTarget={receivedId(claimIdPrefix)}
+        labels={detailQuery.data?.labels ?? []}
+        body={view.body}
+        names={evaluatorNames}
+      />
       <div className="grid gap-6 @4xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <AnswerSection view={view} claimIdPrefix={claimIdPrefix} />
         <div className="space-y-6">
@@ -98,7 +106,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           <ClaimsSection summary={summary} audit={audit} claimIdPrefix={claimIdPrefix} />
         </div>
       </div>
-      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} />
+      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} names={evaluatorNames} />
     </article>
   );
 }
