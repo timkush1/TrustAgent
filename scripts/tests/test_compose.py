@@ -269,6 +269,8 @@ class ComposeTest(unittest.TestCase):
         engine = ONBOARDING.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0] + "\n"
         self.assertIn("      LLM_PROVIDER: mock\n", engine)
         self.assertIn("      TRUTHTABLE_LOG_LEVEL: debug\n", engine)
+        # LOG_LEVEL wins in the engine (truthtable.config): set, not left to .env.
+        self.assertIn("      LOG_LEVEL: DEBUG\n", engine)
         # The browser reaches mock-upstream's sign-in page on MOCK_UPSTREAM_HOST_PORT.
         mock = ONBOARDING.split("\n  mock-upstream:\n", 1)[1]
         self.assertIn(

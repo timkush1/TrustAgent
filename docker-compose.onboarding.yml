@@ -57,6 +57,9 @@ services:
   engine:
     environment:
       TRUTHTABLE_LOG_LEVEL: debug
+      # The engine's own LOG_LEVEL wins over TRUTHTABLE_LOG_LEVEL: set it too, so a LOG_LEVEL
+      # in .env cannot hide debug output from the leak check over the logs.
+      LOG_LEVEL: DEBUG
       # Unchanged from docker-compose.e2e.yml: an env-managed judge, which Connect leaves alone.
       LLM_PROVIDER: mock
 
