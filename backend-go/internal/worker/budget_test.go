@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"math"
@@ -335,5 +336,69 @@ func TestAuditCostRowsAreLinkedToTheAudit(t *testing.T) {
 	}
 	if !strings.HasPrefix(rows[1].Component, "deep_audit") {
 		t.Errorf("component %q", rows[1].Component)
+	}
+}
+
+// A cost record whose cost is negative, infinite or not a number counts $0 everywhere: the audit
+// is still stored and broadcast (NaN would not encode as JSON, and an infinite cost does not fit
+// the NUMERIC column), its rows carry $0, and only the real cost reaches the LLM cap.
+func TestCostsThatAreNotNumbersCountZero(t *testing.T) {
+	eng := enginetest.Start(t, &enginetest.Engine{EvaluateFunc: func(ctx context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
+		res, _ := hallucinated(ctx, req)
+		res.Costs = []*pb.CostRecord{
+			{Component: "deep_audit_verify", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: math.NaN(), CostSource: "computed"},
+			{Component: "deep_audit_verify", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: math.Inf(1), CostSource: "reported"},
+			{Component: "deep_audit_verify", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: -0.3, CostSource: "reported"},
+			{Component: "deep_audit_score", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: 0.002, CostSource: "computed"},
+		}
+		return res, nil
+	}})
+	b := &capBudget{cap: 1, est: 0.01}
+	st, pub := &linkedStore{fakeStore: &fakeStore{}}, newPub()
+	c, err := grpc.NewAuditClient(eng.Target, 5*time.Second, "", eng.Dialer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	p := New(Config{Workers: 1, Engine: c, Store: st, Publisher: pub, Logger: slog.New(slog.DiscardHandler)})
+	p.SetBudget(b)
+	p.Start()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = p.Drain(ctx)
+	})
+	j := job(LaneLow, "sample")
+	if _, err := p.Submit(j); err != nil {
+		t.Fatal(err)
+	}
+	if ev := pub.outcome(t); ev.Type != "audit_completed" {
+		t.Fatalf("outcome %s", ev.Type)
+	}
+	st.mu.Lock()
+	rows := st.rows[j.Request.GetAuditId()]
+	saved := st.saved
+	st.mu.Unlock()
+	if len(saved) != 1 || saved[0].CostUSD == nil || math.Abs(*saved[0].CostUSD-0.002) > 1e-12 || len(saved[0].Costs) != 4 {
+		t.Fatalf("saved %+v", saved)
+	}
+	for i, cr := range saved[0].Costs {
+		if math.IsNaN(cr.CostUSD) || math.IsInf(cr.CostUSD, 0) || cr.CostUSD < 0 {
+			t.Errorf("record %d keeps cost %v", i, cr.CostUSD)
+		}
+	}
+	if _, err := json.Marshal(saved[0]); err != nil {
+		t.Errorf("the stored audit does not encode: %v", err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("rows %d", len(rows))
+	}
+	for i, want := range []float64{0, 0, 0, 0.002} {
+		if rows[i].CostUSD == nil || *rows[i].CostUSD != want {
+			t.Errorf("row %d cost %v, want %v", i, rows[i].CostUSD, want)
+		}
+	}
+	if spent, reserved, holds, _ := b.state(); math.Abs(spent-0.002) > 1e-12 || reserved != 0 || holds != 0 {
+		t.Errorf("spent %v reserved %v holds %d, want 0.002 booked", spent, reserved, holds)
 	}
 }
