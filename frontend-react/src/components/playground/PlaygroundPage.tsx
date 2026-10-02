@@ -228,6 +228,7 @@ export function PlaygroundPage() {
                       running: run.running,
                       streamed: run.streamed,
                       timing: run.timing,
+                      demo,
                     }}
                   />
                 </div>

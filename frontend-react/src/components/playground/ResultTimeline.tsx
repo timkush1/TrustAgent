@@ -52,16 +52,22 @@ export interface TimelineState {
   /** The answer came as token events. */
   streamed?: boolean;
   timing?: RunTiming;
+  /** A demo stack: its model answers are mocks, so their timings are simulated. */
+  demo?: boolean;
 }
 
 const BROWSER_BASIS = 'Measured in this browser from sending the request, so it includes the network to the gateway.';
+const MOCK_BASIS = 'Timed in this browser, but the model or the fast check that answered is a mock: real ones take their own time.';
 
-/** "First token after 340 ms" or "Decided after 820 ms, …", with its value label. */
-function Timing({ text, subject }: { text: string; subject: string }) {
+/**
+ * "First token after 340 ms" or "Decided after 820 ms, …", with its value label: Measured, or
+ * Simulated when a mock produced what was timed (never mock output presented as measured).
+ */
+function Timing({ text, subject, simulated }: { text: string; subject: string; simulated: boolean }) {
   return (
     <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted tabular">
       <span>{text}</span>
-      <EvidenceBadge label="measured" basis={BROWSER_BASIS} subject={subject} />
+      <EvidenceBadge label={simulated ? 'simulated' : 'measured'} basis={simulated ? MOCK_BASIS : BROWSER_BASIS} subject={subject} />
     </p>
   );
 }
@@ -237,8 +243,10 @@ function DeepAudit({ result }: { result: PlaygroundResult }) {
 }
 
 export function ResultTimeline({ state }: { state: TimelineState }) {
-  const { mode, tokens, decision, result, running, streamed = false, timing } = state;
+  const { mode, tokens, decision, result, running, streamed = false, timing, demo = false } = state;
   const d = result?.decision ?? decision;
+  // A mock fast check (simulated checks, or the demo) decides on a script, not at Jev's speed.
+  const mockDecision = demo || d?.decision_model?.backend === 'mock';
   const firstToken = streamed && timing?.firstTokenMs != null ? timing.firstTokenMs : null;
   const decidedAt = streamed && timing?.decisionMs != null ? timing.decisionMs : null;
   return (
@@ -255,7 +263,7 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
             HTTP {String(result.upstream.status)} · {formatDurationMs(result.upstream.ms)}
           </p>
         ) : null}
-        {firstToken !== null ? <Timing text={`First token after ${formatDurationMs(firstToken)}`} subject="Time to first token" /> : null}
+        {firstToken !== null ? <Timing text={`First token after ${formatDurationMs(firstToken)}`} subject="Time to first token" simulated={demo} /> : null}
         {tokens && !result ? <p className="rounded-md border border-border bg-surface px-3 py-2 text-md whitespace-pre-wrap text-fg">{tokens}</p> : null}
       </Step>
       <Step icon={Search} title={copy.tiers.fast_check} status={d ? 'done' : running ? 'active' : 'waiting'}>
@@ -263,6 +271,7 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
           <Timing
             text={`Decided after ${formatDurationMs(decidedAt)}${timing?.decidedMidStream ? ', while the answer was still streaming' : ''}`}
             subject="When the fast check decided"
+            simulated={mockDecision}
           />
         ) : null}
         {d ? <DecisionView d={d} delivered={deliveredAction(result)} /> : running ? <p className="text-sm text-fg-muted">Checking the answer…</p> : null}

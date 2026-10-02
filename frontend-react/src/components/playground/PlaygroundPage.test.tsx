@@ -244,7 +244,12 @@ describe('Playground page', { timeout: 20_000 }, () => {
 
   it('shows the first token and a decision that arrives while the answer still streams (D69)', async () => {
     const user = userEvent.setup();
-    const result = playgroundResult();
+    const scripted = playgroundResult();
+    // A real fast check (OpenRouter), so both times are measurements.
+    const result = {
+      ...scripted,
+      decision: { ...scripted.decision, decision_model: { ...scripted.decision.decision_model!, backend: 'openrouter-decisions' as const } },
+    };
     const sse = [
       'event: token',
       'data: {"text":"You can get "}',
@@ -267,7 +272,34 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(await screen.findByText(/^First token after \d+ ms$/)).toBeInTheDocument();
     expect(screen.getByText(/^Decided after \d+ ms, while the answer was still streaming$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Measured: how “Time to first token” was produced' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Measured: how “When the fast check decided” was produced' })).toBeInTheDocument();
     expect(await screen.findByText('Flagged')).toBeInTheDocument();
+  });
+
+  it('labels the decision time Simulated when a mock fast check decided', async () => {
+    const user = userEvent.setup();
+    const mock = playgroundResult();
+    expect(mock.decision.decision_model?.backend).toBe('mock');
+    const sse = [
+      'event: token',
+      'data: {"text":"You can get a full refund."}',
+      '',
+      'event: decision',
+      `data: ${JSON.stringify(mock.decision)}`,
+      '',
+      'event: done',
+      `data: ${JSON.stringify(mock)}`,
+      '',
+      '',
+    ].join('\n');
+    renderPage('/app/playground', { control: createControlApi({ playgroundStream: sse }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('switch', { name: 'Stream the answer' }));
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    expect(await screen.findByText(/^Decided after \d+ ms$/)).toBeInTheDocument();
+    // Your model's first token is still a real measurement; the mock's decision time is not.
+    expect(screen.getByRole('button', { name: 'Measured: how “Time to first token” was produced' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Simulated: how “When the fast check decided” was produced' })).toBeInTheDocument();
   });
 
   it('streams tokens, then the decision and the result', async () => {
