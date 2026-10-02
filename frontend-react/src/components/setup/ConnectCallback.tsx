@@ -37,9 +37,13 @@ function missingNonce(): ApiError {
 
 function Failure({ error, publicUrl }: { error: unknown; publicUrl: string | null }) {
   const code = isApiError(error) ? error.code : null;
+  // #59 answers 502 upstream_error with details.reason exchange_failed when OpenRouter refused to
+  // trade the code for a key; its message (redacted) stays below as the technical detail.
+  const exchangeFailed = isApiError(error) && (error.details as { reason?: unknown }).reason === 'exchange_failed';
   let headline: string;
   if (code === MISSING) headline = callbackMissingText(publicUrl);
   else if (code === 'invalid_nonce') headline = copy.setup.step_connect.callback_expired;
+  else if (exchangeFailed) headline = copy.setup.step_connect.exchange_failed;
   else if (code === 'openrouter_refused') headline = 'OpenRouter did not finish the sign-in, so nothing was connected.';
   else headline = 'The OpenRouter sign-in could not be finished.';
   const { message, code: detail } = describeError(error);

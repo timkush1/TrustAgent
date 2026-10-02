@@ -526,6 +526,18 @@ describe('/connect/callback (P4-PLAN D38)', { timeout: 30_000 }, () => {
     expect(screen.getByRole('link', { name: /Connect again/ })).toHaveAttribute('href', '/app/setup?step=connect');
   });
 
+  it('says OpenRouter did not accept the sign-in when the code exchange fails (502, exchange_failed)', async () => {
+    sessionStorage.setItem(CONNECT_PENDING_KEY, JSON.stringify({ nonce: 'q2Xw9fLr0aZk7TcVb3NmYg' }));
+    const message = 'POST /api/v1/auth/keys answered 403';
+    renderPage('/connect/callback?code=abc', {
+      control: createControlApi({ connectComplete: errorReply(502, 'upstream_error', message, undefined, { reason: 'exchange_failed', status: 403 }) }),
+    });
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText(copy.setup.step_connect.exchange_failed)).toBeInTheDocument();
+    expect(within(alert).getByText(message)).toBeInTheDocument();
+    expect(within(alert).getByRole('link', { name: /Connect again/ })).toHaveAttribute('href', '/app/setup?step=connect');
+  });
+
   it('has no axe violations', async () => {
     const { container } = renderPage('/connect/callback?code=abc');
     await screen.findByRole('alert');
