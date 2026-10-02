@@ -5,8 +5,9 @@
  * A key set in .env is read-only here; one set in the engine's .env is invisible to the gateway, so
  * it cannot be tested from here either (D80).
  */
+import { useQueryClient } from '@tanstack/react-query';
 import { CircleSlash, FlaskConical, LogIn } from 'lucide-react';
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { DisabledReason, type Reason } from '@/components/common/DisabledReason';
 import { KeyValueList } from '@/components/common/KeyValue';
 import { Badge, Chip } from '@/components/ui/badge';
@@ -14,8 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { formatDateTime, formatRelativeTime } from '@/domain/format';
 import { commandText, copy, secUsedByLabel, secVerifyView } from '@/domain/presentation';
-import { useStartConnect } from '@/components/setup/connectFlow';
-import type { CredentialView, SettingsView } from '@/types/api';
+import { useStartConnect, type ConnectOutcome } from '@/components/setup/connectFlow';
+import { qkcSecurity } from '@/data/queries/security';
+import type { CredentialVerifyRequest, CredentialView, SettingsView } from '@/types/api';
 import { credentialState, defaultBindTargets, simulatedOn, type CardInfo } from './credentialModel';
 import { CredentialResult } from './CredentialResult';
 import { PasteKeyDialog } from './PasteKeyDialog';
@@ -68,6 +70,15 @@ export function CredentialCard({ card, items, settings, writeReason, testReason 
   const credential = state.kind === 'none' ? null : state.credential;
   const verify = useVerifyCredential();
   const connect = useStartConnect('/app/settings/connections');
+  const qc = useQueryClient();
+  // The last outcome shown on this card: a Connect OpenRouter that returned here (/connect/callback
+  // leaves it in the cache; read once, then dropped), or this card's own test.
+  const [outcome, setOutcome] = useState<ConnectOutcome | null>(() =>
+    card.name === 'openrouter' ? (qc.getQueryData<ConnectOutcome>(qkcSecurity.connectResult) ?? null) : null,
+  );
+  useEffect(() => {
+    if (card.name === 'openrouter') qc.removeQueries({ queryKey: qkcSecurity.connectResult, exact: true });
+  }, [qc, card.name]);
   const doctor = commandText('doctor') ?? 'make doctor';
 
   const reasonId = useId();
@@ -79,8 +90,13 @@ export function CredentialCard({ card, items, settings, writeReason, testReason 
 
   // The one reason line under the actions: the write reason, or for a key set in .env the test's.
   const sharedReason = envReason ? checkReason : writeReason;
-  const test = () => verify.mutate({ name: card.name });
-  const checkAgain = () => verify.mutate({ name: card.name, request: { bind: defaultBindTargets(card, settings) } });
+  const check = (request?: CredentialVerifyRequest) => {
+    // Whether simulated checks were on before this check, so a bind can say they are now off (D76).
+    const wasSimulated = simulatedOn(settings);
+    verify.mutate({ name: card.name, request }, { onSuccess: (result) => setOutcome({ result, wasSimulated }) });
+  };
+  const test = () => check();
+  const checkAgain = () => check({ bind: defaultBindTargets(card, settings) });
 
   return (
     <Card data-credential={card.name}>
@@ -119,8 +135,8 @@ export function CredentialCard({ card, items, settings, writeReason, testReason 
         {state.kind === 'env' ? <EnvManagedNote keys={[card.env]} /> : null}
         {state.kind === 'engine_env' ? <EnvManagedNote keys={[card.env]} engine /> : null}
         {state.kind === 'undecryptable' ? <p className="text-sm text-fg">{copy.settings.credential_undecryptable}</p> : null}
-        {verify.data ? (
-          <CredentialResult result={verify.data} wasSimulated={simulatedOn(settings)} onCheckAgain={checkAgain} checkingAgain={verify.isPending} />
+        {outcome ? (
+          <CredentialResult result={outcome.result} wasSimulated={outcome.wasSimulated} onCheckAgain={checkAgain} checkingAgain={verify.isPending} />
         ) : null}
         {verify.isError ? <ProblemNote error={verify.error} title="The check did not run" /> : null}
         {connect.isError ? <ProblemNote error={connect.error} title="Connect OpenRouter did not start" /> : null}

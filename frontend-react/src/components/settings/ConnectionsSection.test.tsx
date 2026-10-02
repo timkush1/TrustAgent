@@ -1,6 +1,7 @@
 import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import connectOk from '@contracts/fixtures/api/ConnectCompleteResponse.ok.json';
 import { browserNavigation, CONNECT_PENDING_KEY } from '@/components/setup/connectFlow';
 import { copy } from '@/domain/presentation';
 import { axeViolations, formatViolations } from '@/test/axe';
@@ -9,6 +10,7 @@ import { renderPage } from '@/test/control/renderPage';
 import { credentialList, settingsView } from '@/test/control/securityHandlers';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import type { ConnectCompleteResponse } from '@/types/api';
 
 installMswServer();
 afterEach(() => {
@@ -111,6 +113,36 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     await user.click(within(openrouter).getByRole('button', { name: 'Test the OpenRouter key' }));
     expect(await within(openrouter).findByText(/Key rejected\. The provider refused this key/)).toBeInTheDocument();
     expect(control.callsTo('/api/credentials/openrouter/verify', 'POST')[0].body).toEqual({});
+  });
+
+  it('keeps “Simulated checks are now off” after the card’s check again binds and the settings refresh (D76)', async () => {
+    const user = userEvent.setup();
+    const settings = settingsView();
+    settings.runtime.decision_model.backend = 'mock';
+    settings.runtime.judge.provider = 'mock';
+    settings.runtime.bindings = { decision_model: null, judge: null, upstream_default: null };
+    const control = createControlApi({ settings, verifyStatus: { openrouter: 'no_credits' } });
+    renderPage(PATH, { control });
+    const openrouter = await card('OpenRouter');
+    await user.click(within(openrouter).getByRole('button', { name: 'Test the OpenRouter key' }));
+    expect(await within(openrouter).findByText(copy.setup.step_connect.no_credits)).toBeInTheDocument();
+    control.state.verifyStatus = { openrouter: 'ok' };
+    const gets = control.callsTo('/api/settings', 'GET').length;
+    await user.click(within(openrouter).getByRole('button', { name: copy.setup.step_connect.check_again }));
+    expect(await within(openrouter).findByText(`${copy.setup.step_connect.simulated_off}.`)).toBeInTheDocument();
+    // The settings are read again (no longer simulated); the outcome still says what changed.
+    await waitFor(() => expect(control.callsTo('/api/settings', 'GET').length).toBeGreaterThan(gets));
+    expect(within(openrouter).getByText(`${copy.setup.step_connect.simulated_off}.`)).toBeInTheDocument();
+  });
+
+  it('shows the outcome of a Connect OpenRouter that returned to Connections (D38)', async () => {
+    const result = { ...(structuredClone(connectOk) as ConnectCompleteResponse), return_to: '/app/settings/connections' };
+    sessionStorage.setItem(CONNECT_PENDING_KEY, JSON.stringify({ nonce: 'q2Xw9fLr0aZk7TcVb3NmYg' }));
+    const { router } = renderPage('/connect/callback?code=abc123', { control: createControlApi({ connectComplete: result }) });
+    await waitFor(() => expect(router.state.location.pathname).toBe(PATH));
+    const openrouter = await card('OpenRouter');
+    expect(await within(openrouter).findByText('Ready · 412 ms · $0.00001')).toBeInTheDocument();
+    expect(within(openrouter).getByText(/Now used for: Fast check \(Jev\) and Deep audit judge/)).toBeInTheDocument();
   });
 
   it('names the fail-closed routes before removing the fast-check key, then removes it with confirm=true (D77)', async () => {
