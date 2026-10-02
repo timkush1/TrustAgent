@@ -16,11 +16,13 @@ import { StudioStep } from './StudioStep';
 export interface QuickCalibrationStepProps {
   spec: EvaluatorSpec;
   results: readonly TestRow[] | null;
+  /** The check or the samples changed since the run: its risks no longer answer for this check. */
+  stale: boolean;
   samples: readonly StudioSample[];
   onSpecChange: (spec: EvaluatorSpec) => void;
 }
 
-export function QuickCalibrationStep({ spec, results, samples, onSpecChange }: QuickCalibrationStepProps) {
+export function QuickCalibrationStep({ spec, results, stale, samples, onSpecChange }: QuickCalibrationStepProps) {
   const description = 'A first threshold from your labels, free and in the browser. It is a suggestion, not a calibration: keep the check watching and label more traffic.';
   if (!results) {
     return (
@@ -28,6 +30,13 @@ export function QuickCalibrationStep({ spec, results, samples, onSpecChange }: Q
         <p className="text-sm text-fg-muted">
           Run the test in step 3 first. Quick calibration needs {MIN_FIT_LABELS} labelled answers, with at least {MIN_FIT_PER_CLASS} that should fire and {MIN_FIT_PER_CLASS} that shouldn't.
         </p>
+      </StudioStep>
+    );
+  }
+  if (stale) {
+    return (
+      <StudioStep n={4} id="step-quick" title="Suggest a threshold" description={description}>
+        <p className="text-sm text-fg-muted">The check or the samples changed since the last test. Run it again in step 3 for a suggestion that fits this check.</p>
       </StudioStep>
     );
   }

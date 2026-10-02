@@ -33,7 +33,7 @@ describe('QuickCalibrationStep with enough labels', () => {
     const user = userEvent.setup();
     const onSpecChange = vi.fn();
     const spec = specAt(0.6);
-    const { container } = render(<QuickCalibrationStep spec={spec} results={rows()} samples={samples()} onSpecChange={onSpecChange} />);
+    const { container } = render(<QuickCalibrationStep spec={spec} results={rows()} stale={false} samples={samples()} onSpecChange={onSpecChange} />);
 
     expect(screen.getByText("From 10 labels (5 should fire, 5 shouldn't)")).toBeInTheDocument();
     expect(screen.getByTestId('quick-calibration-message')).toHaveTextContent(/^Suggested threshold from 10 labels: 0.7\./);
@@ -47,15 +47,22 @@ describe('QuickCalibrationStep with enough labels', () => {
   });
 
   it('says so when the check already flags at the suggested threshold', () => {
-    render(<QuickCalibrationStep spec={specAt(0.7)} results={rows()} samples={samples()} onSpecChange={vi.fn()} />);
+    render(<QuickCalibrationStep spec={specAt(0.7)} results={rows()} stale={false} samples={samples()} onSpecChange={vi.fn()} />);
     expect(screen.getByText('The check already flags at the suggested threshold.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Use the suggested threshold/ })).not.toBeInTheDocument();
   });
 
   it("counts the viewer's labels, so relabelling changes the suggestion without a new run", () => {
     const relabelled = samples().map((s, i) => (i >= 5 ? { ...s, expected: undefined } : s));
-    render(<QuickCalibrationStep spec={specAt(0.6)} results={rows()} samples={relabelled} onSpecChange={vi.fn()} />);
+    render(<QuickCalibrationStep spec={specAt(0.6)} results={rows()} stale={false} samples={relabelled} onSpecChange={vi.fn()} />);
     expect(screen.getByText("Needs 8 labels (have 5: 0 should fire, 5 shouldn't)")).toBeInTheDocument();
     expect(screen.getByText(/3 more labelled answers, 3 more that should fire: add samples in step 3/)).toBeInTheDocument();
+  });
+
+  it('offers nothing from a run of an older check, and asks for a new run', () => {
+    render(<QuickCalibrationStep spec={specAt(0.6)} results={rows()} stale samples={samples()} onSpecChange={vi.fn()} />);
+    expect(screen.getByText(/The check or the samples changed since the last test\. Run it again in step 3/)).toBeInTheDocument();
+    expect(screen.queryByTestId('quick-calibration-message')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Use the suggested threshold/ })).not.toBeInTheDocument();
   });
 });

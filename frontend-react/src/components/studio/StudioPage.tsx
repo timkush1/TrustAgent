@@ -172,7 +172,7 @@ function StudioEditor({ initial }: { initial: Session }) {
             specReason={specReason}
             primary={next === 2}
           />
-          <QuickCalibrationStep spec={spec} results={run?.response.results ?? null} samples={samples} onSpecChange={setSpec} />
+          <QuickCalibrationStep spec={spec} results={run?.response.results ?? null} stale={stale} samples={samples} onSpecChange={setSpec} />
           <SaveStep spec={spec} onSpecChange={setSpec} base={base} specReason={specReason} writeReason={writeReason} taken={taken} onSaved={onSaved} onReloadLatest={reloadLatest} primary={next === 4} />
           <WatchStep
             savedRef={savedRef}
