@@ -146,6 +146,9 @@ func (e *cached) auditSaved(a *store.AuditRecord, status string, now time.Time) 
 	}
 	id := a.AuditID
 	e.rec.AuditID, e.rec.AuditStatus, e.rec.UpdatedAt = &id, status, now.UTC()
+	if a.MockJudge() && !slices.Contains(e.rec.Flags, store.FlagMockJudge) {
+		e.rec.Flags = append(slices.Clone(e.rec.Flags), store.FlagMockJudge)
+	}
 	counts := store.NewVerdictCounts()
 	for _, cl := range a.Claims {
 		if _, ok := counts[cl.Status]; ok {

@@ -188,13 +188,32 @@ func (s *PostgresStore) saveAudit(ctx context.Context, record *AuditRecord, trac
 	}
 
 	if traceAuditStatus != "" {
+		// A mock judge's audit is simulated: the trace carries mock_judge, so it is labelled
+		// Simulated and stays out of the measured figures unless include_mock (D39, D46).
 		if _, err := tx.Exec(ctx, `
-			UPDATE traces SET audit_id = $2, audit_status = $3, updated_at = now() WHERE trace_id = $1`,
-			traceID, record.AuditID, traceAuditStatus); err != nil {
+			UPDATE traces SET audit_id = $2, audit_status = $3,
+				flags = CASE WHEN NOT $4 OR $5 = ANY(flags) THEN flags ELSE array_append(flags, $5::TEXT) END,
+				updated_at = now()
+			WHERE trace_id = $1`,
+			traceID, record.AuditID, traceAuditStatus, record.MockJudge(), FlagMockJudge); err != nil {
 			return fmt.Errorf("update trace audit status: %w", err)
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// FlagMockJudge is the trace flag of an answer whose deep audit a mock judge gave (simulated).
+const FlagMockJudge = "mock_judge"
+
+// MockJudge reports whether a mock judge gave the audit: its judge's effective provider is mock.
+func (r *AuditRecord) MockJudge() bool {
+	if r == nil || len(r.Judge) == 0 {
+		return false
+	}
+	var j struct {
+		EffectiveProvider string `json:"effective_provider"`
+	}
+	return json.Unmarshal(r.Judge, &j) == nil && j.EffectiveProvider == "mock"
 }
 
 // auditColumns is the SELECT list scanned by scanAudit (audits aliased a). trace_id can only be
