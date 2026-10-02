@@ -10,11 +10,12 @@
  *     MOCK_UPSTREAM_HOST_PORT=… CI=1 npx playwright test --project=stack --workers=1 -g onboarding
  *
  * The browser cannot resolve the proxy's OpenRouter address (http://mock-upstream:8090), so the
- * spec routes it to mock-upstream's published port (route.fetch without following redirects, then
- * route.fulfill); when the browser does not follow the fulfilled redirect it goes to the callback
- * itself (D70). One page walks every step in order, so a failure stops the rest (serial, no retry:
- * the setup link works once). With P4_EVIDENCE_DIR set it writes /api/credentials, /api/settings and
- * /api/status there, after Connect and at the end, once it has checked they hold no secret.
+ * spec routes OpenRouter's sign-in page (/auth on any origin but the dashboard's) to mock-upstream's
+ * published port (route.fetch without following redirects, then route.fulfill); when the browser
+ * does not follow the fulfilled redirect it goes to the callback itself (D70). One page walks every
+ * step in order, so a failure stops the rest (serial, no retry: the setup link works once). With
+ * P4_EVIDENCE_DIR set it writes /api/credentials, /api/settings and /api/status there, after
+ * Connect and at the end, once it has checked they hold no secret.
  *
  * Order: Connect your app (8) runs before the refund example (7). A Playground run is traffic
  * too, so once it has run the Overview no longer waits for a first request.
@@ -27,8 +28,6 @@ import type { CredentialList, SettingsView, SetupStatus, SystemStatus } from '..
 import { requireStack, seriousViolations, skipOrFail } from './stack';
 
 const TIMEOUT = 30_000;
-/** The address the proxy builds Connect's auth_url from (TRUTHTABLE_OPENROUTER_BASE_URL). */
-const MOCK_UPSTREAM_IN_STACK = 'http://mock-upstream:8090';
 const MOCK_UPSTREAM_ON_HOST = `http://127.0.0.1:${process.env.MOCK_UPSTREAM_HOST_PORT || '18090'}`;
 /** D87: at most 8 user actions from the setup link to "Ready". */
 const CLICK_BUDGET = 8;
@@ -169,7 +168,12 @@ test.describe('onboarding', () => {
       await probe.dispose();
     }
     context = await browser.newContext({ baseURL, permissions: ['clipboard-read', 'clipboard-write'] });
-    await context.route(`${MOCK_UPSTREAM_IN_STACK}/**`, routeMockUpstream);
+    // OpenRouter's sign-in page, as the proxy builds Connect's auth_url (TRUTHTABLE_OPENROUTER_BASE_URL
+    // + /auth): http://mock-upstream:8090/auth on the onboarding stack, which only the stack's network
+    // resolves. Matched by path on any origin but the dashboard's, so a proxy started outside compose
+    // with a host address for mock-upstream works too.
+    const dashboard = new URL(baseURL).origin;
+    await context.route((url) => url.origin !== dashboard && url.pathname === '/auth', routeMockUpstream);
     page = await context.newPage();
   });
 
