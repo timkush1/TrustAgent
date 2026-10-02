@@ -90,6 +90,18 @@ describe('Label queue', { timeout: 20_000 }, () => {
     expect(await screen.findByText(/^False alarm\. Saved\./)).toBeInTheDocument();
   });
 
+  it('leaves letters typed on the focused check picker to the picker', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/labels');
+    await firstItem();
+    screen.getByRole('combobox', { name: 'Check' }).focus();
+    await user.keyboard('c');
+    await user.keyboard('{Escape}');
+    // Nothing was labelled, and the answer is still the first one.
+    expect(control.callsTo('/api/labels', 'PUT')).toHaveLength(0);
+    expect(screen.queryByText(/Saved\./)).toBeNull();
+  });
+
   it('undoes the last label: removes it, puts the progress back and shows the answer again', async () => {
     const user = userEvent.setup();
     const { control } = renderPage('/app/evaluators/labels');

@@ -64,12 +64,15 @@ type Status =
 
 const isRedacted = (item: LabelQueueItem) => item.user_request === null && item.response_text === null;
 
-/** Typing in a field (the note) or working in a dialog never triggers a shortcut. */
+/**
+ * Typing in a field (the note), a focused picker (its letters jump to an option) or working in a
+ * dialog never triggers a shortcut.
+ */
 function ignoreKey(event: KeyboardEvent): boolean {
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return true;
   const target = event.target as HTMLElement | null;
   if (!target) return false;
-  if (target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]')) return true;
+  if (target.closest('input, textarea, select, [contenteditable="true"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]')) return true;
   return false;
 }
 
