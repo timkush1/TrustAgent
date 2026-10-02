@@ -187,11 +187,21 @@ func TestParsePriceTable(t *testing.T) {
 		"label":            `{"version":"v1","currency":"USD","entries":[{"match":"*","provider":"x","input_per_mtok":1,"output_per_mtok":0,"label":"guess"}]}`,
 		"as_of":            `{"version":"v1","currency":"USD","entries":[{"match":"*","provider":"x","input_per_mtok":1,"output_per_mtok":0,"as_of":"27/09/2026"}]}`,
 		"trailing data":    good + `{}`,
+		"trailing bracket": good + `]`,
+		"not a date":       `{"version":"v1","currency":"USD","entries":[{"match":"*","provider":"x","input_per_mtok":1,"output_per_mtok":0,"as_of":"2026-02-31"}]}`,
+		"long match":       `{"version":"v1","currency":"USD","entries":[{"match":"` + strings.Repeat("é", 129) + `","provider":"x","input_per_mtok":1,"output_per_mtok":0}]}`,
 		"not json":         `{`,
 	} {
 		if _, err := ParsePriceTable([]byte(doc)); !errors.Is(err, ErrPriceTable) {
 			t.Errorf("%s: err = %v, want ErrPriceTable", name, err)
 		}
+	}
+	// Lengths count characters as JSON Schema's maxLength does, not UTF-8 bytes; trailing
+	// whitespace is not data.
+	wide := `{"version":"` + strings.Repeat("ü", 32) + `","currency":"USD","entries":[{"match":"` + strings.Repeat("é", 128) +
+		`","provider":"x","input_per_mtok":1,"output_per_mtok":0,"as_of":"2028-02-29","note":"` + strings.Repeat("מ", 300) + `"}]}` + "\n"
+	if _, err := ParsePriceTable([]byte(wide)); err != nil {
+		t.Errorf("a table at the character limits: %v", err)
 	}
 	// The embedded contracts table parses, and every entry the jev and judge paths need is there.
 	ct, err := ContractsPrices()

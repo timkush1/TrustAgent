@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"regexp"
@@ -24,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 
 	"github.com/truthtable/contracts"
 )
@@ -121,7 +124,7 @@ func ParsePriceTable(b []byte) (PriceTable, error) {
 	if err := dec.Decode(&t); err != nil {
 		return PriceTable{}, fmt.Errorf("%w: %v", ErrPriceTable, err)
 	}
-	if dec.More() {
+	if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
 		return PriceTable{}, fmt.Errorf("%w: data after the table", ErrPriceTable)
 	}
 	if err := t.Validate(); err != nil {
@@ -131,9 +134,10 @@ func ParsePriceTable(b []byte) (PriceTable, error) {
 }
 
 // Validate checks the pricing.v1 rules that decoding cannot: a version of 1-32 characters, the
-// USD currency, at least one entry, and each entry's rules (CheckPriceEntry).
+// USD currency, at least one entry, and each entry's rules (CheckPriceEntry). Lengths count
+// characters (Unicode code points), as JSON Schema's maxLength does.
 func (t PriceTable) Validate() error {
-	if t.Version == "" || len(t.Version) > maxPriceVersion {
+	if t.Version == "" || utf8.RuneCountInString(t.Version) > maxPriceVersion {
 		return fmt.Errorf("%w: version must be 1-%d characters", ErrPriceTable, maxPriceVersion)
 	}
 	if t.Currency != "USD" {
@@ -154,7 +158,7 @@ func (t PriceTable) Validate() error {
 // and what is wrong with it, or "" when the entry is valid.
 func CheckPriceEntry(e PriceEntry) (field, problem string) {
 	switch {
-	case e.Match == "" || len(e.Match) > maxPriceMatch:
+	case e.Match == "" || utf8.RuneCountInString(e.Match) > maxPriceMatch:
 		return "match", fmt.Sprintf("must be 1-%d characters", maxPriceMatch)
 	case !priceProviderRE.MatchString(e.Provider):
 		return "provider", "must be 1-32 lowercase letters, digits, - or _"
@@ -162,19 +166,28 @@ func CheckPriceEntry(e PriceEntry) (field, problem string) {
 		return "input_per_mtok", "must be a number of at least 0"
 	case !validPrice(e.OutputPerMTok):
 		return "output_per_mtok", "must be a number of at least 0"
-	case len(e.Source) > maxPriceText:
+	case utf8.RuneCountInString(e.Source) > maxPriceText:
 		return "source", fmt.Sprintf("must be at most %d characters", maxPriceText)
 	case e.Label != "" && e.Label != PriceLabelVendor && e.Label != PriceLabelOverride:
 		return "label", "must be vendor_price or override"
-	case e.AsOf != "" && !priceDateRE.MatchString(e.AsOf):
+	case e.AsOf != "" && !validDate(e.AsOf):
 		return "as_of", "must be a date (YYYY-MM-DD)"
-	case len(e.Note) > maxPriceText:
+	case utf8.RuneCountInString(e.Note) > maxPriceText:
 		return "note", fmt.Sprintf("must be at most %d characters", maxPriceText)
 	}
 	return "", ""
 }
 
 func validPrice(p float64) bool { return p >= 0 && !math.IsInf(p, 0) && !math.IsNaN(p) }
+
+// validDate reports whether s is a calendar date in the YYYY-MM-DD form (JSON Schema format date).
+func validDate(s string) bool {
+	if !priceDateRE.MatchString(s) {
+		return false
+	}
+	_, err := time.Parse(time.DateOnly, s)
+	return err == nil
+}
 
 // ContractsPrices is the embedded contracts/pricing/prices.v1.json (parsed once). The caller owns
 // the returned entries.
