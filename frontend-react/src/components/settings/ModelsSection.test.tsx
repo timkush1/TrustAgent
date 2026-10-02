@@ -99,7 +99,8 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     const user = userEvent.setup();
     const control = createControlApi();
     renderPage(PATH, { control });
-    await user.click(await screen.findByRole('button', { name: 'Test the fast check' }));
+    expect(await screen.findByText('One real check with a tiny prompt: about $0.00001 (estimate).')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Test the fast check' }));
     expect(await screen.findByRole('button', { name: /Vendor.*Test cost/ })).toBeInTheDocument();
     control.state.decisionModelTest = errorReply(429, 'rate_limited', 'Wait a moment.', 600);
     await user.click(screen.getByRole('button', { name: 'Test the fast check' }));
@@ -107,6 +108,14 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Test the fast check' })).toHaveAttribute('aria-disabled', 'false'), { timeout: 3000 });
     expect(screen.queryByText('Wait a moment.')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('says a test in simulated mode costs nothing', async () => {
+    const view = settingsView();
+    view.runtime.decision_model.backend = 'mock';
+    renderPage(PATH, { control: createControlApi({ settings: view }) });
+    expect(await screen.findByText('One simulated check on the mock model: nothing is charged.')).toBeInTheDocument();
+    expect(screen.queryByText(/about \$0\.00001/)).toBeNull();
   });
 
   it('disconnects after naming the fail-closed routes (D77)', async () => {

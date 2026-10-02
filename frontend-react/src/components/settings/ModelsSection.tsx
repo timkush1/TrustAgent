@@ -204,7 +204,7 @@ function TestResult({ result }: { result: DecisionModelTestResult }) {
 }
 
 /** Test (#60), disabled with a countdown while the proxy asks to wait (429 Retry-After). */
-function TestButton({ reason }: { reason: Reason | null }) {
+function TestButton({ reason, simulated }: { reason: Reason | null; simulated: boolean }) {
   const ds = useDataSource();
   const qc = useQueryClient();
   const [waitUntil, setWaitUntil] = useState<number | null>(null);
@@ -242,7 +242,9 @@ function TestButton({ reason }: { reason: Reason | null }) {
           </Button>
         )}
       </DisabledAction>
-      <p className="text-xs text-fg-muted">One real check with a tiny prompt, about $0.00001.</p>
+      <p className="text-xs text-fg-muted">
+        {simulated ? 'One simulated check on the mock model: nothing is charged.' : 'One real check with a tiny prompt: about $0.00001 (estimate).'}
+      </p>
       {test.data ? <TestResult result={test.data} /> : null}
       {test.isError && !waitReason ? <ProblemNote error={test.error} title="The test did not run" /> : null}
     </div>
@@ -394,7 +396,7 @@ function FastCheckCard({ settings, status, credentials, writeReason, onReload }:
         {save.isError ? <SaveProblem error={save.error} onReload={reload} /> : null}
       </CardContent>
       <CardFooter className="flex flex-wrap items-start justify-between gap-3">
-        <TestButton reason={writeReason} />
+        <TestButton reason={writeReason} simulated={backend === 'mock'} />
         <div className="flex flex-wrap items-center gap-2">
           {backend !== 'off' ? <Disconnect settings={settings} reason={writeReason ?? (env.locked('decision_model.backend') ? 'env_managed' : null)} onReload={reload} /> : null}
           <DisabledAction reason={writeReason ?? (dirty ? null : { text: 'Change something first' })}>
