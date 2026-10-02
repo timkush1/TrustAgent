@@ -41,12 +41,16 @@ jobs:
         run: npm ci
 
       # Generated from contracts/schema and committed: fail when a schema changed without
-      # `make gen-types` / `make gen-policy-validator` (the vitest drift tests cover the same).
+      # `make gen-types` / `make gen-policy-validator` / `make gen-evaluator-validator` (the vitest
+      # drift tests cover the same).
       - name: Contract types are current (gen-types-check)
         run: node scripts/gen-types.ts --check
 
       - name: Policy validator is current (gen-policy-validator-check)
         run: node scripts/gen-policy-validator.ts --check
+
+      - name: Evaluator validator is current (gen-evaluator-validator-check)
+        run: node scripts/gen-evaluator-validator.ts --check
 
       - name: eslint
         run: npm run lint

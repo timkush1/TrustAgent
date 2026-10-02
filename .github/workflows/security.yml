@@ -1,7 +1,7 @@
 name: Security
 
-# gosec (medium+), bandit, and npm audit (high+) are BLOCKING — the codebase
-# was triaged clean in Phase 3 (see docs/SECURITY.md). Trivy remains
+# gosec (medium+), bandit, npm audit (high+) and gitleaks are BLOCKING — the
+# codebase was triaged clean in Phase 3 (see docs/SECURITY.md). Trivy remains
 # informational until a full scheduled run has been reviewed.
 
 on:
@@ -70,6 +70,37 @@ jobs:
         run: |
           pip install bandit==1.9.4
           bandit -r backend-python/src -x backend-python/src/truthtable/grpc/pb
+
+      # The setup scripts (configure, doctor, setup_url, ...) run docker and git by design: their
+      # low-severity subprocess notes are accepted, anything medium or above fails.
+      - name: Run bandit (setup scripts, medium and above)
+        run: bandit -r scripts -x scripts/tests -ll
+
+  gitleaks:
+    name: gitleaks (secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # the whole history: a key removed in a later commit is still leaked
+
+      # A pinned release, checked against its published SHA-256 (no third-party action, so no
+      # license key and nothing that can change under us).
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.28.0
+          GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          curl -fsSLo gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks && rm gitleaks.tgz
+
+      # .gitleaks.toml keeps the default rules and allows only fake keys in tests (*_test.go,
+      # tests/unit/, e2e/), the detector vectors, the fake-key conventions and SHA-256 calibration
+      # keys. --redact: a finding never prints the secret it found.
+      - name: Scan the git history
+        run: ./gitleaks git --config .gitleaks.toml --redact --no-banner --verbose .
 
   npm-audit:
     name: npm audit (frontend deps)
