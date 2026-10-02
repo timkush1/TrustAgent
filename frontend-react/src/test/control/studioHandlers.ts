@@ -103,9 +103,28 @@ export function studioHandlers(state: StudioState, kit: HandlerKit): HttpHandler
     }),
     http.post(`${API}/api/studio/test`, async ({ request }) => {
       const { body } = await kit.record(request);
-      const samples = (body as { samples?: unknown[] } | undefined)?.samples ?? [];
+      const samples = (body as { samples?: { id: string; expected?: 'fire' | 'no_fire' }[] } | undefined)?.samples ?? [];
       if (samples.length > 50) return reply(errorReply(422, 'invalid_request', 'Test at most 50 samples at a time.'));
-      return reply(state.studioTest);
+      const fixture = state.studioTest;
+      if (fixture === undefined || isError(fixture) || fixture.results.length === 0 || samples.length === 0) return reply(fixture);
+      // Like the gateway: one row per sample sent, in order, compared with the label sent with it.
+      const results = samples.map((s, i) => {
+        const row = fixture.results[i % fixture.results.length];
+        const expected = s.expected ?? null;
+        return { ...row, sample_id: s.id, expected, agrees: expected === null || row.fires === null ? null : row.fires === (expected === 'fire') };
+      });
+      const labelled = results.filter((r) => r.agrees !== null);
+      return reply({
+        ...fixture,
+        results,
+        summary: {
+          ...fixture.summary,
+          n: results.length,
+          assessed: results.filter((r) => r.status === 'assessed').length,
+          agreement: labelled.length > 0 ? labelled.filter((r) => r.agrees).length / labelled.length : null,
+          cost_usd: results.reduce((sum, r) => sum + r.cost_usd, 0),
+        },
+      });
     }),
     http.post(`${API}/api/studio/samples`, async ({ request }) => {
       await kit.record(request);

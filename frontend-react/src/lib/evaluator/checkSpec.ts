@@ -229,6 +229,25 @@ export function checkSpecDocument(doc: unknown, options: CheckOptions = {}): Spe
   return { errors, lints };
 }
 
+/** One problem as Studio lists it: severity, code (`schema`, `syntax` or the lint code), message and place. */
+export interface SpecProblem {
+  severity: 'error' | 'warning';
+  code: string;
+  message: string;
+  /** The gateway's path words ("outcomes.warn_at"); "" for the document. */
+  path: string;
+  line?: number;
+  col?: number;
+}
+
+/** A check's findings as one list: schema errors, then hard rules, then lints. */
+export function specProblems(check: SpecCheck): SpecProblem[] {
+  return [
+    ...check.errors.map((e) => ({ severity: 'error' as const, code: 'schema', message: e.message, path: e.path })),
+    ...check.lints.map((l) => ({ severity: l.severity, code: l.code, message: l.message, path: l.path })),
+  ];
+}
+
 /** Whether a check leaves the spec savable: no schema error and no hard rule broken. */
 export function isSavable(check: SpecCheck): boolean {
   return check.errors.length === 0 && check.lints.every((l) => l.severity !== 'error');

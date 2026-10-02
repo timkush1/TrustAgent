@@ -23,11 +23,10 @@ export type JsonScan = { ok: true; spans: Map<string, JsonSpan> } | { ok: false;
 const MAX_DEPTH = 256;
 
 class ScanError extends Error {
-  constructor(
-    message: string,
-    readonly offset: number,
-  ) {
+  readonly offset: number;
+  constructor(message: string, offset: number) {
     super(message);
+    this.offset = offset;
   }
 }
 

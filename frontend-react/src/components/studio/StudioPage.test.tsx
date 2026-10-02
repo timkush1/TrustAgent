@@ -1,0 +1,355 @@
+/**
+ * Evaluator Studio through the real data layer (LiveDataSource over msw), SPEC §7.3 and P4-PLAN §12:
+ * draft with AI, review with live lints, the test bench (estimate first, results, free what-if),
+ * quick calibration gating, saving (new check, next version, 412), save and watch on a route through
+ * the policy review dialog, and "Test on past traffic" (the D82 confirmation, SSE progress, cancel).
+ * The evaluator writes are spied on the data source: their plane belongs to WEB-EV.
+ */
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import draftFixture from '@contracts/fixtures/api/StudioDraftResponse.ok.json';
+import { ApiError } from '@/data/errors';
+import { axeViolations, formatViolations } from '@/test/axe';
+import { evaluatorDetail, evaluatorVersion } from '@/test/control/fixtures';
+import { createControlApi, errorReply } from '@/test/control/handlers';
+import { adminStatus, renderPage } from '@/test/control/renderPage';
+import { installMswServer } from '@/test/msw';
+import { stopLive } from '@/test/renderLive';
+import type { EvaluatorCreateRequest, EvaluatorDraft, EvaluatorSpec, EvaluatorVersion, EvaluatorVersionCreateRequest, StudioDraftResponse } from '@/types/api';
+
+installMswServer();
+afterEach(() => stopLive());
+configure({ asyncUtilTimeout: 5000 });
+
+const DESCRIPTION = 'Flag answers that blame the customer.';
+
+function savedVersion(spec: EvaluatorSpec, changelog: string): EvaluatorVersion {
+  return {
+    evaluator_id: spec.id,
+    version: spec.version,
+    spec,
+    spec_sha256: 'a'.repeat(64),
+    question_sha256: 'b'.repeat(64),
+    calibration_key: `${spec.id}@${spec.version}:${'c'.repeat(16)}`,
+    created_by: 'setup-admin',
+    created_at: new Date().toISOString(),
+    changelog,
+  };
+}
+
+const step = (name: RegExp) => screen.getByRole('region', { name });
+
+async function draftWithAi(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(await screen.findByRole('textbox', { name: 'What should TrustAgent check?' }), DESCRIPTION);
+  await user.click(screen.getByRole('button', { name: 'Draft with AI' }));
+  await screen.findByText(/Drafted “Blames the customer” with anthropic\/claude-haiku-4\.5/);
+}
+
+describe('Studio', { timeout: 30_000 }, () => {
+  it('drafts with AI, shows the estimate and the model first, and fills the review and the samples', async () => {
+    const user = userEvent.setup();
+    const { control, container } = renderPage('/app/evaluators/studio');
+    const describe = await screen.findByRole('region', { name: /Step 1: Describe a check in plain English/ });
+    expect(await within(describe).findByText(/Uses anthropic\/claude-haiku-4\.5 \(OpenRouter\)/)).toBeInTheDocument();
+    expect(within(describe).getByText('≈ $0.005')).toBeInTheDocument();
+    expect(within(describe).getByRole('button', { name: /Estimate: how “Cost of one draft” was produced/ })).toBeInTheDocument();
+    expect(within(describe).getByText('Describe the check in a sentence first')).toBeInTheDocument();
+
+    await draftWithAi(user);
+    expect(control.callsTo('/api/studio/draft')[0].body).toEqual({ description: DESCRIPTION });
+    // A vendor-reported cost is labelled as such; nothing is saved.
+    expect(within(describe).getByRole('button', { name: /Vendor: how “Cost of this draft” was produced/ })).toBeInTheDocument();
+
+    const review = step(/Step 2: Review the check/);
+    expect(within(review).getByText('Drafted by AI. Change anything; the lints below update as you type.')).toBeInTheDocument();
+    expect(within(review).getByText(/Why the AI shaped it this way/)).toBeInTheDocument();
+    expect(within(review).getByRole('textbox', { name: 'Name' })).toHaveValue('Blames the customer');
+    expect(within(review).getByRole('radio', { name: 'Pick one' })).toBeChecked();
+    expect(within(review).getByText('No problems: the check passes the format and every lint.')).toBeInTheDocument();
+
+    const test = step(/Step 3: Test on samples/);
+    expect(within(test).getAllByText(/From the AI's draft/)).toHaveLength(6);
+    // The estimate is shown before anything runs.
+    expect(within(test).getByText(/6 samples ·/)).toBeInTheDocument();
+    expect(within(test).getByRole('button', { name: /Estimate: how “Cost of this test” was produced/ })).toBeInTheDocument();
+    expect(control.callsTo('/api/studio/test')).toHaveLength(0);
+    expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
+
+  it('labels a mock draft Simulated and says so', async () => {
+    const user = userEvent.setup();
+    const draft = { ...structuredClone(draftFixture), cost_usd: 0, cost_source: 'simulated' } as StudioDraftResponse;
+    renderPage('/app/evaluators/studio', { control: createControlApi({ studioDraft: draft }) });
+    await draftWithAi(user);
+    expect(screen.getByRole('button', { name: /Simulated: how “Cost of this draft” was produced/ })).toBeInTheDocument();
+    expect(screen.getByText('Drafted by the mock model (simulated). Connect a judge for a real draft.')).toBeInTheDocument();
+  });
+
+  it('shows a draft that still breaks the rules, and the server errors with their hint', async () => {
+    const user = userEvent.setup();
+    const failed: StudioDraftResponse = {
+      ...(structuredClone(draftFixture) as StudioDraftResponse),
+      draft: null,
+      attempts: 2,
+      lints: [{ code: 'unresolved_state_reference', severity: 'error', path: 'question.instructions', message: 'The instructions name `policy_text`.' }],
+    };
+    const control = createControlApi({ studioDraft: failed });
+    renderPage('/app/evaluators/studio', { control });
+    await user.type(await screen.findByRole('textbox', { name: 'What should TrustAgent check?' }), DESCRIPTION);
+    await user.click(screen.getByRole('button', { name: 'Draft with AI' }));
+    expect(await screen.findByText(/still broke the evaluator rules after 2 attempts/)).toBeInTheDocument();
+    expect(screen.getByText(/Refers to a field the check doesn't read · The instructions name `policy_text`\./)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /Step 2/ })).not.toBeInTheDocument();
+
+    control.state.studioDraft = errorReply(503, 'no_judge', 'No judge is configured.');
+    await user.click(screen.getByRole('button', { name: 'Draft with AI' }));
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText("Couldn't draft: No judge is configured.")).toBeInTheDocument();
+    expect(within(alert).getByText('No deep-audit judge is set. Choose one in Settings → Models.')).toBeInTheDocument();
+    expect(within(alert).getByText('You can still start from a template.')).toBeInTheDocument();
+  });
+
+  it('makes templates the way in when no judge is configured', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio', { status: { judge: { state: 'disabled', provider: null, model: null, credential_source: 'none', fallback_active: false, fallback_reason: null, warnings: [] } } });
+    const describe = await screen.findByRole('region', { name: /Step 1/ });
+    expect(await within(describe).findByText('No AI judge is set up to draft with')).toBeInTheDocument();
+    expect(within(describe).getByRole('link', { name: 'Choose one in Models' })).toHaveAttribute('href', '/app/settings/models');
+    await user.click(within(describe).getByRole('combobox', { name: 'Start from a template' }));
+    await user.click(await screen.findByRole('option', { name: /^Refusal/ }));
+    await user.click(within(describe).getByRole('button', { name: 'Use this template' }));
+    const review = await screen.findByRole('region', { name: /Step 2: Review the check/ });
+    expect(within(review).getByRole('textbox', { name: 'Name' })).toHaveValue('Refusal (custom)');
+    expect(within(review).getByText(/From the Refusal template/)).toBeInTheDocument();
+  });
+
+  it('edits in Simple, Advanced and JSON with live lints, keeping one spec', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const review = step(/Step 2: Review the check/);
+    const instructions = within(review).getByRole('textbox', { name: 'What should it catch?' });
+    await user.clear(instructions);
+    await user.type(instructions, 'Does `policy_text` blame the customer?');
+    expect(await within(review).findByText(/1 error to fix before saving/)).toBeInTheDocument();
+    expect(within(review).getByText("Refers to a field the check doesn't read")).toBeInTheDocument();
+    expect(screen.getAllByText('Fix the errors in step 2 first').length).toBeGreaterThan(0);
+
+    await user.click(within(review).getByRole('tab', { name: 'Advanced' }));
+    const id = within(review).getByRole('textbox', { name: 'Id' });
+    await user.clear(id);
+    await user.type(id, 'Bad Id{Enter}');
+    expect(await within(review).findByText(/Use 2 to 48 lower-case letters/)).toBeInTheDocument();
+
+    await user.click(within(review).getByRole('tab', { name: 'JSON' }));
+    const editor = await within(review).findByRole('textbox', { name: 'Evaluator spec (JSON)' });
+    expect(editor).toHaveAttribute('contenteditable', 'true');
+    expect(within(review).getByText(/"blames_the_customer"/)).toBeInTheDocument();
+    expect(within(review).getByText(/question\.instructions/)).toBeInTheDocument();
+  });
+
+  it('runs the test, then replays another threshold for free and adopts it', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const test = step(/Step 3: Test on samples/);
+    await user.click(within(test).getByRole('button', { name: 'Run test' }));
+    expect((await within(test).findByText('5 of 6 match')).closest('p')).toHaveTextContent('5 of 6 match · fires on 2 of 6');
+    const sent = control.callsTo('/api/studio/test')[0].body as { spec: EvaluatorSpec; samples: { id: string; expected?: string }[] };
+    expect(sent.spec.id).toBe('blames_the_customer');
+    expect(sent.samples.map((s) => s.expected)).toEqual(['no_fire', 'fire', 'no_fire', 'fire', 'no_fire', 'fire']);
+    expect(within(test).getAllByText('Matches your label')).toHaveLength(5);
+    expect(within(test).getByText("Doesn't match")).toBeInTheDocument();
+    expect(within(test).getByRole('button', { name: /Estimate: how “Cost of this run” was produced/ })).toBeInTheDocument();
+
+    const whatIf = within(test).getByRole('slider', { name: 'What if it flagged at' });
+    whatIf.focus();
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(whatIf, { key: 'ArrowLeft' });
+    expect(await within(test).findByText('At 0.40: fires on 3 of 6 · 6 of 6 match your labels')).toBeInTheDocument();
+    expect(control.callsTo('/api/studio/test')).toHaveLength(1);
+    await user.click(within(test).getByRole('button', { name: 'Use 0.40 as the threshold' }));
+    expect(within(step(/Step 2/)).getByRole('slider', { name: 'Flag when the risk reaches' })).toHaveAttribute('aria-valuenow', '0.4');
+    expect(await within(test).findByText(/The check or the samples changed since this run/)).toBeInTheDocument();
+  });
+
+  it('gates quick calibration on 8 labels with 3 of each, and never says calibrated', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const quick = step(/Step 4: Suggest a threshold/);
+    expect(within(quick).getByText(/Run the test in step 3 first/)).toBeInTheDocument();
+    await user.click(within(step(/Step 3/)).getByRole('button', { name: 'Run test' }));
+    expect(await within(quick).findByText("Needs 8 labels (have 6: 3 should fire, 3 shouldn't)")).toBeInTheDocument();
+    expect(within(quick).getByTestId('quick-calibration-message')).toHaveTextContent(
+      'Label at least 8 answers, with at least 3 where the check should fire and 3 where it should not (you have 3 and 3).',
+    );
+    expect(within(quick).getByText(/2 more labelled answers: add samples in step 3/)).toBeInTheDocument();
+    expect(within(quick).queryByRole('button', { name: /Use the suggested threshold/ })).not.toBeInTheDocument();
+    expect(quick.textContent).not.toMatch(/\bcalibrated\b/i);
+  });
+
+  it('saves a new check, then watches it on a route through the policy review (If-Match)', async () => {
+    const user = userEvent.setup();
+    const { control, dataSource } = renderPage('/app/evaluators/studio');
+    const create = vi.spyOn(dataSource, 'createEvaluator').mockImplementation((req: EvaluatorCreateRequest) => Promise.resolve(savedVersion(req.spec, req.changelog)));
+    await draftWithAi(user);
+
+    const watch = step(/Step 6: Watch it on a route/);
+    expect(within(watch).getByText('Save a version first (step 5)')).toBeInTheDocument();
+
+    const save = step(/Step 5: Save a version/);
+    expect(within(save).getByText('Say what changed and why first')).toBeInTheDocument();
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'First version from the AI draft');
+    await user.click(within(save).getByRole('button', { name: 'Save as a new check' }));
+    expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
+    expect(create).toHaveBeenCalledWith({ spec: expect.objectContaining({ id: 'blames_the_customer', version: 1 }), changelog: 'First version from the AI draft' });
+    expect(within(save).getByText('No changes since version 1')).toBeInTheDocument();
+
+    await user.click(within(watch).getByRole('button', { name: 'Save and watch on route support-bot' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review and save a new policy version' });
+    expect(await within(dialog).findByText('The server accepts this policy.')).toBeInTheDocument();
+    const validated = control.callsTo('/api/policies/validate')[0].body as { yaml: string };
+    expect(validated.yaml).toContain('      - ref: off_brand_tone@1');
+    expect(validated.yaml).toMatch(/ {6}- ref: blames_the_customer@1\n {8}stage: shadow\n/);
+    await user.type(within(dialog).getByRole('textbox', { name: 'What changed and why' }), 'Watch blames_the_customer on support-bot');
+    await user.click(within(dialog).getByRole('button', { name: 'Save version' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(control.callsTo('/api/policies', 'PUT')[0].headers.get('if-match')).toBe('"v3"');
+
+    expect(await within(watch).findByText('Watching on support-bot')).toBeInTheDocument();
+    expect(within(watch).getByRole('button', { name: 'Make active' })).toBeInTheDocument();
+    expect(within(step(/Step 7: Calibrate for blocking/)).getByRole('link', { name: /Calibrate on the check's page/ })).toHaveAttribute('href', '/app/evaluators/blames_the_customer');
+  });
+
+  it('confirms a paid test on past traffic with the server estimate, then shows the result (D82)', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('radio', { name: '7 days' }));
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Run this paid test?' });
+    expect(within(confirm).getByText("This test costs about $0.0021 (200 of 1,840 past answers). $1.84 of today's fast-check budget is left.")).toBeInTheDocument();
+    const first = control.callsTo('/api/studio/dry-run')[0].body as Record<string, unknown>;
+    expect(first).not.toHaveProperty('confirm_cost');
+    expect(first).toMatchObject({ route: 'support-bot', window: '7d', max_samples: 200, spec: expect.objectContaining({ id: 'blames_the_customer' }) });
+
+    await user.click(within(confirm).getByRole('button', { name: 'Run the test' }));
+    expect(await within(watch).findByText('Would have fired 11 times (5.9%, 95% CI 3.3%–10.2%) on the last 7 days; this test cost $0.00082.')).toBeInTheDocument();
+    expect(control.callsTo('/api/studio/dry-run')[1].body).toMatchObject({ confirm_cost: true });
+    expect(within(watch).getByText(/off_brand_tone@1 \(6\)|Off-brand tone \(6\)/)).toBeInTheDocument();
+    expect(within(watch).getByText('None of these answers had a deep audit to compare with')).toBeInTheDocument();
+    expect(within(watch).getByRole('link', { name: '01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64' })).toHaveAttribute('href', '/app/traffic/01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64');
+  });
+
+  it('cancels a running test and says what it spent', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio', { control: createControlApi({ studioDryRunConfirm: null, studioDryRunHold: true }) });
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    expect(await within(watch).findByText(/Checked 200 of 200 · fired on 11 · spent ≈ \$0\.00082/)).toBeInTheDocument();
+    expect(within(watch).getByRole('progressbar', { name: 'Answers checked' })).toHaveAttribute('aria-valuenow', '200');
+    await user.click(within(watch).getByRole('button', { name: 'Cancel the test' }));
+    expect(await within(watch).findByText("Test stopped. You're charged only for the checks that already ran (≈ $0.00082).")).toBeInTheDocument();
+  });
+
+  it('explains a refused test: over the budget, or no fast-check model', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ studioDryRunConfirm: null, studioDryRun: errorReply(503, 'budget_exhausted', "Today's fast-check budget is used up.") });
+    renderPage('/app/evaluators/studio', { control });
+    await draftWithAi(user);
+    await user.click(within(step(/Step 6/)).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    expect(await screen.findByText("The test did not run: Today's fast-check budget is used up.")).toBeInTheDocument();
+    expect(screen.getByText(/Raise the daily cap in Settings → Budgets/)).toBeInTheDocument();
+  });
+
+  it('keeps writes visible but unavailable, with the reason, on a read-only instance', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio', { status: { readonly: true } });
+    const describe = await screen.findByRole('region', { name: /Step 1/ });
+    await user.type(within(describe).getByRole('textbox', { name: 'What should TrustAgent check?' }), DESCRIPTION);
+    expect(within(describe).getByRole('button', { name: 'Draft with AI' })).toHaveAttribute('aria-disabled', 'true');
+    expect(await within(describe).findByText('Not available on a read-only instance')).toBeInTheDocument();
+    await user.click(within(describe).getByRole('button', { name: 'Use this template' }));
+    const test = await screen.findByRole('region', { name: /Step 3/ });
+    expect(within(test).getByRole('button', { name: 'Run test' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('says the fast check is not connected, with the fix', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio', { status: { decision_model: { ...adminStatus().decision_model, backend: 'off', state: 'off' } } });
+    const describe = await screen.findByRole('region', { name: /Step 1/ });
+    await user.click(within(describe).getByRole('button', { name: 'Use this template' }));
+    const test = await screen.findByRole('region', { name: /Step 3/ });
+    expect(await within(test).findByText('No fast-check model is connected')).toBeInTheDocument();
+    expect(within(test).getByRole('link', { name: 'Connect one' })).toHaveAttribute('href', '/app/settings/connections');
+  });
+});
+
+describe('Studio on a saved version', { timeout: 30_000 }, () => {
+  function dashboardCheck(latest: number) {
+    const spec = { ...(draftFixture.draft as unknown as EvaluatorDraft), id: 'blames', version: latest } as unknown as EvaluatorSpec & Record<string, unknown>;
+    delete spec.rationale;
+    delete spec.test_samples;
+    const version = savedVersion(spec as EvaluatorSpec, `Version ${latest}`);
+    const detail = { ...evaluatorDetail('refusal'), id: 'blames', name: 'Blames the customer', origin: 'dashboard' as const, latest_version: latest, latest: version };
+    return { version, detail };
+  }
+
+  it('saves the next version with base_version, and reloads the latest after a 412', async () => {
+    const user = userEvent.setup();
+    const v1 = dashboardCheck(1);
+    const control = createControlApi({ evaluatorDetails: { blames: v1.detail }, evaluatorVersions: { 'blames@1': v1.version } });
+    const { dataSource } = renderPage('/app/evaluators/studio/blames/1', { control });
+    const createVersion = vi
+      .spyOn(dataSource, 'createEvaluatorVersion')
+      .mockRejectedValueOnce(new ApiError({ kind: 'http', status: 412, code: 'stale_version', message: 'A newer version exists.' }))
+      .mockImplementation((_id: string, req: EvaluatorVersionCreateRequest) => Promise.resolve(savedVersion(req.spec, req.changelog)));
+
+    expect(await screen.findByText('Editing version 1 of Blames the customer')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'What should TrustAgent check?' })).not.toBeInTheDocument();
+    const save = step(/Step 5: Save a version/);
+    expect(within(save).getByText('No changes since version 1')).toBeInTheDocument();
+
+    const name = within(step(/Step 2/)).getByRole('textbox', { name: 'Name' });
+    await user.clear(name);
+    await user.type(name, 'Blames the user');
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'Say user');
+    await user.click(within(save).getByRole('button', { name: 'Save version 2' }));
+    expect(await within(save).findByText(/Someone saved a newer version of this check/)).toBeInTheDocument();
+    expect(createVersion.mock.calls[0][1]).toMatchObject({ base_version: 1, spec: expect.objectContaining({ version: 2, name: 'Blames the user' }) });
+
+    // Meanwhile version 2 was saved elsewhere: reloading makes it the base, and the edit stays.
+    const v2 = dashboardCheck(2);
+    control.state.evaluatorDetails.blames = v2.detail;
+    await user.click(within(save).getByRole('button', { name: 'Reload the latest version' }));
+    await user.click(await within(save).findByRole('button', { name: 'Save version 3' }));
+    expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
+    expect(createVersion.mock.calls[1][1]).toMatchObject({ base_version: 2, spec: expect.objectContaining({ version: 3, name: 'Blames the user' }) });
+  });
+
+  it('copies a built-in check as a new check of your own', async () => {
+    renderPage('/app/evaluators/studio/refusal/1');
+    const start = await screen.findByRole('region', { name: /Step 1: Start from a saved version/ });
+    expect(within(start).getByText(/A copy of Refusal version 1 \(built-in\), saved as a new check/)).toBeInTheDocument();
+    const save = step(/Step 5: Save a version/);
+    expect(within(save).getByText(/Saves a new check,/)).toBeInTheDocument();
+    expect(within(save).getByText('refusal_custom')).toBeInTheDocument();
+    expect(within(save).getByRole('button', { name: 'Save as a new check' })).toBeInTheDocument();
+    expect(evaluatorVersion('refusal').spec.builtin).toBe(true);
+  });
+
+  it('shows the error with Retry for a version that does not load', async () => {
+    const control = createControlApi({ evaluatorDetails: { refusal: errorReply(404, 'not_found', 'No evaluator refusal.') } });
+    renderPage('/app/evaluators/studio/refusal/1', { control });
+    expect(await screen.findByText(/No evaluator refusal\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
+  });
+
+  it('refuses a version that is not a number', async () => {
+    renderPage('/app/evaluators/studio/refusal/latest');
+    expect(await screen.findByText(/“latest” is not a version number\./)).toBeInTheDocument();
+  });
+});
