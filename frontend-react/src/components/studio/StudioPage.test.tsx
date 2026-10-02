@@ -300,6 +300,25 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(test).getByRole('link', { name: 'Connect one' })).toHaveAttribute('href', '/app/settings/connections');
   });
 
+  it('loads samples from recent traffic for free, once each', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/studio');
+    await user.click(within(await screen.findByRole('region', { name: /Step 1/ })).getByRole('button', { name: 'Use this template' }));
+    const bench = await screen.findByRole('region', { name: /Step 3: Test on samples/ });
+    expect(within(bench).getByText('Free: reads answers the gateway already stored. Only answers whose text was kept can be loaded.')).toBeInTheDocument();
+
+    await user.click(within(bench).getByRole('button', { name: 'Load samples' }));
+    expect(await within(bench).findByText('Added 2 answers to the samples above.')).toBeInTheDocument();
+    expect(within(bench).getAllByText(/From traffic/)).toHaveLength(2);
+    expect(within(bench).getAllByRole('link', { name: 'View trace' })[0]).toHaveAttribute('href', '/app/traffic/01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2');
+    expect(control.callsTo('/api/studio/samples')[0].body).toEqual({ window: '7d', filter: 'flagged', limit: 20 });
+
+    // The same answers again: nothing is added twice.
+    await user.click(within(bench).getByRole('button', { name: 'Load samples' }));
+    expect(await within(bench).findByText('Every answer that matched is already in the samples above.')).toBeInTheDocument();
+    expect(within(bench).getAllByText(/From traffic/)).toHaveLength(2);
+  });
+
   it('says the policy did not load in step 6, and Retry loads it', async () => {
     const user = userEvent.setup();
     const control = createControlApi();

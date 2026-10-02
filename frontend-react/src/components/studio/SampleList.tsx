@@ -115,6 +115,8 @@ export function AddSamples({
   const [answer, setAnswer] = useState('');
   const [doc, setDoc] = useState('');
   const [label, setLabel] = useState<LabelValue>('none');
+  /** How many of the last load's answers were new to the bench (the rest were on it already). */
+  const [added, setAdded] = useState<number | null>(null);
 
   const load = useMutation({
     mutationFn: () =>
@@ -127,7 +129,9 @@ export function AddSamples({
         // Server ids are unique per response only: give each a bench id of its own.
         fresh.push({ ...s, id: nextId('t', [...samples, ...fresh]) });
       }
-      onChange([...samples, ...fresh.slice(0, room)]);
+      const take = fresh.slice(0, room);
+      setAdded(take.length);
+      onChange([...samples, ...take]);
     },
   });
 
@@ -189,6 +193,13 @@ export function AddSamples({
         </DisabledAction>
         <p className="text-xs text-fg-muted">Free: reads answers the gateway already stored. Only answers whose text was kept can be loaded.</p>
         {loadedNone ? <p className="text-sm text-fg">No stored answers match. Try another filter or a longer window.</p> : null}
+        {load.isSuccess && !loadedNone && added !== null ? (
+          <p role="status" className="text-sm text-fg">
+            {added === 0
+              ? 'Every answer that matched is already in the samples above.'
+              : `Added ${formatCount(added)} ${added === 1 ? 'answer' : 'answers'} to the samples above.`}
+          </p>
+        ) : null}
         {failure ? (
           <p role="alert" className="text-sm text-fg">
             Couldn't load samples: {failure.message}
