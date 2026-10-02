@@ -705,10 +705,12 @@ func (s *server) planSettingsWrite(ctx context.Context, snap *runtimecfg.Snapsho
 	return plan, 0, nil
 }
 
-// ingestKeyExists reports whether any key can ingest: an env key, or an active api_keys row with
-// the ingest scope (D41).
+// ingestKeyExists reports whether an app key exists for an upstream key bound for every caller
+// (D41).
 func (s *server) ingestKeyExists(ctx context.Context) (bool, error) {
-	if s.gateway != nil && s.gateway.auth != nil && s.gateway.auth.HasIngestKeys() {
+	// An app key: one that holds the ingest scope itself, from the env or the dashboard. Admin keys
+	// do not count (every caller of this PATCH holds one, and an app should not use it; D95).
+	if s.gateway != nil && s.gateway.auth != nil && s.gateway.auth.HasEnvIngestScope() {
 		return true, nil
 	}
 	return s.rt.store.IngestKeyExists(ctx)

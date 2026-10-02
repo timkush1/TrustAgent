@@ -772,3 +772,29 @@ func TestSettingsNullUpstreamURLKeepsTheBoundKey(t *testing.T) {
 		t.Errorf("after unbinding and clearing: %+v %+v", v.Runtime.Upstream.Default, v.Runtime.Bindings)
 	}
 }
+
+// D95: the D41 check counts app keys only, a key that holds the ingest scope itself, from the env
+// or the dashboard; the env admin key every caller of the PATCH has does not make one.
+func TestIngestKeyCheckCountsAppKeysOnly(t *testing.T) {
+	// The env has its admin key and no TRUTHTABLE_API_KEYS app key.
+	env := newSettingsEnv(t, envOpts{mutate: func(c *config.Config) { c.APIKeys = nil }})
+	ctx := context.Background()
+	if !env.srv.gateway.auth.HasIngestKeys() {
+		t.Fatal("the env admin key can ingest")
+	}
+	if ok, err := env.srv.ingestKeyExists(ctx); err != nil || ok {
+		t.Fatalf("with only the env admin key: %v %v, want no app key", ok, err)
+	}
+	if _, err := env.srv.gateway.auth.CreateKey(ctx, "dash-admin", []authz.Scope{authz.ScopeAdmin}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := env.srv.ingestKeyExists(ctx); ok {
+		t.Error("a dashboard admin key counted as an app key")
+	}
+	if _, err := env.srv.gateway.auth.CreateKey(ctx, "app", []authz.Scope{authz.ScopeIngest}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := env.srv.ingestKeyExists(ctx); err != nil || !ok {
+		t.Errorf("with an app key: %v %v", ok, err)
+	}
+}

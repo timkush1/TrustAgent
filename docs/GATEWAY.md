@@ -389,9 +389,10 @@ Each upstream decides on its own:
   `TRUTHTABLE_UPSTREAM_URL` in `.env` pins the upstream for good: the
   dashboard cannot move it.
 - **Rules the dashboard enforces.** Turning inject mode on needs an ingest key
-  first (409 `ingest_key_required`): a dashboard key with the `ingest` scope
-  (the setup wizard mints one), or an environment ingest or admin key, so your
-  apps are never locked out. A fallback upstream on another host
+  first (409 `ingest_key_required`): a key with the `ingest` scope itself, from
+  the dashboard (the setup wizard mints one) or the environment
+  (`TRUTHTABLE_API_KEYS`). An admin key does not count, wherever it comes from:
+  your apps should never send one. A fallback upstream on another host
   needs its own key (422 `fallback_key_required`), so your main key never goes
   to a third party.
 - **Upstream error bodies.** In inject mode the upstream may echo the key it

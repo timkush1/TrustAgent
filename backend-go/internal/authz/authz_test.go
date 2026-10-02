@@ -34,6 +34,11 @@ func TestAuthenticate(t *testing.T) {
 	if !a.HasIngestKeys() || New([]Key{{Label: "ro", Secret: "x", Scopes: []Scope{ScopeRead}}}, IngestKeys).HasIngestKeys() {
 		t.Error("HasIngestKeys")
 	}
+	// D95: an admin key can ingest, but only a key that holds the ingest scope itself is an app key.
+	adminOnly := New([]Key{{Label: "admin", Secret: "x", Scopes: []Scope{ScopeAdmin}}}, IngestKeys)
+	if !adminOnly.HasIngestKeys() || adminOnly.HasEnvIngestScope() || !a.HasEnvIngestScope() {
+		t.Errorf("HasEnvIngestScope: admin-only %v, with an app key %v", adminOnly.HasEnvIngestScope(), a.HasEnvIngestScope())
+	}
 }
 
 func TestScopes(t *testing.T) {
