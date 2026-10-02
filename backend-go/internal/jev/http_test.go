@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -1227,6 +1228,36 @@ func TestEchoedCredentialIsMasked(t *testing.T) {
 	}
 	if st := cl.(StatusReporter).Status(); st.LastError == nil || strings.Contains(st.LastError.Message, key) {
 		t.Errorf("status %+v", st.LastError)
+	}
+}
+
+// A key the vendor echoes across the 300-character cut of its message leaves no prefix behind
+// (D42): the body is masked before the message is cut. The key matches no redaction pattern.
+func TestEchoedCredentialAcrossTheCutIsMasked(t *testing.T) {
+	const key = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+	for _, lead := range []int{288, 290, 296, 299} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			msg := strings.Repeat("x", lead) + " " + key + " is not a valid key"
+			_, _ = io.WriteString(w, `{"error":{"message":"`+msg+`","code":401}}`)
+		}))
+		cl, err := New(Config{Backend: BackendCompatible, JevAPIKey: key, BaseURL: srv.URL, Model: "jev-test"})
+		if err != nil {
+			srv.Close()
+			t.Fatal(err)
+		}
+		_, err = decide(t, cl, testRequest(""), CallOptions{})
+		var last string
+		if st := cl.(StatusReporter).Status(); st.LastError != nil {
+			last = st.LastError.Message
+		}
+		srv.Close()
+		for _, text := range []string{fmt.Sprint(err), last} {
+			if strings.Contains(text, key[:6]) {
+				t.Errorf("lead %d: a prefix of the key survived the cut", lead)
+			}
+		}
 	}
 }
 

@@ -56,7 +56,7 @@ func (c *httpClient) CheckKey(ctx context.Context) (*KeyInfo, error) {
 	}
 	now := c.cfg.Now()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		e, _ := classifyStatus(resp.StatusCode, resp.Header, body, c.cfg.RetryAfterCap)
+		e, _ := classifyStatus(resp.StatusCode, resp.Header, redactBody(body, key), c.cfg.RetryAfterCap)
 		e.Message = redactSecret(e.Message, key)
 		c.status.keyCheck(now, e)
 		return nil, e

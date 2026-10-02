@@ -1,6 +1,7 @@
 package jev
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"mime"
@@ -257,6 +258,16 @@ func scrub(s string) string {
 		s = string(r[:maxLen]) + "…"
 	}
 	return s
+}
+
+// redactBody masks the credential in a vendor's error body before it is classified (D42): the
+// classification cuts the vendor's message to 300 characters, and a key echoed across that cut
+// would otherwise leave its first characters, which no later mask recognises.
+func redactBody(body []byte, secret string) []byte {
+	if len(secret) < 8 {
+		return body
+	}
+	return bytes.ReplaceAll(body, []byte(secret), []byte("[redacted]"))
 }
 
 // redactSecret masks the credential itself wherever a vendor echoes it (SPEC §7.5 masks any loaded

@@ -680,7 +680,7 @@ func (c *httpClient) do(ctx context.Context, cl *call, a *attempt, key string) a
 			Message: "the endpoint redirects to " + redactURL(resp.Header.Get("Location")) + "; TrustAgent never follows redirects with the key",
 			Hint:    Hint(KindNotFound)}
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		res.err, res.effect = classifyStatus(resp.StatusCode, resp.Header, body, c.cfg.RetryAfterCap)
+		res.err, res.effect = classifyStatus(resp.StatusCode, resp.Header, redactBody(body, key), c.cfg.RetryAfterCap)
 		res.err.Message = redactSecret(res.err.Message, key)
 	case len(body) > maxResponseBytes:
 		res.err, res.effect = &Error{Kind: KindBadResponse, Status: resp.StatusCode, Message: "the response is larger than 4 MiB", Hint: Hint(KindBadResponse)}, effectFault
