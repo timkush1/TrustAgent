@@ -5,15 +5,18 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/credentials"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/runtimecfg"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
 )
@@ -72,6 +75,9 @@ type statusReporter struct {
 	// evaluatorWarnings lists what the evaluator registry excluded while loading (skipped files,
 	// versions that break a hard rule, P4-PLAN D54); nil means none.
 	evaluatorWarnings func() []string
+	// runtime is the runtime configuration in effect (GSEC): the decision credential's name and
+	// the runtime warnings come from it; nil means none (a reporter built in a test).
+	runtime func() *runtimecfg.Snapshot
 }
 
 // spendView is SystemStatus.budgets as the cost ledger reports it (P4, D46: real spend only).
@@ -259,6 +265,16 @@ type systemStatus struct {
 	Credentials   statusCredentials   `json:"credentials"`
 	Redis         statusRedis         `json:"redis"`
 	Warnings      []string            `json:"warnings"`
+	// WarningDetails are the warnings that carry a code and details (P4: master_key_changed,
+	// fail_closed_unprotected, ...); each one's message is also in Warnings.
+	WarningDetails []statusWarning `json:"warning_details,omitempty"`
+}
+
+// statusWarning is api.ts StatusWarning.
+type statusWarning struct {
+	Code    string          `json:"code"`
+	Message string          `json:"message"`
+	Details *warningDetails `json:"details,omitempty"`
 }
 
 // statusLite is api.ts SystemStatusLite (the WS hello summary).
@@ -277,6 +293,10 @@ func (s *statusReporter) handleStatus(c *gin.Context) {
 	defer cancel()
 	st := s.system(ctx)
 	st.Auth.CallerScopes = callerScopes(callerIdentity(c))
+	if isAdmin(c) {
+		// Only an admin sees the masked key (D79).
+		st.DecisionModel.Credential = s.decisionCredential(st.DecisionModel.Credential.Source, true)
+	}
 	c.JSON(http.StatusOK, st)
 }
 
@@ -349,7 +369,62 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 		}
 	}
 	s.applyHooks(&st)
+	st.DecisionModel.Credential = s.decisionCredential(st.DecisionModel.Credential.Source, false)
+	for _, w := range s.runtimeWarnings() {
+		msg := apiRedact(w.Message)
+		st.Warnings = append(st.Warnings, msg)
+		st.WarningDetails = append(st.WarningDetails, statusWarning{Code: w.Code, Message: msg, Details: detailsOf(w.Details)})
+	}
 	return st
+}
+
+// runtimeWarnings are the runtime configuration's warnings (D32: master key changed, store
+// unavailable, settings unreadable) and fail_closed_unprotected (D77).
+func (s *statusReporter) runtimeWarnings() []runtimecfg.Warning {
+	var out []runtimecfg.Warning
+	if s.runtime != nil {
+		if snap := s.runtime(); snap != nil {
+			out = append(out, snap.Warnings...)
+		}
+	}
+	if w := s.failClosedWarning(); w != nil {
+		out = append(out, *w)
+	}
+	return out
+}
+
+// decisionCredential is DecisionModelStatus.credential for the source the decision client reports:
+// the credential the runtime configuration binds to the decision model, by its env var when it
+// comes from the env (OPENROUTER_API_KEY) and by its name when it is a dashboard key (openrouter),
+// and its config.MaskSecret mask for an admin only (D79). The name stays null while the client
+// has not caught up with the configuration (their sources differ).
+func (s *statusReporter) decisionCredential(source string, admin bool) decisionCredential {
+	c := decisionCredential{Source: defaultString(source, "none")}
+	if s.runtime == nil || c.Source == "none" {
+		return c
+	}
+	snap := s.runtime()
+	if snap == nil || snap.Settings.Bindings.DecisionModel == nil {
+		return c
+	}
+	cred, ok := snap.Credentials[*snap.Settings.Bindings.DecisionModel]
+	if !ok || cred.Source != c.Source {
+		return c
+	}
+	name := cred.Name
+	if cred.Source == credentials.SourceEnv {
+		if keys := snap.EnvSources["bindings.decision_model"]; len(keys) > 0 {
+			name = keys[0]
+		} else if spec, ok := credentials.Lookup(cred.Name); ok {
+			name = spec.EnvVar
+		}
+	}
+	c.Name = &name
+	if admin && cred.Masked != "" {
+		masked := cred.Masked
+		c.Masked = &masked
+	}
+	return c
 }
 
 // applyHooks overlays the P4 hooks that are set on st: the credential store's state, the
@@ -461,10 +536,12 @@ func judgeStatus(h grpc.EngineHealth) statusJudge {
 	}
 	// GetEngineInfo says how the judge was chosen: where its key came from and why a fallback runs.
 	if ji := h.Info.GetJudge(); ji != nil {
-		if src := ji.GetCredentialSource(); src != "" {
+		// The engine says where its judge's key came from (env, or a dashboard key pushed to it).
+		if src := ji.GetCredentialSource(); slices.Contains([]string{"env", "dashboard", "none"}, src) {
 			j.CredentialSource = src
 		}
 		if why := ji.GetFallbackReason(); why != "" && j.FallbackActive {
+			why = apiRedact(why) // the engine's own words may quote a provider's error (D42)
 			j.FallbackReason = &why
 		}
 	}
@@ -480,7 +557,7 @@ func verifierStatus(h grpc.EngineHealth) statusVerifier {
 	if st := judgeState(h); st == stateDown || st == stateDisabled {
 		v.Effective, v.Reason = "off", "no deep-audit judge is available"
 	} else if why := h.Info.GetVerifierReason(); why != "" && h.Info.GetVerifierEffective() == "llm" {
-		v.Reason = why
+		v.Reason = apiRedact(why)
 	}
 	return v
 }
@@ -549,7 +626,8 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 		}
 	}
 	if e := st.LastError; e != nil {
-		d.LastError = &decisionModelError{Kind: e.Kind, Message: e.Message, Hint: e.Hint, At: e.At.UTC()}
+		// A vendor's error text may echo a key; it leaves through the process Redactor (D42).
+		d.LastError = &decisionModelError{Kind: e.Kind, Message: apiRedact(e.Message), Hint: apiRedact(e.Hint), At: e.At.UTC()}
 	}
 	return d
 }
