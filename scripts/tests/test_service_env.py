@@ -328,10 +328,23 @@ class OnboardingTargetTest(unittest.TestCase):
 
     def test_it_runs_check_config_with_the_proxy_environment_of_the_onboarding_stack(self) -> None:
         recipe = self.recipe()
-        self.assertIn("$(ONBOARDING_COMPOSE) config --format json", recipe)
+        self.assertIn(
+            "$(ONBOARDING_CONFIG_ENV) $(ONBOARDING_COMPOSE) --env-file /dev/null config --format json",
+            recipe,
+        )
         self.assertIn("scripts/service_env.py proxy $(ONBOARDING_EXPECT) --", recipe)
         self.assertIn("./cmd/proxy -check-config", recipe)
         self.assertRegex(DX_MK, r"(?m)^check: onboarding-check-config$")
+
+    def test_compose_resolves_the_committed_files_only(self) -> None:
+        # A developer's .env (configure.py writes the trafficgen key into TRUTHTABLE_API_KEYS) and
+        # the shell must not reach `docker compose config`: --env-file /dev/null replaces .env, and
+        # env -i keeps only what the docker CLI needs to run.
+        line = re.search(r"(?m)^ONBOARDING_CONFIG_ENV = (.*)$", DX_MK)
+        assert line is not None
+        value = line.group(1)
+        self.assertTrue(value.startswith("env -i "), value)
+        self.assertEqual(set(re.findall(r"\b([A-Z_]+)=", value)), {"PATH", "HOME", "DOCKER_CONFIG"})
 
     def test_it_requires_strict_config_backend_auto_and_no_key(self) -> None:
         expect = DX_MK.split("\nONBOARDING_EXPECT = ", 1)[1].split("\n#", 1)[0]
@@ -342,10 +355,14 @@ class OnboardingTargetTest(unittest.TestCase):
         for name in (
             "TRUTHTABLE_JEV_BACKEND",
             "TRUTHTABLE_JEV_API_KEY",
+            "TRUTHTABLE_JEV_API_KEY_FILE",
             "OPENROUTER_API_KEY",
             "TYPESAFE_API_KEY",
             "TRUTHTABLE_ADMIN_KEYS",
             "TRUTHTABLE_ADMIN_KEY",
+            "TRUTHTABLE_API_KEYS",
+            "TRUTHTABLE_READ_KEYS",
+            "TRUTHTABLE_SETUP_TOKEN",
         ):
             self.assertIn(name, names)
         self.assertIn("--expect-default $(k)", expect)

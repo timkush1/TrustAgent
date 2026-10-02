@@ -50,8 +50,14 @@ ONBOARDING_BUILD   ?= --build
 # What onboarding-check-config requires of the proxy's composed environment before it runs
 # -check-config: strict config on, the decision model on backend auto, and no key in any form.
 ONBOARDING_EXPECT = --expect TRUTHTABLE_STRICT_CONFIG=true \
-	$(foreach k,TRUTHTABLE_JEV_BACKEND TRUTHTABLE_JEV_API_KEY OPENROUTER_API_KEY TYPESAFE_API_KEY \
-		TRUTHTABLE_ADMIN_KEYS TRUTHTABLE_ADMIN_KEY TRUTHTABLE_API_KEYS TRUTHTABLE_SETUP_TOKEN,--expect-default $(k))
+	$(foreach k,TRUTHTABLE_JEV_BACKEND TRUTHTABLE_JEV_API_KEY TRUTHTABLE_JEV_API_KEY_FILE OPENROUTER_API_KEY \
+		TYPESAFE_API_KEY TRUTHTABLE_ADMIN_KEYS TRUTHTABLE_ADMIN_KEY TRUTHTABLE_API_KEYS TRUTHTABLE_READ_KEYS \
+		TRUTHTABLE_SETUP_TOKEN,--expect-default $(k))
+# It proves the committed stack, not this machine's: compose resolves the files with no .env and
+# an empty environment (PATH, HOME and the docker CLI config only), as in CI. Neither a developer's
+# .env (configure.py puts the trafficgen key in TRUTHTABLE_API_KEYS) nor a variable exported in the
+# shell changes what it proves, so make check gives the same answer on every machine.
+ONBOARDING_CONFIG_ENV = env -i PATH="$$PATH" HOME="$$HOME" DOCKER_CONFIG="$${DOCKER_CONFIG:-$$HOME/.docker}"
 # trafficgen flags shared by the scenario targets.
 TRAFFICGEN_CHECK = /trafficgen --once --expect --base-url http://127.0.0.1:8080
 # Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
@@ -151,7 +157,7 @@ onboarding-down: ## Stop the onboarding stack and delete its volumes (every run 
 
 onboarding-check-config: ## Prove, without a container, that the gateway accepts the onboarding stack's environment (strict config, backend auto, no key): proxy -check-config
 	@if ! docker compose version >/dev/null 2>&1; then echo "onboarding-check-config: skipped (docker compose not found)"; exit 0; fi; \
-	out="$$($(ONBOARDING_COMPOSE) config --format json \
+	out="$$($(ONBOARDING_CONFIG_ENV) $(ONBOARDING_COMPOSE) --env-file /dev/null config --format json \
 		| $(PYTHON) scripts/service_env.py proxy $(ONBOARDING_EXPECT) -- go -C backend-go run ./cmd/proxy -check-config)" \
 		|| { printf '%s\n' "$$out"; echo "onboarding-check-config: failed: the stack is not the fresh install it should be, or the gateway would refuse to start it (see above)"; exit 1; }; \
 	echo "✅ The onboarding stack's proxy configuration passes -check-config (strict config, backend auto, no key)"
