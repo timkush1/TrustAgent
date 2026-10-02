@@ -3,7 +3,7 @@
  * layer over msw: the fit dialog's honesty note and result, Adopt blocked until Preview impact has
  * loaded, the exact call order of an adoption, deactivation, import, and the page states.
  */
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -78,6 +78,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     expect(screen.getAllByText('Not enough labels for a first fit yet: label a few answers in the queue.')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
     stopLive();
+    cleanup();
 
     renderPage('/app/evaluators/groundedness', { status: { auth: { ingest: 'keys', read: 'keys', setup_required: false, caller_scopes: ['read'] } } });
     const label = await screen.findByRole('button', { name: 'Label queue' });
@@ -224,13 +225,16 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     });
     expect(await screen.findByText('Calibration records need a database')).toBeInTheDocument();
     stopLive();
+    cleanup();
     renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: undefined }) });
     expect(await screen.findByText('Calibration records are not available on this proxy')).toBeInTheDocument();
     stopLive();
+    cleanup();
     renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: errorReply(500, 'internal', 'Boom.') }) });
     expect(await screen.findByText(/Boom\./)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument();
     stopLive();
+    cleanup();
     renderPage('/app/evaluators/groundedness?tab=calibration', { control: createControlApi({ calibrations: { items: [] } }) });
     expect(await screen.findByText('No calibrations for this check yet')).toBeInTheDocument();
   });

@@ -3,8 +3,8 @@
  * cost (every cost carries its label, DESIGN.md §8: vendor, estimate, simulated); the timing
  * waterfall; the response headers your app received, rebuilt from the stored decision (with the
  * route's `headers` setting, read when Details opens); the trace's flags in words; and the fast
- * check of every attempt (attempt 1 is the fallback check) with its raw decision/v1. "Show exact
- * Jev request" arrives in P4 (GET /api/traces/:id/decision-request).
+ * check of every attempt (attempt 1 is the fallback check) with its raw decision/v1 and "Show exact
+ * Jev request", the glass box (JevRequestPanel, GET /api/traces/:id/decision-request).
  */
 import { ChevronRight } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -22,6 +22,7 @@ import {
 } from '@/domain/presentation';
 import type { AuditDetail, GateDecisionView, TraceSummary } from '@/types/api';
 import { TimingWaterfall } from './TimingWaterfall';
+import { JevRequestPanel } from './JevRequestPanel';
 import { attemptLabel, attemptSummary } from './traceView';
 import { useRouteHeaders } from './useRouteHeaders';
 import { waterfallRows } from './waterfall';
@@ -111,7 +112,17 @@ function ResponseHeaders({ summary, decision, open }: { summary: TraceSummary; d
   );
 }
 
-function Attempts({ attempts }: { attempts: readonly GateDecisionView[] }) {
+function Attempts({
+  attempts,
+  traceId,
+  redacted,
+  names,
+}: {
+  attempts: readonly GateDecisionView[];
+  traceId: string;
+  redacted: boolean;
+  names?: ReadonlyMap<string, string>;
+}) {
   return (
     <Subsection title={copy.trace.attempts_title}>
       <ol className="space-y-3">
@@ -131,6 +142,7 @@ function Attempts({ attempts }: { attempts: readonly GateDecisionView[] }) {
                 </summary>
                 <CodeBlock className="mt-2" code={JSON.stringify(d, null, 2)} label={`decision/v1 · ${label}`} maxHeight="24rem" />
               </details>
+              {d.decision_model && d.status !== 'skipped' ? <JevRequestPanel traceId={traceId} decision={d} redacted={redacted} names={names} /> : null}
             </li>
           );
         })}
@@ -144,12 +156,15 @@ export function TraceFacts({
   decision,
   attempts = decision ? [decision] : [],
   audit,
+  names,
 }: {
   summary: TraceSummary;
   decision: GateDecisionView | null;
   /** Every decision, one per attempt (attempt 1 is the fallback check). */
   attempts?: readonly GateDecisionView[];
   audit: AuditDetail | null;
+  /** Evaluator names by id from the library. */
+  names?: ReadonlyMap<string, string>;
 }) {
   // What only Details needs (the route's headers setting) is read once it opens.
   const [open, setOpen] = useState(false);
@@ -198,7 +213,7 @@ export function TraceFacts({
         </div>
         {rows.length >= 2 ? <TimingWaterfall rows={rows} /> : null}
         {decision || summary.mode === 'observe' ? <ResponseHeaders summary={summary} decision={decision} open={open} /> : null}
-        {attempts.length > 0 ? <Attempts attempts={attempts} /> : null}
+        {attempts.length > 0 ? <Attempts attempts={attempts} traceId={summary.trace_id} redacted={summary.redacted} names={names} /> : null}
       </div>
     </details>
   );

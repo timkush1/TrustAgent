@@ -33,7 +33,7 @@ import { Kbd } from '@/components/ui/kbd';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/data/errors';
-import { evaluatorQuery, evaluatorsQuery, isNotServed, qkc } from '@/data/queries';
+import { evaluatorQuery, evaluatorsQuery, isNotServed, qkc, statusQuery } from '@/data/queries';
 import { bumpProgress, invalidateAfterLabel, LABEL_QUEUE_DEFAULTS, labelQueueQuery } from '@/data/queries/evaluators';
 import { formatCount, formatDateTime, formatRelativeTime, formatRisk } from '@/domain/format';
 import { copy, fillTemplate, levelWord } from '@/domain/presentation';
@@ -376,7 +376,9 @@ export function LabelQueuePage({ search }: { search: LabelQueueSearch }) {
   const writeReason = useWriteReason('admin');
   const evaluators = useEvaluatorNames();
   const params = useMemo(() => ({ ...LABEL_QUEUE_DEFAULTS, ...(search.evaluator ? { evaluator: search.evaluator } : {}) }), [search.evaluator]);
-  const q = useQuery({ ...labelQueueQuery(ds, params), enabled: !writeReason });
+  // Admin-only: wait until /api/status has answered (who the caller is), so a reader never sends it.
+  const statusQ = useQuery(statusQuery(ds));
+  const q = useQuery({ ...labelQueueQuery(ds, params), enabled: !writeReason && !statusQ.isPending });
   const showLoading = useDelayedLoading(q.isPending && !writeReason);
 
   const attached = evaluators.filter((e) => !e.archived && e.attached_routes.length > 0);

@@ -106,7 +106,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           <ClaimsSection summary={summary} audit={audit} claimIdPrefix={claimIdPrefix} />
         </div>
       </div>
-      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} />
+      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} names={evaluatorNames} />
     </article>
   );
 }
