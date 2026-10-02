@@ -21,6 +21,39 @@ describe('selectBanner', () => {
     expect(selectBanner({ demo: true, readonly: true, status: null })?.id).toBe('readonly');
   });
 
+  it('pauses deep audits below the problems users feel, above read-only and demo', () => {
+    const budgets = systemStatus().budgets;
+    const llm = systemStatus({ budgets: { ...budgets, llm_exhausted: true } });
+    const b = selectBanner({ demo: true, readonly: true, status: llm });
+    expect(b).toMatchObject({
+      id: 'llm_exhausted',
+      tone: 'warning',
+      title: "Deep audits paused: today's deep-audit budget is used up",
+      fix: { kind: 'settings', section: 'budgets', label: 'Open Budgets' },
+    });
+    // The fast-check budget and a rejected key change what users receive, so they win.
+    const both = systemStatus({ budgets: { ...budgets, llm_exhausted: true, decision_exhausted: true } });
+    expect(selectBanner({ demo: false, readonly: false, status: both })?.id).toBe('budget_exhausted');
+    const dm = systemStatus().decision_model;
+    const noCredits = systemStatus({ budgets: { ...budgets, llm_exhausted: true }, decision_model: { ...dm, state: 'no_credits' } });
+    expect(selectBanner({ demo: false, readonly: false, status: noCredits })?.id).toBe('no_credits');
+    const breaker = systemStatus({ budgets: { ...budgets, llm_exhausted: true }, decision_model: { ...dm, state: 'breaker_open' } });
+    expect(selectBanner({ demo: false, readonly: false, status: breaker, enforcingRoutes: [{ name: 'payments', fail: 'closed' }] })?.id).toBe('breaker_open');
+  });
+
+  it('links each problem to where it is fixed', () => {
+    const dm = systemStatus().decision_model;
+    const fixOf = (state: typeof dm.state) => selectBanner({ demo: false, readonly: false, status: systemStatus({ decision_model: { ...dm, state } }) })?.fix;
+    expect(fixOf('unauthorized')).toEqual({ kind: 'settings', section: 'connections', label: 'Open Connections' });
+    expect(fixOf('no_credits')).toEqual({ kind: 'external', href: 'https://openrouter.ai/settings/credits', label: 'Add credits on OpenRouter' });
+    const exhausted = systemStatus({ budgets: { ...systemStatus().budgets, decision_exhausted: true } });
+    expect(selectBanner({ demo: false, readonly: false, status: exhausted })?.fix).toMatchObject({ section: 'budgets' });
+    const open = systemStatus({ decision_model: { ...dm, state: 'breaker_open' } });
+    expect(selectBanner({ demo: false, readonly: false, status: open, enforcingRoutes: [{ name: 'p', fail: 'open' }] })?.fix).toMatchObject({ section: 'models' });
+    expect(selectBanner({ demo: true, readonly: false, status: null })?.fix).toBeNull();
+    expect(selectBanner({ demo: false, readonly: true, status: null })?.fix).toBeNull();
+  });
+
   it('shows the breaker banner only for an enforcing route', () => {
     const open = systemStatus({ decision_model: { ...systemStatus().decision_model, state: 'breaker_open' } });
     expect(selectBanner({ demo: false, readonly: false, status: open })).toBeNull();

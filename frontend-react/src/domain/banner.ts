@@ -1,12 +1,19 @@
 /**
- * The single full-width banner (SPEC §3.3): at most one, and only for demo, read-only, budget
- * exhausted, a rejected fast-check key (unauthorized / no credits) or an open breaker on an
- * enforcing route. When several apply, the one that changes what users receive wins.
+ * The single full-width banner (SPEC §3.3): at most one, and only for demo, read-only, a budget
+ * used up (fast check or deep audit), a rejected fast-check key (unauthorized / no credits) or an
+ * open breaker on an enforcing route. When several apply, the one that changes what users receive
+ * wins: a rejected key, the fast-check budget, the breaker, then the deep-audit budget (fast
+ * checks keep running), then read-only and demo. Each problem links to where it is fixed.
  */
 import type { EffectiveRoute, SystemStatus } from '@/types/api';
 import { copy, fillTemplate } from './presentation';
 
-export type BannerId = 'unauthorized' | 'no_credits' | 'budget_exhausted' | 'breaker_open' | 'readonly' | 'demo';
+export type BannerId = 'unauthorized' | 'no_credits' | 'budget_exhausted' | 'breaker_open' | 'llm_exhausted' | 'readonly' | 'demo';
+
+/** Where a banner's problem is fixed: a Settings section, or a page outside the dashboard. */
+export type BannerFix =
+  | { kind: 'settings'; section: 'connections' | 'models' | 'budgets'; label: string }
+  | { kind: 'external'; href: string; label: string };
 
 export interface BannerView {
   id: BannerId;
@@ -14,7 +21,18 @@ export interface BannerView {
   body: string;
   action: string | null;
   tone: 'neutral' | 'warning' | 'danger';
+  fix: BannerFix | null;
 }
+
+const FIXES: Record<BannerId, BannerFix | null> = {
+  unauthorized: { kind: 'settings', section: 'connections', label: 'Open Connections' },
+  no_credits: { kind: 'external', href: 'https://openrouter.ai/settings/credits', label: 'Add credits on OpenRouter' },
+  budget_exhausted: { kind: 'settings', section: 'budgets', label: 'Open Budgets' },
+  breaker_open: { kind: 'settings', section: 'models', label: 'Open Models' },
+  llm_exhausted: { kind: 'settings', section: 'budgets', label: 'Open Budgets' },
+  readonly: null,
+  demo: null,
+};
 
 export interface BannerInputs {
   demo: boolean;
@@ -40,6 +58,7 @@ function view(id: BannerId, tone: BannerView['tone'], vars: Record<string, strin
     title: fillTemplate(b.title, vars),
     body: fillTemplate(b.body, vars),
     action: b.action ? fillTemplate(b.action, vars) : null,
+    fix: FIXES[id],
   };
 }
 
@@ -52,6 +71,7 @@ export function selectBanner(inputs: BannerInputs): BannerView | null {
   if (dm === 'breaker_open' && enforcing) {
     return view('breaker_open', 'warning', { route: enforcing.name, fail: enforcing.fail });
   }
+  if (inputs.status?.budgets.llm_exhausted) return view('llm_exhausted', 'warning');
   if (inputs.readonly) return view('readonly', 'neutral');
   if (inputs.demo) return view('demo', 'neutral');
   return null;

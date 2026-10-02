@@ -307,6 +307,35 @@ describe('ReplayDataSource', () => {
     expect(coverage.top_reasons).toEqual([{ reason: 'no_evidence', count: 6 }]);
   });
 
+  it('serves spend per bucket that adds up to the ROI summary, and the built-in prices', async () => {
+    const { ds, clock } = setup();
+    await ds.ready;
+    ds.subscribe(sink().s);
+    await Promise.resolve();
+    clock.runAll();
+    const roi = await ds.getRoiSummary('24h');
+    const series = await ds.getRoiTimeseries({ window: '24h', bucket: '1h' });
+    expect(series).toMatchObject({ window: '24h', bucket: '1h' });
+    expect(series.points.length).toBeGreaterThan(0);
+    // Zero-filled UTC hours, in order.
+    for (const p of series.points) expect(Date.parse(p.t) % 3_600_000).toBe(0);
+    expect(series.points.map((p) => p.t)).toEqual([...series.points.map((p) => p.t)].sort());
+    const sum = (f: (p: (typeof series.points)[number]) => number) => series.points.reduce((s, p) => s + f(p), 0);
+    expect(sum((p) => p.gated)).toBe(roi.gated_responses);
+    expect(sum((p) => p.decision_usd)).toBeCloseTo(roi.decision_cost.usd, 12);
+    expect(sum((p) => p.llm_usd)).toBeCloseTo(roi.llm_cost.usd, 12);
+    const same = roi.counterfactuals.find((c) => c.kind === 'llm_same_checks');
+    expect(sum((p) => p.same_checks_usd ?? 0)).toBeCloseTo(same?.usd ?? 0, 12);
+
+    const days = await ds.getRoiTimeseries({ window: '7d', bucket: '1d' });
+    expect(days.bucket).toBe('1d');
+    expect(days.points.reduce((s, p) => s + p.gated, 0)).toBe(roi.gated_responses);
+
+    const prices = await ds.getPricing();
+    expect(prices.entries.length).toBeGreaterThan(0);
+    expect(prices.entries.every((e) => e.label !== 'override')).toBe(true);
+  });
+
   it('says there is no gateway for everything else', async () => {
     const { ds } = setup();
     await ds.ready;

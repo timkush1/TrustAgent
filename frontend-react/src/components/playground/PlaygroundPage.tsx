@@ -2,7 +2,9 @@
  * Playground (SPEC §3.3, full build): "Try it now". Send a chat request through your model, or
  * check a pasted answer, on any route; watch it go through the fast check, see exactly what your
  * app would have received, and follow the deep audit. The form stays filled between runs, and the
- * same request is shown as a curl command with the key left in an environment variable.
+ * same request is shown as a curl command that reproduces the chosen mode, with the key left in an
+ * environment variable. A streamed run shows when the first token arrived and when the fast check
+ * decided, which can be before the answer finished streaming (D69).
  *
  * Page contract: Run needs an admin on a writable instance and says so otherwise; errors show the
  * server's message with what to do (rate limit with its wait, missing connection with the link);
@@ -28,12 +30,12 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { isApiError } from '@/data/errors';
 import { isNotServed, policiesQuery } from '@/data/queries';
 import { useAppMode, useHealth, useSystemStatus } from '@/data/useSystem';
-import { playgroundCurl } from '@/domain/snippets';
 import type { GateDecisionView, PlaygroundResult } from '@/types/api';
+import { playgroundCommand } from './playgroundCurl';
 import { buildRequest, formProblem } from './playgroundModel';
 import { PlaygroundFormView } from './PlaygroundForm';
 import { usePlaygroundStore } from './playgroundStore';
-import { ResultTimeline } from './ResultTimeline';
+import { ResultTimeline, type RunTiming } from './ResultTimeline';
 
 interface RunState {
   running: boolean;
@@ -42,9 +44,14 @@ interface RunState {
   result: PlaygroundResult | null;
   error: unknown;
   mode: 'chat' | 'audit';
+  /** The answer streamed as token events. */
+  streamed: boolean;
+  timing: RunTiming;
 }
 
-const IDLE: RunState = { running: false, tokens: '', decision: null, result: null, error: null, mode: 'chat' };
+const NO_TIMING: RunTiming = { firstTokenMs: null, decisionMs: null, decidedMidStream: false };
+
+const IDLE: RunState = { running: false, tokens: '', decision: null, result: null, error: null, mode: 'chat', streamed: false, timing: NO_TIMING };
 
 /** Run is off once this proxy has said it does not serve POST /api/playground/run (an older proxy). */
 const NOT_SERVED_REASON: Reason = { text: 'This proxy is older than the dashboard and does not run Playground requests' };
@@ -55,7 +62,7 @@ function RunNotServed({ version }: { version: string | null }) {
     <DegradedState
       title="This proxy does not run Playground requests"
       reason={`It does not serve POST /api/playground/run, so it is older than this dashboard${version ? ` (proxy version ${version})` : ''}. Update the proxy to run requests from here.`}
-      stillWorks="The curl command below sends the same request through the gateway; its checks and deep audit appear in Traffic."
+      stillWorks="In chat mode the curl command below sends the same request through the gateway; its checks and deep audit appear in Traffic."
       action={
         <Link to="/app/traffic" className="text-sm font-medium text-fg underline underline-offset-2">
           Open Traffic
@@ -120,20 +127,34 @@ export function PlaygroundPage() {
   // Mock checks on a demo or test-mode stack answer an unedited example with its scripted answers.
   const scripted = demo || status?.test_mode === true;
   const request = buildRequest(form, { scenario: scripted });
+  const command = playgroundCommand(request, origin);
   const runReason: Reason | null = runUnavailable ? NOT_SERVED_REASON : (writeReason ?? (problem ? { text: problem } : null));
 
   const start = async () => {
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
-    setRun({ ...IDLE, running: true, mode: request.mode });
+    const sentAt = performance.now();
+    const elapsed = () => Math.round(performance.now() - sentAt);
+    setRun({ ...IDLE, running: true, mode: request.mode, streamed: request.stream === true });
     try {
       const result = request.stream
         ? await ds.streamPlayground(
             request,
             {
-              onToken: (t) => setRun((r) => ({ ...r, tokens: r.tokens + t })),
-              onDecision: (d) => setRun((r) => ({ ...r, decision: d })),
+              onToken: (t) => {
+                const at = elapsed();
+                setRun((r) => ({
+                  ...r,
+                  tokens: r.tokens + t,
+                  // A token after the decision: the fast check decided while the answer was still streaming.
+                  timing: { ...r.timing, firstTokenMs: r.timing.firstTokenMs ?? at, decidedMidStream: r.timing.decidedMidStream || r.decision !== null },
+                }));
+              },
+              onDecision: (d) => {
+                const at = elapsed();
+                setRun((r) => ({ ...r, decision: d, timing: { ...r.timing, decisionMs: r.timing.decisionMs ?? at } }));
+              },
             },
             controller.signal,
           )
@@ -162,7 +183,13 @@ export function PlaygroundPage() {
         <Card>
           <CardHeader level={2} title="Request" description="Kept here between runs." />
           <CardContent className="space-y-5">
-            <PlaygroundFormView routes={routes} maxChars={maxChars} busy={run.running} scripted={scripted} />
+            <PlaygroundFormView
+              routes={routes}
+              maxChars={maxChars}
+              busy={run.running}
+              scripted={scripted}
+              knowledge={status?.knowledge.enabled === true}
+            />
             {/* Stays in view at the bottom of a long form. */}
             <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-2 rounded-b-lg border-t border-border bg-surface px-4 py-3">
               {run.running ? (
@@ -192,7 +219,18 @@ export function PlaygroundPage() {
               {run.error ? <RunError error={run.error} /> : null}
               {runUnavailable ? null : started ? (
                 <div className={run.error ? 'mt-4' : undefined}>
-                  <ResultTimeline state={{ mode: run.mode, tokens: run.tokens, decision: run.decision, result: run.result, running: run.running }} />
+                  <ResultTimeline
+                    state={{
+                      mode: run.mode,
+                      tokens: run.tokens,
+                      decision: run.decision,
+                      result: run.result,
+                      running: run.running,
+                      streamed: run.streamed,
+                      timing: run.timing,
+                      demo,
+                    }}
+                  />
                 </div>
               ) : (
                 <ol className="space-y-2 text-sm text-fg-muted">
@@ -204,12 +242,10 @@ export function PlaygroundPage() {
               )}
             </CardContent>
           </Card>
-          <CodeBlock
-            label="The same request with curl"
-            code={playgroundCurl(request, origin)}
-            maxHeight="20rem"
-          />
-          <p className="text-xs text-fg-muted">Your key is not shown: set TRUSTAGENT_KEY to an ingest key from Settings → Access.</p>
+          <CodeBlock label="The same request with curl" code={command.code} maxHeight="20rem" />
+          <p className="text-xs text-fg-muted">
+            Calls <code className="font-mono text-fg">{command.endpoint}</code>. {command.keyNote}
+          </p>
         </div>
       </div>
     </div>

@@ -10,6 +10,9 @@ import {
   matchesFilters,
   reasonLines,
   rowCheckedAgainst,
+  reasonFilterLabel,
+  REASON_LOOKBACK_DAYS,
+  reasonSince,
   rowReason,
   traceListParams,
   TRAFFIC_PAGE_SIZE,
@@ -38,23 +41,41 @@ describe('filters', () => {
     expect(matchesFilters(notChecked, { reason: 'det:numbers_not_in_evidence' })).toBe(false);
   });
 
-  it('matches a reason whole or an evaluator at any level', () => {
-    expect(hasReason(['contradiction:critical'], 'contradiction')).toBe(true);
+  it('matches a whole reason code, or every code a colon-ended prefix starts (D68)', () => {
     expect(hasReason(['contradiction:critical'], 'contradiction:critical')).toBe(true);
     expect(hasReason(['contradiction:critical'], 'contradiction:warn')).toBe(false);
-    expect(hasReason(['contradictionx:warn'], 'contradiction')).toBe(false);
+    expect(hasReason(['contradiction:critical'], 'contradiction:')).toBe(true);
+    expect(hasReason(['contradictionx:warn'], 'contradiction:')).toBe(false);
+    // A bare id is a whole code (disagreement), never a prefix.
+    expect(hasReason(['contradiction:critical'], 'contradiction')).toBe(false);
+    expect(hasReason(['disagreement'], 'disagreement')).toBe(true);
+    expect(hasReason(['det:numbers_not_in_evidence', 'det:urls_not_in_evidence'], 'det:')).toBe(true);
   });
 
-  it('sends every filter but the reason to the API', () => {
-    expect(traceListParams({ outcome: 'flagged', route: 'support-bot', model: 'm', reason: 'contradiction' })).toEqual({
+  it('sends the reason with its since to the API, and every other filter', () => {
+    const since = reasonSince(Date.parse('2026-10-02T12:34:56.789Z'));
+    expect(since).toBe('2026-09-02T12:34:00.000Z');
+    expect(REASON_LOOKBACK_DAYS).toBe(30);
+    expect(traceListParams({ outcome: 'flagged', route: 'support-bot', model: 'm', reason: 'contradiction:' }, since)).toEqual({
       limit: TRAFFIC_PAGE_SIZE,
       outcome: 'flagged',
       route: 'support-bot',
       model: 'm',
+      reason: 'contradiction:',
+      since,
     });
+    // Without a since (the static replay) the reason stays local.
+    expect(traceListParams({ reason: 'disagreement' })).toEqual({ limit: TRAFFIC_PAGE_SIZE });
     expect(traceListParams({})).toEqual({ limit: TRAFFIC_PAGE_SIZE });
     expect(hasFilters({})).toBe(false);
     expect(hasFilters({ reason: 'x' })).toBe(true);
+  });
+
+  it('words a reason filter, a prefix as the check at any level', () => {
+    expect(reasonFilterLabel('contradiction:critical')).toBe('Contradicts your documents');
+    expect(reasonFilterLabel('contradiction:')).toBe('Contradicts your documents, any level');
+    expect(reasonFilterLabel('det:')).toBe('Instant checks, any finding');
+    expect(reasonFilterLabel('house_rules:')).toBe('House rules, any level');
   });
 
   it('offers the routes and models seen, plus the active one', () => {
