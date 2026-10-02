@@ -22,11 +22,11 @@ CI is split into one workflow per stream (v2, P0.5), plus security and eval:
 |---|---|---|---|
 | **CI — Go** | `ci-go.yml` | every push to `main` + every PR | gofmt, vet, `go test -race` against Postgres, govulncheck (informational) |
 | **CI — Python** | `ci-python.yml` | every push to `main` + every PR | ruff, black, unit tests, golden eval gate |
-| **CI — Web** | `ci-web.yml` | every push to `main` + every PR | eslint, `tsc -b`, vitest, production build |
-| **CI — Docker** | `ci-docker.yml` | every push to `main` + every PR | build all three images (replaced by compose e2e from phase S0) |
+| **CI — Web** | `ci-web.yml` | every push to `main` + every PR | generated files are current, eslint, `tsc -b`, vitest, production and static builds |
+| **CI — Docker** | `ci-docker.yml` | every push to `main` + every PR | build all three images (not pushed), labelled with their version and git revision |
 | **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability) + forbidden-identifier scan |
-| **E2E** | `ci-e2e.yml` | manual (enabled in phase S0) | compose stack + Playwright |
-| **Security** | `security.yml` | every push/PR + weekly Mondays | static security scanners (gosec, bandit, npm audit, Trivy) |
+| **E2E** | `ci-e2e.yml` | every push to `main` + every PR + manual button | the DX scripts job, then the demo, e2e and onboarding stacks with trafficgen, doctor and Playwright |
+| **Security** | `security.yml` | every push/PR + weekly Mondays | security scanners (gosec, bandit, gitleaks, npm audit, Trivy) |
 | **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a live model |
 
 ## What each workflow does
@@ -84,10 +84,10 @@ Five jobs; the first four are **blocking**, Trivy is informational:
   project's fake-key conventions (`sk-test-…`, `sk-or-v1-e2e-…`) and SHA-256 calibration keys;
   `scripts/tests/test_gitleaks.py` keeps those allow-lists narrow.
 - **npm audit** — checks frontend dependencies against GitHub's advisory database, **production
-  dependencies only** (`--omit=dev`), blocking at high+. Why omit dev: the shipped bundle is just
-  react/react-dom/zustand; Vite/esbuild are build-time tools whose remaining advisories affect
-  only the local dev server and are fixable only by a breaking Vite major upgrade (deliberately
-  deferred — see Dependabot policy below). A real HIGH in anything we actually ship still fails.
+  dependencies only** (`--omit=dev`), blocking at high+. Why omit dev: the shipped bundle holds
+  only the `dependencies` of `package.json` (React, TanStack, CodeMirror, Recharts and the like);
+  Vite, esbuild and the test tools run at build time, so an advisory there reaches the local dev
+  server at most. A real HIGH in anything we actually ship still fails.
 - **Trivy** — broad filesystem/dependency scanner, `continue-on-error: true` (reports but never
   blocks) until its findings have been triaged.
 
