@@ -77,13 +77,15 @@ export function ConnectCallback({ code, error }: ConnectCallbackProps) {
   const navigate = useNavigate();
   const setup = useQuery(setupStatusQuery(ds));
   const complete = useMutation({
-    mutationFn: async (): Promise<ConnectOutcome & { returnTo: string | null }> => {
+    // The query string arrives as variables, read when the page mounted: taking `code` out of the
+    // address bar re-renders this page without it (the router follows history.replaceState).
+    mutationFn: async (callback: ConnectCallbackProps): Promise<ConnectOutcome & { returnTo: string | null }> => {
       const nonce = takePendingConnect();
-      if (error) throw new ApiError({ kind: 'http', status: 0, code: 'openrouter_refused', message: error });
-      if (!nonce || !code) throw missingNonce();
+      if (callback.error) throw new ApiError({ kind: 'http', status: 0, code: 'openrouter_refused', message: callback.error });
+      if (!nonce || !callback.code) throw missingNonce();
       // Whether simulated checks were on, so the next page can say they are now off (D76).
       const before = await ds.getSettings().catch(() => null);
-      const result = await ds.completeConnect({ code, nonce });
+      const result = await ds.completeConnect({ code: callback.code, nonce });
       return { result, wasSimulated: simulatedOn(before ?? undefined), returnTo: safeReturnPath(result.return_to) };
     },
     onSuccess: ({ result, wasSimulated, returnTo }) => {
@@ -99,9 +101,10 @@ export function ConnectCallback({ code, error }: ConnectCallbackProps) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+    const callback = { code, error };
     window.history.replaceState(window.history.state, '', window.location.pathname);
-    mutate();
-  }, [mutate]);
+    mutate(callback);
+  }, [mutate, code, error]);
 
   const publicUrl = setup.data?.public_url ?? null;
   return (
