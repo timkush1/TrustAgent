@@ -55,6 +55,7 @@ import (
 	"github.com/truthtable/backend-go/internal/evaluators"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/studio"
 )
 
 // Exit statuses.
@@ -272,10 +273,11 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 	budget.MaxQuestions = envInt(getenv, "TRUTHTABLE_JEV_MAX_QUESTIONS_PER_CALL", budget.MaxQuestions)
 	budget.MaxResponseTokens = rc.Decision.MaxResponseTokens
 	budget.EvidenceMaxTokens = rc.Evidence.MaxTokens
-	return &evaluator{
-		client: client, route: &rc, mode: mode, model: model, specs: specs, budget: budget,
-		pricePerMTok: o.pricePerMTok, callTimeout: o.timeout, spend: &spend{cap: o.maxCostUSD}, now: time.Now,
-	}, nil
+	return &evaluator{&studio.Runner{
+		Client: client, Route: &rc, Mode: mode, Model: model, Specs: specs, Budget: budget,
+		PricePerMTok: o.pricePerMTok, CallTimeout: o.timeout, Spend: studio.NewSpend(o.maxCostUSD),
+		Call: jev.CallOptions{Class: jev.ClassAsync}, Now: time.Now,
+	}}, nil
 }
 
 // newJevClient builds the decision-model client; tests replace it with a fake paid backend.
@@ -321,7 +323,7 @@ type stats struct {
 func (s *stats) String(ev *evaluator) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "gate-eval: %d examples: %d evaluated, %d errors, %d over budget", s.examples, s.evaluated, s.errors, s.overBudget)
-	backend := ev.client.Info().Backend
+	backend := ev.Client.Info().Backend
 	fmt.Fprintf(&b, "; backend %s", backend)
 	if snaps := sortedKeys(s.snapshots); len(snaps) > 0 {
 		fmt.Fprintf(&b, " (%s)", strings.Join(snaps, ", "))
@@ -330,8 +332,8 @@ func (s *stats) String(ev *evaluator) string {
 	if src := sortedKeys(s.costSources); len(src) > 0 {
 		fmt.Fprintf(&b, " (%s)", strings.Join(src, ", "))
 	}
-	if ev.spend.cap > 0 {
-		fmt.Fprintf(&b, " of a $%.2f cap", ev.spend.cap)
+	if ev.Spend.Cap() > 0 {
+		fmt.Fprintf(&b, " of a $%.2f cap", ev.Spend.Cap())
 	}
 	if n := len(s.latencies); n > 0 {
 		slices.Sort(s.latencies)
