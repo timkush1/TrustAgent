@@ -88,8 +88,15 @@ describe('Studio plane', () => {
   it('turns an error event into an ApiError with the server code', async () => {
     serve({ studioDryRunConfirm: null, studioDryRunStreamError: { error: { code: 'budget_exhausted', message: 'Budget used up.' } } });
     await expect(plane().dryRunEvaluator({ ref: SPEC_REF, route: 'support-bot', window: '24h', max_samples: 50 }, {})).rejects.toMatchObject({
+      status: 503,
       code: 'budget_exhausted',
       message: 'Budget used up.',
+    });
+    // A code the REST API does not list keeps a gateway-side status.
+    serve({ studioDryRunConfirm: null, studioDryRunStreamError: { error: { code: 'internal', message: 'The run failed.' } } });
+    await expect(plane().dryRunEvaluator({ ref: SPEC_REF, route: 'support-bot', window: '24h', max_samples: 50 }, {})).rejects.toMatchObject({
+      status: 502,
+      code: 'internal',
     });
   });
 

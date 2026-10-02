@@ -20,7 +20,7 @@ import type {
   StudioTestRequest,
   StudioTestResponse,
 } from '@/types/api';
-import { ApiError, apiErrorFromResponse } from '../errors';
+import { ApiError, apiErrorFromResponse, isP4ErrorCode, P4_ERROR_CODES } from '../errors';
 import type { HttpClient } from '../http';
 import { normalizeShaped, type NestedShape } from '../normalize';
 import { readSse } from '../sse';
@@ -100,6 +100,13 @@ function numbers<T>(payload: unknown, keys: readonly string[], what: string, eve
   return payload as T;
 }
 
+/** The HTTP status an `error` event's code has on the REST API (`budget_exhausted` → 503), else 502. */
+function errorEventStatus(payload: unknown): number {
+  const error = typeof payload === 'object' && payload !== null ? (payload as { error?: unknown }).error : undefined;
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && isP4ErrorCode(code) ? P4_ERROR_CODES[code].status : 502;
+}
+
 /** Reads a dry-run stream to its `done` event, reporting `estimate` and `progress` on the way. */
 async function readDryRun(res: Response, handlers: StudioDryRunHandlers, signal: AbortSignal | undefined): Promise<DryRunResult> {
   const what = WHAT.dryRun;
@@ -133,8 +140,9 @@ async function readDryRun(res: Response, handlers: StudioDryRunHandlers, signal:
         case 'done':
           return normalizeShaped(payload, what, STUDIO_SHAPES.dryRun);
         case 'error':
-          // The body of an `error` event is the REST error body (ApiErrorBody); the stream itself was a 200.
-          throw apiErrorFromResponse(502, payload);
+          // The body of an `error` event is the REST error body (ApiErrorBody). The stream itself was a
+          // 200, so the error takes the status its code has on the REST API (502 for any other code).
+          throw apiErrorFromResponse(errorEventStatus(payload), payload);
         default:
           break;
       }

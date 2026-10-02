@@ -38,7 +38,7 @@ export interface StudioState {
   /** Keep the stream open after the progress events (no `done`), so a test can cancel it. */
   studioDryRunHold: boolean;
   /** An `error` event (ApiErrorBody) to end the stream with instead of `done`. */
-  studioDryRunStreamError: { error: { code: string; message: string } } | null;
+  studioDryRunStreamError: { error: { code: string; message: string; details?: Record<string, unknown> } } | null;
 }
 
 /** The 409 the gateway answers a first dry run above STUDIO_CONFIRM_ABOVE_USD (fixture, D82 details). */

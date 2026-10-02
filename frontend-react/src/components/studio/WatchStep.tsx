@@ -175,7 +175,7 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
         </DisabledAction>
       ) : null}
 
-      {route ? <DryRunPanel target={savedRef ? { ref: savedRef } : { spec }} route={route} simulated={simulated} reason={dryReason} names={names} /> : null}
+      {route ? <DryRunPanel target={savedRef ? { ref: savedRef } : { spec }} spec={spec} route={route} simulated={simulated} reason={dryReason} names={names} /> : null}
 
       {state && draft ? (
         <ReviewSaveDialog

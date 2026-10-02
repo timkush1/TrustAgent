@@ -80,14 +80,23 @@ const pct = (p: number) => `${(Math.floor(p * 1000 + 0.5) / 10).toFixed(1)}%`;
 
 const WINDOWS: Record<string, string> = { '1h': 'hour', '24h': '24 h', '7d': '7 days', '30d': '30 days' };
 
-/** copy.studio.dry_run_result filled from a result. */
-export function studioDryRunResultText(r: Pick<DryRunResult, 'fired' | 'fire_rate' | 'fire_rate_ci95' | 'window' | 'cost_usd'>): string {
+/** Whether a dry run tested only part of its window, so its count for the window is extrapolated. */
+export function studioDryRunExtrapolated(r: Pick<DryRunResult, 'sampled' | 'population'>): boolean {
+  return r.sampled < r.population;
+}
+
+/**
+ * copy.studio.dry_run_result filled from a result. The sentence is about the whole window ("on the
+ * last 7 days"), so when only a sample of it was tested the count is the extrapolated one, written
+ * "≈ 108" (an estimate); when every answer was tested it is the count itself.
+ */
+export function studioDryRunResultText(r: Pick<DryRunResult, 'fired' | 'extrapolated_fires' | 'sampled' | 'population' | 'fire_rate' | 'fire_rate_ci95' | 'window' | 'cost_usd'>): string {
   return fillTemplate(copy.studio.dry_run_result, {
-    fired: formatCount(r.fired),
+    fired: studioDryRunExtrapolated(r) ? `≈ ${formatCount(r.extrapolated_fires)}` : formatCount(r.fired),
     rate: pct(r.fire_rate),
     lo: pct(r.fire_rate_ci95[0]),
     hi: pct(r.fire_rate_ci95[1]),
-    window: WINDOWS[r.window] ?? r.window,
+    window: studioWindowWords(r.window),
     cost: formatUsd(r.cost_usd),
   });
 }
@@ -100,6 +109,11 @@ export function studioDryRunConfirmText(d: { estimate_usd: number; samples: numb
     population: formatCount(d.population),
     budget_left: d.decision_budget_left_usd === null ? 'Unknown' : formatUsd(d.decision_budget_left_usd),
   });
+}
+
+/** The window of a dry run in words ("24 h", "7 days"). */
+export function studioWindowWords(window: string): string {
+  return WINDOWS[window] ?? window;
 }
 
 /** copy.studio.dry_run_cancelled with what the checks that ran cost. */

@@ -310,7 +310,11 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(first).toMatchObject({ route: 'support-bot', window: '7d', max_samples: 200, spec: expect.objectContaining({ id: 'blames_the_customer' }) });
 
     await user.click(within(confirm).getByRole('button', { name: 'Run the test' }));
-    expect(await within(watch).findByText('Would have fired 11 times (5.9%, 95% CI 3.3%–10.2%) on the last 7 days; this test cost $0.00082.')).toBeInTheDocument();
+    // 200 of the window's 1,840 answers were tested: the count for the window is the extrapolation.
+    expect(await within(watch).findByText('Would have fired ≈ 108 times (5.9%, 95% CI 3.3%–10.2%) on the last 7 days; this test cost $0.00082.')).toBeInTheDocument();
+    expect(within(watch).getByRole('button', { name: /Estimate: how “Fires on every answer in the window” was produced/ })).toBeInTheDocument();
+    expect(within(watch).getByText('Fired on 11 of 197')).toBeInTheDocument();
+    expect(within(watch).getByText(/over the 197 sampled answers it could judge; errors are left out\./)).toBeInTheDocument();
     expect(control.callsTo('/api/studio/dry-run')[1].body).toMatchObject({ confirm_cost: true });
     expect(within(watch).getByText(/off_brand_tone@1 \(6\)|Off-brand tone \(6\)/)).toBeInTheDocument();
     expect(within(watch).getByText('None of these answers had a deep audit to compare with')).toBeInTheDocument();
@@ -337,6 +341,78 @@ describe('Studio', { timeout: 30_000 }, () => {
     await user.click(within(step(/Step 6/)).getByRole('button', { name: 'Test on past traffic (paid)' }));
     expect(await screen.findByText("The test did not run: Today's fast-check budget is used up.")).toBeInTheDocument();
     expect(screen.getByText(/Raise the daily cap in Settings → Budgets/)).toBeInTheDocument();
+  });
+
+  it('says what a test the budget stopped partway spent, instead of that it did not run', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({
+      studioDryRunConfirm: null,
+      studioDryRunStreamError: {
+        error: {
+          code: 'budget_exhausted',
+          message: "Today's decision budget ran out during the test; the results so far were kept.",
+          details: { cost_usd: 0.00082, evaluated: 200 },
+        },
+      },
+    });
+    renderPage('/app/evaluators/studio', { control });
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    const alert = await within(watch).findByRole('alert');
+    expect(alert).toHaveTextContent("The test stopped partway: Today's decision budget ran out during the test; the results so far were kept.");
+    expect(alert).toHaveTextContent("Test stopped. You're charged only for the checks that already ran (≈ $0.00082).");
+    expect(alert).toHaveTextContent('Raise the daily cap in Settings → Budgets');
+    expect(alert).toHaveTextContent('HTTP 503 · budget_exhausted');
+    expect(alert).not.toHaveTextContent('did not run');
+  });
+
+  it('says when the route has no stored answers to test, instead of a rate of 0%', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ studioDryRunConfirm: null });
+    control.state.studioDryRun = {
+      ...control.state.studioDryRun,
+      window: '24h',
+      sampled: 0,
+      population: 0,
+      assessed: 0,
+      not_assessed: 0,
+      errors: 0,
+      fired: 0,
+      fire_rate: 0,
+      fire_rate_ci95: [0, 0],
+      extrapolated_fires: 0,
+      overlap: [],
+      examples: [],
+      cost_usd: 0,
+    };
+    control.state.studioDryRunEstimate = { est_cost_usd: 0, sampled: 0, population: 0 };
+    control.state.studioDryRunProgress = [];
+    renderPage('/app/evaluators/studio', { control });
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    expect(await within(watch).findByText(/support-bot has no stored answers from the last 24 h to test on, so nothing ran\./)).toBeInTheDocument();
+    expect(within(watch).queryByText(/Would have fired/)).not.toBeInTheDocument();
+  });
+
+  it('says a shown test result is for an older check once the check changes, but not when it is only saved', async () => {
+    const user = userEvent.setup();
+    const { dataSource } = renderPage('/app/evaluators/studio', { control: createControlApi({ studioDryRunConfirm: null }) });
+    vi.spyOn(dataSource, 'createEvaluator').mockImplementation((req: EvaluatorCreateRequest) => Promise.resolve(savedVersion(req.spec, req.changelog)));
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    expect(await within(watch).findByText(/^Would have fired/)).toBeInTheDocument();
+
+    const save = step(/Step 5: Save a version/);
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'First version');
+    await user.click(within(save).getByRole('button', { name: 'Save as a new check' }));
+    expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
+    expect(within(watch).queryByText(/changed since this test/)).not.toBeInTheDocument();
+
+    await user.type(within(step(/Step 2/)).getByRole('textbox', { name: 'Name' }), ' (v2)');
+    expect(within(watch).getByText('The check or the route changed since this test. Test again to see how the new one would fire.')).toBeInTheDocument();
   });
 
   it('keeps writes visible but unavailable, with the reason, on a read-only instance', async () => {
