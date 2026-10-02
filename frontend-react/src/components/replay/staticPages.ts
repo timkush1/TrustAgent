@@ -9,8 +9,12 @@ export interface HiddenPage {
   does: string;
 }
 
-/** Checked first: /app/evaluators/studio stays visible, the rest of /app/evaluators does not. */
-const VISIBLE = ['/app/evaluators/studio'];
+/**
+ * Checked first: /app/evaluators/studio ("Coming soon" in the static build) and
+ * /app/evaluators/benchmarks (the committed runs, bundled at build time; D72) stay visible, the rest
+ * of /app/evaluators does not.
+ */
+const VISIBLE = ['/app/evaluators/studio', '/app/evaluators/benchmarks'];
 const HIDDEN: readonly HiddenPage[] = [
   { prefix: '/app/policies', name: 'Policies', does: 'decide what each route does with a risky answer: observe, flag, block or fall back' },
   { prefix: '/app/settings', name: 'Settings', does: 'connect OpenRouter, pick the fast-check and deep-audit models, and set budgets and keys' },

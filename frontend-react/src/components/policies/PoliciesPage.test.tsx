@@ -174,6 +174,23 @@ describe('Policies page', { timeout: 20_000 }, () => {
     expect(yaml).toContain('require_calibration: false');
   });
 
+  it('links a paused fast check to its last error and a spent budget to Budgets', async () => {
+    const routes = effectiveRoutes();
+    routes[0] = {
+      ...routes[0],
+      mode: 'block',
+      effective_mode: 'flag',
+      downgrades: [
+        { code: 'breaker_open', message: 'the fast check is paused after repeated errors', fix: null },
+        { code: 'budget', message: "today's fast-check budget is spent", fix: null },
+      ],
+    };
+    renderPage('/app/policies', { control: createControlApi({ policies: policyState({ effective_routes: routes }) }) });
+    const support = await card('support-bot');
+    expect(within(support).getByRole('link', { name: /See the last error/ })).toHaveAttribute('href', '/app/settings/models#last-error');
+    expect(within(support).getByRole('link', { name: /Raise the daily cap/ })).toHaveAttribute('href', '/app/settings/budgets');
+  });
+
   it('applies a preset from the picker', async () => {
     const user = userEvent.setup();
     renderPage('/app/policies');

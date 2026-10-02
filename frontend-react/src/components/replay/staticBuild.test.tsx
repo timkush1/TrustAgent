@@ -64,8 +64,8 @@ describe('hiddenStaticPage', () => {
     expect(hiddenStaticPage('/app/setup')?.name).toBe('Setup');
   });
 
-  it('keeps the replay pages and the Studio', () => {
-    for (const path of ['/app/overview', '/app/traffic', '/app/traffic/abc', '/app/playground', '/app/evaluators/studio', '/app/policiesx']) {
+  it('keeps the replay pages, the Studio and the committed benchmark runs (D72)', () => {
+    for (const path of ['/app/overview', '/app/traffic', '/app/traffic/abc', '/app/playground', '/app/evaluators/studio', '/app/evaluators/benchmarks', '/app/policiesx']) {
       expect(hiddenStaticPage(path), path).toBeNull();
     }
   });
@@ -161,5 +161,12 @@ describe('static build', () => {
     await renderStatic('/app/evaluators/studio');
     expect(await screen.findByText('Coming soon')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Write your own checks');
+  });
+
+  it('opens Benchmarks from the committed runs, with no gateway (D72)', async () => {
+    const { requests } = await renderStatic('/app/evaluators/benchmarks');
+    expect(await screen.findByText(/Committed runs only: every figure was measured, none simulated\./)).toBeInTheDocument();
+    expect(screen.queryByText(/needs a running gateway/i)).toBeNull();
+    expect(requests.filter((r) => r.includes('/api/'))).toEqual([]);
   });
 });

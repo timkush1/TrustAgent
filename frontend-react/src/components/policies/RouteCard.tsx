@@ -137,7 +137,7 @@ function DowngradeFix({
       );
     case 'breaker_open':
       return (
-        <Link to="/app/settings/$section" params={{ section: 'models' }} className={linkClass}>
+        <Link to="/app/settings/$section" params={{ section: 'models' }} hash="last-error" className={linkClass}>
           See the last error
           <ArrowRight aria-hidden="true" className="size-3" />
         </Link>
