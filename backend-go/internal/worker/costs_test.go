@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 )
 
@@ -108,6 +109,9 @@ func (b fixedBudget) Reserve(float64, string) (func(float64), error) {
 }
 func (b fixedBudget) HeadroomUSD() float64                 { return math.Inf(1) }
 func (b fixedBudget) PriceTableVersion(_, _ string) string { return "2026-09-27" }
+func (b fixedBudget) CapCostUSD(records []*pb.CostRecord) float64 {
+	return costs.RealCostUSD(records)
+}
 
 // SetBudget is safe before Start and from other goroutines while audits run.
 func TestBudgetSetBeforeStartAndConcurrently(t *testing.T) {

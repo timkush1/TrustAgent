@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -251,6 +252,71 @@ func TestCostLedgerFollowsSettingsAndSeedsOnRestart(t *testing.T) {
 	restarted := newTestEnv(t, envOpts{pg: pg})
 	if v := restarted.srv.ledger().Budgets(); v.LLM.SpentUSD != 0.004 || v.LLM.CapUSD != 0.02 {
 		t.Errorf("after a restart = %+v: today's spend and the stored caps", v)
+	}
+}
+
+// /api/status reads the decision model's last 24 hours from the cost ledger (D92): after a restart
+// the calls and cost of stored decision rows show (first attempts only; simulated rows cost $0),
+// where the restarted client's own counters would read 0.
+func TestCostStatusDecisionDayFromTheLedger(t *testing.T) {
+	pg, _ := newPGStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	usd, hedge, mock := 0.0002, 0.0001, 0.5
+	if err := pg.InsertCostEvents(ctx, []store.CostEvent{
+		{OccurredAt: now.Add(-time.Hour), TraceID: "tr-1", Component: "gate", Kind: "decision", CostUSD: &usd, CostSource: decision.CostReported},
+		{OccurredAt: now.Add(-time.Hour), TraceID: "tr-1", Component: "gate", Kind: "decision", Attempt: 1, Hedge: true, CostUSD: &hedge, CostSource: decision.CostReported},
+		{OccurredAt: now.Add(-2 * time.Hour), TraceID: "tr-2", Component: "gate", Kind: "decision", Provider: "mock", CostUSD: &mock, CostSource: decision.CostSimulated},
+		{OccurredAt: now.Add(-25 * time.Hour), TraceID: "tr-old", Component: "gate", Kind: "decision", CostUSD: &mock, CostSource: decision.CostReported},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	env := newTestEnv(t, envOpts{pg: pg})
+	code, body := env.get("/api/status", testKey)
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/status = %d", code)
+	}
+	var st struct {
+		DecisionModel struct {
+			Calls24h   int     `json:"calls_24h"`
+			Cost24hUSD float64 `json:"cost_24h_usd"`
+		} `json:"decision_model"`
+	}
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.DecisionModel.Calls24h != 2 || math.Abs(st.DecisionModel.Cost24hUSD-0.0003) > 1e-12 {
+		t.Errorf("decision_model calls_24h %d cost_24h_usd %v, want 2 calls and $0.0003 from the stored rows",
+			st.DecisionModel.Calls24h, st.DecisionModel.Cost24hUSD)
+	}
+}
+
+// The decision-day cache reports nothing until a read succeeds, and a failed refresh keeps the
+// last value (D92).
+func TestCostDecisionDayCacheKeepsTheLastRead(t *testing.T) {
+	var fail atomic.Bool
+	calls := int64(0)
+	c := &decisionDayCache{now: time.Now, log: slog.New(slog.DiscardHandler), read: func(context.Context, time.Time) (store.DecisionDay, error) {
+		if fail.Load() {
+			return store.DecisionDay{}, errors.New("database down")
+		}
+		calls++
+		return store.DecisionDay{Calls: calls, CostUSD: float64(calls) / 100}, nil
+	}}
+	fail.Store(true)
+	c.refresh(context.Background())
+	if _, ok := c.get(); ok {
+		t.Fatal("a cache that never read reports a value")
+	}
+	fail.Store(false)
+	c.refresh(context.Background())
+	if d, ok := c.get(); !ok || d.Calls != 1 || d.CostUSD != 0.01 {
+		t.Fatalf("after a read: %+v %v", d, ok)
+	}
+	fail.Store(true)
+	c.refresh(context.Background())
+	if d, ok := c.get(); !ok || d.Calls != 1 {
+		t.Errorf("a failed refresh changed the value: %+v %v", d, ok)
 	}
 }
 

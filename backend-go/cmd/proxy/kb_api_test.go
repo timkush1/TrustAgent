@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/grpc"
@@ -90,6 +91,9 @@ type uploadSpy struct {
 	reserved   int
 	settled    []float64
 	audits     []store.AdminAuditEntry
+	recorded   [][]*pb.CostRecord
+	// capCost, when set, is the hooks' cap cost (D91).
+	capCost func([]*pb.CostRecord) float64
 }
 
 func (s *uploadSpy) hooks() kbUploadHooks {
@@ -105,7 +109,41 @@ func (s *uploadSpy) hooks() kbUploadHooks {
 			s.audits = append(s.audits, e)
 			return nil
 		},
-		log: slog.New(slog.DiscardHandler),
+		record: func(_ context.Context, records []*pb.CostRecord, _ string) {
+			s.recorded = append(s.recorded, records)
+		},
+		capCost: s.capCost,
+		log:     slog.New(slog.DiscardHandler),
+	}
+}
+
+// TestKBUploadSettlesAtTheCapCost: an ingest that reports cost records settles its booking at what
+// they count against the LLM cap (D91: an unpriced record at the reference price), and its rows
+// are recorded as they came.
+func TestKBUploadSettlesAtTheCapCost(t *testing.T) {
+	records := []*pb.CostRecord{
+		{Component: "kb_ingest", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: 0.002, CostSource: "computed"},
+		{Component: "kb_ingest", Kind: "llm", Provider: "openai", Model: "gpt-4o-mini", InputTokens: 1000, CostSource: "unknown"},
+	}
+	eng := &fakeIngester{res: &grpc.IngestResult{DocumentsIngested: 1, Costs: records}}
+	spy := &uploadSpy{capCost: func(rs []*pb.CostRecord) float64 {
+		if len(rs) != 2 {
+			t.Errorf("capCost got %d records", len(rs))
+		}
+		return 0.003
+	}}
+	w := postUpload(t, fileUpload(eng, 1<<20, spy.hooks()), kbUploadBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP %d %s", w.Code, w.Body)
+	}
+	if len(spy.settled) != 1 || spy.settled[0] != 0.003 {
+		t.Errorf("settled %v, want the cap cost 0.003 (not the real 0.002)", spy.settled)
+	}
+	if len(spy.recorded) != 1 || len(spy.recorded[0]) != 2 {
+		t.Errorf("recorded %v", spy.recorded)
+	}
+	if strings.Contains(w.Body.String(), "kb_ingest") {
+		t.Errorf("the upload answer carries the cost records: %s", w.Body)
 	}
 }
 

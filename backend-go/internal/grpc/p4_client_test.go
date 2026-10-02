@@ -2,6 +2,8 @@ package grpc_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 )
 
@@ -56,5 +59,30 @@ func TestRetrieveContextHonoursTheKnowledgeDeadline(t *testing.T) {
 	_, err := c.RetrieveContext(context.Background(), &pb.RetrieveContextRequest{Query: "q"}, 30*time.Millisecond)
 	if status.Code(err) != codes.DeadlineExceeded || time.Since(start) > 5*time.Second {
 		t.Errorf("RetrieveContext past its deadline: %v after %v", err, time.Since(start))
+	}
+}
+
+// An ingest result carries the engine's cost records (IngestResponse.costs) for the ledger, and
+// never puts them in the JSON the upload answers with.
+func TestIngestResultCarriesTheCostRecords(t *testing.T) {
+	eng := enginetest.Start(t, &enginetest.Engine{IngestDocumentsFunc: func(context.Context, *pb.IngestRequest) (*pb.IngestResponse, error) {
+		return &pb.IngestResponse{DocumentsIngested: 1, Costs: []*pb.CostRecord{
+			{Component: "kb_ingest", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: 0.003, CostSource: "computed"},
+		}}, nil
+	}})
+	c := client(t, eng, time.Second, "")
+	res, err := c.IngestDocuments(context.Background(), []grpc.IngestDocument{{Content: "Refunds take 30 days."}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.CostRecords(); len(got) != 1 || got[0].GetComponent() != "kb_ingest" || got[0].GetCostUsd() != 0.003 {
+		t.Fatalf("CostRecords = %v", got)
+	}
+	b, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "kb_ingest") || strings.Contains(string(b), "cost") {
+		t.Errorf("the ingest JSON carries the cost records: %s", b)
 	}
 }

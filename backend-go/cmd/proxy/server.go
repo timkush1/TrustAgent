@@ -17,6 +17,7 @@ import (
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
@@ -92,6 +93,21 @@ type costHooks struct {
 	// decisionHeadroom is the decision spend still allowed today: up to the observe line when
 	// enforcing is false, up to the cap when true (D82).
 	decisionHeadroom func(enforcing bool) float64
+	// capCostLLM is what LLM cost records count against the LLM cap (D91): unpriced records at
+	// the reference judge's price. Settle an LLM hold with capCost.
+	capCostLLM func(records []*pb.CostRecord) float64
+	// refreshDecisionDay re-reads the decision model's last 24 hours from cost_events for
+	// /api/status (D92); the cost loop calls it every minute. Nil without a database.
+	refreshDecisionDay func(ctx context.Context)
+}
+
+// capCost is what records count against the LLM cap (capCostLLM, D91); without a ledger their real
+// cost (nothing is held then).
+func (h costHooks) capCost(records []*pb.CostRecord) float64 {
+	if h.capCostLLM == nil {
+		return costs.RealCostUSD(records)
+	}
+	return h.capCostLLM(records)
 }
 
 // reserve reserves LLM spend (reserveLLM); without a ledger nothing is reserved.

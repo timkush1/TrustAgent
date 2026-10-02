@@ -151,6 +151,8 @@ type kbUploadHooks struct {
 	// reserve asks whether the day's LLM cap is spent (a hold of $0: an ingest's cost is not
 	// known before it runs, D48) and returns the settle function of the booking.
 	reserve func(ctx context.Context) (settle func(actualUSD float64), err error)
+	// capCost is what the ingest's records count against the LLM cap (D91); nil: their real cost.
+	capCost func(records []*pb.CostRecord) float64
 	// record writes the ingest's cost rows, linked to the uploader's key label.
 	record func(ctx context.Context, records []*pb.CostRecord, keyLabel string)
 	// audit appends the admin_audit_log row of the upload.
@@ -188,6 +190,7 @@ func (s *server) handleFileUpload(maxUploadBytes int64) gin.HandlerFunc {
 	}
 	hooks := kbUploadHooks{
 		reserve: func(ctx context.Context) (func(float64), error) { return s.costs.reserve(ctx, 0, componentKBIngest) },
+		capCost: s.costs.capCost,
 		record: func(ctx context.Context, records []*pb.CostRecord, keyLabel string) {
 			s.costs.record(ctx, records, CostLink{KeyLabel: keyLabel})
 		},
@@ -308,10 +311,15 @@ func fileUpload(engine kbIngester, maxUploadBytes int64, hooks kbUploadHooks) gi
 			return
 		}
 
-		// Book the ingest's LLM cost now that it is known (simulated and unpriced calls count $0).
+		// Book the ingest's LLM cost now that it is known (simulated calls count $0, unpriced ones
+		// the reference judge's price, D91).
 		records := ingestCosts(result)
 		booked = true
-		settle(costs.RealCostUSD(records))
+		if hooks.capCost != nil {
+			settle(hooks.capCost(records))
+		} else {
+			settle(costs.RealCostUSD(records))
+		}
 		actor := ""
 		if id := callerIdentity(c); id != nil {
 			actor = id.Label

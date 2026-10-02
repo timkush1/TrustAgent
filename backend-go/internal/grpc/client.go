@@ -138,7 +138,13 @@ type IngestResult struct {
 	ClaimsQuarantined int32         `json:"claims_quarantined"`
 	ConflictsDetected int32         `json:"conflicts_detected"`
 	ClaimResults      []ClaimIngest `json:"claim_results"`
+	// Costs are the engine's LLM cost records of the ingest (IngestResponse.costs): the upload
+	// books them on the cost ledger and never sends them to the client.
+	Costs []*pb.CostRecord `json:"-"`
 }
+
+// CostRecords are the ingest's LLM cost records.
+func (r *IngestResult) CostRecords() []*pb.CostRecord { return r.Costs }
 
 var kbStatusNames = map[pb.KBClaimStatus]string{
 	pb.KBClaimStatus_KB_CLAIM_STATUS_ACCEPTED:    "accepted",
@@ -188,6 +194,7 @@ func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDoc
 		ClaimsQuarantined: resp.ClaimsQuarantined,
 		ConflictsDetected: resp.ConflictsDetected,
 		ClaimResults:      make([]ClaimIngest, len(resp.ClaimResults)),
+		Costs:             resp.GetCosts(),
 	}
 	for i, claim := range resp.ClaimResults {
 		result.ClaimResults[i] = claimIngestFromProto(claim)

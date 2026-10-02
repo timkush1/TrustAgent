@@ -255,8 +255,8 @@ func (l *Ledger) priceVersion(provider, model string) string {
 	return v
 }
 
-// RealCostUSD is the cost of records that counts toward the LLM cap: simulated (mock) records
-// and records without a known cost count $0 (D46).
+// RealCostUSD is the real cost of records: simulated (mock) records and records without a known
+// cost count $0 (D46). The LLM cap counts unknown costs at the reference price (CapCostUSD, D91).
 func RealCostUSD(records []*pb.CostRecord) float64 {
 	var usd float64
 	for _, r := range records {
@@ -269,6 +269,43 @@ func RealCostUSD(records []*pb.CostRecord) float64 {
 	return usd
 }
 
+// CapCostUSD is what records count against the LLM cap (P4-PLAN D91, extending D47 and D48): the
+// real cost of each record, with simulated (mock) records at $0, and records no price covers
+// (cost_source unknown) at the reference judge's price for their tokens, so a judge the price
+// table does not know cannot spend past the cap. The stored rows keep cost_source unknown and no
+// cost, so ROI and Savings never count that reference price as spend.
+func (l *Ledger) CapCostUSD(records []*pb.CostRecord) float64 {
+	var usd float64
+	for _, r := range records {
+		switch r.GetCostSource() {
+		case decision.CostSimulated:
+		case decision.CostUnknown:
+			usd += l.referenceCostUSD(r.GetInputTokens(), r.GetOutputTokens())
+		default:
+			usd += nonNegative(r.GetCostUsd())
+		}
+	}
+	return usd
+}
+
+// referenceCostUSD prices tokens at the reference judge (D47): the price book's entry for the
+// published assumptions' judge (Claude Haiku 4.5, dashboard overrides applied), else its list
+// price.
+func (l *Ledger) referenceCostUSD(inputTokens, outputTokens int64) float64 {
+	in, out := referenceInputPerMTok, referenceOutputPerMTok
+	if entry, _, ok := l.prices.Lookup(l.audits.ref.Provider, l.audits.ref.Model); ok && !entry.Free() {
+		in, out = entry.InputPerMTok, entry.OutputPerMTok
+	}
+	return nonNegative(decision.TokenCostUSD(inputTokens, outputTokens, in, out))
+}
+
+// referenceInputPerMTok and referenceOutputPerMTok are Claude Haiku 4.5's list price per million
+// tokens (SPEC Appendix D), for a price book that has no entry for the reference judge.
+const (
+	referenceInputPerMTok  = 1.0
+	referenceOutputPerMTok = 5.0
+)
+
 // LLM is the LLM cap as its callers use it.
 func (l *Ledger) LLM() *LLMBudget { return &LLMBudget{l: l} }
 
@@ -280,7 +317,7 @@ type LLMBudget struct{ l *Ledger }
 func (b *LLMBudget) EstimateAuditUSD() float64 { return b.l.audits.Estimate() }
 
 // Reserve holds usd of today's LLM cap for a call of component and returns its settle function,
-// which books the call's real cost (RealCostUSD of its records; 0 releases the hold). It fails
+// which books the call's cost (CapCostUSD of its records, D91; 0 releases the hold). It fails
 // with ErrLLMCapReached when the cap cannot take usd, or is spent: a hold of 0 asks only whether
 // the cap is spent (a knowledge ingest, booked afterwards).
 func (b *LLMBudget) Reserve(usd float64, component string) (settle func(actualUSD float64), err error) {
@@ -294,6 +331,10 @@ func (b *LLMBudget) Reserve(usd float64, component string) (settle func(actualUS
 
 // HeadroomUSD is the LLM spend still allowed today (+Inf without a cap).
 func (b *LLMBudget) HeadroomUSD() float64 { return b.l.llm.Headroom(true) }
+
+// CapCostUSD is what records count against the cap (Ledger.CapCostUSD, D91): settle an LLM hold
+// with it.
+func (b *LLMBudget) CapCostUSD(records []*pb.CostRecord) float64 { return b.l.CapCostUSD(records) }
 
 // PriceTableVersion is the price_table_version an LLM cost of model on provider records:
 // "override" when a dashboard override prices it, else the version of the table in force.
@@ -356,7 +397,9 @@ func (l *Ledger) Seed(ctx context.Context) error {
 		return fmt.Errorf("cost ledger: seed: %w", err)
 	}
 	l.decision.seed(day, totals.DecisionUSD, totals.DecisionByKey)
-	l.llm.seed(day, totals.LLMUSD, nil)
+	// Today's LLM rows no price covered count at the reference price, as their settle did (D91).
+	llm := totals.LLMUSD + l.referenceCostUSD(totals.LLMUnpricedInputTokens, totals.LLMUnpricedOutputTokens)
+	l.llm.seed(day, llm, nil)
 	return nil
 }
 

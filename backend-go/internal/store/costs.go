@@ -25,6 +25,10 @@ const (
 // was spent, so it never counts toward a cap or the spend seed (D46).
 const costSourceSimulated = "simulated"
 
+// costSourceUnknown is cost_events.cost_source of a call no price covered (decision.CostUnknown):
+// its cost is NULL, and the LLM cap counts its tokens at the reference price (P4-PLAN D91).
+const costSourceUnknown = "unknown"
+
 // maxCostUSD is the largest cost cost_events.cost_usd (NUMERIC(14,10)) holds.
 const maxCostUSD = 9999.9999999999
 
@@ -105,6 +109,11 @@ type SpendTotals struct {
 	LLMUSD      float64
 	// DecisionByKey is the decision spend of each key label that has some.
 	DecisionByKey map[string]float64
+	// LLMUnpricedInputTokens and LLMUnpricedOutputTokens are the tokens of today's LLM rows no
+	// price covered (cost_source unknown, no cost): the ledger counts them at the reference price
+	// toward the LLM cap (P4-PLAN D91).
+	LLMUnpricedInputTokens  int64
+	LLMUnpricedOutputTokens int64
 }
 
 // SpendToday reads the real spend since dayStart (the start of a UTC day): every component counts
@@ -140,6 +149,13 @@ func (s *PostgresStore) SpendToday(ctx context.Context, dayStart time.Time) (Spe
 	}
 	if err := rows.Err(); err != nil {
 		return out, fmt.Errorf("spend today: %w", err)
+	}
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(GREATEST(input_tokens, 0)), 0)::BIGINT, COALESCE(sum(GREATEST(output_tokens, 0)), 0)::BIGINT
+		FROM cost_events
+		WHERE occurred_at >= $1 AND kind <> 'decision' AND cost_source = $2`,
+		dayStart.UTC(), costSourceUnknown).Scan(&out.LLMUnpricedInputTokens, &out.LLMUnpricedOutputTokens); err != nil {
+		return out, fmt.Errorf("spend today: unpriced LLM tokens: %w", err)
 	}
 	return out, nil
 }

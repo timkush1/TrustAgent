@@ -165,6 +165,9 @@ type Budget interface {
 	// PriceTableVersion is the price_table_version an LLM cost of model on provider records:
 	// "override" when a dashboard override prices it, else the version of the table in force.
 	PriceTableVersion(provider, model string) string
+	// CapCostUSD is what an audit's cost records count against the cap (D91): their real cost,
+	// with records no price covers at the reference judge's price.
+	CapCostUSD(records []*pb.CostRecord) float64
 }
 
 // AuditCosts are the LLM cost records of one audit the engine answered.
@@ -477,7 +480,7 @@ func (p *Pool) run(job *Job, lane string) {
 		job.settle(failedCallCost(err, job.estimate))
 		rec = failedRecord(job, lane, kind, "The audit engine could not complete this audit.", started, finished, p.cfg.TextRetention)
 	} else {
-		job.settle(costs.RealCostUSD(res.GetCosts()))
+		job.settle(p.capCostUSD(res.GetCosts()))
 		rec = resultRecord(job, lane, res, started, finished, p.cfg.TextRetention)
 		rows = costRows(job, res.GetCosts(), finished, p.priceVersion)
 	}
@@ -515,6 +518,15 @@ func (p *Pool) save(ctx context.Context, rec *store.AuditRecord, status string, 
 		return ls.SaveAuditResultWithCosts(ctx, rec, status, rows)
 	}
 	return p.cfg.Store.SaveAuditResult(ctx, rec, status)
+}
+
+// capCostUSD is what an answered audit's records count against the LLM cap (Budget.CapCostUSD,
+// D91); without a budget there is no hold to settle, and the real cost stands in.
+func (p *Pool) capCostUSD(records []*pb.CostRecord) float64 {
+	if b := p.budget.Load(); b != nil {
+		return (*b).CapCostUSD(records)
+	}
+	return costs.RealCostUSD(records)
 }
 
 // priceVersion is the price_table_version of an LLM cost ("" without a budget, which has no

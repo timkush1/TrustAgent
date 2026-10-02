@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 	"github.com/truthtable/backend-go/internal/store"
@@ -33,6 +34,8 @@ type capBudget struct {
 	refused                 int
 	versionCalls            int
 	versionProvider, vModel string
+	// unknownUSD is what each record no price covers counts against the cap (D91).
+	unknownUSD float64
 }
 
 var errCap = errors.New("cap reached")
@@ -76,6 +79,16 @@ func (b *capBudget) PriceTableVersion(provider, model string) string {
 		return "override"
 	}
 	return "2026-09-27"
+}
+
+func (b *capBudget) CapCostUSD(records []*pb.CostRecord) float64 {
+	usd := costs.RealCostUSD(records)
+	for _, r := range records {
+		if r.GetCostSource() == "unknown" {
+			usd += b.unknownUSD
+		}
+	}
+	return usd
 }
 
 func (b *capBudget) state() (spent, reserved float64, holds int, settled []float64) {
@@ -237,6 +250,33 @@ func TestHoldsReconcileWithTheRealCost(t *testing.T) {
 				t.Errorf("spent %v reserved %v holds %d settled %v, want %v booked", spent, reserved, holds, settled, c.real)
 			}
 		})
+	}
+}
+
+// An answered audit settles its hold at what its records count against the cap (D91): a record no
+// price covers counts at the budget's reference price, not at $0, so an unpriced judge cannot
+// spend past the cap.
+func TestUnpricedAuditCostsSettleAtTheCapCost(t *testing.T) {
+	eng := enginetest.Start(t, &enginetest.Engine{EvaluateFunc: func(ctx context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
+		res, _ := hallucinated(ctx, req)
+		res.Costs = []*pb.CostRecord{
+			{Component: "deep_audit_verify", Kind: "llm", Provider: "openai", Model: "gpt-4o-mini", InputTokens: 900, OutputTokens: 80, CostSource: "unknown"},
+			{Component: "deep_audit_score", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5", CostUsd: 0.002, CostSource: "computed"},
+		}
+		return res, nil
+	}})
+	b := &capBudget{cap: 1, est: 0.01, unknownUSD: 0.03}
+	p, _, pub := startPool(t, eng, Config{Workers: 1})
+	p.SetBudget(b)
+	if _, err := p.Submit(job(LaneLow, "sample")); err != nil {
+		t.Fatal(err)
+	}
+	if ev := pub.outcome(t); ev.Type != "audit_completed" {
+		t.Fatalf("outcome %s", ev.Type)
+	}
+	spent, reserved, holds, settled := b.state()
+	if len(settled) != 1 || math.Abs(settled[0]-0.032) > 1e-12 || math.Abs(spent-0.032) > 1e-12 || reserved != 0 || holds != 0 {
+		t.Errorf("settled %v spent %v reserved %v holds %d, want 0.032 booked (0.002 real + 0.03 for the unpriced record)", settled, spent, reserved, holds)
 	}
 }
 

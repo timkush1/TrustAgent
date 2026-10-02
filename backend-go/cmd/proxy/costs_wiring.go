@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +14,7 @@ import (
 	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/runtimecfg"
+	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/worker"
 )
 
@@ -43,8 +46,9 @@ const costsBootTimeout = 10 * time.Second
 //     and the knowledge upload; the status budgets.
 //
 // How LLM callers use the hooks (D48): reserve the estimate with s.costs.reserve, call the engine,
-// then settle with the real cost of its records (costs.RealCostUSD: simulated ones count $0) and
-// record the records with s.costs.record. The settle books the spend; recording writes the rows.
+// then settle with what its records count against the cap (s.costs.capCost, D91: simulated ones
+// count $0, unpriced ones the reference judge's price) and record the records with
+// s.costs.record. The settle books the spend; recording writes the rows.
 func (s *server) initCosts(d serverDeps) {
 	cfg := s.cfg
 	book, err := costs.LoadPriceBook(cfg.PriceTableFile)
@@ -88,6 +92,7 @@ func (s *server) initCosts(d serverDeps) {
 		},
 		effectivePriceJSON: book.EffectiveJSON,
 		decisionHeadroom:   ledger.Headroom,
+		capCostLLM:         ledger.CapCostUSD,
 	}
 	if d.pg != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), costsBootTimeout)
@@ -108,6 +113,14 @@ func (s *server) initCosts(d serverDeps) {
 			}
 			s.costs.knownSnapshot = snap
 		}
+	}
+	if d.pg != nil && s.status != nil {
+		day := &decisionDayCache{read: d.pg.Status24h, now: time.Now, log: s.log}
+		ctx, cancel := context.WithTimeout(context.Background(), costsBootTimeout)
+		day.refresh(ctx)
+		cancel()
+		s.costs.refreshDecisionDay = day.refresh
+		s.status.decisionDay = day.get
 	}
 	s.pool.SetBudget(llm)
 	s.pool.SetCostRecorder(func(a worker.AuditCosts) { llm.ObserveAudit(a.Records) })
@@ -174,6 +187,59 @@ func (s *server) startCostLoops(ctx context.Context, wg *sync.WaitGroup) {
 	}
 	wg.Add(1)
 	go func() { defer wg.Done(); l.Run(ctx) }()
+	if refresh := s.costs.refreshDecisionDay; refresh != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); everyMinute(ctx, refresh) }()
+	}
+}
+
+// everyMinute calls f every costs.DefaultResyncEvery until ctx ends, each call bounded by
+// costsBootTimeout.
+func everyMinute(ctx context.Context, f func(context.Context)) {
+	t := time.NewTicker(costs.DefaultResyncEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			rctx, cancel := context.WithTimeout(ctx, costsBootTimeout)
+			f(rctx)
+			cancel()
+		}
+	}
+}
+
+// decisionDayCache is the decision model's calls and cost over the last 24 hours, read from
+// cost_events (DecisionModelStatus.calls_24h and cost_24h_usd, D92): it survives a restart, unlike
+// the decision client's own counters, which also restart on a hot swap. The cost loop refreshes it
+// every minute, so /api/status never queries for it; until the first read succeeds, get reports
+// nothing and the status keeps the client's counters.
+type decisionDayCache struct {
+	read func(ctx context.Context, now time.Time) (store.DecisionDay, error)
+	now  func() time.Time
+	log  *slog.Logger
+	v    atomic.Pointer[store.DecisionDay]
+}
+
+// refresh re-reads the last 24 hours; a failed read keeps the previous value.
+func (c *decisionDayCache) refresh(ctx context.Context) {
+	day, err := c.read(ctx, c.now())
+	if err != nil {
+		if ctx.Err() == nil {
+			c.log.Warn("cost ledger: the decision model's last 24 hours could not be read; /api/status keeps the previous figures", "err", err)
+		}
+		return
+	}
+	c.v.Store(&day)
+}
+
+// get is the last value read (the statusReporter decisionDay hook).
+func (c *decisionDayCache) get() (store.DecisionDay, bool) {
+	if d := c.v.Load(); d != nil {
+		return *d, true
+	}
+	return store.DecisionDay{}, false
 }
 
 // stopCosts writes the ledger's buffered rows at shutdown, after the audits drained. Rows booked

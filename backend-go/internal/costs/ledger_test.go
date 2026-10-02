@@ -124,6 +124,36 @@ func TestCostRealCostExcludesSimulated(t *testing.T) {
 	}
 }
 
+// The LLM cap counts a record no price covers at the reference judge's price for its tokens, with
+// dashboard overrides of that price applied, and simulated records at $0 (D91); RealCostUSD, which
+// ROI and Savings use, still counts the unpriced record at $0.
+func TestBudgetCapCostPricesUnknownAtTheReference(t *testing.T) {
+	l := newTestLedger(t, LedgerConfig{LLMCapUSD: 1})
+	records := []*pb.CostRecord{
+		{Component: "deep_audit_verify", CostUsd: 0.01, CostSource: decision.CostReported},
+		{Component: "deep_audit_verify", CostUsd: 5, CostSource: decision.CostSimulated},
+		{Component: "deep_audit_verify", Provider: "openai", Model: "gpt-4o-mini", InputTokens: 2000, OutputTokens: 400,
+			CostUsd: 7, CostSource: decision.CostUnknown},
+		{Component: "deep_audit_verify", CostUsd: math.NaN(), CostSource: decision.CostComputed},
+		nil,
+	}
+	// 2,000 × $1 + 400 × $5 per million tokens = $0.004, plus the $0.01 reported.
+	if got := l.CapCostUSD(records); !near(got, 0.014) {
+		t.Errorf("CapCostUSD = %v, want 0.014", got)
+	}
+	if got := l.LLM().CapCostUSD(records); !near(got, 0.014) {
+		t.Errorf("LLMBudget.CapCostUSD = %v, want 0.014", got)
+	}
+	if got := RealCostUSD(records); !near(got, 0.01) {
+		t.Errorf("RealCostUSD = %v, want 0.01 (the unpriced record is not spend)", got)
+	}
+	l.ApplySettings(Caps{LLMUSDDay: 1}, []decision.PriceEntry{{Provider: "anthropic", Match: "claude-haiku-4-5*",
+		InputPerMTok: 2, OutputPerMTok: 10, Label: decision.PriceLabelOverride, AsOf: "2026-10-01"}})
+	if got := l.CapCostUSD(records); !near(got, 0.018) {
+		t.Errorf("CapCostUSD with the reference overridden = %v, want 0.018", got)
+	}
+}
+
 // ApplySettings swaps the pricing overrides and logs the invalid ones out.
 func TestPricingLedgerApplySettingsOverrides(t *testing.T) {
 	l := newTestLedger(t, LedgerConfig{})
@@ -311,8 +341,13 @@ func TestSeedLedgerAfterARestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []*pb.CostRecord{{Component: "studio_draft", Kind: "llm", Provider: "anthropic", Model: "claude-haiku-4-5",
-		CostUsd: 0.04, CostSource: decision.CostComputed}, {Component: "studio_draft", Kind: "llm", CostSource: decision.CostUnknown}}
-	settle(RealCostUSD(records))
+		CostUsd: 0.04, CostSource: decision.CostComputed}, {Component: "studio_draft", Kind: "llm", Provider: "openai",
+		Model: "gpt-4o-mini", InputTokens: 1000, OutputTokens: 200, CostSource: decision.CostUnknown}}
+	// D91: the unpriced record counts at the reference judge's price ($1/$5 per MTok): $0.002.
+	if got := first.CapCostUSD(records); !near(got, 0.042) {
+		t.Fatalf("CapCostUSD = %v, want 0.042", got)
+	}
+	settle(first.CapCostUSD(records))
 	first.RecordLLM(records, Link{TraceID: "tr-draft"})
 	if err := first.Flush(context.Background()); err != nil {
 		t.Fatal(err)
@@ -333,8 +368,9 @@ func TestSeedLedgerAfterARestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := restarted.Budgets()
-	if !near(v.Decision.SpentUSD, 0.5) || !near(v.LLM.SpentUSD, 0.04) {
-		t.Errorf("after the restart: decision %v (want 0.5), llm %v (want 0.04)", v.Decision.SpentUSD, v.LLM.SpentUSD)
+	if !near(v.Decision.SpentUSD, 0.5) || !near(v.LLM.SpentUSD, 0.042) {
+		t.Errorf("after the restart: decision %v (want 0.5), llm %v (want 0.042: the unpriced row at the reference price, D91)",
+			v.Decision.SpentUSD, v.LLM.SpentUSD)
 	}
 	if _, err := restarted.Reserve(jev.SpendRequest{USD: 0.3, KeyLabel: "app-a"}); err == nil {
 		t.Error("app-a's seeded spend (0.25 of 0.5) left room for 0.3")
