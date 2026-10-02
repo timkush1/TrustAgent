@@ -63,6 +63,9 @@ func TestPricingOverridesFindings(t *testing.T) {
 	if !strings.Contains(got[5].Message, "119×") || !strings.Contains(got[5].Message, "$0.042") {
 		t.Errorf("far-above message = %q", got[5].Message)
 	}
+	if got[4].Details["provider"] != "openrouter" {
+		t.Errorf("zero-price details = %v", got[4].Details)
+	}
 	if got[6].Details["index"] != 5 {
 		t.Errorf("duplicate details = %v", got[6].Details)
 	}

@@ -28,10 +28,11 @@ type FieldError struct {
 const (
 	// CodeInvalidPriceEntry: the entry breaks a pricing.v1 rule; Path names the field.
 	CodeInvalidPriceEntry = "invalid_price_entry"
-	// CodePriceZeroNotLocal: $0 in and out for a provider that is not local (D53).
+	// CodePriceZeroNotLocal: $0 in and out for a provider that is not local (D53). Details:
+	// provider.
 	CodePriceZeroNotLocal = "price_zero_not_local"
 	// CodeDuplicateOverride: an earlier override has the same provider and match, so this one
-	// could never apply.
+	// could never apply. Details: index (0-based) of that earlier override.
 	CodeDuplicateOverride = "duplicate_override"
 	// CodePriceFarAboveContracts (a warning): more than FarAboveFactor times the contracts price
 	// of the same model (D53). Details: contracts_per_mtok, ratio.
@@ -77,6 +78,7 @@ func overrideError(at string, e decision.PriceEntry, seen map[[2]string]int, i i
 		return FieldError{
 			Path: at + ".input_per_mtok", Code: CodePriceZeroNotLocal,
 			Message: fmt.Sprintf("A $0 price is only allowed for local models; %s calls are billed.", e.Provider),
+			Details: map[string]any{"provider": e.Provider},
 		}, true
 	}
 	key := [2]string{e.Provider, e.Match}
