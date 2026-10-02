@@ -199,13 +199,4 @@ describe('cross-origin dashboard key (P4-PLAN D71)', () => {
     await client(true).get('/api/status', { headers: { 'X-TrustAgent-Key': 'ta_candidate' } });
     expect(seen[0].key).toBe('ta_candidate');
   });
-
-  it('has no other way to carry a key: no ?api_key=, no bearer subprotocol, no build-time key', () => {
-    // Every source file of the dashboard (tests excluded), as text.
-    const sources = import.meta.glob(['/src/**/*.{ts,tsx}', '!/src/**/*.test.{ts,tsx}'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
-    expect(Object.keys(sources).length).toBeGreaterThan(100);
-    const forbidden = [/[?&]api_key=/, /['"`]bearer\./i, /VITE_TRUTHTABLE_API_KEY/];
-    const hits = Object.entries(sources).flatMap(([file, text]) => forbidden.filter((re) => re.test(text)).map((re) => `${file}: ${re.source}`));
-    expect(hits).toEqual([]);
-  });
 });

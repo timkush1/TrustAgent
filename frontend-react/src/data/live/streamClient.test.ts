@@ -410,3 +410,25 @@ describe('StreamClient cross-origin tickets (P4-PLAN D71)', () => {
     expect(create).toHaveBeenCalledWith(signal);
   });
 });
+
+describe('LiveDataSource on another origin (P4-PLAN D71)', () => {
+  afterEach(() => clearDashboardKey());
+
+  it('connects its WebSocket with a fresh ticket from POST /api/ws-ticket while this tab holds a key', async () => {
+    vi.useRealTimers();
+    const { LiveDataSource } = await import('./liveDataSource');
+    const sockets = socketFactory();
+    const lifecycle = fakeLifecycle();
+    const tickets = vi.fn(async () => ({ ticket: 'wst_live', expires_in: 30 }));
+    const ds = new LiveDataSource(
+      { apiBase: 'http://proxy.test', crossOrigin: true, wsUrl: 'ws://proxy.test/ws' },
+      { stream: { createSocket: sockets.create, lifecycle: lifecycle.source, ticket: wsTicketSource(true, tickets) } },
+    );
+    storeDashboardKey('ta_admin_key');
+    const control = ds.subscribe({ onEvent: () => {}, onConnection: () => {} });
+    await vi.waitFor(() => expect(sockets.sockets).toHaveLength(1));
+    expect(sockets.last.url.searchParams.get('ticket')).toBe('wst_live');
+    expect(tickets).toHaveBeenCalledTimes(1);
+    control.stop();
+  });
+});

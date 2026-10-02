@@ -6,7 +6,9 @@
  * - Cross origin (`apiBase` on another origin, P4-PLAN D71): no cookies. The key the viewer signed
  *   in with is kept for this tab only, in `sessionStorage["ta.dashboard.key"]` (never localStorage,
  *   never the URL), and goes on every request as `X-TrustAgent-Key`. The WebSocket cannot carry a
- *   header, so it connects with a one-use ticket instead (StreamClient `ticket`).
+ *   header, so it connects with a one-use ticket instead (StreamClient `ticket`). Every other way of
+ *   carrying a key (a URL parameter, a WebSocket subprotocol, a build-time key) is refused repo-wide
+ *   by scripts/check-forbidden.mjs.
  * - Every failure is an ApiError (errors.ts), including network trouble, timeouts and aborts.
  */
 import type { RuntimeConfig } from '@/config/runtime';
