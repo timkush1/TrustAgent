@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -195,71 +196,216 @@ func (b *BodyRecord) View(now time.Time) TraceBodyView {
 	}
 }
 
-// StartTrace inserts a pending trace. A trace that already exists is left as it is.
-func (s *PostgresStore) StartTrace(ctx context.Context, t *TraceRecord) error {
-	if t.TraceID == "" {
-		return errors.New("store: trace_id is required")
-	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO traces (`+traceInsertColumns+`)
-		VALUES (`+placeholders(traceInsertCount)+`)
-		ON CONFLICT (trace_id) DO NOTHING`, traceInsertArgs(t)...)
-	return err
+// TraceWriteKind names a trace-scoped write: one of the write methods below.
+type TraceWriteKind int
+
+// The trace-scoped writes (SPEC §2.3 writers).
+const (
+	WriteStart TraceWriteKind = iota + 1
+	WriteDecision
+	WriteAttempt
+	WriteLateDecision
+)
+
+// TraceWrite is one trace-scoped write with the arguments of its method: StartTrace (Trace),
+// RecordDecision (Trace, Decision and an optional Body), RecordAttempt or RecordLateDecision
+// (Decision). The batched writer (internal/store/tracewriter) queues these and sends them through
+// WriteTraceBatch.
+type TraceWrite struct {
+	Kind     TraceWriteKind
+	Trace    *TraceRecord
+	Decision *DecisionRecord
+	Body     *BodyRecord
 }
 
-// RecordDecision writes a decided trace in one transaction: the traces row (inserted, or updated
-// with the decision's columns; columns the decision leaves NULL keep their stored value), the
-// gate_decisions row for its attempt, and the body when one is kept.
-func (s *PostgresStore) RecordDecision(ctx context.Context, t *TraceRecord, d *DecisionRecord, b *BodyRecord) error {
-	if t.TraceID == "" || d == nil {
-		return errors.New("store: a trace id and a decision are required")
+// TraceID is the trace the write belongs to ("" for a write Check refuses).
+func (w *TraceWrite) TraceID() string {
+	switch {
+	case w.Trace != nil:
+		return w.Trace.TraceID
+	case w.Decision != nil:
+		return w.Decision.TraceID
+	}
+	return ""
+}
+
+// Check refuses a write its method would refuse, before anything is sent.
+func (w *TraceWrite) Check() error {
+	switch w.Kind {
+	case WriteStart:
+		if w.Trace == nil || w.Trace.TraceID == "" {
+			return errors.New("store: trace_id is required")
+		}
+	case WriteDecision:
+		if w.Trace == nil || w.Trace.TraceID == "" || w.Decision == nil {
+			return errors.New("store: a trace id and a decision are required")
+		}
+	case WriteAttempt:
+		if w.Decision == nil || w.Decision.TraceID == "" {
+			return errors.New("store: a decision with a trace id is required")
+		}
+		if w.Decision.Attempt < 1 {
+			return fmt.Errorf("store: attempt %d is recorded with its trace (RecordDecision), not as a later attempt", w.Decision.Attempt)
+		}
+	case WriteLateDecision:
+		if w.Decision == nil || w.Decision.TraceID == "" {
+			return errors.New("store: a decision with a trace id is required")
+		}
+		if !w.Decision.Late {
+			return errors.New("store: a late decision must be marked late")
+		}
+	default:
+		return fmt.Errorf("store: unknown trace write kind %d", w.Kind)
+	}
+	return nil
+}
+
+// statement is one SQL statement of a write; what names it in an error.
+type statement struct {
+	what string
+	sql  string
+	args []any
+}
+
+// statements are the SQL statements of a checked write, in order. They run in one transaction.
+func (w *TraceWrite) statements() ([]statement, error) {
+	switch w.Kind {
+	case WriteStart:
+		return []statement{{"insert trace", `
+		INSERT INTO traces (` + traceInsertColumns + `)
+		VALUES (` + placeholders(traceInsertCount) + `)
+		ON CONFLICT (trace_id) DO NOTHING`, traceInsertArgs(w.Trace)}}, nil
+	case WriteDecision:
+		out := []statement{
+			{"upsert trace", `
+		INSERT INTO traces (` + traceInsertColumns + `)
+		VALUES (` + placeholders(traceInsertCount) + `)
+		ON CONFLICT (trace_id) DO UPDATE SET ` + traceDecisionUpdate, traceInsertArgs(w.Trace)},
+			decisionStatement(w.Decision),
+		}
+		if b := w.Body; b != nil {
+			rules, err := json.Marshal(nonNilMap(b.Rules))
+			if err != nil {
+				return nil, fmt.Errorf("marshal rules: %w", err)
+			}
+			out = append(out, statement{"insert trace body", `
+			INSERT INTO trace_bodies (trace_id, messages, user_request, system_instructions, response_text,
+				final_response_text, evidence, rules, bytes, truncated, inclusion_prob, expires_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			ON CONFLICT (trace_id) DO UPDATE SET final_response_text = EXCLUDED.final_response_text`, []any{
+				w.Trace.TraceID, jsonOr(b.Messages, "[]"), b.UserRequest, b.SystemInstructions, b.ResponseText,
+				b.FinalResponseText, jsonOr(b.Evidence, "[]"), json.RawMessage(rules), b.Bytes, b.Truncated,
+				b.InclusionProb, b.ExpiresAt,
+			}})
+		}
+		return out, nil
+	case WriteAttempt:
+		return []statement{decisionStatement(w.Decision)}, nil
+	case WriteLateDecision:
+		return []statement{
+			{"upsert late decision", `
+		INSERT INTO gate_decisions (` + decisionColumns + `)
+		VALUES (` + placeholders(decisionColumnCount) + `)
+		ON CONFLICT (trace_id, attempt) DO UPDATE SET ` + lateDecisionUpdate, decisionArgs(w.Decision)},
+			{"flag late decision", `
+		UPDATE traces SET flags = array_append(flags, 'late_decision'), updated_at = now()
+		WHERE trace_id = $1 AND NOT ('late_decision' = ANY(flags))`, []any{w.Decision.TraceID}},
+		}, nil
+	}
+	return nil, w.Check()
+}
+
+// write runs one write's statements in a transaction (one statement runs on its own).
+func (s *PostgresStore) write(ctx context.Context, w *TraceWrite) error {
+	if err := w.Check(); err != nil {
+		return err
+	}
+	stmts, err := w.statements()
+	if err != nil {
+		return err
+	}
+	if len(stmts) == 1 {
+		return execStatement(ctx, s.pool, stmts[0])
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
-
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO traces (`+traceInsertColumns+`)
-		VALUES (`+placeholders(traceInsertCount)+`)
-		ON CONFLICT (trace_id) DO UPDATE SET `+traceDecisionUpdate, traceInsertArgs(t)...); err != nil {
-		return fmt.Errorf("upsert trace: %w", err)
-	}
-	if err := insertDecision(ctx, tx, d); err != nil {
-		return err
-	}
-	if b != nil {
-		rules, err := json.Marshal(nonNilMap(b.Rules))
-		if err != nil {
-			return fmt.Errorf("marshal rules: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO trace_bodies (trace_id, messages, user_request, system_instructions, response_text,
-				final_response_text, evidence, rules, bytes, truncated, inclusion_prob, expires_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-			ON CONFLICT (trace_id) DO UPDATE SET final_response_text = EXCLUDED.final_response_text`,
-			t.TraceID, jsonOr(b.Messages, "[]"), b.UserRequest, b.SystemInstructions, b.ResponseText,
-			b.FinalResponseText, jsonOr(b.Evidence, "[]"), json.RawMessage(rules), b.Bytes, b.Truncated,
-			b.InclusionProb, b.ExpiresAt,
-		); err != nil {
-			return fmt.Errorf("insert trace body: %w", err)
+	for _, st := range stmts {
+		if err := execStatement(ctx, tx, st); err != nil {
+			return err
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// execStatement runs a statement; its error names the statement.
+func execStatement(ctx context.Context, q execer, st statement) error {
+	if _, err := q.Exec(ctx, st.sql, st.args...); err != nil {
+		return fmt.Errorf("%s: %w", st.what, err)
+	}
+	return nil
+}
+
+// WriteTraceBatch runs the statements of several writes, in order, in one transaction and one
+// round trip (pgx.Batch). Any failure rolls the whole batch back and is returned: the batched
+// writer then retries its writes one by one through the methods below.
+func (s *PostgresStore) WriteTraceBatch(ctx context.Context, writes []TraceWrite) error {
+	b := &pgx.Batch{}
+	var queued []statement
+	for i := range writes {
+		w := &writes[i]
+		if err := w.Check(); err != nil {
+			return fmt.Errorf("write %d: %w", i, err)
+		}
+		stmts, err := w.statements()
+		if err != nil {
+			return fmt.Errorf("write %d: %w", i, err)
+		}
+		for _, st := range stmts {
+			b.Queue(st.sql, st.args...)
+		}
+		queued = append(queued, stmts...)
+	}
+	if len(queued) == 0 {
+		return nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	br := tx.SendBatch(ctx, b)
+	for _, st := range queued {
+		if _, err := br.Exec(); err != nil {
+			_ = br.Close()
+			return fmt.Errorf("%s: %w", st.what, err)
+		}
+	}
+	if err := br.Close(); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// StartTrace inserts a pending trace. A trace that already exists is left as it is.
+func (s *PostgresStore) StartTrace(ctx context.Context, t *TraceRecord) error {
+	return s.write(ctx, &TraceWrite{Kind: WriteStart, Trace: t})
+}
+
+// RecordDecision writes a decided trace in one transaction: the traces row (inserted, or updated
+// with the decision's columns; columns the decision leaves NULL keep their stored value), the
+// gate_decisions row for its attempt, and the body when one is kept.
+func (s *PostgresStore) RecordDecision(ctx context.Context, t *TraceRecord, d *DecisionRecord, b *BodyRecord) error {
+	return s.write(ctx, &TraceWrite{Kind: WriteDecision, Trace: t, Decision: d, Body: b})
 }
 
 // RecordAttempt writes the gate_decisions row of a later attempt of a trace (attempt 1, the
 // fallback re-gate) and nothing else: the trace keeps its fields and its audit stays on the
 // original answer. Writing an attempt again replaces its decision.
 func (s *PostgresStore) RecordAttempt(ctx context.Context, d *DecisionRecord) error {
-	if d == nil || d.TraceID == "" {
-		return errors.New("store: a decision with a trace id is required")
-	}
-	if d.Attempt < 1 {
-		return fmt.Errorf("store: attempt %d is recorded with its trace (RecordDecision), not as a later attempt", d.Attempt)
-	}
-	return insertDecision(ctx, s.pool, d)
+	return s.write(ctx, &TraceWrite{Kind: WriteAttempt, Decision: d})
 }
 
 // RecordLateDecision records a decision recomputed after a late decision-model answer (d.Late,
@@ -267,45 +413,25 @@ func (s *PostgresStore) RecordAttempt(ctx context.Context, d *DecisionRecord) er
 // compile columns included, and adds the flag late_decision to the trace. The trace keeps every
 // other field: its action and gate outcome are what was enforced.
 func (s *PostgresStore) RecordLateDecision(ctx context.Context, d *DecisionRecord) error {
-	if d == nil || d.TraceID == "" {
-		return errors.New("store: a decision with a trace id is required")
-	}
-	if !d.Late {
-		return errors.New("store: a late decision must be marked late")
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO gate_decisions (`+decisionColumns+`)
-		VALUES (`+placeholders(decisionColumnCount)+`)
-		ON CONFLICT (trace_id, attempt) DO UPDATE SET
-			policy_version = EXCLUDED.policy_version, route = EXCLUDED.route, mode = EXCLUDED.mode,
-			effective_mode = EXCLUDED.effective_mode, status = EXCLUDED.status, action = EXCLUDED.action,
-			would_action = EXCLUDED.would_action, verdict = EXCLUDED.verdict, max_risk = EXCLUDED.max_risk,
-			calibration = EXCLUDED.calibration, degraded = EXCLUDED.degraded, reasons = EXCLUDED.reasons,
-			decision = EXCLUDED.decision, detectors = EXCLUDED.detectors, excluded = EXCLUDED.excluded,
-			evidence_summary = EXCLUDED.evidence_summary, question_set_sha256 = EXCLUDED.question_set_sha256,
-			request_sha256 = EXCLUDED.request_sha256, cpt = EXCLUDED.cpt,
-			packed_evidence_ids = EXCLUDED.packed_evidence_ids, truncated_ids = EXCLUDED.truncated_ids,
-			decision_backend = EXCLUDED.decision_backend, decision_model_requested = EXCLUDED.decision_model_requested,
-			decision_snapshot = EXCLUDED.decision_snapshot, decision_ms = EXCLUDED.decision_ms,
-			decision_calls = EXCLUDED.decision_calls, decision_attempts = EXCLUDED.decision_attempts,
-			decision_hedged = EXCLUDED.decision_hedged, connect_ms = EXCLUDED.connect_ms,
-			input_tokens = EXCLUDED.input_tokens, cost_usd = EXCLUDED.cost_usd, error_kind = EXCLUDED.error_kind,
-			error_message = EXCLUDED.error_message, late = true, gate_ms = EXCLUDED.gate_ms, updated_at = now()`,
-		decisionArgs(d)...); err != nil {
-		return fmt.Errorf("upsert late decision: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE traces SET flags = array_append(flags, 'late_decision'), updated_at = now()
-		WHERE trace_id = $1 AND NOT ('late_decision' = ANY(flags))`, d.TraceID); err != nil {
-		return fmt.Errorf("flag late decision: %w", err)
-	}
-	return tx.Commit(ctx)
+	return s.write(ctx, &TraceWrite{Kind: WriteLateDecision, Decision: d})
 }
+
+// lateDecisionUpdate replaces a gate_decisions row whole with a late decision.
+const lateDecisionUpdate = `
+	policy_version = EXCLUDED.policy_version, route = EXCLUDED.route, mode = EXCLUDED.mode,
+	effective_mode = EXCLUDED.effective_mode, status = EXCLUDED.status, action = EXCLUDED.action,
+	would_action = EXCLUDED.would_action, verdict = EXCLUDED.verdict, max_risk = EXCLUDED.max_risk,
+	calibration = EXCLUDED.calibration, degraded = EXCLUDED.degraded, reasons = EXCLUDED.reasons,
+	decision = EXCLUDED.decision, detectors = EXCLUDED.detectors, excluded = EXCLUDED.excluded,
+	evidence_summary = EXCLUDED.evidence_summary, question_set_sha256 = EXCLUDED.question_set_sha256,
+	request_sha256 = EXCLUDED.request_sha256, cpt = EXCLUDED.cpt,
+	packed_evidence_ids = EXCLUDED.packed_evidence_ids, truncated_ids = EXCLUDED.truncated_ids,
+	decision_backend = EXCLUDED.decision_backend, decision_model_requested = EXCLUDED.decision_model_requested,
+	decision_snapshot = EXCLUDED.decision_snapshot, decision_ms = EXCLUDED.decision_ms,
+	decision_calls = EXCLUDED.decision_calls, decision_attempts = EXCLUDED.decision_attempts,
+	decision_hedged = EXCLUDED.decision_hedged, connect_ms = EXCLUDED.connect_ms,
+	input_tokens = EXCLUDED.input_tokens, cost_usd = EXCLUDED.cost_usd, error_kind = EXCLUDED.error_kind,
+	error_message = EXCLUDED.error_message, late = true, gate_ms = EXCLUDED.gate_ms, updated_at = now()`
 
 // execer runs a statement on the pool or in a transaction.
 type execer interface {
@@ -333,23 +459,19 @@ func decisionArgs(d *DecisionRecord) []any {
 	}
 }
 
-// insertDecision upserts the gate_decisions row of d's attempt. A late decision already recorded
-// for the attempt stays: it is the newest word on it (RecordLateDecision).
-func insertDecision(ctx context.Context, q execer, d *DecisionRecord) error {
-	if _, err := q.Exec(ctx, `
-		INSERT INTO gate_decisions (`+decisionColumns+`)
-		VALUES (`+placeholders(decisionColumnCount)+`)
+// decisionStatement upserts the gate_decisions row of d's attempt. A late decision already
+// recorded for the attempt stays: it is the newest word on it (RecordLateDecision).
+func decisionStatement(d *DecisionRecord) statement {
+	return statement{"insert gate decision", `
+		INSERT INTO gate_decisions (` + decisionColumns + `)
+		VALUES (` + placeholders(decisionColumnCount) + `)
 		ON CONFLICT (trace_id, attempt) DO UPDATE SET
 			status = EXCLUDED.status, action = EXCLUDED.action, would_action = EXCLUDED.would_action,
 			verdict = EXCLUDED.verdict, max_risk = EXCLUDED.max_risk, calibration = EXCLUDED.calibration,
 			degraded = EXCLUDED.degraded, reasons = EXCLUDED.reasons, decision = EXCLUDED.decision,
 			detectors = EXCLUDED.detectors, excluded = EXCLUDED.excluded, late = EXCLUDED.late,
 			gate_ms = EXCLUDED.gate_ms, updated_at = now()
-		WHERE NOT gate_decisions.late`,
-		decisionArgs(d)...); err != nil {
-		return fmt.Errorf("insert gate decision: %w", err)
-	}
-	return nil
+		WHERE NOT gate_decisions.late`, decisionArgs(d)}
 }
 
 // TraceAuditUpdate changes a trace's audit fields; nil and empty fields keep their value.
@@ -421,6 +543,95 @@ const traceDecisionUpdate = `
 	flags = CASE WHEN 'late_decision' = ANY(traces.flags) AND NOT ('late_decision' = ANY(EXCLUDED.flags))
 		THEN array_append(EXCLUDED.flags, 'late_decision') ELSE EXCLUDED.flags END,
 	updated_at = now()`
+
+// Stored returns t as a trace write stores it and GetTrace reads it back (traceInsertArgs and
+// scanTrace): created_at defaults to now and is UTC, the gate status defaults to pending, the audit
+// status to none, max_risk keeps a REAL's precision, an empty evidence summary is NULL, reasons and
+// flags are never nil, and updated_at is now. The batched writer's memory copy of a trace is built
+// with it, so a read from memory answers as the database would.
+func (t *TraceRecord) Stored(now time.Time) TraceRecord {
+	out := *t
+	if out.CreatedAt.IsZero() {
+		out.CreatedAt = now
+	}
+	out.CreatedAt, out.UpdatedAt = out.CreatedAt.UTC(), now.UTC()
+	if out.GateStatus == "" {
+		out.GateStatus = GateStatusPending
+	}
+	if out.AuditStatus == "" {
+		out.AuditStatus = TraceAuditNone
+	}
+	if out.MaxRisk != nil {
+		v := Float64From32(float32(*out.MaxRisk))
+		out.MaxRisk = &v
+	}
+	out.EvidenceSummary = jsonOrNil(out.EvidenceSummary)
+	out.Reasons, out.Flags = append([]string{}, out.Reasons...), append([]string{}, out.Flags...)
+	out.Audit = AuditJoin{}
+	return out
+}
+
+// MergeDecided is the Go form of RecordDecision's upsert of a stored trace (traceDecisionUpdate):
+// the gate outcome, reasons, audit status and flags are the decided trace's (a late_decision flag
+// already stored stays); the other decision columns keep a stored value the decided trace leaves
+// unset; identity columns (client request id, created_at, source, format, path, route, policy
+// version, mode, key label, stream, scenario) and the joined audit keep their stored values. Both
+// records are as Stored returns them.
+func MergeDecided(stored, decided *TraceRecord) TraceRecord {
+	out := *stored
+	coalesce := func(dst **string, v *string) {
+		if v != nil {
+			*dst = v
+		}
+	}
+	coalesceInt64 := func(dst **int64, v *int64) {
+		if v != nil {
+			*dst = v
+		}
+	}
+	coalesceInt := func(dst **int, v *int) {
+		if v != nil {
+			*dst = v
+		}
+	}
+	coalesce(&out.EffectiveMode, decided.EffectiveMode)
+	coalesce(&out.Model, decided.Model)
+	coalesce(&out.AnswerSource, decided.AnswerSource)
+	coalesceInt(&out.UpstreamStatus, decided.UpstreamStatus)
+	coalesceInt64(&out.UpstreamMs, decided.UpstreamMs)
+	coalesceInt64(&out.TTFTMs, decided.TTFTMs)
+	coalesceInt64(&out.TotalMs, decided.TotalMs)
+	coalesceInt64(&out.OverheadMs, decided.OverheadMs)
+	coalesceInt64(&out.GateMs, decided.GateMs)
+	coalesceInt(&out.PromptTokens, decided.PromptTokens)
+	coalesceInt(&out.CompletionTokens, decided.CompletionTokens)
+	out.Action, out.WouldAction, out.GateStatus = decided.Action, decided.WouldAction, decided.GateStatus
+	out.SkipReason, out.Verdict, out.MaxRisk, out.Reasons = decided.SkipReason, decided.Verdict, decided.MaxRisk, decided.Reasons
+	if decided.EvidenceSummary != nil {
+		out.EvidenceSummary = decided.EvidenceSummary
+	}
+	coalesce(&out.DecisionBackend, decided.DecisionBackend)
+	coalesce(&out.DecisionSnapshot, decided.DecisionSnapshot)
+	if decided.DecisionCostUSD != nil {
+		out.DecisionCostUSD = decided.DecisionCostUSD
+	}
+	coalesce(&out.AuditID, decided.AuditID)
+	out.AuditStatus = decided.AuditStatus
+	coalesce(&out.AuditLane, decided.AuditLane)
+	coalesce(&out.AuditSelection, decided.AuditSelection)
+	coalesce(&out.QuestionPreview, decided.QuestionPreview)
+	coalesce(&out.ResponsePreview, decided.ResponsePreview)
+	coalesceInt(&out.ResponseChars, decided.ResponseChars)
+	out.Flags = append([]string{}, decided.Flags...)
+	if slices.Contains(stored.Flags, FlagLateDecision) && !slices.Contains(out.Flags, FlagLateDecision) {
+		out.Flags = append(out.Flags, FlagLateDecision)
+	}
+	out.UpdatedAt = decided.UpdatedAt
+	return out
+}
+
+// FlagLateDecision is the trace flag RecordLateDecision adds.
+const FlagLateDecision = "late_decision"
 
 func traceInsertArgs(t *TraceRecord) []any {
 	created := t.CreatedAt
