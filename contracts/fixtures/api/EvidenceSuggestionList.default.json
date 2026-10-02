@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "kind": "tag_pattern",
+      "pattern": {
+        "pattern": "<kb_article id=\"([^\"]+)\">([\\s\\S]*?)</kb_article>",
+        "flags": "i"
+      },
+      "label": "<kb_article> blocks in the system prompt",
+      "would_gain": 312,
+      "sample": 500,
+      "example_trace_id": "01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64"
+    },
+    {
+      "kind": "extension",
+      "pattern": null,
+      "label": "Send documents in the trustagent.context extension",
+      "would_gain": 0,
+      "sample": 500,
+      "example_trace_id": null
+    }
+  ]
+}

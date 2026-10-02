@@ -5,6 +5,9 @@
  *
  * A state entry set to an ErrorReply answers with that error; `undefined` answers 404 (an older
  * proxy that does not serve the endpoint).
+ *
+ * The P4 planes add their own state and handlers from {security,cost,evaluator,studio}Handlers.ts
+ * (one owner each, seeded from contracts/fixtures/api); ControlState is the P3 state plus theirs.
  */
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
 import type {
@@ -27,6 +30,11 @@ import type {
 } from '@/types/api';
 import type { KbClaimsPage, KbConflictsPage } from '@/data/controlPlane';
 import { API } from '../msw';
+import { costHandlers, defaultCostState, type CostState } from './costHandlers';
+import { defaultEvaluatorState, evaluatorHandlers, type EvaluatorState } from './evaluatorHandlers';
+import { isError, readBody, reply, errorReply, type ErrorReply, type HandlerKit, type Reply } from './kit';
+import { defaultSecurityState, securityHandlers, type SecurityState } from './securityHandlers';
+import { defaultStudioState, studioHandlers, type StudioState } from './studioHandlers';
 import {
   conflictPair,
   dryRunResult,
@@ -48,13 +56,10 @@ import {
   validateResult,
 } from './fixtures';
 
-export interface ErrorReply {
-  error: { status: number; code: string; message: string; retry_after_ms?: number };
-}
+export { errorReply, type ErrorReply, type Reply };
 
-type Reply<T> = T | ErrorReply | undefined;
-
-export interface ControlState {
+/** The P3 control-plane state (the P4 planes' state is merged in by ControlState). */
+export interface P3ControlState {
   overview: Reply<OverviewStats>;
   roi: Reply<RoiSummary>;
   coverage: Reply<EvidenceCoverage>;
@@ -83,6 +88,8 @@ export interface ControlState {
   latencyMs: number;
 }
 
+export type ControlState = P3ControlState & SecurityState & CostState & EvaluatorState & StudioState;
+
 export interface ControlCall {
   method: string;
   path: string;
@@ -99,27 +106,14 @@ export interface ControlApi {
   callsTo(path: string, method?: string): ControlCall[];
 }
 
-export function errorReply(status: number, code: string, message: string, retryAfterMs?: number): ErrorReply {
-  return { error: { status, code, message, retry_after_ms: retryAfterMs } };
-}
-
-function isError(v: unknown): v is ErrorReply {
-  return typeof v === 'object' && v !== null && 'error' in v && typeof (v as ErrorReply).error?.status === 'number';
-}
-
-function reply<T>(value: Reply<T>): Response {
-  if (value === undefined) return HttpResponse.json({ error: { code: 'not_found', message: 'Not served by this proxy.' } }, { status: 404 });
-  if (isError(value)) {
-    const { status, code, message, retry_after_ms } = value.error;
-    return HttpResponse.json({ error: { code, message, retry_after_ms: retry_after_ms ?? null } }, { status });
-  }
-  return HttpResponse.json(value as object);
-}
-
 export function defaultControlState(): ControlState {
   const versions = [policyVersionMeta(3), policyVersionMeta(2), policyVersionMeta(1)];
   const details = Object.fromEntries(evaluatorMetas().map((m) => [m.id, evaluatorDetail(m.id)]));
   return {
+    ...defaultSecurityState(),
+    ...defaultCostState(),
+    ...defaultEvaluatorState(),
+    ...defaultStudioState(),
     overview: overviewStats(),
     roi: roiSummary(),
     coverage: evidenceCoverage(),
@@ -146,32 +140,11 @@ export function defaultControlState(): ControlState {
   };
 }
 
-async function readBody(request: Request): Promise<unknown> {
-  const type = request.headers.get('content-type') ?? '';
-  if (type.includes('multipart/form-data')) {
-    const form = await request.formData();
-    const file = form.get('file');
-    // jsdom's File crosses into Node's fetch here, so check the shape rather than the class.
-    if (file && typeof file === 'object' && 'text' in file) {
-      const blob = file as Blob & { name?: string };
-      return { file: { name: blob.name ?? null, text: await blob.text() } };
-    }
-    return { file: null };
-  }
-  const text = await request.text();
-  if (!text) return undefined;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
-
 export function createControlApi(overrides: Partial<ControlState> = {}): ControlApi {
   const state: ControlState = { ...defaultControlState(), ...overrides };
   const calls: ControlCall[] = [];
 
-  const record = async (request: Request) => {
+  const record: HandlerKit['record'] = async (request: Request) => {
     const url = new URL(request.url);
     const body = request.method === 'GET' ? undefined : await readBody(request.clone());
     calls.push({ method: request.method, path: url.pathname, query: url.searchParams, body, headers: request.headers });
@@ -319,6 +292,11 @@ export function createControlApi(overrides: Partial<ControlState> = {}): Control
       await record(request);
       return reply(state.kbUpload);
     }),
+    // P4 planes (one owner each).
+    ...securityHandlers(state, { record }),
+    ...costHandlers(state, { record }),
+    ...evaluatorHandlers(state, { record }),
+    ...studioHandlers(state, { record }),
   ];
 
   return {
