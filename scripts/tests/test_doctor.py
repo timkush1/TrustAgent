@@ -716,17 +716,35 @@ class RuntimeChecksTest(unittest.TestCase):
         self.assertIn("settings version 7", check.summary)
         self.assertIn("epoch 0190a8c4-epoch", check.detail)
 
+    # The push warnings as the gateway words them (internal/runtimecfg/push.go).
+    NOT_APPLIED = (
+        "The audit engine has not applied the settings from the dashboard yet "
+        "(it answered Unavailable): connection refused"
+    )
+    JUDGE_REFUSED = (
+        "The audit engine could not use the judge settings from the dashboard, so deep audits "
+        "keep the engine's own judge."
+    )
+
     def test_an_engine_behind_the_gateway_warns(self) -> None:
         body = self.with_status(
             engine={"state": "up", "runtime_config_version": 6},
-            warnings=["Engine push failed: deadline exceeded", "unrelated"],
+            warnings=[self.NOT_APPLIED, "Evaluators: unrelated"],
         )
         check = self.stack(body, **{"/api/settings": settings_view(7)}).check_runtime_config()
         self.assertEqual(check.status, "WARN")
         self.assertIn("applied settings version 6, the gateway holds 7", check.summary)
-        self.assertIn("Engine push failed", check.detail)
+        self.assertIn("has not applied the settings", check.detail)
         self.assertNotIn("unrelated", check.detail)
         self.assertIn("make logs SERVICE=engine", check.fix)
+
+    def test_a_push_warning_warns_even_when_the_versions_match(self) -> None:
+        body = self.with_status(
+            engine={"state": "up", "runtime_config_version": 7}, warnings=[self.JUDGE_REFUSED]
+        )
+        check = self.stack(body, **{"/api/settings": settings_view(7)}).check_runtime_config()
+        self.assertEqual(check.status, "WARN")
+        self.assertIn("runs settings version 7, but: The audit engine could not use", check.summary)
 
     def test_an_engine_that_reports_no_version_warns_once_settings_exist(self) -> None:
         check = self.stack(

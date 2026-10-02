@@ -773,13 +773,27 @@ class Doctor:
             detail += f" (epoch {epoch})"
         if engine.get("version"):
             detail += f"; engine {engine['version']}"
-        if applied == version:
+        # The gateway's own words about the push (runtimecfg: "The audit engine ...").
+        engine_notes = [
+            str(w) for w in status.get("warnings") or [] if "audit engine" in str(w).lower()
+        ]
+        if engine_notes:
+            detail += "; " + "; ".join(engine_notes)
+        if applied == version and not engine_notes:
             summary = (
                 "the engine runs the gateway's settings (none saved yet)"
                 if version == 0
                 else f"the engine runs settings version {version}"
             )
             return Check("runtime_config.version", "PASS", summary, detail)
+        if applied == version:
+            return Check(
+                "runtime_config.version",
+                "WARN",
+                f"the engine runs settings version {version}, but: {engine_notes[0]}",
+                detail,
+                self.logs_hint("engine"),
+            )
         if raw is None and version > 0:
             return Check(
                 "runtime_config.version",
@@ -789,9 +803,6 @@ class Doctor:
                 detail,
                 "rebuild and restart both (make up UP_ARGS=--build), then run doctor again",
             )
-        pushes = [str(w) for w in status.get("warnings") or [] if "push" in str(w).lower()]
-        if pushes:
-            detail += "; " + "; ".join(pushes)
         return Check(
             "runtime_config.version",
             "WARN",
