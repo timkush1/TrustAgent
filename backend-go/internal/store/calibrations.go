@@ -177,7 +177,7 @@ func (s *PostgresStore) InsertCalibrations(ctx context.Context, channel string, 
 			}
 			snaps = append(snaps, r.Snapshot)
 		}
-		if err := insertAdminAudit(ctx, tx, audit); err != nil {
+		if err := InsertAdminAudit(ctx, tx, audit); err != nil {
 			return fmt.Errorf("insert calibrations: audit: %w", err)
 		}
 		return notifyCalibrations(ctx, tx, channel, snaps...)
@@ -221,7 +221,7 @@ func (s *PostgresStore) SetCalibrationActive(ctx context.Context, channel string
 				}
 			}
 		}
-		if err := insertAdminAudit(ctx, tx, audit); err != nil {
+		if err := InsertAdminAudit(ctx, tx, audit); err != nil {
 			return fmt.Errorf("calibration activation: audit: %w", err)
 		}
 		return notifyCalibrations(ctx, tx, channel, r.Snapshot)

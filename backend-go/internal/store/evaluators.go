@@ -286,7 +286,7 @@ func (s *PostgresStore) CreateEvaluator(ctx context.Context, channel string, e E
 	if err := insertEvaluatorVersion(ctx, tx, channel, v); err != nil {
 		return err
 	}
-	if err := insertAdminAudit(ctx, tx, audit); err != nil {
+	if err := InsertAdminAudit(ctx, tx, audit); err != nil {
 		return fmt.Errorf("create evaluator: audit: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -332,7 +332,7 @@ func (s *PostgresStore) CreateEvaluatorVersion(ctx context.Context, channel stri
 		v.EvaluatorID, name, category, v.Version); err != nil {
 		return fmt.Errorf("create evaluator version: %w", err)
 	}
-	if err := insertAdminAudit(ctx, tx, audit); err != nil {
+	if err := InsertAdminAudit(ctx, tx, audit); err != nil {
 		return fmt.Errorf("create evaluator version: audit: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -365,7 +365,7 @@ func (s *PostgresStore) SetEvaluatorArchived(ctx context.Context, channel, id st
 	if err != nil {
 		return nil, fmt.Errorf("archive evaluator: %w", err)
 	}
-	if err := insertAdminAudit(ctx, tx, audit); err != nil {
+	if err := InsertAdminAudit(ctx, tx, audit); err != nil {
 		return nil, fmt.Errorf("archive evaluator: audit: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, configChannel(channel), "evaluators:"+id); err != nil {
