@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -70,10 +71,16 @@ func (s *server) engineReported(h grpc.EngineHealth) {
 }
 
 // mountConnectAPI mounts the credential, Connect OpenRouter, decision-model test and admin audit
-// log endpoints (SPEC §2.4 rows 54-60 and 70). Step-0 stub: it registers nothing yet.
+// log endpoints (SPEC §2.4 rows 54-60 and 70).
 func (s *server) mountConnectAPI(api *gin.RouterGroup, g apiGuards) {
-	_, _ = api, g
+	// #60: one probe per caller every 10 s (it costs ≈ $0.00001 each).
+	api.POST("/decision-model/test", g.writable, g.admin, g.limitBy(1, decisionModelTestEvery), s.handleDecisionModelTest)
+	// #70
+	api.GET("/admin/audit-log", g.admin, g.rateLimit, s.handleAdminAuditLog)
 }
+
+// decisionModelTestEvery is the per-caller interval of POST /api/decision-model/test.
+const decisionModelTestEvery = 10 * time.Second
 
 // startApplyLoops runs the engine push until ctx ends, starting with the snapshot in effect.
 func (s *server) startApplyLoops(ctx context.Context, wg *sync.WaitGroup) {
