@@ -62,8 +62,9 @@ of guessing. A verified knowledge base is an optional add-on.
 **In the dashboard:** live traffic with one outcome per answer and its claims marked inline;
 versioned policies with a free preview of their impact; an **Evaluator Studio** that drafts a new
 check from one sentence, tests it on your own traffic and calibrates it from your labels;
-**Savings**, which shows what the checks actually cost (measured) next to labelled estimates of
-what the same checks would cost with an LLM judge; and **Settings**, where you connect OpenRouter,
+**Savings**, which shows what the checks actually cost (the vendor's reported cost, or an estimate
+from the price table where it reports none) next to labelled estimates of what the same checks
+would cost with an LLM judge; and **Settings**, where you connect OpenRouter,
 set daily budgets and manage API keys.
 
 ## How it works
