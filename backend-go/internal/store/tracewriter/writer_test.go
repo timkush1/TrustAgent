@@ -300,14 +300,17 @@ func TestWriterHoldsWritesThroughAnOutage(t *testing.T) {
 		t.Fatalf("GetTrace during the outage: %+v, %v", got, err)
 	}
 
-	short, cancel := context.WithTimeout(ctx, 30*time.Millisecond)
-	err = w.SetTraceAudit(short, "t1", store.TraceAuditUpdate{Status: "running"})
-	cancel()
-	if !errors.Is(err, context.DeadlineExceeded) {
+	// An audit write behind queued writes is refused at once, even with no deadline of its own (a
+	// caller on a request's path): the outage must not hold it.
+	err = w.SetTraceAudit(ctx, "t1", store.TraceAuditUpdate{Status: "running"})
+	if !errors.Is(err, ErrDatabaseUnreachable) {
 		t.Fatalf("an audit write behind queued writes during an outage: %v", err)
 	}
-	if got, _ := w.GetTrace(ctx, "t1"); got.AuditStatus != "running" {
-		t.Errorf("memory took the audit update: %q", got.AuditStatus)
+	if err := w.SaveAuditResult(ctx, auditRec("t1"), "completed"); !errors.Is(err, ErrDatabaseUnreachable) {
+		t.Fatalf("an audit result behind queued writes during an outage: %v", err)
+	}
+	if got, _ := w.GetTrace(ctx, "t1"); got.AuditStatus != "completed" {
+		t.Errorf("memory took the audit updates: %q", got.AuditStatus)
 	}
 
 	fake.setDown(false)
@@ -319,6 +322,43 @@ func TestWriterHoldsWritesThroughAnOutage(t *testing.T) {
 	}
 	if drops.get() != 0 {
 		t.Errorf("dropped = %d after the outage", drops.get())
+	}
+}
+
+// TestWriterAuditWriteEndsWhenAnOutageBegins: an audit write with no deadline of its own waits for
+// its trace's queued writes; when the flush it asked for finds the database down, the wait ends at
+// once instead of lasting as long as the outage.
+func TestWriterAuditWriteEndsWhenAnOutageBegins(t *testing.T) {
+	fake := newFake()
+	w, _ := newWriter(t, batchStore{fake}, Config{Interval: time.Hour})
+	ctx := context.Background()
+	if err := w.StartTrace(ctx, startRec("t1")); err != nil {
+		t.Fatal(err)
+	}
+	fake.setDown(true)
+	done := make(chan error, 1)
+	go func() { done <- w.SetTraceAudit(ctx, "t1", store.TraceAuditUpdate{Status: "dropped"}) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrDatabaseUnreachable) {
+			t.Fatalf("SetTraceAudit = %v, want ErrDatabaseUnreachable", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the audit write waited for the outage to end")
+	}
+	if !w.Pending("t1") {
+		t.Error("the trace's start was dropped; it must wait for the database")
+	}
+	// The database is back: the drain writes the start, then the audit write runs inline.
+	fake.setDown(false)
+	if err := w.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetTraceAudit(ctx, "t1", store.TraceAuditUpdate{Status: "dropped"}); err != nil {
+		t.Fatalf("after the outage: %v", err)
+	}
+	if got := fake.stored("t1"); got == nil || got.AuditStatus != "dropped" {
+		t.Errorf("stored %+v, want the start then the audit status", got)
 	}
 }
 

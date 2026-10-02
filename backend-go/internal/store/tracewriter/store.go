@@ -36,11 +36,11 @@ func (w *Writer) RecordLateDecision(ctx context.Context, d *store.DecisionRecord
 	return w.enqueue(ctx, store.TraceWrite{Kind: store.WriteLateDecision, Decision: d})
 }
 
-// SetTraceAudit waits for the trace's queued writes (D83), then updates its audit fields inline.
-// When the wait times out nothing is written (a queued decision would overwrite it) and the error
-// is returned.
+// SetTraceAudit waits for the trace's queued writes (D83, auditBarrier), then updates its audit
+// fields inline. When the wait fails (it timed out, or the database does not answer) nothing is
+// written (a queued decision would overwrite it) and the error is returned.
 func (w *Writer) SetTraceAudit(ctx context.Context, traceID string, u store.TraceAuditUpdate) error {
-	err := w.Barrier(ctx, traceID)
+	err := w.auditBarrier(ctx, traceID)
 	if err == nil {
 		err = w.inner.SetTraceAudit(ctx, traceID, u)
 	}
@@ -56,20 +56,20 @@ func (w *Writer) SetTraceAudit(ctx context.Context, traceID string, u store.Trac
 	return err
 }
 
-// SaveAudit waits for the trace's queued writes (D83), then stores the audit inline.
+// SaveAudit waits for the trace's queued writes (D83, auditBarrier), then stores the audit inline.
 func (w *Writer) SaveAudit(ctx context.Context, r *store.AuditRecord) error {
-	if err := w.Barrier(ctx, auditTraceID(r)); err != nil {
+	if err := w.auditBarrier(ctx, auditTraceID(r)); err != nil {
 		return err
 	}
 	return w.inner.SaveAudit(ctx, r)
 }
 
-// SaveAuditResult waits for the trace's queued writes (D83), then stores the audit and the trace's
-// audit status inline: the audit is in the database before audit_completed is broadcast, and no
-// queued decision can overwrite the status afterwards.
+// SaveAuditResult waits for the trace's queued writes (D83, auditBarrier), then stores the audit
+// and the trace's audit status inline: the audit is in the database before audit_completed is
+// broadcast, and no queued decision can overwrite the status afterwards.
 func (w *Writer) SaveAuditResult(ctx context.Context, r *store.AuditRecord, status string) error {
 	traceID := auditTraceID(r)
-	err := w.Barrier(ctx, traceID)
+	err := w.auditBarrier(ctx, traceID)
 	if err == nil {
 		err = w.inner.SaveAuditResult(ctx, r, status)
 	}
@@ -156,11 +156,11 @@ func (w *Writer) TraceDecisions(ctx context.Context, traceID string) ([]json.Raw
 }
 
 // GetTraceBody waits for the trace's queued writes (bodies are not kept in memory) for at most
-// bodyBarrierTimeout, then reads the database: while it is unreachable the read is not held up
-// any longer, and the body may simply not be there yet.
+// bodyBarrierTimeout, and not at all while the queue is held for an outage, then reads the
+// database: the body may simply not be there yet.
 func (w *Writer) GetTraceBody(ctx context.Context, traceID string) (*store.BodyRecord, error) {
 	bctx, cancel := context.WithTimeout(ctx, bodyBarrierTimeout)
-	_ = w.Barrier(bctx, traceID)
+	_ = w.barrier(bctx, traceID, true)
 	cancel()
 	return w.inner.GetTraceBody(ctx, traceID)
 }

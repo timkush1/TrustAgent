@@ -13,6 +13,9 @@
 //   - The audit writes (SaveAudit, SaveAuditResult, SetTraceAudit) first wait for the trace's
 //     queued writes (Barrier, D83), then run inline: a decision flushed late can never overwrite an
 //     audit status written after it, and an audit is stored before audit_completed is broadcast.
+//     That wait is bounded by WriteTimeout, and it ends at once with ErrDatabaseUnreachable while
+//     the queue is held for an outage: some callers write on a request's path with no deadline of
+//     their own, and an outage must not hold their answer.
 //   - A memory copy of the last 2,000 traces (what the gateway wrote, kept as the database would
 //     store it) answers GetTrace and TraceDecisions while a trace still has queued writes or lost
 //     one, and whenever the database cannot answer.
@@ -22,6 +25,7 @@ package tracewriter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -49,6 +53,10 @@ const (
 	// dropLogEvery spaces the warnings about dropped writes.
 	dropLogEvery = 10 * time.Second
 )
+
+// ErrDatabaseUnreachable is what an audit write or a body read returns, at once, when its trace
+// still has queued writes while the writer holds its queue because the database does not answer.
+var ErrDatabaseUnreachable = errors.New("tracewriter: the database does not answer; trace writes are held")
 
 // Config tunes a Writer; zero fields take the defaults.
 type Config struct {
@@ -105,6 +113,9 @@ type Writer struct {
 	dropped *idSet
 	cache   *cache
 	closed  bool
+	// held: the queue is held because the database does not answer (an outage); barriers that fail
+	// fast (audit writes, body reads) end at once. Changes wake the barriers through progress.
+	held bool
 	// unwritten counts the writes Shutdown gave up on.
 	unwritten int
 	// dropsToLog and lastDropLog space the drop warnings.
@@ -192,9 +203,27 @@ func (w *Writer) enqueue(ctx context.Context, tw store.TraceWrite) error {
 // Barrier waits until every write of traceID queued before it is written or dropped (D83),
 // asking for an early flush; it returns ctx's error if that takes too long.
 func (w *Writer) Barrier(ctx context.Context, traceID string) error {
+	return w.barrier(ctx, traceID, false)
+}
+
+// auditBarrier is the barrier of an audit write or a body read: it waits at most WriteTimeout (a
+// caller on a request's path may pass a context with no deadline) and fails at once with
+// ErrDatabaseUnreachable while the queue is held for an outage, or as soon as one begins.
+func (w *Writer) auditBarrier(ctx context.Context, traceID string) error {
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.WriteTimeout)
+	defer cancel()
+	return w.barrier(ctx, traceID, true)
+}
+
+// barrier waits for traceID's queued writes; failHeld ends the wait while the queue is held.
+func (w *Writer) barrier(ctx context.Context, traceID string, failHeld bool) error {
 	w.mu.Lock()
 	target, ok := w.pending[traceID]
 	for ok && w.settled < target {
+		if failHeld && w.held {
+			w.mu.Unlock()
+			return fmt.Errorf("tracewriter: trace %s still has queued writes: %w", traceID, ErrDatabaseUnreachable)
+		}
 		progress := w.progress
 		w.mu.Unlock()
 		select {
@@ -227,8 +256,12 @@ func (w *Writer) Shutdown(ctx context.Context) error {
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
-		<-w.done
-		return nil
+		select {
+		case <-w.done:
+			return nil
+		case <-ctx.Done():
+			return fmt.Errorf("tracewriter: the first shutdown was still draining: %w", ctx.Err())
+		}
 	}
 	w.closed = true
 	w.mu.Unlock()
@@ -299,11 +332,13 @@ func (w *Writer) run() {
 			if !outage {
 				w.log.Warn("the database does not answer: trace writes wait in the queue and are retried",
 					"waiting", len(buf)+len(w.queue))
+				w.setHeld(true)
 			}
 			pause = min(max(2*pause, w.cfg.Interval), maxRetryPause)
 			outage, retryAt = true, time.Now().Add(pause)
 		case outage:
 			w.log.Info("trace writes reach the database again")
+			w.setHeld(false)
 			outage, pause = false, 0
 		}
 	}
@@ -435,6 +470,15 @@ func (w *Writer) settle(ops []*op) {
 			delete(w.pending, id)
 		}
 	}
+	close(w.progress)
+	w.progress = make(chan struct{})
+}
+
+// setHeld records whether the queue is held for an outage and wakes the barriers to look.
+func (w *Writer) setHeld(held bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.held = held
 	close(w.progress)
 	w.progress = make(chan struct{})
 }
