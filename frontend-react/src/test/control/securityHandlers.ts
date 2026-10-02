@@ -111,6 +111,7 @@ export function adminSession(overrides: Partial<SessionInfo> = {}): SessionInfo 
     scopes: ['ingest', 'read', 'content', 'admin'],
     expires_at: '2026-10-28T12:00:00Z',
     sliding: true,
+    key_id: 'k_01a0e6f1',
     ...overrides,
   };
 }

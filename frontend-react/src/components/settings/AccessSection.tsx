@@ -233,7 +233,9 @@ function ApiKeys({ writeReason }: { writeReason: ReturnType<typeof useSettingsWr
   const keys = useQuery(apiKeysQuery(ds));
   const session = useQuery(sessionQuery(ds));
   const tabKey = readDashboardKey();
-  const isCurrent = (k: ApiKeyView) => (tabKey ? tabKey.startsWith(k.prefix) : session.data?.actor === k.label);
+  // The key this tab sends, or the key the session was opened with (by id: labels repeat, e.g.
+  // every setup-admin key). A session opened with an env key matches no listed key.
+  const isCurrent = (k: ApiKeyView) => (tabKey ? tabKey.startsWith(k.prefix) : session.data?.key_id === k.id);
   return (
     <Card>
       <CardHeader level={2} title="API keys" description="Keys for your apps (send requests) and for people (read the dashboard, change settings). Only a hash is kept." />

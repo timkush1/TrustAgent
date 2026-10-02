@@ -604,6 +604,8 @@ export interface SessionInfo {
   expires_at: ISODateTime;
   sliding: boolean;
   created_admin_key?: string;
+  /** The api_keys id of the key this caller signed in with; absent for an env key. */
+  key_id?: string;
 }
 export interface ApiKeyView {
   id: string;

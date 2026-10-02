@@ -7,6 +7,7 @@ import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { copy } from '@/domain/presentation';
+import type { ApiKeyList } from '@/types/api';
 
 installMswServer();
 afterEach(() => stopLive());
@@ -46,6 +47,22 @@ describe('Settings → Access', { timeout: 20_000 }, () => {
     expect(within(rows[2]).getByText(/^Revoked/)).toBeInTheDocument();
     expect(within(rows[2]).queryByRole('button', { name: /Revoke/ })).not.toBeInTheDocument();
     expect(within(rows[1]).getByText(/never used/)).toBeInTheDocument();
+  });
+
+  it('marks only the key this session was opened with, though another has the same name', async () => {
+    const control = createControlApi();
+    const keys = control.state.apiKeys as ApiKeyList;
+    control.state.apiKeys = {
+      ...keys,
+      items: [...keys.items, { ...keys.items[0], id: 'k_02b1f7a2', prefix: 'ta_Qm8d2X', created_at: '2026-09-29T08:00:00Z' }],
+    };
+    renderPage(PATH, { control });
+    const list = await screen.findByRole('list', { name: 'API keys' });
+    const marked = within(list)
+      .getAllByRole('listitem')
+      .filter((row) => within(row).queryByText('This browser'));
+    expect(marked).toHaveLength(1);
+    expect(within(marked[0]).getByText('ta_Zp4c9W…')).toBeInTheDocument();
   });
 
   it('creates a key and shows its secret once, closing only after “I saved it”', async () => {

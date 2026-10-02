@@ -126,3 +126,30 @@ func TestSessionSignInIsAudited(t *testing.T) {
 		t.Errorf("rows after a failed sign-in: %d", len(rows))
 	}
 }
+
+// SessionInfo.key_id names the api_keys row the caller signed in with, so Access marks exactly
+// that key "This browser" even when labels repeat; an env key has no row and no key_id.
+func TestSessionNamesTheKeyItWasOpenedWith(t *testing.T) {
+	env, _ := pgSchemaEnv(t, envOpts{adminKey: settingsAdminKey, master: durableMaster(t, 3),
+		mutate: func(c *config.Config) { c.PublicURL = dashOrigin }})
+	created, err := env.srv.gateway.auth.CreateKey(context.Background(), "setup-admin", []authz.Scope{authz.ScopeAdmin, authz.ScopeRead}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, key, wantID string
+	}{{"a dashboard key", created.Secret, created.Record.ID}, {"an env key", settingsAdminKey, ""}} {
+		body, _ := json.Marshal(map[string]string{"key": c.key})
+		resp, b := env.request(http.MethodPost, "/api/session", "", body, csrf...)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: sign in: %d %s", c.name, resp.StatusCode, b)
+		}
+		var info sessionInfo
+		if err := json.Unmarshal(b, &info); err != nil {
+			t.Fatal(err)
+		}
+		if info.KeyID != c.wantID {
+			t.Errorf("%s: key_id %q, want %q", c.name, info.KeyID, c.wantID)
+		}
+	}
+}
