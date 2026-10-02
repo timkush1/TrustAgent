@@ -84,7 +84,9 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
   const code = isApiError(err) ? err.code : '';
   const stale = status === 412 || code === 'stale_version';
   const fileManaged = code === 'file_managed';
-  const builtin = status === 403 && asVersion;
+  // #32 answers a built-in check with 403 naming it; any other 403 is the caller's access.
+  const named = isApiError(err) && Array.isArray(err.details.names) ? (err.details.names as unknown[]) : [];
+  const builtin = status === 403 && named.includes(spec.id);
   const idTaken = status === 409 && !fileManaged && !asVersion;
   const failure = err && !stale ? describeError(err) : null;
   const fieldErrors = isApiError(err) ? err.fieldErrors : [];
@@ -167,7 +169,13 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
             </ul>
           ) : null}
           {idTaken && suggestedId ? (
-            <Button size="sm" onClick={() => onSpecChange({ ...spec, id: suggestedId })}>
+            <Button
+              size="sm"
+              onClick={() => {
+                onSpecChange({ ...spec, id: suggestedId });
+                save.reset();
+              }}
+            >
               Use the id {suggestedId}
             </Button>
           ) : null}

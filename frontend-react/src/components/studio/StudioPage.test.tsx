@@ -273,6 +273,29 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(step(/Step 7: Calibrate for blocking/)).getByRole('link', { name: /Calibrate on the check's page/ })).toHaveAttribute('href', '/app/evaluators/blames_the_customer');
   });
 
+  it('offers a free id after a 409, and clears the conflict once the viewer takes it', async () => {
+    const user = userEvent.setup();
+    const { dataSource } = renderPage('/app/evaluators/studio');
+    const create = vi
+      .spyOn(dataSource, 'createEvaluator')
+      .mockRejectedValueOnce(
+        new ApiError({ kind: 'http', status: 409, code: 'conflict', message: 'An evaluator named blames_the_customer already exists.', details: { names: ['blames_the_customer'] } }),
+      )
+      .mockImplementation((req: EvaluatorCreateRequest) => Promise.resolve(savedVersion(req.spec, req.changelog)));
+    await draftWithAi(user);
+    const save = step(/Step 5: Save a version/);
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'First version');
+    await user.click(within(save).getByRole('button', { name: 'Save as a new check' }));
+    expect(await within(save).findByText('A check with the id blames_the_customer already exists.')).toBeInTheDocument();
+
+    await user.click(within(save).getByRole('button', { name: 'Use the id blames_the_customer_2' }));
+    expect(within(save).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(save).getByText(/^Saves a new check,/)).toHaveTextContent('Saves a new check, blames_the_customer_2, as version 1.');
+    await user.click(within(save).getByRole('button', { name: 'Save as a new check' }));
+    expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
+    expect(create).toHaveBeenLastCalledWith({ spec: expect.objectContaining({ id: 'blames_the_customer_2', version: 1 }), changelog: 'First version' });
+  });
+
   it('confirms a paid test on past traffic with the server estimate, then shows the result (D82)', async () => {
     const user = userEvent.setup();
     const { control } = renderPage('/app/evaluators/studio');
@@ -424,6 +447,24 @@ describe('Studio on a saved version', { timeout: 30_000 }, () => {
     await user.click(await within(save).findByRole('button', { name: 'Save version 3' }));
     expect(await within(save).findByText(/Saved as/)).toBeInTheDocument();
     expect(createVersion.mock.calls[1][1]).toMatchObject({ base_version: 2, spec: expect.objectContaining({ version: 3, name: 'Blames the user' }) });
+  });
+
+  it("shows a 403 that is about the viewer's access as it is, not as a built-in check", async () => {
+    const user = userEvent.setup();
+    const v1 = dashboardCheck(1);
+    const control = createControlApi({ evaluatorDetails: { blames: v1.detail }, evaluatorVersions: { 'blames@1': v1.version } });
+    const { dataSource } = renderPage('/app/evaluators/studio/blames/1', { control });
+    vi.spyOn(dataSource, 'createEvaluatorVersion').mockRejectedValue(new ApiError({ kind: 'http', status: 403, code: 'forbidden', message: 'This key may not change evaluators.' }));
+    expect(await screen.findByText('Editing version 1 of Blames the customer')).toBeInTheDocument();
+    const name = within(step(/Step 2/)).getByRole('textbox', { name: 'Name' });
+    await user.clear(name);
+    await user.type(name, 'Blames the user');
+    const save = step(/Step 5: Save a version/);
+    await user.type(within(save).getByRole('textbox', { name: 'What changed and why' }), 'Say user');
+    await user.click(within(save).getByRole('button', { name: 'Save version 2' }));
+    expect(await within(save).findByText("Couldn't save: This key may not change evaluators.")).toBeInTheDocument();
+    expect(within(save).queryByText(/Built-in checks never get new versions/)).not.toBeInTheDocument();
+    expect(within(save).queryByRole('button', { name: 'Save as a new check instead' })).not.toBeInTheDocument();
   });
 
   it('says so when reloading after a 412 fails, and keeps the edit and the way to retry', async () => {
