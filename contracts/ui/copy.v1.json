@@ -300,7 +300,11 @@
       "sign_out_everywhere": "Sign out everywhere",
       "sign_out_everywhere_confirm": "Every dashboard session, including this one, will need to sign in again.",
       "stale_version": "Settings changed in another tab. Reload to see the latest, then try again.",
-      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill."
+      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill.",
+      "price_invalid_entry": "Check this price: {message}",
+      "price_zero_not_local": "$0 is only allowed for local models. {provider} bills its calls.",
+      "price_duplicate_override": "Price {n} already covers this model, so this one would never apply.",
+      "price_far_above_contracts": "This is {ratio}× the built-in price of ${contracts_per_mtok} per million tokens. Check the units: USD per million tokens."
     },
     "labels": {
       "title": "Label queue",
