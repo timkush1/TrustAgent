@@ -25,7 +25,7 @@ import { isApiError } from '@/data/errors';
 import { isNotServed } from '@/data/queries';
 import { pricingQuery } from '@/data/queries/costs';
 import { qkcSecurity } from '@/data/queries/security';
-import { costOverrideFinding, costOverrideNote, costPricePair, costPriceSourceWord } from '@/domain/presentation';
+import { costOverrideFinding, costOverrideNote, costPricePair, costPriceProviderLabel, costPriceSourceWord } from '@/domain/presentation';
 import type { FieldError, PriceEntry, SettingsView } from '@/types/api';
 import {
   emptyRow,
@@ -79,7 +79,7 @@ function EffectiveTable() {
               <th scope="row" className="px-3 py-1.5 text-left align-top font-normal">
                 <span className="block font-mono text-xs text-fg">{e.match}</span>
                 <span className="block text-xs text-fg-muted">
-                  {e.provider}
+                  {costPriceProviderLabel(e.provider)}
                   {e.note ? ` · ${e.note}` : ''}
                 </span>
               </th>

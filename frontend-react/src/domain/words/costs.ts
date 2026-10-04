@@ -8,7 +8,7 @@
 import type { AuditSelection, Counterfactual, FieldError, PriceEntry, ValueLabel } from '@/types/api';
 import { copy } from '../contracts';
 import { formatUsd } from '../format';
-import { fillTemplate } from '../presentation';
+import { fillTemplate, humanizeId } from '../presentation';
 
 // ------------------------------------------------------------------------------- counterfactuals
 
@@ -144,6 +144,20 @@ export function costBudgetView(kind: CostBudgetKind): CostBudgetView {
 export function costPriceSourceWord(label: PriceEntry['label']): string {
   if (label === 'override') return 'Your price';
   return label === 'vendor_price' ? 'Vendor list price' : 'Assumed price';
+}
+
+const PRICE_PROVIDERS: Record<string, string> = {
+  openrouter: 'OpenRouter',
+  typesafe: 'TypeSafe',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  ollama: 'Ollama (on your machine)',
+  mock: 'Mock (simulated)',
+};
+
+/** Words for PriceEntry.provider ("OpenRouter", "Ollama (on your machine)"), never the raw id. */
+export function costPriceProviderLabel(provider: string): string {
+  return PRICE_PROVIDERS[provider] ?? humanizeId(provider);
 }
 
 /** "$0.042 / $0 per million tokens (in / out)". */
