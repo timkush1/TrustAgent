@@ -11,7 +11,7 @@
  *   credits — check again", the no-limit callout, and "Simulated checks are now off" after a bind.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ClipboardPaste, ExternalLink, FlaskConical, LogIn } from 'lucide-react';
+import { CircleCheck, ClipboardPaste, ExternalLink, FlaskConical, LogIn } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useDataSource } from '@/app/services';
 import { DisabledAction, DisabledReason, type Reason } from '@/components/common/DisabledReason';
@@ -96,10 +96,14 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
     verify.mutate({ name: 'openrouter', request: { bind: BIND } }, { onSuccess: (r) => record(r, wasSimulated) });
   };
 
+  // Once a key is connected, Next is the step's only primary action: connecting or pasting again
+  // only replaces the key, and simulated checks are not offered (they would replace real checks).
+  const connected = progress.connected;
+  const primary = (way: typeof CONNECT_PRIMARY) => (!connected && CONNECT_PRIMARY === way ? 'primary' : 'secondary');
   // Both ways in share one reason when neither is available.
   const off = keyReason ? { disabled: true, 'aria-describedby': reasonId } : { disabled: false };
   const connectButton = (
-    <Button variant={CONNECT_PRIMARY === 'connect' ? 'primary' : 'secondary'} onClick={() => connect.mutate()} pending={connect.isPending} {...off}>
+    <Button variant={primary('connect')} onClick={() => connect.mutate()} pending={connect.isPending} {...off}>
       <LogIn aria-hidden="true" />
       {copy.setup.step_connect.primary}
     </Button>
@@ -125,10 +129,18 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
         </div>
       ) : null}
 
+      {connected && !openrouterEnv && !outcome ? (
+        <p role="status" className="flex items-center gap-1.5 text-sm text-fg">
+          <CircleCheck aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />
+          A key is connected, so answers are checked for real. Go on to step 3, or replace the key below.
+        </p>
+      ) : null}
+
       <div className="space-y-1.5">
+        {connected && !openrouterEnv ? <p className="text-xs text-fg-muted">To use a different key:</p> : null}
         <div className="flex flex-wrap items-start gap-3">
           {CONNECT_PRIMARY === 'connect' ? connectButton : null}
-          <Button variant={CONNECT_PRIMARY === 'paste' ? 'primary' : 'secondary'} onClick={() => setPasting((v) => !v)} aria-expanded={pasting} {...off}>
+          <Button variant={primary('paste')} onClick={() => setPasting((v) => !v)} aria-expanded={pasting} {...off}>
             <ClipboardPaste aria-hidden="true" />
             {copy.setup.step_connect.paste_key}
           </Button>
@@ -172,29 +184,31 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
 
       <p className="text-sm text-fg-muted">{copy.setup.step_connect.privacy}</p>
 
-      <section aria-labelledby="simulated-title" className="space-y-2 border-t border-border pt-4">
-        <h3 id="simulated-title" className="text-sm font-semibold text-fg">
-          No key yet?
-        </h3>
-        {progress.simulated ? (
-          <p role="status" className="text-sm text-fg">
-            {copy.setup.step_connect.simulated_on}
-          </p>
-        ) : (
-          <>
-            <p className="text-sm text-fg-muted">{copy.setup.step_connect.simulated_note}</p>
-            <DisabledAction reason={simReason}>
-              {(p) => (
-                <Button onClick={() => simPatch && simulate.mutate(simPatch)} pending={simulate.isPending} {...p}>
-                  <FlaskConical aria-hidden="true" />
-                  {copy.setup.step_connect.simulated}
-                </Button>
-              )}
-            </DisabledAction>
-            {simulate.isError ? <ProblemNote error={simulate.error} title="Simulated checks were not turned on" /> : null}
-          </>
-        )}
-      </section>
+      {connected ? null : (
+        <section aria-labelledby="simulated-title" className="space-y-2 border-t border-border pt-4">
+          <h3 id="simulated-title" className="text-sm font-semibold text-fg">
+            No key yet?
+          </h3>
+          {progress.simulated ? (
+            <p role="status" className="text-sm text-fg">
+              {copy.setup.step_connect.simulated_on}
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-fg-muted">{copy.setup.step_connect.simulated_note}</p>
+              <DisabledAction reason={simReason}>
+                {(p) => (
+                  <Button onClick={() => simPatch && simulate.mutate(simPatch)} pending={simulate.isPending} {...p}>
+                    <FlaskConical aria-hidden="true" />
+                    {copy.setup.step_connect.simulated}
+                  </Button>
+                )}
+              </DisabledAction>
+              {simulate.isError ? <ProblemNote error={simulate.error} title="Simulated checks were not turned on" /> : null}
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

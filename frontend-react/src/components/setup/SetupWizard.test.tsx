@@ -335,6 +335,19 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('once a key is connected, leaves Next as the only primary action and offers no simulated checks', async () => {
+    renderPage('/app/setup?step=connect', { control: createControlApi({ settings: settingsView() }) });
+    const step = await panel(copy.setup.step_connect.title);
+    expect(await within(step).findByText(/A key is connected, so answers are checked for real\./)).toBeInTheDocument();
+    expect(within(step).getByText('To use a different key:')).toBeInTheDocument();
+    expect(within(step).getByRole('button', { name: copy.setup.step_connect.primary })).not.toHaveClass(/bg-fg/);
+    expect(within(step).getByRole('button', { name: copy.setup.step_connect.paste_key })).not.toHaveClass(/bg-fg/);
+    // Simulated checks would replace the real ones: not offered on this step once connected.
+    expect(within(step).queryByRole('button', { name: copy.setup.step_connect.simulated })).toBeNull();
+    expect(within(step).queryByText('No key yet?')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false');
+  });
+
   it('shows no credits with nothing bound, then binds after “check again”, and says simulated checks are off (D75, D76)', async () => {
     const user = userEvent.setup();
     const settings = unbound();

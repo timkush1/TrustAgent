@@ -186,7 +186,7 @@ export function SetupWizard({ step }: { step?: SetupStep }) {
           </CardFooter>
         )}
       </Card>
-      <p className="text-xs text-fg-muted">Keys and sessions never leave this proxy; only masked keys are ever shown.</p>
+      <p className="text-xs text-fg-muted">Keys are stored encrypted here and sent only to the provider they belong to; only masked keys are ever shown.</p>
     </div>
   );
 }
