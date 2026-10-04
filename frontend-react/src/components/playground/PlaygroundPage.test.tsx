@@ -352,7 +352,9 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     expect(signal!.aborted).toBe(false);
     await act(() => router.navigate({ to: '/app/overview' }));
-    await waitFor(() => expect(signal!.aborted).toBe(true));
+    // The abort reaches the mocked request through the fetch interceptor asynchronously; on a busy
+    // machine (the whole suite on two workers) that can take longer than waitFor's default 1 s.
+    await waitFor(() => expect(signal!.aborted).toBe(true), { timeout: 10_000 });
   });
 
   it('checks a pasted answer from an example, with no model call', async () => {
