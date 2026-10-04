@@ -60,7 +60,10 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
   const [reloading, setReloading] = useState(false);
   // Another check with the same name would read the same in Policies and on traces.
   const library = useQuery(evaluatorsQuery(ds, true));
-  const sameName = (library.data?.items ?? []).find((e) => e.id !== spec.id && e.name.trim().toLowerCase() === spec.name.trim().toLowerCase());
+  // Archived checks are out of Policies and traces, so they never clash with a new name.
+  const sameName = (library.data?.items ?? []).find(
+    (e) => !e.archived && e.id !== spec.id && e.name.trim().toLowerCase() === spec.name.trim().toLowerCase(),
+  );
   const asVersion = base !== null && base.origin === 'dashboard' && base.id === spec.id;
   const nextVersion = asVersion ? base.latest + 1 : 1;
   const toSave: EvaluatorSpec = { ...spec, version: nextVersion };

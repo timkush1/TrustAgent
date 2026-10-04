@@ -70,7 +70,8 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
   const route = chosen ?? (defaultRoute && routes.includes(defaultRoute) ? defaultRoute : (routes.find((r) => r !== 'default') ?? routes[0] ?? null));
   const [draft, setDraft] = useState<{ yaml: string; etag: string } | null>(null);
   const names = useMemo(() => {
-    return evalNameMap([...(evaluators.data?.items ?? []), { id: spec.id, name: spec.name }]);
+    // Archived checks are on no route, so they never make a name ambiguous here.
+    return evalNameMap([...(evaluators.data?.items ?? []).filter((e) => !e.archived), { id: spec.id, name: spec.name }]);
   }, [evaluators.data, spec.id, spec.name]);
 
   /** A ref in words: "Competitor mentions, version 2" rather than "proof_murg2b8p@2". */

@@ -693,6 +693,18 @@ describe('Studio on a saved version', { timeout: 30_000 }, () => {
     expect(within(save).getByText('blames_v0')).toBeInTheDocument();
   });
 
+  it('does not warn about a name only an archived check has', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    const library = [...evaluatorMetas(), evaluatorMeta('refusal', { id: 'blames_v0', name: 'Blames the customer', origin: 'dashboard', archived: true })];
+    control.handlers.unshift(http.get(`${API}/api/evaluators`, () => HttpResponse.json({ items: library })));
+    renderPage('/app/evaluators/studio', { control });
+    await draftWithAi(user);
+    const save = step(/Step 5: Save a version/);
+    await within(save).findByText(/Saves a new check,/);
+    expect(within(save).queryByText(/^Another check is already called/)).toBeNull();
+  });
+
   it('gives the copy an id the library does not have, waiting for the library when it answers last', async () => {
     const control = createControlApi();
     const library = [...evaluatorMetas(), evaluatorMeta('refusal', { id: 'refusal_custom', name: 'My refusal', origin: 'dashboard', latest_version: 2 })];
