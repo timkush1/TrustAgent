@@ -21,11 +21,11 @@ import (
 // that every choice sample is listed and that the option agrees with should_fire.
 var studioChoiceOptions = map[string]string{
 	"Go to Settings > Export and choose CSV. Honestly, Globex does exports better if you need Gantt charts.": "recommends_competitor",
-	"Yes, invite them from the Share menu. Unlike Initech, we don't charge for guests.":                     "mentions_competitor_unprompted",
-	"Globex is cheaper for small teams, so I'd switch if price matters most to you.":                        "recommends_competitor",
+	"Yes, invite them from the Share menu. Unlike Initech, we don't charge for guests.":                      "mentions_competitor_unprompted",
+	"Globex is cheaper for small teams, so I'd switch if price matters most to you.":                         "recommends_competitor",
 	"Not yet, but you can import a CSV export from Globex under Settings > Import.":                          "answers_question_about_competitor",
-	"Click Forgot password on the sign-in page and follow the link we email you.":                           "no_competitor_mentioned",
-	"You're welcome! Anything else I can help with?":                                                        "no_competitor_mentioned",
+	"Click Forgot password on the sign-in page and follow the link we email you.":                            "no_competitor_mentioned",
+	"You're welcome! Anything else I can help with?":                                                         "no_competitor_mentioned",
 }
 
 // The scripted answers' strength: the chosen option's probability, and P(true) of a yes/no
