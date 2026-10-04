@@ -61,11 +61,11 @@ describe('Label queue', { timeout: 20_000 }, () => {
     await waitFor(() => expect(puts).toEqual([{ trace_id: FIRST, target: 'groundedness@1', label: 'should_fire' }]));
 
     release();
-    expect(await screen.findByText('Correct. Saved. Thanks — 156 more and this check can be calibrated.')).toBeInTheDocument();
+    expect(await screen.findByText('Yes, it has the problem. Saved. Thanks — 156 more and this check can be calibrated.')).toBeInTheDocument();
     await waitFor(() => expect(labelsMeter()).toHaveAttribute('aria-valuenow', '44'));
 
     // A redacted answer has nothing to judge: C and F do nothing, S skips it.
-    expect(screen.getByRole('button', { name: /^Correct/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: /^Yes, it has the problem/ })).toHaveAttribute('aria-disabled', 'true');
     await user.keyboard('f');
     expect(puts).toHaveLength(1);
     await user.keyboard('s');
@@ -77,9 +77,13 @@ describe('Label queue', { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     const { control } = renderPage('/app/evaluators/labels');
     await firstItem();
+    // The queue also holds answers the check let through, so it asks yes or no, never Correct or
+    // False alarm (which would only fit an answer the check flagged).
+    expect(screen.queryByRole('button', { name: /^(Correct|False alarm)/ })).toBeNull();
+    expect(screen.getByText(/Yes: the answer has the problem this check looks for, so it should be flagged\. No: it is fine/)).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: /Note/ }), 'Canada ships in 5 days, not next day');
     expect(control.callsTo('/api/labels', 'PUT')).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: /^False alarm/ }));
+    await user.click(screen.getByRole('button', { name: /^No, it is fine/ }));
     await waitFor(() => expect(control.callsTo('/api/labels', 'PUT')).toHaveLength(1));
     expect(control.callsTo('/api/labels', 'PUT')[0].body).toEqual({
       trace_id: FIRST,
@@ -87,7 +91,7 @@ describe('Label queue', { timeout: 20_000 }, () => {
       label: 'should_not_fire',
       note: 'Canada ships in 5 days, not next day',
     });
-    expect(await screen.findByText(/^False alarm\. Saved\./)).toBeInTheDocument();
+    expect(await screen.findByText(/^No, it is fine\. Saved\./)).toBeInTheDocument();
   });
 
   it('leaves letters typed on the focused check picker to the picker', async () => {
@@ -107,7 +111,7 @@ describe('Label queue', { timeout: 20_000 }, () => {
     const { control } = renderPage('/app/evaluators/labels');
     await firstItem();
     await user.keyboard('c');
-    await screen.findByText(/^Correct\. Saved\./);
+    await screen.findByText(/^Yes, it has the problem\. Saved\./);
     await waitFor(() => expect(labelsMeter()).toHaveAttribute('aria-valuenow', '44'));
     await user.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(control.callsTo('/api/labels', 'DELETE')).toHaveLength(1));

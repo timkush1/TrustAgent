@@ -130,7 +130,7 @@
     {
       "id": "label",
       "term": "Label",
-      "short": "Your verdict on an answer — Correct or False alarm — used to calibrate checks.",
+      "short": "Your verdict on an answer: it has the problem a check looks for, or it is fine. Labels calibrate checks.",
       "see_also": ["calibration"]
     },
     {

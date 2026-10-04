@@ -21,7 +21,11 @@ import { copy, outcomesContract } from '../contracts';
 
 // ------------------------------------------------------------------------------------- labels
 
-/** The two answers to "Was this right?" for an evaluator target (D59): Correct fires, False alarm does not. */
+/**
+ * The two labels an evaluator target takes (D59): `should_fire` (the answer has the problem the
+ * check looks for) and `should_not_fire` (it is fine). "Was this right?" asks them as Correct and
+ * False alarm, the label queue as Yes and No.
+ */
 export type EvalFireLabel = Extract<LabelValue, 'should_fire' | 'should_not_fire'>;
 
 /** Every label PUT /api/labels accepts (D59; claim labels are only the four verdicts the gateway takes). */
@@ -36,7 +40,7 @@ const LABEL_WORDS: Record<string, string> = {
   PARTIALLY_SUPPORTED: 'Partly supported',
 };
 
-/** "Correct", "False alarm", a claim verdict in words, … (never the raw value). */
+/** "Correct", "False alarm", a claim verdict in words, … (never the raw value). For a flag's label. */
 export function evalLabelWord(label: string): string {
   return LABEL_WORDS[label] ?? 'Other label';
 }
@@ -53,6 +57,15 @@ export function evalLabelerName(labeledBy: string): string {
   if (labeledBy.startsWith('key:')) return 'an API key';
   if (labeledBy === 'public') return 'someone without a key';
   return labeledBy;
+}
+
+/**
+ * The label queue's answer to "Should <check> flag this answer?" in words: Yes (`should_fire`) or No
+ * (`should_not_fire`). The queue also holds answers the check did not flag, so it never says
+ * Correct or False alarm.
+ */
+export function evalQueueAnswer(label: EvalFireLabel): string {
+  return label === 'should_fire' ? copy.labels.yes : copy.labels.no;
 }
 
 /** The label queue's keys (D59): C = should_fire, F = should_not_fire, S = skip. */
@@ -121,7 +134,7 @@ export function evalQualityView(quality: CalibrationRecordMeta['quality']): Eval
 /** The fit dialog's honesty note (SPEC §2.11 quality rules). */
 export const EVAL_FIT_HONESTY = [
   'A calibration maps the fast check’s raw score to how often your own labels agreed: it measures agreement with labels, not ground truth.',
-  'Only your own labels (or a public dataset) can make it Measured: at least 200 labels, with 30 Correct and 30 False alarms. Deep-audit labels make it a Proxy, which can flag but never block.',
+  'Only your own labels (or a public dataset) can make it Measured: at least 200 labels, with 30 answers that have the problem and 30 that are fine. Deep-audit labels make it a Proxy, which can flag but never block.',
   'Fitting is free and changes nothing on its own: answers keep their current thresholds until you adopt it.',
 ] as const;
 
@@ -162,7 +175,7 @@ export function evalNotEnoughLabelsText(details: unknown): string | null {
   const [n, pos, neg, needN, perClass] = nums as number[];
   const fmt = (v: number) => v.toLocaleString('en-US');
   return (
-    `Not enough labels to fit yet: ${fmt(n)} so far (${fmt(pos)} ${copy.labels.correct.toLowerCase()}, ${fmt(neg)} ${neg === 1 ? 'false alarm' : 'false alarms'}). ` +
+    `Not enough labels to fit yet: ${fmt(n)} so far (${fmt(pos)} with the problem, ${fmt(neg)} fine). ` +
     `A fit needs at least ${fmt(needN)} labels with ${fmt(perClass)} of each kind. Label more answers in the label queue, then try again.`
   );
 }

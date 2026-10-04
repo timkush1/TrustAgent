@@ -68,7 +68,7 @@ export function FitResult({ fit, simulated }: { fit: CalibrationFitResponse; sim
         <div className="space-y-3">
           <KeyValueList
             items={[
-              { label: 'Labels used', value: formatCount(entry.n), numeric: true, hint: `${formatCount(entry.n_pos)} correct · ${formatCount(entry.n_neg)} false alarms` },
+              { label: 'Labels used', value: formatCount(entry.n), numeric: true, hint: `${formatCount(entry.n_pos)} with the problem · ${formatCount(entry.n_neg)} fine` },
               { label: 'Calibration error', value: beforeAfter(fit.metrics.ece_before, fit.metrics.ece_after), numeric: true, hint: 'ECE before → after, lower is better' },
               { label: 'Brier score', value: beforeAfter(fit.metrics.brier_before, fit.metrics.brier_after), numeric: true, hint: 'before → after, lower is better' },
               { label: 'Ranking (AUROC)', value: fit.metrics.auroc === null ? null : formatRisk(fit.metrics.auroc), numeric: true, hint: '1.0 ranks every problem above every fine answer' },
@@ -203,8 +203,8 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
               ))}
             </ul>
             <p className="text-sm text-fg-muted tabular">
-              You have {formatCount(progress.human_labels.n)} labels ({formatCount(progress.human_labels.pos)} correct, {formatCount(progress.human_labels.neg)} false
-              alarms) and {formatCount(progress.proxy_labels)} deep-audit labels for this version.
+              You have {formatCount(progress.human_labels.n)} labels ({formatCount(progress.human_labels.pos)} with the problem, {formatCount(progress.human_labels.neg)}{' '}
+              fine) and {formatCount(progress.proxy_labels)} deep-audit labels for this version.
             </p>
             <RadioGroup<Sources>
               label="Labels to fit on"

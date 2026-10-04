@@ -1,6 +1,6 @@
 /**
- * Calibration progress for one evaluator (SPEC §3.3 Evaluators): "Labels 43/200 (31 correct,
- * 12 false alarms)" with a meter per requirement (200 labels, 30 of each kind), the calibration
+ * Calibration progress for one evaluator (SPEC §3.3 Evaluators): "Labels 43/200 (31 with the
+ * problem, 12 fine)" with a meter per requirement (200 labels, 30 of each kind), the calibration
  * state, what is still missing, and the actions: Label queue (this check's answers) and Calibrate
  * now (the fit dialog). Each says why when it is not available.
  */
@@ -22,7 +22,7 @@ function Bar({ label, value, have, need }: { label: string; value: number; have:
   return (
     <div className="space-y-0.5">
       <div className="flex justify-between gap-2 text-2xs text-fg-muted">
-        <span>{label}</span>
+        <span className="truncate">{label}</span>
         <span className="tabular">
           {formatCount(have)}/{formatCount(need)}
         </span>
@@ -105,7 +105,7 @@ export function CalibrationMeter({
 }) {
   const parts = progressParts(progress);
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('@container space-y-2', className)}>
       <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
         <span className="text-fg tabular">{progressText(progress)}</span>
         <span className="text-xs text-fg-muted">
@@ -115,10 +115,11 @@ export function CalibrationMeter({
       {compact ? (
         <Bar label="Labels" value={parts.total} have={progress.human_labels.n} need={progress.needed.n} />
       ) : (
-        <div className="grid grid-cols-3 gap-3">
+        // Side by side where there is room; stacked in a narrow card (the label queue's sidebar).
+        <div className="grid gap-x-3 gap-y-2 @sm:grid-cols-3">
           <Bar label="Labels" value={parts.total} have={progress.human_labels.n} need={progress.needed.n} />
-          <Bar label="Correct" value={parts.correct} have={progress.human_labels.pos} need={progress.needed.pos} />
-          <Bar label="False alarms" value={parts.falseAlarms} have={progress.human_labels.neg} need={progress.needed.neg} />
+          <Bar label="Has the problem" value={parts.correct} have={progress.human_labels.pos} need={progress.needed.pos} />
+          <Bar label="Fine" value={parts.falseAlarms} have={progress.human_labels.neg} need={progress.needed.neg} />
         </div>
       )}
       {parts.missing ? <p className="text-xs text-fg-muted">{parts.missing}</p> : <p className="text-xs text-fg-muted">Enough labels to calibrate for blocking.</p>}

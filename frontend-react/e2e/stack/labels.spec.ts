@@ -107,7 +107,7 @@ test.describe('labels', () => {
 
     try {
       await page.keyboard.press('f');
-      await expect(page.getByText(/^False alarm\. Saved\./)).toBeVisible({ timeout: TIMEOUT });
+      await expect(page.getByText(/^No, it is fine\. Saved\./)).toBeVisible({ timeout: TIMEOUT });
       await expect.poll(() => labelCount(page, evaluatorId), { timeout: TIMEOUT }).toBe(before + 1);
 
       await page.getByRole('button', { name: 'Undo' }).click();

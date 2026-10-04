@@ -23,9 +23,9 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(within(g).getByText('Grounding')).toBeInTheDocument();
     expect(within(g).getByText(/Built-in · version 1/)).toBeInTheDocument();
     expect(within(g).getAllByText(/support-bot|payments-faq/)).toHaveLength(2);
-    expect(await within(g).findByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
+    expect(await within(g).findByText('Labels 43/200 (31 with the problem, 12 fine)')).toBeInTheDocument();
     expect(within(g).getByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
-    expect(within(g).getByText(/Needs 157 more labels, including at least 18 false alarms, to calibrate for blocking\./)).toBeInTheDocument();
+    expect(within(g).getByText(/Needs 157 more labels, including at least 18 fine, to calibrate for blocking\./)).toBeInTheDocument();
     // Label queue (this check's answers) and Calibrate now are live for an admin.
     expect(within(g).getByRole('link', { name: 'Label queue for Groundedness' })).toHaveAttribute(
       'href',
@@ -122,7 +122,7 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     expect(screen.getByText('Needs your documents (not checked without them)')).toBeInTheDocument();
     expect(screen.getByText('0.80')).toBeInTheDocument();
     expect(screen.getByText('0.95')).toBeInTheDocument();
-    expect(screen.getByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
+    expect(screen.getByText('Labels 43/200 (31 with the problem, 12 fine)')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Fit and adopt from labels' })).not.toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: 'Duplicate and edit' })).toHaveAttribute('href', '/app/evaluators/studio/groundedness/1');
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');

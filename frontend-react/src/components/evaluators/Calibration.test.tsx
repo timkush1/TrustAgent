@@ -33,7 +33,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     const d = await dialog('Calibrate Groundedness');
     expect(within(d).getByText(/measures agreement with labels, not ground truth/)).toBeInTheDocument();
     expect(within(d).getByText(/Deep-audit labels make it a Proxy, which can flag but never block/)).toBeInTheDocument();
-    expect(within(d).getByText(/You have 43 labels \(31 correct, 12 false alarms\) and 58 deep-audit labels/)).toBeInTheDocument();
+    expect(within(d).getByText(/You have 43 labels \(31 with the problem, 12 fine\) and 58 deep-audit labels/)).toBeInTheDocument();
     await user.click(within(d).getByRole('radio', { name: /Your labels and the deep-audit sample/ }));
     await user.click(within(d).getByRole('button', { name: 'Fit calibration (free)' }));
 
@@ -90,7 +90,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     await user.click(within(d).getByRole('button', { name: 'Fit calibration (free)' }));
     const alert = await within(d).findByRole('alert');
     expect(alert).toHaveTextContent(
-      'Not enough labels to fit yet: 5 so far (2 correct, 3 false alarms). A fit needs at least 8 labels with 3 of each kind. Label more answers in the label queue, then try again.',
+      'Not enough labels to fit yet: 5 so far (2 with the problem, 3 fine). A fit needs at least 8 labels with 3 of each kind. Label more answers in the label queue, then try again.',
     );
     expect(alert).not.toHaveTextContent(/groundedness@1|should fire|validation_failed|The fit failed/);
   });

@@ -1,8 +1,9 @@
 /**
  * The label queue (SPEC §3.3 Evaluators; D59-D61): one answer at a time, the most uncertain
- * first (the server orders it by distance to the flag line, D60). For each answer the viewer says
- * whether the check should have fired: Correct (C), False alarm (F) or Skip (S), with an optional
- * note. Each label counts toward calibrating that check, so its progress moves at once (optimistic,
+ * first (the server orders it by distance to the flag line, D60), so it holds answers the check
+ * flagged and answers it let through. For each the viewer answers "Should <check> flag this
+ * answer?": Yes, it has the problem (C, `should_fire`), No, it is fine (F, `should_not_fire`) or
+ * Skip (S), with an optional note. Each label counts toward calibrating that check, so its progress moves at once (optimistic,
  * rolled back if the save fails), and the last label can be undone.
  *
  * Keys work anywhere on the page except while typing in a field. After every step the focus moves
@@ -38,7 +39,7 @@ import { bumpProgress, invalidateAfterLabel, LABEL_QUEUE_DEFAULTS, labelQueueQue
 import { useAppMode } from '@/data/useSystem';
 import { formatCount, formatDateTime, formatRelativeTime, formatRisk } from '@/domain/format';
 import { copy, fillTemplate, levelWord } from '@/domain/presentation';
-import { evalLabelsStillNeeded, evalLabelWord, evalRefId, evalSavedText, type EvalFireLabel } from '@/domain/words/evaluators';
+import { evalLabelsStillNeeded, evalQueueAnswer, evalRefId, evalSavedText, type EvalFireLabel } from '@/domain/words/evaluators';
 import type { EvaluatorDetail, LabelQueueItem } from '@/types/api';
 import { CalibrationMeter } from './CalibrationMeter';
 import { EvaluatorsTabs } from './EvaluatorsTabs';
@@ -241,7 +242,7 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
     put.mutateAsync({ item, label: value, note: text }).then(
       () => {
         setTally((t) => ({ ...t, labelled: t.labelled + 1 }));
-        setStatus({ kind: 'saved', text: `${evalLabelWord(value)}. ${evalSavedText(stillNeeded(item))}`, undo: { index: at, item, label: value } });
+        setStatus({ kind: 'saved', text: `${evalQueueAnswer(value)}. ${evalSavedText(stillNeeded(item))}`, undo: { index: at, item, label: value } });
         invalidateAfterLabel(queryClient, { traceId: item.trace_id, evaluatorIds: [evalRefId(item.evaluator_ref)] });
       },
       (err: unknown) => {
@@ -339,7 +340,7 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
                   <DisabledAction reason={redactedReason}>
                     {(p) => (
                       <Button variant="primary" onClick={() => act('should_fire')} aria-keyshortcuts="C" {...p}>
-                        {copy.labels.correct}
+                        {copy.labels.yes}
                         <Kbd>C</Kbd>
                       </Button>
                     )}
@@ -347,7 +348,7 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
                   <DisabledAction reason={redactedReason}>
                     {(p) => (
                       <Button onClick={() => act('should_not_fire')} aria-keyshortcuts="F" {...p}>
-                        {copy.labels.false_alarm}
+                        {copy.labels.no}
                         <Kbd>F</Kbd>
                       </Button>
                     )}
@@ -358,8 +359,7 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
                   </Button>
                 </div>
                 <p className="text-xs text-fg-muted">
-                  <span className="font-medium text-fg">{copy.labels.correct}</span>: the answer has the problem this check looks for.{' '}
-                  <span className="font-medium text-fg">{copy.labels.false_alarm}</span>: it does not. {copy.labels.keys_hint}.
+                  Yes: the answer has the problem this check looks for, so it should be flagged. No: it is fine, so it should not be. {copy.labels.keys_hint}.
                 </p>
               </div>
             </CardContent>

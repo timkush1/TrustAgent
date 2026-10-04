@@ -9,7 +9,7 @@ import { copy, fillTemplate } from '@/domain/presentation';
 import { MIN_FIT_LABELS } from '@/lib/decision/calibrate';
 import type { CalibrationProgress, EvaluatorSpec } from '@/types/api';
 
-/** "Labels 43/200 (31 correct, 12 false alarms)". */
+/** "Labels 43/200 (31 with the problem, 12 fine)". */
 export function progressText(p: CalibrationProgress): string {
   return fillTemplate(copy.evaluators.calibration_progress, {
     n: formatCount(p.human_labels.n),
@@ -26,7 +26,7 @@ export interface ProgressParts {
   falseAlarms: number;
   /** All three requirements met: a measured calibration can be fitted. */
   complete: boolean;
-  /** What is still missing, in words ("Needs 157 more labels, including at least 18 false alarms, …"). */
+  /** What is still missing, in words ("Needs 157 more labels, including at least 18 fine, …"). */
   missing: string | null;
   /** The calibration state in words. */
   stateLabel: string;
@@ -39,9 +39,9 @@ export function progressParts(p: CalibrationProgress): ProgressParts {
   const pos = more(p.human_labels.pos, p.needed.pos);
   const neg = more(p.human_labels.neg, p.needed.neg);
   // Every new label is one of the two kinds, so the labels still needed are at least both kinds'
-  // shortfalls together: "200 more labels, including at least 30 correct and 30 false alarms".
+  // shortfalls together: "200 more labels, including at least 30 with the problem and 30 fine".
   const labels = Math.max(more(p.human_labels.n, p.needed.n), pos + neg);
-  const kinds = [pos > 0 ? `${formatCount(pos)} correct` : null, neg > 0 ? `${formatCount(neg)} false alarms` : null].filter((x): x is string => x !== null);
+  const kinds = [pos > 0 ? `${formatCount(pos)} with the problem` : null, neg > 0 ? `${formatCount(neg)} fine` : null].filter((x): x is string => x !== null);
   const missing =
     labels === 0
       ? null

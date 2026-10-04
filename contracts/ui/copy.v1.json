@@ -238,7 +238,7 @@
       "trusts_user_context": "This route treats text pasted by users as documents; a user could make a false answer look supported."
     },
     "evaluators": {
-      "calibration_progress": "Labels {n}/{needed} ({correct} correct, {false_alarms} false alarms)",
+      "calibration_progress": "Labels {n}/{needed} ({correct} with the problem, {false_alarms} fine)",
       "label_queue": "Label queue",
       "calibrate_now": "Calibrate now",
       "reliability_caption": "agreement with labels, not ground truth",
@@ -354,11 +354,13 @@
     },
     "labels": {
       "title": "Label queue",
-      "intro": "Was each flag right? Your answers calibrate the check so it can block safely.",
+      "intro": "Should the check flag each answer? Your answers calibrate it so it can block safely.",
       "empty": "Nothing to label right now. New answers near the flag line show up here.",
-      "keys_hint": "C correct · F false alarm · S skip",
+      "keys_hint": "C yes · F no · S skip",
       "correct": "Correct",
       "false_alarm": "False alarm",
+      "yes": "Yes, it has the problem",
+      "no": "No, it is fine",
       "skip": "Skip",
       "was_this_right": "Was this right?",
       "saved": "Saved. Thanks — {n} more and this check can be calibrated.",
