@@ -123,7 +123,7 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     expect(screen.getByText('0.80')).toBeInTheDocument();
     expect(screen.getByText('0.95')).toBeInTheDocument();
     expect(screen.getByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Fit and adopt from labels' })).not.toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: 'Duplicate and edit' })).toHaveAttribute('href', '/app/evaluators/studio/groundedness/1');
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });

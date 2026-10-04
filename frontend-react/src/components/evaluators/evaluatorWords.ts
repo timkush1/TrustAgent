@@ -85,8 +85,13 @@ export function canFitOnOwnLabels(p: CalibrationProgress): boolean {
  */
 export function calibrateReason(p: CalibrationProgress): CustomReason | null {
   if (p.snapshot === null) return { text: 'No fast-check version has checked traffic for this check yet, so there is nothing to calibrate.' };
-  if (!canFitOnOwnLabels(p) && p.human_labels.n + p.proxy_labels < MIN_FIT_LABELS) {
-    return { text: 'Not enough labels for a first fit yet: label a few answers in the queue.' };
-  }
+  const more = labelsForFirstFit(p);
+  if (more > 0) return { text: `Not enough labels for a first fit yet: label ${more} more ${more === 1 ? 'answer' : 'answers'} in the queue.` };
   return null;
+}
+
+/** How many more labels a first fit needs (0 when one is possible). */
+export function labelsForFirstFit(p: CalibrationProgress): number {
+  if (canFitOnOwnLabels(p)) return 0;
+  return Math.max(0, MIN_FIT_LABELS - (p.human_labels.n + p.proxy_labels));
 }

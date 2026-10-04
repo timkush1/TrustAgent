@@ -119,9 +119,23 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     renderPage('/app/evaluators/groundedness', { control });
     const button = await screen.findByRole('button', { name: 'Calibrate now' });
     expect(button).toHaveAttribute('aria-disabled', 'true');
-    // Beside Calibrate now, and beside Adopt calibration in the header.
-    expect(screen.getAllByText('Not enough labels for a first fit yet: label a few answers in the queue.')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
+    // Beside Calibrate now. The header's fit is off too, and as calibration #3 is for the version the
+    // check runs on, its reason points to that record rather than saying nothing can be adopted.
+    expect(await screen.findByText(/^Adopt an existing calibration on the Calibration tab, or label 1 more answer for a new fit\.$/)).toBeInTheDocument();
+    expect(screen.getAllByText('Not enough labels for a first fit yet: label 1 more answer in the queue.')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Fit and adopt from labels' })).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Open Calibration' }));
+    expect(await screen.findByRole('tab', { name: 'Calibration', selected: true })).toBeInTheDocument();
+    stopLive();
+    cleanup();
+
+    // Without a calibration for the current version, the header says what the fit needs.
+    const bare = createControlApi();
+    bare.state.calibrations = { items: [] };
+    bare.state.evaluatorDetails.groundedness = control.state.evaluatorDetails.groundedness;
+    renderPage('/app/evaluators/groundedness', { control: bare });
+    await screen.findByRole('button', { name: 'Calibrate now' });
+    await waitFor(() => expect(screen.getAllByText('Not enough labels for a first fit yet: label 1 more answer in the queue.')).toHaveLength(2));
     stopLive();
     cleanup();
 
@@ -147,7 +161,7 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
         return HttpResponse.json(dryRunResult());
       }),
     );
-    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    await user.click(await screen.findByRole('button', { name: 'Fit and adopt from labels' }));
     const d = await dialog(/Adopt calibration: Groundedness/);
     await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
 
@@ -164,7 +178,7 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     await user.click(within(d).getByRole('button', { name: 'Adopt calibration' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    const order = control.calls.map((c) => `${c.method} ${c.path}`).filter((c) => /calibration|dry-run|PUT \/api\/policies/.test(c));
+    const order = control.calls.map((c) => `${c.method} ${c.path}`).filter((c) => !c.startsWith('GET ') && /calibration|dry-run|PUT \/api\/policies/.test(c));
     expect(order).toEqual(['POST /api/calibration/fit', 'POST /api/policies/dry-run', 'POST /api/calibration/7/activate', 'PUT /api/policies']);
     expect(control.callsTo('/api/calibration/fit')[0].body).toMatchObject({ activate: false });
     expect(control.callsTo('/api/policies/dry-run')[0].body).toMatchObject({ window: '7d', calibration_ids: [7] });
@@ -180,7 +194,7 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     const control = createControlApi({ dryRun: errorReply(429, 'rate_limited', 'At most 6 previews a minute.') });
     renderPage('/app/evaluators/groundedness', { control });
-    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    await user.click(await screen.findByRole('button', { name: 'Fit and adopt from labels' }));
     const d = await dialog(/Adopt calibration: Groundedness/);
     await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
     expect(await within(d).findByText('The preview failed: At most 6 previews a minute.')).toBeInTheDocument();
@@ -194,7 +208,7 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     const control = createControlApi({ save: errorReply(409, 'file_managed', 'The policy is managed by policies.yaml.') });
     renderPage('/app/evaluators/groundedness', { control });
-    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    await user.click(await screen.findByRole('button', { name: 'Fit and adopt from labels' }));
     const d = await dialog(/Adopt calibration: Groundedness/);
     await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
@@ -211,7 +225,7 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     const control = createControlApi({ save: errorReply(412, 'stale_version', 'The policy changed since you loaded it.') });
     renderPage('/app/evaluators/groundedness', { control });
-    await user.click(await screen.findByRole('button', { name: 'Adopt calibration' }));
+    await user.click(await screen.findByRole('button', { name: 'Fit and adopt from labels' }));
     const d = await dialog(/Adopt calibration: Groundedness/);
     await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
@@ -226,7 +240,7 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     const control = createControlApi();
     control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', { attached_routes: [] });
     renderPage('/app/evaluators/groundedness', { control });
-    expect(await screen.findByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
+    expect(await screen.findByRole('button', { name: 'Fit and adopt from labels' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText('Attach this check to a route in Policies first.')).toBeInTheDocument();
   });
 });

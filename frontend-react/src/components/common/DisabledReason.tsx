@@ -82,15 +82,19 @@ export function DisabledReason({ reason, id, className }: { reason: Reason; id?:
   const text = typeof reason === 'string' ? copy.disabled_reasons[reason] : reason.text;
   const fix = typeof reason === 'string' ? contractFix(reason) : reason.fix;
   return (
-    <span id={id} className={cn('inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-fg-muted', className)}>
-      <Lock aria-hidden="true" className="size-3 shrink-0" />
-      <span>{text}</span>
-      {fix ? (
-        <>
-          <span aria-hidden="true">·</span>
-          {fix}
-        </>
-      ) : null}
+    // The lock stays beside the first line however the reason wraps: the text and its fix wrap
+    // together in one box next to it.
+    <span id={id} className={cn('inline-flex items-start gap-1 text-xs text-fg-muted', className)}>
+      <Lock aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+      <span className="min-w-0">
+        {text}
+        {fix ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            {fix}
+          </>
+        ) : null}
+      </span>
     </span>
   );
 }

@@ -38,6 +38,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tab, TabPanel, Tabs, TabsList } from '@/components/ui/tabs';
 import { isApiError } from '@/data/errors';
 import { evaluatorQuery, evaluatorVersionQuery, isNotServed, reliabilityQuery } from '@/data/queries';
+import { calibrationsQuery } from '@/data/queries/evaluators';
+import { evalRefId } from '@/domain/words/evaluators';
 import { useAppMode } from '@/data/useSystem';
 import { evaluatorCategoryLabel, evaluatorOriginLabel, stageLabel } from '@/domain/controlPresentation';
 import { formatCount, formatDateTime, formatRelativeTime, formatRisk } from '@/domain/format';
@@ -46,7 +48,7 @@ import type { EvaluatorDetail, TimeWindow } from '@/types/api';
 import { CalibrateDialog } from './CalibrateDialog';
 import { CalibrationMeter } from './CalibrationMeter';
 import { CalibrationRecords } from './CalibrationRecords';
-import { calibrateReason, evidenceNeedLabel, questionTypeLabel } from './evaluatorWords';
+import { calibrateReason, evidenceNeedLabel, labelsForFirstFit, questionTypeLabel } from './evaluatorWords';
 import { ReliabilityChart } from './ReliabilityChart';
 
 export type EvaluatorTab = 'overview' | 'calibration' | 'versions';
@@ -291,11 +293,28 @@ function CalibrationTab({ detail }: { detail: EvaluatorDetail }) {
   );
 }
 
-/** Why "Adopt calibration" is not available, or null. */
-function adoptReason(detail: EvaluatorDetail, writeReason: Reason | null): Reason | null {
+/** The header action: it fits a calibration from the labels, previews its impact, then adopts it (D62). */
+const FIT_AND_ADOPT = 'Fit and adopt from labels';
+
+/**
+ * Why "Fit and adopt from labels" is not available, or null. When too few labels allow a new fit
+ * but a calibration for the current fast-check version already exists, the reason points to it,
+ * so the header never reads as "nothing can be adopted" beside an adoptable record.
+ */
+function adoptReason(detail: EvaluatorDetail, writeReason: Reason | null, adoptable: boolean, onOpenCalibration?: () => void): Reason | null {
   if (writeReason) return writeReason;
   if (detail.attached_routes.length === 0) return { text: 'Attach this check to a route in Policies first.' };
-  return calibrateReason(detail.calibration_progress);
+  const fit = calibrateReason(detail.calibration_progress);
+  const more = labelsForFirstFit(detail.calibration_progress);
+  if (!fit || !adoptable || more === 0) return fit;
+  return {
+    text: `Adopt an existing calibration on the Calibration tab, or label ${more} more ${more === 1 ? 'answer' : 'answers'} for a new fit.`,
+    fix: onOpenCalibration ? (
+      <button type="button" className="font-medium text-fg underline underline-offset-2" onClick={onOpenCalibration}>
+        Open Calibration
+      </button>
+    ) : undefined,
+  };
 }
 
 const TABS: { id: EvaluatorTab; label: string }[] = [
@@ -352,7 +371,11 @@ export function EvaluatorDetailPage({ id, tab = 'overview', onTabChange }: { id:
     );
   }
 
-  const adopt = detail ? adoptReason(detail, writeReason) : null;
+  // A calibration for the fast-check version the check runs on now can be adopted from its record.
+  const records = useQuery({ ...calibrationsQuery(ds, {}), enabled: detail !== undefined });
+  const current = detail?.calibration_progress.snapshot ?? null;
+  const adoptable = (records.data?.items ?? []).some((r) => evalRefId(r.target_key) === id && current !== null && r.snapshot === current);
+  const adopt = detail ? adoptReason(detail, writeReason, adoptable, tab === 'calibration' ? undefined : () => onTabChange?.('calibration')) : null;
   return (
     <div>
       <Link to="/app/evaluators" className="mb-3 inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg">
@@ -376,9 +399,9 @@ export function EvaluatorDetailPage({ id, tab = 'overview', onTabChange }: { id:
               <DisabledAction reason={adopt} layout="stacked">
                 {(p) =>
                   p.disabled ? (
-                    <Button {...p}>{copy.evaluators.adopt_calibration}</Button>
+                    <Button {...p}>{FIT_AND_ADOPT}</Button>
                   ) : (
-                    <CalibrateDialog detail={detail} intent="adopt" trigger={<Button variant="primary">{copy.evaluators.adopt_calibration}</Button>} />
+                    <CalibrateDialog detail={detail} intent="adopt" trigger={<Button variant="primary">{FIT_AND_ADOPT}</Button>} />
                   )
                 }
               </DisabledAction>
