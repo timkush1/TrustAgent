@@ -158,5 +158,5 @@ export const STUDIO_SIMULATED_TEST =
 export const STUDIO_SIMULATED_DRY_RUN =
   "Simulated: the demo's mock fast check answers questions about past traffic arbitrarily, so this count says nothing about your check. Connect a key to test it for real.";
 
-/** copy.studio.dry_run on a mock fast check, where the test costs nothing real. */
-export const STUDIO_DRY_RUN_SIMULATED_TITLE = 'Test on past traffic (simulated, $0)';
+/** copy.studio.dry_run on a mock fast check, where nothing is billed. */
+export const STUDIO_DRY_RUN_SIMULATED_TITLE = 'Test on past traffic (simulated)';

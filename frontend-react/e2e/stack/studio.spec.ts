@@ -118,8 +118,8 @@ test.describe('studio', () => {
 
       // 7. Test on past traffic; confirm the cost when the server asks for it (D82).
       await watch.getByRole('radio', { name: '7 days' }).click();
-      await watch.getByRole('button', { name: 'Test on past traffic (paid)' }).click();
-      const confirm = page.getByRole('alertdialog', { name: 'Run this paid test?' });
+      await watch.getByRole('button', { name: /^Test on past traffic \((paid|simulated)\)$/ }).click();
+      const confirm = page.getByRole('alertdialog', { name: /^Run this (paid|simulated) test\?$/ });
       const result = watch.getByText(/^Would have fired (≈ )?[\d,]+ times in the last /);
       await expect(confirm.or(result)).toBeVisible({ timeout: TIMEOUT });
       if (await confirm.isVisible()) await confirm.getByRole('button', { name: 'Run the test' }).click();

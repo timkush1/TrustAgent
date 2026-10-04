@@ -386,7 +386,7 @@ export function DryRunPanel({ target, spec, route, simulated, reason, names }: D
           if (!open) setPhase((p) => (p.kind === 'confirm' ? { kind: 'idle' } : p));
         }}
         tone="neutral"
-        title="Run this paid test?"
+        title={simulated ? 'Run this simulated test?' : 'Run this paid test?'}
         description={phase.kind === 'confirm' ? studioDryRunConfirmText(phase.details) : undefined}
         confirmLabel="Run the test"
         onConfirm={() => {
