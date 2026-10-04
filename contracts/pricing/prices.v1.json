@@ -30,7 +30,7 @@
       "source": "https://docs.anthropic.com/en/docs/about-claude/pricing",
       "label": "vendor_price",
       "as_of": "2026-06-24",
-      "note": "Anthropic list price as of 2026-06-24."
+      "note": "[A] Anthropic list price as of 2026-06-24, not re-checked since."
     },
     {
       "match": "anthropic/claude-haiku-4.5",
@@ -40,7 +40,7 @@
       "source": "https://openrouter.ai/anthropic/claude-haiku-4.5",
       "label": "vendor_price",
       "as_of": "2026-06-24",
-      "note": "Taken to equal the Anthropic list price as of 2026-06-24."
+      "note": "[A] Taken to equal the Anthropic list price as of 2026-06-24, not re-checked on openrouter.ai since."
     },
     {
       "match": "*",

@@ -130,7 +130,11 @@ describe('Savings tab', { timeout: 20_000 }, () => {
       roi: roiSummary({ simulated: true, llm_cost: { ...base.llm_cost, usd: 0, value: 0 }, counterfactuals: [...base.counterfactuals, freeFull] }),
     });
     renderPage('/app/savings', { control });
-    expect(await screen.findByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./)).toBeInTheDocument();
+    const free = await screen.findByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
+    // What a real judge would add: the published $35.50 per 1,000 full audits, per audit and at this
+    // window's rate (58 audits over 540 answers), labelled an estimate.
+    expect(free).toHaveTextContent('With a real judge each deep audit adds about $0.036: about $3.81 per 1,000 answers at this window’s deep-audit rate.');
+    expect(badge('Estimate', 'What a real judge would add')).toBeInTheDocument();
     const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ }).closest('tr')!;
     expect(row).toHaveTextContent('Not available in the simulated demo: the mock judge is free');
     expect(within(row).getAllByRole('cell').slice(0, 2).map((c) => c.textContent)).toEqual(['—', '—']);

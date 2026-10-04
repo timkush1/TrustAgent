@@ -5,6 +5,7 @@
  * Text comes from contracts/ui (copy.v1.json, outcomes.v1.json) where a key exists; the words below
  * without one are listed for the lead to move into copy.v1.json at the next checkpoint (D86).
  */
+import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import type { AuditSelection, Counterfactual, FieldError, PriceEntry, ValueLabel } from '@/types/api';
 import { copy } from '../contracts';
 import { formatUsd } from '../format';
@@ -38,7 +39,7 @@ const METHODS: Record<Counterfactual['method'], string> = {
   token_model: 'Token model: your fast-check tokens priced at the judge’s rate',
   uniform_sample: 'Mean cost of uniformly sampled deep audits × answers',
   fitted_from_audits: 'Fitted from your deep audits by answer length',
-  static_assumptions: 'Published assumptions (≈ $35.50 per 1,000 answers)',
+  static_assumptions: 'Published assumptions',
 };
 
 /** How a counterfactual was worked out, in words. */
@@ -50,6 +51,14 @@ export function costMethodWord(method: Counterfactual['method']): string {
 export function costIsMeasuredMethod(method: Counterfactual['method']): boolean {
   return method !== 'static_assumptions';
 }
+
+/**
+ * The published assumption for an LLM auditing one answer claim by claim, per 1,000 answers
+ * (contracts value claim llm_full_audit_cost_per_1k, an estimate), or null without one. The server
+ * prices its static full-audit counterfactual with the same claim.
+ */
+export const costFullAuditPer1k: number | null =
+  (claimsDoc.claims as readonly { id: string; value: number | null }[]).find((c) => c.id === 'llm_full_audit_cost_per_1k')?.value ?? null;
 
 /** "not measured", for a figure that comes from the published assumptions. */
 export const costNotMeasured: string = copy.savings.not_measured;
@@ -158,6 +167,16 @@ const PRICE_PROVIDERS: Record<string, string> = {
 /** Words for PriceEntry.provider ("OpenRouter", "Ollama (on your machine)"), never the raw id. */
 export function costPriceProviderLabel(provider: string): string {
   return PRICE_PROVIDERS[provider] ?? humanizeId(provider);
+}
+
+/**
+ * A price entry's note in plain words. The contract marks a price still to be re-verified before
+ * `make bench-publish` with a leading "[A]" (contracts/README.md); the note itself already says it
+ * has not been re-checked, so the marker is dropped here.
+ */
+export function costPriceNote(note: string | null | undefined): string | null {
+  const text = (note ?? '').replace(/^\[A\]\s*/, '').trim();
+  return text === '' ? null : text;
 }
 
 /** "$0.042 / $0 per million tokens (in / out)". */

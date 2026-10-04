@@ -25,7 +25,7 @@ import { isApiError } from '@/data/errors';
 import { isNotServed } from '@/data/queries';
 import { pricingQuery } from '@/data/queries/costs';
 import { qkcSecurity } from '@/data/queries/security';
-import { costOverrideFinding, costOverrideNote, costPricePair, costPriceProviderLabel, costPriceSourceWord } from '@/domain/presentation';
+import { costOverrideFinding, costOverrideNote, costPriceNote, costPricePair, costPriceProviderLabel, costPriceSourceWord } from '@/domain/presentation';
 import type { FieldError, PriceEntry, SettingsView } from '@/types/api';
 import {
   emptyRow,
@@ -80,7 +80,7 @@ function EffectiveTable() {
                 <span className="block font-mono text-xs text-fg">{e.match}</span>
                 <span className="block text-xs text-fg-muted">
                   {costPriceProviderLabel(e.provider)}
-                  {e.note ? ` · ${e.note}` : ''}
+                  {costPriceNote(e.note) ? ` · ${costPriceNote(e.note)}` : ''}
                 </span>
               </th>
               <td className="px-3 py-1.5 text-right align-top text-fg tabular">{costPricePair(e)}</td>
@@ -91,7 +91,7 @@ function EffectiveTable() {
                 ) : (
                   <EvidenceBadge
                     label="vendor"
-                    basis={`${costPriceSourceWord(e.label)}${e.note ? `. ${e.note}` : ''}`}
+                    basis={`${costPriceSourceWord(e.label)}${costPriceNote(e.note) ? `. ${costPriceNote(e.note)}` : ''}`}
                     sourceUrl={e.source}
                     asOf={e.as_of}
                     subject={`${e.match} price`}

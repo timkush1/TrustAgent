@@ -8,6 +8,7 @@ import { valueLabelView } from '@/domain/controlPresentation';
 import { formatCount, formatDateTime, formatUsd } from '@/domain/format';
 import {
   costCounterfactualView,
+  costFullAuditPer1k,
   costIsMeasuredMethod,
   costLabel,
   costLlmCapHit,
@@ -292,10 +293,16 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
       });
       continue;
     }
+    // The published assumption says where its number comes from: the server's per-1,000 figure
+    // (contracts value claim llm_full_audit_cost_per_1k) times the answers in the window.
+    const method =
+      c.method === 'static_assumptions' && finite(c.per_1k)
+        ? `${costMethodWord(c.method)}: ${formatUsd(c.per_1k)} per 1,000 answers × ${countOf(n, sim ? 'simulated answer' : 'answer')}`
+        : costMethodWord(c.method);
     rows.push({
       key: c.kind,
       label: costCounterfactualView(c.kind).label,
-      detail: notMeasured ? `${costMethodWord(c.method)} · ${costNotMeasured}` : costMethodWord(c.method),
+      detail: notMeasured ? `${method} · ${costNotMeasured}` : method,
       total: finite(c.low) && finite(c.high) ? costRange(c.low, c.high) : formatUsd(c.usd),
       per1k: formatUsd(c.per_1k),
       valueLabel: costLabel(sim, c.label),
@@ -304,6 +311,28 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
     });
   }
   return rows;
+}
+
+/**
+ * What a real judge would add on a demo whose mock judge is free: the published full-audit
+ * assumption per deep audit, and per 1,000 answers at this window's deep-audit rate (audits per
+ * answer checked). An estimate, never measured; null without the assumption or without audits.
+ */
+export function realJudgeEstimate(roi: RoiSummary, per1kAssumption: number | null = costFullAuditPer1k): { perAudit: string; per1k: string } | null {
+  const n = roi.gated_responses;
+  const audits = roi.llm_cost.audits;
+  if (!finite(per1kAssumption) || per1kAssumption <= 0 || n <= 0 || audits <= 0) return null;
+  return { perAudit: twoFigures(per1kAssumption / 1000), per1k: formatUsd((per1kAssumption * audits) / n) };
+}
+
+/**
+ * A cent or two, to two significant figures ("$0.036"), where cents would round it away. Halves
+ * round up in decimal ($35.50 per 1,000 is $0.0355, never the binary $0.03549… shown as $0.035).
+ */
+function twoFigures(usd: number): string {
+  if (usd >= 1) return formatUsd(usd);
+  const step = 10 ** (Math.floor(Math.log10(usd)) - 1);
+  return `$${Number((Math.round(usd / step + 1e-9) * step).toPrecision(2))}`;
 }
 
 // ---------------------------------------------------------------------------------------- savings

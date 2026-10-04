@@ -33,7 +33,7 @@ import { formatPercent } from '@/domain/rates';
 import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
 import { CostBandChart } from './CostBandChart';
-import { componentRows, costBandPoints, countOf, outcomeSplit, samplingLines, savingsRange, type SavingsRange } from './savingsModel';
+import { componentRows, costBandPoints, countOf, outcomeSplit, realJudgeEstimate, samplingLines, savingsRange, type SavingsRange } from './savingsModel';
 
 const linkClass = 'inline-flex items-center gap-0.5 text-sm font-medium text-fg underline underline-offset-2';
 
@@ -65,6 +65,7 @@ function Headline({ roi }: { roi: RoiSummary }) {
   const line = savingsLine(roi);
   const saved = savingsRange(roi);
   const same = roi.counterfactuals.find((c) => c.kind === 'llm_same_checks');
+  const realJudge = line.freeMockJudge ? realJudgeEstimate(roi) : null;
   return (
     <section aria-labelledby="savings-headline" className="space-y-2 rounded-lg border border-border bg-surface px-4 py-4">
       <h2 id="savings-headline" className="flex flex-wrap items-center gap-2 text-lg font-semibold text-fg">
@@ -91,8 +92,25 @@ function Headline({ roi }: { roi: RoiSummary }) {
         </p>
       ) : null}
       {line.freeMockJudge ? (
-        <p className="text-sm text-fg-muted">
-          The deep audit reads $0 because the demo&rsquo;s mock judge is free. With a real judge, every deep audit adds an LLM cost.
+        <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+          <span>
+            The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
+            {realJudge ? (
+              <span className="tabular">
+                With a real judge each deep audit adds about {realJudge.perAudit}: about {realJudge.per1k} per 1,000 answers at this window&rsquo;s
+                deep-audit rate.
+              </span>
+            ) : (
+              'With a real judge, every deep audit adds an LLM cost.'
+            )}
+          </span>
+          {realJudge ? (
+            <EvidenceBadge
+              label="estimate"
+              basis="The published assumption for an LLM auditing one answer claim by claim, times this window’s deep audits per answer checked. Not measured."
+              subject="What a real judge would add"
+            />
+          ) : null}
         </p>
       ) : null}
       <p className="text-xs text-fg-muted">{copy.savings.caption}</p>

@@ -295,6 +295,24 @@ describe('Settings → Budgets → Prices', { timeout: 20_000 }, () => {
     expect(within(row).queryByRole('button', { name: /^Vendor:/ })).toBeNull();
   });
 
+  it('shows a not-yet-re-verified price note without its [A] marker', async () => {
+    const haiku: PriceEntry = {
+      provider: 'anthropic',
+      match: 'claude-haiku-4-5*',
+      input_per_mtok: 1,
+      output_per_mtok: 5,
+      label: 'vendor_price',
+      as_of: '2026-06-24',
+      note: '[A] Anthropic list price as of 2026-06-24, not re-checked since.',
+    };
+    const control = createControlApi({ pricing: { ...pricingFixture, entries: [...pricingFixture.entries, haiku] } as PricingTable });
+    renderPage(PATH, { control });
+    const table = await screen.findByRole('table', { name: /^Prices in use/ });
+    const row = within(table).getAllByRole('row').at(-1)!;
+    expect(row).toHaveTextContent('Anthropic · Anthropic list price as of 2026-06-24, not re-checked since.');
+    expect(row.textContent).not.toContain('[A]');
+  });
+
   it('adds an override and saves the list labelled as yours', async () => {
     const user = userEvent.setup();
     const { control } = renderPage(PATH);

@@ -15,6 +15,7 @@ import {
   endLabels,
   freeMockCounterfactual,
   rangeRatio,
+  realJudgeEstimate,
   samplingLines,
   savingsRange,
   type CostBandPoint,
@@ -141,6 +142,8 @@ describe('Savings figures', () => {
       ['llm_full_claim_audit', '$15.00–$30.00', '$40.00', 'estimate'],
     ]);
     expect(rows[4].notMeasured).toBe(true);
+    // The published assumption says where its number comes from: per 1,000 answers × the answers.
+    expect(rows[4].detail).toBe(`Published assumptions: $40.00 per 1,000 answers × ${roiSummary().gated_responses.toLocaleString('en-US')} answers · not measured`);
     expect(rows[4].detail).toMatch(/not measured$/);
     expect(componentRows(roiSummary({ simulated: true })).every((r) => r.valueLabel === 'simulated')).toBe(true);
   });
@@ -220,5 +223,19 @@ describe('endLabels', () => {
   it('labels only the spend without a comparison', () => {
     expect(endLabels([point(3, null)], 'same_checks', false, y).map((l) => l.key)).toEqual(['measured']);
     expect(endLabels([], null, false, y)).toEqual([]);
+  });
+});
+
+describe('realJudgeEstimate', () => {
+  it('prices a real judge from the published assumption, per audit and at the window’s audit rate', () => {
+    const roi = roiSummary(); // 58 deep audits over 540 answers
+    expect(realJudgeEstimate(roi, 35.5)).toEqual({ perAudit: '$0.036', per1k: '$3.81' });
+  });
+
+  it('gives nothing without an assumption, answers or audits', () => {
+    const roi = roiSummary();
+    expect(realJudgeEstimate(roi, null)).toBeNull();
+    expect(realJudgeEstimate({ ...roi, gated_responses: 0 }, 35.5)).toBeNull();
+    expect(realJudgeEstimate({ ...roi, llm_cost: { ...roi.llm_cost, audits: 0 } }, 35.5)).toBeNull();
   });
 });
