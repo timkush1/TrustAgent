@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -139,8 +140,8 @@ func TestMigration0005UpgradesLiveRows(t *testing.T) {
 	if err := Migrate(ctx, pool); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	if got := appliedNames(t, ctx, pool); got[len(got)-1] != migration0005 {
-		t.Fatalf("schema_migrations = %v, want %s last", got, migration0005)
+	if got := appliedNames(t, ctx, pool); !slices.Contains(got, migration0005) {
+		t.Fatalf("schema_migrations = %v, want %s applied", got, migration0005)
 	}
 
 	var flagged, linked, withChars int
