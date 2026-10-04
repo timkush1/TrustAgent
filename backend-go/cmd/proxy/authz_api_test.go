@@ -459,6 +459,7 @@ func TestWSTicketAPI(t *testing.T) {
 		ExpiresIn int    `json:"expires_in"`
 	}
 	strictDecode(t, body, &tk)
+	contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/WsTicket", body)
 	if resp.StatusCode != http.StatusOK || tk.ExpiresIn != 30 || tk.Ticket == "" || resp.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("ticket %d %s", resp.StatusCode, body)
 	}
@@ -508,6 +509,7 @@ func TestKeysAPI(t *testing.T) {
 	}
 	var created createdAPIKey
 	strictDecode(t, body, &created)
+	contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/CreatedApiKey", body)
 	if !authz.IsMintedKey(created.Secret) || created.Label != "ci-bot" || strings.Join(created.Scopes, ",") != "ingest,read" ||
 		created.Prefix != created.Secret[:9] || created.RevokedAt != nil || created.LastUsedAt != nil {
 		t.Errorf("created %+v", created)
@@ -521,6 +523,7 @@ func TestKeysAPI(t *testing.T) {
 		Items []apiKeyView `json:"items"`
 	}
 	strictDecode(t, body, &list)
+	contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/ApiKeyList", body)
 	if resp.StatusCode != http.StatusOK || len(list.Items) != 1 || list.Items[0].ID != created.ID || list.Items[0].LastUsedAt == nil {
 		t.Fatalf("list %d %s", resp.StatusCode, body)
 	}
@@ -571,6 +574,7 @@ func TestKeysAPI(t *testing.T) {
 	}
 	_, body = env.call(http.MethodGet, "/api/keys", nil, nil, admin...)
 	strictDecode(t, body, &list)
+	contractstest.ValidateJSON(t, "api.v1.schema.json#/$defs/ApiKeyList", body)
 	if list.Items[0].RevokedAt == nil {
 		t.Error("the list shows the revocation")
 	}

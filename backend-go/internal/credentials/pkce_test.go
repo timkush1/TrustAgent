@@ -312,6 +312,21 @@ func TestExchangeConnectCode(t *testing.T) {
 	}
 }
 
+// D96: the code exchange's own client dials through netguard, so even an allowed origin that
+// resolves to a link-local or cloud-metadata address is refused before any byte is sent.
+func TestExchangeConnectCodeRefusesMetadataAddresses(t *testing.T) {
+	verifier, _ := NewCodeVerifier()
+	for _, base := range []string{"http://169.254.169.254", "http://[fd00:ec2::254]"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := ExchangeConnectCode(ctx, nil, base, []string{base}, "code", verifier)
+		cancel()
+		var xe *ExchangeError
+		if !errors.As(err, &xe) || xe.Status != 0 || !strings.Contains(xe.Message, "link-local or cloud-metadata") {
+			t.Errorf("%s: %v, want the netguard refusal", base, err)
+		}
+	}
+}
+
 func TestPlausibleKey(t *testing.T) {
 	for k, want := range map[string]bool{
 		"sk-or-v1-abc": true, "": false, "sk or": false, "sk-\n": false, "sk-é": false, strings.Repeat("k", maxExchangedKey+1): false,

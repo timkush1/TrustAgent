@@ -225,6 +225,51 @@ func TestCalibrationAPI(t *testing.T) {
 			t.Errorf("fit %v: %d %s", req, resp.StatusCode, body)
 		}
 	}
+	// The two minimums on their own (#45): 7 balanced labels are one short, the 8th makes a fit;
+	// 10 labels with only 2 of one class are refused for the class, not for the count.
+	refusal := func(target string) (n, pos, neg int) {
+		t.Helper()
+		resp, body := env.call(http.MethodPost, "/api/calibration/fit", evalAdminKey,
+			map[string]any{"target": target, "snapshot": liveSnapshot, "sources": []string{"labels"}, "activate": false})
+		var e struct {
+			Error struct {
+				Code    string `json:"code"`
+				Details struct {
+					N, Pos, Neg int
+				} `json:"details"`
+			} `json:"error"`
+		}
+		if resp.StatusCode != http.StatusUnprocessableEntity || json.Unmarshal(body, &e) != nil || e.Error.Code != codeValidationFailed {
+			t.Fatalf("fit %s: %d %s, want 422 validation_failed", target, resp.StatusCode, body)
+		}
+		return e.Error.Details.N, e.Error.Details.Pos, e.Error.Details.Neg
+	}
+	seedLabels(t, db, "off_topic@1", liveSnapshot, "human", 7)
+	if n, pos, neg := refusal("off_topic@1"); n != 7 || pos != 3 || neg != 4 {
+		t.Errorf("7 labels: refused with n %d (%d/%d)", n, pos, neg)
+	}
+	addLabel := func(target, traceID, label string, risk float64) {
+		t.Helper()
+		if _, err := db.Exec(t.Context(), `INSERT INTO labels (trace_id, target, label, labeled_by, label_source, risk_raw, snapshot)
+			VALUES ($1, $2, $3, 'seed', 'human', $4, $5)`, traceID, target, label, risk, liveSnapshot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addLabel("off_topic@1", "seed-boundary-8", "should_fire", 0.9)
+	if f := fitCalibration(t, env, map[string]any{"target": "off_topic@1", "snapshot": liveSnapshot, "sources": []string{"labels"}, "activate": false}); f.Reliability.N != decision.MinFitLabels || f.Record.Quality != "provisional" {
+		t.Errorf("8 labels: n %d quality %s", f.Reliability.N, f.Record.Quality)
+	}
+	for i := range 10 {
+		label, risk := "should_fire", 0.6+float64(i)/50
+		if i < 2 {
+			label, risk = "should_not_fire", 0.1
+		}
+		addLabel("commitments@1", "seed-class-"+strconv.Itoa(i), label, risk)
+	}
+	if n, pos, neg := refusal("commitments@1"); n != 10 || pos != 8 || neg != 2 {
+		t.Errorf("2 of one class: refused with n %d (%d/%d)", n, pos, neg)
+	}
+
 	if resp, _ := env.call(http.MethodPost, "/api/calibration/fit", testKey, map[string]any{"target": "groundedness@1"}); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("a content key fits: %d", resp.StatusCode)
 	}
@@ -241,7 +286,8 @@ func TestCalibrationAPI(t *testing.T) {
 		actions = append(actions, a)
 	}
 	rows.Close()
-	want := "calibration.fit,calibration.activate,calibration.deactivate,calibration.fit,calibration.fit,calibration.fit,calibration.fit"
+	// The last fit is the 8-label boundary fit; the refused ones leave no row.
+	want := "calibration.fit,calibration.activate,calibration.deactivate,calibration.fit,calibration.fit,calibration.fit,calibration.fit,calibration.fit"
 	if strings.Join(actions, ",") != want {
 		t.Errorf("audit rows %v", actions)
 	}
