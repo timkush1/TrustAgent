@@ -70,8 +70,12 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
   const route = chosen ?? (defaultRoute && routes.includes(defaultRoute) ? defaultRoute : (routes.find((r) => r !== 'default') ?? routes[0] ?? null));
   const [draft, setDraft] = useState<{ yaml: string; etag: string } | null>(null);
   const names = useMemo(() => {
-    // Archived checks are on no route, so they never make a name ambiguous here.
-    return evalNameMap([...(evaluators.data?.items ?? []).filter((e) => !e.archived), { id: spec.id, name: spec.name }]);
+    const items = evaluators.data?.items ?? [];
+    // Archived checks are on no route, so they never make a name ambiguous here; they can still
+    // show up in past traffic (a dry run's overlap), where they read "<name> (archived)".
+    const byId = evalNameMap([...items.filter((e) => !e.archived), { id: spec.id, name: spec.name }]);
+    for (const e of items) if (e.archived && !byId.has(e.id)) byId.set(e.id, `${e.name} (archived)`);
+    return byId;
   }, [evaluators.data, spec.id, spec.name]);
 
   /** A ref in words: "Competitor mentions, version 2" rather than "proof_murg2b8p@2". */

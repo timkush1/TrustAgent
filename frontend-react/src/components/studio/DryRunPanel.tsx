@@ -18,6 +18,7 @@ import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { describeError } from '@/components/common/describeError';
 import { useNow } from '@/components/common/useNow';
+import { evaluatorName } from '@/components/trace/traceView';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
@@ -124,10 +125,8 @@ function ExampleRow({ example }: { example: DryRunResult['examples'][number] }) 
 }
 
 function DryRunResultView({ result, simulated, names }: { result: DryRunResult; simulated: boolean; names: ReadonlyMap<string, string> }) {
-  const nameOf = (ref: string) => {
-    const id = ref.includes('@') ? ref.slice(0, ref.lastIndexOf('@')) : ref;
-    return names.get(id) ?? ref;
-  };
+  // Named from the library; a check it does not list reads as its humanized id, never a raw ref.
+  const nameOf = (ref: string) => evaluatorName(ref, names);
   const cost = (
     <CostFigure
       usd={result.cost_usd}

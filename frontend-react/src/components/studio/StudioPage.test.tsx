@@ -538,6 +538,22 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(await within(test).findByText(STUDIO_SIMULATED_TEST)).toBeInTheDocument();
   });
 
+  it('names an archived check in a dry run’s overlap, never by its ref', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    const library = evaluatorMetas().map((e) => (e.id === 'off_brand_tone' ? evaluatorMeta('off_brand_tone', { archived: true }) : e));
+    control.handlers.unshift(http.get(`${API}/api/evaluators`, () => HttpResponse.json({ items: library })));
+    renderPage('/app/evaluators/studio', { control });
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('radio', { name: '7 days' }));
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Run this paid test?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Run the test' }));
+    expect(await within(watch).findByText('Off-brand tone (archived) (6)')).toBeInTheDocument();
+    expect(within(watch).queryByText(/off_brand_tone@1/)).toBeNull();
+  });
+
   it('labels a dry run on the mock fast check simulated, figure by figure', async () => {
     const user = userEvent.setup();
     renderPage('/app/evaluators/studio', { status: { demo: true, decision_model: { ...adminStatus().decision_model, backend: 'mock', state: 'mock' } } });
