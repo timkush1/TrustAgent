@@ -1,7 +1,8 @@
 /**
  * Section 4 (SPEC §8.1): write your own checks. The "clip" is the built-in Unapproved commitments
  * check from contracts/evaluators, shown as what a one-sentence rule becomes. The Studio that drafts
- * such checks from plain English arrives later and is labelled "coming soon".
+ * such checks from plain English runs on your own stack (make demo); the pill says the online demo
+ * does not have it yet.
  */
 import { ArrowRight, Hourglass } from 'lucide-react';
 import { COMMITMENTS } from './content';
@@ -64,9 +65,12 @@ export function WriteChecks() {
               {ROUTE_SNIPPET}
             </pre>
             <p className="mt-auto pt-6">
-              <span className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-xs font-medium text-fg-muted">
-                <Hourglass aria-hidden="true" className="size-3.5" />
-                Drafting in the Studio: coming soon
+              {/* Wraps on a phone, so it is a rounded box rather than a fixed-height pill. */}
+              <span className="inline-flex min-h-6 items-center gap-1 rounded-xl border border-dashed border-border-strong px-2 py-0.5 text-xs font-medium text-fg-muted">
+                <Hourglass aria-hidden="true" className="size-3.5 shrink-0" />
+                <span>
+                  Drafting in the Studio: in <code className="font-mono">make demo</code>, not in the online demo yet
+                </span>
               </span>
             </p>
           </div>

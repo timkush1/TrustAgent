@@ -17,6 +17,7 @@ function StudioRoute() {
         phase="P5"
         phaseName="Studio in the online demo"
         badge="Coming soon"
+        intro="Studio runs on your own TrustAgent stack. The online demo cannot draft or test checks yet. On your own stack you can:"
         planned={[
           'Describe a check in plain English; an LLM drafts it once as a question the fast check can answer',
           'Test the draft on recorded traffic before it touches anyone',

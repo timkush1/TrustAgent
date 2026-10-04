@@ -101,6 +101,13 @@ describe('landing page', () => {
     expect(within(live).queryByRole('textbox')).toBeNull();
   });
 
+  it('says Studio ships in make demo and is missing only from the online demo', async () => {
+    await renderLanding();
+    const pill = screen.getByText(/^Drafting in the Studio: in/);
+    expect(pill).toHaveTextContent('Drafting in the Studio: in make demo, not in the online demo yet');
+    expect(screen.queryByText(/Drafting in the Studio: coming soon/)).toBeNull();
+  });
+
   it('marks every other product’s comparison cell as a dated TODO', async () => {
     await renderLanding();
     const table = screen.getByRole('table');

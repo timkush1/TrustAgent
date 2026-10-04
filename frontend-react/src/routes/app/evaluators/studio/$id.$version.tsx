@@ -19,6 +19,7 @@ function StudioVersionRoute() {
         phase="P5"
         phaseName="Studio in the online demo"
         badge="Coming soon"
+        intro="Studio runs on your own TrustAgent stack. The online demo cannot edit checks yet. On your own stack you can:"
         planned={[
           'Start from this version: change the question, the options or the thresholds',
           'Test the change on the same samples and on recorded traffic',

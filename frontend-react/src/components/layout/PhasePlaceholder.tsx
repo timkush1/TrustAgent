@@ -1,6 +1,6 @@
 /**
- * An honest page for a navigation item that is not built yet: what it will answer, what it will
- * show, and when it arrives. Only real links, never a dead button.
+ * An honest page for a navigation item that is not built yet, or not available here: what it
+ * answers, what it shows, and when it arrives. Only real links, never a dead button.
  */
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Hourglass } from 'lucide-react';
@@ -18,9 +18,14 @@ export interface PhasePlaceholderProps {
   meanwhile?: ReactNode;
   /** Replaces "Arrives in {phase} · {phaseName}" (the public static site says "Coming soon"). */
   badge?: string;
+  /**
+   * The sentence before the list. Defaults to "This page is not built yet…"; a page that exists
+   * elsewhere (Studio runs on your own stack, not in the online demo) says so instead.
+   */
+  intro?: string;
 }
 
-export function PhasePlaceholder({ question, phase, phaseName, planned, meanwhile, badge }: PhasePlaceholderProps) {
+export function PhasePlaceholder({ question, phase, phaseName, planned, meanwhile, badge, intro }: PhasePlaceholderProps) {
   return (
     <section aria-labelledby="placeholder-title" className="max-w-2xl space-y-5">
       <div className="space-y-2">
@@ -31,7 +36,7 @@ export function PhasePlaceholder({ question, phase, phaseName, planned, meanwhil
         <h2 id="placeholder-title" className="text-xl font-semibold text-fg">
           {question}
         </h2>
-        <p className="text-sm text-fg-muted">This page is not built yet. When it lands it will show:</p>
+        <p className="text-sm text-fg-muted">{intro ?? 'This page is not built yet. When it lands it will show:'}</p>
       </div>
       <ul className="space-y-1.5 text-sm text-fg">
         {planned.map((item) => (
