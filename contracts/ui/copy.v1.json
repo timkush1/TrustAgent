@@ -207,7 +207,7 @@
     },
     "savings": {
       "headline": "Your cost: {total_per_1k} per 1,000 answers (fast check {fast_check} + deep audit {deep_audit})",
-      "early_data": "So far: {n} answers checked for {cost}. Asking an LLM the same questions would have cost ≈ {counterfactual} (estimate).",
+      "early_data": "So far: {n} answers checked for {cost}. Asking an LLM the same questions would have cost ≈ {counterfactual}.",
       "caption": "The fast check triages; deep audits add claim-level explanations.",
       "calculator_footnote": "The fast check triages; it doesn't replace claim-level audit.",
       "stopped": "Stopped before users saw them",

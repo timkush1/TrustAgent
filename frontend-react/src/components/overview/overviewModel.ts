@@ -106,6 +106,11 @@ export interface SavingsLine {
   stopped: number;
   flagged: number;
   outcomesLabel: 'measured' | 'simulated';
+  /**
+   * The deep audit reads $0 only because the demo's mock judge is free (simulated audits, no
+   * spend): the page says so next to the headline.
+   */
+  freeMockJudge: boolean;
 }
 
 function perThousand(usd: number, answers: number): number | null {
@@ -144,6 +149,7 @@ export function savingsLine(roi: RoiSummary): SavingsLine {
     stopped: roi.outcomes.blocked + roi.outcomes.fallback,
     flagged: roi.outcomes.flagged,
     outcomesLabel: roi.simulated ? 'simulated' : roi.outcomes.label,
+    freeMockJudge: roi.simulated && roi.llm_cost.audits > 0 && roi.llm_cost.usd === 0,
   };
 }
 

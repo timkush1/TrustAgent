@@ -47,7 +47,7 @@ describe('Overview page', { timeout: 20_000 }, () => {
   it('writes the savings line with value labels', async () => {
     renderPage('/app/overview');
     expect(await screen.findByText(/Your cost: \$0\.80 per 1,000 answers \(fast check \$0\.05 \+ deep audit \$0\.76\)/)).toBeInTheDocument();
-    expect(screen.getByText(/So far: 540 answers checked for \$0\.43\. Asking an LLM the same questions would have cost ≈ \$1\.22 \(estimate\)\./)).toBeInTheDocument();
+    expect(screen.getByText(/So far: 540 answers checked for \$0\.43\. Asking an LLM the same questions would have cost ≈ \$1\.22\.$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Estimate: how “What an LLM would have cost” was produced/ })).toBeInTheDocument();
   });
 

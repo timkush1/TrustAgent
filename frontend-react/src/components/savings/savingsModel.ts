@@ -62,6 +62,20 @@ export function rangeRatio(c: Counterfactual | null): [number, number] {
   return [Math.min(lo, hi), Math.max(lo, hi)];
 }
 
+/** Why a counterfactual scaled up from the demo's free mock audits shows no figure. */
+export const FREE_MOCK_AUDIT_REASON =
+  'Not available in the simulated demo: the mock judge is free, so there is no audit cost to scale up';
+
+/**
+ * A full-audit counterfactual scaled up from free mock audits: simulated and $0, which says
+ * nothing about what an LLM audit costs. It shows an em dash and no chart band (DESIGN §8: a
+ * missing value is "—", never 0). The published assumption (static_assumptions) is never one.
+ */
+export function freeMockCounterfactual(c: Counterfactual | null, simulated: boolean): boolean {
+  if (!c || c.kind !== 'llm_full_claim_audit' || c.method === 'static_assumptions') return false;
+  return (simulated || c.label === 'simulated') && (c.usd === 0 || c.per_1k === 0);
+}
+
 /**
  * The points of the Savings chart (D73, no api.ts change):
  * - same-checks band: the bucket's `same_checks_usd` × [low/usd, high/usd] of the summary's
@@ -73,7 +87,7 @@ export function costBandPoints(series: RoiTimeseries, roi: RoiSummary | undefine
   const full = counterfactual(roi, 'llm_full_claim_audit');
   const [sameLo, sameHi] = rangeRatio(same);
   const [fullLo, fullHi] = rangeRatio(full);
-  const per1k = full && finite(full.per_1k) ? full.per_1k : null;
+  const per1k = full && finite(full.per_1k) && !freeMockCounterfactual(full, roi?.simulated ?? false) ? full.per_1k : null;
   return series.points.map((p) => {
     const gated = finite(p.gated) ? p.gated : 0;
     const sameUsd = finite(p.same_checks_usd) ? p.same_checks_usd : null;
@@ -84,6 +98,30 @@ export function costBandPoints(series: RoiTimeseries, roi: RoiSummary | undefine
       same_checks: sameUsd === null ? null : { low: sameUsd * sameLo, high: sameUsd * sameHi },
       full_audit: per1k === null ? null : { low: ((per1k * fullLo) * gated) / 1000, high: ((per1k * fullHi) * gated) / 1000 },
     };
+  });
+}
+
+/** A bucket with nothing in it: no answer checked and nothing spent. */
+const emptyBucket = (p: CostBandPoint): boolean => p.gated === 0 && p.measured === 0;
+
+/**
+ * The buckets the chart draws: a fresh stack's day is mostly empty hours, so the chart starts one
+ * bucket before the first one with traffic (the line then rises from zero) rather than at the
+ * window's start. `since` is the first drawn bucket's time when the start moved, else null. A
+ * series without any traffic, or with too few buckets to trim, stays whole.
+ */
+export function chartBuckets(points: readonly CostBandPoint[]): { points: CostBandPoint[]; since: string | null } {
+  const first = points.findIndex((p) => !emptyBucket(p));
+  const start = Math.min(Math.max(0, first - 1), Math.max(0, points.length - 2));
+  if (first <= 0 || start === 0) return { points: [...points], since: null };
+  return { points: points.slice(start), since: points[start].t };
+}
+
+/** Whether a band has any spread in the series (else it is a single estimate per bucket: a line). */
+export function bandHasRange(points: readonly CostBandPoint[], band: BandKind): boolean {
+  return points.some((p) => {
+    const b = p[band];
+    return b !== null && b.high - b.low > 1e-9;
   });
 }
 
@@ -119,11 +157,19 @@ export function bandWords(kind: BandKind): string {
   return costCounterfactualView(kind === 'same_checks' ? 'llm_same_checks' : 'llm_full_claim_audit').label;
 }
 
+/**
+ * When the chart's buckets run: "since Mon 14:00" when it starts at the first traffic, else the
+ * window in words ("in the last 24 hours").
+ */
+export function chartSpan(bucket: RoiTimeseries['bucket'], since: string | null, windowWords: string): string {
+  return since ? `since ${bucketLabel(bucket, since)}` : `in ${windowWords}`;
+}
+
 /** The chart in one sentence, for screen readers and the figure description. */
-export function costBandSummary(points: readonly CostBandPoint[], band: BandKind | null, bandLabel: ValueLabel): string {
+export function costBandSummary(points: readonly CostBandPoint[], band: BandKind | null, bandLabel: ValueLabel, span: string): string {
   const spent = points.reduce((s, p) => s + p.measured, 0);
   const answers = points.reduce((s, p) => s + p.gated, 0);
-  let line = `Checking ${countOf(answers, 'answer')} cost ${formatUsd(spent)} over ${countOf(points.length, 'interval')}.`;
+  let line = `Checking ${countOf(answers, 'answer')} cost ${formatUsd(spent)} ${span}.`;
   if (band) {
     const present = points.flatMap((p) => (p[band] ? [p[band]] : []));
     if (present.length > 0) {
@@ -196,6 +242,19 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
   ];
   for (const c of roi.counterfactuals) {
     const notMeasured = !costIsMeasuredMethod(c.method);
+    if (freeMockCounterfactual(c, sim)) {
+      rows.push({
+        key: c.kind,
+        label: costCounterfactualView(c.kind).label,
+        detail: FREE_MOCK_AUDIT_REASON,
+        total: formatUsd(null),
+        per1k: formatUsd(null),
+        valueLabel: costLabel(sim, c.label),
+        basis: `${FREE_MOCK_AUDIT_REASON}. ${c.basis}`,
+        notMeasured,
+      });
+      continue;
+    }
     rows.push({
       key: c.kind,
       label: costCounterfactualView(c.kind).label,
@@ -224,6 +283,21 @@ export interface SavingsRange {
    * the whole range; `mixed`: the range runs from costing more to saving.
    */
   direction: 'saved' | 'cost_more' | 'mixed';
+  /**
+   * How many times cheaper the fast check was than an LLM asking the same questions ("60×"), when
+   * it saved and by at least 2×; else null.
+   */
+  multiple: string | null;
+}
+
+/** "60×", "4.5×": the same-checks counterfactual over the fast-check spend, or null below 2×. */
+export function cheaperMultiple(roi: RoiSummary): string | null {
+  const same = counterfactual(roi, 'llm_same_checks');
+  const spent = roi.decision_cost.usd;
+  if (!same || !finite(same.usd) || !finite(spent) || spent <= 0) return null;
+  const x = same.usd / spent;
+  if (!Number.isFinite(x) || x < 2) return null;
+  return `${x < 10 ? x.toLocaleString('en-US', { maximumFractionDigits: 1 }) : formatCount(Math.round(x))}×`;
 }
 
 /** What the fast check saved against an LLM asking the same questions, or null without an estimate. */
@@ -236,9 +310,9 @@ export function savingsRange(roi: RoiSummary): SavingsRange | null {
   const high = Math.max(lo, hi);
   const label = costLabel(roi.simulated, roi.savings_vs_same_checks.label);
   // "Cost $0.10–$0.20 more than …", never "Cost -$0.20–-$0.10 more than …".
-  if (low < 0 && high <= 0) return { text: costRange(-high, -low), label, direction: 'cost_more' };
-  if (low < 0) return { text: `${formatUsd(-low)} more and ${formatUsd(high)} less`, label, direction: 'mixed' };
-  return { text: costRange(low, high), label, direction: 'saved' };
+  if (low < 0 && high <= 0) return { text: costRange(-high, -low), label, direction: 'cost_more', multiple: null };
+  if (low < 0) return { text: `${formatUsd(-low)} more and ${formatUsd(high)} less`, label, direction: 'mixed', multiple: null };
+  return { text: costRange(low, high), label, direction: 'saved', multiple: cheaperMultiple(roi) };
 }
 
 // ------------------------------------------------------------------------------------- sampling

@@ -2698,7 +2698,7 @@ $5 covers about 1,600 answers at the default settings, or about 24,000 fast chec
   - Outcomes. "Stopped before users saw them" counts only block and fallback; "flagged" is separate.
   - Gate p50/p95 and deadline-miss rate.
   - Sampling status: "uniform sampling paused at 14:02 (daily cap 50)" and LLM cap hits.
-  - Early-data copy: "So far: 212 answers checked for $0.04. Asking an LLM the same questions would have cost ≈ $1.22 (estimate)."
+  - Early-data copy: "So far: 212 answers checked for $0.04. Asking an LLM the same questions would have cost ≈ $1.22." (its value label is the badge beside it, never words in the sentence)
 - **Caps.** Daily decision and LLM caps, an enforcing reserve, reservations, and an optional per-key cap. Past the decision cap, observe and flag routes skip (`degraded: budget`), fail-open routes pass, and fail-closed block routes block.
 
 ### 7.5 Credentials, auth, OAuth

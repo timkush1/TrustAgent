@@ -101,12 +101,28 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(row).toHaveTextContent('not measured');
   });
 
-  it('reads each interval with the arrow keys', async () => {
+  it('says a $0 deep audit comes from the free mock judge, and shows no $0 full audit', async () => {
+    const base = roiSummary();
+    const freeFull = { ...FULL_AUDIT, method: 'uniform_sample' as const, usd: 0, low: 0, high: 0, per_1k: 0, label: 'simulated' as const };
+    const control = createControlApi({
+      roi: roiSummary({ simulated: true, llm_cost: { ...base.llm_cost, usd: 0, value: 0 }, counterfactuals: [...base.counterfactuals, freeFull] }),
+    });
+    renderPage('/app/savings', { control });
+    expect(await screen.findByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./)).toBeInTheDocument();
+    const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ }).closest('tr')!;
+    expect(row).toHaveTextContent('Not available in the simulated demo: the mock judge is free');
+    expect(within(row).getAllByRole('cell').slice(0, 2).map((c) => c.textContent)).toEqual(['—', '—']);
+    // No full-audit band to switch to: the chart compares with the same questions only.
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    expect(within(chart).queryByRole('radio', { name: 'Full audit' })).toBeNull();
+  });
+
+  it('reads each day with the arrow keys', async () => {
     renderPage('/app/overview?tab=savings&window=7d');
-    const plot = await screen.findByRole('slider', { name: 'What checking cost per interval' });
+    const plot = await screen.findByRole('slider', { name: 'What checking cost per day' });
     expect(plot).toHaveAttribute('aria-valuemax', '6');
     expect(plot).toHaveAccessibleDescription(
-      'Checking 1,199 answers cost $0.99 over 7 intervals. An LLM asking the same questions would have cost $2.21–$2.95 (estimate).',
+      'Checking 1,199 answers cost $0.99 in the last 7 days. An LLM asking the same questions would have cost $2.21–$2.95 (estimate).',
     );
     plot.focus();
     fireEvent.keyDown(plot, { key: 'Home' });

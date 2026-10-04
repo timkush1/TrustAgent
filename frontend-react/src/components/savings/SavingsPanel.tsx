@@ -78,6 +78,7 @@ function Headline({ roi }: { roi: RoiSummary }) {
             {SAVED_WORDS[saved.direction][0]}
             <span className="font-medium tabular">{saved.text}</span>
             {SAVED_WORDS[saved.direction][1]} an LLM asking the same questions
+            {saved.multiple ? <span className="tabular">{` (the fast check was about ${saved.multiple} cheaper)`}</span> : null}
           </span>
           <EvidenceBadge label={saved.label} basis={same?.basis} subject="Savings against an LLM asking the same questions" />
         </p>
@@ -86,6 +87,11 @@ function Headline({ roi }: { roi: RoiSummary }) {
         <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
           <span>{line.earlyData}</span>
           <EvidenceBadge label={line.earlyDataLabel} basis={same?.basis} subject="What an LLM would have cost" />
+        </p>
+      ) : null}
+      {line.freeMockJudge ? (
+        <p className="text-sm text-fg-muted">
+          The deep audit reads $0 because the demo&rsquo;s mock judge is free. With a real judge, every deep audit adds an LLM cost.
         </p>
       ) : null}
       <p className="text-xs text-fg-muted">{copy.savings.caption}</p>
@@ -125,6 +131,7 @@ function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWind
         // The line is fast check plus deep audit: the weaker label of the two, as the total's (D46).
         measuredLabel={costLabel(roi.simulated, roi.total_per_1k.label)}
         bandLabel={roi.simulated ? 'simulated' : 'estimate'}
+        windowWords={windowLong(timeWindow)}
         headingLevel={2}
       />
     );

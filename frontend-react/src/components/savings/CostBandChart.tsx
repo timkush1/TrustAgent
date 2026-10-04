@@ -21,7 +21,19 @@ import { valueLabelView } from '@/domain/controlPresentation';
 import { costRange } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import type { RoiTimeseries, ValueLabel } from '@/types/api';
-import { availableBands, bandWords, bucketLabel, chartMax, costBandSummary, countOf, type BandKind, type CostBandPoint } from './savingsModel';
+import {
+  availableBands,
+  bandHasRange,
+  bandWords,
+  bucketLabel,
+  chartBuckets,
+  chartMax,
+  chartSpan,
+  costBandSummary,
+  countOf,
+  type BandKind,
+  type CostBandPoint,
+} from './savingsModel';
 
 export interface CostBandChartProps {
   points: readonly CostBandPoint[];
@@ -30,6 +42,8 @@ export interface CostBandChartProps {
   measuredLabel: ValueLabel;
   /** Value label of the counterfactual bands (Estimate, or Simulated). */
   bandLabel: ValueLabel;
+  /** The window in words ("the last 24 hours"), for the chart's description. */
+  windowWords: string;
   headingLevel?: 2 | 3 | 4;
   /** Plot height in px. */
   height?: number;
@@ -59,21 +73,38 @@ function labelIndexes(n: number): number[] {
   return Array.from({ length: MAX_X_LABELS }, (_, i) => Math.round(i * step));
 }
 
-/** The band as closed areas, one per run of buckets that have it. */
-function bandPaths(points: readonly CostBandPoint[], band: BandKind, y: (v: number) => number): { area: string[]; ticks: string[] } {
+/** Half the width of a lone bucket's marker, in % of the plot. */
+const CAP = 1.2;
+
+/**
+ * The band, one shape per run of buckets that have it: a closed area from low to high when the
+ * band has a range, else (a single estimate per bucket) a line. A lone bucket gets a marker that
+ * stays visible: a range bar with caps at its low and high, or a short dash at the estimate.
+ */
+function bandPaths(
+  points: readonly CostBandPoint[],
+  band: BandKind,
+  y: (v: number) => number,
+  ranged: boolean,
+): { area: string[]; lines: string[] } {
   const area: string[] = [];
-  const ticks: string[] = [];
+  const lines: string[] = [];
   const n = points.length;
   let run: number[] = [];
   const flush = () => {
     if (run.length === 1) {
-      const i = run[0];
-      const b = points[i][band]!;
-      ticks.push(`M${xAt(i, n)},${y(b.high)}L${xAt(i, n)},${y(b.low)}`);
+      const x = xAt(run[0], n);
+      const b = points[run[0]][band]!;
+      const [hi, lo] = [y(b.high), y(b.low)];
+      lines.push(ranged ? `M${x},${hi}L${x},${lo}M${x - CAP},${hi}L${x + CAP},${hi}M${x - CAP},${lo}L${x + CAP},${lo}` : `M${x - CAP},${hi}L${x + CAP},${hi}`);
     } else if (run.length > 1) {
       const top = run.map((i, k) => `${k === 0 ? 'M' : 'L'}${xAt(i, n)},${y(points[i][band]!.high)}`).join('');
-      const bottom = [...run].reverse().map((i) => `L${xAt(i, n)},${y(points[i][band]!.low)}`).join('');
-      area.push(`${top}${bottom}Z`);
+      if (ranged) {
+        const bottom = [...run].reverse().map((i) => `L${xAt(i, n)},${y(points[i][band]!.low)}`).join('');
+        area.push(`${top}${bottom}Z`);
+      } else {
+        lines.push(top);
+      }
     }
     run = [];
   };
@@ -82,19 +113,22 @@ function bandPaths(points: readonly CostBandPoint[], band: BandKind, y: (v: numb
     else flush();
   });
   flush();
-  return { area, ticks };
+  return { area, lines };
 }
 
 export function CostBandChart({
-  points,
+  points: allPoints,
   bucket,
   measuredLabel,
   bandLabel,
+  windowWords,
   headingLevel = 3,
   height = 220,
   className,
 }: CostBandChartProps) {
   const summaryId = useId();
+  // A fresh stack's window is mostly empty buckets: start at its first traffic.
+  const { points, since } = useMemo(() => chartBuckets(allPoints), [allPoints]);
   const bands = useMemo(() => availableBands(points), [points]);
   const [chosen, setChosen] = useState<BandKind>('same_checks');
   const band: BandKind | null = bands.includes(chosen) ? chosen : (bands[0] ?? null);
@@ -105,14 +139,16 @@ export function CostBandChart({
   const top = ticks[ticks.length - 1] || 1;
   const y = (v: number) => 100 - (Math.max(0, v) / top) * 100;
   const measuredPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xAt(i, n)},${y(p.measured)}`).join('');
-  const bandGeometry = band ? bandPaths(points, band, y) : { area: [], ticks: [] };
-  const summary = costBandSummary(points, band, bandLabel);
+  const ranged = band ? bandHasRange(points, band) : false;
+  const bandGeometry = band ? bandPaths(points, band, y, ranged) : { area: [], lines: [] };
+  const span = chartSpan(bucket, since, windowWords);
+  const summary = costBandSummary(points, band, bandLabel, span);
 
   const measuredName = `What checking cost you (${valueLabelView(measuredLabel).label})`;
-  const bandName = band ? `${bandWords(band)} (${valueLabelView(bandLabel).label}, range)` : null;
+  const bandName = band ? `${bandWords(band)} (${valueLabelView(bandLabel).label}${ranged ? ', range' : ''})` : null;
   const legend: LegendItem[] = [
     { key: 'measured', label: measuredName, color: MEASURED_COLOR, mark: 'line' },
-    ...(bandName ? [{ key: 'band', label: bandName, color: BAND_COLOR, mark: 'square' as const }] : []),
+    ...(bandName ? [{ key: 'band', label: bandName, color: BAND_COLOR, mark: ranged ? ('square' as const) : ('line' as const) }] : []),
   ];
 
   const table = (
@@ -184,7 +220,7 @@ export function CostBandChart({
   return (
     <ChartFrame
       title="What checking cost, against asking an LLM"
-      description={`USD per ${bucket === '1d' ? 'UTC day' : 'hour'}. ${summary}`}
+      description={`${bucket === '1d' ? 'Daily (UTC)' : 'Hourly'}, in USD. ${summary}`}
       headingLevel={headingLevel}
       legend={legend}
       table={table}
@@ -221,7 +257,7 @@ export function CostBandChart({
             // readout, and the value text says what the readout shows.
             tabIndex={0}
             role="slider"
-            aria-label="What checking cost per interval"
+            aria-label={`What checking cost per ${bucket === '1d' ? 'day' : 'hour'}`}
             aria-describedby={summaryId}
             aria-valuemin={0}
             aria-valuemax={n - 1}
@@ -245,8 +281,18 @@ export function CostBandChart({
               {bandGeometry.area.map((d, i) => (
                 <path key={i} data-band={band ?? undefined} d={d} fill={BAND_COLOR} fillOpacity={0.45} stroke={BAND_COLOR} strokeWidth={1} vectorEffect="non-scaling-stroke" />
               ))}
-              {bandGeometry.ticks.map((d, i) => (
-                <path key={i} d={d} stroke={BAND_COLOR} strokeWidth={6} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              {bandGeometry.lines.map((d, i) => (
+                <path
+                  key={i}
+                  data-band={band ?? undefined}
+                  d={d}
+                  fill="none"
+                  stroke={BAND_COLOR}
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
               ))}
               <path
                 data-series="measured"
