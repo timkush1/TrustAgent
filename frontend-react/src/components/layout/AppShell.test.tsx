@@ -47,6 +47,17 @@ describe('app shell and routes', () => {
     await waitFor(() => expect(pill).toHaveTextContent(/issue|ready/));
   });
 
+  it('says setup is in progress instead of counting issues while the setup wizard is open', async () => {
+    const off = systemStatus({ decision_model: { ...systemStatus().decision_model, state: 'off', backend: 'off' } });
+    const ds = fakeDataSource({ getStatus: vi.fn(async () => off) });
+    const { router } = renderApp('/app/setup', ds);
+    const pill = await screen.findByRole('button', { name: /System health/ });
+    await waitFor(() => expect(pill).toHaveTextContent('Setup in progress'));
+    // Elsewhere the same state is an issue.
+    await router.navigate({ to: '/app/overview' });
+    await waitFor(() => expect(pill).toHaveTextContent(/\d+ issues?/));
+  });
+
   it('shows the demo badge and banner on the demo stack', async () => {
     const ds = fakeDataSource({
       getHealth: async () => ({ status: 'ok', version: '2.0.0', demo: true, audit_engine: true }),

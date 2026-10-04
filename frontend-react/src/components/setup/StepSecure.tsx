@@ -197,7 +197,7 @@ export function StepSecure({ auth, setup, token, readonly, saved, onSavedChange 
             <h3 id="key-title" className="text-sm font-semibold text-fg">
               Sign in with a key
             </h3>
-            <Field label="Key" description="An admin key (or a read key) from TRUTHTABLE_ADMIN_KEYS, TRUTHTABLE_READ_KEYS or one created in Settings → Access.">
+            <Field label="Key" description="The admin key you created, or one from your .env (TRUTHTABLE_ADMIN_KEYS, or TRUTHTABLE_READ_KEYS for read-only), or one made in Settings → Access.">
               <Input type="password" autoComplete="current-password" value={key} onValueChange={setKey} />
             </Field>
             <DisabledAction reason={key.trim() === '' ? { text: 'Enter a key first' } : null}>

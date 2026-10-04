@@ -1,7 +1,11 @@
 /**
  * Top-bar Health pill: a dot and "All systems ready" / "2 issues", opening the checklist
- * (SPEC §3.3). Fed by /health, /api/status when served, and the live connection.
+ * (SPEC §3.3). Fed by /health, /api/status when served, and the live connection. While the setup
+ * wizard is open, what it has not set up yet (no fast-check key, no sign-in) is not an incident:
+ * the pill says "Setup in progress" in a neutral tone, and the checklist still lists each item.
+ * An unreachable proxy keeps its alarm everywhere.
  */
+import { useRouterState } from '@tanstack/react-router';
 import { CircleCheck, CircleDashed, Info, RotateCw, TriangleAlert, type LucideIcon } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
@@ -21,7 +25,9 @@ const checkIcon: Record<CheckState, { icon: LucideIcon; className: string; word:
 };
 
 export function HealthPill() {
-  const summary = useHealthSummary();
+  const health = useHealthSummary();
+  const inSetup = useRouterState({ select: (s) => s.location.pathname.startsWith('/app/setup') });
+  const summary = inSetup && health.tone === 'warning' ? { ...health, tone: 'neutral' as const, label: 'Setup in progress' } : health;
   const phase = useStreamStore((s) => s.connection.phase);
   const canRetry = phase === 'reconnecting' || phase === 'unauthorized';
   return (

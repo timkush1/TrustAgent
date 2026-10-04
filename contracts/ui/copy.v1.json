@@ -115,7 +115,7 @@
       },
       "step_see_it_work": {
         "title": "See it work",
-        "body": "Try a refund question whose answer says 60 days while the policy says 30. No upstream key needed."
+        "body": "Try a refund question whose answer says 60 days while the policy says 30. Your own model is not called, so no model key is needed."
       },
       "step_try": {
         "title": "See it work",
