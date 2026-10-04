@@ -195,7 +195,7 @@ export function ReviewSaveDialog({
                       {notReady.map((b) => (
                         <li key={`${b.route}-${b.evaluator}`}>
                           <span className="font-medium">{routeTitle(b.route)}</span> · {evaluatorDisplayName(b.evaluator, names)}:{' '}
-                          {b.missing.map((m) => readinessWords(m).label.toLowerCase()).join(', ')}
+                          still to do: {b.missing.map((m) => readinessWords(m).action).join('; ')}
                         </li>
                       ))}
                     </ul>

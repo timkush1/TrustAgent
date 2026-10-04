@@ -38,6 +38,8 @@ describe('control presentation', () => {
     for (const item of READINESS_ITEMS) {
       expect(readinessWords(item).label).not.toBe('');
       expect(readinessWords(item).missing).not.toBe('');
+      // The next step is an instruction that keeps the mode names' capitals.
+      expect(readinessWords(item).action).toMatch(/^[a-z]/);
     }
   });
 

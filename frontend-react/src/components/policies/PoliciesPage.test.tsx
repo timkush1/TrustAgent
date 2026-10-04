@@ -158,6 +158,8 @@ describe('Policies page', { timeout: 20_000 }, () => {
     renderPage('/app/policies', { control });
     const support = await card('support-bot');
     expect(within(support).getByText('Block → currently acting as Flag')).toBeInTheDocument();
+    // The next requirement reads as an instruction.
+    expect(within(support).getByText(/^· \d of \d done · next: calibrate it for the current fast-check version$/)).toBeInTheDocument();
     await user.click(within(support).getByRole('button', { name: 'Buffer streams' }));
     expect(await screen.findByRole('region', { name: 'Unsaved changes' })).toBeInTheDocument();
 

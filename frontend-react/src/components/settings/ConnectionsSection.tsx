@@ -97,7 +97,7 @@ export function ConnectionsSection() {
                 {simulated ? 'No key is connected, so the checks are simulated. ' : 'Nothing is connected yet. '}Connect OpenRouter to run both checks for real with one key.
               </p>
             ) : null}
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid items-start gap-4 xl:grid-cols-2">
               {CARDS.map((card) => (
                 <CredentialCard
                   key={card.name}

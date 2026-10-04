@@ -105,31 +105,45 @@ export type ReadinessItem = BlockReadiness['missing'][number];
 /** The five block-readiness requirements (SPEC §7.2), in the order the checklist lists them. */
 export const READINESS_ITEMS: readonly ReadinessItem[] = ['mode', 'evidence', 'corroborator', 'calibration', 'buffering'];
 
-const READINESS_WORDS: Record<ReadinessItem, { label: string; missing: string }> = {
+export interface ReadinessWords {
+  /** The requirement as a checklist item ("Route set to Block or Fallback"). */
+  label: string;
+  /** Why it is not met yet. */
+  missing: string;
+  /** What to do next, as an instruction ("set this route to Block or Fallback"), lower-case first. */
+  action: string;
+}
+
+const READINESS_WORDS: Record<ReadinessItem, ReadinessWords> = {
   mode: {
     label: 'Route set to Block or Fallback',
     missing: 'The route is not in Block or Fallback mode.',
+    action: 'set this route to Block or Fallback',
   },
   evidence: {
     label: 'Documents to check against',
     missing: 'None of the route’s evidence sources can supply documents for this check.',
+    action: 'give the route documents to check against',
   },
   corroborator: {
     label: 'A second signal that can agree',
     missing: 'No second check or instant check can confirm this one, so it cannot block alone.',
+    action: 'add a second check or instant check that can agree',
   },
   calibration: {
     label: 'Calibrated for the current fast-check version',
     missing: 'Thresholds are not calibrated on labelled traffic for this fast-check version.',
+    action: 'calibrate it for the current fast-check version',
   },
   buffering: {
     label: 'Streams buffered',
     missing: 'Streamed answers pass straight through, so they can only be flagged.',
+    action: 'buffer streamed answers on this route',
   },
 };
 
-export function readinessWords(item: ReadinessItem): { label: string; missing: string } {
-  return READINESS_WORDS[item] ?? { label: humanizeId(item), missing: humanizeId(item) };
+export function readinessWords(item: ReadinessItem): ReadinessWords {
+  return READINESS_WORDS[item] ?? { label: humanizeId(item), missing: humanizeId(item), action: humanizeId(item).toLowerCase() };
 }
 
 // --------------------------------------------------------------------------------- calibration

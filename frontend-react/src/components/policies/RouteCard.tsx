@@ -176,7 +176,7 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
               <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
               {b.ready ? null : (
                 <span className="text-xs text-fg-muted tabular" title={next ? readinessWords(next).missing : undefined}>
-                  · {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).label.toLowerCase()}` : ''}
+                  · {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).action}` : ''}
                 </span>
               )}
             </p>
