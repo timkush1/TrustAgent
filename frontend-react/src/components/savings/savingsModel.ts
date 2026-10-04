@@ -117,6 +117,41 @@ export function chartBuckets(points: readonly CostBandPoint[]): { points: CostBa
   return { points: points.slice(start), since: points[start].t };
 }
 
+/** How close (in % of the plot's height) two end labels may sit before they are pushed apart. */
+const LABEL_GAP = 9;
+
+export interface EndLabel {
+  key: 'measured' | 'band';
+  text: string;
+  /** Vertical position in % of the plot, already kept clear of the other label. */
+  top: number;
+}
+
+/**
+ * The direct labels at the right end of the lines: "You $0.0029" at the last bucket's spend and
+ * "LLM $0.15" at the band's last estimate (its range when it has one). When the two would overlap
+ * they move apart around their midpoint, staying inside the plot.
+ */
+export function endLabels(
+  points: readonly CostBandPoint[],
+  band: BandKind | null,
+  ranged: boolean,
+  y: (v: number) => number,
+): EndLabel[] {
+  const last = points[points.length - 1];
+  if (!last) return [];
+  const labels: EndLabel[] = [{ key: 'measured', text: `You ${formatUsd(last.measured)}`, top: y(last.measured) }];
+  const b = band ? [...points].reverse().find((p) => p[band])?.[band] : undefined;
+  if (b) labels.push({ key: 'band', text: `LLM ${ranged ? costRange(b.low, b.high) : formatUsd(b.high)}`, top: y(ranged ? (b.low + b.high) / 2 : b.high) });
+  if (labels.length === 2 && Math.abs(labels[0].top - labels[1].top) < LABEL_GAP) {
+    const [upper, lower] = labels[0].top <= labels[1].top ? [labels[0], labels[1]] : [labels[1], labels[0]];
+    const mid = Math.min(100 - LABEL_GAP / 2, Math.max(LABEL_GAP / 2, (upper.top + lower.top) / 2));
+    upper.top = mid - LABEL_GAP / 2;
+    lower.top = mid + LABEL_GAP / 2;
+  }
+  return labels;
+}
+
 /** Whether a band has any spread in the series (else it is a single estimate per bucket: a line). */
 export function bandHasRange(points: readonly CostBandPoint[], band: BandKind): boolean {
   return points.some((p) => {

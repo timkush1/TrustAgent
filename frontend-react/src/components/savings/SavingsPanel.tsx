@@ -73,8 +73,9 @@ function Headline({ roi }: { roi: RoiSummary }) {
       </h2>
       {saved ? (
         <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
-          <PiggyBank aria-hidden="true" className="size-4 text-fg-muted" />
+          {/* The icon stays on the sentence's first line, however narrow the screen. */}
           <span>
+            <PiggyBank aria-hidden="true" className="mr-1.5 inline-block size-4 align-[-0.15em] text-fg-muted" />
             {SAVED_WORDS[saved.direction][0]}
             <span className="font-medium tabular">{saved.text}</span>
             {SAVED_WORDS[saved.direction][1]} an LLM asking the same questions
@@ -143,7 +144,10 @@ function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWind
   );
 }
 
-/** Every component of the cost, then the alternatives, each figure with its value label. */
+/**
+ * Every component of the cost, then the alternatives, each figure with its value label. The label
+ * sits next to the row's name, so the table keeps three columns and fits a phone.
+ */
 function ComponentTable({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWindow }) {
   const rows = componentRows(roi);
   return (
@@ -158,14 +162,11 @@ function ComponentTable({ roi, timeWindow }: { roi: RoiSummary; timeWindow: Time
                 <th scope="col" className="py-1.5 pr-3 text-left font-medium">
                   Component
                 </th>
-                <th scope="col" className="px-3 py-1.5 text-right font-medium">
+                <th scope="col" className="px-3 py-1.5 text-right font-medium whitespace-nowrap">
                   Total
                 </th>
-                <th scope="col" className="px-3 py-1.5 text-right font-medium">
+                <th scope="col" className="py-1.5 pl-3 text-right font-medium whitespace-nowrap">
                   Per 1,000
-                </th>
-                <th scope="col" className="py-1.5 pl-3 text-left font-medium">
-                  Source
                 </th>
               </tr>
             </thead>
@@ -177,14 +178,14 @@ function ComponentTable({ roi, timeWindow }: { roi: RoiSummary; timeWindow: Time
                   className={cn('border-b border-border last:border-b-0', r.key === 'total' && 'bg-surface-sunken')}
                 >
                   <th scope="row" className="py-2 pr-3 text-left align-top font-normal">
-                    <span className={cn('block text-fg', r.key === 'total' && 'font-medium')}>{r.label}</span>
-                    {r.detail ? <span className="block text-xs text-fg-muted">{r.detail}</span> : null}
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className={cn('text-fg', r.key === 'total' && 'font-medium')}>{r.label}</span>
+                      <EvidenceBadge label={r.valueLabel} basis={r.basis} subject={r.label} />
+                    </span>
+                    {r.detail ? <span className="mt-0.5 block text-xs text-fg-muted">{r.detail}</span> : null}
                   </th>
-                  <td className="px-3 py-2 text-right align-top text-fg tabular">{r.total}</td>
-                  <td className="px-3 py-2 text-right align-top text-fg tabular">{r.per1k}</td>
-                  <td className="py-2 pl-3 align-top">
-                    <EvidenceBadge label={r.valueLabel} basis={r.basis} subject={r.label} />
-                  </td>
+                  <td className="px-3 py-2 text-right align-top whitespace-nowrap text-fg tabular">{r.total}</td>
+                  <td className="py-2 pl-3 text-right align-top whitespace-nowrap text-fg tabular">{r.per1k}</td>
                 </tr>
               ))}
             </tbody>
@@ -330,7 +331,8 @@ export function SavingsPanel({ timeWindow }: { timeWindow: TimeWindow }) {
     <div className="space-y-5">
       <Headline roi={roi} />
       <SpendChart roi={roi} timeWindow={timeWindow} />
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      {/* One shrinkable column below lg, so a wide table scrolls inside its card, never the page. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <ComponentTable roi={roi} timeWindow={timeWindow} />
         <div className="space-y-4">
           <OutcomesAndSpeed roi={roi} />

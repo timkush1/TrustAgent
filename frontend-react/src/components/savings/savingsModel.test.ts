@@ -12,6 +12,7 @@ import {
   chartMax,
   componentRows,
   costBandPoints,
+  endLabels,
   freeMockCounterfactual,
   rangeRatio,
   samplingLines,
@@ -183,5 +184,41 @@ describe('Savings figures', () => {
     );
     expect(lines[0]).toEqual({ key: 'uniform', text: 'Uniform sampling: 3 of 50 audits today', stopped: false });
     expect(lines[1].text).toMatch(/^Deep-audit budget reached at 26 Sept?/);
+  });
+});
+
+describe('endLabels', () => {
+  const y = (v: number) => 100 - v; // a plot from $0 (bottom) to $100 (top)
+  const point = (measured: number, same: number | null, spread = 0): CostBandPoint => ({
+    t: '2026-09-22T00:00:00Z',
+    gated: 10,
+    measured,
+    same_checks: same === null ? null : { low: same - spread, high: same + spread },
+    full_audit: null,
+  });
+
+  it('labels the last spend and the last estimate where their lines end', () => {
+    const labels = endLabels([point(1, 40), point(2, 60)], 'same_checks', false, y);
+    expect(labels).toEqual([
+      { key: 'measured', text: 'You $2.00', top: 98 },
+      { key: 'band', text: 'LLM $60.00', top: 40 },
+    ]);
+  });
+
+  it('labels a range by its range, at its middle', () => {
+    const [, band] = endLabels([point(1, 50, 10)], 'same_checks', true, y);
+    expect(band).toEqual({ key: 'band', text: 'LLM $40.00–$60.00', top: 50 });
+  });
+
+  it('pushes two close labels apart, inside the plot', () => {
+    const [you, llm] = endLabels([point(1, 2)], 'same_checks', false, y);
+    expect(llm.top - you.top).toBeCloseTo(-9);
+    expect(Math.max(you.top, llm.top)).toBeLessThanOrEqual(100);
+    expect(Math.min(you.top, llm.top)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('labels only the spend without a comparison', () => {
+    expect(endLabels([point(3, null)], 'same_checks', false, y).map((l) => l.key)).toEqual(['measured']);
+    expect(endLabels([], null, false, y)).toEqual([]);
   });
 });

@@ -1,9 +1,10 @@
 /**
  * What checking cost per day (or hour), over what an LLM would have cost for the same traffic
  * (SPEC §7.4 "measured cost over the counterfactual bands"; D73). One axis, in USD per
- * bucket: the measured spend is a 2px line, the counterfactual a neutral band from its low to its
- * high estimate. Colour carries no verdict here (DESIGN.md "Charts"): both series are the neutral
- * inks, told apart by mark (line vs area) and named in the legend.
+ * bucket: the measured spend is a solid 2px line, the counterfactual a neutral band from its low to
+ * its high estimate, or a dashed 2px line when it is a single estimate. Colour carries no verdict
+ * here (DESIGN.md "Charts"): both series are the neutral inks, told apart by mark (solid line vs
+ * area or dashed line), named in the legend and labelled directly at the end of each line.
  *
  * Custom SVG like the other feature charts (DESIGN.md §12): the geometry is drawn in a 100×100
  * viewBox stretched to the plot (strokes keep their width), and every word is HTML so it stays
@@ -31,6 +32,7 @@ import {
   chartSpan,
   costBandSummary,
   countOf,
+  endLabels,
   type BandKind,
   type CostBandPoint,
 } from './savingsModel';
@@ -75,6 +77,8 @@ function labelIndexes(n: number): number[] {
 
 /** Half the width of a lone bucket's marker, in % of the plot. */
 const CAP = 1.2;
+/** The counterfactual line's dashes, in screen px (the strokes do not scale). */
+const BAND_DASH = '5 4';
 
 /**
  * The band, one shape per run of buckets that have it: a closed area from low to high when the
@@ -143,12 +147,13 @@ export function CostBandChart({
   const bandGeometry = band ? bandPaths(points, band, y, ranged) : { area: [], lines: [] };
   const span = chartSpan(bucket, since, windowWords);
   const summary = costBandSummary(points, band, bandLabel, span);
+  const ends = endLabels(points, band, ranged, y);
 
   const measuredName = `What checking cost you (${valueLabelView(measuredLabel).label})`;
   const bandName = band ? `${bandWords(band)} (${valueLabelView(bandLabel).label}${ranged ? ', range' : ''})` : null;
   const legend: LegendItem[] = [
     { key: 'measured', label: measuredName, color: MEASURED_COLOR, mark: 'line' },
-    ...(bandName ? [{ key: 'band', label: bandName, color: BAND_COLOR, mark: ranged ? ('square' as const) : ('line' as const) }] : []),
+    ...(bandName ? [{ key: 'band', label: bandName, color: BAND_COLOR, mark: ranged ? ('square' as const) : ('dash' as const) }] : []),
   ];
 
   const table = (
@@ -243,7 +248,7 @@ export function CostBandChart({
           to Table, or pick a longer window to see a trend.
         </p>
       ) : (
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2">
           {/* Y axis: tick values beside the plot, in text tokens. */}
           <div aria-hidden="true" className="relative w-12" style={{ height }}>
             {ticks.map((t) => (
@@ -288,9 +293,11 @@ export function CostBandChart({
                   d={d}
                   fill="none"
                   stroke={BAND_COLOR}
-                  strokeWidth={2.5}
+                  strokeWidth={2}
+                  // A single estimate is a dashed line; a lone ranged bucket's bar and caps stay solid.
+                  strokeDasharray={ranged ? undefined : BAND_DASH}
                   strokeLinejoin="round"
-                  strokeLinecap="round"
+                  strokeLinecap={ranged ? 'round' : 'butt'}
                   vectorEffect="non-scaling-stroke"
                 />
               ))}
@@ -329,6 +336,24 @@ export function CostBandChart({
               />
             )}
           </div>
+          {/* Direct labels at the end of each line. The hidden copies give the column its width. */}
+          <div aria-hidden="true" data-end-labels="" className="relative text-2xs whitespace-nowrap tabular" style={{ height }}>
+            <div className="invisible h-0">
+              {ends.map((l) => (
+                <div key={l.key}>{l.text}</div>
+              ))}
+            </div>
+            {ends.map((l) => (
+              <span
+                key={l.key}
+                data-end-label={l.key}
+                className={cn('absolute left-0 -translate-y-1/2', l.key === 'measured' ? 'font-medium text-fg' : 'text-fg-muted')}
+                style={{ top: `${l.top}%` }}
+              >
+                {l.text}
+              </span>
+            ))}
+          </div>
           {/* X axis: a few bucket names under the plot. */}
           <span aria-hidden="true" />
           <div aria-hidden="true" className="relative mt-1 h-4">
@@ -345,6 +370,7 @@ export function CostBandChart({
               </span>
             ))}
           </div>
+          <span aria-hidden="true" />
         </div>
       )}
     </ChartFrame>

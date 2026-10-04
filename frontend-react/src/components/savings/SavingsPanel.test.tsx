@@ -66,6 +66,10 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(within(legend).getByText('An LLM asking the same questions (Estimate, range)')).toBeInTheDocument();
     expect(chart.querySelector('[data-series="measured"]')).not.toBeNull();
     expect(chart.querySelector('[data-band="same_checks"]')).not.toBeNull();
+    // A range is an area (a square key, no dashes), and its end label is the range.
+    expect(legend.querySelector('[data-series="band"] [data-mark="square"]')).not.toBeNull();
+    expect(chart.querySelector('path[data-band="same_checks"]')).not.toHaveAttribute('stroke-dasharray');
+    expect(chart.querySelector('[data-end-label="band"]')?.textContent).toMatch(/^LLM \$[\d.]+–\$[\d.]+$/);
 
     await user.click(within(chart).getByRole('radio', { name: 'Table' }));
     const table = within(chart).getByRole('region', { name: /Spend per day/ });
@@ -75,6 +79,24 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(within(table).getByRole('columnheader', { name: 'Your cost (Measured)' })).toBeInTheDocument();
     // 2026-09-22: $0.0081 + $0.142 spent; the same checks $0.39 × [1.05/1.22, 1.40/1.22].
     expect(within(rows[1]).getAllByRole('cell').map((c) => c.textContent)).toEqual(['180', '$0.15', '$0.34–$0.45']);
+  });
+
+  it('draws a single LLM estimate as a dashed line, labels both lines at their end, and keeps a range as an area', async () => {
+    const base = roiSummary();
+    const single = base.counterfactuals.map((c) => (c.kind === 'llm_same_checks' ? { ...c, low: null, high: null } : c));
+    const control = createControlApi({ roi: roiSummary({ counterfactuals: single }) });
+    renderPage('/app/overview?tab=savings&window=7d', { control });
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    const legend = within(chart).getByRole('list', { name: 'Legend' });
+    // Told apart by mark, not only by weight: the legend key for the estimate is dashed too.
+    expect(legend.querySelector('[data-series="measured"] [data-mark="line"]')).not.toBeNull();
+    expect(legend.querySelector('[data-series="band"] [data-mark="dash"]')).not.toBeNull();
+    const line = chart.querySelector('path[data-band="same_checks"]');
+    expect(line).toHaveAttribute('stroke-dasharray');
+    expect(chart.querySelector('path[data-series="measured"]')).not.toHaveAttribute('stroke-dasharray');
+    // Direct labels at the end of each line: the last day's spend and the LLM's estimate.
+    expect(chart.querySelector('[data-end-label="measured"]')?.textContent).toMatch(/^You \$/);
+    expect(chart.querySelector('[data-end-label="band"]')?.textContent).toMatch(/^LLM \$[\d.]+$/);
   });
 
   it('labels the spend line like the total when the deep-audit cost is an estimate', async () => {
