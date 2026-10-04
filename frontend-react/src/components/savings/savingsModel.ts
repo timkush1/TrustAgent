@@ -222,7 +222,9 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
     {
       key: 'deep_audit',
       label: 'Deep audit (LLM judge)',
-      detail: `${audits.toLocaleString('en-US')} deep audit${audits === 1 ? '' : 's'}${selections ? `: ${selections}` : ''}`,
+      // Every audit started counts (a failed one may still have spent on the judge), so they are
+      // "attempted", not all completed.
+      detail: `${countOf(audits, 'deep audit')} attempted${selections ? `: ${selections}` : ''}`,
       total: formatUsd(roi.llm_cost.usd),
       per1k: formatUsd(perThousand(roi.llm_cost.usd, n)),
       valueLabel: costLabel(sim, roi.llm_cost.label),

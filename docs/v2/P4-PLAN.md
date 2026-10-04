@@ -1770,8 +1770,10 @@ None of these is in the §4.2 P4 gate.
    (cd frontend-react && TRUSTAGENT_SETUP_URL="$url" P4_EVIDENCE_DIR=$EVID CI=1 npx playwright test --project=stack --workers=1 -g "onboarding") | tee $EVID/b-playwright.txt
    docker compose -p $ONBOARDING_PROJECT exec -T postgres psql -U truthtable -tAc \
      "select name, masked, last_verify_status from credentials; select action, count(*) from admin_audit_log group by action" > $EVID/b-db.txt
-   docker compose -p $ONBOARDING_PROJECT logs --no-color proxy engine dashboard postgres > $EVID/b-logs.txt
-   ! grep -qE 'sk-or-v1-[A-Za-z0-9_-]{8,}|sk-test-[A-Za-z0-9_-]{8,}|cmp0e2eZq7Lw4Rt9Yx2Vb6Nm|mockcode_[0-9a-f]{8,}' $EVID/b-logs.txt \
+   # The boot log prints the one-time setup link by design (spent by now): mask it in the evidence.
+   docker compose -p $ONBOARDING_PROJECT logs --no-color proxy engine dashboard postgres \
+     | sed -E 's/#token=[A-Za-z0-9_-]+/#token=<masked>/g' > $EVID/b-logs.txt
+   ! grep -qE 'sk-or-v1-[A-Za-z0-9_-]{8,}|sk-test-[A-Za-z0-9_-]{8,}|cmp0e2eZq7Lw4Rt9Yx2Vb6Nm|mockcode_[0-9a-f]{8,}|#token=[A-Za-z0-9_-]{8,}' $EVID/b-logs.txt \
      && echo "no secrets in logs" | tee $EVID/b-leak.txt
    # screenshots now: wizard step 2, Connections → $EVID/
    make onboarding-down

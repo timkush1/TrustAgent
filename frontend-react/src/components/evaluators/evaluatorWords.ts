@@ -26,7 +26,7 @@ export interface ProgressParts {
   falseAlarms: number;
   /** All three requirements met: a measured calibration can be fitted. */
   complete: boolean;
-  /** What is still missing, in words ("157 more labels, 18 more false alarms"). */
+  /** What is still missing, in words ("Needs 157 more labels, including at least 18 false alarms, …"). */
   missing: string | null;
   /** The calibration state in words. */
   stateLabel: string;
@@ -36,17 +36,22 @@ const clamp = (x: number) => Math.min(1, Math.max(0, x));
 
 export function progressParts(p: CalibrationProgress): ProgressParts {
   const more = (have: number, need: number) => Math.max(0, need - have);
-  const parts = [
-    more(p.human_labels.n, p.needed.n) > 0 ? `${formatCount(more(p.human_labels.n, p.needed.n))} more labels` : null,
-    more(p.human_labels.pos, p.needed.pos) > 0 ? `${formatCount(more(p.human_labels.pos, p.needed.pos))} more correct` : null,
-    more(p.human_labels.neg, p.needed.neg) > 0 ? `${formatCount(more(p.human_labels.neg, p.needed.neg))} more false alarms` : null,
-  ].filter((x): x is string => x !== null);
+  const pos = more(p.human_labels.pos, p.needed.pos);
+  const neg = more(p.human_labels.neg, p.needed.neg);
+  // Every new label is one of the two kinds, so the labels still needed are at least both kinds'
+  // shortfalls together: "200 more labels, including at least 30 correct and 30 false alarms".
+  const labels = Math.max(more(p.human_labels.n, p.needed.n), pos + neg);
+  const kinds = [pos > 0 ? `${formatCount(pos)} correct` : null, neg > 0 ? `${formatCount(neg)} false alarms` : null].filter((x): x is string => x !== null);
+  const missing =
+    labels === 0
+      ? null
+      : `Needs ${formatCount(labels)} more ${labels === 1 ? 'label' : 'labels'}${kinds.length > 0 ? `, including at least ${kinds.join(' and ')},` : ''} to calibrate for blocking.`;
   return {
     total: clamp(p.human_labels.n / p.needed.n),
     correct: clamp(p.human_labels.pos / p.needed.pos),
     falseAlarms: clamp(p.human_labels.neg / p.needed.neg),
-    complete: parts.length === 0,
-    missing: parts.length > 0 ? `Needs ${parts.join(', ')} to calibrate for blocking.` : null,
+    complete: missing === null,
+    missing,
     stateLabel: calibrationStateView(p.state).label,
   };
 }

@@ -84,7 +84,17 @@ function Reliability({ detail }: { detail: EvaluatorDetail }) {
   } else if (q.data.n === 0) {
     body = (
       <EmptyState icon={Scale} title="No labelled answers in this window" className="py-8">
-        <p>Reliability compares the risk the fast check gave with how answers were labelled. Label answers in a trace (“Was this right?”) to see it.</p>
+        <p>
+          Reliability compares the risk the fast check gave with how answers were labelled.{' '}
+          <Link
+            to="/app/evaluators/labels"
+            search={{ evaluator: detail.calibration_progress.evaluator_ref }}
+            className="font-medium text-fg underline underline-offset-2"
+          >
+            Label answers in the {copy.evaluators.label_queue}
+          </Link>{' '}
+          to see it.
+        </p>
       </EmptyState>
     );
   } else {
@@ -176,6 +186,11 @@ function Versions({ detail }: { detail: EvaluatorDetail }) {
                 {v.version === latest ? <span className="ml-2 text-xs font-normal text-fg-muted">latest</span> : null}
               </p>
               <p className="text-sm text-fg-muted">{v.changelog || 'No changelog'}</p>
+              <details className="text-xs text-fg-muted">
+                <summary className="cursor-pointer select-none">Calibration key</summary>
+                <p className="mt-1 font-mono break-all text-fg">{v.calibration_key}</p>
+                <p className="mt-0.5">Calibrations are stored under this key: a new question or threshold basis gets a new one.</p>
+              </details>
             </div>
             <p className="text-xs text-fg-muted">
               {v.created_by} · <time dateTime={v.created_at} title={formatDateTime(v.created_at)}>{formatRelativeTime(v.created_at, now)}</time>
@@ -240,7 +255,6 @@ function Overview({ detail }: { detail: EvaluatorDetail }) {
                   value: outcomes.block_eligible && outcomes.critical_at != null ? formatRisk(outcomes.critical_at) : 'Never blocks',
                   numeric: true,
                 },
-                { label: 'Calibration key', value: detail.latest.calibration_key, mono: true, copy: true },
               ]}
             />
           </CardContent>

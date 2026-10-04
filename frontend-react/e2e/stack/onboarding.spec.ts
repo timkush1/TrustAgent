@@ -329,7 +329,7 @@ test.describe('onboarding', () => {
     expect(holdsSecret((await page.locator('body').textContent()) ?? ''), 'the pasted key is shown only masked').toBe(false);
   });
 
-  test('8 · Connect your app: one app key, then waiting, then received after one /v1 request', async ({ request }) => {
+  test('7 · Connect your app: one app key, then waiting, then received after one /v1 request', async ({ request }) => {
     await page.goto('/app/setup?step=try');
     await expect(page.getByRole('heading', { level: 2, name: `3. ${SEE_IT_WORK.title}` })).toBeVisible({ timeout: TIMEOUT });
     await page.getByRole('button', { name: 'Create an app key' }).click();
@@ -361,7 +361,7 @@ test.describe('onboarding', () => {
     await expect(received).toBeVisible();
   });
 
-  test('7 · see it work: the refund answer is flagged and its contradicted claim marked', async () => {
+  test('8 · see it work: the refund answer is flagged and its contradicted claim marked', async () => {
     await page.goto('/app/setup?step=try');
     await expect(page.getByText(SEE_IT_WORK.body)).toBeVisible({ timeout: TIMEOUT });
     await page.getByRole('button', { name: 'Check this answer' }).click();

@@ -145,7 +145,7 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((r) => r.getAttribute('data-row'))).toEqual(['fast_check', 'deep_audit', 'total', 'llm_same_checks', 'llm_full_claim_audit']);
     for (const row of rows) expect(within(row).getByRole('button', { name: /: how “.+” was produced$/ })).toBeInTheDocument();
-    expect(within(rows[1]).getByRole('rowheader')).toHaveTextContent('58 deep audits: 44 high risk · 10 sampled · 4 uniform sample');
+    expect(within(rows[1]).getByRole('rowheader')).toHaveTextContent('58 deep audits attempted: 44 high risk · 10 sampled · 4 uniform sample');
     expect(within(rows[3]).getAllByRole('cell')[0]).toHaveTextContent('$1.05–$1.40');
   });
 

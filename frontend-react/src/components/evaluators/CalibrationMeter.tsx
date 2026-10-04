@@ -92,9 +92,12 @@ export function CalibrationMeter({
   progress,
   detail,
   showActions = true,
+  compact = false,
   className,
 }: {
   progress: CalibrationProgress;
+  /** One Labels bar instead of three (the library cards): the line above it names both kinds. */
+  compact?: boolean;
   /** The evaluator, for the actions (Label queue, Calibrate now). Without it there are none. */
   detail?: EvaluatorDetail;
   showActions?: boolean;
@@ -109,11 +112,15 @@ export function CalibrationMeter({
           <Term id="calibration">{parts.stateLabel}</Term>
         </span>
       </p>
-      <div className="grid grid-cols-3 gap-3">
+      {compact ? (
         <Bar label="Labels" value={parts.total} have={progress.human_labels.n} need={progress.needed.n} />
-        <Bar label="Correct" value={parts.correct} have={progress.human_labels.pos} need={progress.needed.pos} />
-        <Bar label="False alarms" value={parts.falseAlarms} have={progress.human_labels.neg} need={progress.needed.neg} />
-      </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          <Bar label="Labels" value={parts.total} have={progress.human_labels.n} need={progress.needed.n} />
+          <Bar label="Correct" value={parts.correct} have={progress.human_labels.pos} need={progress.needed.pos} />
+          <Bar label="False alarms" value={parts.falseAlarms} have={progress.human_labels.neg} need={progress.needed.neg} />
+        </div>
+      )}
       {parts.missing ? <p className="text-xs text-fg-muted">{parts.missing}</p> : <p className="text-xs text-fg-muted">Enough labels to calibrate for blocking.</p>}
       {showActions && detail ? <Actions progress={progress} detail={detail} /> : null}
     </div>

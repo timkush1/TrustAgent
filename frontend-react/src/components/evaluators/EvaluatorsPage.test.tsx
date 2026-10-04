@@ -25,7 +25,7 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(within(g).getAllByText(/support-bot|payments-faq/)).toHaveLength(2);
     expect(await within(g).findByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
     expect(within(g).getByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
-    expect(within(g).getByText(/Needs 157 more labels, 18 more false alarms/)).toBeInTheDocument();
+    expect(within(g).getByText(/Needs 157 more labels, including at least 18 false alarms, to calibrate for blocking\./)).toBeInTheDocument();
     // Label queue (this check's answers) and Calibrate now are live for an admin.
     expect(within(g).getByRole('link', { name: 'Label queue for Groundedness' })).toHaveAttribute(
       'href',
