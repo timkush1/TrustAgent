@@ -149,7 +149,7 @@ test.describe('labels', () => {
     await page.getByText('Show exact Jev request').first().click();
     const box = page.getByTestId('jev-request').first();
     await expect(box.getByText(/Jev calls? · \d+ questions?/)).toBeVisible({ timeout: TIMEOUT });
-    await expect(box.getByText(/^(Matches|Differs from) a recompile of this request$/)).toBeVisible({ timeout: TIMEOUT });
+    await expect(box.getByText(/^Rebuilt from the stored request: (identical|different)$/)).toBeVisible({ timeout: TIMEOUT });
     expect(await seriousViolations(page)).toEqual([]);
   });
 });
