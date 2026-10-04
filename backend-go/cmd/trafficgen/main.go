@@ -107,7 +107,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
 	fl.Usage = func() {
-		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p4] [--upstream none] [--base-url URL] [--file pack.json]")
+		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--file pack.json]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
 	}

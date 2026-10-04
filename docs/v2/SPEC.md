@@ -1755,7 +1755,7 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
 - **`critical_at`:** the smallest t such that, for every t′ ≥ t, the Wilson 95% lower bound of precision is ≥ 0.95 with ≥ 50 predicted positives. Otherwise `null` with "insufficient evidence to block". Quick calibration (Studio) never emits `critical_at`.
 - **Key:**
   - `target_key = "<id>@<v>#<calibration_key[:16]>#<params_sha[:16]|->"`, where `calibration_key = sha256(JCS({question, signal}))` and `params_sha = sha256(JCS(resolved route params))` for evaluators that have params.
-  - A difference in fit-context state composition produces a `calibration_warning: "calibrated with different state fields"`; the calibration still applies. P4: P3 produces no `calibration_warning` (D28).
+  - A difference in fit-context state composition produces a `calibration_warning: "calibrated with different state fields"`; the calibration still applies (implemented in P4, D56; P3 produced none, D28).
 - **Lookup:**
   1. Exact snapshot.
   2. Family (snapshot minus `-YYYYMMDD`), only if `CALIBRATION_FAMILY_FALLBACK`; forced to `provisional`, state `family`.
@@ -1764,7 +1764,7 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
   API-imported and fitted rows override files (P4, #42-46). File merge: newest `created_at` wins, with a warning.
   **P3 (D14):** the lookup reads files only, from `TRUTHTABLE_CALIBRATION_DIR`, polled every 30 s; a change broadcasts WS `calibration_updated`. A file that stops parsing keeps its last good content.
 - **Activation vs adoption:** activating a calibration **does not change live decisions** while the route's threshold space is `raw`. "Adopt calibration" creates a new policy version with `space: calibrated` and the recommended thresholds, and is gated by a Preview-impact dry-run.
-- **Snapshot change:** WS `decision_model_changed` shows a banner. Adopted routes whose calibration no longer applies fall back to raw risk and are capped to flag. P3 reports this with the reason `uncalibrated_snapshot`; `calibration_missing` comes with the P4 calibration store (D28).
+- **Snapshot change:** WS `decision_model_changed` shows a banner. Adopted routes whose calibration no longer applies fall back to raw risk and are capped to flag. The reason is `uncalibrated_snapshot` when the target is calibrated only on other snapshots, else `calibration_missing` (P4 calibration store, D56; D28 resolved).
 - **Committed files:**
   - `config/calibration/mock__jev-heuristic-v1.json` (quality `mock`).
   - `config/calibration/typesafe__jev-1.13-<date>.json` (measured, from P6 bench-lite, for groundedness@1 and contradiction@1).

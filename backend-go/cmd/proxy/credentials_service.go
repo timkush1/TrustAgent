@@ -20,9 +20,6 @@ import (
 	"github.com/truthtable/backend-go/internal/websocket"
 )
 
-// errNotImplemented is what a Step-0 seam returns until its owner fills it in.
-var errNotImplemented = errors.New("not implemented")
-
 // CredentialWrite is one credential write (D75): PUT /api/credentials/:name (#55), the
 // verify-and-bind of POST /api/credentials/:name/verify (#57) and the key from Connect OpenRouter
 // (#59) all go through writeCredential.
