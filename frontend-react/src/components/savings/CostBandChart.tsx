@@ -340,7 +340,9 @@ export function CostBandChart({
           <div aria-hidden="true" data-end-labels="" className="relative text-2xs whitespace-nowrap tabular" style={{ height }}>
             <div className="invisible h-0">
               {ends.map((l) => (
-                <div key={l.key}>{l.text}</div>
+                <div key={l.key} className={l.key === 'measured' ? 'font-medium' : undefined}>
+                  {l.text}
+                </div>
               ))}
             </div>
             {ends.map((l) => (
