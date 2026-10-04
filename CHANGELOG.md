@@ -290,9 +290,9 @@ phase (P0 → P7).
   append-only trigger on `admin_audit_log`. **Migration 0006** makes that log
   refuse `TRUNCATE` as well.
 - **Savings on the simulated demo:** deep audits from the free mock judge
-  (\$0, no tokens) no longer scale up to a \$0 "LLM auditing every answer"
+  ($0, no tokens) no longer scale up to a $0 "LLM auditing every answer"
   figure: the full-audit counterfactual falls back to the published assumption
-  (≈ \$35.50 per 1,000, labelled not measured), and the deep-audit basis says the
+  (≈ $35.50 per 1,000, labelled not measured), and the deep-audit basis says the
   mock judge is free. The mock fast check also answers the Studio drafter's own
   samples by their `should_fire`, so the demo's test bench shows the intended
   matches instead of hash answers.
