@@ -155,13 +155,18 @@ function DryRunResultView({ result, simulated, names }: { result: DryRunResult; 
       {simulated ? <SimulatedRunNote>{STUDIO_SIMULATED_DRY_RUN}</SimulatedRunNote> : null}
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-semibold text-fg">
         <span>{studioDryRunResultText(result)}</span>
-        {extrapolated ? (
+        {/* Every figure carries its own label: a mock fast check's count is simulated (D46). */}
+        {simulated ? (
+          <EvidenceBadge label="simulated" basis="A mock fast check answered on this stack, so the count is made up." subject="Fires on every answer in the window" />
+        ) : extrapolated ? (
           <EvidenceBadge
             label="estimate"
             basis={`Scaled up from the ${formatCount(result.sampled)} tested answers to all ${formatCount(result.population)}, each counted by its chance of being sampled.`}
             subject="Fires on every answer in the window"
           />
-        ) : null}
+        ) : (
+          <EvidenceBadge label="measured" basis={`Every one of the ${formatCount(result.population)} stored answers in the window was tested.`} subject="Fires on every answer in the window" />
+        )}
       </p>
       <dl className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-[auto_1fr]">
         <dt className="text-fg-muted">Checked</dt>

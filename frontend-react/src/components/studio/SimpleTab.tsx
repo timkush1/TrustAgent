@@ -78,7 +78,7 @@ function OptionRow({
     // Option names are long snake_case keys: they get room for about 34 characters, and the
     // role control moves under them where the row is narrower than that.
     <li className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-2 sm:items-start xl:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_auto]">
-      <Field label="Option name" error={keyProblem} description={keyProblem ? undefined : 'Part of the question: say what it means'}>
+      <Field label="Option name" error={keyProblem} description={keyProblem ? undefined : 'Jev reads this name as part of the question, so make it descriptive.'}>
         <Input
           value={key}
           className="font-mono text-xs"
@@ -91,7 +91,14 @@ function OptionRow({
         />
       </Field>
       <Field label="What it means">
-        <Input value={option.what} disabled={disabled} onChange={(e) => onChange({ ...option, what: e.target.value })} />
+        {/* Grows with its text where the browser can (field-sizing), so a long meaning is never cut off. */}
+        <Textarea
+          rows={2}
+          className="min-h-9 resize-none [field-sizing:content]"
+          value={option.what}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...option, what: e.target.value })}
+        />
       </Field>
       <div className="flex items-end gap-1 sm:col-span-2 xl:col-span-1 xl:pt-5">
         <SegmentedControl<RoleValue>
@@ -146,7 +153,10 @@ export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { sp
       <Field label="Name" description="Shown on traces, in the library and in alerts.">
         <Input value={form.name} maxLength={80} disabled={disabled} onChange={(e) => set({ ...form, name: e.target.value })} />
       </Field>
-      <Field label="What should it catch?" description="The question the fast check answers. Name what it reads in backticks, such as `assistant_response`.">
+      <Field
+        label="What should it catch?"
+        description="The question the fast check answers. A name in backticks points it at part of the request: `assistant_response` is your model's answer, `user_request` the user's message, `evidence` your documents, and `rules.…` one of the check's settings, such as `rules.brand_voice`."
+      >
         <Textarea rows={3} value={form.instructions} disabled={disabled} onChange={(e) => set({ ...form, instructions: e.target.value })} />
       </Field>
       <div className="space-y-1.5">

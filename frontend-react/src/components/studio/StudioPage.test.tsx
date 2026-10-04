@@ -538,6 +538,22 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(await within(test).findByText(STUDIO_SIMULATED_TEST)).toBeInTheDocument();
   });
 
+  it('labels a dry run on the mock fast check simulated, figure by figure', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio', { status: { demo: true, decision_model: { ...adminStatus().decision_model, backend: 'mock', state: 'mock' } } });
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('radio', { name: '7 days' }));
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (simulated)' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Run this simulated test?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Run the test' }));
+    await within(watch).findByText(/^Would have fired/);
+    // The headline count and the cost each carry the Simulated label, never Estimate or Measured.
+    expect(within(watch).getByRole('button', { name: 'Simulated: how “Fires on every answer in the window” was produced' })).toBeInTheDocument();
+    expect(within(watch).queryByRole('button', { name: /^(Estimate|Measured): how “Fires on every answer/ })).toBeNull();
+    expect(within(watch).getAllByRole('button', { name: 'Simulated: how “Cost of this test” was produced' }).length).toBeGreaterThan(0);
+  });
+
   it('says the fast check is not connected, with the fix', async () => {
     const user = userEvent.setup();
     renderPage('/app/evaluators/studio', { status: { decision_model: { ...adminStatus().decision_model, backend: 'off', state: 'off' } } });
