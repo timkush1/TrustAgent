@@ -31,7 +31,7 @@ func TestMigration0006RefusesTruncate(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM admin_audit_log`).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_trigger WHERE tgname = 'admin_audit_log_no_truncate'`).Scan(&triggers); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_trigger WHERE tgname = 'admin_audit_log_no_truncate' AND tgrelid = 'admin_audit_log'::regclass`).Scan(&triggers); err != nil {
 		t.Fatal(err)
 	}
 	if rows != 1 || triggers != 1 {
