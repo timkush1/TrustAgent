@@ -37,6 +37,10 @@ jobs:
       - name: Forbidden identifiers (SPEC Appendix A)
         run: node scripts/check-forbidden.mjs
 
+      # No code or comment names the delivery phase it shipped in (P4-PLAN §17 I-3).
+      - name: Phase references (scripts/phase-refs.allow)
+        run: make phase-refs-check
+
       - uses: actions/setup-go@v6
         if: hashFiles('contracts/**') != ''
         with:

@@ -15,7 +15,7 @@ GO ?= go
 # Stamp npm writes on every install; it is older than package-lock.json when dependencies changed.
 CONTRACTS_NODE_STAMP := $(CONTRACTS_DIR)/node_modules/.package-lock.json
 
-.PHONY: contracts-install contracts-check contracts-test contracts-go forbidden-check vectors install check
+.PHONY: contracts-install contracts-check contracts-test contracts-go forbidden-check phase-refs-check vectors install check
 
 contracts-install: ## Install the contracts validator dependencies (npm ci)
 	cd "$(CONTRACTS_DIR)" && $(NPM) ci --no-audit --no-fund
@@ -37,6 +37,17 @@ forbidden-check: ## Fail on a superseded identifier (scripts/check-forbidden.mjs
 	$(NODE) "$(CONTRACTS_MK_DIR)../scripts/check-forbidden.mjs" --self-test
 	$(NODE) "$(CONTRACTS_MK_DIR)../scripts/check-forbidden.mjs"
 
+# The phase grep (P4-PLAN §17 I-3): no code or comment names the delivery phase it shipped in. The
+# only exceptions are the fixed substrings in scripts/phase-refs.allow, matched against git grep's
+# `path:line:text` output. Raise PHASE_REFS_RE to the next phase when that phase's cleanup lands.
+PHASE_REFS_RE ?= \bP4\b|"p4"|in P4|P4_REASONS
+PHASE_REFS_PATHS ?= frontend-react/src backend-go backend-python/src scripts
+
+phase-refs-check: ## Fail on a code or comment line that names a delivery phase (scripts/phase-refs.allow lists the exceptions)
+	@cd "$(CONTRACTS_MK_DIR).." && hits="$$(git grep -nE '$(PHASE_REFS_RE)' -- $(PHASE_REFS_PATHS) | grep -v -F -f scripts/phase-refs.allow)"; \
+	if [ -n "$$hits" ]; then printf '%s\n' "$$hits"; echo "phase-refs-check: the lines above name a delivery phase; reword them (or, for a deliberate exception, add the exact line to scripts/phase-refs.allow)"; exit 1; fi; \
+	echo "✅ No code or comment names a delivery phase outside scripts/phase-refs.allow"
+
 # Extra cmd/vectorgen flags, e.g. VECTORGEN_FLAGS=-check (verify only) or VECTORGEN_FLAGS="-kinds compile -freeze".
 VECTORGEN_FLAGS ?=
 
@@ -47,4 +58,4 @@ vectors: ## Generate the expected values of the mechanical golden vectors with G
 # elsewhere (with or without a recipe) and also works when no other rule for the target exists.
 # If the root Makefile ever declares them `::` (double-colon), these lines must become `::` too.
 install: contracts-install
-check: contracts-check contracts-test contracts-go forbidden-check
+check: contracts-check contracts-test contracts-go forbidden-check phase-refs-check
