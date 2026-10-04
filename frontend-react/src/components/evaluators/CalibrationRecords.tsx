@@ -168,7 +168,7 @@ function ImportAction({ disabledReason }: { disabledReason: ReturnType<typeof us
         )}
       </DisabledAction>
       <p className="text-xs text-fg-muted">
-        An imported calibration becomes the active one for its check and fast-check version. Routes that read raw scores are unchanged until you adopt it.
+        An imported calibration becomes the active one for its check and fast-check version. Routes keep their current thresholds until you adopt it on them.
       </p>
       {parseError ? (
         <p role="alert" className="text-xs text-fg">
@@ -232,12 +232,13 @@ function RecordRow({ meta, detail, writeReason, onAdopt }: { meta: CalibrationRe
             {formatRelativeTime(meta.created_at, now)}
           </time>
         </p>
+        {meta.active ? <p className="text-xs text-fg-muted">Ready to use. Routes keep their current thresholds until you adopt it on them.</p> : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <DisabledAction reason={adoptReason} layout="stacked" className="items-end">
           {(p) => (
             <Button size="sm" onClick={onAdopt} {...p}>
-              Adopt…
+              Adopt on a route…
             </Button>
           )}
         </DisabledAction>
@@ -314,7 +315,7 @@ export function CalibrationRecords({ detail }: { detail: EvaluatorDetail }) {
   return (
     <Section
       title="Calibrations"
-      description="Every calibration this proxy holds for the check. The active one maps raw scores to calibrated ones; adopting one moves a route's thresholds into calibrated space."
+      description="Every calibration this proxy holds for the check. The active one turns the fast check's scores into probabilities you can rely on; a route uses it once you adopt it there, which moves that route's thresholds onto the calibrated scale."
     >
       {body}
       <ImportAction disabledReason={writeReason} />

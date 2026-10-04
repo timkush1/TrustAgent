@@ -122,7 +122,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     // Beside Calibrate now. The header's fit is off too, and as calibration #3 is for the version the
     // check runs on, its reason points to that record rather than saying nothing can be adopted.
     expect(await screen.findByText(/^Adopt an existing calibration on the Calibration tab, or label 1 more answer for a new fit\.$/)).toBeInTheDocument();
-    expect(screen.getAllByText('Not enough labels for a first fit yet: label 1 more answer in the queue.')).toHaveLength(1);
+    expect(screen.getAllByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Fit and adopt from labels' })).toHaveAttribute('aria-disabled', 'true');
     await userEvent.setup().click(screen.getByRole('button', { name: 'Open Calibration' }));
     expect(await screen.findByRole('tab', { name: 'Calibration', selected: true })).toBeInTheDocument();
@@ -135,7 +135,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     bare.state.evaluatorDetails.groundedness = control.state.evaluatorDetails.groundedness;
     renderPage('/app/evaluators/groundedness', { control: bare });
     await screen.findByRole('button', { name: 'Calibrate now' });
-    await waitFor(() => expect(screen.getAllByText('Not enough labels for a first fit yet: label 1 more answer in the queue.')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toHaveLength(2));
     stopLive();
     cleanup();
 
@@ -286,7 +286,7 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     const user = userEvent.setup();
     const { control } = renderPage('/app/evaluators/groundedness?tab=calibration');
     const row = (await screen.findByText('Calibration #3')).closest('li') as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'Adopt…' }));
+    await user.click(within(row).getByRole('button', { name: 'Adopt on a route…' }));
     const d = await dialog(/Adopt calibration: Groundedness/);
     expect(await within(d).findByTestId('preview-impact')).toBeInTheDocument();
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
@@ -308,7 +308,7 @@ describe('Calibration records', { timeout: 20_000 }, () => {
     list.items[0].snapshot = 'typesafe/jev-1.12-20260601';
     renderPage('/app/evaluators/groundedness?tab=calibration', { control });
     const row = (await screen.findByText('Calibration #3')).closest('li') as HTMLElement;
-    expect(within(row).getByRole('button', { name: 'Adopt…' })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(row).getByRole('button', { name: 'Adopt on a route…' })).toHaveAttribute('aria-disabled', 'true');
     expect(within(row).getByText(/This one is for fast-check version typesafe\/jev-1\.12-20260601; the check now runs on typesafe\/jev-1\.13-20260917/)).toBeInTheDocument();
   });
 

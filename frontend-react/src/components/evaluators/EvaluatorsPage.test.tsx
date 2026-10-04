@@ -23,9 +23,10 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(within(g).getByText('Grounding')).toBeInTheDocument();
     expect(within(g).getByText(/Built-in · version 1/)).toBeInTheDocument();
     expect(within(g).getAllByText(/support-bot|payments-faq/)).toHaveLength(2);
-    expect(await within(g).findByText('Labels 43/200 (31 with the problem, 12 fine)')).toBeInTheDocument();
-    expect(within(g).getByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
-    expect(within(g).getByText(/Needs 157 more labels, including at least 18 fine, to calibrate for blocking\./)).toBeInTheDocument();
+    // One meter and one next step on a card.
+    expect(await within(g).findByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
+    expect(within(g).getAllByRole('meter')).toHaveLength(1);
+    expect(within(g).getByText('Blocking needs 157 more of your own labels, including at least 18 that are fine.')).toBeInTheDocument();
     // Label queue (this check's answers) and Calibrate now are live for an admin.
     expect(within(g).getByRole('link', { name: 'Label queue for Groundedness' })).toHaveAttribute(
       'href',
@@ -40,6 +41,17 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(names.slice(0, 4)).toEqual(['Contradiction', 'Groundedness', 'Unapproved commitments', 'Off-brand tone']);
     const tone = await card('Off-brand tone');
     expect(within(tone).getByText(/Watching/)).toBeInTheDocument();
+  });
+
+  it('gives a card one next step: the first fit, when Calibrate now is not available yet', async () => {
+    const control = createControlApi();
+    control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', {
+      calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, proxy_labels: 5, can_fit_provisional: false }),
+    });
+    renderPage('/app/evaluators', { control });
+    const g = await card('Groundedness');
+    expect(await within(g).findByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toBeInTheDocument();
+    expect(within(g).queryByText(/^Blocking needs/)).toBeNull();
   });
 
   it('filters by name, category and use, and clears the filters', async () => {
@@ -109,7 +121,7 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
   it('has no axe violations', async () => {
     const { container } = renderPage('/app/evaluators');
     const g = await card('Groundedness');
-    await within(g).findByText(/Labels 43\/200/);
+    await within(g).findByRole('meter', { name: 'Labels' });
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
 });

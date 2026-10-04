@@ -153,7 +153,7 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
     onSuccess: (meta) => {
       void queryClient.invalidateQueries({ queryKey: qkcEvaluators.calibrationLists });
       void queryClient.invalidateQueries({ queryKey: qkc.evaluators.detail(detail.id) });
-      notify.success(`Calibration #${meta.id} is active`, { description: 'Routes that read raw scores are unchanged until you adopt it.' });
+      notify.success(`Calibration #${meta.id} is active`, { description: 'Routes keep their current thresholds until you adopt it on them.' });
       setOpen(false);
     },
   });
@@ -261,7 +261,7 @@ export function CalibrateDialog({ detail, trigger, intent = 'calibrate' }: Calib
                 {failure.code ? <span className="ml-1 font-mono text-2xs text-fg-subtle">{failure.code}</span> : null}
               </p>
             ) : null}
-            <p className="text-xs text-fg-muted">Activating keeps it on hand for routes that read calibrated scores; routes that read raw scores are unchanged until you adopt it.</p>
+            <p className="text-xs text-fg-muted">Activating keeps it ready for routes that already use calibrated thresholds; every other route keeps its current thresholds until you adopt it there.</p>
             <DialogFooter>
               <Button variant="secondary" onClick={() => setOpen(false)}>
                 Close

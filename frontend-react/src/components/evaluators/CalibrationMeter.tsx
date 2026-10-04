@@ -96,7 +96,7 @@ export function CalibrationMeter({
   className,
 }: {
   progress: CalibrationProgress;
-  /** One Labels bar instead of three (the library cards): the line above it names both kinds. */
+  /** A library card: one Labels bar instead of three, and one next step. */
   compact?: boolean;
   /** The evaluator, for the actions (Label queue, Calibrate now). Without it there are none. */
   detail?: EvaluatorDetail;
@@ -104,10 +104,14 @@ export function CalibrationMeter({
   className?: string;
 }) {
   const parts = progressParts(progress);
+  const actions = showActions && detail !== undefined;
+  // A library card keeps one meter and one next step: when Calibrate now is not available yet, the
+  // reason under it is that step, so the blocking shortfall is left to the check's own page.
+  const nextStep = compact && actions && calibrateReason(progress) !== null ? null : (parts.missing ?? 'Enough labels to calibrate for blocking.');
   return (
     <div className={cn('@container space-y-2', className)}>
       <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
-        <span className="text-fg tabular">{progressText(progress)}</span>
+        {compact ? <span className="text-xs text-fg-muted">Calibration</span> : <span className="text-fg tabular">{progressText(progress)}</span>}
         <span className="text-xs text-fg-muted">
           <Term id="calibration">{parts.stateLabel}</Term>
         </span>
@@ -122,8 +126,8 @@ export function CalibrationMeter({
           <Bar label="Fine" value={parts.falseAlarms} have={progress.human_labels.neg} need={progress.needed.neg} />
         </div>
       )}
-      {parts.missing ? <p className="text-xs text-fg-muted">{parts.missing}</p> : <p className="text-xs text-fg-muted">Enough labels to calibrate for blocking.</p>}
-      {showActions && detail ? <Actions progress={progress} detail={detail} /> : null}
+      {nextStep ? <p className="text-xs text-fg-muted">{nextStep}</p> : null}
+      {actions ? <Actions progress={progress} detail={detail} /> : null}
     </div>
   );
 }
