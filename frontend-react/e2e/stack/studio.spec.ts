@@ -80,6 +80,11 @@ test.describe('studio', () => {
       const results = bench.getByRole('region', { name: 'Test results' });
       await expect(results.getByText(/^(\d+ of \d+ match|No labelled samples)/)).toBeVisible({ timeout: TIMEOUT });
       await expect(results.getByText(/^Sample \d+$/)).toHaveCount(6);
+      // On a mock fast check the run says it is simulated, and the mock knows the drafted
+      // example's own samples, so every one of them matches its label.
+      if ((await results.getByText(/^Simulated: the demo's mock fast check/).count()) > 0) {
+        await expect(results.getByText(/^6 of 6 match/)).toBeVisible();
+      }
 
       // 4. Quick calibration asks for more labels (it needs 8, with 3 of each).
       await expect(step(page, 4).getByText(/^Needs 8 labels \(have \d+/)).toBeVisible();
