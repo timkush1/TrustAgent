@@ -370,7 +370,7 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(curl.textContent).toContain('"response": "You can get a full refund within 60 days of purchase."');
     expect(screen.getByText(/set TRUSTAGENT_ADMIN_KEY to an admin key/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Check the answer' }));
-    expect(await screen.findByText('Audit mode: no model call.')).toBeInTheDocument();
+    expect(await screen.findByText('Checked as written: no model was called to produce it.')).toBeInTheDocument();
     expect(control.callsTo('/api/playground/run')[0].body).toMatchObject({ mode: 'audit', route: 'support-bot' });
     // A live (non-demo) stack runs real checks: no scenario is sent.
     expect(control.callsTo('/api/playground/run')[0].body).not.toHaveProperty('scenario');
@@ -398,7 +398,7 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Refund window: 60 days vs 30 days' }));
     expect(screen.getByText(/this stack’s mock checks answer it with the scenario’s scripted results \(simulated\)/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Check the answer' }));
-    await screen.findByText('Audit mode: no model call.');
+    await screen.findByText('Checked as written: no model was called to produce it.');
     expect(control.callsTo('/api/playground/run')[0].body).toMatchObject({ mode: 'audit', scenario: 'refund-contradiction-flag' });
   });
 

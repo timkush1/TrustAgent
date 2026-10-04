@@ -256,7 +256,7 @@ export function stageLabel(stage: 'active' | 'shadow'): string {
 
 const BACKENDS: Record<DecisionBackend, string> = {
   'openrouter-decisions': 'OpenRouter',
-  'openrouter-systemone': 'OpenRouter (systemone route)',
+  'openrouter-systemone': 'OpenRouter (alternate decisions route)',
   typesafe: 'TypeSafe direct',
   compatible: 'Other gateway',
   mock: 'Mock (simulated)',

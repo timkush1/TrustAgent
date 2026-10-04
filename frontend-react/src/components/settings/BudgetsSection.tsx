@@ -148,13 +148,19 @@ function BudgetsCard({ settings, status, writeReason }: { settings: SettingsView
           return (
             <div key={kind} data-budget={kind} className="space-y-2">
               <Field label={`${view.title}, USD per day`} description={view.description} error={fieldError}>
-                <Input
-                  value={env ? capText(capOf(settings, kind)) : drafts[kind]}
-                  onValueChange={(v) => form.setDraft((d) => ({ ...d, [kind]: v }))}
-                  readOnly={env || writeReason !== null}
-                  inputMode="decimal"
-                  className="max-w-40 tabular"
-                />
+                {/* The unit inside the field: "$ 2", not a bare "2". */}
+                <div className="relative max-w-40">
+                  <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-sm text-fg-muted">
+                    $
+                  </span>
+                  <Input
+                    value={env ? capText(capOf(settings, kind)) : drafts[kind]}
+                    onValueChange={(v) => form.setDraft((d) => ({ ...d, [kind]: v }))}
+                    readOnly={env || writeReason !== null}
+                    inputMode="decimal"
+                    className="pl-6 tabular"
+                  />
+                </div>
               </Field>
               {env ? <DisabledReason reason={{ text: fillTemplate(copy.settings.env_managed, { keys: BUDGET_ENV[kind] }) }} /> : null}
               {below ? (

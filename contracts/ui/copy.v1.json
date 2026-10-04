@@ -193,8 +193,8 @@
       "details": "Details",
       "show_jev_request": "Show exact Jev request",
       "jev_request_summary": "{calls} Jev call · {questions} questions · {latency_ms} ms · {cost} · {snapshot}",
-      "recompile_match": "Matches a recompile of this request",
-      "recompile_mismatch": "Differs from a recompile of this request"
+      "recompile_match": "Rebuilt from the stored request: identical",
+      "recompile_mismatch": "Rebuilt from the stored request: different"
     },
     "overview": {
       "hero_chart": "Requests by outcome",

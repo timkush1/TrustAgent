@@ -231,7 +231,7 @@ export function secBackendCardOf(backend: RuntimeSettings['decision_model']['bac
 const SETTING_BACKENDS: Record<RuntimeSettings['decision_model']['backend'], string> = {
   auto: 'Automatic (from the connected key)',
   'openrouter-decisions': 'OpenRouter',
-  'openrouter-systemone': 'OpenRouter (systemone route)',
+  'openrouter-systemone': 'OpenRouter (alternate decisions route)',
   typesafe: 'TypeSafe direct',
   compatible: 'Other gateway',
   mock: 'Simulated (mock)',

@@ -37,7 +37,13 @@ function textOf(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
-function RequestView({ request, index, total }: { request: JevRequest; index: number; total: number }) {
+/** A question key ("proof_muree135__v1") in words, through the same names as the answers. */
+function questionName(key: string, names?: ReadonlyMap<string, string>): string {
+  const m = /^(.*)__v(\d+)$/.exec(key);
+  return m ? evaluatorName(`${m[1]}@${m[2]}`, names) : evaluatorName(key, names);
+}
+
+function RequestView({ request, index, total, names }: { request: JevRequest; index: number; total: number; names?: ReadonlyMap<string, string> }) {
   const label = total > 1 ? `Request ${index + 1} of ${total}` : 'Request';
   return (
     <div className="space-y-3">
@@ -59,7 +65,7 @@ function RequestView({ request, index, total }: { request: JevRequest; index: nu
             const question = (q ?? {}) as { instructions?: unknown; type?: unknown };
             return (
               <li key={key} className="text-sm">
-                <span className="font-medium text-fg">{humanizeId(key)}</span>
+                <span className="font-medium text-fg">{questionName(key, names)}</span>
                 {typeof question.instructions === 'string' ? <span className="text-fg-muted"> — {question.instructions}</span> : null}
               </li>
             );
@@ -76,7 +82,7 @@ function MatchBadge({ view, decision }: { view: DecisionRequestView; decision: G
   const why = matches
     ? null
     : view.matches_recorded
-      ? "The recompile's fingerprint differs from the one recorded with the decision."
+      ? "The rebuilt request's fingerprint differs from the one recorded with the decision."
       : evalMismatchText(view.mismatch_reason);
   return (
     <div className="space-y-1">
@@ -163,7 +169,7 @@ function Body({ traceId, decision, redacted, names }: { traceId: string; decisio
       <div className="space-y-4">
         <MatchBadge view={q.data} decision={decision} />
         {q.data.requests.map((r, i) => (
-          <RequestView key={i} request={r} index={i} total={q.data.requests.length} />
+          <RequestView key={i} request={r} index={i} total={q.data.requests.length} names={names} />
         ))}
       </div>
     );

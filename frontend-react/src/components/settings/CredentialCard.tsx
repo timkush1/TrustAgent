@@ -105,7 +105,7 @@ export function CredentialCard({ card, items, settings, writeReason, testReason 
         title={
           <span className="flex flex-wrap items-center gap-2">
             {card.title}
-            {card.recommended ? <Badge emphasis="outline">Recommended</Badge> : null}
+            {card.recommended ? <Badge emphasis="quiet">Recommended</Badge> : null}
           </span>
         }
         description={card.purpose}

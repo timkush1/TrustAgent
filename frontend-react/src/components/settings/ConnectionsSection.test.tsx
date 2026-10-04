@@ -202,7 +202,10 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     document.body.innerHTML = '';
 
     renderPage(PATH, { status: { demo: true } });
-    expect(within(await card('OpenAI')).getByText(copy.disabled_reasons.demo)).toBeInTheDocument();
+    // The demo reason and its fix are said once for the page; each card keeps a short reason.
+    expect(await screen.findByText(/^This demo runs simulated checks/)).toBeInTheDocument();
+    expect(screen.getAllByText(copy.disabled_reasons.demo)).toHaveLength(1);
+    expect(within(await card('OpenAI')).getByText('Not on the demo stack')).toBeInTheDocument();
     expect(within(await card('OpenAI')).getByRole('button', { name: 'Paste a key' })).toHaveAttribute('aria-disabled', 'true');
     stopLive();
     document.body.innerHTML = '';

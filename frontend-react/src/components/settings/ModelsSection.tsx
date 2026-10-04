@@ -300,7 +300,7 @@ function backendOptions(credentials: readonly CredentialView[] | undefined): Rad
       label: (
         <span className="inline-flex flex-wrap items-center gap-2">
           {c.title}
-          {c.recommended ? <Badge emphasis="outline">Recommended</Badge> : null}
+          {c.recommended ? <Badge emphasis="quiet">Recommended</Badge> : null}
         </span>
       ),
       description: missing ? (
@@ -374,7 +374,7 @@ function FastCheckCard({ settings, status, credentials, writeReason, onReload }:
           <div className="space-y-3">
             {shown.card === 'openrouter' ? (
               <Switch
-                label="Use the systemone route"
+                label="Use OpenRouter's alternate decisions route"
                 description="A fallback for when OpenRouter changes the decisions route. Same model, same price."
                 checked={shown.systemone}
                 onCheckedChange={(systemone) => edit({ systemone })}

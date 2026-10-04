@@ -222,6 +222,10 @@ describe('Show exact Jev request', { timeout: 20_000 }, () => {
     expect(control.callsTo(`/api/traces/${detail.trace_id}/decision-request`)[0].query.get('attempt')).toBe('0');
     // The state and the questions it was sent, in words and in the raw request.
     expect(within(box).getAllByText(/Is every claim in `assistant_response` supported by `evidence`\?/).length).toBeGreaterThan(0);
+    // Questions are named as the answers are (the evaluator's name), never by their raw key.
+    const asked = within(box).getByText(/what it was asked$/).nextElementSibling as HTMLElement;
+    expect(within(asked).getByText('Groundedness')).toBeInTheDocument();
+    expect(within(asked).queryByText(/v1|__/)).toBeNull();
     expect(within(box).getByText('Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.', { selector: 'dd' })).toBeInTheDocument();
     expect(within(box).getByRole('region', { name: /Request · typesafe\/jev/ })).toBeInTheDocument();
   });
@@ -236,11 +240,11 @@ describe('Show exact Jev request', { timeout: 20_000 }, () => {
     expect(bars).toHaveTextContent('0.96');
   });
 
-  it('says when the recompile differs: by fingerprint, or for a reason the server gives', async () => {
+  it('says when the rebuilt request differs: by fingerprint, or for a reason the server gives', async () => {
     setup();
     let box = await openGlassBox();
     expect(await within(box).findByText(copy.trace.recompile_mismatch)).toBeInTheDocument();
-    expect(within(box).getByText("The recompile's fingerprint differs from the one recorded with the decision.")).toBeInTheDocument();
+    expect(within(box).getByText("The rebuilt request's fingerprint differs from the one recorded with the decision.")).toBeInTheDocument();
     stopLive();
     cleanup();
 

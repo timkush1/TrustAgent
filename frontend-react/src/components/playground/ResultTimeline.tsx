@@ -257,7 +257,7 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
         status={result || tokens || mode === 'audit' ? 'done' : running ? 'active' : 'waiting'}
       >
         {mode === 'audit' ? (
-          <p className="text-sm text-fg-muted">Audit mode: no model call.</p>
+          <p className="text-sm text-fg-muted">Checked as written: no model was called to produce it.</p>
         ) : result?.upstream ? (
           <p className="text-sm text-fg-muted tabular">
             HTTP {String(result.upstream.status)} · {formatDurationMs(result.upstream.ms)}
