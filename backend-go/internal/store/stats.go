@@ -574,11 +574,14 @@ const gateCostSQL = `c.kind = 'decision' AND c.component = 'gate'`
 // include_mock (D46), even on a trace that is not itself mock (a real fast check with a mock judge).
 const costRowWhere = `c.occurred_at >= $1 AND ($4::BOOLEAN OR c.cost_source <> 'simulated')`
 
-// realAuditSQL holds for an audit (aliased a) that may be counted without include_mock: none of
-// its linked cost rows is simulated (D46), so a mock judge's made-up cost never feeds the
-// uniform-sample mean or the fitted line as if it were a real one.
-const realAuditSQL = `($4::BOOLEAN OR NOT EXISTS (SELECT 1 FROM cost_events ce
-	WHERE ce.audit_id = a.audit_id AND ce.cost_source = 'simulated'))`
+// realAuditSQL holds for an audit (aliased a) whose cost may feed the uniform-sample mean or the
+// fitted line: none of its linked cost rows is simulated (D46), so a mock judge's made-up cost
+// never counts as if it were a real one; with include_mock a simulated audit counts too, but only
+// when it carries a cost. The mock judge reports $0 and no tokens, which says nothing about what
+// an LLM audit costs, so a demo of free mock audits falls through to static_assumptions instead
+// of scaling $0 up to a $0 counterfactual.
+const realAuditSQL = `(NOT EXISTS (SELECT 1 FROM cost_events ce
+	WHERE ce.audit_id = a.audit_id AND ce.cost_source = 'simulated') OR ($4::BOOLEAN AND a.cost_usd > 0))`
 
 // costSums reads the spend of the traces of f from cost_events (costRowWhere).
 func (s *PostgresStore) costSums(ctx context.Context, f StatsFilter) (CostSums, error) {

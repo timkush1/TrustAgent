@@ -201,6 +201,9 @@ func (s *server) handleRoiSummary(c *gin.Context) {
 	out.DecisionCost = roiDecisionCost{labelledValue: labelledValue{Value: ptrF(roundUSD(r.DecisionUSD)), Label: dLabel, Basis: dBasis},
 		USD: roundUSD(r.DecisionUSD), Per1k: per1k(r.DecisionUSD, n)}
 	lLabel, lBasis := spendLabel(r.LLMSources, "deep-audit judge calls", simulated)
+	if note := freeMockJudgeNote(r); note != "" {
+		lBasis = note
+	}
 	by := map[string]int64{}
 	for sel, cnt := range r.AuditsBySelection {
 		if slices.Contains(auditSelections, sel) {
@@ -248,6 +251,22 @@ func (s *server) handleRoiSummary(c *gin.Context) {
 		out.Sampling.LLMCapHitAt = l.CapHitAt(costs.KindLLM)
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// freeMockJudgeNote is the deep-audit basis when every judge call of the window came from the
+// mock judge, which reports $0: the spend is not a real one, and a real judge would add about the
+// published full-audit assumption per deep audit. "" otherwise.
+func freeMockJudgeNote(r *store.RoiData) string {
+	c := r.LLMSources
+	if r.Audits == 0 || c.Simulated == 0 || c.Reported+c.Computed+c.FreeLocal+c.Unknown+c.Other > 0 || r.LLMUSD != 0 {
+		return ""
+	}
+	note := "deep-audit judge calls: the mock judge is free in the demo, so this spend is simulated, not a real one"
+	if claim := staticFullAudit(); claim.per1k > 0 {
+		note += "; a real judge adds about $" + strconv.FormatFloat(claim.per1k/1000, 'f', -1, 64) +
+			" per deep audit (estimate, not measured: " + claim.basis + ")"
+	}
+	return note
 }
 
 // sameChecksCounterfactual is llm_same_checks: the token model over calls decisions that called

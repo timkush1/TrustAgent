@@ -394,4 +394,26 @@ func TestRoiLeavesOutSimulatedCostsWithoutIncludeMock(t *testing.T) {
 	if math.Abs(llm-(base.LLMUSD+usd)) > 1e-9 {
 		t.Errorf("include_mock series LLM spend %v", llm)
 	}
+
+	// The real mock judge reports $0 and no tokens: such an audit says nothing about what an LLM
+	// audit costs, so even with include_mock it feeds neither the uniform-sample mean nor the
+	// fitted line (the counterfactual then falls back to the published assumption).
+	zero := 0.0
+	free := &AuditRecord{AuditID: "a-mock-free", TraceID: "t-pass", Source: "proxy", Selection: &selection,
+		Status: AuditCompleted, ScoringVersion: "v2", CreatedAt: now.Add(-2 * time.Minute), CostUSD: &zero}
+	if err := s.SaveAuditResultWithCosts(ctx, free, AuditCompleted, []CostEvent{{OccurredAt: now.Add(-time.Minute),
+		TraceID: "t-pass", AuditID: "a-mock-free", Route: "support-bot", Component: "deep_audit_verify", Kind: CostKindLLM,
+		Provider: "mock", Model: "mock", CostUSD: &zero, CostSource: costSourceSimulated}}); err != nil {
+		t.Fatal(err)
+	}
+	withFree, err := s.Roi(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withFree.Audits != r.Audits+1 || withFree.UniformCosted != r.UniformCosted || len(withFree.FitSamples) != len(r.FitSamples) ||
+		withFree.LLMSources.Simulated != r.LLMSources.Simulated+1 {
+		t.Errorf("a free mock audit: %d audits, uniform %d, fit %d, simulated rows %d (before: %d, %d, %d, %d)",
+			withFree.Audits, withFree.UniformCosted, len(withFree.FitSamples), withFree.LLMSources.Simulated,
+			r.Audits, r.UniformCosted, len(r.FitSamples), r.LLMSources.Simulated)
+	}
 }

@@ -64,6 +64,28 @@ func TestFullAuditMethodOrder(t *testing.T) {
 	}
 }
 
+// A window whose deep audits all came from the free mock judge says so, with what a real judge
+// would add per audit; any real, local or unpriced judge call, or a spend, keeps the usual basis.
+func TestFreeMockJudgeNote(t *testing.T) {
+	mock := &store.RoiData{Audits: 12, CostSums: store.CostSums{LLMSources: store.CostCounts{Simulated: 30}}}
+	note := freeMockJudgeNote(mock)
+	if !strings.Contains(note, "the mock judge is free in the demo") || !strings.Contains(note, "a real judge adds about $0.0355 per deep audit") ||
+		!strings.Contains(note, "not measured") {
+		t.Errorf("mock note %q", note)
+	}
+	for name, r := range map[string]*store.RoiData{
+		"no audits":      {CostSums: store.CostSums{LLMSources: store.CostCounts{Simulated: 3}}},
+		"a real call":    {Audits: 2, CostSums: store.CostSums{LLMSources: store.CostCounts{Simulated: 3, Reported: 1}}},
+		"a local judge":  {Audits: 2, CostSums: store.CostSums{LLMSources: store.CostCounts{FreeLocal: 3}}},
+		"a priced mock":  {Audits: 2, CostSums: store.CostSums{LLMUSD: 0.5, LLMSources: store.CostCounts{Simulated: 3}}},
+		"no judge calls": {Audits: 2},
+	} {
+		if got := freeMockJudgeNote(r); got != "" {
+			t.Errorf("%s: %q", name, got)
+		}
+	}
+}
+
 // The fit recovers an exact line, applies it to every checked answer (those without a recorded
 // length at the mean length), and its bootstrap interval is the same on every run.
 func TestFittedFromAuditsIsDeterministic(t *testing.T) {
