@@ -90,10 +90,13 @@ function AppKey({ writeReason }: { writeReason: Reason | null }) {
           {mint.isError ? <ProblemNote error={mint.error} title="The key was not created" /> : null}
         </>
       )}
-      <Link to="/app/overview" className={linkClass}>
-        Connect your app
-        <ArrowRight aria-hidden="true" className="size-3.5" />
-      </Link>
+      {/* Its own line: inline beside "Create an app key" the two ran together with no gap. */}
+      <p>
+        <Link to="/app/overview" className={linkClass}>
+          Connect your app
+          <ArrowRight aria-hidden="true" className="size-3.5" />
+        </Link>
+      </p>
     </section>
   );
 }
