@@ -3080,7 +3080,7 @@ Where a section above says otherwise, the decision cited for it here wins.
 | SPEC section | What changes | Decisions |
 |---|---|---|
 | §2.2 (proto) | `Credential.allowed_hosts`, `EngineInfo.env_managed` and `runtime_config_epoch`; the push carries `{version, epoch, credentials, judge, price_table_json}` and never `decision`; the engine resolves the judge from it, env first | D34 |
-| §2.3 (storage) | The settings version and epoch live in the `settings` table and bump only on runtime-config and credential writes; migration 0005 adds the cost-ledger columns (`audit_id`, `hedge`, `late`, `estimated`), `traces.response_chars`, the calibration mirror index and the append-only admin audit log; audit writes wait for their trace's queued writes (the per-trace barrier) | D31, D45, D83 |
+| §2.3 (storage) | The settings version and epoch live in the `settings` table and bump only on runtime-config and credential writes; migration 0005 adds the cost-ledger columns (`audit_id`, `hedge`, `late`, `estimated`), `traces.response_chars`, the calibration mirror index and the append-only admin audit log; migration 0006 also refuses `TRUNCATE` on `admin_audit_log` (a statement trigger, since row triggers never fire on it); audit writes wait for their trace's queued writes (the per-trace barrier) | D31, D44, D45, D83 |
 | §2.4 #10 | `reason=<code>` matches a whole code, `reason=<prefix>:` a prefix; both need `since` | D68 |
 | §2.4 #12 | `DecisionRequestView {requests, request_sha256, matches_recorded, cpt, mismatch_reason}` | D63 |
 | §2.4 #26, #45, #46b | #45 fits without activating; new #46b activates a calibration; #26 takes `calibration_ids` for a dry run | D62 |
