@@ -331,11 +331,15 @@ describe('Playground page', { timeout: 20_000 }, () => {
 
   it('stops a streamed run when the viewer leaves the page', async () => {
     const user = userEvent.setup();
-    let signal: AbortSignal | null = null;
+    // Hold the Request itself, not just its signal: the fetch Request keeps the AbortController that
+    // follows the page's signal alive only while the Request lives (undici keeps a WeakRef to it,
+    // nodejs/undici#1926). Holding only `request.signal` lets the Request be garbage-collected
+    // mid-test, after which the page's abort never reaches the held signal.
+    let held: Request | null = null;
     const { router } = renderPage('/app/playground');
     server.use(
       http.post(`${API}/api/playground/run`, ({ request }) => {
-        signal = request.signal;
+        held = request;
         // A stream that never ends on its own.
         const body = new ReadableStream<Uint8Array>({
           start(c) {
@@ -350,11 +354,11 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
     expect(await screen.findByText('You can get')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
-    expect(signal!.aborted).toBe(false);
+    expect(held!.signal.aborted).toBe(false);
     await act(() => router.navigate({ to: '/app/overview' }));
-    // The abort reaches the mocked request through the fetch interceptor asynchronously; on a busy
-    // machine (the whole suite on two workers) that can take longer than waitFor's default 1 s.
-    await waitFor(() => expect(signal!.aborted).toBe(true), { timeout: 10_000 });
+    // Leaving the page unmounts the Playground, whose cleanup aborts the run's controller; the abort
+    // follows to the request's own signal synchronously.
+    await waitFor(() => expect(held!.signal.aborted).toBe(true));
   });
 
   it('checks a pasted answer from an example, with no model call', async () => {
