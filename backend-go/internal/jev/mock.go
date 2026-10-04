@@ -48,6 +48,8 @@ type mockClient struct {
 	scenarios map[string]map[string]*decision.RawAnswer
 	// fallbacks holds, per scenario, the answers to the re-gate of its scripted fallback answer.
 	fallbacks map[string]*mockFallback
+	// studio holds the answers to the Studio drafter examples' samples (mock_studio.go).
+	studio map[string]*decision.RawAnswer
 	// costs receives one simulated cost event per call.
 	costs  CostSink
 	status statusTracker
@@ -77,6 +79,9 @@ func newMock(cfg MockConfig, model string) (*mockClient, error) {
 	}
 	if m.scenarios, m.fallbacks, err = parseScenarios(b); err != nil {
 		return nil, fmt.Errorf("jev: mock fixtures: %w", err)
+	}
+	if m.studio, err = loadStudioSamples(); err != nil {
+		return nil, fmt.Errorf("jev: mock studio samples: %w", err)
 	}
 	return m, nil
 }
@@ -143,7 +148,8 @@ func (m *mockClient) Status() Status {
 }
 
 // Decide answers every question of req. In scenario mode a question the scenario scripts gets that
-// answer; any other question fails the call when strict and gets a hash answer otherwise.
+// answer, as does a Studio drafter example's question about one of its own samples; any other
+// question fails the call when strict and gets a hash answer otherwise.
 func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) (*Response, error) {
 	start := time.Now()
 	if m.cfg.Latency > 0 {
@@ -174,6 +180,10 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 		if m.cfg.Mode == MockScenario {
 			if a, ok := scripted[qid]; ok && a != nil {
 				answers[qid] = cloneAnswer(a)
+				continue
+			}
+			if a := m.studioAnswer(req.Questions[qid], req.State); a != nil {
+				answers[qid] = a
 				continue
 			}
 			if m.cfg.Strict {
