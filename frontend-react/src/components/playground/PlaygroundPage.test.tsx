@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { playgroundResult } from '@/test/control/fixtures';
+import { evaluatorMeta, evaluatorMetas, playgroundResult } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
@@ -149,6 +149,19 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(body).toMatchObject({ mode: 'chat', stream: false, messages: [{ role: 'user', content: 'Can I get a refund after 45 days?' }] });
     // The form is still filled for the next run.
     expect(screen.getByRole('textbox', { name: 'Message 2' })).toHaveValue('Can I get a refund after 45 days?');
+  });
+
+  it('names each check from the evaluator library, never by its id', async () => {
+    const user = userEvent.setup();
+    // A renamed check: its id no longer reads as its name.
+    const evaluators = evaluatorMetas().map((e) => (e.id === 'contradiction' ? evaluatorMeta('contradiction', { name: 'Policy contradictions' }) : e));
+    renderPage('/app/playground', { control: createControlApi({ evaluators }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    const timeline = await screen.findByRole('list', { name: 'What happened to the request' });
+    expect(await within(timeline).findByRole('meter', { name: 'Policy contradictions risk' })).toBeInTheDocument();
+    expect(within(timeline).getByText('Policy contradictions')).toBeInTheDocument();
+    expect(within(timeline).queryByRole('meter', { name: 'Contradiction risk' })).toBeNull();
   });
 
   it('follows the deep audit on the live stream', async () => {

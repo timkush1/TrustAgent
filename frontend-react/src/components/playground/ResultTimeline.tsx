@@ -6,28 +6,32 @@
  * when the first token arrived and when the fast check decided (D69: possibly before the answer
  * finished), as measured in this browser.
  */
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Bot, Gavel, Inbox, Search } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useDataSource } from '@/app/services';
 import { RiskBar, RiskBarLegend } from '@/components/charts/RiskBar';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
+import { evaluatorName } from '@/components/trace/traceView';
 import { Spinner } from '@/components/ui/spinner';
 import { AuditState } from '@/components/outcome/AuditState';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
+import { evaluatorsQuery } from '@/data/queries';
 import { useStreamStore } from '@/data/stream/streamStore';
 import { stageLabel } from '@/domain/controlPresentation';
 import { formatDurationMs, formatRisk } from '@/domain/format';
 import {
   checkedAgainst,
   copy,
-  humanizeId,
   levelWord,
   reasonCopy,
   statusReason,
   toneVar,
   traceOutcome,
 } from '@/domain/presentation';
+import { evalNameMap } from '@/domain/words/evaluators';
 import { cn } from '@/lib/cn';
 import type { GateAction, GateDecisionView, PlaygroundResult, TraceAuditStatus } from '@/types/api';
 import { deliveredAction, receivedCaption } from './playgroundModel';
@@ -108,11 +112,12 @@ function Step({
   );
 }
 
-function evaluatorName(ref: string): string {
-  return humanizeId(ref.split('@')[0] ?? ref);
-}
-
 function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAction | null }) {
+  // The checks are named from the evaluator library, as in Traffic: a renamed check or a Studio
+  // copy is never shown by its id. While the library is not at hand, the humanized id stands in.
+  const ds = useDataSource();
+  const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
+  const names = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
   // One outcome per request, as in Traffic: what the app received once the run says so.
   const outcome = traceOutcome({
     gate_status: d.status,
@@ -149,7 +154,7 @@ function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAc
                 <li key={e.ref} className="space-y-1">
                   <p className="flex items-baseline justify-between gap-2 text-sm">
                     <span className="font-medium text-fg">
-                      {evaluatorName(e.ref)}
+                      {evaluatorName(e.ref, names)}
                       {e.stage === 'shadow' ? <span className="ml-1.5 text-xs font-normal text-fg-muted">{stageLabel('shadow')}</span> : null}
                     </span>
                     {level ? (
@@ -169,7 +174,7 @@ function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAc
                       level={e.level}
                       warnAt={e.thresholds.warn_at}
                       criticalAt={e.thresholds.critical_at}
-                      label={`${evaluatorName(e.ref)} risk`}
+                      label={`${evaluatorName(e.ref, names)} risk`}
                     />
                   ) : null}
                 </li>
