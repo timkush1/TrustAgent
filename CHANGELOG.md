@@ -287,7 +287,15 @@ phase (P0 → P7).
   applied, and the warnings `master_key_changed` and `fail_closed_unprotected`.
 - **Migration 0005**: cost-event links (`audit_id`, `hedge`, `late`,
   `estimated`), `traces.response_chars`, unique file calibrations, and the
-  append-only trigger on `admin_audit_log`.
+  append-only trigger on `admin_audit_log`. **Migration 0006** makes that log
+  refuse `TRUNCATE` as well.
+- **Savings on the simulated demo:** deep audits from the free mock judge
+  (\$0, no tokens) no longer scale up to a \$0 "LLM auditing every answer"
+  figure: the full-audit counterfactual falls back to the published assumption
+  (≈ \$35.50 per 1,000, labelled not measured), and the deep-audit basis says the
+  mock judge is free. The mock fast check also answers the Studio drafter's own
+  samples by their `should_fire`, so the demo's test bench shows the intended
+  matches instead of hash answers.
 - **Developer experience (P4):** `make configure WITH_SECRETS=1` asks for the
   vendor keys at hidden prompts (never echoed, `.env` mode 0600);
   `make onboarding-up` / `onboarding-setup-url` / `onboarding-down` run a fresh
@@ -372,7 +380,7 @@ phase (P0 → P7).
   volume or set `TRUTHTABLE_SECRET_KEY` in `.env`: saved keys decrypt only with
   the master key they were sealed with, and a Postgres backup alone means
   entering them again ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
-- **Migration 0005** applies at proxy start and, like 0002-0004, has no
+- **Migrations 0005 and 0006** apply at proxy start and, like 0002-0004, have no
   downgrade. Upgrade the proxy and the engine together.
 - **Production origins:** the default `TRUTHTABLE_ALLOWED_ORIGINS` includes
   `http://localhost:5173` for the Vite dev server; set the variable explicitly
