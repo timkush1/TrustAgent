@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import draftFixture from '@contracts/fixtures/api/StudioDraftResponse.ok.json';
+import testFixture from '@contracts/fixtures/api/StudioTestResponse.six.json';
 import { notify } from '@/components/common/notify';
 import { ApiError } from '@/data/errors';
 import { axeViolations, formatViolations } from '@/test/axe';
@@ -19,7 +20,17 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { API, installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
-import type { DryRunResult, EvaluatorCreateRequest, EvaluatorDraft, EvaluatorSpec, EvaluatorVersion, EvaluatorVersionCreateRequest, StudioDraftResponse } from '@/types/api';
+import { STUDIO_SIMULATED_TEST } from './studioWords';
+import type {
+  DryRunResult,
+  EvaluatorCreateRequest,
+  EvaluatorDraft,
+  EvaluatorSpec,
+  EvaluatorVersion,
+  EvaluatorVersionCreateRequest,
+  StudioDraftResponse,
+  StudioTestResponse,
+} from '@/types/api';
 
 installMswServer();
 afterEach(() => {
@@ -90,6 +101,9 @@ describe('Studio', { timeout: 30_000 }, () => {
     await draftWithAi(user);
     expect(screen.getByRole('button', { name: /Simulated: how “Cost of this draft” was produced/ })).toBeInTheDocument();
     expect(screen.getByText('Drafted by the mock model (simulated). Connect a judge for a real draft.')).toBeInTheDocument();
+    // The review step says where the draft came from: the mock model, not an AI.
+    expect(await screen.findByText(/^Drafted by the mock model \(simulated\)\. Change anything/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Drafted by AI/)).toBeNull();
   });
 
   it('shows a draft that still breaks the rules, and the server errors with their hint', async () => {
@@ -379,7 +393,7 @@ describe('Studio', { timeout: 30_000 }, () => {
 
     await user.click(within(confirm).getByRole('button', { name: 'Run the test' }));
     // 200 of the window's 1,840 answers were tested: the count for the window is the extrapolation.
-    expect(await within(watch).findByText('Would have fired ≈ 108 times (5.9%, 95% CI 3.3%–10.2%) on the last 7 days; this test cost $0.00082.')).toBeInTheDocument();
+    expect(await within(watch).findByText('Would have fired ≈ 108 times in the last 7 days (5.9% of answers, likely between 3.3% and 10%).')).toBeInTheDocument();
     expect(within(watch).getByRole('button', { name: /Estimate: how “Fires on every answer in the window” was produced/ })).toBeInTheDocument();
     expect(within(watch).getByText('Fired on 11 of 197')).toBeInTheDocument();
     expect(within(watch).getByText(/over the 197 sampled answers it could judge; errors are left out\./)).toBeInTheDocument();
@@ -502,6 +516,20 @@ describe('Studio', { timeout: 30_000 }, () => {
     const test = step(/Step 3/);
     expect(await within(test).findByRole('button', { name: /Simulated: how “Cost of this test” was produced/ })).toBeInTheDocument();
     expect(within(test).getByText('$0')).toBeInTheDocument();
+  });
+
+  it('says what a run on the mock fast check can and cannot tell', async () => {
+    const user = userEvent.setup();
+    const result = structuredClone(testFixture) as StudioTestResponse;
+    result.summary.backend = 'mock';
+    renderPage('/app/evaluators/studio', {
+      control: createControlApi({ studioTest: result }),
+      status: { demo: true, decision_model: { ...adminStatus().decision_model, backend: 'mock', state: 'mock' } },
+    });
+    await draftWithAi(user);
+    const test = step(/Step 3/);
+    await user.click(within(test).getByRole('button', { name: 'Run test' }));
+    expect(await within(test).findByText(STUDIO_SIMULATED_TEST)).toBeInTheDocument();
   });
 
   it('says the fast check is not connected, with the fix', async () => {

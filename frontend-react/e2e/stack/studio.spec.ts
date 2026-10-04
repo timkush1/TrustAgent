@@ -115,7 +115,7 @@ test.describe('studio', () => {
       await watch.getByRole('radio', { name: '7 days' }).click();
       await watch.getByRole('button', { name: 'Test on past traffic (paid)' }).click();
       const confirm = page.getByRole('alertdialog', { name: 'Run this paid test?' });
-      const result = watch.getByText(/^Would have fired (≈ )?[\d,]+ times \(/);
+      const result = watch.getByText(/^Would have fired (≈ )?[\d,]+ times in the last /);
       await expect(confirm.or(result)).toBeVisible({ timeout: TIMEOUT });
       if (await confirm.isVisible()) await confirm.getByRole('button', { name: 'Run the test' }).click();
       await expect(result).toBeVisible({ timeout: 2 * TIMEOUT });

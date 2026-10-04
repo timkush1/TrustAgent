@@ -76,7 +76,6 @@ export function studioExpectedWords(expected: 'fire' | 'no_fire' | undefined | n
   return 'Not labelled';
 }
 
-const pct = (p: number) => `${(Math.floor(p * 1000 + 0.5) / 10).toFixed(1)}%`;
 
 const WINDOWS: Record<string, string> = { '1h': 'hour', '24h': '24 h', '7d': '7 days', '30d': '30 days' };
 
@@ -85,19 +84,27 @@ export function studioDryRunExtrapolated(r: Pick<DryRunResult, 'sampled' | 'popu
   return r.sampled < r.population;
 }
 
+/** A rate in plain words: "40%" from 10% up, "5.9%" below (never "0%" for a small one). */
+const plainPct = (p: number) => {
+  const v = p * 100;
+  if (v >= 10) return `${Math.round(v)}%`;
+  return `${(Math.round(v * 10) / 10).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+};
+
 /**
- * copy.studio.dry_run_result filled from a result. The sentence is about the whole window ("on the
+ * copy.studio.dry_run_result filled from a result. The sentence is about the whole window ("in the
  * last 7 days"), so when only a sample of it was tested the count is the extrapolated one, written
- * "≈ 108" (an estimate); when every answer was tested it is the count itself.
+ * "≈ 108" (an estimate); when every answer was tested it is the count itself. The 95% interval is
+ * said in plain words ("likely between 3.3% and 10%"); the cost is not in it, as it has its own
+ * labelled row.
  */
-export function studioDryRunResultText(r: Pick<DryRunResult, 'fired' | 'extrapolated_fires' | 'sampled' | 'population' | 'fire_rate' | 'fire_rate_ci95' | 'window' | 'cost_usd'>): string {
+export function studioDryRunResultText(r: Pick<DryRunResult, 'fired' | 'extrapolated_fires' | 'sampled' | 'population' | 'fire_rate' | 'fire_rate_ci95' | 'window'>): string {
   return fillTemplate(copy.studio.dry_run_result, {
     fired: studioDryRunExtrapolated(r) ? `≈ ${formatCount(r.extrapolated_fires)}` : formatCount(r.fired),
-    rate: pct(r.fire_rate),
-    lo: pct(r.fire_rate_ci95[0]),
-    hi: pct(r.fire_rate_ci95[1]),
+    rate: plainPct(r.fire_rate),
+    lo: plainPct(r.fire_rate_ci95[0]),
+    hi: plainPct(r.fire_rate_ci95[1]),
     window: studioWindowWords(r.window),
-    cost: formatUsd(r.cost_usd),
   });
 }
 
@@ -142,3 +149,14 @@ export function studioCostLabel(source: CostRecord['cost_source']): { label: Val
       return null;
   }
 }
+
+/** What a test bench run on the mock fast check can and cannot tell. */
+export const STUDIO_SIMULATED_TEST =
+  "Simulated: the demo's mock fast check knows only the drafted example's own samples. It answers your own samples and edited questions arbitrarily, so those matches say nothing about your check. Connect a key to test it for real.";
+
+/** What a dry run on the mock fast check can and cannot tell. */
+export const STUDIO_SIMULATED_DRY_RUN =
+  "Simulated: the demo's mock fast check answers questions about past traffic arbitrarily, so this count says nothing about your check. Connect a key to test it for real.";
+
+/** copy.studio.dry_run on a mock fast check, where the test costs nothing real. */
+export const STUDIO_DRY_RUN_SIMULATED_TITLE = 'Test on past traffic (simulated, $0)';

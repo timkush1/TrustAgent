@@ -21,8 +21,9 @@ import { copy, decisionBackendLabel } from '@/domain/presentation';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
 import type { DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse } from '@/types/api';
-import { studioAgreementWords, studioExpectedWords, studioFireWords } from './studioWords';
+import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioExpectedWords, studioFireWords } from './studioWords';
 import { CostFigure } from './CostFigure';
+import { SimulatedRunNote } from './SimulatedRunNote';
 import { AddSamples, SampleList } from './SampleList';
 import { StudioStep } from './StudioStep';
 
@@ -228,6 +229,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
             </p>
             {runCost ? <CostFigure usd={run.response.summary.cost_usd} label={runCost.label} basis={runCost.basis} subject="Cost of this run" approximate={false} /> : null}
           </div>
+          {run.response.summary.backend === 'mock' ? <SimulatedRunNote>{STUDIO_SIMULATED_TEST}</SimulatedRunNote> : null}
           {stale ? <p className="text-sm text-fg-muted">The check or the samples changed since this run. Run it again to see the new answers.</p> : null}
           <ol className="space-y-2">
             {run.response.results.map((row, i) => (

@@ -5,7 +5,8 @@
  * structured text) says why and points to the JSON tab.
  */
 import { Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { DisabledReason } from '@/components/common/DisabledReason';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
@@ -48,6 +49,7 @@ function OptionRow({
   others,
   disabled,
   canRemove,
+  removeReasonId,
   onChange,
   onRemove,
 }: {
@@ -55,6 +57,8 @@ function OptionRow({
   others: readonly string[];
   disabled: boolean;
   canRemove: boolean;
+  /** The id of the line that says why an option cannot be removed. */
+  removeReasonId: string;
   onChange: (next: SimpleOption) => void;
   onRemove: () => void;
 }) {
@@ -71,7 +75,9 @@ function OptionRow({
   };
 
   return (
-    <li className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] sm:items-start">
+    // Option names are long snake_case keys: they get room for about 34 characters, and the
+    // role control moves under them where the row is narrower than that.
+    <li className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-2 sm:items-start xl:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_auto]">
       <Field label="Option name" error={keyProblem} description={keyProblem ? undefined : 'Part of the question: say what it means'}>
         <Input
           value={key}
@@ -87,7 +93,7 @@ function OptionRow({
       <Field label="What it means">
         <Input value={option.what} disabled={disabled} onChange={(e) => onChange({ ...option, what: e.target.value })} />
       </Field>
-      <div className="flex items-end gap-1 sm:pt-5">
+      <div className="flex items-end gap-1 sm:col-span-2 xl:col-span-1 xl:pt-5">
         <SegmentedControl<RoleValue>
           aria-label={`How bad is ${option.key}`}
           size="sm"
@@ -98,7 +104,14 @@ function OptionRow({
             if (v !== 'custom') onChange({ ...option, weight: ROLE_WEIGHTS[v] });
           }}
         />
-        <IconButton icon={Trash2} size="sm" aria-label={`Remove option ${option.key}`} disabled={disabled || !canRemove} onClick={onRemove} />
+        <IconButton
+          icon={Trash2}
+          size="sm"
+          aria-label={`Remove option ${option.key}`}
+          disabled={disabled || !canRemove}
+          aria-describedby={!disabled && !canRemove ? removeReasonId : undefined}
+          onClick={onRemove}
+        />
       </div>
     </li>
   );
@@ -112,6 +125,7 @@ function newOptionKey(existing: readonly string[]): string {
 }
 
 export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { spec: EvaluatorSpec; onChange: (spec: EvaluatorSpec) => void; disabled?: boolean; onOpenJson: () => void }) {
+  const removeReasonId = useId();
   const read = readSimpleForm(spec);
   if (!read.ok) {
     return (
@@ -182,11 +196,15 @@ export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { sp
                 others={keys.filter((k) => k !== o.key)}
                 disabled={disabled}
                 canRemove={form.options.length > 2}
+                removeReasonId={removeReasonId}
                 onChange={(next) => set({ ...form, options: form.options.map((x, j) => (j === i ? next : x)) })}
                 onRemove={() => set({ ...form, options: form.options.filter((_, j) => j !== i) })}
               />
             ))}
           </ul>
+          {!disabled && form.options.length <= 2 ? (
+            <DisabledReason id={removeReasonId} reason={{ text: 'A pick-one question needs at least two options, so these two cannot be removed.' }} />
+          ) : null}
           <Button size="sm" disabled={disabled} onClick={() => set({ ...form, options: [...form.options, { key: newOptionKey(keys), what: '', weight: 0 }] })}>
             <Plus aria-hidden="true" />
             Add an option

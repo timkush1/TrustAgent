@@ -122,7 +122,7 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
         spec: draftToSpec(result.draft, { taken }),
         samples: draftSamples(result.draft),
         draft: result,
-        origin: 'Drafted by AI',
+        origin: result.cost_source === 'simulated' ? 'Drafted by the mock model (simulated)' : 'Drafted by AI',
         route: routeOrNull,
       });
     },

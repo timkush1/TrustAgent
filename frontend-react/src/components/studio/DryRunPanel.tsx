@@ -24,8 +24,17 @@ import { errorCodeHint, isApiError } from '@/data/errors';
 import { formatCount, formatRisk, formatUsd } from '@/domain/format';
 import { copy, levelWord } from '@/domain/presentation';
 import type { DryRunResult, EvaluatorSpec, StudioDryRunEvent, StudioDryRunRequest } from '@/types/api';
-import { studioDryRunCancelledText, studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioWindowWords } from './studioWords';
+import {
+  STUDIO_DRY_RUN_SIMULATED_TITLE,
+  STUDIO_SIMULATED_DRY_RUN,
+  studioDryRunCancelledText,
+  studioDryRunConfirmText,
+  studioDryRunExtrapolated,
+  studioDryRunResultText,
+  studioWindowWords,
+} from './studioWords';
 import { CostFigure } from './CostFigure';
+import { SimulatedRunNote } from './SimulatedRunNote';
 
 type Estimate = Extract<StudioDryRunEvent, { event: 'estimate' }>['data'];
 type Progress = Extract<StudioDryRunEvent, { event: 'progress' }>['data'];
@@ -104,6 +113,7 @@ function DryRunResultView({ result, simulated, names }: { result: DryRunResult; 
   const extrapolated = studioDryRunExtrapolated(result);
   return (
     <div className="space-y-3" role="status">
+      {simulated ? <SimulatedRunNote>{STUDIO_SIMULATED_DRY_RUN}</SimulatedRunNote> : null}
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-semibold text-fg">
         <span>{studioDryRunResultText(result)}</span>
         {extrapolated ? (
@@ -240,7 +250,7 @@ export function DryRunPanel({ target, spec, route, simulated, reason, names }: D
     <div className="space-y-3 rounded-md border border-border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <History aria-hidden="true" className="size-4 text-fg-muted" />
-        <h3 className="text-sm font-semibold text-fg">{copy.studio.dry_run}</h3>
+        <h3 className="text-sm font-semibold text-fg">{simulated ? STUDIO_DRY_RUN_SIMULATED_TITLE : copy.studio.dry_run}</h3>
       </div>
       <p className="text-sm text-fg-muted">
         Runs the check on stored answers from <span className="font-medium text-fg">{route}</span> to see how often it would fire. Each answer is one fast-check call; nothing changes for users.
@@ -284,7 +294,7 @@ export function DryRunPanel({ target, spec, route, simulated, reason, names }: D
           <DisabledAction reason={reason}>
             {(p) => (
               <Button onClick={() => void start(false)} {...p}>
-                {phase.kind === 'done' || phase.kind === 'cancelled' ? 'Test again' : copy.studio.dry_run}
+                {phase.kind === 'done' || phase.kind === 'cancelled' ? 'Test again' : simulated ? STUDIO_DRY_RUN_SIMULATED_TITLE : copy.studio.dry_run}
               </Button>
             )}
           </DisabledAction>

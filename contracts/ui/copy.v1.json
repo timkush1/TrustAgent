@@ -260,7 +260,7 @@
       "describe": "Describe a check in plain English",
       "test_on_samples": "Test on samples",
       "dry_run": "Test on past traffic (paid)",
-      "dry_run_result": "Would have fired {fired} times ({rate}, 95% CI {lo}–{hi}) on the last {window}; this test cost {cost}.",
+      "dry_run_result": "Would have fired {fired} times in the last {window} ({rate} of answers, likely between {lo} and {hi}).",
       "save_and_watch": "Save and watch on route {route}",
       "make_active": "Make active",
       "dry_run_confirm": "This test costs about {estimate} ({samples} of {population} past answers). {budget_left} of today's fast-check budget is left.",

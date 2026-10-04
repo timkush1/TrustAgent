@@ -14,13 +14,13 @@ const done = dryRunFixture as DryRunResult;
 describe('studioDryRunResultText', () => {
   it('gives the extrapolated count for the window when only a sample of it was tested', () => {
     expect(studioDryRunExtrapolated(done)).toBe(true);
-    expect(studioDryRunResultText(done)).toBe('Would have fired ≈ 108 times (5.9%, 95% CI 3.3%–10.2%) on the last 7 days; this test cost $0.00082.');
+    expect(studioDryRunResultText(done)).toBe('Would have fired ≈ 108 times in the last 7 days (5.9% of answers, likely between 3.3% and 10%).');
   });
 
   it('gives the count itself when every answer of the window was tested', () => {
     const all = { ...done, window: '24h' as const, sampled: 120, population: 120, fired: 9, extrapolated_fires: 9, fire_rate: 0.075, fire_rate_ci95: [0.04, 0.137] as [number, number] };
     expect(studioDryRunExtrapolated(all)).toBe(false);
-    expect(studioDryRunResultText(all)).toBe('Would have fired 9 times (7.5%, 95% CI 4.0%–13.7%) on the last 24 h; this test cost $0.00082.');
+    expect(studioDryRunResultText(all)).toBe('Would have fired 9 times in the last 24 h (7.5% of answers, likely between 4% and 14%).');
   });
 });
 
