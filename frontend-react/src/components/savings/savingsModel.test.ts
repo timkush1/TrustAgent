@@ -116,8 +116,8 @@ describe('Savings bands (D73)', () => {
     const freeFull: Counterfactual = { ...full, method: 'uniform_sample', usd: 0, low: 0, high: 0, per_1k: 0, label: 'simulated' };
     const roi = roiSummary({ simulated: true, counterfactuals: [...roiSummary().counterfactuals, freeFull] });
     expect(freeMockCounterfactual(freeFull, true)).toBe(true);
-    // A real $0 (a free local judge, measured) and the published assumption keep their figures.
-    expect(freeMockCounterfactual({ ...freeFull, label: 'measured' }, false)).toBe(false);
+    // A real $0 (a free local judge on real traffic) and the published assumption keep their figures.
+    expect(freeMockCounterfactual({ ...freeFull, label: 'estimate' }, false)).toBe(false);
     expect(freeMockCounterfactual({ ...freeFull, method: 'static_assumptions' }, true)).toBe(false);
     expect(freeMockCounterfactual({ ...full, label: 'simulated' }, true)).toBe(false);
     const row = componentRows(roi).find((r) => r.key === 'llm_full_claim_audit')!;
