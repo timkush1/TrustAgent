@@ -10,18 +10,21 @@
  */
 import { Link } from '@tanstack/react-router';
 import { CircleAlert, CircleStop, History } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { describeError } from '@/components/common/describeError';
+import { useNow } from '@/components/common/useNow';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { STUDIO_DRY_RUN_MAX_SAMPLES } from '@/data/control/studioPlane';
 import { errorCodeHint, isApiError } from '@/data/errors';
-import { formatCount, formatRisk, formatUsd } from '@/domain/format';
+import { traceQuery } from '@/data/queries';
+import { formatCount, formatDateTime, formatRelativeTime, formatRisk, formatUsd } from '@/domain/format';
 import { copy, levelWord } from '@/domain/presentation';
 import type { DryRunResult, EvaluatorSpec, StudioDryRunEvent, StudioDryRunRequest } from '@/types/api';
 import {
@@ -82,6 +85,42 @@ export interface DryRunPanelProps {
   /** Why the test cannot run (write access, the spec, the model), or null. */
   reason: Reason | null;
   names: ReadonlyMap<string, string>;
+}
+
+/** How much of an answer an example row shows. */
+const SNIPPET_CHARS = 110;
+
+/**
+ * One answer the check would have fired on: its risk (once, toned by level), a line of the
+ * answer and when it was given, the whole row linking to the trace. The answer is read from the
+ * trace; until it loads (or without the content scope) the row shows the trace's short id.
+ */
+function ExampleRow({ example }: { example: DryRunResult['examples'][number] }) {
+  const ds = useDataSource();
+  const now = useNow();
+  const trace = useQuery({ ...traceQuery(ds, example.trace_id), retry: false, staleTime: 60_000 });
+  const level = levelWord(example.level);
+  const text = trace.data ? (trace.data.body.final_response_text ?? trace.data.body.response_text ?? '').replace(/\s+/g, ' ').trim() : '';
+  const snippet = text.length > SNIPPET_CHARS ? `${text.slice(0, SNIPPET_CHARS - 1)}…` : text;
+  return (
+    <li>
+      <Link
+        to="/app/traffic/$traceId"
+        params={{ traceId: example.trace_id }}
+        className="flex min-w-0 items-center gap-2 rounded-sm px-1 py-0.5 text-sm hover:bg-surface-sunken"
+      >
+        <Badge tone={level.tone} emphasis="tint" className="shrink-0 tabular">
+          {level.label} · {formatRisk(example.risk)}
+        </Badge>
+        <span className="min-w-0 flex-1 truncate text-fg">{snippet ? `“${snippet}”` : <span className="font-mono text-xs">{example.trace_id.slice(0, 8)}</span>}</span>
+        {trace.data ? (
+          <time dateTime={trace.data.created_at} title={formatDateTime(trace.data.created_at)} className="shrink-0 text-xs text-fg-muted">
+            {formatRelativeTime(trace.data.created_at, now)}
+          </time>
+        ) : null}
+      </Link>
+    </li>
+  );
 }
 
 function DryRunResultView({ result, simulated, names }: { result: DryRunResult; simulated: boolean; names: ReadonlyMap<string, string> }) {
@@ -154,20 +193,9 @@ function DryRunResultView({ result, simulated, names }: { result: DryRunResult; 
         <div className="space-y-1">
           <h4 className="text-xs font-medium text-fg-muted">Answers it would have fired on</h4>
           <ul className="space-y-1">
-            {result.examples.map((ex) => {
-              const level = levelWord(ex.level);
-              return (
-                <li key={ex.trace_id} className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge tone={level.tone} emphasis="tint">
-                    {level.label}
-                  </Badge>
-                  <span className="tabular text-fg-muted">risk {formatRisk(ex.risk)}</span>
-                  <Link to="/app/traffic/$traceId" params={{ traceId: ex.trace_id }} className="font-mono text-xs text-fg underline underline-offset-2">
-                    {ex.trace_id}
-                  </Link>
-                </li>
-              );
-            })}
+            {result.examples.map((ex) => (
+              <ExampleRow key={ex.trace_id} example={ex} />
+            ))}
           </ul>
         </div>
       ) : null}

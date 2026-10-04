@@ -19,6 +19,7 @@ import { ClaimsSection } from './ClaimsSection';
 import { OutcomeCard } from './OutcomeCard';
 import { TraceFacts } from './TraceFacts';
 import { auditHasResult, buildTraceView, receivedId } from './traceView';
+import { evalNameMap } from '@/domain/words/evaluators';
 
 function BackToTraffic() {
   return (
@@ -53,7 +54,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const fetched = useQuery({ ...auditQuery(ds, auditId ?? ''), enabled: needAudit });
   // The checks are named from the evaluator library (GET /api/evaluators) when this proxy serves it.
   const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
-  const evaluatorNames = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
+  const evaluatorNames = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
   const view = useMemo(() => {
     if (!base || base.audit || !fetched.data) return base;
     return buildTraceView({ detail: detailQuery.data, live, liveDecision, liveAudit, fetchedAudit: fetched.data });

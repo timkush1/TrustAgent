@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evalLabelerName } from './evaluators';
+import { evalLabelerName, evalNameMap } from './evaluators';
 
 describe('evalLabelerName', () => {
   it('names an environment admin key by its label, without the session fingerprint', () => {
@@ -14,5 +14,21 @@ describe('evalLabelerName', () => {
 
   it('keeps a key label sent with a key header as it is', () => {
     expect(evalLabelerName('ci-labeller')).toBe('ci-labeller');
+  });
+});
+
+describe('evalNameMap', () => {
+  it('keeps unique names, and puts the id beside a name two checks share', () => {
+    const names = evalNameMap([
+      { id: 'groundedness', name: 'Groundedness' },
+      { id: 'competitors', name: 'Competitor mentions' },
+      { id: 'proof_muree135', name: 'Competitor mentions' },
+      { id: 'groundedness', name: 'Groundedness' },
+    ]);
+    expect([...names]).toEqual([
+      ['groundedness', 'Groundedness'],
+      ['competitors', 'Competitor mentions (competitors)'],
+      ['proof_muree135', 'Competitor mentions (proof_muree135)'],
+    ]);
   });
 });

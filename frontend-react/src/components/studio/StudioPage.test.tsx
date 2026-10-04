@@ -400,7 +400,13 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(control.callsTo('/api/studio/dry-run')[1].body).toMatchObject({ confirm_cost: true });
     expect(within(watch).getByText(/off_brand_tone@1 \(6\)|Off-brand tone \(6\)/)).toBeInTheDocument();
     expect(within(watch).getByText('None of these answers had a deep audit to compare with')).toBeInTheDocument();
-    expect(within(watch).getByRole('link', { name: '01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64' })).toHaveAttribute('href', '/app/traffic/01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64');
+    // Each example links to its trace and gives its risk once (without the answer's text the row
+    // falls back to the trace's short id, never the whole UUID).
+    const example = within(watch).getByRole('link', { name: /· 0\.93/ });
+    expect(example).toHaveAttribute('href', '/app/traffic/01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64');
+    expect(example).toHaveTextContent(/· 0\.93.*(“.+”|01a0e781)/);
+    expect(example).not.toHaveTextContent('01a0e781-0c1d');
+    expect(within(example).getAllByText(/risk/)).toHaveLength(1);
   });
 
   it('cancels a running test and says what it spent', async () => {
@@ -673,6 +679,18 @@ describe('Studio on a saved version', { timeout: 30_000 }, () => {
     expect(within(save).getByText('refusal_custom')).toBeInTheDocument();
     expect(within(save).getByRole('button', { name: 'Save as a new check' })).toBeInTheDocument();
     expect(evaluatorVersion('refusal').spec.builtin).toBe(true);
+  });
+
+  it('warns before saving a new check under a name another check already has', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi();
+    const library = [...evaluatorMetas(), evaluatorMeta('refusal', { id: 'blames_v0', name: 'Blames the customer', origin: 'dashboard' })];
+    control.handlers.unshift(http.get(`${API}/api/evaluators`, () => HttpResponse.json({ items: library })));
+    renderPage('/app/evaluators/studio', { control });
+    await draftWithAi(user);
+    const save = step(/Step 5: Save a version/);
+    expect(await within(save).findByText(/^Another check is already called “Blames the customer”/)).toBeInTheDocument();
+    expect(within(save).getByText('blames_v0')).toBeInTheDocument();
   });
 
   it('gives the copy an id the library does not have, waiting for the library when it answers last', async () => {

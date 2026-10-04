@@ -58,6 +58,7 @@ import { isDivergedWarning, policyWarningView } from './policyWarnings';
 import { evaluatorDisplayName, evaluatorId, policyWriteReason, routeTitle } from './routeWords';
 import { VersionsSheet } from './VersionsSheet';
 import { YamlEditorDialog } from './YamlEditorDialog';
+import { evalNameMap } from '@/domain/words/evaluators';
 
 interface Draft {
   yaml: string;
@@ -171,7 +172,7 @@ export function PoliciesPage({ search = {} }: { search?: PoliciesSearch }) {
   const writeReason = policyWriteReason(state, instanceReason);
   const draftYaml = draft?.yaml ?? state?.yaml ?? '';
 
-  const names = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
+  const names = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
 
   // Calibration progress of the evaluators that keep a route from blocking ("Label N more").
   const uncalibratedIds = useMemo(() => {

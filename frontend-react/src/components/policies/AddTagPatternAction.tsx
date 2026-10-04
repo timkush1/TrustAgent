@@ -21,6 +21,7 @@ import type { EvidenceSuggestion } from '@/types/api';
 import { addTagPattern, DraftError, draftRouteNames } from './policyDraft';
 import { ReviewSaveDialog } from './ReviewSaveDialog';
 import { policyWriteReason, routeTitle } from './routeWords';
+import { evalNameMap } from '@/domain/words/evaluators';
 
 /**
  * "Add to a route": the suggested pattern goes into a draft of the current policy, then into the
@@ -33,7 +34,7 @@ export default function AddTagPatternAction({ pattern }: { pattern: NonNullable<
   const postReason = useWriteReason('post');
   const policies = useQuery({ ...policiesQuery(ds), retry: false });
   const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
-  const names = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
+  const names = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
   const [route, setRoute] = useState('default');
   const [draft, setDraft] = useState<{ yaml: string; baseEtag: string } | null>(null);
   const [error, setError] = useState<string | null>(null);

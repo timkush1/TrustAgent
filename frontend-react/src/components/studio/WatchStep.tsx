@@ -31,6 +31,7 @@ import type { EvaluatorSpec } from '@/types/api';
 import { studioSaveAndWatchLabel } from './studioWords';
 import { DryRunPanel } from './DryRunPanel';
 import { StudioStep } from './StudioStep';
+import { evalNameMap } from '@/domain/words/evaluators';
 
 export interface WatchStepProps {
   /** The saved version to attach ("id@version"), or null while the check is unsaved or changed. */
@@ -69,10 +70,15 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
   const route = chosen ?? (defaultRoute && routes.includes(defaultRoute) ? defaultRoute : (routes.find((r) => r !== 'default') ?? routes[0] ?? null));
   const [draft, setDraft] = useState<{ yaml: string; etag: string } | null>(null);
   const names = useMemo(() => {
-    const m = new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name]));
-    m.set(spec.id, spec.name);
-    return m;
+    return evalNameMap([...(evaluators.data?.items ?? []), { id: spec.id, name: spec.name }]);
   }, [evaluators.data, spec.id, spec.name]);
+
+  /** A ref in words: "Competitor mentions, version 2" rather than "proof_murg2b8p@2". */
+  const refWords = (ref: string) => {
+    const at = ref.lastIndexOf('@');
+    const refName = names.get(at < 0 ? ref : ref.slice(0, at)) ?? (at < 0 ? ref : ref.slice(0, at));
+    return at < 0 ? refName : `${refName}, version ${ref.slice(at + 1)}`;
+  };
 
   const id = savedRef ? refId(savedRef) : spec.id;
   const entry = state && route ? safeFind(state.yaml, route, id) : undefined;
@@ -93,19 +99,19 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
     if (!entry) {
       action = {
         label: studioSaveAndWatchLabel(route),
-        detail: `Adds ${savedRef} to ${route} as Watching: it is asked on every request and shown on traces, but never changes an answer.`,
+        detail: `Adds ${refWords(savedRef)} to ${route} as Watching: it is asked on every request and shown on traces, but never changes an answer.`,
         run: () => open((y) => attachEvaluator(y, route, savedRef, 'shadow')),
       };
     } else if (entry.ref !== savedRef) {
       action = {
-        label: `Use ${savedRef} on ${route}`,
-        detail: `${route} runs ${entry.ref} (${stageLabel(stage ?? 'active')}). This points it at ${savedRef} and keeps it ${stageLabel(stage ?? 'active').toLowerCase()}.`,
+        label: `Use version ${savedRef.slice(savedRef.lastIndexOf('@') + 1)} on ${route}`,
+        detail: `${route} runs ${refWords(entry.ref)} (${stageLabel(stage ?? 'active')}). This points it at ${refWords(savedRef)} and keeps it ${stageLabel(stage ?? 'active').toLowerCase()}.`,
         run: () => open((y) => replaceEvaluatorRef(y, route, savedRef)),
       };
     } else if (stage === 'shadow') {
       action = {
         label: copy.studio.make_active,
-        detail: `${route} is watching ${savedRef}. Make it active once its answers look right: it then flags (and, when calibrated, blocks) as the route's mode says.`,
+        detail: `${route} is watching ${refWords(savedRef)}. Make it active once its answers look right: it then flags (and, when calibrated, blocks) as the route's mode says.`,
         run: () => open((y) => setEvaluatorStage(y, route, id, 'active')),
       };
     }
@@ -140,7 +146,7 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
           </Field>
           {stage ? (
             <Badge tone="neutral" emphasis="quiet" icon={Eye}>
-              {entry?.ref === savedRef ? `${stageLabel(stage)} on ${route}` : `${route} runs ${entry?.ref}`}
+              {entry?.ref === savedRef || !entry ? `${stageLabel(stage)} on ${route}` : `${route} runs ${refWords(entry.ref)}`}
             </Badge>
           ) : null}
         </div>
@@ -159,7 +165,7 @@ export function WatchStep({ savedRef, spec, defaultRoute, specReason, simulated,
         </div>
       ) : savedRef && stage === 'active' && entry?.ref === savedRef ? (
         <p className="text-sm text-fg">
-          {savedRef} is active on {route}.{' '}
+          {refWords(savedRef)} is active on {route}.{' '}
           <Link to="/app/policies" className="font-medium underline underline-offset-2">
             See it in Policies
           </Link>

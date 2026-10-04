@@ -7,7 +7,7 @@
  * as a new check of the viewer's own.
  */
 import { Link } from '@tanstack/react-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, CircleCheck, RotateCw } from 'lucide-react';
 import { useState } from 'react';
 import { useDataSource } from '@/app/services';
@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/input';
 import { isApiError } from '@/data/errors';
-import { qkc } from '@/data/queries';
+import { evaluatorsQuery, qkc } from '@/data/queries';
 import { formatCount } from '@/domain/format';
 import { evaluatorIdFrom } from '@/lib/studio/draftToSpec';
 import { sameSpec, specJson } from '@/lib/studio/specFields';
@@ -58,6 +58,9 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
   const queryClient = useQueryClient();
   const [changelog, setChangelog] = useState('');
   const [reloading, setReloading] = useState(false);
+  // Another check with the same name would read the same in Policies and on traces.
+  const library = useQuery(evaluatorsQuery(ds, true));
+  const sameName = (library.data?.items ?? []).find((e) => e.id !== spec.id && e.name.trim().toLowerCase() === spec.name.trim().toLowerCase());
   const asVersion = base !== null && base.origin === 'dashboard' && base.id === spec.id;
   const nextVersion = asVersion ? base.latest + 1 : 1;
   const toSave: EvaluatorSpec = { ...spec, version: nextVersion };
@@ -129,6 +132,15 @@ export function SaveStep({ spec, onSpecChange, base, specReason, writeReason, ta
           </>
         )}
       </p>
+      {sameName ? (
+        <p className="flex items-start gap-1.5 text-sm text-fg">
+          <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-tone-warning" />
+          <span className="min-w-0">
+            Another check is already called “{sameName.name}” (<span className="font-mono text-xs">{sameName.id}</span>). Give this one a different name in step 2, so the
+            two stay apart in Policies and on traces.
+          </span>
+        </p>
+      ) : null}
       <DiffView label="Changes to the check" before={base ? specJson({ ...base.spec, version: nextVersion }) : ''} after={specJson(toSave)} />
       <Field label="What changed and why" description="Kept with the version, for whoever reads its history.">
         <Textarea rows={2} maxLength={2000} value={changelog} onChange={(e) => setChangelog(e.target.value)} />

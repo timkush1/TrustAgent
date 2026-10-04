@@ -200,7 +200,20 @@ export function evalMismatchText(reason: DecisionRequestView['mismatch_reason'])
   return reason ? MISMATCH[reason] ?? 'The recompile differs for a reason this dashboard does not know.' : 'The recompile differs from the request that was sent.';
 }
 
-/** "Matches a recompile of this request" / "Differs from a recompile of this request". */
+/** "Rebuilt from the stored request: identical" / "…: different". */
 export function evalRecompileText(matches: boolean): string {
   return matches ? copy.trace.recompile_match : copy.trace.recompile_mismatch;
+}
+
+/**
+ * Evaluator names by id, for showing refs in words. When two checks share a name (a Studio copy
+ * of "Competitor mentions", say), each of them gets its id in brackets so they stay apart:
+ * "Competitor mentions (proof_muree135)". A later entry for the same id replaces an earlier one.
+ */
+export function evalNameMap(items: readonly { id: string; name: string }[]): Map<string, string> {
+  const byId = new Map<string, string>();
+  for (const e of items) byId.set(e.id, e.name);
+  const count = new Map<string, number>();
+  for (const name of byId.values()) count.set(name, (count.get(name) ?? 0) + 1);
+  return new Map([...byId].map(([id, name]) => [id, (count.get(name) ?? 0) > 1 ? `${name} (${id})` : name]));
 }

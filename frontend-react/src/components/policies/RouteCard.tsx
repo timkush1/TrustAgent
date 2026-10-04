@@ -160,36 +160,50 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
   }
   return (
     <ul className="space-y-2">
-      {items.map((b) => (
-        <li key={b.evaluator} className="space-y-1">
-          <p className="flex items-center gap-1.5 text-sm">
-            {b.ready ? (
-              <Check aria-hidden="true" className="size-3.5 text-fg-muted" />
-            ) : (
-              <CircleAlert aria-hidden="true" className="size-3.5 text-tone-warning" />
-            )}
-            <span className="font-medium text-fg">{evaluatorDisplayName(b.evaluator, names)}</span>
-            <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
-          </p>
-          <ul className="flex flex-wrap gap-x-3 gap-y-0.5 pl-5 text-xs">
-            {READINESS_ITEMS.filter((item) => item !== 'mode' || b.missing.includes('mode')).map((item) => {
-              const missing = b.missing.includes(item);
-              const words = readinessWords(item);
-              return (
-                <li key={item} data-missing={missing || undefined} title={missing ? words.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
-                  {missing ? (
-                    <CircleAlert aria-hidden="true" className="size-3 text-tone-warning" />
-                  ) : (
-                    <Check aria-hidden="true" className="size-3" />
-                  )}
-                  {words.label}
-                  <span className="sr-only">{missing ? `: missing. ${words.missing}` : ': met'}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </li>
-      ))}
+      {items.map((b) => {
+        const shown = READINESS_ITEMS.filter((item) => item !== 'mode' || b.missing.includes('mode'));
+        const done = shown.filter((item) => !b.missing.includes(item)).length;
+        const next = shown.find((item) => b.missing.includes(item));
+        return (
+          <li key={b.evaluator} className="space-y-1">
+            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+              {b.ready ? (
+                <Check aria-hidden="true" className="size-3.5 text-fg-muted" />
+              ) : (
+                <CircleAlert aria-hidden="true" className="size-3.5 text-tone-warning" />
+              )}
+              <span className="font-medium text-fg">{evaluatorDisplayName(b.evaluator, names)}</span>
+              <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
+              {b.ready ? null : (
+                <span className="text-xs text-fg-muted tabular" title={next ? readinessWords(next).missing : undefined}>
+                  · {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).label.toLowerCase()}` : ''}
+                </span>
+              )}
+            </p>
+            {/* The whole checklist is one click away, not repeated open on every check of every route. */}
+            <details className="pl-5 text-xs">
+              <summary className="cursor-pointer text-fg-muted select-none">All {shown.length} requirements</summary>
+              <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                {shown.map((item) => {
+                  const missing = b.missing.includes(item);
+                  const words = readinessWords(item);
+                  return (
+                    <li key={item} data-missing={missing || undefined} title={missing ? words.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
+                      {missing ? (
+                        <CircleAlert aria-hidden="true" className="size-3 text-tone-warning" />
+                      ) : (
+                        <Check aria-hidden="true" className="size-3" />
+                      )}
+                      {words.label}
+                      <span className="sr-only">{missing ? `: missing. ${words.missing}` : ': met'}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          </li>
+        );
+      })}
     </ul>
   );
 }
