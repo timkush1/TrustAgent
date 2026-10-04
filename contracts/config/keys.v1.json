@@ -1551,7 +1551,7 @@
       "advanced": true,
       "restart": true,
       "group": "decision_model",
-      "description": "Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic gives lexical heuristics."
+      "description": "Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic is reserved for lexical heuristics and falls back to hash answers in this version."
     },
     {
       "name": "TRUTHTABLE_JEV_MOCK_STRICT",

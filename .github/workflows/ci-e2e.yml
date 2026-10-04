@@ -184,13 +184,13 @@ jobs:
           DASHBOARD_HOST_PORT: '3000'
         run: npx playwright test --project=stack -g skeleton
 
-      # One worker: the Studio and Savings specs change shared state (evaluator
-      # drafts, budgets) that the other specs read.
-      - name: Playwright (stack, M-Demo, Studio and Savings specs)
+      # One worker: the Studio, Savings and label specs change shared state
+      # (evaluator drafts, budgets, labels) that the other specs read.
+      - name: Playwright (stack, M-Demo, Studio, Savings and label specs)
         working-directory: frontend-react
         env:
           DASHBOARD_HOST_PORT: '3000'
-        run: npx playwright test --project=stack --workers=1 -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings"
+        run: npx playwright test --project=stack --workers=1 -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings|labels"
 
       # The static GitHub Pages site needs no stack. It is built as the M-Demo gate
       # builds it; --project=static makes Playwright serve it with vite preview
@@ -246,7 +246,9 @@ jobs:
           $e2e ps --all > e2e-artifacts/compose-e2e-ps.txt 2>&1 || true
           $e2e logs --no-color --timestamps > e2e-artifacts/compose-e2e.log 2>&1 || true
           $onboarding ps --all > e2e-artifacts/compose-onboarding-ps.txt 2>&1 || true
-          $onboarding logs --no-color --timestamps > e2e-artifacts/compose-onboarding.log 2>&1 || true
+          # The boot SETUP line carries a one-time token: mask it before upload.
+          $onboarding logs --no-color --timestamps 2>&1 \
+            | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[masked]/g' > e2e-artifacts/compose-onboarding.log || true
           python3 scripts/doctor.py --target docker --expect demo --wait 0 --json \
             > e2e-artifacts/doctor.json 2>&1 || true
 

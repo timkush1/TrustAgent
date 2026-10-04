@@ -362,7 +362,7 @@ func New(cfg Config) (Client, error) {
 		m.info.CredentialSource = "none"
 		m.costs = cfg.Costs
 		if cfg.Mock.Mode == MockHeuristic {
-			m.info.Reason += "; the heuristic mock mode is not implemented yet, so questions get hash answers"
+			m.info.Reason += "; the heuristic mock mode falls back to hash answers in this version"
 		}
 		return m, nil
 	case BackendOff:

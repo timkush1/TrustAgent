@@ -240,7 +240,7 @@ The fast check (Jev). Go only in 2.0.
 | `TRUTHTABLE_JEV_STARTUP_PROBE` | `true` | proxy | yes | no | yes | Send one tiny probe question at startup to verify the backend.<br>`true` or `false`. |
 | `TRUTHTABLE_JEV_KEEPALIVE` | `60s` | proxy | yes | no | yes | Keep-warm interval while a synchronous route exists.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_JEV_LOG_PAYLOADS` | `false` | proxy | yes | no | yes | Log decision request and response bodies (keys are never logged).<br>`true` or `false`. |
-| `TRUTHTABLE_JEV_MOCK_MODE` | `scenario` | proxy | yes | no | yes | Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic gives lexical heuristics.<br>One of `scenario`, `hash`, `heuristic`. |
+| `TRUTHTABLE_JEV_MOCK_MODE` | `scenario` | proxy | yes | no | yes | Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic is reserved for lexical heuristics and falls back to hash answers in this version.<br>One of `scenario`, `hash`, `heuristic`. |
 | `TRUTHTABLE_JEV_MOCK_STRICT` | `false` | proxy | yes | no | yes | Fail instead of falling back when a scenario has no mock answer.<br>`true` or `false`. |
 | `TRUTHTABLE_JEV_MOCK_FIXTURES` | *empty*<br>empty uses the embedded contracts/demo/scenarios.v1.json | proxy | yes | no | yes | Scenario file for the mock backend.<br>File path. |
 | `TRUTHTABLE_JEV_MOCK_SEED` | `42` | proxy | yes | no | yes | Seed of the mock backend.<br>Integer. |
