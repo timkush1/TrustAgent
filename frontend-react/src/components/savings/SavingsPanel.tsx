@@ -23,12 +23,13 @@ import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { EmptyState, ErrorState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { savingsLine, windowLong } from '@/components/overview/overviewModel';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isNotServed, roiSummaryQuery } from '@/data/queries';
 import { roiBucket, roiTimeseriesQuery } from '@/data/queries/costs';
 import { formatCount, formatDurationMs } from '@/domain/format';
-import { copy, costLabel } from '@/domain/presentation';
+import { copy, costLabel, costPriceLineIsOverride } from '@/domain/presentation';
 import { formatPercent } from '@/domain/rates';
 import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
@@ -209,12 +210,18 @@ function ComponentTable({ roi, timeWindow }: { roi: RoiSummary; timeWindow: Time
             </tbody>
           </table>
         </div>
-        {roi.third_party.length > 0 ? (
-          <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-            <EvidenceBadge label="third_party" basis={roi.third_party.join('; ')} subject="Figures from third parties" />
-            <span>Uses third-party figures: {roi.third_party.join('; ')}</span>
+        {/* The prices the alternatives use, each with its own source: a vendor's list price is
+            labelled Vendor, as in the Prices table; the viewer's own override is "Your price". */}
+        {roi.third_party.map((line) => (
+          <p key={line} className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+            {costPriceLineIsOverride(line) ? (
+              <Badge size="sm">Your price</Badge>
+            ) : (
+              <EvidenceBadge label="vendor" basis={line} subject="Price used for the alternatives" />
+            )}
+            <span>Priced with: {line}</span>
           </p>
-        ) : null}
+        ))}
       </CardContent>
     </Card>
   );

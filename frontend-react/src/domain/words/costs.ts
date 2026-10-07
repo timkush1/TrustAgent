@@ -179,6 +179,16 @@ export function costPriceNote(note: string | null | undefined): string | null {
   return text === '' ? null : text;
 }
 
+/**
+ * Whether a price line of RoiSummary.third_party is the viewer's own price override. The proxy
+ * lists there the prices its counterfactuals use (cmd/proxy/roi_api.go priceNote), each naming its
+ * source in brackets: a vendor's list price ("(Anthropic, as of …)") or "(your price override)".
+ * A vendor's price is labelled Vendor, as in the Prices table; an override is never labelled so.
+ */
+export function costPriceLineIsOverride(line: string): boolean {
+  return /\(your price override\b/.test(line);
+}
+
 /** "$0.042 / $0 per million tokens (in / out)". */
 export function costPricePair(entry: Pick<PriceEntry, 'input_per_mtok' | 'output_per_mtok'>): string {
   return `${formatUsd(entry.input_per_mtok)} in · ${formatUsd(entry.output_per_mtok)} out`;

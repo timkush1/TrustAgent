@@ -175,6 +175,22 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(within(rows[3]).getAllByRole('cell')[0]).toHaveTextContent('$1.05–$1.40');
   });
 
+  it('labels the vendor price the alternatives use Vendor, as the Prices table does', async () => {
+    const vendor = 'Claude Haiku 4.5 list price $1 / $5 per million tokens (Anthropic, as of 2026-06-24)';
+    renderPage('/app/savings', { control: createControlApi({ roi: roiSummary({ third_party: [vendor] }) }) });
+    const line = await screen.findByText(`Priced with: ${vendor}`);
+    expect(within(line.parentElement!).getByRole('button', { name: 'Vendor: how “Price used for the alternatives” was produced' })).toBeInTheDocument();
+    expect(screen.queryByText(/third-party/i)).toBeNull();
+  });
+
+  it('never labels your own price override Vendor', async () => {
+    const override = 'anthropic claude-haiku-4-5 $0.8 / $4 per million tokens (your price override, as of 2026-09-30)';
+    renderPage('/app/savings', { control: createControlApi({ roi: roiSummary({ third_party: [override] }) }) });
+    const own = await screen.findByText(`Priced with: ${override}`);
+    expect(own.parentElement).toHaveTextContent(/^Your price/);
+    expect(within(own.parentElement!).queryByRole('button', { name: /^Vendor:/ })).toBeNull();
+  });
+
   it('keeps stopped (block and fallback) apart from flagged, with speed and sampling', async () => {
     const control = createControlApi({ roi: roiSummary({ outcomes: { flagged: 34, blocked: 4, fallback: 3, not_assessed: 72, label: 'measured' } }) });
     renderPage('/app/savings', { control });
