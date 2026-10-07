@@ -296,13 +296,17 @@ phase (P0 → P7).
   mock judge is free. The mock fast check also answers the Studio drafter's own
   samples by their `should_fire`, so the demo's test bench shows the intended
   matches instead of hash answers. On that demo the headline also says what a
-  real judge would add (the published \$35.50 per 1,000 full audits, per deep
+  real judge would add (the published $35.50 per 1,000 full audits, per deep
   audit and at the window's audit rate, labelled an estimate).
 - **Label queue words:** the queue holds answers the check flagged and answers
   it let through, so it asks "Should this check flag this answer?" with
   **Yes, it has the problem** (C, `should_fire`) and **No, it is fine** (F,
   `should_not_fire`). Calibration counts read "with the problem" and "fine";
   "Was this right?" on a flagged trace keeps Correct and False alarm.
+- **Key check words:** a passed key check says what its test call measured
+  ("Ready: the test call took 231 ms and cost $0.00001", with the cost's value
+  label), and the Savings footnote labels the price it uses Vendor, as the
+  Prices table does (a price override reads "Your price").
 - **`make phase-refs-check`** (in `make check` and ci-contracts) fails on a code
   or comment line that names the delivery phase it shipped in, except the
   lines in `scripts/phase-refs.allow`.
