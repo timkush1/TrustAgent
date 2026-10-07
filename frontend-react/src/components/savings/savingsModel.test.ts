@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import claimsDoc from '@contracts/claims/value-claims.v1.json';
+import { costFullAuditPer1k, costShippedDefaults } from '@/domain/presentation';
 import { roiSummary } from '@/test/control/fixtures';
 import type { Counterfactual, RoiTimeseries } from '@/types/api';
 import {
   FREE_MOCK_AUDIT_REASON,
   availableBands,
   bandHasRange,
+  bandLabels,
+  bucketLabel,
+  bucketUnit,
   chartBuckets,
   chartSpan,
+  chartTotals,
   cheaperMultiple,
   costBandSummary,
   chartMax,
@@ -14,8 +20,9 @@ import {
   costBandPoints,
   endLabels,
   freeMockCounterfactual,
+  counterfactualLabel,
   rangeRatio,
-  realJudgeEstimate,
+  realJudgeView,
   samplingLines,
   savingsRange,
   type CostBandPoint,
@@ -72,15 +79,38 @@ describe('Savings bands (D73)', () => {
     expect(availableBands(costBandPoints({ ...series, points: [{ ...series.points[1] }] }, roiSummary({ counterfactuals: [] })))).toEqual([]);
   });
 
-  it('describes the chart in one sentence', () => {
-    const points = costBandPoints(series, roiSummary());
-    const span = chartSpan('1h', null, 'the last 24 hours');
-    expect(costBandSummary(points, 'same_checks', 'estimate', span)).toBe(
-      'Checking 250 answers cost $0.21 in the last 24 hours. An LLM asking the same questions would have cost $0.53–$0.70 (estimate).',
+  it('describes the chart in one sentence, with the summary’s totals', () => {
+    // The fixture summary: 540 answers, $0.0243 + $0.41 spent, the same checks $1.05–$1.40.
+    const totals = chartTotals(roiSummary());
+    const span = chartSpan('1h', null, 'in the last 24 hours');
+    expect(costBandSummary(totals, 'same_checks', 'estimate', span)).toBe(
+      'Checking 540 answers cost $0.43 in the last 24 hours. An LLM asking the same questions would have cost $1.05–$1.40 (estimate).',
     );
-    expect(costBandSummary(points, null, 'estimate', span)).toBe('Checking 250 answers cost $0.21 in the last 24 hours.');
-    expect(costBandSummary([{ ...points[0], gated: 1 }], null, 'estimate', span)).toMatch(/^Checking 1 answer cost \$[\d.]+ in the last 24 hours\.$/);
-    expect(chartSpan('1h', '2026-09-28T10:00:00.000Z', 'the last 24 hours')).toMatch(/^since \w{3} \d{2}:00$/);
+    expect(costBandSummary(totals, null, 'estimate', span)).toBe('Checking 540 answers cost $0.43 in the last 24 hours.');
+    // No full-audit estimate in the summary: the sentence names no full-audit figure.
+    expect(costBandSummary(totals, 'full_audit', 'estimate', span)).toBe('Checking 540 answers cost $0.43 in the last 24 hours.');
+    expect(costBandSummary({ ...totals, answers: 1 }, null, 'estimate', 'over the replayed traffic')).toMatch(
+      /^Checking 1 answer cost \$[\d.]+ over the replayed traffic\.$/,
+    );
+    expect(chartSpan('1h', '2026-09-28T10:00:00.000Z', 'in the last 24 hours')).toMatch(/^since \w{3} \d{2}:00$/);
+  });
+
+  it('takes the chart’s totals from the summary, the same figures as the component table', () => {
+    const roi = roiSummary({ counterfactuals: [...roiSummary().counterfactuals, { ...full, method: 'static_assumptions', low: null, high: null }] });
+    expect(chartTotals(roi)).toEqual({
+      answers: 540,
+      spent: 0.0243 + 0.41,
+      bands: { same_checks: { low: 1.05, high: 1.4 }, full_audit: { low: 20, high: 20 } },
+    });
+    // A full audit scaled up from free mock audits has no total, as it has no row figure.
+    const freeFull: Counterfactual = { ...full, method: 'uniform_sample', usd: 0, low: 0, high: 0, per_1k: 0, label: 'simulated' };
+    expect(chartTotals(roiSummary({ simulated: true, counterfactuals: [freeFull] })).bands).toEqual({ same_checks: null, full_audit: null });
+  });
+
+  it('names minute buckets for the static replay', () => {
+    expect(['1d', '1h', '1m'].map((b) => bucketUnit(b as never))).toEqual(['day', 'hour', 'minute']);
+    expect(bucketLabel('1m', '2026-09-28T09:01:00.000Z')).toMatch(/^\d{2}:\d{2}$/);
+    expect(bucketLabel('1h', '2026-09-28T09:00:00.000Z')).toMatch(/^\w{3} \d{2}:00$/);
   });
 
   const bucketAt = (h: number, gated: number, measured: number): CostBandPoint => ({
@@ -146,6 +176,25 @@ describe('Savings figures', () => {
     expect(rows[4].detail).toBe(`Published assumptions: $40.00 per 1,000 answers × ${roiSummary().gated_responses.toLocaleString('en-US')} answers · not measured`);
     expect(rows[4].detail).toMatch(/not measured$/);
     expect(componentRows(roiSummary({ simulated: true })).every((r) => r.valueLabel === 'simulated')).toBe(true);
+  });
+
+  it('labels the published full-audit figure Estimate even on a simulated stack', () => {
+    const published: Counterfactual = { ...full, method: 'static_assumptions', low: null, high: null, per_1k: 35.5, usd: 2.343 };
+    const roi = roiSummary({ simulated: true, gated_responses: 66, counterfactuals: [...roiSummary().counterfactuals, published] });
+    const rows = componentRows(roi);
+    expect(rows.map((r) => [r.key, r.valueLabel])).toEqual([
+      ['fast_check', 'simulated'],
+      ['deep_audit', 'simulated'],
+      ['total', 'simulated'],
+      ['llm_same_checks', 'simulated'],
+      ['llm_full_claim_audit', 'estimate'],
+    ]);
+    // Its detail says the answers it is applied to are simulated.
+    expect(rows[4].detail).toBe('Published assumptions: $35.50 per 1,000 answers × 66 simulated answers · not measured');
+    expect(bandLabels(roi)).toEqual({ same_checks: 'simulated', full_audit: 'estimate' });
+    // A full audit fitted to (simulated) audits stays Simulated.
+    expect(counterfactualLabel(full, true)).toBe('simulated');
+    expect(counterfactualLabel(full, false)).toBe('estimate');
   });
 
   it('says when checking cost more than asking an LLM', () => {
@@ -226,16 +275,45 @@ describe('endLabels', () => {
   });
 });
 
-describe('realJudgeEstimate', () => {
-  it('prices a real judge from the published assumption, per audit and at the window’s audit rate', () => {
-    const roi = roiSummary(); // 58 deep audits over 540 answers
-    expect(realJudgeEstimate(roi, 35.5)).toEqual({ perAudit: '$0.036', per1k: '$3.81' });
+describe('realJudgeView', () => {
+  const shipped = { per1k: 3, basis: 'Fast check on every answer, plus a full LLM audit of the deep-audited share.', auditShare: 0.079 };
+
+  it('leads with the published figures at the shipped defaults, never the demo’s rate scaled up', () => {
+    // The live demo stack: every answer deep-audited (66 of 66) by a free mock judge.
+    const demo = roiSummary({ simulated: true, gated_responses: 66, llm_cost: { ...roiSummary().llm_cost, usd: 0, audits: 66 } });
+    const view = realJudgeView(demo, shipped, 35.5, 'Decompose into 8 claims.')!;
+    expect([view.shippedPer1k, view.shippedShare, view.fullAuditPer1k]).toEqual(['$3', 'about 8 in 100', '$35.50']);
+    expect(view.demoLine).toBe('This demo deep-audits every answer to show the audit flow: at that rate a real judge would add about $35.50 per 1,000 answers.');
+    expect(view.demoBasis).toContain('66 for 66 answers');
   });
 
-  it('gives nothing without an assumption, answers or audits', () => {
+  it('words the replay’s rate in hundreds', () => {
+    // The online demo's recording: 12 deep audits over 18 answers.
+    const replay = roiSummary({ simulated: true, gated_responses: 18, llm_cost: { ...roiSummary().llm_cost, usd: 0, audits: 12 } });
+    expect(realJudgeView(replay, shipped, 35.5, '')?.demoLine).toBe(
+      'This demo deep-audits about 67 in 100 answers to show the audit flow: at that rate a real judge would add about $23.67 per 1,000 answers.',
+    );
+    const rare = { ...replay, gated_responses: 1000, llm_cost: { ...replay.llm_cost, audits: 3 } };
+    expect(realJudgeView(rare, shipped, 35.5, '')?.demoLine).toMatch(/^This demo deep-audits fewer than 1 in 100 answers/);
+    const extra = { ...replay, llm_cost: { ...replay.llm_cost, audits: 20 } };
+    expect(realJudgeView(extra, shipped, 35.5, '')?.demoLine).toMatch(/^This demo ran more deep audits than answers checked \(20 for 18 answers\)/);
+  });
+
+  it('gives the published figures alone without audits, and nothing without the figures', () => {
     const roi = roiSummary();
-    expect(realJudgeEstimate(roi, null)).toBeNull();
-    expect(realJudgeEstimate({ ...roi, gated_responses: 0 }, 35.5)).toBeNull();
-    expect(realJudgeEstimate({ ...roi, llm_cost: { ...roi.llm_cost, audits: 0 } }, 35.5)).toBeNull();
+    expect(realJudgeView({ ...roi, llm_cost: { ...roi.llm_cost, audits: 0 } }, shipped, 35.5, '')?.demoLine).toBeNull();
+    expect(realJudgeView({ ...roi, gated_responses: 0 }, shipped, 35.5, '')?.demoLine).toBeNull();
+    expect(realJudgeView(roi, shipped, null, '')).toBeNull();
+    expect(realJudgeView(roi, { ...shipped, per1k: null }, 35.5, '')).toBeNull();
+  });
+
+  it('reads the shipped defaults from the published assumptions, consistent with their total', () => {
+    const view = realJudgeView(roiSummary())!;
+    expect([view.shippedPer1k, view.shippedShare, view.fullAuditPer1k]).toEqual(['$3', 'about 8 in 100', '$35.50']);
+    // The share is 5% grounding-flagged + 2% of the other 95% + 1% uniform, and the published total
+    // is the fast check on every answer plus a full audit of that share.
+    expect(costShippedDefaults.auditShare).toBeCloseTo(0.079, 12);
+    const fastCheck = claimsDoc.claims.find((c) => c.id === 'fast_check_cost_per_1k')!.value!;
+    expect(fastCheck + costShippedDefaults.auditShare * costFullAuditPer1k!).toBeCloseTo(costShippedDefaults.per1k!, 1);
   });
 });

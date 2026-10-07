@@ -53,6 +53,14 @@ describe('Overview page', { timeout: 20_000 }, () => {
     expect(screen.getByRole('button', { name: /Estimate: how “What an LLM would have cost” was produced/ })).toBeInTheDocument();
   });
 
+  it('says why the deep audit reads $0 on a free mock judge, and links to what a real judge costs', async () => {
+    const base = roiSummary({ simulated: true });
+    const control = createControlApi({ roi: { ...base, llm_cost: { ...base.llm_cost, usd: 0, value: 0 } } });
+    renderPage('/app/overview', { control, status: { demo: true } });
+    const why = await screen.findByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
+    expect(within(why).getByRole('link', { name: 'What a real judge costs' }).getAttribute('href')).toMatch(/tab=savings/);
+  });
+
   it('labels every number simulated on the demo stack and shows the demo connect copy', async () => {
     const control = createControlApi({ overview: emptyOverview(), roi: roiSummary({ simulated: true }) });
     renderPage('/app/overview', { control, status: { demo: true } });

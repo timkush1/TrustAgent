@@ -5,12 +5,13 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query';
 import type { RoiTimeseries, TimeWindow } from '@/types/api';
 import type { RoiTimeseriesParams } from '../control/costPlane';
-import { qk, qkc } from '../queries';
+import { OVERVIEW_POLL_MS, qk, qkc } from '../queries';
 import type { DataSource } from '../source';
 import type { StreamEvent } from '../stream/types';
 
 export const qkcCosts = {
   all: ['costs'] as const,
+  roiTimeseriesAll: ['costs', 'roi-timeseries'] as const,
   roiTimeseries: (params: RoiTimeseriesParams) => ['costs', 'roi-timeseries', params] as const,
   pricing: ['costs', 'pricing'] as const,
 };
@@ -24,7 +25,11 @@ export function roiBucket(window: TimeWindow): RoiTimeseries['bucket'] | null {
   return window === '7d' || window === '30d' ? '1d' : '1h';
 }
 
-/** GET /api/roi/timeseries (#48): spend and the same-checks counterfactual per bucket. */
+/**
+ * GET /api/roi/timeseries (#48): spend and the same-checks counterfactual per bucket. It polls on
+ * the ROI summary's interval (roiSummaryQuery), so the chart drawn under the headline keeps up
+ * with it as traffic arrives.
+ */
 export function roiTimeseriesQuery(ds: DataSource, window: TimeWindow) {
   const bucket = roiBucket(window);
   const params: RoiTimeseriesParams = bucket ? { window, bucket } : { window };
@@ -32,6 +37,7 @@ export function roiTimeseriesQuery(ds: DataSource, window: TimeWindow) {
     queryKey: qkcCosts.roiTimeseries(params),
     queryFn: ({ signal }) => ds.getRoiTimeseries(params, signal),
     enabled: bucket !== null,
+    refetchInterval: OVERVIEW_POLL_MS,
   });
 }
 

@@ -6,6 +6,7 @@
  * without one are listed for the lead to move into copy.v1.json at the next checkpoint (D86).
  */
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
+import assumptions from '@contracts/pricing/assumptions.v1.json';
 import type { AuditSelection, Counterfactual, FieldError, PriceEntry, ValueLabel } from '@/types/api';
 import { copy } from '../contracts';
 import { formatUsd } from '../format';
@@ -52,13 +53,39 @@ export function costIsMeasuredMethod(method: Counterfactual['method']): boolean 
   return method !== 'static_assumptions';
 }
 
+/** A published value claim (contracts/claims/value-claims.v1.json): its figure and where it comes from. */
+interface CostClaim {
+  value: number | null;
+  basis: string;
+}
+
+function costClaim(id: string): CostClaim {
+  const claim = (claimsDoc.claims as readonly { id: string; value: number | null; basis: string }[]).find((c) => c.id === id);
+  return { value: claim?.value ?? null, basis: claim?.basis ?? '' };
+}
+
 /**
  * The published assumption for an LLM auditing one answer claim by claim, per 1,000 answers
  * (contracts value claim llm_full_audit_cost_per_1k, an estimate), or null without one. The server
  * prices its static full-audit counterfactual with the same claim.
  */
-export const costFullAuditPer1k: number | null =
-  (claimsDoc.claims as readonly { id: string; value: number | null }[]).find((c) => c.id === 'llm_full_audit_cost_per_1k')?.value ?? null;
+export const costFullAuditPer1k: number | null = costClaim('llm_full_audit_cost_per_1k').value;
+
+/** Why the published full-audit figure is what it is (the value claim's basis). */
+export const costFullAuditBasis: string = costClaim('llm_full_audit_cost_per_1k').basis;
+
+/**
+ * What checking costs with a real judge at the shipped defaults (value claim
+ * default_total_cost_per_1k, an estimate): the fast check on every answer plus a full audit of the
+ * deep-audited share. `auditShare` is that share, from the same inputs the published figure uses
+ * (pricing/assumptions.v1.json): grounding-flagged answers, the pass sample of the rest and the
+ * uniform sample.
+ */
+export const costShippedDefaults: { per1k: number | null; basis: string; auditShare: number } = (() => {
+  const { grounding_flag_rate: flagged, pass_sample_rate: pass, uniform_sample_rate: uniform } = assumptions.inputs;
+  const claim = costClaim('default_total_cost_per_1k');
+  return { per1k: claim.value, basis: claim.basis, auditShare: flagged.value + (1 - flagged.value) * pass.value + uniform.value };
+})();
 
 /** "not measured", for a figure that comes from the published assumptions. */
 export const costNotMeasured: string = copy.savings.not_measured;
@@ -67,7 +94,7 @@ export const costNotMeasured: string = copy.savings.not_measured;
 
 const SELECTIONS: Record<AuditSelection, string> = {
   high: 'high risk',
-  sample: 'sampled',
+  sample: 'pass sample',
   error_sample: 'sampled after a failed check',
   uniform: 'uniform sample',
   direct: 'sent directly',
@@ -80,7 +107,7 @@ export function costSelectionWord(selection: AuditSelection): string {
   return SELECTIONS[selection];
 }
 
-/** "44 high risk · 10 sampled · 4 uniform sample", largest first; "" when there are none. */
+/** "44 high risk · 10 pass sample · 4 uniform sample", largest first; "" when there are none. */
 export function costSelectionBreakdown(bySelection: Partial<Record<AuditSelection, number>>): string {
   return (Object.entries(bySelection) as [AuditSelection, number][])
     .filter(([, n]) => n > 0)

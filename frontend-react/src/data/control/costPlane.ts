@@ -17,9 +17,21 @@ export interface RoiTimeseriesParams {
   bucket?: RoiTimeseries['bucket'];
 }
 
+/**
+ * A spend series' bucket: the hour and day #48 serves, or a minute, which only the static
+ * replay uses (a recording spans minutes; the gateway never serves one).
+ */
+export type CostBucket = RoiTimeseries['bucket'] | '1m';
+
+/** A spend series as the Savings chart reads it: #48's RoiTimeseries, or the replay's per-minute one. */
+export type CostSeries = Omit<RoiTimeseries, 'bucket'> & { bucket: CostBucket };
+
 export interface CostPlane {
-  /** GET /api/roi/timeseries (#48): spend and same-checks counterfactual per bucket. */
-  getRoiTimeseries(params: RoiTimeseriesParams, signal?: AbortSignal): Promise<RoiTimeseries>;
+  /**
+   * GET /api/roi/timeseries (#48): spend and same-checks counterfactual per bucket. The gateway
+   * answers in the bucket asked for; the static replay picks the one that fits its recording.
+   */
+  getRoiTimeseries(params: RoiTimeseriesParams, signal?: AbortSignal): Promise<CostSeries>;
   /** GET /api/pricing (#49): the effective price table (overrides > price file > contracts, D53). */
   getPricing(signal?: AbortSignal): Promise<PricingTable>;
 }

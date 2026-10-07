@@ -1,5 +1,6 @@
 /**
- * What checking cost per day (or hour), over what an LLM would have cost for the same traffic
+ * What checking cost per day, hour or (in the static replay) minute, over what an LLM would have
+ * cost for the same traffic
  * (SPEC §7.4 "measured cost over the counterfactual bands"; D73). One axis, in USD per
  * bucket: the measured spend is a solid 2px line, the counterfactual a neutral band from its low to
  * its high estimate, or a dashed 2px line when it is a single estimate. Colour carries no verdict
@@ -21,12 +22,14 @@ import { formatCount, formatUsd } from '@/domain/format';
 import { valueLabelView } from '@/domain/controlPresentation';
 import { costRange } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
-import type { RoiTimeseries, ValueLabel } from '@/types/api';
+import type { CostBucket } from '@/data/control/costPlane';
+import type { ValueLabel } from '@/types/api';
 import {
   availableBands,
   bandHasRange,
   bandWords,
   bucketLabel,
+  bucketUnit,
   chartBuckets,
   chartMax,
   chartSpan,
@@ -34,18 +37,26 @@ import {
   countOf,
   endLabels,
   type BandKind,
+  type ChartTotals,
   type CostBandPoint,
 } from './savingsModel';
 
 export interface CostBandChartProps {
   points: readonly CostBandPoint[];
-  bucket: RoiTimeseries['bucket'];
+  bucket: CostBucket;
+  /**
+   * The totals the description states: the ROI summary's, as in the headline and the component
+   * table (chartTotals), never a sum of the points, which another request fetched.
+   */
+  totals: ChartTotals;
   /** Value label of the measured spend (Measured, or Simulated on a mock stack). */
   measuredLabel: ValueLabel;
-  /** Value label of the counterfactual bands (Estimate, or Simulated). */
-  bandLabel: ValueLabel;
-  /** The window in words ("the last 24 hours"), for the chart's description. */
-  windowWords: string;
+  /** Value label of each comparison, as its row in the component table says (bandLabels). */
+  bandLabels: Record<BandKind, ValueLabel>;
+  /** The span in words for the description: "in the last 24 hours", "over the replayed traffic". */
+  spanWords: string;
+  /** Whether the page offers a time window to pick (the static replay has none). */
+  windowPicker: boolean;
   headingLevel?: 2 | 3 | 4;
   /** Plot height in px. */
   height?: number;
@@ -57,6 +68,8 @@ const BAND_COLOR = seriesColor({ tone: 'ink', shade: 'light' });
 /** Horizontal room (in % of the plot) so the first and last points are not on the edge. */
 const PAD_X = 2;
 const MAX_X_LABELS = 6;
+
+const BUCKET_DESCRIPTION: Record<CostBucket, string> = { '1d': 'Daily (UTC)', '1h': 'Hourly', '1m': 'Per minute' };
 
 const BAND_OPTION: Record<BandKind, string> = {
   same_checks: 'Same questions',
@@ -120,12 +133,27 @@ function bandPaths(
   return { area, lines };
 }
 
+/**
+ * What the chart says instead of a line with fewer than two buckets. It points at a longer window
+ * only where the page has a window picker.
+ */
+function sparseMessage(n: number, unit: 'day' | 'hour' | 'minute', windowPicker: boolean): string {
+  if (windowPicker) {
+    return `${n === 1 ? `Only one ${unit}` : `No ${unit}s`} in this window so far: switch to Table, or pick a longer window to see a trend.`;
+  }
+  return n === 1
+    ? `Only one ${unit} of traffic so far: the trend draws from the second ${unit}. Switch to Table to see this one.`
+    : `No ${unit}s of traffic so far.`;
+}
+
 export function CostBandChart({
   points: allPoints,
   bucket,
+  totals,
   measuredLabel,
-  bandLabel,
-  windowWords,
+  bandLabels,
+  spanWords,
+  windowPicker,
   headingLevel = 3,
   height = 220,
   className,
@@ -145,8 +173,10 @@ export function CostBandChart({
   const measuredPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xAt(i, n)},${y(p.measured)}`).join('');
   const ranged = band ? bandHasRange(points, band) : false;
   const bandGeometry = band ? bandPaths(points, band, y, ranged) : { area: [], lines: [] };
-  const span = chartSpan(bucket, since, windowWords);
-  const summary = costBandSummary(points, band, bandLabel, span);
+  const unit = bucketUnit(bucket);
+  const bandLabel: ValueLabel = band ? bandLabels[band] : 'estimate';
+  const span = chartSpan(bucket, since, spanWords);
+  const summary = costBandSummary(totals, band, bandLabel, span);
   const ends = endLabels(points, band, ranged, y);
 
   const measuredName = `What checking cost you (${valueLabelView(measuredLabel).label})`;
@@ -158,12 +188,12 @@ export function CostBandChart({
 
   const table = (
     <ChartTable
-      caption={`Spend per ${bucket === '1d' ? 'day' : 'hour'}, with what an LLM would have cost`}
+      caption={`Spend per ${unit}, with what an LLM would have cost`}
       columns={[
-        { key: 'label', label: bucket === '1d' ? 'Day (UTC)' : 'Hour' },
+        { key: 'label', label: unit === 'day' ? 'Day (UTC)' : unit === 'minute' ? 'Minute' : 'Hour' },
         { key: 'gated', label: 'Answers checked', numeric: true },
         { key: 'measured', label: `Your cost (${valueLabelView(measuredLabel).label})`, numeric: true },
-        ...bands.map((k) => ({ key: k, label: `${BAND_OPTION[k]}, LLM (${valueLabelView(bandLabel).label})`, numeric: true })),
+        ...bands.map((k) => ({ key: k, label: `${BAND_OPTION[k]}, LLM (${valueLabelView(bandLabels[k]).label})`, numeric: true })),
       ]}
       rows={points.map((p) => ({
         label: bucketLabel(bucket, p.t),
@@ -225,7 +255,7 @@ export function CostBandChart({
   return (
     <ChartFrame
       title="What checking cost, against asking an LLM"
-      description={`${bucket === '1d' ? 'Daily (UTC)' : 'Hourly'}, in USD. ${summary}`}
+      description={`${BUCKET_DESCRIPTION[bucket]}, in USD. ${summary}`}
       headingLevel={headingLevel}
       legend={legend}
       table={table}
@@ -244,8 +274,7 @@ export function CostBandChart({
     >
       {n < 2 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-fg-muted">
-          {n === 1 ? `Only one ${bucket === '1d' ? 'day' : 'hour'}` : `No ${bucket === '1d' ? 'days' : 'hours'}`} in this window so far: switch
-          to Table, or pick a longer window to see a trend.
+          {sparseMessage(n, unit, windowPicker)}
         </p>
       ) : (
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2">
@@ -262,7 +291,7 @@ export function CostBandChart({
             // readout, and the value text says what the readout shows.
             tabIndex={0}
             role="slider"
-            aria-label={`What checking cost per ${bucket === '1d' ? 'day' : 'hour'}`}
+            aria-label={`What checking cost per ${unit}`}
             aria-describedby={summaryId}
             aria-valuemin={0}
             aria-valuemax={n - 1}

@@ -9,6 +9,11 @@
  * apart from what was flagged; fast-check speed; and the sampling status, including when the
  * deep-audit budget ran out.
  *
+ * On a demo whose mock judge is free, the headline says what a real judge costs at the shipped
+ * defaults (the published estimates), apart from this demo's own deep-audit rate. The static
+ * replay words every span "over the replayed traffic" and says the recording carries no sampling
+ * state, since it has no window to pick and no gateway to ask.
+ *
  * Page contract: the delayed skeleton, the server's message with Retry, a degraded state for a
  * proxy that does not report costs (an older version), an empty state before the first checked
  * answer, and simulated labels on a demo or mock stack (D46). Nothing here writes.
@@ -17,7 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Flag, Gauge, PiggyBank, ShieldX } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useDataSource } from '@/app/services';
+import { useDataSource, useRuntimeConfig } from '@/app/services';
 import { DegradedState } from '@/components/common/DegradedState';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { EmptyState, ErrorState } from '@/components/common/StateViews';
@@ -34,9 +39,25 @@ import { formatPercent } from '@/domain/rates';
 import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
 import { CostBandChart } from './CostBandChart';
-import { componentRows, costBandPoints, countOf, outcomeSplit, realJudgeEstimate, samplingLines, savingsRange, type SavingsRange } from './savingsModel';
+import {
+  bandLabels,
+  chartTotals,
+  componentRows,
+  costBandPoints,
+  countOf,
+  outcomeSplit,
+  realJudgeView,
+  samplingLines,
+  savingsRange,
+  type RealJudgeView,
+  type SavingsRange,
+} from './savingsModel';
 
 const linkClass = 'inline-flex items-center gap-0.5 text-sm font-medium text-fg underline underline-offset-2';
+
+/** The span every figure covers, in words: the window's, or the static replay's recording. */
+const REPLAY_SPAN = 'over the replayed traffic';
+const spanWords = (timeWindow: TimeWindow, replay: boolean): string => (replay ? REPLAY_SPAN : `in ${windowLong(timeWindow)}`);
 
 function SavingsSkeleton() {
   return (
@@ -61,12 +82,41 @@ const SAVED_WORDS: Record<SavingsRange['direction'], [string, string]> = {
   mixed: ['Between ', ' than'],
 };
 
-/** The headline, the savings range and the early-data sentence. */
+/**
+ * What a real judge costs, on a demo whose mock judge is free: the published figures at the
+ * shipped defaults against a full audit of every answer, then this demo's own deep-audit rate,
+ * which is far higher than the defaults to show the audit flow.
+ */
+function RealJudge({ view }: { view: RealJudgeView }) {
+  return (
+    <div className="space-y-1.5 border-t border-border pt-2.5">
+      <h3 className="text-sm font-medium text-fg">With a real judge</h3>
+      <p className="text-sm text-fg">
+        At the shipped defaults ({view.shippedShare} answers deep-audited), checking costs about{' '}
+        <span className="font-medium tabular">{view.shippedPer1k}</span> per 1,000 answers{' '}
+        <EvidenceBadge label="estimate" basis={view.basis} subject="Checking at the shipped defaults with a real judge" className="align-middle" />,
+        against <span className="font-medium tabular">{view.fullAuditPer1k}</span> to audit every answer claim by claim{' '}
+        <EvidenceBadge label="estimate" basis={view.fullAuditBasis} subject="An LLM auditing every answer claim by claim" className="align-middle" />.
+      </p>
+      <p className="text-sm text-fg-muted">
+        The deep audit above reads $0 because the demo&rsquo;s mock judge is free.{' '}
+        {view.demoLine ? (
+          <>
+            <span className="tabular">{view.demoLine}</span>{' '}
+            <EvidenceBadge label="estimate" basis={view.demoBasis} subject="What a real judge would add at this demo’s rate" className="align-middle" />
+          </>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
+/** The headline, the savings range, the early-data sentence and, on a free mock judge, a real judge's cost. */
 function Headline({ roi }: { roi: RoiSummary }) {
   const line = savingsLine(roi);
   const saved = savingsRange(roi);
   const same = roi.counterfactuals.find((c) => c.kind === 'llm_same_checks');
-  const realJudge = line.freeMockJudge ? realJudgeEstimate(roi) : null;
+  const realJudge = line.freeMockJudge ? realJudgeView(roi) : null;
   return (
     <section aria-labelledby="savings-headline" className="space-y-2 rounded-lg border border-border bg-surface px-4 py-4">
       <h2 id="savings-headline" className="flex flex-wrap items-center gap-2 text-lg font-semibold text-fg">
@@ -92,27 +142,10 @@ function Headline({ roi }: { roi: RoiSummary }) {
           <EvidenceBadge label={line.earlyDataLabel} basis={same?.basis} subject="What an LLM would have cost" />
         </p>
       ) : null}
-      {line.freeMockJudge ? (
-        <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-          <span>
-            The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
-            {realJudge ? (
-              <span className="tabular">
-                With a real judge each deep audit adds about {realJudge.perAudit}: about {realJudge.per1k} per 1,000 answers at this window&rsquo;s
-                deep-audit rate.
-              </span>
-            ) : (
-              'With a real judge, every deep audit adds an LLM cost.'
-            )}
-          </span>
-          {realJudge ? (
-            <EvidenceBadge
-              label="estimate"
-              basis="The published assumption for an LLM auditing one answer claim by claim, times this window’s deep audits per answer checked. Not measured."
-              subject="What a real judge would add"
-            />
-          ) : null}
-        </p>
+      {realJudge ? (
+        <RealJudge view={realJudge} />
+      ) : line.freeMockJudge ? (
+        <p className="text-sm text-fg-muted">The deep audit reads $0 because the demo&rsquo;s mock judge is free. With a real judge, every deep audit adds an LLM cost.</p>
       ) : null}
       <p className="text-xs text-fg-muted">{copy.savings.caption}</p>
     </section>
@@ -120,7 +153,7 @@ function Headline({ roi }: { roi: RoiSummary }) {
 }
 
 /** The spend over the counterfactual bands, with its own loading, error and older-proxy states. */
-function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWindow }) {
+function SpendChart({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: TimeWindow; replay: boolean }) {
   const ds = useDataSource();
   const q = useQuery(roiTimeseriesQuery(ds, timeWindow));
   let body: ReactNode;
@@ -148,10 +181,12 @@ function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWind
       <CostBandChart
         points={costBandPoints(q.data, roi)}
         bucket={q.data.bucket}
+        totals={chartTotals(roi)}
         // The line is fast check plus deep audit: the weaker label of the two, as the total's (D46).
         measuredLabel={costLabel(roi.simulated, roi.total_per_1k.label)}
-        bandLabel={roi.simulated ? 'simulated' : 'estimate'}
-        windowWords={windowLong(timeWindow)}
+        bandLabels={bandLabels(roi)}
+        spanWords={spanWords(timeWindow, replay)}
+        windowPicker={!replay}
         headingLevel={2}
       />
     );
@@ -167,11 +202,12 @@ function SpendChart({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWind
  * Every component of the cost, then the alternatives, each figure with its value label. The label
  * sits next to the row's name, so the table keeps three columns and fits a phone.
  */
-function ComponentTable({ roi, timeWindow }: { roi: RoiSummary; timeWindow: TimeWindow }) {
+function ComponentTable({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: TimeWindow; replay: boolean }) {
   const rows = componentRows(roi);
+  const span = spanWords(timeWindow, replay);
   return (
     <Card>
-      <CardHeader level={2} title="Where the cost comes from" description={`In ${windowLong(timeWindow)}, and per 1,000 checked answers.`} />
+      <CardHeader level={2} title="Where the cost comes from" description={`${span[0].toUpperCase()}${span.slice(1)}, and per 1,000 checked answers.`} />
       <CardContent>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -240,7 +276,7 @@ function Stat({ label, value, icon: Icon }: { label: string; value: string; icon
 }
 
 /** Stopped (block and fallback) apart from flagged; then the fast check's speed. */
-function OutcomesAndSpeed({ roi }: { roi: RoiSummary }) {
+function OutcomesAndSpeed({ roi, replay }: { roi: RoiSummary; replay: boolean }) {
   const split = outcomeSplit(roi);
   const latencyLabel = roi.simulated ? 'simulated' : roi.latency_ms.label;
   return (
@@ -277,6 +313,9 @@ function OutcomesAndSpeed({ roi }: { roi: RoiSummary }) {
             <div>
               <dt className="text-xs text-fg-muted">Missed the deadline</dt>
               <dd className="font-medium text-fg tabular">{formatPercent(roi.latency_ms.deadline_miss_rate)}</dd>
+              {replay && roi.latency_ms.deadline_miss_rate === null ? (
+                <dd className="text-2xs text-fg-muted">Not in the recording</dd>
+              ) : null}
             </div>
           </dl>
           <EvidenceBadge label={latencyLabel} subject="Fast-check speed" />
@@ -286,8 +325,12 @@ function OutcomesAndSpeed({ roi }: { roi: RoiSummary }) {
   );
 }
 
-/** Uniform sampling and the deep-audit budget today. */
-function Sampling({ roi }: { roi: RoiSummary }) {
+/** How the two kinds of sampled deep audit differ (the component table counts both). */
+const SAMPLE_KINDS =
+  'Uniform samples are picked before the fast check decides, so they are the only unbiased deep audits: they feed the hallucination rate. Pass samples are drawn from answers that passed, at each route’s sample rate.';
+
+/** Uniform sampling and the deep-audit budget today; in the static replay, that it is not recorded. */
+function Sampling({ roi, replay }: { roi: RoiSummary; replay: boolean }) {
   const lines = samplingLines(roi);
   const capHit = lines.some((l) => l.key === 'llm_cap');
   return (
@@ -295,16 +338,23 @@ function Sampling({ roi }: { roi: RoiSummary }) {
       <h2 id="savings-sampling" className="text-sm font-semibold text-fg">
         Sampling status
       </h2>
-      <ul className="space-y-1 text-sm">
-        {lines.map((l) => (
-          <li key={l.key} data-sampling={l.key} className={l.stopped ? 'text-fg' : 'text-fg-muted'}>
-            {l.text}
-          </li>
-        ))}
-      </ul>
+      {replay ? (
+        <p data-sampling="not_recorded" className="text-sm text-fg-muted">
+          Sampling status is not part of the recording. On your own stack this card shows today&rsquo;s uniform samples against their
+          daily cap, and when the deep-audit budget ran out.
+        </p>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {lines.map((l) => (
+            <li key={l.key} data-sampling={l.key} className={l.stopped ? 'text-fg' : 'text-fg-muted'}>
+              {l.text}
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="text-xs text-fg-muted">
-        Uniform samples are the only unbiased deep audits: they feed the hallucination rate.{' '}
-        {capHit ? (
+        {SAMPLE_KINDS}{' '}
+        {capHit && !replay ? (
           <Link to="/app/settings/$section" params={{ section: 'budgets' }} className={linkClass}>
             Raise the deep-audit budget
             <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -317,6 +367,7 @@ function Sampling({ roi }: { roi: RoiSummary }) {
 
 export function SavingsPanel({ timeWindow }: { timeWindow: TimeWindow }) {
   const ds = useDataSource();
+  const replay = useRuntimeConfig().appMode === 'static';
   const q = useQuery(roiSummaryQuery(ds, timeWindow));
   const showLoading = useDelayedLoading(q.isPending);
 
@@ -340,6 +391,13 @@ export function SavingsPanel({ timeWindow }: { timeWindow: TimeWindow }) {
   }
   const roi = q.data;
   if (roi.gated_responses === 0) {
+    if (replay) {
+      return (
+        <EmptyState icon={PiggyBank} title="No checked answers in the replay yet">
+          Costs and savings appear once the replay reaches its first checked answer.
+        </EmptyState>
+      );
+    }
     return (
       <EmptyState icon={PiggyBank} title={`No checked answers in ${windowLong(timeWindow)}`} action={
         <Link to="/app/playground" className={linkClass}>
@@ -355,13 +413,13 @@ export function SavingsPanel({ timeWindow }: { timeWindow: TimeWindow }) {
   return (
     <div className="space-y-5">
       <Headline roi={roi} />
-      <SpendChart roi={roi} timeWindow={timeWindow} />
+      <SpendChart roi={roi} timeWindow={timeWindow} replay={replay} />
       {/* One shrinkable column below lg, so a wide table scrolls inside its card, never the page. */}
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <ComponentTable roi={roi} timeWindow={timeWindow} />
+        <ComponentTable roi={roi} timeWindow={timeWindow} replay={replay} />
         <div className="space-y-4">
-          <OutcomesAndSpeed roi={roi} />
-          <Sampling roi={roi} />
+          <OutcomesAndSpeed roi={roi} replay={replay} />
+          <Sampling roi={roi} replay={replay} />
         </div>
       </div>
     </div>

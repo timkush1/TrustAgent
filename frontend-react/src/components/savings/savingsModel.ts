@@ -8,8 +8,10 @@ import { valueLabelView } from '@/domain/controlPresentation';
 import { formatCount, formatDateTime, formatUsd } from '@/domain/format';
 import {
   costCounterfactualView,
+  costFullAuditBasis,
   costFullAuditPer1k,
   costIsMeasuredMethod,
+  costShippedDefaults,
   costLabel,
   costLlmCapHit,
   costMethodWord,
@@ -18,7 +20,8 @@ import {
   costSelectionBreakdown,
   costUniformPaused,
 } from '@/domain/presentation';
-import type { Counterfactual, RoiSummary, RoiTimeseries, ValueLabel } from '@/types/api';
+import type { CostBucket, CostSeries } from '@/data/control/costPlane';
+import type { Counterfactual, RoiSummary, ValueLabel } from '@/types/api';
 
 // ------------------------------------------------------------------------------------------ bands
 
@@ -78,12 +81,32 @@ export function freeMockCounterfactual(c: Counterfactual | null, simulated: bool
 }
 
 /**
+ * A counterfactual's value label. One from the published assumptions is an Estimate even on a
+ * simulated stack: the figure is the published one, and the simulated answer count it is applied
+ * to is said in its detail. Everything else on a simulated summary is Simulated (D46).
+ */
+export function counterfactualLabel(c: Counterfactual, simulated: boolean): ValueLabel {
+  return c.method === 'static_assumptions' ? c.label : costLabel(simulated, c.label);
+}
+
+/** The value labels of the chart's two comparisons, as their rows in the component table say. */
+export function bandLabels(roi: RoiSummary): Record<BandKind, ValueLabel> {
+  const fallback: ValueLabel = roi.simulated ? 'simulated' : 'estimate';
+  const same = counterfactual(roi, 'llm_same_checks');
+  const full = counterfactual(roi, 'llm_full_claim_audit');
+  return {
+    same_checks: same ? counterfactualLabel(same, roi.simulated) : fallback,
+    full_audit: full ? counterfactualLabel(full, roi.simulated) : fallback,
+  };
+}
+
+/**
  * The points of the Savings chart (D73, no api.ts change):
  * - same-checks band: the bucket's `same_checks_usd` × [low/usd, high/usd] of the summary's
  *   `llm_same_checks`;
  * - full-audit band: the summary's `llm_full_claim_audit` per-1k range × gated / 1000.
  */
-export function costBandPoints(series: RoiTimeseries, roi: RoiSummary | undefined): CostBandPoint[] {
+export function costBandPoints(series: CostSeries, roi: RoiSummary | undefined): CostBandPoint[] {
   const same = counterfactual(roi, 'llm_same_checks');
   const full = counterfactual(roi, 'llm_full_claim_audit');
   const [sameLo, sameHi] = rangeRatio(same);
@@ -181,12 +204,18 @@ export function chartMax(points: readonly CostBandPoint[], band: BandKind | null
 
 const dayFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 const hourFormat = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+const minuteFormat = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-/** A bucket's name: the UTC day ("Mon 22 Sep") or the local hour ("Mon 14:00"). */
-export function bucketLabel(bucket: RoiTimeseries['bucket'], iso: string): string {
+/** A bucket's name: the UTC day ("Mon 22 Sep"), the local hour ("Mon 14:00") or minute ("14:02"). */
+export function bucketLabel(bucket: CostBucket, iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
-  return (bucket === '1d' ? dayFormat : hourFormat).format(t);
+  return (bucket === '1d' ? dayFormat : bucket === '1m' ? minuteFormat : hourFormat).format(t);
+}
+
+/** What one bucket is called: "day", "hour" or "minute". */
+export function bucketUnit(bucket: CostBucket): 'day' | 'hour' | 'minute' {
+  return bucket === '1d' ? 'day' : bucket === '1m' ? 'minute' : 'hour';
 }
 
 export function bandWords(kind: BandKind): string {
@@ -195,24 +224,41 @@ export function bandWords(kind: BandKind): string {
 
 /**
  * When the chart's buckets run: "since Mon 14:00" when it starts at the first traffic, else the
- * window in words ("in the last 24 hours").
+ * span in words ("in the last 24 hours", "over the replayed traffic").
  */
-export function chartSpan(bucket: RoiTimeseries['bucket'], since: string | null, windowWords: string): string {
-  return since ? `since ${bucketLabel(bucket, since)}` : `in ${windowWords}`;
+export function chartSpan(bucket: CostBucket, since: string | null, spanWords: string): string {
+  return since ? `since ${bucketLabel(bucket, since)}` : spanWords;
+}
+
+/**
+ * The totals the chart's sentence states: the summary's own (the headline and the component table
+ * read the same response), so one window never shows two costs. A comparison scaled up from the
+ * demo's free mock audits has none.
+ */
+export interface ChartTotals {
+  answers: number;
+  spent: number;
+  bands: Record<BandKind, Band | null>;
+}
+
+export function chartTotals(roi: RoiSummary): ChartTotals {
+  const total = (c: Counterfactual | null): Band | null => {
+    if (!c || !finite(c.usd) || freeMockCounterfactual(c, roi.simulated)) return null;
+    return finite(c.low) && finite(c.high) ? { low: Math.min(c.low, c.high), high: Math.max(c.low, c.high) } : { low: c.usd, high: c.usd };
+  };
+  return {
+    answers: roi.gated_responses,
+    spent: roi.decision_cost.usd + roi.llm_cost.usd,
+    bands: { same_checks: total(counterfactual(roi, 'llm_same_checks')), full_audit: total(counterfactual(roi, 'llm_full_claim_audit')) },
+  };
 }
 
 /** The chart in one sentence, for screen readers and the figure description. */
-export function costBandSummary(points: readonly CostBandPoint[], band: BandKind | null, bandLabel: ValueLabel, span: string): string {
-  const spent = points.reduce((s, p) => s + p.measured, 0);
-  const answers = points.reduce((s, p) => s + p.gated, 0);
-  let line = `Checking ${countOf(answers, 'answer')} cost ${formatUsd(spent)} ${span}.`;
-  if (band) {
-    const present = points.flatMap((p) => (p[band] ? [p[band]] : []));
-    if (present.length > 0) {
-      const low = present.reduce((s, b) => s + b.low, 0);
-      const high = present.reduce((s, b) => s + b.high, 0);
-      line += ` ${bandWords(band)} would have cost ${costRange(low, high)} (${valueLabelView(bandLabel).label.toLowerCase()}).`;
-    }
+export function costBandSummary(totals: ChartTotals, band: BandKind | null, bandLabel: ValueLabel, span: string): string {
+  let line = `Checking ${countOf(totals.answers, 'answer')} cost ${formatUsd(totals.spent)} ${span}.`;
+  const b = band ? totals.bands[band] : null;
+  if (band && b) {
+    line += ` ${bandWords(band)} would have cost ${costRange(b.low, b.high)} (${valueLabelView(bandLabel).label.toLowerCase()}).`;
   }
   return line;
 }
@@ -305,7 +351,7 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
       detail: notMeasured ? `${method} · ${costNotMeasured}` : method,
       total: finite(c.low) && finite(c.high) ? costRange(c.low, c.high) : formatUsd(c.usd),
       per1k: formatUsd(c.per_1k),
-      valueLabel: costLabel(sim, c.label),
+      valueLabel: counterfactualLabel(c, sim),
       basis: c.basis,
       notMeasured,
     });
@@ -313,26 +359,69 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
   return rows;
 }
 
-/**
- * What a real judge would add on a demo whose mock judge is free: the published full-audit
- * assumption per deep audit, and per 1,000 answers at this window's deep-audit rate (audits per
- * answer checked). An estimate, never measured; null without the assumption or without audits.
- */
-export function realJudgeEstimate(roi: RoiSummary, per1kAssumption: number | null = costFullAuditPer1k): { perAudit: string; per1k: string } | null {
-  const n = roi.gated_responses;
-  const audits = roi.llm_cost.audits;
-  if (!finite(per1kAssumption) || per1kAssumption <= 0 || n <= 0 || audits <= 0) return null;
-  return { perAudit: twoFigures(per1kAssumption / 1000), per1k: formatUsd((per1kAssumption * audits) / n) };
+/** "about $3", "about $35.50": whole dollars without cents. */
+function aboutUsd(usd: number): string {
+  return Number.isInteger(usd) ? `$${usd}` : formatUsd(usd);
+}
+
+export interface RealJudgeView {
+  /** The published total at the shipped defaults, per 1,000 answers ("$3"). */
+  shippedPer1k: string;
+  /** How many answers the shipped defaults deep-audit ("about 8 in 100"). */
+  shippedShare: string;
+  basis: string;
+  /** The published full claim-by-claim audit of every answer, per 1,000 answers ("$35.50"). */
+  fullAuditPer1k: string;
+  fullAuditBasis: string;
+  /**
+   * What this demo does instead: "This demo deep-audits every answer to show the audit flow: at
+   * that rate a real judge would add about $35.50 per 1,000 answers." Null without deep audits.
+   */
+  demoLine: string | null;
+  demoBasis: string;
+}
+
+/** "every answer", "about 67 in 100 answers": a deep-audit rate in words. */
+function auditShareWords(rate: number): string {
+  if (rate >= 0.995) return 'every answer';
+  const pct = Math.round(rate * 100);
+  return pct < 1 ? 'fewer than 1 in 100 answers' : `about ${pct} in 100 answers`;
 }
 
 /**
- * A cent or two, to two significant figures ("$0.036"), where cents would round it away. Halves
- * round up in decimal ($35.50 per 1,000 is $0.0355, never the binary $0.03549… shown as $0.035).
+ * What a real judge would cost, for a demo whose mock judge is free (SPEC §7.4; value claims
+ * default_total_cost_per_1k and llm_full_audit_cost_per_1k, both estimates). The headline is the
+ * published figure at the shipped defaults, never the demo's own deep-audit rate scaled up: the
+ * demo audits far more answers than the defaults do, to show the audit flow, and says so in
+ * `demoLine` with what that rate would add. Null without the published figures.
  */
-function twoFigures(usd: number): string {
-  if (usd >= 1) return formatUsd(usd);
-  const step = 10 ** (Math.floor(Math.log10(usd)) - 1);
-  return `$${Number((Math.round(usd / step + 1e-9) * step).toPrecision(2))}`;
+export function realJudgeView(
+  roi: RoiSummary,
+  shipped: typeof costShippedDefaults = costShippedDefaults,
+  fullAuditPer1k: number | null = costFullAuditPer1k,
+  fullAuditBasis: string = costFullAuditBasis,
+): RealJudgeView | null {
+  if (!finite(shipped.per1k) || shipped.per1k <= 0 || !finite(fullAuditPer1k) || fullAuditPer1k <= 0) return null;
+  const n = roi.gated_responses;
+  const audits = roi.llm_cost.audits;
+  let demoLine: string | null = null;
+  if (n > 0 && audits > 0) {
+    const rate = audits / n;
+    const adds = `a real judge would add about ${formatUsd(fullAuditPer1k * rate)} per 1,000 answers`;
+    demoLine =
+      rate > 1.005
+        ? `This demo ran more deep audits than answers checked (${formatCount(audits)} for ${countOf(n, 'answer')}) to show the audit flow: at that rate ${adds}.`
+        : `This demo deep-audits ${auditShareWords(rate)} to show the audit flow: at that rate ${adds}.`;
+  }
+  return {
+    shippedPer1k: aboutUsd(shipped.per1k),
+    shippedShare: `about ${Math.round(shipped.auditShare * 100)} in 100`,
+    basis: shipped.basis,
+    fullAuditPer1k: aboutUsd(fullAuditPer1k),
+    fullAuditBasis,
+    demoLine,
+    demoBasis: `The published full-audit figure (${aboutUsd(fullAuditPer1k)} per 1,000 answers) times this demo’s deep audits per answer checked (${formatCount(audits)} for ${countOf(n, 'answer')}). Not measured.`,
+  };
 }
 
 // ---------------------------------------------------------------------------------------- savings

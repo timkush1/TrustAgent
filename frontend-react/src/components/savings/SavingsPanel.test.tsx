@@ -4,8 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import statusBudgetEvent from '@contracts/fixtures/api/WsEvent.status.budget.json';
 import settingsUpdatedEvent from '@contracts/fixtures/api/WsEvent.settings_updated.json';
-import { qk, qkc } from '@/data/queries';
-import { costSideEffects, qkcCosts, roiBucket } from '@/data/queries/costs';
+import { OVERVIEW_POLL_MS, qk, qkc, roiSummaryQuery } from '@/data/queries';
+import { costSideEffects, qkcCosts, roiBucket, roiTimeseriesQuery } from '@/data/queries/costs';
+import type { DataSource } from '@/data/source';
 import type { StreamEvent } from '@/data/stream/types';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { roiSummary } from '@/test/control/fixtures';
@@ -132,11 +133,20 @@ describe('Savings tab', { timeout: 20_000 }, () => {
       roi: roiSummary({ simulated: true, llm_cost: { ...base.llm_cost, usd: 0, value: 0 }, counterfactuals: [...base.counterfactuals, freeFull] }),
     });
     renderPage('/app/savings', { control });
-    const free = await screen.findByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
-    // What a real judge would add: the published $35.50 per 1,000 full audits, per audit and at this
-    // window's rate (58 audits over 540 answers), labelled an estimate.
-    expect(free).toHaveTextContent('With a real judge each deep audit adds about $0.036: about $3.81 per 1,000 answers at this window’s deep-audit rate.');
-    expect(badge('Estimate', 'What a real judge would add')).toBeInTheDocument();
+    // A real judge's cost leads with the published figures at the shipped defaults, each an
+    // estimate, never this demo's own deep-audit rate scaled up.
+    const shipped = await screen.findByText(/^At the shipped defaults/);
+    expect(shipped).toHaveTextContent(
+      'At the shipped defaults (about 8 in 100 answers deep-audited), checking costs about $3 per 1,000 answers Estimate, against $35.50 to audit every answer claim by claim Estimate.',
+    );
+    expect(badge('Estimate', 'Checking at the shipped defaults with a real judge')).toBeInTheDocument();
+    expect(badge('Estimate', 'An LLM auditing every answer claim by claim')).toBeInTheDocument();
+    // Then this window's own rate (58 audits over 540 answers), apart from the headline figure.
+    const free = screen.getByText(/^The deep audit above reads \$0 because the demo’s mock judge is free\./);
+    expect(free).toHaveTextContent(
+      'This demo deep-audits about 11 in 100 answers to show the audit flow: at that rate a real judge would add about $3.81 per 1,000 answers.',
+    );
+    expect(badge('Estimate', 'What a real judge would add at this demo’s rate')).toBeInTheDocument();
     const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ }).closest('tr')!;
     expect(row).toHaveTextContent('Not available in the simulated demo: the mock judge is free');
     expect(within(row).getAllByRole('cell').slice(0, 2).map((c) => c.textContent)).toEqual(['—', '—']);
@@ -149,8 +159,9 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     renderPage('/app/overview?tab=savings&window=7d');
     const plot = await screen.findByRole('slider', { name: 'What checking cost per day' });
     expect(plot).toHaveAttribute('aria-valuemax', '6');
+    // The totals are the summary's (the headline's and the table's), not a sum of the points.
     expect(plot).toHaveAccessibleDescription(
-      'Checking 1,199 answers cost $0.99 in the last 7 days. An LLM asking the same questions would have cost $2.21–$2.95 (estimate).',
+      'Checking 540 answers cost $0.43 in the last 7 days. An LLM asking the same questions would have cost $1.05–$1.40 (estimate).',
     );
     plot.focus();
     fireEvent.keyDown(plot, { key: 'Home' });
@@ -173,7 +184,7 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((r) => r.getAttribute('data-row'))).toEqual(['fast_check', 'deep_audit', 'total', 'llm_same_checks', 'llm_full_claim_audit']);
     for (const row of rows) expect(within(row).getByRole('button', { name: /: how “.+” was produced$/ })).toBeInTheDocument();
-    expect(within(rows[1]).getByRole('rowheader')).toHaveTextContent('58 deep audits attempted: 44 high risk · 10 sampled · 4 uniform sample');
+    expect(within(rows[1]).getByRole('rowheader')).toHaveTextContent('58 deep audits attempted: 44 high risk · 10 pass sample · 4 uniform sample');
     expect(within(rows[3]).getAllByRole('cell')[0]).toHaveTextContent('$1.05–$1.40');
   });
 
@@ -204,6 +215,10 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(screen.getByText('p95').nextElementSibling).toHaveTextContent('480 ms');
     expect(screen.getByText('Missed the deadline').nextElementSibling).toHaveTextContent('0.4%');
     expect(screen.getByText('Uniform sampling: 4 of 50 audits today (1% of answers)')).toBeInTheDocument();
+    // How a uniform sample differs from the pass samples the component table counts.
+    expect(screen.getByText(/^Uniform samples are picked before the fast check decides/)).toHaveTextContent(
+      'Pass samples are drawn from answers that passed, at each route’s sample rate.',
+    );
     expect(screen.queryByRole('link', { name: /Raise the deep-audit budget/ })).toBeNull();
   });
 
@@ -230,6 +245,21 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     const table = screen.getByRole('table', { name: /What checking cost/ });
     for (const b of within(table).getAllByRole('button')) expect(b).toHaveAccessibleName(/^Simulated:/);
     expect(await screen.findByText('What checking cost you (Simulated)')).toBeInTheDocument();
+  });
+
+  it('labels the published full-audit figure Estimate on a mock stack, in the table and the chart', async () => {
+    const user = userEvent.setup();
+    const published = { ...FULL_AUDIT, low: null, high: null, usd: 19.17 };
+    const control = createControlApi({ roi: roiSummary({ simulated: true, counterfactuals: [...roiSummary().counterfactuals, published] }) });
+    renderPage('/app/savings', { control, status: { demo: true } });
+    const row = (await screen.findByRole('rowheader', { name: /An LLM auditing every answer/ })).closest('tr')!;
+    expect(within(row).getByRole('button', { name: 'Estimate: how “An LLM auditing every answer claim by claim” was produced' })).toBeInTheDocument();
+    expect(row).toHaveTextContent('Published assumptions: $35.50 per 1,000 answers × 540 simulated answers · not measured');
+    const same = screen.getByRole('rowheader', { name: /An LLM asking the same questions/ });
+    expect(within(same).getByRole('button', { name: /^Simulated:/ })).toBeInTheDocument();
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    await user.click(within(chart).getByRole('radio', { name: 'Full audit' }));
+    expect(within(chart).getByText('An LLM auditing every answer claim by claim (Estimate)')).toBeInTheDocument();
   });
 
   it('has an empty state before the first checked answer', async () => {
@@ -287,6 +317,12 @@ describe('Savings tab', { timeout: 20_000 }, () => {
 });
 
 describe('cost queries', () => {
+  it('polls the spend series with the ROI summary, so the chart keeps up with the headline', () => {
+    const ds = {} as DataSource;
+    expect(roiTimeseriesQuery(ds, '24h').refetchInterval).toBe(OVERVIEW_POLL_MS);
+    expect(roiSummaryQuery(ds, '24h').refetchInterval).toBe(OVERVIEW_POLL_MS);
+  });
+
   it('draws hours up to a day and days beyond', () => {
     // #48 has no bucket for a 15-minute window (it answers 422): the chart asks for none.
     expect(['15m', '1h', '24h', '7d', '30d'].map((w) => roiBucket(w as never))).toEqual([null, '1h', '1h', '1d', '1d']);
