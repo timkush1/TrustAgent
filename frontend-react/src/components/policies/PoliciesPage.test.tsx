@@ -143,6 +143,23 @@ describe('Policies page', { timeout: 20_000 }, () => {
     expect(within(dialog).getByText('Fix the errors above first.')).toBeInTheDocument();
   });
 
+  it('asks for the Block mode last, and lists a Flag route’s missing steps without a warning', async () => {
+    const routes = effectiveRoutes();
+    routes[0] = { ...routes[0], block_readiness: [{ evaluator: 'groundedness@1', ready: false, missing: ['mode', 'calibration', 'buffering'] }] };
+    renderPage('/app/policies', { control: createControlApi({ policies: policyState({ effective_routes: routes }) }) });
+    const support = await card('support-bot');
+    // Setting the route to Block first would give a route that still cannot block.
+    expect(within(support).getByText('· 2 of 5 done · next: calibrate it for the current fast-check version')).toBeInTheDocument();
+    const steps = within(support).getAllByRole('listitem').filter((li) => li.hasAttribute('data-missing'));
+    expect(steps.map((li) => li.textContent?.replace(/:.*$/, ''))).toEqual([
+      'Calibrated for the current fast-check version',
+      'Streams buffered',
+      'Route set to Block or Fallback',
+    ]);
+    // Nobody asked this Flag route to block: the missing steps are not a warning.
+    expect(support.querySelector('.text-tone-warning')).toBeNull();
+  });
+
   it('applies the one-click fixes to the draft', async () => {
     const user = userEvent.setup();
     const routes = effectiveRoutes();

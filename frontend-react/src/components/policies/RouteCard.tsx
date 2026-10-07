@@ -5,7 +5,7 @@
  * Changes made here go into the page's draft; nothing is saved until the viewer reviews it.
  */
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Check, CircleAlert, Eye, ListChecks, SlidersHorizontal, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Check, CircleAlert, CircleDashed, Eye, ListChecks, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { useId, useState } from 'react';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
@@ -161,16 +161,22 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
   return (
     <ul className="space-y-2">
       {items.map((b) => {
-        const shown = READINESS_ITEMS.filter((item) => item !== 'mode' || b.missing.includes('mode'));
+        // Switching the route to Block or Fallback is the last step: before the others are met it
+        // would give a route that still cannot block. On a Flag or Observe route (mode missing)
+        // nobody has asked to block yet, so what is missing is neutral, not a warning.
+        const wantsBlock = !b.missing.includes('mode');
+        const shown = [...READINESS_ITEMS.filter((item) => item !== 'mode'), ...(wantsBlock ? [] : (['mode'] as const))];
         const done = shown.filter((item) => !b.missing.includes(item)).length;
         const next = shown.find((item) => b.missing.includes(item));
+        const MissingIcon = wantsBlock ? CircleAlert : CircleDashed;
+        const missingTone = wantsBlock ? 'text-tone-warning' : 'text-fg-muted';
         return (
           <li key={b.evaluator} className="space-y-1">
             <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
               {b.ready ? (
                 <Check aria-hidden="true" className="size-3.5 text-fg-muted" />
               ) : (
-                <CircleAlert aria-hidden="true" className="size-3.5 text-tone-warning" />
+                <MissingIcon aria-hidden="true" className={cn('size-3.5', missingTone)} />
               )}
               <span className="font-medium text-fg">{evaluatorDisplayName(b.evaluator, names)}</span>
               <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
@@ -190,7 +196,7 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
                   return (
                     <li key={item} data-missing={missing || undefined} title={missing ? words.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
                       {missing ? (
-                        <CircleAlert aria-hidden="true" className="size-3 text-tone-warning" />
+                        <MissingIcon aria-hidden="true" className={cn('size-3', missingTone)} />
                       ) : (
                         <Check aria-hidden="true" className="size-3" />
                       )}
