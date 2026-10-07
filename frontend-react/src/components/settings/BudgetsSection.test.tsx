@@ -67,6 +67,10 @@ describe('Settings → Budgets', { timeout: 20_000 }, () => {
     const deep = screen.getByRole('meter', { name: 'Deep-audit budget: spent today' });
     expect(deep).toHaveAttribute('aria-valuetext', '$0.41 of $5.00 spent today (8.2%)');
     expect(deep.querySelector('[data-marker]')).toBeNull();
+    // Each spend carries its value label: an estimate, since the status does not say how much of it
+    // the provider reported.
+    expect(screen.getByRole('button', { name: 'Estimate: how “Fast-check budget: spent today” was produced' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Estimate: how “Deep-audit budget: spent today” was produced' })).toBeInTheDocument();
     const save = screen.getByRole('button', { name: 'Save budgets' });
     expect(save).toHaveAttribute('aria-disabled', 'true');
     expect(save).toHaveAccessibleDescription('Nothing to save yet');

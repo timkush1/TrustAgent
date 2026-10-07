@@ -3,9 +3,14 @@
  * verdict, so the fill is the neutral ink), with the line where observe and flag routes stop on the
  * fast-check budget (the enforcing reserve, 75% by default). The words under it carry the numbers
  * and the state, so nothing depends on the picture.
+ *
+ * The spend is labelled Estimate: /api/status sums the ledger's real calls without saying how many
+ * were priced from tokens rather than reported by the provider, so it claims no more than the
+ * weaker of the two.
  */
 import { CircleAlert } from 'lucide-react';
 import { pct01 } from '@/components/charts/scale';
+import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { formatUsd } from '@/domain/format';
 import { formatPercent } from '@/domain/rates';
 import type { Spend } from './budgetsModel';
@@ -20,14 +25,22 @@ export interface SpendBarProps {
   observeLine?: number;
 }
 
+/** Where today's spend comes from (the badge's basis). */
+export const SPEND_BASIS =
+  'Today’s real calls from the cost ledger: the provider’s reported cost where it reports one, otherwise their tokens × the price table, as the cap counts them. Simulated checks never count.';
+
 export function SpendBar({ label, cap, spend, observeLine }: SpendBarProps) {
+  const badge = <EvidenceBadge label="estimate" basis={SPEND_BASIS} subject={`${label}: spent today`} />;
   if (!spend) {
     return <p className="text-xs text-fg-muted">Today’s spend is unknown: this proxy does not report it.</p>;
   }
   if (cap <= 0) {
     return (
-      <p className="text-xs text-fg-muted">
-        No cap: <span className="font-medium text-fg tabular">{formatUsd(spend.spent)}</span> spent today (UTC).
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
+        <span>
+          No cap: <span className="font-medium text-fg tabular">{formatUsd(spend.spent)}</span> spent today (UTC).
+        </span>
+        {badge}
       </p>
     );
   }
@@ -59,8 +72,11 @@ export function SpendBar({ label, cap, spend, observeLine }: SpendBarProps) {
           />
         ) : null}
       </div>
-      <p className="flex flex-wrap justify-between gap-x-3 text-xs text-fg-muted">
-        <span className="tabular">{valueText}</span>
+      <p className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-fg-muted">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="tabular">{valueText}</span>
+          {badge}
+        </span>
         {observeLine !== undefined ? (
           <span>
             Observe and flag stop at {formatPercent(observeLine)} ({formatUsd(cap * observeLine)})
