@@ -16,7 +16,6 @@ import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { ConfirmAgain } from '@/components/common/confirmAgain';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
-import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { KeyValueList } from '@/components/common/KeyValue';
 import { PageHeader } from '@/components/common/PageHeader';
 import { QueryState } from '@/components/common/QueryState';
@@ -46,11 +45,11 @@ import {
   secEnvKeyOfPath,
   secJudgeCredential,
   secJudgeSettingLabel,
-  secProbeReadyText,
   type SecBackendCard,
 } from '@/domain/presentation';
 import type { CredentialView, DecisionModelTestResult, RuntimeSettings, RuntimeSettingsPatch, SettingsView, SystemStatus } from '@/types/api';
-import { confirmationRoutes, probeCostBasis, probeCostLabel } from './credentialModel';
+import { confirmationRoutes, probeCostLabel } from './credentialModel';
+import { ProbeReady } from './CredentialResult';
 import { EnvManagedNote, ProblemNote, SettingsWarnings } from './SettingsKit';
 import { useSettingsWriteReason } from './useSettingsAccess';
 
@@ -184,8 +183,7 @@ function TestResult({ result }: { result: DecisionModelTestResult }) {
     return (
       <div role="status" className="space-y-1 rounded-md border border-border px-3 py-2 text-sm">
         <p className="flex flex-wrap items-center gap-1.5 text-fg">
-          <span className="tabular">{secProbeReadyText(result.latency_ms, cost)}</span>
-          {cost && costLabel ? <EvidenceBadge label={costLabel} basis={probeCostBasis(costLabel)} subject="Test cost" /> : null}
+          <ProbeReady latencyMs={result.latency_ms} cost={cost} costLabel={costLabel} />
         </p>
         <p className="text-xs text-fg-muted">
           {secBackendSettingLabel(result.backend)}

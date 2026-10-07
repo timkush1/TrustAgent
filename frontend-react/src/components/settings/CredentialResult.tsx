@@ -9,9 +9,25 @@ import { CircleAlert, CircleCheck, Info, RotateCw } from 'lucide-react';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { Button } from '@/components/ui/button';
 import { formatUsd } from '@/domain/format';
-import { copy, secBindingLabel, secJoinWords, secProbeReadyText, secSkipReasonText, secVerifyHintText, secVerifyView } from '@/domain/presentation';
-import type { CredentialWriteResult } from '@/types/api';
-import { probeCostBasis, probeCostLabel } from './credentialModel';
+import { copy, secBindingLabel, secJoinWords, secProbeReadySegments, secSkipReasonText, secVerifyHintText, secVerifyView } from '@/domain/presentation';
+import type { CredentialWriteResult, ValueLabel } from '@/types/api';
+import { PROBE_TIME_BASIS, probeCostBasis, probeCostLabel, probeTimeLabel } from './credentialModel';
+
+/**
+ * "Ready: the test call took 231 ms [Measured] and cost $0.00001 [Vendor]": each figure of a passed
+ * key check with its own value label. Shared by the key checks here and the judge test in Models.
+ */
+export function ProbeReady({ latencyMs, cost, costLabel }: { latencyMs: number | null | undefined; cost: string | null; costLabel: ValueLabel | null }) {
+  const seg = secProbeReadySegments(latencyMs, cost);
+  return (
+    <>
+      <span className="tabular">{seg.first}</span>
+      {seg.timed ? <EvidenceBadge label={probeTimeLabel(costLabel)} basis={PROBE_TIME_BASIS} subject="Test call time" /> : null}
+      {seg.second ? <span className="tabular">{seg.second}</span> : null}
+      {cost && costLabel ? <EvidenceBadge label={costLabel} basis={probeCostBasis(costLabel)} subject="Test call cost" /> : null}
+    </>
+  );
+}
 
 export interface CredentialResultProps {
   result: CredentialWriteResult;
@@ -43,9 +59,9 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
   const tone =
     v === null || probeSkipped ? 'text-fg-muted' : v.ok ? 'text-tone-success' : v.status === 'unauthorized' ? 'text-tone-danger' : 'text-tone-warning';
 
-  let headline: string;
+  let headline = '';
   if (v === null) headline = 'Saved without a check.';
-  else if (ready) headline = secProbeReadyText(v.latency_ms, cost);
+  else if (ready) headline = '';
   else if (probeSkipped) headline = hint ?? 'OpenRouter accepted the key; the credits are not confirmed yet.';
   else if (v.ok) headline = `Saved. ${hint ?? verify.hint ?? ''}`.trim();
   else if (v.status === 'no_credits') headline = copy.setup.step_connect.no_credits;
@@ -57,10 +73,7 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
     <div role="status" aria-live="polite" className="space-y-2 rounded-md border border-border bg-surface px-3 py-2.5 text-sm">
       <p className="flex flex-wrap items-start gap-1.5 text-fg">
         <Icon aria-hidden="true" className={`mt-0.5 size-4 shrink-0 ${tone}`} />
-        <span className="tabular">{headline}</span>
-        {ready && cost && costLabel ? (
-          <EvidenceBadge label={costLabel} basis={probeCostBasis(costLabel)} subject="Key check cost" />
-        ) : null}
+        {ready ? <ProbeReady latencyMs={v.latency_ms} cost={cost} costLabel={costLabel} /> : <span className="tabular">{headline}</span>}
       </p>
       {!result.stored ? (
         <p className="pl-5.5 text-fg-muted">Nothing was saved: the key that is already in use keeps running your checks.</p>

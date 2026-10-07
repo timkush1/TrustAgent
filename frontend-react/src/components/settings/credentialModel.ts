@@ -167,6 +167,14 @@ const PROBE_COST_BASIS: Record<'vendor' | 'estimate' | 'simulated', string> = {
   simulated: 'From the mock model of simulated checks: nothing was charged.',
 };
 
+/** How a key check's time was taken, for its badge. */
+export const PROBE_TIME_BASIS = 'Timed by the gateway around this one test call, from sending it to the answer.';
+
+/** The time's label: measured on a real call, simulated when the mock model answered. */
+export function probeTimeLabel(costLabel: ValueLabel | null): ValueLabel {
+  return costLabel === 'simulated' ? 'simulated' : 'measured';
+}
+
 /** How a labelled probe cost was produced, for its badge. */
 export function probeCostBasis(label: ValueLabel): string {
   return label === 'vendor' || label === 'estimate' || label === 'simulated' ? PROBE_COST_BASIS[label] : '';

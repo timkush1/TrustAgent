@@ -551,3 +551,24 @@ export function secProbeReadyText(latencyMs: number | null | undefined, cost: st
   if (ms !== null) return `Ready: the test call took ${ms} ms`;
   return cost ? `Ready: the test call cost ${cost}` : 'Ready';
 }
+
+/**
+ * The same sentence in two parts, so each figure carries its own value label right after it:
+ * `first` ends at the time when `timed` ("Ready: the test call took 231 ms"), `second` holds the
+ * cost ("and cost $0.00001"), or is "" when the cost is already in `first` or not reported.
+ */
+export function secProbeReadySegments(latencyMs: number | null | undefined, cost: string | null): { first: string; timed: boolean; second: string } {
+  const ms = latencyMs === null || latencyMs === undefined ? null : formatCount(latencyMs);
+  const template = copy.setup.step_connect.probe_ready;
+  const time = '{latency_ms} ms';
+  const at = template.indexOf(time);
+  if (ms !== null && cost && at >= 0) {
+    const cut = at + time.length;
+    return {
+      first: fillTemplate(template.slice(0, cut), { latency_ms: ms }),
+      timed: true,
+      second: fillTemplate(template.slice(cut), { cost }).trim(),
+    };
+  }
+  return { first: secProbeReadyText(latencyMs, cost), timed: ms !== null && !cost, second: '' };
+}

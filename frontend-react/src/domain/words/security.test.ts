@@ -21,6 +21,7 @@ import {
   secFieldErrorText,
   secJoinWords,
   secJudgeSettingLabel,
+  secProbeReadySegments,
   secProbeReadyText,
   secProviderLabel,
   secScopeView,
@@ -131,6 +132,10 @@ describe('security words', () => {
     expect(secProbeReadyText(null, '$0.00001')).toBe('Ready: the test call cost $0.00001');
     expect(secProbeReadyText(231, null)).toBe('Ready: the test call took 231 ms');
     expect(secProbeReadyText(undefined, null)).toBe('Ready');
+    // Split for a badge after each figure.
+    expect(secProbeReadySegments(231, '$0.00001')).toEqual({ first: 'Ready: the test call took 231 ms', timed: true, second: 'and cost $0.00001' });
+    expect(secProbeReadySegments(231, null)).toEqual({ first: 'Ready: the test call took 231 ms', timed: true, second: '' });
+    expect(secProbeReadySegments(null, '$0.00001')).toEqual({ first: 'Ready: the test call cost $0.00001', timed: false, second: '' });
     expect(secJoinWords(['A', 'B', 'C'])).toBe('A, B and C');
   });
 

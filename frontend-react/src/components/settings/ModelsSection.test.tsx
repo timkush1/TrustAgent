@@ -123,7 +123,8 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     const control = createControlApi();
     renderPage(PATH, { control });
     await user.click(await screen.findByRole('button', { name: 'Test the fast check' }));
-    expect(await screen.findByText('Ready: the test call took 231 ms and cost $0.00001')).toBeInTheDocument();
+    const ready = (await screen.findByText('Ready: the test call took 231 ms')).closest('p')!;
+    expect(ready).toHaveTextContent(/^Ready: the test call took 231 msMeasuredand cost \$0\.00001Vendor$/);
     expect(screen.getByText('typesafe/jev-1.13-20260917')).toBeInTheDocument();
     control.state.decisionModelTest = errorReply(429, 'rate_limited', 'Wait a few seconds.', 8000);
     await user.click(screen.getByRole('button', { name: 'Test the fast check' }));
@@ -137,7 +138,7 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     renderPage(PATH, { control });
     expect(await screen.findByText('One real check with a tiny prompt: about $0.00001 (estimate).')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Test the fast check' }));
-    expect(await screen.findByRole('button', { name: /Vendor.*Test cost/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Vendor.*Test call cost/ })).toBeInTheDocument();
     control.state.decisionModelTest = errorReply(429, 'rate_limited', 'Wait a moment.', 600);
     await user.click(screen.getByRole('button', { name: 'Test the fast check' }));
     expect(await screen.findByText(/Checked a moment ago: try again in \d s/)).toBeInTheDocument();

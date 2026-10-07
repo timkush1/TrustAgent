@@ -6,7 +6,8 @@
  * it cannot be tested from here either (D80).
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { CircleSlash, FlaskConical, LogIn } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { CircleSlash, FlaskConical, Lock, LogIn } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { DisabledReason, type Reason } from '@/components/common/DisabledReason';
 import { KeyValueList } from '@/components/common/KeyValue';
@@ -62,6 +63,25 @@ function UsedFor({ credential }: { credential: CredentialView }) {
         <span className="text-fg-subtle">nothing yet</span>
       )}
     </div>
+  );
+}
+
+/**
+ * Why a key that could run the deep-audit judge does not: the engine's .env sets the judge
+ * (bindings.judge is env-managed, D33), so the card's "Used for" leaves it out. Says what to change,
+ * with the way to Settings → Models, where the judge in effect is shown.
+ */
+function JudgeEnvNote() {
+  return (
+    <p data-note="judge-env-managed" className="flex items-start gap-1.5 text-xs text-fg-muted">
+      <Lock aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+      <span>
+        Not used for the {copy.tiers.deep_audit} judge. {copy.setup.step_connect.judge_env_managed}{' '}
+        <Link to="/app/settings/$section" params={{ section: 'models' }} className="font-medium text-fg underline underline-offset-2">
+          See the judge in Settings → Models
+        </Link>
+      </span>
+    </p>
   );
 }
 
@@ -132,6 +152,9 @@ export function CredentialCard({ card, items, settings, writeReason, testReason 
           />
         ) : null}
         {credential ? <UsedFor credential={credential} /> : null}
+        {credential && card.targets.includes('judge') && !credential.used_by.includes('judge') && settings?.env_managed.includes('bindings.judge') ? (
+          <JudgeEnvNote />
+        ) : null}
         {state.kind === 'env' ? <EnvManagedNote keys={[card.env]} /> : null}
         {state.kind === 'engine_env' ? <EnvManagedNote keys={[card.env]} engine /> : null}
         {state.kind === 'undecryptable' ? <p className="text-sm text-fg">{copy.settings.credential_undecryptable}</p> : null}

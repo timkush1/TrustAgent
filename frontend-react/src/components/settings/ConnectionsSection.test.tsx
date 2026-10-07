@@ -59,6 +59,26 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     expect(screen.getByText(copy.setup.step_connect.privacy)).toBeInTheDocument();
   });
 
+  it('says why an OpenRouter key does not run the judge when .env sets the judge, with the way to Models', async () => {
+    const settings = settingsView({ env_managed: ['bindings.judge', 'judge.provider'] });
+    settings.runtime.bindings = { ...settings.runtime.bindings, judge: null };
+    const credentials = credentialList();
+    for (const c of credentials.items) if (c.name === 'openrouter') c.used_by = ['decision_model'];
+    renderPage(PATH, { control: createControlApi({ settings, credentials }) });
+    const openrouter = await card('OpenRouter');
+    expect(within(openrouter).getByText(copy.tiers.fast_check)).toBeInTheDocument();
+    const note = within(openrouter).getByText(new RegExp(`^Not used for the ${copy.tiers.deep_audit} judge\\.`));
+    expect(note).toHaveTextContent(copy.setup.step_connect.judge_env_managed);
+    expect(within(note).getByRole('link', { name: 'See the judge in Settings → Models' })).toHaveAttribute('href', '/app/settings/models');
+  });
+
+  it('adds no judge note to a key that runs the judge', async () => {
+    renderPage(PATH, { control: createControlApi({ settings: settingsView({ env_managed: ['bindings.judge'] }) }) });
+    const openrouter = await card('OpenRouter');
+    expect(within(openrouter).getByText(`${copy.tiers.deep_audit} judge`)).toBeInTheDocument();
+    expect(within(openrouter).queryByText(/^Not used for the/)).toBeNull();
+  });
+
   it('pastes a key, checks it and binds it to the checks ticked (D75)', async () => {
     const user = userEvent.setup();
     const { control } = renderPage(PATH);
@@ -70,7 +90,7 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     await user.click(judge);
     await user.type(within(dialog).getByLabelText('API key'), 'sk-test-openai-0000ok12');
     await user.click(within(dialog).getByRole('button', { name: 'Save and check' }));
-    expect(await within(dialog).findByText('Ready: the test call took 231 ms and cost $0.00001')).toBeInTheDocument();
+    expect((await within(dialog).findByText('Ready: the test call took 231 ms')).closest('p')).toHaveTextContent('and cost $0.00001');
     expect(within(dialog).getByText(`Now used for: ${copy.tiers.deep_audit} judge.`)).toBeInTheDocument();
     expect(control.callsTo('/api/credentials/openai', 'PUT')[0].body).toEqual({
       provider: 'openai',
@@ -143,7 +163,7 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     const { router } = renderPage('/connect/callback?code=abc123', { control: createControlApi({ connectComplete: result }) });
     await waitFor(() => expect(router.state.location.pathname).toBe(PATH));
     const openrouter = await card('OpenRouter');
-    expect(await within(openrouter).findByText('Ready: the test call took 412 ms and cost $0.00001')).toBeInTheDocument();
+    expect((await within(openrouter).findByText('Ready: the test call took 412 ms')).closest('p')).toHaveTextContent('and cost $0.00001');
     expect(within(openrouter).getByText(/Now used for: Fast check \(Jev\) and Deep audit judge/)).toBeInTheDocument();
   });
 

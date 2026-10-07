@@ -325,7 +325,11 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     await user.click(await screen.findByRole('button', { name: copy.setup.step_connect.paste_key }));
     await user.type(screen.getByLabelText('OpenRouter key'), 'sk-or-v1-e2e-ok-2222');
     await user.click(screen.getByRole('button', { name: 'Save and check' }));
-    expect(await screen.findByText('Ready: the test call took 231 ms and cost $0.00001')).toBeInTheDocument();
+    // Each figure of the test call carries its own label: the time is measured, the cost the vendor's.
+    const ready = (await screen.findByText('Ready: the test call took 231 ms')).closest('p')!;
+    expect(ready).toHaveTextContent(/^Ready: the test call took 231 msMeasuredand cost \$0\.00001Vendor$/);
+    expect(within(ready).getByRole('button', { name: 'Measured: how “Test call time” was produced' })).toBeInTheDocument();
+    expect(within(ready).getByRole('button', { name: 'Vendor: how “Test call cost” was produced' })).toBeInTheDocument();
     expect(screen.getByText(`Now used for: ${copy.tiers.fast_check} and ${copy.tiers.deep_audit} judge.`)).toBeInTheDocument();
     expect(control.callsTo('/api/credentials/openrouter', 'PUT')).toHaveLength(1);
     expect(control.callsTo('/api/credentials/openrouter', 'PUT')[0].body).toEqual({
