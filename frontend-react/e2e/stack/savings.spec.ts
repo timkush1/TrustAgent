@@ -69,6 +69,10 @@ test.describe('savings', () => {
   test('labels every component, keeps stopped apart from flagged, and shows sampling', async ({ page }) => {
     await waitForCheckedAnswers(page.request);
     const demo = await isDemo(page.request);
+    // The full audit from the published assumptions is an estimate even on the demo stack; every
+    // other figure there is simulated.
+    const roi = (await (await page.request.get('/api/roi/summary?window=24h')).json()) as { counterfactuals: { kind: string; method: string }[] };
+    const publishedFullAudit = roi.counterfactuals.some((c) => c.kind === 'llm_full_claim_audit' && c.method === 'static_assumptions');
     await page.goto('/app/overview?tab=savings');
 
     const components = page.getByRole('table', { name: 'What checking cost, and what the alternatives would have cost' });
@@ -78,7 +82,8 @@ test.describe('savings', () => {
     for (const row of await rows.all()) {
       const badge = row.getByRole('button', { name: /: how “.+” was produced$/ });
       await expect(badge).toHaveCount(1);
-      if (demo) await expect(badge).toHaveAccessibleName(/^Simulated:/);
+      const estimate = publishedFullAudit && (await row.getAttribute('data-row')) === 'llm_full_claim_audit';
+      if (demo) await expect(badge).toHaveAccessibleName(estimate ? /^Estimate:/ : /^Simulated:/);
     }
 
     const stopped = page.getByText('Stopped before users saw them', { exact: true });
@@ -92,6 +97,24 @@ test.describe('savings', () => {
     const sampling = page.getByRole('region', { name: 'Sampling status' });
     await expect(sampling).toBeVisible();
     await expect(sampling.locator('[data-sampling="uniform"]')).toHaveText(/^Uniform sampling/);
+  });
+
+  test('on the demo, states a real judge’s cost at the shipped defaults, apart from the demo’s own rate', async ({ page }) => {
+    await waitForCheckedAnswers(page.request);
+    test.skip(!(await isDemo(page.request)), 'only the demo stack has the free mock judge');
+    await page.goto('/app/overview?tab=savings');
+    const headline = page.getByRole('region', { name: /^Your cost:/ });
+    // The published figures lead: about $3 per 1,000 at the shipped defaults against $35.50 for a
+    // full audit of every answer, each an estimate; never the demo's audit rate scaled up.
+    const shipped = headline.getByText(/^At the shipped defaults/);
+    await expect(shipped).toContainText(/about 8 in 100 answers deep-audited.*about \$3 per 1,000 answers.*\$35\.50 to audit every answer claim by claim/, { timeout: TIMEOUT });
+    await expect(shipped.getByRole('button', { name: /^Estimate: / })).toHaveCount(2);
+    await expect(headline.getByText(/^The deep audit above reads \$0/)).toContainText(/This demo deep-audits (every answer|about \d+ in 100 answers) to show the audit flow/);
+    // One window, one cost: the chart's sentence states the headline's totals.
+    const early = await headline.getByText(/^So far: /).textContent();
+    const [, answers, spent] = /^So far: ([\d,]+) answers checked for (\$[\d.]+)\./.exec(early ?? '') ?? [];
+    const chart = page.getByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    await expect(chart).toContainText(`Checking ${answers} answers cost ${spent}`);
   });
 
   for (const theme of ['light', 'dark'] as const) {
