@@ -72,11 +72,12 @@ function UsedFor({ credential }: { credential: CredentialView }) {
  * with the way to Settings → Models, where the judge in effect is shown.
  */
 function JudgeEnvNote() {
+  const judge = `${copy.tiers.deep_audit} judge`;
   return (
     <p data-note="judge-env-managed" className="flex items-start gap-1.5 text-xs text-fg-muted">
       <Lock aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
       <span>
-        Not used for the {copy.tiers.deep_audit} judge. {copy.setup.step_connect.judge_env_managed}{' '}
+        Not used for the {judge}. {copy.setup.step_connect.judge_env_managed}{' '}
         <Link to="/app/settings/$section" params={{ section: 'models' }} className="font-medium text-fg underline underline-offset-2">
           See the judge in Settings → Models
         </Link>
