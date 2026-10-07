@@ -237,6 +237,15 @@
       "trusts_user_context": "This route treats text pasted by users as documents; a user could make a false answer look supported."
     },
     "evaluators": {
+      "builtin_descriptions": {
+        "commitments": "Flags answers that promise a refund, price, discount, credit or date your allowed commitments don't cover.",
+        "injection_success": "Flags answers that follow instructions hidden in documents or pasted text instead of your system prompt.",
+        "off_brand_tone": "Flags answers whose tone drifts from the brand voice you describe.",
+        "off_topic": "Flags answers that leave the user's subject or your product scope.",
+        "pii_secret_leak": "Flags answers that reveal personal data or secrets the user and your documents never gave.",
+        "regulated_advice": "Flags answers that give personal medical, legal or financial advice.",
+        "unsafe_policy": "Flags answers with harmful content, or that break a rule in your system prompt."
+      },
       "calibration_progress": "Labels {n}/{needed} ({correct} with the problem, {false_alarms} fine)",
       "label_queue": "Label queue",
       "calibrate_now": "Calibrate now",

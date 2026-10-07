@@ -7,7 +7,7 @@ import { calibrationStateView } from '@/domain/controlPresentation';
 import { formatCount } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
 import { MIN_FIT_LABELS } from '@/lib/decision/calibrate';
-import type { CalibrationProgress, EvaluatorSpec } from '@/types/api';
+import type { CalibrationProgress, EvaluatorMeta, EvaluatorSpec } from '@/types/api';
 
 /** "Labels 43/200 (31 with the problem, 12 fine)". */
 export function progressText(p: CalibrationProgress): string {
@@ -64,6 +64,18 @@ const QUESTION_TYPES: Record<EvaluatorSpec['question']['type'], string> = {
   choice: 'Pick one',
   score: 'Scale',
 };
+
+/**
+ * The one line under a check's name: its spec's own description, or for a built-in check whose
+ * template has none, the contract copy's (copy.evaluators.builtin_descriptions). Null without one.
+ * The copy lives outside the template because a template's text is part of its spec_sha256.
+ */
+export function evaluatorDescription(detail: Pick<EvaluatorMeta, 'id' | 'origin'> & { latest: { spec: Pick<EvaluatorSpec, 'description'> } }): string | null {
+  const own = detail.latest.spec.description;
+  if (typeof own === 'string' && own.trim() !== '') return own;
+  if (detail.origin !== 'builtin') return null;
+  return (copy.evaluators.builtin_descriptions as Record<string, string | undefined>)[detail.id] ?? null;
+}
 
 export function questionTypeLabel(type: EvaluatorSpec['question']['type']): string {
   return QUESTION_TYPES[type] ?? type;

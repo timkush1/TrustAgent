@@ -45,6 +45,9 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(names.slice(0, 4)).toEqual(['Contradiction', 'Groundedness', 'Unapproved commitments', 'Off-brand tone']);
     const tone = await card('Off-brand tone');
     expect(within(tone).getByText(/Watching/)).toBeInTheDocument();
+    // Every built-in check says what it flags: its template's own line, or the contract copy's.
+    expect(within(g).getByText('Flags answers that state facts the evidence does not contain.')).toBeInTheDocument();
+    expect(within(tone).getByText(copy.evaluators.builtin_descriptions.off_brand_tone)).toBeInTheDocument();
   });
 
   it('gives a card one next step: the first fit, when Calibrate now is not available yet', async () => {

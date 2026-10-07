@@ -48,7 +48,7 @@ import type { EvaluatorDetail, TimeWindow } from '@/types/api';
 import { CalibrateDialog } from './CalibrateDialog';
 import { CalibrationMeter } from './CalibrationMeter';
 import { CalibrationRecords } from './CalibrationRecords';
-import { calibrateReason, evidenceNeedLabel, labelsForFirstFit, questionTypeLabel } from './evaluatorWords';
+import { calibrateReason, evaluatorDescription, evidenceNeedLabel, labelsForFirstFit, questionTypeLabel } from './evaluatorWords';
 import { ReliabilityChart } from './ReliabilityChart';
 
 export type EvaluatorTab = 'overview' | 'calibration' | 'versions';
@@ -398,7 +398,7 @@ export function EvaluatorDetailPage({ id, tab = 'overview', onTabChange }: { id:
       </Link>
       <PageHeader
         title={detail?.name ?? id}
-        description={detail?.latest.spec.description}
+        description={detail ? (evaluatorDescription(detail) ?? undefined) : undefined}
         actions={
           detail ? (
             <>

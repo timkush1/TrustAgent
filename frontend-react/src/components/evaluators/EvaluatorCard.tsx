@@ -12,9 +12,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { evaluatorCategoryLabel, evaluatorOriginLabel, stageLabel } from '@/domain/controlPresentation';
 import type { EvaluatorDetail, EvaluatorMeta } from '@/types/api';
 import { CalibrationMeter } from './CalibrationMeter';
+import { evaluatorDescription } from './evaluatorWords';
 
 export function EvaluatorCard({ meta, detail }: { meta: EvaluatorMeta; detail: Pick<UseQueryResult<EvaluatorDetail>, 'data' | 'isPending' | 'isError' | 'error'> }) {
   const headingId = `evaluator-${meta.id}`;
+  // A built-in check's line shows at once; a saved check's comes with its detail.
+  const description = evaluatorDescription({ id: meta.id, origin: meta.origin, latest: { spec: { description: detail.data?.latest.spec.description } } });
   return (
     <Card className="flex flex-col">
       <article aria-labelledby={headingId} className="flex flex-1 flex-col gap-3 p-4">
@@ -37,7 +40,7 @@ export function EvaluatorCard({ meta, detail }: { meta: EvaluatorMeta; detail: P
           <p className="text-xs text-fg-muted">
             {evaluatorOriginLabel(meta.origin)} · version {meta.latest_version} · <span className="font-mono">{meta.id}</span>
           </p>
-          {detail.data?.latest.spec.description ? <p className="line-clamp-2 text-sm text-fg-muted">{detail.data.latest.spec.description}</p> : null}
+          {description ? <p className="line-clamp-2 text-sm text-fg-muted">{description}</p> : null}
         </header>
 
         <div className="space-y-1">
