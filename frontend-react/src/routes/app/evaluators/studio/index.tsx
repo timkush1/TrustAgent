@@ -22,7 +22,7 @@ function StudioRoute() {
           'Describe a check in plain English; an LLM drafts it once as a question the fast check can answer',
           'Test the draft on recorded traffic before it touches anyone',
           'Calibrate it with a few labels, then watch it in shadow mode',
-          'Attach it to a route: Jev then runs it on every request for a fraction of a cent',
+          'Attach it to a route: Jev then asks it on every request, in the same call as the route’s other checks',
         ]}
         meanwhile={<StudioStaticNote />}
       />

@@ -195,7 +195,7 @@ function StudioEditor({ initial }: { initial: Session }) {
   );
 }
 
-const DESCRIPTION = 'Describe a check in plain English, test it on real answers, then let it watch a route before it changes anything. Jev runs it on every request for a fraction of a cent.';
+const DESCRIPTION = 'Describe a check in plain English, test it on real answers, then let it watch a route before it changes anything. Jev then asks it on every request, in the same call as the route’s other checks.';
 
 /** Studio for a new check. */
 export function StudioPage() {
