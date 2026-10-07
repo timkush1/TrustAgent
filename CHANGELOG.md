@@ -296,17 +296,34 @@ phase (P0 → P7).
   mock judge is free. The mock fast check also answers the Studio drafter's own
   samples by their `should_fire`, so the demo's test bench shows the intended
   matches instead of hash answers. On that demo the headline also says what a
-  real judge would add (the published $35.50 per 1,000 full audits, per deep
-  audit and at the window's audit rate, labelled an estimate).
+  real judge costs: about $3 per 1,000 answers at the shipped defaults (about 8
+  in 100 answers deep-audited) against $35.50 to audit every answer claim by
+  claim, both published estimates, then what the demo's own (much higher)
+  deep-audit rate would add. The published full-audit figure is labelled
+  Estimate even on a simulated stack, the chart's sentence states the
+  summary's totals (the spend series polls with it), and the static demo prices
+  the same full-audit counterfactual, draws its spend per minute, words every
+  span "over the replayed traffic" and says sampling status is not part of the
+  recording. Today's spend in Budgets carries an Estimate label.
 - **Label queue words:** the queue holds answers the check flagged and answers
   it let through, so it asks "Should this check flag this answer?" with
-  **Yes, it has the problem** (C, `should_fire`) and **No, it is fine** (F,
-  `should_not_fire`). Calibration counts read "with the problem" and "fine";
-  "Was this right?" on a flagged trace keeps Correct and False alarm.
+  **Yes, it has the problem** (Y or C, `should_fire`) and **No, it is fine** (N
+  or F, `should_not_fire`). Calibration counts read "with the problem" and
+  "fine"; "Was this right?" on a flagged trace keeps Correct and False alarm.
+  Library cards keep the label queue and link to Calibrate on the check's
+  page, and every built-in check has a "Flags answers that …" line (contract
+  copy for the templates without a description).
 - **Key check words:** a passed key check says what its test call measured
-  ("Ready: the test call took 231 ms and cost $0.00001", with the cost's value
-  label), and the Savings footnote labels the price it uses Vendor, as the
-  Prices table does (a price override reads "Your price").
+  ("Ready: the test call took 231 ms and cost $0.00001", the time labelled
+  Measured and the cost with its own value label), and the Savings footnote
+  labels the price it uses Vendor, as the Prices table does (a price override
+  reads "Your price"). An OpenRouter key that does not run the judge because
+  .env pins it says so on its Connections card, with the way to Settings →
+  Models.
+- **Policies and Studio words:** block readiness lists the Block mode last and
+  stays neutral on a Flag or Observe route; Studio's Simple tab reads the
+  question back with readable names ("your model's answer"), and a dry run
+  shows identical answers once with "×N".
 - **`make phase-refs-check`** (in `make check` and ci-contracts) fails on a code
   or comment line that names the delivery phase it shipped in, except the
   lines in `scripts/phase-refs.allow`.
