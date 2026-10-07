@@ -9,11 +9,13 @@ import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { renderWithRouter } from '@/test/renderWithRouter';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { BenchmarkRun } from '@/types/api';
 import { committedRuns } from './benchmarkRuns';
 import { BenchmarksPage } from './BenchmarksPage';
 
 installMswServer();
+warmRoutes('/app/evaluators/benchmarks');
 afterEach(() => stopLive());
 
 const metrics = (p: number, r: number) => ({

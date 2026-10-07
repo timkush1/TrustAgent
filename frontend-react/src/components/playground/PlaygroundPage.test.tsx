@@ -10,11 +10,13 @@ import { API, installMswServer, server } from '@/test/msw';
 import { p3Detail } from '@/test/p3Fixtures';
 import { stopLive } from '@/test/renderLive';
 import { s0Decision, s0Trace } from '@/test/scenarios';
+import { warmRoutes } from '@/test/warmRoutes';
 import { playgroundCommand } from './playgroundCurl';
 import { buildRequest, EXAMPLES, formProblem, INITIAL_FORM, playgroundExamples } from './playgroundModel';
 import { usePlaygroundStore } from './playgroundStore';
 
 installMswServer();
+warmRoutes('/app/playground', '/app/overview');
 beforeEach(() => {
   usePlaygroundStore.getState().reset();
   usePlaygroundStore.getState().setRunUnavailable(false);

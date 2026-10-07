@@ -11,8 +11,10 @@ import { createControlApi } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 
 installMswServer();
+warmRoutes('/app/overview');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

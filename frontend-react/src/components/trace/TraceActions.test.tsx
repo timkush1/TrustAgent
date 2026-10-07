@@ -19,9 +19,11 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { DecisionRequestView, SystemStatus, TraceDetail } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/traffic/t-1');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 5000 });
 

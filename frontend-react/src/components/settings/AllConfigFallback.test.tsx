@@ -9,6 +9,7 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import { copy } from '@/domain/presentation';
 
 vi.mock('@contracts/config/keys.v1.json', () => {
@@ -16,6 +17,7 @@ vi.mock('@contracts/config/keys.v1.json', () => {
 });
 
 installMswServer();
+warmRoutes('/app/settings/all');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

@@ -6,6 +6,9 @@ import { policyState } from '@/test/control/fixtures';
 import { fakeDataSource } from '@/test/fakeDataSource';
 import { renderApp } from '@/test/renderApp';
 import { systemStatus } from '@/test/status';
+import { warmRoutes } from '@/test/warmRoutes';
+
+warmRoutes('/app/traffic', '/app/overview', '/app/traces/t-9', '/app/audits/a-1', '/app/setup', '/app/settings/connections', '/');
 
 beforeEach(() => {
   useStreamStore.getState().reset();

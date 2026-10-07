@@ -20,6 +20,7 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { API, installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import { STUDIO_SIMULATED_TEST } from './studioWords';
 import type {
   DryRunResult,
@@ -33,6 +34,7 @@ import type {
 } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/evaluators/studio', '/app/evaluators/studio/refusal/1');
 afterEach(() => {
   stopLive();
   vi.restoreAllMocks();

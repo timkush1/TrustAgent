@@ -7,10 +7,12 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import { heroDescription } from './heroChart';
 import { outcomeBuckets } from './overviewModel';
 
 installMswServer();
+warmRoutes('/app/overview', '/app/savings');
 afterEach(() => stopLive());
 // The first render of a page imports its charts; give it longer than the 1 s default.
 configure({ asyncUtilTimeout: 4000 });

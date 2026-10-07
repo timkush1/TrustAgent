@@ -8,10 +8,12 @@ import { renderPage } from '@/test/control/renderPage';
 import { settingsView } from '@/test/control/securityHandlers';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import { commandText } from '@/domain/presentation';
 import type { SettingKeyView, SettingsView } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/settings/all');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

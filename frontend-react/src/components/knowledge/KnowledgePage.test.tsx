@@ -7,8 +7,10 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 
 installMswServer();
+warmRoutes('/app/knowledge', '/app/overview');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

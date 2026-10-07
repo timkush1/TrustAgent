@@ -6,6 +6,9 @@ import { configure, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeDataSource } from '@/test/fakeDataSource';
 import { renderApp } from '@/test/renderApp';
+import { warmRoutes } from '@/test/warmRoutes';
+
+warmRoutes('/app/evaluators/studio', '/app/evaluators/studio/refusal/1');
 
 configure({ asyncUtilTimeout: 5000 });
 

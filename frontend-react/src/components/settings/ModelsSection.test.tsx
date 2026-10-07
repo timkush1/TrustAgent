@@ -10,9 +10,11 @@ import { adminStatus, renderPage } from '@/test/control/renderPage';
 import { settingsView } from '@/test/control/securityHandlers';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { SettingsView } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/settings/models');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

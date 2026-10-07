@@ -6,10 +6,12 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import { copy } from '@/domain/presentation';
 import type { ApiKeyList } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/settings/access');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

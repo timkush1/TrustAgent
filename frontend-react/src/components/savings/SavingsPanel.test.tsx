@@ -13,9 +13,11 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { Counterfactual, RoiTimeseries } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/savings', '/app/overview');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

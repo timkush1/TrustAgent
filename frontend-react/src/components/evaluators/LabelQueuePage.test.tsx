@@ -13,10 +13,12 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import labelQueueFixture from '@contracts/fixtures/api/LabelQueue.default.json';
 import type { EvaluatorDetail, LabelPut, LabelQueue } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/evaluators/labels');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

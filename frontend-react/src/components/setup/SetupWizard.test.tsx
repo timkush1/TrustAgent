@@ -19,11 +19,13 @@ import { adminSession, CLAIMED_ADMIN_KEY, settingsView, setupStatus } from '@/te
 import { API, installMswServer, server } from '@/test/msw';
 import { createTestQueryClient } from '@/test/renderApp';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { ConnectCompleteResponse, SettingsView } from '@/types/api';
 import { browserNavigation, callbackMissingText, CONNECT_PENDING_KEY, safeReturnPath, simulatedPatch } from './connectFlow';
 import { takeSetupToken, tokenFromPaste } from './setupToken';
 
 installMswServer();
+warmRoutes('/app/setup', '/connect/callback');
 afterEach(() => {
   stopLive();
   clearDashboardKey();

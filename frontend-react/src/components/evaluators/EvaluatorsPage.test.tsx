@@ -9,8 +9,10 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 
 installMswServer();
+warmRoutes('/app/evaluators', '/app/evaluators/groundedness');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

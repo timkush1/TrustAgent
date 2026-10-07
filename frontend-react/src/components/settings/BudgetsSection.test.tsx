@@ -12,9 +12,11 @@ import { settingsView } from '@/test/control/securityHandlers';
 import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { systemStatus } from '@/test/status';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { PriceEntry, PricingTable, SettingsView } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/settings/budgets');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 

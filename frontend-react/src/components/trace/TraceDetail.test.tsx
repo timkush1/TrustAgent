@@ -13,8 +13,10 @@ import { API, installMswServer, server } from '@/test/msw';
 import { p3Detail } from '@/test/p3Fixtures';
 import { renderLive, stopLive } from '@/test/renderLive';
 import { REFUND_DOC, auditIdOf, s0Audit, s0Decision, s0Detail, s0Trace, scenario, traceIdOf } from '@/test/scenarios';
+import { warmRoutes } from '@/test/warmRoutes';
 
 installMswServer();
+warmRoutes('/app/traffic/t-1');
 afterEach(stopLive);
 // The first render of a file loads the lazily split route modules; under a parallel run that can
 // take longer than the 1 s default.

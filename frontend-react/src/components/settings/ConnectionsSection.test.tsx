@@ -10,9 +10,11 @@ import { renderPage } from '@/test/control/renderPage';
 import { credentialList, settingsView } from '@/test/control/securityHandlers';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 import type { ConnectCompleteResponse } from '@/types/api';
 
 installMswServer();
+warmRoutes('/app/settings/connections', '/connect/callback');
 afterEach(() => {
   stopLive();
   sessionStorage.clear();
