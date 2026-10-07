@@ -157,6 +157,26 @@ describe('static build', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Time window' })).toBeNull();
   });
 
+  it('shows the recording’s Savings in its own words: per minute, both comparisons, no live sampling', async () => {
+    await renderStatic('/app/overview?tab=savings');
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    // The recording spans minutes, so the chart draws per minute, as Requests by outcome does.
+    const plot = await within(chart).findByRole('slider', { name: 'What checking cost per minute' });
+    expect(plot).toHaveAccessibleDescription(/^Checking \d+ answers cost \$[\d.]+ over the replayed traffic\./);
+    // The published full audit is there to compare with, labelled an estimate.
+    expect(within(chart).getByRole('radio', { name: 'Full audit' })).toBeInTheDocument();
+    const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ });
+    expect(within(row).getByRole('button', { name: /^Estimate:/ })).toBeInTheDocument();
+    // A real judge's cost leads with the shipped defaults; the demo's own rate comes after.
+    expect(screen.getByText(/^At the shipped defaults/)).toHaveTextContent(/about \$3 per 1,000 answers.*\$35\.50 to audit every answer/);
+    expect(screen.getByText(/^The deep audit above reads \$0/)).toHaveTextContent(/This demo deep-audits about \d+ in 100 answers to show the audit flow/);
+    // No window to pick and no gateway to ask: no window words, no made-up sampling count.
+    expect(screen.getByText('Over the replayed traffic, and per 1,000 checked answers.')).toBeInTheDocument();
+    expect(screen.queryByText(/last 24 hours|pick a longer window|audits today/)).toBeNull();
+    expect(screen.getByText(/^Sampling status is not part of the recording\./)).toBeInTheDocument();
+    expect(screen.getByText('Not in the recording')).toBeInTheDocument();
+  });
+
   it('opens the Studio placeholder, labelled coming soon', async () => {
     await renderStatic('/app/evaluators/studio');
     expect(await screen.findByText('Coming soon')).toBeInTheDocument();

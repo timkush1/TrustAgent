@@ -280,8 +280,9 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
     },
     async getRoiTimeseries(params) {
       const t = await ready;
-      // A recording spans minutes to hours: hourly buckets unless the caller asks for days.
-      return roiTimeseries(played(t), ctx(t, params.window), params.bucket ?? '1h');
+      // A recording is one fixed stretch of minutes to hours, so the series comes in the bucket
+      // that fits it (per minute for this demo's recording), whatever the window asks for.
+      return roiTimeseries(played(t), ctx(t, params.window));
     },
     async getPricing() {
       // A recording has no dashboard overrides: the built-in table is the effective one.

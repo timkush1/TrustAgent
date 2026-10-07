@@ -5,7 +5,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
 import { useRuntimeConfig } from '@/app/services';
-import { qk, qkc } from '@/data/queries';
+import { qk, qkc, qkcCosts } from '@/data/queries';
 import { useReplayStore, type ReplayInfo } from '@/data/replay/replayStore';
 import { useStreamStore } from '@/data/stream/streamStore';
 
@@ -38,7 +38,7 @@ export function useReplayRestart(): (() => void) | null {
   const run = useCallback(() => {
     if (!restart) return;
     useStreamStore.getState().reset();
-    for (const key of [qk.traces.all, qk.audits.all, qk.decisions.all, qkc.overview.all, qkc.evidence.all]) {
+    for (const key of [qk.traces.all, qk.audits.all, qk.decisions.all, qkc.overview.all, qkc.evidence.all, qkcCosts.roiTimeseriesAll]) {
       queryClient.removeQueries({ queryKey: key });
     }
     restart();
@@ -54,6 +54,8 @@ export function useRefreshWhenFinished(): void {
     if (!finished) return;
     void queryClient.invalidateQueries({ queryKey: qkc.overview.all });
     void queryClient.invalidateQueries({ queryKey: qkc.evidence.all });
+    // The spend chart under the Savings headline: its totals are the summary's, its points too.
+    void queryClient.invalidateQueries({ queryKey: qkcCosts.roiTimeseriesAll });
     void queryClient.invalidateQueries({ queryKey: qk.traces.lists() });
   }, [finished, queryClient]);
 }
