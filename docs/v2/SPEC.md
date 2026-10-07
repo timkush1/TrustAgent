@@ -2092,7 +2092,7 @@ Other routes:
 - **Evaluators:**
   - Library cards with category, attached routes (active or shadow) and a calibration progress meter ("Labels 43/200 (31 correct, 12 false alarms) · [Label queue] [Calibrate now]").
   - Detail page: versions, diff, reliability chart (labelled "agreement with labels, not ground truth"), and "Adopt calibration" (runs Preview impact first).
-  - Label queue: one response at a time, buttons plus keys C/F/S.
+  - Label queue: one response at a time, buttons plus keys Y/N/S, matching the Yes and No buttons (C and F also work).
   - Benchmarks: committed runs only, or an empty state with `make bench-lite`.
 - **Studio:** see §7.3.
 - **Policies:**

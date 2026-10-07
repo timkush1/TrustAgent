@@ -149,7 +149,11 @@ test.describe('labels', () => {
     await page.getByText('Show exact Jev request').first().click();
     const box = page.getByTestId('jev-request').first();
     await expect(box.getByText(/Jev calls? · \d+ questions?/)).toBeVisible({ timeout: TIMEOUT });
-    await expect(box.getByText(/^Rebuilt from the stored request: (identical|different)$/)).toBeVisible({ timeout: TIMEOUT });
+    // The demo's mock fast check is asked exactly what the proxy stored, so the rebuild matches
+    // there; a real stack may differ (a newer question set, for one).
+    const health = (await (await page.request.get('/health', { failOnStatusCode: false })).json().catch(() => null)) as { demo?: unknown } | null;
+    const expected = health?.demo === true ? /^Rebuilt from the stored request: identical$/ : /^Rebuilt from the stored request: (identical|different)$/;
+    await expect(box.getByText(expected)).toBeVisible({ timeout: TIMEOUT });
     expect(await seriousViolations(page)).toEqual([]);
   });
 });
