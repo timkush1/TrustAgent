@@ -3,8 +3,9 @@
  * first (the server orders it by distance to the flag line, D60), so it holds answers the check
  * flagged and answers it let through. For each the viewer answers "Should <check> flag this
  * answer?": Yes, it has the problem (C, `should_fire`), No, it is fine (F, `should_not_fire`) or
- * Skip (S), with an optional note. Each label counts toward calibrating that check, so its progress moves at once (optimistic,
- * rolled back if the save fails), and the last label can be undone.
+ * Skip (S), with an optional note. Each label counts toward calibrating that check, so its
+ * progress moves at once (optimistic, rolled back if the save fails), and the last label can be
+ * undone.
  *
  * Keys work anywhere on the page except while typing in a field. After every step the focus moves
  * to the next answer's heading, so keyboard and screen-reader users keep their place.
