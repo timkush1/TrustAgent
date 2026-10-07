@@ -52,6 +52,9 @@ export interface LabelQueueSearch {
 
 type Action = EvalFireLabel | 'skip';
 
+/** The label keys: Y and N match the buttons' words, and C, F and S (SPEC §3.3) work too. */
+const LABEL_KEYS: Readonly<Record<string, Action>> = { y: 'should_fire', c: 'should_fire', n: 'should_not_fire', f: 'should_not_fire', s: 'skip' };
+
 interface Done {
   index: number;
   item: LabelQueueItem;
@@ -293,8 +296,7 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
   // The listener stays put; the event reads this render's item, index and note.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (ignoreKey(event)) return;
-    const key = event.key.toLowerCase();
-    const action: Action | null = key === 'c' ? 'should_fire' : key === 'f' ? 'should_not_fire' : key === 's' ? 'skip' : null;
+    const action: Action | null = LABEL_KEYS[event.key.toLowerCase()] ?? null;
     if (!action) return;
     event.preventDefault();
     act(action);
@@ -340,17 +342,17 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
                 <div role="group" aria-label="Label this answer" className="flex flex-wrap items-center gap-2">
                   <DisabledAction reason={redactedReason}>
                     {(p) => (
-                      <Button variant="primary" onClick={() => act('should_fire')} aria-keyshortcuts="C" {...p}>
+                      <Button variant="primary" onClick={() => act('should_fire')} aria-keyshortcuts="Y C" {...p}>
                         {copy.labels.yes}
-                        <Kbd>C</Kbd>
+                        <Kbd>Y</Kbd>
                       </Button>
                     )}
                   </DisabledAction>
                   <DisabledAction reason={redactedReason}>
                     {(p) => (
-                      <Button onClick={() => act('should_not_fire')} aria-keyshortcuts="F" {...p}>
+                      <Button onClick={() => act('should_not_fire')} aria-keyshortcuts="N F" {...p}>
                         {copy.labels.no}
-                        <Kbd>F</Kbd>
+                        <Kbd>N</Kbd>
                       </Button>
                     )}
                   </DisabledAction>
@@ -360,7 +362,7 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
                   </Button>
                 </div>
                 <p className="text-xs text-fg-muted">
-                  Yes: the answer has the problem this check looks for, so it should be flagged. No: it is fine, so it should not be. {copy.labels.keys_hint}.
+                  {copy.labels.yes_no_hint} {copy.labels.keys_hint}.
                 </p>
               </div>
             </CardContent>

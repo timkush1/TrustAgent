@@ -96,6 +96,18 @@ describe('Label queue', { timeout: 20_000 }, () => {
     expect(await screen.findByText(/^No, it is fine\. Saved\./)).toBeInTheDocument();
   });
 
+  it('takes Y and N, the keys the buttons show, as well as C and F', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/evaluators/labels');
+    await firstItem();
+    expect(screen.getByRole('button', { name: /^Yes, it has the problem/ })).toHaveAttribute('aria-keyshortcuts', 'Y C');
+    expect(screen.getByRole('button', { name: /^No, it is fine/ })).toHaveAttribute('aria-keyshortcuts', 'N F');
+    expect(screen.getByText(/Y yes · N no · S skip \(C and F work too\)\.$/)).toBeInTheDocument();
+    await user.keyboard('y');
+    await waitFor(() => expect(control.callsTo('/api/labels', 'PUT')).toHaveLength(1));
+    expect(control.callsTo('/api/labels', 'PUT')[0].body).toMatchObject({ trace_id: FIRST, label: 'should_fire' });
+  });
+
   it('leaves letters typed on the focused check picker to the picker', async () => {
     const user = userEvent.setup();
     const { control } = renderPage('/app/evaluators/labels');
