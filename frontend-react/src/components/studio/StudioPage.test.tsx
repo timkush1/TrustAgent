@@ -185,6 +185,9 @@ describe('Studio', { timeout: 30_000 }, () => {
     await draftWithAi(user);
     const review = step(/Step 2: Review the check/);
     const instructions = within(review).getByRole('textbox', { name: 'What should it catch?' });
+    // The Simple tab reads the question back in plain words; the raw name stays in the text.
+    expect(review.querySelector('[data-reads-as]')).toHaveTextContent('Reads as: Does your model’s answer blame the customer for the problem they describe?');
+    expect(within(review).getByTitle('assistant_response')).toHaveTextContent('your model’s answer');
     await user.clear(instructions);
     await user.type(instructions, 'Does `policy_text` blame the customer?');
     expect(await within(review).findByText(/1 error to fix before saving/)).toBeInTheDocument();

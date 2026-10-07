@@ -79,6 +79,41 @@ export function studioExpectedWords(expected: 'fire' | 'no_fire' | undefined | n
 
 const WINDOWS: Record<string, string> = { '1h': 'hour', '24h': '24 h', '7d': '7 days', '30d': '30 days' };
 
+// ---------------------------------------------------------------------------- readable question
+
+/** What each part of the request a question can name is, in the Simple tab's words. */
+const STATE_WORDS: Record<string, string> = {
+  assistant_response: 'your model’s answer',
+  user_request: 'the user’s message',
+  evidence: 'your documents',
+  system_instructions: 'your system prompt',
+  rules: 'the check’s settings',
+};
+
+/** A question split into its words and the names it points at, each name with its readable label. */
+export type StudioQuestionPart = { kind: 'text'; text: string } | { kind: 'name'; raw: string; label: string };
+
+/**
+ * A question as the Simple tab shows it: every name in backticks becomes its readable label
+ * ("`assistant_response`" → "your model’s answer", "`rules.competitors`" → the setting's own label,
+ * such as "Competitor names"). The raw names stay in the text being edited and in Advanced and JSON.
+ */
+export function studioQuestionParts(text: string, params?: Readonly<Record<string, { label?: string | null } | undefined>> | null): StudioQuestionPart[] {
+  const parts: StudioQuestionPart[] = [];
+  const pattern = /`([^`\n]+)`/g;
+  let last = 0;
+  for (let m = pattern.exec(text); m !== null; m = pattern.exec(text)) {
+    if (m.index > last) parts.push({ kind: 'text', text: text.slice(last, m.index) });
+    const raw = m[1].trim();
+    const rule = /^rules\.(.+)$/.exec(raw);
+    const label = rule ? (params?.[rule[1]]?.label || humanizeId(rule[1])) : (STATE_WORDS[raw] ?? humanizeId(raw));
+    parts.push({ kind: 'name', raw, label });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ kind: 'text', text: text.slice(last) });
+  return parts;
+}
+
 /** Answers a dry run would have fired on, with the same text shown once: the first (highest risk) and how many. */
 export interface StudioExampleGroup<E> {
   example: E;

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import dryRunFixture from '@contracts/fixtures/api/DryRunResult.done.json';
 import type { DryRunResult } from '@/types/api';
-import { studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples } from './studioWords';
+import { studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples, studioQuestionParts } from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
 
@@ -52,5 +52,28 @@ describe('studioGroupExamples', () => {
       ['f', 1, null],
     ]);
     expect(studioGroupExamples([], [])).toEqual([]);
+  });
+});
+
+describe('studioQuestionParts', () => {
+  it('names each part of the request in words, and a setting by its own label', () => {
+    const parts = studioQuestionParts('Does `assistant_response` name one of `rules.competitors` or `rules.other_brand`, given `user_request`?', {
+      competitors: { label: 'Competitor names' },
+    });
+    expect(parts.map((p) => (p.kind === 'name' ? `[${p.label}]` : p.text)).join('')).toBe(
+      'Does [your model’s answer] name one of [Competitor names] or [Other brand], given [the user’s message]?',
+    );
+    expect(parts.filter((p) => p.kind === 'name').map((p) => (p.kind === 'name' ? p.raw : ''))).toEqual([
+      'assistant_response',
+      'rules.competitors',
+      'rules.other_brand',
+      'user_request',
+    ]);
+    expect(studioQuestionParts('No names here.')).toEqual([{ kind: 'text', text: 'No names here.' }]);
+    expect(studioQuestionParts('`evidence` and `system_instructions`', null).map((p) => (p.kind === 'name' ? p.label : p.text))).toEqual([
+      'your documents',
+      ' and ',
+      'your system prompt',
+    ]);
   });
 });

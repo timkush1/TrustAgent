@@ -29,7 +29,30 @@ import {
   type SimpleOption,
 } from '@/lib/studio/simpleForm';
 import type { EvaluatorSpec } from '@/types/api';
-import { studioCorroboratorName } from './studioWords';
+import { studioCorroboratorName, studioQuestionParts } from './studioWords';
+
+/**
+ * The question as the fast check reads it, every name in backticks shown by its readable label
+ * (its raw name on hover), so the Simple tab never makes the reader decode `rules.competitors`.
+ */
+function ReadsAs({ text, params }: { text: string; params: EvaluatorSpec['params'] }) {
+  const parts = studioQuestionParts(text, params);
+  if (!parts.some((p) => p.kind === 'name')) return null;
+  return (
+    <p data-reads-as="" className="text-sm text-fg-muted">
+      <span className="font-medium text-fg">Reads as: </span>
+      {parts.map((p, i) =>
+        p.kind === 'text' ? (
+          <span key={i}>{p.text}</span>
+        ) : (
+          <span key={i} title={p.raw} className="rounded-sm bg-surface-sunken px-1 py-px font-medium text-fg">
+            {p.label}
+          </span>
+        ),
+      )}
+    </p>
+  );
+}
 
 const ANSWER_TYPES = [
   { value: 'yes_no', label: 'Yes/No' },
@@ -159,6 +182,7 @@ export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { sp
       >
         <Textarea rows={3} value={form.instructions} disabled={disabled} onChange={(e) => set({ ...form, instructions: e.target.value })} />
       </Field>
+      <ReadsAs text={form.instructions} params={spec.params} />
       <div className="space-y-1.5">
         <p className="text-sm font-medium text-fg">Answer type</p>
         <SegmentedControl<AnswerType>
