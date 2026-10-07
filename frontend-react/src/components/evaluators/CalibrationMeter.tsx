@@ -5,6 +5,7 @@
  * now (the fit dialog). Each says why when it is not available.
  */
 import { Link } from '@tanstack/react-router';
+import { ArrowRight } from 'lucide-react';
 import { useId } from 'react';
 import { DisabledAction, DisabledReason } from '@/components/common/DisabledReason';
 import { Term } from '@/components/common/Term';
@@ -38,6 +39,45 @@ function Bar({ label, value, have, need }: { label: string; value: number; have:
       >
         <div className="h-full rounded-full bg-fg-muted" style={{ width: `${value * 100}%` }} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * A library card's one action: the label queue for this check. Calibrate now lives on the check's
+ * Calibration tab, where its records and Adopt are; the card links there once a fit is possible.
+ */
+function CardActions({ progress, detail }: { progress: CalibrationProgress; detail: EvaluatorDetail }) {
+  const writeReason = useWriteReason('admin');
+  const reasonId = useId();
+  if (writeReason) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled aria-describedby={reasonId}>
+          {copy.evaluators.label_queue}
+        </Button>
+        <DisabledReason id={reasonId} reason={writeReason} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <Link to="/app/evaluators/labels" search={{ evaluator: progress.evaluator_ref }} className={buttonVariants({ size: 'sm' })}>
+        {copy.evaluators.label_queue}{' '}
+        <span className="sr-only">for {detail.name}</span>
+      </Link>
+      {calibrateReason(progress) === null ? (
+        <Link
+          to="/app/evaluators/$id"
+          params={{ id: detail.id }}
+          search={{ tab: 'calibration' }}
+          className="inline-flex items-center gap-0.5 text-sm font-medium text-fg underline underline-offset-2"
+        >
+          Calibrate{' '}
+          <span className="sr-only">{detail.name}</span>
+          <ArrowRight aria-hidden="true" className="size-3.5" />
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -105,9 +145,10 @@ export function CalibrationMeter({
 }) {
   const parts = progressParts(progress);
   const actions = showActions && detail !== undefined;
-  // A library card keeps one meter and one next step: when Calibrate now is not available yet, the
-  // reason under it is that step, so the blocking shortfall is left to the check's own page.
-  const nextStep = compact && actions && calibrateReason(progress) !== null ? null : (parts.missing ?? 'Enough labels to calibrate for blocking.');
+  // A library card keeps one meter and one next step: before a first fit is possible, what that fit
+  // needs (the blocking shortfall is left to the check's own page); after, what blocking needs.
+  const firstFit = compact ? calibrateReason(progress) : null;
+  const nextStep = firstFit?.text ?? parts.missing ?? 'Enough labels to calibrate for blocking.';
   return (
     <div className={cn('@container space-y-2', className)}>
       <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
@@ -127,7 +168,7 @@ export function CalibrationMeter({
         </div>
       )}
       {nextStep ? <p className="text-xs text-fg-muted">{nextStep}</p> : null}
-      {actions ? <Actions progress={progress} detail={detail} /> : null}
+      {actions ? compact ? <CardActions progress={progress} detail={detail} /> : <Actions progress={progress} detail={detail} /> : null}
     </div>
   );
 }

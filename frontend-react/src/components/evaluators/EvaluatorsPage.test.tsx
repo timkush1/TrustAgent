@@ -29,12 +29,14 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(await within(g).findByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
     expect(within(g).getAllByRole('meter')).toHaveLength(1);
     expect(within(g).getByText('Blocking needs 157 more of your own labels, including at least 18 that are fine.')).toBeInTheDocument();
-    // Label queue (this check's answers) and Calibrate now are live for an admin.
+    // Label queue (this check's answers) for an admin; Calibrate now stays on the check's own
+    // Calibration tab, which the card links to once a fit is possible.
     expect(within(g).getByRole('link', { name: 'Label queue for Groundedness' })).toHaveAttribute(
       'href',
       expect.stringMatching(/^\/app\/evaluators\/labels\?evaluator=groundedness(%40|@)1$/),
     );
-    expect(within(g).getByRole('button', { name: 'Calibrate now for Groundedness' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(within(g).queryByRole('button', { name: /Calibrate now/ })).toBeNull();
+    expect(within(g).getByRole('link', { name: 'Calibrate Groundedness' })).toHaveAttribute('href', '/app/evaluators/groundedness?tab=calibration');
     expect(screen.getByRole('link', { name: 'New check' })).toHaveAttribute('href', '/app/evaluators/studio');
     expect(screen.getByRole('navigation', { name: 'Evaluators sections' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page');
@@ -54,6 +56,9 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     const g = await card('Groundedness');
     expect(await within(g).findByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toBeInTheDocument();
     expect(within(g).queryByText(/^Blocking needs/)).toBeNull();
+    // No fit to open yet: the card offers the label queue only.
+    expect(within(g).queryByRole('link', { name: /^Calibrate/ })).toBeNull();
+    expect(within(g).queryByRole('button', { name: /Calibrate now/ })).toBeNull();
   });
 
   it('filters by name, category and use, and clears the filters', async () => {
