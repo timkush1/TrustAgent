@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import dryRunFixture from '@contracts/fixtures/api/DryRunResult.done.json';
 import type { DryRunResult } from '@/types/api';
-import { studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText } from './studioWords';
+import { studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples } from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
 
@@ -37,5 +37,20 @@ describe('studioDryRunConfirmText', () => {
     expect(studioDryRunConfirmText({ ...details, decision_budget_left_usd: null })).toBe(
       'This test costs about $0.0021 (200 of 1,840 past answers). No daily fast-check budget is set.',
     );
+  });
+});
+
+describe('studioGroupExamples', () => {
+  it('shows the same answer once with its count, in the order the examples came', () => {
+    const ex = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ trace_id: id }));
+    const groups = studioGroupExamples(ex, ['Refund in 30 days', 'Refund in 30 days', null, 'Call us', 'Refund in 30 days', '']);
+    expect(groups.map((g) => [g.example.trace_id, g.count, g.text])).toEqual([
+      ['a', 3, 'Refund in 30 days'],
+      // Without its text an example stays a row of its own.
+      ['c', 1, null],
+      ['d', 1, 'Call us'],
+      ['f', 1, null],
+    ]);
+    expect(studioGroupExamples([], [])).toEqual([]);
   });
 });

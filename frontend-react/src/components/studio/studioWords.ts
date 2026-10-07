@@ -79,6 +79,36 @@ export function studioExpectedWords(expected: 'fire' | 'no_fire' | undefined | n
 
 const WINDOWS: Record<string, string> = { '1h': 'hour', '24h': '24 h', '7d': '7 days', '30d': '30 days' };
 
+/** Answers a dry run would have fired on, with the same text shown once: the first (highest risk) and how many. */
+export interface StudioExampleGroup<E> {
+  example: E;
+  /** How many of the examples have this text (1 for one whose text is unknown). */
+  count: number;
+  text: string | null;
+}
+
+/**
+ * Groups a dry run's examples by their answer text, in the order they came (the server sends the
+ * highest risk first), so six identical answers read as one row "×6". An example whose text is not
+ * known (not loaded yet, hidden or expired) stays a row of its own.
+ */
+export function studioGroupExamples<E>(examples: readonly E[], texts: readonly (string | null)[]): StudioExampleGroup<E>[] {
+  const groups: StudioExampleGroup<E>[] = [];
+  const byText = new Map<string, StudioExampleGroup<E>>();
+  examples.forEach((example, i) => {
+    const text = texts[i] || null;
+    const same = text === null ? undefined : byText.get(text);
+    if (same) {
+      same.count += 1;
+      return;
+    }
+    const group = { example, count: 1, text };
+    groups.push(group);
+    if (text !== null) byText.set(text, group);
+  });
+  return groups;
+}
+
 /** Whether a dry run tested only part of its window, so its count for the window is extrapolated. */
 export function studioDryRunExtrapolated(r: Pick<DryRunResult, 'sampled' | 'population'>): boolean {
   return r.sampled < r.population;

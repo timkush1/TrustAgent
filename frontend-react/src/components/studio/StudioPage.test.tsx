@@ -18,6 +18,8 @@ import { axeViolations, formatViolations } from '@/test/axe';
 import { evaluatorDetail, evaluatorMeta, evaluatorMetas, evaluatorVersion } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { adminStatus, renderPage } from '@/test/control/renderPage';
+import { createFakeApi } from '@/test/apiHandlers';
+import { trace } from '@/test/fixtures';
 import { API, installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
 import { warmRoutes } from '@/test/warmRoutes';
@@ -31,6 +33,7 @@ import type {
   EvaluatorVersionCreateRequest,
   StudioDraftResponse,
   StudioTestResponse,
+  TraceDetail,
 } from '@/types/api';
 
 installMswServer();
@@ -400,7 +403,7 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(watch).getByText('Fired on 11 of 197')).toBeInTheDocument();
     expect(within(watch).getByText(/over the 197 sampled answers it could judge; errors are left out\./)).toBeInTheDocument();
     expect(control.callsTo('/api/studio/dry-run')[1].body).toMatchObject({ confirm_cost: true });
-    expect(within(watch).getByText(/off_brand_tone@1 \(6\)|Off-brand tone \(6\)/)).toBeInTheDocument();
+    expect(within(watch).getByText('Off-brand tone on 6 answers')).toBeInTheDocument();
     expect(within(watch).getByText('None of these answers had a deep audit to compare with')).toBeInTheDocument();
     // Each example links to its trace and gives its risk once (without the answer's text the row
     // falls back to the trace's short id, never the whole UUID).
@@ -540,6 +543,42 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(await within(test).findByText(STUDIO_SIMULATED_TEST)).toBeInTheDocument();
   });
 
+  it('shows identical answers a dry run fired on once, with their count', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ studioDryRunConfirm: null });
+    const ids = ['01a0e790-0000-7000-8000-000000000001', '01a0e790-0000-7000-8000-000000000002', '01a0e790-0000-7000-8000-000000000003'];
+    control.state.studioDryRun = {
+      ...(control.state.studioDryRun as DryRunResult),
+      examples: [
+        { trace_id: ids[0], risk: 0.93, level: 'critical' },
+        { trace_id: ids[1], risk: 0.9, level: 'critical' },
+        { trace_id: ids[2], risk: 0.71, level: 'warn' },
+      ],
+    };
+    const answer = (id: string, text: string) =>
+      ({
+        ...trace({ trace_id: id }),
+        body: { available: true, unavailable_reason: null, messages: [], user_request: null, system_instructions: null, response_text: text, final_response_text: text, evidence: [], rules: {}, truncated: false },
+        decisions: [],
+        audit_detail: null,
+        labels: [],
+      }) as TraceDetail;
+    const details = {
+      [ids[0]]: answer(ids[0], 'Our competitor Acme is cheaper, switch to them.'),
+      [ids[1]]: answer(ids[1], 'Our competitor Acme is cheaper, switch to them.'),
+      [ids[2]]: answer(ids[2], 'Acme has a similar plan.'),
+    };
+    renderPage('/app/evaluators/studio', { control, api: createFakeApi({ status: adminStatus(), details }, { controlPlane: false }) });
+    await draftWithAi(user);
+    const watch = step(/Step 6/);
+    await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
+    const rows = await within(watch).findAllByRole('link', { name: /“Our competitor Acme|“Acme has/ });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveAttribute('href', `/app/traffic/${ids[0]}`);
+    expect(rows[0]).toHaveTextContent(/×2 answers like this/);
+    expect(rows[1]).not.toHaveTextContent('×');
+  });
+
   it('names an archived check in a dry run’s overlap, never by its ref', async () => {
     const user = userEvent.setup();
     const control = createControlApi();
@@ -552,7 +591,7 @@ describe('Studio', { timeout: 30_000 }, () => {
     await user.click(within(watch).getByRole('button', { name: 'Test on past traffic (paid)' }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Run this paid test?' });
     await user.click(within(confirm).getByRole('button', { name: 'Run the test' }));
-    expect(await within(watch).findByText('Off-brand tone (archived) (6)')).toBeInTheDocument();
+    expect(await within(watch).findByText('Off-brand tone (archived) on 6 answers')).toBeInTheDocument();
     expect(within(watch).queryByText(/off_brand_tone@1/)).toBeNull();
   });
 

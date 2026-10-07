@@ -10,7 +10,7 @@
  */
 import { Link } from '@tanstack/react-router';
 import { CircleAlert, CircleStop, History } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -27,7 +27,7 @@ import { errorCodeHint, isApiError } from '@/data/errors';
 import { traceQuery } from '@/data/queries';
 import { formatCount, formatDateTime, formatRelativeTime, formatRisk, formatUsd } from '@/domain/format';
 import { copy, levelWord } from '@/domain/presentation';
-import type { DryRunResult, EvaluatorSpec, StudioDryRunEvent, StudioDryRunRequest } from '@/types/api';
+import type { DryRunResult, EvaluatorSpec, StudioDryRunEvent, StudioDryRunRequest, TraceDetail } from '@/types/api';
 import {
   STUDIO_DRY_RUN_SIMULATED_TITLE,
   STUDIO_SIMULATED_DRY_RUN,
@@ -35,6 +35,7 @@ import {
   studioDryRunConfirmText,
   studioDryRunExtrapolated,
   studioDryRunResultText,
+  studioGroupExamples,
   studioWindowWords,
 } from './studioWords';
 import { CostFigure } from './CostFigure';
@@ -91,17 +92,19 @@ export interface DryRunPanelProps {
 /** How much of an answer an example row shows. */
 const SNIPPET_CHARS = 110;
 
+/** An answer's text on one line, or "" without it. */
+function answerLine(trace: TraceDetail | undefined): string {
+  return trace ? (trace.body.final_response_text ?? trace.body.response_text ?? '').replace(/\s+/g, ' ').trim() : '';
+}
+
 /**
  * One answer the check would have fired on: its risk (once, toned by level), a line of the
- * answer and when it was given, the whole row linking to the trace. The answer is read from the
- * trace; until it loads (or without the content scope) the row shows the trace's short id.
+ * answer, how many answers read the same ("×6") and when it was given, the whole row linking to
+ * the trace. Until the trace loads (or without the content scope) the row shows its short id.
  */
-function ExampleRow({ example }: { example: DryRunResult['examples'][number] }) {
-  const ds = useDataSource();
+function ExampleRow({ example, text, count, createdAt }: { example: DryRunResult['examples'][number]; text: string; count: number; createdAt: string | null }) {
   const now = useNow();
-  const trace = useQuery({ ...traceQuery(ds, example.trace_id), retry: false, staleTime: 60_000 });
   const level = levelWord(example.level);
-  const text = trace.data ? (trace.data.body.final_response_text ?? trace.data.body.response_text ?? '').replace(/\s+/g, ' ').trim() : '';
   const snippet = text.length > SNIPPET_CHARS ? `${text.slice(0, SNIPPET_CHARS - 1)}…` : text;
   return (
     <li>
@@ -114,13 +117,40 @@ function ExampleRow({ example }: { example: DryRunResult['examples'][number] }) 
           {level.label} · {formatRisk(example.risk)}
         </Badge>
         <span className="min-w-0 flex-1 truncate text-fg">{snippet ? `“${snippet}”` : <span className="font-mono text-xs">{example.trace_id.slice(0, 8)}</span>}</span>
-        {trace.data ? (
-          <time dateTime={trace.data.created_at} title={formatDateTime(trace.data.created_at)} className="shrink-0 text-xs text-fg-muted">
-            {formatRelativeTime(trace.data.created_at, now)}
+        {count > 1 ? (
+          <span className="shrink-0 text-xs font-medium text-fg-muted tabular" title={`${formatCount(count)} answers read the same; this one has the highest risk`}>
+            ×{formatCount(count)}
+            <span className="sr-only"> answers like this</span>
+          </span>
+        ) : null}
+        {createdAt ? (
+          <time dateTime={createdAt} title={formatDateTime(createdAt)} className="shrink-0 text-xs text-fg-muted">
+            {formatRelativeTime(createdAt, now)}
           </time>
         ) : null}
       </Link>
     </li>
+  );
+}
+
+/** The answers a dry run would have fired on, the same text shown once with its count. */
+function ExampleList({ examples }: { examples: DryRunResult['examples'] }) {
+  const ds = useDataSource();
+  const traces = useQueries({ queries: examples.map((ex) => ({ ...traceQuery(ds, ex.trace_id), retry: false, staleTime: 60_000 })) });
+  const texts = traces.map((t) => answerLine(t.data) || null);
+  const groups = studioGroupExamples(examples, texts);
+  return (
+    <ul className="space-y-1">
+      {groups.map((g) => (
+        <ExampleRow
+          key={g.example.trace_id}
+          example={g.example}
+          text={g.text ?? ''}
+          count={g.count}
+          createdAt={traces[examples.indexOf(g.example)]?.data?.created_at ?? null}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -182,7 +212,7 @@ function DryRunResultView({ result, simulated, names }: { result: DryRunResult; 
         <dd className="text-fg">
           {result.overlap.length === 0
             ? 'No other check fired on the same answers'
-            : result.overlap.map((o) => `${nameOf(o.evaluator_ref)} (${formatCount(o.both_fired)})`).join(', ')}
+            : result.overlap.map((o) => `${nameOf(o.evaluator_ref)} on ${formatCount(o.both_fired)} ${o.both_fired === 1 ? 'answer' : 'answers'}`).join(', ')}
         </dd>
         <dt className="text-fg-muted">Deep audits</dt>
         <dd className="text-fg">
@@ -196,11 +226,7 @@ function DryRunResultView({ result, simulated, names }: { result: DryRunResult; 
       {result.examples.length > 0 ? (
         <div className="space-y-1">
           <h4 className="text-xs font-medium text-fg-muted">Answers it would have fired on</h4>
-          <ul className="space-y-1">
-            {result.examples.map((ex) => (
-              <ExampleRow key={ex.trace_id} example={ex} />
-            ))}
-          </ul>
+          <ExampleList examples={result.examples} />
         </div>
       ) : null}
       <p className="text-xs text-fg-muted">
