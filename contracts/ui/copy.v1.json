@@ -95,7 +95,7 @@
         "paste_key": "Paste a key instead",
         "simulated": "Try it without a key (simulated checks, $0)",
         "privacy": "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out.",
-        "probe_ready": "Ready · {latency_ms} ms · {cost}",
+        "probe_ready": "Ready: the test call took {latency_ms} ms and cost {cost}",
         "no_credits": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits",
         "prerequisite": "You need an OpenRouter account with about $5 of credit (≈1,600 answers at default settings, estimate).",
         "prerequisite_link": "Add credits at openrouter.ai/settings/credits",

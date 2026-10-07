@@ -17,7 +17,7 @@ const noLimit = () => screen.queryByText(copy.setup.step_connect.no_limit, { exa
 describe('CredentialResult: the no-limit callout (D87)', () => {
   it('shows it for an OpenRouter key with limit_usd null and the no_limit hint', () => {
     render(<CredentialResult result={result((r) => Object.assign(r.verification!, { limit_usd: null, limit_remaining_usd: null, hint: 'no_limit' }))} />);
-    expect(screen.getByText(/^Ready · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Ready: the test call took /)).toBeInTheDocument();
     expect(noLimit()).toBeInTheDocument();
   });
 
@@ -36,13 +36,13 @@ describe('CredentialResult: the no-limit callout (D87)', () => {
         })}
       />,
     );
-    expect(screen.getByText(/^Ready · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Ready: the test call took /)).toBeInTheDocument();
     expect(noLimit()).toBeNull();
   });
 
   it('leaves it out for an OpenRouter key with a limit', () => {
     render(<CredentialResult result={result((r) => (r.verification!.limit_usd = 2))} />);
-    expect(screen.getByText(/^Ready · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Ready: the test call took /)).toBeInTheDocument();
     expect(noLimit()).toBeNull();
   });
 
@@ -57,7 +57,7 @@ describe('CredentialResult: the no-limit callout (D87)', () => {
         })}
       />,
     );
-    expect(screen.getByText(/^Ready · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Ready: the test call took /)).toBeInTheDocument();
     expect(noLimit()).toBeNull();
   });
 

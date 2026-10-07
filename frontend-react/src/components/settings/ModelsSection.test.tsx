@@ -121,7 +121,7 @@ describe('Settings → Models', { timeout: 30_000 }, () => {
     const control = createControlApi();
     renderPage(PATH, { control });
     await user.click(await screen.findByRole('button', { name: 'Test the fast check' }));
-    expect(await screen.findByText('Ready · 231 ms · $0.00001')).toBeInTheDocument();
+    expect(await screen.findByText('Ready: the test call took 231 ms and cost $0.00001')).toBeInTheDocument();
     expect(screen.getByText('typesafe/jev-1.13-20260917')).toBeInTheDocument();
     control.state.decisionModelTest = errorReply(429, 'rate_limited', 'Wait a few seconds.', 8000);
     await user.click(screen.getByRole('button', { name: 'Test the fast check' }));

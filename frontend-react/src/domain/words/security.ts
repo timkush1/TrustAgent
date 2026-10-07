@@ -540,9 +540,14 @@ export function secWarningText(code: string | undefined, details: WarningDetails
   }
 }
 
-/** The "Ready · 231 ms · $0.00001" line of a passed key check (copy.setup.step_connect.probe_ready). */
+/**
+ * The line of a passed key check, saying what the test call measured: "Ready: the test call took
+ * 231 ms and cost $0.00001" (copy.setup.step_connect.probe_ready). The cost's value label follows
+ * it as a badge; a part the proxy did not report is left out of the sentence.
+ */
 export function secProbeReadyText(latencyMs: number | null | undefined, cost: string | null): string {
-  if (latencyMs === null || latencyMs === undefined) return cost ? `Ready · ${cost}` : 'Ready';
-  const line = fillTemplate(copy.setup.step_connect.probe_ready, { latency_ms: formatCount(latencyMs), cost: cost ?? '' });
-  return line.replace(/\s*·\s*$/, '');
+  const ms = latencyMs === null || latencyMs === undefined ? null : formatCount(latencyMs);
+  if (ms !== null && cost) return fillTemplate(copy.setup.step_connect.probe_ready, { latency_ms: ms, cost });
+  if (ms !== null) return `Ready: the test call took ${ms} ms`;
+  return cost ? `Ready: the test call cost ${cost}` : 'Ready';
 }

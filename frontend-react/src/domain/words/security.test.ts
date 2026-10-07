@@ -126,9 +126,11 @@ describe('security words', () => {
     expect(secWarningText('master_key_changed', { names: ['anthropic', 'compatible'] })).toContain('Anthropic and Other gateway');
     expect(secWarningText('fail_closed_unprotected', { routes: ['payments-faq'] })).toContain('payments-faq');
     expect(secWarningText('something_else', undefined)).toBeNull();
-    expect(secProbeReadyText(231, '$0.00001')).toBe('Ready · 231 ms · $0.00001');
-    expect(secProbeReadyText(null, '$0.00001')).toBe('Ready · $0.00001');
-    expect(secProbeReadyText(231, null)).toBe('Ready · 231 ms');
+    expect(secProbeReadyText(231, '$0.00001')).toBe('Ready: the test call took 231 ms and cost $0.00001');
+    expect(secProbeReadyText(1234, '$0.00001')).toBe('Ready: the test call took 1,234 ms and cost $0.00001');
+    expect(secProbeReadyText(null, '$0.00001')).toBe('Ready: the test call cost $0.00001');
+    expect(secProbeReadyText(231, null)).toBe('Ready: the test call took 231 ms');
+    expect(secProbeReadyText(undefined, null)).toBe('Ready');
     expect(secJoinWords(['A', 'B', 'C'])).toBe('A, B and C');
   });
 

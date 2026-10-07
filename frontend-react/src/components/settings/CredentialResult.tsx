@@ -1,8 +1,9 @@
 /**
- * The outcome of a key write or check (CredentialWriteResult, D75, D76, D87), in words:
- * "Ready · 231 ms · $0.00001", what the key is now used for, why a check was skipped, and what to do
- * when it failed. No credits gets "I added credits — check again"; a key with no spending limit gets
- * the callout to set one. Shared by Settings → Connections and the setup wizard.
+ * The outcome of a key write or check (CredentialWriteResult, D75, D76, D87), in words: "Ready:
+ * the test call took 231 ms and cost $0.00001", what the key is now used for, why a check was
+ * skipped, and what to do when it failed. No credits gets "I added credits — check again"; a key
+ * with no spending limit gets the callout to set one. Shared by Settings → Connections and the
+ * setup wizard.
  */
 import { CircleAlert, CircleCheck, Info, RotateCw } from 'lucide-react';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';

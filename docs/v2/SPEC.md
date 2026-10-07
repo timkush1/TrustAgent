@@ -2061,7 +2061,7 @@ Other routes:
      - Primary button, with "Paste a key instead" and "Explore with simulated checks (mock, labelled)" links.
      - Privacy line: "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out."
      - Bindings default to decision model plus judge.
-     - The probe shows "Ready · 231 ms · $0.00001". On 402: "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"; nothing is bound.
+     - The probe shows "Ready: the test call took 231 ms and cost $0.00001". On 402: "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"; nothing is bound.
   3. *See it work.* A prefilled Playground in audit mode with `mode_override: flag` and the refund example (60 days vs 30 days). Shows the outcome card and the highlighted claim; no upstream key needed.
 
   Afterwards, Overview shows **Connect your app**:

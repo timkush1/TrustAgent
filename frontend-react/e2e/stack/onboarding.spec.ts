@@ -144,7 +144,7 @@ async function shownOnceSecret(title: string): Promise<string> {
 }
 
 /** The outcome a key write or a Connect left on the page (CredentialResult). */
-const outcome = () => page.getByRole('status').filter({ hasText: /Ready · |no credits|Saved/ }).last();
+const outcome = () => page.getByRole('status').filter({ hasText: /Ready: |no credits|Saved/ }).last();
 
 test.describe('onboarding', () => {
   test.describe.configure({ mode: 'serial', retries: 0, timeout: 120_000 });
@@ -274,7 +274,7 @@ test.describe('onboarding', () => {
     happyPath.push('approve at OpenRouter');
     await expect(page).toHaveURL(/\/app\/setup\?step=connect$/, { timeout: TIMEOUT });
     const result = outcome();
-    await expect(result).toContainText(/Ready · [\d,]+ ms/, { timeout: TIMEOUT });
+    await expect(result).toContainText(/Ready: the test call took [\d,]+ ms/, { timeout: TIMEOUT });
     expect(happyPath.length, `happy-path actions: ${happyPath.join(' → ')}`).toBeLessThanOrEqual(CLICK_BUDGET);
     await expect(result).toContainText(`Now used for: ${FAST_CHECK}.`);
     await expect(result).toContainText(CONNECT.simulated_off);
@@ -316,7 +316,7 @@ test.describe('onboarding', () => {
     await expect(dialog.getByText('Set by the environment, so it stays as it is.')).toBeVisible();
     await dialog.getByRole('button', { name: 'Save and check' }).click();
 
-    await expect(dialog.getByRole('status')).toContainText(/Ready · [\d,]+ ms/, { timeout: TIMEOUT });
+    await expect(dialog.getByRole('status')).toContainText(/Ready: the test call took [\d,]+ ms/, { timeout: TIMEOUT });
     await expect(dialog.getByRole('status')).toContainText(`Now used for: ${FAST_CHECK}.`);
     await dialog.getByRole('button', { name: 'Done' }).click();
     await expect(dialog).toBeHidden();

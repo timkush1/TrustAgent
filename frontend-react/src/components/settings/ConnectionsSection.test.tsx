@@ -68,7 +68,7 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     await user.click(judge);
     await user.type(within(dialog).getByLabelText('API key'), 'sk-test-openai-0000ok12');
     await user.click(within(dialog).getByRole('button', { name: 'Save and check' }));
-    expect(await within(dialog).findByText('Ready · 231 ms · $0.00001')).toBeInTheDocument();
+    expect(await within(dialog).findByText('Ready: the test call took 231 ms and cost $0.00001')).toBeInTheDocument();
     expect(within(dialog).getByText(`Now used for: ${copy.tiers.deep_audit} judge.`)).toBeInTheDocument();
     expect(control.callsTo('/api/credentials/openai', 'PUT')[0].body).toEqual({
       provider: 'openai',
@@ -141,7 +141,7 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     const { router } = renderPage('/connect/callback?code=abc123', { control: createControlApi({ connectComplete: result }) });
     await waitFor(() => expect(router.state.location.pathname).toBe(PATH));
     const openrouter = await card('OpenRouter');
-    expect(await within(openrouter).findByText('Ready · 412 ms · $0.00001')).toBeInTheDocument();
+    expect(await within(openrouter).findByText('Ready: the test call took 412 ms and cost $0.00001')).toBeInTheDocument();
     expect(within(openrouter).getByText(/Now used for: Fast check \(Jev\) and Deep audit judge/)).toBeInTheDocument();
   });
 

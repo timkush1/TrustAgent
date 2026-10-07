@@ -8,7 +8,7 @@
  * 3. read and forget the pending nonce this tab kept when Connect started;
  * 4. POST /api/connect/openrouter/complete (#59): the proxy exchanges the code for a key, stores it
  *    encrypted, checks it and binds it;
- * 5. hand the outcome ("Ready · …", or no credits) to the page it returns to;
+ * 5. hand the outcome ("Ready: …", or no credits) to the page it returns to;
  * 6. go to the server's `return_to`, through the router, and only when it is a dashboard path.
  *
  * Failures stay here with what to do: no sign-in waiting in this tab (open the dashboard at its
