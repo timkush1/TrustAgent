@@ -13,7 +13,8 @@ import { checkSpecDocument, checkSpecJson, draftAsSpec, isSavable, lintPointer, 
 interface LintVector {
   name: string;
   status: string;
-  input: { spec: unknown };
+  /** attached: the route's evaluator ids, for the route lints (D98). */
+  input: { spec: unknown; attached?: string[] };
   expected: { errors: string[]; lints: string[] };
 }
 
@@ -40,11 +41,12 @@ describe('lint parity with contracts/vectors/lint', () => {
   });
 
   it.each(vectors.map((v) => [v.name, v] as const))('%s: same codes as the reference, no schema finding', (_name, v) => {
-    const check = checkSpecDocument(v.input.spec);
+    const options = v.input.attached ? { attached: v.input.attached } : {};
+    const check = checkSpecDocument(v.input.spec, options);
     expect(check.errors).toEqual([]);
     expect(lintCodes(check.lints)).toEqual(v.expected);
     // The JSON tab reports the same codes from the text.
-    const json = checkSpecJson(JSON.stringify(v.input.spec, null, 2));
+    const json = checkSpecJson(JSON.stringify(v.input.spec, null, 2), options);
     const codes = (severity: 'error' | 'warning') => [...new Set(json.problems.filter((p) => p.severity === severity).map((p) => p.code))].sort();
     expect({ errors: codes('error'), lints: codes('warning') }).toEqual(v.expected);
     expect(isSavable(check)).toBe(v.expected.errors.length === 0);
