@@ -3,8 +3,8 @@
 The "gitleaks (secrets)" job (.github/workflows/security.yml) runs gitleaks over the whole history
 with this file. These tests pin its allow-lists without the gitleaks binary: the default rules stay
 on, only the test paths and the detector vectors are allowed by path, and the regex allow-lists
-accept the project's fake-key conventions but not a realistic key. Standard library only
-(tomllib, Python 3.11).
+accept the project's fake-key conventions, in test files only, but never a realistic key. Standard
+library only (tomllib, Python 3.11).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import string
 import tomllib
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG: Dict[str, Any] = tomllib.loads((ROOT / ".gitleaks.toml").read_text(encoding="utf-8"))
@@ -26,17 +26,22 @@ def allowlists() -> List[Dict[str, Any]]:
     return list(CONFIG.get("allowlists") or [])
 
 
-def regexes(target: str) -> List[re.Pattern[str]]:
-    return [
-        re.compile(pattern)
-        for entry in allowlists()
-        if entry.get("regexTarget", "secret") == target and not entry.get("paths")
-        for pattern in entry.get("regexes") or []
-    ]
+def allowed(target: str, text: str, path: Optional[str] = None) -> bool:
+    """Whether a regex allow-list accepts `text` found in `path` (None: a path no list names).
 
-
-def allowed(target: str, text: str) -> bool:
-    return any(pattern.search(text) for pattern in regexes(target))
+    An entry with paths and condition AND needs both its regex and one of its paths to match.
+    """
+    for entry in allowlists():
+        if entry.get("regexTarget", "secret") != target:
+            continue
+        if not any(re.search(pattern, text) for pattern in entry.get("regexes") or []):
+            continue
+        paths = entry.get("paths") or []
+        if not paths or entry.get("condition", "OR") != "AND":
+            return True
+        if path is not None and any(re.search(p, path) for p in paths):
+            return True
+    return False
 
 
 def realistic(prefix: str, length: int) -> str:
@@ -80,14 +85,29 @@ class GitleaksConfigTest(unittest.TestCase):
                 for commit in entry["commits"]:
                     self.assertRegex(commit, r"^[0-9a-f]{40}$")
 
-    def test_fake_key_conventions_pass_and_realistic_keys_do_not(self) -> None:
+    def test_fake_key_conventions_pass_in_tests_only_and_realistic_keys_never(self) -> None:
+        tests = (
+            "frontend-react/src/data/control/securityPlane.test.ts",
+            "frontend-react/src/components/common/composites.test.tsx",
+            "scripts/tests/test_service_env.py",
+        )
+        elsewhere = (
+            "frontend-react/src/data/control/securityPlane.ts",
+            "scripts/doctor.py",
+            "docs/SECURITY.md",
+            ".env.example",
+            None,
+        )
         for fake in (
             "sk-test-0123456789abcdef",
             "sk-or-v1-e2e-nocredits-0123456789",
             "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm",
             "tk_live_x",
         ):
-            self.assertTrue(allowed("secret", fake), fake)
+            for path in tests:
+                self.assertTrue(allowed("secret", fake, path), f"{fake} in {path}")
+            for other in elsewhere:
+                self.assertFalse(allowed("secret", fake, other), f"{fake} would pass in {other}")
         for real in (
             "sk-or-v1-" + secrets.token_hex(32),
             realistic("sk-ant-api03-", 93),
@@ -96,7 +116,8 @@ class GitleaksConfigTest(unittest.TestCase):
             # A fake prefix inside a longer value is not a fake key.
             "xsk-test-" + secrets.token_hex(8),
         ):
-            self.assertFalse(allowed("secret", real), "a realistic key would be allowed")
+            for path in tests + elsewhere:
+                self.assertFalse(allowed("secret", real, path), "a realistic key would be allowed")
 
     def test_calibration_digests_pass_and_keys_next_to_them_do_not(self) -> None:
         digest = secrets.token_hex(32)
