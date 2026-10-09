@@ -90,12 +90,15 @@ function auditShareWords(rate: number): string {
   return pct < 1 ? 'fewer than 1 in 100 answers' : `about ${pct} in 100 answers`;
 }
 
-/** How much of the window's traffic was deep-audited, in words ("every answer"), or null without any. */
+/**
+ * How much of the window's traffic was deep-audited, as what the demo does ("deep-audits every
+ * answer", "ran more deep audits than answers checked"), or null without any.
+ */
 function demoAuditShare(roi: RoiSummary): string | null {
   const n = roi.gated_responses;
   const audits = roi.llm_cost.audits;
   if (n <= 0 || audits <= 0) return null;
-  return audits / n > 1.005 ? 'more answers than it checks' : auditShareWords(audits / n);
+  return audits / n > 1.005 ? 'ran more deep audits than answers checked' : `deep-audits ${auditShareWords(audits / n)}`;
 }
 
 /**
@@ -108,7 +111,7 @@ function demoAuditShare(roi: RoiSummary): string | null {
 export function fullAuditNotComparable(roi: RoiSummary | undefined): string | null {
   if (!roi || !savingsLine(roi).freeMockJudge) return null;
   const share = demoAuditShare(roi);
-  return `Full audit is not comparable on the simulated demo: its mock judge is free${share ? ` and it deep-audits ${share}` : ''}. Compare the published figures under “With a real judge” above.`;
+  return `Full audit is not comparable on the simulated demo: its mock judge is free${share ? ` and it ${share}` : ''}. Compare the published figures under “With a real judge” above.`;
 }
 
 /**
@@ -423,11 +426,20 @@ function aboutUsd(usd: number): string {
 export interface RealJudgeView {
   /** The published total at the shipped defaults, per 1,000 answers ("$3"). */
   shippedPer1k: string;
+  /** The same total as a number of dollars (3). */
+  shippedPer1kUsd: number;
   /**
-   * What the shipped-defaults total is made of: "fast check $0.21 on every answer + a deep audit of
-   * about 8 in 100 answers" (value claims fast_check_cost_per_1k and default_total_cost_per_1k).
+   * What the shipped-defaults total per 1,000 answers is made of, each part with its own cost per
+   * 1,000 answers: "a fast check on every answer ($0.21) + a deep audit of about 8 in 100 answers
+   * (about $2.80)" (value claims fast_check_cost_per_1k, llm_full_audit_cost_per_1k and
+   * default_total_cost_per_1k). Never "$0.21 on every answer": that reads as a price per answer.
    */
   shippedParts: string;
+  /**
+   * How many times less checking with a real judge costs than an LLM auditing every answer
+   * ("about 12×"), from the two published figures; null when it is not at least 2×.
+   */
+  fullAuditMultiple: string | null;
   /** The published figure for an LLM asking the same questions, per 1,000 answers ("$5.75"), or null. */
   sameChecksPer1k: string | null;
   /** How many answers the shipped defaults deep-audit ("about 8 in 100"). */
@@ -472,10 +484,15 @@ export function realJudgeView(
         : `This demo deep-audits ${auditShareWords(rate)} to show the audit flow: at that rate ${adds}.`;
   }
   const shippedShare = `about ${Math.round(shipped.auditShare * 100)} in 100`;
-  const fast = finite(fastCheck.value) && fastCheck.value > 0 ? `fast check ${formatUsd(fastCheck.value)} on every answer` : 'the fast check on every answer';
+  // Each part in the total's unit (per 1,000 answers), in brackets after what it buys.
+  const fast = finite(fastCheck.value) && fastCheck.value > 0 ? `a fast check on every answer (${formatUsd(fastCheck.value)})` : 'a fast check on every answer';
+  const deep = `a deep audit of ${shippedShare} answers (about ${formatUsd(shipped.auditShare * fullAuditPer1k)})`;
+  const multiple = fullAuditPer1k / shipped.per1k;
   return {
     shippedPer1k: aboutUsd(shipped.per1k),
-    shippedParts: `${fast} + a deep audit of ${shippedShare} answers`,
+    shippedPer1kUsd: shipped.per1k,
+    shippedParts: `${fast} + ${deep}`,
+    fullAuditMultiple: multiple >= 2 ? `about ${Math.round(multiple)}×` : null,
     sameChecksPer1k: finite(sameChecks.value) && sameChecks.value > 0 ? aboutUsd(sameChecks.value) : null,
     shippedShare,
     basis: shipped.basis,
@@ -504,6 +521,11 @@ export interface Alternatives {
   /** "Against the alternatives, per 1,000 answers" or, on a free mock judge, "With a real judge, …". */
   title: string;
   items: Alternative[];
+  /**
+   * On a free mock judge, what the published figures add up to, in one sentence ("With a real
+   * judge, TrustAgent costs about 12× less than …"), an estimate with its basis; null otherwise.
+   */
+  takeaway: { text: string; basis: string } | null;
 }
 
 /** "Published assumptions · not measured". */
@@ -537,7 +559,7 @@ export function alternatives(
         per1k: realJudge.shippedPer1k,
         valueLabel: 'estimate',
         basis: realJudge.basis,
-        note: `At the shipped defaults: ${realJudge.shippedParts}`,
+        note: `Per 1,000 answers at the shipped defaults: ${realJudge.shippedParts}`,
         subject: 'Checking at the shipped defaults with a real judge',
       },
     ];
@@ -561,7 +583,7 @@ export function alternatives(
       note: PUBLISHED_NOTE,
       subject: `${fullLabel}, published, per 1,000 answers`,
     });
-    return { title: 'With a real judge, per 1,000 answers', items };
+    return { title: 'With a real judge, per 1,000 answers', items, takeaway: realJudgeTakeaway(realJudge, publishedSame.value) };
   }
   const items: Alternative[] = [];
   const same = counterfactual(roi, 'llm_same_checks');
@@ -588,7 +610,25 @@ export function alternatives(
       subject: `${fullLabel}, per 1,000 answers`,
     });
   }
-  return { title: 'Against the alternatives, per 1,000 answers', items };
+  return { title: 'Against the alternatives, per 1,000 answers', items, takeaway: null };
+}
+
+/**
+ * The published figures in one sentence: how many times less a real judge at the shipped defaults
+ * costs than an LLM auditing every answer, and (when it is) that it costs less than an LLM asking
+ * the same questions although it also deep-audits a share of answers. Null without a multiple.
+ */
+function realJudgeTakeaway(realJudge: RealJudgeView, sameChecksPer1k: number | null): { text: string; basis: string } | null {
+  if (!realJudge.fullAuditMultiple) return null;
+  const belowSame = finite(sameChecksPer1k) && sameChecksPer1k > realJudge.shippedPer1kUsd;
+  const text =
+    `With a real judge, TrustAgent costs ${realJudge.fullAuditMultiple} less than an LLM auditing every answer` +
+    (belowSame ? `, and less than an LLM asking the same questions while it also deep-audits ${realJudge.shippedShare} answers.` : '.');
+  const basis =
+    `${realJudge.fullAuditPer1k} ÷ ${realJudge.shippedPer1k} per 1,000 answers` +
+    (belowSame ? `, and ${realJudge.shippedPer1k} against ${aboutUsd(sameChecksPer1k)}` : '') +
+    `: published estimates for a typical 5,000-token request, ${costNotMeasured}.`;
+  return { text, basis };
 }
 
 // ---------------------------------------------------------------------------------------- savings

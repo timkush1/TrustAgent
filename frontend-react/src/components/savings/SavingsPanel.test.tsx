@@ -152,7 +152,16 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(real).toHaveAttribute('data-alternative', 'real_judge');
     expect(within(real).getByText('$3')).toBeInTheDocument();
     // The published total in its parts, so it reads against the same-questions figure beside it.
-    expect(real).toHaveTextContent('At the shipped defaults: fast check $0.21 on every answer + a deep audit of about 8 in 100 answers');
+    // Each part in the total's unit: never "$0.21 on every answer", which reads as a price per answer.
+    expect(real).toHaveTextContent(
+      'Per 1,000 answers at the shipped defaults: a fast check on every answer ($0.21) + a deep audit of about 8 in 100 answers (about $2.80)',
+    );
+    expect(real).not.toHaveTextContent(/\$[\d.]+ on every answer/);
+    // The value in one sentence, labelled Estimate.
+    expect(document.querySelector('[data-takeaway]')).toHaveTextContent(
+      'With a real judge, TrustAgent costs about 12× less than an LLM auditing every answer, and less than an LLM asking the same questions while it also deep-audits about 8 in 100 answers.',
+    );
+    expect(badge('Estimate', 'A real judge against the alternatives')).toBeInTheDocument();
     expect(badge('Estimate', 'Checking at the shipped defaults with a real judge')).toBeInTheDocument();
     const same = document.querySelector<HTMLElement>('[data-alternative="llm_same_checks"]')!;
     expect(within(same).getByText('$5.75')).toBeInTheDocument();
@@ -247,8 +256,12 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     const control = createControlApi({ roi: roiSummary({ counterfactuals: [...roiSummary().counterfactuals, FULL_AUDIT] }) });
     renderPage('/app/savings', { control });
     const table = await screen.findByRole('table', { name: /What checking cost, and what the alternatives/ });
-    const rows = within(table).getAllByRole('row').slice(1);
+    const rows = within(table).getAllByRole('row').filter((r) => r.hasAttribute('data-row'));
     expect(rows.map((r) => r.getAttribute('data-row'))).toEqual(['fast_check', 'deep_audit', 'total', 'llm_same_checks', 'llm_full_claim_audit']);
+    // The alternatives sit under their own heading, apart from what you paid.
+    const alternatives = table.querySelector<HTMLElement>('[data-rowgroup="alternatives"]')!;
+    expect(within(alternatives).getByRole('rowheader', { name: 'Instead of TrustAgent: what an LLM would have cost for the same answers' })).toHaveAttribute('scope', 'rowgroup');
+    expect([...alternatives.querySelectorAll('[data-row]')].map((r) => r.getAttribute('data-row'))).toEqual(['llm_same_checks', 'llm_full_claim_audit']);
     for (const row of rows) expect(within(row).getByRole('button', { name: /: how “.+” was produced$/ })).toBeInTheDocument();
     expect(within(rows[1]).getByRole('rowheader')).toHaveTextContent('58 deep audits attempted: 44 high risk · 10 pass sample · 4 uniform sample');
     expect(within(rows[3]).getAllByRole('cell')[0]).toHaveTextContent('$1.05–$1.40');
@@ -281,6 +294,8 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(screen.getByText('p95').nextElementSibling).toHaveTextContent('480 ms');
     expect(screen.getByText('Missed the deadline').nextElementSibling).toHaveTextContent('0.4%');
     expect(screen.getByText('Uniform sampling: 4 of 50 audits today (1% of answers)')).toBeInTheDocument();
+    // The counts carry their value label like every other figure on the page.
+    expect(badge('Measured', 'Uniform samples today')).toBeInTheDocument();
     // How a uniform sample differs from the pass samples the component table counts.
     expect(screen.getByText(/^Uniform samples are picked before the fast check decides/)).toHaveTextContent(
       'Pass samples are drawn from answers that passed, at each route’s sample rate.',
@@ -308,6 +323,7 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     await screen.findByRole('heading', { level: 2, name: /^Your cost:/ });
     expect(badge('Simulated', 'Your cost per 1,000 answers')).toBeInTheDocument();
     expect(badge('Simulated', 'Stopped and flagged answers')).toBeInTheDocument();
+    expect(badge('Simulated', 'Uniform samples today')).toBeInTheDocument();
     const table = screen.getByRole('table', { name: /What checking cost/ });
     for (const b of within(table).getAllByRole('button')) expect(b).toHaveAccessibleName(/^Simulated:/);
     expect(await screen.findByText('What checking cost you (Simulated)')).toBeInTheDocument();

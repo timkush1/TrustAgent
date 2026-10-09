@@ -55,6 +55,7 @@ import {
   samplingLines,
   savingsRange,
   type Alternatives as AlternativesView,
+  type ComponentRow,
   type RealJudgeView,
   type SavingsRange,
 } from './savingsModel';
@@ -95,7 +96,7 @@ const ALTERNATIVE_COLS: Record<number, string> = { 1: 'sm:grid-cols-1', 2: 'sm:g
  * The alternatives in the headline's unit, side by side and on one basis: one surface with
  * hairline dividers, not a row of stat cards (DESIGN.md), each figure with its own value label.
  */
-function AlternativesStrip({ title, items }: AlternativesView) {
+function AlternativesStrip({ title, items, takeaway }: AlternativesView) {
   return (
     <div className="space-y-1.5 border-t border-border pt-3">
       <h3 id="savings-alternatives" className="text-sm font-medium text-fg">
@@ -119,6 +120,13 @@ function AlternativesStrip({ title, items }: AlternativesView) {
           </div>
         ))}
       </dl>
+      {/* The published figures in one sentence, so the value does not have to be worked out. */}
+      {takeaway ? (
+        <p data-takeaway="" className="text-sm text-fg">
+          <span className="tabular">{takeaway.text}</span>{' '}
+          <EvidenceBadge label="estimate" basis={takeaway.basis} subject="A real judge against the alternatives" className="align-middle" />
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -252,9 +260,27 @@ function SpendChart({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: 
  * Every component of the cost, then the alternatives, each figure with its value label. The label
  * sits next to the row's name, so the table keeps three columns and fits a phone.
  */
+/** The rows of what you paid; the rest are the alternatives. */
+const OWN_ROWS = new Set(['fast_check', 'deep_audit', 'total']);
+
 function ComponentTable({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: TimeWindow; replay: boolean }) {
   const rows = componentRows(roi, savingsLine(roi).freeMockJudge ? realJudgeView(roi) : null);
+  const own = rows.filter((r) => OWN_ROWS.has(r.key));
+  const others = rows.filter((r) => !OWN_ROWS.has(r.key));
   const span = spanWords(timeWindow, replay);
+  const row = (r: ComponentRow) => (
+    <tr key={r.key} data-row={r.key} className={cn('border-b border-border last:border-b-0', r.key === 'total' && 'bg-surface-sunken')}>
+      <th scope="row" className="py-2 pr-3 text-left align-top font-normal">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className={cn('text-fg', r.key === 'total' && 'font-medium')}>{r.label}</span>
+          <EvidenceBadge label={r.valueLabel} basis={r.basis} subject={r.label} />
+        </span>
+        {r.detail ? <span className="mt-0.5 block text-xs text-fg-muted">{r.detail}</span> : null}
+      </th>
+      <td className="px-3 py-2 text-right align-top whitespace-nowrap text-fg tabular">{r.total}</td>
+      <td className="py-2 pl-3 text-right align-top whitespace-nowrap text-fg tabular">{r.per1k}</td>
+    </tr>
+  );
   return (
     <Card>
       <CardHeader level={2} title="Where the cost comes from" description={`${span[0].toUpperCase()}${span.slice(1)}, and per 1,000 checked answers.`} />
@@ -275,25 +301,19 @@ function ComponentTable({ roi, timeWindow, replay }: { roi: RoiSummary; timeWind
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.key}
-                  data-row={r.key}
-                  className={cn('border-b border-border last:border-b-0', r.key === 'total' && 'bg-surface-sunken')}
-                >
-                  <th scope="row" className="py-2 pr-3 text-left align-top font-normal">
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className={cn('text-fg', r.key === 'total' && 'font-medium')}>{r.label}</span>
-                      <EvidenceBadge label={r.valueLabel} basis={r.basis} subject={r.label} />
-                    </span>
-                    {r.detail ? <span className="mt-0.5 block text-xs text-fg-muted">{r.detail}</span> : null}
+            <tbody>{own.map(row)}</tbody>
+            {/* The alternatives under their own heading, so their totals are not read as part of
+                (or against) yours in the same column. */}
+            {others.length > 0 ? (
+              <tbody data-rowgroup="alternatives">
+                <tr className="border-y border-border">
+                  <th scope="rowgroup" colSpan={3} className="pt-3 pb-1.5 text-left text-xs font-medium text-fg-muted">
+                    Instead of TrustAgent: what an LLM would have cost for the same answers
                   </th>
-                  <td className="px-3 py-2 text-right align-top whitespace-nowrap text-fg tabular">{r.total}</td>
-                  <td className="py-2 pl-3 text-right align-top whitespace-nowrap text-fg tabular">{r.per1k}</td>
                 </tr>
-              ))}
-            </tbody>
+                {others.map(row)}
+              </tbody>
+            ) : null}
           </table>
         </div>
         {/* The prices the alternatives use, each with its own source: a vendor's list price is
@@ -396,8 +416,12 @@ function Sampling({ roi, replay }: { roi: RoiSummary; replay: boolean }) {
       ) : (
         <ul className="space-y-1 text-sm">
           {lines.map((l) => (
-            <li key={l.key} data-sampling={l.key} className={l.stopped ? 'text-fg' : 'text-fg-muted'}>
-              {l.text}
+            <li key={l.key} data-sampling={l.key} className={cn('flex flex-wrap items-center gap-x-2 gap-y-1', l.stopped ? 'text-fg' : 'text-fg-muted')}>
+              <span className="tabular">{l.text}</span>
+              {/* Counted by this gateway today; over a demo's simulated traffic they are Simulated (D46). */}
+              {l.key === 'uniform' ? (
+                <EvidenceBadge label={roi.simulated ? 'simulated' : 'measured'} subject="Uniform samples today" />
+              ) : null}
             </li>
           ))}
         </ul>

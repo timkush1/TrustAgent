@@ -176,6 +176,10 @@ describe('Savings bands (D73)', () => {
     expect(fullAuditNotComparable(demo)).toBe(
       'Full audit is not comparable on the simulated demo: its mock judge is free and it deep-audits every answer. Compare the published figures under “With a real judge” above.',
     );
+    // More audits than answers (a retried audit counts twice) is said as what the demo did.
+    expect(fullAuditNotComparable({ ...demo, llm_cost: { ...demo.llm_cost, audits: 50 } })).toMatch(
+      /^Full audit is not comparable on the simulated demo: its mock judge is free and it ran more deep audits than answers checked\. /,
+    );
     const points = costBandPoints(series, demo);
     expect(points.every((p) => p.full_audit === null)).toBe(true);
     expect(points[0].same_checks).not.toBeNull();
@@ -364,10 +368,11 @@ describe('realJudgeView', () => {
     const view = realJudgeView(roiSummary())!;
     expect([view.shippedPer1k, view.shippedShare, view.fullAuditPer1k]).toEqual(['$3', 'about 8 in 100', '$35.50']);
     // The total in its parts: the fast check on every answer plus a deep audit of the share.
-    expect(view.shippedParts).toBe('fast check $0.21 on every answer + a deep audit of about 8 in 100 answers');
+    expect(view.shippedParts).toBe('a fast check on every answer ($0.21) + a deep audit of about 8 in 100 answers (about $2.80)');
+    expect(view.fullAuditMultiple).toBe('about 12×');
     expect(view.sameChecksPer1k).toBe('$5.75');
     expect(realJudgeView(roiSummary(), costShippedDefaults, 35.5, '', { value: null }, { value: null })).toMatchObject({
-      shippedParts: 'the fast check on every answer + a deep audit of about 8 in 100 answers',
+      shippedParts: 'a fast check on every answer + a deep audit of about 8 in 100 answers (about $2.80)',
       sameChecksPer1k: null,
     });
     // The share is 5% grounding-flagged + 2% of the other 95% + 1% uniform, and the published total
@@ -412,10 +417,25 @@ describe('alternatives', () => {
       ['$35.50', 'estimate', 'Decompose into 8 claims.'],
     ]);
     expect(view.items.map((a) => a.note)).toEqual([
-      'At the shipped defaults: fast check $0.21 on every answer + a deep audit of about 8 in 100 answers',
+      'Per 1,000 answers at the shipped defaults: a fast check on every answer ($0.21) + a deep audit of about 8 in 100 answers (about $2.80)',
       'Published assumptions · not measured',
       'Published assumptions · not measured',
     ]);
+  });
+
+  it('sums the published figures up in one labelled sentence only when a real judge is clearly cheaper', () => {
+    const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 } });
+    expect(alternatives(demo, realJudgeView(demo, shipped, 35.5, ''), publishedSame).takeaway).toEqual({
+      text: 'With a real judge, TrustAgent costs about 12× less than an LLM auditing every answer, and less than an LLM asking the same questions while it also deep-audits about 8 in 100 answers.',
+      basis: '$35.50 ÷ $3 per 1,000 answers, and $3 against $5.75: published estimates for a typical 5,000-token request, not measured.',
+    });
+    // Asking the same questions is not dearer: the second half is left out, never claimed.
+    expect(alternatives(demo, realJudgeView(demo, shipped, 35.5, ''), { value: 2, basis: '' }).takeaway?.text).toBe(
+      'With a real judge, TrustAgent costs about 12× less than an LLM auditing every answer.',
+    );
+    // Under 2× there is no multiple worth stating; a stack with a real judge has its own figures.
+    expect(alternatives(demo, realJudgeView(demo, shipped, 5, ''), publishedSame).takeaway).toBeNull();
+    expect(alternatives(roiSummary(), null, publishedSame).takeaway).toBeNull();
   });
 
   it('leaves out what is missing and never shows a full audit scaled up from free mock audits', () => {

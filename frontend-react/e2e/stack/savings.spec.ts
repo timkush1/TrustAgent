@@ -77,7 +77,8 @@ test.describe('savings', () => {
 
     const components = page.getByRole('table', { name: 'What checking cost, and what the alternatives would have cost' });
     await expect(components).toBeVisible({ timeout: TIMEOUT });
-    const rows = components.locator('tbody tr');
+    // The alternatives' sub-heading row is not a component: only rows with data-row carry figures.
+    const rows = components.locator('tbody tr[data-row]');
     expect(await rows.count()).toBeGreaterThanOrEqual(3);
     for (const row of await rows.all()) {
       const badge = row.getByRole('button', { name: /: how “.+” was produced$/ });

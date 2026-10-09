@@ -182,7 +182,7 @@ describe('static build', () => {
       'llm_full_claim_audit',
     ]);
     expect(document.querySelector('[data-alternative="real_judge"]')).toHaveTextContent(
-      /\$3.*At the shipped defaults: fast check \$0\.21 on every answer \+ a deep audit of about 8 in 100 answers/,
+      /\$3.*Per 1,000 answers at the shipped defaults: a fast check on every answer \(\$0\.21\) \+ a deep audit of about 8 in 100 answers \(about \$2\.80\)/,
     );
     expect(document.querySelector('[data-alternative="llm_same_checks"]')).toHaveTextContent(/\$5\.75/);
     expect(document.querySelector('[data-alternative="llm_full_claim_audit"]')).toHaveTextContent(/\$35\.50/);
