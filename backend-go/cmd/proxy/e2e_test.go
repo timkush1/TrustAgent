@@ -197,9 +197,15 @@ func checkAggregates(t *testing.T, env *testEnv) {
 		r.Outcomes.Flagged != 1 || len(r.Counterfactual) != 2 {
 		t.Errorf("roi HTTP %d %+v", code, r)
 	}
+	// Over simulated traffic every counterfactual is simulated except the published full-audit
+	// assumption, which stays an estimate (its basis says the answers are simulated).
 	for _, cf := range r.Counterfactual {
-		if cf.Label != labelSimulated {
-			t.Errorf("a counterfactual over simulated traffic is labelled %s", cf.Label)
+		want := labelSimulated
+		if cf.Method == "static_assumptions" {
+			want = labelEstimate
+		}
+		if cf.Label != want {
+			t.Errorf("counterfactual %s (%s) over simulated traffic is labelled %s, want %s", cf.Kind, cf.Method, cf.Label, want)
 		}
 	}
 }
