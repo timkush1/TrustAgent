@@ -415,6 +415,34 @@ phase (P0 → P7).
 - **Phone widths**: Studio's example buttons, a check's page header and the
   "How well its risk matches your labels" card no longer widen the page at
   400 px; a route's block progress has its own line.
+- **Savings on the free-mock-judge demo**: the chart no longer sets the demo's
+  spend (deep audits at $0, on far more answers than the shipped defaults)
+  against the published full-audit estimate. Its Full audit option is disabled
+  with the reason, and the table's full-audit row says to compare it with
+  TrustAgent with a real judge (about $3 per 1,000 answers, shown as the fast
+  check $0.21 plus a deep audit of about 8 in 100 answers). A line says why the
+  published figures, which assume a 5,000-token request, are above the demo's
+  simulated ones. The published full audit stays an Estimate over simulated
+  traffic (D97).
+- **A corroboration warning that gave wrong advice**: the policy check warned
+  that a check "needs Contradiction to agree" when any one of its listed
+  corroborators is enough, and the number and date checks could still confirm
+  it. It now warns only on a Block or Fallback route where none of them can
+  run; the evaluator lint does the same (D98). The shipped policies have no
+  such warning.
+- **Calibrate now**: its reason no longer says every deep audit counts. Only
+  deep audits of the uniform sample become labels, and the reason says how
+  many there are so far.
+- **`/api/status` right after traffic**: the decision model's 24-hour calls and
+  cost are re-read when older than 5 s, so the first status read after traffic
+  shows it rather than the boot read (D92).
+- **Wording**: the demo banner names the published estimates as the
+  exception to "simulated"; block readiness says how to calibrate and links the
+  label queue; the label queue's key hint shows the buttons' keys; Setup calls
+  the one-time link a link and points a `.env` judge to Settings → Models; the
+  Prices table words its catch-all pattern; a firing Studio test row shows a
+  flag; the top bar is solid, and a command in a banner never breaks across
+  lines.
 - **B4 — duplicate ids corrupted audit history**: trace/audit ids are now
   server-generated UUIDv7; a client `X-Request-ID` is stored only as a
   non-unique `client_request_id`, and a repeated id can no longer append claims
