@@ -295,11 +295,13 @@ phase (P0 → P7).
   (≈ $35.50 per 1,000, labelled not measured), and the deep-audit basis says the
   mock judge is free. The mock fast check also answers the Studio drafter's own
   samples by their `should_fire`, so the demo's test bench shows the intended
-  matches instead of hash answers. On that demo the headline also says what a
-  real judge costs: about $3 per 1,000 answers at the shipped defaults (about 8
-  in 100 answers deep-audited) against $35.50 to audit every answer claim by
-  claim, both published estimates, then what the demo's own (much higher)
-  deep-audit rate would add. The published full-audit figure is labelled
+  matches instead of hash answers. Under the headline, the alternatives stand
+  side by side in its unit, per 1,000 answers, each with its value label: an
+  LLM asking the same questions, an LLM auditing every answer claim by claim
+  and, on the demo's free mock judge, TrustAgent with a real judge at the
+  shipped defaults (about $3, with about 8 in 100 answers deep-audited, against
+  $35.50 for the full audit; both published estimates). A line below says what
+  the demo's own (much higher) deep-audit rate would add. The published full-audit figure is labelled
   Estimate even on a simulated stack, the chart's sentence states the
   summary's totals (the spend series polls with it), and the static demo prices
   the same full-audit counterfactual, draws its spend per minute, words every
@@ -325,8 +327,9 @@ phase (P0 → P7).
   question back with readable names ("your model's answer"), and a dry run
   shows identical answers once with "×N".
 - **`make phase-refs-check`** (in `make check` and ci-contracts) fails on a code
-  or comment line that names the delivery phase it shipped in, except the
-  lines in `scripts/phase-refs.allow`.
+  or comment line that names the delivery phase it shipped in, including a name
+  that runs on into an identifier (`P4_…`, `isP4…`), except the lines in
+  `scripts/phase-refs.allow`.
 - **Developer experience (P4):** `make configure WITH_SECRETS=1` asks for the
   vendor keys at hidden prompts (never echoed, `.env` mode 0600);
   `make onboarding-up` / `onboarding-setup-url` / `onboarding-down` run a fresh
@@ -334,7 +337,8 @@ phase (P0 → P7).
   with the onboarding spec; `make doctor` adds the credential store, the
   engine's settings version, the judge's key source and today's budgets;
   Grafana gains a Spend row; nginx never logs `/connect/callback`; gitleaks scans
-  the whole history in CI (`.gitleaks.toml`); `make gen-evaluator-validator`;
+  the whole history in CI (`.gitleaks.toml`; the fake-key conventions are
+  allowed in test files only); `make gen-evaluator-validator`;
   images carry their git revision (`GIT_SHA`): the proxy reports it as
   `build_sha` and `/api/export/replay` names it, and every image has it as
   `org.opencontainers.image.revision`. [docs/SECURITY.md](docs/SECURITY.md) and
