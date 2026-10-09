@@ -93,6 +93,49 @@ func TestStrictConfigExitCode(t *testing.T) {
 	}
 }
 
+// TestPriceTableFileIsCheckedAtLoad (CO-12): a TRUTHTABLE_PRICE_TABLE_FILE that is missing or is
+// not a pricing.v1 table is a configuration warning keyed by its name (so -check-config, the
+// settings page and /api/status show it, and strict mode refuses to start); a valid one is not.
+func TestPriceTableFileIsCheckedAtLoad(t *testing.T) {
+	clearProxyEnv(t)
+	envFile := t.TempDir() + "/.env"
+	if err := os.WriteFile(envFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TRUTHTABLE_ENV_FILE", envFile)
+	dir := t.TempDir()
+	valid, invalid := dir+"/prices.json", dir+"/broken.json"
+	if err := os.WriteFile(valid, []byte(`{"version":"2026-10-09","currency":"USD","entries":[{"match":"x-*","provider":"openai","input_per_mtok":1,"output_per_mtok":2}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(invalid, []byte(`{"version":"2026-10-09","entries":"nope"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keyed := func(cfg *config.Config) bool {
+		for _, d := range cfg.Diagnostics {
+			if d.Key == "TRUTHTABLE_PRICE_TABLE_FILE" {
+				return true
+			}
+		}
+		return false
+	}
+	for name, path := range map[string]string{"missing": dir + "/none.json", "invalid": invalid} {
+		t.Setenv("TRUTHTABLE_PRICE_TABLE_FILE", path)
+		t.Setenv("TRUTHTABLE_STRICT_CONFIG", "false")
+		if cfg, _, exit, _, _ := boot(t); exit || cfg == nil || !keyed(cfg) {
+			t.Errorf("%s: no TRUTHTABLE_PRICE_TABLE_FILE diagnostic", name)
+		}
+		t.Setenv("TRUTHTABLE_STRICT_CONFIG", "true")
+		if _, code, exit, out, _ := boot(t, "-check-config"); !exit || code != 2 || !strings.Contains(out, "TRUTHTABLE_PRICE_TABLE_FILE") {
+			t.Errorf("%s: -check-config under strict: exit %v code %d\n%s", name, exit, code, out)
+		}
+	}
+	t.Setenv("TRUTHTABLE_PRICE_TABLE_FILE", valid)
+	if _, code, exit, out, _ := boot(t, "-check-config"); !exit || code != 0 || !strings.Contains(out, "No warnings.") {
+		t.Errorf("a valid file: exit %v code %d\n%s", exit, code, out)
+	}
+}
+
 // TestCheckConfigStrictAutoWithoutKeys (DX-1): a fresh onboarding stack, backend auto and
 // no key anywhere, passes -check-config under TRUTHTABLE_STRICT_CONFIG: a missing key is a
 // state the dashboard fixes (Connect OpenRouter, or simulated checks), not a configuration error.

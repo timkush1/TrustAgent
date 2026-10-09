@@ -1199,6 +1199,15 @@ func (a *studioAPI) draft(c *gin.Context) {
 		case st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), codeNoJudge):
 			settle(0)
 			abortAPI(c, http.StatusServiceUnavailable, codeNoJudge, "No judge is configured, so Draft with AI is off. Start from a template instead.")
+		case st.Code() == codes.ResourceExhausted && st.Message() == codeNoCredits:
+			// The provider refused before drafting anything: nothing was billed.
+			settle(0)
+			abortAPI(c, http.StatusServiceUnavailable, codeNoCredits,
+				"The judge's provider says the account is out of credits, so nothing was drafted. Add credits, then try again.")
+		case st.Code() == codes.PermissionDenied && st.Message() == codeJudgeUnauthorized:
+			settle(0)
+			abortAPI(c, http.StatusServiceUnavailable, codeJudgeUnauthorized,
+				"The judge's provider refused its key, so nothing was drafted. Replace the key in Settings, then try again.")
 		case st.Code() == codes.DeadlineExceeded || st.Code() == codes.Canceled:
 			// The judge may have been called and billed: the estimate stays spent (D48).
 			settle(estimate)

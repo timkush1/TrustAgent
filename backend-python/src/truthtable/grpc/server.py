@@ -45,6 +45,7 @@ from ..graphs.state import (
     coerce_status,
 )
 from ..providers.costs import KB_INGEST, CallCost, cost_ledger
+from ..providers.errors import AUTH, CREDITS, ProviderError
 from ..providers.mock import FixtureNotFoundError, mock_judge_scope
 from ..providers.pricing import PriceTable, PriceTableError, set_active_price_table
 from ..runtime.manager import ProviderManager
@@ -1099,9 +1100,12 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         studio/drafter.py).
 
         FAILED_PRECONDITION `no_judge` without a judge, INVALID_ARGUMENT
-        `description_required` without a description, UNAVAILABLE
-        `judge_unavailable` when the judge call fails. A draft that is still
-        invalid after the repair turn is a normal answer with its errors.
+        `description_required` without a description, RESOURCE_EXHAUSTED
+        `no_credits` when the judge's provider answers 402 (out of credits or
+        over its spend limit), PERMISSION_DENIED `judge_unauthorized` when it
+        refuses the key (401 or 403), UNAVAILABLE `judge_unavailable` when the
+        judge call fails otherwise. A draft that is still invalid after the
+        repair turn is a normal answer with its errors.
         """
         if not request.description.strip():
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
@@ -1125,6 +1129,20 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
         except NoJudgeError:
             context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
             context.set_details("no_judge")
+            return evaluator_pb2.DraftEvaluatorResponse()
+        except ProviderError as exc:
+            # The words the dashboard shows depend on the cause: an empty account or a refused key
+            # is the owner's to fix, not an outage (P4 D40 kinds).
+            logger.warning(f"Draft with AI failed: {self.redactor.redact(str(exc))}")
+            if exc.kind == CREDITS:
+                context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)
+                context.set_details("no_credits")
+            elif exc.kind == AUTH:
+                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+                context.set_details("judge_unauthorized")
+            else:
+                context.set_code(grpc.StatusCode.UNAVAILABLE)
+                context.set_details(self.redactor.redact(f"judge_unavailable: {exc}"))
             return evaluator_pb2.DraftEvaluatorResponse()
         except Exception as exc:
             logger.warning(f"Draft with AI failed: {exc}")

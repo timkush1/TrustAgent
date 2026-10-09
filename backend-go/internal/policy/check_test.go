@@ -15,6 +15,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/contracts"
 )
 
 func env(t *testing.T) Env {
@@ -214,6 +215,96 @@ routes:
 	}
 	if len(res.Policy.Warnings) != len(res.Warnings) {
 		t.Error("the policy keeps its warnings")
+	}
+}
+
+// TestWarningCodes: every warning the check writes carries a code from the closed WarningCodes
+// list, with the route and the values its words need, and every code has its words in
+// contracts/ui copy policies.warnings (CO-5); the engine's own two codes are checked in
+// engine_test.go.
+func TestWarningCodes(t *testing.T) {
+	docs := []string{
+		`version: 1
+overrides: {client_rules: true}
+defaults:
+  fail: closed
+routes:
+  - name: pay
+    match: {}
+    mode: block
+    streaming: buffer
+    evaluators: [{ref: groundedness@1}]
+  - name: sampled
+    match: {}
+    mode: flag
+    sample_rate: 0.5
+`,
+		"version: 1\nroutes:\n  - name: r\n    match: {}\n    mode: block\n    streaming: buffer\n    evidence: {sources: []}\n    evaluators: [{ref: groundedness@1}]\n",
+		"version: 1\nroutes:\n  - name: c\n    match: {}\n    mode: flag\n    evaluators: [{ref: contradiction@1}]\n",
+	}
+	seen := map[string]bool{}
+	for _, doc := range docs {
+		res := Check([]byte(doc), enforcingEnv(t))
+		if res.Policy == nil {
+			t.Fatalf("errors %v", res.Errors)
+		}
+		for _, w := range res.Warnings {
+			if !slices.Contains(WarningCodes, w.Code) {
+				t.Errorf("%s: %q has code %q, not one of %v", w.Path, w.Message, w.Code, WarningCodes)
+				continue
+			}
+			seen[w.Code] = true
+			if r, _ := w.Details["route"].(string); r == "" {
+				t.Errorf("%s: %s names no route in %v", w.Path, w.Code, w.Details)
+			}
+			want := map[string][]string{
+				WarnNoCorroborator: {"ref", "corroborators"}, WarnImpliesUnattached: {"ref", "implies"},
+				WarnFailClosedNotEnforcing: {"mode"}, WarnSampleRateNotObserve: {"mode"}, WarnTrustsUserContext: {"mode"},
+			}[w.Code]
+			for _, k := range want {
+				if _, ok := w.Details[k]; !ok {
+					t.Errorf("%s: %s has no %s in %v", w.Path, w.Code, k, w.Details)
+				}
+			}
+		}
+	}
+	for _, code := range []string{WarnNoCorroborator, WarnImpliesUnattached, WarnFailClosedNotEnforcing, WarnSampleRateNotObserve,
+		WarnTrustsUserContext, WarnClientRulesEnforcing} {
+		if !seen[code] {
+			t.Errorf("no document above writes %s", code)
+		}
+	}
+	b, err := contracts.FS.ReadFile("ui/copy.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copyDoc struct {
+		Copy struct {
+			Policies struct {
+				Warnings map[string]string `json:"warnings"`
+			} `json:"policies"`
+		} `json:"copy"`
+	}
+	if err := json.Unmarshal(b, &copyDoc); err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range WarningCodes {
+		if copyDoc.Copy.Policies.Warnings[code] == "" {
+			t.Errorf("contracts/ui/copy.v1.json has no policies.warnings.%s", code)
+		}
+	}
+}
+
+// TestEscalateNotBelowWarnHasACode (CO-18): thresholds whose escalate_from is not below warn_at
+// (a calibrated warn_at under the evaluator's escalate_from) are refused with a code and the
+// values the dashboard's Adopt words.
+func TestEscalateNotBelowWarnHasACode(t *testing.T) {
+	doc := "version: 1\nroutes:\n  - name: r\n    match: {}\n    mode: flag\n    evaluators:\n      - ref: groundedness@1\n        thresholds: {warn_at: 0.3, escalate_from: 0.4}\n"
+	res := Check([]byte(doc), env(t))
+	fe := findError(res.Errors, "routes[0].evaluators[0].thresholds")
+	if fe == nil || fe.Code != ErrEscalateNotBelowWarn || fe.Details["warn_at"] != 0.3 || fe.Details["escalate_from"] != 0.4 ||
+		fe.Details["route"] != "r" || fe.Details["ref"] != "groundedness@1" {
+		t.Errorf("error %+v in %+v", fe, res.Errors)
 	}
 }
 

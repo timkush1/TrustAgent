@@ -84,9 +84,8 @@ def path(name: str) -> Path:
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_drafter_render_fixture_matches_the_drafter(name: str) -> None:
     on_disk = json.loads(path(name).read_text(encoding="utf-8"))
-    assert on_disk == fixture(name), (
-        f"{path(name).name} is stale: run python tests/unit/test_drafter_fixtures.py --update"
-    )
+    stale = f"{path(name).name} is stale: run python tests/unit/test_drafter_fixtures.py --update"
+    assert on_disk == fixture(name), stale
 
 
 def test_the_cases_cover_the_cap_and_the_escape() -> None:

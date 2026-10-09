@@ -160,6 +160,46 @@ func (s *PostgresStore) SpendToday(ctx context.Context, dayStart time.Time) (Spe
 	return out, nil
 }
 
+// CapCrossedAt is when today's stored real spend of one cap first reached capUSD: the occurred_at
+// of the row whose running cap cost (rows in time order) crossed it, or nil when it has not. It
+// counts the rows SpendToday counts: decision rows for the decision cap (decisionCap), the other
+// kinds for the LLM cap, never simulated ones (D46). An LLM row no price covered (cost_source
+// unknown, no cost) counts at refInPerMTok and refOutPerMTok, the reference judge's price (D91).
+func (s *PostgresStore) CapCrossedAt(ctx context.Context, dayStart time.Time, decisionCap bool, capUSD, refInPerMTok, refOutPerMTok float64) (*time.Time, error) {
+	if capUSD <= 0 {
+		return nil, nil
+	}
+	if decisionCap {
+		refInPerMTok, refOutPerMTok = 0, 0 // the decision cap counts priced rows only
+	}
+	var at time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT occurred_at FROM (
+			SELECT occurred_at, id, sum(c) OVER (ORDER BY occurred_at, id ROWS UNBOUNDED PRECEDING) AS running
+			FROM (
+				SELECT occurred_at, id, CASE
+					WHEN cost_usd IS NOT NULL THEN GREATEST(cost_usd, 0)::FLOAT8
+					WHEN cost_source = $5 THEN (GREATEST(COALESCE(input_tokens, 0), 0) * $6::FLOAT8
+						+ GREATEST(COALESCE(output_tokens, 0), 0) * $7::FLOAT8) / 1e6
+					ELSE 0 END AS c
+				FROM cost_events
+				WHERE occurred_at >= $1 AND cost_source <> $2 AND (kind = 'decision') = $3
+			) priced
+		) totals
+		WHERE running >= $4::FLOAT8 - 1e-9
+		ORDER BY occurred_at, id
+		LIMIT 1`,
+		dayStart.UTC(), costSourceSimulated, decisionCap, capUSD, costSourceUnknown, refInPerMTok, refOutPerMTok).Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cap crossed at: %w", err)
+	}
+	at = at.UTC()
+	return &at, nil
+}
+
 // DecisionDay is the decision model's activity over the 24 hours before a moment, from the ledger
 // (DecisionModelStatus.calls_24h and cost_24h_usd): it survives a restart, unlike the client's own
 // counters.

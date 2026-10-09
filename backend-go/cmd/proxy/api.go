@@ -42,6 +42,10 @@ const (
 	codeBudgetExhausted          = "budget_exhausted"
 	codeCredentialsUnavailable   = "credentials_unavailable"
 	codeDecisionModelUnavailable = "decision_model_unavailable"
+	// The judge's provider refused a Studio draft: the account is out of credits (402), or the
+	// key was refused (401/403). Owner fixes, not outages (CO-8; P4 D40 kinds).
+	codeNoCredits         = "no_credits"
+	codeJudgeUnauthorized = "judge_unauthorized"
 )
 
 // apiRedact masks secrets in every REST error message (D42). It is the identity until

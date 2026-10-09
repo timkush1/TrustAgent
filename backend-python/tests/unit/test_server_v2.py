@@ -433,6 +433,48 @@ async def test_draft_evaluator_judge_failure_is_unavailable() -> None:
     assert exc_info.value.details().startswith("judge_unavailable: ")
 
 
+class RefusingJudge(LLMProvider):
+    """A judge whose provider answers with a fixed HTTP refusal (kind and status)."""
+
+    provider_name = "openrouter"
+
+    def __init__(self, *, model: str, kind: str, status: int) -> None:
+        super().__init__(model=model)
+        self.kind, self.status = kind, status
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        raise ProviderError(
+            f"openrouter answered HTTP {self.status}",
+            kind=self.kind,
+            provider="openrouter",
+            status=self.status,
+        )
+
+    async def health_check(self) -> bool:
+        return False
+
+
+@pytest.mark.parametrize(
+    ("kind", "status", "code", "details"),
+    [
+        ("credits", 402, grpc.StatusCode.RESOURCE_EXHAUSTED, "no_credits"),
+        ("auth", 401, grpc.StatusCode.PERMISSION_DENIED, "judge_unauthorized"),
+        ("auth", 403, grpc.StatusCode.PERMISSION_DENIED, "judge_unauthorized"),
+    ],
+)
+async def test_draft_evaluator_names_an_empty_account_or_a_refused_key(
+    kind: str, status: int, code: grpc.StatusCode, details: str
+) -> None:
+    # CO-8: Studio must not call an out-of-credits account or a refused key "engine unavailable".
+    judge = RefusingJudge(model="m", kind=kind, status=status)
+    async with serving(AuditServicer(audit_graph=None, provider=judge)) as audit_stub:
+        with pytest.raises(aio.AioRpcError) as exc_info:
+            await audit_stub.DraftEvaluator(DRAFT_REQUEST, timeout=RPC_TIMEOUT_S)
+
+    assert exc_info.value.code() == code
+    assert exc_info.value.details() == details
+
+
 # Fake; matches no redaction pattern, so only its registration masks it (P4-PLAN section 0 rule 8).
 UNMATCHED_SECRET = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
 
@@ -442,8 +484,8 @@ class LeakingJudge(FailingJudge):
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         raise ProviderError(
-            f"openrouter answered 401 for key {UNMATCHED_SECRET}",
-            kind="auth",
+            f"openrouter answered 503 for key {UNMATCHED_SECRET}",
+            kind="unavailable",
             provider="openrouter",
         )
 

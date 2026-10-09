@@ -331,7 +331,7 @@
         "wait_preview": "Wait for Preview impact to finish: Adopt runs it first.",
         "preview_failed": "Preview impact failed. Try it again before adopting.",
         "say_why": "Say what changed and why first.",
-        "warn_below_escalate": "This calibration's flag threshold ({warn_at}) is below the deep-audit threshold of route {route} ({escalate_from}), and a route flags only above the point where it starts deep audits. Lower that route's deep-audit threshold in Policies first, or keep the current thresholds."
+        "escalate_not_below_warn": "This calibration's flag threshold ({warn_at}) is below the deep-audit threshold of route {route} ({escalate_from}), and a route flags only above the point where it starts deep audits. Lower that route's deep-audit threshold in Policies first, or keep the current thresholds."
       }
     },
     "studio": {

@@ -94,7 +94,7 @@ func (c *checker) locate(sc scope, field string) (path string, n *yaml.Node, inh
 // finding records an error or warning about field. A local finding depends only on the value
 // of field, so when a route inherits that value from the defaults it was already reported there
 // and is not repeated.
-func (c *checker) finding(warn, local bool, sc scope, field, format string, args ...any) {
+func (c *checker) finding(warn, local bool, sc scope, code string, details map[string]any, field, format string, args ...any) {
 	path, n, inherited := c.locate(sc, field)
 	if inherited && local {
 		return
@@ -103,7 +103,7 @@ func (c *checker) finding(warn, local bool, sc scope, field, format string, args
 	if inherited {
 		msg += fmt.Sprintf(" (in route %q)", sc.name)
 	}
-	fe := FieldError{Path: path, Message: msg}
+	fe := FieldError{Path: path, Message: msg, Code: code, Details: details}
 	if n != nil {
 		fe.Line, fe.Col = n.Line, n.Column
 	}
@@ -115,19 +115,33 @@ func (c *checker) finding(warn, local bool, sc scope, field, format string, args
 }
 
 func (c *checker) bad(sc scope, field, format string, args ...any) {
-	c.finding(false, true, sc, field, format, args...)
+	c.finding(false, true, sc, "", nil, field, format, args...)
 }
 
 func (c *checker) badCross(sc scope, field, format string, args ...any) {
-	c.finding(false, false, sc, field, format, args...)
+	c.finding(false, false, sc, "", nil, field, format, args...)
 }
 
-func (c *checker) warn(sc scope, field, format string, args ...any) {
-	c.finding(true, true, sc, field, format, args...)
+// warn records a warning with its code (WarningCodes) and details; the route's name joins the
+// details as route.
+func (c *checker) warn(sc scope, code string, details map[string]any, field, format string, args ...any) {
+	c.finding(true, true, sc, code, withRoute(sc, details), field, format, args...)
 }
 
-func (c *checker) warnCross(sc scope, field, format string, args ...any) {
-	c.finding(true, false, sc, field, format, args...)
+func (c *checker) warnCross(sc scope, code string, details map[string]any, field, format string, args ...any) {
+	c.finding(true, false, sc, code, withRoute(sc, details), field, format, args...)
+}
+
+// withRoute adds the scope's route name to a warning's details ("default" for the defaults).
+func withRoute(sc scope, details map[string]any) map[string]any {
+	out := map[string]any{"route": sc.name}
+	if sc.name == "" {
+		out["route"] = DefaultRouteName
+	}
+	for k, v := range details {
+		out[k] = v
+	}
+	return out
 }
 
 // topError records an error about a top-level path of the document.
@@ -223,7 +237,8 @@ func (c *checker) run() *Policy {
 			if slices.Contains(enforcingModes, r.Mode) {
 				n, _ := find(d.root, parsePath("overrides.client_rules"))
 				c.warns = append(c.warns, FieldError{Path: "overrides.client_rules", Line: n.Line, Col: n.Column,
-					Message: fmt.Sprintf("client_rules lets end users rewrite rules on the enforcing route %q", r.Name)})
+					Message: fmt.Sprintf("client_rules lets end users rewrite rules on the enforcing route %q", r.Name),
+					Code:    WarnClientRulesEnforcing, Details: map[string]any{"route": r.Name}})
 				break
 			}
 		}
@@ -418,13 +433,13 @@ func (c *checker) settings(sc scope, s *Settings) {
 
 	enforcing := slices.Contains(enforcingModes, s.Mode)
 	if s.Fail == decision.FailClosed && !enforcing {
-		c.warnCross(sc, "fail", "fail: closed only matters in block and fallback modes (this route is %s)", s.Mode)
+		c.warnCross(sc, WarnFailClosedNotEnforcing, map[string]any{"mode": s.Mode}, "fail", "fail: closed only matters in block and fallback modes (this route is %s)", s.Mode)
 	}
 	if s.SampleRate < 1 && s.Mode != decision.ModeObserve {
-		c.warnCross(sc, "sample_rate", "sample_rate applies to observe routes only; this %s route checks every request", s.Mode)
+		c.warnCross(sc, WarnSampleRateNotObserve, map[string]any{"mode": s.Mode}, "sample_rate", "sample_rate applies to observe routes only; this %s route checks every request", s.Mode)
 	}
 	if enforcing && slices.Contains(s.Evidence.Sources, evidence.SourceRequestContext) {
-		c.warnCross(sc, "evidence.sources", "the %s route trusts user-message context: an end user could paste text that makes a false answer look supported (drop request_context)", s.Mode)
+		c.warnCross(sc, WarnTrustsUserContext, map[string]any{"mode": s.Mode}, "evidence.sources", "the %s route trusts user-message context: an end user could paste text that makes a false answer look supported (drop request_context)", s.Mode)
 	}
 }
 
@@ -525,13 +540,15 @@ func (c *checker) evaluators(sc scope, s *Settings) {
 			e.StageOrDefault() == decision.StageActive && slices.Contains(enforcingModes, s.Mode) {
 			r := &Route{Settings: *s}
 			if !facts(r, c.env.Specs, c.env).corroboratorReachable(r, spec, c.env.Specs) {
-				c.warn(sc, at+".ref", "%s blocks only when one of %s agrees, and none of them can run on this route",
+				c.warn(sc, WarnNoCorroborator, map[string]any{"ref": e.Ref, "corroborators": slices.Clone(spec.Outcomes.RequiresCorroboration)},
+					at+".ref", "%s blocks only when one of %s agrees, and none of them can run on this route",
 					e.Ref, strings.Join(spec.Outcomes.RequiresCorroboration, ", "))
 			}
 		}
 		for _, x := range spec.Outcomes.Implies {
 			if !attached[x] {
-				c.warn(sc, at+".ref", "%s implies %s, which this route does not attach, so their disagreement is never checked", e.Ref, x)
+				c.warn(sc, WarnImpliesUnattached, map[string]any{"ref": e.Ref, "implies": x},
+					at+".ref", "%s implies %s, which this route does not attach, so their disagreement is never checked", e.Ref, x)
 			}
 		}
 	}
@@ -554,7 +571,13 @@ func (c *checker) thresholds(sc scope, at string, t *Thresholds, spec *decision.
 		}
 	}
 	if esc != nil && !(*esc < warn) {
-		c.bad(sc, at+".thresholds", "escalate_from %v must be below warn_at %v", *esc, warn)
+		// A calibrated warn_at can land at or below the evaluator's escalate_from: the dashboard's
+		// Adopt then says why by this code (CO-18).
+		details := map[string]any{"route": sc.name, "warn_at": warn, "escalate_from": *esc}
+		if spec != nil {
+			details["ref"] = spec.Ref()
+		}
+		c.finding(false, true, sc, ErrEscalateNotBelowWarn, details, at+".thresholds", "escalate_from %v must be below warn_at %v", *esc, warn)
 	}
 	if crit != nil && !(warn <= *crit) {
 		c.bad(sc, at+".thresholds", "warn_at %v must not exceed critical_at %v", warn, *crit)

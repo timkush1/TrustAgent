@@ -25,6 +25,7 @@ var ErrLLMCapReached = errors.New("daily LLM spend cap reached")
 type LedgerStore interface {
 	RowStore
 	SpendToday(ctx context.Context, dayStart time.Time) (store.SpendTotals, error)
+	CapCrossedAt(ctx context.Context, dayStart time.Time, decisionCap bool, capUSD, refInPerMTok, refOutPerMTok float64) (*time.Time, error)
 }
 
 // LedgerConfig configures a Ledger.
@@ -292,11 +293,17 @@ func (l *Ledger) CapCostUSD(records []*pb.CostRecord) float64 {
 // published assumptions' judge (Claude Haiku 4.5, dashboard overrides applied), else its list
 // price.
 func (l *Ledger) referenceCostUSD(inputTokens, outputTokens int64) float64 {
-	in, out := referenceInputPerMTok, referenceOutputPerMTok
+	in, out := l.referencePrices()
+	return nonNegative(decision.TokenCostUSD(inputTokens, outputTokens, in, out))
+}
+
+// referencePrices is the reference judge's price per million input and output tokens (D47).
+func (l *Ledger) referencePrices() (in, out float64) {
+	in, out = referenceInputPerMTok, referenceOutputPerMTok
 	if entry, _, ok := l.prices.Lookup(l.audits.ref.Provider, l.audits.ref.Model); ok && !entry.Free() {
 		in, out = entry.InputPerMTok, entry.OutputPerMTok
 	}
-	return nonNegative(decision.TokenCostUSD(inputTokens, outputTokens, in, out))
+	return in, out
 }
 
 // referenceInputPerMTok and referenceOutputPerMTok are Claude Haiku 4.5's list price per million
@@ -396,11 +403,29 @@ func (l *Ledger) Seed(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cost ledger: seed: %w", err)
 	}
-	l.decision.seed(day, totals.DecisionUSD, totals.DecisionByKey)
+	l.decision.seed(day, totals.DecisionUSD, totals.DecisionByKey, l.crossedAt(ctx, start, true, l.decision, totals.DecisionUSD))
 	// Today's LLM rows no price covered count at the reference price, as their settle did (D91).
 	llm := totals.LLMUSD + l.referenceCostUSD(totals.LLMUnpricedInputTokens, totals.LLMUnpricedOutputTokens)
-	l.llm.seed(day, llm, nil)
+	l.llm.seed(day, llm, nil, l.crossedAt(ctx, start, false, l.llm, llm))
 	return nil
+}
+
+// crossedAt is when the stored spend first reached b's cap, for a seed that finds the cap already
+// spent before this process recorded a hit (a restart, or another replica's spend): the time of the
+// row that crossed it, not the time of the seed (CO-11). nil when the cap is not reached, a hit is
+// already recorded, or the read fails (the seed then records its own time, as before).
+func (l *Ledger) crossedAt(ctx context.Context, start time.Time, decisionCap bool, b *Budget, total float64) *time.Time {
+	st := b.State()
+	if st.CapUSD <= 0 || total < st.CapUSD-budgetEps || st.CapHitAt != nil {
+		return nil
+	}
+	in, out := l.referencePrices()
+	at, err := l.st.CapCrossedAt(ctx, start, decisionCap, st.CapUSD, in, out)
+	if err != nil {
+		l.log.Warn("cost ledger: when today's cap was reached could not be read; it counts from now", "err", err)
+		return nil
+	}
+	return at
 }
 
 // Run writes rows and reconciles the spend with the stored rows every ResyncEvery until ctx

@@ -35,7 +35,8 @@ const (
 	// could never apply. Details: index (0-based) of that earlier override.
 	CodeDuplicateOverride = "duplicate_override"
 	// CodePriceFarAboveContracts (a warning): more than FarAboveFactor times the contracts price
-	// of the same model (D53). Details: contracts_per_mtok, ratio.
+	// of the same model (D53). Details: contracts_per_mtok, ratio, and index (0-based) of the
+	// override, so the Prices panel attaches the warning to its row.
 	CodePriceFarAboveContracts = "price_far_above_contracts"
 )
 
@@ -60,7 +61,7 @@ func ValidateOverrides(overrides []decision.PriceEntry) []FieldError {
 			out = append(out, err)
 			continue
 		}
-		out = append(out, farAboveWarnings(at, e, contracts)...)
+		out = append(out, farAboveWarnings(at, i, e, contracts)...)
 	}
 	return out
 }
@@ -95,8 +96,8 @@ func overrideError(at string, e decision.PriceEntry, seen map[[2]string]int, i i
 
 // farAboveWarnings flags the prices of e that are more than FarAboveFactor times the contracts
 // price of the same model: the contracts entry with the same provider and match, otherwise the
-// one that would price a model the glob names.
-func farAboveWarnings(at string, e decision.PriceEntry, contracts decision.PriceTable) []FieldError {
+// one that would price a model the glob names. i is the override's index.
+func farAboveWarnings(at string, i int, e decision.PriceEntry, contracts decision.PriceTable) []FieldError {
 	ref, ok := contractsEntryFor(e, contracts)
 	if !ok {
 		return nil
@@ -117,7 +118,7 @@ func farAboveWarnings(at string, e decision.PriceEntry, contracts decision.Price
 			Path: at + "." + p.field, Code: CodePriceFarAboveContracts, Warning: true,
 			Message: fmt.Sprintf("$%s per million tokens is %s× the built-in price of $%s; check the units (USD per million tokens).",
 				formatUSD(p.price), formatUSD(ratio), formatUSD(p.listed)),
-			Details: map[string]any{"contracts_per_mtok": p.listed, "ratio": ratio},
+			Details: map[string]any{"contracts_per_mtok": p.listed, "ratio": ratio, "index": i},
 		})
 	}
 	return out

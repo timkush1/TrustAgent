@@ -385,6 +385,54 @@ func TestSeedLedgerAfterARestart(t *testing.T) {
 	}
 }
 
+// CO-11: a seed that finds today's cap already spent dates the hit when the stored rows crossed the
+// cap, not when the seed ran; with no crossing there is no hit. Against Postgres: rows cross the
+// LLM cap ($1) at 10:05 and the decision cap is never reached; the seed runs at 12:00.
+func TestSeedDatesTheCapHitFromTheCrossingRow(t *testing.T) {
+	schema := storetest.New(t)
+	pg, err := store.NewPostgresStore(context.Background(), schema.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pg.Close)
+	day := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	at := func(h, m int) time.Time { return day.Add(time.Duration(h)*time.Hour + time.Duration(m)*time.Minute) }
+	usd := func(v float64) *float64 { return &v }
+	tokens := func(n int64) *int64 { return &n }
+	if err := pg.InsertCostEvents(context.Background(), []store.CostEvent{
+		{OccurredAt: at(9, 0), Component: "deep_audit_verify", Kind: "llm", CostUSD: usd(0.4), CostSource: decision.CostComputed},
+		{OccurredAt: at(9, 30), Component: "deep_audit_verify", Kind: "llm", CostUSD: usd(5), CostSource: decision.CostSimulated},
+		// Unpriced: 100k input tokens at the reference judge's $1 per million is $0.10 (D91).
+		{OccurredAt: at(10, 0), Component: "studio_draft", Kind: "llm", Provider: "openai", Model: "gpt-x",
+			InputTokens: tokens(100000), OutputTokens: tokens(0), CostSource: decision.CostUnknown},
+		{OccurredAt: at(10, 5), Component: "deep_audit_verify", Kind: "llm", CostUSD: usd(0.5), CostSource: decision.CostReported},
+		{OccurredAt: at(11, 0), Component: "deep_audit_verify", Kind: "llm", CostUSD: usd(0.3), CostSource: decision.CostReported},
+		{OccurredAt: at(10, 30), Component: "gate", Kind: "decision", CostUSD: usd(0.2), CostSource: decision.CostReported},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clk := newClock(at(12, 0))
+	l := newTestLedger(t, LedgerConfig{DecisionCapUSD: 1, LLMCapUSD: 1, Store: pg, Now: clk.Now})
+	if err := l.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	v := l.Budgets()
+	if !v.LLM.Exhausted || v.LLM.CapHitAt == nil || !v.LLM.CapHitAt.Equal(at(10, 5)) {
+		t.Errorf("LLM cap hit at %v (exhausted %v), want 10:05", v.LLM.CapHitAt, v.LLM.Exhausted)
+	}
+	if got := l.CapHitAt(KindLLM); got == nil || !got.Equal(at(10, 5)) {
+		t.Errorf("CapHitAt(llm) = %v", got)
+	}
+	if v.Decision.CapHitAt != nil || l.CapHitAt(KindDecision) != nil {
+		t.Errorf("the decision cap was never reached, but its hit is %v", v.Decision.CapHitAt)
+	}
+	// A later seed keeps the first hit.
+	clk.Set(at(13, 0))
+	if err := l.Seed(context.Background()); err != nil || !l.Budgets().LLM.CapHitAt.Equal(at(10, 5)) {
+		t.Errorf("after a resync: %v (%v)", l.Budgets().LLM.CapHitAt, err)
+	}
+}
+
 // Only audits whose cost is known teach the audit estimate (D48): an audit without cost records,
 // or with a record no price covers, leaves the estimate where it was; a simulated record is a
 // known $0.

@@ -186,12 +186,18 @@ func (b *Budget) State() BudgetState {
 // seed raises the day's spend to the stored totals when they are higher (max(memory, db)): rows
 // another replica wrote, or rows written before a restart. The totals are of day; a seed read
 // before a rollover is ignored.
-func (b *Budget) seed(day string, total float64, byKey map[string]float64) {
+func (b *Budget) seed(day string, total float64, byKey map[string]float64, crossedAt *time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollover()
 	if day != b.day {
 		return
+	}
+	// The stored spend reached the cap before this process saw it: the hit is when the row that
+	// crossed it was written, not now (CO-11).
+	if crossedAt != nil && b.capHitAt == nil && crossedAt.UTC().Format(time.DateOnly) == day {
+		t := crossedAt.UTC()
+		b.capHitAt = &t
 	}
 	b.spent = max(b.spent, nonNegative(total))
 	for key, usd := range byKey {
