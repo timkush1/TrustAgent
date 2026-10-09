@@ -179,7 +179,7 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Examples">
         <span className="text-xs text-fg-muted">Examples:</span>
         {DESCRIBE_EXAMPLES.map((example) => (
-          <Button key={example} size="sm" variant="ghost" className="h-auto min-h-7 py-1 text-left whitespace-normal" onClick={() => setDescription(example)}>
+          <Button key={example} size="sm" variant="ghost" className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={() => setDescription(example)}>
             {example}
           </Button>
         ))}
