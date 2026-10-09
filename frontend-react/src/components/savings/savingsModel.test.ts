@@ -321,45 +321,58 @@ describe('realJudgeView', () => {
 
 describe('alternatives', () => {
   const shipped = { per1k: 3, basis: 'Fast check on every answer, plus a full LLM audit of the deep-audited share.', auditShare: 0.079 };
+  const publishedSame = { value: 5.75, basis: 'The same 5,000-token request plus about 150 output tokens.' };
   const published: Counterfactual = { ...full, method: 'static_assumptions', per_1k: 35.5, usd: 0.64, low: null, high: null, label: 'estimate', basis: 'not measured' };
-  const keys = (items: ReturnType<typeof alternatives>) => items.map((a) => a.key);
+  const keys = (view: ReturnType<typeof alternatives>) => view.items.map((a) => a.key);
 
-  it('lists the alternatives per 1,000 answers on a stack with a real judge, each with its own label', () => {
+  it('lists this window’s alternatives per 1,000 answers on a stack with a real judge, each with its own label', () => {
     const roi = roiSummary({ counterfactuals: [...roiSummary().counterfactuals, full] });
-    const items = alternatives(roi, null);
-    expect(keys(items)).toEqual(['llm_same_checks', 'llm_full_claim_audit']);
-    expect(items.map((a) => [a.per1k, a.valueLabel, a.note])).toEqual([
+    const view = alternatives(roi, null, publishedSame);
+    expect(view.title).toBe('Against the alternatives, per 1,000 answers');
+    expect(keys(view)).toEqual(['llm_same_checks', 'llm_full_claim_audit']);
+    expect(view.items.map((a) => [a.per1k, a.valueLabel, a.note])).toEqual([
       ['$2.26', 'estimate', 'Token model: your fast-check tokens priced at the judge’s rate'],
       ['$40.00', 'estimate', 'Fitted from your deep audits by answer length'],
     ]);
     // A badge subject apart from the component table's row of the same name.
-    expect(items[1]!.subject).toBe('An LLM auditing every answer claim by claim, per 1,000 answers');
+    expect(view.items[1]!.subject).toBe('An LLM auditing every answer claim by claim, per 1,000 answers');
+    // The published full audit from the server says it is not measured.
+    const early = alternatives(roiSummary({ counterfactuals: [...roiSummary().counterfactuals, published] }), null, publishedSame);
+    expect(early.items[1]!.note).toBe('Published assumptions · not measured');
   });
 
-  it('puts a real judge at the shipped defaults between the two on a free mock judge, all from the published figures', () => {
+  it('compares only published estimates on a free mock judge, a real judge cheapest of the three', () => {
     const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 }, counterfactuals: [...roiSummary().counterfactuals, published] });
-    const items = alternatives(demo, realJudgeView(demo, shipped, 35.5, 'Decompose into 8 claims.'));
-    expect(keys(items)).toEqual(['llm_same_checks', 'real_judge', 'llm_full_claim_audit']);
-    // The demo's same-questions figure is simulated; the published figures stay estimates.
-    expect(items.map((a) => [a.per1k, a.valueLabel])).toEqual([
-      ['$2.26', 'simulated'],
-      ['$3', 'estimate'],
-      ['$35.50', 'estimate'],
+    const view = alternatives(demo, realJudgeView(demo, shipped, 35.5, 'Decompose into 8 claims.'), publishedSame);
+    expect(view.title).toBe('With a real judge, per 1,000 answers');
+    expect(keys(view)).toEqual(['real_judge', 'llm_same_checks', 'llm_full_claim_audit']);
+    // Never the demo's simulated same-questions figure ($2.26 here) beside the published ones.
+    expect(view.items.map((a) => [a.per1k, a.valueLabel, a.basis])).toEqual([
+      ['$3', 'estimate', shipped.basis],
+      ['$5.75', 'estimate', publishedSame.basis],
+      ['$35.50', 'estimate', 'Decompose into 8 claims.'],
     ]);
-    expect(items[1]!.note).toBe('At the shipped defaults: about 8 in 100 answers deep-audited');
-    expect(items[2]!.note).toBe('Published assumptions · not measured');
+    expect(view.items.map((a) => a.note)).toEqual([
+      'At the shipped defaults: about 8 in 100 answers deep-audited',
+      'Published assumptions · not measured',
+      'Published assumptions · not measured',
+    ]);
   });
 
-  it('gives a full audit scaled up from free mock audits way to the published figure, and leaves out what is missing', () => {
+  it('leaves out what is missing and never shows a full audit scaled up from free mock audits', () => {
     const freeFull: Counterfactual = { ...full, method: 'uniform_sample', usd: 0, low: 0, high: 0, per_1k: 0, label: 'simulated' };
-    const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 }, counterfactuals: [freeFull] });
-    const items = alternatives(demo, realJudgeView(demo, shipped, 35.5, 'Decompose into 8 claims.'));
-    expect(keys(items)).toEqual(['real_judge', 'llm_full_claim_audit']);
-    expect([items[1]!.per1k, items[1]!.valueLabel, items[1]!.basis]).toEqual(['$35.50', 'estimate', 'Decompose into 8 claims.']);
-    // Without a real-judge view (a stack with a real judge) a free full audit is simply left out.
-    expect(alternatives(roiSummary({ simulated: true, counterfactuals: [freeFull] }), null)).toEqual([]);
+    expect(alternatives(roiSummary({ simulated: true, counterfactuals: [freeFull] }), null, publishedSame).items).toEqual([]);
     // A same-questions figure without a per-1,000 value is left out, never shown as $0.
     const noPrice = roiSummary({ counterfactuals: [{ ...roiSummary().counterfactuals[0]!, per_1k: null }] });
-    expect(alternatives(noPrice, null)).toEqual([]);
+    expect(alternatives(noPrice, null, publishedSame).items).toEqual([]);
+    // Without the published same-questions figure, a free mock judge's comparison keeps the other two.
+    const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 } });
+    expect(keys(alternatives(demo, realJudgeView(demo, shipped, 35.5, ''), { value: null, basis: '' }))).toEqual(['real_judge', 'llm_full_claim_audit']);
+  });
+
+  it('reads the published same-questions figure from the value claims', () => {
+    const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 } });
+    const same = alternatives(demo, realJudgeView(demo)).items.find((a) => a.key === 'llm_same_checks')!;
+    expect(same.per1k).toBe(`$${claimsDoc.claims.find((c) => c.id === 'llm_same_checks_cost_per_1k')!.value!.toFixed(2)}`);
   });
 });

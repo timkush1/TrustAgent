@@ -104,30 +104,42 @@ test.describe('savings', () => {
     const demo = await isDemo(page.request);
     await page.goto('/app/overview?tab=savings');
     const headline = page.getByRole('region', { name: /^Your cost:/ });
-    await expect(headline.getByRole('heading', { level: 3, name: 'Against the alternatives, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
     const realJudge = headline.locator('[data-alternative="real_judge"]');
+    const alternatives = () => headline.locator('[data-alternative]').evaluateAll((els) => els.map((el) => el.getAttribute('data-alternative')));
     if (demo) {
-      // The demo's mock judge is free: a real judge's cost is the published figure at the shipped
-      // defaults (about $3 per 1,000), beside $35.50 for a full audit of every answer, each an
-      // estimate; never the demo's own deep-audit rate scaled up, which has its own line.
+      // The demo's mock judge is free: the comparison is the published estimates only, on one
+      // basis: a real judge at the shipped defaults (about $3 per 1,000), an LLM asking the same
+      // questions ($5.75) and a full audit of every answer ($35.50). Never the demo's own
+      // deep-audit rate scaled up, which has its own line, nor its simulated same-questions figure.
+      await expect(headline.getByRole('heading', { level: 3, name: 'With a real judge, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
+      expect(await alternatives()).toEqual(['real_judge', 'llm_same_checks', 'llm_full_claim_audit']);
       await expect(realJudge).toContainText(/TrustAgent with a real judge\s*\$3(?![\d.])/);
       await expect(realJudge).toContainText('At the shipped defaults: about 8 in 100 answers deep-audited');
-      await expect(realJudge.getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
-      const full = headline.locator('[data-alternative="llm_full_claim_audit"]');
-      await expect(full).toContainText('$35.50');
-      await expect(full.getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
+      await expect(headline.locator('[data-alternative="llm_same_checks"]')).toContainText('$5.75');
+      await expect(headline.locator('[data-alternative="llm_full_claim_audit"]')).toContainText('$35.50');
+      for (const key of ['real_judge', 'llm_same_checks', 'llm_full_claim_audit']) {
+        await expect(headline.locator(`[data-alternative="${key}"]`).getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
+      }
       await expect(headline.getByText(/^The deep audit reads \$0/)).toContainText(/This demo deep-audits (every answer|about \d+ in 100 answers) to show the audit flow/);
     } else {
-      // A stack with a real judge states what its own deep audits cost: no published stand-in.
+      // A stack with a real judge compares this window's own figures: no published stand-in.
+      await expect(headline.getByRole('heading', { level: 3, name: 'Against the alternatives, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
       await expect(realJudge).toHaveCount(0);
       await expect(headline.getByText(/mock judge is free/)).toHaveCount(0);
     }
-    // One window, one cost: the chart's sentence states the headline's totals.
-    const early = await headline.getByText(/^So far: /).textContent();
-    const [, answers, spent] = /^So far: ([\d,]+) answers checked for (\$[\d.]+)\./.exec(early ?? '') ?? [];
-    expect(answers).toBeTruthy();
+    // One window, one cost: the chart's sentence states the headline's totals (read together, so
+    // traffic arriving between the two reads cannot split them).
     const chart = page.getByRole('figure', { name: 'What checking cost, against asking an LLM' });
-    await expect(chart).toContainText(`Checking ${answers} answers cost ${spent}`);
+    await expect
+      .poll(
+        async () => {
+          const early = (await headline.getByText(/^So far: /).textContent()) ?? '';
+          const [, answers, spent] = /^So far: ([\d,]+) answers checked for (\$[\d.]+)\./.exec(early) ?? [];
+          return answers !== undefined && ((await chart.textContent()) ?? '').includes(`Checking ${answers} answers cost ${spent}`);
+        },
+        { timeout: TIMEOUT },
+      )
+      .toBe(true);
   });
 
   for (const theme of ['light', 'dark'] as const) {

@@ -9,9 +9,9 @@
  * Third-party, Vendor or Simulated); what was stopped (block and fallback) apart from what was
  * flagged; fast-check speed; and the sampling status, including when the deep-audit budget ran out.
  *
- * On a demo whose mock judge is free, the alternatives include what checking costs with a real
- * judge at the shipped defaults (the published estimate), and a line below says what this demo's
- * own, far higher, deep-audit rate would add. The static replay words every span "over the
+ * On a demo whose mock judge is free, the alternatives are the published estimates (checking with a
+ * real judge at the shipped defaults, an LLM asking the same questions, a full audit), and a line
+ * below says what this demo's own, far higher, deep-audit rate would add. The static replay words every span "over the
  * replayed traffic" and says the recording carries no sampling state, since it has no window to
  * pick and no gateway to ask.
  *
@@ -51,7 +51,7 @@ import {
   realJudgeView,
   samplingLines,
   savingsRange,
-  type Alternative,
+  type Alternatives as AlternativesView,
   type RealJudgeView,
   type SavingsRange,
 } from './savingsModel';
@@ -89,14 +89,14 @@ const SAVED_WORDS: Record<SavingsRange['direction'], [string, string]> = {
 const ALTERNATIVE_COLS: Record<number, string> = { 1: 'sm:grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3' };
 
 /**
- * The alternatives in the headline's unit, side by side: one surface with hairline dividers, not a
- * row of stat cards (DESIGN.md), each figure with its own value label.
+ * The alternatives in the headline's unit, side by side and on one basis: one surface with
+ * hairline dividers, not a row of stat cards (DESIGN.md), each figure with its own value label.
  */
-function Alternatives({ items }: { items: Alternative[] }) {
+function AlternativesStrip({ title, items }: AlternativesView) {
   return (
     <div className="space-y-1.5 border-t border-border pt-3">
       <h3 id="savings-alternatives" className="text-sm font-medium text-fg">
-        Against the alternatives, per 1,000 answers
+        {title}
       </h3>
       <dl
         aria-labelledby="savings-alternatives"
@@ -143,7 +143,7 @@ function FreeMockJudge({ view }: { view: RealJudgeView | null }) {
 
 /**
  * The headline, the savings range and the early-data sentence; then the alternatives per 1,000
- * answers (on a free mock judge, with a real judge's cost at the shipped defaults among them).
+ * answers (on a free mock judge, the published estimates with a real judge at the shipped defaults).
  */
 function Headline({ roi }: { roi: RoiSummary }) {
   const line = savingsLine(roi);
@@ -178,7 +178,7 @@ function Headline({ roi }: { roi: RoiSummary }) {
           </p>
         ) : null}
       </div>
-      {others.length > 0 ? <Alternatives items={others} /> : null}
+      {others.items.length > 0 ? <AlternativesStrip {...others} /> : null}
       {line.freeMockJudge ? <FreeMockJudge view={realJudge} /> : null}
       <p className="text-xs text-fg-muted">{copy.savings.caption}</p>
     </section>

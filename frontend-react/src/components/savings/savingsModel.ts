@@ -17,6 +17,7 @@ import {
   costMethodWord,
   costNotMeasured,
   costRange,
+  costSameChecksPublished,
   costSelectionBreakdown,
   costUniformPaused,
 } from '@/domain/presentation';
@@ -438,64 +439,95 @@ export interface Alternative {
   subject: string;
 }
 
+export interface Alternatives {
+  /** "Against the alternatives, per 1,000 answers" or, on a free mock judge, "With a real judge, …". */
+  title: string;
+  items: Alternative[];
+}
+
+/** "Published assumptions · not measured". */
+const PUBLISHED_NOTE = `${costMethodWord('static_assumptions')} · ${costNotMeasured}`;
+
 /**
- * The alternatives beside the headline's cost, all in its unit (per 1,000 answers), so they read
- * as one comparison: an LLM asking the same questions; on a free mock judge, checking with a real
- * judge at the shipped defaults (the published estimate, never the demo's audit rate scaled up);
- * and an LLM auditing every answer claim by claim. A figure the summary does not have is left out,
- * and a full audit scaled up from free mock audits gives way to the published one.
+ * The comparison beside the headline's cost, all in its unit (per 1,000 answers) and on one basis,
+ * so the figures can be read against each other:
+ * - on a stack with a real judge, this window's alternatives: an LLM asking the same questions and
+ *   an LLM auditing every answer claim by claim, each with the summary's label;
+ * - on a demo whose mock judge is free, the published estimates only: TrustAgent with a real judge
+ *   at the shipped defaults, an LLM asking the same questions and an LLM auditing every answer.
+ *   The demo's simulated same-questions figure stays in the sentences above and the table: set
+ *   beside a published one, its smaller simulated token counts would make a real judge look dearer
+ *   than asking the same questions.
+ * A figure that is missing is left out, never shown as $0, and a full audit scaled up from free
+ * mock audits never appears.
  */
-export function alternatives(roi: RoiSummary, realJudge: RealJudgeView | null): Alternative[] {
-  const out: Alternative[] = [];
+export function alternatives(
+  roi: RoiSummary,
+  realJudge: RealJudgeView | null,
+  publishedSame: { value: number | null; basis: string } = costSameChecksPublished,
+): Alternatives {
+  const sameLabel = costCounterfactualView('llm_same_checks').label;
+  const fullLabel = costCounterfactualView('llm_full_claim_audit').label;
+  if (realJudge) {
+    const items: Alternative[] = [
+      {
+        key: 'real_judge',
+        label: 'TrustAgent with a real judge',
+        per1k: realJudge.shippedPer1k,
+        valueLabel: 'estimate',
+        basis: realJudge.basis,
+        note: `At the shipped defaults: ${realJudge.shippedShare} answers deep-audited`,
+        subject: 'Checking at the shipped defaults with a real judge',
+      },
+    ];
+    if (finite(publishedSame.value) && publishedSame.value > 0) {
+      items.push({
+        key: 'llm_same_checks',
+        label: sameLabel,
+        per1k: aboutUsd(publishedSame.value),
+        valueLabel: 'estimate',
+        basis: publishedSame.basis,
+        note: PUBLISHED_NOTE,
+        subject: `${sameLabel}, published, per 1,000 answers`,
+      });
+    }
+    items.push({
+      key: 'llm_full_claim_audit',
+      label: fullLabel,
+      per1k: realJudge.fullAuditPer1k,
+      valueLabel: 'estimate',
+      basis: realJudge.fullAuditBasis,
+      note: PUBLISHED_NOTE,
+      subject: `${fullLabel}, published, per 1,000 answers`,
+    });
+    return { title: 'With a real judge, per 1,000 answers', items };
+  }
+  const items: Alternative[] = [];
   const same = counterfactual(roi, 'llm_same_checks');
   if (same && finite(same.per_1k)) {
-    const label = costCounterfactualView('llm_same_checks').label;
-    out.push({
+    items.push({
       key: 'llm_same_checks',
-      label,
+      label: sameLabel,
       per1k: formatUsd(same.per_1k),
       valueLabel: counterfactualLabel(same, roi.simulated),
       basis: same.basis,
       note: costMethodWord(same.method),
-      subject: `${label}, per 1,000 answers`,
+      subject: `${sameLabel}, per 1,000 answers`,
     });
   }
-  if (realJudge) {
-    out.push({
-      key: 'real_judge',
-      label: 'TrustAgent with a real judge',
-      per1k: realJudge.shippedPer1k,
-      valueLabel: 'estimate',
-      basis: realJudge.basis,
-      note: `At the shipped defaults: ${realJudge.shippedShare} answers deep-audited`,
-      subject: 'Checking at the shipped defaults with a real judge',
-    });
-  }
-  const label = costCounterfactualView('llm_full_claim_audit').label;
-  const published = `${costMethodWord('static_assumptions')} · ${costNotMeasured}`;
   const full = counterfactual(roi, 'llm_full_claim_audit');
   if (full && finite(full.per_1k) && !freeMockCounterfactual(full, roi.simulated)) {
-    out.push({
+    items.push({
       key: 'llm_full_claim_audit',
-      label,
+      label: fullLabel,
       per1k: formatUsd(full.per_1k),
       valueLabel: counterfactualLabel(full, roi.simulated),
       basis: full.basis,
-      note: costIsMeasuredMethod(full.method) ? costMethodWord(full.method) : published,
-      subject: `${label}, per 1,000 answers`,
-    });
-  } else if (realJudge) {
-    out.push({
-      key: 'llm_full_claim_audit',
-      label,
-      per1k: realJudge.fullAuditPer1k,
-      valueLabel: 'estimate',
-      basis: realJudge.fullAuditBasis,
-      note: published,
-      subject: `${label}, per 1,000 answers`,
+      note: costIsMeasuredMethod(full.method) ? costMethodWord(full.method) : PUBLISHED_NOTE,
+      subject: `${fullLabel}, per 1,000 answers`,
     });
   }
-  return out;
+  return { title: 'Against the alternatives, per 1,000 answers', items };
 }
 
 // ---------------------------------------------------------------------------------------- savings

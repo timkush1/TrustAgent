@@ -143,22 +143,28 @@ describe('Savings tab', { timeout: 20_000 }, () => {
       roi: roiSummary({ simulated: true, llm_cost: { ...base.llm_cost, usd: 0, value: 0 }, counterfactuals: [...base.counterfactuals, freeFull] }),
     });
     renderPage('/app/savings', { control });
-    // Among the alternatives per 1,000 answers, a real judge's cost at the shipped defaults and the
-    // full audit of every answer come from the published figures, each an estimate, never this
-    // demo's own deep-audit rate scaled up; the simulated same-questions figure keeps its label.
-    const real = (await screen.findByText('TrustAgent with a real judge')).closest<HTMLElement>('[data-alternative]')!;
+    // On a free mock judge the comparison is the published estimates only, on one basis: checking
+    // with a real judge at the shipped defaults, an LLM asking the same questions, a full audit.
+    // Never this demo's own deep-audit rate scaled up, nor its simulated same-questions figure.
+    expect(await screen.findByRole('heading', { level: 3, name: 'With a real judge, per 1,000 answers' })).toBeInTheDocument();
+    const real = screen.getByText('TrustAgent with a real judge').closest<HTMLElement>('[data-alternative]')!;
     expect(real).toHaveAttribute('data-alternative', 'real_judge');
     expect(within(real).getByText('$3')).toBeInTheDocument();
     expect(real).toHaveTextContent('At the shipped defaults: about 8 in 100 answers deep-audited');
     expect(badge('Estimate', 'Checking at the shipped defaults with a real judge')).toBeInTheDocument();
+    const same = document.querySelector<HTMLElement>('[data-alternative="llm_same_checks"]')!;
+    expect(within(same).getByText('$5.75')).toBeInTheDocument();
+    expect(same).toHaveTextContent('Published assumptions · not measured');
+    expect(badge('Estimate', 'An LLM asking the same questions, published, per 1,000 answers')).toBeInTheDocument();
     const full = document.querySelector<HTMLElement>('[data-alternative="llm_full_claim_audit"]')!;
     expect(within(full).getByText('$35.50')).toBeInTheDocument();
     expect(full).toHaveTextContent('Published assumptions · not measured');
-    expect(badge('Estimate', 'An LLM auditing every answer claim by claim, per 1,000 answers')).toBeInTheDocument();
-    expect(badge('Simulated', 'An LLM asking the same questions, per 1,000 answers')).toBeInTheDocument();
-    expect(
-      [...document.querySelectorAll('[data-alternative]')].map((el) => el.getAttribute('data-alternative')),
-    ).toEqual(['llm_same_checks', 'real_judge', 'llm_full_claim_audit']);
+    expect(badge('Estimate', 'An LLM auditing every answer claim by claim, published, per 1,000 answers')).toBeInTheDocument();
+    expect([...document.querySelectorAll('[data-alternative]')].map((el) => el.getAttribute('data-alternative'))).toEqual([
+      'real_judge',
+      'llm_same_checks',
+      'llm_full_claim_audit',
+    ]);
     // Then this window's own rate (58 audits over 540 answers), apart from the published figures.
     const free = screen.getByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
     expect(free).toHaveTextContent(

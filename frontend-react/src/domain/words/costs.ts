@@ -54,7 +54,7 @@ export function costIsMeasuredMethod(method: Counterfactual['method']): boolean 
 }
 
 /** A published value claim (contracts/claims/value-claims.v1.json): its figure and where it comes from. */
-interface CostClaim {
+export interface CostClaim {
   value: number | null;
   basis: string;
 }
@@ -73,6 +73,12 @@ export const costFullAuditPer1k: number | null = costClaim('llm_full_audit_cost_
 
 /** Why the published full-audit figure is what it is (the value claim's basis). */
 export const costFullAuditBasis: string = costClaim('llm_full_audit_cost_per_1k').basis;
+
+/**
+ * The published assumption for an LLM asking the same questions as the fast check, per 1,000
+ * answers (value claim llm_same_checks_cost_per_1k, an estimate), with its basis.
+ */
+export const costSameChecksPublished: CostClaim = costClaim('llm_same_checks_cost_per_1k');
 
 /**
  * What checking costs with a real judge at the shipped defaults (value claim

@@ -167,14 +167,15 @@ describe('static build', () => {
     expect(within(chart).getByRole('radio', { name: 'Full audit' })).toBeInTheDocument();
     const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ });
     expect(within(row).getByRole('button', { name: /^Estimate:/ })).toBeInTheDocument();
-    // The alternatives per 1,000 answers: both comparisons, and a real judge's cost at the shipped
-    // defaults from the published figures; the demo's own rate comes after, in its own line.
+    // With a real judge, per 1,000 answers: the published estimates on one basis; the demo's own
+    // rate comes after, in its own line.
     expect([...document.querySelectorAll('[data-alternative]')].map((el) => el.getAttribute('data-alternative'))).toEqual([
-      'llm_same_checks',
       'real_judge',
+      'llm_same_checks',
       'llm_full_claim_audit',
     ]);
     expect(document.querySelector('[data-alternative="real_judge"]')).toHaveTextContent(/\$3.*At the shipped defaults: about 8 in 100 answers deep-audited/);
+    expect(document.querySelector('[data-alternative="llm_same_checks"]')).toHaveTextContent(/\$5\.75/);
     expect(document.querySelector('[data-alternative="llm_full_claim_audit"]')).toHaveTextContent(/\$35\.50/);
     expect(screen.getByText(/^The deep audit reads \$0/)).toHaveTextContent(/This demo deep-audits about \d+ in 100 answers to show the audit flow/);
     // No window to pick and no gateway to ask: no window words, no made-up sampling count.
