@@ -318,6 +318,10 @@ Ask the owner for the 5-minute localhost PKCE check in §21 #1. Use the answer a
   - `outcomes.v1.json` wording for `calibration_missing` and `calibration_warning`.
 - **Setup:**
   - `setup.step_connect.{prerequisite, no_credits ($5), check_again, no_limit, simulated, simulated_off, callback_origin_mismatch, callback_expired}`;
+    *Erratum (791c3bd):* `callback_origin_mismatch` is not seeded. The 409 that refuses a
+    dashboard address carries the proxy's own message (which also covers a gateway with no public
+    URL), and a callback from another address is answered as `invalid_nonce`, which reads
+    `callback_expired`;
   - `setup.step_try.disabled_reason`.
 - **Settings:**
   - `settings.credential_remove_impact`, `settings.env_managed`;
@@ -1748,7 +1752,8 @@ None of these is in the §4.2 P4 gate.
    flock /tmp/trustagent-heavy.lock make demo OPEN=0 DEMO_PROJECT=$DEMO_PROJECT
    make demo-scenarios DEMO_PROJECT=$DEMO_PROJECT | tee $EVID/a-scenarios.txt                     # 26 × ok, 0 × skipping
    (cd frontend-react && CI=1 npx playwright test --project=stack --workers=1 \
-      -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings") | tee $EVID/a-playwright.txt
+      -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings|labels") | tee $EVID/a-playwright.txt
+      # "labels" (the label queue specs) as ci-e2e.yml runs it; erratum (1cfc60c)
    H="X-TrustAgent-Key: $TRUSTAGENT_ADMIN_KEY"; P=http://127.0.0.1:18080
    curl -fsS -H "$H" $P/api/status > $EVID/a-status.json
    curl -fsS -H "$H" $P/api/pricing > $EVID/a-pricing.json
