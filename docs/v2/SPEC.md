@@ -3103,7 +3103,7 @@ Where a section above says otherwise, the decision cited for it here wins.
 | §3.4 (infra) | The onboarding stack overlay; `make configure WITH_SECRETS=1` | D70, D74 |
 | §4.2 gate | Proofs run on two stacks: demo-shaped (studio, savings) and onboarding | D70 |
 | §6 (owner guide) | `configure --with-secrets`; the credit prerequisite is about $5 | D74, D86 |
-| §7.4 (savings) | Simulated spend never counts toward a cap; ROI's decision cost counts the gate component only; overrides > file > contracts; over simulated traffic every ROI figure is Simulated except the published `static_assumptions` full audit, which stays an Estimate (its basis says the answers are simulated) | D46, D50, D53 |
+| §7.4 (savings) | Simulated spend never counts toward a cap; ROI's decision cost counts the gate component only; overrides > file > contracts; over simulated traffic every ROI figure is Simulated except the published `static_assumptions` full audit, which stays an Estimate (its basis says the answers are simulated) | D46, D50, D53, D97 |
 | §7.5 (credentials) | Fingerprints are an HMAC of the master key's subkey; secrets re-entered after an origin change; PKCE; credentials bound to canonical origins (and refused at dial time, D96); what non-admin callers see | D30, D37, D38, D78, D79 |
 | §7.6 (vectors) | Cost vectors (`call_cost`, `price_lookup`, `per_1k`), frozen and run in Go and Python; TypeScript in P5 | D85 |
 | Appendix B (metrics) | `trustagent_gateway_cost_write_dropped_total` | D51 |
@@ -3136,6 +3136,18 @@ Where a section above says otherwise, the decision cited for it here wins.
 
 ### Decisions made at the P4 fix rounds
 
+- **D97 (the published full audit over simulated traffic; exception to D46):** the
+  `static_assumptions` full-audit counterfactual keeps its Estimate label on a simulated stack, for
+  its per-1,000 figure (value claim `llm_full_audit_cost_per_1k`) and for the window total it implies
+  (that figure × the window's simulated answers). Its basis and the component table's row say the
+  answer count is simulated. A counterfactual carries one label on the wire (`Counterfactual.label`),
+  so the total is not split off as Simulated. Every other ROI figure over simulated traffic stays
+  Simulated (D46). On a demo whose mock judge is free, the Savings chart offers no full-audit
+  comparison (the option is disabled, with the reason), and the table's full-audit row points at
+  TrustAgent with a real judge: the demo's own spend leaves out the judge it would pay for.
+- **D92 (refined):** a status read re-reads the decision model's 24-hour figures when they are older
+  than 5 s (at most one read per 5 s, 2 s timeout, the last value while a read runs or after a failed
+  one), so `/api/status` right after traffic shows it rather than the boot read.
 - **D98 (corroboration warnings):** any one corroborator is enough for a block (§2.9
   `corroborated`), so a warning about a missing one is wrong when another can still agree. The
   evaluator lint (`lint.go`, `lint.ts`, with `Attached`) warns once, when no listed corroborator is
