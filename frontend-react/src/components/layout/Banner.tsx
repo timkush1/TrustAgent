@@ -23,7 +23,7 @@ function GatewayBanner() {
       data-banner={banner.id}
       style={{ '--tone': `var(${toneVar(banner.tone)})` } as CSSProperties}
       className={cn(
-        'flex items-start gap-2 border-b px-6 py-2 text-sm',
+        'flex items-start gap-2 border-b px-6 py-2 text-sm max-sm:px-4',
         banner.tone === 'neutral'
           ? 'border-border bg-surface-sunken text-fg'
           : 'border-[color-mix(in_oklab,var(--tone)_40%,transparent)] bg-[color-mix(in_oklab,var(--tone)_var(--tint),var(--surface))] text-fg',
@@ -37,7 +37,8 @@ function GatewayBanner() {
             {' '}
             {splitCommands(banner.action).map((part, i) =>
               part.command ? (
-                <code key={i} className="rounded-sm bg-surface px-1 py-0.5 font-mono text-xs text-fg">
+                // A command never breaks across lines (on a phone it moves to the next line whole).
+                <code key={i} className="rounded-sm bg-surface px-1 py-0.5 font-mono text-xs whitespace-nowrap text-fg">
                   {part.text}
                 </code>
               ) : (

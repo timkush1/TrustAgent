@@ -29,7 +29,7 @@
     "banners": {
       "demo": {
         "title": "Demo stack",
-        "body": "Mock checks and a mock judge: every number here is simulated.",
+        "body": "Mock checks and a mock judge: every number here is simulated, except the published estimates, which say so.",
         "action": "To use your own keys: {command:demo_to_own_keys}"
       },
       "readonly": {

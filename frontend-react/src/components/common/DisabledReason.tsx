@@ -40,7 +40,7 @@ function DemoFix() {
     <>
       {splitCommands(text).map((part, i) =>
         part.command ? (
-          <code key={i} className="rounded-sm bg-surface-sunken px-1 font-mono text-2xs text-fg">
+          <code key={i} className="rounded-sm bg-surface-sunken px-1 font-mono text-2xs whitespace-nowrap text-fg">
             {part.text}
           </code>
         ) : (
