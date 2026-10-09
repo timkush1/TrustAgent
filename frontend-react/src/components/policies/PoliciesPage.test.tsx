@@ -398,7 +398,8 @@ describe('Policies page', { timeout: 20_000 }, () => {
 
   it('says policy warnings in plain words, with the server text as technical detail', async () => {
     const user = userEvent.setup();
-    const raw = 'routes[0].evaluators[2].ref (line 40, col 9): commitments@1 is corroborated by contradiction@2, which this route does not attach';
+    const raw =
+      'routes[0].evaluators[2].ref (line 40, col 9): commitments@1 blocks only when one of contradiction, det:numbers_not_in_evidence, det:dates_not_in_evidence agrees, and none of them can run on this route';
     renderPage('/app/policies', {
       control: createControlApi({
         policies: policyState({
@@ -407,7 +408,11 @@ describe('Policies page', { timeout: 20_000 }, () => {
       }),
     });
     const list = await screen.findByRole('list', { name: 'Policy warnings' });
-    expect(within(list).getByText('support-bot: Unapproved commitments needs Contradiction to agree before it can block, but this route does not run Contradiction. Add Contradiction to the route so Unapproved commitments can block.')).toBeInTheDocument();
+    expect(
+      within(list).getByText(
+        'support-bot: Unapproved commitments blocks only when another signal agrees (Contradiction, Number check or Date check), and none of them can run on this route, so it can flag answers but not block them. Give the route documents to check against so the instant checks can run.',
+      ),
+    ).toBeInTheDocument();
     expect(within(list).getByText('Policy version 5 no longer passes validation, so version 4 stays in effect until a valid version is saved.')).toBeInTheDocument();
     expect(within(list).getByText(raw)).not.toBeVisible();
     await user.click(within(list).getAllByText('Technical detail')[0]);

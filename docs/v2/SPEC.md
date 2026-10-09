@@ -3081,6 +3081,7 @@ Where a section above says otherwise, the decision cited for it here wins.
 |---|---|---|
 | §2.2 (proto) | `Credential.allowed_hosts`, `EngineInfo.env_managed` and `runtime_config_epoch`; the push carries `{version, epoch, credentials, judge, price_table_json}` and never `decision`; the engine resolves the judge from it, env first | D34 |
 | §2.3 (storage) | The settings version and epoch live in the `settings` table and bump only on runtime-config and credential writes; migration 0005 adds the cost-ledger columns (`audit_id`, `hedge`, `late`, `estimated`), `traces.response_chars`, the calibration mirror index and the append-only admin audit log; migration 0006 also refuses `TRUNCATE` on `admin_audit_log` (a statement trigger, since row triggers never fire on it); audit writes wait for their trace's queued writes (the per-trace barrier) | D31, D44, D45, D83 |
+| §2.8 (references) | On a route, a corroboration warning only when none of the listed corroborators can agree (one instant check or attached evaluator is enough); the policy check warns only on a blocking route where none can fire there | D98 |
 | §2.4 #10 | `reason=<code>` matches a whole code, `reason=<prefix>:` a prefix; both need `since` | D68 |
 | §2.4 #12 | `DecisionRequestView {requests, request_sha256, matches_recorded, cpt, mismatch_reason}` | D63 |
 | §2.4 #26, #45, #46b | #45 fits without activating; new #46b activates a calibration; #26 takes `calibration_ids` for a dry run | D62 |
@@ -3132,6 +3133,17 @@ Where a section above says otherwise, the decision cited for it here wins.
 - **D76b (lead text at CP-SEC2/3):** a bind that applies `decision_model` moves an explicit backend
   the credential cannot serve to auto; one that applies `judge` moves an explicit provider other than
   the credential's own to auto; env-managed paths stay.
+
+### Decisions made at the P4 fix rounds
+
+- **D98 (corroboration warnings):** any one corroborator is enough for a block (§2.9
+  `corroborated`), so a warning about a missing one is wrong when another can still agree. The
+  evaluator lint (`lint.go`, `lint.ts`, with `Attached`) warns once, when no listed corroborator is
+  an instant check and none is attached. The policy check warns on a block-eligible, active
+  evaluator of a block or fallback route when none of its corroborators can fire there (the block
+  readiness rule: an instant check with documents or rules, or an attached evaluator that can reach
+  critical); routes that do not block get no warning, since block readiness lists what they would
+  need. An implied evaluator that is not attached still warns, each on its own.
 
 ### Requests answered at the integration
 

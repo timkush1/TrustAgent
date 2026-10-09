@@ -1,18 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { fieldWarningView, isDivergedWarning, policyWarningView } from './policyWarnings';
 
-const ctx = { routes: ['support-bot', 'billing-bot'], names: new Map([['commitments', 'Unapproved commitments'], ['contradiction', 'Contradiction']]) };
+const ctx = {
+  routes: ['support-bot', 'billing-bot'],
+  names: new Map([
+    ['commitments', 'Unapproved commitments'],
+    ['contradiction', 'Contradiction'],
+    ['groundedness', 'Groundedness'],
+  ]),
+};
 
 describe('policy warnings in plain words', () => {
-  it('names the route and the checks of a corroboration warning, and keeps the server text', () => {
-    const raw = 'routes[1].evaluators[0].ref (line 52, col 11): commitments@1 is corroborated by contradiction@1, which this route does not attach';
+  it('names the route and the checks of a corroboration warning, and keeps the server text (D98)', () => {
+    const raw =
+      'routes[1].evaluators[0].ref (line 52, col 11): commitments@1 blocks only when one of contradiction, det:numbers_not_in_evidence, det:dates_not_in_evidence agrees, and none of them can run on this route';
     const view = policyWarningView(raw, ctx);
     expect(view.route).toBe('billing-bot');
+    // Any one of the listed signals is enough, and the instant checks need documents.
     expect(view.text).toBe(
-      'billing-bot: Unapproved commitments needs Contradiction to agree before it can block, but this route does not run Contradiction. Add Contradiction to the route so Unapproved commitments can block.',
+      'billing-bot: Unapproved commitments blocks only when another signal agrees (Contradiction, Number check or Date check), and none of them can run on this route, so it can flag answers but not block them. Give the route documents to check against so the instant checks can run.',
     );
     expect(view.detail).toBe(raw);
-    expect(view.text).not.toMatch(/routes\[|@1|corroborated/);
+    expect(view.text).not.toMatch(/routes\[|@1|det:|corroborat/);
+    // Only checks listed: attaching one is the fix.
+    const checksOnly = policyWarningView('routes[0].evaluators[0].ref: groundedness@1 blocks only when one of contradiction agrees, and none of them can run on this route', ctx);
+    expect(checksOnly.text).toBe(
+      'support-bot: Groundedness blocks only when another signal agrees (Contradiction), and none of them can run on this route, so it can flag answers but not block them. Attach Contradiction to the route so it can confirm a block.',
+    );
+  });
+
+  it('words an older gateway’s per-corroborator warning without claiming the check cannot block', () => {
+    const view = policyWarningView('routes[1].evaluators[0].ref: commitments@1 is corroborated by contradiction, which this route does not attach', ctx);
+    expect(view.text).toBe('billing-bot: Contradiction is one of the signals that can confirm Unapproved commitments before it blocks, and this route does not run it.');
+    expect(view.text).not.toMatch(/Add Contradiction|can block\./);
   });
 
   it('rephrases every warning the gateway writes today', () => {
@@ -43,9 +63,11 @@ describe('policy warnings in plain words', () => {
   });
 
   it('reads validate field warnings the same way', () => {
-    const view = fieldWarningView({ path: 'routes[1].evaluators[0].ref', message: 'commitments@1 is corroborated by contradiction@1, which this route does not attach' }, ctx);
+    const message = 'commitments@1 blocks only when one of contradiction, det:numbers_not_in_evidence agrees, and none of them can run on this route';
+    const view = fieldWarningView({ path: 'routes[1].evaluators[0].ref', message }, ctx);
     expect(view.route).toBe('billing-bot');
-    expect(view.detail).toBe('routes[1].evaluators[0].ref: commitments@1 is corroborated by contradiction@1, which this route does not attach');
+    expect(view.text).toMatch(/^billing-bot: Unapproved commitments blocks only when another signal agrees \(Contradiction or Number check\)/);
+    expect(view.detail).toBe(`routes[1].evaluators[0].ref: ${message}`);
   });
 
   it('recognises the diverged-file warning the banner already shows', () => {

@@ -370,6 +370,27 @@ func TestLintReferences(t *testing.T) {
 	if lints := LintSpec(onRoute, LintOptions{Registry: IDSet("groundedness"), Attached: IDSet("groundedness")}); len(lints) != 0 {
 		t.Errorf("attached: %+v", lints)
 	}
+	// D98: any one corroborator is enough. An instant check can always agree, so a list with one
+	// never warns; nor does one with an attached evaluator. Only a list where none can agree warns,
+	// once, naming them all.
+	reg := IDSet("groundedness", "contradiction")
+	withDet := mustParse(t, withSpec(t, map[string]any{"outcomes.requires_corroboration": []string{"contradiction", "det:numbers_not_in_evidence"}}))
+	if lints := LintSpec(withDet, LintOptions{Registry: reg, Attached: IDSet()}); len(lints) != 0 {
+		t.Errorf("an instant check can agree: %+v", lints)
+	}
+	both := mustParse(t, withSpec(t, map[string]any{"outcomes.requires_corroboration": []string{"groundedness", "contradiction"}}))
+	if lints := LintSpec(both, LintOptions{Registry: reg, Attached: IDSet("contradiction")}); len(lints) != 0 {
+		t.Errorf("one attached corroborator is enough: %+v", lints)
+	}
+	lints = LintSpec(both, LintOptions{Registry: reg, Attached: IDSet()})
+	if len(lints) != 1 || lints[0].Message != "none of groundedness, contradiction is attached to this route, so nothing can agree before a block" {
+		t.Errorf("none attached: %+v", lints)
+	}
+	// An implied evaluator is a cross-check of its own: each one not attached warns.
+	implied := mustParse(t, withSpec(t, map[string]any{"outcomes.implies": []string{"groundedness", "contradiction"}}))
+	if got := pathsOf(LintSpec(implied, LintOptions{Registry: reg, Attached: IDSet("groundedness")}), LintReferenceNotAttached); !reflect.DeepEqual(got, []string{"outcomes.implies"}) {
+		t.Errorf("implies: %v", got)
+	}
 }
 
 func TestLintNonDescriptiveKeysInDocumentOrder(t *testing.T) {

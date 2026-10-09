@@ -823,7 +823,11 @@ func LintSpec(s *Spec, opts LintOptions) []Lint {
 			"critical_at "+jsNumber(*criticalAt)+" must be at least warn_at "+jsNumber(warnAt))
 	}
 
-	// Hard rule: referenced evaluators exist; a warning when the route does not attach them.
+	// Hard rule: referenced evaluators exist. On a route, a warning when an implied evaluator is not
+	// attached, and when no corroborator can agree (D98): any one listed is enough, an instant check
+	// included, so the warning comes only when none is an instant check and none is attached.
+	corroborates := false
+	var unattached []string
 	for _, ref := range []struct {
 		path string
 		ids  []string
@@ -831,18 +835,34 @@ func LintSpec(s *Spec, opts LintOptions) []Lint {
 		{"outcomes.requires_corroboration", s.Outcomes.RequiresCorroboration},
 		{"outcomes.implies", s.Outcomes.Implies},
 	} {
+		corroboration := ref.path == "outcomes.requires_corroboration"
 		for _, x := range ref.ids {
 			if det, ok := strings.CutPrefix(x, "det:"); ok {
 				if !slices.Contains(DetectorIDs, det) {
 					fail(CodeUnknownDetector, ref.path, x+" is not a detector")
+				} else if corroboration {
+					corroborates = true
 				}
 				continue
 			}
-			if opts.Registry != nil && !opts.Registry(x) {
+			switch {
+			case opts.Registry != nil && !opts.Registry(x):
 				fail(CodeUnknownEvaluatorReference, ref.path, x+" is not a known evaluator")
-			} else if opts.Attached != nil && !opts.Attached(x) {
-				warn(LintReferenceNotAttached, ref.path, x+" is not attached to this route, so it can never agree")
+			case opts.Attached == nil:
+			case opts.Attached(x):
+				corroborates = corroborates || corroboration
+			case corroboration:
+				unattached = append(unattached, x)
+			default:
+				warn(LintReferenceNotAttached, ref.path, x+" is not attached to this route, so the disagreement with it is never checked")
 			}
+		}
+		if corroboration && !corroborates && len(unattached) > 0 {
+			subject := unattached[0] + " is not"
+			if len(unattached) > 1 {
+				subject = "none of " + strings.Join(unattached, ", ") + " is"
+			}
+			warn(LintReferenceNotAttached, ref.path, subject+" attached to this route, so nothing can agree before a block")
 		}
 	}
 

@@ -12,6 +12,7 @@
 import { modeView } from '@/domain/controlPresentation';
 import { copy, humanizeId } from '@/domain/presentation';
 import type { PolicyMode } from '@/types/api';
+import { studioCorroboratorName } from '@/components/studio/studioWords';
 import { DEFAULT_ROUTE } from './policyDraft';
 import { evaluatorDisplayName, routeTitle } from './routeWords';
 
@@ -49,11 +50,34 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** "A, B or C". */
+function orList(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
+}
+
+/**
+ * A blocking route where none of a check's corroborators can fire (D98): the check flags but never
+ * blocks. Instant checks need documents (the number and date checks also run on a check's rules),
+ * so documents are the fix when one is listed; otherwise attaching one of the listed checks is.
+ */
+function noCorroborator(ref: string, list: string, ctx: PolicyWarningContext): string {
+  const ids = list.split(', ').filter((x) => x !== '');
+  const names = ids.map((x) => studioCorroboratorName(x, ctx.names));
+  const fix = ids.some((x) => x.startsWith('det:'))
+    ? 'Give the route documents to check against so the instant checks can run.'
+    : `Attach ${orList(names)} to the route so it can confirm a block.`;
+  return `${evaluatorDisplayName(ref, ctx.names)} blocks only when another signal agrees (${orList(names)}), and none of them can run on this route, so it can flag answers but not block them. ${fix}`;
+}
+
 /** Rephrases one known message; null when it is not one the gateway writes today. */
 function rephrase(message: string, ctx: PolicyWarningContext): string | null {
   const name = (ref: string) => evaluatorDisplayName(ref, ctx.names);
-  let m = /^(\S+) is corroborated by (\S+), which this route does not attach$/.exec(message);
-  if (m) return `${name(m[1])} needs ${name(m[2])} to agree before it can block, but this route does not run ${name(m[2])}. Add ${name(m[2])} to the route so ${name(m[1])} can block.`;
+  let m = /^(\S+) blocks only when one of (.+) agrees, and none of them can run on this route$/.exec(message);
+  if (m) return noCorroborator(m[1], m[2], ctx);
+  // An older gateway warned for each corroborator a route did not attach, although any one that can
+  // fire is enough: say what it is, without claiming the check cannot block.
+  m = /^(\S+) is corroborated by (\S+), which this route does not attach$/.exec(message);
+  if (m) return `${name(m[2])} is one of the signals that can confirm ${name(m[1])} before it blocks, and this route does not run it.`;
   m = /^(\S+) implies (\S+), which this route does not attach, so their disagreement is never checked$/.exec(message);
   if (m) return `${name(m[1])} is cross-checked against ${name(m[2])} to catch the two disagreeing, but this route does not run ${name(m[2])}, so that cross-check never happens.`;
   m = /^fail: closed only matters in block and fallback modes \(this route is (\w+)\)$/.exec(message);

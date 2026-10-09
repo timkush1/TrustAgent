@@ -160,7 +160,9 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
     error('threshold_order', 'outcomes.critical_at', `critical_at ${criticalAt} must be at least warn_at ${warnAt}`);
   }
 
-  // Hard rule: referenced evaluators exist; a warning when the route does not attach them.
+  // Hard rule: referenced evaluators exist. On a route, a warning when an implied evaluator is not
+  // attached, and when no corroborator can agree (D98): any one listed is enough, an instant check
+  // included, so the warning comes only when none is an instant check and none is attached.
   const registry = options.registry === undefined ? null : new Set(options.registry);
   const attached = options.attached === undefined ? null : new Set(options.attached);
   const references: [string, readonly string[]][] = [
@@ -168,13 +170,24 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
     ['outcomes.implies', spec.outcomes.implies],
   ];
   for (const [path, ids] of references) {
+    const corroboration = path === 'outcomes.requires_corroboration';
+    let corroborates = false;
+    const unattached: string[] = [];
     for (const x of ids) {
       if (x.startsWith('det:')) {
         if (!(DETECTOR_IDS as readonly string[]).includes(x.slice(4))) error('unknown_detector', path, `${x} is not a detector`);
+        else if (corroboration) corroborates = true;
         continue;
       }
       if (registry !== null && !registry.has(x)) error('unknown_evaluator_reference', path, `${x} is not a known evaluator`);
-      else if (attached !== null && !attached.has(x)) warn(NOT_ATTACHED, path, `${x} is not attached to this route, so it can never agree`);
+      else if (attached === null) continue;
+      else if (attached.has(x)) corroborates ||= corroboration;
+      else if (corroboration) unattached.push(x);
+      else warn(NOT_ATTACHED, path, `${x} is not attached to this route, so the disagreement with it is never checked`);
+    }
+    if (corroboration && !corroborates && unattached.length > 0) {
+      const subject = unattached.length > 1 ? `none of ${unattached.join(', ')} is` : `${unattached[0]} is not`;
+      warn(NOT_ATTACHED, path, `${subject} attached to this route, so nothing can agree before a block`);
     }
   }
 
