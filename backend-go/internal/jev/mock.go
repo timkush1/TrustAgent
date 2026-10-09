@@ -189,6 +189,12 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 			if m.cfg.Strict {
 				return nil, &Error{Kind: KindMockFixtureMissing, Message: missingMessage(opt.Scenario, scripted != nil, qid)}
 			}
+			// A question about a list of names (a drafted competitor check) does not fire at
+			// random on answers that name none of them.
+			if a := namesAnswer(req.Questions[qid], req.State); a != nil {
+				answers[qid] = a
+				continue
+			}
 		}
 		answers[qid] = m.hashAnswer(qid, req.Questions[qid], stateJCS)
 	}

@@ -3,6 +3,9 @@ package jev
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
+	"unicode"
 
 	"github.com/truthtable/contracts"
 
@@ -130,4 +133,94 @@ func (m *mockClient) studioAnswer(question any, state map[string]any) *decision.
 		out.Probabilities = spread(keys, out.Choice, (studioChoiceTop-0.55)/0.4)
 	}
 	return out
+}
+
+// rulesRef finds the rules a question points at ("`rules.competitors`").
+var rulesRef = regexp.MustCompile("`rules\\.([a-z][a-z0-9_]*)`")
+
+// nameList reads a rule that is a short list of proper names ("Globex, Initech"): one to twenty
+// items, each one to four words that all start with a capital letter. Prose ("Friendly, clear, and
+// professional") and scopes ("Any subject") are not name lists.
+func nameList(v any) []string {
+	s, ok := v.(string)
+	if !ok {
+		return nil
+	}
+	items := strings.Split(s, ",")
+	if len(items) > 20 {
+		return nil
+	}
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		it = strings.TrimSpace(it)
+		words := strings.Fields(it)
+		if it == "" || len(it) > 40 || len(words) > 4 {
+			return nil
+		}
+		for _, w := range words {
+			if r := []rune(w)[0]; !unicode.IsUpper(r) {
+				return nil
+			}
+		}
+		names = append(names, it)
+	}
+	return names
+}
+
+// namesAnswer is the mock's answer to a question about a list of names in the rules (a drafted
+// "Competitor mentions" check, say) when no listed name appears in the answer: it does not fire,
+// so a Studio test on past traffic fires only on answers that name one, never at random on a
+// refund answer. A yes/no question fires when a name appears; a choice question takes its single
+// "no_…" option when none does. Anything else is nil and gets a hash answer.
+func namesAnswer(question any, state map[string]any) *decision.RawAnswer {
+	q, _ := question.(map[string]any)
+	instructions, _ := q["instructions"].(string)
+	response, _ := state[decision.FieldAssistantResponse].(string)
+	rules, _ := state[decision.FieldRules].(map[string]any)
+	if instructions == "" || response == "" || rules == nil {
+		return nil
+	}
+	var names []string
+	for _, m := range rulesRef.FindAllStringSubmatch(instructions, -1) {
+		names = append(names, nameList(rules[m[1]])...)
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	named := false
+	for _, n := range names {
+		if regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(n) + `\b`).MatchString(response) {
+			named = true
+			break
+		}
+	}
+	switch q["type"] {
+	case decision.QuestionNoul:
+		p := studioNoulPass
+		if named {
+			p = studioNoulFire
+		}
+		return &decision.RawAnswer{Type: decision.QuestionNoul, Noul: &p}
+	case decision.QuestionChoice:
+		if named {
+			return nil
+		}
+		criteria, _ := q["criteria"].(map[string]any)
+		none := ""
+		keys := make([]string, 0, len(criteria))
+		for k := range criteria {
+			keys = append(keys, k)
+			if strings.HasPrefix(k, "no_") {
+				if none != "" {
+					return nil // two "no_" options: which one is meant is unclear
+				}
+				none = k
+			}
+		}
+		if none == "" {
+			return nil
+		}
+		return &decision.RawAnswer{Type: decision.QuestionChoice, Choice: none, Probabilities: spread(keys, none, (studioChoiceTop-0.55)/0.4)}
+	}
+	return nil
 }

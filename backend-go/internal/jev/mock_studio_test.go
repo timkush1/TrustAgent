@@ -113,3 +113,50 @@ func TestParseStudioSamplesRefusesUnscriptedChoices(t *testing.T) {
 		}
 	}
 }
+
+// A drafted check about a list of names (the competitor example) does not fire at random on a
+// Studio test over past traffic: an answer that names none of them takes the "no_…" option (or a
+// low yes/no), and one that names one is left to the hash for a choice and fires for a yes/no.
+// Rules that are prose or a scope are not name lists, and a strict mock still refuses.
+func TestNamesAnswerFollowsTheListedNames(t *testing.T) {
+	choice := map[string]any{"type": "choice", "instructions": "How does `assistant_response` treat the companies in `rules.competitors`?",
+		"criteria": map[string]any{"no_competitor_mentioned": map[string]any{}, "recommends_competitor": map[string]any{}, "mentions_competitor_unprompted": map[string]any{}}}
+	noul := map[string]any{"type": "noul", "instructions": "Does `assistant_response` name a company in `rules.competitors`?"}
+	rules := map[string]any{"competitors": "Globex, Initech"}
+	state := func(response string, rules any) map[string]any {
+		return map[string]any{decision.FieldAssistantResponse: response, decision.FieldRules: rules}
+	}
+	refund := "Refunds are available within 30 days of purchase."
+	if a := namesAnswer(choice, state(refund, rules)); a == nil || a.Choice != "no_competitor_mentioned" || a.Probabilities["no_competitor_mentioned"] != studioChoiceTop {
+		t.Errorf("a refund answer: %+v", a)
+	}
+	if a := namesAnswer(choice, state("Honestly, globex does exports better.", rules)); a != nil {
+		t.Errorf("an answer naming Globex (any case) was not left to the hash: %+v", a)
+	}
+	if a := namesAnswer(noul, state(refund, rules)); a == nil || *a.Noul != studioNoulPass {
+		t.Errorf("yes/no on a refund answer: %+v", a)
+	}
+	if a := namesAnswer(noul, state("Initech is cheaper.", rules)); a == nil || *a.Noul != studioNoulFire {
+		t.Errorf("yes/no naming Initech: %+v", a)
+	}
+	// Not a name list, no rules, or a word inside another: no scripted answer, or no match.
+	for _, r := range []any{map[string]any{"competitors": "Friendly, clear, and professional"}, map[string]any{"competitors": "Any subject"}, decision.NoneProvided, nil} {
+		if a := namesAnswer(choice, state(refund, r)); a != nil {
+			t.Errorf("rules %v answered %+v", r, a)
+		}
+	}
+	if a := namesAnswer(noul, state("Our globexample plan.", rules)); a == nil || *a.Noul != studioNoulPass {
+		t.Errorf("a name inside another word fired: %+v", a)
+	}
+
+	// Through Decide: the scenario mock answers it, a strict one still refuses an unscripted question.
+	m := mockClientFor(t, MockConfig{Mode: MockScenario})
+	resp, err := m.Decide(context.Background(), &Request{State: state(refund, rules), Questions: map[string]any{"competitor_mentions__v1": choice}}, CallOptions{})
+	if err != nil || resp.Answers["competitor_mentions__v1"].Choice != "no_competitor_mentioned" {
+		t.Fatalf("Decide: %+v %v", resp, err)
+	}
+	strict := mockClientFor(t, MockConfig{Mode: MockScenario, Strict: true})
+	if _, err := strict.Decide(context.Background(), &Request{State: state(refund, rules), Questions: map[string]any{"competitor_mentions__v1": choice}}, CallOptions{}); ErrorKind(err) != KindMockFixtureMissing {
+		t.Errorf("a strict mock answered an unscripted question: %v", err)
+	}
+}
