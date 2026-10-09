@@ -15,9 +15,13 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { formatCount } from '@/domain/format';
 import { copy } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
+import { MIN_FIT_LABELS } from '@/lib/decision/calibrate';
 import type { CalibrationProgress, EvaluatorDetail } from '@/types/api';
 import { CalibrateDialog } from './CalibrateDialog';
-import { calibrateReason, progressParts, progressText } from './evaluatorWords';
+import { calibrateReason, labelsForFirstFit, progressParts, progressText } from './evaluatorWords';
+
+/** What a first fit gives and what blocking needs, in one sentence (the two thresholds). */
+const FIT_THRESHOLDS = `From ${MIN_FIT_LABELS} labels you get a provisional calibration that sharpens flagging; blocking needs 200 of your own labels.`;
 
 function Bar({ label, value, have, need }: { label: string; value: number; have: number; need: number }) {
   return (
@@ -47,7 +51,7 @@ function Bar({ label, value, have, need }: { label: string; value: number; have:
  * A library card's one action: the label queue for this check. Calibrate now lives on the check's
  * Calibration tab, where its records and Adopt are; the card links there once a fit is possible.
  */
-function CardActions({ progress, detail }: { progress: CalibrationProgress; detail: EvaluatorDetail }) {
+function CardActions({ progress, detail, note }: { progress: CalibrationProgress; detail: EvaluatorDetail; note: string | null }) {
   const writeReason = useWriteReason('admin');
   const reasonId = useId();
   if (writeReason) {
@@ -57,6 +61,7 @@ function CardActions({ progress, detail }: { progress: CalibrationProgress; deta
           {copy.evaluators.label_queue}
         </Button>
         <DisabledReason id={reasonId} reason={writeReason} />
+        {note ? <span className="text-xs text-fg-muted">{note}</span> : null}
       </div>
     );
   }
@@ -66,6 +71,7 @@ function CardActions({ progress, detail }: { progress: CalibrationProgress; deta
         {copy.evaluators.label_queue}{' '}
         <span className="sr-only">for {detail.name}</span>
       </Link>
+      {note ? <span className="text-xs text-fg-muted">{note}</span> : null}
       {calibrateReason(progress) === null ? (
         <Link
           to="/app/evaluators/$id"
@@ -145,10 +151,13 @@ export function CalibrationMeter({
 }) {
   const parts = progressParts(progress);
   const actions = showActions && detail !== undefined;
-  // A library card keeps one meter and one next step: before a first fit is possible, what that fit
-  // needs (the blocking shortfall is left to the check's own page); after, what blocking needs.
+  // A library card keeps one meter and one short next step: before a first fit is possible, how many
+  // labels it needs (the full reason and the blocking shortfall are on the check's own page); after,
+  // what blocking needs.
   const firstFit = compact ? calibrateReason(progress) : null;
-  const nextStep = firstFit?.text ?? parts.missing ?? 'Enough labels to calibrate for blocking.';
+  const more = labelsForFirstFit(progress);
+  const cardNote = firstFit ? (progress.snapshot !== null && more > 0 ? `${formatCount(more)} ${more === 1 ? 'label' : 'labels'} to a first calibration` : firstFit.text) : null;
+  const nextStep = compact ? (firstFit ? (actions ? null : cardNote) : (parts.missing ?? 'Enough labels to calibrate for blocking.')) : (parts.missing ?? 'Enough labels to calibrate for blocking.');
   return (
     <div className={cn('@container space-y-2', className)}>
       <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
@@ -168,7 +177,15 @@ export function CalibrationMeter({
         </div>
       )}
       {nextStep ? <p className="text-xs text-fg-muted">{nextStep}</p> : null}
-      {actions ? compact ? <CardActions progress={progress} detail={detail} /> : <Actions progress={progress} detail={detail} /> : null}
+      {/* What a first fit gives and what blocking needs, said once, on the check's own page. */}
+      {!compact && progress.state !== 'measured' ? <p className="text-xs text-fg-muted">{FIT_THRESHOLDS}</p> : null}
+      {actions ? (
+        compact ? (
+          <CardActions progress={progress} detail={detail} note={cardNote} />
+        ) : (
+          <Actions progress={progress} detail={detail} />
+        )
+      ) : null}
     </div>
   );
 }

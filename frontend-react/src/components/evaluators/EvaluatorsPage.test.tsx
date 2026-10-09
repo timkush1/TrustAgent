@@ -50,14 +50,16 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(within(tone).getByText(copy.evaluators.builtin_descriptions.off_brand_tone)).toBeInTheDocument();
   });
 
-  it('gives a card one next step: the first fit, when Calibrate now is not available yet', async () => {
+  it('gives a card one short next step beside the label queue: the labels a first fit needs', async () => {
     const control = createControlApi();
     control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', {
       calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, proxy_labels: 5, can_fit_provisional: false }),
     });
     renderPage('/app/evaluators', { control });
     const g = await card('Groundedness');
-    expect(await within(g).findByText('Calibrate now needs 8 labels: your own, plus deep audits from the uniform sample (5 so far). Label 1 more answer in the queue.')).toBeInTheDocument();
+    expect(await within(g).findByText('1 label to a first calibration')).toBeInTheDocument();
+    // The full reason is on the check's own page, not repeated on every card.
+    expect(within(g).queryByText(/^Calibrate now needs/)).toBeNull();
     expect(within(g).queryByText(/^Blocking needs/)).toBeNull();
     // No fit to open yet: the card offers the label queue only.
     expect(within(g).queryByRole('link', { name: /^Calibrate/ })).toBeNull();
@@ -145,7 +147,7 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     expect(screen.getByText('0.80')).toBeInTheDocument();
     expect(screen.getByText('0.95')).toBeInTheDocument();
     expect(screen.getByText('Labels 43/200 (31 with the problem, 12 fine)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Fit and adopt from labels' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Calibrate and adopt' })).not.toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('link', { name: 'Duplicate and edit' })).toHaveAttribute('href', '/app/evaluators/studio/groundedness/1');
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });

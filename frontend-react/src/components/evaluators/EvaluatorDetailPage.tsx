@@ -307,11 +307,15 @@ function CalibrationTab({ detail }: { detail: EvaluatorDetail }) {
   );
 }
 
-/** The header action: it fits a calibration from the labels, previews its impact, then adopts it (D62). */
-const FIT_AND_ADOPT = 'Fit and adopt from labels';
+/**
+ * The header action: it calibrates from the labels (as "Calibrate now" does), previews the impact,
+ * then adopts the calibration on the check's routes (D62). One verb per action across the page:
+ * calibrate fits from labels, adopt puts a calibration to use on a route.
+ */
+const FIT_AND_ADOPT = 'Calibrate and adopt';
 
 /**
- * Why "Fit and adopt from labels" is not available, or null. When too few labels allow a new fit
+ * Why "Calibrate and adopt" is not available, or null. When too few labels allow a new fit
  * but a calibration for the current fast-check version already exists, the reason points to it,
  * so the header never reads as "nothing can be adopted" beside an adoptable record.
  */
@@ -410,7 +414,8 @@ export function EvaluatorDetailPage({ id, tab = 'overview', onTabChange }: { id:
                 <Copy aria-hidden="true" />
                 Duplicate and edit
               </Link>
-              <DisabledAction reason={adopt} layout="stacked">
+              {/* The reason stays under its own button, wrapped to a readable width. */}
+              <DisabledAction reason={adopt} layout="stacked" className="max-w-xs">
                 {(p) =>
                   p.disabled ? (
                     <Button {...p}>{FIT_AND_ADOPT}</Button>
