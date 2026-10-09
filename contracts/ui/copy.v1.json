@@ -364,7 +364,7 @@
       "title": "Label queue",
       "intro": "Should the check flag each answer? Your answers calibrate it so it can block safely.",
       "empty": "Nothing to label right now. New answers near the flag line show up here.",
-      "keys_hint": "Y yes · N no · S skip (C and F work too)",
+      "keys_hint": "Y yes · N no · S skip",
       "yes_no_hint": "Yes: the answer has the problem this check looks for, so it should be flagged. No: it is fine, so it should not be.",
       "correct": "Correct",
       "false_alarm": "False alarm",

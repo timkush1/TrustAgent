@@ -132,8 +132,8 @@ const READINESS_WORDS: Record<ReadinessItem, ReadinessWords> = {
   },
   calibration: {
     label: 'Calibrated for the current fast-check version',
-    missing: 'Thresholds are not calibrated on labelled traffic for this fast-check version.',
-    action: 'calibrate it for the current fast-check version',
+    missing: 'Thresholds are not calibrated on at least 200 of your own labels for this fast-check version; a provisional or simulated calibration cannot block.',
+    action: 'calibrate it on at least 200 of your own labels (a simulated calibration cannot block)',
   },
   buffering: {
     label: 'Streams buffered',

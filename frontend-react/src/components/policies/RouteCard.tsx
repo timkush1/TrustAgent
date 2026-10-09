@@ -185,6 +185,21 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
             {b.ready ? null : (
               <p className="pl-5 text-xs text-fg-muted tabular" title={next ? readinessWords(next).missing : undefined}>
                 {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).action}` : ''}
+                {/* Labels are what a calibration is fitted on: the queue is the next step's place. */}
+                {next === 'calibration' ? (
+                  <>
+                    {' '}
+                    <Link
+                      to="/app/evaluators/labels"
+                      search={{ evaluator: b.evaluator }}
+                      aria-label={`Label answers for ${evaluatorDisplayName(b.evaluator, names)}`}
+                      className={linkClass}
+                    >
+                      Label answers
+                      <ArrowRight aria-hidden="true" className="size-3" />
+                    </Link>
+                  </>
+                ) : null}
               </p>
             )}
             {/* The whole checklist is one click away, not repeated open on every check of every route. */}

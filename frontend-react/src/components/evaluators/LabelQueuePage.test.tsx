@@ -102,7 +102,10 @@ describe('Label queue', { timeout: 20_000 }, () => {
     await firstItem();
     expect(screen.getByRole('button', { name: /^Yes, it has the problem/ })).toHaveAttribute('aria-keyshortcuts', 'Y C');
     expect(screen.getByRole('button', { name: /^No, it is fine/ })).toHaveAttribute('aria-keyshortcuts', 'N F');
-    expect(screen.getByText(/Y yes · N no · S skip \(C and F work too\)\.$/)).toBeInTheDocument();
+    // The hint names the keys the buttons show; C and F stay working and are announced by
+    // aria-keyshortcuts, not in the visible hint.
+    expect(screen.getByText(/Y yes · N no · S skip\.$/)).toBeInTheDocument();
+    expect(screen.queryByText(/C and F/)).toBeNull();
     await user.keyboard('y');
     await waitFor(() => expect(control.callsTo('/api/labels', 'PUT')).toHaveLength(1));
     expect(control.callsTo('/api/labels', 'PUT')[0].body).toMatchObject({ trace_id: FIRST, label: 'should_fire' });
