@@ -341,6 +341,18 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false'));
   });
 
+  it('says a judge set in .env keeps running deep audits, with the way to Settings → Models', async () => {
+    const user = userEvent.setup();
+    const control = createControlApi({ settings: unbound({ env_managed: ['judge.provider', 'bindings.judge'] }) });
+    renderPage('/app/setup?step=connect', { control, status: fresh() });
+    await user.click(await screen.findByRole('button', { name: copy.setup.step_connect.paste_key }));
+    await user.type(screen.getByLabelText('OpenRouter key'), 'sk-or-v1-e2e-ok-2222');
+    await user.click(screen.getByRole('button', { name: 'Save and check' }));
+    const note = (await screen.findByText(copy.setup.step_connect.judge_env_managed, { exact: false })).closest('li')!;
+    expect(within(note).getByRole('link', { name: 'See the judge in Settings → Models' })).toHaveAttribute('href', '/app/settings/models');
+    expect(screen.getByText(`Now used for: ${copy.tiers.fast_check}.`)).toBeInTheDocument();
+  });
+
   it('once a key is connected, leaves Next as the only primary action and offers no simulated checks', async () => {
     renderPage('/app/setup?step=connect', { control: createControlApi({ settings: settingsView() }) });
     const step = await panel(copy.setup.step_connect.title);

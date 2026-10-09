@@ -178,7 +178,7 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
       ) : null}
 
       {outcome ? (
-        <CredentialResult result={outcome.result} wasSimulated={outcome.wasSimulated} onCheckAgain={checkAgain} checkingAgain={verify.isPending} />
+        <CredentialResult result={outcome.result} wasSimulated={outcome.wasSimulated} onCheckAgain={checkAgain} checkingAgain={verify.isPending} modelsLink />
       ) : null}
       {verify.isError ? <ProblemNote error={verify.error} title="The check did not run" /> : null}
 

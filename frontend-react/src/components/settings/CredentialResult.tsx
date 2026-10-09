@@ -5,6 +5,7 @@
  * with no spending limit gets the callout to set one. Shared by Settings → Connections and the
  * setup wizard.
  */
+import { Link } from '@tanstack/react-router';
 import { CircleAlert, CircleCheck, Info, RotateCw } from 'lucide-react';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { Button } from '@/components/ui/button';
@@ -36,9 +37,14 @@ export interface CredentialResultProps {
   /** "I added credits — check again" (#57 with bind); left out where there is nothing to re-check. */
   onCheckAgain?: () => void;
   checkingAgain?: boolean;
+  /**
+   * Link a judge left to the environment to Settings → Models, where the judge in effect is shown.
+   * The setup wizard sets it; on Connections the card's own note already links there.
+   */
+  modelsLink?: boolean;
 }
 
-export function CredentialResult({ result, wasSimulated = false, onCheckAgain, checkingAgain = false }: CredentialResultProps) {
+export function CredentialResult({ result, wasSimulated = false, onCheckAgain, checkingAgain = false, modelsLink = false }: CredentialResultProps) {
   const v = result.verification;
   const { applied, skipped } = result.bindings;
   const verify = secVerifyView(v?.status);
@@ -85,7 +91,17 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
       {skipped.length > 0 ? (
         <ul className="space-y-0.5 pl-5.5 text-fg-muted">
           {skipped.map((s) => (
-            <li key={s.target}>{secSkipReasonText(s.reason, s.target)}</li>
+            <li key={s.target}>
+              {secSkipReasonText(s.reason, s.target)}
+              {modelsLink && s.target === 'judge' && s.reason === 'env_managed' ? (
+                <>
+                  {' '}
+                  <Link to="/app/settings/$section" params={{ section: 'models' }} className="font-medium text-fg underline underline-offset-2">
+                    See the judge in Settings → Models
+                  </Link>
+                </>
+              ) : null}
+            </li>
           ))}
         </ul>
       ) : null}

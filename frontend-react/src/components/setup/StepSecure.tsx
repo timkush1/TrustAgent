@@ -158,7 +158,7 @@ export function StepSecure({ auth, setup, token, readonly, saved, onSavedChange 
               </h3>
               <p className="text-sm text-fg-muted">
                 {setupRequired
-                  ? 'This one-time link creates the first admin key for this TrustAgent and signs this browser in.'
+                  ? 'Your one-time setup link lets you create the first admin key for this TrustAgent; creating it also signs this browser in.'
                   : 'This TrustAgent already has an admin. A link made with -force can still create another admin key.'}
               </p>
               <DisabledAction reason={readonly ? 'readonly' : null}>
