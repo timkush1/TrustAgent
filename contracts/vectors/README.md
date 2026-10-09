@@ -29,7 +29,7 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `decide` | 58 (58 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
-| `lint` | 19 (19 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
+| `lint` | 23 (23 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
 | `cost` | 18 (18 + 0) | 8 | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
 
 The `decide` vectors cover `calibration_missing`, an `other_snapshot` calibration entry and
@@ -277,7 +277,10 @@ at that risk. Input order matters: every sum runs in input order.
 
 ### `lint`
 
-- `input`: `{spec}`, an evaluator spec (schema-valid, though possibly breaking a hard rule).
+- `input`: `{spec, attached?}`, an evaluator spec (schema-valid, though possibly breaking a hard rule)
+  and, for a check on a route, the evaluator ids attached to it (`LintOptions.Attached`): the D98
+  corroboration warning (none of `requires_corroboration` is an instant check or attached) and the
+  implied-evaluator warning, both `reference_not_attached`.
 - `expected`: `{errors, lints}`, each a sorted list of distinct codes. `errors` holds the named hard rules
   (`unresolved_state_reference`, `no_id_reference`); `lints` holds the SPEC §2.8 lint ids. Token Jaccard
   for `near_duplicate_options` uses lowercase `[a-z0-9]+` tokens of each option's `what`.

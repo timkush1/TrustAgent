@@ -895,14 +895,36 @@ function checkSpan(rel, where, text, start, end, want) {
   }
 }
 
-// lint vectors: input.spec is a schema-valid evaluator (it may break a hard rule); expected is
-// {errors, lints}, each a sorted list of distinct codes from SPEC §2.8, and must be what the text hard
-// rules and the lints above produce for the spec.
+// routeLints are the lints a spec gets on a route (D98), when a lint vector gives input.attached
+// (the evaluator ids attached to the route): requires_corroboration warns when no listed
+// corroborator can agree, that is none is an instant check (det:…) and none is attached; an
+// implied evaluator that is not attached warns on its own.
+function routeLints(spec, attached) {
+  const on = new Set(attached);
+  const outcomes = isObj(spec.outcomes) ? spec.outcomes : {};
+  const requires = Array.isArray(outcomes.requires_corroboration) ? outcomes.requires_corroboration : [];
+  const implies = Array.isArray(outcomes.implies) ? outcomes.implies : [];
+  const instant = (x) => typeof x === 'string' && x.startsWith('det:');
+  const found = [];
+  if (!requires.some((x) => instant(x) || on.has(x)) && requires.some((x) => !instant(x))) found.push({ code: 'reference_not_attached' });
+  for (const x of implies) if (!instant(x) && !on.has(x)) found.push({ code: 'reference_not_attached' });
+  return found;
+}
+
+// lint vectors: input.spec is a schema-valid evaluator (it may break a hard rule), and
+// input.attached (optional) the route's attached evaluator ids; expected is {errors, lints}, each a
+// sorted list of distinct codes from SPEC §2.8, and must be what the text hard rules, the lints
+// above and (with attached) the route lints produce for the spec.
 function checkLintVector(rel, v) {
   const specValid = validate(`${rel} (input.spec)`, v.input?.spec, 'evaluator.v1');
+  const attached = v.input?.attached;
+  if (attached !== undefined && !(Array.isArray(attached) && attached.every((a) => typeof a === 'string'))) {
+    error(rel, 'input.attached must be a list of evaluator ids');
+  }
   if (specValid && isObj(v.expected)) {
     const codesOf = (found) => [...new Set(found.map((f) => f.code))].sort();
-    const got = { errors: codesOf(questionTextViolations(v.input.spec)), lints: codesOf(evaluatorLints(v.input.spec)) };
+    const lints = [...evaluatorLints(v.input.spec), ...(Array.isArray(attached) ? routeLints(v.input.spec, attached) : [])];
+    const got = { errors: codesOf(questionTextViolations(v.input.spec)), lints: codesOf(lints) };
     for (const key of ['errors', 'lints']) {
       if (Array.isArray(v.expected[key]) && got[key].join(',') !== v.expected[key].join(',')) {
         error(rel, `expected.${key} is ${JSON.stringify(v.expected[key])}, but the SPEC §2.8 rules give ${JSON.stringify(got[key])}`);
@@ -912,7 +934,8 @@ function checkLintVector(rel, v) {
   const codes = {
     errors: ['unresolved_state_reference', 'no_id_reference'],
     lints: ['missing_escape_option', 'non_descriptive_key', 'double_negative', 'counting_or_arithmetic',
-      'near_duplicate_options', 'numeric_only_score_levels', 'long_instructions', 'score_used_for_policy'],
+      'near_duplicate_options', 'numeric_only_score_levels', 'long_instructions', 'score_used_for_policy',
+      'reference_not_attached'],
   };
   for (const [key, known] of Object.entries(codes)) {
     const list = v.expected?.[key];

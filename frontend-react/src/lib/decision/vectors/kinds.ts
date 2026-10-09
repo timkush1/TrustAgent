@@ -177,10 +177,13 @@ function runEvidence(input: unknown) {
   };
 }
 
-/** lint: {spec} -> {errors, lints} (sorted distinct codes) */
+/** lint: {spec, attached?} -> {errors, lints} (sorted distinct codes); attached is the route's evaluator ids. */
 function runLint(input: unknown) {
-  const x = fields(input, ['spec']);
-  return lintCodes(lintSpec(x.spec));
+  const x = fields(input, ['spec', 'attached']);
+  if (x.attached !== undefined && !(Array.isArray(x.attached) && x.attached.every((a) => typeof a === 'string'))) {
+    throw new Error('attached must be a list of evaluator ids');
+  }
+  return lintCodes(lintSpec(x.spec, x.attached === undefined ? {} : { attached: x.attached as string[] }));
 }
 
 /** decide: decide-input.v1 -> the decision/v1 core */

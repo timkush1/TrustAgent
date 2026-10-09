@@ -451,6 +451,17 @@ describe('validate.mjs', () => {
     assert.match(r.out, /evaluators\/refusal\.v1\.json: counting_or_arithmetic: .*\(built-in templates must be lint-clean\)/);
   });
 
+  test('route lint vectors (input.attached) must agree with the D98 corroboration rule', () => {
+    const sb = sandbox();
+    // Attach the one corroborator: the vector still says it warns, which the rule no longer gives.
+    sb.edit('vectors/lint/corroboration-with-none-attached-warns.json', (v) => { v.input.attached = ['groundedness']; });
+    sb.edit('vectors/lint/implied-not-attached-warns.json', (v) => { v.input.attached = 'contradiction'; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /corroboration-with-none-attached-warns\.json: expected\.lints is \["reference_not_attached"\], but the SPEC §2\.8 rules give \[\]/);
+    assert.match(r.out, /implied-not-attached-warns\.json: input\.attached must be a list of evaluator ids/);
+  });
+
   test('drafter examples are drafts the drafter rules accept', () => {
     const sb = sandbox();
     sb.edit('prompts/evaluator-drafter.v1.json', (p) => {
