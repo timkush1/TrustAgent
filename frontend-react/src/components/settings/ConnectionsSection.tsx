@@ -6,13 +6,14 @@
  * keys saved for your own model provider are listed after the cards.
  */
 import { useQuery } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { ArrowRight, KeyRound } from 'lucide-react';
 import { useDataSource } from '@/app/services';
 import { KeyValueList } from '@/components/common/KeyValue';
 import { PageHeader } from '@/components/common/PageHeader';
 import { QueryState } from '@/components/common/QueryState';
 import { EmptyState, LoadingState } from '@/components/common/StateViews';
-import { DisabledAction, DisabledReason, type Reason } from '@/components/common/DisabledReason';
+import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { settingsQuery, statusQuery } from '@/data/queries';
@@ -87,11 +88,16 @@ export function ConnectionsSection() {
       <QueryState query={credentials} loading={<LoadingState rows={5} />}>
         {(data) => (
           <div className="space-y-4">
+            {/* The demo banner says how to use your own keys and each card says why it is off; the
+                page offers what the demo can do instead (one home per fact). */}
             {demo ? (
-              <div className="space-y-1">
-                <p className="text-sm text-fg">This demo runs simulated checks (a mock fast check and a mock judge), so no keys are connected here. You add keys on your own stack.</p>
-                <DisabledReason reason="demo" />
-              </div>
+              <p className="text-sm text-fg">
+                The demo runs simulated checks, so nothing is connected here. To watch a check run,{' '}
+                <Link to="/app/playground" className="inline-flex items-center gap-0.5 font-medium underline underline-offset-2">
+                  try it in the Playground
+                  <ArrowRight aria-hidden="true" className="size-3.5" />
+                </Link>
+              </p>
             ) : data.items.length === 0 ? (
               <p className="text-sm text-fg">
                 {simulated ? 'No key is connected, so the checks are simulated. ' : 'Nothing is connected yet. '}Connect OpenRouter to run both checks for real with one key.

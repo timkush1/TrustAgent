@@ -102,9 +102,17 @@ function EffectiveTable() {
               </th>
               <td className="px-3 py-1.5 text-right align-top text-fg tabular">{costPricePair(e)}</td>
               <td className="px-3 py-1.5 align-top">
-                {e.label !== 'vendor_price' ? (
-                  // Your override, or an entry with no vendor behind it: never labelled Vendor.
+                {e.label === 'override' ? (
+                  // Your own price: never labelled Vendor.
                   <Badge size="sm">{costPriceSourceWord(e.label)}</Badge>
+                ) : e.label !== 'vendor_price' ? (
+                  // No vendor list price behind it: an assumption, labelled Estimate like every
+                  // other assumed figure, with why in its basis.
+                  <EvidenceBadge
+                    label="estimate"
+                    basis={`${costPriceSourceWord(e.label)}: no vendor list price is behind it${costPriceNote(e.note) ? `. ${costPriceNote(e.note)}` : ''}.`}
+                    subject={`${e.match === '*' ? catchAllWords(q.data.entries, i) : e.match} price`}
+                  />
                 ) : (
                   <EvidenceBadge
                     label="vendor"

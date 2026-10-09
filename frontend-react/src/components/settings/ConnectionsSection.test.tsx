@@ -224,9 +224,11 @@ describe('Settings → Connections', { timeout: 30_000 }, () => {
     document.body.innerHTML = '';
 
     renderPage(PATH, { status: { demo: true } });
-    // The demo reason and its fix are said once for the page; each card keeps a short reason.
-    expect(await screen.findByText(/^This demo runs simulated checks/)).toBeInTheDocument();
-    expect(screen.getAllByText(copy.disabled_reasons.demo)).toHaveLength(1);
+    // The banner says how to use your own keys; the page offers what the demo can do instead, and
+    // each card keeps a short reason.
+    expect(await screen.findByText(/^The demo runs simulated checks, so nothing is connected here/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /try it in the Playground/ })).toHaveAttribute('href', '/app/playground');
+    expect(screen.queryAllByText(copy.disabled_reasons.demo)).toHaveLength(0);
     expect(within(await card('OpenAI')).getByText('Not on the demo stack')).toBeInTheDocument();
     expect(within(await card('OpenAI')).getByRole('button', { name: 'Paste a key' })).toHaveAttribute('aria-disabled', 'true');
     stopLive();

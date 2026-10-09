@@ -238,6 +238,17 @@ describe('Settings → Budgets', { timeout: 20_000 }, () => {
     expect(alert).toHaveTextContent('This value isn’t allowed here.');
   });
 
+  it('lets an admin change the caps on the demo stack, whose budgets are its own settings', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage(PATH, { status: { demo: true } });
+    const input = await decisionInput();
+    expect(input).not.toHaveAttribute('readonly');
+    await user.clear(input);
+    await user.type(input, '3');
+    await user.click(screen.getByRole('button', { name: 'Save budgets' }));
+    await waitFor(() => expect(control.callsTo('/api/settings', 'PATCH')).toHaveLength(1));
+  });
+
   it('says why saving is off on a read-only stack', async () => {
     renderPage(PATH, { status: { readonly: true } });
     expect(await decisionInput()).toHaveAttribute('readonly');
@@ -297,7 +308,9 @@ describe('Settings → Budgets → Prices', { timeout: 20_000 }, () => {
     renderPage(PATH, { control });
     const table = await screen.findByRole('table', { name: /^Prices in use/ });
     const row = within(table).getAllByRole('row').at(-1)!;
-    expect(within(row).getByText('Assumed price')).toBeInTheDocument();
+    // An assumption reads as an Estimate, one of the five value labels, with why in its basis.
+    expect(within(row).getByRole('button', { name: /^Estimate: how “Any model price” was produced$/ })).toHaveAttribute('data-value-label', 'estimate');
+    expect(within(row).queryByText('Assumed price')).toBeNull();
     expect(within(row).queryByRole('button', { name: /^Vendor:/ })).toBeNull();
     // The catch-all pattern reads as words, the glob beside it: the provider's only entry.
     expect(within(row).getByRole('rowheader')).toHaveTextContent(/^Any model \(\*\)/);

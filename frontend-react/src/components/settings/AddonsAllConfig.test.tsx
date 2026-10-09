@@ -35,6 +35,22 @@ describe('Settings → Add-ons', { timeout: 20_000 }, () => {
     expect(screen.getAllByText('Unknown').length).toBe(2);
   });
 
+  it('says on the demo stack that add-ons come with your own stack, and still gives the commands', async () => {
+    renderPage('/app/settings/addons', { status: { demo: true } });
+    expect(await screen.findByText('The demo stack runs without add-ons. Start your own stack first, then add them.')).toBeInTheDocument();
+    expect(screen.getByText(commandText('knowledge_up')!)).toBeInTheDocument();
+    expect(screen.getByText(commandText('local_llm_up')!)).toBeInTheDocument();
+  });
+
+  it('reads the same on a read-only instance: the add-ons are turned on from the shell, not here', async () => {
+    renderPage('/app/settings/addons', { status: { readonly: true } });
+    expect(await screen.findByRole('heading', { name: 'Local LLM' })).toBeInTheDocument();
+    expect(screen.getByText(commandText('knowledge_up')!)).toBeInTheDocument();
+    expect(screen.queryByText('The demo stack runs without add-ons. Start your own stack first, then add them.')).toBeNull();
+    // Nothing to write: no button is offered, so none sits disabled without a reason.
+    expect(screen.queryAllByRole('button', { name: /^(Turn on|Save|Add)/ })).toHaveLength(0);
+  });
+
   it('has no axe violations', async () => {
     const { container } = renderPage('/app/settings/addons');
     await screen.findByRole('heading', { name: 'Local LLM' });
