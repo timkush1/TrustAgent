@@ -9,11 +9,13 @@
  * Third-party, Vendor or Simulated); what was stopped (block and fallback) apart from what was
  * flagged; fast-check speed; and the sampling status, including when the deep-audit budget ran out.
  *
- * On a demo whose mock judge is free, the alternatives are the published estimates (checking with a
- * real judge at the shipped defaults, an LLM asking the same questions, a full audit), and a line
- * below says what this demo's own, far higher, deep-audit rate would add. The static replay words every span "over the
- * replayed traffic" and says the recording carries no sampling state, since it has no window to
- * pick and no gateway to ask.
+ * On a demo whose mock judge is free, a line under the headline says why its deep audit reads $0;
+ * the alternatives are the published estimates (checking with a real judge at the shipped
+ * defaults, an LLM asking the same questions, a full audit), with a line on what this demo's own,
+ * far higher, deep-audit rate would add; the chart offers no full-audit band (its free audits and
+ * the published full audit are not on one basis) and the table's alternatives say which published
+ * figure to read them against. The static replay words every span "over the replayed traffic" and
+ * says the recording carries no sampling state, since it has no window to pick and no gateway to ask.
  *
  * Page contract: the delayed skeleton, the server's message with Retry, a degraded state for a
  * proxy that does not report costs (an older version), an empty state before the first checked
@@ -121,6 +123,10 @@ function AlternativesStrip({ title, items }: AlternativesView) {
   );
 }
 
+/** Why the published figures and the demo's simulated ones differ for the same alternative. */
+const PUBLISHED_REQUEST_NOTE =
+  'Published figures assume a typical 5,000-token request; the demo’s scripted requests are shorter, so its simulated figures are lower.';
+
 /**
  * Under the alternatives on a demo whose mock judge is free: what a real judge would add at this
  * demo's own deep-audit rate (far above the shipped defaults, to show the audit flow), and why the
@@ -138,14 +144,11 @@ function RealJudgeNotes({ view }: { view: RealJudgeView | null }) {
           </>
         ) : null}
       </p>
-      <p className="text-xs">{PUBLISHED_REQUEST_NOTE}</p>
+      {view ? <p className="text-xs">{PUBLISHED_REQUEST_NOTE}</p> : null}
     </div>
   );
 }
 
-/** Why the published figures and the demo's simulated ones differ for the same alternative. */
-const PUBLISHED_REQUEST_NOTE =
-  'Published figures assume a typical 5,000-token request; the demo’s scripted answers are shorter, so its simulated figures are lower.';
 
 /**
  * The headline, the savings range and the early-data sentence; then the alternatives per 1,000

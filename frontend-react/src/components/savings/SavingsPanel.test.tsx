@@ -180,7 +180,7 @@ describe('Savings tab', { timeout: 20_000 }, () => {
       ),
     ).toBeInTheDocument();
     expect(badge('Estimate', 'What a real judge would add at this demo’s rate')).toBeInTheDocument();
-    expect(screen.getByText(/^Published figures assume a typical 5,000-token request; the demo’s scripted answers are shorter/)).toBeInTheDocument();
+    expect(screen.getByText(/^Published figures assume a typical 5,000-token request; the demo’s scripted requests are shorter/)).toBeInTheDocument();
     const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ }).closest('tr')!;
     expect(row).toHaveTextContent('Not available in the simulated demo: the mock judge is free');
     expect(within(row).getAllByRole('cell').slice(0, 2).map((c) => c.textContent)).toEqual(['—', '—']);

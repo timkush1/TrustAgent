@@ -243,7 +243,7 @@ describe('Savings figures', () => {
       'Published assumptions: $35.50 per 1,000 answers × 44 simulated answers · not measured. Compare it with TrustAgent with a real judge ($3 per 1,000 answers) above, not with this simulated total',
     );
     const sameRow = rows.find((r) => r.key === 'llm_same_checks')!;
-    expect(sameRow.detail).toMatch(/Simulated on the demo’s short scripted answers; for a typical 5,000-token request the published figure is \$5\.75 per 1,000 answers \(above\)$/);
+    expect(sameRow.detail).toMatch(/Simulated on the demo’s short scripted requests; for a typical 5,000-token request the published figure is \$5\.75 per 1,000 answers \(above\)$/);
     // Without the real-judge view (a stack with a real judge), the rows keep their method only.
     expect(componentRows(demo).find((r) => r.key === 'llm_full_claim_audit')!.detail).toBe(
       'Published assumptions: $35.50 per 1,000 answers × 44 simulated answers · not measured',

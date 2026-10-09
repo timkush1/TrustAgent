@@ -411,8 +411,8 @@ function realJudgeRowNote(kind: Counterfactual['kind'], realJudge: RealJudgeView
     return `Compare it with TrustAgent with a real judge (${realJudge.shippedPer1k} per 1,000 answers) above, not with this simulated total`;
   }
   return realJudge.sameChecksPer1k
-    ? `Simulated on the demo’s short scripted answers; for a typical 5,000-token request the published figure is ${realJudge.sameChecksPer1k} per 1,000 answers (above)`
-    : 'Simulated on the demo’s short scripted answers';
+    ? `Simulated on the demo’s short scripted requests; for a typical 5,000-token request the published figure is ${realJudge.sameChecksPer1k} per 1,000 answers (above)`
+    : 'Simulated on the demo’s short scripted requests';
 }
 
 /** "about $3", "about $35.50": whole dollars without cents. */

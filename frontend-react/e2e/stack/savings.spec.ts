@@ -114,27 +114,35 @@ test.describe('savings', () => {
       await expect(headline.getByRole('heading', { level: 3, name: 'With a real judge, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
       expect(await alternatives()).toEqual(['real_judge', 'llm_same_checks', 'llm_full_claim_audit']);
       await expect(realJudge).toContainText(/TrustAgent with a real judge\s*\$3(?![\d.])/);
-      await expect(realJudge).toContainText('At the shipped defaults: about 8 in 100 answers deep-audited');
+      await expect(realJudge).toContainText('At the shipped defaults: fast check $0.21 on every answer + a deep audit of about 8 in 100 answers');
       await expect(headline.locator('[data-alternative="llm_same_checks"]')).toContainText('$5.75');
       await expect(headline.locator('[data-alternative="llm_full_claim_audit"]')).toContainText('$35.50');
       for (const key of ['real_judge', 'llm_same_checks', 'llm_full_claim_audit']) {
         await expect(headline.locator(`[data-alternative="${key}"]`).getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
       }
-      await expect(headline.getByText(/^The deep audit reads \$0/)).toContainText(/This demo deep-audits (every answer|about \d+ in 100 answers) to show the audit flow/);
+      await expect(headline.getByText(/^The deep audit reads \$0 because the demo’s mock judge is free/)).toBeVisible();
+      await expect(headline.getByText(/^This demo deep-audits (every answer|about \d+ in 100 answers) to show the audit flow/)).toBeVisible();
+      // The chart never sets the free judge's spend against the published full audit: the option
+      // stays, disabled, with the reason.
+      const chart = page.getByRole('figure', { name: 'What checking cost, against asking an LLM' });
+      await expect(chart.getByRole('radio', { name: 'Full audit' })).toHaveAttribute('data-disabled', '');
+      await expect(chart.getByText(/^Full audit is not comparable on the simulated demo: its mock judge is free/)).toBeVisible();
     } else {
       // A stack with a real judge compares this window's own figures: no published stand-in.
       await expect(headline.getByRole('heading', { level: 3, name: 'Against the alternatives, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
       await expect(realJudge).toHaveCount(0);
       await expect(headline.getByText(/mock judge is free/)).toHaveCount(0);
     }
-    // One window, one cost: the chart's sentence states the headline's totals (read together, so
-    // traffic arriving between the two reads cannot split them).
+    // One window, one cost: the chart's sentence states the component table's totals (read
+    // together, so traffic arriving between the two reads cannot split them).
     const chart = page.getByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    const components = page.getByRole('table', { name: 'What checking cost, and what the alternatives would have cost' });
     await expect
       .poll(
         async () => {
-          const early = (await headline.getByText(/^So far: /).textContent()) ?? '';
-          const [, answers, spent] = /^So far: ([\d,]+) answers checked for (\$[\d.]+)\./.exec(early) ?? [];
+          const checked = (await components.locator('[data-row="fast_check"] th').textContent()) ?? '';
+          const [, answers] = /([\d,]+) answers checked/.exec(checked) ?? [];
+          const spent = ((await components.locator('[data-row="total"] td').first().textContent()) ?? '').trim();
           return answers !== undefined && ((await chart.textContent()) ?? '').includes(`Checking ${answers} answers cost ${spent}`);
         },
         { timeout: TIMEOUT },

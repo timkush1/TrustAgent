@@ -157,16 +157,23 @@ describe('static build', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Time window' })).toBeNull();
   });
 
-  it('shows the recording’s Savings in its own words: per minute, both comparisons, no live sampling', async () => {
+  it('shows the recording’s Savings in its own words: per minute, one basis per comparison, no live sampling', async () => {
     await renderStatic('/app/overview?tab=savings');
     const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
     // The recording spans minutes, so the chart draws per minute, as Requests by outcome does.
     const plot = await within(chart).findByRole('slider', { name: 'What checking cost per minute' });
     expect(plot).toHaveAccessibleDescription(/^Checking \d+ answers cost \$[\d.]+ over the replayed traffic\./);
-    // The published full audit is there to compare with, labelled an estimate.
-    expect(within(chart).getByRole('radio', { name: 'Full audit' })).toBeInTheDocument();
+    // The recording's mock judge is free while it deep-audits most answers: the chart never sets
+    // that spend against the published full audit. The option stays, disabled, and says why.
+    expect(within(chart).getByRole('radio', { name: 'Full audit' })).toHaveAttribute('data-disabled');
+    expect(within(chart).getByRole('radiogroup', { name: 'Compare with' })).toHaveAccessibleDescription(
+      /^Full audit is not comparable on the simulated demo: its mock judge is free and it deep-audits about \d+ in 100 answers\./,
+    );
+    expect(plot).not.toHaveAccessibleDescription(/auditing every answer/);
+    // The table keeps the published figure, labelled an estimate, and says what to read it against.
     const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ });
     expect(within(row).getByRole('button', { name: /^Estimate:/ })).toBeInTheDocument();
+    expect(row).toHaveTextContent(/Compare it with TrustAgent with a real judge \(\$3 per 1,000 answers\) above, not with this simulated total/);
     // With a real judge, per 1,000 answers: the published estimates on one basis; the demo's own
     // rate comes after, in its own line.
     expect([...document.querySelectorAll('[data-alternative]')].map((el) => el.getAttribute('data-alternative'))).toEqual([
@@ -174,10 +181,13 @@ describe('static build', () => {
       'llm_same_checks',
       'llm_full_claim_audit',
     ]);
-    expect(document.querySelector('[data-alternative="real_judge"]')).toHaveTextContent(/\$3.*At the shipped defaults: about 8 in 100 answers deep-audited/);
+    expect(document.querySelector('[data-alternative="real_judge"]')).toHaveTextContent(
+      /\$3.*At the shipped defaults: fast check \$0\.21 on every answer \+ a deep audit of about 8 in 100 answers/,
+    );
     expect(document.querySelector('[data-alternative="llm_same_checks"]')).toHaveTextContent(/\$5\.75/);
     expect(document.querySelector('[data-alternative="llm_full_claim_audit"]')).toHaveTextContent(/\$35\.50/);
-    expect(screen.getByText(/^The deep audit reads \$0/)).toHaveTextContent(/This demo deep-audits about \d+ in 100 answers to show the audit flow/);
+    expect(screen.getByText(/^The deep audit reads \$0 because the demo’s mock judge is free: the figures with a real judge are below\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^This demo deep-audits about \d+ in 100 answers to show the audit flow/)).toBeInTheDocument();
     // No window to pick and no gateway to ask: no window words, no made-up sampling count.
     expect(screen.getByText('Over the replayed traffic, and per 1,000 checked answers.')).toBeInTheDocument();
     expect(screen.queryByText(/last 24 hours|pick a longer window|audits today/)).toBeNull();
