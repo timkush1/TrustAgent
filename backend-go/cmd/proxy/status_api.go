@@ -77,9 +77,13 @@ type statusReporter struct {
 	evaluatorWarnings func() []string
 	// decisionDay is the decision model's calls and cost over the last 24 hours from the cost
 	// ledger, which survive a restart (D92; GCOST fills it from a value its own loop
-	// refreshes, so /api/status runs no query). nil, or ok false (no database, or not read yet),
+	// refreshes, and this hook never queries). nil, or ok false (no database, or not read yet),
 	// falls back to the decision-model client's in-memory counters.
 	decisionDay func() (store.DecisionDay, bool)
+	// decisionDayFresh is the same figures for GET /api/status alone: re-read first when they are
+	// older than a few seconds (D92 refined), so a status read right after traffic shows it. nil
+	// uses decisionDay.
+	decisionDayFresh func() (store.DecisionDay, bool)
 	// runtime is the runtime configuration in effect (GSEC): the decision credential's name and
 	// the runtime warnings come from it; nil means none (a reporter built in a test).
 	runtime func() *runtimecfg.Snapshot
@@ -332,7 +336,7 @@ func (s *statusReporter) system(ctx context.Context) systemStatus {
 		Engine:        statusEngine{componentState: engineComponent(eng)},
 		Judge:         judgeStatus(eng),
 		Verifier:      verifierStatus(eng),
-		DecisionModel: s.decisionModel(),
+		DecisionModel: s.decisionModelWith(s.freshDecisionDay()),
 		Knowledge:     knowledgeStatus(eng),
 		Policy:        s.policyStatus(),
 		Budgets:       s.budgets(),
@@ -611,8 +615,23 @@ func (s *statusReporter) jevStatus() jev.Status {
 // decisionModel is SystemStatus.decision_model, from the client's live status: state, breaker,
 // last error with its hint, snapshot, rate use, the endpoint's host and the last 24 hours' calls and
 // cost. Those two come from the cost ledger when the decisionDay hook has read it (D92), and
-// otherwise from the client's in-memory counters, which restart with the proxy.
+// otherwise from the client's in-memory counters, which restart with the proxy. It never queries
+// the database: only GET /api/status re-reads stale figures (system, through decisionDayFresh).
 func (s *statusReporter) decisionModel() decisionModelStatus {
+	return s.decisionModelWith(s.decisionDay)
+}
+
+// freshDecisionDay is the hook GET /api/status reads the 24-hour figures through.
+func (s *statusReporter) freshDecisionDay() func() (store.DecisionDay, bool) {
+	if s.decisionDayFresh != nil {
+		return s.decisionDayFresh
+	}
+	return s.decisionDay
+}
+
+// decisionModelWith is decisionModel with the 24-hour figures read through day (nil: the client's
+// counters).
+func (s *statusReporter) decisionModelWith(day func() (store.DecisionDay, bool)) decisionModelStatus {
 	st := s.jevStatus()
 	d := decisionModelStatus{
 		Provider: "jev", Backend: st.Backend, BackendReason: st.Reason, ModelRequested: nonEmpty(st.Model),
@@ -623,9 +642,9 @@ func (s *statusReporter) decisionModel() decisionModelStatus {
 	if d.State == "" {
 		d.State = "off"
 	}
-	if s.decisionDay != nil {
-		if day, ok := s.decisionDay(); ok {
-			d.Calls24h, d.Cost24hUSD = int(day.Calls), day.CostUSD
+	if day != nil {
+		if v, ok := day(); ok {
+			d.Calls24h, d.Cost24hUSD = int(v.Calls), v.CostUSD
 		}
 	}
 	// The calibration of the snapshot that answers; unknown until the first answer (HTTP backends).

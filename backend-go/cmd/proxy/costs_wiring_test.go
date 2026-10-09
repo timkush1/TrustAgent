@@ -373,9 +373,16 @@ func TestCostDecisionDayCacheReReadsStaleFigures(t *testing.T) {
 		t.Errorf("after maxAge the database is asked again: %+v after %d reads", d, reads)
 	}
 
+	// cached, the hook of every status reader but GET /api/status, never queries, however stale.
+	clock = clock.Add(time.Hour)
+	before := reads
+	if d, ok := c.cached(); !ok || d.Calls != 50 || reads != before {
+		t.Errorf("cached: %+v %v after %d more reads, want the last value and no read", d, ok, reads-before)
+	}
+
 	never := &decisionDayCache{now: func() time.Time { return clock }, log: slog.New(slog.DiscardHandler),
 		read: func(context.Context, time.Time) (store.DecisionDay, error) { reads++; return store.DecisionDay{}, nil }}
-	before := reads
+	before = reads
 	if _, ok := never.get(); ok || reads != before {
 		t.Errorf("with maxAge 0, get read the database (%d reads) or reported a value (%v)", reads-before, ok)
 	}

@@ -120,7 +120,10 @@ func (s *server) initCosts(d serverDeps) {
 		day.refresh(ctx)
 		cancel()
 		s.costs.refreshDecisionDay = day.refresh
-		s.status.decisionDay = day.get
+		// Only GET /api/status may wait for a re-read; the status watch loop, readiness, the
+		// WebSocket hello and the settings guard read the cached value (they use the state alone).
+		s.status.decisionDay = day.cached
+		s.status.decisionDayFresh = day.get
 	}
 	s.pool.SetBudget(llm)
 	s.pool.SetCostRecorder(func(a worker.AuditCosts) { llm.ObserveAudit(a.Records) })
@@ -210,9 +213,10 @@ func everyMinute(ctx context.Context, f func(context.Context)) {
 	}
 }
 
-// decisionDayMaxAge is how old the decision-day figures may be when /api/status reads them: an
-// older value is re-read first, so a status read right after traffic shows it rather than the
-// figures of up to a minute before (the boot read on a fresh stack says 0 calls).
+// decisionDayMaxAge is how old the decision-day figures may be when GET /api/status reads them:
+// an older value is re-read first, so a status read right after traffic shows it rather than the
+// figures of up to a minute before (the boot read on a fresh stack says 0 calls). Other readers of
+// the decision model's status take the cached value and never query.
 const decisionDayMaxAge = 5 * time.Second
 
 // decisionDayReadTimeout bounds the re-read a status read makes; past it the status keeps the
@@ -265,8 +269,18 @@ func (c *decisionDayCache) readLocked(ctx context.Context) {
 	c.v.Store(&decisionDayRead{day: day, at: now})
 }
 
-// get is the statusReporter decisionDay hook: the last value read, re-read first when it is older
-// than maxAge and no read ran within maxAge.
+// cached is the statusReporter decisionDay hook: the last value read, never a query, so the
+// callers that run on a timer or on every connection (the status watch loop, /health/ready, the
+// WebSocket hello) do not touch the database.
+func (c *decisionDayCache) cached() (store.DecisionDay, bool) {
+	if r := c.v.Load(); r != nil {
+		return r.day, true
+	}
+	return store.DecisionDay{}, false
+}
+
+// get is the statusReporter decisionDayFresh hook, for GET /api/status alone: the last value read,
+// re-read first when it is older than maxAge and no read ran within maxAge.
 func (c *decisionDayCache) get() (store.DecisionDay, bool) {
 	if c.maxAge > 0 && c.stale() && c.mu.TryLock() {
 		if c.stale() {
@@ -276,10 +290,7 @@ func (c *decisionDayCache) get() (store.DecisionDay, bool) {
 		}
 		c.mu.Unlock()
 	}
-	if r := c.v.Load(); r != nil {
-		return r.day, true
-	}
-	return store.DecisionDay{}, false
+	return c.cached()
 }
 
 // stale: the value is older than maxAge (or missing) and no read started within maxAge.

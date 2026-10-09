@@ -103,6 +103,21 @@ func TestDecisionModelStatusIsLive(t *testing.T) {
 		t.Errorf("a quiet day in the ledger is zero, not the client's counters: %d %v", d.Calls24h, d.Cost24hUSD)
 	}
 
+	// D92 refined: only GET /api/status (system) reads through the hook that may query; the state
+	// readers (watch loop, readiness, the WebSocket hello, the settings guard) take the cached value.
+	fresh := 0
+	s.decisionDayFresh = func() (store.DecisionDay, bool) { fresh++; return store.DecisionDay{Calls: 7}, true }
+	if d := s.decisionModel(); fresh != 0 || d.Calls24h != 0 {
+		t.Errorf("decisionModel used the re-reading hook (%d calls) or its figures (%d)", fresh, d.Calls24h)
+	}
+	if d := s.decisionModelWith(s.freshDecisionDay()); fresh != 1 || d.Calls24h != 7 {
+		t.Errorf("the status read did not use the re-reading hook: %d calls, %d calls_24h", fresh, d.Calls24h)
+	}
+	s.decisionDayFresh = nil
+	if d := s.decisionModelWith(s.freshDecisionDay()); d.Calls24h != 0 {
+		t.Errorf("without a re-reading hook the status read takes the cached figures: %d", d.Calls24h)
+	}
+
 	// Without a status-reporting client, the resolved backend alone.
 	off := &statusReporter{cfg: cfg, jev: jev.Info{Backend: jev.BackendOff, Reason: "no key"}, now: time.Now}
 	if d := off.decisionModel(); d.State != "off" || d.Breaker != "closed" || d.EndpointHost != nil || d.Credential.Source != "none" {
