@@ -62,7 +62,7 @@ function Failure({ error, claiming }: { error: unknown; claiming: boolean }) {
   );
 }
 
-function SignedIn({ session, forThisTab, onSignOut, signingOut }: { session: SessionInfo; forThisTab: boolean; onSignOut: () => void; signingOut: boolean }) {
+function SignedIn({ session, forThisTab, demo, onSignOut, signingOut }: { session: SessionInfo; forThisTab: boolean; demo: boolean; onSignOut: () => void; signingOut: boolean }) {
   const admin = session.scopes.includes('admin');
   return (
     <div className="space-y-2">
@@ -76,7 +76,10 @@ function SignedIn({ session, forThisTab, onSignOut, signingOut }: { session: Ses
       ) : null}
       <p className="text-sm text-fg-muted">
         {admin
-          ? 'Admin actions are available: connect keys, edit policies, run the Playground and manage keys.'
+          ? demo
+            ? // The demo refuses keys (connected or app keys): only what it allows is promised.
+              'Admin actions are available: edit policies, run the Playground and label answers.'
+            : 'Admin actions are available: connect keys, edit policies, run the Playground and manage keys.'
           : 'This session can read the dashboard; setting it up and changing it need an admin key.'}
       </p>
       <div className="flex flex-wrap items-center gap-3">
@@ -101,12 +104,14 @@ export interface StepSecureProps {
   /** The token from the address (`#token=`), read once. */
   token: string | null;
   readonly: boolean;
+  /** The demo stack: keys cannot be connected or minted there, so step 1 does not promise it. */
+  demo?: boolean;
   /** Ticked "I saved it" for the admin key this claim created. */
   saved: boolean;
   onSavedChange: (saved: boolean) => void;
 }
 
-export function StepSecure({ auth, setup, token, readonly, saved, onSavedChange }: StepSecureProps) {
+export function StepSecure({ auth, setup, token, readonly, demo = false, saved, onSavedChange }: StepSecureProps) {
   const { signedIn, signIn, signOut, createdKey, cookieLost, crossOrigin } = auth;
   const [key, setKey] = useState('');
   const [pasted, setPasted] = useState('');
@@ -146,7 +151,7 @@ export function StepSecure({ auth, setup, token, readonly, saved, onSavedChange 
       {signIn.isError ? <Failure error={signIn.error} claiming={claiming} /> : null}
       {signedIn ? (
         <>
-          <SignedIn session={signedIn} forThisTab={crossOrigin} onSignOut={() => signOut.mutate()} signingOut={signOut.isPending} />
+          <SignedIn session={signedIn} forThisTab={crossOrigin} demo={demo} onSignOut={() => signOut.mutate()} signingOut={signOut.isPending} />
           {signOut.isError ? <Failure error={signOut.error} claiming={false} /> : null}
         </>
       ) : (

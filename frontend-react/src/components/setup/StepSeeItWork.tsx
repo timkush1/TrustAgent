@@ -2,10 +2,12 @@
  * Step 3 of the setup wizard, "See it work" (SPEC §3.3; ON-7d, D87):
  *
  * - Disabled, with the reason and the way back, until a key runs the fast check or simulated checks
- *   are on.
+ *   are on (the demo stack always runs simulated checks).
  * - Runs the refund example of the Playground (the answer says 60 days, the policy says 30) in audit
  *   mode with `mode_override: flag`, so no upstream key is needed, and shows what happened step by
- *   step with a link to the trace.
+ *   step with a link to the trace. The example shows the document the answer is checked against.
+ *   The check is a Playground run, so it is gated like the Playground (an admin on a writable
+ *   instance), not like a settings write: a demo visitor can run it.
  * - Mints an app key (ingest scope) only when none is active, and shows it once.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,6 +17,7 @@ import { useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { SecretOnce } from '@/components/common/SecretOnce';
+import { useWriteReason } from '@/components/common/useWriteAccess';
 import { buildRequest, EXAMPLES } from '@/components/playground/playgroundModel';
 import { ResultTimeline } from '@/components/playground/ResultTimeline';
 import { ProblemNote } from '@/components/settings/SettingsKit';
@@ -26,6 +29,12 @@ import type { SetupProgress } from './useSetupProgress';
 
 /** The refund example (60 days in the answer, 30 in the policy), flagged rather than blocked. */
 const REFUND_EXAMPLE = EXAMPLES.find((e) => e.id === 'refund-contradiction-flag') ?? EXAMPLES[0];
+
+/** The first document the example's system prompt carries (`<document id="…">…</document>`), or null. */
+function exampleDocument(system: string): { id: string; text: string } | null {
+  const m = /<document id="([^"]+)">([\s\S]*?)<\/document>/.exec(system);
+  return m ? { id: m[1], text: m[2].trim() } : null;
+}
 
 const linkClass = 'inline-flex items-center gap-1 text-sm font-medium text-fg underline underline-offset-2';
 
@@ -103,11 +112,14 @@ function AppKey({ writeReason }: { writeReason: Reason | null }) {
 
 export interface StepSeeItWorkProps {
   progress: SetupProgress;
+  /** Why a settings write (an app key) is unavailable here, or null. */
   writeReason: Reason | null;
 }
 
 export function StepSeeItWork({ progress, writeReason }: StepSeeItWorkProps) {
   const ds = useDataSource();
+  // The same gate as the Playground's run button: a check changes no settings.
+  const runReason = useWriteReason('admin');
   const scripted = progress.status?.demo === true || progress.status?.test_mode === true;
   const form = { ...REFUND_EXAMPLE.form, modeOverride: 'flag' as const };
   const run = useMutation({ mutationFn: () => ds.runPlayground(buildRequest(form, { scenario: scripted })) });
@@ -125,6 +137,7 @@ export function StepSeeItWork({ progress, writeReason }: StepSeeItWorkProps) {
   }
 
   const question = form.messages.find((m) => m.role === 'user')?.content ?? '';
+  const doc = exampleDocument(form.messages.find((m) => m.role === 'system')?.content ?? '');
   return (
     <div className="space-y-5">
       <p className="text-sm text-fg">{copy.setup.step_see_it_work.body}</p>
@@ -133,9 +146,17 @@ export function StepSeeItWork({ progress, writeReason }: StepSeeItWorkProps) {
         <dd className="text-fg">{question}</dd>
         <dt className="text-fg-muted">Answer to check</dt>
         <dd className="text-fg">{form.response}</dd>
+        {doc ? (
+          <>
+            <dt className="text-fg-muted">Checked against</dt>
+            <dd className="text-fg">
+              <code className="font-mono text-xs">{doc.id}</code>: “{doc.text}”
+            </dd>
+          </>
+        ) : null}
       </dl>
       {progress.simulated ? <p className="text-sm text-fg-muted">{copy.setup.step_connect.simulated_note}</p> : null}
-      <DisabledAction reason={writeReason}>
+      <DisabledAction reason={runReason}>
         {(p) => (
           <Button variant="primary" onClick={() => run.mutate()} pending={run.isPending} {...p}>
             <Play aria-hidden="true" />
@@ -154,6 +175,15 @@ export function StepSeeItWork({ progress, writeReason }: StepSeeItWorkProps) {
             </Link>
           ) : null}
         </div>
+      ) : null}
+      {progress.demo ? (
+        <p className="space-x-1 text-sm text-fg-muted">
+          <span>{copy.setup.step_see_it_work.demo_more}</span>
+          <Link to="/app/playground" className={linkClass}>
+            Open the Playground
+            <ArrowRight aria-hidden="true" className="size-3.5" />
+          </Link>
+        </p>
       ) : null}
       <AppKey writeReason={writeReason} />
     </div>

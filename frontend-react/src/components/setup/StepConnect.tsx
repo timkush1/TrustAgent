@@ -7,14 +7,19 @@
  * - **Paste a key instead**: one PUT that stores, checks and binds the key to the fast check and
  *   the judge.
  * - **Try it without a key**: simulated checks ($0, labelled Simulated, never blocking).
- * - The prerequisite (about $5 of credit), the privacy line, the no-credits state with "I added
- *   credits — check again", the no-limit callout, and "Simulated checks are now off" after a bind.
+ * - The prerequisite (about $5 of credit, its answer count labelled Estimate), the privacy line,
+ *   the no-credits state with "I added credits — check again", the no-limit callout, and
+ *   "Simulated checks are now off" after a bind.
+ *
+ * On the demo stack the step is done already (`StepConnectDemo`): its checks are simulated and keys
+ * cannot be connected there, so it says so instead of offering three ways in that are all disabled.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, ClipboardPaste, ExternalLink, FlaskConical, LogIn } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useDataSource } from '@/app/services';
 import { DisabledAction, DisabledReason, type Reason } from '@/components/common/DisabledReason';
+import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { CredentialResult } from '@/components/settings/CredentialResult';
 import { EnvManagedNote, ProblemNote, StoreNotice } from '@/components/settings/SettingsKit';
 import { usePutCredential, useVerifyCredential } from '@/components/settings/useCredentialWrites';
@@ -43,6 +48,22 @@ export interface StepConnectProps {
   progress: SetupProgress;
   /** Why connecting is unavailable here (read-only, demo, admin), or null. */
   writeReason: Reason | null;
+}
+
+/**
+ * Step 2 on the demo stack: nothing to connect. The demo's mock fast check and mock judge already
+ * run, so step 3 is open; how to use your own keys is in the demo banner, said once.
+ */
+export function StepConnectDemo() {
+  return (
+    <div className="space-y-2">
+      <p role="status" className="flex items-start gap-1.5 text-sm text-fg">
+        <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
+        {copy.setup.step_connect.demo_ready}
+      </p>
+      <p className="text-sm text-fg-muted">{copy.setup.step_connect.demo_note}</p>
+    </div>
+  );
 }
 
 export function StepConnect({ progress, writeReason }: StepConnectProps) {
@@ -113,6 +134,7 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
     <div className="space-y-5">
       <p className="text-sm text-fg">
         {copy.setup.step_connect.prerequisite}{' '}
+        <EvidenceBadge label="estimate" basis={copy.setup.step_connect.prerequisite_basis} subject="Answers $5 of credit covers" className="align-middle" />{' '}
         <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-medium underline underline-offset-2">
           {copy.setup.step_connect.prerequisite_link}
           <ExternalLink aria-hidden="true" className="size-3" />

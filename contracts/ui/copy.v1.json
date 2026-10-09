@@ -97,7 +97,8 @@
         "privacy": "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out.",
         "probe_ready": "Ready: the test call took {latency_ms} ms and cost {cost}",
         "no_credits": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits",
-        "prerequisite": "You need an OpenRouter account with about $5 of credit (≈1,600 answers at default settings, estimate).",
+        "prerequisite": "You need an OpenRouter account with about $5 of credit, enough for about 1,600 answers at the default settings.",
+        "prerequisite_basis": "$5 of credit ÷ about $3 per 1,000 answers at the shipped defaults (a fast check on every answer and a deep audit of about 8 in 100), a published estimate.",
         "prerequisite_link": "Add credits at openrouter.ai/settings/credits",
         "simulated_note": "Simulated checks use a mock model: results are labelled Simulated and never block an answer. The mock judge knows only the built-in examples, so deep audits of your own answers wait for a real key.",
         "simulated_on": "Simulated checks are on. Connect a key any time to check answers for real.",
@@ -110,11 +111,14 @@
         "callback_missing": "No sign-in is waiting in this tab. Open the dashboard at {public_url} and connect again.",
         "callback_working": "Finishing the OpenRouter sign-in…",
         "exchange_failed": "OpenRouter didn't accept this sign-in. Start Connect OpenRouter again.",
-        "callback_refused": "OpenRouter did not finish the sign-in, so nothing was connected."
+        "callback_refused": "OpenRouter did not finish the sign-in, so nothing was connected.",
+        "demo_ready": "Nothing to connect: the demo already runs simulated checks. Go on to step 3.",
+        "demo_note": "A mock model plays the fast check and the deep-audit judge, so every result is labelled Simulated and nothing is sent to a vendor. On your own stack, this step connects an OpenRouter key so answers are checked for real."
       },
       "step_see_it_work": {
         "title": "See it work",
-        "body": "Try a refund question whose answer says 60 days while the policy says 30. Your own model is not called, so no model key is needed."
+        "body": "Try a refund question whose answer says 60 days while the policy says 30. Your own model is not called, so no model key is needed.",
+        "demo_more": "More examples, including an answer that is blocked and one replaced by a fallback, are in the Playground."
       },
       "step_try": {
         "title": "See it work",

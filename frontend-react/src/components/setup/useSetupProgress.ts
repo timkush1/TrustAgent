@@ -3,8 +3,9 @@
  *
  * - secure: this browser is signed in with the admin scope;
  * - connect: a key runs the fast check (bound in the dashboard, or set in .env), or simulated
- *   checks are on;
- * - try: open once the fast check can run, real or simulated.
+ *   checks are on; on the demo stack there is nothing to connect, since it always runs simulated
+ *   checks (mock fast check and mock judge), so the step is done;
+ * - try: open once the fast check can run, real or simulated (the demo included).
  *
  * The step to open is the first one not done, unless the address names one (`?step=`).
  */
@@ -26,9 +27,11 @@ export interface SetupProgress {
   secured: boolean;
   /** A key runs the fast check. */
   connected: boolean;
-  /** Simulated checks are on (D39). */
+  /** Simulated checks are on (D39): "Try it without a key", outside the demo stack. */
   simulated: boolean;
-  /** Step 3 is open: connected or simulated (D87). */
+  /** The demo stack: its checks are always simulated and keys cannot be connected there. */
+  demo: boolean;
+  /** Step 3 is open: connected, simulated, or the demo (D87). */
   canTry: boolean;
   settings: SettingsView | undefined;
   status: SystemStatus | undefined;
@@ -43,10 +46,12 @@ export function setupProgress(input: { session: SessionInfo | null; settings: Se
   const envKey = status?.decision_model.credential.source === 'env';
   const backend = runtime?.decision_model.backend;
   const connected = backend !== 'off' && backend !== 'mock' && (Boolean(runtime?.bindings.decision_model) || envKey);
-  const simulated = backend === 'mock' && status?.demo !== true;
-  const canTry = connected || simulated;
+  const demo = status?.demo === true;
+  const simulated = backend === 'mock' && !demo;
+  // The demo never dead-ends at step 2: its mock checks already run, and nothing can be connected.
+  const canTry = connected || simulated || demo;
   const next: SetupStep = !admin ? 'secure' : !canTry ? 'connect' : 'try';
-  return { session, admin, secured: admin, connected, simulated, canTry, settings, status, next };
+  return { session, admin, secured: admin, connected, simulated, demo, canTry, settings, status, next };
 }
 
 export function useSetupProgress(): SetupProgress {

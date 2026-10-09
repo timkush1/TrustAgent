@@ -3,8 +3,12 @@
  * one-time link to a checked answer.
  *
  * 1. Secure this dashboard: claim the link (or paste its token), save the admin key, or sign in.
- * 2. Connect OpenRouter: Connect, paste a key, or try simulated checks.
+ * 2. Connect OpenRouter: Connect, paste a key, or try simulated checks. On the demo stack it is
+ *    done already: the demo runs simulated checks and has nothing to connect.
  * 3. See it work: the refund example, flagged, and an app key for your own requests.
+ *
+ * On the demo stack (`make demo` opens this page with its one-time link) the wizard never dead-ends:
+ * step 1, then step 3 straight away. The demo banner says how to use your own keys, once.
  *
  * `?step=` opens a step; without it the wizard opens the first step not done, and stays on step 1
  * after a sign-in or claim until the viewer moves on (the admin key must be saved first). It is also
@@ -15,7 +19,6 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { useState } from 'react';
 import { useDataSource } from '@/app/services';
-import { CommandText } from '@/components/common/CommandText';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { PageHeader } from '@/components/common/PageHeader';
 import { LoadingState } from '@/components/common/StateViews';
@@ -25,10 +28,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { setupStatusQuery } from '@/data/queries';
 import { useAppMode } from '@/data/useSystem';
-import { copy, fillTemplate } from '@/domain/presentation';
+import { copy } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import { takeSetupToken } from './setupToken';
-import { StepConnect } from './StepConnect';
+import { StepConnect, StepConnectDemo } from './StepConnect';
 import { StepSecure } from './StepSecure';
 import { StepSeeItWork } from './StepSeeItWork';
 import { useDashboardAuth } from './useDashboardAuth';
@@ -125,11 +128,17 @@ export function SetupWizard({ step }: { step?: SetupStep }) {
   if (pending) {
     body = showLoading ? <LoadingState rows={4} /> : null;
   } else if (current === 'secure') {
-    body = <StepSecure auth={auth} setup={setup.data} token={token} readonly={mode.readonly} saved={saved} onSavedChange={setSaved} />;
+    body = <StepSecure auth={auth} setup={setup.data} token={token} readonly={mode.readonly} demo={mode.demo} saved={saved} onSavedChange={setSaved} />;
+  } else if (current === 'connect' && progress.demo) {
+    body = <StepConnectDemo />;
   } else if (!progress.admin) {
     body = (
       <div className="space-y-2">
-        <p className="text-sm text-fg">Sign in as an admin first: connecting keys changes how every answer is checked.</p>
+        <p className="text-sm text-fg">
+          {progress.demo
+            ? 'Sign in as an admin first: running a check from the dashboard needs the admin key.'
+            : 'Sign in as an admin first: connecting keys changes how every answer is checked.'}
+        </p>
         <Link to="/app/setup" search={{ step: 'secure' }} className="inline-flex items-center gap-1 text-sm font-medium text-fg underline underline-offset-2">
           Back to {TITLES.secure}
           <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -148,12 +157,13 @@ export function SetupWizard({ step }: { step?: SetupStep }) {
 
   return (
     <div className="max-w-3xl space-y-5">
-      <PageHeader description="Three steps to a working TrustAgent: secure this dashboard, connect a key, then watch it catch a wrong answer." />
-      {mode.demo ? (
-        <p className="rounded-md border border-border px-3 py-2 text-sm text-fg">
-          <CommandText text={fillTemplate(copy.connect_app.demo_stack)} />
-        </p>
-      ) : null}
+      <PageHeader
+        description={
+          mode.demo
+            ? 'On the demo: secure this dashboard, then watch TrustAgent catch a wrong answer. The demo already runs simulated checks, so there is nothing to connect.'
+            : 'Three steps to a working TrustAgent: secure this dashboard, connect a key, then watch it catch a wrong answer.'
+        }
+      />
       <Stepper current={current} done={done} locked={current === 'secure' && auth.createdKey !== null && !saved} />
       <Card>
         <CardHeader level={2} title={`${index + 1}. ${TITLES[current]}`} />

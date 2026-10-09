@@ -190,7 +190,7 @@ jobs:
         working-directory: frontend-react
         env:
           DASHBOARD_HOST_PORT: '3000'
-        run: npx playwright test --project=stack --workers=1 -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings|labels"
+        run: npx playwright test --project=stack --workers=1 -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings|labels|demo setup"
 
       # The static GitHub Pages site needs no stack. It is built as the M-Demo gate
       # builds it; --project=static makes Playwright serve it with vite preview

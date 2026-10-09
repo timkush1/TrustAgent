@@ -50,6 +50,19 @@ function unbound(overrides: Partial<SettingsView> = {}): SettingsView {
 /** The fast check as /api/status reports it on a fresh stack: no key, nothing ready. */
 const fresh = () => ({ decision_model: { ...adminStatus().decision_model, state: 'off' as const, backend: 'off' as const, credential: { source: 'none' as const, name: null, masked: null } } });
 
+/** The demo stack's settings: mock fast check, nothing bound (the demo blanks every vendor key). */
+function demoSettings(): SettingsView {
+  const s = unbound();
+  s.runtime.decision_model = { ...s.runtime.decision_model, backend: 'mock' };
+  return s;
+}
+
+/** /api/status on the demo stack (`make demo`): demo mode, the mock fast check, no key. */
+const demoStatus = () => ({
+  demo: true,
+  decision_model: { ...adminStatus().decision_model, state: 'mock' as const, backend: 'mock' as const, credential: { source: 'none' as const, name: null, masked: null } },
+});
+
 /** The dashboard on another origin than its proxy: the runtime config says crossOrigin. */
 function renderCrossOrigin(path: string, control = signedOut()) {
   server.use(...createFakeApi({ status: null }, { controlPlane: false }).handlers, ...control.handlers);
@@ -417,16 +430,34 @@ describe('Setup wizard, step 2: connect OpenRouter', { timeout: 30_000 }, () => 
     expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false');
   });
 
-  it('explains disabled connecting on the demo stack and on a read-only instance', async () => {
-    renderPage('/app/setup?step=connect', { control: createControlApi({ settings: unbound() }), status: { ...fresh(), demo: true } });
-    expect(await screen.findByText(/This is the demo stack/)).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: copy.setup.step_connect.primary })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getAllByText(copy.disabled_reasons.demo).length).toBeGreaterThan(0);
-    stopLive();
-    document.body.innerHTML = '';
+  it('on the demo stack, says there is nothing to connect and opens step 3: no disabled ways in, no dead end', async () => {
+    renderPage('/app/setup?step=connect', { control: createControlApi({ settings: demoSettings() }), status: demoStatus() });
+    const step = await panel(copy.setup.step_connect.title);
+    expect(await within(step).findByRole('status')).toHaveTextContent(copy.setup.step_connect.demo_ready);
+    expect(within(step).getByText(copy.setup.step_connect.demo_note)).toBeInTheDocument();
+    // Nothing that cannot work here: no Connect, no paste, no "try it without a key".
+    for (const way of [copy.setup.step_connect.primary, copy.setup.step_connect.paste_key, copy.setup.step_connect.simulated]) {
+      expect(within(step).queryByRole('button', { name: way })).toBeNull();
+    }
+    expect(screen.queryByText(copy.setup.step_try.disabled_reason)).toBeNull();
+    expect(screen.getByRole('link', { name: /Connect OpenRouter.*Done/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false');
+    // The demo banner says how to use your own keys; the page does not repeat it.
+    expect(screen.queryByText(/This is the demo stack/)).toBeNull();
+  });
 
+  it('explains disabled connecting on a read-only instance', async () => {
     renderPage('/app/setup?step=connect', { control: createControlApi({ settings: unbound() }), status: { ...fresh(), readonly: true } });
     expect((await screen.findAllByText(copy.disabled_reasons.readonly)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: copy.setup.step_connect.primary })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('labels the answers $5 of credit covers as an estimate, with its basis', async () => {
+    renderPage('/app/setup?step=connect', { control: createControlApi({ settings: unbound() }), status: fresh() });
+    const step = await panel(copy.setup.step_connect.title);
+    const estimate = await within(step).findByRole('button', { name: 'Estimate: how “Answers $5 of credit covers” was produced' });
+    expect(estimate).toHaveAttribute('data-value-label', 'estimate');
+    expect(within(step).queryByText(/estimate\)/)).toBeNull();
   });
 
   it('says why keys cannot be saved without a credentials store, and still offers simulated checks (D32)', async () => {
@@ -483,6 +514,27 @@ describe('Setup wizard, step 3: see it work', { timeout: 30_000 }, () => {
     expect(within(step).queryByRole('button', { name: 'Create an app key' })).not.toBeInTheDocument();
   });
 
+  it('shows the document the answer is checked against', async () => {
+    renderPage('/app/setup?step=try');
+    const step = await panel(copy.setup.step_see_it_work.title);
+    const against = (await within(step).findByText('Checked against')).nextElementSibling as HTMLElement;
+    expect(against).toHaveTextContent('refund-policy.md: “Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.”');
+  });
+
+  it('on the demo stack, runs the check like the Playground does and points at more examples', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/setup?step=try', { control: createControlApi({ settings: demoSettings() }), status: demoStatus() });
+    const step = await panel(copy.setup.step_see_it_work.title);
+    const check = await within(step).findByRole('button', { name: 'Check this answer' });
+    // Gated like the Playground's run (an admin on a writable stack), not like a settings write.
+    expect(check).toHaveAttribute('aria-disabled', 'false');
+    await user.click(check);
+    expect(await within(step).findByRole('list', { name: 'What happened to the request' })).toBeInTheDocument();
+    // The demo's mock checks play the unedited example's scripted answers.
+    expect(control.callsTo('/api/playground/run', 'POST')[0].body).toMatchObject({ mode_override: 'flag', scenario: 'refund-contradiction-flag' });
+    expect(within(step).getByRole('link', { name: /Open the Playground/ })).toHaveAttribute('href', '/app/playground');
+  });
+
   it('offers no app key when the key list cannot be read, only another try', async () => {
     const user = userEvent.setup();
     const control = createControlApi({ apiKeys: errorReply(503, 'persistence_disabled', 'API keys need the database.') });
@@ -511,6 +563,51 @@ describe('Setup wizard, step 3: see it work', { timeout: 30_000 }, () => {
   it('has no axe violations', async () => {
     const { container } = renderPage('/app/setup?step=try');
     await panel(copy.setup.step_see_it_work.title);
+    expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
+});
+
+describe('Setup wizard on the demo stack (make demo opens it with the one-time link)', { timeout: 30_000 }, () => {
+  it('goes from the setup link to a checked answer and on to the dashboard, never stopping at step 2', async () => {
+    const user = userEvent.setup();
+    const control = signedOut({ settings: demoSettings() });
+    window.history.replaceState(null, '', '/app/setup#token=setup-token-123');
+    renderPage('/app/setup', { control, status: demoStatus() });
+    expect(await screen.findByText(/there is nothing to connect/)).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Create the admin key' }));
+    // Step 1 promises only what the demo allows: no keys to connect or manage there.
+    expect(await screen.findByText('Admin actions are available: edit policies, run the Playground and label answers.')).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: copy.setup.step_secure.saved_confirm }));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    const connect = await panel(copy.setup.step_connect.title);
+    expect(await within(connect).findByText(copy.setup.step_connect.demo_ready)).toBeInTheDocument();
+    const next = screen.getByRole('button', { name: 'Next' });
+    expect(next).toHaveAttribute('aria-disabled', 'false');
+    await user.click(next);
+
+    const tryIt = await panel(copy.setup.step_see_it_work.title);
+    const check = await within(tryIt).findByRole('button', { name: 'Check this answer' });
+    expect(check).toHaveAttribute('aria-disabled', 'false');
+    await user.click(check);
+    expect(await within(tryIt).findByRole('list', { name: 'What happened to the request' })).toBeInTheDocument();
+    expect(within(tryIt).getByRole('link', { name: /Open the trace/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Secure this dashboard.*Done/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Connect OpenRouter.*Done/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: /Go to Overview/ }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+  });
+
+  it('opens a signed-in admin straight at step 3', async () => {
+    renderPage('/app/setup', { control: createControlApi({ settings: demoSettings() }), status: demoStatus() });
+    expect(await panel(copy.setup.step_see_it_work.title)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Check this answer' })).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  it('has no axe violations on step 2', async () => {
+    const { container } = renderPage('/app/setup?step=connect', { control: createControlApi({ settings: demoSettings() }), status: demoStatus() });
+    await screen.findByText(copy.setup.step_connect.demo_ready);
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
 });
