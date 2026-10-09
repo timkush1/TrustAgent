@@ -1,0 +1,10 @@
+# ============================================================================
+# TrustAgent - knowledge add-on proof stack (P5-PLAN D131; DR-10)
+# ============================================================================
+# A stub until DX-RELEASE fills it: COMPOSE_PROFILES=knowledge with the knowledge
+# engine image, the fast check on mock-upstream and the mock judge, for the
+# handbook scenario (contracts/demo/scenarios.v1.json knowledge-only-capped).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge config -q
+
+services: {}

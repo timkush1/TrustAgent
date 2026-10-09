@@ -1,0 +1,13 @@
+# ============================================================================
+# TrustAgent - demo recording stack (P5-PLAN D123; `make record-demo`)
+# ============================================================================
+# A stub until DX-RELEASE fills it: real backends from .env, test mode for the
+# scripted answers, sync trace flush, small spend caps, no mock-upstream and no
+# published database port. The test-header seam (internal/jev/testheaders.go)
+# keeps test headers away from openrouter.ai. Run as project truthtable-record:
+#
+#   docker compose -p truthtable-record -f docker-compose.yml -f docker-compose.record.yml config -q
+
+name: truthtable-record
+
+services: {}

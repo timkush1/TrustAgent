@@ -1,7 +1,8 @@
 # ============================================================================
 # mk/dx.mk - Compose stacks (default, demo and e2e), setup tools, local models,
-# load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
-# root Makefile; targets are declared .PHONY there.
+# monitoring shortcuts. Owned by the DX-RELEASE stream. Included by the root
+# Makefile; targets are declared .PHONY there. The load test lives in
+# mk/load.mk (GO), release targets in mk/release.mk, launch in mk/launch.mk.
 #
 # Services are addressed by compose service name (`$(COMPOSE) exec ollama ...`);
 # there are no fixed container names. The default stack's project name comes
@@ -130,6 +131,13 @@ e2e-scenarios: ## Check the e2e scenarios against the running e2e stack (E2E_SCE
 	$(E2E_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(E2E_SCENARIOS) --upstream $(E2E_UPSTREAM) \
 		$(if $(E2E_EXCLUDE),--exclude $(E2E_EXCLUDE)) $(if $(E2E_PHASE),--phase $(E2E_PHASE))
 
+# The faults pack (contracts/demo/faults.v1.json, P5-PLAN D119): mock-upstream's fault counters are
+# reset first (from inside the proxy container, which reaches mock-upstream by name), so counted
+# faults such as 429@1 start fresh; then every faults scenario runs against the e2e stack.
+e2e-faults: ## Check the vendor-fault scenarios against the running e2e stack (resets mock-upstream, then trafficgen --pack faults)
+	$(E2E_COMPOSE) exec -T proxy wget -q -O /dev/null --post-data= http://mock-upstream:8090/_mock/reset
+	$(E2E_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --pack faults --scenarios faults --upstream all
+
 e2e-logs: ## Follow the e2e stack's logs (SERVICE=mock-upstream for one service)
 	$(E2E_COMPOSE) logs -f $(SERVICE)
 
@@ -206,7 +214,12 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding and load overrides (docker compose config -q)
+# The record and knowledge overlays (P5-PLAN D123, D131) start as stubs; DX-RELEASE fills them.
+RECORD_PROJECT    ?= truthtable-record
+RECORD_COMPOSE     = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docker-compose.record.yml
+KNOWLEDGE_COMPOSE  = $(COMPOSE) -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge
+
+compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding, load, record and knowledge overrides (docker compose config -q)
 	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \
 	set -e; for p in $(COMPOSE_CHECK_PROFILES); do \
 		$(COMPOSE) $${p:+--profile "$$p"} config -q; echo "compose config ok: profile $${p:-default}"; \
@@ -215,7 +228,9 @@ compose-check: ## Validate the compose files: every profile and the demo, e2e, o
 	$(E2E_COMPOSE) config -q; echo "compose config ok: e2e override"; \
 	$(ONBOARDING_COMPOSE) config -q; echo "compose config ok: onboarding override"; \
 	$(LOAD_COMPOSE) config -q; echo "compose config ok: load override"; \
-	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) config -q; echo "compose config ok: load override, slow fast check"
+	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) config -q; echo "compose config ok: load override, slow fast check"; \
+	$(RECORD_COMPOSE) config -q; echo "compose config ok: record override"; \
+	$(KNOWLEDGE_COMPOSE) config -q; echo "compose config ok: knowledge override"
 
 test-scripts: ## Unit tests of the setup scripts (scripts/tests, standard library only)
 	$(PYTHON) -m unittest discover -s scripts/tests -v
@@ -233,53 +248,7 @@ ollama-pull: ## Pull OLLAMA_MODEL into the running ollama service (ollama-init p
 ollama-list: ## List the models in the ollama service
 	$(COMPOSE) --profile local-llm exec -T ollama ollama list
 
-##@ Load testing and monitoring
-
-# The load-test stack (docker-compose.load.yml): every vendor on mock-upstream, the load policy of
-# scripts/load/policies.yaml, no published host port (k6 joins the proxy container), so it can
-# run next to a demo. docker-compose.load-slow-jev.yml turns the fast check into a 150 ms one for
-# scenario d. docs/GATEWAY.md §13 lists the scenarios and their targets.
-comma := ,
-LOAD_PROJECT  ?= truthtable-load
-LOAD_COMPOSE   = $(COMPOSE) -p $(LOAD_PROJECT) -f docker-compose.yml -f docker-compose.load.yml --profile load
-LOAD_SLOW_JEV  = -f docker-compose.load-slow-jev.yml
-LOAD_BUILD    ?= --build
-# k6 (scripts/load/gateway-overhead.js): requests per second, and the time, of each scenario.
-LOAD_RATE     ?= 20
-LOAD_DURATION ?= 30s
-K6_IMAGE      ?= grafana/k6
-# k6 joins the running proxy container's network namespace and calls it on 127.0.0.1: no bridge
-# hop in the measurement, and no run at all (docker refuses) when the proxy is not running.
-# $(call k6_run,<scenarios>): k6 reads the container environment as __ENV. The proxy key reaches
-# it through docker's own environment (`-e API_KEY` without a value), never the command line,
-# where other local users could read it.
-k6_run = API_KEY="$$($(PYTHON) scripts/envfile.py get TRAFFICGEN_API_KEY)" \
-	docker run --rm -i --network "container:$$($(LOAD_COMPOSE) ps -q proxy)" \
-	-e BASE_URL=http://127.0.0.1:8080 -e API_KEY \
-	-e RATE=$(LOAD_RATE) -e DURATION=$(LOAD_DURATION) -e SCENARIOS=$(1) \
-	$(K6_IMAGE) run - < scripts/load/gateway-overhead.js
-
-load-up: ## Start the load-test stack (vendors on mock-upstream, no host ports) and wait until healthy
-	$(PYTHON) scripts/configure.py --ensure
-	$(LOAD_COMPOSE) up -d $(LOAD_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT) proxy
-
-# Pass 1 runs scenarios a, b, c, e and f; pass 2 recreates the proxy on the 150 ms fast check for
-# scenario d. The stack is removed whatever happened, and the exit status says whether every
-# target held. (No $$(MAKE) inside the recipe: `make -n` would run such a line for real.)
-load-test-gate: load-up ## Gateway overhead under load: k6 scenarios a-f on the load stack (starts it, removes it after; LOAD_RATE=, LOAD_DURATION=)
-	@status=0; \
-	echo "Pass 1: scenarios a, b, c, e, f (the fast check answers at once)"; \
-	$(call k6_run,a$(comma)b$(comma)c$(comma)e$(comma)f) || status=1; \
-	echo "Pass 2: scenario d (the fast check answers in 150 ms)"; \
-	if $(LOAD_COMPOSE) $(LOAD_SLOW_JEV) up -d --wait --wait-timeout $(WAIT_TIMEOUT) --no-deps mock-jev-slow proxy; then \
-		$(call k6_run,d) || status=1; \
-	else status=1; fi; \
-	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) down --volumes --remove-orphans; \
-	if [ $$status -ne 0 ]; then echo "load-test-gate: a target was missed or a pass did not run (see above)"; fi; \
-	exit $$status
-
-load-down: ## Stop the load-test stack and delete its volumes
-	$(LOAD_COMPOSE) down --volumes --remove-orphans
+##@ Monitoring
 
 metrics: ## Open the Prometheus UI (profile observability; WSL/macOS/Linux aware)
 	@$(PYTHON) scripts/open_url.py --label "Prometheus" http://localhost:9090

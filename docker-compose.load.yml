@@ -14,8 +14,9 @@
 # spent: the fast check is the `compatible` backend on its TypeSafe-shaped /v1/systemone, answering
 # at once, and the LLM upstream answers every request with -default-answer. mock-jev-slow is a
 # second mock-upstream whose decisions take 150 ms (scenario d). The gateway reads the load policy
-# in scripts/load/policies.yaml: one route per scenario. Deep audits are off in that policy, so the
-# engine only has to start.
+# in scripts/load/policies.yaml: one route per scenario. Deep audits are off in that policy, and
+# the proxy runs without the audit engine (TRUTHTABLE_GRPC_ADDRESS is empty, and the engine is not
+# a dependency here), so a load run needs no engine image and no engine start.
 #
 # The stack publishes no host port: k6 runs inside the proxy container's network namespace, so a
 # demo or `make up` stack can keep running next to it. Test mode is on so the k6 script can
@@ -57,6 +58,8 @@ services:
       TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0"
       TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "0"
       TRUTHTABLE_LOG_LEVEL: warn
+      # No audit engine: deep audits are off (cmd/proxy/main.go runs without one).
+      TRUTHTABLE_GRPC_ADDRESS: ""
       # No vendor credential reaches the load proxy.
       OPENROUTER_API_KEY: !reset null
       TYPESAFE_API_KEY: !reset null
@@ -65,7 +68,9 @@ services:
       TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY: !reset null
     volumes:
       - ./scripts/load/policies.yaml:/etc/trustagent-load/policies.yaml:ro
-    depends_on:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
       mock-upstream:
         condition: service_healthy
 

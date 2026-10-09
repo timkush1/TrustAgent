@@ -23,6 +23,8 @@ COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 DEMO = (ROOT / "docker-compose.demo.yml").read_text(encoding="utf-8")
 E2E = (ROOT / "docker-compose.e2e.yml").read_text(encoding="utf-8")
 ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8")
+RECORD = (ROOT / "docker-compose.record.yml").read_text(encoding="utf-8")
+KNOWLEDGE = (ROOT / "docker-compose.knowledge.yml").read_text(encoding="utf-8")
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
@@ -87,6 +89,8 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.demo.yml", DEMO),
             ("docker-compose.e2e.yml", E2E),
             ("docker-compose.onboarding.yml", ONBOARDING),
+            ("docker-compose.record.yml", RECORD),
+            ("docker-compose.knowledge.yml", KNOWLEDGE),
         ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
@@ -110,6 +114,8 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.demo.yml", DEMO),
             ("docker-compose.e2e.yml", E2E),
             ("docker-compose.onboarding.yml", ONBOARDING),
+            ("docker-compose.record.yml", RECORD),
+            ("docker-compose.knowledge.yml", KNOWLEDGE),
         ):
             for key in set(pattern.findall(text)):
                 if key in allowed_foreign:
@@ -124,6 +130,26 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(DEMO, r"(?m)^name: truthtable-demo$")
         self.assertRegex(E2E, r"(?m)^name: truthtable-e2e$")
         self.assertRegex(ONBOARDING, r"(?m)^name: truthtable-onboarding$")
+        self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
+
+    def test_record_and_knowledge_overlays_are_checked(self) -> None:
+        # P5-PLAN D123 and D131: both overlays exist from Step 0 (stubs until DX-RELEASE fills
+        # them) and compose-check validates them with the files they are layered on.
+        for text in (RECORD, KNOWLEDGE):
+            self.assertRegex(text, r"(?m)^services:")
+        check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(RECORD_COMPOSE) config -q", check)
+        self.assertIn("$(KNOWLEDGE_COMPOSE) config -q", check)
+        record = re.search(r"(?m)^RECORD_COMPOSE\s*=(.*)$", DX_MK)
+        self.assertIsNotNone(record)
+        self.assertEqual(
+            re.findall(r"-f (\S+)", record.group(1) if record else ""),
+            ["docker-compose.yml", "docker-compose.record.yml"],
+        )
+        self.assertRegex(DX_MK, r"(?m)^RECORD_PROJECT\s+\?= truthtable-record$")
+        knowledge = re.search(r"(?m)^KNOWLEDGE_COMPOSE\s*=(.*)$", DX_MK)
+        self.assertIsNotNone(knowledge)
+        self.assertIn("docker-compose.knowledge.yml", knowledge.group(1) if knowledge else "")
 
     def test_every_published_port_binds_bind_addr(self) -> None:
         for name, text in (

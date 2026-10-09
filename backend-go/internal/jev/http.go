@@ -655,9 +655,7 @@ func (c *httpClient) do(ctx context.Context, cl *call, a *attempt, key string) a
 		return res
 	}
 	c.setHeaders(hreq.Header, key)
-	if c.cfg.ForwardScenario && cl.opt.Scenario != "" {
-		hreq.Header.Set("X-TrustAgent-Scenario", cl.opt.Scenario)
-	}
+	forwardTestHeaders(hreq.Header, hreq.URL, cl.opt, c.cfg.ForwardScenario)
 	resp, err := c.hc.Do(hreq)
 	res.connectMs, res.wrote = ct.result()
 	if err != nil {

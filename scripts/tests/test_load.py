@@ -24,7 +24,7 @@ SLOW = (ROOT / "docker-compose.load-slow-jev.yml").read_text(encoding="utf-8")
 POLICY_PATH = ROOT / "scripts" / "load" / "policies.yaml"
 POLICY = POLICY_PATH.read_text(encoding="utf-8")
 K6 = (ROOT / "scripts" / "load" / "gateway-overhead.js").read_text(encoding="utf-8")
-DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
+LOAD_MK = (ROOT / "mk" / "load.mk").read_text(encoding="utf-8")
 GATEWAY_DOC = (ROOT / "docs" / "GATEWAY.md").read_text(encoding="utf-8")
 
 SCENARIOS = "abcdef"
@@ -182,18 +182,18 @@ class LoadK6Test(unittest.TestCase):
         self.assertIn("'fault:hang@1'", K6)
 
     def test_the_make_target_runs_every_scenario(self) -> None:
-        passes = re.findall(r"\$\(call k6_run,([a-z$()]+)\)", DX_MK)
+        passes = re.findall(r"\$\(call k6_run,([a-z$()]+)\)", LOAD_MK)
         ran = "".join(p.replace("$(comma)", "") for p in passes)
         self.assertEqual(sorted(ran), list(SCENARIOS))
-        self.assertRegex(DX_MK, r"(?m)^load-test-gate: load-up ##")
-        recipe = DX_MK.split("load-test-gate: load-up", 1)[1].split("\nload-down:", 1)[0]
+        self.assertRegex(LOAD_MK, r"(?m)^load-test-gate: load-up ##")
+        recipe = LOAD_MK.split("load-test-gate: load-up", 1)[1].split("\nload-down:", 1)[0]
         self.assertNotIn("$(MAKE)", recipe, "make -n would run such a recipe line for real")
         self.assertIn("down --volumes", recipe)
 
     def test_the_proxy_key_never_reaches_a_command_line(self) -> None:
         # `docker run -e API_KEY=<key>` would show the key to every local user (ps); docker
         # takes it from its own environment when -e names the variable alone.
-        k6_run = DX_MK.split("k6_run =", 1)[1].split("\n\n", 1)[0]
+        k6_run = LOAD_MK.split("k6_run =", 1)[1].split("\n\n", 1)[0]
         self.assertRegex(k6_run, r"-e API_KEY(\s|\\)")
         self.assertNotRegex(k6_run, r"-e API_KEY=")
         self.assertRegex(

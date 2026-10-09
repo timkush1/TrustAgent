@@ -85,6 +85,31 @@ export-replay: ## Export a sanitized replay recording: REPLAY_OUT=<dir> [REPLAY_
 	cd backend-go && go run ./cmd/export-replay --out "$(abspath $(REPLAY_OUT))" \
 		$(if $(REPLAY_SINCE),--since "$(REPLAY_SINCE)") $(if $(REPLAY_SOURCE),--source "$(REPLAY_SOURCE)") $(REPLAY_ARGS)
 
+##@ Decision model check and Go benchmarks
+
+# make jev-check: one paid-free check of the decision model's connection (cmd/jevcheck). Inside a
+# running stack it runs in the proxy container, where the gateway's own configuration is; without
+# one it runs from this checkout with the shell's environment.
+JEV_CHECK_ARGS ?=
+
+jev-check: ## Check the decision model connection (cmd/jevcheck; in the running stack's proxy container when there is one)
+	@if $(COMPOSE) ps --status running --services 2>/dev/null | grep -qx proxy; then \
+		$(COMPOSE) exec -T proxy /jevcheck $(JEV_CHECK_ARGS); \
+	else \
+		go -C backend-go run ./cmd/jevcheck $(JEV_CHECK_ARGS); \
+	fi
+
+# Go benchmarks (P5-PLAN D120): five counts of every benchmark, written to backend-go/bench/<sha>.txt
+# (ignored), so two revisions compare with benchstat. bench-go-smoke runs each benchmark once.
+BENCH_PKGS ?= ./...
+
+bench-go: ## Run the Go benchmarks (-count 5) into backend-go/bench/<git sha>.txt
+	@mkdir -p backend-go/bench
+	cd backend-go && go test -run '^$$' -bench . -benchmem -count 5 $(BENCH_PKGS) | tee bench/$$(git rev-parse --short HEAD).txt
+
+bench-go-smoke: ## Run every Go benchmark once (-benchtime 1x): they compile and run
+	cd backend-go && go test -run '^$$' -bench . -benchtime 1x $(BENCH_PKGS)
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
 install: install-go
 proto: proto-go
