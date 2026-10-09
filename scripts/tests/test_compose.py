@@ -26,6 +26,7 @@ ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8"
 RECORD = (ROOT / "docker-compose.record.yml").read_text(encoding="utf-8")
 KNOWLEDGE = (ROOT / "docker-compose.knowledge.yml").read_text(encoding="utf-8")
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
 ALIASES: Dict[str, str] = {
@@ -162,9 +163,14 @@ class ComposeTest(unittest.TestCase):
                 self.assertTrue(port.startswith("${BIND_ADDR:-127.0.0.1}:"), f"{name}: {port}")
 
     def test_app_images_and_pull_policy(self) -> None:
+        # D126: the default tag is the version (a mirror of VERSION, kept by bump_version.py),
+        # and only the engine tag carries the ENGINE_EXTRAS suffix.
+        tag = "${TRUSTAGENT_VERSION:-" + VERSION + "}"
+        extras = "${ENGINE_EXTRAS:+-${ENGINE_EXTRAS:-}}"
         for service in ("proxy", "engine", "dashboard"):
+            suffix = extras if service == "engine" else ""
             self.assertIn(
-                f"image: ghcr.io/timkush1/truthtable-{service}:${{TRUSTAGENT_VERSION:-edge}}",
+                f"    image: ghcr.io/timkush1/truthtable-{service}:{tag}{suffix}\n",
                 COMPOSE,
             )
             self.assertIn(
@@ -217,7 +223,8 @@ class ComposeTest(unittest.TestCase):
         # own); its healthcheck probes its own port, not the proxy's.
         service = COMPOSE.split("\n  mock-upstream:\n", 1)[1].split("\n\n", 1)[0]
         self.assertIn(
-            "image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}", service
+            "image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-" + VERSION + "}",
+            service,
         )
         self.assertIn("pull_policy: never", service)
         self.assertIn("profiles: [e2e, load]", service)
