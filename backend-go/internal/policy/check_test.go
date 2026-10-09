@@ -192,10 +192,9 @@ routes:
 		t.Fatalf("errors %v", res.Errors)
 	}
 	want := map[string]string{
-		"overrides.client_rules":      `enforcing route "pay"`,
-		"defaults.fail":               "only matters in block and fallback",
-		"routes[0].evaluators[0].ref": "contradiction, which this route does not attach",
-		"routes[1].sample_rate":       "observe routes only",
+		"overrides.client_rules": `enforcing route "pay"`,
+		"defaults.fail":          "only matters in block and fallback",
+		"routes[1].sample_rate":  "observe routes only",
 	}
 	for path, msg := range want {
 		fe := findError(res.Warnings, path)
@@ -215,6 +214,60 @@ routes:
 	}
 	if len(res.Policy.Warnings) != len(res.Warnings) {
 		t.Error("the policy keeps its warnings")
+	}
+}
+
+// TestCorroborationWarning (D98): a blocking route warns about a block-eligible evaluator only
+// when none of its corroborators can fire there; one reachable corroborator is enough, and a route
+// that does not block gets no warning (block readiness says what it would need).
+func TestCorroborationWarning(t *testing.T) {
+	const none = "none of them can run on this route"
+	route := func(mode, evidence, evaluators string) string {
+		return "version: 1\nroutes:\n  - name: r\n    match: {}\n    mode: " + mode + "\n    streaming: buffer\n" + evidence +
+			"    evaluators: [" + evaluators + "]\n"
+	}
+	noDocs := "    evidence: {sources: []}\n"
+	cases := []struct {
+		name, doc string
+		warn      bool
+	}{
+		// groundedness lists contradiction and the number, date, URL, quote and citation checks.
+		{"instant checks run on documents", route("block", "", "{ref: groundedness@1}"), false},
+		{"nothing can confirm without documents or rules", route("block", noDocs, "{ref: groundedness@1}"), true},
+		{"the same route in flag mode", route("flag", noDocs, "{ref: groundedness@1}"), false},
+		{"observe mode", route("observe", noDocs, "{ref: groundedness@1}"), false},
+		{"fallback mode", strings.Replace(route("fallback", noDocs, "{ref: groundedness@1}"), "streaming: buffer", "streaming: buffer\n    fallback: {upstream: same}", 1), true},
+		// commitments lists contradiction and the number and date checks: its rules let those run
+		// without documents, so contradiction (which needs documents) is not required.
+		{"rules let the number check run", route("block", noDocs, "{ref: commitments@1}"), false},
+		{"a shadow evaluator never blocks", route("block", noDocs, "{ref: groundedness@1, stage: shadow}"), false},
+	}
+	for _, tc := range cases {
+		res := Check([]byte(tc.doc), enforcingEnv(t))
+		if res.Policy == nil {
+			t.Fatalf("%s: errors %v", tc.name, res.Errors)
+		}
+		fe := findError(res.Warnings, "routes[0].evaluators[0].ref")
+		got := fe != nil && strings.Contains(fe.Message, none)
+		if got != tc.warn {
+			t.Errorf("%s: warning %+v, want one: %v", tc.name, fe, tc.warn)
+		}
+		if got && !strings.Contains(fe.Message, "groundedness@1 blocks only when one of contradiction, det:numbers_not_in_evidence") {
+			t.Errorf("%s: message %q", tc.name, fe.Message)
+		}
+	}
+	// The shipped policies: no corroboration warning anywhere (billing-bot's commitments check is
+	// confirmed by the number and date checks its rules feed).
+	for _, f := range []string{filepath.Join("..", "..", "..", "config", "policies.yaml"), filepath.Join("..", "..", "..", "contracts", "policies", "example.policies.yaml")} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range Check(b, enforcingEnv(t)).Warnings {
+			if strings.Contains(w.Message, "agrees") || strings.Contains(w.Message, "corroborat") {
+				t.Errorf("%s: %s: %s", f, w.Path, w.Message)
+			}
+		}
 	}
 }
 

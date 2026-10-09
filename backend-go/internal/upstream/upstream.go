@@ -9,8 +9,11 @@
 //
 // Credentials (B1, D15): an upstream with a key of its own injects it (inject mode): the client's
 // Authorization, X-Api-Key and Api-Key headers are dropped and the key is sent on the upstream's
-// auth header. Without a key the client's credential passes through untouched (passthrough
-// mode). A TrustAgent key is never forwarded, wherever the client put it.
+// auth header. The key is the env's (Config.APIKey) or a dashboard credential bound to the
+// upstream (Config.Key, D41), fetched per request for the upstream's canonical origin so
+// the credentials store can refuse an origin the credential was not created for (D78). Without a
+// key the client's credential passes through untouched (passthrough mode). A TrustAgent key is
+// never forwarded, wherever the client put it.
 //
 // Timeouts (M12): the transport bounds the wait for response headers; Do bounds a whole JSON
 // answer with the total timeout, and a streamed body (StreamBody) with the idle timeout between
@@ -30,11 +33,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/llmapi"
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 // DefaultBaseURL is the upstream when TRUTHTABLE_UPSTREAM_URL is empty.
 const DefaultBaseURL = "https://api.openai.com"
+
+// DefaultAnthropicBaseURL is the Anthropic upstream when none is configured (the registry
+// default of TRUTHTABLE_ANTHROPIC_UPSTREAM_URL).
+const DefaultAnthropicBaseURL = "https://api.anthropic.com"
+
+// KeyFunc returns the credential to inject on a call to origin, the upstream's canonical origin
+// scheme://host[:port] (jev.CanonicalOrigin). The runtime configuration's KeyFunc refuses an
+// origin outside the bound credential's allowed origins (D78).
+type KeyFunc func(ctx context.Context, origin string) (string, error)
+
+// ErrCredentialUnavailable is the failure of a call whose injected credential cannot be had (a
+// deleted, undecryptable or origin-refused dashboard credential). Nothing is sent upstream: the
+// request is never retried with the client's own credential instead.
+var ErrCredentialUnavailable = errors.New("upstream: the upstream credential is not available")
 
 // Config configures one upstream.
 type Config struct {
@@ -43,6 +62,9 @@ type Config struct {
 	// APIKey, when set, is injected (inject mode): the client's Authorization, X-Api-Key and
 	// Api-Key headers are dropped and APIKey is sent on AuthHeader instead.
 	APIKey string
+	// Key, when set and APIKey is not, supplies the injected credential per request (a dashboard
+	// credential bound to this upstream, D41): inject mode as with APIKey.
+	Key KeyFunc
 	// AuthHeader carries APIKey: authorization (the default) sends "Bearer <key>", any other
 	// header (x-api-key, api-key) the key as it is (TRUTHTABLE_UPSTREAM_AUTH_HEADER).
 	AuthHeader string
@@ -63,6 +85,8 @@ type Client struct {
 	transport     http.RoundTripper
 	timeout, idle time.Duration
 	apiKey        string
+	key           KeyFunc
+	origin        string // the base URL's canonical origin, asserted by key
 	authHeader    string // canonical
 	isProxyKey    func(string) bool
 }
@@ -90,16 +114,22 @@ func New(cfg Config, isProxyKey func(string) bool) (*Client, error) {
 	}
 	t := cfg.Transport
 	if t == nil {
-		dt := http.DefaultTransport.(*http.Transport).Clone()
+		// The upstream URL is the operator's or an admin's choice: the guarded dialer refuses a
+		// link-local or cloud-metadata address however the host is spelled (D78).
+		dt := netguard.Transport()
 		dt.ResponseHeaderTimeout = cfg.HeaderTimeout
 		dt.MaxIdleConnsPerHost = 64
 		dt.IdleConnTimeout = 90 * time.Second
 		t = dt
 	}
-	return &Client{
+	c := &Client{
 		base: u, transport: t, timeout: cfg.Timeout, idle: cfg.IdleTimeout,
-		apiKey: cfg.APIKey, authHeader: http.CanonicalHeaderKey(header), isProxyKey: isProxyKey,
-	}, nil
+		apiKey: cfg.APIKey, origin: jev.CanonicalOrigin(u), authHeader: http.CanonicalHeaderKey(header), isProxyKey: isProxyKey,
+	}
+	if cfg.APIKey == "" {
+		c.key = cfg.Key
+	}
+	return c, nil
 }
 
 // redact is a URL safe for an error message: a password becomes xxxxx and the query goes (a base
@@ -114,7 +144,25 @@ func redact(raw string) string {
 }
 
 // Injecting reports whether the upstream injects its own credential (inject mode).
-func (c *Client) Injecting() bool { return c.apiKey != "" }
+func (c *Client) Injecting() bool { return c.apiKey != "" || c.key != nil }
+
+// Origin is the canonical origin of the base URL, the one an injected credential is asserted for.
+func (c *Client) Origin() string { return c.origin }
+
+// credential is the key to inject: the static key, or the bound credential for the origin.
+func (c *Client) credential(ctx context.Context) (string, error) {
+	if c.apiKey != "" {
+		return c.apiKey, nil
+	}
+	key, err := c.key(ctx, c.origin)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrCredentialUnavailable, err)
+	}
+	if key == "" {
+		return "", ErrCredentialUnavailable
+	}
+	return key, nil
+}
 
 // Timeout is the total timeout of a JSON exchange (0: none).
 func (c *Client) Timeout() time.Duration { return c.timeout }
@@ -151,8 +199,17 @@ var hopByHop = []string{
 var credentialHeaders = []string{"Authorization", "X-Api-Key", "Api-Key"}
 
 // OutboundHeaders filters the client's request headers for the upstream and sets its credential:
-// the configured key in inject mode, else the client's own (never a TrustAgent key).
+// the configured key in inject mode, else the client's own (never a TrustAgent key). In inject
+// mode a credential that cannot be had leaves no credential at all (Outbound reports why).
 func (c *Client) OutboundHeaders(in http.Header) http.Header {
+	out, _ := c.Outbound(context.Background(), in)
+	return out
+}
+
+// Outbound is OutboundHeaders for a request running on ctx. In inject mode it fails with
+// ErrCredentialUnavailable when the injected credential cannot be had; the headers it returns
+// then carry no credential, so the caller must not send them.
+func (c *Client) Outbound(ctx context.Context, in http.Header) (http.Header, error) {
 	out := in.Clone()
 	if out == nil {
 		out = http.Header{}
@@ -173,7 +230,7 @@ func (c *Client) OutboundHeaders(in http.Header) http.Header {
 	for _, h := range []string{"Cookie", "Host", "Content-Length", "Accept-Encoding"} {
 		out.Del(h)
 	}
-	if c.apiKey != "" {
+	if c.Injecting() {
 		// Inject mode: no client credential goes upstream (a proxy key a client sent as its
 		// credential goes with them), the upstream's own does.
 		for name := range out {
@@ -181,12 +238,16 @@ func (c *Client) OutboundHeaders(in http.Header) http.Header {
 				delete(out, name)
 			}
 		}
-		if c.authHeader == "Authorization" {
-			out.Set("Authorization", "Bearer "+c.apiKey)
-		} else {
-			out.Set(c.authHeader, c.apiKey)
+		key, err := c.credential(ctx)
+		if err != nil {
+			return out, err
 		}
-		return out
+		if c.authHeader == "Authorization" {
+			out.Set("Authorization", "Bearer "+key)
+		} else {
+			out.Set(c.authHeader, key)
+		}
+		return out, nil
 	}
 	// Passthrough: the client's credential goes upstream untouched, unless it is a TrustAgent key.
 	for name, values := range out {
@@ -194,7 +255,7 @@ func (c *Client) OutboundHeaders(in http.Header) http.Header {
 			delete(out, name)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // isCredentialHeader reports the request headers that carry an LLM API credential, in any
@@ -238,7 +299,10 @@ func (c *Client) Do(ctx context.Context, method, path, rawQuery string, header h
 		release()
 		return nil, nil, err
 	}
-	req.Header = c.OutboundHeaders(header)
+	if req.Header, err = c.Outbound(ctx, header); err != nil {
+		release()
+		return nil, nil, err
+	}
 	req.ContentLength = int64(len(body))
 	resp, err := c.transport.RoundTrip(req)
 	if err != nil {
@@ -283,16 +347,22 @@ func CopyResponseHeaders(dst, src http.Header) {
 	}
 }
 
-// ReverseProxy forwards an ungated request as is (headers filtered, credential passed through),
-// streaming the response back. onError writes a TrustAgent error for a failed upstream call.
+// ReverseProxy forwards an ungated request as is (headers filtered, credential passed through or
+// injected), streaming the response back. onError writes a TrustAgent error for a failed upstream
+// call, including one whose injected credential cannot be had (nothing is sent then).
 func (c *Client) ReverseProxy(onError func(w http.ResponseWriter, r *http.Request, err error)) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL = c.URL(pr.In.URL.Path, pr.In.URL.RawQuery)
 			pr.Out.Host = pr.Out.URL.Host
-			pr.Out.Header = c.OutboundHeaders(pr.In.Header)
+			h, err := c.Outbound(pr.In.Context(), pr.In.Header)
+			pr.Out.Header = h
+			if err != nil {
+				// Rewrite cannot fail: the transport refuses the request instead.
+				pr.Out = pr.Out.WithContext(context.WithValue(pr.Out.Context(), credentialErrKey{}, err))
+			}
 		},
-		Transport: c.transport,
+		Transport: refuseWithoutCredential{next: c.transport},
 		ModifyResponse: func(resp *http.Response) error {
 			for name := range resp.Header {
 				if isTrustAgentHeader(name) || strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") ||
@@ -304,4 +374,19 @@ func (c *Client) ReverseProxy(onError func(w http.ResponseWriter, r *http.Reques
 		},
 		ErrorHandler: onError,
 	}
+}
+
+// credentialErrKey carries a ReverseProxy request's credential failure from Rewrite to the
+// transport.
+type credentialErrKey struct{}
+
+// refuseWithoutCredential fails a request whose injected credential could not be had before
+// anything is sent.
+type refuseWithoutCredential struct{ next http.RoundTripper }
+
+func (t refuseWithoutCredential) RoundTrip(r *http.Request) (*http.Response, error) {
+	if err, ok := r.Context().Value(credentialErrKey{}).(error); ok {
+		return nil, err
+	}
+	return t.next.RoundTrip(r)
 }

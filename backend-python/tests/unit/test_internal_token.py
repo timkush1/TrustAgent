@@ -79,6 +79,27 @@ def test_a_rotated_file_is_picked_up(tmp_path: Path) -> None:
     assert source.current() == "second-token"
 
 
+def test_every_token_yielded_is_reported_for_redaction(tmp_path: Path) -> None:
+    # The engine registers each token with its log redactor (D42), so a token
+    # the proxy rotates in later is masked like the first one.
+    seen: List[str] = []
+    assert token_source(TOKEN, "", on_token=seen.append).current() == TOKEN
+    assert seen == [TOKEN]
+
+    seen.clear()
+    path = tmp_path / "internal.token"
+    path.write_text("first-token", encoding="utf-8")
+    clock = FakeClock()
+    source = InternalTokenSource(path=path, clock=clock, on_token=seen.append)
+    source.current()
+    path.write_text("second-token", encoding="utf-8")
+    clock.now += 1.5
+    source.current()
+    clock.now += 1.5
+    source.current()  # unchanged file: not reported again
+    assert seen == ["first-token", "second-token"]
+
+
 def test_a_same_size_token_replaced_by_rename_is_picked_up(tmp_path: Path) -> None:
     # Tokens have a fixed length; an atomic rewrite (write + rename) changes the
     # inode even when size and mtime granularity would not show the change.

@@ -8,6 +8,41 @@ RAG by default), Evaluator Studio, and a redesigned dashboard. The full
 specification is [docs/v2/SPEC.md](docs/v2/SPEC.md); progress is tracked by
 phase (P0 → P7).
 
+### Breaking changes (P4)
+- **CORS allows exactly the SPEC request headers (D43).** A cross-origin browser
+  may send `Content-Type`, `If-Match`, `X-TrustAgent-Key`, `X-TrustAgent-CSRF`,
+  `X-TrustAgent-Route`, `X-TrustAgent-Mode` and `X-Request-ID`; `Authorization`
+  and `X-API-Key` are no longer allowed cross-origin, so such a preflight fails.
+  Browser clients send their key as `X-TrustAgent-Key`. SDK and server clients
+  are unaffected: the gateway still reads `Authorization: Bearer` and
+  `X-API-Key` on `/api` (and on `/v1` in inject mode).
+- **Upstream keys are environment or credential store only (D35).**
+  `TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY` and
+  `TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY` are not runtime settings; the
+  dashboard keeps such keys as the encrypted `upstream-anthropic` and
+  `upstream-fallback` credentials. No secret registry key may be runtime
+  settable (`contracts/validate.mjs` refuses it). New compose key
+  `MOCK_UPSTREAM_HOST_PORT` (default 18090).
+- **Credential writes return `CredentialWriteResult` (D75).**
+  `PUT /api/credentials/:name`, `POST /api/credentials/:name/verify` and
+  `POST /api/connect/openrouter/complete` answer
+  `{credential, stored, bindings: {applied, skipped}, verification}` (complete
+  adds `return_to`) instead of a bare `CredentialView`. Bindings apply only when
+  the key's check passes; a failed check never replaces a key in use.
+- **A new calibration cap reason, `calibration_missing` (D56).** A block
+  capped at flag because a block-set check has no usable, adopted calibration
+  for the current snapshot now reports `calibration_missing`;
+  `uncalibrated_snapshot` is kept for checks calibrated only on other
+  snapshots (the decision model changed). Clients and alerts that match
+  `uncalibrated_snapshot` to find every calibration cap should match both.
+  A calibration fitted with different state fields still applies and sets the
+  evaluator result's `calibration_warning`.
+- **The engine implements `ApplyRuntimeConfig` and `DraftEvaluator`.** The
+  gateway pushes its runtime settings (judge, the judge's key, prices) as
+  `(epoch, version)`, and the Studio drafts through the engine. An engine from
+  before this phase answers `UNIMPLEMENTED`: the gateway logs one warning and
+  retries, but the dashboard judge and Studio drafts need both upgraded.
+
 ### Breaking changes (P3)
 - **Metric renames (M11).** Both services exported the same `trustagent_*`
   names, so Prometheus counted every audit twice. The engine's metrics are now
@@ -189,7 +224,153 @@ phase (P0 → P7).
   [docs/EVALUATORS.md](docs/EVALUATORS.md); the README and
   [docs/DEMO.md](docs/DEMO.md) describe 2.0.
 
+### Added (P4: security, credentials, Studio, ROI)
+- **Keys in the dashboard.** **Connect OpenRouter** (self-hosted PKCE: the
+  verifier and the key never reach the browser) and **Paste a key** for
+  OpenRouter, TypeSafe, Anthropic, OpenAI, a compatible gateway and the
+  upstreams. Keys are sealed with AES-256-GCM under the master key, with the
+  name, provider and allowed origins as authenticated data; every outbound call
+  checks the destination origin first. Each key is checked with its provider
+  before use (OpenRouter: key lookup plus one probe; a 402 stores it unbound with
+  "no credits"). A non-empty environment value always wins and is read-only in
+  the dashboard. Endpoints: `GET /api/credentials`,
+  `PUT|DELETE /api/credentials/:name` (deleting a key that fail-closed routes
+  depend on needs `?confirm=true`), `POST /api/credentials/:name/verify`,
+  `POST /api/connect/openrouter/start|complete`, `POST /api/decision-model/test`.
+- **Runtime settings.** `GET /api/settings` and `PATCH /api/settings`
+  (`If-Match: "s<version>"`; 428 without it, 412 when stale, 409 `env_managed`):
+  the decision model, the judge, upstreams, bindings, budgets and price
+  overrides apply without a restart and are pushed to the engine. **Try it
+  without a key (simulated checks, $0)** switches both checks to mocks, labelled
+  Simulated everywhere, and turns off by itself when a key is bound.
+- **Access.** `GET|POST /api/keys`, `DELETE /api/keys/:id` (the last admin key
+  cannot be revoked), `DELETE /api/session?all=true` (sign out everywhere), and
+  the append-only admin audit log (`GET /api/admin/audit-log`) of setup,
+  sign-ins, keys, settings, credentials, evaluators, calibrations, Studio
+  dry-runs, uploads and exports. Redaction covers every received or decrypted
+  key in Go logs and errors, gRPC and WS status details, upstream error bodies
+  relayed in inject mode, and every root log handler of the engine.
+- **Costs and budgets.** A cost ledger records every decision call (hedge losers
+  included) and every judge call, linked to its trace or audit, with its source
+  (reported, estimated or simulated; simulated never counts). The daily budgets
+  reserve before a call and settle after it; the deep-audit budget is hard in
+  every lane (`POST /api/audit` answers 503 `budget_exhausted`, sampled audits
+  are dropped with `audit_dropped{reason: llm_budget}`). Savings and ROI:
+  `GET /api/roi/summary`, `GET /api/roi/timeseries`; `GET /api/pricing` serves
+  the effective table (overrides, then `TRUTHTABLE_PRICE_TABLE_FILE`, then the
+  contracts). Metrics `spend_reserved_usd{kind}` and `cost_write_dropped_total`.
+- **Evaluator Studio and calibration.** `POST /api/studio/draft|test|samples|calibrate`
+  and the paid `POST /api/studio/dry-run` (SSE, with an estimate and a
+  confirmation above `TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD`); evaluator writes
+  (`POST /api/evaluators`, `/api/evaluators/:id/versions`, `/archive`) validated
+  by the Go linter, the reference for the TypeScript one, which
+  `POST /api/evaluators/validate` runs without saving; labels
+  (`PUT|DELETE /api/labels`, `GET /api/labels/queue`); calibrations stored in
+  the database (`GET|POST /api/calibration`, `GET /api/calibration/:id`,
+  `POST /api/calibration/fit`, `/:id/activate`, `/:id/deactivate`) and the
+  adopt flow, with
+  `calibration_ids` in `POST /api/policies/dry-run` for a free preview.
+  `GET /api/traces/:id/decision-request` recompiles the exact Jev request (the
+  glass box); `GET /api/evidence/suggestions` proposes evidence patterns.
+- **WebSocket events:** `credentials_changed {name, action, fingerprint}`
+  (the fingerprint only, never the key), `settings_updated {version, keys}`,
+  `evaluator_updated` on an archive change, and `status {component: "budget"}`
+  naming the cap (`decision`, `llm` or both).
+- **Gateway (P3 leftovers).** Traces are written in ordered batches by default
+  (`TRUTHTABLE_TRACE_FLUSH=async`; a 2,000-trace memory copy serves reads
+  meanwhile); knowledge retrieval runs alongside the upstream call within
+  `TRUTHTABLE_KNOWLEDGE_DEADLINE`; `/v1/models` goes to the Anthropic upstream
+  for Anthropic clients; the Playground streams chat answers from the upstream;
+  `GET /api/traces?reason=` filters by gate reason.
+- **`/api/status`** adds the credential store's state and undecryptable keys,
+  real spend against both budgets, the settings version and epoch the engine
+  applied, and the warnings `master_key_changed` and `fail_closed_unprotected`.
+- **Migration 0005**: cost-event links (`audit_id`, `hedge`, `late`,
+  `estimated`), `traces.response_chars`, unique file calibrations, and the
+  append-only trigger on `admin_audit_log`. **Migration 0006** makes that log
+  refuse `TRUNCATE` as well.
+- **Savings on the simulated demo:** deep audits from the free mock judge
+  ($0, no tokens) no longer scale up to a $0 "LLM auditing every answer"
+  figure: the full-audit counterfactual falls back to the published assumption
+  (≈ $35.50 per 1,000, labelled not measured), and the deep-audit basis says the
+  mock judge is free. The mock fast check also answers the Studio drafter's own
+  samples by their `should_fire`, so the demo's test bench shows the intended
+  matches instead of hash answers. Under the headline, the alternatives stand
+  side by side in its unit, per 1,000 answers, each with its value label and
+  on one basis: on a stack with a real judge, this window's LLM asking the
+  same questions and LLM auditing every answer claim by claim; on the demo's
+  free mock judge, the published estimates only, "With a real judge":
+  TrustAgent at the shipped defaults (about $3, with about 8 in 100 answers
+  deep-audited), an LLM asking the same questions ($5.75) and a full audit of
+  every answer ($35.50). A line below says what the demo's own (much higher)
+  deep-audit rate would add. The published full-audit figure is labelled
+  Estimate even on a simulated stack (`/api/roi/summary` keeps its label), the chart's sentence states the
+  summary's totals (the spend series polls with it), and the static demo prices
+  the same full-audit counterfactual, draws its spend per minute, words every
+  span "over the replayed traffic" and says sampling status is not part of the
+  recording. Today's spend in Budgets carries an Estimate label.
+- **Label queue words:** the queue holds answers the check flagged and answers
+  it let through, so it asks "Should this check flag this answer?" with
+  **Yes, it has the problem** (Y or C, `should_fire`) and **No, it is fine** (N
+  or F, `should_not_fire`). Calibration counts read "with the problem" and
+  "fine"; "Was this right?" on a flagged trace keeps Correct and False alarm.
+  Library cards keep the label queue and link to Calibrate on the check's
+  page, and every built-in check has a "Flags answers that …" line (contract
+  copy for the templates without a description).
+- **Key check words:** a passed key check says what its test call measured
+  ("Ready: the test call took 231 ms and cost $0.00001", the time labelled
+  Measured and the cost with its own value label), and the Savings footnote
+  labels the price it uses Vendor, as the Prices table does (a price override
+  reads "Your price"). An OpenRouter key that does not run the judge because
+  .env pins it says so on its Connections card, with the way to Settings →
+  Models.
+- **Policies and Studio words:** block readiness lists the Block mode last and
+  stays neutral on a Flag or Observe route; Studio's Simple tab reads the
+  question back with readable names ("your model's answer"), and a dry run
+  shows identical answers once with "×N".
+- **`make phase-refs-check`** (in `make check` and ci-contracts) fails on a code
+  or comment line that names the delivery phase it shipped in, including a name
+  that runs on into an identifier (`P4_…`, `isP4…`), except the lines in
+  `scripts/phase-refs.allow`.
+- **Developer experience (P4):** `make configure WITH_SECRETS=1` asks for the
+  vendor keys at hidden prompts (never echoed, `.env` mode 0600);
+  `make onboarding-up` / `onboarding-setup-url` / `onboarding-down` run a fresh
+  install (no admin, no keys) against mock-upstream's OpenRouter, which CI walks
+  with the onboarding spec; `make doctor` adds the credential store, the
+  engine's settings version, the judge's key source and today's budgets;
+  Grafana gains a Spend row; nginx never logs `/connect/callback`; gitleaks scans
+  the whole history in CI (`.gitleaks.toml`; the fake-key conventions are
+  allowed in test files only); `make gen-evaluator-validator`;
+  images carry their git revision (`GIT_SHA`): the proxy reports it as
+  `build_sha` and `/api/export/replay` names it, and every image has it as
+  `org.opencontainers.image.revision`. [docs/SECURITY.md](docs/SECURITY.md) and
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) are rewritten for 2.0;
+  [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md), [docs/GATEWAY.md](docs/GATEWAY.md),
+  [docs/EVALUATORS.md](docs/EVALUATORS.md) and the getting-started and demo
+  guides cover the new pages.
+- **Integration (P4):** `GET /api/session` names the key a session was opened
+  with (`key_id`), so Access marks exactly one key "This browser";
+  `TraceDetail.labels[].mine` says which labels are yours (only those can be
+  undone); `GET /api/overview` counts `would_block` apart from `would_flag`, and
+  the Overview chart draws both; a deep audit a mock judge gave flags its trace
+  `mock_judge` (Simulated, and out of the measured figures); Benchmarks renders
+  in the static build; a cross-origin dashboard's live stream uses a WS ticket.
+
 ### Changed
+- **Security (P4 integration):** link-local and cloud-metadata addresses are
+  refused at dial time, after DNS, by the upstream proxy, the decision-model
+  client and key checks, and the OpenRouter key exchange; inject mode masks the
+  gateway's key in upstream response headers as well as bodies; WS status
+  details pass through the redactor; a vendor message cut across an echoed key
+  leaves no prefix of it.
+- **Costs (P4 integration):** an LLM call no price covers counts toward the
+  daily LLM cap at the reference judge's price (D91); `/api/status`
+  `decision_model.calls_24h` and `cost_24h_usd` come from the cost ledger and
+  survive a restart (D92).
+- **Settings (P4 integration):** a bind that moves the fast-check backend or the
+  judge to auto also resets that model to the new provider's default (D94);
+  binding an upstream key for every caller needs an app key (the `ingest`
+  scope itself; an admin key does not count, D95).
 - **Scoring v2** (ADR-001 in [docs/DECISIONS.md](docs/DECISIONS.md)): per-claim
   verdict distributions, flags, `p_hallucinated`, coverage and a trust score that
   is absent (never 0) when it cannot be computed; an audit fails with
@@ -226,12 +407,82 @@ phase (P0 → P7).
   off; `POST /api/kb/documents` (admin) is the upload's v2 path.
 
 ### Fixed
+- **A judge bound behind the engine's back right after a start**: until the
+  engine's first health report the gateway did not know that the engine's env
+  (`LLM_PROVIDER`) sets the judge, so a Connect OpenRouter in the first seconds
+  bound the judge and said so. A write that binds the judge now asks a
+  not-yet-reported engine once first, and skips the judge as env-managed.
+- **Phone widths**: Studio's example buttons, a check's page header and the
+  "How well its risk matches your labels" card no longer widen the page at
+  400 px; a route's block progress has its own line.
+- **Savings on the free-mock-judge demo**: the chart no longer sets the demo's
+  spend (deep audits at $0, on far more answers than the shipped defaults)
+  against the published full-audit estimate. Its Full audit option is disabled
+  with the reason, and the table's full-audit row says to compare it with
+  TrustAgent with a real judge (about $3 per 1,000 answers, shown as the fast
+  check $0.21 plus a deep audit of about 8 in 100 answers). A line says why the
+  published figures, which assume a 5,000-token request, are above the demo's
+  simulated ones. The published full audit stays an Estimate over simulated
+  traffic (D97).
+- **A corroboration warning that gave wrong advice**: the policy check warned
+  that a check "needs Contradiction to agree" when any one of its listed
+  corroborators is enough, and the number and date checks could still confirm
+  it. It now warns only on a Block or Fallback route where none of them can
+  run; the evaluator lint does the same (D98). The shipped policies have no
+  such warning.
+- **Calibrate now**: its reason no longer says every deep audit counts. Only
+  deep audits of the uniform sample become labels, and the reason says how
+  many there are so far.
+- **`/api/status` right after traffic**: the decision model's 24-hour calls and
+  cost are re-read when older than 5 s, so the first status read after traffic
+  shows it rather than the boot read (D92).
+- **Wording**: the demo banner names the published estimates as the
+  exception to "simulated"; block readiness says how to calibrate and links the
+  label queue; the label queue's key hint shows the buttons' keys; Setup calls
+  the one-time link a link and points a `.env` judge to Settings → Models; the
+  Prices table words its catch-all pattern; a firing Studio test row shows a
+  flag; the top bar is solid, and a command in a banner never breaks across
+  lines.
+- **The demo's setup wizard no longer dead-ends** (`make demo` opens it): step
+  2 says the demo already runs simulated checks and nothing needs connecting,
+  Next opens step 3, and its check runs like the Playground's, so a visitor
+  goes from the setup link to a caught wrong answer and on to the dashboard
+  (a vitest and the `demo setup` stack spec walk it).
+- **The real-judge figure states its unit**: "a fast check on every answer
+  ($0.21) + a deep audit of about 8 in 100 answers (about $2.80)" per 1,000
+  answers, where it read as 21 cents per answer; one Estimate line sums the
+  published figures up (about 12x less than an LLM auditing every answer).
+- **Fix round 5 polish**: Savings groups the alternatives under their own
+  heading and labels the sampling counts; Policies says why a calibration
+  cannot block by its state; one verb per calibration action, and short
+  library-card steps; Studio's steps are numbered circles, its dry run names
+  the thresholds its risk words follow, and the mock fast check no longer
+  fires a drafted competitor check at random; the label queue's cards line
+  up; the glass box shows documents as excerpts; Settings tabs stay on one
+  row and an assumed price is an Estimate; only `GET /api/status` re-reads
+  the decision day (the status loop, readiness and the WebSocket hello read
+  the cache); the dial guard also refuses Alibaba Cloud metadata and judges
+  the target behind an HTTP(S) proxy.
 - **B4 — duplicate ids corrupted audit history**: trace/audit ids are now
   server-generated UUIDv7; a client `X-Request-ID` is stored only as a
   non-unique `client_request_id`, and a repeated id can no longer append claims
   to an existing audit.
 
 ### Migration notes
+- **Before saving keys in the dashboard,** back up the `trustagent-secrets`
+  volume or set `TRUTHTABLE_SECRET_KEY` in `.env`: saved keys decrypt only with
+  the master key they were sealed with, and a Postgres backup alone means
+  entering them again ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
+- **Migrations 0005 and 0006** apply at proxy start and, like 0002-0004, have no
+  downgrade. Upgrade the proxy and the engine together.
+- **Production origins:** the default `TRUTHTABLE_ALLOWED_ORIGINS` includes
+  `http://localhost:5173` for the Vite dev server; set the variable explicitly
+  in production.
+- **Cross-origin browser clients** that sent `Authorization` or `X-API-Key` send
+  `X-TrustAgent-Key` instead (CORS above).
+- **Several proxy replicas** need sticky sessions for Connect OpenRouter (its
+  nonce lives in one process for 10 minutes), and each enforces the budgets on
+  its own between 60 s resyncs.
 - **Metrics:** replace the 1.0 names in dashboards and alerts using the table
   under *Breaking changes (P3)*, and add a `job` filter to every query
   (`config/grafana/dashboards/trustagent.json` shows the pattern). The

@@ -291,10 +291,11 @@ type (
 	}
 )
 
-// KeyFunc returns the current credential for an outbound call to host. The credentials store
-// supplies it for dashboard keys and asserts the credential's allowed_hosts (SPEC §7.5); a changed
-// key resets the breaker.
-type KeyFunc func(ctx context.Context, host string) (string, error)
+// KeyFunc returns the current credential for an outbound call to origin, the canonical origin
+// scheme://host[:port] of the endpoint (CanonicalOrigin). The credentials store supplies it for
+// dashboard keys and asserts that origin is one of the credential's allowed origins (SPEC §7.5,
+// D78); a changed key resets the breaker.
+type KeyFunc func(ctx context.Context, origin string) (string, error)
 
 // Binding is a dashboard credential bound to the decision model (settings.bindings); auto
 // resolution uses it when no environment credential applies.
@@ -342,7 +343,10 @@ type Config struct {
 	OnSnapshotChange func(SnapshotChange)
 	// KnownSnapshot is the last snapshot recorded for the default model, if persisted.
 	KnownSnapshot string
-	Logger        *slog.Logger
+	// Prices resolves the input price of computed costs (the effective price table,
+	// D53); nil uses the embedded contracts table. TRUTHTABLE_JEV_PRICE_PER_MTOK still wins.
+	Prices PriceFunc
+	Logger *slog.Logger
 }
 
 // New resolves the backend (SPEC §3.1 auto resolution) and builds its client.
@@ -358,7 +362,7 @@ func New(cfg Config) (Client, error) {
 		m.info.CredentialSource = "none"
 		m.costs = cfg.Costs
 		if cfg.Mock.Mode == MockHeuristic {
-			m.info.Reason += "; the heuristic mock mode is not implemented yet, so questions get hash answers"
+			m.info.Reason += "; the heuristic mock mode falls back to hash answers in this version"
 		}
 		return m, nil
 	case BackendOff:

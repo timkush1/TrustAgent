@@ -145,6 +145,9 @@ type sessionInfo struct {
 	ExpiresAt       string   `json:"expires_at"`
 	Sliding         bool     `json:"sliding"`
 	CreatedAdminKey string   `json:"created_admin_key,omitempty"`
+	// KeyID is the api_keys id of the key the caller signed in or authenticated with; absent for
+	// an env key (no api_keys row). Access marks exactly that key "This browser".
+	KeyID string `json:"key_id,omitempty"`
 }
 
 // info describes an identity. A key-authenticated caller has no session: its expires_at is the
@@ -158,7 +161,7 @@ func (h *authzAPI) info(id *authz.Identity, createdAdminKey string) sessionInfo 
 	}
 	return sessionInfo{
 		Actor: id.Label, Scopes: callerScopes(id), ExpiresAt: exp.UTC().Format(time.RFC3339Nano),
-		Sliding: sliding, CreatedAdminKey: createdAdminKey,
+		Sliding: sliding, CreatedAdminKey: createdAdminKey, KeyID: id.KeyID,
 	}
 }
 
@@ -255,6 +258,12 @@ func (h *authzAPI) createSession(c *gin.Context) {
 		}
 		abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "The session cannot be started right now.")
 		return
+	}
+	if !hasToken {
+		// An interactive sign-in with a key is audited (D44); the setup claim has its own row.
+		if err := h.auth.AuditSignIn(ctx, id); err != nil {
+			h.log.Warn("sign-in not recorded in the admin audit log", "actor", id.Label, "err", err)
+		}
 	}
 	http.SetCookie(c.Writer, cookie)
 	noStore(c)

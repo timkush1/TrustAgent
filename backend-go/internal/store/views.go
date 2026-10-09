@@ -166,6 +166,9 @@ type LabelView struct {
 	LabeledBy string    `json:"labeled_by"`
 	CreatedAt time.Time `json:"created_at"`
 	Note      *string   `json:"note"`
+	// Mine is whether the caller gave the label (labeled_by is the caller's labeller): labels are
+	// per labeller, and DELETE /api/labels removes only the caller's own (#41).
+	Mine bool `json:"mine"`
 }
 
 // TraceDetail is GET /api/traces/:id (api.ts TraceDetail).
@@ -347,6 +350,15 @@ func (d TraceDetail) Redact() TraceDetail {
 	if d.AuditDetail != nil {
 		a := d.AuditDetail.Redact()
 		d.AuditDetail = &a
+	}
+	if d.Labels != nil {
+		// A label note is free text that can quote the answer (SPEC §2.1: text needs content).
+		labels := make([]LabelView, len(d.Labels))
+		for i, l := range d.Labels {
+			l.Note = nil
+			labels[i] = l
+		}
+		d.Labels = labels
 	}
 	return d
 }

@@ -1,7 +1,8 @@
 /**
  * Evaluator validation beyond the JSON Schema (SPEC §2.8): the hard rules (severity "error") and
  * the lints (severity "warning"), shown in Studio. Built-in templates must be lint-clean. Pinned by
- * contracts/vectors/lint.
+ * contracts/vectors/lint; backend-go/internal/decision/lint.go is the reference (D54) and
+ * adds the JSON Schema checks the server runs before saving.
  *
  * The SPEC names two hard-rule codes (unresolved_state_reference, no_id_reference) and every lint
  * id; the remaining hard rules use the codes defined here. Three lints have no SPEC definition beyond
@@ -53,6 +54,12 @@ export const LINT_CODES = [
 export const NOT_ATTACHED = 'reference_not_attached';
 
 const MAX_INSTRUCTIONS = 600;
+/**
+ * The schema's limit on choice options (criteria maxProperties): near_duplicate_options compares at
+ * most the first this many, so a document with thousands of options (which the schema refuses
+ * anyway) costs bounded work. lint.go maxComparedOptions.
+ */
+const MAX_COMPARED_OPTIONS = 255;
 const ESCAPE_KEY = /^(no_|nothing_|not_|too_short|too_generic)/;
 const ESCAPE_WHAT = /greeting|too short|nothing to|not about|no .*(subject|facts|content)/i;
 const DOUBLE_NEGATIVE = /\bnot\b.*\b(no|not|never|without)\b/;
@@ -129,10 +136,10 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
   }
 
   const criteria = question.criteria;
-  const optionKeys = spec.question.type === 'choice' && isObj(criteria) ? Object.keys(criteria) : [];
+  const optionKeys = new Set(spec.question.type === 'choice' && isObj(criteria) ? Object.keys(criteria) : []);
   if (spec.signal.riskWeights !== null && spec.question.type === 'choice') {
     for (const k of spec.signal.riskWeights.keys()) {
-      if (!optionKeys.includes(k)) error('unknown_risk_weight_option', `signal.risk_weights.${k}`, `${k} is not an option of the question`);
+      if (!optionKeys.has(k)) error('unknown_risk_weight_option', `signal.risk_weights.${k}`, `${k} is not an option of the question`);
     }
   }
   if (spec.signal.riskLevels !== null && spec.question.type === 'score' && Array.isArray(criteria)) {
@@ -153,7 +160,9 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
     error('threshold_order', 'outcomes.critical_at', `critical_at ${criticalAt} must be at least warn_at ${warnAt}`);
   }
 
-  // Hard rule: referenced evaluators exist; a warning when the route does not attach them.
+  // Hard rule: referenced evaluators exist. On a route, a warning when an implied evaluator is not
+  // attached, and when no corroborator can agree (D98): any one listed is enough, an instant check
+  // included, so the warning comes only when none is an instant check and none is attached.
   const registry = options.registry === undefined ? null : new Set(options.registry);
   const attached = options.attached === undefined ? null : new Set(options.attached);
   const references: [string, readonly string[]][] = [
@@ -161,13 +170,24 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
     ['outcomes.implies', spec.outcomes.implies],
   ];
   for (const [path, ids] of references) {
+    const corroboration = path === 'outcomes.requires_corroboration';
+    let corroborates = false;
+    const unattached: string[] = [];
     for (const x of ids) {
       if (x.startsWith('det:')) {
         if (!(DETECTOR_IDS as readonly string[]).includes(x.slice(4))) error('unknown_detector', path, `${x} is not a detector`);
+        else if (corroboration) corroborates = true;
         continue;
       }
       if (registry !== null && !registry.has(x)) error('unknown_evaluator_reference', path, `${x} is not a known evaluator`);
-      else if (attached !== null && !attached.has(x)) warn(NOT_ATTACHED, path, `${x} is not attached to this route, so it can never agree`);
+      else if (attached === null) continue;
+      else if (attached.has(x)) corroborates ||= corroboration;
+      else if (corroboration) unattached.push(x);
+      else warn(NOT_ATTACHED, path, `${x} is not attached to this route, so the disagreement with it is never checked`);
+    }
+    if (corroboration && !corroborates && unattached.length > 0) {
+      const subject = unattached.length > 1 ? `none of ${unattached.join(', ')} is` : `${unattached[0]} is not`;
+      warn(NOT_ATTACHED, path, `${subject} attached to this route, so nothing can agree before a block`);
     }
   }
 
@@ -184,12 +204,17 @@ export function lintSpec(doc: unknown, options: LintOptions = {}): Lint[] {
         warn('non_descriptive_key', `question.criteria.${k}`, `${k} does not say what the option means; the key is part of the question`);
       }
     }
-    for (let i = 0; i < entries.length; i++) {
-      for (let j = i + 1; j < entries.length; j++) {
-        const [ka, a] = entries[i];
-        const [kb, b] = entries[j];
-        if (hasNotFor(a) || hasNotFor(b)) continue;
-        if (jaccard(tokens(optionWhat(a)), tokens(optionWhat(b))) > 0.5) {
+    // An option with a not_for is never a near-duplicate (null tokens).
+    const compared = entries.slice(0, MAX_COMPARED_OPTIONS);
+    const toks = compared.map(([, o]) => (hasNotFor(o) ? null : tokens(optionWhat(o))));
+    for (let i = 0; i < compared.length; i++) {
+      for (let j = i + 1; j < compared.length; j++) {
+        const a = toks[i];
+        const b = toks[j];
+        if (a === null || b === null) continue;
+        if (jaccard(a, b) > 0.5) {
+          const [ka] = compared[i];
+          const [kb] = compared[j];
           warn('near_duplicate_options', `question.criteria.${kb}`, `${ka} and ${kb} are described almost the same way; add not_for to separate them`);
         }
       }

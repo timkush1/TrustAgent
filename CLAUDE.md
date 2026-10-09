@@ -34,9 +34,9 @@ streams to a React dashboard over WebSocket v2.
 | `frontend-react/` | React 19.3 + TypeScript 6 + Vite 8 + TanStack Router/Query + Tailwind 4 dashboard; house rules in `frontend-react/DESIGN.md` |
 | `contracts/` | Cross-language source of truth: JSON Schemas, config-key registry (`config/keys.v1.json`), evaluator templates, question sets, rules, demo scenarios, UI copy/glossary, pricing, value claims, golden vectors |
 | `proto/evaluator.proto` | Go↔Python gRPC contract (v2, additive) |
-| `docker-compose.yml` (+ `.demo.yml`) | Default set: proxy, engine, postgres, dashboard. Profiles: `knowledge`, `local-llm`, `observability`, `redis`, `demo`. No fixed container names: `docker compose exec <service>` (engine service is `engine`) |
+| `docker-compose.yml` (+ `.demo.yml`, `.e2e.yml`, `.onboarding.yml`, `.load*.yml`) | Default set: proxy, engine, postgres, dashboard. Profiles: `knowledge`, `local-llm`, `observability`, `redis`, `demo`, `e2e`, `load`. No fixed container names: `docker compose exec <service>` (engine service is `engine`). make passes `GIT_SHA` as a build arg |
 | `Makefile`, `mk/*.mk` | Thin root Makefile including one fragment per stream (`go`, `py`, `web`, `dx`, `contracts`) |
-| `.github/workflows/` | `ci-{go,python,web,contracts,docker,e2e}.yml` (job names are branch-protection checks: keep them stable), `security.yml`, `eval.yml` |
+| `.github/workflows/` | `ci-{go,python,web,contracts,docker,e2e}.yml` (job names are branch-protection checks: keep them stable), `security.yml` (gosec, bandit, npm audit, gitleaks with `.gitleaks.toml`), `eval.yml` |
 | `VERSION` | Project version (mirror into pyproject.toml, package.json, `backend-go/internal/version/version.go`, `truthtable/__init__.py`) |
 
 ## Commands
@@ -45,7 +45,11 @@ streams to a React dashboard over WebSocket v2.
 make help           # list every target (root Makefile + mk/*.mk)
 make demo           # zero-key demo: mock Jev + mock judge + scripted traffic, opens http://localhost:3000
 make demo-down      # stop it (make demo-clean also deletes its volumes)
-make up / down      # the real stack (proxy, engine, postgres, dashboard); keys from .env (see docs/JEV-ACCESS.md)
+make up / down      # the real stack (proxy, engine, postgres, dashboard); connect keys in the setup wizard or .env (docs/JEV-ACCESS.md)
+make configure WITH_SECRETS=1                     # .env plus vendor keys at hidden prompts (never echoed)
+make onboarding-up / onboarding-setup-url / onboarding-down   # fresh-install stack (no admin, no keys; mock-upstream OpenRouter)
+make onboarding-check-config   # proxy -check-config with that stack's environment, no container (part of make check)
+make e2e-up / e2e-scenarios / e2e-down            # every vendor on mock-upstream (real HTTP paths)
 make up-infra       # backing services only, for make dev-go / dev-python / dev-react
 make doctor         # diagnose a running stack (ARGS="--expect demo")
 make check          # the local gate: lint + unit tests + contracts + compose config
@@ -55,6 +59,7 @@ make vectors-ts     # run the same golden vectors against the TypeScript decisio
 make gen-types / gen-api-schema (+ -check)        # regenerate types.gen.ts / api.v1.schema.json
 make config-docs (+ -check)                       # regenerate docs/CONFIGURATION.md + .env.example from the key registry
 make gen-policy-validator (+ -check)              # regenerate the CSP-safe policy.v1 validator (src/lib/policy)
+make gen-evaluator-validator (+ -check)           # regenerate the CSP-safe evaluator validator (src/lib/evaluator)
 make setup-url      # print a new one-time SETUP link (claim it at /app/setup to create the admin key)
 make gate-eval      # build backend-go/bin/gate-eval;  make calibrate EVALUATOR=… IN=… [WRITE=1]
 make export-replay REPLAY_OUT=<dir>               # sanitized replay recording from the database
@@ -100,8 +105,12 @@ Per-project:
 - Generated gRPC stubs are gitignored; run `make proto-tools` once, then `make proto` on a fresh clone.
 - The zero-key demo uses mock backends: its numbers are simulated and labelled as such.
 - Real checks need an OpenRouter key (one key covers Jev and the Claude judge) — see docs/JEV-ACCESS.md.
-  Never commit keys; `.env` is gitignored.
+  Never commit keys; `.env` is gitignored. Tests use fake keys only (`sk-test-…`, `sk-or-v1-e2e-…`,
+  plus `cmp0e2eZq7Lw4Rt9Yx2Vb6Nm` in leak tests); gitleaks scans the whole history in CI.
+- Keys saved in the dashboard are sealed with the master key (`TRUTHTABLE_SECRET_KEY`, else the
+  `trustagent-secrets` volume): a fresh volume makes them undecryptable (`make doctor` reports it).
 - Windows/WSL dev environment: Docker Desktop needs WSL integration enabled; prefer cross-platform
   commands in Makefile/scripts. The dev laptop is small (~8 GB RAM): avoid running several heavy
-  builds/test suites at once.
+  builds/test suites at once, and run `make check VITEST_FLAGS=--maxWorkers=2` (with every vitest
+  worker, the axe tests in `kit.a11y.test.tsx` can exceed vitest's 5 s timeout under load).
 - Curated public docs live in `docs/`; historical build-journal material is under `docs/archive/`.

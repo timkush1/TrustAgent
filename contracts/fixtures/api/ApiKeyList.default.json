@@ -1,0 +1,41 @@
+{
+  "items": [
+    {
+      "id": "k_01a0e6f1",
+      "label": "setup-admin",
+      "scopes": [
+        "ingest",
+        "read",
+        "content",
+        "admin"
+      ],
+      "prefix": "ta_Zp4c9W",
+      "created_at": "2026-09-28T09:55:40.880Z",
+      "last_used_at": "2026-09-28T10:19:58.000Z",
+      "revoked_at": null
+    },
+    {
+      "id": "k_01a0e6f9",
+      "label": "ci-ingest",
+      "scopes": [
+        "ingest"
+      ],
+      "prefix": "ta_q7Hd2x",
+      "created_at": "2026-09-28T09:57:02.006Z",
+      "last_used_at": null,
+      "revoked_at": null
+    },
+    {
+      "id": "k_01a0e6a2",
+      "label": "old-dashboard",
+      "scopes": [
+        "read",
+        "content"
+      ],
+      "prefix": "ta_Lm2v8R",
+      "created_at": "2026-09-21T14:03:11.000Z",
+      "last_used_at": "2026-09-22T08:00:00.000Z",
+      "revoked_at": "2026-09-27T12:00:00.000Z"
+    }
+  ]
+}

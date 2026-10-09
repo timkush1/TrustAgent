@@ -6,8 +6,18 @@ import { QueryClient, queryOptions } from '@tanstack/react-query';
 import type { TimeWindow } from '@/types/api';
 import type { EvidenceParams, KbClaimsParams, OverviewParams, ReliabilityParams } from './controlPlane';
 import { isApiError } from './errors';
+import { costSideEffects } from './queries/costs';
+import { evaluatorSideEffects } from './queries/evaluators';
+import { securitySideEffects } from './queries/security';
+import { studioSideEffects } from './queries/studio';
 import type { AuditListParams, DataSource, DecisionListParams, TraceListParams } from './source';
 import type { StreamEvent } from './stream/types';
+
+// The control planes keep their keys, queryOptions and side effects in data/queries/<plane>.ts (one owner each).
+export { qkcSecurity, securitySideEffects, settingsQuery } from './queries/security';
+export { qkcCosts, costSideEffects } from './queries/costs';
+export { qkcEvaluators, evaluatorSideEffects } from './queries/evaluators';
+export { qkcStudio, studioSideEffects } from './queries/studio';
 
 export const qk = {
   health: ['health'] as const,
@@ -209,7 +219,7 @@ export function evidenceCoverageQuery(ds: DataSource, params: EvidenceParams) {
   });
 }
 
-/** Admin-only and new in P4: a 401/403/404 is an expected answer, so it is not retried. */
+/** Admin-only, and missing on an older proxy: a 401/403/404 is an expected answer, so it is not retried. */
 export function evidenceSuggestionsQuery(ds: DataSource, params: EvidenceParams) {
   return queryOptions({
     queryKey: qkc.evidence.suggestions(params),
@@ -297,13 +307,18 @@ export function isKnowledgeDisabled(err: unknown): boolean {
 /**
  * Keeps control-plane queries in step with the live stream (called from liveStream.ts for every
  * committed batch): policy and evaluator changes refetch their pages; (re)connects and resyncs
- * refresh the overview, its evidence coverage and the policy.
+ * refresh the overview, its evidence coverage and the policy. Each event also goes to the control planes'
+ * side effects (data/queries/<plane>.ts).
  */
 export function applyControlSideEffects(queryClient: QueryClient, batch: readonly StreamEvent[]): void {
   let overview = false;
   let policies = false;
   let evaluators = false;
   for (const ev of batch) {
+    securitySideEffects(ev, queryClient);
+    costSideEffects(ev, queryClient);
+    evaluatorSideEffects(ev, queryClient);
+    studioSideEffects(ev, queryClient);
     switch (ev.type) {
       case 'hello':
       case 'resync':

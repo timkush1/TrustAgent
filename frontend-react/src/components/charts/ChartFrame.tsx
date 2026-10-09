@@ -24,6 +24,8 @@ export interface ChartFrameProps {
   children: ReactNode;
   /** Controls on the right of the title (not filters: those sit in the page's filter row). */
   actions?: ReactNode;
+  /** A line under the header, e.g. why one of the actions is unavailable (a DisabledReason). */
+  note?: ReactNode;
   defaultView?: ChartView;
   className?: string;
 }
@@ -41,6 +43,7 @@ export function ChartFrame({
   table,
   children,
   actions,
+  note,
   defaultView = 'chart',
   className,
 }: ChartFrameProps) {
@@ -67,6 +70,7 @@ export function ChartFrame({
           />
         </div>
       </div>
+      {note ? <div className="min-w-0">{note}</div> : null}
       {legend && legend.length > 1 && view === 'chart' ? <ChartLegend items={legend} /> : null}
       {view === 'chart' ? <div className="min-w-0">{children}</div> : table}
     </figure>

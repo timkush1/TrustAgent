@@ -13,7 +13,7 @@ import { ReplayPlayer } from './player';
 import { checkManifest, MOCK_LABEL, parseDataset } from './recording';
 import { createReplayDataSource, featuredTrace, STATIC_UNAVAILABLE } from './replayDataSource';
 import { useReplayStore } from './replayStore';
-import { percentile } from './stats';
+import { percentile, roiBucketOf } from './stats';
 import { ReplayTape } from './tape';
 
 const manifest = committedManifest();
@@ -299,12 +299,51 @@ describe('ReplayDataSource', () => {
     expect(roi.simulated).toBe(true);
     expect(roi.gated_responses).toBe(18);
     for (const v of [roi.decision_cost, roi.llm_cost, roi.total_per_1k, roi.savings_vs_same_checks, roi.outcomes, roi.latency_ms]) expect(v.label).toBe('simulated');
-    expect(roi.counterfactuals.every((c) => c.label === 'simulated')).toBe(true);
+    // The same checks are priced from the simulated fast-check tokens; the full audit is the
+    // published assumption the gateway also falls back to (an estimate, never measured).
+    expect(roi.counterfactuals.map((c) => [c.kind, c.method, c.label])).toEqual([
+      ['llm_same_checks', 'token_model', 'simulated'],
+      ['llm_full_claim_audit', 'static_assumptions', 'estimate'],
+    ]);
+    const full = roi.counterfactuals[1];
+    expect(full.per_1k).toBe(35.5);
+    expect(full.usd).toBeCloseTo((35.5 * 18) / 1000, 12);
+    expect(full.basis).toMatch(/^not measured: /);
     expect(roi.llm_cost.usd).toBe(0);
 
     const coverage = await ds.getEvidenceCoverage({ window: '24h' });
     expect(coverage.requests).toBe(18);
     expect(coverage.top_reasons).toEqual([{ reason: 'no_evidence', count: 6 }]);
+  });
+
+  it('serves spend per bucket that adds up to the ROI summary, and the built-in prices', async () => {
+    const { ds, clock } = setup();
+    await ds.ready;
+    ds.subscribe(sink().s);
+    await Promise.resolve();
+    clock.runAll();
+    const roi = await ds.getRoiSummary('24h');
+    // The recording spans under four minutes: per-minute buckets, whatever the window asks for.
+    const series = await ds.getRoiTimeseries({ window: '24h', bucket: '1h' });
+    expect(series).toMatchObject({ window: '24h', bucket: '1m' });
+    expect(series.points).toHaveLength(4);
+    // Zero-filled UTC minutes, in order.
+    for (const p of series.points) expect(Date.parse(p.t) % 60_000).toBe(0);
+    expect(series.points.map((p) => p.t)).toEqual([...series.points.map((p) => p.t)].sort());
+    const sum = (f: (p: (typeof series.points)[number]) => number) => series.points.reduce((s, p) => s + f(p), 0);
+    expect(sum((p) => p.gated)).toBe(roi.gated_responses);
+    expect(sum((p) => p.decision_usd)).toBeCloseTo(roi.decision_cost.usd, 12);
+    expect(sum((p) => p.llm_usd)).toBeCloseTo(roi.llm_cost.usd, 12);
+    const same = roi.counterfactuals.find((c) => c.kind === 'llm_same_checks');
+    expect(sum((p) => p.same_checks_usd ?? 0)).toBeCloseTo(same?.usd ?? 0, 12);
+
+    const week = await ds.getRoiTimeseries({ window: '7d', bucket: '1d' });
+    expect(week.bucket).toBe('1m');
+    expect(week.points.reduce((s, p) => s + p.gated, 0)).toBe(roi.gated_responses);
+
+    const prices = await ds.getPricing();
+    expect(prices.entries.length).toBeGreaterThan(0);
+    expect(prices.entries.every((e) => e.label !== 'override')).toBe(true);
   });
 
   it('says there is no gateway for everything else', async () => {
@@ -335,5 +374,12 @@ describe('percentile', () => {
     expect(percentile([], 50)).toBeNull();
     expect(percentile([null, 3, 1, 2, undefined], 50)).toBe(2);
     expect(percentile([1, 2, 3, 4], 95)).toBe(4);
+  });
+});
+
+describe('roiBucketOf', () => {
+  it('draws minutes up to an hour, hours up to two days, days beyond', () => {
+    const h = 3_600_000;
+    expect([0, 226_457, h, h + 1, 48 * h, 48 * h + 1, Number.NaN].map(roiBucketOf)).toEqual(['1m', '1m', '1m', '1h', '1h', '1d', '1m']);
   });
 });

@@ -60,6 +60,16 @@ export function skipOrFail(condition: boolean, reason: string): void {
   test.skip(true, reason);
 }
 
+/**
+ * Headers for a cookie-authenticated write sent through `page.request` (a spec's cleanup): the
+ * CSRF header and the dashboard's own Origin. Playwright's request context sends no Origin, and
+ * the proxy refuses a cookie write without an allow-listed one (403 csrf_failed), so a cleanup
+ * without it fails quietly and leaves the stack changed.
+ */
+export function cookieWriteHeaders(): Record<string, string> {
+  return { 'X-TrustAgent-CSRF': '1', Origin: new URL(String(test.info().project.use.baseURL)).origin };
+}
+
 /** Whether signInAsAdmin has a way in: an admin key or the one-time setup link. */
 export function canSignInAsAdmin(): boolean {
   return Boolean(process.env.TRUSTAGENT_ADMIN_KEY || process.env.TRUSTAGENT_SETUP_URL);

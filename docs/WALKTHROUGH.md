@@ -6,6 +6,13 @@ and the CI. Written assuming you know how to code but may be new to some of the
 infrastructure concepts (CORS, gRPC, Prometheus, GitHub Actions...). Every concept is
 explained the first time it appears.*
 
+> **Which version this describes.** Most sections still describe TrustAgent 1.0 (an audit proxy
+> with a React feed); the 2.0 gateway (tiered checks, the decision model, policies, the setup
+> wizard, dashboard keys, the cost ledger and the Studio) is documented in
+> [ARCHITECTURE.md](ARCHITECTURE.md), [GATEWAY.md](GATEWAY.md), [EVALUATORS.md](EVALUATORS.md)
+> and [SECURITY.md](SECURITY.md). "Changed in 2.0" notes mark the places that moved; the full
+> rewrite of this tour is planned for P5.
+
 **Total reading time: ~2.5–3 hours.** Suggested split into three sittings:
 
 | Sitting | Sections | Time | You'll understand |
@@ -267,8 +274,9 @@ The worker gets the result back over gRPC and does two things
 
 The browser keeps one **WebSocket** open to `ws://localhost:8080/ws`. A WebSocket is a
 TCP connection that starts as HTTP and then stays open both ways — the server can *push*
-without the browser asking (no polling). [useWebSocket.ts](../frontend-react/src/hooks/useWebSocket.ts)
-parses each message and feeds the Zustand store; React re-renders; a new audit card
+without the browser asking (no polling). In 1.0 a `useWebSocket` hook parsed each message and fed
+the Zustand store (in 2.0, [liveStream.ts](../frontend-react/src/data/liveStream.ts) feeds the
+stream store); React re-renders; a new audit card
 appears with its grade, claims, and evidence. Elapsed wall time from request to verdict
 on screen: a few seconds to ~30s depending on the judge model and your CPU.
 
@@ -307,7 +315,7 @@ graceful). **Twelve-factor style**: same binary everywhere, behavior injected by
 |---|---|
 | `POST /v1/chat/completions` | The interception point (OpenAI-compatible) |
 | `POST /api/audit` | Audit text directly without proxying (dashboard's "try it" box) |
-| `POST /api/upload` | Upload documents into the knowledge base (Gate-1 vetted) |
+| `POST /api/kb/documents` | Upload documents into the knowledge base (Gate-1 vetted; admin) |
 | `GET /api/audits` | Paged audit history from Postgres |
 | `GET /api/kb/claims`, `/api/kb/conflicts`, `/api/kb/stats` | KB inspection |
 | `GET /ws` | WebSocket upgrade for the dashboard |
@@ -391,6 +399,15 @@ so they deliberately skip Gate-1), with deterministic IDs so re-seeding never du
 
 ## 7. The React dashboard
 
+> **Changed in 2.0.** The dashboard was rebuilt: React 19 with TanStack Router and Query, data
+> access through `src/data/` (a DataSource for REST and StreamClient v2 for the WebSocket), the
+> pages under `src/routes/app/` (Overview, Traffic, traces, Policies, Evaluators with their
+> Studio and labels, Playground, Savings, Knowledge, Settings and the setup wizard) and their
+> components under
+> `src/components/`. Knowledge uploads go to `POST /api/kb/documents`. The tree below is the
+> 1.0 layout; [ARCHITECTURE.md](ARCHITECTURE.md) and `frontend-react/DESIGN.md` describe the
+> current one.
+
 ```
 frontend-react/src/
 ├── main.tsx / App.tsx          ← entry + layout
@@ -403,7 +420,7 @@ frontend-react/src/
     ├── history/  HistoryView        ← reads GET /api/audits
     ├── kb/       KnowledgeBaseView  ← reads /api/kb/*
     ├── layout/   Header
-    └── upload/   FileUpload         ← POST /api/upload
+    └── upload/   FileUpload         ← POST /api/kb/documents
 ```
 
 Concepts if frontend is not your home turf:

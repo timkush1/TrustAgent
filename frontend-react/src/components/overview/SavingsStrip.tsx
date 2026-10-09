@@ -1,7 +1,9 @@
 /**
  * The savings strip on Overview (SPEC §7.4): "Your cost: $X per 1,000 answers (fast check $a +
  * deep audit $b)", what was stopped and flagged, and the early-data comparison with asking an LLM
- * the same questions. Every figure carries its value label (Measured, Estimate, Simulated…).
+ * the same questions. Every figure carries its value label (Measured, Estimate, Simulated…). On a
+ * demo whose mock judge is free, it says why the deep audit reads $0 and links to what a real
+ * judge costs on the Savings tab.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -38,6 +40,19 @@ export function SavingsStrip({ timeWindow }: { timeWindow: TimeWindow }) {
           <span className="font-medium tabular">{line.headline}</span>
           <EvidenceBadge label={line.label} basis={q.data.total_per_1k.basis} subject="Your cost per 1,000 answers" />
         </p>
+        {/* The headline's deep audit is $0 only because the mock judge is free: said right under it. */}
+        {line.freeMockJudge ? (
+          <p className="text-sm text-fg-muted">
+            The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
+            <Link
+              to="/app/overview"
+              search={(prev) => ({ ...prev, tab: 'savings' as const })}
+              className="font-medium text-fg underline underline-offset-2"
+            >
+              What a real judge costs
+            </Link>
+          </p>
+        ) : null}
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted">
           <span className="inline-flex items-center gap-1.5">
             <ShieldX aria-hidden="true" className="size-3.5" />

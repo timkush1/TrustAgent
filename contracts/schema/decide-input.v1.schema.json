@@ -108,12 +108,20 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["table", "quality", "state"],
+        "required": ["state"],
         "properties": {
           "table": {"$ref": "common.v1.schema.json#/$defs/CalibrationTable"},
           "quality": {"$ref": "common.v1.schema.json#/$defs/CalibrationQuality"},
-          "state": {"$ref": "common.v1.schema.json#/$defs/CalibrationState"}
-        }
+          "state": {"$ref": "#/$defs/CalibrationEntryState"},
+          "fit_state_fields": {
+            "description": "The state fields the calibration was fitted with (D56). When they differ from the evaluator's own, decide() sets calibration_warning and still applies the calibration.",
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        },
+        "if": {"properties": {"state": {"const": "other_snapshot"}}, "required": ["state"]},
+        "then": {"not": {"anyOf": [{"required": ["table"]}, {"required": ["quality"]}]}},
+        "else": {"required": ["table", "quality"]}
       }
     },
     "meta": {
@@ -164,6 +172,15 @@
         "required": ["ran", "fired"],
         "properties": {"ran": {"type": "boolean"}, "fired": {"type": "boolean"}}
       }
+    }
+  },
+  "$defs": {
+    "CalibrationEntryState": {
+      "description": "common.v1 CalibrationState plus other_snapshot: the target is calibrated only on other snapshots, so the entry carries no table (D56). decision.v1 calibration_state never takes other_snapshot.",
+      "anyOf": [
+        {"$ref": "common.v1.schema.json#/$defs/CalibrationState"},
+        {"const": "other_snapshot"}
+      ]
     }
   }
 }

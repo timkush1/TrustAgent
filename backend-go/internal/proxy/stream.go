@@ -357,7 +357,7 @@ func (h *Handler) relayStream(f *flow, resp *http.Response, body io.Reader) {
 	}
 	// The gate bounds itself by the route deadline; the record context lets it finish when the
 	// client leaves meanwhile.
-	g := h.gate.Evaluate(f.record, x)
+	g := h.evaluate(f.record, f)
 	if !gone && s.leftDuringGate(g, &out) {
 		gone = true
 	}
@@ -402,7 +402,7 @@ func (h *Handler) streamFailed(f *flow, s *streamState, base http.Header, err er
 	if errors.Is(err, upstream.ErrUndecodable) {
 		x.SkipReason = gate.SkipUndecodable
 	}
-	g := h.gate.Evaluate(f.record, x)
+	g := h.evaluate(f.record, f)
 	fin := &gate.Final{Action: unenforcedAction(g.Decision.Action), Delivered: gate.DeliveredOriginal}
 	up := s.upstreamRecord(end)
 	done := h.now()
@@ -441,7 +441,7 @@ func (h *Handler) relayStreamUngated(f *flow, resp *http.Response, body io.Reade
 		upstream.CopyResponseHeaders(hdr, resp.Header)
 	}
 	f.x.SkipReason = gate.SkipUnsupportedAPI
-	g := h.gate.Evaluate(f.record, f.x)
+	g := h.evaluate(f.record, f)
 	up, end := gate.Upstream{Status: http.StatusOK}, h.now()
 	audit := h.decided(f, g, up, end, nil)
 	h.countRequest(f, deliveredAction(g), up, end)
@@ -462,7 +462,7 @@ func (h *Handler) relayStreamUngated(f *flow, resp *http.Response, body io.Reade
 func (h *Handler) gateStreamLater(f *flow, out streamOutcome, up gate.Upstream, written time.Time) {
 	x := f.x
 	if x.SkipReason != "" {
-		g := h.gate.Evaluate(f.record, x)
+		g := h.evaluate(f.record, f)
 		addStreamFlags(g, out)
 		h.decided(f, g, up, written, nil)
 		return
@@ -471,7 +471,7 @@ func (h *Handler) gateStreamLater(f *flow, out streamOutcome, up gate.Upstream, 
 	case h.sem <- struct{}{}:
 	default:
 		x.SkipReason = gate.SkipOverload
-		g := h.gate.Evaluate(f.record, x)
+		g := h.evaluate(f.record, f)
 		addStreamFlags(g, out)
 		h.decided(f, g, up, written, nil)
 		return
@@ -483,7 +483,7 @@ func (h *Handler) gateStreamLater(f *flow, out streamOutcome, up gate.Upstream, 
 		// The gate bounds its decision-model call; this bounds the rest (and a stuck sink).
 		gctx, cancel := context.WithTimeout(f.record, 2*h.gate.AsyncDeadline())
 		defer cancel()
-		g := h.gate.Evaluate(gctx, x)
+		g := h.evaluate(gctx, f)
 		addStreamFlags(g, out)
 		bounded := *f
 		bounded.record = gctx

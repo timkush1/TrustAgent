@@ -1,0 +1,27 @@
+{
+  "requests": [
+    {
+      "model": "typesafe/jev",
+      "state": {
+        "assistant_response": "You can get a full refund within 60 days of purchase.",
+        "evidence": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+      },
+      "questions": {
+        "groundedness": {
+          "type": "noul",
+          "instructions": "Is every claim in `assistant_response` supported by `evidence`?"
+        },
+        "contradiction": {
+          "type": "noul",
+          "instructions": "Does `assistant_response` contradict `evidence`?"
+        }
+      }
+    }
+  ],
+  "request_sha256": [
+    "7c1e9a04d2b85f3e6a0d4c7b9e1f2a3d5c8b0e6f4a2d9c7b1e3f5a8c0d2b4e6f"
+  ],
+  "matches_recorded": true,
+  "cpt": 3.9,
+  "mismatch_reason": null
+}

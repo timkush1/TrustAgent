@@ -2,11 +2,14 @@ package jev
 
 import (
 	"crypto/x509"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 func TestTransportSettings(t *testing.T) {
@@ -54,6 +57,17 @@ func TestTransportSpeaksHTTP2(t *testing.T) {
 		}
 		if r.ConnectMs == nil || *r.ConnectMs != 0 {
 			t.Errorf("call %d: connect_ms %v, want 0 on the warm HTTP/2 connection", i, r.ConnectMs)
+		}
+	}
+}
+
+// The decision-model transport refuses a link-local or cloud-metadata address at dial time
+// (D78): a compatible backend's base URL is the admin's choice.
+func TestTransportRefusesMetadataAddresses(t *testing.T) {
+	hc := &http.Client{Transport: NewTransport(), Timeout: 5 * time.Second}
+	for _, u := range []string{"http://169.254.169.254/latest/meta-data/", "http://[fd00:ec2::254]/"} {
+		if _, err := hc.Get(u); !errors.Is(err, netguard.ErrForbiddenTarget) {
+			t.Errorf("GET %s = %v, want netguard.ErrForbiddenTarget", u, err)
 		}
 	}
 }

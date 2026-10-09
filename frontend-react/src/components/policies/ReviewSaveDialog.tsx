@@ -23,6 +23,9 @@ import { qkc } from '@/data/queries';
 import { readinessWords } from '@/domain/controlPresentation';
 import { copy } from '@/domain/presentation';
 import type { FieldError, PolicyState, TimeWindow } from '@/types/api';
+import { draftRouteNames } from './policyDraft';
+import { PolicyWarningList } from './PolicyWarningList';
+import { fieldWarningView } from './policyWarnings';
 import { PreviewImpact } from './PreviewImpact';
 import { evaluatorDisplayName, routeTitle } from './routeWords';
 
@@ -176,7 +179,15 @@ export function ReviewSaveDialog({
               <>
                 {errors.length === 0 ? <p className="text-sm text-fg">The server accepts this policy.</p> : null}
                 <Problems title="Errors" items={errors} tone="error" />
-                <Problems title="Warnings" items={validation.data.warnings} tone="warning" />
+                {validation.data.warnings.length > 0 ? (
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-medium text-fg-muted">Warnings</h4>
+                    <PolicyWarningList
+                      label="Warnings"
+                      warnings={validation.data.warnings.map((w) => fieldWarningView(w, { routes: draftRouteNames(draftYaml).slice(1), names }))}
+                    />
+                  </div>
+                ) : null}
                 {notReady.length > 0 ? (
                   <div className="space-y-1">
                     <h4 className="text-xs font-medium text-fg-muted">Not ready to block yet (these routes will act as Flag)</h4>
@@ -184,7 +195,7 @@ export function ReviewSaveDialog({
                       {notReady.map((b) => (
                         <li key={`${b.route}-${b.evaluator}`}>
                           <span className="font-medium">{routeTitle(b.route)}</span> · {evaluatorDisplayName(b.evaluator, names)}:{' '}
-                          {b.missing.map((m) => readinessWords(m).label.toLowerCase()).join(', ')}
+                          still to do: {b.missing.map((m) => readinessWords(m).action).join('; ')}
                         </li>
                       ))}
                     </ul>

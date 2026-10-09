@@ -123,6 +123,9 @@ type fakeUpstream struct {
 	// respond, when set, answers each request in place of status, ctype and body: n counts the
 	// requests before this one.
 	respond func(n int, body []byte) (status int, ctype, answer string)
+	// echoHeader, when set, is quoted back in a WWW-Authenticate header, as a refusing vendor
+	// may quote the key it was sent.
+	echoHeader string
 }
 
 func newFakeUpstream(t *testing.T) *fakeUpstream {
@@ -134,8 +137,11 @@ func newFakeUpstream(t *testing.T) *fakeUpstream {
 		n := len(f.requests)
 		f.requests = append(f.requests, r.Clone(context.Background()))
 		f.bodies = append(f.bodies, b)
-		status, body, ctype, delay, encoding, respond := f.status, f.body, f.ctype, f.delay, f.encoding, f.respond
+		status, body, ctype, delay, encoding, respond, echo := f.status, f.body, f.ctype, f.delay, f.encoding, f.respond, f.echoHeader
 		f.mu.Unlock()
+		if echo != "" {
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="key `+echo+` is invalid"`)
+		}
 		if respond != nil {
 			status, ctype, body = respond(n, b)
 		}
@@ -212,6 +218,13 @@ type envOpts struct {
 	// fallbackFormat, when set, adds a fallback upstream (env.fb) answering in that family
 	// (TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT).
 	fallbackFormat string
+	// knowledge, when set, is the knowledge retriever (the add-on on: the policy may read the
+	// knowledge source).
+	knowledge Retriever
+	// injectKey, when set, is the upstreams' own key (inject mode).
+	injectKey string
+	// redact is Options.Redact.
+	redact func(string) string
 }
 
 // anthropicBody is the Anthropic upstream's default answer.
@@ -244,7 +257,7 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pol := loadPolicy(t, reg, o.policyYAML, policy.Env{Enforcing: o.enforcing, FallbackUpstream: o.fallbackFormat != ""})
+	pol := loadPolicy(t, reg, o.policyYAML, policy.Env{Enforcing: o.enforcing, FallbackUpstream: o.fallbackFormat != "", Knowledge: o.knowledge != nil})
 	cl := o.jev
 	if cl == nil {
 		backend := o.jevBackend
@@ -267,11 +280,11 @@ func newEnv(t *testing.T, o envOpts) *env {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey)
+	up, err := upstream.New(upstream.Config{BaseURL: fu.URL, Timeout: timeout, HeaderTimeout: timeout, APIKey: o.injectKey}, auth.IsProxyKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	anth, err := upstream.New(upstream.Config{BaseURL: fa.URL, Timeout: timeout, HeaderTimeout: timeout}, auth.IsProxyKey)
+	anth, err := upstream.New(upstream.Config{BaseURL: fa.URL, Timeout: timeout, HeaderTimeout: timeout, APIKey: o.injectKey, AuthHeader: anthropicAuthHeader(o.injectKey)}, auth.IsProxyKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,9 +299,11 @@ func newEnv(t *testing.T, o envOpts) *env {
 	}
 	sink := newRecSink()
 	h := New(Options{
-		Upstreams: set, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
+		Upstreams: func() *upstream.Set { return set }, Policy: func() *policy.Policy { return pol }, Gate: g, Sink: sink,
 		TestMode: o.testMode, GateMaxConcurrency: o.maxGates, MaxUpstreamResponseBytes: o.maxBytes, Logger: quiet,
+		Knowledge: o.knowledge, Redact: o.redact,
 	})
+	h.ProxyKeys(auth.IsProxyKey)
 	r := gin.New()
 	r.Use(middleware.CORS([]string{"http://localhost:5173"}))
 	guards := []gin.HandlerFunc{h.TraceIDs(), auth.Ingest(Deny)}
@@ -304,6 +319,15 @@ func newEnv(t *testing.T, o envOpts) *env {
 		}
 	})
 	return &env{router: r, sink: sink, up: fu, anth: fa, fb: fb, handler: h}
+}
+
+// anthropicAuthHeader is the header an Anthropic upstream takes its injected key on: x-api-key,
+// or none (the default, Authorization) without a key.
+func anthropicAuthHeader(key string) string {
+	if key == "" {
+		return ""
+	}
+	return "x-api-key"
 }
 
 func (e *env) do(t *testing.T, path, body string, headers map[string]string) *httptest.ResponseRecorder {

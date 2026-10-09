@@ -7,6 +7,10 @@
  * LiveDataSource implements it over HTTP (live/liveControlPlane.ts). A source that cannot serve an
  * endpoint (the static replay build hides Policies and Knowledge) spreads `unavailableControlPlane`
  * so every call fails with a plain ApiError the page contract already renders.
+ *
+ * Four planes join it, one per owner: security (WEB-ON), cost (WEB-SV),
+ * evaluator (WEB-EV) and Studio (WEB-ST). Each lives in data/control/<x>Plane.ts with its live and
+ * unavailable implementations; this file and liveControlPlane.ts only spread them in.
  */
 import type {
   ChatMessage,
@@ -36,10 +40,23 @@ import type {
   TimeWindow,
   ValidateResult,
 } from '@/types/api';
+import { unavailableCostPlane, type CostPlane } from './control/costPlane';
+import { unavailableEvaluatorPlane, type EvaluatorPlane } from './control/evaluatorPlane';
+import { unavailableSecurityPlane, type SecurityPlane } from './control/securityPlane';
+import { unavailableStudioPlane, type StudioPlane } from './control/studioPlane';
 import { ApiError } from './errors';
 import type { PageParams } from './source';
 
 export type { ChatMessage };
+export type { ConfirmOption, SecurityPlane } from './control/securityPlane';
+export type { CostPlane, RoiTimeseriesParams } from './control/costPlane';
+export type {
+  CalibrationListParams,
+  DecisionRequestParams,
+  EvaluatorPlane,
+  LabelQueueParams,
+} from './control/evaluatorPlane';
+export type { StudioDryRunHandlers, StudioPlane } from './control/studioPlane';
 
 /** GET /api/overview (#9). `include_mock` defaults to the demo flag on the server. */
 export interface OverviewParams {
@@ -62,6 +79,8 @@ export type PolicyDryRunRequest = (PolicyInput | { version: number; yaml?: never
   window: TimeWindow;
   /** At most 100,000 stored answers. */
   limit?: number;
+  /** Calibration records to replay with instead of the active ones (the adopt flow's preview, D62). */
+  calibration_ids?: number[];
 };
 
 /** PUT /api/policies (#23), sent with `If-Match: <etag>`. */
@@ -109,7 +128,7 @@ export interface PlaygroundStreamHandlers {
 /** POST /api/session (#4): the one-time setup token from the proxy's SETUP line, or a key. */
 export type SessionRequest = { setup_token: string; key?: never } | { key: string; setup_token?: never };
 
-export interface ControlPlane {
+export interface ControlPlane extends SecurityPlane, CostPlane, EvaluatorPlane, StudioPlane {
   /** GET /api/setup/status (#3, public): whether an admin still has to be created. */
   getSetupStatus(signal?: AbortSignal): Promise<SetupStatus>;
   /** GET /api/session (#5): the caller's session; a 401 ApiError when there is none. */
@@ -157,6 +176,10 @@ export interface ControlPlane {
 export function unavailableControlPlane(message = 'Not available in this build.'): ControlPlane {
   const reject = () => Promise.reject(new ApiError({ kind: 'http', status: 404, code: 'not_found', message }));
   return {
+    ...unavailableSecurityPlane(message),
+    ...unavailableCostPlane(message),
+    ...unavailableEvaluatorPlane(message),
+    ...unavailableStudioPlane(message),
     getSetupStatus: reject,
     getSession: reject,
     createSession: reject,

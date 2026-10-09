@@ -1,0 +1,79 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "corroboration-by-instant-check-needs-no-attachment",
+  "status": "frozen",
+  "description": "D98: on a route, an instant check listed in requires_corroboration can agree by itself, so no corroboration warning comes although contradiction is not attached.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "promise_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Promise check",
+      "category": "custom",
+      "params": {
+        "allowed_commitments": {
+          "default": "No commitments are allowed: the assistant must not promise refunds, prices, discounts, credits, dates, or deadlines.",
+          "label": "Allowed commitments"
+        }
+      },
+      "state_fields": [
+        "assistant_response",
+        "rules"
+      ],
+      "question": {
+        "type": "choice",
+        "instructions": "Does `assistant_response` promise the user a refund, price, discount, credit, delivery date, or deadline, and is that promise permitted by `rules.allowed_commitments`?",
+        "criteria": {
+          "no_commitment": {
+            "what": "Makes no promise about refunds, prices, discounts, credits, dates, or deadlines",
+            "not_for": "Statements that the company will do something for this user"
+          },
+          "describes_policy_only": {
+            "what": "Explains terms in general without promising this user anything",
+            "not_for": "Promises to this user"
+          },
+          "permitted_commitment": {
+            "what": "Makes a promise that `rules.allowed_commitments` explicitly permits",
+            "not_for": "Promises that go beyond `rules.allowed_commitments`"
+          },
+          "unapproved_commitment": {
+            "what": "Promises something that `rules.allowed_commitments` does not permit",
+            "not_for": "Describing a policy without promising anything"
+          }
+        }
+      },
+      "evidence": {
+        "requires": "none"
+      },
+      "signal": {
+        "risk_weights": {
+          "unapproved_commitment": 1
+        }
+      },
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": 0.9,
+        "block_eligible": true,
+        "requires_corroboration": [
+          "contradiction",
+          "det:numbers_not_in_evidence",
+          "det:dates_not_in_evidence"
+        ],
+        "implies": []
+      },
+      "escalation": {
+        "escalate_from": 0.4,
+        "numeric_or_date": true,
+        "on_error": "escalate"
+      }
+    },
+    "attached": []
+  },
+  "expected": {
+    "errors": [],
+    "lints": []
+  },
+  "tolerance": 1e-09
+}

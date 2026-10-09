@@ -119,6 +119,50 @@ func TestCORSAllowsListedOrigin(t *testing.T) {
 	}
 }
 
+// TestCORSHeadersExact pins the cross-origin dashboard's CORS headers to the SPEC §2.4 lists
+// (D43): no Authorization or X-API-Key, no wildcard, Max-Age 600.
+func TestCORSHeadersExact(t *testing.T) {
+	// Global middleware, as in production: it answers the preflight without an OPTIONS route.
+	router := gin.New()
+	router.Use(CORS([]string{"http://localhost:5173"}))
+	router.PATCH("/test", func(c *gin.Context) { c.Status(http.StatusOK) })
+	req := httptest.NewRequest(http.MethodOptions, "/test", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	req.Header.Set("Access-Control-Request-Method", "PATCH")
+	req.Header.Set("Access-Control-Request-Headers", "content-type, if-match, x-trustagent-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	want := map[string]string{
+		"Access-Control-Allow-Origin":  "http://localhost:5173",
+		"Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+		"Access-Control-Allow-Headers": "Content-Type, If-Match, X-TrustAgent-Key, X-TrustAgent-CSRF, X-TrustAgent-Route, X-TrustAgent-Mode, X-Request-ID",
+		"Access-Control-Expose-Headers": "ETag, Retry-After, X-Request-ID, X-TrustAgent-Trace-Id, X-TrustAgent-Route, X-TrustAgent-Mode, " +
+			"X-TrustAgent-Action, X-TrustAgent-Would-Action, X-TrustAgent-Status, X-TrustAgent-Verdict, X-TrustAgent-Risk, " +
+			"X-TrustAgent-Calibrated, X-TrustAgent-Degraded, X-TrustAgent-Reasons, X-TrustAgent-Checked-Against, " +
+			"X-TrustAgent-Decision-Model, X-TrustAgent-Gate-Ms, X-TrustAgent-Overhead-Ms, X-TrustAgent-Audit, X-TrustAgent-Source",
+		"Access-Control-Max-Age": "600",
+		"Vary":                   "Origin",
+	}
+	for h, v := range want {
+		if got := w.Header().Get(h); got != v {
+			t.Errorf("%s = %q\nwant %q", h, got, v)
+		}
+	}
+	if w.Code != http.StatusNoContent {
+		t.Errorf("preflight status %d, want 204", w.Code)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("Access-Control-Allow-Credentials = %q: the cross-origin dashboard sends no cookies", got)
+	}
+	allowed := strings.ToLower(w.Header().Get("Access-Control-Allow-Headers"))
+	for _, dropped := range []string{"authorization", "x-api-key"} {
+		if strings.Contains(allowed, dropped) {
+			t.Errorf("Access-Control-Allow-Headers still allows %s (D43)", dropped)
+		}
+	}
+}
+
 func TestCORSIgnoresUnlistedOrigin(t *testing.T) {
 	router := newRouter(CORS([]string{"http://localhost:5173"}))
 	req := httptest.NewRequest("GET", "/test", nil)

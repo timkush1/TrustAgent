@@ -177,10 +177,13 @@ function runEvidence(input: unknown) {
   };
 }
 
-/** lint: {spec} -> {errors, lints} (sorted distinct codes) */
+/** lint: {spec, attached?} -> {errors, lints} (sorted distinct codes); attached is the route's evaluator ids. */
 function runLint(input: unknown) {
-  const x = fields(input, ['spec']);
-  return lintCodes(lintSpec(x.spec));
+  const x = fields(input, ['spec', 'attached']);
+  if (x.attached !== undefined && !(Array.isArray(x.attached) && x.attached.every((a) => typeof a === 'string'))) {
+    throw new Error('attached must be a list of evaluator ids');
+  }
+  return lintCodes(lintSpec(x.spec, x.attached === undefined ? {} : { attached: x.attached as string[] }));
 }
 
 /** decide: decide-input.v1 -> the decision/v1 core */
@@ -280,10 +283,10 @@ export const KINDS: Readonly<Record<string, VectorKind>> = {
   decide: { run: runDecide, go: 'all' },
   detectors: { run: runDetectors, go: 'all' },
   evidence: { run: runEvidence, go: 'all (internal/evidence, every api_format through llmapi.ParseRequest)' },
-  lint: { run: runLint, go: 'none (the Go evaluator lints join with the Studio, P4)' },
+  lint: { run: runLint, go: 'all' },
   calibrate_fit: { run: runCalibrateFit, go: 'all' },
-  cost: { skip: 'the cost calculator lands with internal/costs and the Savings panel in P4', go: 'none (P4)' },
-  pkce: { skip: 'PKCE (src/lib/openrouter/pkce.ts) lands with Connect OpenRouter in P4', go: 'none (TS-only kind)' },
+  cost: { skip: 'TS runner with the landing calculator (P5, D85)', go: 'all fn (internal/decision/cost.go)' },
+  pkce: { skip: 'src/lib/openrouter/pkce.ts (P5)', go: 'none (TS-only kind)' },
 };
 
 /**

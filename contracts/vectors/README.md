@@ -26,13 +26,17 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `compile` | 34 (34 + 0) | 1 per template + 12 (23) | generated | `internal/decision` |
 | `calibration_apply` | 15 (15 + 0) | 10 | generated | `internal/decision` |
 | `calibrate_fit` | 38 (38 + 0) | 10 | generated | `internal/decision` |
-| `decide` | 55 (55 + 0) | 40 | hand-authored | `internal/decision` |
+| `decide` | 58 (58 + 0) | 40 | hand-authored | `internal/decision` |
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
-| `lint` | 19 (0 + 19) | 14 | hand-authored | P4 (skipped; TypeScript runs them) |
+| `lint` | 23 (23 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
+| `cost` | 18 (18 + 0) | 8 | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
 
-`cost` vectors come with the cost calculator
-(`internal/costs`, P4, which also defines their input); `pkce` vectors are TypeScript-only.
+The `decide` vectors cover `calibration_missing`, an `other_snapshot` calibration entry and
+`calibration_warning` (D56). `lint` runs in Go (`backend-go/internal/decision/vectors/lint.go`, D54) and
+TypeScript; `cost` runs in Go for every `fn` (`backend-go/internal/decision/vectors/cost.go`, D85) and in
+Python for `call_cost`; TypeScript skips `cost` until P5. `pkce` vectors are TypeScript-only
+and arrive with `src/lib/openrouter/pkce.ts` in P5.
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
 `github.com/truthtable/contracts` module): kinds with a Go runner must pass in full, draft and frozen alike;
@@ -50,7 +54,7 @@ to its vectors.
 ## Generating and freezing vectors
 
 The mechanical kinds (`canonical`, `tokens`, `question_hash`, `normalize`, `compile`, `calibration_apply`,
-`calibrate_fit`)
+`calibrate_fit`, `cost`)
 have `expected` values that the Go reference computes. To add one:
 
 1. Write `<kind>/<name>.json` with `status: "draft"`, a `description`, the `input`, and `"expected": null`.
@@ -231,6 +235,12 @@ at that risk. Input order matters: every sum runs in input order.
     `factual_claims` as uncalibrated.
 - The `s0-*` vectors are the three S0 demo scenarios (`../demo/scenarios.v1.json`) on the `support-bot`
   route of `config/policies.yaml`.
+- Calibration entries (D56): an entry's `state` is a calibration state or `other_snapshot` (the
+  target is calibrated only on other snapshots). An `other_snapshot` entry has no `table` and no `quality`
+  and calibrates nothing; `decision.v1` `calibration_state` never takes that value. Reasons, as D56 states
+  them: an uncalibrated block-set evaluator gives `uncalibrated_snapshot` when every entry is
+  `other_snapshot`, otherwise `calibration_missing`. `fit_state_fields` that differ from the evaluator's own state fields set
+  `calibration_warning` and the calibration still applies.
 
 ### `detectors`
 
@@ -267,11 +277,32 @@ at that risk. Input order matters: every sum runs in input order.
 
 ### `lint`
 
-- `input`: `{spec}`, an evaluator spec (schema-valid, though possibly breaking a hard rule).
+- `input`: `{spec, attached?}`, an evaluator spec (schema-valid, though possibly breaking a hard rule)
+  and, for a check on a route, the evaluator ids attached to it (`LintOptions.Attached`): the D98
+  corroboration warning (none of `requires_corroboration` is an instant check or attached) and the
+  implied-evaluator warning, both `reference_not_attached`.
 - `expected`: `{errors, lints}`, each a sorted list of distinct codes. `errors` holds the named hard rules
   (`unresolved_state_reference`, `no_id_reference`); `lints` holds the SPEC §2.8 lint ids. Token Jaccard
   for `near_duplicate_options` uses lowercase `[a-z0-9]+` tokens of each option's `what`.
 - Every built-in template has a `builtin-*-is-clean` vector: built-ins must stay lint-clean.
+- Runners: Go `internal/decision/lint.go` is the reference (D54); TypeScript
+  `src/lib/decision/lint.ts` runs the same vectors.
+
+### `cost`
+
+- `input`: `{fn, ...}`. `fn` names the pure function of the calculator in
+  `backend-go/internal/decision/cost.go` (D52, D85): `call_cost` (the cost of one call from its
+  token counts and a price table), `per_1k` (the cost of 1,000 answers at given settings) or
+  `price_lookup` (which `PriceEntry` a provider and model resolve to across the layers override >
+  `TRUTHTABLE_PRICE_TABLE_FILE` > contracts: first the call's own provider's entries in that order, then
+  those of any other paid provider; free local and mock entries never price another provider). The file
+  is layered over contracts, not swapped for it, and the effective table carries the file's version
+  (`override` when an override priced the call). The other members are that function's arguments, named as its JSON tags in
+  `cost.go` document them; a price table is given inline in the `pricing.v1` shape.
+- `expected`: the function's result as JSON, written by `cmd/vectorgen`.
+- Runners: Go runs every `fn`; Python runs `call_cost` only (`backend-python/tests/unit/test_contract_vectors.py`),
+  because the engine receives the already-effective table; the TypeScript runner joins with the landing
+  calculator in P5.
 
 ## SPEC §7.6 coverage
 
@@ -374,6 +405,13 @@ Every case SPEC §7.6 requires, and the vectors that pin it.
   `marker-blocks-dedup-and-max-marker`.
 - **lint** (14, every built-in clean): `builtin-<id>-is-clean` for all 11 built-ins, plus 8 lint and hard-rule
   cases.
+- **cost** (8): reported vs computed `call-reported-cost-wins`, `call-computed-from-table`,
+  `call-negative-reported-cost-ignored`; price-table precedence `lookup-override-beats-file-and-contracts`,
+  `lookup-file-beats-contracts`, `lookup-contracts-under-file`, `call-override-entry`, provider first
+  `lookup-provider-match-beats-override`, `call-provider-match-first`, `call-other-provider-fallback`,
+  `lookup-no-match`; cost sources `call-ollama-free-local`, `call-mock-simulated`, `call-unknown-model`;
+  exact decimals `call-exact-decimals`; the calculator with the default policy (about $3.0 per 1,000)
+  `per-1k-default-policy`, plus `per-1k-local-judge`, `per-1k-unknown-judge`.
 
 ## Writing a vector
 

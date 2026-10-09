@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
+	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/store"
@@ -254,5 +256,34 @@ func TestDirectAuditWritesOutliveTheCallerButNotForever(t *testing.T) {
 	tr, err := st.GetTrace(t.Context(), st.traceID)
 	if err != nil || tr.AuditStatus != store.TraceAuditDropped {
 		t.Errorf("trace %+v %v", tr, err)
+	}
+}
+
+// TestDirectAuditPastTheLLMCap: past the day's LLM cap POST /api/audit answers 503
+// budget_exhausted with details.cap llm (D48); the direct trace is recorded and dropped with the
+// flag llm_budget.
+func TestDirectAuditPastTheLLMCap(t *testing.T) {
+	env, pg := pgEnv(t, envOpts{mutate: func(c *config.Config) { c.SpendCapLLMUSDDay = 0.05 }})
+	settle, err := env.srv.costs.reserve(context.Background(), 0.05, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settle(0.05) // the day's LLM cap is spent
+	code, body := env.do(http.MethodPost, "/api/audit", testKey, []byte(`{"query":"How long is the refund window?","response":"60 days."}`))
+	if code != http.StatusServiceUnavailable || errorCodeOf(t, body) != codeBudgetExhausted {
+		t.Fatalf("HTTP %d %s", code, body)
+	}
+	var e apiErrorBody
+	if err := json.Unmarshal(body, &e); err != nil || e.Error.Details["cap"] != "llm" {
+		t.Errorf("details %+v %v", e.Error.Details, err)
+	}
+	contractstest.ValidateJSON(t, schemaError, body)
+	traces, _, err := pg.ListTraces(context.Background(), store.TraceFilter{Limit: 10})
+	if err != nil || len(traces) != 1 {
+		t.Fatalf("traces %d %v", len(traces), err)
+	}
+	tr := traces[0]
+	if tr.Source != "direct" || tr.AuditStatus != store.TraceAuditDropped || !slices.Contains(tr.Flags, flagLLMBudget) {
+		t.Errorf("trace audit %q flags %v source %s", tr.AuditStatus, tr.Flags, tr.Source)
 	}
 }

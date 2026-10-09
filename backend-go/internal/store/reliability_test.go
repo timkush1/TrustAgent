@@ -12,7 +12,7 @@ import (
 
 const liveSnapshot = "typesafe/jev-1.13-20260917"
 
-// seedLabel inserts a labels row (the labels API arrives in P4).
+// seedLabel inserts a labels row (as PUT /api/labels writes it).
 func seedLabel(t *testing.T, s *PostgresStore, target, label, source string, risk *float64, snapshot string, at time.Time) {
 	t.Helper()
 	if _, err := s.pool.Exec(context.Background(), `
@@ -116,5 +116,31 @@ func TestReliabilitySamples(t *testing.T) {
 		if err != nil || describe(got) != tc.want {
 			t.Errorf("%s:\n got  %s (%v)\n want %s", name, describe(got), err, tc.want)
 		}
+	}
+}
+
+// TestReliabilitySamplesByRoute: a route keeps the labels and uniform audits of its own traces.
+func TestReliabilitySamplesByRoute(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	seedAudited(t, s, "groundedness@1", 0.8, "uniform", VerdictHallucinated, false, liveSnapshot) // support-bot
+	id := seedGated(t, s, "billing", now, map[string][2]*float64{"groundedness@1": {f64(0.4), nil}}, now.Add(time.Hour))
+	if err := s.UpsertLabel(ctx, LabelRecord{TraceID: id, Target: "groundedness@1", Label: LabelShouldNotFire, LabeledBy: "a",
+		SampleExpiresAt: now.Add(time.Hour), RiskRaw: f64(0.4), Snapshot: strp(liveSnapshot)}); err != nil {
+		t.Fatal(err)
+	}
+	seedLabel(t, s, "groundedness@1", LabelShouldFire, "human", f64(0.9), liveSnapshot, now) // no trace: no route
+	f := ReliabilityFilter{Evaluator: "groundedness@1", From: now.Add(-time.Hour), To: now.Add(time.Hour), Labels: true, UniformAudits: true}
+	if all, _ := s.ReliabilitySamples(ctx, f); len(all) != 3 {
+		t.Fatalf("every route: %d samples", len(all))
+	}
+	f.Route = "billing"
+	if got, _ := s.ReliabilitySamples(ctx, f); describe(got) != "human:0.40:false" {
+		t.Errorf("billing: %s", describe(got))
+	}
+	f.Route = "support-bot"
+	if got, _ := s.ReliabilitySamples(ctx, f); describe(got) != "uniform_audit:0.80:true" {
+		t.Errorf("support-bot: %s", describe(got))
 	}
 }

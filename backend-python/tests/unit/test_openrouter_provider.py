@@ -5,6 +5,9 @@ OpenRouter judge provider (SPEC section 3.2): OpenAI-compatible chat at
 All HTTP goes through httpx.MockTransport; nothing reaches openrouter.ai.
 """
 
+import json
+
+import httpx
 import pytest
 
 from provider_fakes import ScriptedTransport, SleepRecorder, json_reply, text_reply
@@ -104,6 +107,40 @@ async def test_cost_is_computed_when_usage_has_no_cost() -> None:
 
     assert response.cost_source == "computed"
     assert response.cost_usd == pytest.approx((1000 * 1.0 + 200 * 5.0) / 1_000_000)
+
+
+def raw_json_reply(usage: str) -> httpx.Response:
+    """CHAT_OK with `usage` as raw JSON text (NaN, Infinity and huge integers included)."""
+    answer = dict(CHAT_OK, usage="USAGE")
+    text = json.dumps(answer).replace('"USAGE"', usage)
+    return httpx.Response(200, content=text.encode(), headers={"content-type": "application/json"})
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        '{"prompt_tokens": 1000, "completion_tokens": 200, "cost": 1' + "0" * 400 + "}",
+        '{"prompt_tokens": 1000, "completion_tokens": 200, "cost": Infinity}',
+        '{"prompt_tokens": 1000, "completion_tokens": 200, "cost": NaN}',
+    ],
+    ids=["cost-beyond-float", "cost-infinity", "cost-nan"],
+)
+async def test_a_reported_cost_no_float_holds_is_priced_from_the_table(usage: str) -> None:
+    response = await provider(ScriptedTransport(raw_json_reply(usage))).complete(request())
+
+    assert response.cost_source == "computed"
+    assert response.cost_usd == pytest.approx((1000 * 1.0 + 200 * 5.0) / 1_000_000)
+
+
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+async def test_token_counts_that_are_not_finite_count_as_zero(bad: str) -> None:
+    usage = f'{{"prompt_tokens": {bad}, "completion_tokens": 200}}'
+
+    response = await provider(ScriptedTransport(raw_json_reply(usage))).complete(request())
+
+    assert (response.input_tokens, response.output_tokens) == (0, 200)
+    assert response.cost_source == "computed"
+    assert response.cost_usd == pytest.approx(200 * 5.0 / 1_000_000)
 
 
 async def test_402_raises_budget_error_without_retrying() -> None:

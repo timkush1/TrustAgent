@@ -9,8 +9,26 @@ export interface LegendItem {
   key: string;
   label: string;
   color: string;
-  /** Mirror the mark: a square for bars and areas, a short line for lines. */
-  mark?: 'square' | 'line';
+  /** Mirror the mark: a square for bars and areas, a short line for lines, a dashed one for dashed lines. */
+  mark?: 'square' | 'line' | 'dash';
+}
+
+function LegendMark({ item }: { item: LegendItem }) {
+  if (item.mark === 'dash') {
+    return (
+      <svg aria-hidden="true" data-mark="dash" width="14" height="4" viewBox="0 0 14 4" className="shrink-0">
+        <line x1="0" x2="14" y1="2" y2="2" stroke={item.color} strokeWidth="2" strokeDasharray="4 2" />
+      </svg>
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      data-mark={item.mark ?? 'square'}
+      className={item.mark === 'line' ? 'h-0.5 w-3 rounded-full' : 'size-2.5 rounded-[2px]'}
+      style={{ backgroundColor: item.color }}
+    />
+  );
 }
 
 /** Always present for two or more series (never color-matching alone). */
@@ -19,11 +37,7 @@ export function ChartLegend({ items, className }: { items: readonly LegendItem[]
     <ul aria-label="Legend" className={cn('flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted', className)}>
       {items.map((item) => (
         <li key={item.key} data-series={item.key} className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className={item.mark === 'line' ? 'h-0.5 w-3 rounded-full' : 'size-2.5 rounded-[2px]'}
-            style={{ backgroundColor: item.color }}
-          />
+          <LegendMark item={item} />
           {item.label}
         </li>
       ))}

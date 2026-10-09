@@ -63,8 +63,14 @@ COPY backend-go/ ./
 COPY --from=proto /out/ ./
 
 # VERSION is stamped into internal/version (compose passes TRUSTAGENT_VERSION).
+# GIT_SHA (make passes `git rev-parse --short HEAD`; the build context has no
+# .git, so Go's own VCS stamp is empty) goes to internal/version.GitSHA: the
+# proxy reports it as status build_sha and names it as the git revision of a
+# recording (GET /api/export/replay); the image label below carries it too.
+# Empty leaves it unset.
 # CMDS lists the ./cmd/<name> packages to ship; each lands at /<name>.
 ARG VERSION=dev
+ARG GIT_SHA=""
 ARG CMDS="proxy trafficgen mock-upstream"
 ARG TARGETOS
 ARG TARGETARCH
@@ -73,7 +79,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     mkdir -p /out \
  && for cmd in ${CMDS}; do \
       CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH}" go build -trimpath \
-        -ldflags="-s -w -X github.com/truthtable/backend-go/internal/version.Version=${VERSION}" \
+        -ldflags="-s -w -X github.com/truthtable/backend-go/internal/version.Version=${VERSION} -X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}" \
         -o "/out/${cmd}" "./cmd/${cmd}" || exit 1; \
     done
 
@@ -114,3 +120,8 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
     CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
 
 CMD ["/proxy"]
+
+# The git revision the image was built from (make passes `git rev-parse --short HEAD`). Declared
+# and labelled last: a label is metadata only, so a new commit rebuilds no layer above it.
+ARG GIT_SHA=""
+LABEL org.opencontainers.image.revision="${GIT_SHA}"

@@ -3,17 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { playgroundResult } from '@/test/control/fixtures';
+import { evaluatorMeta, evaluatorMetas, playgroundResult } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
 import { p3Detail } from '@/test/p3Fixtures';
 import { stopLive } from '@/test/renderLive';
 import { s0Decision, s0Trace } from '@/test/scenarios';
-import { buildRequest, EXAMPLES, formProblem, INITIAL_FORM } from './playgroundModel';
+import { warmRoutes } from '@/test/warmRoutes';
+import { playgroundCommand } from './playgroundCurl';
+import { buildRequest, EXAMPLES, formProblem, INITIAL_FORM, playgroundExamples } from './playgroundModel';
 import { usePlaygroundStore } from './playgroundStore';
 
 installMswServer();
+warmRoutes('/app/playground', '/app/overview');
 beforeEach(() => {
   usePlaygroundStore.getState().reset();
   usePlaygroundStore.getState().setRunUnavailable(false);
@@ -84,8 +87,14 @@ describe('Playground model', () => {
     ]) {
       expect(ids).not.toContain(id);
     }
-    // The P3 gateway enforces block and fallback: the p3 chat scenarios on those routes are examples.
+    // The gateway enforces block and fallback: the p3 chat scenarios on those routes are examples.
     expect(ids).toEqual(expect.arrayContaining(['payments-fallback', 'help-center-uncalibrated-flag']));
+    // With the knowledge add-on on, its scenarios are examples too; nothing else changes.
+    const withKnowledge = playgroundExamples({ knowledge: true }).map((e) => e.id);
+    expect(withKnowledge).toContain('knowledge-only-capped');
+    expect(withKnowledge.filter((id) => id !== 'knowledge-only-capped')).toEqual(ids);
+    expect(playgroundExamples({ knowledge: true }).find((e) => e.id === 'knowledge-only-capped')?.form).toMatchObject({ mode: 'audit', route: 'handbook' });
+    expect(playgroundExamples()).toBe(EXAMPLES);
     expect(EXAMPLES.find((e) => e.id === 'payments-fallback')?.form).toMatchObject({
       mode: 'audit',
       route: 'payments-faq',
@@ -142,6 +151,19 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(body).toMatchObject({ mode: 'chat', stream: false, messages: [{ role: 'user', content: 'Can I get a refund after 45 days?' }] });
     // The form is still filled for the next run.
     expect(screen.getByRole('textbox', { name: 'Message 2' })).toHaveValue('Can I get a refund after 45 days?');
+  });
+
+  it('names each check from the evaluator library, never by its id', async () => {
+    const user = userEvent.setup();
+    // A renamed check: its id no longer reads as its name.
+    const evaluators = evaluatorMetas().map((e) => (e.id === 'contradiction' ? evaluatorMeta('contradiction', { name: 'Policy contradictions' }) : e));
+    renderPage('/app/playground', { control: createControlApi({ evaluators }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    const timeline = await screen.findByRole('list', { name: 'What happened to the request' });
+    expect(await within(timeline).findByRole('meter', { name: 'Policy contradictions risk' })).toBeInTheDocument();
+    expect(within(timeline).getByText('Policy contradictions')).toBeInTheDocument();
+    expect(within(timeline).queryByRole('meter', { name: 'Contradiction risk' })).toBeNull();
   });
 
   it('follows the deep audit on the live stream', async () => {
@@ -235,6 +257,66 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(within(timeline).queryByText(/instead$/)).toBeNull();
   });
 
+  it('shows the first token and a decision that arrives while the answer still streams (D69)', async () => {
+    const user = userEvent.setup();
+    const scripted = playgroundResult();
+    // A real fast check (OpenRouter), so both times are measurements.
+    const result = {
+      ...scripted,
+      decision: { ...scripted.decision, decision_model: { ...scripted.decision.decision_model!, backend: 'openrouter-decisions' as const } },
+    };
+    const sse = [
+      'event: token',
+      'data: {"text":"You can get "}',
+      '',
+      'event: decision',
+      `data: ${JSON.stringify(result.decision)}`,
+      '',
+      'event: token',
+      'data: {"text":"a full refund."}',
+      '',
+      'event: done',
+      `data: ${JSON.stringify(result)}`,
+      '',
+      '',
+    ].join('\n');
+    renderPage('/app/playground', { control: createControlApi({ playgroundStream: sse }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('switch', { name: 'Stream the answer' }));
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    expect(await screen.findByText(/^First token after \d+ ms$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Decided after \d+ ms, while the answer was still streaming$/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Measured: how “Time to first token” was produced' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Measured: how “When the fast check decided” was produced' })).toBeInTheDocument();
+    expect(await screen.findByText('Flagged')).toBeInTheDocument();
+  });
+
+  it('labels the decision time Simulated when a mock fast check decided', async () => {
+    const user = userEvent.setup();
+    const mock = playgroundResult();
+    expect(mock.decision.decision_model?.backend).toBe('mock');
+    const sse = [
+      'event: token',
+      'data: {"text":"You can get a full refund."}',
+      '',
+      'event: decision',
+      `data: ${JSON.stringify(mock.decision)}`,
+      '',
+      'event: done',
+      `data: ${JSON.stringify(mock)}`,
+      '',
+      '',
+    ].join('\n');
+    renderPage('/app/playground', { control: createControlApi({ playgroundStream: sse }) });
+    await fillChat(user);
+    await user.click(screen.getByRole('switch', { name: 'Stream the answer' }));
+    await user.click(screen.getByRole('button', { name: 'Send the request' }));
+    expect(await screen.findByText(/^Decided after \d+ ms$/)).toBeInTheDocument();
+    // Your model's first token is still a real measurement; the mock's decision time is not.
+    expect(screen.getByRole('button', { name: 'Measured: how “Time to first token” was produced' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Simulated: how “When the fast check decided” was produced' })).toBeInTheDocument();
+  });
+
   it('streams tokens, then the decision and the result', async () => {
     const user = userEvent.setup();
     const result = playgroundResult();
@@ -257,15 +339,22 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
     expect(await screen.findByText('Flagged')).toBeInTheDocument();
     expect((control.callsTo('/api/playground/run')[0].body as { stream: boolean }).stream).toBe(true);
+    // No decision event before done: the time to first token, but no mid-stream decision.
+    expect(screen.getByText(/^First token after \d+ ms$/)).toBeInTheDocument();
+    expect(screen.queryByText(/still streaming/)).toBeNull();
   });
 
   it('stops a streamed run when the viewer leaves the page', async () => {
     const user = userEvent.setup();
-    let signal: AbortSignal | null = null;
+    // Hold the Request itself, not just its signal: the fetch Request keeps the AbortController that
+    // follows the page's signal alive only while the Request lives (undici keeps a WeakRef to it,
+    // nodejs/undici#1926). Holding only `request.signal` lets the Request be garbage-collected
+    // mid-test, after which the page's abort never reaches the held signal.
+    let held: Request | null = null;
     const { router } = renderPage('/app/playground');
     server.use(
       http.post(`${API}/api/playground/run`, ({ request }) => {
-        signal = request.signal;
+        held = request;
         // A stream that never ends on its own.
         const body = new ReadableStream<Uint8Array>({
           start(c) {
@@ -280,9 +369,11 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Send the request' }));
     expect(await screen.findByText('You can get')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
-    expect(signal!.aborted).toBe(false);
+    expect(held!.signal.aborted).toBe(false);
     await act(() => router.navigate({ to: '/app/overview' }));
-    await waitFor(() => expect(signal!.aborted).toBe(true));
+    // Leaving the page unmounts the Playground, whose cleanup aborts the run's controller; the abort
+    // follows to the request's own signal synchronously.
+    await waitFor(() => expect(held!.signal.aborted).toBe(true));
   });
 
   it('checks a pasted answer from an example, with no model call', async () => {
@@ -291,14 +382,34 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(await screen.findByRole('button', { name: 'Load an example' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Refund window: 60 days vs 30 days' }));
     expect(screen.getByRole('textbox', { name: 'The answer to check' })).toHaveValue('You can get a full refund within 60 days of purchase.');
+    // Audit mode has no /v1 equivalent: the command posts the same request to the Playground endpoint.
     const curl = screen.getByRole('region', { name: 'The same request with curl' });
-    expect(curl.textContent).toContain('/api/audit');
-    expect(curl.textContent).toContain('$TRUSTAGENT_KEY');
+    expect(curl.textContent).toContain('/api/playground/run');
+    expect(curl.textContent).not.toContain('/api/audit');
+    expect(curl.textContent).toContain('X-TrustAgent-Key: $TRUSTAGENT_ADMIN_KEY');
+    expect(curl.textContent).toContain('"mode": "audit"');
+    expect(curl.textContent).toContain('"response": "You can get a full refund within 60 days of purchase."');
+    expect(screen.getByText(/set TRUSTAGENT_ADMIN_KEY to an admin key/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Check the answer' }));
-    expect(await screen.findByText('Audit mode: no model call.')).toBeInTheDocument();
+    expect(await screen.findByText('Checked as written: no model was called to produce it.')).toBeInTheDocument();
     expect(control.callsTo('/api/playground/run')[0].body).toMatchObject({ mode: 'audit', route: 'support-bot' });
     // A live (non-demo) stack runs real checks: no scenario is sent.
     expect(control.callsTo('/api/playground/run')[0].body).not.toHaveProperty('scenario');
+  });
+
+  it('offers the knowledge examples only while the knowledge add-on is on', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/playground', { status: { knowledge: { state: 'up', enabled: true } } });
+    await user.click(await screen.findByRole('button', { name: 'Load an example' }));
+    expect(await screen.findByRole('menuitem', { name: 'Knowledge-base evidence only: capped at warn' })).toBeInTheDocument();
+  });
+
+  it('leaves the knowledge examples out without the add-on', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/playground', { status: { knowledge: { state: 'disabled', enabled: false } } });
+    await user.click(await screen.findByRole('button', { name: 'Load an example' }));
+    await screen.findByRole('menuitem', { name: 'Refund window: 60 days vs 30 days' });
+    expect(screen.queryByRole('menuitem', { name: 'Knowledge-base evidence only: capped at warn' })).toBeNull();
   });
 
   it('sends the example scenario to a demo stack, whose mock checks script it', async () => {
@@ -308,7 +419,7 @@ describe('Playground page', { timeout: 20_000 }, () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Refund window: 60 days vs 30 days' }));
     expect(screen.getByText(/this stack’s mock checks answer it with the scenario’s scripted results \(simulated\)/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Check the answer' }));
-    await screen.findByText('Audit mode: no model call.');
+    await screen.findByText('Checked as written: no model was called to produce it.');
     expect(control.callsTo('/api/playground/run')[0].body).toMatchObject({ mode: 'audit', scenario: 'refund-contradiction-flag' });
   });
 
@@ -322,6 +433,36 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(curl.textContent).toContain('/v1/chat/completions');
     expect(curl.textContent).toContain('X-TrustAgent-Key: $TRUSTAGENT_KEY');
     expect(curl.textContent).toContain('Refunds within 30 days.');
+  });
+
+  it('builds a command that reproduces each mode', () => {
+    const chat = playgroundCommand(
+      {
+        mode: 'chat',
+        route: 'support-bot',
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: "It's late: refund?" }],
+        evidence: [{ id: 'refund.md', text: '30 days.' }],
+        stream: true,
+        mode_override: 'block',
+      },
+      'http://localhost:3000/v1/',
+    );
+    expect(chat.endpoint).toBe('POST /v1/chat/completions');
+    expect(chat.code.split('\n')[0]).toBe('curl -i -N http://localhost:3000/v1/chat/completions \\');
+    expect(chat.code).toContain("-H 'X-TrustAgent-Route: support-bot'");
+    expect(chat.code).toContain("-H 'X-TrustAgent-Mode: block'");
+    // Shell-quoted: the apostrophe in the message survives the paste.
+    expect(chat.code).toContain(`It'\\''s late: refund?`);
+    expect(chat.code).toContain('"trustagent": {');
+
+    const request = buildRequest(EXAMPLES.find((e) => e.id === 'refund-contradiction-flag')!.form, { scenario: true });
+    const audit = playgroundCommand({ ...request, mode_override: 'flag' }, 'http://localhost:3000');
+    expect(audit.endpoint).toBe('POST /api/playground/run');
+    const body = JSON.parse(audit.code.slice(audit.code.indexOf("-d '") + 4, -1)) as unknown;
+    // Exactly the body the page sends, so the run is reproduced as is.
+    expect(body).toEqual({ ...request, mode_override: 'flag' });
+    expect(audit.code).not.toContain('OPENAI_API_KEY');
   });
 
   it('explains a rate limit with the wait', async () => {

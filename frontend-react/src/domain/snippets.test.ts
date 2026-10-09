@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gatewayOrigin, playgroundCurl, shellQuote, SNIPPET_TABS, snippet } from './snippets';
+import { gatewayOrigin, shellQuote, SNIPPET_TABS, snippet } from './snippets';
 
 describe('connect snippets', () => {
   it('has the five SDK tabs of SPEC §3.3', () => {
@@ -30,46 +30,5 @@ describe('connect snippets', () => {
   it('quotes shell strings safely', () => {
     expect(shellQuote(`it's`)).toBe(`'it'\\''s'`);
     expect(gatewayOrigin('http://a/v1/')).toBe('http://a');
-  });
-});
-
-describe('playground curl', () => {
-  it('builds the chat request with context, route and mode, and a masked key', () => {
-    const curl = playgroundCurl(
-      {
-        mode: 'chat',
-        route: 'support-bot',
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'Be brief.' },
-          { role: 'user', content: "What's the refund window?" },
-        ],
-        evidence: [{ id: 'refund-policy.md', text: '30 days.' }, { text: '  ' }],
-        stream: true,
-        mode_override: 'flag',
-      },
-      'http://localhost:3000',
-    );
-    expect(curl).toContain('curl -i -N http://localhost:3000/v1/chat/completions');
-    expect(curl).toContain('X-TrustAgent-Key: $TRUSTAGENT_KEY');
-    expect(curl).toContain(`-H 'X-TrustAgent-Route: support-bot'`);
-    expect(curl).toContain(`-H 'X-TrustAgent-Mode: flag'`);
-    expect(curl).toContain('"stream": true');
-    expect(curl).toContain('"id": "refund-policy.md"');
-    // The apostrophe survives shell quoting.
-    expect(curl).toContain(`What'\\''s the refund window?`);
-    // Blank documents are dropped.
-    expect(curl.match(/"text":/g)).toHaveLength(1);
-  });
-
-  it('posts audit mode to /api/audit with the answer to check', () => {
-    const curl = playgroundCurl(
-      { mode: 'audit', messages: [{ role: 'user', content: 'Refund?' }], response: '60 days.', evidence: [{ text: '30 days.' }] },
-      'http://localhost:3000',
-    );
-    expect(curl).toContain('http://localhost:3000/api/audit');
-    expect(curl).toContain('"query": "Refund?"');
-    expect(curl).toContain('"response": "60 days."');
-    expect(curl).not.toContain('Authorization');
   });
 });

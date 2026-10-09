@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 )
@@ -26,10 +27,19 @@ type Engine struct {
 	HealthFunc   func(ctx context.Context) (*pb.HealthResponse, error)
 	// EngineInfoFunc answers GetEngineInfo; nil answers UNIMPLEMENTED (an engine without the RPC).
 	EngineInfoFunc func(ctx context.Context) (*pb.EngineInfo, error)
+	// ApplyRuntimeConfigFunc answers ApplyRuntimeConfig; nil acknowledges every push (applied
+	// version and epoch echoed, judge configured). Every push is recorded either way (Pushes).
+	ApplyRuntimeConfigFunc func(ctx context.Context, cfg *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error)
+	// DraftEvaluatorFunc, RetrieveContextFunc and IngestDocumentsFunc answer those RPCs; nil
+	// answers UNIMPLEMENTED.
+	DraftEvaluatorFunc  func(ctx context.Context, req *pb.DraftEvaluatorRequest) (*pb.DraftEvaluatorResponse, error)
+	RetrieveContextFunc func(ctx context.Context, req *pb.RetrieveContextRequest) (*pb.RetrieveContextResponse, error)
+	IngestDocumentsFunc func(ctx context.Context, req *pb.IngestRequest) (*pb.IngestResponse, error)
 
 	mu       sync.Mutex
 	requests []*pb.AuditRequest
 	metadata []metadata.MD
+	pushes   []*pb.RuntimeConfig
 
 	// Target and Dialer connect a client to the engine (set by Start).
 	Target string
@@ -56,6 +66,55 @@ func (e *Engine) GetEngineInfo(ctx context.Context, req *pb.EngineInfoRequest) (
 		return e.EngineInfoFunc(ctx)
 	}
 	return e.UnimplementedAuditServiceServer.GetEngineInfo(ctx, req)
+}
+
+// ApplyRuntimeConfig implements AuditService.ApplyRuntimeConfig and records the push.
+func (e *Engine) ApplyRuntimeConfig(ctx context.Context, cfg *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	e.mu.Lock()
+	e.pushes = append(e.pushes, proto.Clone(cfg).(*pb.RuntimeConfig))
+	e.metadata = append(e.metadata, md)
+	e.mu.Unlock()
+	if e.ApplyRuntimeConfigFunc != nil {
+		return e.ApplyRuntimeConfigFunc(ctx, cfg)
+	}
+	judge := "no_judge"
+	if cfg.GetJudge() != nil {
+		judge = "configured"
+	}
+	return &pb.ApplyRuntimeConfigResponse{AppliedVersion: cfg.GetVersion(), AppliedEpoch: cfg.GetEpoch(),
+		JudgeStatus: judge, DecisionStatus: "unset"}, nil
+}
+
+// DraftEvaluator implements AuditService.DraftEvaluator.
+func (e *Engine) DraftEvaluator(ctx context.Context, req *pb.DraftEvaluatorRequest) (*pb.DraftEvaluatorResponse, error) {
+	if e.DraftEvaluatorFunc != nil {
+		return e.DraftEvaluatorFunc(ctx, req)
+	}
+	return e.UnimplementedAuditServiceServer.DraftEvaluator(ctx, req)
+}
+
+// RetrieveContext implements AuditService.RetrieveContext.
+func (e *Engine) RetrieveContext(ctx context.Context, req *pb.RetrieveContextRequest) (*pb.RetrieveContextResponse, error) {
+	if e.RetrieveContextFunc != nil {
+		return e.RetrieveContextFunc(ctx, req)
+	}
+	return e.UnimplementedAuditServiceServer.RetrieveContext(ctx, req)
+}
+
+// IngestDocuments implements AuditService.IngestDocuments.
+func (e *Engine) IngestDocuments(ctx context.Context, req *pb.IngestRequest) (*pb.IngestResponse, error) {
+	if e.IngestDocumentsFunc != nil {
+		return e.IngestDocumentsFunc(ctx, req)
+	}
+	return e.UnimplementedAuditServiceServer.IngestDocuments(ctx, req)
+}
+
+// Pushes returns copies of the ApplyRuntimeConfig pushes received so far, in order.
+func (e *Engine) Pushes() []*pb.RuntimeConfig {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]*pb.RuntimeConfig(nil), e.pushes...)
 }
 
 // HealthCheck implements AuditService.HealthCheck.

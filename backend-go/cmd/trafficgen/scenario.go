@@ -131,9 +131,12 @@ func selectScenarios(all []scenario, sel, exclude string) ([]scenario, error) {
 // when --phase reaches that phase.
 const (
 	phaseS0 = "s0"
-	// defaultPhase is the phase this build's gateway implements: P3 enforces block and fallback,
-	// gates streams and serves /v1/messages and /v1/completions.
-	defaultPhase = "p3"
+	// defaultPhase is the phase this build's gateway implements: it adds knowledge on the hot path,
+	// Playground streaming and the batched trace writer to P3's block and fallback enforcement,
+	// stream gating, /v1/messages and /v1/completions. This phase added no traffic scenario of its own
+	// (its work is the control plane), so no scenario carries its tag; p5 is the next phase a tag may
+	// name.
+	defaultPhase = "p4"
 )
 
 var phases = []string{phaseS0, "p2", "p3", "p4", "p5"}

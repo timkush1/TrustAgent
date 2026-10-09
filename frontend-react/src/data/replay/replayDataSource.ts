@@ -4,7 +4,8 @@
  * so Overview, Traffic and Trace render unchanged:
  *
  * - REST reads answer from the tape at its current position: traces, decisions and audits the
- *   stream has "shown" so far, plus Overview, ROI and evidence-coverage numbers computed from them,
+ *   stream has "shown" so far, plus Overview, ROI (summary and time series) and evidence-coverage
+ *   numbers computed from them, and the built-in price table,
  *   labelled as the recording allows (a mock recording is simulated throughout).
  * - subscribe() plays the rest of the tape as WS v2 frames in compressed time (VITE_REPLAY_SPEED),
  *   after a `hello` that marks the stream read-only. The first half of the traces is already on
@@ -19,6 +20,7 @@ import type {
   GateDecisionRow,
   HealthStatus,
   Page,
+  PricingTable,
   SystemStatus,
   TraceDetail,
   TraceSummary,
@@ -31,7 +33,8 @@ import { outcomeOf } from '@/domain/presentation';
 import { browserClock, DEFAULT_MAX_GAP_MS, ReplayPlayer, type ReplayClock } from './player';
 import { loadRecording, type DemoDataset, type RecordingFiles } from './recording';
 import { INITIAL_REPLAY, useReplayStore } from './replayStore';
-import { evidenceCoverage, overviewStats, roiSummary, type PlayedTrace } from './stats';
+import pricingTable from '@contracts/pricing/prices.v1.json';
+import { evidenceCoverage, overviewStats, roiSummary, roiTimeseries, type PlayedTrace } from './stats';
 import { envelope, ReplayTape } from './tape';
 
 export const STATIC_UNAVAILABLE =
@@ -274,6 +277,16 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
     async getRoiSummary(window) {
       const t = await ready;
       return roiSummary(played(t), ctx(t, window));
+    },
+    async getRoiTimeseries(params) {
+      const t = await ready;
+      // A recording is one fixed stretch of minutes to hours, so the series comes in the bucket
+      // that fits it (per minute for this demo's recording), whatever the window asks for.
+      return roiTimeseries(played(t), ctx(t, params.window));
+    },
+    async getPricing() {
+      // A recording has no dashboard overrides: the built-in table is the effective one.
+      return structuredClone(pricingTable) as PricingTable;
     },
     async getEvidenceCoverage(params) {
       const t = await ready;

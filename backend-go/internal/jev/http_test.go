@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -255,6 +256,59 @@ func TestResponseAccounting(t *testing.T) {
 	}
 	if resp.CostSource != CostComputed || math.Abs(*resp.CostUSD-float64(*resp.InputTokens)*0.042/1e6) > 1e-15 || resp.Snapshot != "jev-1.13.0" {
 		t.Errorf("typesafe response %+v cost %v", resp, *resp.CostUSD)
+	}
+}
+
+// A reported usage.cost below $0 is not a cost (the wire decoder drops it, as decision.PriceCall
+// ignores it): the attempt is priced from its input tokens, so a malformed report can never lower
+// the day's spend.
+func TestNegativeReportedCostIsComputed(t *testing.T) {
+	h := newHarness(t, mockupstream.Config{})
+	// Between the client and the mock: every answer reports usage.cost = -0.5.
+	neg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, h.srv.URL+r.URL.RequestURI(), r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		req.Header = r.Header.Clone()
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer res.Body.Close()
+		var body map[string]any
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		if u, ok := body["usage"].(map[string]any); ok {
+			u["cost"] = -0.5
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(res.StatusCode)
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	defer neg.Close()
+
+	cl := h.client(BackendOpenRouterDecisions, func(c *Config) { c.OpenRouterBaseURL = neg.URL })
+	resp, err := decide(t, cl, testRequest(""), CallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.InputTokens == nil || resp.CostUSD == nil {
+		t.Fatalf("response %+v", resp)
+	}
+	want := decision.TokenCostUSD(int64(*resp.InputTokens), 0, 0.042, 0)
+	if resp.CostSource != CostComputed || *resp.CostUSD != want || want <= 0 {
+		t.Errorf("cost %v (%s), want %v computed", *resp.CostUSD, resp.CostSource, want)
+	}
+	if ev := h.waitEvents(1)[0]; ev.CostSource != CostComputed || ev.CostUSD != want {
+		t.Errorf("cost event %+v", ev)
+	}
+	if st := cl.Status(); st.Spend == nil || st.Spend.SpentUSD != want {
+		t.Errorf("spend %+v, want %v", st.Spend, want)
 	}
 }
 
@@ -880,9 +934,9 @@ func TestKeyRotationResetsTheBreaker(t *testing.T) {
 	var mu sync.Mutex
 	cl := h.client(BackendAuto, func(c *Config) {
 		c.OpenRouterBaseURL = h.srv.URL
-		c.Binding = &Binding{Backend: BackendOpenRouterDecisions, Name: "openrouter", Key: func(_ context.Context, host string) (string, error) {
+		c.Binding = &Binding{Backend: BackendOpenRouterDecisions, Name: "openrouter", Key: func(_ context.Context, origin string) (string, error) {
 			mu.Lock()
-			hosts = append(hosts, host)
+			hosts = append(hosts, origin)
 			mu.Unlock()
 			return key.Load().(string), nil
 		}}
@@ -905,8 +959,9 @@ func TestKeyRotationResetsTheBreaker(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(hosts) == 0 || hosts[0] != "127.0.0.1" {
-		t.Errorf("KeyFunc hosts %v", hosts)
+	// KeyFunc receives the endpoint's canonical origin, never a bare host (D78).
+	if len(hosts) == 0 || hosts[0] != h.srv.URL {
+		t.Errorf("KeyFunc origins %v, want %s", hosts, h.srv.URL)
 	}
 }
 
@@ -1173,6 +1228,36 @@ func TestEchoedCredentialIsMasked(t *testing.T) {
 	}
 	if st := cl.(StatusReporter).Status(); st.LastError == nil || strings.Contains(st.LastError.Message, key) {
 		t.Errorf("status %+v", st.LastError)
+	}
+}
+
+// A key the vendor echoes across the 300-character cut of its message leaves no prefix behind
+// (D42): the body is masked before the message is cut. The key matches no redaction pattern.
+func TestEchoedCredentialAcrossTheCutIsMasked(t *testing.T) {
+	const key = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+	for _, lead := range []int{288, 290, 296, 299} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			msg := strings.Repeat("x", lead) + " " + key + " is not a valid key"
+			_, _ = io.WriteString(w, `{"error":{"message":"`+msg+`","code":401}}`)
+		}))
+		cl, err := New(Config{Backend: BackendCompatible, JevAPIKey: key, BaseURL: srv.URL, Model: "jev-test"})
+		if err != nil {
+			srv.Close()
+			t.Fatal(err)
+		}
+		_, err = decide(t, cl, testRequest(""), CallOptions{})
+		var last string
+		if st := cl.(StatusReporter).Status(); st.LastError != nil {
+			last = st.LastError.Message
+		}
+		srv.Close()
+		for _, text := range []string{fmt.Sprint(err), last} {
+			if strings.Contains(text, key[:6]) {
+				t.Errorf("lead %d: a prefix of the key survived the cut", lead)
+			}
+		}
 	}
 }
 

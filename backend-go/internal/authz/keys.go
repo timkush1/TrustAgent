@@ -24,6 +24,10 @@ type Store interface {
 	APIKeyByID(ctx context.Context, id string) (*store.APIKeyRecord, error)
 	ListAPIKeys(ctx context.Context) ([]store.APIKeyRecord, error)
 	RevokeAPIKey(ctx context.Context, id, actor string) (*store.APIKeyRecord, bool, error)
+	// RevokeAPIKeyKeepingAdmin refuses, with store.ErrLastAdminKey, to revoke the last active
+	// admin key (D81).
+	RevokeAPIKeyKeepingAdmin(ctx context.Context, id, actor string) (*store.APIKeyRecord, bool, error)
+	AppendAdminAudit(ctx context.Context, e store.AdminAuditEntry) error
 	TouchAPIKey(ctx context.Context, id string, at time.Time) error
 	AdminKeyExists(ctx context.Context) (bool, error)
 	PutSetupToken(ctx context.Context, rec store.SetupTokenRecord, actor string) error
@@ -208,6 +212,8 @@ var (
 	ErrNoStore = errors.New("authz: API keys need a database (TRUTHTABLE_DATABASE_URL)")
 	// ErrKeyNotFound: no api_keys row has that id.
 	ErrKeyNotFound = errors.New("authz: no such key")
+	// ErrLastAdminKey: revoking the key would leave no admin credential (D81).
+	ErrLastAdminKey = errors.New("authz: the last admin key cannot be revoked")
 )
 
 // labelPattern is the syntax of a key label.
@@ -275,7 +281,8 @@ func (a *Authenticator) ListKeys(ctx context.Context) ([]store.APIKeyRecord, err
 
 // RevokeKey revokes an api key. It takes effect at once on this replica and within
 // RevalidateEvery elsewhere; sessions opened with the key end with it. Revoking a revoked key is
-// not an error.
+// not an error. Without an env admin key, the last active admin key is not revoked
+// (ErrLastAdminKey, D81): nobody could open Settings again.
 func (a *Authenticator) RevokeKey(ctx context.Context, id, actor string) (*store.APIKeyRecord, error) {
 	if a.store == nil {
 		return nil, ErrNoStore
@@ -283,13 +290,38 @@ func (a *Authenticator) RevokeKey(ctx context.Context, id, actor string) (*store
 	a.cache.mu.Lock()
 	a.cache.gen++ // lookups already running when the revocation starts must not cache their row
 	a.cache.mu.Unlock()
-	rec, _, err := a.store.RevokeAPIKey(ctx, id, actor)
+	revoke := a.store.RevokeAPIKeyKeepingAdmin
+	if a.HasEnvAdmin() {
+		revoke = a.store.RevokeAPIKey
+	}
+	rec, _, err := revoke(ctx, id, actor)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, ErrKeyNotFound
+	}
+	if errors.Is(err, store.ErrLastAdminKey) {
+		return nil, ErrLastAdminKey
 	}
 	if err != nil {
 		return nil, err
 	}
 	a.cache.forget(rec)
 	return rec, nil
+}
+
+// AuditSignIn records an interactive dashboard sign-in with a key (session.sign_in, D44): who
+// signed in and with which scopes. Without a database there is no audit log and it does nothing.
+func (a *Authenticator) AuditSignIn(ctx context.Context, id *Identity) error {
+	if a.store == nil || id == nil {
+		return nil
+	}
+	scopes := make([]string, 0, len(id.Scopes))
+	for _, sc := range Expand(id.Scopes) {
+		scopes = append(scopes, string(sc))
+	}
+	target := id.KeyID
+	if target == "" {
+		target = id.Label
+	}
+	return a.store.AppendAdminAudit(ctx, store.AdminAuditEntry{Actor: id.Label, Action: "session.sign_in", Target: target,
+		Diff: map[string]any{"scopes": scopes}})
 }

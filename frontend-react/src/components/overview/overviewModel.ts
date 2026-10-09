@@ -67,6 +67,7 @@ export function outcomeBuckets(series: OverviewStats['outcomes_series']): Outcom
     counts: {
       passed: p.passed,
       would_flag: p.would_flag,
+      would_block: p.would_block,
       flagged: p.flagged,
       blocked: p.blocked,
       replaced: p.replaced,
@@ -105,6 +106,11 @@ export interface SavingsLine {
   stopped: number;
   flagged: number;
   outcomesLabel: 'measured' | 'simulated';
+  /**
+   * The deep audit reads $0 only because the demo's mock judge is free (simulated audits, no
+   * spend): the page says so next to the headline.
+   */
+  freeMockJudge: boolean;
 }
 
 function perThousand(usd: number, answers: number): number | null {
@@ -143,6 +149,7 @@ export function savingsLine(roi: RoiSummary): SavingsLine {
     stopped: roi.outcomes.blocked + roi.outcomes.fallback,
     flagged: roi.outcomes.flagged,
     outcomesLabel: roi.simulated ? 'simulated' : roi.outcomes.label,
+    freeMockJudge: roi.simulated && roi.llm_cost.audits > 0 && roi.llm_cost.usd === 0,
   };
 }
 
@@ -188,13 +195,17 @@ export function coverageSummary(
 // ---------------------------------------------------------------------------------- checklist
 
 export interface ChecklistItem {
-  id: 'fast_check' | 'judge' | 'database' | 'first_request' | 'evidence';
+  id: 'secure' | 'fast_check' | 'judge' | 'database' | 'first_request' | 'evidence';
   label: string;
   done: boolean;
   /** Shown while not done: what to do next. */
   hint: string;
-  /** Where the fix is (a route inside the app). */
-  fix: { to: '/app/settings/$section'; section: 'connections' | 'models' | 'addons' } | { to: '/app/playground' | '/app/policies' | '/app/overview' } | null;
+  /** Where the fix is (a route inside the app); a setup-wizard fix names its step and its link words. */
+  fix:
+    | { to: '/app/settings/$section'; section: 'connections' | 'models' | 'addons' }
+    | { to: '/app/playground' | '/app/policies' | '/app/overview' }
+    | { to: '/app/setup'; search: { step: 'secure' | 'connect' }; label: string }
+    | null;
 }
 
 /**
@@ -212,11 +223,19 @@ export function setupChecklist(input: {
   if (status) {
     const dm = status.decision_model.state;
     items.push({
+      id: 'secure',
+      label: copy.setup.step_secure.title,
+      // An admin key exists: the one-time setup link is used up.
+      done: !status.auth.setup_required,
+      hint: 'Claim the one-time setup link to create the admin key.',
+      fix: { to: '/app/setup', search: { step: 'secure' }, label: 'Open setup' },
+    });
+    items.push({
       id: 'fast_check',
       label: `${copy.tiers.fast_check} connected`,
       done: dm === 'ready' || dm === 'mock' || dm === 'degraded',
       hint: 'Connect OpenRouter so every answer gets a fast check.',
-      fix: { to: '/app/settings/$section', section: 'connections' },
+      fix: { to: '/app/setup', search: { step: 'connect' }, label: 'Connect OpenRouter' },
     });
     items.push({
       id: 'judge',

@@ -42,6 +42,22 @@ const (
 // immutableMessage is what the evaluator_versions trigger raises (SPEC §2.3).
 const immutableMessage = "evaluator_versions rows are immutable"
 
+// migrateThrough applies the embedded migrations in order up to and including
+// the file called last, so a test can pin the schema as that file left it.
+func migrateThrough(t *testing.T, ctx context.Context, pool *pgxpool.Pool, last string) {
+	t.Helper()
+	all := mustLoadMigrations(t)
+	for i, m := range all {
+		if m.name == last {
+			if err := applyMigrations(ctx, pool, all[:i+1]); err != nil {
+				t.Fatalf("migrate through %s: %v", last, err)
+			}
+			return
+		}
+	}
+	t.Fatalf("migration %s is not embedded", last)
+}
+
 // migrationByName returns the embedded migration called name.
 func migrationByName(t *testing.T, name string) migration {
 	t.Helper()
@@ -110,9 +126,7 @@ func TestMigration0003Schema(t *testing.T) {
 	ctx := context.Background()
 	schema := storetest.New(t)
 	pool := schema.Pool(t)
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	migrateThrough(t, ctx, pool, migration0004) // later files extend these tables (migrate_0005_test.go)
 
 	want := map[string][]string{
 		"policy_versions": {
@@ -355,9 +369,7 @@ func TestMigration0004Schema(t *testing.T) {
 	ctx := context.Background()
 	schema := storetest.New(t)
 	pool := schema.Pool(t)
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
+	migrateThrough(t, ctx, pool, migration0004) // later files extend these tables (migrate_0005_test.go)
 
 	want := map[string][]string{
 		"settings": {
@@ -584,16 +596,22 @@ func TestMigration0003And0004RerunKeepsRows(t *testing.T) {
 	})
 }
 
-// rowDigests returns "count md5" of every row of each table.
-func rowDigests(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tables []string) map[string]string {
+// rowDigests returns "count md5" of every row of each table, leaving out the
+// columns named in added (columns a later migration adds; the caller checks
+// their values separately).
+func rowDigests(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tables, added []string) map[string]string {
 	t.Helper()
+	if added == nil {
+		added = []string{}
+	}
 	out := make(map[string]string, len(tables))
 	for _, table := range tables {
 		var count int
 		var digest string
 		if err := pool.QueryRow(ctx, fmt.Sprintf(
-			`SELECT count(*), coalesce(md5(string_agg(r::text, E'\n' ORDER BY r::text)), '') FROM %s r`,
-			pgx.Identifier{table}.Sanitize())).Scan(&count, &digest); err != nil {
+			`SELECT count(*), coalesce(md5(string_agg(j::text, E'\n' ORDER BY j::text)), '')
+			 FROM (SELECT to_jsonb(r) - $1::text[] AS j FROM %s r) d`,
+			pgx.Identifier{table}.Sanitize()), added).Scan(&count, &digest); err != nil {
 			t.Fatalf("digest %s: %v", table, err)
 		}
 		out[table] = fmt.Sprintf("%d %s", count, digest)
@@ -602,8 +620,9 @@ func rowDigests(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tables []
 }
 
 // A database the P1-core runner left at 0002, holding legacy audits and v2
-// traffic, upgrades in place: 0003 and 0004 are applied once, in order, under
-// the lock, and no existing row changes.
+// traffic, upgrades in place: 0003, 0004 and 0005 are applied once, in order,
+// under the lock, and no existing row changes (0005 only adds a NULL
+// traces.response_chars).
 func TestMigrateUpgradesSeeded0002Database(t *testing.T) {
 	ctx := context.Background()
 	schema := storetest.New(t)
@@ -640,9 +659,10 @@ func TestMigrateUpgradesSeeded0002Database(t *testing.T) {
 		}
 	}
 	existing := []string{"audits", "audit_claims", "traces", "gate_decisions", "trace_bodies"}
-	before := rowDigests(t, ctx, pool, existing)
+	added := []string{"response_chars"} // 0005: NULL on every existing trace (checked below)
+	before := rowDigests(t, ctx, pool, existing, added)
 
-	s, err := NewPostgresStore(ctx, schema.URL) // applies the pending 0003 and 0004
+	s, err := NewPostgresStore(ctx, schema.URL) // applies the pending 0003, 0004 and 0005
 	if err != nil {
 		t.Fatalf("upgrade: %v", err)
 	}
@@ -651,8 +671,15 @@ func TestMigrateUpgradesSeeded0002Database(t *testing.T) {
 	if got := appliedNames(t, ctx, pool); strings.Join(got, ",") != strings.Join(migrationNames(migrations), ",") {
 		t.Errorf("schema_migrations = %v, want %v", got, migrationNames(migrations))
 	}
-	if after := rowDigests(t, ctx, pool, existing); fmt.Sprint(after) != fmt.Sprint(before) {
+	if after := rowDigests(t, ctx, pool, existing, added); fmt.Sprint(after) != fmt.Sprint(before) {
 		t.Errorf("upgrade changed existing rows:\nbefore %v\nafter  %v", before, after)
+	}
+	var withChars int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM traces WHERE response_chars IS NOT NULL`).Scan(&withChars); err != nil {
+		t.Fatal(err)
+	}
+	if withChars != 0 {
+		t.Errorf("0005 backfilled response_chars on %d existing traces; it must stay NULL", withChars)
 	}
 	for _, table := range append(append([]string{}, tables0003...), tables0004...) {
 		if !tableExists(t, ctx, pool, table) {

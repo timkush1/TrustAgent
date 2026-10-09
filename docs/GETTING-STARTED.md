@@ -4,11 +4,6 @@ This guide takes you from a fresh Windows laptop to TrustAgent running on it. Yo
 **demo**, which needs no keys and costs nothing, and then switch to **real mode** with your own
 OpenRouter key. Everything runs in Docker on your own machine; there is nothing to deploy.
 
-> **Where this stands.** TrustAgent 2.0 is being built in phases (see
-> [docs/v2/SPEC.md §4](v2/SPEC.md#4-implementation-sequence)). The demo works today. Features that
-> are still on the way carry the phase that ships them, for example *(from P4)*: they are not
-> available until that phase has landed.
-
 **Contents:** [1. What you need](#1-what-you-need) ·
 [2. Start the demo](#2-start-the-demo-no-keys-0) ·
 [3. What you will see](#3-what-you-will-see) ·
@@ -88,7 +83,8 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
 ## 3. What you will see
 
 - A **Demo stack** banner at the top: *"Mock checks and a mock judge: every number here is
-  simulated."*
+  simulated, except the published estimates, which say so."* (The Savings tab sets the demo's
+  simulated costs beside the published per-1,000-answer estimates, each labelled Estimate.)
 - **Traffic** (in the left navigation): the traffic generator sends a round of about 20 scripted
   requests about once a minute, so new rows keep appearing. Each row has an outcome pill; a round
   starts with these three:
@@ -104,7 +100,7 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
   `Context:` block, prompts whose documents TrustAgent cannot find (*Not checked*), and an observe
   route that only records what it *would* have blocked, an answer **Blocked** for an invented
   link, a payments answer **Replaced** by a grounded fallback, streamed answers and the Anthropic
-  API. [DEMO.md](DEMO.md) has a three-minute tour, and
+  API. [DEMO.md](DEMO.md) has a five-minute tour, and
   [contracts/README.md](../contracts/README.md#demo-scenarios) lists every scenario.
 - **Click a row** to open the trace: the answer, the reasons for its outcome, what it was
   **checked against** (for example the system-prompt document), and the **deep audit**, which
@@ -140,72 +136,80 @@ In real mode TrustAgent checks your own app's answers. One OpenRouter key runs b
 check (Jev) and the deep-audit judge.
 
 > **Without a key** `make up` still runs, but the fast check is off: answers pass through
-> unchecked and show as **Not checked** (`X-TrustAgent-Status: skipped:decision_model_off`), and
-> there is no deep-audit judge unless you set `ANTHROPIC_API_KEY` (or the heavy `local-llm`
-> add-on).
+> unchecked and show as **Not checked** (`X-TrustAgent-Status: skipped:decision_model_off`).
+> The setup wizard also offers **Try it without a key (simulated checks, $0)**, which runs both
+> checks on mocks and labels every number Simulated.
 
-1. **Get the key.** Follow the TL;DR at the top of [JEV-ACCESS.md](JEV-ACCESS.md): sign in at
-   OpenRouter, add $5 of credit and create a key with a **$2 credit limit**.
+1. **Get an OpenRouter account with credit.** Sign in at [openrouter.ai](https://openrouter.ai)
+   and add $5 at [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits). That
+   covers about 1,600 answers at the default settings **[estimate]**.
 2. **Stop the demo.** Both stacks use the same ports:
 
    ```bash
    make demo-down
    ```
 
-3. **Put the key in `.env`** (and only there). Open `.env` in any editor, for example
-   `nano .env`, find the line `# OPENROUTER_API_KEY=`, delete the `# ` at its start and paste
-   your key after the `=`:
+3. **Keep the master key safe (once).** Keys you save in the dashboard are encrypted with a master
+   key that lives in the `trustagent-secrets` Docker volume. Either back that volume up, or put
+   the master key in `.env` yourself before the first start:
 
    ```bash
-   OPENROUTER_API_KEY=sk-or-v1-...
+   echo "TRUTHTABLE_SECRET_KEY=$(python3 -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')" >> .env
    ```
 
-   If your `.env` has no such line (it was made before TrustAgent 2.0), add the line at the
-   end. `.env` is never committed. Never paste the key into a chat, an issue, a commit or a
-   screenshot. Every other setting in `.env` is optional; [CONFIGURATION.md](CONFIGURATION.md)
-   explains each of them.
-
-   **Optional: let the dashboard read traffic without signing in.** Add this line to `.env` as
-   well:
-
-   ```bash
-   TRUTHTABLE_PUBLIC_READ=true
-   ```
-
-   This is safe on your laptop because TrustAgent only listens on 127.0.0.1 (`BIND_ADDR`);
-   remove the line before you ever set `BIND_ADDR=0.0.0.0`. Without a key the dashboard shows
-   outcomes and reasons but hides the prompts and answers. Signing in (next steps) shows them.
+   Without either, losing the volume means entering your keys again
+   ([SECURITY.md](SECURITY.md#master-key)).
 4. **Start TrustAgent:**
 
    ```bash
    make up
    ```
 
-   This starts the proxy, the engine, the database and the dashboard (no traffic generator).
-   Traffic stays empty until your app sends requests.
-5. **Sign in as the admin.** `make up` opens a one-time setup link
-   (`http://localhost:3000/app/setup#token=…`). Click **Create the admin key**: the dashboard
-   shows your admin key once (keep it in your password manager) and signs this browser in, so you
-   can edit policies. Later, sign in at `/app/setup` with that key. If you missed the link,
-   `make setup-url` prints a new one (each replaces the last); once an admin exists,
-   `make setup-url SETUP_FORCE=1` mints a recovery link.
-6. **Check the connection:** `make doctor` shows which fast-check backend is active, why it was
-   chosen, its snapshot, state, latency and the last 24 hours' calls and cost, plus the setup,
-   calibration, policy and metrics checks.
+   This starts the proxy, the engine, the database and the dashboard (no traffic generator), and
+   opens a one-time setup link (`http://localhost:3000/app/setup#token=…`). If you missed it,
+   `make setup-url` prints a new one (each replaces the last).
+5. **Walk the setup wizard.**
+   - **Step 1, admin key.** Click **Create the admin key**. The dashboard shows it once: keep it in
+     your password manager. Later you sign in at `/app/setup` with it.
+   - **Step 2, connect.** Click **Connect OpenRouter**, sign in on openrouter.ai and approve. You
+     come back to TrustAgent with a new key, stored encrypted and already checked. Then open
+     [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) and give that key a
+     **credit limit** (for example $2): keys created this way have none. **Paste a key** is on the
+     same screen if you prefer an existing key.
+   - **Step 3, connect your app.** The wizard shows the base URL and a code snippet, and mints an
+     ingest key for your app when none exists yet (shown once). Otherwise create one on
+     **Settings → Access**, or use the traffic generator's key from `.env`
+     (`python3 scripts/envfile.py get TRAFFICGEN_API_KEY`) for a first test.
+6. **Check the connection:** `make doctor` shows which fast-check backend is active and why, its
+   snapshot, state, latency and the last 24 hours' calls and cost, whether every saved key
+   decrypts, where the judge's key comes from, and today's spend against the budgets.
+
+**Prefer `.env`?** Put `OPENROUTER_API_KEY=sk-or-v1-...` in `.env` before `make up` (find the
+line `# OPENROUTER_API_KEY=` and remove the `# `), or run `make configure WITH_SECRETS=1`, which
+asks for the key at a hidden prompt. A key in `.env` always wins over the dashboard, which then
+shows it as read-only. Never paste a key into a chat, an issue, a commit or a screenshot.
+
+**Optional: let the dashboard read traffic without signing in.** Add
+`TRUTHTABLE_PUBLIC_READ=true` to `.env`. This is safe on your laptop because TrustAgent only
+listens on 127.0.0.1 (`BIND_ADDR`); remove the line before you ever set `BIND_ADDR=0.0.0.0`.
+Without signing in, the dashboard shows outcomes and reasons but hides the prompts and answers.
 
 **Send a first request.** Point your app at the proxy instead of the LLM provider:
 base URL `http://localhost:8080/v1`. Two things change for your app: it sends its TrustAgent key
-in an `X-TrustAgent-Key` header, and it sends the documents the answer must stick to, so there is
-something to check against. A quick test from the terminal, with OpenRouter as the LLM too:
+(an ingest key, see step 5) in an `X-TrustAgent-Key` header, and it sends the documents the answer
+must stick to, so there is something to check against. A quick test from the terminal, with
+OpenRouter as the LLM too:
 
 ```bash
 # once: send LLM calls through OpenRouter as well (then run `make up` again)
 echo 'TRUTHTABLE_UPSTREAM_URL=openrouter' >> .env
 
+read -rsp 'OpenRouter key (for the LLM call): ' LLM_KEY; echo          # hidden, not in history
+read -rsp 'TrustAgent ingest key: ' TA_KEY; echo
 curl -sS -D - http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $(python3 scripts/envfile.py get OPENROUTER_API_KEY)" \
-  -H "X-TrustAgent-Key: $(python3 scripts/envfile.py get TRAFFICGEN_API_KEY)" \
+  -H "Authorization: Bearer $LLM_KEY" \
+  -H "X-TrustAgent-Key: $TA_KEY" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "How long do I have to ask for a refund on an annual plan?"}],
@@ -214,11 +218,9 @@ curl -sS -D - http://localhost:8080/v1/chat/completions \
 ```
 
 The response is the normal LLM answer, plus `X-TrustAgent-*` headers that say what TrustAgent
-did; the same request then appears in Traffic. This test borrows the traffic generator's key. For
-your own app, add its own `label=key` entry to `TRUTHTABLE_API_KEYS` in `.env`, separated by a
-comma (for example `myapp=` followed by a long random string, which
-`python3 -c "import secrets; print(secrets.token_hex(32))"` prints), and restart with
-`make up`. The LLM call itself is billed by OpenRouter as usual; TrustAgent's own costs are in
+did; the same request then appears in Traffic, and the wizard's step 3 turns from waiting to
+received. More keys for more apps: **Settings → Access** (or a `label=key` entry in
+`TRUTHTABLE_API_KEYS` in `.env`). The LLM call itself is billed by OpenRouter as usual; TrustAgent's own costs are in
 [JEV-ACCESS.md](JEV-ACCESS.md#costs-estimate).
 
 **Stop:** `make down` (keeps your data). `make clean-data` deletes all of it.

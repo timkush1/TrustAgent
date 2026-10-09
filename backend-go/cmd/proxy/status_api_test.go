@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
+	"github.com/truthtable/backend-go/internal/store"
 )
 
 func TestJudgeStateFromEngineHealth(t *testing.T) {
@@ -83,6 +85,37 @@ func TestDecisionModelStatusIsLive(t *testing.T) {
 	b := s.budgets()
 	if b.DecisionSpentTodayUSD != 1.6 || b.DecisionExhausted || !b.DecisionReserveOnly || b.DecisionUSDDay != 2 || b.LLMUSDDay != 5 {
 		t.Errorf("budgets %+v", b)
+	}
+
+	// D92: the ledger's 24-hour figures win once read; before that, the client's counters stay.
+	ledger := store.DecisionDay{}
+	read := false
+	s.decisionDay = func() (store.DecisionDay, bool) { return ledger, read }
+	if d := s.decisionModel(); d.Calls24h != 12 || d.Cost24hUSD != 0.0003 {
+		t.Errorf("an unread ledger keeps the client's counters: %d %v", d.Calls24h, d.Cost24hUSD)
+	}
+	ledger, read = store.DecisionDay{Calls: 3120, CostUSD: 0.0815}, true
+	if d := s.decisionModel(); d.Calls24h != 3120 || d.Cost24hUSD != 0.0815 {
+		t.Errorf("the ledger's figures survive a restart: %d %v", d.Calls24h, d.Cost24hUSD)
+	}
+	ledger = store.DecisionDay{}
+	if d := s.decisionModel(); d.Calls24h != 0 || d.Cost24hUSD != 0 {
+		t.Errorf("a quiet day in the ledger is zero, not the client's counters: %d %v", d.Calls24h, d.Cost24hUSD)
+	}
+
+	// D92 refined: only GET /api/status (system) reads through the hook that may query; the state
+	// readers (watch loop, readiness, the WebSocket hello, the settings guard) take the cached value.
+	fresh := 0
+	s.decisionDayFresh = func() (store.DecisionDay, bool) { fresh++; return store.DecisionDay{Calls: 7}, true }
+	if d := s.decisionModel(); fresh != 0 || d.Calls24h != 0 {
+		t.Errorf("decisionModel used the re-reading hook (%d calls) or its figures (%d)", fresh, d.Calls24h)
+	}
+	if d := s.decisionModelWith(s.freshDecisionDay()); fresh != 1 || d.Calls24h != 7 {
+		t.Errorf("the status read did not use the re-reading hook: %d calls, %d calls_24h", fresh, d.Calls24h)
+	}
+	s.decisionDayFresh = nil
+	if d := s.decisionModelWith(s.freshDecisionDay()); d.Calls24h != 0 {
+		t.Errorf("without a re-reading hook the status read takes the cached figures: %d", d.Calls24h)
 	}
 
 	// Without a status-reporting client, the resolved backend alone.
@@ -301,6 +334,31 @@ func TestKnowledgeStatusWhileTheEngineIsSilent(t *testing.T) {
 	} {
 		if k := knowledgeStatus(tc.h); k.State != tc.want {
 			t.Errorf("%s: knowledge %s, want %s", tc.name, k.State, tc.want)
+		}
+	}
+}
+
+// The build revision is the one the Docker build stamped into version.GitSHA when it is a git
+// revision, else Go's VCS stamp, else "unknown" (the GIT_SHA build arg; /api/export/replay needs it).
+func TestBuildSHAPrefersTheStampedRevision(t *testing.T) {
+	vcs := func(rev string) func() (*debug.BuildInfo, bool) {
+		return func() (*debug.BuildInfo, bool) {
+			return &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: rev}}}, true
+		}
+	}
+	none := func() (*debug.BuildInfo, bool) { return nil, false }
+	for _, c := range []struct {
+		name, stamped string
+		info          func() (*debug.BuildInfo, bool)
+		want          string
+	}{
+		{"stamped", "0123abc", vcs("fedcba9876543210fedcba9876543210fedcba98"), "0123abc"},
+		{"not a revision", "HEAD", vcs("fedcba9876543210fedcba9876543210fedcba98"), "fedcba9876543210fedcba9876543210fedcba98"},
+		{"vcs only", "", vcs("abcdef1"), "abcdef1"},
+		{"nothing", "", none, "unknown"},
+	} {
+		if got := resolveBuildSHA(c.stamped, c.info); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
 	}
 }

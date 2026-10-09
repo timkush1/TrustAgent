@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -113,12 +114,14 @@ func NewRedactor(secrets ...string) *Redactor {
 // Redactor returns a Redactor for every secret this configuration loaded.
 func (c *Config) Redactor() *Redactor { return NewRedactor(c.Secrets()...) }
 
-// Add registers more secrets.
+// Add registers more secrets: secrets received or decrypted after startup join it before their
+// first use (D42). A secret already registered is not added twice, so callers may add the
+// same secrets again at every reload.
 func (r *Redactor) Add(secrets ...string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, s := range secrets {
-		if len(s) >= minRedactLen {
+		if len(s) >= minRedactLen && !slices.Contains(r.secrets, s) {
 			r.secrets = append(r.secrets, s)
 		}
 	}

@@ -229,3 +229,59 @@ func TestSummaryIgnoresUntrustedItemsAndReportsKnowledge(t *testing.T) {
 		t.Errorf("used must be an empty array: %s", b)
 	}
 }
+
+func TestAddKnowledge(t *testing.T) {
+	r := &Result{
+		Items: []Item{
+			{ID: "sys1", Source: SourceRequestSystem, Label: LabelSystemPrompt, Text: "Refunds within 30 days."},
+			{ID: "kb1", Source: SourceToolResults, Label: "lookup", Text: "Order 42 shipped."},
+		},
+		PreDedupItems: 2, MaxMarker: 1,
+	}
+	sources := []string{SourceRequestSystem, SourceKnowledge, SourceToolResults}
+	r.AddKnowledge([]Item{
+		{ID: "kb1", Text: "Refunds go to the original card."},                  // id taken: kbN
+		{ID: "doc:7", Label: " Handbook ", Text: " Refunds within\n30 days. "}, // the request's copy wins
+		{ID: "doc:8", Label: "Handbook", Text: "Support answers within 4 hours."},
+		{ID: "doc:9", Text: "   "}, // blank
+	}, sources)
+	want := []Item{
+		{ID: "sys1", Source: SourceRequestSystem, Label: LabelSystemPrompt, Text: "Refunds within 30 days."},
+		{ID: "kb2", Source: SourceKnowledge, Label: LabelKnowledge, Text: "Refunds go to the original card."},
+		{ID: "doc:8", Source: SourceKnowledge, Label: "Handbook", Text: "Support answers within 4 hours."},
+		{ID: "kb1", Source: SourceToolResults, Label: "lookup", Text: "Order 42 shipped."},
+	}
+	if !reflect.DeepEqual(r.Items, want) {
+		t.Errorf("items %+v, want %+v", r.Items, want)
+	}
+	if r.Knowledge != KnowledgeUsed || r.PreDedupItems != 2 || r.MaxMarker != 1 {
+		t.Errorf("knowledge %q, pre-dedup %d, max marker %d: knowledge documents count in neither", r.Knowledge, r.PreDedupItems, r.MaxMarker)
+	}
+	if r.KnowledgeOnly() || !r.HasRequestEvidence() {
+		t.Error("the request carries evidence of its own")
+	}
+	s := Summarize(r, sources, false, 4)
+	if s.Knowledge != KnowledgeUsed || s.CheckedAgainst() != "request_system:1,knowledge:2,tool_results:1" {
+		t.Errorf("summary knowledge %q, checked against %q", s.Knowledge, s.CheckedAgainst())
+	}
+
+	// Knowledge alone, appended after every request source.
+	only := &Result{}
+	only.AddKnowledge([]Item{{ID: "doc:1", Text: "A."}}, []string{SourceKnowledge, SourceRequestSystem})
+	if !only.KnowledgeOnly() || only.HasRequestEvidence() || len(only.Items) != 1 || only.Items[0].Source != SourceKnowledge {
+		t.Errorf("knowledge-only result %+v", only)
+	}
+
+	none := &Result{}
+	none.AddKnowledge(nil, []string{SourceKnowledge})
+	if none.Knowledge != KnowledgeNoHits || none.KnowledgeOnly() {
+		t.Errorf("no documents: knowledge %q, knowledge-only %v", none.Knowledge, none.KnowledgeOnly())
+	}
+	if got := Summarize(none, []string{SourceKnowledge}, false, 4).Knowledge; got != KnowledgeNoHits {
+		t.Errorf("summary knowledge %q, want no_hits", got)
+	}
+	// A route that does not read knowledge reports not_requested whatever ran.
+	if got := Summarize(none, []string{SourceRequestSystem}, false, 4).Knowledge; got != KnowledgeNotRequested {
+		t.Errorf("summary knowledge %q, want not_requested", got)
+	}
+}

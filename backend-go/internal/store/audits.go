@@ -37,7 +37,7 @@ const (
 // and ScoringVersion. ClientRequestID is stored only when it passes
 // ClientRequestID; anything else is dropped with a warning.
 func (s *PostgresStore) SaveAudit(ctx context.Context, record *AuditRecord) error {
-	return s.saveAudit(ctx, record, "")
+	return s.saveAudit(ctx, record, "", nil)
 }
 
 // SaveAuditResult saves an audit like SaveAudit and, in the same transaction, sets the audit
@@ -47,10 +47,27 @@ func (s *PostgresStore) SaveAuditResult(ctx context.Context, record *AuditRecord
 	if traceAuditStatus == "" {
 		return errors.New("store: a trace audit status is required")
 	}
-	return s.saveAudit(ctx, record, traceAuditStatus)
+	return s.saveAudit(ctx, record, traceAuditStatus, nil)
 }
 
-func (s *PostgresStore) saveAudit(ctx context.Context, record *AuditRecord, traceAuditStatus string) error {
+// SaveAuditResultWithCosts is SaveAuditResult with the audit's cost_events rows as the caller
+// built them (worker.LinkedCostStore): linked by audit_id and stamped at completion, with their
+// key label and price table version (D45). They are written in the audit's transaction,
+// so the audit and its cost appear together; record.Costs is then only what the event carries.
+// nil rows fall back to the rows SaveAuditResult derives from record.Costs.
+func (s *PostgresStore) SaveAuditResultWithCosts(ctx context.Context, record *AuditRecord, traceAuditStatus string, costs []CostEvent) error {
+	if traceAuditStatus == "" {
+		return errors.New("store: a trace audit status is required")
+	}
+	if costs == nil {
+		costs = []CostEvent{}
+	}
+	return s.saveAudit(ctx, record, traceAuditStatus, costs)
+}
+
+// saveAudit writes the audit and its costs: the rows given, or (nil) the rows derived from
+// record.Costs.
+func (s *PostgresStore) saveAudit(ctx context.Context, record *AuditRecord, traceAuditStatus string, costs []CostEvent) error {
 	if record.AuditID == "" {
 		return errors.New("store: audit_id is required")
 	}
@@ -157,19 +174,13 @@ func (s *PostgresStore) saveAudit(ctx context.Context, record *AuditRecord, trac
 		}
 	}
 
-	if len(record.Costs) > 0 {
-		// One cost_events row per model call, stamped with the audit's created_at so the audit
-		// detail finds its own rows among the trace's (cost_events has no audit id).
+	if costs == nil {
+		costs = auditCostEvents(record, traceID, createdAt)
+	}
+	if len(costs) > 0 {
 		batch := &pgx.Batch{}
-		for _, c := range record.Costs {
-			batch.Queue(`
-				INSERT INTO cost_events (occurred_at, trace_id, route, component, kind, provider, model,
-					input_tokens, output_tokens, cost_usd, cost_source, latency_ms, status, questions, selection)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-				createdAt, traceID, record.Route, c.Component, c.Kind, nilIfEmpty(c.Provider), nilIfEmpty(c.Model),
-				clampInt32(c.InputTokens), clampInt32(c.OutputTokens), c.CostUSD, defaultString(c.CostSource, "unknown"),
-				clampInt32(c.LatencyMs), nilIfEmpty(c.Status), c.Questions, record.Selection,
-			)
+		for i := range costs {
+			queueCostEvent(batch, &costs[i])
 		}
 		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 			return fmt.Errorf("insert cost events: %w", err)
@@ -177,13 +188,32 @@ func (s *PostgresStore) saveAudit(ctx context.Context, record *AuditRecord, trac
 	}
 
 	if traceAuditStatus != "" {
+		// A mock judge's audit is simulated: the trace carries mock_judge, so it is labelled
+		// Simulated and stays out of the measured figures unless include_mock (D39, D46).
 		if _, err := tx.Exec(ctx, `
-			UPDATE traces SET audit_id = $2, audit_status = $3, updated_at = now() WHERE trace_id = $1`,
-			traceID, record.AuditID, traceAuditStatus); err != nil {
+			UPDATE traces SET audit_id = $2, audit_status = $3,
+				flags = CASE WHEN NOT $4 OR $5 = ANY(flags) THEN flags ELSE array_append(flags, $5::TEXT) END,
+				updated_at = now()
+			WHERE trace_id = $1`,
+			traceID, record.AuditID, traceAuditStatus, record.MockJudge(), FlagMockJudge); err != nil {
 			return fmt.Errorf("update trace audit status: %w", err)
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// FlagMockJudge is the trace flag of an answer whose deep audit a mock judge gave (simulated).
+const FlagMockJudge = "mock_judge"
+
+// MockJudge reports whether a mock judge gave the audit: its judge's effective provider is mock.
+func (r *AuditRecord) MockJudge() bool {
+	if r == nil || len(r.Judge) == 0 {
+		return false
+	}
+	var j struct {
+		EffectiveProvider string `json:"effective_provider"`
+	}
+	return json.Unmarshal(r.Judge, &j) == nil && j.EffectiveProvider == "mock"
 }
 
 // auditColumns is the SELECT list scanned by scanAudit (audits aliased a). trace_id can only be
@@ -396,16 +426,49 @@ func (s *PostgresStore) getAudit(ctx context.Context, where, id string) (*AuditR
 	return record, nil
 }
 
-// auditCosts reads the audit's model calls back from cost_events: its trace's deep-audit rows
-// stamped with the audit's created_at (saveAudit writes them so).
+// auditCostEvents are the cost_events rows of record.Costs (one per model call), linked to the
+// audit by audit_id and stamped when it completed (D45; created_at for a record without a
+// completion time). A call no price covers keeps a NULL cost.
+func auditCostEvents(record *AuditRecord, traceID string, createdAt time.Time) []CostEvent {
+	occurred := createdAt
+	if record.CompletedAt != nil && !record.CompletedAt.IsZero() {
+		occurred = *record.CompletedAt
+	}
+	out := make([]CostEvent, 0, len(record.Costs))
+	for _, c := range record.Costs {
+		in, outTokens, latency := c.InputTokens, c.OutputTokens, c.LatencyMs
+		e := CostEvent{
+			OccurredAt: occurred, TraceID: traceID, AuditID: record.AuditID, Route: derefOr(record.Route, ""),
+			Component: c.Component, Kind: defaultString(c.Kind, CostKindLLM), Provider: c.Provider, Model: c.Model,
+			InputTokens: &in, OutputTokens: &outTokens, CostSource: defaultString(c.CostSource, "unknown"),
+			LatencyMs: &latency, Status: c.Status, Selection: derefOr(record.Selection, ""),
+		}
+		if e.CostSource != "unknown" {
+			usd := c.CostUSD
+			e.CostUSD = &usd
+		}
+		if c.Questions > 0 {
+			q := c.Questions
+			e.Questions = &q
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// auditCosts reads the audit's model calls back from cost_events: the rows linked to it by
+// audit_id (D45) and, for an audit stored before 0005, its trace's deep-audit rows stamped with
+// the audit's created_at (the pre-0005 rule, which had no audit id).
 func (s *PostgresStore) auditCosts(ctx context.Context, record *AuditRecord) ([]CostRecord, error) {
+	const cols = `id, component, kind, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(input_tokens, 0),
+		COALESCE(output_tokens, 0), COALESCE(cost_usd, 0)::float8, cost_source, COALESCE(latency_ms, 0),
+		COALESCE(status, ''), COALESCE(questions, 0)`
 	rows, err := s.pool.Query(ctx, `
-		SELECT component, kind, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(input_tokens, 0),
-			COALESCE(output_tokens, 0), COALESCE(cost_usd, 0)::float8, cost_source, COALESCE(latency_ms, 0),
-			COALESCE(status, ''), COALESCE(questions, 0)
-		FROM cost_events
-		WHERE occurred_at = $1 AND trace_id = $2 AND component LIKE 'deep\_audit%'
-		ORDER BY id`, record.CreatedAt, record.TraceID)
+		SELECT `+cols+` FROM cost_events WHERE audit_id = $1
+		UNION ALL
+		SELECT `+cols+` FROM cost_events
+		WHERE audit_id IS NULL AND trace_id = $2 AND occurred_at = $3 AND component LIKE 'deep\_audit%'
+		ORDER BY 1`, record.AuditID, record.TraceID, record.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -413,10 +476,11 @@ func (s *PostgresStore) auditCosts(ctx context.Context, record *AuditRecord) ([]
 	var out []CostRecord
 	for rows.Next() {
 		var (
+			id                            int64
 			c                             CostRecord
 			input, output, latency, quest int32
 		)
-		if err := rows.Scan(&c.Component, &c.Kind, &c.Provider, &c.Model, &input, &output, &c.CostUSD, &c.CostSource,
+		if err := rows.Scan(&id, &c.Component, &c.Kind, &c.Provider, &c.Model, &input, &output, &c.CostUSD, &c.CostSource,
 			&latency, &c.Status, &quest); err != nil {
 			return nil, err
 		}
@@ -424,6 +488,18 @@ func (s *PostgresStore) auditCosts(ctx context.Context, record *AuditRecord) ([]
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// DropTraceAudit records that a trace's audit was not queued: its audit status becomes dropped
+// and, when flag is not empty, the flag joins the trace's flags once (llm_budget for an audit the
+// day's LLM cap refused, D48). A trace that was never recorded is not an error.
+func (s *PostgresStore) DropTraceAudit(ctx context.Context, traceID, flag string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE traces SET audit_status = $2,
+			flags = CASE WHEN $3 = '' OR $3 = ANY(flags) THEN flags ELSE array_append(flags, $3::TEXT) END,
+			updated_at = now()
+		WHERE trace_id = $1`, traceID, TraceAuditDropped, flag)
+	return err
 }
 
 // clampInt32 fits a count into an INT column.

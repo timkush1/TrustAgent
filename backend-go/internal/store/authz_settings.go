@@ -54,9 +54,11 @@ const MaxPendingSetupTokens = 8
 // comparisons agree.
 func dbTime(t time.Time) time.Time { return t.UTC().Truncate(time.Microsecond) }
 
-// PutSetupToken adds a pending setup token. Tokens that expired by rec.CreatedAt are dropped, at
-// most MaxPendingSetupTokens stay (the newest), and a claimed state starts over with rec alone.
-// The merge is one INSERT … ON CONFLICT statement, so concurrent starts do not lose a token.
+// PutSetupToken adds a pending setup token and logs setup_token.mint (D44) in the same
+// transaction. Tokens that expired by rec.CreatedAt are dropped, at most MaxPendingSetupTokens stay
+// (the newest), and a claimed state starts over with rec alone. The merge is one INSERT … ON
+// CONFLICT statement, so concurrent starts do not lose a token. The audit row records when the
+// token expires and whether it is a forced recovery token, never its hash.
 func (s *PostgresStore) PutSetupToken(ctx context.Context, rec SetupTokenRecord, actor string) error {
 	if rec.SHA256 == "" {
 		return errors.New("store: a setup token needs its sha256")
@@ -66,7 +68,20 @@ func (s *PostgresStore) PutSetupToken(ctx context.Context, rec SetupTokenRecord,
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := putSetupToken(ctx, tx, rec, token, actor); err != nil {
+			return err
+		}
+		return insertAdminAudit(ctx, tx, AdminAuditEntry{
+			Actor: actor, Action: "setup_token.mint",
+			Diff: map[string]any{"expires_at": rec.ExpiresAt, "forced": rec.Forced},
+		})
+	})
+}
+
+// putSetupToken merges one token into the setup row.
+func putSetupToken(ctx context.Context, tx pgx.Tx, rec SetupTokenRecord, token []byte, actor string) error {
+	_, err := tx.Exec(ctx, `
 		INSERT INTO settings (key, value, updated_by)
 		VALUES ($1, jsonb_build_object('tokens', jsonb_build_array($2::jsonb)), $3)
 		ON CONFLICT (key) DO UPDATE SET

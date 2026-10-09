@@ -144,3 +144,49 @@ export function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   return 'Something went wrong.';
 }
+
+// ------------------------------------------------------------- settings, credentials, costs and Studio codes
+
+/**
+ * The error codes the settings, credentials, cost, label, calibration and Studio endpoints answer with (SPEC §2.4 "Error codes"), each with its
+ * HTTP status and a plain hint on what to do. Pages show the server's message first and may add the
+ * hint; anything with a name or a route in it (`details.names`, `details.routes`) gets its words
+ * from contracts/ui through the domain words modules. `not_implemented` is the Step-0b stub answer.
+ */
+export const CONTROL_ERROR_CODES = {
+  conflict: { status: 409, hint: 'Something else changed this first. Reload and try again.' },
+  env_managed: { status: 409, hint: 'This is set by an environment variable. Change it in .env and restart.' },
+  ingest_key_required: { status: 409, hint: 'Create an ingest API key first, so only your apps can use the upstream key.' },
+  confirmation_required: { status: 409, hint: 'This change needs a confirmation. Review what it affects, then confirm.' },
+  body_expired: { status: 409, hint: "This answer's stored text has expired." },
+  file_managed: { status: 409, hint: 'This comes from a file on the server. Change the file instead.' },
+  invalid_nonce: { status: 400, hint: 'This sign-in link expired or was already used. Start again from the dashboard.' },
+  stale_version: { status: 412, hint: 'This changed in another tab or session. Reload to see the latest, then try again.' },
+  precondition_required: { status: 428, hint: 'Reload the page and try again.' },
+  budget_exhausted: { status: 503, hint: "Today's budget is used up. Raise the daily cap in Settings → Budgets, or wait until tomorrow." },
+  credentials_unavailable: { status: 503, hint: 'Keys cannot be saved or used here yet. Set TRUTHTABLE_SECRET_KEY and restart.' },
+  decision_model_unavailable: { status: 503, hint: 'No fast-check model is connected. Connect one in Settings → Connections.' },
+  engine_unavailable: { status: 503, hint: 'The audit engine is not reachable. Check that it is running.' },
+  persistence_disabled: { status: 503, hint: 'This needs a database. Start the stack with Postgres to save changes.' },
+  no_judge: { status: 503, hint: 'No deep-audit judge is set. Choose one in Settings → Models.' },
+  not_implemented: { status: 404, hint: 'This dashboard build cannot do this yet.' },
+} as const satisfies Record<string, { status: number; hint: string }>;
+
+export type ControlErrorCode = keyof typeof CONTROL_ERROR_CODES;
+
+/** Field-error codes inside a 422 `validation_failed` (FieldError.code; D37, D41). */
+export const CONTROL_FIELD_ERROR_CODES = {
+  reenter_secret: 'The address changed, so paste the key again to send it there.',
+  fallback_key_required: 'A fallback on another host needs its own upstream key.',
+} as const satisfies Record<string, string>;
+
+export type ControlFieldErrorCode = keyof typeof CONTROL_FIELD_ERROR_CODES;
+
+export function isControlErrorCode(code: string): code is ControlErrorCode {
+  return Object.hasOwn(CONTROL_ERROR_CODES, code);
+}
+
+/** The plain hint for an error's code, or null when the code is not one of them. */
+export function errorCodeHint(err: unknown): string | null {
+  return isApiError(err) && isControlErrorCode(err.code) ? CONTROL_ERROR_CODES[err.code].hint : null;
+}

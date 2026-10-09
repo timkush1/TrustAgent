@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -13,8 +14,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/costs"
+	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/middleware"
@@ -49,6 +53,93 @@ type serverDeps struct {
 	// evaluator tables, the dry-run replay and the overview aggregates need it. Without it the
 	// policy is file-managed.
 	pg *store.PostgresStore
+	// redactor masks every loaded secret in logs and errors (config.Redactor); nil in tests that
+	// do not check redaction. Received and decrypted secrets join it (D42).
+	redactor *config.Redactor
+}
+
+// apiGuards are the middleware of the /api routes.
+type apiGuards struct {
+	// read, content and admin authenticate callers with those scopes; writable refuses writes in
+	// read-only mode; rateLimit is the general per-caller limit; dryRunLimit is the policy
+	// dry-run limit (6/min), used instead of rateLimit; bodyLimit caps request bodies.
+	read, content, admin, writable, rateLimit, dryRunLimit, bodyLimit gin.HandlerFunc
+	// limitBy builds an endpoint's own per-caller limit of n requests per window, used instead
+	// of rateLimit (the Playground's 10/min).
+	limitBy func(n int, window time.Duration) gin.HandlerFunc
+}
+
+// costHooks are the cost ledger's hooks into the gateway, the audit pool, Studio and the engine
+// push (GCOST fills them in initCosts). The zero value is no ledger: every field is optional
+// and the methods below are the nil-safe way to call the function fields.
+type costHooks struct {
+	// decision receives the decision model's cost events; budget admits decision spend against
+	// the daily cap; prices resolves computed decision prices (nil: in-memory budget, embedded
+	// prices, events discarded).
+	decision jev.CostSink
+	budget   jev.Budget
+	prices   jev.PriceFunc
+	// knownSnapshot is the last decision-model snapshot recorded; uniformSeed today's persisted
+	// uniform-sample count.
+	knownSnapshot string
+	uniformSeed   int
+	// reserveLLM reserves usd of the LLM cap for component before an LLM call and returns the
+	// settle function for the actual cost; an error means the cap is exhausted (D48).
+	reserveLLM func(ctx context.Context, usd float64, component string) (settle func(actual float64), err error)
+	// recordLLM books the engine's cost records (deep audits, the Studio drafter, ingest).
+	recordLLM func(ctx context.Context, records []*pb.CostRecord, link CostLink)
+	// effectivePriceJSON is the effective price table pushed to the engine (D53).
+	effectivePriceJSON func(overrides []decision.PriceEntry) []byte
+	// decisionHeadroom is the decision spend still allowed today: up to the observe line when
+	// enforcing is false, up to the cap when true (D82).
+	decisionHeadroom func(enforcing bool) float64
+	// capCostLLM is what LLM cost records count against the LLM cap (D91): unpriced records at
+	// the reference judge's price. Settle an LLM hold with capCost.
+	capCostLLM func(records []*pb.CostRecord) float64
+	// refreshDecisionDay re-reads the decision model's last 24 hours from cost_events for
+	// /api/status (D92); the cost loop calls it every minute. Nil without a database.
+	refreshDecisionDay func(ctx context.Context)
+}
+
+// capCost is what records count against the LLM cap (capCostLLM, D91); without a ledger their real
+// cost (nothing is held then).
+func (h costHooks) capCost(records []*pb.CostRecord) float64 {
+	if h.capCostLLM == nil {
+		return costs.RealCostUSD(records)
+	}
+	return h.capCostLLM(records)
+}
+
+// reserve reserves LLM spend (reserveLLM); without a ledger nothing is reserved.
+func (h costHooks) reserve(ctx context.Context, usd float64, component string) (func(actual float64), error) {
+	if h.reserveLLM == nil {
+		return func(float64) {}, nil
+	}
+	return h.reserveLLM(ctx, usd, component)
+}
+
+// record books LLM cost records (recordLLM); without a ledger they are dropped.
+func (h costHooks) record(ctx context.Context, records []*pb.CostRecord, link CostLink) {
+	if h.recordLLM != nil {
+		h.recordLLM(ctx, records, link)
+	}
+}
+
+// priceJSON is the effective price table for the engine; nil without a ledger (the engine keeps
+// its own table).
+func (h costHooks) priceJSON(overrides []decision.PriceEntry) []byte {
+	if h.effectivePriceJSON == nil {
+		return nil
+	}
+	return h.effectivePriceJSON(overrides)
+}
+
+// headroom is the decision spend still allowed today; without a ledger it is unlimited.
+func (h costHooks) headroom(enforcing bool) float64 {
+	if h.decisionHeadroom == nil {
+		return math.Inf(1)
+	}
+	return h.decisionHeadroom(enforcing)
 }
 
 // server is the proxy: the /v1 gateway, the REST API, the WS hub and the deep-audit workers.
@@ -73,8 +164,43 @@ type server struct {
 	calib   policy.CalibrationLookup
 	waiters *decisionWaiters
 
+	// Seams the owners fill in. redactor masks secrets (nil: identity); engine is the
+	// audit engine client (nil without one); notify fans config notifications out (D84).
+	redactor *config.Redactor
+	engine   *grpc.AuditClient
+	notify   *notifyHub
+	// rt is the runtime configuration (runtime_wiring.go), apply its hot apply
+	// (apply_wiring.go), costs the cost ledger's hooks (costs_wiring.go), eval the evaluator,
+	// label and calibration services (eval_wiring.go).
+	rt    *runtimeParts
+	apply *applyParts
+	costs costHooks
+	eval  *evalParts
+	// sink records traces and decisions (sink.go); the init steps below may wire hooks into it.
+	sink *traceSink
+	// traceBarrier flushes a trace's pending writes before a later read or write of it (D83);
+	// nil while trace writes are inline (trace_writer.go sets it).
+	traceBarrier func(ctx context.Context, traceID string) error
+
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+// redact masks secrets in text that leaves the process (D42): the identity while there is no
+// redactor.
+func (s *server) redact(text string) string {
+	if s.redactor == nil {
+		return text
+	}
+	return s.redactor.Redact(text)
+}
+
+// barrier runs traceBarrier when it is set (D83).
+func (s *server) barrier(ctx context.Context, traceID string) error {
+	if s.traceBarrier == nil {
+		return nil
+	}
+	return s.traceBarrier(ctx, traceID)
 }
 
 // newServer wires the components and the routes. start runs the background loops.
@@ -83,7 +209,7 @@ func newServer(d serverDeps) (*server, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &server{cfg: cfg, log: log, pg: d.pg}
+	s := &server{cfg: cfg, log: log, pg: d.pg, redactor: d.redactor, engine: d.engine}
 
 	s.status = &statusReporter{cfg: cfg, redisState: d.redisState, now: time.Now}
 	if s.status.redisState == "" {
@@ -125,14 +251,23 @@ func newServer(d serverDeps) (*server, error) {
 	if d.store != nil {
 		sink.store = d.store
 	}
+	s.sink = sink
+	// The D83 barrier of the batched trace writer (nil without it): a later read or write through
+	// the Postgres store sees a trace's queued writes.
+	s.traceBarrier = traceBarrierOf(d.store)
 	// The calibration lookup comes before the policy services: block readiness reads it.
 	s.initCalibration()
+	// The notification hub, the runtime configuration and the cost ledger come before the
+	// policy services (the hub carries their notifications; the gateway reads the other two).
+	s.notify = newNotifyHub()
+	s.initRuntime(d)
+	s.initCosts(d)
 	// The policy services come first: the gateway reads the policy in effect and the evaluator
 	// registry from them. newServer has no context, so loading is bounded here.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ps, err := newPolicyServices(ctx, policyWiring{
-		cfg: cfg, pg: d.pg, hub: s.hub, runtime: s.policyRuntime, log: log,
+		cfg: cfg, pg: d.pg, hub: s.hub, runtime: s.policyRuntime, notify: s.notify, log: log,
 		// Block and fallback stay refused until the /v1 handler enforces them (v1_routes.go).
 		enforcing: gatewayEnforces,
 		// A new policy version turns the decision model's keep-warm on or off (the gateway sets it
@@ -144,12 +279,18 @@ func newServer(d serverDeps) (*server, error) {
 	}
 	s.policies = ps
 	s.status.policies = ps.Engine
+	s.status.evaluatorWarnings = ps.Registry.Warnings // excluded versions (D54)
+	s.initEval(d)
 
-	gw, err := newGateway(cfg, sink, auth, ps, gatewayHooks{snapshotChanged: s.snapshotChanged, calibrations: s.calib}, log)
+	gw, err := newGateway(cfg, sink, auth, ps, gatewayHooks{
+		snapshotChanged: s.snapshotChanged, calibrations: s.calib,
+		runtime: s.rt.manager, costs: s.costs, retriever: s.knowledgeRetriever(d), redact: s.redact,
+	}, log)
 	if err != nil {
 		return nil, err
 	}
 	s.gateway = gw
+	s.initApply(d)
 	s.status.jev, s.status.jevClient = gw.jev, gw.client
 	s.auth = &apiAuth{keys: gw.auth, publicRead: cfg.PublicRead, demo: cfg.DemoMode}
 	s.status.auth = s.auth
@@ -157,7 +298,7 @@ func newServer(d serverDeps) (*server, error) {
 		s.stats, s.status.figures = d.pg, d.pg
 	}
 
-	traces := &tracesAPI{now: time.Now, log: log}
+	traces := &tracesAPI{now: time.Now, log: log, labels: s.traceLabels}
 	audits := &auditsAPI{audits: s.pool, pub: s.hub, maxTextChars: cfg.MaxTextChars, testMode: cfg.TestMode, log: log}
 	if d.store != nil {
 		traces.store, audits.store = d.store, d.store
@@ -217,7 +358,7 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	api.POST("/audit", writable, ingest, rateLimit, bodyLimit, audits.direct)
 	// Knowledge base (SPEC §2.4 rows 62-65): 409 knowledge_disabled while the add-on is off.
 	knowledge := s.knowledgeOn(d.engine != nil)
-	upload := handleFileUpload(d.engine, cfg.MaxUploadBytes)
+	upload := s.handleFileUpload(cfg.MaxUploadBytes)
 	uploadLimit := middleware.BodyLimit(cfg.MaxUploadBytes)
 	api.POST("/kb/documents", writable, s.auth.require(authz.ScopeAdmin), uploadRateLimit, knowledge, uploadLimit, upload)
 	api.GET("/kb/claims", read, rateLimit, knowledge, handleListKBClaims(d.engine))
@@ -228,13 +369,22 @@ func (s *server) routes(d serverDeps, traces *tracesAPI, audits *auditsAPI) *gin
 	// Policies and evaluators (policies_api.go, evaluators_api.go). The dry-run has only its own
 	// limit: RateLimit keys on the route path, so the general limit would count it twice. limitBy
 	// builds an endpoint's own per-caller limit.
-	guards := apiGuards{read: read, admin: s.auth.require(authz.ScopeAdmin), writable: writable,
+	guards := apiGuards{read: read, content: s.auth.require(authz.ScopeContent), admin: s.auth.require(authz.ScopeAdmin), writable: writable,
 		rateLimit: rateLimit, dryRunLimit: rateLimitBy(6, time.Minute), bodyLimit: bodyLimit, limitBy: rateLimitBy}
 	s.policies.mount(api, guards)
 	// Overview, ROI and evidence coverage (stats_api.go).
 	s.mountStats(api, read, rateLimit)
 	// The P3 REST endpoints (p3_api.go).
 	s.mountP3API(r, api, guards)
+	// The settings, credentials, cost, evaluator and Studio endpoints, one mount per owner: settings (runtime_wiring.go), credentials and
+	// Connect OpenRouter (apply_wiring.go), ROI time series (costs_wiring.go), evaluator writes,
+	// labels and calibration (eval_wiring.go), Studio, the decision request and evidence
+	// suggestions (studio_api.go).
+	s.mountSecurityAPI(api, guards)
+	s.mountConnectAPI(api, guards)
+	s.mountCostAPI(api, guards)
+	s.mountEvalAPI(api, guards)
+	s.mountStudioAPI(api, guards)
 
 	r.GET("/ws", s.serveWS)
 
@@ -401,6 +551,10 @@ func (s *server) start() {
 	// Calibration reload and retention (decision_wiring.go), status transitions (status_events.go).
 	s.startDecisionLoops(ctx, &s.wg)
 	s.startStatusWatch(ctx, &s.wg)
+	// The runtime configuration reload, the engine push and the cost ledger.
+	s.startRuntimeLoops(ctx, &s.wg)
+	s.startApplyLoops(ctx, &s.wg)
+	s.startCostLoops(ctx, &s.wg)
 	s.pool.Start()
 }
 
@@ -412,6 +566,10 @@ func (s *server) shutdown(ctx context.Context) error {
 		errs = append(errs, err)
 	}
 	if err := s.pool.Drain(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	// The drained audits booked their costs: flush the ledger.
+	if err := s.stopCosts(ctx); err != nil {
 		errs = append(errs, err)
 	}
 	if s.cancel != nil {

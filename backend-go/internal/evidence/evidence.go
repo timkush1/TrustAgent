@@ -5,7 +5,8 @@
 // contracts/vectors/evidence vectors.
 //
 // Requests of every API format arrive through llmapi.ParseRequest (OpenAI chat and completions,
-// Anthropic Messages mapped onto chat messages). The knowledge add-on joins in P3.
+// Anthropic Messages mapped onto chat messages). The knowledge add-on's documents join the
+// request's evidence through Result.AddKnowledge (SPEC §7.1, D65).
 package evidence
 
 import (
@@ -110,6 +111,9 @@ type Result struct {
 	// MaxMarker is the highest [Document N] marker number among the items of configured sources,
 	// counted before dedup like PreDedupItems.
 	MaxMarker int
+	// Knowledge is the state of the knowledge retrieval (a Knowledge* state; EvidenceSummary
+	// knowledge): "" when none ran, which a route that reads knowledge reports as disabled.
+	Knowledge string
 }
 
 // DecisionItems returns the items as the decision core sees them.
@@ -124,6 +128,81 @@ func (r *Result) DecisionItems() []decision.EvidenceItem {
 // Trusted reports whether any item may serve as evidence (untrusted items never do).
 func (r *Result) Trusted() bool {
 	return slices.ContainsFunc(r.Items, func(it Item) bool { return !it.Untrusted })
+}
+
+// LabelKnowledge marks a knowledge-base document that carries no label of its own.
+const LabelKnowledge = "Knowledge base"
+
+// HasRequestEvidence reports whether the request itself carries trusted evidence: an item of any
+// source but knowledge. A route whose evidence.knowledge.when is fallback retrieves only without it.
+func (r *Result) HasRequestEvidence() bool {
+	return slices.ContainsFunc(r.Items, func(it Item) bool { return !it.Untrusted && it.Source != SourceKnowledge })
+}
+
+// KnowledgeOnly reports whether the trusted evidence came from the knowledge base alone (decision
+// meta.knowledge_only): a critical grounding level is then capped to warn.
+func (r *Result) KnowledgeOnly() bool {
+	return r.Trusted() && !r.HasRequestEvidence()
+}
+
+// AddKnowledge joins knowledge-base documents to the evidence (SPEC §7.1, D65). sources is
+// the route evidence.sources: the documents go where knowledge stands in it, after the items of the
+// sources before it and before those after it. A document keeps its id when that is a valid
+// evidence id no other item uses, else it gets kbN; it is labelled LabelKnowledge when it has no
+// label; one whose text another item already carries (white space collapsed) is dropped, so the
+// request's own copy wins. Knowledge documents never count in PreDedupItems or MaxMarker: the
+// upstream never saw them, so an answer cannot cite them by number. Knowledge becomes used when a
+// document joined, else no_hits.
+func (r *Result) AddKnowledge(docs []Item, sources []string) {
+	seen := map[[sha256.Size]byte]bool{}
+	ids := map[string]bool{}
+	for _, it := range r.Items {
+		seen[sha256.Sum256([]byte(collapseWhitespace(it.Text)))] = true
+		ids[it.ID] = true
+	}
+	var add []Item
+	n := 0
+	for _, d := range docs {
+		text := strings.TrimSpace(d.Text)
+		if text == "" {
+			continue
+		}
+		key := sha256.Sum256([]byte(collapseWhitespace(text)))
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		id := d.ID
+		for !validID.MatchString(id) || ids[id] {
+			n++
+			id = idPrefix[SourceKnowledge] + strconv.Itoa(n)
+		}
+		ids[id] = true
+		label := strings.TrimSpace(d.Label)
+		if label == "" {
+			label = LabelKnowledge
+		}
+		add = append(add, Item{ID: id, Source: SourceKnowledge, Label: label, Text: text})
+	}
+	if len(add) == 0 {
+		r.Knowledge = KnowledgeNoHits
+		return
+	}
+	r.Knowledge = KnowledgeUsed
+	// The items are in route source order: the documents go before the first item of a source
+	// that comes after knowledge.
+	rank := func(src string) int {
+		if i := slices.Index(sources, src); i >= 0 {
+			return i
+		}
+		return len(sources)
+	}
+	k := rank(SourceKnowledge)
+	at := slices.IndexFunc(r.Items, func(it Item) bool { return rank(it.Source) > k })
+	if at < 0 {
+		at = len(r.Items)
+	}
+	r.Items = slices.Insert(r.Items, at, add...)
 }
 
 var validID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)

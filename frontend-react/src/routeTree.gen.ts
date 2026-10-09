@@ -18,15 +18,19 @@ import { Route as AppPlaygroundRouteImport } from './routes/app/playground'
 import { Route as AppPoliciesRouteImport } from './routes/app/policies'
 import { Route as AppSavingsRouteImport } from './routes/app/savings'
 import { Route as AppSetupRouteImport } from './routes/app/setup'
+import { Route as ConnectCallbackRouteImport } from './routes/connect/callback'
 import { Route as AppAuditsIdRouteImport } from './routes/app/audits/$id'
 import { Route as AppEvaluatorsIndexRouteImport } from './routes/app/evaluators/index'
 import { Route as AppEvaluatorsIdRouteImport } from './routes/app/evaluators/$id'
-import { Route as AppEvaluatorsStudioRouteImport } from './routes/app/evaluators/studio'
+import { Route as AppEvaluatorsBenchmarksRouteImport } from './routes/app/evaluators/benchmarks'
+import { Route as AppEvaluatorsLabelsRouteImport } from './routes/app/evaluators/labels'
 import { Route as AppSettingsIndexRouteImport } from './routes/app/settings/index'
 import { Route as AppSettingsSectionRouteImport } from './routes/app/settings/$section'
 import { Route as AppTracesIdRouteImport } from './routes/app/traces/$id'
 import { Route as AppTrafficIndexRouteImport } from './routes/app/traffic/index'
 import { Route as AppTrafficTraceIdRouteImport } from './routes/app/traffic/$traceId'
+import { Route as AppEvaluatorsStudioIndexRouteImport } from './routes/app/evaluators/studio/index'
+import { Route as AppEvaluatorsStudioIdVersionRouteImport } from './routes/app/evaluators/studio/$id.$version'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -73,6 +77,11 @@ const AppSetupRoute = AppSetupRouteImport.update({
   path: '/setup',
   getParentRoute: () => AppRoute,
 } as any)
+const ConnectCallbackRoute = ConnectCallbackRouteImport.update({
+  id: '/connect/callback',
+  path: '/connect/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppAuditsIdRoute = AppAuditsIdRouteImport.update({
   id: '/audits/$id',
   path: '/audits/$id',
@@ -88,9 +97,14 @@ const AppEvaluatorsIdRoute = AppEvaluatorsIdRouteImport.update({
   path: '/evaluators/$id',
   getParentRoute: () => AppRoute,
 } as any)
-const AppEvaluatorsStudioRoute = AppEvaluatorsStudioRouteImport.update({
-  id: '/evaluators/studio',
-  path: '/evaluators/studio',
+const AppEvaluatorsBenchmarksRoute = AppEvaluatorsBenchmarksRouteImport.update({
+  id: '/evaluators/benchmarks',
+  path: '/evaluators/benchmarks',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEvaluatorsLabelsRoute = AppEvaluatorsLabelsRouteImport.update({
+  id: '/evaluators/labels',
+  path: '/evaluators/labels',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
@@ -118,6 +132,18 @@ const AppTrafficTraceIdRoute = AppTrafficTraceIdRouteImport.update({
   path: '/traffic/$traceId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEvaluatorsStudioIndexRoute =
+  AppEvaluatorsStudioIndexRouteImport.update({
+    id: '/evaluators/studio/',
+    path: '/evaluators/studio/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppEvaluatorsStudioIdVersionRoute =
+  AppEvaluatorsStudioIdVersionRouteImport.update({
+    id: '/evaluators/studio/$id/$version',
+    path: '/evaluators/studio/$id/$version',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -128,16 +154,20 @@ export interface FileRoutesByFullPath {
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
   '/app/setup': typeof AppSetupRoute
+  '/connect/callback': typeof ConnectCallbackRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
   '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
-  '/app/evaluators/studio': typeof AppEvaluatorsStudioRoute
+  '/app/evaluators/benchmarks': typeof AppEvaluatorsBenchmarksRoute
+  '/app/evaluators/labels': typeof AppEvaluatorsLabelsRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
   '/app/evaluators/': typeof AppEvaluatorsIndexRoute
   '/app/settings/': typeof AppSettingsIndexRoute
   '/app/traffic/': typeof AppTrafficIndexRoute
+  '/app/evaluators/studio/': typeof AppEvaluatorsStudioIndexRoute
+  '/app/evaluators/studio/$id/$version': typeof AppEvaluatorsStudioIdVersionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -147,16 +177,20 @@ export interface FileRoutesByTo {
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
   '/app/setup': typeof AppSetupRoute
+  '/connect/callback': typeof ConnectCallbackRoute
   '/app': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
   '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
-  '/app/evaluators/studio': typeof AppEvaluatorsStudioRoute
+  '/app/evaluators/benchmarks': typeof AppEvaluatorsBenchmarksRoute
+  '/app/evaluators/labels': typeof AppEvaluatorsLabelsRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
   '/app/evaluators': typeof AppEvaluatorsIndexRoute
   '/app/settings': typeof AppSettingsIndexRoute
   '/app/traffic': typeof AppTrafficIndexRoute
+  '/app/evaluators/studio': typeof AppEvaluatorsStudioIndexRoute
+  '/app/evaluators/studio/$id/$version': typeof AppEvaluatorsStudioIdVersionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -168,16 +202,20 @@ export interface FileRoutesById {
   '/app/policies': typeof AppPoliciesRoute
   '/app/savings': typeof AppSavingsRoute
   '/app/setup': typeof AppSetupRoute
+  '/connect/callback': typeof ConnectCallbackRoute
   '/app/': typeof AppIndexRoute
   '/app/audits/$id': typeof AppAuditsIdRoute
   '/app/evaluators/$id': typeof AppEvaluatorsIdRoute
-  '/app/evaluators/studio': typeof AppEvaluatorsStudioRoute
+  '/app/evaluators/benchmarks': typeof AppEvaluatorsBenchmarksRoute
+  '/app/evaluators/labels': typeof AppEvaluatorsLabelsRoute
   '/app/settings/$section': typeof AppSettingsSectionRoute
   '/app/traces/$id': typeof AppTracesIdRoute
   '/app/traffic/$traceId': typeof AppTrafficTraceIdRoute
   '/app/evaluators/': typeof AppEvaluatorsIndexRoute
   '/app/settings/': typeof AppSettingsIndexRoute
   '/app/traffic/': typeof AppTrafficIndexRoute
+  '/app/evaluators/studio/': typeof AppEvaluatorsStudioIndexRoute
+  '/app/evaluators/studio/$id/$version': typeof AppEvaluatorsStudioIdVersionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -190,16 +228,20 @@ export interface FileRouteTypes {
     | '/app/policies'
     | '/app/savings'
     | '/app/setup'
+    | '/connect/callback'
     | '/app/'
     | '/app/audits/$id'
     | '/app/evaluators/$id'
-    | '/app/evaluators/studio'
+    | '/app/evaluators/benchmarks'
+    | '/app/evaluators/labels'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
     | '/app/evaluators/'
     | '/app/settings/'
     | '/app/traffic/'
+    | '/app/evaluators/studio/'
+    | '/app/evaluators/studio/$id/$version'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -209,16 +251,20 @@ export interface FileRouteTypes {
     | '/app/policies'
     | '/app/savings'
     | '/app/setup'
+    | '/connect/callback'
     | '/app'
     | '/app/audits/$id'
     | '/app/evaluators/$id'
-    | '/app/evaluators/studio'
+    | '/app/evaluators/benchmarks'
+    | '/app/evaluators/labels'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
     | '/app/evaluators'
     | '/app/settings'
     | '/app/traffic'
+    | '/app/evaluators/studio'
+    | '/app/evaluators/studio/$id/$version'
   id:
     | '__root__'
     | '/'
@@ -229,21 +275,26 @@ export interface FileRouteTypes {
     | '/app/policies'
     | '/app/savings'
     | '/app/setup'
+    | '/connect/callback'
     | '/app/'
     | '/app/audits/$id'
     | '/app/evaluators/$id'
-    | '/app/evaluators/studio'
+    | '/app/evaluators/benchmarks'
+    | '/app/evaluators/labels'
     | '/app/settings/$section'
     | '/app/traces/$id'
     | '/app/traffic/$traceId'
     | '/app/evaluators/'
     | '/app/settings/'
     | '/app/traffic/'
+    | '/app/evaluators/studio/'
+    | '/app/evaluators/studio/$id/$version'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  ConnectCallbackRoute: typeof ConnectCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -311,6 +362,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSetupRouteImport
       parentRoute: typeof AppRoute
     }
+    '/connect/callback': {
+      id: '/connect/callback'
+      path: '/connect/callback'
+      fullPath: '/connect/callback'
+      preLoaderRoute: typeof ConnectCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/audits/$id': {
       id: '/app/audits/$id'
       path: '/audits/$id'
@@ -332,11 +390,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEvaluatorsIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/evaluators/studio': {
-      id: '/app/evaluators/studio'
-      path: '/evaluators/studio'
-      fullPath: '/app/evaluators/studio'
-      preLoaderRoute: typeof AppEvaluatorsStudioRouteImport
+    '/app/evaluators/benchmarks': {
+      id: '/app/evaluators/benchmarks'
+      path: '/evaluators/benchmarks'
+      fullPath: '/app/evaluators/benchmarks'
+      preLoaderRoute: typeof AppEvaluatorsBenchmarksRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/evaluators/labels': {
+      id: '/app/evaluators/labels'
+      path: '/evaluators/labels'
+      fullPath: '/app/evaluators/labels'
+      preLoaderRoute: typeof AppEvaluatorsLabelsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/settings/': {
@@ -374,6 +439,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTrafficTraceIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/evaluators/studio/': {
+      id: '/app/evaluators/studio/'
+      path: '/evaluators/studio'
+      fullPath: '/app/evaluators/studio/'
+      preLoaderRoute: typeof AppEvaluatorsStudioIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/evaluators/studio/$id/$version': {
+      id: '/app/evaluators/studio/$id/$version'
+      path: '/evaluators/studio/$id/$version'
+      fullPath: '/app/evaluators/studio/$id/$version'
+      preLoaderRoute: typeof AppEvaluatorsStudioIdVersionRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -387,13 +466,16 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppAuditsIdRoute: typeof AppAuditsIdRoute
   AppEvaluatorsIdRoute: typeof AppEvaluatorsIdRoute
-  AppEvaluatorsStudioRoute: typeof AppEvaluatorsStudioRoute
+  AppEvaluatorsBenchmarksRoute: typeof AppEvaluatorsBenchmarksRoute
+  AppEvaluatorsLabelsRoute: typeof AppEvaluatorsLabelsRoute
   AppSettingsSectionRoute: typeof AppSettingsSectionRoute
   AppTracesIdRoute: typeof AppTracesIdRoute
   AppTrafficTraceIdRoute: typeof AppTrafficTraceIdRoute
   AppEvaluatorsIndexRoute: typeof AppEvaluatorsIndexRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
   AppTrafficIndexRoute: typeof AppTrafficIndexRoute
+  AppEvaluatorsStudioIndexRoute: typeof AppEvaluatorsStudioIndexRoute
+  AppEvaluatorsStudioIdVersionRoute: typeof AppEvaluatorsStudioIdVersionRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -406,13 +488,16 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppAuditsIdRoute: AppAuditsIdRoute,
   AppEvaluatorsIdRoute: AppEvaluatorsIdRoute,
-  AppEvaluatorsStudioRoute: AppEvaluatorsStudioRoute,
+  AppEvaluatorsBenchmarksRoute: AppEvaluatorsBenchmarksRoute,
+  AppEvaluatorsLabelsRoute: AppEvaluatorsLabelsRoute,
   AppSettingsSectionRoute: AppSettingsSectionRoute,
   AppTracesIdRoute: AppTracesIdRoute,
   AppTrafficTraceIdRoute: AppTrafficTraceIdRoute,
   AppEvaluatorsIndexRoute: AppEvaluatorsIndexRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
   AppTrafficIndexRoute: AppTrafficIndexRoute,
+  AppEvaluatorsStudioIndexRoute: AppEvaluatorsStudioIndexRoute,
+  AppEvaluatorsStudioIdVersionRoute: AppEvaluatorsStudioIdVersionRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -420,6 +505,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  ConnectCallbackRoute: ConnectCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

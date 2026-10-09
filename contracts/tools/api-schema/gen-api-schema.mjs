@@ -61,6 +61,69 @@ export const ROOTS = [
   // WebSocket v2
   'WsEvent',
   'WsHello',
+  // P4 (docs/v2/P4-PLAN.md §2.2f): settings, credentials, Connect OpenRouter, keys, audit log
+  'SettingsView',
+  'RuntimeSettings',
+  'RuntimeSettingsPatch',
+  'BindingTarget',
+  'CredentialView',
+  'CredentialList',
+  'CredentialPutRequest',
+  'CredentialVerifyRequest',
+  'CredentialVerification',
+  'CredentialWriteResult',
+  'ConnectStartRequest',
+  'ConnectStartResponse',
+  'ConnectCompleteRequest',
+  'ConnectCompleteResponse',
+  'DecisionModelTestResult',
+  'WsTicket',
+  'ApiKeyView',
+  'ApiKeyCreateRequest',
+  'CreatedApiKey',
+  'ApiKeyList',
+  'AdminAuditEntry',
+  'Page<AdminAuditEntry>',
+  'StatusWarning',
+  // P3 control plane (fixtures added in P4 Step 0b)
+  'PlaygroundResult',
+  'ReliabilityResponse',
+  'Recording',
+  // P4: costs
+  'RoiSummary',
+  'RoiTimeseries',
+  'PricingTable',
+  // P4: evaluators, Studio, labels, calibration, evidence, decision request
+  'EvaluatorMeta',
+  'EvaluatorVersion',
+  'EvaluatorValidateRequest',
+  'EvaluatorValidateResult',
+  'EvaluatorCreateRequest',
+  'EvaluatorVersionCreateRequest',
+  'EvaluatorArchiveRequest',
+  'StudioDraftRequest',
+  'StudioDraftResponse',
+  'StudioSamplesRequest',
+  'StudioSamplesResponse',
+  'StudioTestRequest',
+  'StudioTestResponse',
+  'QuickCalibrationRequest',
+  'QuickCalibration',
+  'StudioDryRunRequest',
+  'DryRunResult',
+  'LabelValue',
+  'LabelPut',
+  'LabelDelete',
+  'LabelQueue',
+  'CalibrationList',
+  'CalibrationRecord',
+  'CalibrationImportRequest',
+  'CalibrationImportResult',
+  'CalibrationFitRequest',
+  'CalibrationFitResponse',
+  'EvidenceSuggestionList',
+  'JevRequest',
+  'DecisionRequestView',
 ];
 
 const SCRATCH_PAGES = `
@@ -69,6 +132,7 @@ export interface __CorePages {
   traces: Page<TraceSummary>;
   decisions: Page<GateDecisionRow>;
   audits: Page<AuditSummary>;
+  admin_audit: Page<AdminAuditEntry>;
 }
 `;
 
@@ -76,12 +140,14 @@ const DESCRIPTION =
   'Contract-owned JSON Schema for the TrustAgent REST and WebSocket v2 payloads (docs/v2/SPEC.md sections 2.1, 2.4, ' +
   '2.5 and 2.6). Every $defs entry has the name, fields and enum values of the same type in ' +
   "frontend-react/src/types/api.ts; Go handler tests and the golden fixtures in contracts/fixtures/api/ validate against " +
-  "'api.v1.schema.json#/$defs/<TypeName>'. This is the S0 core subset: health and status, traces (list and detail), " +
-  'gate decisions, audits with claims and UTF-16 spans, the WebSocket v2 envelope and events, and the error body.';
+  "'api.v1.schema.json#/$defs/<TypeName>'. It covers the S0 core (health and status, traces (list and detail), " +
+  'gate decisions, audits with claims and UTF-16 spans, the WebSocket v2 envelope and events, and the error body) ' +
+  'and the P4 surfaces (settings, credentials, Connect OpenRouter, API keys and the admin audit log; ROI and pricing; ' +
+  'evaluator writes, Studio, labels, calibration, evidence suggestions and the decision request).';
 
 const COMMENT =
   "Generated from api.ts with ts-json-schema-generator 2.9.0 (--type '*' --expose export --jsDoc extended, plus a " +
-  'scratch type instantiating Page<TraceSummary>, Page<GateDecisionRow> and Page<AuditSummary>), converted from ' +
+  'scratch type instantiating Page<TraceSummary>, Page<GateDecisionRow>, Page<AuditSummary> and Page<AdminAuditEntry>), converted from ' +
   'draft-07 to 2020-12 (definitions -> $defs; array-form items -> prefixItems) and pruned to the roots named in the ' +
   "description plus everything they reference. Page<T> keeps the generator's name, percent-encoded in $ref. " +
   'Regenerate instead of hand-editing whenever api.ts changes.';

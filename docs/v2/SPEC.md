@@ -1755,7 +1755,7 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
 - **`critical_at`:** the smallest t such that, for every t′ ≥ t, the Wilson 95% lower bound of precision is ≥ 0.95 with ≥ 50 predicted positives. Otherwise `null` with "insufficient evidence to block". Quick calibration (Studio) never emits `critical_at`.
 - **Key:**
   - `target_key = "<id>@<v>#<calibration_key[:16]>#<params_sha[:16]|->"`, where `calibration_key = sha256(JCS({question, signal}))` and `params_sha = sha256(JCS(resolved route params))` for evaluators that have params.
-  - A difference in fit-context state composition produces a `calibration_warning: "calibrated with different state fields"`; the calibration still applies. P4: P3 produces no `calibration_warning` (D28).
+  - A difference in fit-context state composition produces a `calibration_warning: "calibrated with different state fields"`; the calibration still applies (implemented in P4, D56; P3 produced none, D28).
 - **Lookup:**
   1. Exact snapshot.
   2. Family (snapshot minus `-YYYYMMDD`), only if `CALIBRATION_FAMILY_FALLBACK`; forced to `provisional`, state `family`.
@@ -1764,7 +1764,7 @@ This replaces the old `config/jev/thresholds.json`. Thresholds live in the evalu
   API-imported and fitted rows override files (P4, #42-46). File merge: newest `created_at` wins, with a warning.
   **P3 (D14):** the lookup reads files only, from `TRUTHTABLE_CALIBRATION_DIR`, polled every 30 s; a change broadcasts WS `calibration_updated`. A file that stops parsing keeps its last good content.
 - **Activation vs adoption:** activating a calibration **does not change live decisions** while the route's threshold space is `raw`. "Adopt calibration" creates a new policy version with `space: calibrated` and the recommended thresholds, and is gated by a Preview-impact dry-run.
-- **Snapshot change:** WS `decision_model_changed` shows a banner. Adopted routes whose calibration no longer applies fall back to raw risk and are capped to flag. P3 reports this with the reason `uncalibrated_snapshot`; `calibration_missing` comes with the P4 calibration store (D28).
+- **Snapshot change:** WS `decision_model_changed` shows a banner. Adopted routes whose calibration no longer applies fall back to raw risk and are capped to flag. The reason is `uncalibrated_snapshot` when the target is calibrated only on other snapshots, else `calibration_missing` (P4 calibration store, D56; D28 resolved).
 - **Committed files:**
   - `config/calibration/mock__jev-heuristic-v1.json` (quality `mock`).
   - `config/calibration/typesafe__jev-1.13-<date>.json` (measured, from P6 bench-lite, for groundedness@1 and contradiction@1).
@@ -2061,7 +2061,7 @@ Other routes:
      - Primary button, with "Paste a key instead" and "Explore with simulated checks (mock, labelled)" links.
      - Privacy line: "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out."
      - Bindings default to decision model plus judge.
-     - The probe shows "Ready · 231 ms · $0.00001". On 402: "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"; nothing is bound.
+     - The probe shows "Ready: the test call took 231 ms and cost $0.00001". On 402: "Key works but your OpenRouter account has no credits — add $1+ at openrouter.ai/settings/credits"; nothing is bound.
   3. *See it work.* A prefilled Playground in audit mode with `mode_override: flag` and the refund example (60 days vs 30 days). Shows the outcome card and the highlighted claim; no upstream key needed.
 
   Afterwards, Overview shows **Connect your app**:
@@ -2092,7 +2092,7 @@ Other routes:
 - **Evaluators:**
   - Library cards with category, attached routes (active or shadow) and a calibration progress meter ("Labels 43/200 (31 correct, 12 false alarms) · [Label queue] [Calibrate now]").
   - Detail page: versions, diff, reliability chart (labelled "agreement with labels, not ground truth"), and "Adopt calibration" (runs Preview impact first).
-  - Label queue: one response at a time, buttons plus keys C/F/S.
+  - Label queue: one response at a time, buttons plus keys Y/N/S, matching the Yes and No buttons (C and F also work).
   - Benchmarks: committed runs only, or an empty state with `make bench-lite`.
 - **Studio:** see §7.3.
 - **Policies:**
@@ -2698,7 +2698,7 @@ $5 covers about 1,600 answers at the default settings, or about 24,000 fast chec
   - Outcomes. "Stopped before users saw them" counts only block and fallback; "flagged" is separate.
   - Gate p50/p95 and deadline-miss rate.
   - Sampling status: "uniform sampling paused at 14:02 (daily cap 50)" and LLM cap hits.
-  - Early-data copy: "So far: 212 answers checked for $0.04. Asking an LLM the same questions would have cost ≈ $1.22 (estimate)."
+  - Early-data copy: "So far: 212 answers checked for $0.04. Asking an LLM the same questions would have cost ≈ $1.22." (its value label is the badge beside it, never words in the sentence)
 - **Caps.** Daily decision and LLM caps, an enforcing reserve, reservations, and an optional per-key cap. Past the decision cap, observe and flag routes skip (`degraded: budget`), fail-open routes pass, and fail-closed block routes block.
 
 ### 7.5 Credentials, auth, OAuth
@@ -3038,7 +3038,7 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 
 | Assumption | Verified at |
 |---|---|
-| OpenRouter PKCE accepts `localhost` callbacks | P1g |
+| OpenRouter PKCE accepts `localhost` callbacks | P1g; at the end of P4 still unverified against the real openrouter.ai (the owner's §21 #1 check was not run), so Connect stays primary with Paste always visible (D88; verified only against the mock-upstream OpenRouter) |
 | OpenRouter PKCE accepts the Pages callback | P5, when Pages exists |
 | `GET /api/v1/key` response shape | P1g |
 | `usage.cost` on chat with `usage.include` | P1g |
@@ -3068,5 +3068,109 @@ The lead decisions D1-D28 of `docs/v2/P3-PLAN.md` §1 settled the gaps P3 found.
 - **Client disconnects (D7):** a client that leaves before the finish reason, or while the gate or a buffered fallback runs, is recorded unenforced with `skipped:client_disconnected`; after a finish reason the text is gated unenforced with the flag `client_disconnected` and audited.
 - **trafficgen (D18):** the default `--phase` is the build's (`p3`), and `--expect` exits 1 when it skips a selected scenario by phase, unless `--allow-skip` is given. Stack specs throw in CI instead of skipping.
 - **`/v1/models` (D26):** it stays on `TRUTHTABLE_UPSTREAM_URL` (§2.4 row 72); choosing the family from `anthropic-version` or `x-api-key` is P4.
-- **Checks that do not fit P3 (D17, D28):** the async ordered trace writer and its LRU fallback, `calibration_warning` and `calibration_missing` move to P4.
+- **Checks that do not fit P3 (D17, D28):** the async ordered trace writer and its LRU fallback, `calibration_warning` and `calibration_missing` move to P4. **Resolved in P4:** the trace writer is D66 and D83, the two calibration signals are D56 (Appendix F).
+- **`/v1/models` family:** resolved in P4 by D67 (Appendix F).
 - **superseded identifiers (Appendix A):** WS v1 (`ProtocolV1`, `v1Frame`, the frame type `audit_result`) and metric names without the service prefix are errors in `contracts/superseded.v1.json`; the metric rule matches metric-shaped names only, because `trustagent_error`, `trustagent_blocked` and similar are TrustAgent identifiers, not metrics.
+
+## Appendix F: P4 errata
+
+The lead decisions D29-D90 of `docs/v2/P4-PLAN.md` §1, and D91-D96 below, settled the gaps P4 found.
+Where a section above says otherwise, the decision cited for it here wins.
+
+| SPEC section | What changes | Decisions |
+|---|---|---|
+| §2.2 (proto) | `Credential.allowed_hosts`, `EngineInfo.env_managed` and `runtime_config_epoch`; the push carries `{version, epoch, credentials, judge, price_table_json}` and never `decision`; the engine resolves the judge from it, env first | D34 |
+| §2.3 (storage) | The settings version and epoch live in the `settings` table and bump only on runtime-config and credential writes; migration 0005 adds the cost-ledger columns (`audit_id`, `hedge`, `late`, `estimated`), `traces.response_chars`, the calibration mirror index and the append-only admin audit log; migration 0006 also refuses `TRUNCATE` on `admin_audit_log` (a statement trigger, since row triggers never fire on it); audit writes wait for their trace's queued writes (the per-trace barrier) | D31, D44, D45, D83 |
+| §2.8 (references) | On a route, a corroboration warning only when none of the listed corroborators can agree (one instant check or attached evaluator is enough); the policy check warns only on a blocking route where none can fire there | D98 |
+| §2.4 #10 | `reason=<code>` matches a whole code, `reason=<prefix>:` a prefix; both need `since` | D68 |
+| §2.4 #12 | `DecisionRequestView {requests, request_sha256, matches_recorded, cpt, mismatch_reason}` | D63 |
+| §2.4 #26, #45, #46b | #45 fits without activating; new #46b activates a calibration; #26 takes `calibration_ids` for a dry run | D62 |
+| §2.4 #31, #32 | 409 on an existing id; 403 for built-ins, 409 `file_managed`, 412 on a stale `base_version` | D57 |
+| §2.4 #34, #65 | The LLM cap is hard for every caller: a refused draft or upload answers 503 `budget_exhausted` | D48 |
+| §2.4 #35, #38 | Studio, dry-run, Playground and probe decision calls are non-enforcing and refused past the observe line | D82 |
+| §2.4 #39 | The label queue order and window | D60 |
+| §2.4 #53 | Changes that would block every answer on fail-closed routes need `?confirm=true`; an upstream key bound for every caller needs an app key | D77, D41 |
+| §2.4 #55, #57, #59 | One credential write returns `CredentialWriteResult {credential, stored, verification, bindings}` and binds on request | D75 |
+| §2.4 #56 | Deleting the fast check's key under a fail-closed route needs the confirmation | D77 |
+| §2.4 #58, #59 | Self-hosted PKCE: S256, a 10-minute in-memory nonce, at most 5 per actor, the callback origin checked | D38 |
+| §2.4 #69 | The last admin key cannot be revoked (409 `conflict`, `last_admin_key`) | D81 |
+| §2.5 (WS) | `status{component:"budget"}` carries the worse of the two caps and names them in `detail` | D49 |
+| §2.6 (types) | New wire types: `CredentialWriteResult`, `SettingsView`, `DecisionRequestView`, `PricingTable`, `RoiTimeseries`, `LabelQueue`, `CalibrationRecordMeta`, `StudioDraftResponse` and the rest in `frontend-react/src/types/api.ts` (generated into `contracts/schema/api.v1.schema.json`) | new types |
+| §2.7 (config) | No new `TRUTHTABLE_*` key: the PKCE TTL, per-actor cap and swap grace are constants; the upstream API keys of Anthropic and the fallback are runtime-null | D35 |
+| §2.11 (calibration) | File calibrations are mirrored into `calibrations`; a removed file's mirrored row stays active until another row replaces it; `calibration_missing` and `calibration_warning` | D55, D56 |
+| §3.1 (Go) | `runtimecfg` does not own the engine pinger; redaction lives in `config.Redactor`; files inside shared packages have owners | D90 |
+| §3.3 (web) | The Prices panel and `/api/pricing` follow override > file > contracts, provider first; the static build keeps Studio "Coming soon" and renders committed benchmark runs | D53, D72 |
+| §3.4 (infra) | The onboarding stack overlay; `make configure WITH_SECRETS=1` | D70, D74 |
+| §4.2 gate | Proofs run on two stacks: demo-shaped (studio, savings) and onboarding | D70 |
+| §6 (owner guide) | `configure --with-secrets`; the credit prerequisite is about $5 | D74, D86 |
+| §7.4 (savings) | Simulated spend never counts toward a cap; ROI's decision cost counts the gate component only; overrides > file > contracts; over simulated traffic every ROI figure is Simulated except the published `static_assumptions` full audit, which stays an Estimate (its basis says the answers are simulated) | D46, D50, D53, D97 |
+| §7.5 (credentials) | Fingerprints are an HMAC of the master key's subkey; secrets re-entered after an origin change; PKCE; credentials bound to canonical origins (and refused at dial time, D96); what non-admin callers see | D30, D37, D38, D78, D79 |
+| §7.6 (vectors) | Cost vectors (`call_cost`, `price_lookup`, `per_1k`), frozen and run in Go and Python; TypeScript in P5 | D85 |
+| Appendix B (metrics) | `trustagent_gateway_cost_write_dropped_total` | D51 |
+| Appendix D | The localhost PKCE callback stays unverified against the real openrouter.ai at the end of P4 (Connect primary, Paste always visible) | D88 |
+| P3-PLAN §13 | Knowledge runs next to the upstream call and is joined before the gate within the deadline | D65 |
+
+### Decisions made during the P4 integration (D91-D96)
+
+- **D91 (LLM cap cost of unpriced calls):** a cost record with `cost_source: unknown` counts toward
+  the LLM cap at the reference judge's price for its tokens (the price book's Claude Haiku 4.5 entry,
+  overrides applied). Audits, Studio drafts and knowledge uploads settle with it, and the restart seed
+  prices today's unpriced rows the same way. Stored rows keep `unknown` and no cost, so ROI and
+  Savings never count the reference price as spend.
+- **D92 (decision model's last 24 hours):** `/api/status` `calls_24h` and `cost_24h_usd` come from
+  the cost ledger (refreshed every minute), so they survive a restart and a hot swap.
+- **D93 (simulated mode's judge):** the mock judge answers only the scripted demo scenarios; a deep
+  audit of any other answer fails as `mock_fixture_missing` instead of inventing a verdict. The setup
+  wizard says so, and the trace and its figures are labelled Simulated (`mock_judge`).
+- **D94 (a bind moves the model too):** when a bind moves `decision_model.backend` or
+  `judge.provider` to auto (D76, D76b), a persisted model of the old provider becomes null (the new
+  provider's default), unless the model is env-managed; the audit diff names it.
+- **D95 (app keys for D41):** an upstream key bound for every caller needs a key that holds the
+  `ingest` scope itself, from the env or the dashboard; an admin key does not count.
+- **D96 (dial-time guard):** every outbound client that calls an operator- or admin-chosen address
+  (the upstream proxy, the decision model and key checks, the OpenRouter key exchange) refuses a
+  link-local or cloud-metadata address after DNS, at dial time (`internal/netguard`).
+- **D76b (lead text at CP-SEC2/3):** a bind that applies `decision_model` moves an explicit backend
+  the credential cannot serve to auto; one that applies `judge` moves an explicit provider other than
+  the credential's own to auto; env-managed paths stay.
+
+### Decisions made at the P4 fix rounds
+
+- **D97 (the published full audit over simulated traffic; exception to D46):** the
+  `static_assumptions` full-audit counterfactual keeps its Estimate label on a simulated stack, for
+  its per-1,000 figure (value claim `llm_full_audit_cost_per_1k`) and for the window total it implies
+  (that figure × the window's simulated answers). Its basis and the component table's row say the
+  answer count is simulated. A counterfactual carries one label on the wire (`Counterfactual.label`),
+  so the total is not split off as Simulated. Every other ROI figure over simulated traffic stays
+  Simulated (D46). On a demo whose mock judge is free, the Savings chart offers no full-audit
+  comparison (the option is disabled, with the reason), and the table's full-audit row points at
+  TrustAgent with a real judge: the demo's own spend leaves out the judge it would pay for.
+- **D92 (refined):** a status read re-reads the decision model's 24-hour figures when they are older
+  than 5 s (at most one read per 5 s, 2 s timeout, the last value while a read runs or after a failed
+  one), so `/api/status` right after traffic shows it rather than the boot read.
+- **D98 (corroboration warnings):** any one corroborator is enough for a block (§2.9
+  `corroborated`), so a warning about a missing one is wrong when another can still agree. The
+  evaluator lint (`lint.go`, `lint.ts`, with `Attached`) warns once, when no listed corroborator is
+  an instant check and none is attached. The policy check warns on a block-eligible, active
+  evaluator of a block or fallback route when none of its corroborators can fire there (the block
+  readiness rule: an instant check with documents or rules, or an attached evaluator that can reach
+  critical); routes that do not block get no warning, since block readiness lists what they would
+  need. An implied evaluator that is not attached still warns, each on its own.
+
+### Requests answered at the integration
+
+- The engine and decision-model details on the WS stream, the `/v1` relay's response headers in
+  inject mode, and a vendor message cut across an echoed key are all masked (D42).
+- `GET /api/session` names the key a session was opened with (`key_id`), and
+  `TraceDetail.labels[].mine` says which labels are the caller's (only those can be undone).
+- `GET /api/overview` `outcomes_series` counts `would_block` apart from `would_flag`.
+- The trace writer forwards linked audit cost rows and dropped audits behind its barrier.
+- A dashboard on another origin opens its live stream with a WS ticket (D71).
+- Kept as decided in the plan: verify-with-bind of an env row answers 409 `env_managed` (D29);
+  a vendor 429 maps to `unreachable` and a 402 to `no_credits` (D40); the per-name verify limit is
+  per replica; the fingerprint reaches `content`-scope dashboards in `credentials_changed` (D42).
+- Deferred to P5: machine-readable codes for policy warnings (the web words them by their text, with
+  the server text behind a disclosure), contract copy keys for the words that live in the prefixed
+  words modules (D86 allows them there), details on `price_far_above_contracts` warnings,
+  Studio's `Draft with AI` saying "out of credits" instead of "engine unavailable" for a 401 or 402
+  judge, and the Docker run of the `handbook` knowledge scenario (D65).

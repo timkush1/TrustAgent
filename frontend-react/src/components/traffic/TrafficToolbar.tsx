@@ -7,10 +7,10 @@ import { Pause, X } from 'lucide-react';
 import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { OUTCOME_IDS } from '@/domain/contracts';
-import { outcomeView, reasonCopy } from '@/domain/presentation';
+import { outcomeView } from '@/domain/presentation';
 import { formatCount } from '@/domain/format';
 import { cn } from '@/lib/cn';
-import { hasFilters, type TrafficFilters } from './trafficRows';
+import { hasFilters, reasonFilterLabel, type TrafficFilters } from './trafficRows';
 
 interface Option {
   value: string;
@@ -101,7 +101,7 @@ export function TrafficToolbar({
         />
         {filters.reason ? (
           <span className="inline-flex h-8 items-center gap-1 rounded-md border border-border-strong bg-surface pr-1 pl-2 text-sm text-fg">
-            <span className="text-fg-muted">Reason:</span> {reasonCopy(filters.reason)}
+            <span className="text-fg-muted">Reason:</span> {reasonFilterLabel(filters.reason)}
             <Link
               from="/app/traffic/"
               search={(prev) => ({ ...prev, reason: undefined })}

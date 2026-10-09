@@ -165,6 +165,7 @@ describe('validate.mjs', () => {
       k.keys.find((x) => x.name === 'TRUTHTABLE_READ_TIMEOUT').default = '30 seconds';
       for (const x of k.keys.slice(0, 20)) x.advanced = false;
       k.keys.push({ ...k.keys.find((x) => x.name === 'BIND_ADDR') });
+      k.keys.find((x) => x.name === 'TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY').runtime = 'settable';
     });
     const r = run(sb.root);
     assert.equal(r.code, 1);
@@ -172,6 +173,7 @@ describe('validate.mjs', () => {
     assert.match(r.out, /TRUTHTABLE_READ_TIMEOUT: default "30 seconds" is not a Go duration/);
     assert.match(r.out, /\.env\.example would list \d+ keys/);
     assert.match(r.out, /name or alias BIND_ADDR is declared twice/);
+    assert.match(r.out, /TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY: a secret key cannot be runtime settable/);
   });
 
   test('value-claim labels, secret defaults and scripted scenarios follow their rules', () => {
@@ -447,6 +449,17 @@ describe('validate.mjs', () => {
     assert.match(r.out, /counting-or-arithmetic-instructions\.json: expected\.lints is \[\], but the SPEC §2\.8 rules give \["counting_or_arithmetic"\]/);
     assert.match(r.out, /no-id-reference\.json: expected\.errors is \[\], but the SPEC §2\.8 rules give \["no_id_reference"\]/);
     assert.match(r.out, /evaluators\/refusal\.v1\.json: counting_or_arithmetic: .*\(built-in templates must be lint-clean\)/);
+  });
+
+  test('route lint vectors (input.attached) must agree with the D98 corroboration rule', () => {
+    const sb = sandbox();
+    // Attach the one corroborator: the vector still says it warns, which the rule no longer gives.
+    sb.edit('vectors/lint/corroboration-with-none-attached-warns.json', (v) => { v.input.attached = ['groundedness']; });
+    sb.edit('vectors/lint/implied-not-attached-warns.json', (v) => { v.input.attached = 'contradiction'; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /corroboration-with-none-attached-warns\.json: expected\.lints is \["reference_not_attached"\], but the SPEC §2\.8 rules give \[\]/);
+    assert.match(r.out, /implied-not-attached-warns\.json: input\.attached must be a list of evaluator ids/);
   });
 
   test('drafter examples are drafts the drafter rules accept', () => {

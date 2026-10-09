@@ -29,8 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # The version tag, and the git revision the images are labelled with (GIT_SHA).
       - name: Image version
-        run: echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+        run: |
+          echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+          echo "GIT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -39,7 +42,9 @@ jobs:
         with:
           context: .
           file: backend-go/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           push: false
           cache-from: type=gha,scope=proxy
           cache-to: type=gha,scope=proxy,mode=max
@@ -49,7 +54,9 @@ jobs:
         with:
           context: .
           file: frontend-react/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           push: false
           cache-from: type=gha,scope=dashboard
           cache-to: type=gha,scope=dashboard,mode=max
@@ -59,7 +66,9 @@ jobs:
         with:
           context: .
           file: backend-python/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           push: false
           cache-from: type=gha,scope=engine
           cache-to: type=gha,scope=engine,mode=max

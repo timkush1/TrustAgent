@@ -24,6 +24,7 @@ import (
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/llmapi"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/studio"
 )
 
 // repoPolicy is the repository policy file, relative to this package.
@@ -98,30 +99,6 @@ func TestParseExample(t *testing.T) {
 	} {
 		if _, err := parseExample([]byte(doc)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("parseExample(%s) = %v, want an error about %q", doc, err, want)
-		}
-	}
-}
-
-func TestSpend(t *testing.T) {
-	s := &spend{cap: 1}
-	if !s.reserve(0.4) || !s.reserve(0.5) {
-		t.Fatal("reservations within the cap refused")
-	}
-	if s.reserve(0.2) || !s.stopped() {
-		t.Fatal("a reservation over the cap was accepted")
-	}
-	if s.reserve(0.01) {
-		t.Fatal("the budget accepted a reservation after it was exhausted")
-	}
-	s.settle(0.4, 0.3)
-	s.settle(0.5, 0.25)
-	if got := s.total(); got != 0.55 {
-		t.Errorf("total = %v", got)
-	}
-	unlimited := &spend{}
-	for range 100 {
-		if !unlimited.reserve(1e6) {
-			t.Fatal("an uncapped budget refused a reservation")
 		}
 	}
 }
@@ -301,10 +278,10 @@ func testEvaluator(t *testing.T, client jev.Client, capUSD float64) *evaluator {
 	route := *pol.Routes[0] // support-bot: groundedness@1 and contradiction@1
 	b := decision.DefaultBudget()
 	b.MaxResponseTokens, b.EvidenceMaxTokens = route.Decision.MaxResponseTokens, route.Evidence.MaxTokens
-	return &evaluator{
-		client: client, route: &route, mode: route.Mode, model: "typesafe/jev-1.13", specs: reg.Specs(), budget: b,
-		pricePerMTok: 10, callTimeout: time.Second, spend: &spend{cap: capUSD}, now: time.Now,
-	}
+	return &evaluator{&studio.Runner{
+		Client: client, Route: &route, Mode: route.Mode, Model: "typesafe/jev-1.13", Specs: reg.Specs(), Budget: b,
+		PricePerMTok: 10, CallTimeout: time.Second, Spend: studio.NewSpend(capUSD), Call: jev.CallOptions{Class: jev.ClassAsync},
+	}}
 }
 
 func examples(n int) string {
@@ -324,13 +301,13 @@ func TestCostCapIsHard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := decision.Compile(ev.compileRoute(), ev.specs, &decision.CompileInputs{
+	c, err := decision.Compile(ev.CompileRoute(), ev.Specs, &decision.CompileInputs{
 		UserRequest: ex.UserRequest, AssistantResponse: ex.Response, Evidence: ex.Evidence,
-	}, ev.budget)
+	}, ev.Budget)
 	if err != nil || len(c.Requests) != 1 {
 		t.Fatalf("compile: %v %+v", err, c)
 	}
-	reservation := float64(c.EstTokens[0]) * 10 / 1e6 * reserveFactor
+	reservation := float64(c.EstTokens[0]) * 10 / 1e6 * studio.ReserveFactor
 	if reservation >= 0.05 || reservation < 0.004 {
 		t.Fatalf("reservation %v does not suit this test", reservation)
 	}
@@ -343,7 +320,7 @@ func TestCostCapIsHard(t *testing.T) {
 	if s.overBudget == 0 || s.evaluated == 0 || s.examples != 40 {
 		t.Fatalf("stats = %+v", s)
 	}
-	if spent := ev.spend.total(); spent > 0.05 || client.maxSpent > 0.05 {
+	if spent := ev.Spend.Total(); spent > 0.05 || client.maxSpent > 0.05 {
 		t.Errorf("spent %v (vendor saw %v), over the $0.05 cap", spent, client.maxSpent)
 	}
 	// Sequential run: the evaluated examples come first, every later one is skipped, and no call
@@ -390,7 +367,7 @@ func TestCostCapWithConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if client.maxSpent > 0.03 || ev.spend.total() > 0.03 || s.overBudget == 0 {
+	if client.maxSpent > 0.03 || ev.Spend.Total() > 0.03 || s.overBudget == 0 {
 		t.Errorf("spent %v with 6 workers, cap 0.03; stats %+v", client.maxSpent, s)
 	}
 	// Output stays in input order.
@@ -420,8 +397,8 @@ func TestFailedCallsAreChargedAtTheEstimate(t *testing.T) {
 	if g, _ := r.Decision.Evaluators.Get("groundedness@1"); g.Reason == nil || *g.Reason != "error:credits" {
 		t.Errorf("groundedness = %+v", g)
 	}
-	if r.DecisionModel.CostSource != jev.CostComputed || r.CostUSD <= 0 || ev.spend.total() != r.CostUSD {
-		t.Errorf("usage %+v, cost %v, spent %v", r.DecisionModel, r.CostUSD, ev.spend.total())
+	if r.DecisionModel.CostSource != jev.CostComputed || r.CostUSD <= 0 || ev.Spend.Total() != r.CostUSD {
+		t.Errorf("usage %+v, cost %v, spent %v", r.DecisionModel, r.CostUSD, ev.Spend.Total())
 	}
 
 	timeout := &fakeClient{fail: context.DeadlineExceeded}

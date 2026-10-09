@@ -1,14 +1,16 @@
 /**
  * Edits to a policy draft (SPEC §2.7 policy/v1), made on the YAML text so comments and layout
  * survive: the one-click fixes ("Buffer streams", "Allow uncalibrated blocking"), the per-route
- * mode picker and the presets all go through here. Every edit re-serializes with the `yaml`
+ * mode picker, the presets, threshold changes (Adjust threshold, Adopt calibration) and evidence
+ * tag patterns all go through here. Every edit re-serializes with the `yaml`
  * Document API and then keeps the original text of every line the edit did not touch, so the diff
  * the viewer reviews shows only their change.
  */
 import { diffArrays } from 'diff';
 import { isMap, isSeq, parseDocument, type Document } from 'yaml';
 import presetsJson from '@contracts/policies/presets.v1.json';
-import type { EvidenceSource, PolicyMode, RouteSettings } from '@/types/api';
+import policySchema from '@contracts/schema/policy.v1.schema.json';
+import type { EvidenceSource, PolicyMode, RouteEvaluatorRef, RouteSettings } from '@/types/api';
 
 /** The route that applies when no other route matches; edits to it go to `defaults`. */
 export const DEFAULT_ROUTE = 'default';
@@ -120,6 +122,68 @@ export function effectiveEvidenceSources(yaml: string, route: string): EvidenceS
 export function stopTrustingUserContext(yaml: string, route: string): string {
   const sources = effectiveEvidenceSources(yaml, route).filter((s) => s !== 'request_context');
   return setRouteField(yaml, route, ['evidence', 'sources'], sources);
+}
+
+/** The evaluators a route runs when neither it nor the defaults list any (policy.v1's own default). */
+export const SCHEMA_DEFAULT_EVALUATORS: readonly RouteEvaluatorRef[] = (
+  policySchema as unknown as { $defs: { RouteSettings: { properties: { evaluators: { default: RouteEvaluatorRef[] } } } } }
+).$defs.RouteSettings.properties.evaluators.default;
+
+/** A threshold change for one evaluator on one route (SPEC §2.7 `thresholds`); only the given keys are written. */
+export interface ThresholdEdit {
+  space?: 'raw' | 'calibrated';
+  warn_at?: number;
+  critical_at?: number | null;
+}
+
+/**
+ * Sets an evaluator's thresholds on one route ("Adjust threshold", "Adopt calibration"). A route
+ * that inherits its evaluators gets the inherited list first, because lists replace rather than
+ * merge (SPEC §2.7): the route keeps running exactly the same checks, with the new thresholds.
+ */
+export function setEvaluatorThresholds(yaml: string, route: string, ref: string, change: ThresholdEdit): string {
+  return edit(yaml, (doc) => {
+    const base = routePath(doc, route);
+    if (!isSeq(doc.getIn([...base, 'evaluators'], true))) {
+      const inherited = route === DEFAULT_ROUTE ? undefined : doc.getIn(['defaults', 'evaluators'], true);
+      const list = isSeq(inherited) ? (inherited.toJSON() as unknown[]) : structuredClone([...SCHEMA_DEFAULT_EVALUATORS]);
+      doc.setIn([...base, 'evaluators'], doc.createNode(list));
+    }
+    const seq = doc.getIn([...base, 'evaluators'], true);
+    const index = isSeq(seq) ? seq.items.findIndex((item) => isMap(item) && item.get('ref') === ref) : -1;
+    if (index === -1) throw new DraftError(`Route ${route} does not run ${ref}.`);
+    const at = [...base, 'evaluators', index, 'thresholds'];
+    for (const key of ['space', 'warn_at', 'critical_at'] as const) {
+      if (change[key] !== undefined) doc.setIn([...at, key], change[key]);
+    }
+  });
+}
+
+/** One `evidence.tag_patterns` entry (RE2, flags a subset of "ims"). */
+export interface TagPattern {
+  pattern: string;
+  flags?: string;
+}
+
+const MAX_TAG_PATTERNS = 16;
+
+/**
+ * Adds a tag pattern to a route's evidence (the evidence-suggestion one-click fix): the route's own
+ * list, else the defaults' list it inherits, plus the new pattern. Lists replace, so the whole list
+ * is set on the route.
+ */
+export function addTagPattern(yaml: string, route: string, pattern: TagPattern): string {
+  const doc = parse(yaml);
+  const own = doc.getIn([...routePath(doc, route), 'evidence', 'tag_patterns'], true);
+  const inherited = route === DEFAULT_ROUTE ? undefined : doc.getIn(['defaults', 'evidence', 'tag_patterns'], true);
+  const source = isSeq(own) ? own : isSeq(inherited) ? inherited : null;
+  const list = (source?.toJSON() ?? []) as TagPattern[];
+  const flags = pattern.flags ?? '';
+  if (list.some((p) => p.pattern === pattern.pattern && (p.flags ?? '') === flags)) {
+    throw new DraftError(`${route} already reads documents with this pattern.`);
+  }
+  if (list.length >= MAX_TAG_PATTERNS) throw new DraftError(`${route} already has ${MAX_TAG_PATTERNS} tag patterns, the most a route can have.`);
+  return setRouteField(yaml, route, ['evidence', 'tag_patterns'], [...list, flags ? { pattern: pattern.pattern, flags } : { pattern: pattern.pattern }]);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

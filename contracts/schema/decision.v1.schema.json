@@ -61,7 +61,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^([a-z][a-z0-9_]{1,47}:(warn|critical)|det:(numbers_not_in_evidence|dates_not_in_evidence|urls_not_in_evidence|quotes_not_in_evidence|citation_out_of_range|secret_pattern|system_prompt_leak)|disagreement|needs_second_signal|no_evidence|stream_not_buffered|fail_closed|uncalibrated_snapshot)$"
+        "pattern": "^([a-z][a-z0-9_]{1,47}:(warn|critical)|det:(numbers_not_in_evidence|dates_not_in_evidence|urls_not_in_evidence|quotes_not_in_evidence|citation_out_of_range|secret_pattern|system_prompt_leak)|disagreement|needs_second_signal|no_evidence|stream_not_buffered|fail_closed|uncalibrated_snapshot|calibration_missing)$"
       }
     },
     "evaluators": {

@@ -23,6 +23,15 @@ function FixLink({ item }: { item: ChecklistItem }) {
       </Link>
     );
   }
+  if (fix.to === '/app/setup') {
+    // A setup-wizard fix opens its own step and says what it does (ON-8).
+    return (
+      <Link to="/app/setup" search={fix.search} className={className}>
+        {fix.label}
+        <ArrowRight aria-hidden="true" className="size-3" />
+      </Link>
+    );
+  }
   if (fix.to === '/app/overview') {
     return (
       <a href="#evidence-coverage" className={className}>

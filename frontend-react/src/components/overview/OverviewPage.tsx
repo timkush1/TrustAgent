@@ -21,9 +21,9 @@ import { OutcomeTimeSeries } from '@/components/charts/OutcomeTimeSeries';
 import { DegradedState } from '@/components/common/DegradedState';
 import { LabelledRateView } from '@/components/common/LabelledRate';
 import { PageHeader } from '@/components/common/PageHeader';
-import { PhasePlaceholder } from '@/components/layout/PhasePlaceholder';
 import { NAV_ITEMS } from '@/components/layout/nav';
 import { ErrorState } from '@/components/common/StateViews';
+import { SavingsPanel } from '@/components/savings/SavingsPanel';
 import { Term } from '@/components/common/Term';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { Card, CardContent } from '@/components/ui/card';
@@ -38,7 +38,8 @@ import type { OverviewStats, TimeWindow } from '@/types/api';
 import { AtAGlance } from './AtAGlance';
 import { ConnectYourApp } from './ConnectYourApp';
 import { EvidenceCoverageCard } from './EvidenceCoverageCard';
-import { bucketDescription, bucketFormatter, DEFAULT_WINDOW, outcomeBuckets, setupChecklist, TIME_WINDOWS } from './overviewModel';
+import { bucketFormatter, DEFAULT_WINDOW, outcomeBuckets, setupChecklist, TIME_WINDOWS } from './overviewModel';
+import { heroDescription } from './heroChart';
 import { PerformanceSection } from './PerformanceSection';
 import { SavingsStrip } from './SavingsStrip';
 import { SetupChecklist } from './SetupChecklist';
@@ -100,7 +101,7 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
             <CardContent>
               <OutcomeTimeSeries
                 title={copy.overview.hero_chart}
-                description={replay ? `${bucketDescription(stats).split(',')[0]}, over the replayed traffic` : bucketDescription(stats)}
+                description={heroDescription(stats, replay)}
                 buckets={outcomeBuckets(stats.outcomes_series)}
                 formatBucket={bucketFormatter(stats.bucket)}
                 headingLevel={2}
@@ -148,25 +149,6 @@ function ConnectAnotherApp(props: { origin: string; demo: boolean; received: boo
         <ConnectYourApp {...props} className="border-0" />
       </div>
     </details>
-  );
-}
-
-function SavingsTab({ timeWindow }: { timeWindow: TimeWindow }) {
-  return (
-    <div className="space-y-5">
-      <SavingsStrip timeWindow={timeWindow} />
-      <PhasePlaceholder
-        question={NAV_ITEMS[0].question}
-        phase="P4"
-        phaseName="security, credentials, Studio, ROI"
-        planned={[
-          'Your measured cost per 1,000 answers over time, against what an LLM would have cost for the same checks',
-          'A component table where every number says whether it is measured, an estimate, vendor or simulated',
-          'Fast-check p50 / p95 and how often the deadline was missed',
-          'Sampling status: uniform audits today and budget caps reached',
-        ]}
-      />
-    </div>
   );
 }
 
@@ -245,7 +227,7 @@ export function OverviewPage({ search }: { search: OverviewSearchParams }) {
         </TabsList>
         <TabPanel value="summary">{summary}</TabPanel>
         <TabPanel value="savings">
-          <SavingsTab timeWindow={timeWindow} />
+          <SavingsPanel timeWindow={timeWindow} />
         </TabPanel>
       </Tabs>
     </div>

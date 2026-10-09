@@ -9,7 +9,7 @@
 // With a database, the built-in and file specs are registered at startup (insert-only), so the
 // database holds every version a decision, a calibration or a replay can refer to; a version
 // that is already stored keeps its stored spec (versions are immutable) and the registry reports
-// the mismatch as a warning. Dashboard-authored versions (P4 writes) join through Reload.
+// the mismatch as a warning. Dashboard-authored versions (the evaluator writes) join through Reload.
 package evaluators
 
 import (
@@ -180,9 +180,6 @@ func New(ctx context.Context, cfg Config) (*Registry, error) {
 	if _, err := r.Reload(ctx); err != nil {
 		return nil, err
 	}
-	for _, w := range r.Warnings() {
-		r.log.Warn("evaluators: " + w)
-	}
 	return r, nil
 }
 
@@ -267,11 +264,16 @@ func readDir(fsys fs.FS, dir, source string, strictNames bool) ([]*Version, erro
 	return out, nil
 }
 
-// newVersion parses a spec document.
+// newVersion parses a spec document and runs the hard rules that need no route (SPEC §2.8,
+// D54): a version that breaks one is excluded, and the caller reports why. References to
+// other evaluators are checked where a route attaches them (policy check, Studio validate).
 func newVersion(doc []byte, source string) (*Version, error) {
 	spec, err := decision.ParseSpec(doc)
 	if err != nil {
 		return nil, err
+	}
+	if errs := decision.HardErrors(decision.LintSpec(spec, decision.LintOptions{})); len(errs) > 0 {
+		return nil, hardRuleError(spec.Ref(), errs)
 	}
 	h, err := spec.Hashes()
 	if err != nil {
@@ -285,6 +287,18 @@ func newVersion(doc []byte, source string) (*Version, error) {
 		v.Changelog = meta.Changelog
 	}
 	return v, nil
+}
+
+// hardRuleError names the hard rules a spec breaks: the first finding in full, then a count.
+func hardRuleError(ref string, errs []decision.Lint) error {
+	first := errs[0]
+	msg := fmt.Sprintf("%s breaks the hard rule %s at %s: %s", ref, first.Code, first.Path, first.Message)
+	if n := len(errs) - 1; n == 1 {
+		msg += " (and 1 more)"
+	} else if n > 1 {
+		msg += fmt.Sprintf(" (and %d more)", n)
+	}
+	return errors.New(msg)
 }
 
 // overlay merges layers in increasing precedence: a later layer's version replaces an earlier
@@ -378,7 +392,7 @@ func (r *Registry) Reload(ctx context.Context) (bool, error) {
 		if r.snap.Load() != nil {
 			return false, nil
 		}
-		r.snap.Store(r.build(r.static, nil, nil, ""))
+		r.swap(r.build(r.static, nil, nil, ""))
 		return true, nil
 	}
 	fp, err := r.cfg.Store.EvaluatorsFingerprint(ctx)
@@ -410,8 +424,19 @@ func (r *Registry) Reload(ctx context.Context) (bool, error) {
 		v.CreatedBy, v.CreatedAt, v.Changelog = row.CreatedBy, row.CreatedAt, row.Changelog
 		stored = append(stored, v)
 	}
-	r.snap.Store(r.build(stored, recs, warns, fp))
+	r.swap(r.build(stored, recs, warns, fp))
 	return true, nil
+}
+
+// swap installs a snapshot and logs the warnings the previous one did not have, so a version
+// that a reload excludes (a stored spec that breaks a hard rule) is reported once.
+func (r *Registry) swap(next *snapshot) {
+	prev := r.snap.Swap(next)
+	for _, w := range next.warnings {
+		if prev == nil || !slices.Contains(prev.warnings, w) {
+			r.log.Warn("evaluators: " + w)
+		}
+	}
 }
 
 // build assembles a snapshot from the static layer and the stored versions and rows.
@@ -480,7 +505,8 @@ func (r *Registry) Specs() map[string]*decision.Spec { return r.current().specs 
 // Refs lists the registered refs, sorted.
 func (r *Registry) Refs() []string { return slices.Clone(r.current().refs) }
 
-// Warnings lists the problems found while loading (skipped files, spec conflicts).
+// Warnings lists the problems found while loading (skipped files, versions that break a hard
+// rule, spec conflicts).
 func (r *Registry) Warnings() []string { return slices.Clone(r.current().warnings) }
 
 // Evaluators lists the evaluators by id; archived ones only when includeArchived.

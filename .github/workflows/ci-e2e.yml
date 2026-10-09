@@ -6,10 +6,12 @@ name: CI (E2E)
 # skeleton and the M-Demo set, signed in as admin with a key generated for the
 # run), the static site's specs (built as the gate builds it and served by vite
 # preview), then the e2e stack (every vendor on mock-upstream) with its p3
-# scenarios; compose logs are uploaded on failure. The scripts job lints and
-# unit-tests the setup scripts the suite relies on and validates every compose
-# profile. No path filters on purpose: a required check that never reports
-# would block merges.
+# scenarios, then the onboarding stack (a fresh install: setup link, Connect
+# OpenRouter on mock-upstream, the wizard); compose logs are uploaded on
+# failure. The scripts job lints and unit-tests the setup scripts the suite
+# relies on, validates every compose profile and runs the gateway's
+# -check-config against the onboarding stack's environment. No path filters on
+# purpose: a required check that never reports would block merges.
 
 on:
   push:
@@ -31,7 +33,7 @@ jobs:
   scripts:
     name: DX scripts
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -53,8 +55,28 @@ jobs:
       - name: Unit tests (scripts/tests)
         run: python -m unittest discover -s scripts/tests -v
 
-      - name: Compose files (every profile and the demo, e2e and load overrides)
+      - name: Compose files (every profile and the demo, e2e, onboarding and load overrides)
         run: make compose-check
+
+      # The onboarding stack must start under TRUTHTABLE_STRICT_CONFIG with backend auto and no
+      # key (D70): run the gateway's -check-config on the host with the environment compose
+      # gives its proxy, so a refusal shows here with its warnings instead of as an unhealthy
+      # container in the E2E job. Same Go and stub setup as ci-go.yml.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate gRPC stubs
+        run: make proto-tools proto-go
+
+      - name: Onboarding stack configuration (proxy -check-config, strict, no key)
+        run: make onboarding-check-config
 
   e2e:
     name: E2E (compose stack)
@@ -63,10 +85,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # docker-compose.yml tags the app images with TRUSTAGENT_VERSION (make
-      # exports the contents of VERSION the same way).
+      # docker-compose.yml tags the app images with TRUSTAGENT_VERSION and builds
+      # them with GIT_SHA (make exports both the same way: the contents of VERSION
+      # and `git rev-parse --short HEAD`).
       - name: Image tag
-        run: echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+        run: |
+          echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+          echo "GIT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -78,7 +103,9 @@ jobs:
         with:
           context: .
           file: backend-go/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           tags: ghcr.io/timkush1/truthtable-proxy:${{ env.TRUSTAGENT_VERSION }}
           load: true
           cache-from: type=gha,scope=proxy
@@ -89,7 +116,9 @@ jobs:
         with:
           context: .
           file: backend-python/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           tags: ghcr.io/timkush1/truthtable-engine:${{ env.TRUSTAGENT_VERSION }}
           load: true
           cache-from: type=gha,scope=engine
@@ -100,7 +129,9 @@ jobs:
         with:
           context: .
           file: frontend-react/Dockerfile
-          build-args: VERSION=${{ env.TRUSTAGENT_VERSION }}
+          build-args: |
+            VERSION=${{ env.TRUSTAGENT_VERSION }}
+            GIT_SHA=${{ env.GIT_SHA }}
           tags: ghcr.io/timkush1/truthtable-dashboard:${{ env.TRUSTAGENT_VERSION }}
           load: true
           cache-from: type=gha,scope=dashboard
@@ -153,11 +184,13 @@ jobs:
           DASHBOARD_HOST_PORT: '3000'
         run: npx playwright test --project=stack -g skeleton
 
-      - name: Playwright (stack, M-Demo specs)
+      # One worker: the Studio, Savings and label specs change shared state
+      # (evaluator drafts, budgets, labels) that the other specs read.
+      - name: Playwright (stack, M-Demo, Studio, Savings and label specs)
         working-directory: frontend-react
         env:
           DASHBOARD_HOST_PORT: '3000'
-        run: npx playwright test --project=stack -g "trace detail|inline claims|policy edit|rollback|fallback"
+        run: npx playwright test --project=stack --workers=1 -g "trace detail|inline claims|policy edit|rollback|fallback|studio|savings|labels|demo setup"
 
       # The static GitHub Pages site needs no stack. It is built as the M-Demo gate
       # builds it; --project=static makes Playwright serve it with vite preview
@@ -180,17 +213,42 @@ jobs:
       - name: E2E stack and its p3 scenarios
         run: make e2e-up E2E_BUILD= && make e2e-scenarios E2E_PHASE=p3 && make e2e-down
 
-      # Whichever stack was up when a step failed: the demo, or the e2e stack.
+      # A fresh install (docker-compose.onboarding.yml): no admin key and no
+      # fast-check key. The onboarding spec claims the one-time setup link,
+      # connects OpenRouter through mock-upstream's sign-in page (published on
+      # MOCK_UPSTREAM_HOST_PORT for the browser) and walks the wizard. Its own
+      # ports, so nothing else has to stop first; the run's admin key is unset
+      # so the spec signs in only through the setup link it claims.
+      - name: Onboarding stack and its Playwright spec
+        env:
+          PROXY_HOST_PORT: '28080'
+          DASHBOARD_HOST_PORT: '23000'
+          POSTGRES_HOST_PORT: '25432'
+          MOCK_UPSTREAM_HOST_PORT: '28090'
+        run: |
+          make onboarding-up ONBOARDING_BUILD=
+          url="$(make -s onboarding-setup-url)"
+          echo "::add-mask::$url"
+          (cd frontend-react && env -u TRUSTAGENT_ADMIN_KEY TRUSTAGENT_SETUP_URL="$url" CI=1 \
+            npx playwright test --project=stack --workers=1 -g onboarding)
+
+      # Whichever stack was up when a step failed: the demo, the e2e stack or the
+      # onboarding stack.
       - name: Collect logs
         if: failure()
         run: |
           mkdir -p e2e-artifacts
           demo="docker compose -p truthtable-demo -f docker-compose.yml -f docker-compose.demo.yml --profile demo"
           e2e="docker compose -p truthtable-e2e -f docker-compose.yml -f docker-compose.e2e.yml --profile e2e"
+          onboarding="docker compose -p truthtable-onboarding -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.onboarding.yml --profile e2e"
           $demo ps --all > e2e-artifacts/compose-ps.txt 2>&1 || true
           $demo logs --no-color --timestamps > e2e-artifacts/compose.log 2>&1 || true
           $e2e ps --all > e2e-artifacts/compose-e2e-ps.txt 2>&1 || true
           $e2e logs --no-color --timestamps > e2e-artifacts/compose-e2e.log 2>&1 || true
+          $onboarding ps --all > e2e-artifacts/compose-onboarding-ps.txt 2>&1 || true
+          # The boot SETUP line carries a one-time token: mask it before upload.
+          $onboarding logs --no-color --timestamps 2>&1 \
+            | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[masked]/g' > e2e-artifacts/compose-onboarding.log || true
           python3 scripts/doctor.py --target docker --expect demo --wait 0 --json \
             > e2e-artifacts/doctor.json 2>&1 || true
 
@@ -208,4 +266,4 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: make -k demo-clean e2e-down
+        run: make -k demo-clean e2e-down onboarding-down

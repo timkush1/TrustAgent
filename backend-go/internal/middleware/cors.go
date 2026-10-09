@@ -18,12 +18,17 @@ var ExposedHeaders = []string{
 	"X-TrustAgent-Overhead-Ms", "X-TrustAgent-Audit", "X-TrustAgent-Source",
 }
 
-// allowedHeaders are the request headers a cross-origin browser may send: the SPEC §2.4 list, plus
-// Authorization and X-API-Key, which the legacy /api key check still reads until the P2 authz core.
+// allowedHeaders are the request headers a cross-origin browser may send: exactly the SPEC §2.4
+// list (D43). Authorization and X-API-Key are not on it: a cross-origin dashboard
+// authenticates with X-TrustAgent-Key, and SDK clients, which send no preflight, still
+// authenticate with either (authz/resolve.go).
 var allowedHeaders = []string{
 	"Content-Type", "If-Match", "X-TrustAgent-Key", "X-TrustAgent-CSRF", "X-TrustAgent-Route",
-	"X-TrustAgent-Mode", "X-Request-ID", "Authorization", "X-API-Key",
+	"X-TrustAgent-Mode", "X-Request-ID",
 }
+
+// allowedMethods are the methods a cross-origin dashboard may use (SPEC §2.4).
+var allowedMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 
 // CORS reflects the request origin only when it appears in the allowlist
 // (replacing the previous wildcard "*"). Requests from other origins get no
@@ -35,13 +40,14 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 	}
 	exposed := strings.Join(ExposedHeaders, ", ")
 	requestHeaders := strings.Join(allowedHeaders, ", ")
+	methods := strings.Join(allowedMethods, ", ")
 
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 		if origin != "" && allowed[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			c.Header("Access-Control-Allow-Methods", methods)
 			c.Header("Access-Control-Allow-Headers", requestHeaders)
 			c.Header("Access-Control-Expose-Headers", exposed)
 			c.Header("Access-Control-Max-Age", "600")

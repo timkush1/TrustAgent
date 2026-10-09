@@ -6,6 +6,9 @@ import { policyState } from '@/test/control/fixtures';
 import { fakeDataSource } from '@/test/fakeDataSource';
 import { renderApp } from '@/test/renderApp';
 import { systemStatus } from '@/test/status';
+import { warmRoutes } from '@/test/warmRoutes';
+
+warmRoutes('/app/traffic', '/app/overview', '/app/traces/t-9', '/app/audits/a-1', '/app/setup', '/app/settings/connections', '/');
 
 beforeEach(() => {
   useStreamStore.getState().reset();
@@ -28,19 +31,34 @@ describe('app shell and routes', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Overview');
   });
 
-  it('renders an honest placeholder that names the phase and only links to real pages', async () => {
-    // Settings is still a placeholder until P4 (Policies, Overview, Playground and Evaluators are built).
+  it('renders a Settings section under the Settings heading with no dead buttons', async () => {
     renderApp('/app/settings/connections');
-    expect(await screen.findByText(/Arrives in P4/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Connected, and within budget?');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
     const main = screen.getByRole('main');
-    expect(within(main).queryAllByRole('button').filter((b) => !b.hasAttribute('aria-haspopup') && !b.getAttribute('aria-expanded'))).toHaveLength(0);
+    // Every button does something: a disabled one says why (DESIGN.md "no dead buttons").
+    for (const button of within(main).queryAllByRole('button')) {
+      if (button.hasAttribute('disabled') || button.getAttribute('aria-disabled') === 'true') {
+        expect(button.getAttribute('aria-describedby')).toBeTruthy();
+      }
+    }
   });
 
   it('shows the Health pill from /health', async () => {
     renderApp('/app/overview');
     const pill = await screen.findByRole('button', { name: /System health/ });
     await waitFor(() => expect(pill).toHaveTextContent(/issue|ready/));
+  });
+
+  it('says setup is in progress instead of counting issues while the setup wizard is open', async () => {
+    const off = systemStatus({ decision_model: { ...systemStatus().decision_model, state: 'off', backend: 'off' } });
+    const ds = fakeDataSource({ getStatus: vi.fn(async () => off) });
+    const { router } = renderApp('/app/setup', ds);
+    const pill = await screen.findByRole('button', { name: /System health/ });
+    await waitFor(() => expect(pill).toHaveTextContent('Setup in progress'));
+    // Elsewhere the same state is an issue.
+    await router.navigate({ to: '/app/overview' });
+    await waitFor(() => expect(pill).toHaveTextContent(/\d+ issues?/));
   });
 
   it('shows the demo badge and banner on the demo stack', async () => {
@@ -70,6 +88,55 @@ describe('app shell and routes', () => {
     const banner = container.querySelector('[data-banner="breaker_open"]') as HTMLElement;
     expect(banner).toHaveTextContent('Route payments-faq enforces decisions; until the fast check recovers it follows its fail mode (closed).');
     expect(getPolicies).toHaveBeenCalled();
+  });
+
+  it('pauses deep audits in the banner when their budget is used up, with the way to Budgets', async () => {
+    const base = systemStatus();
+    const ds = fakeDataSource({ getStatus: vi.fn(async () => systemStatus({ budgets: { ...base.budgets, llm_exhausted: true } })) });
+    const { container } = renderApp('/app/traffic', ds);
+    await waitFor(() => expect(container.querySelector('[data-banner="llm_exhausted"]')).not.toBeNull());
+    const banner = within(container.querySelector('[data-banner="llm_exhausted"]') as HTMLElement);
+    expect(banner.getByText(/Deep audits paused/)).toBeInTheDocument();
+    expect(banner.getByRole('link', { name: 'Open Budgets' })).toHaveAttribute('href', '/app/settings/budgets');
+  });
+
+  it('links a no-credits banner to OpenRouter in a new tab', async () => {
+    const base = systemStatus();
+    const ds = fakeDataSource({ getStatus: vi.fn(async () => systemStatus({ decision_model: { ...base.decision_model, state: 'no_credits' } })) });
+    const { container } = renderApp('/app/traffic', ds);
+    await waitFor(() => expect(container.querySelector('[data-banner="no_credits"]')).not.toBeNull());
+    const link = within(container.querySelector('[data-banner="no_credits"]') as HTMLElement).getByRole('link', { name: /Add credits on OpenRouter/ });
+    expect(link).toHaveAttribute('href', 'https://openrouter.ai/settings/credits');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('marks simulated checks outside the demo stack, next to the read-only badge (D89)', async () => {
+    const base = systemStatus();
+    const ds = fakeDataSource({
+      getStatus: vi.fn(async () => systemStatus({ demo: false, readonly: true, decision_model: { ...base.decision_model, backend: 'mock', state: 'mock' } })),
+    });
+    const { container } = renderApp('/app/traffic', ds);
+    await waitFor(() => expect(container.querySelector('[data-badge="simulated-checks"]')).not.toBeNull());
+    const header = within(screen.getByRole('banner'));
+    expect(header.getByText('Simulated checks')).toBeInTheDocument();
+    expect(header.getByText('Read-only')).toBeInTheDocument();
+  });
+
+  it('leaves the simulated badge to the demo badge on the demo stack, and off a real backend', async () => {
+    const base = systemStatus();
+    const demo = fakeDataSource({
+      getHealth: async () => ({ status: 'ok', version: '2.0.0', demo: true, audit_engine: true }),
+      getStatus: vi.fn(async () => systemStatus({ demo: true, decision_model: { ...base.decision_model, backend: 'mock', state: 'mock' } })),
+    });
+    const { container, unmount } = renderApp('/app/traffic', demo);
+    expect(await screen.findByText('Demo')).toBeInTheDocument();
+    expect(container.querySelector('[data-badge="simulated-checks"]')).toBeNull();
+    unmount();
+    const real = fakeDataSource({ getStatus: vi.fn(async () => systemStatus({ demo: false, decision_model: { ...base.decision_model, backend: 'openrouter-decisions', state: 'ready' } })) });
+    const second = renderApp('/app/traffic', real);
+    await screen.findByRole('button', { name: /System health/ });
+    expect(second.container.querySelector('[data-badge="simulated-checks"]')).toBeNull();
   });
 
   it('does not read the policy for the banner while the breaker is closed', async () => {

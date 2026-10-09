@@ -30,7 +30,7 @@
       "source": "https://docs.anthropic.com/en/docs/about-claude/pricing",
       "label": "vendor_price",
       "as_of": "2026-06-24",
-      "note": "[A] Assumed from the Anthropic model table (cached 2026-06-24, not re-fetched); re-verify before bench-publish."
+      "note": "[A] Anthropic list price as of 2026-06-24, not re-checked since."
     },
     {
       "match": "anthropic/claude-haiku-4.5",
@@ -40,14 +40,14 @@
       "source": "https://openrouter.ai/anthropic/claude-haiku-4.5",
       "label": "vendor_price",
       "as_of": "2026-06-24",
-      "note": "[A] Assumed equal to the Anthropic price; verify on openrouter.ai before bench-publish."
+      "note": "[A] Taken to equal the Anthropic list price as of 2026-06-24, not re-checked on openrouter.ai since."
     },
     {
       "match": "*",
       "provider": "ollama",
       "input_per_mtok": 0,
       "output_per_mtok": 0,
-      "note": "Local model: compute is not priced (cost_source free_local)."
+      "note": "Runs on your machine: no per-token price."
     }
   ]
 }

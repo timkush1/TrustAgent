@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -143,5 +146,102 @@ func TestWriteDeadlinePerRoute(t *testing.T) {
 	}
 	if got := writeDeadline(&config.Config{}, "/v1/chat/completions", ingest); got != 0 {
 		t.Errorf("an upstream timeout of 0 sets no /v1 deadline, got %s", got)
+	}
+}
+
+// The owner seams change nothing on the gated path: a gated request flows as before, every
+// seam's route is served by its owner's handler, and the harness options the newer tests use work
+// (a custom engine, a config mutation, the redacting log, WS replay frames).
+func TestOwnerSeamsKeepTodaysBehaviour(t *testing.T) {
+	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm" // matches no redaction pattern
+	var logs bytes.Buffer
+	eng := scenarioEngine(t, false)
+	env := newTestEnv(t, envOpts{publicRead: true, engine: eng, logs: &logs, mutate: func(c *config.Config) {
+		c.Jev.APIKey = secret // a loaded secret joins the redactor
+	}})
+	if env.engine != eng || env.srv.rt == nil || env.srv.rt.manager.Current().Version != 0 || env.srv.apply == nil || env.srv.eval == nil {
+		t.Fatalf("seams not wired: rt %v apply %v eval %v", env.srv.rt, env.srv.apply, env.srv.eval)
+	}
+	if got := env.srv.redact("key " + secret); strings.Contains(got, secret) {
+		t.Errorf("server.redact kept a loaded secret: %q", got)
+	}
+	if h := env.srv.costs.headroom(true); h <= 0 {
+		t.Errorf("without a ledger the decision headroom is unlimited, got %v", h)
+	}
+	settle, err := env.srv.costs.reserve(context.Background(), 1, "test")
+	if err != nil {
+		t.Fatalf("without a ledger nothing is reserved: %v", err)
+	}
+	settle(0.5)
+
+	resp := env.send(loadDemoScenarios(t)["refund-contradiction-flag"])
+	traceID := resp.Header.Get(proxy.HeaderTraceID)
+	d := env.settledTrace(traceID)
+	if d.Labels == nil || len(d.Labels) != 0 {
+		t.Errorf("labels hook default: %v", d.Labels)
+	}
+	frames := env.wsFrames(t, 50)
+	var sawTrace bool
+	for _, f := range frames {
+		if strings.Contains(string(f), `"trace_started"`) && strings.Contains(string(f), traceID) {
+			sawTrace = true
+		}
+	}
+	if !sawTrace {
+		t.Errorf("wsFrames did not replay trace_started of %s (%d frames)", traceID, len(frames))
+	}
+	// Every seam has its owner's handler: /api/settings (SEC-5) and /api/credentials
+	// (CN-7) since CP-SEC2+CP-SEC3, /api/labels/queue (EV-3) since CP-EVAL, /api/roi/timeseries
+	// (COST-9) and /api/studio/samples (ST-4) since I-1. None answers the unmounted 404.
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/settings"}, {http.MethodGet, "/api/credentials"}, {http.MethodGet, "/api/labels/queue"},
+		{http.MethodGet, "/api/roi/timeseries"}, {http.MethodPost, "/api/studio/samples"},
+	} {
+		if code, body := env.do(route.method, route.path, testKey, []byte(`{}`)); code == http.StatusNotFound && strings.Contains(string(body), "No endpoint here") {
+			t.Errorf("%s %s = the unknown-route 404: its owner's handler is not mounted", route.method, route.path)
+		}
+	}
+	if !strings.Contains(env.logText(), "level=") || strings.Contains(env.logText(), secret) {
+		t.Errorf("the redacting test log is empty or leaks the secret")
+	}
+}
+
+// TestStatusWarnsAboutExcludedEvaluators: a file version that breaks a hard rule is left out of
+// the registry and named in /api/status warnings (D54), while the other versions stay.
+func TestStatusWarnsAboutExcludedEvaluators(t *testing.T) {
+	const spec = `{"spec_version":"evaluator/v1","id":"tone","version":%d,"name":"Tone","category":"quality",
+  "state_fields":["assistant_response"],"question":{"type":"noul","instructions":"%s","criteria":{"true":"Rude","false":"Polite"}},
+  "evidence":{"requires":"none"},"signal":{"invert":false},"outcomes":{"warn_at":0.7},"changelog":"first"}`
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"tone-1.json": fmt.Sprintf(spec, 1, "Is it rude?"),
+		"tone-2.json": fmt.Sprintf(spec, 2, "Is it rude about `evidence`?"),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := newTestEnv(t, envOpts{mutate: func(c *config.Config) { c.EvaluatorsDir = dir }})
+	if _, ok := env.srv.policies.Registry.Get("tone@1"); !ok {
+		t.Fatal("tone@1 is clean and must load")
+	}
+	code, body := env.get("/api/status", testKey)
+	if code != http.StatusOK {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	var st struct {
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	var found int
+	for _, w := range st.Warnings {
+		if strings.HasPrefix(w, "Evaluators: ") && strings.Contains(w, "tone@2 breaks the hard rule unresolved_state_reference") {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Errorf("want one evaluator warning for tone@2, got %q", st.Warnings)
 	}
 }

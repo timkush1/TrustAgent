@@ -59,8 +59,27 @@ describe('lintSpec', () => {
     const spec = { ...noul, outcomes: { ...noul.outcomes, requires_corroboration: ['groundedness', 'det:numbers_not_in_evidence', 'det:vibes'], implies: ['ghost'] } };
     expect(codes(spec).errors).toEqual(['unknown_detector']);
     expect(codes(spec, { registry: ['groundedness'] }).errors).toEqual(['unknown_detector', 'unknown_evaluator_reference']);
-    const onRoute = lintSpec({ ...spec, outcomes: { ...spec.outcomes, implies: [] } }, { registry: ['groundedness'], attached: [] });
-    expect(onRoute.filter((l) => l.code === NOT_ATTACHED)).toHaveLength(1);
+    const onRoute = lintSpec({ ...spec, outcomes: { ...spec.outcomes, requires_corroboration: ['groundedness'], implies: [] } }, { registry: ['groundedness'], attached: [] });
+    expect(onRoute.filter((l) => l.code === NOT_ATTACHED).map((l) => l.message)).toEqual([
+      'groundedness is not attached to this route, so nothing can agree before a block',
+    ]);
+  });
+
+  it('warns about corroboration only when none of the listed corroborators can agree (D98, like lint.go)', () => {
+    const registry = ['groundedness', 'contradiction'];
+    const withOutcomes = (outcomes: Record<string, string[]>) => ({ ...noul, outcomes: { ...noul.outcomes, ...outcomes } });
+    // An instant check can always agree, and so can an attached evaluator.
+    expect(lintSpec(withOutcomes({ requires_corroboration: ['contradiction', 'det:numbers_not_in_evidence'] }), { registry, attached: [] })).toEqual([]);
+    const both = withOutcomes({ requires_corroboration: ['groundedness', 'contradiction'] });
+    expect(lintSpec(both, { registry, attached: ['contradiction'] })).toEqual([]);
+    expect(lintSpec(both, { registry, attached: [] }).map((l) => [l.code, l.path, l.message])).toEqual([
+      [NOT_ATTACHED, 'outcomes.requires_corroboration', 'none of groundedness, contradiction is attached to this route, so nothing can agree before a block'],
+    ]);
+    // An implied evaluator is a cross-check of its own: each one not attached warns.
+    const implied = lintSpec(withOutcomes({ implies: ['groundedness', 'contradiction'] }), { registry, attached: ['groundedness'] });
+    expect(implied.map((l) => [l.path, l.message])).toEqual([
+      ['outcomes.implies', 'contradiction is not attached to this route, so the disagreement with it is never checked'],
+    ]);
   });
 
   it('flags non-descriptive option keys', () => {
@@ -78,5 +97,15 @@ describe('lintSpec', () => {
     expect(codes(spec).lints).toEqual(['counting_or_arithmetic']);
     const unresolved = { ...noul, question: { ...noul.question, criteria: { true: ['`rules.tone` is ignored'], false: 'ok' } } };
     expect(codes(unresolved).errors).toEqual(['unresolved_state_reference']);
+  });
+
+  it('compares at most the first 255 options for near-duplicates (bounded work, like lint.go)', () => {
+    // 600 options described the same way: every pair is a near-duplicate, but only the pairs among
+    // the first 255 (the schema's limit) are compared and reported.
+    const criteria = Object.fromEntries(Array.from({ length: 600 }, (_, i) => [`same_reply_${i}`, 'The same description']));
+    const spec = { ...noul, question: { type: 'choice', instructions: 'Which fits `assistant_response`?', criteria }, signal: { risk_weights: { same_reply_0: 1 } } };
+    const found = lintSpec(spec).filter((l) => l.code === 'near_duplicate_options');
+    expect(found).toHaveLength((255 * 254) / 2);
+    expect(found.at(-1)?.message).toBe('same_reply_253 and same_reply_254 are described almost the same way; add not_for to separate them');
   });
 });

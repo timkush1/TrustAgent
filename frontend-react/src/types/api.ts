@@ -99,6 +99,10 @@ export interface FieldError {
   line?: number;
   col?: number;
   message: string;
+  /** A machine code the web renders words for, e.g. reenter_secret (D37) or fallback_key_required (D41). */
+  code?: string;
+  /** e.g. {names: [credential]} for reenter_secret, {host} for fallback_key_required. */
+  details?: Record<string, unknown>;
 }
 /** REST error body for every `/api/*` error (`/v1/*` errors use the upstream API's shape). */
 export interface ApiErrorBody {
@@ -319,6 +323,8 @@ export interface LabelView {
   labeled_by: string;
   created_at: ISODateTime;
   note: string | null;
+  /** The caller gave this label: labels are per labeller, and DELETE /api/labels removes only the caller's own. */
+  mine: boolean;
 }
 export interface TraceDetail extends TraceSummary {
   body: {
@@ -519,6 +525,8 @@ export interface SystemStatus {
   engine: ComponentState & {
     version?: string;
     runtime_config_version?: number;
+    /** D34: the Go settings epoch of the last push the engine applied. */
+    runtime_config_epoch?: string;
     max_audits?: number;
   };
   judge: {
@@ -554,6 +562,20 @@ export interface SystemStatus {
   credentials: { store: 'ready' | 'unavailable' | 'no_database'; undecryptable: string[] };
   redis: ComponentState & { configured: boolean };
   warnings: string[];
+  /** The warnings that carry details (master_key_changed, fail_closed_unprotected, ...); codes also appear in warnings. */
+  warning_details?: StatusWarning[];
+}
+/** A status or settings warning with details (D32, D77): the web renders words by code. */
+export interface StatusWarning {
+  code: string;
+  message: string;
+  details?: WarningDetails;
+}
+export interface WarningDetails {
+  /** fail_closed_unprotected, confirmation_required: the enforcing routes affected (D77). */
+  routes?: string[];
+  /** master_key_changed, reenter_secret: the credential names (D32, D37). */
+  names?: string[];
 }
 export type SystemStatusLite = Pick<SystemStatus, 'version' | 'demo' | 'readonly'> & {
   engine: ComponentStateName;
@@ -582,6 +604,8 @@ export interface SessionInfo {
   expires_at: ISODateTime;
   sliding: boolean;
   created_admin_key?: string;
+  /** The api_keys id of the key this caller signed in with; absent for an env key. */
+  key_id?: string;
 }
 export interface ApiKeyView {
   id: string;
@@ -647,6 +671,8 @@ export interface OverviewStats {
     t: ISODateTime;
     passed: number;
     would_flag: number;
+    /** Observe-only answers the gate would have blocked (counted apart from would_flag). */
+    would_block: number;
     flagged: number;
     blocked: number;
     replaced: number;
@@ -783,6 +809,24 @@ export interface EvidenceSuggestion {
   would_gain: number;
   sample: number;
   example_trace_id: TraceId | null;
+}
+/** GET /api/evidence/suggestions (#51, D64). */
+export interface EvidenceSuggestionList {
+  items: EvidenceSuggestion[];
+}
+/** One decision-model request body as compiled (session_id is never returned). */
+export interface JevRequest {
+  model: string;
+  state: Record<string, unknown>;
+  questions: Record<string, unknown>;
+}
+/** GET /api/traces/:id/decision-request (#12, D63): the glass box. */
+export interface DecisionRequestView {
+  requests: JevRequest[];
+  request_sha256: string[];
+  matches_recorded: boolean;
+  cpt: number;
+  mismatch_reason: 'body_truncated' | 'policy_missing' | 'evaluator_missing' | null;
 }
 
 // policies
@@ -932,13 +976,59 @@ export interface Lint {
   path: string;
   message: string;
 }
+/** POST /api/evaluators/validate (#30). */
+export interface EvaluatorValidateRequest {
+  spec: import('@/lib/contracts/types.gen').EvaluatorSpec;
+}
+/** Schema errors and lints (Go internal/decision/lint.go is the reference, D54); hashes are null while errors remain. */
+export interface EvaluatorValidateResult {
+  errors: FieldError[];
+  lints: Lint[];
+  question_sha256: string | null;
+  calibration_key: string | null;
+  question_tokens: number | null;
+}
+/** POST /api/evaluators (#31). */
+export interface EvaluatorCreateRequest {
+  spec: import('@/lib/contracts/types.gen').EvaluatorSpec;
+  changelog: string;
+}
+/** POST /api/evaluators/:id/versions (#32): base_version is the latest version the editor started from. */
+export interface EvaluatorVersionCreateRequest {
+  spec: import('@/lib/contracts/types.gen').EvaluatorSpec;
+  changelog: string;
+  base_version: number;
+}
+/** POST /api/evaluators/:id/archive (#33). */
+export interface EvaluatorArchiveRequest {
+  archived: boolean;
+}
 export interface StudioDraftResponse {
   draft: import('@/lib/contracts/types.gen').EvaluatorDraft | null;
   errors: FieldError[];
   lints: Lint[];
   model: string;
   cost_usd: number;
+  /** D82: simulated for a mock judge, so the draft cost is labelled Simulated. */
+  cost_source: CostRecord['cost_source'];
   attempts: number;
+}
+/** POST /api/studio/draft (#34). */
+export interface StudioDraftRequest {
+  /** At most 2000 characters. */
+  description: string;
+  route?: string;
+}
+/** POST /api/studio/samples (#36). */
+export interface StudioSamplesRequest {
+  route?: string;
+  window: TimeWindow;
+  filter: 'flagged' | 'random' | 'disagreement';
+  /** At most 50. */
+  limit?: number;
+}
+export interface StudioSamplesResponse {
+  samples: StudioSample[];
 }
 export interface StudioSample {
   id: string;
@@ -1077,6 +1167,73 @@ export interface ReliabilityResponse {
   n: number;
 }
 
+// Labels and calibration (D55, D59-D62)
+/** <id>@<v> takes should_fire|should_not_fire; claim:<i> a claim verdict; response hallucinated|grounded (D59). */
+export type LabelValue = 'should_fire' | 'should_not_fire' | ClaimVerdict | 'hallucinated' | 'grounded';
+/** PUT /api/labels (#40). */
+export interface LabelPut {
+  trace_id: TraceId;
+  target: string;
+  label: LabelValue;
+  note?: string;
+}
+/** DELETE /api/labels (#41). */
+export interface LabelDelete {
+  trace_id: TraceId;
+  target: string;
+}
+/** GET /api/labels/queue (#39, D60). */
+export interface LabelQueue {
+  items: LabelQueueItem[];
+}
+/** GET /api/calibration (#42). */
+export interface CalibrationList {
+  items: CalibrationRecordMeta[];
+}
+/** POST /api/calibration (#44). */
+export interface CalibrationImportRequest {
+  file: import('@/lib/contracts/types.gen').CalibrationFile;
+  activate: boolean;
+}
+export interface CalibrationImportResult {
+  imported: CalibrationRecordMeta[];
+  rejected: {
+    target_key: string | null;
+    reason: 'unknown_version' | 'calibration_key_mismatch' | 'mock_snapshot' | 'invalid';
+    message: string;
+  }[];
+}
+/** POST /api/calibration/fit (#45). */
+export interface CalibrationFitRequest {
+  target: string;
+  route?: string;
+  snapshot?: string;
+  sources: ('labels' | 'uniform_audit')[];
+  method?: 'auto' | 'isotonic' | 'platt';
+  /** The adopt flow fits with activate:false, previews, then activates (D62). */
+  activate: boolean;
+}
+export interface CalibrationFitMetrics {
+  ece_before: number | null;
+  ece_after: number | null;
+  brier_before: number | null;
+  brier_after: number | null;
+  auroc: number | null;
+}
+/** Recommended thresholds in calibrated space (calibration.v1 recommended). */
+export interface CalibrationRecommended {
+  space: 'calibrated';
+  warn_at: { value: number; precision: number; recall: number } | null;
+  critical_at: { value: number; precision_lb95: number; predicted_pos: number } | null;
+  critical_null_reason: string | null;
+}
+export interface CalibrationFitResponse {
+  record: CalibrationRecord;
+  reliability: ReliabilityResponse;
+  metrics: CalibrationFitMetrics;
+  recommended: CalibrationRecommended;
+}
+
 // settings / credentials
 export interface Bindings {
   decision_model: string | null;
@@ -1096,7 +1253,7 @@ export interface RuntimeSettings {
     path: string | null;
   };
   judge: {
-    provider: 'auto' | 'anthropic' | 'openrouter' | 'openai' | 'ollama' | 'none';
+    provider: 'auto' | 'anthropic' | 'openrouter' | 'openai' | 'ollama' | 'mock' | 'none';
     model: string | null;
   };
   upstream: {
@@ -1126,7 +1283,7 @@ export interface SettingsView {
   groups: { name: string; keys: SettingKeyView[] }[];
   runtime: RuntimeSettings;
   env_managed: string[];
-  warnings: { key: string; message: string; hint: string }[];
+  warnings: { key: string; message: string; hint: string; code?: string; details?: WarningDetails }[];
   dotenv_path: string | null;
 }
 export interface CredentialView {
@@ -1157,6 +1314,97 @@ export interface DecisionModelTestResult {
   cost_usd: number | null;
   cost_source: string | null;
   error: { kind: string; status: number | null; message: string; hint: string } | null;
+}
+
+// Settings writes, credentials, Connect OpenRouter, keys (D29-D41, D75-D81)
+/** What a credential write or a verify may bind (D75): never the upstreams, which bind through PATCH. */
+export type BindingTarget = 'decision_model' | 'judge';
+/** PATCH /api/settings body (#53): any subset of RuntimeSettings, nested objects partial too. */
+export interface RuntimeSettingsPatch {
+  decision_model?: Partial<RuntimeSettings['decision_model']>;
+  judge?: Partial<RuntimeSettings['judge']>;
+  upstream?: {
+    default?: Partial<UpstreamSetting>;
+    anthropic?: Partial<UpstreamSetting>;
+    fallback?: Partial<UpstreamSetting & { format: 'openai' | 'anthropic' }>;
+  };
+  bindings?: Partial<Bindings>;
+  budgets?: Partial<RuntimeSettings['budgets']>;
+  pricing_overrides?: PriceEntry[];
+}
+export type CredentialProvider = CredentialView['provider'];
+export type CredentialVerifyStatus = 'ok' | 'unauthorized' | 'no_credits' | 'unreachable' | 'unknown';
+/** PUT /api/credentials/:name (#55). base_url only for compatible and upstream-* (D29). */
+export interface CredentialPutRequest {
+  provider: CredentialProvider;
+  secret: string;
+  base_url?: string;
+  /** Default true; bind with verify:false is a 422 (D75). */
+  verify?: boolean;
+  bind?: BindingTarget[];
+}
+/** POST /api/credentials/:name/verify (#57). */
+export interface CredentialVerifyRequest {
+  bind?: BindingTarget[];
+}
+/** The result of checking a key with its provider (D40). The secret never appears here. */
+export interface CredentialVerification {
+  ok: boolean;
+  status: CredentialVerifyStatus;
+  /** A code the web renders words for (e.g. no_credits), or null. */
+  hint: string | null;
+  latency_ms: number | null;
+  cost_usd: number | null;
+  cost_source: CostRecord['cost_source'] | null;
+  /** OpenRouter GET /api/v1/key: the key's label and spending limit (null = no limit). */
+  key_label?: string | null;
+  limit_usd?: number | null;
+  limit_remaining_usd?: number | null;
+}
+export type BindingSkipReason = 'env_managed' | 'backend_pinned' | 'verification_failed';
+/** #55, #57 and #59 (D75): one shared write; bindings apply only when verification.ok. */
+export interface CredentialWriteResult {
+  credential: CredentialView;
+  /** false when a failed verification left the currently bound key in place. */
+  stored: boolean;
+  bindings: { applied: BindingTarget[]; skipped: { target: BindingTarget; reason: BindingSkipReason }[] };
+  /** null when the write asked for verify:false. */
+  verification: CredentialVerification | null;
+}
+export interface CredentialList {
+  items: CredentialView[];
+}
+/** POST /api/connect/openrouter/start (#58, D38). */
+export interface ConnectStartRequest {
+  /** A dashboard path under /app/ to return to. */
+  return_to?: string;
+}
+export interface ConnectStartResponse {
+  auth_url: string;
+  nonce: string;
+  expires_in: number;
+}
+/** POST /api/connect/openrouter/complete (#59, D38). */
+export interface ConnectCompleteRequest {
+  code: string;
+  nonce: string;
+  bind?: BindingTarget[];
+}
+export type ConnectCompleteResponse = CredentialWriteResult & { return_to: string };
+/** POST /api/ws-ticket (#7, D71): a one-use ticket for ?ticket= on the WebSocket URL. */
+export interface WsTicket {
+  ticket: string;
+  expires_in: number;
+}
+/** POST /api/keys (#68). */
+export interface ApiKeyCreateRequest {
+  label: string;
+  scopes: Scope[];
+}
+/** The created key: secret is shown once and never again. */
+export type CreatedApiKey = ApiKeyView & { secret: string };
+export interface ApiKeyList {
+  items: ApiKeyView[];
 }
 
 // playground / kb / recording
@@ -1233,7 +1481,8 @@ export interface Recording {
   calibration_state: CalibrationState;
   answer_sources: { scripted: number; generated: number };
   totals: { traces: number; decision_usd: number; llm_usd: number };
-  roi: RoiSummary;
+  /** recording.v1 `roi`: the headline only (Go recording.ROI); the full RoiSummary is recomputed from the traces. */
+  roi: Pick<RoiSummary, 'window' | 'gated_responses' | 'simulated'>;
   // details in traces/<id>.json as TraceDetail incl. scripted/generated bodies
   traces: TraceSummary[];
   events: { t_ms: number; type: WsEvent['type']; trace_id?: TraceId; data: unknown }[];

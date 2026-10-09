@@ -70,7 +70,7 @@ func (h *Handler) serveBuffered(f *flow, resp *http.Response, body io.Reader) {
 
 	// The gate bounds itself by the route deadline; the record context lets it finish when the
 	// client leaves meanwhile.
-	g := h.gate.Evaluate(f.record, x)
+	g := h.evaluate(f.record, f)
 	if !gone {
 		gone = s.leftDuringGate(g, &out)
 	}

@@ -19,6 +19,7 @@ import { ClaimsSection } from './ClaimsSection';
 import { OutcomeCard } from './OutcomeCard';
 import { TraceFacts } from './TraceFacts';
 import { auditHasResult, buildTraceView, receivedId } from './traceView';
+import { evalNameMap } from '@/domain/words/evaluators';
 
 function BackToTraffic() {
   return (
@@ -53,7 +54,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const fetched = useQuery({ ...auditQuery(ds, auditId ?? ''), enabled: needAudit });
   // The checks are named from the evaluator library (GET /api/evaluators) when this proxy serves it.
   const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
-  const evaluatorNames = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
+  const evaluatorNames = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
   const view = useMemo(() => {
     if (!base || base.audit || !fetched.data) return base;
     return buildTraceView({ detail: detailQuery.data, live, liveDecision, liveAudit, fetchedAudit: fetched.data });
@@ -90,7 +91,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     <article aria-label="Request" className="@container space-y-5" data-trace-id={summary.trace_id}>
       <BackToTraffic />
       {partialError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
-      <OutcomeCard summary={summary} decision={decision} delivered={view.delivered} receivedTarget={receivedId(claimIdPrefix)} />
+      <OutcomeCard
+        summary={summary}
+        decision={decision}
+        delivered={view.delivered}
+        receivedTarget={receivedId(claimIdPrefix)}
+        labels={detailQuery.data?.labels ?? []}
+        body={view.body}
+        names={evaluatorNames}
+      />
       <div className="grid gap-6 @4xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <AnswerSection view={view} claimIdPrefix={claimIdPrefix} />
         <div className="space-y-6">
@@ -98,7 +107,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           <ClaimsSection summary={summary} audit={audit} claimIdPrefix={claimIdPrefix} />
         </div>
       </div>
-      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} />
+      <TraceFacts summary={summary} decision={decision} attempts={view.attempts} audit={audit} names={evaluatorNames} />
     </article>
   );
 }

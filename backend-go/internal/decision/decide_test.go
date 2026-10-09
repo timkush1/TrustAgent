@@ -136,12 +136,32 @@ func TestDecideRejectsInvalidInput(t *testing.T) {
 		"calibration": func(in *Input) {
 			in.Calibration = map[string]CalibrationEntry{"groundedness@1": {Table: []float64{0, 1}, Quality: QualityMeasured, State: "measured"}}
 		},
+		"other_snapshot with a table": func(in *Input) {
+			in.Calibration = map[string]CalibrationEntry{"groundedness@1": {Table: []float64{0, 0.5, 1}, State: CalibrationOtherSnapshot}}
+		},
 	}
 	for name, mutate := range mutations {
 		in := s0Input(specs, 0.1, 0.1, false)
 		mutate(in)
 		if _, err := Decide(in); err == nil {
 			t.Errorf("%s: Decide succeeded, want an error", name)
+		}
+	}
+}
+
+// An other_snapshot entry (D56) carries no table and calibrates nothing on this snapshot:
+// decide() accepts it and decision.v1 calibration_state never takes the value other_snapshot.
+func TestDecideOtherSnapshotEntryCalibratesNothing(t *testing.T) {
+	specs := loadTemplates(t)
+	in := s0Input(specs, 0.1, 0.1, false)
+	in.Calibration = map[string]CalibrationEntry{"groundedness@1": {State: CalibrationOtherSnapshot}}
+	d, err := Decide(in)
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	for _, r := range d.Evaluators {
+		if r.CalibrationState == CalibrationOtherSnapshot || r.Calibrated {
+			t.Errorf("%s: calibration_state %q calibrated %v, want no calibration", r.Ref, r.CalibrationState, r.Calibrated)
 		}
 	}
 }

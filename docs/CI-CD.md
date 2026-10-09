@@ -22,18 +22,18 @@ CI is split into one workflow per stream (v2, P0.5), plus security and eval:
 |---|---|---|---|
 | **CI — Go** | `ci-go.yml` | every push to `main` + every PR | gofmt, vet, `go test -race` against Postgres, govulncheck (informational) |
 | **CI — Python** | `ci-python.yml` | every push to `main` + every PR | ruff, black, unit tests, golden eval gate |
-| **CI — Web** | `ci-web.yml` | every push to `main` + every PR | eslint, `tsc -b`, vitest, production build |
-| **CI — Docker** | `ci-docker.yml` | every push to `main` + every PR | build all three images (replaced by compose e2e from phase S0) |
+| **CI — Web** | `ci-web.yml` | every push to `main` + every PR | generated files are current, eslint, `tsc -b`, vitest, production and static builds |
+| **CI — Docker** | `ci-docker.yml` | every push to `main` + every PR | build all three images (not pushed), labelled with their version and git revision |
 | **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability) + forbidden-identifier scan |
-| **E2E** | `ci-e2e.yml` | manual (enabled in phase S0) | compose stack + Playwright |
-| **Security** | `security.yml` | every push/PR + weekly Mondays | static security scanners (gosec, bandit, npm audit, Trivy) |
+| **E2E** | `ci-e2e.yml` | every push to `main` + every PR + manual button | the DX scripts job, then the demo, e2e and onboarding stacks with trafficgen, doctor and Playwright |
+| **Security** | `security.yml` | every push/PR + weekly Mondays | security scanners (gosec, bandit, gitleaks, npm audit, Trivy) |
 | **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a live model |
 
 ## What each workflow does
 
 ### CI (`.github/workflows/ci-*.yml`) — "does everything still work?"
 
-One workflow per stream (the job ids `go`, `python`, `frontend`, `docker` are unchanged so branch protection keeps working):
+One workflow per stream (the job ids `go`, `python`, `frontend`, `docker`, `contracts`, `scripts`, `e2e` stay unchanged so branch protection keeps working):
 
 - **Go (proxy)** — spins up a real Postgres service container, regenerates the gRPC stubs from
   `proto/evaluator.proto` (they're gitignored, so every job regenerates them), then runs
@@ -45,25 +45,49 @@ One workflow per stream (the job ids `go`, `python`, `frontend`, `docker` are un
   real pipeline with recorded model outputs and must match the committed baseline **bit-exactly**.
   Any change to parsing/scoring/thresholds that flips one prediction fails CI and forces a
   deliberate baseline update in the same PR.
-- **Frontend (dashboard)** — `npm ci` (installs *exactly* what `package-lock.json` says) →
-  `eslint` → `tsc -b` (typecheck) → `vitest`.
+- **Frontend (dashboard)** — `npm ci` (installs *exactly* what `package-lock.json` says) → the
+  generated contract types and the CSP-safe policy and evaluator validators are current →
+  `eslint` → `tsc -b` (typecheck) → `vitest` → the production and static builds → the landing
+  page's size budget → `check_recording.py` on the demo recording.
+- **Contracts** — the JSON Schemas, fixtures and golden vectors validate; no superseded
+  identifier (SPEC Appendix A) appears anywhere; `docs/CONFIGURATION.md` and `.env.example` match
+  the key registry; the api.v1 schema matches `src/types/api.ts`.
+- **DX scripts** — `ruff`, `black` and the unit tests of `scripts/` (configure, doctor, setup
+  link, config docs, compose files, Grafana, nginx, gitleaks config), then `docker compose config`
+  on every profile and override, then `make onboarding-check-config`: the gateway's
+  `-check-config` runs on the host with the environment compose gives the onboarding stack's
+  proxy, so a fresh install that strict config would refuse (or one that carries a key by
+  mistake) fails here with its warnings, before any container starts. Compose resolves the
+  committed files alone (no `.env`, no shell variables), so `make check` runs the same proof on
+  a laptop whose `.env` holds keys.
+- **E2E (compose stack)** — the zero-key demo stack: every scenario with `trafficgen --expect`,
+  `doctor --expect demo`, the Playwright stack specs (M-Demo, Studio and Savings, one worker) and
+  the static site's specs; then the e2e stack (every vendor on mock-upstream) and its scenarios;
+  then the onboarding stack (a fresh install: the setup link, Connect OpenRouter through
+  mock-upstream, the wizard). Compose logs are uploaded when a step fails.
 - **Docker builds** — builds all three production images (without pushing) to prove the
   Dockerfiles work. This is the job that catches base-image problems (see the python:3.14 story
   below).
 
 ### Security (`.github/workflows/security.yml`) — "did we introduce a vulnerability?"
 
-Four jobs; the first three are **blocking**, Trivy is informational:
+Five jobs; the first four are **blocking**, Trivy is informational:
 
 - **gosec** — Go static security analysis (SQL injection, weak crypto, unchecked conversions…),
   blocking at medium+ severity. Pinned to `v2.27.1`.
-- **bandit** — the Python equivalent, pinned to `1.9.4`. (It once caught a Trojan-Source
-  pattern in this repo — these scanners earn their keep.)
+- **bandit** — the Python equivalent, pinned to `1.9.4`, over the engine (every level) and the
+  setup scripts (medium and above). (It once caught a Trojan-Source pattern in this repo — these
+  scanners earn their keep.)
+- **gitleaks** — scans the **whole git history** for keys, with a pinned, checksum-verified
+  binary and `--redact` (a finding never prints the secret). [`.gitleaks.toml`](../.gitleaks.toml)
+  allows only fake keys in tests (`*_test.go`, `tests/unit/`, `e2e/`), the detector vectors, the
+  project's fake-key conventions (`sk-test-…`, `sk-or-v1-e2e-…`) and SHA-256 calibration keys;
+  `scripts/tests/test_gitleaks.py` keeps those allow-lists narrow.
 - **npm audit** — checks frontend dependencies against GitHub's advisory database, **production
-  dependencies only** (`--omit=dev`), blocking at high+. Why omit dev: the shipped bundle is just
-  react/react-dom/zustand; Vite/esbuild are build-time tools whose remaining advisories affect
-  only the local dev server and are fixable only by a breaking Vite major upgrade (deliberately
-  deferred — see Dependabot policy below). A real HIGH in anything we actually ship still fails.
+  dependencies only** (`--omit=dev`), blocking at high+. Why omit dev: the shipped bundle holds
+  only the `dependencies` of `package.json` (React, TanStack, CodeMirror, Recharts and the like);
+  Vite, esbuild and the test tools run at build time, so an advisory there reaches the local dev
+  server at most. A real HIGH in anything we actually ship still fails.
 - **Trivy** — broad filesystem/dependency scanner, `continue-on-error: true` (reports but never
   blocks) until its findings have been triaged.
 
@@ -163,8 +187,8 @@ Dependabot PRs, and a failing job holds the workflow open until timeout/failure 
 Everything CI does has a local equivalent — run these before pushing:
 
 ```bash
-make lint          # ruff + black + gofmt/vet + eslint     (≈ the lint steps)
-make test          # pytest unit + go test + vitest        (≈ the test steps)
+make check         # the local gate: lint, unit tests, contracts, compose files, generated files, both web builds
 make eval-golden   # the eval regression gate              (≈ the CI blocker)
-cd frontend-react && npx tsc -b && npm audit --omit=dev --audit-level=high
+cd frontend-react && npm audit --omit=dev --audit-level=high
+gitleaks git --config .gitleaks.toml --redact .            # if gitleaks is installed
 ```

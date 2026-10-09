@@ -3,7 +3,7 @@
   "kind": "decide",
   "name": "mock-calibration-ignored-with-live-backend",
   "status": "frozen",
-  "description": "Same routes as mock-calibration-counts-with-mock-backend, but the backend is openrouter-decisions: mock quality is not usable, so calibrated is false and the block is capped to flag (uncalibrated). risk still goes through the table, because risk depends only on space = calibrated and a table being present: raw 0.95 -> 0.97 and 0.96 -> 0.98 with t[i] = min(1, (i+2)/100).",
+  "description": "Same routes as mock-calibration-counts-with-mock-backend, but the backend is openrouter-decisions: mock quality is not usable, so calibrated is false and the block is capped to flag (uncalibrated), with reason calibration_missing (P4-PLAN D56: the entries are for this snapshot, not other_snapshot). risk still goes through the table, because risk depends only on space = calibrated and a table being present: raw 0.95 -> 0.97 and 0.96 -> 0.98 with t[i] = min(1, (i+2)/100).",
   "input": {
     "policy": {
       "configured_mode": "block",
@@ -158,7 +158,7 @@
     "would_action": "block",
     "calibration": "none",
     "degraded": "uncalibrated",
-    "reasons": ["contradiction:critical", "groundedness:critical", "uncalibrated_snapshot"],
+    "reasons": ["contradiction:critical", "groundedness:critical", "calibration_missing"],
     "evaluators": {
       "groundedness@1": {
         "level": "critical",

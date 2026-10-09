@@ -11,12 +11,13 @@ import asyncio
 import random
 import time
 from abc import abstractmethod
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, FrozenSet, Iterable, Optional
 
 import httpx
 
 from .base import CompletionRequest, CompletionResponse, LLMProvider
-from .errors import ProviderError
+from .errors import INVALID, ProviderError
+from .origins import canonical_origin
 from .retry import DEFAULT_RETRY_POLICY, NO_RETRY, RetryPolicy, Sleep, call_with_retry
 from .transport import JsonObject, request_json
 
@@ -33,6 +34,9 @@ class HTTPProvider(LLMProvider):
         transport: httpx transport override (tests use httpx.MockTransport).
         sleep: Awaitable sleep used between retries (tests pass a no-op).
         rng: Jitter source for the backoff.
+        allowed_origins: Canonical origins the provider's credential may be
+            sent to (D78). When given, base_url must be one of them and
+            every request to another origin is refused before it is sent.
     """
 
     def __init__(
@@ -45,10 +49,19 @@ class HTTPProvider(LLMProvider):
         transport: Optional[httpx.AsyncBaseTransport] = None,
         sleep: Sleep = asyncio.sleep,
         rng: Callable[[], float] = random.random,
+        allowed_origins: Optional[Iterable[str]] = None,
         **kwargs: Any,
     ):
         super().__init__(model=model, **kwargs)
         self.base_url = base_url.rstrip("/")
+        self.allowed_origins: Optional[FrozenSet[str]] = None
+        if allowed_origins is not None:
+            self.allowed_origins = frozenset(allowed_origins)
+            if canonical_origin(self.base_url) not in self.allowed_origins:
+                raise ValueError(
+                    f"{self.provider_name or 'provider'} base URL origin "
+                    f"{canonical_origin(self.base_url)} is not an allowed origin of its credential"
+                )
         self.timeout = timeout
         self.retry_policy = retry_policy
         self._transport = transport
@@ -63,13 +76,34 @@ class HTTPProvider(LLMProvider):
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client (lazy initialization)."""
         if self._client is None:
+            hooks: Dict[str, Any] = {}
+            if self.allowed_origins is not None:
+                hooks["request"] = [self._check_origin]
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self.timeout,
                 headers=self._headers(),
                 transport=self._transport,
+                event_hooks=hooks,
             )
         return self._client
+
+    async def _check_origin(self, request: httpx.Request) -> None:
+        """Refuse a request whose origin is not an allowed origin of the credential."""
+        allowed = self.allowed_origins
+        if allowed is None:
+            return
+        try:
+            origin = canonical_origin(str(request.url))
+        except ValueError:
+            origin = ""
+        if origin not in allowed:
+            raise ProviderError(
+                f"refusing to send the {self.provider_name} credential to {origin or 'that URL'}: "
+                "not one of its allowed origins",
+                kind=INVALID,
+                provider=self.provider_name,
+            )
 
     async def _request(
         self,
@@ -128,9 +162,10 @@ class HTTPProvider(LLMProvider):
 
     async def close(self) -> None:
         """Close the HTTP client connection."""
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Detach first: a call made while the old client closes gets a new one.
+        client, self._client = self._client, None
+        if client is not None:
+            await client.aclose()
 
     async def __aenter__(self) -> "HTTPProvider":
         return self

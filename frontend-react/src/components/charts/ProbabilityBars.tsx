@@ -49,13 +49,14 @@ export function ProbabilityBars({ label, options, top, sort = 'given', format = 
           <li
             key={o.key}
             data-option={o.key}
-            className="grid grid-cols-[minmax(6rem,12rem)_minmax(3rem,1fr)_3rem] items-center gap-x-3 text-xs"
+            className="grid grid-cols-[minmax(6rem,12rem)_minmax(3rem,1fr)_3rem] items-start gap-x-3 text-xs"
           >
-            <span className={cn('min-w-0 truncate', isTop ? 'font-medium text-fg' : 'text-fg-muted')} title={o.label}>
+            {/* Long option names wrap rather than being cut off; the bar stays on the first line. */}
+            <span className={cn('min-w-0 break-words', isTop ? 'font-medium text-fg' : 'text-fg-muted')}>
               {o.label}
               {isTop ? <span className="sr-only"> (most likely)</span> : null}
             </span>
-            <span aria-hidden="true" className="relative h-2 rounded-r-[4px] bg-surface-sunken">
+            <span aria-hidden="true" className="relative mt-1 h-2 rounded-r-[4px] bg-surface-sunken">
               <span
                 className="absolute inset-y-0 left-0 rounded-r-[4px]"
                 style={{ width: pct01(o.p), backgroundColor: seriesColor({ tone: o.tone ?? 'ink', shade: 'solid' }) }}

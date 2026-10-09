@@ -1,13 +1,12 @@
 /**
- * Copy-paste snippets for "Connect your app" (SPEC §3.3 Overview) and the Playground's curl
- * equivalent: point an SDK at the gateway, send the ingest key in `X-TrustAgent-Key`, and attach
+ * Copy-paste snippets for "Connect your app" (SPEC §3.3 Overview), and the quoting helpers the
+ * Playground's curl equivalent (components/playground/playgroundCurl.ts) shares: point an SDK at the gateway, send the ingest key in `X-TrustAgent-Key`, and attach
  * the documents the answer should be checked against with the `trustagent.context` extension
  * (SPEC §2.12; the gateway strips it before the request goes upstream).
  *
  * Keys are never written into a snippet: they read environment variables (`$TRUSTAGENT_KEY`,
  * `$OPENAI_API_KEY`), so what the page shows and what the viewer copies are both safe to share.
  */
-import type { ChatMessage, PlaygroundRequest } from '@/types/api';
 
 export type SnippetId = 'openai-python' | 'openai-ts' | 'anthropic' | 'curl' | 'langchain';
 
@@ -186,44 +185,3 @@ export function contextExtensionSnippet(doc: { id: string; text: string } = DEFA
   ].join('\n');
 }
 
-/**
- * The Playground request as the equivalent call from the viewer's own terminal: chat mode goes
- * through `/v1/chat/completions` with the documents as `trustagent.context`; audit mode posts to
- * `/api/audit` (SPEC §2.4 #15). The key is an environment variable, so nothing secret is shown.
- */
-export function playgroundCurl(request: PlaygroundRequest, origin: string): string {
-  const base = gatewayOrigin(origin);
-  const context = (request.evidence ?? []).filter((e) => e.text.trim() !== '').map((e) => ({ ...(e.id ? { id: e.id } : {}), text: e.text }));
-  if (request.mode === 'audit') {
-    const userText = request.messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n\n');
-    const body = {
-      query: userText,
-      response: request.response ?? '',
-      ...(request.model ? { model: request.model } : {}),
-      ...(request.route ? { route: request.route } : {}),
-      ...(context.length > 0 ? { context } : {}),
-    };
-    return [
-      `curl -i ${base}/api/audit \\`,
-      `  -H "X-TrustAgent-Key: $${INGEST_KEY_ENV}" \\`,
-      '  -H "Content-Type: application/json" \\',
-      `  -d ${shellQuote(JSON.stringify(body, null, 2))}`,
-    ].join('\n');
-  }
-  const messages: ChatMessage[] = request.messages.filter((m) => m.content.trim() !== '');
-  const body = {
-    ...(request.model ? { model: request.model } : {}),
-    messages,
-    ...(request.stream ? { stream: true } : {}),
-    ...(context.length > 0 ? { trustagent: { context } } : {}),
-  };
-  return [
-    `curl -i${request.stream ? ' -N' : ''} ${base}/v1/chat/completions \\`,
-    '  -H "Authorization: Bearer $OPENAI_API_KEY" \\',
-    `  -H "X-TrustAgent-Key: $${INGEST_KEY_ENV}" \\`,
-    ...(request.route ? [`  -H ${shellQuote(`X-TrustAgent-Route: ${request.route}`)} \\`] : []),
-    ...(request.mode_override ? [`  -H ${shellQuote(`X-TrustAgent-Mode: ${request.mode_override}`)} \\`] : []),
-    '  -H "Content-Type: application/json" \\',
-    `  -d ${shellQuote(JSON.stringify(body, null, 2))}`,
-  ].join('\n');
-}

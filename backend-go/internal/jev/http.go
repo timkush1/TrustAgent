@@ -164,6 +164,7 @@ type httpClient struct {
 	limiter *limiter
 	budget  Budget
 	costs   CostSink
+	prices  PriceFunc
 	snaps   *snapshotTracker
 	cpt     *cptTracker
 	status  statusTracker
@@ -199,7 +200,7 @@ func newHTTPClient(cfg Config, r resolution) (*httpClient, error) {
 			return http.ErrUseLastResponse // never follow a redirect with the key
 		}},
 		limiter: newLimiter(h.RPM, h.SyncReserve, h.MaxInFlight, h.Now),
-		budget:  cfg.Budget, costs: cfg.Costs, cpt: newCPTTracker(h.CharsPerToken),
+		budget:  cfg.Budget, costs: cfg.Costs, prices: cfg.Prices, cpt: newCPTTracker(h.CharsPerToken),
 		referer: referer(h.AppURL, h.PublicURL), ua: "TrustAgent/" + version.Version + " (+" + DefaultAppURL + ")",
 	}
 	backend := r.backend
@@ -207,7 +208,7 @@ func newHTTPClient(cfg Config, r resolution) (*httpClient, error) {
 		metrics.JevBreakerState.WithLabelValues(backend).Set(breakerGauge(state))
 	})
 	metrics.JevBreakerState.WithLabelValues(backend).Set(0)
-	c.keys = &keySource{static: r.key, host: r.ep.host, onChange: c.breaker.reset}
+	c.keys = &keySource{static: r.key, origin: r.ep.origin, onChange: c.breaker.reset}
 	if r.binding != nil {
 		c.keys.static, c.keys.fn = "", r.binding.Key
 		c.info.CredentialSource = "dashboard"
@@ -268,9 +269,10 @@ func (c *httpClient) Status() Status {
 // keySource yields the credential of each attempt: the environment key, or the binding's KeyFunc
 // (hot reload). A changed key resets the breaker.
 type keySource struct {
-	static   string
-	fn       KeyFunc
-	host     string
+	static string
+	fn     KeyFunc
+	// origin is the endpoint's canonical origin, which the KeyFunc asserts (D78).
+	origin   string
 	onChange func()
 
 	mu   sync.Mutex
@@ -282,7 +284,7 @@ func (k *keySource) get(ctx context.Context) (string, *Error) {
 	key := k.static
 	if k.fn != nil {
 		var err error
-		if key, err = k.fn(ctx, k.host); err != nil {
+		if key, err = k.fn(ctx, k.origin); err != nil {
 			return "", &Error{Kind: KindCredentialsUnavailable, Message: scrub(err.Error()), Hint: Hint(KindCredentialsUnavailable)}
 		}
 	}
@@ -331,7 +333,7 @@ func (c *httpClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 	}
 	cl := &call{
 		c: c, req: &r, opt: opt, body: body, count: count, estTokens: decision.Overhead + count.Est,
-		price: priceFor(c.cfg.PricePerMTok, c.info.Backend, r.Model), start: time.Now(),
+		price: c.priceOf(r.Model), start: time.Now(),
 		results: make(chan attemptResult, retries+2), retries: retries,
 	}
 	return cl.wait(ctx)
@@ -678,7 +680,7 @@ func (c *httpClient) do(ctx context.Context, cl *call, a *attempt, key string) a
 			Message: "the endpoint redirects to " + redactURL(resp.Header.Get("Location")) + "; TrustAgent never follows redirects with the key",
 			Hint:    Hint(KindNotFound)}
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		res.err, res.effect = classifyStatus(resp.StatusCode, resp.Header, body, c.cfg.RetryAfterCap)
+		res.err, res.effect = classifyStatus(resp.StatusCode, resp.Header, redactBody(body, key), c.cfg.RetryAfterCap)
 		res.err.Message = redactSecret(res.err.Message, key)
 	case len(body) > maxResponseBytes:
 		res.err, res.effect = &Error{Kind: KindBadResponse, Status: resp.StatusCode, Message: "the response is larger than 4 MiB", Hint: Hint(KindBadResponse)}, effectFault

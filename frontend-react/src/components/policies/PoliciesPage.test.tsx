@@ -1,14 +1,17 @@
-import { configure, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { effectiveRoutes, policyState, policyVersion, policyVersionMeta } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 
 installMswServer();
+warmRoutes('/app/policies');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 
@@ -140,6 +143,28 @@ describe('Policies page', { timeout: 20_000 }, () => {
     expect(within(dialog).getByText('Fix the errors above first.')).toBeInTheDocument();
   });
 
+  it('asks for the Block mode last, and lists a Flag route’s missing steps without a warning', async () => {
+    const routes = effectiveRoutes();
+    routes[0] = { ...routes[0], block_readiness: [{ evaluator: 'groundedness@1', ready: false, missing: ['mode', 'calibration', 'buffering'] }] };
+    renderPage('/app/policies', { control: createControlApi({ policies: policyState({ effective_routes: routes }) }) });
+    const support = await card('support-bot');
+    // Setting the route to Block first would give a route that still cannot block.
+    // Why the calibration it has cannot block follows its state (provisional here: 43 labels).
+    expect(
+      await within(support).findByText(/^2 of 5 done · next: calibrate it on at least 200 of your own labels \(the provisional one has too few labels to block\)\s*$/),
+    ).toBeInTheDocument();
+    // Labels are what the calibration is fitted on: the next step links to the queue for this check.
+    expect(within(support).getByRole('link', { name: 'Label answers for Groundedness' })).toHaveAttribute('href', '/app/evaluators/labels?evaluator=groundedness%401');
+    const steps = within(support).getAllByRole('listitem').filter((li) => li.hasAttribute('data-missing'));
+    expect(steps.map((li) => li.textContent?.replace(/:.*$/, ''))).toEqual([
+      'Calibrated for the current fast-check version',
+      'Streams buffered',
+      'Route set to Block or Fallback',
+    ]);
+    // Nobody asked this Flag route to block: the missing steps are not a warning.
+    expect(support.querySelector('.text-tone-warning')).toBeNull();
+  });
+
   it('applies the one-click fixes to the draft', async () => {
     const user = userEvent.setup();
     const routes = effectiveRoutes();
@@ -157,6 +182,8 @@ describe('Policies page', { timeout: 20_000 }, () => {
     renderPage('/app/policies', { control });
     const support = await card('support-bot');
     expect(within(support).getByText('Block → currently acting as Flag')).toBeInTheDocument();
+    // The next requirement reads as an instruction.
+    expect(await within(support).findByText(/^\d of \d done · next: calibrate it on at least 200 of your own labels \(the provisional one has too few labels to block\)/)).toBeInTheDocument();
     await user.click(within(support).getByRole('button', { name: 'Buffer streams' }));
     expect(await screen.findByRole('region', { name: 'Unsaved changes' })).toBeInTheDocument();
 
@@ -171,6 +198,23 @@ describe('Policies page', { timeout: 20_000 }, () => {
     const yaml = (control.callsTo('/api/policies/validate').at(-1)?.body as { yaml: string }).yaml;
     expect(yaml).toContain('streaming: buffer');
     expect(yaml).toContain('require_calibration: false');
+  });
+
+  it('links a paused fast check to its last error and a spent budget to Budgets', async () => {
+    const routes = effectiveRoutes();
+    routes[0] = {
+      ...routes[0],
+      mode: 'block',
+      effective_mode: 'flag',
+      downgrades: [
+        { code: 'breaker_open', message: 'the fast check is paused after repeated errors', fix: null },
+        { code: 'budget', message: "today's fast-check budget is spent", fix: null },
+      ],
+    };
+    renderPage('/app/policies', { control: createControlApi({ policies: policyState({ effective_routes: routes }) }) });
+    const support = await card('support-bot');
+    expect(within(support).getByRole('link', { name: /See the last error/ })).toHaveAttribute('href', '/app/settings/models#last-error');
+    expect(within(support).getByRole('link', { name: /Raise the daily cap/ })).toHaveAttribute('href', '/app/settings/budgets');
   });
 
   it('applies a preset from the picker', async () => {
@@ -303,6 +347,81 @@ describe('Policies page', { timeout: 20_000 }, () => {
   it('degrades when the proxy does not serve policies', async () => {
     renderPage('/app/policies', { control: createControlApi({ policies: undefined }) });
     expect(await screen.findByText('Policies cannot be read from this proxy')).toBeInTheDocument();
+  });
+
+  it('opens the threshold editor from an Adjust threshold link, previews the change and saves it', async () => {
+    const user = userEvent.setup();
+    const { control } = renderPage('/app/policies?route=support-bot&evaluator=groundedness@1');
+    const support = await card('support-bot');
+    const editor = await within(support).findByTestId('threshold-editor');
+    await waitFor(() => expect(document.activeElement).toHaveTextContent('Thresholds for Groundedness on support-bot'));
+    const preview = within(editor).getByRole('button', { name: 'Preview impact (free — replays past answers)' });
+    expect(preview).toHaveAttribute('aria-disabled', 'true');
+    expect(within(editor).getByText('Move a threshold first.')).toBeInTheDocument();
+
+    const flag = within(editor).getByRole('slider', { name: 'Flags from' });
+    flag.focus();
+    await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}{ArrowLeft}{ArrowLeft}');
+    expect(flag).toHaveAttribute('aria-valuetext', expect.stringMatching(/^0\.75/));
+    await user.click(within(editor).getByRole('button', { name: 'Preview impact (free — replays past answers)' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Review and save a new policy version' });
+    await waitFor(() => expect(control.callsTo('/api/policies/dry-run')).toHaveLength(1));
+    const proposed = parse((control.callsTo('/api/policies/dry-run')[0].body as { yaml: string }).yaml) as { routes: { name: string; evaluators: { ref: string; thresholds?: object }[] }[] };
+    expect(proposed.routes.find((r) => r.name === 'support-bot')?.evaluators[0]).toEqual({ ref: 'groundedness@1', thresholds: { warn_at: 0.75, critical_at: 0.95 } });
+    await user.type(within(dialog).getByRole('textbox', { name: 'What changed and why' }), 'Flag groundedness earlier');
+    await user.click(within(dialog).getByRole('button', { name: 'Save version' }));
+    await waitFor(() => expect(control.callsTo('/api/policies', 'PUT')).toHaveLength(1));
+  });
+
+  it('says so when an Adjust threshold link names a check the route no longer runs', async () => {
+    renderPage('/app/policies?route=support-bot&evaluator=groundedness@7');
+    const support = await card('support-bot');
+    expect(await screen.findByText(/\(groundedness@7\) no longer runs on support-bot, so there is no threshold of it to adjust there\./)).toBeInTheDocument();
+    expect(within(support).queryByTestId('threshold-editor')).toBeNull();
+    stopLive();
+    cleanup();
+
+    // A link that matches says nothing extra.
+    renderPage('/app/policies?route=support-bot&evaluator=groundedness@1');
+    await within(await card('support-bot')).findByTestId('threshold-editor');
+    expect(screen.queryByText(/no longer runs on/)).toBeNull();
+  });
+
+  it('opens a check\'s threshold editor from its card, with one thumb for a check that never blocks', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/policies');
+    const support = await card('support-bot');
+    await user.click(within(support).getByRole('button', { name: 'Adjust threshold: Off-brand tone' }));
+    const editor = await within(support).findByTestId('threshold-editor');
+    expect(within(editor).getAllByRole('slider')).toHaveLength(1);
+    expect(within(editor).getByText(/This check never blocks on this route/)).toBeInTheDocument();
+    await user.click(within(editor).getByRole('button', { name: 'Cancel' }));
+    expect(within(support).queryByTestId('threshold-editor')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull();
+  });
+
+  it('says policy warnings in plain words, with the server text as technical detail', async () => {
+    const user = userEvent.setup();
+    const raw =
+      'routes[0].evaluators[2].ref (line 40, col 9): commitments@1 blocks only when one of contradiction, det:numbers_not_in_evidence, det:dates_not_in_evidence agrees, and none of them can run on this route';
+    renderPage('/app/policies', {
+      control: createControlApi({
+        policies: policyState({
+          warnings: [raw, 'the newest policy version v5 no longer validates (routes[0].mode: unknown value "x"); running v4 until a valid version is saved'],
+        }),
+      }),
+    });
+    const list = await screen.findByRole('list', { name: 'Policy warnings' });
+    expect(
+      within(list).getByText(
+        'support-bot: Unapproved commitments blocks only when another signal agrees (Contradiction, Number check or Date check), and none of them can run on this route, so it can flag answers but not block them. Give the route documents to check against so the instant checks can run.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(list).getByText('Policy version 5 no longer passes validation, so version 4 stays in effect until a valid version is saved.')).toBeInTheDocument();
+    expect(within(list).getByText(raw)).not.toBeVisible();
+    await user.click(within(list).getAllByText('Technical detail')[0]);
+    expect(within(list).getByText(raw)).toBeVisible();
   });
 
   it('has no axe violations', async () => {

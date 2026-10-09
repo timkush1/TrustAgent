@@ -516,11 +516,18 @@ func (c *checker) evaluators(sc scope, s *Settings) {
 		if !e.IsEnabled() {
 			continue
 		}
-		for _, x := range spec.Outcomes.RequiresCorroboration {
-			if strings.HasPrefix(x, "det:") || attached[x] {
-				continue
+		// Corroboration decides only whether a critical result blocks (SPEC §2.9 block_set), so it is
+		// checked where the route blocks: a warning when none of the listed corroborators can fire
+		// here (D98). One that can, an instant check with documents or rules or an attached
+		// evaluator that can reach critical, is enough; block readiness lists what a non-enforcing
+		// route would need.
+		if spec.Outcomes.BlockEligible && len(spec.Outcomes.RequiresCorroboration) > 0 &&
+			e.StageOrDefault() == decision.StageActive && slices.Contains(enforcingModes, s.Mode) {
+			r := &Route{Settings: *s}
+			if !facts(r, c.env.Specs, c.env).corroboratorReachable(r, spec, c.env.Specs) {
+				c.warn(sc, at+".ref", "%s blocks only when one of %s agrees, and none of them can run on this route",
+					e.Ref, strings.Join(spec.Outcomes.RequiresCorroboration, ", "))
 			}
-			c.warn(sc, at+".ref", "%s is corroborated by %s, which this route does not attach", e.Ref, x)
 		}
 		for _, x := range spec.Outcomes.Implies {
 			if !attached[x] {

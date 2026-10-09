@@ -524,10 +524,9 @@
       "default": "",
       "secret": true,
       "advanced": true,
-      "restart": false,
-      "runtime": "settable",
+      "restart": true,
       "group": "upstream",
-      "description": "Injected credential for the Anthropic upstream."
+      "description": "Injected credential for the Anthropic upstream. The dashboard alternative is the encrypted upstream-anthropic credential in Settings; a non-empty value here wins."
     },
     {
       "name": "TRUTHTABLE_FALLBACK_UPSTREAM_URL",
@@ -550,10 +549,9 @@
       "default": "",
       "secret": true,
       "advanced": true,
-      "restart": false,
-      "runtime": "settable",
+      "restart": true,
       "group": "upstream",
-      "description": "Credential for the fallback upstream."
+      "description": "Credential for the fallback upstream. The dashboard alternative is the encrypted upstream-fallback credential in Settings; a non-empty value here wins."
     },
     {
       "name": "TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT",
@@ -1553,7 +1551,7 @@
       "advanced": true,
       "restart": true,
       "group": "decision_model",
-      "description": "Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic gives lexical heuristics."
+      "description": "Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic is reserved for lexical heuristics and falls back to hash answers in this version."
     },
     {
       "name": "TRUTHTABLE_JEV_MOCK_STRICT",
@@ -2192,6 +2190,19 @@
       "description": "Compose project name."
     },
     {
+      "name": "GIT_SHA",
+      "aliases": [],
+      "services": ["compose"],
+      "kind": "string",
+      "default": null,
+      "default_note": "git rev-parse --short HEAD (make sets it)",
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Git revision the app images are built from: stamped into the proxy (status build_sha, the git_sha of /api/export/replay) and the image labels."
+    },
+    {
       "name": "POSTGRES_PASSWORD",
       "aliases": [],
       "services": ["compose"],
@@ -2258,6 +2269,20 @@
       "restart": true,
       "group": "deploy",
       "description": "Host port of Postgres."
+    },
+    {
+      "name": "MOCK_UPSTREAM_HOST_PORT",
+      "aliases": [],
+      "services": ["compose"],
+      "kind": "int",
+      "default": "18090",
+      "min": 1,
+      "max": 65535,
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Host port of the mock upstream (the onboarding and e2e stacks only; it fakes OpenRouter's sign-in and key endpoints)."
     },
     {
       "name": "TRUSTAGENT_VERSION",

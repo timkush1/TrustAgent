@@ -3,7 +3,12 @@
  *
  * - Same origin (the default): cookies ride along, and non-GET requests carry
  *   `X-TrustAgent-CSRF: 1` as cookie-authenticated writes require.
- * - Cross origin (`apiBase` on another origin): no cookies, key-header auth only (P2 adds the key).
+ * - Cross origin (`apiBase` on another origin, D71): no cookies. The key the viewer signed
+ *   in with is kept for this tab only, in `sessionStorage["ta.dashboard.key"]` (never localStorage,
+ *   never the URL), and goes on every request as `X-TrustAgent-Key`. The WebSocket cannot carry a
+ *   header, so it connects with a one-use ticket instead (StreamClient `ticket`). Every other way of
+ *   carrying a key (a URL parameter, a WebSocket subprotocol, a build-time key) is refused repo-wide
+ *   by scripts/check-forbidden.mjs.
  * - Every failure is an ApiError (errors.ts), including network trouble, timeouts and aborts.
  */
 import type { RuntimeConfig } from '@/config/runtime';
@@ -37,6 +42,51 @@ export interface HttpClient {
 }
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
+
+/** The header a key travels in (SPEC §2.4; CORS allows it for the dashboard, D43). */
+export const KEY_HEADER = 'X-TrustAgent-Key';
+/** Where a cross-origin tab keeps the key it signed in with (D71): this tab only, gone when it closes. */
+export const DASHBOARD_KEY_STORAGE = 'ta.dashboard.key';
+
+function tabStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.sessionStorage;
+  } catch {
+    // Storage blocked (privacy settings): signing in lasts until the page reloads at most.
+    return null;
+  }
+}
+
+/** The key this tab signed in with on a cross-origin dashboard, or null. */
+export function readDashboardKey(): string | null {
+  try {
+    const key = tabStorage()?.getItem(DASHBOARD_KEY_STORAGE) ?? null;
+    return key && key.trim() !== '' ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keeps `key` for this tab (cross-origin sign-in). Returns false when the browser refuses storage. */
+export function storeDashboardKey(key: string): boolean {
+  try {
+    const storage = tabStorage();
+    if (!storage) return false;
+    storage.setItem(DASHBOARD_KEY_STORAGE, key.trim());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Forgets this tab's key (sign out, or a key the proxy no longer accepts). */
+export function clearDashboardKey(): void {
+  try {
+    tabStorage()?.removeItem(DASHBOARD_KEY_STORAGE);
+  } catch {
+    // Nothing stored, nothing to forget.
+  }
+}
 
 export function buildQuery(query: Query | undefined): string {
   if (!query) return '';
@@ -103,7 +153,13 @@ export function createHttpClient(
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(options.body);
     }
-    if (method !== 'GET' && !config.crossOrigin) headers['X-TrustAgent-CSRF'] = '1';
+    if (config.crossOrigin) {
+      // Key-header auth only (D71): the signed-in key of this tab, never a cookie.
+      const key = readDashboardKey();
+      if (key && headers[KEY_HEADER] === undefined) headers[KEY_HEADER] = key;
+    } else if (method !== 'GET') {
+      headers['X-TrustAgent-CSRF'] = '1';
+    }
     return { method, headers, body, credentials: (config.crossOrigin ? 'omit' : 'same-origin') as RequestCredentials };
   }
 

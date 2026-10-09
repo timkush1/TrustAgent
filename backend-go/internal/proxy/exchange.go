@@ -29,8 +29,9 @@ import (
 //  2. ans := h.scriptedAnswer(f, text), or h.upstreamAnswer(f, resp, cancel) after setting
 //     f.upStart before the call (an error there goes to upstreamFailed, which records and answers
 //     it); then f.takeAnswer(ans), and ans.close once the answer is written;
-//  3. res := h.gate.Evaluate(f.record, f.x): the record context outlives the client, and the gate
-//     bounds itself by the route's deadline;
+//  3. res := h.evaluate(f.record, f): the record context outlives the client, and the gate
+//     bounds itself by the route's deadline. evaluate joins the knowledge retrieval that
+//     h.startKnowledge(f) started next to the upstream call (knowledge.go), then gates f.x;
 //  4. out := h.enforceJSON(ctx, f, res, ans) picks what is delivered. ctx is the client's context:
 //     a fallback decision calls h.fallback on it and records the fallback's attempt 1;
 //  5. audit := h.decided(f, res, ans.upstreamRecord(), end, out.final) records the trace, exactly
@@ -58,6 +59,12 @@ type flow struct {
 	forward []byte
 	// upStart is when the upstream call started; zero for a scripted (test_response) answer.
 	upStart time.Time
+	// ups is the upstream set in effect when the flow started; the fallback upstream comes from
+	// the same set.
+	ups *upstream.Set
+	// knowledge is the knowledge retrieval in flight (knowledge.go), nil when none runs or once it
+	// was joined.
+	knowledge *knowledgeFetch
 }
 
 // newFlow builds the flow of a request of format on path: the route and mode the policy in effect
@@ -69,9 +76,10 @@ type flow struct {
 //
 // newFlow is shared with the Playground (playground.go): its signature is fixed.
 func (h *Handler) newFlow(c *gin.Context, format, path string, raw []byte, req *llmapi.ChatRequest, start time.Time) *flow {
+	ups := h.upstreams()
 	f := &flow{
 		c: c, format: format, req: req, raw: raw, start: start, forward: raw,
-		up: h.ups.For(llmapi.Family(format)),
+		up: ups.For(llmapi.Family(format)), ups: ups,
 		// The record outlives the client: a client that goes away still gets its trace written.
 		record: context.WithoutCancel(c.Request.Context()),
 	}
@@ -163,6 +171,9 @@ type answer struct {
 	ms          *int64
 	usage       *llmapi.Usage
 	close       func()
+	// broken says why a streamed 2xx answer has no answer to show (an error inside the stream, a
+	// stream cut short); "" otherwise. Only the Playground reads it (streamedAnswer).
+	broken string
 }
 
 // takeAnswer hands a JSON answer to the exchange before it is gated: the gated text, the skip
@@ -218,8 +229,12 @@ func (h *Handler) upstreamAnswer(f *flow, resp *http.Response, cancel context.Ca
 	}
 	switch {
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		// Passed through as it is, oversized or not: an upstream error is never enforced (D4).
+		// Passed through as it is, oversized or not: an upstream error is never enforced (D4). In
+		// inject mode it may quote the gateway's own key: it is masked first (redact.go, D42).
 		a.skip, a.unenforced = gate.SkipUpstreamError, true
+		if f.up != nil && f.up.Injecting() {
+			a.body, a.rest = h.redactErrorBody(body), nil
+		}
 	case tooLarge:
 		a.skip = gate.SkipUpstreamError
 	default:

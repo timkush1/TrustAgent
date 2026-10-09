@@ -2,9 +2,42 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/api.v1.schema.json",
   "title": "TrustAgent API v1 payloads (REST and WebSocket v2)",
-  "description": "Contract-owned JSON Schema for the TrustAgent REST and WebSocket v2 payloads (docs/v2/SPEC.md sections 2.1, 2.4, 2.5 and 2.6). Every $defs entry has the name, fields and enum values of the same type in frontend-react/src/types/api.ts; Go handler tests and the golden fixtures in contracts/fixtures/api/ validate against 'api.v1.schema.json#/$defs/<TypeName>'. This is the S0 core subset: health and status, traces (list and detail), gate decisions, audits with claims and UTF-16 spans, the WebSocket v2 envelope and events, and the error body.",
-  "$comment": "Generated from api.ts with ts-json-schema-generator 2.9.0 (--type '*' --expose export --jsDoc extended, plus a scratch type instantiating Page<TraceSummary>, Page<GateDecisionRow> and Page<AuditSummary>), converted from draft-07 to 2020-12 (definitions -> $defs; array-form items -> prefixItems) and pruned to the roots named in the description plus everything they reference. Page<T> keeps the generator's name, percent-encoded in $ref. Regenerate instead of hand-editing whenever api.ts changes.",
+  "description": "Contract-owned JSON Schema for the TrustAgent REST and WebSocket v2 payloads (docs/v2/SPEC.md sections 2.1, 2.4, 2.5 and 2.6). Every $defs entry has the name, fields and enum values of the same type in frontend-react/src/types/api.ts; Go handler tests and the golden fixtures in contracts/fixtures/api/ validate against 'api.v1.schema.json#/$defs/<TypeName>'. It covers the S0 core (health and status, traces (list and detail), gate decisions, audits with claims and UTF-16 spans, the WebSocket v2 envelope and events, and the error body) and the P4 surfaces (settings, credentials, Connect OpenRouter, API keys and the admin audit log; ROI and pricing; evaluator writes, Studio, labels, calibration, evidence suggestions and the decision request).",
+  "$comment": "Generated from api.ts with ts-json-schema-generator 2.9.0 (--type '*' --expose export --jsDoc extended, plus a scratch type instantiating Page<TraceSummary>, Page<GateDecisionRow>, Page<AuditSummary> and Page<AdminAuditEntry>), converted from draft-07 to 2020-12 (definitions -> $defs; array-form items -> prefixItems) and pruned to the roots named in the description plus everything they reference. Page<T> keeps the generator's name, percent-encoded in $ref. Regenerate instead of hand-editing whenever api.ts changes.",
   "$defs": {
+    "AdminAuditEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "diff": {},
+        "id": {
+          "type": "number"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "actor",
+        "action",
+        "target",
+        "diff"
+      ],
+      "type": "object"
+    },
     "ApiErrorBody": {
       "additionalProperties": false,
       "description": "REST error body for every `/api/*` error (`/v1/*` errors use the upstream API's shape).",
@@ -61,6 +94,94 @@
         "direct"
       ],
       "type": "string"
+    },
+    "ApiKeyCreateRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/keys (#68).",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/Scope"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "ApiKeyList": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ApiKeyView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ApiKeyView": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "last_used_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "revoked_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/Scope"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "scopes",
+        "prefix",
+        "created_at",
+        "last_used_at",
+        "revoked_at"
+      ],
+      "type": "object"
     },
     "AuditDetail": {
       "additionalProperties": false,
@@ -687,6 +808,447 @@
       ],
       "type": "string"
     },
+    "BindingSkipReason": {
+      "enum": [
+        "env_managed",
+        "backend_pinned",
+        "verification_failed"
+      ],
+      "type": "string"
+    },
+    "BindingTarget": {
+      "description": "What a credential write or a verify may bind (D75): never the upstreams, which bind through PATCH.",
+      "enum": [
+        "decision_model",
+        "judge"
+      ],
+      "type": "string"
+    },
+    "Bindings": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "judge": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "upstream_default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "decision_model",
+        "judge",
+        "upstream_default"
+      ],
+      "type": "object"
+    },
+    "CalibrationEntry": {
+      "$ref": "calibration.v1.schema.json#/$defs/CalibrationEntry"
+    },
+    "CalibrationFile": {
+      "$ref": "calibration.v1.schema.json"
+    },
+    "CalibrationFitMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "auroc": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "brier_after": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "brier_before": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ece_after": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ece_before": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ece_before",
+        "ece_after",
+        "brier_before",
+        "brier_after",
+        "auroc"
+      ],
+      "type": "object"
+    },
+    "CalibrationFitRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/calibration/fit (#45).",
+      "properties": {
+        "activate": {
+          "description": "The adopt flow fits with activate:false, previews, then activates (D62).",
+          "type": "boolean"
+        },
+        "method": {
+          "enum": [
+            "auto",
+            "isotonic",
+            "platt"
+          ],
+          "type": "string"
+        },
+        "route": {
+          "type": "string"
+        },
+        "snapshot": {
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "enum": [
+              "labels",
+              "uniform_audit"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "sources",
+        "activate"
+      ],
+      "type": "object"
+    },
+    "CalibrationFitResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "$ref": "#/$defs/CalibrationFitMetrics"
+        },
+        "recommended": {
+          "$ref": "#/$defs/CalibrationRecommended"
+        },
+        "record": {
+          "$ref": "#/$defs/CalibrationRecord"
+        },
+        "reliability": {
+          "$ref": "#/$defs/ReliabilityResponse"
+        }
+      },
+      "required": [
+        "record",
+        "reliability",
+        "metrics",
+        "recommended"
+      ],
+      "type": "object"
+    },
+    "CalibrationImportRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/calibration (#44).",
+      "properties": {
+        "activate": {
+          "type": "boolean"
+        },
+        "file": {
+          "$ref": "#/$defs/CalibrationFile"
+        }
+      },
+      "required": [
+        "file",
+        "activate"
+      ],
+      "type": "object"
+    },
+    "CalibrationImportResult": {
+      "additionalProperties": false,
+      "properties": {
+        "imported": {
+          "items": {
+            "$ref": "#/$defs/CalibrationRecordMeta"
+          },
+          "type": "array"
+        },
+        "rejected": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "unknown_version",
+                  "calibration_key_mismatch",
+                  "mock_snapshot",
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              "target_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "target_key",
+              "reason",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "imported",
+        "rejected"
+      ],
+      "type": "object"
+    },
+    "CalibrationList": {
+      "additionalProperties": false,
+      "description": "GET /api/calibration (#42).",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/CalibrationRecordMeta"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "CalibrationRecommended": {
+      "additionalProperties": false,
+      "description": "Recommended thresholds in calibrated space (calibration.v1 recommended).",
+      "properties": {
+        "critical_at": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "precision_lb95": {
+                  "type": "number"
+                },
+                "predicted_pos": {
+                  "type": "number"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "value",
+                "precision_lb95",
+                "predicted_pos"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "critical_null_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space": {
+          "const": "calibrated",
+          "type": "string"
+        },
+        "warn_at": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "precision": {
+                  "type": "number"
+                },
+                "recall": {
+                  "type": "number"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "value",
+                "precision",
+                "recall"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "space",
+        "warn_at",
+        "critical_at",
+        "critical_null_reason"
+      ],
+      "type": "object"
+    },
+    "CalibrationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "backend": {
+          "type": "string"
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "entry": {
+          "$ref": "#/$defs/CalibrationEntry"
+        },
+        "family": {
+          "type": "string"
+        },
+        "id": {
+          "type": "number"
+        },
+        "origin": {
+          "enum": [
+            "file",
+            "import",
+            "fit"
+          ],
+          "type": "string"
+        },
+        "quality": {
+          "enum": [
+            "measured",
+            "provisional",
+            "proxy",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "snapshot": {
+          "type": "string"
+        },
+        "target_key": {
+          "type": "string"
+        },
+        "target_kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "active",
+        "backend",
+        "created_at",
+        "entry",
+        "family",
+        "id",
+        "origin",
+        "quality",
+        "snapshot",
+        "target_key",
+        "target_kind"
+      ],
+      "type": "object"
+    },
+    "CalibrationRecordMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "backend": {
+          "type": "string"
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "family": {
+          "type": "string"
+        },
+        "id": {
+          "type": "number"
+        },
+        "origin": {
+          "enum": [
+            "file",
+            "import",
+            "fit"
+          ],
+          "type": "string"
+        },
+        "quality": {
+          "enum": [
+            "measured",
+            "provisional",
+            "proxy",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "snapshot": {
+          "type": "string"
+        },
+        "target_key": {
+          "type": "string"
+        },
+        "target_kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "created_at",
+        "origin",
+        "backend",
+        "snapshot",
+        "family",
+        "target_kind",
+        "target_key",
+        "quality",
+        "active"
+      ],
+      "type": "object"
+    },
     "CalibrationState": {
       "enum": [
         "measured",
@@ -917,6 +1479,129 @@
       ],
       "type": "string"
     },
+    "ConnectCompleteRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/connect/openrouter/complete (#59, D38).",
+      "properties": {
+        "bind": {
+          "items": {
+            "$ref": "#/$defs/BindingTarget"
+          },
+          "type": "array"
+        },
+        "code": {
+          "type": "string"
+        },
+        "nonce": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "nonce"
+      ],
+      "type": "object"
+    },
+    "ConnectCompleteResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "items": {
+                "$ref": "#/$defs/BindingTarget"
+              },
+              "type": "array"
+            },
+            "skipped": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "$ref": "#/$defs/BindingSkipReason"
+                  },
+                  "target": {
+                    "$ref": "#/$defs/BindingTarget"
+                  }
+                },
+                "required": [
+                  "target",
+                  "reason"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "applied",
+            "skipped"
+          ],
+          "type": "object"
+        },
+        "credential": {
+          "$ref": "#/$defs/CredentialView"
+        },
+        "return_to": {
+          "type": "string"
+        },
+        "stored": {
+          "description": "false when a failed verification left the currently bound key in place.",
+          "type": "boolean"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CredentialVerification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null when the write asked for verify:false."
+        }
+      },
+      "required": [
+        "bindings",
+        "credential",
+        "return_to",
+        "stored",
+        "verification"
+      ],
+      "type": "object"
+    },
+    "ConnectStartRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/connect/openrouter/start (#58, D38).",
+      "properties": {
+        "return_to": {
+          "description": "A dashboard path under /app/ to return to.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ConnectStartResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_url": {
+          "type": "string"
+        },
+        "expires_in": {
+          "type": "number"
+        },
+        "nonce": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "auth_url",
+        "nonce",
+        "expires_in"
+      ],
+      "type": "object"
+    },
     "CostRecord": {
       "additionalProperties": false,
       "properties": {
@@ -977,6 +1662,474 @@
         "latency_ms",
         "status",
         "questions"
+      ],
+      "type": "object"
+    },
+    "Counterfactual": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "high": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "llm_same_checks",
+            "llm_full_claim_audit"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "enum": [
+            "estimate",
+            "simulated"
+          ],
+          "type": "string"
+        },
+        "low": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "method": {
+          "enum": [
+            "token_model",
+            "uniform_sample",
+            "fitted_from_audits",
+            "static_assumptions"
+          ],
+          "type": "string"
+        },
+        "n": {
+          "type": "number"
+        },
+        "per_1k": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "method",
+        "usd",
+        "low",
+        "high",
+        "per_1k",
+        "n",
+        "label",
+        "basis"
+      ],
+      "type": "object"
+    },
+    "CreatedApiKey": {
+      "additionalProperties": false,
+      "description": "The created key: secret is shown once and never again.",
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "last_used_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "revoked_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/Scope"
+          },
+          "type": "array"
+        },
+        "secret": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "created_at",
+        "id",
+        "label",
+        "last_used_at",
+        "prefix",
+        "revoked_at",
+        "scopes",
+        "secret"
+      ],
+      "type": "object"
+    },
+    "CredentialList": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/CredentialView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "CredentialProvider": {
+      "enum": [
+        "openrouter",
+        "typesafe",
+        "anthropic",
+        "openai",
+        "generic"
+      ],
+      "type": "string"
+    },
+    "CredentialPutRequest": {
+      "additionalProperties": false,
+      "description": "PUT /api/credentials/:name (#55). base_url only for compatible and upstream-* (D29).",
+      "properties": {
+        "base_url": {
+          "type": "string"
+        },
+        "bind": {
+          "items": {
+            "$ref": "#/$defs/BindingTarget"
+          },
+          "type": "array"
+        },
+        "provider": {
+          "$ref": "#/$defs/CredentialProvider"
+        },
+        "secret": {
+          "type": "string"
+        },
+        "verify": {
+          "description": "Default true; bind with verify:false is a 422 (D75).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider",
+        "secret"
+      ],
+      "type": "object"
+    },
+    "CredentialVerification": {
+      "additionalProperties": false,
+      "description": "The result of checking a key with its provider (D40). The secret never appears here.",
+      "properties": {
+        "cost_source": {
+          "enum": [
+            "reported",
+            "computed",
+            "free_local",
+            "simulated",
+            "unknown",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hint": {
+          "description": "A code the web renders words for (e.g. no_credits), or null.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key_label": {
+          "description": "OpenRouter GET /api/v1/key: the key's label and spending limit (null = no limit).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "limit_remaining_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "limit_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/CredentialVerifyStatus"
+        }
+      },
+      "required": [
+        "ok",
+        "status",
+        "hint",
+        "latency_ms",
+        "cost_usd",
+        "cost_source"
+      ],
+      "type": "object"
+    },
+    "CredentialVerifyRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/credentials/:name/verify (#57).",
+      "properties": {
+        "bind": {
+          "items": {
+            "$ref": "#/$defs/BindingTarget"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "CredentialVerifyStatus": {
+      "enum": [
+        "ok",
+        "unauthorized",
+        "no_credits",
+        "unreachable",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "CredentialView": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "last_used_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_verified_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_verify_status": {
+          "enum": [
+            "ok",
+            "unauthorized",
+            "no_credits",
+            "unreachable",
+            "unknown",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "masked": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "openrouter",
+            "typesafe",
+            "anthropic",
+            "openai",
+            "generic"
+          ],
+          "type": "string"
+        },
+        "rotated_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ISODateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "env",
+            "dashboard"
+          ],
+          "type": "string"
+        },
+        "undecryptable": {
+          "type": "boolean"
+        },
+        "used_by": {
+          "items": {
+            "enum": [
+              "decision_model",
+              "judge",
+              "upstream_default",
+              "upstream_anthropic",
+              "upstream_fallback"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "source",
+        "masked",
+        "fingerprint",
+        "allowed_hosts",
+        "created_at",
+        "rotated_at",
+        "last_verified_at",
+        "last_verify_status",
+        "last_used_at",
+        "used_by",
+        "undecryptable"
+      ],
+      "type": "object"
+    },
+    "CredentialWriteResult": {
+      "additionalProperties": false,
+      "description": "#55, #57 and #59 (D75): one shared write; bindings apply only when verification.ok.",
+      "properties": {
+        "bindings": {
+          "additionalProperties": false,
+          "properties": {
+            "applied": {
+              "items": {
+                "$ref": "#/$defs/BindingTarget"
+              },
+              "type": "array"
+            },
+            "skipped": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": {
+                    "$ref": "#/$defs/BindingSkipReason"
+                  },
+                  "target": {
+                    "$ref": "#/$defs/BindingTarget"
+                  }
+                },
+                "required": [
+                  "target",
+                  "reason"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "applied",
+            "skipped"
+          ],
+          "type": "object"
+        },
+        "credential": {
+          "$ref": "#/$defs/CredentialView"
+        },
+        "stored": {
+          "description": "false when a failed verification left the currently bound key in place.",
+          "type": "boolean"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CredentialVerification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null when the write asked for verify:false."
+        }
+      },
+      "required": [
+        "credential",
+        "stored",
+        "bindings",
+        "verification"
       ],
       "type": "object"
     },
@@ -1172,6 +2325,106 @@
       ],
       "type": "object"
     },
+    "DecisionModelTestResult": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/DecisionBackend"
+        },
+        "cost_source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "endpoint_host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hint": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "status",
+                "message",
+                "hint"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "model_requested": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "backend",
+        "endpoint_host",
+        "model_requested",
+        "snapshot",
+        "latency_ms",
+        "input_tokens",
+        "cost_usd",
+        "cost_source",
+        "error"
+      ],
+      "type": "object"
+    },
     "DecisionModelUsage": {
       "additionalProperties": false,
       "properties": {
@@ -1246,6 +2499,50 @@
         "input_tokens",
         "cost_usd",
         "cost_source"
+      ],
+      "type": "object"
+    },
+    "DecisionRequestView": {
+      "additionalProperties": false,
+      "description": "GET /api/traces/:id/decision-request (#12, D63): the glass box.",
+      "properties": {
+        "cpt": {
+          "type": "number"
+        },
+        "matches_recorded": {
+          "type": "boolean"
+        },
+        "mismatch_reason": {
+          "enum": [
+            "body_truncated",
+            "policy_missing",
+            "evaluator_missing",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_sha256": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/JevRequest"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests",
+        "request_sha256",
+        "matches_recorded",
+        "cpt",
+        "mismatch_reason"
       ],
       "type": "object"
     },
@@ -1365,6 +2662,183 @@
       ],
       "type": "object"
     },
+    "DryRunResult": {
+      "additionalProperties": false,
+      "properties": {
+        "agreement_with_audit": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "agree": {
+                  "type": "number"
+                },
+                "n": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "n",
+                "agree"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assessed": {
+          "type": "number"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "errors": {
+          "type": "number"
+        },
+        "evaluator_ref": {
+          "type": "string"
+        },
+        "examples": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "$ref": "#/$defs/EvaluatorLevel"
+              },
+              "risk": {
+                "type": "number"
+              },
+              "trace_id": {
+                "$ref": "#/$defs/TraceId"
+              }
+            },
+            "required": [
+              "trace_id",
+              "risk",
+              "level"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "extrapolated_fires": {
+          "type": "number"
+        },
+        "fire_rate": {
+          "type": "number"
+        },
+        "fire_rate_ci95": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "fired": {
+          "type": "number"
+        },
+        "not_assessed": {
+          "type": "number"
+        },
+        "overlap": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "both_fired": {
+                "type": "number"
+              },
+              "evaluator_ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "evaluator_ref",
+              "both_fired"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "population": {
+          "type": "number"
+        },
+        "route": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "sampled": {
+          "type": "number"
+        },
+        "snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window": {
+          "$ref": "#/$defs/TimeWindow"
+        }
+      },
+      "required": [
+        "run_id",
+        "evaluator_ref",
+        "route",
+        "window",
+        "sampled",
+        "population",
+        "assessed",
+        "not_assessed",
+        "errors",
+        "fired",
+        "fire_rate",
+        "fire_rate_ci95",
+        "extrapolated_fires",
+        "overlap",
+        "agreement_with_audit",
+        "examples",
+        "cost_usd",
+        "snapshot"
+      ],
+      "type": "object"
+    },
+    "EvaluatorArchiveRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/evaluators/:id/archive (#33).",
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "archived"
+      ],
+      "type": "object"
+    },
+    "EvaluatorCreateRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/evaluators (#31).",
+      "properties": {
+        "changelog": {
+          "type": "string"
+        },
+        "spec": {
+          "$ref": "#/$defs/EvaluatorSpec"
+        }
+      },
+      "required": [
+        "spec",
+        "changelog"
+      ],
+      "type": "object"
+    },
+    "EvaluatorDraft": {
+      "$ref": "evaluator-draft.v1.schema.json"
+    },
     "EvaluatorLevel": {
       "enum": [
         "ok",
@@ -1372,6 +2846,71 @@
         "critical"
       ],
       "type": "string"
+    },
+    "EvaluatorMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "attached_routes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "route": {
+                "type": "string"
+              },
+              "stage": {
+                "enum": [
+                  "active",
+                  "shadow"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "route",
+              "stage"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "category": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "latest_version": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "builtin",
+            "file",
+            "dashboard"
+          ],
+          "type": "string"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/ISODateTime"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "origin",
+        "latest_version",
+        "archived",
+        "attached_routes",
+        "updated_at"
+      ],
+      "type": "object"
     },
     "EvaluatorResult": {
       "additionalProperties": false,
@@ -1592,6 +3131,131 @@
       ],
       "type": "string"
     },
+    "EvaluatorSpec": {
+      "$ref": "evaluator.v1.schema.json"
+    },
+    "EvaluatorValidateRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/evaluators/validate (#30).",
+      "properties": {
+        "spec": {
+          "$ref": "#/$defs/EvaluatorSpec"
+        }
+      },
+      "required": [
+        "spec"
+      ],
+      "type": "object"
+    },
+    "EvaluatorValidateResult": {
+      "additionalProperties": false,
+      "description": "Schema errors and lints (Go internal/decision/lint.go is the reference, D54); hashes are null while errors remain.",
+      "properties": {
+        "calibration_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/FieldError"
+          },
+          "type": "array"
+        },
+        "lints": {
+          "items": {
+            "$ref": "#/$defs/Lint"
+          },
+          "type": "array"
+        },
+        "question_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "question_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "errors",
+        "lints",
+        "question_sha256",
+        "calibration_key",
+        "question_tokens"
+      ],
+      "type": "object"
+    },
+    "EvaluatorVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "calibration_key": {
+          "type": "string"
+        },
+        "changelog": {
+          "type": "string"
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "created_by": {
+          "type": "string"
+        },
+        "evaluator_id": {
+          "type": "string"
+        },
+        "question_sha256": {
+          "type": "string"
+        },
+        "spec": {
+          "$ref": "#/$defs/EvaluatorSpec"
+        },
+        "spec_sha256": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "evaluator_id",
+        "version",
+        "spec",
+        "spec_sha256",
+        "question_sha256",
+        "calibration_key",
+        "created_by",
+        "created_at",
+        "changelog"
+      ],
+      "type": "object"
+    },
+    "EvaluatorVersionCreateRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/evaluators/:id/versions (#32): base_version is the latest version the editor started from.",
+      "properties": {
+        "base_version": {
+          "type": "number"
+        },
+        "changelog": {
+          "type": "string"
+        },
+        "spec": {
+          "$ref": "#/$defs/EvaluatorSpec"
+        }
+      },
+      "required": [
+        "spec",
+        "changelog",
+        "base_version"
+      ],
+      "type": "object"
+    },
     "EvidenceItem": {
       "additionalProperties": false,
       "properties": {
@@ -1671,6 +3335,86 @@
       ],
       "type": "object"
     },
+    "EvidenceSuggestion": {
+      "additionalProperties": false,
+      "properties": {
+        "example_trace_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TraceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "tag_pattern",
+            "line_header",
+            "extension"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flags": {
+                  "type": "string"
+                },
+                "pattern": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "pattern",
+                "flags"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sample": {
+          "type": "number"
+        },
+        "would_gain": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "pattern",
+        "label",
+        "would_gain",
+        "sample",
+        "example_trace_id"
+      ],
+      "type": "object"
+    },
+    "EvidenceSuggestionList": {
+      "additionalProperties": false,
+      "description": "GET /api/evidence/suggestions (#51, D64).",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSuggestion"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "EvidenceSummary": {
       "additionalProperties": false,
       "properties": {
@@ -1747,8 +3491,17 @@
     "FieldError": {
       "additionalProperties": false,
       "properties": {
+        "code": {
+          "description": "A machine code the web renders words for, e.g. reenter_secret (D37) or fallback_key_required (D41).",
+          "type": "string"
+        },
         "col": {
           "type": "number"
+        },
+        "details": {
+          "additionalProperties": {},
+          "description": "e.g. {names: [credential]} for reenter_secret, {host} for fallback_key_required.",
+          "type": "object"
         },
         "line": {
           "type": "number"
@@ -2187,6 +3940,29 @@
       "format": "date-time",
       "type": "string"
     },
+    "JevRequest": {
+      "additionalProperties": false,
+      "description": "One decision-model request body as compiled (session_id is never returned).",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "questions": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "state": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "model",
+        "state",
+        "questions"
+      ],
+      "type": "object"
+    },
     "JudgeInfo": {
       "additionalProperties": false,
       "properties": {
@@ -2235,6 +4011,150 @@
       ],
       "type": "object"
     },
+    "LabelDelete": {
+      "additionalProperties": false,
+      "description": "DELETE /api/labels (#41).",
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        }
+      },
+      "required": [
+        "trace_id",
+        "target"
+      ],
+      "type": "object"
+    },
+    "LabelPut": {
+      "additionalProperties": false,
+      "description": "PUT /api/labels (#40).",
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/LabelValue"
+        },
+        "note": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        }
+      },
+      "required": [
+        "trace_id",
+        "target",
+        "label"
+      ],
+      "type": "object"
+    },
+    "LabelQueue": {
+      "additionalProperties": false,
+      "description": "GET /api/labels/queue (#39, D60).",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/LabelQueueItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "LabelQueueItem": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "evaluator_ref": {
+          "type": "string"
+        },
+        "evidence_labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluatorLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "response_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "risk_raw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "route": {
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "user_request": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "trace_id",
+        "created_at",
+        "route",
+        "evaluator_ref",
+        "risk_raw",
+        "level",
+        "user_request",
+        "response_text",
+        "evidence_labels"
+      ],
+      "type": "object"
+    },
+    "LabelValue": {
+      "anyOf": [
+        {
+          "const": "should_fire",
+          "type": "string"
+        },
+        {
+          "const": "should_not_fire",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ClaimVerdict"
+        },
+        {
+          "const": "hallucinated",
+          "type": "string"
+        },
+        {
+          "const": "grounded",
+          "type": "string"
+        }
+      ],
+      "description": "<id>@<v> takes should_fire|should_not_fire; claim:<i> a claim verdict; response hallucinated|grounded (D59)."
+    },
     "LabelView": {
       "additionalProperties": false,
       "properties": {
@@ -2246,6 +4166,10 @@
         },
         "labeled_by": {
           "type": "string"
+        },
+        "mine": {
+          "description": "The caller gave this label: labels are per labeller, and DELETE /api/labels removes only the caller's own.",
+          "type": "boolean"
         },
         "note": {
           "type": [
@@ -2262,7 +4186,88 @@
         "label",
         "labeled_by",
         "created_at",
-        "note"
+        "note",
+        "mine"
+      ],
+      "type": "object"
+    },
+    "LabelledValue": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "string"
+        },
+        "label": {
+          "$ref": "#/$defs/ValueLabel"
+        },
+        "source_url": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "label",
+        "basis"
+      ],
+      "type": "object"
+    },
+    "Lint": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "path",
+        "message"
+      ],
+      "type": "object"
+    },
+    "Page<AdminAuditEntry>": {
+      "additionalProperties": false,
+      "description": "Keyset page (`limit` 1-200, default 50, plus `cursor`); `next_cursor` is null at the end.",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AdminAuditEntry"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
       ],
       "type": "object"
     },
@@ -2335,6 +4340,65 @@
       ],
       "type": "object"
     },
+    "PlaygroundResult": {
+      "additionalProperties": false,
+      "properties": {
+        "audit_status": {
+          "$ref": "#/$defs/TraceAuditStatus"
+        },
+        "decision": {
+          "$ref": "#/$defs/GateDecisionView"
+        },
+        "delivered_text": {
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "response_text": {
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "upstream": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ms": {
+                  "type": "number"
+                },
+                "status": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "status",
+                "ms"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "trace_id",
+        "upstream",
+        "response_text",
+        "delivered_text",
+        "headers",
+        "decision",
+        "audit_status"
+      ],
+      "type": "object"
+    },
     "PolicyMode": {
       "enum": [
         "observe",
@@ -2343,6 +4407,315 @@
         "fallback"
       ],
       "type": "string"
+    },
+    "PriceEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "type": "string"
+        },
+        "input_per_mtok": {
+          "type": "number"
+        },
+        "label": {
+          "enum": [
+            "vendor_price",
+            "override"
+          ],
+          "type": "string"
+        },
+        "match": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "output_per_mtok": {
+          "type": "number"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "match",
+        "provider",
+        "input_per_mtok",
+        "output_per_mtok"
+      ],
+      "type": "object"
+    },
+    "PricingTable": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "const": "USD",
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/PriceEntry"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "currency",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "QuickCalibration": {
+      "additionalProperties": false,
+      "properties": {
+        "enough": {
+          "type": "boolean"
+        },
+        "grid": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fn": {
+                "type": "number"
+              },
+              "fp": {
+                "type": "number"
+              },
+              "threshold": {
+                "type": "number"
+              },
+              "tn": {
+                "type": "number"
+              },
+              "tp": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "threshold",
+              "tp",
+              "fp",
+              "tn",
+              "fn"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "loo_range": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mapping": {
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "enum": [
+                "platt",
+                "isotonic",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "platt": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "table": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "table",
+            "platt"
+          ],
+          "type": "object"
+        },
+        "message": {
+          "type": "string"
+        },
+        "n": {
+          "type": "number"
+        },
+        "n_neg": {
+          "type": "number"
+        },
+        "n_pos": {
+          "type": "number"
+        },
+        "precision": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ci95": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "point": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "point",
+                "ci95"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recall": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ci95": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "point": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "point",
+                "ci95"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threshold": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unstable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "n",
+        "n_pos",
+        "n_neg",
+        "enough",
+        "message",
+        "threshold",
+        "precision",
+        "recall",
+        "loo_range",
+        "unstable",
+        "mapping",
+        "grid"
+      ],
+      "type": "object"
+    },
+    "QuickCalibrationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "type": "number"
+        },
+        "labeled": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "boolean"
+              },
+              "risk_raw": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "risk_raw",
+              "label"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "objective": {
+          "enum": [
+            "max_f1",
+            "min_threshold_at_precision"
+          ],
+          "type": "string"
+        },
+        "target_precision": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "labeled"
+      ],
+      "type": "object"
     },
     "RawAnswer": {
       "additionalProperties": false,
@@ -2441,6 +4814,981 @@
       ],
       "type": "object"
     },
+    "Recording": {
+      "additionalProperties": false,
+      "properties": {
+        "answer_sources": {
+          "additionalProperties": false,
+          "properties": {
+            "generated": {
+              "type": "number"
+            },
+            "scripted": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "scripted",
+            "generated"
+          ],
+          "type": "object"
+        },
+        "calibration_state": {
+          "$ref": "#/$defs/CalibrationState"
+        },
+        "decision_model": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "$ref": "#/$defs/DecisionBackend"
+            },
+            "snapshot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "snapshot"
+          ],
+          "type": "object"
+        },
+        "events": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "data": {},
+              "t_ms": {
+                "type": "number"
+              },
+              "trace_id": {
+                "$ref": "#/$defs/TraceId"
+              },
+              "type": {
+                "enum": [
+                  "hello",
+                  "hb",
+                  "trace_started",
+                  "gate_decision",
+                  "audit_queued",
+                  "audit_started",
+                  "audit_completed",
+                  "audit_failed",
+                  "audit_dropped",
+                  "gap",
+                  "policy_updated",
+                  "policy_error",
+                  "evaluator_updated",
+                  "calibration_updated",
+                  "decision_model_changed",
+                  "status",
+                  "credentials_changed",
+                  "settings_updated"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "t_ms",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "git_sha": {
+          "type": "string"
+        },
+        "judge": {
+          "additionalProperties": false,
+          "properties": {
+            "fallback_active": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model",
+            "fallback_active"
+          ],
+          "type": "object"
+        },
+        "kind": {
+          "enum": [
+            "recorded",
+            "mock"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "roi": {
+          "additionalProperties": false,
+          "description": "recording.v1 `roi`: the headline only (Go recording.ROI); the full RoiSummary is recomputed from the traces.",
+          "properties": {
+            "gated_responses": {
+              "type": "number"
+            },
+            "simulated": {
+              "type": "boolean"
+            },
+            "window": {
+              "$ref": "#/$defs/TimeWindow"
+            }
+          },
+          "required": [
+            "window",
+            "gated_responses",
+            "simulated"
+          ],
+          "type": "object"
+        },
+        "schema": {
+          "const": "trustagent.recording/v1",
+          "type": "string"
+        },
+        "totals": {
+          "additionalProperties": false,
+          "properties": {
+            "decision_usd": {
+              "type": "number"
+            },
+            "llm_usd": {
+              "type": "number"
+            },
+            "traces": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "traces",
+            "decision_usd",
+            "llm_usd"
+          ],
+          "type": "object"
+        },
+        "traces": {
+          "items": {
+            "$ref": "#/$defs/TraceSummary"
+          },
+          "type": "array"
+        },
+        "trustagent_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "kind",
+        "label",
+        "recorded_at",
+        "git_sha",
+        "trustagent_version",
+        "decision_model",
+        "judge",
+        "calibration_state",
+        "answer_sources",
+        "totals",
+        "roi",
+        "traces",
+        "events"
+      ],
+      "type": "object"
+    },
+    "ReliabilityResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "bins": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "frac_pos": {
+                "type": "number"
+              },
+              "hi": {
+                "type": "number"
+              },
+              "lo": {
+                "type": "number"
+              },
+              "mean_pred": {
+                "type": "number"
+              },
+              "n": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lo",
+              "hi",
+              "n",
+              "mean_pred",
+              "frac_pos"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "ece": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "evaluator": {
+          "type": "string"
+        },
+        "n": {
+          "type": "number"
+        },
+        "n_by_source": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "snapshot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window": {
+          "$ref": "#/$defs/TimeWindow"
+        }
+      },
+      "required": [
+        "evaluator",
+        "snapshot",
+        "window",
+        "n_by_source",
+        "bins",
+        "ece",
+        "n"
+      ],
+      "type": "object"
+    },
+    "RoiSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "counterfactuals": {
+          "items": {
+            "$ref": "#/$defs/Counterfactual"
+          },
+          "type": "array"
+        },
+        "decision_cost": {
+          "additionalProperties": false,
+          "properties": {
+            "as_of": {
+              "type": "string"
+            },
+            "basis": {
+              "type": "string"
+            },
+            "label": {
+              "$ref": "#/$defs/ValueLabel"
+            },
+            "per_1k": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "source_url": {
+              "type": "string"
+            },
+            "usd": {
+              "type": "number"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "basis",
+            "label",
+            "per_1k",
+            "usd",
+            "value"
+          ],
+          "type": "object"
+        },
+        "gated_responses": {
+          "type": "number"
+        },
+        "latency_ms": {
+          "additionalProperties": false,
+          "properties": {
+            "deadline_miss_rate": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "gate_p50": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "gate_p95": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "label": {
+              "enum": [
+                "measured",
+                "simulated"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "gate_p50",
+            "gate_p95",
+            "deadline_miss_rate",
+            "label"
+          ],
+          "type": "object"
+        },
+        "llm_cost": {
+          "additionalProperties": false,
+          "properties": {
+            "as_of": {
+              "type": "string"
+            },
+            "audits": {
+              "type": "number"
+            },
+            "basis": {
+              "type": "string"
+            },
+            "by_selection": {
+              "additionalProperties": false,
+              "properties": {
+                "direct": {
+                  "type": "number"
+                },
+                "error_sample": {
+                  "type": "number"
+                },
+                "high": {
+                  "type": "number"
+                },
+                "playground": {
+                  "type": "number"
+                },
+                "sample": {
+                  "type": "number"
+                },
+                "studio": {
+                  "type": "number"
+                },
+                "uniform": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "label": {
+              "$ref": "#/$defs/ValueLabel"
+            },
+            "source_url": {
+              "type": "string"
+            },
+            "usd": {
+              "type": "number"
+            },
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "audits",
+            "basis",
+            "by_selection",
+            "label",
+            "usd",
+            "value"
+          ],
+          "type": "object"
+        },
+        "outcomes": {
+          "additionalProperties": false,
+          "properties": {
+            "blocked": {
+              "type": "number"
+            },
+            "fallback": {
+              "type": "number"
+            },
+            "flagged": {
+              "type": "number"
+            },
+            "label": {
+              "enum": [
+                "measured",
+                "simulated"
+              ],
+              "type": "string"
+            },
+            "not_assessed": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "flagged",
+            "blocked",
+            "fallback",
+            "not_assessed",
+            "label"
+          ],
+          "type": "object"
+        },
+        "sampling": {
+          "additionalProperties": false,
+          "properties": {
+            "llm_cap_hit_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ISODateTime"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "uniform_cap": {
+              "type": "number"
+            },
+            "uniform_rate": {
+              "type": "number"
+            },
+            "uniform_stopped_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ISODateTime"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "uniform_today": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "uniform_rate",
+            "uniform_today",
+            "uniform_cap",
+            "uniform_stopped_at",
+            "llm_cap_hit_at"
+          ],
+          "type": "object"
+        },
+        "savings_vs_same_checks": {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "enum": [
+                "estimate",
+                "simulated"
+              ],
+              "type": "string"
+            },
+            "usd_high": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "usd_low": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "usd_low",
+            "usd_high",
+            "label"
+          ],
+          "type": "object"
+        },
+        "simulated": {
+          "type": "boolean"
+        },
+        "third_party": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "total_per_1k": {
+          "$ref": "#/$defs/LabelledValue"
+        },
+        "window": {
+          "$ref": "#/$defs/TimeWindow"
+        }
+      },
+      "required": [
+        "window",
+        "gated_responses",
+        "simulated",
+        "decision_cost",
+        "llm_cost",
+        "total_per_1k",
+        "counterfactuals",
+        "savings_vs_same_checks",
+        "outcomes",
+        "latency_ms",
+        "sampling",
+        "third_party"
+      ],
+      "type": "object"
+    },
+    "RoiTimeseries": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "enum": [
+            "1h",
+            "1d"
+          ],
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decision_usd": {
+                "type": "number"
+              },
+              "gated": {
+                "type": "number"
+              },
+              "llm_usd": {
+                "type": "number"
+              },
+              "same_checks_usd": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "t": {
+                "$ref": "#/$defs/ISODateTime"
+              }
+            },
+            "required": [
+              "t",
+              "decision_usd",
+              "llm_usd",
+              "same_checks_usd",
+              "gated"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "window": {
+          "$ref": "#/$defs/TimeWindow"
+        }
+      },
+      "required": [
+        "window",
+        "bucket",
+        "points"
+      ],
+      "type": "object"
+    },
+    "RuntimeSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "$ref": "#/$defs/Bindings"
+        },
+        "budgets": {
+          "additionalProperties": false,
+          "properties": {
+            "decision_usd_day": {
+              "type": "number"
+            },
+            "llm_usd_day": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "decision_usd_day",
+            "llm_usd_day"
+          ],
+          "type": "object"
+        },
+        "decision_model": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DecisionBackend"
+                },
+                {
+                  "const": "auto",
+                  "type": "string"
+                }
+              ]
+            },
+            "base_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "model",
+            "base_url",
+            "path"
+          ],
+          "type": "object"
+        },
+        "judge": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider": {
+              "enum": [
+                "auto",
+                "anthropic",
+                "openrouter",
+                "openai",
+                "ollama",
+                "mock",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        "pricing_overrides": {
+          "items": {
+            "$ref": "#/$defs/PriceEntry"
+          },
+          "type": "array"
+        },
+        "upstream": {
+          "additionalProperties": false,
+          "properties": {
+            "anthropic": {
+              "$ref": "#/$defs/UpstreamSetting"
+            },
+            "default": {
+              "$ref": "#/$defs/UpstreamSetting"
+            },
+            "fallback": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_header": {
+                  "enum": [
+                    "authorization",
+                    "api-key",
+                    "x-api-key"
+                  ],
+                  "type": "string"
+                },
+                "credential": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "format": {
+                  "enum": [
+                    "openai",
+                    "anthropic"
+                  ],
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "auth_header",
+                "credential",
+                "format",
+                "url"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "default",
+            "anthropic",
+            "fallback"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "decision_model",
+        "judge",
+        "upstream",
+        "bindings",
+        "budgets",
+        "pricing_overrides"
+      ],
+      "type": "object"
+    },
+    "RuntimeSettingsPatch": {
+      "additionalProperties": false,
+      "description": "PATCH /api/settings body (#53): any subset of RuntimeSettings, nested objects partial too.",
+      "properties": {
+        "bindings": {
+          "additionalProperties": false,
+          "properties": {
+            "decision_model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "judge": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "upstream_default": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "budgets": {
+          "additionalProperties": false,
+          "properties": {
+            "decision_usd_day": {
+              "type": "number"
+            },
+            "llm_usd_day": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "decision_model": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DecisionBackend"
+                },
+                {
+                  "const": "auto",
+                  "type": "string"
+                }
+              ]
+            },
+            "base_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "judge": {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider": {
+              "enum": [
+                "auto",
+                "anthropic",
+                "openrouter",
+                "openai",
+                "ollama",
+                "mock",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "pricing_overrides": {
+          "items": {
+            "$ref": "#/$defs/PriceEntry"
+          },
+          "type": "array"
+        },
+        "upstream": {
+          "additionalProperties": false,
+          "properties": {
+            "anthropic": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_header": {
+                  "enum": [
+                    "authorization",
+                    "api-key",
+                    "x-api-key"
+                  ],
+                  "type": "string"
+                },
+                "credential": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "default": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_header": {
+                  "enum": [
+                    "authorization",
+                    "api-key",
+                    "x-api-key"
+                  ],
+                  "type": "string"
+                },
+                "credential": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "fallback": {
+              "additionalProperties": false,
+              "properties": {
+                "auth_header": {
+                  "enum": [
+                    "authorization",
+                    "api-key",
+                    "x-api-key"
+                  ],
+                  "type": "string"
+                },
+                "credential": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "format": {
+                  "enum": [
+                    "openai",
+                    "anthropic"
+                  ],
+                  "type": "string"
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "Scope": {
       "enum": [
         "ingest",
@@ -2449,6 +5797,155 @@
         "admin"
       ],
       "type": "string"
+    },
+    "SettingKeyView": {
+      "additionalProperties": false,
+      "properties": {
+        "advanced": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "string"
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "env": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "restart_required": {
+          "type": "boolean"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "services": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "enum": [
+            "default",
+            "dotenv",
+            "env",
+            "dashboard",
+            "file",
+            "seed"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "env",
+        "value",
+        "default",
+        "source",
+        "secret",
+        "advanced",
+        "restart_required",
+        "editable",
+        "services"
+      ],
+      "type": "object"
+    },
+    "SettingsView": {
+      "additionalProperties": false,
+      "properties": {
+        "dotenv_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env_managed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "groups": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "keys": {
+                "items": {
+                  "$ref": "#/$defs/SettingKeyView"
+                },
+                "type": "array"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "keys"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeSettings"
+        },
+        "version": {
+          "type": "number"
+        },
+        "warnings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "details": {
+                "$ref": "#/$defs/WarningDetails"
+              },
+              "hint": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "message",
+              "hint"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "version",
+        "etag",
+        "groups",
+        "runtime",
+        "env_managed",
+        "warnings",
+        "dotenv_path"
+      ],
+      "type": "object"
     },
     "SkipReason": {
       "enum": [
@@ -2470,6 +5967,456 @@
         "legacy"
       ],
       "type": "string"
+    },
+    "StatusWarning": {
+      "additionalProperties": false,
+      "description": "A status or settings warning with details (D32, D77): the web renders words by code.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "details": {
+          "$ref": "#/$defs/WarningDetails"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "StudioDraftRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/studio/draft (#34).",
+      "properties": {
+        "description": {
+          "description": "At most 2000 characters.",
+          "type": "string"
+        },
+        "route": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "type": "object"
+    },
+    "StudioDraftResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "type": "number"
+        },
+        "cost_source": {
+          "description": "D82: simulated for a mock judge, so the draft cost is labelled Simulated.",
+          "enum": [
+            "reported",
+            "computed",
+            "free_local",
+            "simulated",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluatorDraft"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/FieldError"
+          },
+          "type": "array"
+        },
+        "lints": {
+          "items": {
+            "$ref": "#/$defs/Lint"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "draft",
+        "errors",
+        "lints",
+        "model",
+        "cost_usd",
+        "cost_source",
+        "attempts"
+      ],
+      "type": "object"
+    },
+    "StudioDryRunRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "confirm_cost": {
+          "type": "boolean"
+        },
+        "max_samples": {
+          "type": "number"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "route": {
+          "type": "string"
+        },
+        "spec": {
+          "$ref": "#/$defs/EvaluatorSpec"
+        },
+        "thresholds": {
+          "additionalProperties": false,
+          "properties": {
+            "critical_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "warn_at": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "window": {
+          "enum": [
+            "24h",
+            "7d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "route",
+        "window",
+        "max_samples"
+      ],
+      "type": "object"
+    },
+    "StudioSample": {
+      "additionalProperties": false,
+      "properties": {
+        "assistant_response": {
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "$ref": "#/$defs/EvidenceSource"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "expected": {
+          "enum": [
+            "fire",
+            "no_fire"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "rules": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "system_instructions": {
+          "type": "string"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/TraceId"
+        },
+        "user_request": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "assistant_response"
+      ],
+      "type": "object"
+    },
+    "StudioSamplesRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/studio/samples (#36).",
+      "properties": {
+        "filter": {
+          "enum": [
+            "flagged",
+            "random",
+            "disagreement"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "description": "At most 50.",
+          "type": "number"
+        },
+        "route": {
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/$defs/TimeWindow"
+        }
+      },
+      "required": [
+        "window",
+        "filter"
+      ],
+      "type": "object"
+    },
+    "StudioSamplesResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/StudioSample"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "samples"
+      ],
+      "type": "object"
+    },
+    "StudioTestRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "samples": {
+          "items": {
+            "$ref": "#/$defs/StudioSample"
+          },
+          "type": "array"
+        },
+        "spec": {
+          "$ref": "#/$defs/EvaluatorSpec"
+        },
+        "thresholds": {
+          "additionalProperties": false,
+          "properties": {
+            "critical_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "warn_at": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "samples"
+      ],
+      "type": "object"
+    },
+    "StudioTestResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agrees": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "answer": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RawAnswer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cost_usd": {
+                "type": "number"
+              },
+              "escalate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expected": {
+                "enum": [
+                  "fire",
+                  "no_fire",
+                  null
+                ],
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fires": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "latency_ms": {
+                "type": "number"
+              },
+              "level": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/EvaluatorLevel"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "probabilities": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "number"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "risk": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "risk_raw": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "sample_id": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/$defs/EvaluatorResultStatus"
+              }
+            },
+            "required": [
+              "sample_id",
+              "status",
+              "reason",
+              "answer",
+              "probabilities",
+              "risk_raw",
+              "risk",
+              "level",
+              "escalate",
+              "fires",
+              "latency_ms",
+              "cost_usd",
+              "expected",
+              "agrees"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "summary": {
+          "additionalProperties": false,
+          "properties": {
+            "agreement": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "assessed": {
+              "type": "number"
+            },
+            "backend": {
+              "$ref": "#/$defs/DecisionBackend"
+            },
+            "cost_usd": {
+              "type": "number"
+            },
+            "n": {
+              "type": "number"
+            },
+            "snapshot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "n",
+            "assessed",
+            "agreement",
+            "cost_usd",
+            "snapshot",
+            "backend"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "run_id",
+        "results",
+        "summary"
+      ],
+      "type": "object"
     },
     "SystemStatus": {
       "additionalProperties": false,
@@ -2592,6 +6539,10 @@
             },
             "max_audits": {
               "type": "number"
+            },
+            "runtime_config_epoch": {
+              "description": "D34: the Go settings epoch of the last push the engine applied.",
+              "type": "string"
             },
             "runtime_config_version": {
               "type": "number"
@@ -2865,6 +6816,13 @@
         "version": {
           "type": "string"
         },
+        "warning_details": {
+          "description": "The warnings that carry details (master_key_changed, fail_closed_unprotected, ...); codes also appear in warnings.",
+          "items": {
+            "$ref": "#/$defs/StatusWarning"
+          },
+          "type": "array"
+        },
         "warnings": {
           "items": {
             "type": "string"
@@ -2939,6 +6897,16 @@
         "version"
       ],
       "type": "object"
+    },
+    "TimeWindow": {
+      "enum": [
+        "15m",
+        "1h",
+        "24h",
+        "7d",
+        "30d"
+      ],
+      "type": "string"
     },
     "TraceAuditStatus": {
       "enum": [
@@ -3847,6 +7815,67 @@
         "redacted",
         "flags"
       ],
+      "type": "object"
+    },
+    "UpstreamSetting": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_header": {
+          "enum": [
+            "authorization",
+            "api-key",
+            "x-api-key"
+          ],
+          "type": "string"
+        },
+        "credential": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "credential",
+        "auth_header"
+      ],
+      "type": "object"
+    },
+    "ValueLabel": {
+      "enum": [
+        "measured",
+        "estimate",
+        "third_party",
+        "vendor",
+        "simulated"
+      ],
+      "type": "string"
+    },
+    "WarningDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "names": {
+          "description": "master_key_changed, reenter_secret: the credential names (D32, D37).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "routes": {
+          "description": "fail_closed_unprotected, confirmation_required: the enforcing routes affected (D77).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
       "type": "object"
     },
     "WouldAction": {
@@ -4875,6 +8904,23 @@
         "demo",
         "readonly",
         "status"
+      ],
+      "type": "object"
+    },
+    "WsTicket": {
+      "additionalProperties": false,
+      "description": "POST /api/ws-ticket (#7, D71): a one-use ticket for ?ticket= on the WebSocket URL.",
+      "properties": {
+        "expires_in": {
+          "type": "number"
+        },
+        "ticket": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "expires_in"
       ],
       "type": "object"
     }

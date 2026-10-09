@@ -2,32 +2,49 @@
  * What happened to a Playground request, in order (SPEC §3.3 Playground): your model's answer,
  * the fast check's decision, what your app received (the block message or a fallback answer in
  * place of the model's, next to it; and every response header the run returned), and the deep
- * audit, which keeps updating from the live stream until it finishes.
+ * audit, which keeps updating from the live stream until it finishes. A streamed run also says
+ * when the first token arrived and when the fast check decided (D69: possibly before the answer
+ * finished), as measured in this browser.
  */
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Bot, Gavel, Inbox, Search } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useDataSource } from '@/app/services';
 import { RiskBar, RiskBarLegend } from '@/components/charts/RiskBar';
 import { CodeBlock } from '@/components/common/CodeBlock';
+import { EvidenceBadge } from '@/components/common/EvidenceBadge';
+import { evaluatorName } from '@/components/trace/traceView';
 import { Spinner } from '@/components/ui/spinner';
 import { AuditState } from '@/components/outcome/AuditState';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
+import { evaluatorsQuery } from '@/data/queries';
 import { useStreamStore } from '@/data/stream/streamStore';
 import { stageLabel } from '@/domain/controlPresentation';
 import { formatDurationMs, formatRisk } from '@/domain/format';
 import {
   checkedAgainst,
   copy,
-  humanizeId,
   levelWord,
   reasonCopy,
   statusReason,
   toneVar,
   traceOutcome,
 } from '@/domain/presentation';
+import { evalNameMap } from '@/domain/words/evaluators';
 import { cn } from '@/lib/cn';
 import type { GateAction, GateDecisionView, PlaygroundResult, TraceAuditStatus } from '@/types/api';
 import { deliveredAction, receivedCaption } from './playgroundModel';
+
+/** When a streamed run's events arrived, in ms after the request was sent (null: not yet). */
+export interface RunTiming {
+  /** Time to first token. */
+  firstTokenMs: number | null;
+  /** When the fast check's decision arrived. */
+  decisionMs: number | null;
+  /** More of the answer streamed after the decision: the check decided before the answer ended. */
+  decidedMidStream: boolean;
+}
 
 export interface TimelineState {
   mode: 'chat' | 'audit';
@@ -36,6 +53,27 @@ export interface TimelineState {
   decision: GateDecisionView | null;
   result: PlaygroundResult | null;
   running: boolean;
+  /** The answer came as token events. */
+  streamed?: boolean;
+  timing?: RunTiming;
+  /** A demo stack: its model answers are mocks, so their timings are simulated. */
+  demo?: boolean;
+}
+
+const BROWSER_BASIS = 'Measured in this browser from sending the request, so it includes the network to the gateway.';
+const MOCK_BASIS = 'Timed in this browser, but the model or the fast check that answered is a mock: real ones take their own time.';
+
+/**
+ * "First token after 340 ms" or "Decided after 820 ms, …", with its value label: Measured, or
+ * Simulated when a mock produced what was timed (never mock output presented as measured).
+ */
+function Timing({ text, subject, simulated }: { text: string; subject: string; simulated: boolean }) {
+  return (
+    <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted tabular">
+      <span>{text}</span>
+      <EvidenceBadge label={simulated ? 'simulated' : 'measured'} basis={simulated ? MOCK_BASIS : BROWSER_BASIS} subject={subject} />
+    </p>
+  );
 }
 
 function Step({
@@ -74,11 +112,12 @@ function Step({
   );
 }
 
-function evaluatorName(ref: string): string {
-  return humanizeId(ref.split('@')[0] ?? ref);
-}
-
 function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAction | null }) {
+  // The checks are named from the evaluator library, as in Traffic: a renamed check or a Studio
+  // copy is never shown by its id. While the library is not at hand, the humanized id stands in.
+  const ds = useDataSource();
+  const evaluators = useQuery({ ...evaluatorsQuery(ds), retry: false });
+  const names = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
   // One outcome per request, as in Traffic: what the app received once the run says so.
   const outcome = traceOutcome({
     gate_status: d.status,
@@ -115,7 +154,7 @@ function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAc
                 <li key={e.ref} className="space-y-1">
                   <p className="flex items-baseline justify-between gap-2 text-sm">
                     <span className="font-medium text-fg">
-                      {evaluatorName(e.ref)}
+                      {evaluatorName(e.ref, names)}
                       {e.stage === 'shadow' ? <span className="ml-1.5 text-xs font-normal text-fg-muted">{stageLabel('shadow')}</span> : null}
                     </span>
                     {level ? (
@@ -135,7 +174,7 @@ function DecisionView({ d, delivered }: { d: GateDecisionView; delivered: GateAc
                       level={e.level}
                       warnAt={e.thresholds.warn_at}
                       criticalAt={e.thresholds.critical_at}
-                      label={`${evaluatorName(e.ref)} risk`}
+                      label={`${evaluatorName(e.ref, names)} risk`}
                     />
                   ) : null}
                 </li>
@@ -209,8 +248,12 @@ function DeepAudit({ result }: { result: PlaygroundResult }) {
 }
 
 export function ResultTimeline({ state }: { state: TimelineState }) {
-  const { mode, tokens, decision, result, running } = state;
+  const { mode, tokens, decision, result, running, streamed = false, timing, demo = false } = state;
   const d = result?.decision ?? decision;
+  // A mock fast check (simulated checks, or the demo) decides on a script, not at Jev's speed.
+  const mockDecision = demo || d?.decision_model?.backend === 'mock';
+  const firstToken = streamed && timing?.firstTokenMs != null ? timing.firstTokenMs : null;
+  const decidedAt = streamed && timing?.decisionMs != null ? timing.decisionMs : null;
   return (
     <ol aria-label="What happened to the request" className="min-w-0">
       <Step
@@ -219,15 +262,23 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
         status={result || tokens || mode === 'audit' ? 'done' : running ? 'active' : 'waiting'}
       >
         {mode === 'audit' ? (
-          <p className="text-sm text-fg-muted">Audit mode: no model call.</p>
+          <p className="text-sm text-fg-muted">Checked as written: no model was called to produce it.</p>
         ) : result?.upstream ? (
           <p className="text-sm text-fg-muted tabular">
             HTTP {String(result.upstream.status)} · {formatDurationMs(result.upstream.ms)}
           </p>
         ) : null}
+        {firstToken !== null ? <Timing text={`First token after ${formatDurationMs(firstToken)}`} subject="Time to first token" simulated={demo} /> : null}
         {tokens && !result ? <p className="rounded-md border border-border bg-surface px-3 py-2 text-md whitespace-pre-wrap text-fg">{tokens}</p> : null}
       </Step>
       <Step icon={Search} title={copy.tiers.fast_check} status={d ? 'done' : running ? 'active' : 'waiting'}>
+        {decidedAt !== null ? (
+          <Timing
+            text={`Decided after ${formatDurationMs(decidedAt)}${timing?.decidedMidStream ? ', while the answer was still streaming' : ''}`}
+            subject="When the fast check decided"
+            simulated={mockDecision}
+          />
+        ) : null}
         {d ? <DecisionView d={d} delivered={deliveredAction(result)} /> : running ? <p className="text-sm text-fg-muted">Checking the answer…</p> : null}
       </Step>
       <Step icon={Inbox} title="What your app received" status={result ? 'done' : running ? 'active' : 'waiting'}>

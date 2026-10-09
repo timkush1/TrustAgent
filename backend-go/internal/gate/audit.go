@@ -83,6 +83,21 @@ type dailyCounter struct {
 	n     int
 }
 
+// SeedUniform sets today's uniform-sample count to n, e.g. from the persisted count after a
+// restart (the cost ledger seeds it), so the daily cap survives restarts. n below zero counts
+// as zero.
+func (g *Gate) SeedUniform(n int) {
+	g.uniform.seed(g.cfg.Now(), max(n, 0))
+}
+
+// seed sets the count of the UTC day of now to n.
+func (d *dailyCounter) seed(now time.Time, n int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.day, d.n = now.UTC().Format(time.DateOnly), n
+	metrics.SetUniformSamplesToday(n)
+}
+
 // take counts one event and reports whether it was under the cap. A cap of zero or less allows
 // none.
 func (d *dailyCounter) take(now time.Time) bool {

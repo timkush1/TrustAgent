@@ -63,7 +63,12 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	d := serverDeps{cfg: cfg, log: log, redisState: stateDisabled}
+	d := serverDeps{cfg: cfg, log: log, redisState: stateDisabled, redactor: redactor}
+	// Admin audit diffs are scrubbed with the process Redactor, which learns every secret the
+	// runtime configuration loads or receives (D42, D44).
+	defer store.AddAuditRedactor(redactor)()
+	// REST error messages pass through the same Redactor (D42).
+	defer installRedaction(redactor)()
 
 	if cfg.DatabaseURL == "" {
 		log.Warn("TRUTHTABLE_DATABASE_URL is not set: traces and audits are not stored")
@@ -80,9 +85,10 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 		}
 	}
 	d.master = loadMasterKey(cfg, log) // signs dashboard sessions (P2 authz core)
-	if cfg.TraceFlush != "sync" {
-		log.Info("trace writes run inline; the batched TRUTHTABLE_TRACE_FLUSH=async writer lands in P2")
-	}
+	// The batched trace writer (TRUTHTABLE_TRACE_FLUSH=async, trace_writer.go) fronts the store;
+	// its flush runs at shutdown after the drain.
+	var flushTraces func(context.Context) error
+	d.store, flushTraces = wrapTraceWriter(cfg, d.store, log)
 
 	cfg.InternalToken = internalToken(cfg.InternalToken, cfg.InternalTokenFile, log)
 	redactor.Add(cfg.InternalToken) // a generated token was not in the loaded configuration
@@ -154,6 +160,9 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 	if err := srv.shutdown(drainCtx); err != nil {
 		log.Warn("work was still running at shutdown", "err", err)
 	}
+	if err := flushTraces(drainCtx); err != nil {
+		log.Warn("trace writes were still pending at shutdown", "err", err)
+	}
 	if err := metricsServer.Shutdown(ctx); err != nil {
 		log.Warn("metrics server shutdown", "err", err)
 	}
@@ -161,14 +170,20 @@ func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error 
 	return runErr
 }
 
-// redactURL is a URL safe to log: a password becomes xxxxx and the query is dropped (a base URL
-// may carry an api-key parameter).
+// redactURL is a URL safe to log and to show (D79): a password becomes xxxxx, so does a user name
+// that stands alone (it is often a token), and the query is dropped (a base URL may carry an
+// api-key parameter).
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "(unparseable URL)"
 	}
-	u.RawQuery, u.Fragment = "", ""
+	u.RawQuery, u.ForceQuery, u.Fragment = "", false, ""
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); !hasPassword {
+			u.User = url.User("xxxxx")
+		}
+	}
 	return u.Redacted()
 }
 

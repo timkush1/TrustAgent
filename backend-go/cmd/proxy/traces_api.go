@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,9 @@ var (
 	auditSelections   = []string{"high", "sample", "error_sample", "uniform", "direct", "playground", "studio"}
 	traceSources      = []string{"proxy", "direct", "playground", "test", "trafficgen"}
 	searchWindowLimit = 7 * 24 * time.Hour
+	// reasonFilterPattern is the shape of a gate reason code ("groundedness:critical",
+	// "det:numbers_not_in_evidence", "needs_second_signal") or of a prefix of one ("det:").
+	reasonFilterPattern = regexp.MustCompile(`^[A-Za-z0-9_.@/-]+(:[A-Za-z0-9_.@/-]+)*:?$`)
 )
 
 // tracesAPI serves GET /api/traces and GET /api/traces/:id (SPEC §2.4 endpoints 10 and 11).
@@ -50,6 +54,9 @@ type tracesAPI struct {
 	store traceReader // nil when persistence is disabled
 	now   func() time.Time
 	log   *slog.Logger
+	// labels reads a trace's labels for TraceDetail.labels (eval_wiring.go traceLabels);
+	// nil means none.
+	labels func(ctx context.Context, traceID string) ([]store.LabelView, error)
 }
 
 // available answers 503 persistence_disabled when there is no store.
@@ -131,6 +138,17 @@ func (a *tracesAPI) traceFilter(c *gin.Context) (store.TraceFilter, bool) {
 		badParam(c, "q", "text search needs since within the last 7 days")
 		return f, false
 	}
+	// reason is a whole code or a prefix ending in a colon, bounded by since (D68).
+	if f.Reason = c.Query("reason"); f.Reason != "" {
+		if len(f.Reason) > 128 || !reasonFilterPattern.MatchString(f.Reason) {
+			badParam(c, "reason", "must be a reason code such as det:secret_pattern, or a prefix ending in a colon such as det:")
+			return f, false
+		}
+		if f.Since == nil {
+			badParam(c, "reason", "the reason filter needs since")
+			return f, false
+		}
+	}
 	return f, true
 }
 
@@ -158,6 +176,20 @@ func (a *tracesAPI) get(c *gin.Context) {
 	d := store.TraceDetail{
 		TraceSummary: rec.Summary(), Body: store.UnavailableBody(store.BodyScope), Decisions: decisions,
 		Labels: []store.LabelView{},
+	}
+	if a.labels != nil {
+		labels, err := a.labels(ctx, id)
+		if err != nil {
+			a.internal(c, "get trace labels", err)
+			return
+		}
+		if labels != nil {
+			me := labeler(c)
+			for i := range labels {
+				labels[i].Mine = labels[i].LabeledBy == me
+			}
+			d.Labels = labels
+		}
 	}
 	if rec.AuditID != nil {
 		audit, err := a.store.GetAudit(ctx, *rec.AuditID)

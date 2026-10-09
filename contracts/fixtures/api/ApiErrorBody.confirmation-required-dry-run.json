@@ -1,0 +1,13 @@
+{
+  "error": {
+    "code": "confirmation_required",
+    "message": "This test costs about $0.0021; confirm to run it.",
+    "details": {
+      "estimate_usd": 0.0021,
+      "samples": 200,
+      "population": 1840,
+      "decision_budget_left_usd": 1.84
+    }
+  },
+  "trace_id": null
+}

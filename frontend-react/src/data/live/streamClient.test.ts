@@ -2,9 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeLifecycle, socketFactory } from '@/test/fakes/FakeWebSocket';
 import { decision, flaggedTrace, frame, hb, hello, iso, T0, trace } from '@/test/fixtures';
 import type { ResyncEvent, ResyncReason, StreamEvent } from '../stream/types';
-import { CLOSE_UNAUTHORIZED, StreamClient } from './streamClient';
+import { clearDashboardKey, storeDashboardKey } from '../http';
+import { CLOSE_UNAUTHORIZED, StreamClient, wsTicketSource, type StreamClientOptions } from './streamClient';
 
-function setup(opts: { random?: () => number; resync?: (since: string, reason: ResyncReason) => Promise<ResyncEvent> } = {}) {
+function setup(
+  opts: {
+    random?: () => number;
+    resync?: (since: string, reason: ResyncReason) => Promise<ResyncEvent>;
+    ticket?: StreamClientOptions['ticket'];
+  } = {},
+) {
   const sockets = socketFactory();
   const lifecycle = fakeLifecycle();
   const events: StreamEvent[] = [];
@@ -32,6 +39,7 @@ function setup(opts: { random?: () => number; resync?: (since: string, reason: R
     random: opts.random ?? (() => 0.5),
     now: () => Date.now(),
     warn,
+    ticket: opts.ticket,
   });
   return { client, sockets, lifecycle, events, phases, resync, warn };
 }
@@ -329,5 +337,98 @@ describe('StreamClient resync', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(s.resync).toHaveBeenCalledTimes(2);
     expect(s.events.filter((e) => e.type === 'resync')).toHaveLength(1);
+  });
+});
+
+describe('StreamClient cross-origin tickets (D71)', () => {
+  afterEach(() => clearDashboardKey());
+
+  it('asks for a fresh ticket before every (re)connect and connects with ?ticket=', async () => {
+    let n = 0;
+    const ticket = vi.fn(async () => `wst_${++n}`);
+    const s = setup({ ticket });
+    s.client.start();
+    expect(s.sockets.sockets).toHaveLength(0);
+    expect(s.phases.at(-1)).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.sockets.last.url.searchParams.get('ticket')).toBe('wst_1');
+    expect(s.sockets.last.url.searchParams.get('protocol')).toBe('2');
+    connect(s);
+    s.sockets.last.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ticket).toHaveBeenCalledTimes(2);
+    expect(s.sockets.sockets).toHaveLength(2);
+    expect(s.sockets.last.url.searchParams.get('ticket')).toBe('wst_2');
+    expect(s.sockets.last.url.searchParams.get('since_seq')).toBe('10');
+    expect(s.sockets.last.url.searchParams.has('api_key')).toBe(false);
+  });
+
+  it('connects without a ticket when the source has none, and opens one socket for overlapping retries', async () => {
+    const ticket = vi.fn(async () => null);
+    const s = setup({ ticket });
+    s.client.start();
+    s.client.retryNow();
+    s.lifecycle.goOnline();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ticket).toHaveBeenCalledTimes(1);
+    expect(s.sockets.sockets).toHaveLength(1);
+    expect(s.sockets.last.url.searchParams.has('ticket')).toBe(false);
+  });
+
+  it('shows a refused ticket (401) as unauthorized and keeps retrying with backoff', async () => {
+    const ticket = vi.fn(async () => {
+      throw Object.assign(new Error('Sign in first.'), { status: 401 });
+    });
+    const s = setup({ ticket });
+    s.client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.sockets.sockets).toHaveLength(0);
+    expect(s.client.connection).toMatchObject({ phase: 'unauthorized', lastCloseCode: CLOSE_UNAUTHORIZED, attempt: 1 });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ticket.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('drops a ticket that arrives after dispose', async () => {
+    let resolve: (t: string) => void = () => {};
+    const s = setup({ ticket: (signal) => new Promise<string>((r) => { resolve = r; signal.addEventListener('abort', () => r('late')); }) });
+    s.client.start();
+    s.client.dispose();
+    resolve('wst_late');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.sockets.sockets).toHaveLength(0);
+  });
+
+  it('wsTicketSource: none on the same origin; on another origin a ticket only while this tab holds a key', async () => {
+    const create = vi.fn(async () => ({ ticket: 'wst_abc', expires_in: 30 }));
+    expect(wsTicketSource(false, create)).toBeUndefined();
+    const source = wsTicketSource(true, create)!;
+    const signal = new AbortController().signal;
+    await expect(source(signal)).resolves.toBeNull();
+    expect(create).not.toHaveBeenCalled();
+    storeDashboardKey('ta_admin_key');
+    await expect(source(signal)).resolves.toBe('wst_abc');
+    expect(create).toHaveBeenCalledWith(signal);
+  });
+});
+
+describe('LiveDataSource on another origin (D71)', () => {
+  afterEach(() => clearDashboardKey());
+
+  it('connects its WebSocket with a fresh ticket from POST /api/ws-ticket while this tab holds a key', async () => {
+    vi.useRealTimers();
+    const { LiveDataSource } = await import('./liveDataSource');
+    const sockets = socketFactory();
+    const lifecycle = fakeLifecycle();
+    const tickets = vi.fn(async () => ({ ticket: 'wst_live', expires_in: 30 }));
+    const ds = new LiveDataSource(
+      { apiBase: 'http://proxy.test', crossOrigin: true, wsUrl: 'ws://proxy.test/ws' },
+      { stream: { createSocket: sockets.create, lifecycle: lifecycle.source, ticket: wsTicketSource(true, tickets) } },
+    );
+    storeDashboardKey('ta_admin_key');
+    const control = ds.subscribe({ onEvent: () => {}, onConnection: () => {} });
+    await vi.waitFor(() => expect(sockets.sockets).toHaveLength(1));
+    expect(sockets.last.url.searchParams.get('ticket')).toBe('wst_live');
+    expect(tickets).toHaveBeenCalledTimes(1);
+    control.stop();
   });
 });

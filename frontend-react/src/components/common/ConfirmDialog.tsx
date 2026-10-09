@@ -10,7 +10,9 @@
  *   what users receive ("Allow uncalibrated blocking"): the button works once the text matches,
  *   and the instruction next to it says so.
  * - `onConfirm` may return a promise: the button shows progress, the dialog stays open, and a
- *   failure shows the server's message in place so the viewer can try again or cancel.
+ *   failure shows the server's message in place so the viewer can try again or cancel. Throwing
+ *   `ConfirmAgain` keeps the dialog open without a failure, for a server that asks to confirm
+ *   again with more detail (D77).
  */
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { CircleAlert } from 'lucide-react';
@@ -18,6 +20,7 @@ import { useId, useRef, useState, type ReactElement, type ReactNode } from 'reac
 import { Button } from '@/components/ui/button';
 import { backdropClass } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { ConfirmAgain } from './confirmAgain';
 import { cn } from '@/lib/cn';
 import { describeError } from './describeError';
 
@@ -95,7 +98,8 @@ export function ConfirmDialog({
       onOpenChange?.(false);
     } catch (err) {
       setPending(false);
-      setError(err);
+      // A second, informed confirmation (D77): the dialog already asks it, so no failure shows.
+      if (!(err instanceof ConfirmAgain)) setError(err);
     }
   };
 

@@ -44,6 +44,7 @@ import {
   DEFAULT_ROUTE,
   DraftError,
   draftRouteNames,
+  setEvaluatorThresholds,
   setRouteMode,
   stopTrustingUserContext,
   yamlDiffers,
@@ -52,9 +53,12 @@ import {
 import { PresetsDialog } from './PresetsDialog';
 import { ReviewSaveDialog } from './ReviewSaveDialog';
 import { RouteCard, type RouteFix } from './RouteCard';
-import { evaluatorId, policyWriteReason } from './routeWords';
+import { PolicyWarningList } from './PolicyWarningList';
+import { isDivergedWarning, policyWarningView } from './policyWarnings';
+import { evaluatorDisplayName, evaluatorId, policyWriteReason, routeTitle } from './routeWords';
 import { VersionsSheet } from './VersionsSheet';
 import { YamlEditorDialog } from './YamlEditorDialog';
+import { evalNameMap } from '@/domain/words/evaluators';
 
 interface Draft {
   yaml: string;
@@ -146,7 +150,13 @@ function DraftBar({
   );
 }
 
-export function PoliciesPage() {
+export interface PoliciesSearch {
+  /** With `evaluator`: open that check's threshold editor on this route ("Adjust threshold"). */
+  route?: string;
+  evaluator?: string;
+}
+
+export function PoliciesPage({ search = {} }: { search?: PoliciesSearch }) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const { demo } = useAppMode();
@@ -162,7 +172,7 @@ export function PoliciesPage() {
   const writeReason = policyWriteReason(state, instanceReason);
   const draftYaml = draft?.yaml ?? state?.yaml ?? '';
 
-  const names = useMemo(() => new Map((evaluators.data?.items ?? []).map((e) => [e.id, e.name])), [evaluators.data]);
+  const names = useMemo(() => evalNameMap(evaluators.data?.items ?? []), [evaluators.data]);
 
   // Calibration progress of the evaluators that keep a route from blocking ("Label N more").
   const uncalibratedIds = useMemo(() => {
@@ -178,20 +188,31 @@ export function PoliciesPage() {
       new Map<string, CalibrationProgress>(results.flatMap((r) => (r.data ? [[r.data.id, r.data.calibration_progress] as const] : []))),
   });
 
+  // In plain words; the diverged-file warning is the banner's job.
+  const warnings = useMemo(() => {
+    if (!state) return [];
+    const ctx = { routes: draftRouteNames(state.yaml).slice(1), names };
+    return state.warnings.filter((w) => !(state.file.status === 'diverged' && isDivergedWarning(w))).map((w) => policyWarningView(w, ctx));
+  }, [state, names]);
+
   const draftModes = useMemo(() => (draft ? modesIn(draft.yaml) : new Map<string, PolicyMode>()), [draft]);
 
-  const applyEdit = (change: (yaml: string) => string, done?: string) => {
-    if (!state) return;
+  /** Applies a change to the draft; true when the draft now differs from the saved policy. */
+  const applyEdit = (change: (yaml: string) => string, done?: string): boolean => {
+    if (!state) return false;
     try {
       const next = change(draftYaml);
-      if (!yamlDiffers(next, state.yaml)) {
+      const differs = yamlDiffers(next, state.yaml);
+      if (!differs) {
         setDraft(null);
       } else {
         setDraft({ yaml: next, baseEtag: draft?.baseEtag ?? state.etag });
       }
       if (done) notify.success(done, { description: 'Review and save to apply it.' });
+      return differs;
     } catch (err) {
       notify.error("Couldn't change the draft", err instanceof DraftError ? err : new Error(String(err)));
+      return false;
     }
   };
 
@@ -292,12 +313,13 @@ export function PoliciesPage() {
           </p>
         ) : null}
         {state.persisted ? null : <p className="text-sm text-fg-muted">{copy.states.applies_until_restart}</p>}
-        {state.warnings.length > 0 ? (
-          <ul className="space-y-1 text-sm text-fg-muted">
-            {state.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
+        <PolicyWarningList warnings={warnings} className="rounded-lg border border-border bg-surface px-4 py-3" />
+        {search.route && search.evaluator && !routes.some((r) => r.name === search.route && r.evaluators.some((e) => e.ref === search.evaluator)) ? (
+          // "Adjust threshold" from an older request: the policy has moved on since.
+          <p role="status" className="rounded-lg border border-border bg-surface px-4 py-2.5 text-sm text-fg">
+            {evaluatorDisplayName(search.evaluator, names)} ({search.evaluator}) no longer runs on {routeTitle(search.route)}, so there is no threshold of it to
+            adjust there. The routes below show what runs now.
+          </p>
         ) : null}
         <Section title="Routes" description="A request follows the first route whose matchers all fit; the default route takes the rest.">
         {routes.length === 0 ? (
@@ -316,6 +338,10 @@ export function PoliciesPage() {
                 writeReason={writeReason}
                 onModeChange={(mode) => applyEdit((y) => setRouteMode(y, route.name, mode))}
                 onFix={onFix(route.name)}
+                onThresholds={(ref, edit) => {
+                  if (applyEdit((y) => setEvaluatorThresholds(y, route.name, ref, edit))) setReviewOpen(true);
+                }}
+                focusEvaluator={search.route === route.name ? (search.evaluator ?? null) : null}
               />
             ))}
           </div>

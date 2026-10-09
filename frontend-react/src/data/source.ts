@@ -32,7 +32,7 @@ export interface PageParams {
   cursor?: string;
 }
 
-/** GET /api/traces (SPEC §2.4 #10). `q` requires `since` within 7 days. */
+/** GET /api/traces (SPEC §2.4 #10). `q` requires `since` within 7 days; `reason` requires `since`. */
 export interface TraceListParams extends PageParams {
   since?: string;
   until?: string;
@@ -46,6 +46,12 @@ export interface TraceListParams extends PageParams {
   audit_verdict?: AuditVerdict;
   source?: TraceSource;
   outcome?: OutcomeId;
+  /**
+   * A gate reason (D68): a whole code (`contradiction:critical`, `det:secret_pattern`,
+   * `disagreement`) matches that code; a prefix ending in a colon (`contradiction:`, `det:`)
+   * matches every code it starts. The proxy needs `since` with it.
+   */
+  reason?: string;
   q?: string;
 }
 

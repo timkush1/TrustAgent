@@ -26,8 +26,10 @@ export interface CardHeaderProps {
 export function CardHeader({ title, description, actions, level = 3, id, className }: CardHeaderProps) {
   const Heading = `h${level}` as const;
   return (
-    <div className={cn('flex items-start justify-between gap-3 px-4 pt-4', className)}>
-      <div className="min-w-0 space-y-0.5">
+    // The title keeps at least 16rem beside the actions; narrower, the actions wrap under it
+    // instead of squeezing it to a word per line.
+    <div className={cn('flex flex-wrap items-start justify-between gap-3 px-4 pt-4', className)}>
+      <div className="min-w-0 flex-1 basis-64 space-y-0.5">
         <Heading id={id} className="text-sm font-semibold text-fg">
           {title}
         </Heading>

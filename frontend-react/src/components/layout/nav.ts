@@ -1,7 +1,6 @@
 /**
- * The six navigation items (SPEC §3.3 information architecture). Knowledge appears only when the
- * add-on is enabled (P3). `phase` is when the full page arrives; until then the route renders a
- * designed placeholder that says so.
+ * The navigation items (SPEC §3.3 information architecture). Knowledge appears only when the
+ * add-on is enabled.
  */
 import { BookOpen, FlaskConical, LayoutDashboard, ListChecks, Rows3, Settings, ShieldCheck, type LucideIcon } from 'lucide-react';
 

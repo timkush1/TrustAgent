@@ -19,7 +19,7 @@ import { modeView, POLICY_MODES } from '@/domain/controlPresentation';
 import { formatCount } from '@/domain/format';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, PolicyMode } from '@/types/api';
-import { EXAMPLES, textLength, type PlaygroundMode } from './playgroundModel';
+import { playgroundExamples, textLength, type PlaygroundMode } from './playgroundModel';
 import { usePlaygroundStore } from './playgroundStore';
 
 const ROLE_OPTIONS: { value: ChatMessage['role']; label: string }[] = [
@@ -36,9 +36,12 @@ export interface PlaygroundFormProps {
   busy: boolean;
   /** A demo or test-mode stack: an unedited example is answered with its scenario's scripted checks. */
   scripted?: boolean;
+  /** The knowledge add-on is on: its scenarios are examples too. */
+  knowledge?: boolean;
 }
 
-export function PlaygroundFormView({ routes, maxChars, busy, scripted = false }: PlaygroundFormProps) {
+export function PlaygroundFormView({ routes, maxChars, busy, scripted = false, knowledge = false }: PlaygroundFormProps) {
+  const examples = playgroundExamples({ knowledge });
   const { form, set, setMessage, addMessage, removeMessage, setDoc, addDoc, removeDoc, load, reset } = usePlaygroundStore();
   const modelListId = useId();
   const length = textLength(form);
@@ -62,7 +65,7 @@ export function PlaygroundFormView({ routes, maxChars, busy, scripted = false }:
           <Menu>
             <MenuTrigger render={<Button size="sm" variant="ghost">Load an example</Button>} />
             <MenuContent>
-              {EXAMPLES.map((ex) => (
+              {examples.map((ex) => (
                 <MenuItem key={ex.id} onClick={() => load(ex.form)}>
                   {ex.title}
                 </MenuItem>
@@ -82,7 +85,7 @@ export function PlaygroundFormView({ routes, maxChars, busy, scripted = false }:
       </p>
       {scripted && form.scenario ? (
         <p className="text-xs text-fg-muted">
-          Example “{EXAMPLES.find((e) => e.id === form.scenario)?.title ?? form.scenario}”: this stack’s mock checks answer it with the
+          Example “{examples.find((e) => e.id === form.scenario)?.title ?? form.scenario}”: this stack’s mock checks answer it with the
           scenario’s scripted results (simulated). Editing the example makes it your own request.
         </p>
       ) : null}

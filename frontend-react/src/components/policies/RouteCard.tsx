@@ -5,14 +5,15 @@
  * Changes made here go into the page's draft; nothing is saved until the viewer reviews it.
  */
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Check, CircleAlert, Eye, ListChecks, TriangleAlert } from 'lucide-react';
-import { useId } from 'react';
+import { ArrowRight, Check, CircleAlert, CircleDashed, Eye, ListChecks, SlidersHorizontal, TriangleAlert } from 'lucide-react';
+import { useId, useState } from 'react';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { DisabledAction, type Reason } from '@/components/common/DisabledReason';
 import { Term } from '@/components/common/Term';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { IconButton } from '@/components/ui/icon-button';
 import { Select } from '@/components/ui/select';
 import {
   actingAsText,
@@ -28,7 +29,9 @@ import { formatCount, formatRisk } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
 import type { BlockReadiness, CalibrationProgress, Downgrade, EffectiveRoute, PolicyMode } from '@/types/api';
+import type { ThresholdEdit } from './policyDraft';
 import { evaluatorDisplayName, evaluatorId, isDefaultRoute, matchSummary, routeTitle, settingFacts } from './routeWords';
+import { ThresholdEditor } from './ThresholdEditor';
 
 export type RouteFix = 'buffer_streams' | 'allow_uncalibrated' | 'stop_trusting_user_context';
 
@@ -43,6 +46,10 @@ export interface RouteCardProps {
   writeReason: Reason | null;
   onModeChange: (mode: PolicyMode) => void;
   onFix: (fix: RouteFix) => void;
+  /** Put a threshold change into the draft and open the review (Preview impact). */
+  onThresholds: (ref: string, edit: ThresholdEdit) => void;
+  /** Open this check's threshold editor at once ("Adjust threshold" from a trace). */
+  focusEvaluator?: string | null;
 }
 
 const linkClass = 'inline-flex items-center gap-0.5 text-xs font-medium text-fg underline underline-offset-2';
@@ -130,7 +137,7 @@ function DowngradeFix({
       );
     case 'breaker_open':
       return (
-        <Link to="/app/settings/$section" params={{ section: 'models' }} className={linkClass}>
+        <Link to="/app/settings/$section" params={{ section: 'models' }} hash="last-error" className={linkClass}>
           See the last error
           <ArrowRight aria-hidden="true" className="size-3" />
         </Link>
@@ -147,48 +154,89 @@ function DowngradeFix({
   }
 }
 
-function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: ReadonlyMap<string, string> }) {
+function Readiness({ items, names, progress }: { items: readonly BlockReadiness[]; names: ReadonlyMap<string, string>; progress: RouteCardProps['progress'] }) {
   if (items.length === 0) {
     return <p className="text-xs text-fg-muted">No check on this route is allowed to block.</p>;
   }
   return (
     <ul className="space-y-2">
-      {items.map((b) => (
-        <li key={b.evaluator} className="space-y-1">
-          <p className="flex items-center gap-1.5 text-sm">
-            {b.ready ? (
-              <Check aria-hidden="true" className="size-3.5 text-fg-muted" />
-            ) : (
-              <CircleAlert aria-hidden="true" className="size-3.5 text-tone-warning" />
+      {items.map((b) => {
+        // Switching the route to Block or Fallback is the last step: before the others are met it
+        // would give a route that still cannot block. On a Flag or Observe route (mode missing)
+        // nobody has asked to block yet, so what is missing is neutral, not a warning.
+        const wantsBlock = !b.missing.includes('mode');
+        const shown = [...READINESS_ITEMS.filter((item) => item !== 'mode'), ...(wantsBlock ? [] : (['mode'] as const))];
+        const done = shown.filter((item) => !b.missing.includes(item)).length;
+        const next = shown.find((item) => b.missing.includes(item));
+        const MissingIcon = wantsBlock ? CircleAlert : CircleDashed;
+        // Why the calibration it has cannot block depends on its state (simulated, provisional…).
+        const calibration = progress.get(evaluatorId(b.evaluator))?.state;
+        const words = (item: (typeof shown)[number]) => readinessWords(item, calibration);
+        const missingTone = wantsBlock ? 'text-tone-warning' : 'text-fg-muted';
+        return (
+          <li key={b.evaluator} className="space-y-1">
+            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+              {b.ready ? (
+                <Check aria-hidden="true" className="size-3.5 text-fg-muted" />
+              ) : (
+                <MissingIcon aria-hidden="true" className={cn('size-3.5', missingTone)} />
+              )}
+              <span className="font-medium text-fg">{evaluatorDisplayName(b.evaluator, names)}</span>
+              <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
+            </p>
+            {/* Its own line under the name, so a wrap never starts a line with a separator. */}
+            {b.ready ? null : (
+              <p className="pl-5 text-xs text-fg-muted tabular" title={next ? words(next).missing : undefined}>
+                {done} of {shown.length} done{next ? ` · next: ${words(next).action}` : ''}
+                {/* Labels are what a calibration is fitted on: the queue is the next step's place. */}
+                {next === 'calibration' ? (
+                  <>
+                    {' '}
+                    <Link
+                      to="/app/evaluators/labels"
+                      search={{ evaluator: b.evaluator }}
+                      aria-label={`Label answers for ${evaluatorDisplayName(b.evaluator, names)}`}
+                      className={linkClass}
+                    >
+                      Label answers
+                      <ArrowRight aria-hidden="true" className="size-3" />
+                    </Link>
+                  </>
+                ) : null}
+              </p>
             )}
-            <span className="font-medium text-fg">{evaluatorDisplayName(b.evaluator, names)}</span>
-            <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
-          </p>
-          <ul className="flex flex-wrap gap-x-3 gap-y-0.5 pl-5 text-xs">
-            {READINESS_ITEMS.filter((item) => item !== 'mode' || b.missing.includes('mode')).map((item) => {
-              const missing = b.missing.includes(item);
-              const words = readinessWords(item);
-              return (
-                <li key={item} data-missing={missing || undefined} title={missing ? words.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
-                  {missing ? (
-                    <CircleAlert aria-hidden="true" className="size-3 text-tone-warning" />
-                  ) : (
-                    <Check aria-hidden="true" className="size-3" />
-                  )}
-                  {words.label}
-                  <span className="sr-only">{missing ? `: missing. ${words.missing}` : ': met'}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </li>
-      ))}
+            {/* The whole checklist is one click away, not repeated open on every check of every route. */}
+            <details className="pl-5 text-xs">
+              <summary className="cursor-pointer text-fg-muted select-none">All {shown.length} requirements</summary>
+              <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                {shown.map((item) => {
+                  const missing = b.missing.includes(item);
+                  const w = words(item);
+                  return (
+                    <li key={item} data-missing={missing || undefined} title={missing ? w.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
+                      {missing ? (
+                        <MissingIcon aria-hidden="true" className={cn('size-3', missingTone)} />
+                      ) : (
+                        <Check aria-hidden="true" className="size-3" />
+                      )}
+                      {w.label}
+                      <span className="sr-only">{missing ? `: missing. ${w.missing}` : ': met'}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-export function RouteCard({ route, draftMode, names, progress, writeReason, onModeChange, onFix }: RouteCardProps) {
+export function RouteCard({ route, draftMode, names, progress, writeReason, onModeChange, onFix, onThresholds, focusEvaluator = null }: RouteCardProps) {
   const headingId = useId();
+  const linked = focusEvaluator && route.evaluators.some((e) => e.ref === focusEvaluator) ? focusEvaluator : null;
+  const [editing, setEditing] = useState<string | null>(linked);
   const mode = modeView(route.mode);
   const acting = actingAsText(route.mode, route.effective_mode);
   const shownMode = draftMode ?? route.mode;
@@ -267,7 +315,7 @@ export function RouteCard({ route, draftMode, names, progress, writeReason, onMo
                 Ready to <Term id="block">block</Term>?
               </span>
             </h4>
-            <Readiness items={route.block_readiness} names={names} />
+            <Readiness items={route.block_readiness} names={names} progress={progress} />
           </section>
         ) : null}
 
@@ -283,25 +331,52 @@ export function RouteCard({ route, draftMode, names, progress, writeReason, onMo
                 const id = evaluatorId(e.ref);
                 const cal = calibrationStateView(e.calibration_state);
                 return (
-                  <li key={e.ref} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Link to="/app/evaluators/$id" params={{ id }} className="truncate text-sm font-medium text-fg underline-offset-2 hover:underline">
-                        {evaluatorDisplayName(e.ref, names)}
-                      </Link>
-                      <Badge size="sm" emphasis={e.stage === 'shadow' ? 'outline' : 'quiet'} icon={e.stage === 'shadow' ? Eye : undefined}>
-                        {stageLabel(e.stage)}
-                      </Badge>
-                      {e.resolved ? null : (
-                        <span className="inline-flex items-center gap-1 text-xs text-fg">
-                          <TriangleAlert aria-hidden="true" className="size-3 text-tone-warning" />
-                          Not in the library
+                  <li key={e.ref} className="space-y-2 py-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Link to="/app/evaluators/$id" params={{ id }} className="truncate text-sm font-medium text-fg underline-offset-2 hover:underline">
+                          {evaluatorDisplayName(e.ref, names)}
+                        </Link>
+                        <Badge size="sm" emphasis={e.stage === 'shadow' ? 'outline' : 'quiet'} icon={e.stage === 'shadow' ? Eye : undefined}>
+                          {stageLabel(e.stage)}
+                        </Badge>
+                        {e.resolved ? null : (
+                          <span className="inline-flex items-center gap-1 text-xs text-fg">
+                            <TriangleAlert aria-hidden="true" className="size-3 text-tone-warning" />
+                            Not in the library
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-xs text-fg-muted tabular">
+                          {cal.label} · flag at {formatRisk(e.warn_at)}
+                          {e.critical_at !== null ? ` · block at ${formatRisk(e.critical_at)}` : ''}
                         </span>
-                      )}
-                    </span>
-                    <span className="text-xs text-fg-muted tabular">
-                      {cal.label} · flag at {formatRisk(e.warn_at)}
-                      {e.critical_at !== null ? ` · block at ${formatRisk(e.critical_at)}` : ''}
-                    </span>
+                        {e.resolved ? (
+                          <IconButton
+                            size="sm"
+                            icon={SlidersHorizontal}
+                            aria-label={`${copy.trace.adjust_threshold}: ${evaluatorDisplayName(e.ref, names)}`}
+                            aria-expanded={editing === e.ref}
+                            onClick={() => setEditing((cur) => (cur === e.ref ? null : e.ref))}
+                          />
+                        ) : null}
+                      </span>
+                    </div>
+                    {editing === e.ref ? (
+                      <ThresholdEditor
+                        route={route.name}
+                        evaluator={e}
+                        name={evaluatorDisplayName(e.ref, names)}
+                        writeReason={writeReason}
+                        focusOnOpen={linked === e.ref}
+                        onPreview={(edit) => {
+                          onThresholds(e.ref, edit);
+                          setEditing(null);
+                        }}
+                        onCancel={() => setEditing(null)}
+                      />
+                    ) : null}
                   </li>
                 );
               })}

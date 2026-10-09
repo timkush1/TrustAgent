@@ -144,6 +144,17 @@ func (s *Store) ListAPIKeys(context.Context) ([]store.APIKeyRecord, error) {
 func (s *Store) RevokeAPIKey(_ context.Context, id, actor string) (*store.APIKeyRecord, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.revokeLocked(id, actor, false)
+}
+
+// RevokeAPIKeyKeepingAdmin implements authz.Store: RevokeAPIKey, refusing the last active admin key.
+func (s *Store) RevokeAPIKeyKeepingAdmin(_ context.Context, id, actor string) (*store.APIKeyRecord, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.revokeLocked(id, actor, true)
+}
+
+func (s *Store) revokeLocked(id, actor string, keepAdmin bool) (*store.APIKeyRecord, bool, error) {
 	if s.Err != nil {
 		return nil, false, s.Err
 	}
@@ -154,10 +165,32 @@ func (s *Store) RevokeAPIKey(_ context.Context, id, actor string) (*store.APIKey
 	if k.RevokedAt != nil {
 		return clone(k), false, nil
 	}
+	if keepAdmin && slices.Contains(k.Scopes, "admin") {
+		admins := 0
+		for _, r := range s.keys {
+			if r.RevokedAt == nil && slices.Contains(r.Scopes, "admin") {
+				admins++
+			}
+		}
+		if admins == 1 {
+			return nil, false, store.ErrLastAdminKey
+		}
+	}
 	now := time.Now().UTC()
 	k.RevokedAt = &now
 	s.Audit = append(s.Audit, store.AdminAuditEntry{Actor: actor, Action: "api_key.revoke", Target: id})
 	return clone(k), true, nil
+}
+
+// AppendAdminAudit implements authz.Store.
+func (s *Store) AppendAdminAudit(_ context.Context, e store.AdminAuditEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Err != nil {
+		return s.Err
+	}
+	s.Audit = append(s.Audit, e)
+	return nil
 }
 
 // RevokeDirect revokes a key without going through an Authenticator (another replica did it).

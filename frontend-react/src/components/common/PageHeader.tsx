@@ -29,7 +29,9 @@ export function PageHeader({ title, description, actions, children, className }:
             {title ? <h2 className="truncate text-xl font-semibold text-fg">{title}</h2> : null}
             {description ? <p className="max-w-prose text-sm text-fg-muted">{description}</p> : null}
           </div>
-          {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+          {/* At most the header's width: on a phone the actions wrap under the title, and a long
+              reason under a disabled action wraps with them instead of widening the page. */}
+          {actions ? <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
       ) : null}
       {children}

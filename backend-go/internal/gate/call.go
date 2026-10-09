@@ -96,7 +96,7 @@ func (g *Gate) ask(ctx context.Context, x *Exchange, c *decision.Compiled, base 
 	opt := jev.CallOptions{
 		Class: jev.ClassSync, Scenario: x.Trace.Scenario,
 		HedgeAfter: time.Duration(x.Route.HedgeAfterMs) * time.Millisecond,
-		Enforcing:  x.Trace.Mode == decision.ModeBlock || x.Trace.Mode == decision.ModeFallback,
+		Enforcing:  !x.Advisory && (x.Trace.Mode == decision.ModeBlock || x.Trace.Mode == decision.ModeFallback),
 		TraceID:    x.Trace.TraceID, Route: x.Route.Name, KeyLabel: x.Trace.KeyLabel,
 	}
 	if x.Trace.Mode == decision.ModeObserve {

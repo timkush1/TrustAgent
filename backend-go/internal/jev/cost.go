@@ -1,13 +1,11 @@
 package jev
 
 import (
-	"encoding/json"
-	"math"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/truthtable/contracts"
+	"github.com/truthtable/backend-go/internal/decision"
 )
 
 // CostKindDecision is cost_events.kind for decision-model calls.
@@ -49,7 +47,8 @@ type CostEvent struct {
 	Late bool
 }
 
-// CostSink receives cost events. It must not block for long; the ledger (P4) buffers them.
+// CostSink receives cost events. It must not block for long: the cost ledger (internal/costs)
+// buffers them for its row writer.
 type CostSink interface {
 	RecordCost(CostEvent)
 }
@@ -64,88 +63,88 @@ type discardCosts struct{}
 
 func (discardCosts) RecordCost(CostEvent) {}
 
-// price is the input price used for computed costs.
+// PriceFunc returns the input price per million tokens of model on backend and the version of
+// the price table it came from ("override" for a dashboard override); ok is false when no entry
+// matches, and the default list price applies (D53).
+type PriceFunc func(backend, model string) (perMTok float64, version string, ok bool)
+
+// PricingProvider is the price table provider of a decision backend: openrouter for both
+// OpenRouter endpoints, typesafe for TypeSafe direct, compatible for a compatible endpoint, mock
+// for the mock. An entry of that provider prices the call first; when the provider has none, any
+// paid provider's matching entry does (decision.LookupPrice), so a compatible endpoint serving a
+// Jev model is priced like Jev while an override written for provider compatible wins over it.
+func PricingProvider(backend string) string {
+	switch backend {
+	case BackendOpenRouterDecisions, BackendOpenRouterSystemOne:
+		return "openrouter"
+	case BackendTypeSafe:
+		return "typesafe"
+	case BackendCompatible:
+		return "compatible"
+	case BackendMock:
+		return "mock"
+	}
+	return ""
+}
+
+// contractsTable is the embedded contracts price table, parsed and copied once: decision calls
+// are priced from it on every call, and nothing modifies it.
+var contractsTable = sync.OnceValues(decision.ContractsPrices)
+
+// ContractsPrices prices decision calls from the embedded contracts table with the shared
+// calculator (decision.LookupPrice). It is what a client without Config.Prices uses.
+func ContractsPrices(backend, model string) (perMTok float64, version string, ok bool) {
+	t, err := contractsTable()
+	if err != nil {
+		return 0, "", false
+	}
+	e, ok := decision.LookupPrice(t.Entries, PricingProvider(backend), model)
+	if !ok {
+		return 0, "", false
+	}
+	return e.InputPerMTok, t.VersionOf(e), true
+}
+
+// priceOf is the input price of model for this client's computed costs: the
+// TRUTHTABLE_JEV_PRICE_PER_MTOK override, else Config.Prices (the effective price table), else the
+// contracts table, else the $0.042/M list price. A leading "~" (an OpenRouter alias) is ignored.
+func (c *httpClient) priceOf(model string) price {
+	return lookupPrice(c.cfg.PricePerMTok, c.prices, c.info.Backend, model)
+}
+
+func lookupPrice(override float64, prices PriceFunc, backend, model string) price {
+	if override > 0 {
+		return price{perMTok: override, version: decision.PriceVersionOverride}
+	}
+	if prices == nil {
+		prices = ContractsPrices
+	}
+	if p, v, ok := prices(backend, strings.TrimPrefix(model, "~")); ok {
+		return price{perMTok: p, version: v}
+	}
+	return price{perMTok: DefaultPricePerMTok, version: "default"}
+}
+
+// EstimateUSD is the computed input cost of inputTokens on the backend and model of info, priced
+// from the contracts table (ContractsPrices). ok is false for the mock and off backends, which make
+// no paid call.
+func EstimateUSD(info Info, inputTokens int) (usd float64, ok bool) {
+	switch info.Backend {
+	case BackendMock, BackendOff, "":
+		return 0, false
+	}
+	return lookupPrice(0, nil, info.Backend, info.Model).usd(inputTokens), true
+}
+
+// price is the input price used for computed costs (decision models bill input tokens; Jev's
+// output is free).
 type price struct {
 	perMTok float64
 	version string
 }
 
-// usd is the cost of tokens input tokens. Prices with at most six decimals per million tokens
-// (all of the price table) are applied in exact integer steps: tokens × micro-dollars is an exact
-// integer and one division by 1e12 rounds correctly, so the cost is the double nearest its decimal
-// value and serializes as 2.3772e-05 rather than 0.000023772000000000002.
+// usd is the cost of tokens input tokens, as the float64 nearest its exact decimal value
+// (decision.TokenCostUSD), so it serializes as 2.3772e-05 rather than 0.000023772000000000002.
 func (p price) usd(tokens int) float64 {
-	micro := math.Round(p.perMTok * 1e6)
-	if exact := float64(tokens) * micro; math.Abs(micro-p.perMTok*1e6) < 1e-6 && exact < 1<<53 {
-		return exact / 1e12
-	}
-	return float64(tokens) * p.perMTok / 1e6
-}
-
-// priceFor picks the input price of model on backend: the TRUTHTABLE_JEV_PRICE_PER_MTOK override,
-// else the first matching entry of contracts/pricing/prices.v1.json, else the $0.042/M list price.
-func priceFor(override float64, backend, model string) price {
-	if override > 0 {
-		return price{perMTok: override, version: "override"}
-	}
-	t := loadPriceTable()
-	provider := ""
-	switch backend {
-	case BackendOpenRouterDecisions, BackendOpenRouterSystemOne:
-		provider = "openrouter"
-	case BackendTypeSafe:
-		provider = "typesafe"
-	}
-	name := strings.TrimPrefix(model, "~")
-	for _, pass := range []bool{true, false} { // provider match first, then any provider
-		for _, e := range t.Entries {
-			if pass && provider != "" && e.Provider != provider || e.Provider == "ollama" || e.InputPerMTok == nil {
-				continue
-			}
-			if globMatch(e.Match, name) {
-				return price{perMTok: *e.InputPerMTok, version: t.Version}
-			}
-		}
-		if provider == "" {
-			break
-		}
-	}
-	return price{perMTok: DefaultPricePerMTok, version: "default"}
-}
-
-type priceTable struct {
-	Version string `json:"version"`
-	Entries []struct {
-		Match        string   `json:"match"`
-		Provider     string   `json:"provider"`
-		InputPerMTok *float64 `json:"input_per_mtok"`
-	} `json:"entries"`
-}
-
-var loadPriceTable = sync.OnceValue(func() priceTable {
-	var t priceTable
-	if b, err := contracts.FS.ReadFile("pricing/prices.v1.json"); err == nil {
-		_ = json.Unmarshal(b, &t)
-	}
-	return t
-})
-
-// globMatch matches s against a pattern where * matches any run of characters.
-func globMatch(pattern, s string) bool {
-	parts := strings.Split(pattern, "*")
-	if len(parts) == 1 {
-		return pattern == s
-	}
-	if !strings.HasPrefix(s, parts[0]) {
-		return false
-	}
-	s = s[len(parts[0]):]
-	for _, p := range parts[1 : len(parts)-1] {
-		i := strings.Index(s, p)
-		if i < 0 {
-			return false
-		}
-		s = s[i+len(p):]
-	}
-	return strings.HasSuffix(s, parts[len(parts)-1])
+	return decision.TokenCostUSD(int64(tokens), 0, p.perMTok, 0)
 }

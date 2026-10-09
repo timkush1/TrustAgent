@@ -1,9 +1,13 @@
-// Package calibration is the gateway's calibration lookup (SPEC §2.11; P3 decision D14): a
-// read-only view of the trustagent.calibration/v1 files in TRUTHTABLE_CALIBRATION_DIR, keyed by
-// decision-model snapshot and calibration target, and re-read by a poll. Store implements
-// policy.CalibrationLookup for the gate (decide()'s calibration input, Entries) and for the policy
-// readiness checks. The P4 calibration store (API imports and fits, which override files) builds
-// on this package.
+// Package calibration is the gateway's calibration lookup (SPEC §2.11; P3 decision D14, D55):
+// the calibrations that apply, keyed by decision-model snapshot and calibration target, and
+// re-read by a poll. Store implements policy.CalibrationLookup for the gate (decide()'s calibration
+// input, Entries) and for the policy readiness checks.
+//
+// Without a database the calibrations are the trustagent.calibration/v1 files in
+// TRUTHTABLE_CALIBRATION_DIR. With one, the files are mirrored into the calibrations table (origin
+// file) and the lookup reads the table's active rows, so a calibration imported or fitted through
+// the API (and activated) overrides the file's; a write anywhere reaches every replica through the
+// config notifications ("calibrations:<snapshot>", Trigger) and the poll.
 //
 // A lookup finds, for an evaluator ref with its route params (the target key of
 // decision.EvaluatorTarget) and a snapshot:
@@ -22,6 +26,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -38,6 +43,7 @@ import (
 
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/policy"
+	"github.com/truthtable/backend-go/internal/store"
 )
 
 // ReloadInterval is how often the gateway re-reads the calibration directory (D14).
@@ -78,8 +84,21 @@ type Config struct {
 	// Current returns the current decision-model snapshot ("" when unknown), for a lookup or a
 	// state that names no snapshot. nil means unknown.
 	Current func() string
+	// DB is the calibration store; nil reads the files only. Channel is its NOTIFY channel
+	// (store.ConfigChannel when empty).
+	DB      DB
+	Channel string
 	Logger  *slog.Logger
 }
+
+// DB is the database side of the lookup (*store.PostgresStore).
+type DB interface {
+	MirrorCalibrationFile(ctx context.Context, channel string, recs []*store.CalibrationRecord) (int, error)
+	ActiveCalibrations(ctx context.Context) ([]store.CalibrationRecord, error)
+}
+
+// dbTimeout bounds one reload's database work.
+const dbTimeout = 10 * time.Second
 
 // Change is a snapshot whose calibrations a reload added, changed or removed (WS
 // calibration_updated {snapshot, imported}).
@@ -99,6 +118,8 @@ type Store struct {
 	files map[string]*file
 	idx   atomic.Pointer[index]
 	keys  keyCache
+	// trigger asks Watch to reload now (a calibration notification arrived).
+	trigger chan struct{}
 }
 
 var _ policy.CalibrationLookup = (*Store)(nil)
@@ -109,6 +130,8 @@ type file struct {
 	sum string
 	// cal is the last content that parsed; nil when none did.
 	cal *decision.CalibrationFile
+	// calSum is the sha256 of cal's content, and mirrored the one last mirrored into the database.
+	calSum, mirrored string
 }
 
 // index is an immutable view of every loaded calibration.
@@ -130,7 +153,10 @@ type snapshotCal struct {
 type entry struct {
 	table   []float64
 	quality string
-	// created is the created_at of the file it came from; path is that file.
+	// stateFields are the state fields it was fitted with (fit_context.state_fields).
+	stateFields []string
+	// created is the created_at of the file it came from (the row's, from the database); path is
+	// that file ("calibrations/<id>" for a row).
 	created time.Time
 	path    string
 }
@@ -141,14 +167,28 @@ func New(cfg Config) *Store {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Store{cfg: cfg, log: log, files: map[string]*file{}}
+	return &Store{cfg: cfg, log: log, files: map[string]*file{}, trigger: make(chan struct{}, 1)}
 }
 
-// Reload re-reads the directory and reports the snapshots whose calibrations changed, sorted by
-// snapshot; the first Reload reports every snapshot it loads. A file whose new content does not
+// Trigger asks Watch to reload as soon as it can (a "calibrations:" notification). It never blocks.
+func (s *Store) Trigger() {
+	select {
+	case s.trigger <- struct{}{}:
+	default:
+	}
+}
+
+// Reload is ReloadContext without a deadline of its own (the database work is still bounded).
+func (s *Store) Reload() ([]Change, error) { return s.ReloadContext(context.Background()) }
+
+// ReloadContext re-reads the directory (and, with a database, mirrors new file content into it and
+// re-reads its active rows) and reports the snapshots whose calibrations changed, sorted by
+// snapshot; the first reload reports every snapshot it loads. A file whose new content does not
 // parse keeps its last good content, so a half-written file never drops a calibration; a removed
-// file drops its calibrations. An unreadable directory is an error and keeps what is loaded.
-func (s *Store) Reload() ([]Change, error) {
+// file drops its calibrations without a database, while with one its mirrored row stays active
+// until another row replaces it or it is deactivated (D55). An unreadable directory or database is
+// an error and keeps what is loaded.
+func (s *Store) ReloadContext(ctx context.Context) ([]Change, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	paths, err := s.list()
@@ -181,14 +221,14 @@ func (s *Store) Reload() ([]Change, error) {
 			s.log.Info("calibration: skipping a mock calibration, which applies only to the zero-key demo and test stacks",
 				"file", p)
 			if f.cal != nil {
-				f.cal, dirty = nil, true
+				f.cal, f.calSum, dirty = nil, "", true
 			}
 		case err != nil && f.cal != nil:
 			s.log.Warn("calibration: file does not parse; it keeps its last good content", "file", p, "err", err)
 		case err != nil:
 			s.log.Warn("calibration: file does not parse; ignored", "file", p, "err", err)
 		default:
-			f.cal, dirty = cal, true
+			f.cal, f.calSum, dirty = cal, hexSum, true
 		}
 	}
 	for p := range s.files {
@@ -197,13 +237,81 @@ func (s *Store) Reload() ([]Change, error) {
 			dirty = true
 		}
 	}
-	if !dirty {
-		return nil, nil
+	var next *index
+	if s.cfg.DB != nil {
+		dctx, cancel := context.WithTimeout(ctx, dbTimeout)
+		defer cancel()
+		if next, err = s.fromDB(dctx); err != nil {
+			return nil, fmt.Errorf("calibration: %w", err)
+		}
+	} else {
+		if !dirty {
+			return nil, nil
+		}
+		next = s.build()
 	}
-	next := s.build()
 	changes := diff(s.idx.Load(), next)
 	s.idx.Store(next)
 	return changes, nil
+}
+
+// fromDB mirrors the file content not mirrored yet (oldest created_at first, so the newest file
+// of a target ends up active) and indexes the database's active rows.
+func (s *Store) fromDB(ctx context.Context) (*index, error) {
+	var pending []*file
+	for _, f := range s.files {
+		if f.cal != nil && f.calSum != f.mirrored {
+			pending = append(pending, f)
+		}
+	}
+	slices.SortFunc(pending, func(a, b *file) int {
+		if c := a.cal.CreatedAt.Compare(b.cal.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.calSum, b.calSum)
+	})
+	for _, f := range pending {
+		recs, err := FileRecords(f.calSum, f.cal)
+		if err != nil {
+			return nil, err
+		}
+		n, err := s.cfg.DB.MirrorCalibrationFile(ctx, s.cfg.Channel, recs)
+		if err != nil {
+			return nil, fmt.Errorf("mirror %s: %w", f.cal.DecisionModel.Snapshot, err)
+		}
+		f.mirrored = f.calSum
+		if n > 0 {
+			s.log.Info("calibration: mirrored a calibration file into the database", "snapshot", f.cal.DecisionModel.Snapshot, "targets", n)
+		}
+	}
+	rows, err := s.cfg.DB.ActiveCalibrations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildRows(rows), nil
+}
+
+// FileRecords are the calibrations rows that mirror a calibration file (origin file, D55). sum is
+// the sha256 of the file's content.
+func FileRecords(sum string, cal *decision.CalibrationFile) ([]*store.CalibrationRecord, error) {
+	out := make([]*store.CalibrationRecord, 0, len(cal.Entries))
+	for i := range cal.Entries {
+		e := &cal.Entries[i]
+		doc, err := json.Marshal(e)
+		if err != nil {
+			return nil, err
+		}
+		src, err := json.Marshal(e.LabelSource)
+		if err != nil {
+			return nil, err
+		}
+		fileSum := sum
+		out = append(out, &store.CalibrationRecord{
+			Backend: cal.DecisionModel.Backend, Snapshot: cal.DecisionModel.Snapshot, Family: cal.DecisionModel.Family,
+			TargetKind: e.Target.Kind, TargetKey: e.Target.Key(), Quality: e.Quality, LabelSource: src, Entry: doc, FileSHA256: &fileSum,
+		})
+	}
+	return out, nil
 }
 
 // Watch reloads every interval until ctx ends and passes each non-empty change set to changed
@@ -219,8 +327,12 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, changed func([]C
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-s.trigger:
 		}
-		ch, err := s.Reload()
+		ch, err := s.ReloadContext(ctx)
+		if ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			s.log.Warn("calibration: reload failed", "dir", s.cfg.Dir, "err", err)
 			continue
@@ -238,8 +350,11 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, changed func([]C
 // params (resolved or not; the spec's defaults fill the rest) for snapshot ("" = the current one).
 // The table is a copy.
 func (s *Store) Lookup(ref string, params map[string]string, snapshot string) policy.CalibrationStatus {
+	return s.lookupIn(s.idx.Load(), ref, params, snapshot)
+}
+
+func (s *Store) lookupIn(idx *index, ref string, params map[string]string, snapshot string) policy.CalibrationStatus {
 	none := policy.CalibrationStatus{State: policy.CalibrationNone}
-	idx := s.idx.Load()
 	if idx == nil || len(idx.snapshots) == 0 {
 		return none
 	}
@@ -254,7 +369,8 @@ func (s *Store) Lookup(ref string, params map[string]string, snapshot string) po
 	}
 	if sc := idx.snapshots[snapshot]; sc != nil {
 		if e := sc.entries[key]; e != nil {
-			return policy.CalibrationStatus{State: e.quality, Quality: e.quality, Table: slices.Clone(e.table)}
+			return policy.CalibrationStatus{State: e.quality, Quality: e.quality, Table: slices.Clone(e.table),
+				StateFields: slices.Clone(e.stateFields)}
 		}
 	}
 	e := idx.family(snapshot, key)
@@ -265,7 +381,57 @@ func (s *Store) Lookup(ref string, params map[string]string, snapshot string) po
 		return policy.CalibrationStatus{State: policy.CalibrationNone, Stale: true}
 	}
 	return policy.CalibrationStatus{State: policy.CalibrationFamily, Quality: policy.CalibrationProvisional,
-		Table: slices.Clone(e.table), Stale: true}
+		Table: slices.Clone(e.table), Stale: true, StateFields: slices.Clone(e.stateFields)}
+}
+
+// With returns a lookup in which the given rows (any origin, active or not) replace the
+// calibration of their (snapshot, target key): the active rows a Preview impact replays with
+// instead (POST /api/policies/dry-run calibration_ids, D62). The store itself is unchanged. A row
+// whose entry does not parse or has no valid table is an error.
+func (s *Store) With(rows []store.CalibrationRecord) (policy.CalibrationLookup, error) {
+	base := s.idx.Load()
+	next := &index{snapshots: map[string]*snapshotCal{}, families: map[string][]*snapshotCal{}}
+	if base != nil {
+		// Copies: finish() writes each snapshot's digest, and the store's own index is shared with
+		// the gate and with concurrent previews. The entries maps are only read.
+		for name, sc := range base.snapshots {
+			cp := *sc
+			next.snapshots[name] = &cp
+		}
+	}
+	for i := range rows {
+		r := &rows[i]
+		var ce decision.CalibrationFileEntry
+		if err := json.Unmarshal(r.Entry, &ce); err != nil {
+			return nil, fmt.Errorf("calibration %d: %w", r.ID, err)
+		}
+		if err := decision.CheckCalibrationTable(ce.Table); err != nil {
+			return nil, fmt.Errorf("calibration %d: %w", r.ID, err)
+		}
+		sc := next.snapshots[r.Snapshot]
+		copied := &snapshotCal{name: r.Snapshot, family: r.Family, entries: map[string]*entry{}}
+		if sc != nil {
+			copied.family = sc.family
+			for k, v := range sc.entries {
+				copied.entries[k] = v
+			}
+		}
+		copied.entries[r.TargetKey] = &entry{table: ce.Table, quality: r.Quality, stateFields: ce.FitContext.StateFields,
+			created: r.CreatedAt, path: "calibrations/" + strconv.FormatInt(r.ID, 10)}
+		next.snapshots[r.Snapshot] = copied
+	}
+	next.finish()
+	return overlay{s: s, idx: next}, nil
+}
+
+// overlay is the lookup With returns.
+type overlay struct {
+	s   *Store
+	idx *index
+}
+
+func (o overlay) Lookup(ref string, params map[string]string, snapshot string) policy.CalibrationStatus {
+	return o.s.lookupIn(o.idx, ref, params, snapshot)
 }
 
 // Entries is decide()'s calibration input (decision.Input.calibration) for evs on snapshot, from
@@ -275,9 +441,11 @@ func (s *Store) Entries(evs []decision.EvaluatorInput, params map[string]map[str
 }
 
 // Entries is decide()'s calibration input (decision.Input.calibration) on snapshot: for each
-// evaluator of evs (internal ones included) that has a calibration, its table, quality and state,
-// keyed by ref. params holds the route params of an evaluator by ref; the spec's defaults fill
-// the rest. A nil lookup has no calibrations. The map is never nil.
+// evaluator of evs (internal ones included) that has a calibration, its table, quality, state and
+// fit state fields, keyed by ref; for one calibrated only on other snapshots of the family (and no
+// family fallback), an entry with state other_snapshot and no table (D56), so decide() can tell a
+// snapshot change from a missing calibration. params holds the route params of an evaluator by
+// ref; the spec's defaults fill the rest. A nil lookup has no calibrations. The map is never nil.
 func Entries(l policy.CalibrationLookup, evs []decision.EvaluatorInput, params map[string]map[string]string, snapshot string) map[string]decision.CalibrationEntry {
 	out := map[string]decision.CalibrationEntry{}
 	if l == nil {
@@ -288,14 +456,9 @@ func Entries(l policy.CalibrationLookup, evs []decision.EvaluatorInput, params m
 			continue
 		}
 		c := l.Lookup(e.Ref, decision.ResolvedParams(e.Spec, params[e.Ref]), snapshot)
-		if c.Table == nil {
-			continue
+		if entry, ok := policy.DecideCalibration(c); ok {
+			out[e.Ref] = entry
 		}
-		state := c.State
-		if state == "" || state == policy.CalibrationNone {
-			state = c.Quality
-		}
-		out[e.Ref] = decision.CalibrationEntry{Table: c.Table, Quality: c.Quality, State: state}
 	}
 	return out
 }
@@ -448,7 +611,7 @@ func (s *Store) build() *index {
 		for i := range cal.Entries {
 			ce := &cal.Entries[i]
 			key := ce.Target.Key()
-			e := &entry{table: ce.Table, quality: ce.Quality, created: cal.CreatedAt, path: p}
+			e := &entry{table: ce.Table, quality: ce.Quality, stateFields: ce.FitContext.StateFields, created: cal.CreatedAt, path: p}
 			old := sc.entries[key]
 			if old == nil {
 				sc.entries[key] = e
@@ -463,10 +626,49 @@ func (s *Store) build() *index {
 			sc.entries[key] = keep
 		}
 	}
-	for _, sc := range idx.snapshots {
+	idx.finish()
+	return idx
+}
+
+// finish computes the digests and the family lists.
+func (x *index) finish() {
+	for _, sc := range x.snapshots {
 		sc.digest = digest(sc)
-		idx.families[sc.family] = append(idx.families[sc.family], sc)
+		x.families[sc.family] = append(x.families[sc.family], sc)
 	}
+}
+
+// buildRows indexes the active rows of the database. A row whose entry does not parse or whose
+// table is not a calibration table is skipped with a warning, and so is a mock snapshot's row
+// where mock calibrations do not load.
+func (s *Store) buildRows(rows []store.CalibrationRecord) *index {
+	idx := &index{snapshots: map[string]*snapshotCal{}, families: map[string][]*snapshotCal{}}
+	for i := range rows {
+		r := &rows[i]
+		if r.TargetKind != decision.CalibrationTargetEvaluator {
+			continue // other target kinds are v2.1
+		}
+		if strings.HasPrefix(r.Snapshot, mockSnapshotPrefix) && !s.cfg.AllowMock {
+			continue
+		}
+		var ce decision.CalibrationFileEntry
+		if err := json.Unmarshal(r.Entry, &ce); err != nil {
+			s.log.Warn("calibration: a stored calibration does not parse; skipped", "id", r.ID, "err", err)
+			continue
+		}
+		if err := decision.CheckCalibrationTable(ce.Table); err != nil {
+			s.log.Warn("calibration: a stored calibration has no valid table; skipped", "id", r.ID, "err", err)
+			continue
+		}
+		sc := idx.snapshots[r.Snapshot]
+		if sc == nil {
+			sc = &snapshotCal{name: r.Snapshot, family: r.Family, entries: map[string]*entry{}}
+			idx.snapshots[r.Snapshot] = sc
+		}
+		sc.entries[r.TargetKey] = &entry{table: ce.Table, quality: r.Quality, stateFields: ce.FitContext.StateFields,
+			created: r.CreatedAt, path: "calibrations/" + strconv.FormatInt(r.ID, 10)}
+	}
+	idx.finish()
 	return idx
 }
 
@@ -488,7 +690,8 @@ func (x *index) family(snapshot, key string) *entry {
 	return best
 }
 
-// digest identifies a snapshot's calibrations: each target key with its quality and table.
+// digest identifies a snapshot's calibrations: each target key with its quality, fit state fields
+// and table.
 func digest(sc *snapshotCal) string {
 	keys := make([]string, 0, len(sc.entries))
 	for k := range sc.entries {
@@ -502,6 +705,8 @@ func digest(sc *snapshotCal) string {
 		buf = append(buf[:0], k...)
 		buf = append(buf, 0)
 		buf = append(buf, e.quality...)
+		buf = append(buf, 0)
+		buf = append(buf, strings.Join(e.stateFields, ",")...)
 		buf = append(buf, 0)
 		for _, v := range e.table {
 			buf = strconv.AppendFloat(buf, v, 'g', -1, 64)

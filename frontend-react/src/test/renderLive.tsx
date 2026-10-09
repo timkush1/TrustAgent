@@ -43,7 +43,9 @@ export function renderLive(path: string, api: FakeApi) {
   const lifecycle = fakeLifecycle();
   const dataSource = new LiveDataSource(
     { apiBase: API, crossOrigin: true, wsUrl: 'ws://proxy.test/ws' },
-    { stream: { createSocket: sockets.create, lifecycle: lifecycle.source } },
+    // No D71 ticket: these tests open the socket synchronously (ws.connect); the ticket wiring has
+    // its own tests in liveDataSource.test.ts.
+    { stream: { createSocket: sockets.create, lifecycle: lifecycle.source, ticket: undefined } },
   );
   const queryClient = createTestQueryClient();
   startLiveStream(dataSource, queryClient, { scheduler: testScheduler() });

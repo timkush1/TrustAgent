@@ -469,6 +469,12 @@ export function toneVar(tone: Tone): string {
 
 export { copy };
 
+// The control planes' words, one module per plane and owner, each prefixed (sec*, cost*, eval*, studio*; D86).
+export * from './words/security';
+export * from './words/costs';
+export * from './words/evaluators';
+export * from './words/studio';
+
 // ------------------------------------------------------------------------------------------- costs
 
 export type CostSource = 'reported' | 'computed' | 'free_local' | 'simulated' | 'unknown';

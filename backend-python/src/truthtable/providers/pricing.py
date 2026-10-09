@@ -1,31 +1,48 @@
 """
-LLM call pricing from the contracts price table (SPEC sections 3.2 and 7.4).
+LLM call pricing from the effective price table (SPEC sections 3.2 and 7.4,
+D53 and D85), the Python port of backend-go/internal/decision/cost.go
+`PriceCall` (the reference; the contracts `cost` vectors hold both to it).
 
 The table is `contracts/pricing/prices.v1.json` (schema pricing.v1), or the file
 named by TRUTHTABLE_PRICE_TABLE_FILE. A pushed runtime table (ApplyRuntimeConfig
-`price_table_json`) replaces it with `set_active_price_table`.
+`price_table_json`, the gateway's already-effective table: dashboard overrides
+first, then the file, then contracts) replaces it with `set_active_price_table`.
 
-The cost of one call, and its `cost_source` (CostRecord.cost_source):
+The cost of one call, and its `cost_source` (CostRecord.cost_source); the first
+rule that applies wins:
 
 | Case                                                        | cost_usd              | cost_source  |
 |-------------------------------------------------------------|-----------------------|--------------|
 | the mock judge                                              | 0                     | `simulated`  |
-| the provider reported the cost (OpenRouter `usage.cost`)    | the reported cost     | `reported`   |
-| a local provider (Ollama) with no entry or a zero price     | 0                     | `free_local` |
-| the first entry whose provider is equal and glob matches    | tokens x entry price  | `computed`   |
-| no matching entry                                           | None                  | `unknown`    |
+| the provider reported a cost of at least $0 (`usage.cost`)  | the reported cost     | `reported`   |
+| a local provider (Ollama) with no entry or a free one       | 0                     | `free_local` |
+| no entry prices the model (see the lookup below)            | None                  | `unknown`    |
+| otherwise                                                   | tokens x entry price  | `computed`   |
 
-Entries are tried in file order; `match` is a glob on the model id in which
-`*` matches any run of characters and every other character is literal.
-Prices are USD per million tokens.
+A reported cost below $0 (or not finite) is not a cost: it is ignored and the
+call is priced from the table, so a malformed report never lowers the spend.
+
+The lookup (D53): the first entry of the call's own provider whose glob matches
+the model; when that provider has none, the first matching entry of any other
+paid provider. A local or mock provider never borrows a paid price, and a local
+or mock entry (a free `*` catch-all) never prices another provider's call. A
+glob's `*` matches any run of characters; every other character is literal.
+
+Prices are USD per million tokens. Arithmetic is exact decimal: each price is
+the decimal its shortest representation spells, the cost is an exact rational,
+and the result is the float nearest it (566 tokens at $0.042/M is 2.3772e-05,
+never 2.3772000000000002e-05). `price_table_version` is `override` when a
+dashboard override (label `override`) priced the call, otherwise the table's
+version.
 """
 
 import json
 import logging
+import math
 import os
-import re
 import threading
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Tuple, Union
 
@@ -43,16 +60,58 @@ FREE_LOCAL = "free_local"
 SIMULATED = "simulated"
 UNKNOWN = "unknown"
 
+# PriceEntry.label of a dashboard override, and the price_table_version of a cost it priced.
+PRICE_LABEL_OVERRIDE = "override"
+PRICE_VERSION_OVERRIDE = "override"
+
 # Providers that run on the operator's own hardware.
 LOCAL_PROVIDERS = frozenset({"ollama"})
 # Providers whose calls cost nothing because nothing is called.
 SIMULATED_PROVIDERS = frozenset({"mock"})
+# Providers whose entries never price another provider's call, and who never borrow a price.
+_UNPRICED_PROVIDERS = LOCAL_PROVIDERS | SIMULATED_PROVIDERS
 
 _TOKENS_PER_MTOK = 1_000_000
 
 
-def _glob_regex(pattern: str) -> "re.Pattern[str]":
-    return re.compile("^" + ".*".join(re.escape(part) for part in pattern.split("*")) + "$")
+def glob_match(pattern: str, value: str) -> bool:
+    """Whether `value` matches `pattern`, in which `*` matches any run of characters."""
+    parts = pattern.split("*")
+    if len(parts) == 1:
+        return pattern == value
+    if not value.startswith(parts[0]):
+        return False
+    rest = value[len(parts[0]) :]
+    for part in parts[1:-1]:
+        index = rest.find(part)
+        if index < 0:
+            return False
+        rest = rest[index + len(part) :]
+    return rest.endswith(parts[-1])
+
+
+def _valid_amount(value: float) -> bool:
+    """A price or a reported cost: a finite number of at least 0."""
+    return math.isfinite(value) and value >= 0
+
+
+def _decimal(value: float) -> Fraction:
+    """The exact decimal `value` spells: its shortest representation (repr)."""
+    return Fraction(repr(float(value)))
+
+
+def token_cost_usd(
+    input_tokens: int, output_tokens: int, input_per_mtok: float, output_per_mtok: float
+) -> float:
+    """
+    input_tokens x input_per_mtok + output_tokens x output_per_mtok, divided by one
+    million, as the float nearest its exact decimal value. Negative counts count as 0.
+    """
+    exact = (
+        max(0, int(input_tokens)) * _decimal(input_per_mtok)
+        + max(0, int(output_tokens)) * _decimal(output_per_mtok)
+    ) / _TOKENS_PER_MTOK
+    return float(exact)
 
 
 @dataclass(frozen=True)
@@ -66,7 +125,7 @@ class PriceEntry:
     label: str = ""
 
     def matches(self, provider: str, model: str) -> bool:
-        return self.provider == provider and _glob_regex(self.match).match(model) is not None
+        return self.provider == provider and glob_match(self.match, model)
 
     @property
     def is_free(self) -> bool:
@@ -88,9 +147,15 @@ class PriceTableError(ValueError):
 
 def _number(entry: Mapping[str, Any], key: str, where: str) -> float:
     value = entry.get(key)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-        raise PriceTableError(f"{where}.{key} must be a non-negative number")
-    return float(value)
+    number = math.nan
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            number = float(value)
+        except OverflowError:  # an integer beyond any float: not a finite price
+            pass
+    if not _valid_amount(number):
+        raise PriceTableError(f"{where}.{key} must be a finite non-negative number")
+    return number
 
 
 @dataclass(frozen=True)
@@ -157,11 +222,27 @@ class PriceTable:
             return cls.from_json(f.read())
 
     def lookup(self, provider: str, model: str) -> Optional[PriceEntry]:
-        """The first entry for `provider` whose glob matches `model`."""
+        """
+        The entry that prices `model` on `provider` (D53): the first entry of that
+        provider whose glob matches; when it has none, the first matching entry of
+        another paid provider. A local or mock provider never borrows a price, and
+        a local or mock entry never prices another provider. An empty provider
+        takes the second rule only.
+        """
+        if provider:
+            for entry in self.entries:
+                if entry.matches(provider, model):
+                    return entry
+            if provider in _UNPRICED_PROVIDERS:
+                return None
         for entry in self.entries:
-            if entry.matches(provider, model):
+            if entry.provider not in _UNPRICED_PROVIDERS and glob_match(entry.match, model):
                 return entry
         return None
+
+    def version_of(self, entry: PriceEntry) -> str:
+        """The price_table_version of a cost `entry` priced: `override` for an override."""
+        return PRICE_VERSION_OVERRIDE if entry.label == PRICE_LABEL_OVERRIDE else self.version
 
     def cost(
         self,
@@ -174,18 +255,18 @@ class PriceTable:
         """The cost of one call (see the module docstring for the precedence)."""
         if provider in SIMULATED_PROVIDERS:
             return Cost(0.0, SIMULATED, self.version)
-        if reported_cost_usd is not None:
+        if reported_cost_usd is not None and _valid_amount(float(reported_cost_usd)):
             return Cost(float(reported_cost_usd), REPORTED, self.version)
         entry = self.lookup(provider, model)
+        version = self.version if entry is None else self.version_of(entry)
         if provider in LOCAL_PROVIDERS and (entry is None or entry.is_free):
-            return Cost(0.0, FREE_LOCAL, self.version)
+            return Cost(0.0, FREE_LOCAL, version)
         if entry is None:
-            return Cost(None, UNKNOWN, self.version)
-        usd = (
-            max(0, input_tokens) * entry.input_per_mtok
-            + max(0, output_tokens) * entry.output_per_mtok
-        ) / _TOKENS_PER_MTOK
-        return Cost(usd, COMPUTED, self.version)
+            return Cost(None, UNKNOWN, version)
+        usd = token_cost_usd(
+            input_tokens, output_tokens, entry.input_per_mtok, entry.output_per_mtok
+        )
+        return Cost(usd, COMPUTED, version)
 
 
 EMPTY_PRICE_TABLE = PriceTable(version="", entries=())

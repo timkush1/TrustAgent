@@ -4,9 +4,12 @@
  * SPEC §2.7 example policy, the built-in evaluator templates, the demo scenarios), so a fixture
  * cannot drift from what the gateway ships.
  *
- * Until contracts/schema/api.v1.schema.json covers these types (its ROOTS are the S0 core subset),
- * the golden JSON fixtures of contracts/fixtures/api cannot be validated for them; these builders
- * are type-checked against api.ts instead, which is the schema's source.
+ * contracts/schema/api.v1.schema.json (ROOTS in contracts/tools/api-schema/gen-api-schema.mjs)
+ * covers the core, the Playground, reliability and recording types, and the settings, costs,
+ * evaluator, Studio, label and calibration types, whose golden fixtures in
+ * contracts/fixtures/api are validated against it. The types it does not root yet (the policy
+ * state and its effective routes, the evaluator detail) have no golden fixture to validate: these
+ * builders are type-checked against api.ts instead, which is the schema's source.
  */
 import exampleYaml from '@contracts/policies/example.policies.yaml?raw';
 import { parse as parseYaml } from 'yaml';
@@ -72,6 +75,7 @@ export function overviewStats(overrides: Partial<OverviewStats> = {}): OverviewS
     t: new Date(T0 - (95 - i) * QUARTER).toISOString(),
     passed: 4 + (i % 3),
     would_flag: i % 7 === 0 ? 1 : 0,
+    would_block: i % 11 === 0 ? 1 : 0,
     flagged: i % 3 === 0 ? 1 : 0,
     blocked: i % 24 === 0 ? 1 : 0,
     replaced: 0,

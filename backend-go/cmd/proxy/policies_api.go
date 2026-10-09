@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -21,27 +22,11 @@ import (
 // If-Match, rollback, adopt-file and the free dry-run ("Preview impact").
 
 // REST error codes of the policy endpoints (SPEC §2.4).
-const (
-	codeConflict             = "conflict"
-	codeFileManaged          = "file_managed"
-	codeLocked               = "locked"
-	codeStaleVersion         = "stale_version"
-	codePreconditionRequired = "precondition_required"
-)
+// conflict, file_managed, stale_version and precondition_required are shared (api.go).
+const codeLocked = "locked"
 
 // maxDryRunLimit is the largest dry-run window in rows (row 26: limit <= 100000).
 const maxDryRunLimit = store.MaxReplayRows
-
-// apiGuards are the middleware of the policy, evaluator and P3 routes.
-type apiGuards struct {
-	// read and admin authenticate callers with those scopes; writable refuses writes in
-	// read-only mode; rateLimit is the general per-caller limit; dryRunLimit is the policy
-	// dry-run limit (6/min), used instead of rateLimit; bodyLimit caps request bodies.
-	read, admin, writable, rateLimit, dryRunLimit, bodyLimit gin.HandlerFunc
-	// limitBy builds an endpoint's own per-caller limit of n requests per window, used instead
-	// of rateLimit (the Playground's 10/min).
-	limitBy func(n int, window time.Duration) gin.HandlerFunc
-}
 
 // policiesAPI serves /api/policies.
 type policiesAPI struct {
@@ -49,7 +34,9 @@ type policiesAPI struct {
 	// replay reads recorded decisions for the dry-run; nil without a database.
 	replay  policy.ReplaySource
 	presets json.RawMessage
-	log     *slog.Logger
+	// calibrations is the lookup of a dry-run's calibration_ids (D62); nil refuses them.
+	calibrations func(ctx context.Context, ids []int64) (policy.CalibrationLookup, error)
+	log          *slog.Logger
 }
 
 // newPoliciesAPI builds the policy endpoints. replay may be nil (no database: no dry-run).
@@ -288,8 +275,16 @@ func (a *policiesAPI) dryRun(c *gin.Context) {
 		Version *int64 `json:"version"`
 		Window  string `json:"window"`
 		Limit   *int   `json:"limit"`
+		// CalibrationIDs replay with these calibration records in place of the active ones of
+		// their targets: the Adopt flow previews a fitted calibration before activating it (D62).
+		CalibrationIDs []int64 `json:"calibration_ids"`
 	}
 	if !bindJSON(c, &body, false) {
+		return
+	}
+	if len(body.CalibrationIDs) > maxPreviewCalibrations || slices.ContainsFunc(body.CalibrationIDs, func(id int64) bool { return id < 1 }) {
+		abortAPI(c, http.StatusBadRequest, codeBadRequest, "calibration_ids takes up to 50 calibration record ids.",
+			fieldError{Path: "calibration_ids", Message: "up to 50 positive ids"})
 		return
 	}
 	if _, ok := policy.ParseWindow(body.Window); !ok {
@@ -316,7 +311,25 @@ func (a *policiesAPI) dryRun(c *gin.Context) {
 		a.fail(c, err)
 		return
 	}
-	res, err := a.engine.Preview(c.Request.Context(), a.replay, proposed, body.Window, limit)
+	var cal policy.CalibrationLookup
+	if len(body.CalibrationIDs) > 0 {
+		if a.calibrations == nil {
+			abortAPI(c, http.StatusServiceUnavailable, codePersistenceDisabled, "Calibration records need a database (TRUTHTABLE_DATABASE_URL).")
+			return
+		}
+		var unknown *errUnknownCalibrations
+		cal, err = a.calibrations(c.Request.Context(), body.CalibrationIDs)
+		switch {
+		case errors.As(err, &unknown):
+			abortAPIDetails(c, http.StatusUnprocessableEntity, codeValidationFailed, "Some calibration_ids name no calibration record.",
+				map[string]any{"ids": unknown.ids}, fieldError{Path: "calibration_ids", Message: "unknown ids"})
+			return
+		case err != nil:
+			a.internal(c, "preview calibrations", err)
+			return
+		}
+	}
+	res, err := a.engine.PreviewWith(c.Request.Context(), a.replay, proposed, body.Window, limit, cal)
 	if err != nil {
 		a.internal(c, "policy dry-run", err)
 		return

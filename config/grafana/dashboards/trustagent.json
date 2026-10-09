@@ -730,6 +730,237 @@
       },
       "description": "Estimated from token counts and the price table; mock judges cost nothing.",
       "id": 22
+    },
+    {
+      "title": "Spend (cost ledger)",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "panels": [],
+      "id": 23
+    },
+    {
+      "title": "Spend Today by Kind (reported or estimated)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 55
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (trustagent_gateway_spend_usd_today{job=\"proxy\"})",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "description": "Real spend today (UTC day) from the cost ledger, the figure the daily budgets count: the vendor's reported cost where it gives one, otherwise estimated from tokens and the price table. Simulated checks never count; it resets at 00:00 UTC.",
+      "id": 24
+    },
+    {
+      "title": "Reserved for Calls in Flight",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 55
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (trustagent_gateway_spend_reserved_usd{job=\"proxy\"})",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "description": "Budget held back for fast checks and deep audits that are still running; it settles to their real cost when they finish.",
+      "id": 25
+    },
+    {
+      "title": "Fast-Check Spend by Component, 24 h (reported or estimated)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 55
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (component) (increase(trustagent_gateway_jev_cost_usd_total{job=\"proxy\"}[24h]))",
+          "legendFormat": "{{component}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "description": "Decision-model spend over the last 24 hours by what made the call (gate, probe, Studio and so on), hedge losers included. The vendor's reported cost where it gives one, otherwise estimated from tokens and the price table.",
+      "id": 26
+    },
+    {
+      "title": "Uniform Audit Samples Today",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 63
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(trustagent_gateway_uniform_samples_today{job=\"proxy\"})",
+          "legendFormat": "Samples"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "description": "Passing answers picked at random for a deep audit today (TRUTHTABLE_UNIFORM_AUDITS_PER_DAY caps it).",
+      "id": 27
+    },
+    {
+      "title": "Deep Audits Paused by the Budget, 24 h",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 63
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(trustagent_gateway_audit_jobs_total{job=\"proxy\",outcome=\"llm_budget\"}[24h]))",
+          "legendFormat": "Not audited"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "description": "Deep audits not run because today's deep-audit budget was used up. Raise the budget in Settings > Budgets.",
+      "id": 28
+    },
+    {
+      "title": "Cost Rows Dropped, 24 h",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 63
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(trustagent_gateway_cost_write_dropped_total{job=\"proxy\"}[24h]))",
+          "legendFormat": "Dropped"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "description": "Cost ledger rows lost because its buffer was full or a write failed. Above zero, spend and the budgets undercount: check the proxy's database connection.",
+      "id": 29
     }
   ],
   "schemaVersion": 38,
@@ -748,6 +979,6 @@
   "timezone": "",
   "title": "TrustAgent - Hallucination Detection",
   "uid": "trustagent-main",
-  "version": 2,
+  "version": 3,
   "refresh": "10s"
 }

@@ -7,8 +7,12 @@ import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { installMswServer } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
+import { heroDescription } from './heroChart';
+import { outcomeBuckets } from './overviewModel';
 
 installMswServer();
+warmRoutes('/app/overview', '/app/savings');
 afterEach(() => stopLive());
 // The first render of a page imports its charts; give it longer than the 1 s default.
 configure({ asyncUtilTimeout: 4000 });
@@ -17,6 +21,8 @@ describe('Overview page', { timeout: 20_000 }, () => {
   it('shows the numbers, the hero chart and what was caught', async () => {
     const { control } = renderPage('/app/overview');
     expect(await screen.findByRole('heading', { name: 'Requests by outcome' })).toBeInTheDocument();
+    // Would flag and Would block are series of their own: no footnote about either.
+    expect(screen.queryByText(/also counts answers an observe-only route would have blocked/)).toBeNull();
     const glance = screen.getByLabelText('At a glance');
     expect(within(glance).getByText('612')).toBeInTheDocument();
     // Blocked 4 + fallback 0 stopped; the flagged count sits under it.
@@ -43,8 +49,16 @@ describe('Overview page', { timeout: 20_000 }, () => {
   it('writes the savings line with value labels', async () => {
     renderPage('/app/overview');
     expect(await screen.findByText(/Your cost: \$0\.80 per 1,000 answers \(fast check \$0\.05 \+ deep audit \$0\.76\)/)).toBeInTheDocument();
-    expect(screen.getByText(/So far: 540 answers checked for \$0\.43\. Asking an LLM the same questions would have cost ≈ \$1\.22 \(estimate\)\./)).toBeInTheDocument();
+    expect(screen.getByText(/So far: 540 answers checked for \$0\.43\. Asking an LLM the same questions would have cost ≈ \$1\.22\.$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Estimate: how “What an LLM would have cost” was produced/ })).toBeInTheDocument();
+  });
+
+  it('says why the deep audit reads $0 on a free mock judge, and links to what a real judge costs', async () => {
+    const base = roiSummary({ simulated: true });
+    const control = createControlApi({ roi: { ...base, llm_cost: { ...base.llm_cost, usd: 0, value: 0 } } });
+    renderPage('/app/overview', { control, status: { demo: true } });
+    const why = await screen.findByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
+    expect(within(why).getByRole('link', { name: 'What a real judge costs' }).getAttribute('href')).toMatch(/tab=savings/);
   });
 
   it('labels every number simulated on the demo stack and shows the demo connect copy', async () => {
@@ -143,13 +157,21 @@ describe('Overview page', { timeout: 20_000 }, () => {
       status: { persistence: { state: 'down', configured: false, migration: null } },
     });
     expect(await screen.findByText('History saved in a database')).toBeInTheDocument();
-    expect(screen.getByText(/of 5 done/)).toBeInTheDocument();
+    expect(screen.getByText(/of 6 done/)).toBeInTheDocument();
+  });
+
+  it('opens the setup wizard at the step a setup item needs', async () => {
+    renderPage('/app/overview', {
+      status: { auth: { ingest: 'keys', read: 'public', setup_required: true, caller_scopes: ['read'] } },
+    });
+    const link = await screen.findByRole('link', { name: /Open setup/ });
+    expect(link.getAttribute('href')).toMatch(/^\/app\/setup\?step=secure$/);
   });
 
   it('opens the Savings tab from the deep link', async () => {
     renderPage('/app/savings');
     expect(await screen.findByRole('tab', { name: 'Savings', selected: true })).toBeInTheDocument();
-    expect(await screen.findByText(/Arrives in P4/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: /^Your cost: \$0\.80 per 1,000 answers/ })).toBeInTheDocument();
   });
 
   it('has no axe violations', async () => {
@@ -157,5 +179,19 @@ describe('Overview page', { timeout: 20_000 }, () => {
     await screen.findByRole('heading', { name: 'Requests by outcome' });
     await screen.findByText(/Your cost:/);
     expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
+});
+
+describe('Overview hero chart', () => {
+  it('describes the buckets, and names the replayed traffic in the static build', () => {
+    const stats = overviewStats();
+    expect(heroDescription(stats, false)).not.toMatch(/Would flag/);
+    expect(heroDescription(stats, true)).toMatch(/over the replayed traffic$/);
+  });
+
+  it('draws Would block as its own series', () => {
+    const buckets = outcomeBuckets(overviewStats().outcomes_series);
+    expect(buckets.some((b) => (b.counts.would_block ?? 0) > 0)).toBe(true);
+    expect(buckets.reduce((n, b) => n + (b.counts.would_block ?? 0), 0)).toBe(9);
   });
 });

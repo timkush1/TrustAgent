@@ -3,8 +3,9 @@
 // answered with what the decision delivers and the X-TrustAgent-* headers.
 //
 // Routes (Mount): POST /v1/chat/completions, /v1/completions and /v1/messages share one gated
-// handler, Serve. /v1/messages/count_tokens (on the Anthropic upstream), /v1/models and
-// /v1/embeddings pass through ungated, and so does the OpenAI Responses API
+// handler, Serve. /v1/messages/count_tokens (on the Anthropic upstream), /v1/models (on the
+// upstream of the client's SDK family, D67) and /v1/embeddings pass through ungated, and so does
+// the OpenAI Responses API
 // (skipped:unsupported_api). Every error TrustAgent writes on /v1 takes the error shape of the
 // route's API: Anthropic on /v1/messages and its sub-paths, OpenAI elsewhere.
 //
@@ -39,12 +40,15 @@ import (
 	"mime"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/truthtable/backend-go/internal/authz"
 	"github.com/truthtable/backend-go/internal/decision"
+	"github.com/truthtable/backend-go/internal/evidence"
 	"github.com/truthtable/backend-go/internal/gate"
 	"github.com/truthtable/backend-go/internal/llmapi"
 	"github.com/truthtable/backend-go/internal/metrics"
@@ -69,8 +73,10 @@ const TrafficgenKeyLabel = "trafficgen"
 
 // Options configures a Handler.
 type Options struct {
-	// Upstreams are the upstreams by API family, plus the optional fallback upstream.
-	Upstreams *upstream.Set
+	// Upstreams returns the upstreams in effect, by API family plus the optional fallback
+	// upstream. It is called once per request, so a rebuilt set (dashboard upstream settings and
+	// credentials) applies from the next request on; nil, or a nil result, serves no upstream.
+	Upstreams func() *upstream.Set
 	// Policy returns the policy in effect; it is called once per request, so a saved, rolled back
 	// or hot-reloaded version applies from the next request on (policy.Engine.Current).
 	Policy func() *policy.Policy
@@ -86,11 +92,29 @@ type Options struct {
 	Logger             *slog.Logger
 	// Now returns the current time; nil uses time.Now.
 	Now func() time.Time
+	// Knowledge retrieves knowledge-base context for gated answers on routes that read the
+	// knowledge source (D65, knowledge.go); nil means the add-on is off.
+	Knowledge Retriever
+	// Redact masks secrets in text the handler relays: in inject mode, the body of an upstream
+	// error answer before it reaches the client (D42, redact.go); nil is the identity.
+	Redact func(string) string
+}
+
+// Retriever fetches knowledge-base documents for an answer (D65): the handler starts it
+// together with the upstream call and joins it before the gate within the knowledge deadline. An
+// error or no documents means no knowledge, never a failed request; ErrKnowledgeDisabled reports
+// the add-on off. response may be "" when the retrieval starts before the answer is known (the
+// handler always starts it so: the query only). ctx carries the route's limits
+// (KnowledgeOptionsFrom) and the deadline.
+type Retriever interface {
+	Retrieve(ctx context.Context, query, response string) ([]evidence.Item, error)
 }
 
 // Handler serves /v1.
 type Handler struct {
-	ups      *upstream.Set
+	upsFn    func() *upstream.Set
+	knowl    Retriever
+	redact   func(string) string
 	policy   func() *policy.Policy
 	gate     *gate.Gate
 	sink     gate.Sink
@@ -98,8 +122,14 @@ type Handler struct {
 	maxBytes int64
 	log      *slog.Logger
 	now      func() time.Time
-	// rps are the passthrough reverse proxies, one per upstream client.
-	rps map[*upstream.Client]http.Handler
+	// rps are the passthrough reverse proxies of rpsSet, one per upstream client; they are rebuilt
+	// when the upstream set changes.
+	rpsMu  sync.Mutex
+	rpsSet *upstream.Set
+	rps    map[*upstream.Client]http.Handler
+	// isProxyKey reports TrustAgent keys (ProxyKeys); /v1/models reads it to tell an Anthropic
+	// client's own x-api-key from a proxy key.
+	isProxyKey func(string) bool
 
 	sem   chan struct{}
 	async sync.WaitGroup
@@ -108,11 +138,12 @@ type Handler struct {
 // New builds a Handler.
 func New(o Options) *Handler {
 	h := &Handler{
-		ups: o.Upstreams, policy: o.Policy, gate: o.Gate, sink: o.Sink, testMode: o.TestMode,
-		maxBytes: o.MaxUpstreamResponseBytes, log: o.Logger, now: o.Now,
+		upsFn: o.Upstreams, policy: o.Policy, gate: o.Gate, sink: o.Sink, testMode: o.TestMode,
+		maxBytes: o.MaxUpstreamResponseBytes, log: o.Logger, now: o.Now, knowl: o.Knowledge, redact: o.Redact,
+		isProxyKey: authz.IsMintedKey,
 	}
-	if h.ups == nil {
-		h.ups = &upstream.Set{}
+	if h.redact == nil {
+		h.redact = func(s string) string { return s }
 	}
 	if h.sink == nil {
 		h.sink = gate.NopSink{}
@@ -131,18 +162,53 @@ func New(o Options) *Handler {
 		n = 256
 	}
 	h.sem = make(chan struct{}, n)
-	h.rps = map[*upstream.Client]http.Handler{}
-	for _, c := range []*upstream.Client{h.ups.OpenAI, h.ups.Anthropic} {
-		if _, ok := h.rps[c]; c != nil && !ok {
-			h.rps[c] = c.ReverseProxy(h.passthroughFailed)
+	h.reverseProxies(h.upstreams()) // build the passthrough proxies of the initial set
+	return h
+}
+
+// ProxyKeys sets how the handler recognises TrustAgent keys (authz.Authenticator.IsProxyKey):
+// /v1/models picks its upstream family by the client's credential (D67). Call it before the
+// handler serves; until then only minted keys (ta_…) count as proxy keys.
+func (h *Handler) ProxyKeys(isProxyKey func(string) bool) {
+	if isProxyKey != nil {
+		h.isProxyKey = isProxyKey
+	}
+}
+
+// noUpstreams is the set served when Options.Upstreams is nil or returns nil.
+var noUpstreams = &upstream.Set{}
+
+// upstreams is the upstream set in effect for one request (Options.Upstreams).
+func (h *Handler) upstreams() *upstream.Set {
+	if h.upsFn != nil {
+		if s := h.upsFn(); s != nil {
+			return s
 		}
 	}
-	return h
+	return noUpstreams
+}
+
+// reverseProxies returns the passthrough reverse proxies of set, building them once per set.
+func (h *Handler) reverseProxies(set *upstream.Set) map[*upstream.Client]http.Handler {
+	h.rpsMu.Lock()
+	defer h.rpsMu.Unlock()
+	if h.rpsSet == set && h.rps != nil {
+		return h.rps
+	}
+	rps := map[*upstream.Client]http.Handler{}
+	for _, c := range []*upstream.Client{set.OpenAI, set.Anthropic} {
+		if _, ok := rps[c]; c != nil && !ok {
+			rps[c] = h.redactingProxy(c)
+		}
+	}
+	h.rpsSet, h.rps = set, rps
+	return rps
 }
 
 // Mount registers the LLM API routes on v1, the /v1 group (SPEC §2.4 rows 71-73): the gated
 // POST /v1/chat/completions, /v1/completions and /v1/messages; /v1/messages/count_tokens (on the
-// Anthropic upstream), /v1/models and /v1/embeddings passed through; the Responses API passed
+// Anthropic upstream), /v1/models (on the client's family, modelsFamily) and /v1/embeddings
+// passed through; the Responses API passed
 // through ungated with X-TrustAgent-Status skipped:unsupported_api. bodyLimit bounds the request
 // body of every route, the passthrough ones included (Passthrough reads the whole body to strip
 // the gateway's members); nil sets no bound.
@@ -216,14 +282,22 @@ func (h *Handler) Drain(ctx context.Context) error {
 // which sees only the outgoing request (whose path may carry the upstream's base path).
 type errorFormatKey struct{}
 
-// Passthrough forwards a request ungated to the upstream of its path's API family (the Anthropic
-// upstream for /v1/messages/count_tokens, the OpenAI upstream otherwise). A JSON body loses the
-// gateway's members first, and a test_response outside test mode is refused (M7); status, when
-// set, is sent as X-TrustAgent-Status.
+// Passthrough forwards a request ungated to the upstream of its API family: the Anthropic upstream
+// for /v1/messages/count_tokens, the family modelsFamily picks for /v1/models (D67), the OpenAI
+// upstream otherwise. A JSON body loses the gateway's members first, and a test_response outside
+// test mode is refused (M7); status, when set, is sent as X-TrustAgent-Status. Errors take the
+// family's error shape.
 func (h *Handler) Passthrough(status string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		format := familyFormat(path)
+		family := llmapi.FamilyForPath(path)
+		if isModelsPath(path) {
+			family = h.modelsFamily(c.Request.Header)
+		}
+		format := llmapi.FormatOpenAIChat
+		if family == llmapi.FamilyAnthropic {
+			format = llmapi.FormatAnthropicMessages
+		}
 		if c.Request.Body != nil && c.Request.Body != http.NoBody {
 			body, err := io.ReadAll(c.Request.Body)
 			if err != nil {
@@ -244,17 +318,38 @@ func (h *Handler) Passthrough(status string) gin.HandlerFunc {
 		if status != "" {
 			c.Header(HeaderStatus, status)
 		}
-		rp, ok := h.rps[h.ups.For(llmapi.FamilyForPath(path))]
+		set := h.upstreams()
+		r := c.Request.WithContext(context.WithValue(c.Request.Context(), errorFormatKey{}, format))
+		rp, ok := h.reverseProxies(set)[set.For(family)]
 		if !ok {
-			h.passthroughFailed(c.Writer, c.Request, errNoUpstream)
+			h.passthroughFailed(c.Writer, r, errNoUpstream)
 			return
 		}
-		r := c.Request.WithContext(context.WithValue(c.Request.Context(), errorFormatKey{}, format))
 		rp.ServeHTTP(c.Writer, r)
 		// Ungated traffic counts in requests_total with no route, format or action, and adds no
 		// overhead sample.
 		metrics.ObserveRequest("", "", "", "", -1)
 	}
+}
+
+// isModelsPath reports the model-list routes, /v1/models and /v1/models/{model}.
+func isModelsPath(path string) bool {
+	p := strings.TrimSuffix(path, "/")
+	return p == llmapi.PathModels || strings.HasPrefix(p, llmapi.PathModels+"/")
+}
+
+// modelsFamily is the upstream family of a /v1/models request (D67): both SDK families list
+// models there, so the client's headers decide. An Anthropic client sends anthropic-version (the
+// SDKs always do) or its own key on x-api-key; anything else, a proxy key on x-api-key included,
+// goes to the OpenAI upstream.
+func (h *Handler) modelsFamily(hdr http.Header) string {
+	if hdr.Get("Anthropic-Version") != "" {
+		return llmapi.FamilyAnthropic
+	}
+	if k := strings.TrimSpace(hdr.Get("X-Api-Key")); k != "" && !h.isProxyKey(k) {
+		return llmapi.FamilyAnthropic
+	}
+	return llmapi.FamilyOpenAI
 }
 
 // passthroughFailed answers a passthrough request whose upstream call failed: 502, or 504 on a
@@ -308,6 +403,9 @@ func (h *Handler) Serve(c *gin.Context) {
 	}
 	f := h.newFlow(c, format, path, body, req, start)
 	h.sink.TraceStarted(f.record, f.x.Trace)
+	// Knowledge runs next to the upstream call (or the scripted answer) and is joined before the
+	// gate (D65).
+	h.startKnowledge(f)
 
 	if req != nil && req.TestResponse != nil {
 		if req.Stream {
@@ -326,6 +424,10 @@ func (h *Handler) Serve(c *gin.Context) {
 	if err != nil {
 		h.upstreamFailed(f, err)
 		return
+	}
+	if f.up.Injecting() {
+		// The headers the client receives may quote the gateway's own key (redact.go, D42).
+		h.redactHeaders(resp.Header)
 	}
 	if isEventStream(resp) {
 		stream := f.up.StreamBody(resp, cancel)
@@ -365,7 +467,7 @@ func (h *Handler) serveJSON(f *flow, ans *answer) {
 	// The gate waits on the record context: only its own deadline stops it (SPEC §2.9 late
 	// decisions), so a client that hangs up mid-check leaves the real decision on record, not a
 	// cancelled check (a timeout, and a fail-closed block on a closed route).
-	res := h.gate.Evaluate(f.record, x)
+	res := h.evaluate(f.record, f)
 	ctx := f.c.Request.Context()
 	out := h.enforceJSON(ctx, f, res, ans)
 	up, end := ans.upstreamRecord(), h.now()
@@ -401,7 +503,7 @@ func (h *Handler) respondThenGate(f *flow, ans *answer) {
 	case h.sem <- struct{}{}:
 	default:
 		x.SkipReason = gate.SkipOverload
-		res := h.gate.Evaluate(f.record, x)
+		res := h.evaluate(f.record, f)
 		h.decided(f, res, ans.upstreamRecord(), written, nil)
 		return
 	}
@@ -412,7 +514,7 @@ func (h *Handler) respondThenGate(f *flow, ans *answer) {
 		// The gate bounds its decision-model call; this bounds the rest (and a stuck sink).
 		gctx, cancel := context.WithTimeout(f.record, 2*h.gate.AsyncDeadline())
 		defer cancel()
-		res := h.gate.Evaluate(gctx, x)
+		res := h.evaluate(gctx, f)
 		bounded := *f
 		bounded.record = gctx
 		h.decided(&bounded, res, ans.upstreamRecord(), written, nil)
@@ -449,7 +551,7 @@ func (h *Handler) upstreamFailed(f *flow, err error) {
 	default:
 		h.log.Warn("upstream call failed", "trace_id", x.Trace.TraceID, "err", err)
 	}
-	res := h.gate.Evaluate(f.record, x)
+	res := h.evaluate(f.record, f)
 	fin := &gate.Final{Action: unenforcedAction(res.Decision.Action), Delivered: gate.DeliveredOriginal}
 	end := h.now()
 	audit := h.decided(f, res, up, end, fin)

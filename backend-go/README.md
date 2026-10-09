@@ -4,7 +4,9 @@ The gateway is the part your app talks to. It serves the OpenAI and Anthropic AP
 forwards each request to the upstream LLM, checks the answer (Tier-0 detectors and one fast-check
 call to Jev), applies the route's policy (observe, flag, block or fallback), and queues a deep
 audit on the Python engine over gRPC. It also serves the dashboard's REST API and WebSocket v2
-stream, and stores traces, decisions, audits and policy versions in Postgres.
+stream, holds the runtime settings and the encrypted vendor keys, records every call's cost in a
+ledger against daily budgets, and stores traces, decisions, audits, labels, calibrations and
+policy versions in Postgres.
 
 What a client sees (modes, headers and trailers, streaming, failures, block and fallback bodies,
 credentials, errors, test mode) is documented in [docs/GATEWAY.md](../docs/GATEWAY.md). The
@@ -24,8 +26,13 @@ response contract, §3.1 Go change list).
 | `internal/jev` | The fast-check client: backends (`openrouter-decisions`, `openrouter-systemone`, `typesafe`, `compatible`, `mock`, `off`), retries, hedging, breaker, rate limit, spend caps, snapshot tracking |
 | `internal/evidence` | What an answer is checked against: system-prompt documents, `Context:` blocks, tool results, the `trustagent.context` extension |
 | `internal/policy`, `internal/evaluators` | Versioned policies (file, dashboard, rollback), validation and block readiness; the evaluator registry |
-| `internal/authz` | Keys and scopes (ingest, read, content, admin), sessions, CSRF, the one-time setup token |
-| `internal/store` | Postgres: traces, gate decisions, bodies, audits, policies, calibrations; embedded migrations |
+| `internal/authz` | Keys and scopes (ingest, read, content, admin), sessions, CSRF, the one-time setup token, the master key |
+| `internal/credentials` | Vendor keys saved in the dashboard: AES-256-GCM sealing bound to name, provider and origins, the URL rules, key checks per provider, Connect OpenRouter (PKCE) |
+| `internal/runtimecfg` | Runtime settings with env precedence (`env_managed`), one version and epoch, hot reload, and the push to the engine |
+| `internal/costs` | The cost ledger, the daily budgets with reservations, ROI and the price table (overrides first) |
+| `internal/studio`, `internal/calibration` | Evaluator Studio runs (test bench, paid dry-run); calibrations stored, fitted from labels and activated |
+| `internal/config` | The configuration registry loader and the redactor every log line and error passes through |
+| `internal/store` | Postgres: traces (written in batches), gate decisions, bodies, audits, policies, settings, credentials, cost events, labels, calibrations, the append-only admin audit log; embedded migrations |
 | `internal/worker`, `internal/grpc` | Deep-audit lanes and the engine client (`Evaluate`, `GetEngineInfo`, knowledge RPCs) |
 | `internal/websocket` | WebSocket protocol v2: sequence numbers, replay ring, gaps, scoped event variants |
 | `internal/metrics` | Prometheus metrics, all `trustagent_gateway_*` |
@@ -67,7 +74,12 @@ make setup-url                                # a one-time link that creates the
 | `GET /api/status` | Everything `make doctor` reads: engine, judge, fast check, calibration, policy, budgets |
 | `GET /api/traces`, `/api/traces/:id` | Traffic and trace detail (decisions, evidence, audit, claims) |
 | `/api/policies*`, `/api/evaluators*` | Policy versions, validation, dry-run, rollback; evaluator specs |
-| `GET /api/setup/status`, `/api/session`, `/api/keys` | Whether an admin exists yet; sign-in (a key or the setup token); key management |
+| `GET /api/setup/status`, `/api/session`, `/api/keys` | Whether an admin exists yet; sign-in (a key or the setup token), sign out everywhere; API keys |
+| `/api/settings`, `/api/credentials*`, `/api/connect/openrouter/*` | Runtime settings (`If-Match` versions); vendor keys (saved, checked, removed); Connect OpenRouter |
+| `/api/decision-model/test`, `/api/pricing`, `/api/roi/*` | One probe of the fast check; the effective price table; Savings figures |
+| `/api/studio/*`, `/api/labels*`, `/api/calibration*` | Evaluator Studio (draft, test, samples, quick calibration, dry-run over SSE); labels and the label queue; calibrations |
+| `GET /api/traces/:id/decision-request`, `/api/evidence/*` | The glass box (the Jev request, recompiled); evidence coverage and suggestions |
+| `GET /api/admin/audit-log`, `GET /api/export/replay` | The admin audit log; a sanitized replay recording (names the build's git revision) |
 | `GET /ws?protocol=2` | The dashboard's live stream (WebSocket v2; a handshake without `protocol=2` is refused) |
 
 `docs/v2/SPEC.md` §2.4 lists every REST endpoint with its scope and limits, and §2.5 the
@@ -86,7 +98,7 @@ routes, and there is no model label.
 | Fast check (Jev) | `jev_requests_total{backend,outcome}`, `jev_seconds{backend}`, `jev_connect_seconds`, `jev_cost_usd_total{backend,component}`, `jev_input_tokens_total{backend}`, `jev_breaker_state{backend}`, `jev_rate_limited_total{class}`, `jev_snapshot_info{snapshot}`, `jev_anomalies_total{kind}` |
 | Audits and fallback | `fallback_total{outcome}`, `audit_jobs_total{lane,selection,outcome}`, `audit_queue_depth{lane}`, `audit_roundtrip_seconds`, `uniform_samples_today` |
 | WebSocket | `ws_clients`, `ws_dropped_total`, `ws_gaps_total{reason}` |
-| Policy, storage, spend | `policy_version`, `policy_reload_errors_total`, `trace_write_dropped_total`, `retention_lag_seconds`, `spend_usd_today{kind}`, `spend_reserved_usd{kind}` |
+| Policy, storage, spend | `policy_version`, `policy_reload_errors_total`, `trace_write_dropped_total`, `retention_lag_seconds`, `spend_usd_today{kind}`, `spend_reserved_usd{kind}`, `cost_write_dropped_total` |
 
 The engine's metrics are `trustagent_engine_*`. The Grafana dashboard
 (`config/grafana/dashboards/trustagent.json`) filters every query by `job="proxy"` or
@@ -112,6 +124,12 @@ overhead with k6 against `mock-upstream` ([GATEWAY.md §13](../docs/GATEWAY.md#1
 
 - New HTTP middleware goes in `internal/middleware`.
 - Every environment variable is registered in `contracts/config/keys.v1.json` first.
+- A secret never reaches a log, an error, the API or the WebSocket: add it to the redactor before
+  its first use, and test with fake keys only (`sk-test-…`, `sk-or-v1-e2e-…`, plus
+  `cmp0e2eZq7Lw4Rt9Yx2Vb6Nm`, which no pattern matches).
+- Docker builds get the git revision as the `GIT_SHA` build arg (set by make), because the build
+  context has no `.git`: it is stamped into `internal/version.GitSHA` (status `build_sha`, the
+  `git_sha` of `/api/export/replay`) and labels the image (`org.opencontainers.image.revision`).
 - Decision logic changes start in `internal/decision` (the reference): update the golden vectors,
   then the TypeScript core in `frontend-react/src/lib/decision` must pass the same vectors.
 - Never edit `api/audit/v1`: change `proto/evaluator.proto` and run `make proto`.

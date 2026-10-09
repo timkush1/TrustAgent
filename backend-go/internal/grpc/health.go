@@ -59,6 +59,22 @@ type Pinger struct {
 
 	mu    sync.RWMutex
 	state EngineHealth
+
+	hookMu sync.Mutex
+	hooks  []func(EngineHealth)
+}
+
+// OnHealth registers fn for the result of every check, not only state transitions: the engine
+// push compares the runtime configuration the engine reports with the one in effect, and follows
+// the engine's env-managed keys (CN-3). fn runs on the checking goroutine after the state
+// is recorded and must not block.
+func (p *Pinger) OnHealth(fn func(EngineHealth)) {
+	if fn == nil {
+		return
+	}
+	p.hookMu.Lock()
+	defer p.hookMu.Unlock()
+	p.hooks = append(p.hooks, fn)
 }
 
 // NewPinger builds a pinger. onChange, when set, is called after every state transition (the WS
@@ -122,6 +138,12 @@ func (p *Pinger) Check(ctx context.Context) EngineHealth {
 	p.mu.Unlock()
 	if changed && p.onChange != nil {
 		p.onChange(h)
+	}
+	p.hookMu.Lock()
+	hooks := p.hooks
+	p.hookMu.Unlock()
+	for _, fn := range hooks {
+		fn(h)
 	}
 	return h
 }

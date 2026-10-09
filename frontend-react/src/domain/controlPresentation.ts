@@ -105,31 +105,63 @@ export type ReadinessItem = BlockReadiness['missing'][number];
 /** The five block-readiness requirements (SPEC §7.2), in the order the checklist lists them. */
 export const READINESS_ITEMS: readonly ReadinessItem[] = ['mode', 'evidence', 'corroborator', 'calibration', 'buffering'];
 
-const READINESS_WORDS: Record<ReadinessItem, { label: string; missing: string }> = {
+export interface ReadinessWords {
+  /** The requirement as a checklist item ("Route set to Block or Fallback"). */
+  label: string;
+  /** Why it is not met yet. */
+  missing: string;
+  /** What to do next, as an instruction ("set this route to Block or Fallback"), lower-case first. */
+  action: string;
+}
+
+const READINESS_WORDS: Record<ReadinessItem, ReadinessWords> = {
   mode: {
     label: 'Route set to Block or Fallback',
     missing: 'The route is not in Block or Fallback mode.',
+    action: 'set this route to Block or Fallback',
   },
   evidence: {
     label: 'Documents to check against',
     missing: 'None of the route’s evidence sources can supply documents for this check.',
+    action: 'give the route documents to check against',
   },
   corroborator: {
     label: 'A second signal that can agree',
     missing: 'No second check or instant check can confirm this one, so it cannot block alone.',
+    action: 'add a second check or instant check that can agree',
   },
   calibration: {
     label: 'Calibrated for the current fast-check version',
-    missing: 'Thresholds are not calibrated on labelled traffic for this fast-check version.',
+    missing: 'Thresholds are not calibrated on at least 200 of your own labels for this fast-check version.',
+    action: 'calibrate it on at least 200 of your own labels',
   },
   buffering: {
     label: 'Streams buffered',
     missing: 'Streamed answers pass straight through, so they can only be flagged.',
+    action: 'buffer streamed answers on this route',
   },
 };
 
-export function readinessWords(item: ReadinessItem): { label: string; missing: string } {
-  return READINESS_WORDS[item] ?? { label: humanizeId(item), missing: humanizeId(item) };
+/**
+ * Why the calibration a check has cannot block, by its state; none for a check with no calibration
+ * (or one not read yet), where "calibrate it" says it all.
+ */
+const CALIBRATION_CANNOT_BLOCK: Partial<Record<CalibrationState, string>> = {
+  mock: 'a simulated calibration cannot block',
+  provisional: 'the provisional one has too few labels to block',
+  proxy: 'one fitted on deep audits alone cannot block',
+  family: 'one borrowed from another fast-check version cannot block',
+};
+
+/**
+ * A readiness requirement in words. For `calibration`, the check's calibration state (when known)
+ * says why the one it has cannot block: simulated, provisional, proxy or borrowed.
+ */
+export function readinessWords(item: ReadinessItem, calibration?: CalibrationState): ReadinessWords {
+  const words = READINESS_WORDS[item] ?? { label: humanizeId(item), missing: humanizeId(item), action: humanizeId(item).toLowerCase() };
+  const why = item === 'calibration' && calibration ? CALIBRATION_CANNOT_BLOCK[calibration] : undefined;
+  if (!why) return words;
+  return { ...words, missing: `${words.missing} ${why[0].toUpperCase()}${why.slice(1)}.`, action: `${words.action} (${why})` };
 }
 
 // --------------------------------------------------------------------------------- calibration
@@ -256,7 +288,7 @@ export function stageLabel(stage: 'active' | 'shadow'): string {
 
 const BACKENDS: Record<DecisionBackend, string> = {
   'openrouter-decisions': 'OpenRouter',
-  'openrouter-systemone': 'OpenRouter (systemone route)',
+  'openrouter-systemone': 'OpenRouter (alternate decisions route)',
   typesafe: 'TypeSafe direct',
   compatible: 'Other gateway',
   mock: 'Mock (simulated)',

@@ -17,6 +17,7 @@ import (
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/contractstest"
+	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/grpc"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/websocket"
@@ -221,6 +222,47 @@ func TestStatusEventDetails(t *testing.T) {
 	s.expect(t)
 }
 
+// TestStatusEventDetailsAreRedacted: an engine or decision-model detail that echoes a loaded secret
+// reaches the stream masked (D42), including a secret no credential pattern matches.
+func TestStatusEventDetailsAreRedacted(t *testing.T) {
+	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm"
+	if got := config.NewRedactor().Redact("key " + secret); !strings.Contains(got, secret) {
+		t.Fatal("the pattern set alone masks the no-pattern secret; the test would prove nothing")
+	}
+	s := newStatusStream(t)
+	s.srv.redactor = config.NewRedactor(secret)
+	s.jev.set(func(st *jev.Status) {
+		st.State = "unauthorized"
+		st.LastError = &jev.StatusError{Kind: "unauthorized", Message: "vendor said: bad key " + secret}
+		st.Spend = nil
+	})
+	s.engine.set(grpc.EngineHealth{State: "down", Detail: "judge refused key " + secret})
+	s.srv.watchStatus()
+	// Read every frame the transition broadcast (judge and knowledge stay unknown while the
+	// engine is down): the engine and the decision model each carry a masked detail.
+	details := map[string]string{}
+	for {
+		_ = s.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		_, msg, err := s.conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		if strings.Contains(string(msg), secret) {
+			t.Errorf("a status frame carries the secret")
+		}
+		var f struct {
+			Data struct{ Component, Detail string } `json:"data"`
+		}
+		_ = json.Unmarshal(msg, &f)
+		details[f.Data.Component] = f.Data.Detail
+	}
+	for _, c := range []string{"engine", "decision_model"} {
+		if d := details[c]; d == "" || !strings.Contains(d, "key") {
+			t.Errorf("%s detail %q, want the masked message", c, d)
+		}
+	}
+}
+
 // TestStatusFixture: the golden status event fixture is a valid WsEvent with a component and state.
 func TestStatusFixture(t *testing.T) {
 	for _, name := range []string{"WsEvent.status.json", "WsEvent.calibration_updated.json"} {
@@ -236,8 +278,11 @@ func TestStatusFixture(t *testing.T) {
 // flag calls stop at their share of the cap (jev's Exhausted is already true there), exhausted
 // only once enforcing calls have spent the reserve too.
 func TestBudgetState(t *testing.T) {
-	if _, _, ok := budgetState(nil); ok {
+	if _, ok := budgetState(nil); ok {
 		t.Error("a client without a budget reports a budget state")
+	}
+	if _, _, ok := (&server{}).budgetStatus(nil); ok {
+		t.Error("a server without a ledger or a client budget reports a budget status")
 	}
 	for _, c := range []struct {
 		sp    jev.SpendStatus
@@ -247,7 +292,7 @@ func TestBudgetState(t *testing.T) {
 		{jev.SpendStatus{Exhausted: true}, budgetExhausted},
 		{jev.SpendStatus{CapUSD: 1, SoftCapUSD: 0.75, SpentUSD: 0.5, ReservedUSD: 0.3}, budgetReserveOnly}, // a held call
 	} {
-		if state, _, ok := budgetState(&c.sp); !ok || state != c.state {
+		if state, ok := budgetState(&c.sp); !ok || state != c.state {
 			t.Errorf("%+v: %s, want %s", c.sp, state, c.state)
 		}
 	}
@@ -256,7 +301,12 @@ func TestBudgetState(t *testing.T) {
 	check := func(step, want string) {
 		t.Helper()
 		sp := b.Spend()
-		if state, detail, ok := budgetState(&sp); !ok || state != want || (want != budgetOK) == (detail == "") {
+		// Without a ledger only the decision cap is known: a status that is not ok names it.
+		wantDetail := ""
+		if want != budgetOK {
+			wantDetail = capDecision
+		}
+		if state, detail, ok := (&server{}).budgetStatus(&sp); !ok || state != want || detail != wantDetail {
 			t.Errorf("%s: %s (%q), want %s; spend %+v", step, state, detail, want, sp)
 		}
 	}
@@ -292,4 +342,80 @@ func TestBudgetState(t *testing.T) {
 	check("no reserve, 90%", budgetOK)
 	spend(0.1, false)
 	check("no reserve, the cap", budgetExhausted)
+}
+
+// TestBudgetStatusNamesTheCaps: with the cost ledger the budget status is the worse of the
+// decision and LLM caps, and its detail names the caps in that state (D49): the LLM cap running
+// out is a transition of its own, and both caps exhausted name both. The fixture of an LLM-cap
+// event is a valid WsEvent.
+func TestBudgetStatusNamesTheCaps(t *testing.T) {
+	s := newStatusStream(t)
+	book, err := costs.LoadPriceBook("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := costs.NewLedger(costs.LedgerConfig{DecisionCapUSD: 1, EnforcingReserve: 0.25, LLMCapUSD: 0.5, Prices: book})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.srv.costs.decision = ledger
+	expectBudget := func(state, detail string) {
+		t.Helper()
+		s.srv.watchStatus()
+		for {
+			f := readFrame(t, s.conn)
+			var d struct{ Component, State, Detail string }
+			_ = json.Unmarshal(f.Data, &d)
+			if d.Component != componentBudget {
+				continue // the other components' first states
+			}
+			if d.State != state || d.Detail != detail {
+				t.Fatalf("budget %s (%q), want %s (%q)", d.State, d.Detail, state, detail)
+			}
+			return
+		}
+	}
+	spend := func(reserve func(float64) (func(float64), error), usd float64) {
+		t.Helper()
+		settle, err := reserve(usd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settle(usd)
+	}
+	llm := ledger.LLM()
+	llmReserve := func(usd float64) (func(float64), error) { return llm.Reserve(usd, "deep_audit") }
+	decisionReserve := func(enforcing bool) func(float64) (func(float64), error) {
+		return func(usd float64) (func(float64), error) {
+			h, err := ledger.Decision().Reserve(usd, enforcing, "")
+			if err != nil {
+				return nil, err
+			}
+			return h.Settle, nil
+		}
+	}
+
+	expectBudget(budgetOK, "")
+	spend(llmReserve, 0.5)
+	expectBudget(budgetExhausted, capLLM)
+	spend(decisionReserve(false), 0.75) // the observe line
+	s.srv.watchStatus()
+	s.expect(t)                        // the decision cap's reserve_only is better than the LLM cap's exhausted
+	spend(decisionReserve(true), 0.25) // enforcing calls spend the reserve
+	expectBudget(budgetExhausted, capDecision+","+capLLM)
+
+	// The budget fixtures name the caps as the gateway sends them (D49).
+	for name, detail := range map[string]string{"budget-llm": capLLM, "budget-decision": capDecision} {
+		fixture, err := contracts.FS.ReadFile("fixtures/api/WsEvent.status." + name + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		contractstest.ValidateJSON(t, schemaWsEvent, fixture)
+		var ev struct {
+			Data struct{ Component, State, Detail string } `json:"data"`
+		}
+		if err := json.Unmarshal(fixture, &ev); err != nil || ev.Data.Component != componentBudget || ev.Data.Detail != detail {
+			t.Errorf("fixture %s %+v %v", name, ev.Data, err)
+		}
+	}
 }

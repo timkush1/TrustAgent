@@ -1,7 +1,9 @@
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { API, server, installMswServer } from '@/test/msw';
 import { audit, flaggedTrace, iso } from '@/test/fixtures';
+import { fakeLifecycle, socketFactory } from '@/test/fakes/FakeWebSocket';
+import { clearDashboardKey, storeDashboardKey } from '../http';
 import { LiveDataSource, RESYNC_LIMIT } from './liveDataSource';
 
 installMswServer();
@@ -82,5 +84,53 @@ describe('LiveDataSource resync (SPEC §2.5)', () => {
 
     server.use(http.get(`${API}/api/traces`, () => HttpResponse.error()));
     await expect(ds().resync(iso(), 'gap')).rejects.toMatchObject({ kind: 'network' });
+  });
+});
+
+describe('LiveDataSource stream on another origin (D71)', () => {
+  afterEach(() => clearDashboardKey());
+
+  const sink = { onEvent: () => {}, onConnection: () => {} };
+
+  function source(crossOrigin: boolean) {
+    const sockets = socketFactory();
+    const tickets: string[] = [];
+    server.use(
+      http.post(`${API}/api/ws-ticket`, ({ request }) => {
+        tickets.push(request.headers.get('X-TrustAgent-Key') ?? '');
+        return HttpResponse.json({ ticket: `wst_${tickets.length}`, expires_in: 30 });
+      }),
+    );
+    const live = new LiveDataSource(
+      { apiBase: API, crossOrigin, wsUrl: 'ws://proxy.test/ws' },
+      { stream: { createSocket: sockets.create, lifecycle: fakeLifecycle().source } },
+    );
+    return { live, sockets, tickets };
+  }
+
+  it('connects with a fresh ticket while this tab is signed in with a key', async () => {
+    storeDashboardKey('ta_admin_test_key_1');
+    const { live, sockets, tickets } = source(true);
+    const control = live.subscribe(sink);
+    await expect.poll(() => sockets.sockets.length).toBe(1);
+    expect(sockets.last.url.searchParams.get('ticket')).toBe('wst_1');
+    expect(tickets).toEqual(['ta_admin_test_key_1']);
+    control.stop();
+  });
+
+  it('connects without a ticket on the same origin, or with no key in this tab', async () => {
+    for (const [crossOrigin, key] of [
+      [false, 'ta_admin_test_key_1'],
+      [true, null],
+    ] as const) {
+      clearDashboardKey();
+      if (key) storeDashboardKey(key);
+      const { live, sockets, tickets } = source(crossOrigin);
+      const control = live.subscribe(sink);
+      await expect.poll(() => sockets.sockets.length).toBe(1);
+      expect(sockets.last.url.searchParams.has('ticket')).toBe(false);
+      expect(tickets).toEqual([]);
+      control.stop();
+    }
   });
 });

@@ -6,7 +6,8 @@
  */
 import pricing from '@contracts/pricing/prices.v1.json';
 import assumptions from '@contracts/pricing/assumptions.v1.json';
-import { outcomeOf } from '@/domain/presentation';
+import type { CostSeries } from '@/data/control/costPlane';
+import { costFullAuditBasis, costFullAuditPer1k, outcomeOf } from '@/domain/presentation';
 import type {
   AuditDetail,
   AuditSelection,
@@ -17,6 +18,7 @@ import type {
   LabelledRate,
   OverviewStats,
   Recording,
+  Counterfactual,
   RoiSummary,
   TimeWindow,
   TraceSummary,
@@ -101,7 +103,7 @@ type SeriesKey = Exclude<keyof SeriesPoint, 't'>;
 const SERIES_OF: Record<string, SeriesKey | null> = {
   passed: 'passed',
   would_flag: 'would_flag',
-  would_block: 'would_flag',
+  would_block: 'would_block',
   flagged: 'flagged',
   blocked: 'blocked',
   replaced: 'replaced',
@@ -132,7 +134,7 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
 
   const series: SeriesPoint[] = [];
   for (let t = start; t <= end; t += step) {
-    series.push({ t: new Date(t).toISOString(), passed: 0, would_flag: 0, flagged: 0, blocked: 0, replaced: 0, not_checked: 0, error: 0 });
+    series.push({ t: new Date(t).toISOString(), passed: 0, would_flag: 0, would_block: 0, flagged: 0, blocked: 0, replaced: 0, not_checked: 0, error: 0 });
   }
   const caught = new Map<string, { count: number; latest: TraceSummary }>();
   for (const t of traces) {
@@ -273,32 +275,61 @@ function judgePrice(): PriceEntry | null {
   return (pricing.entries as PriceEntry[]).find((e) => e.provider === want.provider && e.match === want.match) ?? null;
 }
 
+const isGated = (p: PlayedTrace) => p.summary.gate_status !== 'pending' && p.summary.gate_status !== 'skipped';
+const decisionCost = (p: PlayedTrace) => p.summary.decision_model?.cost_usd ?? 0;
+const auditCost = (a: AuditDetail | null) => (a ? a.costs.reduce((s, c) => s + c.cost_usd, 0) : 0);
+
+/**
+ * The token model of pricing/assumptions.v1.json for one gated answer: its fast-check request
+ * (plus the prompt overhead) asked of the judge, with a short answer per question. 0 when the
+ * recording has no token count for it.
+ */
+function sameChecksCost(p: PlayedTrace, price: PriceEntry): number {
+  const d = p.decision;
+  if (!d?.decision_model || d.decision_model.input_tokens === null) return 0;
+  const model = assumptions.token_model;
+  const questions = Object.keys(d.evaluators).length;
+  return (
+    ((d.decision_model.input_tokens + model.prompt_overhead_tokens) * price.input_per_mtok +
+      model.output_tokens_per_question * questions * price.output_per_mtok) /
+    1e6
+  );
+}
+
+/**
+ * llm_full_claim_audit as the gateway words it before it has costed audits to scale up (SPEC §7.4
+ * method 3): the published per-1,000 assumption times the answers checked, an estimate that is
+ * not measured. A recording never has the 30 costed uniform audits the other methods need, and a
+ * mock one's audits are free. Null without the published figure.
+ */
+function staticFullAudit(n: number): Counterfactual | null {
+  if (costFullAuditPer1k === null || costFullAuditPer1k <= 0) return null;
+  return {
+    kind: 'llm_full_claim_audit',
+    method: 'static_assumptions',
+    usd: (costFullAuditPer1k * n) / 1000,
+    low: null,
+    high: null,
+    per_1k: costFullAuditPer1k,
+    n: 0,
+    label: 'estimate',
+    basis: `not measured: ${costFullAuditBasis.replace(/\.$/, '')}`,
+  };
+}
+
 export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): RoiSummary {
   const sim = simulated(ctx);
   const traces = played.map((p) => p.summary);
-  const gated = played.filter((p) => p.summary.gate_status !== 'pending' && p.summary.gate_status !== 'skipped');
+  const gated = played.filter(isGated);
   const n = gated.length;
   const audits = played.map((p) => p.audit).filter((a): a is AuditDetail => a !== null);
-  const decisionUsd = traces.reduce((acc, t) => acc + (t.decision_model?.cost_usd ?? 0), 0);
-  const llmUsd = audits.reduce((acc, a) => acc + a.costs.reduce((s, c) => s + c.cost_usd, 0), 0);
+  const decisionUsd = played.reduce((acc, p) => acc + decisionCost(p), 0);
+  const llmUsd = audits.reduce((acc, a) => acc + auditCost(a), 0);
   const per1k = (usd: number) => (n > 0 ? (usd / n) * 1000 : null);
 
-  // The token model of pricing/assumptions.v1.json: the same fast-check requests asked of the judge.
   const price = judgePrice();
   const model = assumptions.token_model;
-  let sameUsd: number | null = null;
-  if (price) {
-    sameUsd = 0;
-    for (const p of gated) {
-      const d = p.decision;
-      if (!d?.decision_model || d.decision_model.input_tokens === null) continue;
-      const questions = Object.keys(d.evaluators).length;
-      sameUsd +=
-        ((d.decision_model.input_tokens + model.prompt_overhead_tokens) * price.input_per_mtok +
-          model.output_tokens_per_question * questions * price.output_per_mtok) /
-        1e6;
-    }
-  }
+  const sameUsd: number | null = price ? gated.reduce((acc, p) => acc + sameChecksCost(p, price), 0) : null;
   const bySelection: Partial<Record<AuditSelection, number>> = countBy(audits.map((a) => a.selection).filter((s): s is AuditSelection => s !== null));
   const costLabel = sim ? 'simulated' : 'measured';
   const decisionBasis = sim
@@ -306,6 +337,7 @@ export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): R
     : 'Fast-check cost reported with the recorded calls.';
   const llmBasis = sim ? 'Mock judge: no LLM call was made, so the deep audit cost nothing.' : 'Deep-audit cost reported with the recorded audits.';
   const gateTimes = gated.map((p) => p.summary.timings.gate_ms);
+  const fullAudit = staticFullAudit(n);
 
   return {
     window: ctx.window,
@@ -318,22 +350,24 @@ export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): R
       label: costLabel,
       basis: `Fast check plus deep audit per 1,000 answers in this ${sim ? 'simulated ' : ''}recording.`,
     },
-    counterfactuals:
-      sameUsd === null
+    counterfactuals: [
+      ...(sameUsd === null
         ? []
         : [
             {
-              kind: 'llm_same_checks',
-              method: 'token_model',
+              kind: 'llm_same_checks' as const,
+              method: 'token_model' as const,
               usd: sameUsd,
               low: null,
               high: null,
               per_1k: per1k(sameUsd),
               n,
-              label: sim ? 'simulated' : 'estimate',
+              label: sim ? ('simulated' as const) : ('estimate' as const),
               basis: `The same fast-check requests (plus ${model.prompt_overhead_tokens} prompt tokens) asked of the LLM judge at $${price?.input_per_mtok}/$${price?.output_per_mtok} per million tokens.`,
             },
-          ],
+          ]),
+      ...(fullAudit ? [fullAudit] : []),
+    ],
     savings_vs_same_checks: {
       usd_low: sameUsd === null ? null : sameUsd - decisionUsd,
       usd_high: sameUsd === null ? null : sameUsd - decisionUsd,
@@ -347,7 +381,8 @@ export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): R
       label: costLabel,
     },
     latency_ms: { gate_p50: percentile(gateTimes, 50), gate_p95: percentile(gateTimes, 95), deadline_miss_rate: null, label: costLabel },
-    // A recording does not carry the gateway's sampling state; nothing here was sampled uniformly.
+    // A recording does not carry the gateway's sampling state (its daily count, cap or budget
+    // stops): the Savings panel says so in replay instead of showing these fields.
     sampling: {
       uniform_rate: 0,
       uniform_today: audits.filter((a) => a.selection === 'uniform').length,
@@ -357,6 +392,52 @@ export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): R
     },
     third_party: [],
   };
+}
+
+const ROI_BUCKET_MS: Record<CostSeries['bucket'], number> = { '1m': 60_000, '1h': 3_600_000, '1d': 86_400_000 };
+
+/**
+ * The bucket that fits the played span, as the replay's "Requests by outcome" picks its own: per
+ * minute up to an hour (a recording usually spans minutes, which hourly buckets would fold into
+ * one point), per hour up to two days, per day beyond.
+ */
+export function roiBucketOf(spanMs: number): CostSeries['bucket'] {
+  if (!(spanMs > 3_600_000)) return '1m';
+  return spanMs <= 2 * 86_400_000 ? '1h' : '1d';
+}
+
+/**
+ * Spend per UTC bucket over the played traces (SPEC §2.4 #48): every bucket from the recording's
+ * start to the tape position, empty ones zero-filled, as the gateway serves them, in the bucket
+ * that fits the played span (roiBucketOf). An answer's fast-check and deep-audit costs land in the
+ * bucket it was created in; the same-checks counterfactual is the token model above (null without
+ * the judge's price).
+ */
+export function roiTimeseries(played: readonly PlayedTrace[], ctx: StatsContext): CostSeries {
+  const from = Date.parse(ctx.recording.recorded_at);
+  const to = Date.parse(ctx.now);
+  const bucket = roiBucketOf(to - from);
+  const step = ROI_BUCKET_MS[bucket];
+  const points: CostSeries['points'] = [];
+  if (Number.isNaN(from) || Number.isNaN(to)) return { window: ctx.window, bucket, points };
+  const price = judgePrice();
+  const start = Math.floor(from / step) * step;
+  const end = Math.floor(Math.max(from, to) / step) * step;
+  for (let t = start; t <= end; t += step) {
+    points.push({ t: new Date(t).toISOString(), decision_usd: 0, llm_usd: 0, same_checks_usd: price ? 0 : null, gated: 0 });
+  }
+  for (const p of played) {
+    const created = Date.parse(p.summary.created_at);
+    const i = Math.floor((created - start) / step);
+    const point = points[i];
+    if (Number.isNaN(created) || point === undefined) continue;
+    point.decision_usd += decisionCost(p);
+    point.llm_usd += auditCost(p.audit);
+    if (!isGated(p)) continue;
+    point.gated += 1;
+    if (price && point.same_checks_usd !== null) point.same_checks_usd += sameChecksCost(p, price);
+  }
+  return { window: ctx.window, bucket, points };
 }
 
 // ------------------------------------------------------------------------------------ coverage

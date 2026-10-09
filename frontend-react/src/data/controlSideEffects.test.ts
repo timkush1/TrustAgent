@@ -12,14 +12,26 @@ function keysInvalidated(batch: StreamEvent[]): string[] {
   return spy.mock.calls.map(([filters]) => String((filters as { queryKey: readonly string[] }).queryKey[0])).sort();
 }
 
+function fullKeysInvalidated(batch: StreamEvent[]): string[] {
+  const qc = new QueryClient();
+  const spy = vi.spyOn(qc, 'invalidateQueries');
+  applyControlSideEffects(qc, batch);
+  return spy.mock.calls.map(([filters]) => (filters as { queryKey: readonly string[] }).queryKey.join('/'));
+}
+
 describe('control-plane side effects of stream events', () => {
   it('refetches policies and evaluators when the policy changes', () => {
     expect(keysInvalidated([ev('policy_updated')])).toEqual(['evaluators', 'policies']);
   });
 
-  it('refetches evaluators and block readiness on calibration and snapshot changes', () => {
-    expect(keysInvalidated([ev('calibration_updated')])).toEqual(['evaluators', 'policies']);
-    expect(keysInvalidated([ev('decision_model_changed')])).toEqual(['evaluators', 'policies']);
+  it('refetches evaluators, block readiness and the calibration records on calibration and snapshot changes', () => {
+    // EVW-1: the evaluator plane's calibration lists and records refresh too.
+    for (const type of ['calibration_updated', 'decision_model_changed']) {
+      expect(keysInvalidated([ev(type)])).toEqual(['evaluator-plane', 'evaluator-plane', 'evaluators', 'policies']);
+      expect(fullKeysInvalidated([ev(type)])).toEqual(
+        expect.arrayContaining(['evaluator-plane/calibrations', 'evaluator-plane/calibration']),
+      );
+    }
   });
 
   it('refreshes the overview, its evidence coverage and the policy after a (re)connect or resync', () => {

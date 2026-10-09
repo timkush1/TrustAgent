@@ -1,14 +1,15 @@
 /**
  * Words for the Evaluators pages (SPEC §3.3 Evaluators, §2.8): calibration progress in the
- * contract's phrasing, question types and evidence needs, and why the P4 actions are not here yet.
+ * contract's phrasing, question types and evidence needs, and when Calibrate now is possible.
  */
 import type { CustomReason } from '@/components/common/DisabledReason';
 import { calibrationStateView } from '@/domain/controlPresentation';
 import { formatCount } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
-import type { CalibrationProgress, EvaluatorSpec } from '@/types/api';
+import { MIN_FIT_LABELS } from '@/lib/decision/calibrate';
+import type { CalibrationProgress, EvaluatorMeta, EvaluatorSpec } from '@/types/api';
 
-/** "Labels 43/200 (31 correct, 12 false alarms)". */
+/** "Labels 43/200 (31 with the problem, 12 fine)". */
 export function progressText(p: CalibrationProgress): string {
   return fillTemplate(copy.evaluators.calibration_progress, {
     n: formatCount(p.human_labels.n),
@@ -25,7 +26,7 @@ export interface ProgressParts {
   falseAlarms: number;
   /** All three requirements met: a measured calibration can be fitted. */
   complete: boolean;
-  /** What is still missing, in words ("157 more labels, 18 more false alarms"). */
+  /** What blocking still needs, in words ("Blocking needs 157 more of your own labels, including at least 18 that are fine."). */
   missing: string | null;
   /** The calibration state in words. */
   stateLabel: string;
@@ -35,17 +36,25 @@ const clamp = (x: number) => Math.min(1, Math.max(0, x));
 
 export function progressParts(p: CalibrationProgress): ProgressParts {
   const more = (have: number, need: number) => Math.max(0, need - have);
-  const parts = [
-    more(p.human_labels.n, p.needed.n) > 0 ? `${formatCount(more(p.human_labels.n, p.needed.n))} more labels` : null,
-    more(p.human_labels.pos, p.needed.pos) > 0 ? `${formatCount(more(p.human_labels.pos, p.needed.pos))} more correct` : null,
-    more(p.human_labels.neg, p.needed.neg) > 0 ? `${formatCount(more(p.human_labels.neg, p.needed.neg))} more false alarms` : null,
-  ].filter((x): x is string => x !== null);
+  const pos = more(p.human_labels.pos, p.needed.pos);
+  const neg = more(p.human_labels.neg, p.needed.neg);
+  // Every new label is one of the two kinds, so the labels still needed are at least both kinds'
+  // shortfalls together: "200 more …, including at least 30 that have the problem and 30 that are fine".
+  const labels = Math.max(more(p.human_labels.n, p.needed.n), pos + neg);
+  const kinds = [pos > 0 ? `${formatCount(pos)} that ${pos === 1 ? 'has' : 'have'} the problem` : null, neg > 0 ? `${formatCount(neg)} that ${neg === 1 ? 'is' : 'are'} fine` : null].filter(
+    (x): x is string => x !== null,
+  );
+  // Only your own labels count toward blocking; a first fit also takes the deep-audit labels.
+  const missing =
+    labels === 0
+      ? null
+      : `Blocking needs ${formatCount(labels)} more of your own ${labels === 1 ? 'label' : 'labels'}${kinds.length > 0 ? `, including at least ${kinds.join(' and ')}` : ''}.`;
   return {
     total: clamp(p.human_labels.n / p.needed.n),
     correct: clamp(p.human_labels.pos / p.needed.pos),
     falseAlarms: clamp(p.human_labels.neg / p.needed.neg),
-    complete: parts.length === 0,
-    missing: parts.length > 0 ? `Needs ${parts.join(', ')} to calibrate for blocking.` : null,
+    complete: missing === null,
+    missing,
     stateLabel: calibrationStateView(p.state).label,
   };
 }
@@ -55,6 +64,18 @@ const QUESTION_TYPES: Record<EvaluatorSpec['question']['type'], string> = {
   choice: 'Pick one',
   score: 'Scale',
 };
+
+/**
+ * The one line under a check's name: its spec's own description, or for a built-in check whose
+ * template has none, the contract copy's (copy.evaluators.builtin_descriptions). Null without one.
+ * The copy lives outside the template because a template's text is part of its spec_sha256.
+ */
+export function evaluatorDescription(detail: Pick<EvaluatorMeta, 'id' | 'origin'> & { latest: { spec: Pick<EvaluatorSpec, 'description'> } }): string | null {
+  const own = detail.latest.spec.description;
+  if (typeof own === 'string' && own.trim() !== '') return own;
+  if (detail.origin !== 'builtin') return null;
+  return (copy.evaluators.builtin_descriptions as Record<string, string | undefined>)[detail.id] ?? null;
+}
 
 export function questionTypeLabel(type: EvaluatorSpec['question']['type']): string {
   return QUESTION_TYPES[type] ?? type;
@@ -71,9 +92,32 @@ export function evidenceNeedLabel(requires: string | undefined): string {
   }
 }
 
-/** The P4 actions this page shows but cannot run yet (no dead buttons: they say why). */
-export const P4_REASONS = {
-  labelling: { text: 'The label queue and calibration from labels arrive in P4.' },
-  adopt: { text: 'Adopting a calibration arrives in P4 (it runs Preview impact first).' },
-  studio: { text: 'Studio arrives in P4.' },
-} satisfies Record<string, CustomReason>;
+/** Your own labels alone are enough for a first fit (the server's count, #45's minimum). */
+export function canFitOnOwnLabels(p: CalibrationProgress): boolean {
+  return p.can_fit_provisional || p.can_fit_measured;
+}
+
+/**
+ * Why "Calibrate now" is not available yet, or null. The server says when your own labels allow a
+ * first fit; a fit may also add the deep-audit labels (a Proxy calibration), so it is offered once
+ * both together reach the fit's minimum. Only deep audits of the uniform sample with a definite
+ * verdict count as labels (the server's proxy_labels), never every deep audit, so the reason says
+ * how many there are. Their split between kinds is the server's to check: too few of one kind
+ * answers 422, which the dialog explains with the counts.
+ */
+export function calibrateReason(p: CalibrationProgress): CustomReason | null {
+  if (p.snapshot === null) return { text: 'No fast-check version has checked traffic for this check yet, so there is nothing to calibrate.' };
+  const more = labelsForFirstFit(p);
+  if (more > 0) {
+    return {
+      text: `Calibrate now needs ${MIN_FIT_LABELS} labels: your own, plus deep audits from the uniform sample (${formatCount(p.proxy_labels)} so far). Label ${more} more ${more === 1 ? 'answer' : 'answers'} in the queue.`,
+    };
+  }
+  return null;
+}
+
+/** How many more labels a first fit needs (0 when one is possible). */
+export function labelsForFirstFit(p: CalibrationProgress): number {
+  if (canFitOnOwnLabels(p)) return 0;
+  return Math.max(0, MIN_FIT_LABELS - (p.human_labels.n + p.proxy_labels));
+}

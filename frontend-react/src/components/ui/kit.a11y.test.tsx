@@ -4,10 +4,10 @@
  * each popup open, in both themes. Contrast is checked from the tokens in
  * charts/tokenContrast.test.ts, because jsdom cannot compute colors.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { configure, getConfig, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Flag, Trash2 } from 'lucide-react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BarChart } from '@/components/charts/BarChart';
 import { OutcomeTimeSeries } from '@/components/charts/OutcomeTimeSeries';
 import { ProbabilityBars } from '@/components/charts/ProbabilityBars';
@@ -230,7 +230,17 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-theme');
 });
 
-describe('UI kit accessibility (axe, jsdom)', () => {
+// axe over the whole kit is the heaviest thing a unit test does here: a full run takes a few
+// seconds on a busy machine, past vitest's 5 s default, so these tests get their own budget, and
+// the popups get longer than testing-library's 1 s to open.
+describe('UI kit accessibility (axe, jsdom)', { timeout: 30_000 }, () => {
+  let asyncUtilTimeout = 1000;
+  beforeAll(() => {
+    asyncUtilTimeout = getConfig().asyncUtilTimeout;
+    configure({ asyncUtilTimeout: 5000 });
+  });
+  afterAll(() => configure({ asyncUtilTimeout }));
+
   it('catches a real violation (the harness is live)', async () => {
     render(
       <button type="button">

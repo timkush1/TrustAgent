@@ -120,10 +120,12 @@ func judgedEngine(t testing.TB) *enginetest.Engine {
 }
 
 // newScenarioEnv starts the gateway as the tests' default stack, adjusted by tune, with the
-// judged engine behind it.
+// judged engine behind it. Trace writes run inline unless tune sets TraceFlush to async; then the
+// batched writer fronts the store as main wires it, and its flush runs after the server's drain.
 func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 	t.Helper()
 	cfg := testConfig(t, envOpts{})
+	cfg.TraceFlush = traceFlushSync
 	if tune != nil {
 		tune(cfg)
 	}
@@ -133,7 +135,7 @@ func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	st := newMemStore()
+	st, flushTraces := wrapTraceWriter(cfg, newMemStore(), slog.New(slog.DiscardHandler))
 	cfg.DatabaseURL = "postgres://configured-for-status"
 	srv, err := newServer(serverDeps{cfg: cfg, engine: client, store: st, log: slog.New(slog.DiscardHandler)})
 	if err != nil {
@@ -146,6 +148,9 @@ func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.shutdown(ctx)
+		if err := flushTraces(ctx); err != nil {
+			t.Errorf("trace writes at shutdown: %v", err)
+		}
 	})
 	return &testEnv{t: t, srv: srv, http: hs, store: st, engine: eng}
 }
@@ -308,17 +313,34 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 // process: the mock decision backend answers from mock_answers, the answers are scripted, and the
 // repo's calibration directory holds the mock calibration payments-faq adopts (as the demo stack's
 // TRUTHTABLE_CALIBRATION_DIR does), so payments-fallback falls back instead of being capped to a flag.
+// It runs with trace writes inline (TRUTHTABLE_TRACE_FLUSH=sync, the e2e stack) and batched
+// (async, the default).
 func TestDemoScenariosEndToEnd(t *testing.T) {
-	runScenarios(t, newScenarioEnv(t, func(cfg *config.Config) {
-		cfg.CalibrationDir = config.RepoPath("config/calibration")
-	}), "demo")
+	for _, flush := range traceFlushModes {
+		t.Run("TRACE_FLUSH="+flush, func(t *testing.T) {
+			runScenarios(t, newScenarioEnv(t, func(cfg *config.Config) {
+				cfg.CalibrationDir = config.RepoPath("config/calibration")
+				cfg.TraceFlush = flush
+			}), "demo")
+		})
+	}
 }
+
+// traceFlushModes are the TRUTHTABLE_TRACE_FLUSH values the scenario sets run under.
+var traceFlushModes = []string{traceFlushSync, "async"}
 
 // TestE2EScenariosAgainstMockUpstream is the e2e stack (docker-compose.e2e.yml, make
 // e2e-scenarios) in process: the compatible decision backend calls mock-upstream's TypeSafe-shaped
 // /v1/systemone over HTTP (X-TrustAgent-Scenario reaches it in test mode, so it answers from
-// mock_answers), and every answer comes from mock-upstream through the upstream path.
+// mock_answers), and every answer comes from mock-upstream through the upstream path. It runs
+// with trace writes inline and batched.
 func TestE2EScenariosAgainstMockUpstream(t *testing.T) {
+	for _, flush := range traceFlushModes {
+		t.Run("TRACE_FLUSH="+flush, func(t *testing.T) { e2eScenariosAgainstMockUpstream(t, flush) })
+	}
+}
+
+func e2eScenariosAgainstMockUpstream(t *testing.T, flush string) {
 	mu, err := mockupstream.New(mockupstream.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -329,6 +351,7 @@ func TestE2EScenariosAgainstMockUpstream(t *testing.T) {
 		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
 		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
 		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
+		cfg.TraceFlush = flush
 	})
 	runScenarios(t, env, "e2e", "--upstream", "all")
 

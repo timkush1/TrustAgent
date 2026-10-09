@@ -64,8 +64,8 @@ describe('hiddenStaticPage', () => {
     expect(hiddenStaticPage('/app/setup')?.name).toBe('Setup');
   });
 
-  it('keeps the replay pages and the Studio', () => {
-    for (const path of ['/app/overview', '/app/traffic', '/app/traffic/abc', '/app/playground', '/app/evaluators/studio', '/app/policiesx']) {
+  it('keeps the replay pages, the Studio and the committed benchmark runs (D72)', () => {
+    for (const path of ['/app/overview', '/app/traffic', '/app/traffic/abc', '/app/playground', '/app/evaluators/studio', '/app/evaluators/benchmarks', '/app/policiesx']) {
       expect(hiddenStaticPage(path), path).toBeNull();
     }
   });
@@ -157,9 +157,54 @@ describe('static build', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Time window' })).toBeNull();
   });
 
+  it('shows the recording’s Savings in its own words: per minute, one basis per comparison, no live sampling', async () => {
+    await renderStatic('/app/overview?tab=savings');
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    // The recording spans minutes, so the chart draws per minute, as Requests by outcome does.
+    const plot = await within(chart).findByRole('slider', { name: 'What checking cost per minute' });
+    expect(plot).toHaveAccessibleDescription(/^Checking \d+ answers cost \$[\d.]+ over the replayed traffic\./);
+    // The recording's mock judge is free while it deep-audits most answers: the chart never sets
+    // that spend against the published full audit. The option stays, disabled, and says why.
+    expect(within(chart).getByRole('radio', { name: 'Full audit' })).toHaveAttribute('data-disabled');
+    expect(within(chart).getByRole('radiogroup', { name: 'Compare with' })).toHaveAccessibleDescription(
+      /^Full audit is not comparable on the simulated demo: its mock judge is free and it deep-audits about \d+ in 100 answers\./,
+    );
+    expect(plot).not.toHaveAccessibleDescription(/auditing every answer/);
+    // The table keeps the published figure, labelled an estimate, and says what to read it against.
+    const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ });
+    expect(within(row).getByRole('button', { name: /^Estimate:/ })).toBeInTheDocument();
+    expect(row).toHaveTextContent(/Compare it with TrustAgent with a real judge \(\$3 per 1,000 answers\) above, not with this simulated total/);
+    // With a real judge, per 1,000 answers: the published estimates on one basis; the demo's own
+    // rate comes after, in its own line.
+    expect([...document.querySelectorAll('[data-alternative]')].map((el) => el.getAttribute('data-alternative'))).toEqual([
+      'real_judge',
+      'llm_same_checks',
+      'llm_full_claim_audit',
+    ]);
+    expect(document.querySelector('[data-alternative="real_judge"]')).toHaveTextContent(
+      /\$3.*Per 1,000 answers at the shipped defaults: a fast check on every answer \(\$0\.21\) \+ a deep audit of about 8 in 100 answers \(about \$2\.80\)/,
+    );
+    expect(document.querySelector('[data-alternative="llm_same_checks"]')).toHaveTextContent(/\$5\.75/);
+    expect(document.querySelector('[data-alternative="llm_full_claim_audit"]')).toHaveTextContent(/\$35\.50/);
+    expect(screen.getByText(/^The deep audit reads \$0 because the demo’s mock judge is free: the figures with a real judge are below\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^This demo deep-audits about \d+ in 100 answers to show the audit flow/)).toBeInTheDocument();
+    // No window to pick and no gateway to ask: no window words, no made-up sampling count.
+    expect(screen.getByText('Over the replayed traffic, and per 1,000 checked answers.')).toBeInTheDocument();
+    expect(screen.queryByText(/last 24 hours|pick a longer window|audits today/)).toBeNull();
+    expect(screen.getByText(/^Sampling status is not part of the recording\./)).toBeInTheDocument();
+    expect(screen.getByText('Not in the recording')).toBeInTheDocument();
+  });
+
   it('opens the Studio placeholder, labelled coming soon', async () => {
     await renderStatic('/app/evaluators/studio');
     expect(await screen.findByText('Coming soon')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Write your own checks');
+  });
+
+  it('opens Benchmarks from the committed runs, with no gateway (D72)', async () => {
+    const { requests } = await renderStatic('/app/evaluators/benchmarks');
+    expect(await screen.findByText(/Committed runs only: every figure was measured, none simulated\./)).toBeInTheDocument();
+    expect(screen.queryByText(/needs a running gateway/i)).toBeNull();
+    expect(requests.filter((r) => r.includes('/api/'))).toEqual([]);
   });
 });

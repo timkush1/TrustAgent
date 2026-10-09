@@ -100,3 +100,8 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=5 \
     CMD ["python", "-m", "truthtable.healthcheck"]
 
 CMD ["python", "-m", "truthtable.main"]
+
+# The git revision the image was built from (make passes `git rev-parse --short HEAD`). Declared
+# and labelled last: a label is metadata only, so a new commit rebuilds no layer above it.
+ARG GIT_SHA=""
+LABEL org.opencontainers.image.revision="${GIT_SHA}"

@@ -61,6 +61,10 @@ type DecisionRow struct {
 const decisionEvaluatorsSQL = `(CASE WHEN jsonb_typeof(gd.decision->'evaluators') = 'object'
 	THEN gd.decision->'evaluators' ELSE '{}'::jsonb END)`
 
+// disagreementSQL holds when the decision gd recorded that its evaluators disagreed (the
+// decisions list's disagreement filter and the Studio's disagreement samples).
+const disagreementSQL = `COALESCE(gd.decision->'disagreement' = 'true'::jsonb, false)`
+
 // decisionRowSelect reads attempt-0 gate_decisions rows (alias gd) with the trace's deep-audit
 // verdict (through traces.audit_id, as a trace summary reports it) and the evaluator levels.
 const decisionRowSelect = `
@@ -118,7 +122,7 @@ func (s *PostgresStore) ListDecisions(ctx context.Context, f DecisionFilter) ([]
 		where = append(where, "EXISTS (SELECT 1 FROM jsonb_each("+decisionEvaluatorsSQL+") e WHERE "+strings.Join(conds, " AND ")+")")
 	}
 	if f.Disagreement != nil {
-		where = append(where, "COALESCE(gd.decision->'disagreement' = 'true'::jsonb, false) = "+arg(*f.Disagreement))
+		where = append(where, disagreementSQL+" = "+arg(*f.Disagreement))
 	}
 	if f.Late != nil {
 		where = append(where, "gd.late = "+arg(*f.Late))

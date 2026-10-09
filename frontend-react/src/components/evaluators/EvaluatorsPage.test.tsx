@@ -1,14 +1,18 @@
 import { configure, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { delay, http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it } from 'vitest';
+import { copy } from '@/domain/presentation';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { calibrationProgress, evaluatorDetail, evaluatorMeta, evaluatorMetas, evaluatorVersion, reliability } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
-import { installMswServer } from '@/test/msw';
+import { API, installMswServer, server } from '@/test/msw';
 import { stopLive } from '@/test/renderLive';
+import { warmRoutes } from '@/test/warmRoutes';
 
 installMswServer();
+warmRoutes('/app/evaluators', '/app/evaluators/groundedness');
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
 
@@ -21,17 +25,45 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(within(g).getByText('Grounding')).toBeInTheDocument();
     expect(within(g).getByText(/Built-in · version 1/)).toBeInTheDocument();
     expect(within(g).getAllByText(/support-bot|payments-faq/)).toHaveLength(2);
-    expect(await within(g).findByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
-    expect(within(g).getByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
-    expect(within(g).getByText(/Needs 157 more labels, 18 more false alarms/)).toBeInTheDocument();
-    // P4 actions say why they are not here yet.
-    expect(within(g).getByRole('button', { name: 'Label queue' })).toHaveAttribute('aria-disabled', 'true');
-    expect(within(g).getByText('The label queue and calibration from labels arrive in P4.')).toBeInTheDocument();
+    // One meter and one next step on a card.
+    expect(await within(g).findByRole('meter', { name: 'Labels' })).toHaveAttribute('aria-valuenow', '43');
+    expect(within(g).getAllByRole('meter')).toHaveLength(1);
+    expect(within(g).getByText('Blocking needs 157 more of your own labels, including at least 18 that are fine.')).toBeInTheDocument();
+    // Label queue (this check's answers) for an admin; Calibrate now stays on the check's own
+    // Calibration tab, which the card links to once a fit is possible.
+    expect(within(g).getByRole('link', { name: 'Label queue for Groundedness' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/app\/evaluators\/labels\?evaluator=groundedness(%40|@)1$/),
+    );
+    expect(within(g).queryByRole('button', { name: /Calibrate now/ })).toBeNull();
+    expect(within(g).getByRole('link', { name: 'Calibrate Groundedness' })).toHaveAttribute('href', '/app/evaluators/groundedness?tab=calibration');
+    expect(screen.getByRole('link', { name: 'New check' })).toHaveAttribute('href', '/app/evaluators/studio');
+    expect(screen.getByRole('navigation', { name: 'Evaluators sections' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page');
     // Checks that run somewhere come first.
     const names = screen.getAllByRole('article').map((a) => a.getAttribute('aria-labelledby') && a.querySelector('h3')?.textContent);
     expect(names.slice(0, 4)).toEqual(['Contradiction', 'Groundedness', 'Unapproved commitments', 'Off-brand tone']);
     const tone = await card('Off-brand tone');
     expect(within(tone).getByText(/Watching/)).toBeInTheDocument();
+    // Every built-in check says what it flags: its template's own line, or the contract copy's.
+    expect(within(g).getByText('Flags answers that state facts the evidence does not contain.')).toBeInTheDocument();
+    expect(within(tone).getByText(copy.evaluators.builtin_descriptions.off_brand_tone)).toBeInTheDocument();
+  });
+
+  it('gives a card one short next step beside the label queue: the labels a first fit needs', async () => {
+    const control = createControlApi();
+    control.state.evaluatorDetails.groundedness = evaluatorDetail('groundedness', {
+      calibration_progress: calibrationProgress('groundedness@1', { human_labels: { n: 2, pos: 1, neg: 1 }, proxy_labels: 5, can_fit_provisional: false }),
+    });
+    renderPage('/app/evaluators', { control });
+    const g = await card('Groundedness');
+    expect(await within(g).findByText('1 label to a first calibration')).toBeInTheDocument();
+    // The full reason is on the check's own page, not repeated on every card.
+    expect(within(g).queryByText(/^Calibrate now needs/)).toBeNull();
+    expect(within(g).queryByText(/^Blocking needs/)).toBeNull();
+    // No fit to open yet: the card offers the label queue only.
+    expect(within(g).queryByRole('link', { name: /^Calibrate/ })).toBeNull();
+    expect(within(g).queryByRole('button', { name: /Calibrate now/ })).toBeNull();
   });
 
   it('filters by name, category and use, and clears the filters', async () => {
@@ -75,6 +107,24 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     expect(await card('Groundedness')).toBeInTheDocument();
   });
 
+  it('shows a loading state after 200 ms, then the cards', async () => {
+    renderPage('/app/evaluators');
+    server.use(
+      http.get(`${API}/api/evaluators`, async () => {
+        await delay(600);
+        return HttpResponse.json({ items: evaluatorMetas() });
+      }),
+    );
+    expect(await screen.findByText(copy.states.loading)).toBeInTheDocument();
+    expect(await card('Groundedness')).toBeInTheDocument();
+  });
+
+  it('has an empty state with a next step when the proxy loaded no evaluators', async () => {
+    renderPage('/app/evaluators', { control: createControlApi({ evaluators: [] }) });
+    expect(await screen.findByText('No evaluators yet')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Describe a check in Studio' })).toHaveAttribute('href', '/app/evaluators/studio');
+  });
+
   it('degrades when the library is not served', async () => {
     renderPage('/app/evaluators', { control: createControlApi({ evaluators: undefined }) });
     expect(await screen.findByText('The evaluator library is not available on this proxy')).toBeInTheDocument();
@@ -83,7 +133,7 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
   it('has no axe violations', async () => {
     const { container } = renderPage('/app/evaluators');
     const g = await card('Groundedness');
-    await within(g).findByText(/Labels 43\/200/);
+    await within(g).findByRole('meter', { name: 'Labels' });
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
 });
@@ -96,9 +146,10 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
     expect(screen.getByText('Needs your documents (not checked without them)')).toBeInTheDocument();
     expect(screen.getByText('0.80')).toBeInTheDocument();
     expect(screen.getByText('0.95')).toBeInTheDocument();
-    expect(screen.getByText('Labels 43/200 (31 correct, 12 false alarms)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText(/Adopting a calibration arrives in P4/)).toBeInTheDocument();
+    expect(screen.getByText('Labels 43/200 (31 with the problem, 12 fine)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Calibrate and adopt' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('link', { name: 'Duplicate and edit' })).toHaveAttribute('href', '/app/evaluators/studio/groundedness/1');
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('draws the reliability chart with its caption, table and sources', async () => {
@@ -149,7 +200,7 @@ describe('Evaluator detail', { timeout: 20_000 }, () => {
       versions: [v1meta, v2meta],
       calibration_progress: calibrationProgress('groundedness@2'),
     });
-    renderPage('/app/evaluators/groundedness', { control });
+    renderPage('/app/evaluators/groundedness?tab=versions', { control });
     expect(await screen.findByText('Clearer criteria')).toBeInTheDocument();
     const diff = await screen.findByRole('region', { name: 'Version 1 → version 2' });
     expect(diff.textContent).toContain('A sharper description.');

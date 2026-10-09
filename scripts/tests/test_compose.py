@@ -22,11 +22,14 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 DEMO = (ROOT / "docker-compose.demo.yml").read_text(encoding="utf-8")
 E2E = (ROOT / "docker-compose.e2e.yml").read_text(encoding="utf-8")
+ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8")
+DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
 ALIASES: Dict[str, str] = {
     alias: entry["name"] for entry in REGISTRY["keys"] for alias in entry.get("aliases", [])
 }
+
 
 # Container wiring: set explicitly per service in docker-compose.yml, so a
 # host-oriented .env cannot point a container at localhost.
@@ -83,6 +86,7 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.yml", COMPOSE),
             ("docker-compose.demo.yml", DEMO),
             ("docker-compose.e2e.yml", E2E),
+            ("docker-compose.onboarding.yml", ONBOARDING),
         ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
@@ -105,6 +109,7 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.yml", COMPOSE),
             ("docker-compose.demo.yml", DEMO),
             ("docker-compose.e2e.yml", E2E),
+            ("docker-compose.onboarding.yml", ONBOARDING),
         ):
             for key in set(pattern.findall(text)):
                 if key in allowed_foreign:
@@ -118,12 +123,17 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(COMPOSE, r"(?m)^name: truthtable$")
         self.assertRegex(DEMO, r"(?m)^name: truthtable-demo$")
         self.assertRegex(E2E, r"(?m)^name: truthtable-e2e$")
+        self.assertRegex(ONBOARDING, r"(?m)^name: truthtable-onboarding$")
 
     def test_every_published_port_binds_bind_addr(self) -> None:
-        ports = re.findall(r'^\s+- "([^"]*:\d+)"', COMPOSE, re.MULTILINE)
-        self.assertTrue(ports)
-        for port in ports:
-            self.assertTrue(port.startswith("${BIND_ADDR:-127.0.0.1}:"), port)
+        for name, text in (
+            ("docker-compose.yml", COMPOSE),
+            ("docker-compose.onboarding.yml", ONBOARDING),
+        ):
+            ports = re.findall(r'^\s+- "([^"]*:\d+)"', text, re.MULTILINE)
+            self.assertTrue(ports, name)
+            for port in ports:
+                self.assertTrue(port.startswith("${BIND_ADDR:-127.0.0.1}:"), f"{name}: {port}")
 
     def test_app_images_and_pull_policy(self) -> None:
         for service in ("proxy", "engine", "dashboard"):
@@ -225,6 +235,93 @@ class ComposeTest(unittest.TestCase):
             "LLM_PROVIDER: mock",
         ):
             self.assertIn(line, DEMO)
+
+    def test_onboarding_starts_a_fresh_install_on_mock_upstream(self) -> None:
+        # No decision-model settings and no env admin key (whatever .env holds), so the
+        # dashboard opens on the setup wizard; sign-in required; debug logs for the leak check.
+        proxy = ONBOARDING.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0] + "\n"
+        for key in (
+            "TRUTHTABLE_JEV_BACKEND",
+            "TRUTHTABLE_JEV_API_KEY",
+            "TRUTHTABLE_JEV_BASE_URL",
+            "TRUTHTABLE_JEV_PATH",
+            "TRUTHTABLE_JEV_MODEL",
+            "TRUTHTABLE_ADMIN_KEYS",
+            "TRUTHTABLE_ADMIN_KEY",
+        ):
+            self.assertIn(f'      {key}: ""\n', proxy, key)
+            # Each one is set in the e2e stack or passed through from .env: the override must
+            # reach it, so it has to be a key (or an alias of one) the proxy reads.
+            self.assertIn("proxy", KEYS[ALIASES.get(key, key)]["services"], key)
+        self.assertIn('      TRUTHTABLE_PUBLIC_READ: "false"\n', proxy)
+        self.assertIn("      TRUTHTABLE_LOG_LEVEL: debug\n", proxy)
+        # Connect OpenRouter and the judge stay on the mocks the e2e stack configures.
+        self.assertIn("      TRUTHTABLE_OPENROUTER_BASE_URL: http://mock-upstream:8090\n", proxy)
+        self.assertIn("TRUTHTABLE_OPENROUTER_BASE_URL: http://mock-upstream:8090", E2E)
+        engine = ONBOARDING.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0] + "\n"
+        self.assertIn("      LLM_PROVIDER: mock\n", engine)
+        self.assertIn("      TRUTHTABLE_LOG_LEVEL: debug\n", engine)
+        # LOG_LEVEL wins in the engine (truthtable.config): set, not left to .env.
+        self.assertIn("      LOG_LEVEL: DEBUG\n", engine)
+        # The browser reaches mock-upstream's sign-in page on MOCK_UPSTREAM_HOST_PORT.
+        mock = ONBOARDING.split("\n  mock-upstream:\n", 1)[1]
+        self.assertIn(
+            '      - "${BIND_ADDR:-127.0.0.1}:${MOCK_UPSTREAM_HOST_PORT:-18090}:8090"', mock
+        )
+        key = KEYS["MOCK_UPSTREAM_HOST_PORT"]
+        self.assertEqual((key["services"], key["default"]), (["compose"], "18090"))
+
+    def test_onboarding_targets_layer_the_e2e_stack_and_delete_volumes(self) -> None:
+        compose = re.search(r"(?m)^ONBOARDING_COMPOSE\s*=((?:.*\\\n)*.*)$", DX_MK)
+        self.assertIsNotNone(compose)
+        files = re.findall(r"-f (\S+)", compose.group(1) if compose else "")
+        self.assertEqual(
+            files, ["docker-compose.yml", "docker-compose.e2e.yml", "docker-compose.onboarding.yml"]
+        )
+        self.assertIn("--profile e2e", compose.group(1) if compose else "")
+        self.assertRegex(DX_MK, r"(?m)^ONBOARDING_PROJECT \?= truthtable-onboarding$")
+        self.assertRegex(DX_MK, r"(?m)^ONBOARDING_BUILD\s+\?= --build$")
+        for target in (
+            "onboarding-up",
+            "onboarding-down",
+            "onboarding-logs",
+            "onboarding-setup-url",
+        ):
+            self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
+        down = DX_MK.split("\nonboarding-down:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(ONBOARDING_COMPOSE) down -v", down)
+        url = DX_MK.split("\nonboarding-setup-url:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("--url-only --project $(ONBOARDING_PROJECT)", url)
+        check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(ONBOARDING_COMPOSE) config -q", check)
+
+    def test_images_are_built_with_their_git_revision(self) -> None:
+        # GET /api/export/replay names the revision in a recording; the build context has no .git,
+        # so make passes `git rev-parse --short HEAD` and the Dockerfiles stamp it.
+        self.assertEqual(COMPOSE.count("        GIT_SHA: ${GIT_SHA:-}\n"), 3)
+        self.assertRegex(
+            DX_MK, r"(?m)^GIT_SHA := \$\(shell git rev-parse --short HEAD 2>/dev/null\)$"
+        )
+        self.assertRegex(DX_MK, r"(?m)^export GIT_SHA$")
+        for dockerfile in ("backend-go", "backend-python", "frontend-react"):
+            text = (ROOT / dockerfile / "Dockerfile").read_text(encoding="utf-8")
+            self.assertIn('ARG GIT_SHA=""', text, dockerfile)
+            self.assertIn('org.opencontainers.image.revision="${GIT_SHA}"', text, dockerfile)
+            # In the runtime stage the revision is declared and labelled last, after every RUN
+            # and COPY: a new commit must not rebuild (or re-download) the layers above it.
+            final = text.rsplit("\nFROM ", 1)[1]
+            instructions = re.findall(r"(?m)^([A-Z]+)\s+(.*)$", final)
+            self.assertEqual(
+                instructions[-2:],
+                [
+                    ("ARG", 'GIT_SHA=""'),
+                    ("LABEL", 'org.opencontainers.image.revision="${GIT_SHA}"'),
+                ],
+                dockerfile,
+            )
+            self.assertEqual(final.count("GIT_SHA"), 2, dockerfile)
+        go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("-X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}", go)
 
 
 if __name__ == "__main__":

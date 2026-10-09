@@ -48,6 +48,8 @@ type mockClient struct {
 	scenarios map[string]map[string]*decision.RawAnswer
 	// fallbacks holds, per scenario, the answers to the re-gate of its scripted fallback answer.
 	fallbacks map[string]*mockFallback
+	// studio holds the answers to the Studio drafter examples' samples (mock_studio.go).
+	studio map[string]*decision.RawAnswer
 	// costs receives one simulated cost event per call.
 	costs  CostSink
 	status statusTracker
@@ -77,6 +79,9 @@ func newMock(cfg MockConfig, model string) (*mockClient, error) {
 	}
 	if m.scenarios, m.fallbacks, err = parseScenarios(b); err != nil {
 		return nil, fmt.Errorf("jev: mock fixtures: %w", err)
+	}
+	if m.studio, err = loadStudioSamples(); err != nil {
+		return nil, fmt.Errorf("jev: mock studio samples: %w", err)
 	}
 	return m, nil
 }
@@ -143,7 +148,8 @@ func (m *mockClient) Status() Status {
 }
 
 // Decide answers every question of req. In scenario mode a question the scenario scripts gets that
-// answer; any other question fails the call when strict and gets a hash answer otherwise.
+// answer, as does a Studio drafter example's question about one of its own samples; any other
+// question fails the call when strict and gets a hash answer otherwise.
 func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) (*Response, error) {
 	start := time.Now()
 	if m.cfg.Latency > 0 {
@@ -176,8 +182,18 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 				answers[qid] = cloneAnswer(a)
 				continue
 			}
+			if a := m.studioAnswer(req.Questions[qid], req.State); a != nil {
+				answers[qid] = a
+				continue
+			}
 			if m.cfg.Strict {
 				return nil, &Error{Kind: KindMockFixtureMissing, Message: missingMessage(opt.Scenario, scripted != nil, qid)}
+			}
+			// A question about a list of names (a drafted competitor check) does not fire at
+			// random on answers that name none of them.
+			if a := namesAnswer(req.Questions[qid], req.State); a != nil {
+				answers[qid] = a
+				continue
 			}
 		}
 		answers[qid] = m.hashAnswer(qid, req.Questions[qid], stateJCS)
@@ -187,10 +203,9 @@ func (m *mockClient) Decide(ctx context.Context, req *Request, opt CallOptions) 
 	if est, err := decision.Est(map[string]any{"model": req.Model, "state": req.State, "questions": req.Questions}, decision.DefaultCPT); err == nil {
 		tokens += est
 	}
-	// Priced in exact integer steps (tokens × $0.042 per 1e6 is tokens × 42 / 1e9), so the cost is the
-	// double nearest its decimal value and serializes as, say, 2.3772e-05 rather than
-	// 0.000023772000000000002.
-	cost := float64(tokens) * (DefaultPricePerMTok * 1e3) / 1e9
+	// What the call would cost at the list price, as the double nearest its decimal value (so it
+	// serializes as, say, 2.3772e-05 rather than 0.000023772000000000002); labelled simulated.
+	cost := price{perMTok: DefaultPricePerMTok}.usd(tokens)
 	snapshot := req.Model
 	if !strings.HasPrefix(snapshot, "mock/") {
 		snapshot = DefaultMockModel

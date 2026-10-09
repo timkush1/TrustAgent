@@ -1,0 +1,24 @@
+{
+  "samples": [
+    {
+      "id": "t1",
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "evidence": [
+        {
+          "id": "refund-policy.md",
+          "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+          "source": "request_system"
+        }
+      ],
+      "system_instructions": "You are the Acme support assistant."
+    },
+    {
+      "id": "t2",
+      "trace_id": "01a0e781-0c1d-7a42-9b7e-3f5d2c8a1b64",
+      "user_request": "Do you ship to Canada?",
+      "assistant_response": "Yes, shipping to Canada is free on every order and arrives next day."
+    }
+  ]
+}

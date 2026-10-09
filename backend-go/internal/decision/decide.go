@@ -104,10 +104,18 @@ type Exclusion struct {
 
 // CalibrationEntry is the calibration that applies to an evaluator for the current snapshot.
 type CalibrationEntry struct {
-	Table   []float64 `json:"table"`
-	Quality string    `json:"quality"`
-	State   string    `json:"state"`
+	Table   []float64 `json:"table,omitempty"`
+	Quality string    `json:"quality,omitempty"`
+	// State is a calibration state, or CalibrationOtherSnapshot when the target is calibrated
+	// only on other snapshots; such an entry has no table and calibrates nothing (D56).
+	State string `json:"state"`
+	// FitStateFields are the state fields the calibration was fitted with (D56).
+	FitStateFields []string `json:"fit_state_fields,omitempty"`
 }
+
+// CalibrationOtherSnapshot is decide-input.v1 CalibrationEntryState "other_snapshot" (D56). It
+// never appears in decision.v1 calibration_state.
+const CalibrationOtherSnapshot = "other_snapshot"
 
 // Meta describes how the gate ran.
 type Meta struct {
@@ -415,21 +423,35 @@ func Decide(in *Input) (*Core, error) {
 		}
 	}
 
-	// CALIBRATION CAP
+	// CALIBRATION CAP. The reason says why (D56): uncalibrated_snapshot when every uncalibrated
+	// member is calibrated only on another snapshot (the decision model moved on), otherwise
+	// calibration_missing.
 	uncalibratedCap := false
+	capReason := ReasonCalibrationMissing
 	if (action == ActionBlock || action == ActionFallback) && !failClosed && in.Policy.RequireCalibration && !detBlock {
-		uncal := slices.ContainsFunc(blockSet, func(e *evalState) bool { return !e.calib })
-		if noEvidence {
-			fc := findFactualClaims(evals)
-			uncal = uncal || fc == nil || !fc.calib
+		var uncalRefs []string
+		for _, e := range blockSet {
+			if !e.calib {
+				uncalRefs = append(uncalRefs, e.in.Ref)
+			}
 		}
-		if uncal {
+		if noEvidence {
+			if fc := findFactualClaims(evals); fc == nil {
+				uncalRefs = append(uncalRefs, FactualClaimsRef)
+			} else if !fc.calib {
+				uncalRefs = append(uncalRefs, fc.in.Ref)
+			}
+		}
+		if len(uncalRefs) > 0 {
 			action = ActionFlag
 			if degraded == nil {
 				d := DegradedUncalibrated
 				degraded = &d
 			}
 			uncalibratedCap = true
+			if !slices.ContainsFunc(uncalRefs, func(ref string) bool { return in.Calibration[ref].State != CalibrationOtherSnapshot }) {
+				capReason = ReasonUncalibratedSnapshot
+			}
 		}
 	}
 
@@ -516,7 +538,7 @@ func Decide(in *Input) (*Core, error) {
 		{noEvidence, ReasonNoEvidence},
 		{streamNotBuffered, ReasonStreamNotBuffered},
 		{failClosed, ReasonFailClosed},
-		{uncalibratedCap, ReasonUncalibratedSnapshot},
+		{uncalibratedCap, capReason},
 	} {
 		if r.on {
 			out.Reasons = append(out.Reasons, r.reason)
@@ -542,8 +564,14 @@ func assessEvaluator(e *evalState, in *Input, qid string, excluded map[string]st
 		r.ThresholdSpace = SpaceRaw
 	}
 	cal, hasCal := in.Calibration[e.in.Ref]
+	if hasCal && cal.State == CalibrationOtherSnapshot {
+		cal, hasCal = CalibrationEntry{}, false // calibrated only on other snapshots: nothing applies here
+	}
 	if hasCal {
 		r.CalibrationState = cal.State
+		if len(cal.FitStateFields) > 0 && !sameFieldSet(cal.FitStateFields, spec.StateFields) {
+			r.CalibrationWarning = ptr(CalibrationWarningStateFields)
+		}
 	}
 	warn := spec.Outcomes.WarnAt
 	if e.in.Thresholds.WarnAt != nil {
@@ -665,6 +693,14 @@ func noEvidenceApplies(in *Input, evals, active []*evalState, excluded map[strin
 		return true
 	}
 	return fired(DetNumbers) || fired(DetDates)
+}
+
+// sameFieldSet reports whether two lists name the same state fields (order and repeats aside).
+func sameFieldSet(a, b []string) bool {
+	x, y := slices.Clone(a), slices.Clone(b)
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(slices.Compact(x), slices.Compact(y))
 }
 
 // findFactualClaims returns the factual_claims evaluator (internal or attached), if any.
@@ -849,6 +885,12 @@ func checkInput(in *Input) error {
 		}
 	}
 	for ref, c := range in.Calibration {
+		if c.State == CalibrationOtherSnapshot {
+			if len(c.Table) > 0 {
+				return fmt.Errorf("decide: calibration for %s: an other_snapshot entry has no table", ref)
+			}
+			continue
+		}
 		if err := CheckCalibrationTable(c.Table); err != nil {
 			return fmt.Errorf("decide: calibration for %s: %w", ref, err)
 		}

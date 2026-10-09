@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,20 +14,20 @@ import (
 	"github.com/truthtable/backend-go/internal/decision"
 	"github.com/truthtable/backend-go/internal/policy"
 	"github.com/truthtable/backend-go/internal/store"
-	"github.com/truthtable/contracts"
 )
 
 // GET /api/overview, /api/roi/summary and /api/evidence/coverage (SPEC §2.4 rows 9, 47 and 50;
-// §7.1, §7.4). Every figure is counted from stored traces, decisions, audits and cost rows, and
-// carries its value label: measured, estimate (a model of what something would have cost) or
-// simulated (mock backends, test-mode answers). Mock and test traffic is left out unless
-// include_mock is set, which defaults to the demo flag.
+// §7.1, §7.4; the ROI handlers are in roi_api.go). Every figure is counted from stored traces,
+// decisions, audits and cost rows, and carries its value label: measured, estimate (a model of
+// what something would have cost) or simulated (mock backends, test-mode answers). Mock and test
+// traffic is left out unless include_mock is set, which defaults to the demo flag.
 
 // statsStore reads the aggregates (store.PostgresStore).
 type statsStore interface {
 	Overview(ctx context.Context, f store.StatsFilter, bucket time.Duration) (*store.OverviewData, error)
 	EvidenceCoverage(ctx context.Context, f store.StatsFilter) (*store.CoverageData, error)
 	Roi(ctx context.Context, f store.StatsFilter) (*store.RoiData, error)
+	RoiSeries(ctx context.Context, f store.StatsFilter, bucket time.Duration) ([]store.RoiPoint, error)
 	UniformToday(ctx context.Context, now time.Time, limit int) (int64, *time.Time, error)
 }
 
@@ -103,6 +100,7 @@ type outcomePoint struct {
 	T          time.Time `json:"t"`
 	Passed     int64     `json:"passed"`
 	WouldFlag  int64     `json:"would_flag"`
+	WouldBlock int64     `json:"would_block"`
 	Flagged    int64     `json:"flagged"`
 	Blocked    int64     `json:"blocked"`
 	Replaced   int64     `json:"replaced"`
@@ -239,6 +237,21 @@ func rate(n store.RateCounts, label, basis string) labelledRate {
 
 func pct(p store.Percentiles) percentiles { return percentiles{P50: p.P50, P95: p.P95} }
 
+// outcomeSeries is OverviewStats.outcomes_series: each bucket's count per outcome, the
+// observe-only answers the gate would have flagged and those it would have blocked apart.
+func outcomeSeries(points []store.OutcomePoint) []outcomePoint {
+	out := make([]outcomePoint, 0, len(points))
+	for _, p := range points {
+		out = append(out, outcomePoint{
+			T: p.T, Passed: p.Counts["passed"],
+			WouldFlag: p.Counts["would_flag"], WouldBlock: p.Counts["would_block"],
+			Flagged: p.Counts["flagged"], Blocked: p.Counts["blocked"], Replaced: p.Counts["replaced"],
+			NotChecked: p.Counts["not_checked"], Error: p.Counts["error"],
+		})
+	}
+	return out
+}
+
 // dataLabel is measured, or simulated when the counted traffic includes simulated traces.
 func (s *server) dataLabel(mock int64) string {
 	if s.cfg.DemoMode || mock > 0 {
@@ -288,15 +301,7 @@ func (s *server) handleOverview(c *gin.Context) {
 		StageLatencyMs:            map[string]percentiles{},
 		BackendMix:                o.BackendMix,
 	}
-	for _, p := range o.Series {
-		out.OutcomesSeries = append(out.OutcomesSeries, outcomePoint{
-			T: p.T, Passed: p.Counts["passed"],
-			// Observe-mode answers the gate would have acted on (would flag or would block).
-			WouldFlag: p.Counts["would_flag"] + p.Counts["would_block"],
-			Flagged:   p.Counts["flagged"], Blocked: p.Counts["blocked"], Replaced: p.Counts["replaced"],
-			NotChecked: p.Counts["not_checked"], Error: p.Counts["error"],
-		})
-	}
+	out.OutcomesSeries = append(out.OutcomesSeries, outcomeSeries(o.Series)...)
 	for _, r := range o.Caught {
 		out.WhatWasCaught = append(out.WhatWasCaught, caughtRow{Reason: r.Reason, Count: r.Count, LatestTraceID: r.LatestTraceID})
 	}
@@ -381,269 +386,12 @@ func (s *server) handleEvidenceCoverage(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// roiSummary is api.ts RoiSummary.
-type roiSummary struct {
-	Window         string           `json:"window"`
-	GatedResponses int64            `json:"gated_responses"`
-	Simulated      bool             `json:"simulated"`
-	DecisionCost   roiDecisionCost  `json:"decision_cost"`
-	LLMCost        roiLLMCost       `json:"llm_cost"`
-	TotalPer1k     labelledValue    `json:"total_per_1k"`
-	Counterfactual []counterfactual `json:"counterfactuals"`
-	Savings        roiSavings       `json:"savings_vs_same_checks"`
-	Outcomes       roiOutcomes      `json:"outcomes"`
-	LatencyMs      roiLatency       `json:"latency_ms"`
-	Sampling       roiSampling      `json:"sampling"`
-	ThirdParty     []string         `json:"third_party"`
-}
-
-type roiDecisionCost struct {
-	labelledValue
-	USD   float64  `json:"usd"`
-	Per1k *float64 `json:"per_1k"`
-}
-
-type roiLLMCost struct {
-	labelledValue
-	USD         float64          `json:"usd"`
-	Audits      int64            `json:"audits"`
-	BySelection map[string]int64 `json:"by_selection"`
-}
-
-type counterfactual struct {
-	Kind   string   `json:"kind"`
-	Method string   `json:"method"`
-	USD    *float64 `json:"usd"`
-	Low    *float64 `json:"low"`
-	High   *float64 `json:"high"`
-	Per1k  *float64 `json:"per_1k"`
-	N      int64    `json:"n"`
-	Label  string   `json:"label"`
-	Basis  string   `json:"basis"`
-}
-
-type roiSavings struct {
-	USDLow  *float64 `json:"usd_low"`
-	USDHigh *float64 `json:"usd_high"`
-	Label   string   `json:"label"`
-}
-
-type roiOutcomes struct {
-	Flagged     int64  `json:"flagged"`
-	Blocked     int64  `json:"blocked"`
-	Fallback    int64  `json:"fallback"`
-	NotAssessed int64  `json:"not_assessed"`
-	Label       string `json:"label"`
-}
-
-type roiLatency struct {
-	GateP50          *float64 `json:"gate_p50"`
-	GateP95          *float64 `json:"gate_p95"`
-	DeadlineMissRate *float64 `json:"deadline_miss_rate"`
-	Label            string   `json:"label"`
-}
-
-type roiSampling struct {
-	UniformRate      float64    `json:"uniform_rate"`
-	UniformToday     int64      `json:"uniform_today"`
-	UniformCap       int        `json:"uniform_cap"`
-	UniformStoppedAt *time.Time `json:"uniform_stopped_at"`
-	LLMCapHitAt      *time.Time `json:"llm_cap_hit_at"`
-}
-
-// costLabel labels a sum by where its rows' costs came from: simulated when any is simulated,
-// estimate when any was computed from tokens and the price table (or is unknown), else measured
-// (reported by the provider per call).
-func costLabel(c store.CostCounts, what string) (string, string) {
-	switch {
-	case c.Simulated > 0:
-		return labelSimulated, what + ": simulated by the mock backends, not a real spend"
-	case c.Computed+c.Other > 0:
-		return labelEstimate, what + ": tokens × the price table where the provider did not report a cost"
-	case c.Reported > 0:
-		return labelMeasured, what + ": cost reported by the provider per call"
-	}
-	return labelMeasured, what + ": no calls in this window"
-}
-
-func (s *server) handleRoiSummary(c *gin.Context) {
-	if !s.statsReady(c) {
-		return
-	}
-	q, ok := s.parseStatsQuery(c, "7d")
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), statsTimeout)
-	defer cancel()
-	r, err := s.stats.Roi(ctx, q.filter)
-	if err != nil {
-		s.statsFailed(c, "costs", err)
-		return
-	}
-	simulated := s.dataLabel(r.Mock) == labelSimulated || r.DecisionSources.Simulated > 0 || r.LLMSources.Simulated > 0
-	dataLabel := labelMeasured
-	if simulated {
-		dataLabel = labelSimulated
-	}
-	n := r.Checked
-	out := roiSummary{Window: q.window, GatedResponses: n, Simulated: simulated, ThirdParty: []string{}}
-
-	dLabel, dBasis := costLabel(r.DecisionSources, "fast-check calls")
-	out.DecisionCost = roiDecisionCost{labelledValue: labelledValue{Value: ptrF(roundUSD(r.DecisionUSD)), Label: dLabel, Basis: dBasis},
-		USD: roundUSD(r.DecisionUSD), Per1k: per1k(r.DecisionUSD, n)}
-	lLabel, lBasis := costLabel(r.LLMSources, "deep-audit judge calls")
-	by := map[string]int64{}
-	for sel, cnt := range r.AuditsBySelection {
-		if slices.Contains(auditSelections, sel) {
-			by[sel] = cnt
-		}
-	}
-	out.LLMCost = roiLLMCost{labelledValue: labelledValue{Value: ptrF(roundUSD(r.LLMUSD)), Label: lLabel, Basis: lBasis},
-		USD: roundUSD(r.LLMUSD), Audits: r.Audits, BySelection: by}
-	out.TotalPer1k = labelledValue{Value: per1k(r.DecisionUSD+r.LLMUSD, n), Label: weakest(dLabel, lLabel),
-		Basis: "fast check plus deep audit, per 1,000 answers the fast check assessed"}
-
-	prices := judgePrice()
-	same := counterfactual{Kind: "llm_same_checks", Method: "token_model", N: r.SameChecksCalls, Label: labelEstimate,
-		Basis: "the same questions asked of " + prices.name + " at list price: (fast-check input tokens + 400) × input price + 40 output tokens per question × output price"}
-	if simulated {
-		same.Label = labelSimulated
-	}
-	if r.SameChecksCalls > 0 && prices.ok {
-		usd := (float64(r.SameChecksInputTokens+400*r.SameChecksCalls)*prices.in + float64(40*r.SameChecksQuestions)*prices.out) / 1e6
-		same.USD, same.Per1k = ptrF(roundUSD(usd)), per1k(usd, r.SameChecksCalls)
-		// Savings: the fast check replaces the same checks (high); counting the deep audits'
-		// spend against it gives the low end.
-		lo, hi := usd-r.DecisionUSD-r.LLMUSD, usd-r.DecisionUSD
-		out.Savings = roiSavings{USDLow: ptrF(roundUSD(lo)), USDHigh: ptrF(roundUSD(hi)), Label: same.Label}
-	} else {
-		out.Savings = roiSavings{Label: same.Label}
-	}
-	out.Counterfactual = []counterfactual{same, s.fullAuditCounterfactual(r, n, simulated)}
-	if prices.note != "" {
-		out.ThirdParty = append(out.ThirdParty, prices.note)
-	}
-
-	out.Outcomes = roiOutcomes{Flagged: r.Flagged, Blocked: r.Blocked, Fallback: r.Fallback, NotAssessed: r.NotAssessed, Label: dataLabel}
-	out.LatencyMs = roiLatency{GateP50: r.GateLatency.P50, GateP95: r.GateLatency.P95, Label: dataLabel}
-	if r.Decisions > 0 {
-		out.LatencyMs.DeadlineMissRate = ptrF(float64(r.DeadlineMisses) / float64(r.Decisions))
-	}
-
-	out.Sampling = roiSampling{UniformCap: s.cfg.UniformAuditsPerDay}
-	if pol := s.policies.Engine.Current(); pol != nil && pol.Default != nil {
-		out.Sampling.UniformRate = pol.Default.DeepAudit.UniformSampleRate
-	}
-	if today, stopped, err := s.stats.UniformToday(ctx, time.Now(), s.cfg.UniformAuditsPerDay); err == nil {
-		out.Sampling.UniformToday, out.Sampling.UniformStoppedAt = today, stopped
-	} else {
-		s.log.Warn("uniform sample count failed", "err", err)
-	}
-	c.JSON(http.StatusOK, out)
-}
-
-// fullAuditCounterfactual is llm_full_claim_audit: the mean cost of uniform audits × N once 30
-// uniform audits are costed (with a normal 95% interval), else the static assumption of
-// contracts/claims/value-claims.v1.json, which is not measured.
-func (s *server) fullAuditCounterfactual(r *store.RoiData, n int64, simulated bool) counterfactual {
-	label := labelEstimate
-	if simulated {
-		label = labelSimulated
-	}
-	if r.UniformCosted >= minRateN {
-		usd := r.UniformMeanUSD * float64(n)
-		half := 1.96 * r.UniformStddevUSD / math.Sqrt(float64(r.UniformCosted)) * float64(n)
-		return counterfactual{Kind: "llm_full_claim_audit", Method: "uniform_sample", USD: ptrF(roundUSD(usd)),
-			Low: ptrF(roundUSD(math.Max(0, usd-half))), High: ptrF(roundUSD(usd + half)), Per1k: ptrF(roundUSD(r.UniformMeanUSD * 1000)),
-			N: r.UniformCosted, Label: label, Basis: "mean deep-audit cost of the uniform sample × the answers checked"}
-	}
-	claim := staticFullAudit()
-	cf := counterfactual{Kind: "llm_full_claim_audit", Method: "static_assumptions", N: 0, Label: label,
-		Basis: "not measured: " + claim.basis}
-	if claim.per1k > 0 {
-		cf.Per1k = ptrF(claim.per1k)
-		cf.USD = ptrF(roundUSD(claim.per1k * float64(n) / 1000))
-	}
-	return cf
-}
-
-// judgePriceEntry is the list price of the counterfactual judge (Claude Haiku 4.5).
-type judgePriceEntry struct {
-	name    string
-	in, out float64
-	note    string
-	ok      bool
-}
-
-var judgePrice = sync.OnceValue(func() judgePriceEntry {
-	p := judgePriceEntry{name: "Claude Haiku 4.5"}
-	table, err := prices()
-	if err != nil {
-		return p
-	}
-	for _, e := range table.Entries {
-		if e.Provider == "anthropic" && strings.HasPrefix(e.Match, "claude-haiku-4-5") {
-			p.in, p.out, p.ok = e.InputPerMTok, e.OutputPerMTok, true
-			p.note = "Claude Haiku 4.5 list price $" + strconv.FormatFloat(e.InputPerMTok, 'f', -1, 64) + " / $" +
-				strconv.FormatFloat(e.OutputPerMTok, 'f', -1, 64) + " per million tokens (Anthropic, as of " + e.AsOf + ")"
-			return p
-		}
-	}
-	return p
-})
-
-type staticClaim struct {
-	per1k float64
-	basis string
-}
-
-var staticFullAudit = sync.OnceValue(func() staticClaim {
-	c := staticClaim{basis: "a static assumption about a full claim-level LLM audit"}
-	b, err := contracts.FS.ReadFile("claims/value-claims.v1.json")
-	if err != nil {
-		return c
-	}
-	var doc struct {
-		Claims []struct {
-			ID    string  `json:"id"`
-			Value float64 `json:"value"`
-			Basis string  `json:"basis"`
-		} `json:"claims"`
-	}
-	if json.Unmarshal(b, &doc) != nil {
-		return c
-	}
-	for _, cl := range doc.Claims {
-		if cl.ID == "llm_full_audit_cost_per_1k" {
-			c.per1k, c.basis = cl.Value, strings.TrimSuffix(cl.Basis, ".")
-		}
-	}
-	return c
-})
-
-// weakest is the weaker of two labels: simulated, then estimate, then measured.
-func weakest(a, b string) string {
-	rank := map[string]int{labelSimulated: 0, labelEstimate: 1, labelMeasured: 2}
-	if rank[a] <= rank[b] {
-		return a
-	}
-	return b
-}
-
 func share(part, whole int64) *float64 {
 	if whole <= 0 {
 		return nil
 	}
 	v := float64(part) / float64(whole)
 	return &v
-}
-
-func per1k(usd float64, n int64) *float64 {
-	if n <= 0 {
-		return nil
-	}
-	return ptrF(roundUSD(usd / float64(n) * 1000))
 }
 
 // roundUSD keeps ten decimals (the NUMERIC(14,10) of the cost columns).

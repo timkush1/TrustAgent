@@ -2,9 +2,10 @@ package jev
 
 import (
 	"crypto/tls"
-	"net"
 	"net/http"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/netguard"
 )
 
 // Transport tuning (SPEC §3.1: MaxIdleConnsPerHost ≥ 64, idle 5 m, HTTP/2).
@@ -18,9 +19,11 @@ const (
 // a connection hot, and no proxy environment surprises beyond the standard ones. It is never
 // shared with the upstream reverse proxy.
 func NewTransport() *http.Transport {
-	d := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	// The guarded dialer refuses link-local and cloud-metadata addresses after DNS (D78): a
+	// compatible backend's base URL is the admin's choice.
+	d := netguard.Dialer(5*time.Second, 30*time.Second)
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 netguard.Proxy,
 		DialContext:           d.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},

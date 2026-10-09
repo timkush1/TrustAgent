@@ -8,7 +8,7 @@
 # Configuration reference
 
 TrustAgent is configured with environment variables. This page lists every one of them:
-188 keys in 13 groups, generated from the key registry
+190 keys in 13 groups, generated from the key registry
 [`contracts/config/keys.v1.json`](../contracts/config/keys.v1.json).
 
 **You rarely need this page.** The demo (`make demo`) needs no settings at all, and a
@@ -24,7 +24,7 @@ every other key is marked *advanced* and has a safe default.
   environment. A variable that is already set in the environment is never overwritten
   by `.env`.
 - **Settings you can change while running** (marked *Also editable while running*)
-  also get a value in dashboard Settings *(from P4)*. A non-empty
+  also get a value in dashboard Settings. A non-empty
   environment variable always wins over it and shows there as read-only (*managed by
   environment*); to change such a value, edit `.env` and run `make up` again.
 - **Durations** use Go syntax in both services: `800ms`, `30s`, `5m`, `2160h`.
@@ -43,7 +43,7 @@ every other key is marked *advanced* and has a safe default.
 | Services | Who reads it: `proxy` = the Go gateway; `engine` = the Python audit engine; `compose` = docker compose and make; `dashboard` = the dashboard container (at start); `build` = the dashboard build (baked into the bundle); `tools` = setup and demo tools (trafficgen, doctor, configure). |
 | Advanced | `no` = listed in `.env.example`. `yes` = add it to `.env` yourself when you need it. |
 | Secret | `yes` = never logged, never sent to the browser, masked in the dashboard. |
-| Restart | What a change needs. `yes` = a restart: edit `.env`, then run `make up` again. `rebuild` = a new build: the key is read only when the dashboard bundle is built (for example `npm run build` in `frontend-react/`). `no` = nothing when changed in dashboard Settings *(from P4)*; a value in `.env` still takes effect at the next `make up`. |
+| Restart | What a change needs. `yes` = a restart: edit `.env`, then run `make up` again. `rebuild` = a new build: the key is read only when the dashboard bundle is built (for example `npm run build` in `frontend-react/`). `no` = nothing when changed in dashboard Settings; a value in `.env` still takes effect at the next `make up`. |
 | Description | What it does, then the value syntax. |
 
 ## Groups
@@ -60,7 +60,7 @@ every other key is marked *advanced* and has a safe default.
 - [Budgets, Studio](#budgets-studio): 6 keys
 - [Engine: judge](#engine-judge): 11 keys
 - [Engine: pipeline and server](#engine-pipeline-and-server): 26 keys
-- [Compose, host, dashboard, build](#compose-host-dashboard-build): 24 keys
+- [Compose, host, dashboard, build](#compose-host-dashboard-build): 26 keys
 
 ## Core
 
@@ -114,14 +114,14 @@ Where the proxy forwards LLM requests.
 
 | Key | Default | Services | Advanced | Secret | Restart | Description |
 |---|---|---|---|---|---|---|
-| `TRUTHTABLE_UPSTREAM_URL`<br>alias `UPSTREAM_LLM_URL` | *empty*<br>empty resolves to https://api.openai.com | proxy | no | no | no | Default upstream for OpenAI-format requests. Empty = https://api.openai.com.<br>URL. Shorthands: `ollama` = `${OLLAMA_BASE_URL}`, `openrouter` = `https://openrouter.ai/api`. Also editable while running in dashboard Settings *(from P4)*. |
+| `TRUTHTABLE_UPSTREAM_URL`<br>alias `UPSTREAM_LLM_URL` | *empty*<br>empty resolves to https://api.openai.com | proxy | no | no | no | Default upstream for OpenAI-format requests. Empty = https://api.openai.com.<br>URL. Shorthands: `ollama` = `${OLLAMA_BASE_URL}`, `openrouter` = `https://openrouter.ai/api`. Also editable while running in dashboard Settings. |
 | `TRUTHTABLE_UPSTREAM_API_KEY` | *empty* | proxy | no | yes | yes | Upstream credential. Setting it enables inject mode: client credentials are stripped and this one is sent on `TRUTHTABLE_UPSTREAM_AUTH_HEADER`.<br>Text. |
-| `TRUTHTABLE_UPSTREAM_AUTH_HEADER` | `authorization` | proxy | yes | no | no | Header that carries the injected upstream credential.<br>One of `authorization`, `api-key`, `x-api-key`. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_ANTHROPIC_UPSTREAM_URL` | `https://api.anthropic.com` | proxy | yes | no | no | Upstream for Anthropic Messages requests.<br>URL. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY` | *empty* | proxy | yes | yes | no | Injected credential for the Anthropic upstream.<br>Text. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_FALLBACK_UPSTREAM_URL` | *empty* | proxy | yes | no | no | Upstream used by fallback.upstream: fallback. Empty = no fallback upstream.<br>URL. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY` | *empty* | proxy | yes | yes | no | Credential for the fallback upstream.<br>Text. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT` | `openai` | proxy | yes | no | no | API format of the fallback upstream; a mismatch with the request degrades to block (fallback_format_mismatch).<br>One of `openai`, `anthropic`. Also editable while running in dashboard Settings *(from P4)*. |
+| `TRUTHTABLE_UPSTREAM_AUTH_HEADER` | `authorization` | proxy | yes | no | no | Header that carries the injected upstream credential.<br>One of `authorization`, `api-key`, `x-api-key`. Also editable while running in dashboard Settings. |
+| `TRUTHTABLE_ANTHROPIC_UPSTREAM_URL` | `https://api.anthropic.com` | proxy | yes | no | no | Upstream for Anthropic Messages requests.<br>URL. Also editable while running in dashboard Settings. |
+| `TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY` | *empty* | proxy | yes | yes | yes | Injected credential for the Anthropic upstream. The dashboard alternative is the encrypted upstream-anthropic credential in Settings; a non-empty value here wins.<br>Text. |
+| `TRUTHTABLE_FALLBACK_UPSTREAM_URL` | *empty* | proxy | yes | no | no | Upstream used by fallback.upstream: fallback. Empty = no fallback upstream.<br>URL. Also editable while running in dashboard Settings. |
+| `TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY` | *empty* | proxy | yes | yes | yes | Credential for the fallback upstream. The dashboard alternative is the encrypted upstream-fallback credential in Settings; a non-empty value here wins.<br>Text. |
+| `TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT` | `openai` | proxy | yes | no | no | API format of the fallback upstream; a mismatch with the request degrades to block (fallback_format_mismatch).<br>One of `openai`, `anthropic`. Also editable while running in dashboard Settings. |
 | `TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT` | `60s` | proxy | yes | no | yes | Time to the upstream response headers.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_UPSTREAM_TIMEOUT` | `5m` | proxy | yes | no | yes | Total upstream request timeout.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_STREAM_IDLE_TIMEOUT` | `120s` | proxy | yes | no | yes | Maximum gap between upstream stream events.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
@@ -208,14 +208,14 @@ The fast check (Jev). Go only in 2.0.
 | Key | Default | Services | Advanced | Secret | Restart | Description |
 |---|---|---|---|---|---|---|
 | `TRUTHTABLE_DECISION_PROVIDER` | `jev` | proxy | yes | no | yes | Decision model family. Reserved for another backend family.<br>One of `jev`. |
-| `TRUTHTABLE_JEV_BACKEND` | `auto` | proxy | no | no | no | Fast-check backend. auto: demo -> mock; base URL + `TRUTHTABLE_JEV_API_KEY` -> compatible; OpenRouter key -> openrouter-decisions; TypeSafe key -> typesafe; otherwise off.<br>One of `auto`, `openrouter-decisions`, `openrouter-systemone`, `typesafe`, `compatible`, `mock`, `off`. Also editable while running in dashboard Settings *(from P4)*. |
+| `TRUTHTABLE_JEV_BACKEND` | `auto` | proxy | no | no | no | Fast-check backend. auto: demo -> mock; base URL + `TRUTHTABLE_JEV_API_KEY` -> compatible; OpenRouter key -> openrouter-decisions; TypeSafe key -> typesafe; otherwise off.<br>One of `auto`, `openrouter-decisions`, `openrouter-systemone`, `typesafe`, `compatible`, `mock`, `off`. Also editable while running in dashboard Settings. |
 | `OPENROUTER_API_KEY` | *empty* | proxy, engine | no | yes | yes | One OpenRouter key powers the fast check and the judge.<br>Text. |
 | `TYPESAFE_API_KEY` | *empty* | proxy | yes | yes | yes | TypeSafe direct API key (backend typesafe).<br>Text. |
 | `TRUTHTABLE_JEV_API_KEY` | *empty* | proxy | yes | yes | yes | Credential for an explicit backend or compatible only; never applied to the auto-selected vendor backends.<br>Text. |
 | `TRUTHTABLE_JEV_API_KEY_FILE` | *empty* | proxy | yes | no | yes | File holding `TRUTHTABLE_JEV_API_KEY`.<br>File path. |
-| `TRUTHTABLE_JEV_MODEL` | *empty*<br>openrouter-\*: typesafe/jev-1.13; typesafe: jev-1.13.0; compatible: required; mock: mock/jev-heuristic-v1 | proxy | no | no | no | Decision model id. \~typesafe/jev-latest and jev-latest are allowed with a warning (thresholds are tuned per version).<br>Text. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_JEV_BASE_URL` | *empty*<br>per backend | proxy | yes | no | no | Decision endpoint base URL; https only (http for localhost). Used for compatible, or for vendor backends when set explicitly.<br>URL. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_JEV_PATH` | *empty*<br>per backend | proxy | yes | no | no | Decision endpoint path appended to the base URL.<br>Text. Also editable while running in dashboard Settings *(from P4)*. |
+| `TRUTHTABLE_JEV_MODEL` | *empty*<br>openrouter-\*: typesafe/jev-1.13; typesafe: jev-1.13.0; compatible: required; mock: mock/jev-heuristic-v1 | proxy | no | no | no | Decision model id. \~typesafe/jev-latest and jev-latest are allowed with a warning (thresholds are tuned per version).<br>Text. Also editable while running in dashboard Settings. |
+| `TRUTHTABLE_JEV_BASE_URL` | *empty*<br>per backend | proxy | yes | no | no | Decision endpoint base URL; https only (http for localhost). Used for compatible, or for vendor backends when set explicitly.<br>URL. Also editable while running in dashboard Settings. |
+| `TRUTHTABLE_JEV_PATH` | *empty*<br>per backend | proxy | yes | no | no | Decision endpoint path appended to the base URL.<br>Text. Also editable while running in dashboard Settings. |
 | `TRUTHTABLE_OPENROUTER_BASE_URL` | `https://openrouter.ai` | proxy, engine | yes | no | yes | OpenRouter base for PKCE, key checks, backends and the judge; tests point it at mock-upstream.<br>URL. |
 | `TRUTHTABLE_JEV_ATTEMPT_TIMEOUT` | `3s` | proxy | yes | no | yes | Per-attempt timeout. Each attempt runs detached with this timeout; a synchronous gate stops waiting at the route deadline, and an attempt still running then may finish as a late decision (never enforced).<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_JEV_ASYNC_DEADLINE` | `10s` | proxy | yes | no | yes | Deadline for observe gates and late decisions.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
@@ -240,7 +240,7 @@ The fast check (Jev). Go only in 2.0.
 | `TRUTHTABLE_JEV_STARTUP_PROBE` | `true` | proxy | yes | no | yes | Send one tiny probe question at startup to verify the backend.<br>`true` or `false`. |
 | `TRUTHTABLE_JEV_KEEPALIVE` | `60s` | proxy | yes | no | yes | Keep-warm interval while a synchronous route exists.<br>Duration (Go syntax, e.g. `30s`, `5m`). |
 | `TRUTHTABLE_JEV_LOG_PAYLOADS` | `false` | proxy | yes | no | yes | Log decision request and response bodies (keys are never logged).<br>`true` or `false`. |
-| `TRUTHTABLE_JEV_MOCK_MODE` | `scenario` | proxy | yes | no | yes | Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic gives lexical heuristics.<br>One of `scenario`, `hash`, `heuristic`. |
+| `TRUTHTABLE_JEV_MOCK_MODE` | `scenario` | proxy | yes | no | yes | Mock backend mode: scenario answers from contracts demo scenarios (mock_answers); hash gives deterministic hash-based answers; heuristic is reserved for lexical heuristics and falls back to hash answers in this version.<br>One of `scenario`, `hash`, `heuristic`. |
 | `TRUTHTABLE_JEV_MOCK_STRICT` | `false` | proxy | yes | no | yes | Fail instead of falling back when a scenario has no mock answer.<br>`true` or `false`. |
 | `TRUTHTABLE_JEV_MOCK_FIXTURES` | *empty*<br>empty uses the embedded contracts/demo/scenarios.v1.json | proxy | yes | no | yes | Scenario file for the mock backend.<br>File path. |
 | `TRUTHTABLE_JEV_MOCK_SEED` | `42` | proxy | yes | no | yes | Seed of the mock backend.<br>Integer. |
@@ -252,8 +252,8 @@ Daily spend caps, prices and Studio limits.
 
 | Key | Default | Services | Advanced | Secret | Restart | Description |
 |---|---|---|---|---|---|---|
-| `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY` | `2.00` | proxy | no | no | no | Daily fast-check spend cap in USD; seeds the runtime budget. 0 = unlimited. Past the cap, observe/flag routes skip (degraded: budget), fail-open routes pass and fail-closed block routes block.<br>Number, at least 0. Also editable while running in dashboard Settings *(from P4)*. |
-| `TRUTHTABLE_SPEND_CAP_LLM_USD_DAY` | `5.00` | proxy | no | no | no | Daily deep-audit (LLM judge) spend cap in USD; seeds the runtime budget. 0 = unlimited. The cap is hard in every lane.<br>Number, at least 0. Also editable while running in dashboard Settings *(from P4)*. |
+| `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY` | `2.00` | proxy | no | no | no | Daily fast-check spend cap in USD; seeds the runtime budget. 0 = unlimited. Past the cap, observe/flag routes skip (degraded: budget), fail-open routes pass and fail-closed block routes block.<br>Number, at least 0. Also editable while running in dashboard Settings. |
+| `TRUTHTABLE_SPEND_CAP_LLM_USD_DAY` | `5.00` | proxy | no | no | no | Daily deep-audit (LLM judge) spend cap in USD; seeds the runtime budget. 0 = unlimited. The cap is hard in every lane.<br>Number, at least 0. Also editable while running in dashboard Settings. |
 | `TRUTHTABLE_SPEND_ENFORCING_RESERVE` | `0.25` | proxy | yes | no | yes | Share of the decision cap reserved for enforcing routes: observe and flag routes stop at 75% of the cap.<br>Number, from 0 to 1. |
 | `TRUTHTABLE_PRICE_TABLE_FILE` | *empty*<br>empty uses the embedded contracts/pricing/prices.v1.json | proxy, engine | yes | no | yes | Price table override (schema pricing.v1).<br>File path. |
 | `TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD` | `0.10` | proxy | yes | no | yes | Studio asks for confirmation above this estimated cost.<br>Number, at least 0. |
@@ -265,9 +265,9 @@ The LLM judge used by the deep audit.
 
 | Key | Default | Services | Advanced | Secret | Restart | Description |
 |---|---|---|---|---|---|---|
-| `LLM_PROVIDER` | `auto` | engine | no | no | no | Deep-audit judge. auto: explicit > Anthropic key > OpenRouter key > OpenAI key > Ollama (if reachable) > none; mock in demo mode.<br>One of `auto`, `anthropic`, `openrouter`, `openai`, `ollama`, `mock`, `none`. Also editable while running in dashboard Settings *(from P4)*. |
-| `LLM_MODEL` | *empty*<br>per provider: anthropic claude-haiku-4-5, openrouter `OPENROUTER_JUDGE_MODEL`, ollama `OLLAMA_FALLBACK_MODEL` | engine | yes | no | no | Judge model.<br>Text. Also editable while running in dashboard Settings *(from P4)*. |
-| `LLM_FALLBACK` | `none` | engine | yes | no | no | Explicit opt-in fallback judge; reported, never hidden.<br>One of `none`, `ollama`. Also editable while running in dashboard Settings *(from P4)*. |
+| `LLM_PROVIDER` | `auto` | engine | no | no | no | Deep-audit judge. auto: explicit > Anthropic key > OpenRouter key > OpenAI key > Ollama (if reachable) > none; mock in demo mode.<br>One of `auto`, `anthropic`, `openrouter`, `openai`, `ollama`, `mock`, `none`. Also editable while running in dashboard Settings. |
+| `LLM_MODEL` | *empty*<br>per provider: anthropic claude-haiku-4-5, openrouter `OPENROUTER_JUDGE_MODEL`, ollama `OLLAMA_FALLBACK_MODEL` | engine | yes | no | no | Judge model.<br>Text. Also editable while running in dashboard Settings. |
+| `LLM_FALLBACK` | `none` | engine | yes | no | no | Explicit opt-in fallback judge; reported, never hidden.<br>One of `none`, `ollama`. Also editable while running in dashboard Settings. |
 | `ANTHROPIC_API_KEY` | *empty* | engine | no | yes | yes | Anthropic key for the judge.<br>Text. |
 | `OPENAI_API_KEY` | *empty* | engine | yes | yes | yes | OpenAI key for the judge.<br>Text. |
 | `OPENROUTER_JUDGE_MODEL` | `anthropic/claude-haiku-4.5` | engine | yes | no | yes | Judge model when the judge runs through OpenRouter.<br>Text. |
@@ -318,11 +318,13 @@ Compose, host ports, the dashboard container and frontend build.
 |---|---|---|---|---|---|---|
 | `COMPOSE_PROFILES` | *empty* | compose | no | no | yes | Optional compose add-ons.<br>Comma-separated list of `knowledge`, `local-llm`, `observability`, `redis`, `demo`, `load`. |
 | `COMPOSE_PROJECT_NAME` | `truthtable` | compose | yes | no | yes | Compose project name.<br>Text. |
+| `GIT_SHA` | *none*<br>git rev-parse --short HEAD (make sets it) | compose | yes | no | yes | Git revision the app images are built from: stamped into the proxy (status build_sha, the git_sha of /api/export/replay) and the image labels.<br>Text. |
 | `POSTGRES_PASSWORD` | *none*<br>generated by configure --ensure when .env is new; never changed once the volume exists | compose | yes | yes | yes | Postgres password.<br>Text. |
 | `GRAFANA_ADMIN_PASSWORD` | *none*<br>generated by configure --ensure | compose | yes | yes | yes | Grafana admin password (observability profile).<br>Text. |
 | `PROXY_HOST_PORT` | `8080` | compose | yes | no | yes | Host port of the proxy.<br>Integer, from 1 to 65535. |
 | `DASHBOARD_HOST_PORT` | `3000` | compose | yes | no | yes | Host port of the dashboard.<br>Integer, from 1 to 65535. |
 | `POSTGRES_HOST_PORT` | `5432` | compose | yes | no | yes | Host port of Postgres.<br>Integer, from 1 to 65535. |
+| `MOCK_UPSTREAM_HOST_PORT` | `18090` | compose | yes | no | yes | Host port of the mock upstream (the onboarding and e2e stacks only; it fakes OpenRouter's sign-in and key endpoints).<br>Integer, from 1 to 65535. |
 | `TRUSTAGENT_VERSION` | *none*<br>the contents of VERSION | compose | yes | no | yes | Image tag of the app services.<br>Text. |
 | `ENGINE_EXTRAS` | *empty* | compose | yes | no | yes | Engine image build extras; knowledge installs the knowledge-base dependencies.<br>Text. |
 | `TRAFFICGEN_API_KEY` | *none*<br>generated by configure --ensure | compose, tools | yes | yes | yes | Ingest key used by the demo traffic generator.<br>Text. |

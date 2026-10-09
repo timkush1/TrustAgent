@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "stale_version",
+    "message": "The settings changed since you loaded them: reload, reapply your edit and save again."
+  }
+}

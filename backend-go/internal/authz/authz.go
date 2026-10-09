@@ -355,6 +355,13 @@ func (a *Authenticator) HasIngestKeys() bool {
 	return slices.ContainsFunc(a.keys, func(e entry) bool { return e.id.Has(ScopeIngest) })
 }
 
+// HasEnvIngestScope reports whether an env key holds the ingest scope itself (an app key such
+// as TRUTHTABLE_API_KEYS), not through admin: the D41 check for an upstream key bound for every
+// caller, which counts dashboard keys the same way (store.IngestKeyExists, D95).
+func (a *Authenticator) HasEnvIngestScope() bool {
+	return slices.ContainsFunc(a.keys, func(e entry) bool { return slices.Contains(e.id.Scopes, ScopeIngest) })
+}
+
 // HasEnvAdmin reports whether TRUTHTABLE_ADMIN_KEYS (or any env key with admin) is configured.
 func (a *Authenticator) HasEnvAdmin() bool {
 	return slices.ContainsFunc(a.keys, func(e entry) bool { return e.id.Has(ScopeAdmin) })
