@@ -47,7 +47,8 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(badge('Measured', 'Your cost per 1,000 answers')).toBeInTheDocument();
     expect(screen.getByText(/Saved/)).toHaveTextContent('Saved $0.60–$0.97 against an LLM asking the same questions');
     expect(badge('Estimate', 'Savings against an LLM asking the same questions')).toBeInTheDocument();
-    expect(screen.getByText(/So far: 540 answers checked/)).toBeInTheDocument();
+    // The early-data sentence would repeat the saved line's two totals, so it is left out here.
+    expect(screen.queryByText(/So far: 540 answers checked/)).toBeNull();
     // The alternatives in the headline's unit: here only an LLM asking the same questions, with
     // its own label and how it was worked out; no real-judge figure on a stack with a real judge.
     const others = screen.getByRole('heading', { level: 3, name: 'Against the alternatives, per 1,000 answers' });
@@ -150,7 +151,8 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     const real = screen.getByText('TrustAgent with a real judge').closest<HTMLElement>('[data-alternative]')!;
     expect(real).toHaveAttribute('data-alternative', 'real_judge');
     expect(within(real).getByText('$3')).toBeInTheDocument();
-    expect(real).toHaveTextContent('At the shipped defaults: about 8 in 100 answers deep-audited');
+    // The published total in its parts, so it reads against the same-questions figure beside it.
+    expect(real).toHaveTextContent('At the shipped defaults: fast check $0.21 on every answer + a deep audit of about 8 in 100 answers');
     expect(badge('Estimate', 'Checking at the shipped defaults with a real judge')).toBeInTheDocument();
     const same = document.querySelector<HTMLElement>('[data-alternative="llm_same_checks"]')!;
     expect(within(same).getByText('$5.75')).toBeInTheDocument();
@@ -165,18 +167,58 @@ describe('Savings tab', { timeout: 20_000 }, () => {
       'llm_same_checks',
       'llm_full_claim_audit',
     ]);
-    // Then this window's own rate (58 audits over 540 answers), apart from the published figures.
-    const free = screen.getByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
-    expect(free).toHaveTextContent(
-      'This demo deep-audits about 11 in 100 answers to show the audit flow: at that rate a real judge would add about $3.81 per 1,000 answers.',
+    // Why the headline's deep audit is $0, right under the headline.
+    const headline = screen.getByRole('heading', { level: 2, name: /^Your cost:/ });
+    expect(headline.nextElementSibling).toHaveTextContent(
+      'The deep audit reads $0 because the demo’s mock judge is free: the figures with a real judge are below.',
     );
+    // Then this window's own rate (58 audits over 540 answers), apart from the published figures,
+    // and why the published figures are higher than the demo's simulated ones.
+    expect(
+      screen.getByText(
+        'This demo deep-audits about 11 in 100 answers to show the audit flow: at that rate a real judge would add about $3.81 per 1,000 answers.',
+      ),
+    ).toBeInTheDocument();
     expect(badge('Estimate', 'What a real judge would add at this demo’s rate')).toBeInTheDocument();
+    expect(screen.getByText(/^Published figures assume a typical 5,000-token request; the demo’s scripted answers are shorter/)).toBeInTheDocument();
     const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ }).closest('tr')!;
     expect(row).toHaveTextContent('Not available in the simulated demo: the mock judge is free');
     expect(within(row).getAllByRole('cell').slice(0, 2).map((c) => c.textContent)).toEqual(['—', '—']);
-    // No full-audit band to switch to: the chart compares with the same questions only.
+    // No full-audit band: the option stays, disabled, and says why (no dead buttons).
     const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
-    expect(within(chart).queryByRole('radio', { name: 'Full audit' })).toBeNull();
+    const option = within(chart).getByRole('radio', { name: 'Full audit' });
+    expect(option).toHaveAttribute('data-disabled');
+    expect(within(chart).getByRole('radio', { name: 'Same questions' })).toBeChecked();
+    const group = within(chart).getByRole('radiogroup', { name: 'Compare with' });
+    expect(group).toHaveAccessibleDescription(
+      'Full audit is not comparable on the simulated demo: its mock judge is free and it deep-audits about 11 in 100 answers. Compare the published figures under “With a real judge” above.',
+    );
+    expect(chart.querySelector('[data-band="full_audit"]')).toBeNull();
+  });
+
+  it('never sets a free mock judge’s spend against the published full audit, in the chart or the table', async () => {
+    const user = userEvent.setup();
+    const base = roiSummary();
+    // The live demo: every answer deep-audited by the free mock judge, and the published full audit.
+    const published = { ...FULL_AUDIT, low: null, high: null, usd: 1.562 };
+    const roi = roiSummary({
+      simulated: true,
+      gated_responses: 44,
+      llm_cost: { ...base.llm_cost, usd: 0, value: 0, audits: 44 },
+      counterfactuals: [...base.counterfactuals, published],
+    });
+    renderPage('/app/savings', { control: createControlApi({ roi }), status: { demo: true } });
+    const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
+    const option = within(chart).getByRole('radio', { name: 'Full audit' });
+    expect(option).toHaveAttribute('data-disabled');
+    await user.click(option);
+    expect(within(chart).getByRole('radio', { name: 'Same questions' })).toBeChecked();
+    expect(within(chart).getByText(/it deep-audits every answer\. Compare the published figures under “With a real judge” above\.$/)).toBeInTheDocument();
+    expect(within(chart).queryByText(/auditing every answer claim by claim/)).toBeNull();
+    expect(chart).not.toHaveTextContent(/would have cost \$1\.56/);
+    // The table keeps the figure and says what to read it against.
+    const row = screen.getByRole('rowheader', { name: /An LLM auditing every answer/ });
+    expect(row).toHaveTextContent('Compare it with TrustAgent with a real judge ($3 per 1,000 answers) above, not with this simulated total');
   });
 
   it('reads each day with the arrow keys', async () => {

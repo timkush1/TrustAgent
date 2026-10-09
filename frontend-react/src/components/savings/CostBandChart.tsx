@@ -14,6 +14,7 @@
  */
 import { useId, useMemo, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { ChartFrame } from '@/components/charts/ChartFrame';
+import { DisabledReason } from '@/components/common/DisabledReason';
 import { ChartTable, ChartTooltipBox, type LegendItem } from '@/components/charts/ChartParts';
 import { seriesColor } from '@/components/charts/palette';
 import { niceTicks } from '@/components/charts/scale';
@@ -53,6 +54,12 @@ export interface CostBandChartProps {
   measuredLabel: ValueLabel;
   /** Value label of each comparison, as its row in the component table says (bandLabels). */
   bandLabels: Record<BandKind, ValueLabel>;
+  /**
+   * Comparisons the chart offers but cannot draw, each with why (e.g. the full audit on a demo
+   * whose mock judge is free: fullAuditNotComparable). Its option stays in the "Compare with"
+   * control, disabled, with the reason under the header (no dead buttons).
+   */
+  unavailable?: Partial<Record<BandKind, string | null>>;
   /** The span in words for the description: "in the last 24 hours", "over the replayed traffic". */
   spanWords: string;
   /** Whether the page offers a time window to pick (the static replay has none). */
@@ -152,6 +159,7 @@ export function CostBandChart({
   totals,
   measuredLabel,
   bandLabels,
+  unavailable,
   spanWords,
   windowPicker,
   headingLevel = 3,
@@ -159,11 +167,18 @@ export function CostBandChart({
   className,
 }: CostBandChartProps) {
   const summaryId = useId();
+  const reasonId = useId();
   // A fresh stack's window is mostly empty buckets: start at its first traffic.
   const { points, since } = useMemo(() => chartBuckets(allPoints), [allPoints]);
   const bands = useMemo(() => availableBands(points), [points]);
   const [chosen, setChosen] = useState<BandKind>('same_checks');
   const band: BandKind | null = bands.includes(chosen) ? chosen : (bands[0] ?? null);
+  // The comparisons in the "Compare with" control: those drawn, and those that say why they are not.
+  const reasons = (['same_checks', 'full_audit'] as const).flatMap((k) => {
+    const why = bands.includes(k) ? null : unavailable?.[k];
+    return why ? [{ kind: k, why }] : [];
+  });
+  const offered = (['same_checks', 'full_audit'] as const).filter((k) => bands.includes(k) || reasons.some((r) => r.kind === k));
   const [active, setActive] = useState<number | null>(null);
 
   const n = points.length;
@@ -261,13 +276,22 @@ export function CostBandChart({
       table={table}
       className={className}
       actions={
-        bands.length > 1 && band ? (
+        offered.length > 1 && band ? (
           <SegmentedControl<BandKind>
             aria-label="Compare with"
+            aria-describedby={reasons.length > 0 ? reasonId : undefined}
             size="sm"
-            options={bands.map((k) => ({ value: k, label: BAND_OPTION[k] }))}
+            options={offered.map((k) => ({ value: k, label: BAND_OPTION[k], disabled: !bands.includes(k) }))}
             value={band}
             onValueChange={setChosen}
+          />
+        ) : null
+      }
+      note={
+        offered.length > 1 && band && reasons.length > 0 ? (
+          <DisabledReason
+            id={reasonId}
+            reason={{ text: reasons.map((r) => r.why).join(' ') }}
           />
         ) : null
       }

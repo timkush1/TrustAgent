@@ -40,6 +40,19 @@ export function SavingsStrip({ timeWindow }: { timeWindow: TimeWindow }) {
           <span className="font-medium tabular">{line.headline}</span>
           <EvidenceBadge label={line.label} basis={q.data.total_per_1k.basis} subject="Your cost per 1,000 answers" />
         </p>
+        {/* The headline's deep audit is $0 only because the mock judge is free: said right under it. */}
+        {line.freeMockJudge ? (
+          <p className="text-sm text-fg-muted">
+            The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
+            <Link
+              to="/app/overview"
+              search={(prev) => ({ ...prev, tab: 'savings' as const })}
+              className="font-medium text-fg underline underline-offset-2"
+            >
+              What a real judge costs
+            </Link>
+          </p>
+        ) : null}
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-fg-muted">
           <span className="inline-flex items-center gap-1.5">
             <ShieldX aria-hidden="true" className="size-3.5" />
@@ -59,18 +72,6 @@ export function SavingsStrip({ timeWindow }: { timeWindow: TimeWindow }) {
               basis={q.data.counterfactuals.find((c) => c.kind === 'llm_same_checks')?.basis}
               subject="What an LLM would have cost"
             />
-          </p>
-        ) : null}
-        {line.freeMockJudge ? (
-          <p className="text-sm text-fg-muted">
-            The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
-            <Link
-              to="/app/overview"
-              search={(prev) => ({ ...prev, tab: 'savings' as const })}
-              className="font-medium text-fg underline underline-offset-2"
-            >
-              What a real judge costs
-            </Link>
           </p>
         ) : null}
         <p className="text-xs text-fg-muted">{copy.savings.caption}</p>

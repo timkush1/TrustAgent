@@ -20,6 +20,8 @@ export interface SegmentOption<V extends string = string> {
 export interface SegmentedControlProps<V extends string = string> {
   /** Names the group for screen readers ("Time window"). */
   'aria-label': string;
+  /** Describes the group, e.g. why one of its options is unavailable (a DisabledReason's id). */
+  'aria-describedby'?: string;
   options: readonly SegmentOption<V>[];
   value?: V;
   defaultValue?: V;
@@ -32,6 +34,7 @@ export interface SegmentedControlProps<V extends string = string> {
 
 export function SegmentedControl<V extends string = string>({
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
   options,
   value,
   defaultValue,
@@ -44,6 +47,7 @@ export function SegmentedControl<V extends string = string>({
   return (
     <BaseRadioGroup
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
       value={value}
       defaultValue={defaultValue ?? (value === undefined ? options[0]?.value : undefined)}
       onValueChange={(next) => onValueChange?.(next as V)}

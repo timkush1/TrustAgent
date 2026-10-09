@@ -4,10 +4,12 @@
  * component table where every figure keeps its value label, the outcome split (stopped is block
  * and fallback only; flagged is separate) and the sampling status line.
  */
+import { savingsLine } from '@/components/overview/overviewModel';
 import { valueLabelView } from '@/domain/controlPresentation';
 import { formatCount, formatDateTime, formatUsd } from '@/domain/format';
 import {
   costCounterfactualView,
+  costFastCheckPublished,
   costFullAuditBasis,
   costFullAuditPer1k,
   costIsMeasuredMethod,
@@ -81,6 +83,34 @@ export function freeMockCounterfactual(c: Counterfactual | null, simulated: bool
   return (simulated || c.label === 'simulated') && (c.usd === 0 || c.per_1k === 0);
 }
 
+/** "every answer", "about 67 in 100 answers": a deep-audit rate in words. */
+function auditShareWords(rate: number): string {
+  if (rate >= 0.995) return 'every answer';
+  const pct = Math.round(rate * 100);
+  return pct < 1 ? 'fewer than 1 in 100 answers' : `about ${pct} in 100 answers`;
+}
+
+/** How much of the window's traffic was deep-audited, in words ("every answer"), or null without any. */
+function demoAuditShare(roi: RoiSummary): string | null {
+  const n = roi.gated_responses;
+  const audits = roi.llm_cost.audits;
+  if (n <= 0 || audits <= 0) return null;
+  return audits / n > 1.005 ? 'more answers than it checks' : auditShareWords(audits / n);
+}
+
+/**
+ * Why the chart offers no full-audit comparison on a demo whose mock judge is free, or null when
+ * it can draw one. The demo's spend has the deep audits at $0 while it deep-audits far more answers
+ * than the shipped defaults, so setting it against what an LLM auditing every answer would cost
+ * compares two bases: with a real judge, the demo's own audits would cost about as much as the full
+ * audit. The published figures, on one basis, are in the "With a real judge" strip above the chart.
+ */
+export function fullAuditNotComparable(roi: RoiSummary | undefined): string | null {
+  if (!roi || !savingsLine(roi).freeMockJudge) return null;
+  const share = demoAuditShare(roi);
+  return `Full audit is not comparable on the simulated demo: its mock judge is free${share ? ` and it deep-audits ${share}` : ''}. Compare the published figures under “With a real judge” above.`;
+}
+
 /**
  * A counterfactual's value label. One from the published assumptions is an Estimate even on a
  * simulated stack: the figure is the published one, and the simulated answer count it is applied
@@ -112,7 +142,8 @@ export function costBandPoints(series: CostSeries, roi: RoiSummary | undefined):
   const full = counterfactual(roi, 'llm_full_claim_audit');
   const [sameLo, sameHi] = rangeRatio(same);
   const [fullLo, fullHi] = rangeRatio(full);
-  const per1k = full && finite(full.per_1k) && !freeMockCounterfactual(full, roi?.simulated ?? false) ? full.per_1k : null;
+  const comparable = !freeMockCounterfactual(full, roi?.simulated ?? false) && fullAuditNotComparable(roi) === null;
+  const per1k = full && finite(full.per_1k) && comparable ? full.per_1k : null;
   return series.points.map((p) => {
     const gated = finite(p.gated) ? p.gated : 0;
     const sameUsd = finite(p.same_checks_usd) ? p.same_checks_usd : null;
@@ -234,7 +265,8 @@ export function chartSpan(bucket: CostBucket, since: string | null, spanWords: s
 /**
  * The totals the chart's sentence states: the summary's own (the headline and the component table
  * read the same response), so one window never shows two costs. A comparison scaled up from the
- * demo's free mock audits has none.
+ * demo's free mock audits has none, and neither has the full audit on a demo whose mock judge is
+ * free (fullAuditNotComparable).
  */
 export interface ChartTotals {
   answers: number;
@@ -250,7 +282,10 @@ export function chartTotals(roi: RoiSummary): ChartTotals {
   return {
     answers: roi.gated_responses,
     spent: roi.decision_cost.usd + roi.llm_cost.usd,
-    bands: { same_checks: total(counterfactual(roi, 'llm_same_checks')), full_audit: total(counterfactual(roi, 'llm_full_claim_audit')) },
+    bands: {
+      same_checks: total(counterfactual(roi, 'llm_same_checks')),
+      full_audit: fullAuditNotComparable(roi) === null ? total(counterfactual(roi, 'llm_full_claim_audit')) : null,
+    },
   };
 }
 
@@ -284,8 +319,13 @@ export interface ComponentRow {
 
 const perThousand = (usd: number, n: number): number | null => (n > 0 ? (usd / n) * 1000 : null);
 
-/** The Savings component table: what you paid, then what the alternatives would have cost. */
-export function componentRows(roi: RoiSummary): ComponentRow[] {
+/**
+ * The Savings component table: what you paid, then what the alternatives would have cost. On a
+ * demo whose mock judge is free (`realJudge` set), the alternatives' rows say which published
+ * figure in the "With a real judge" strip to read them against, since the demo's simulated totals
+ * and the published estimates are not on one basis.
+ */
+export function componentRows(roi: RoiSummary, realJudge: RealJudgeView | null = null): ComponentRow[] {
   const n = roi.gated_responses;
   const sim = roi.simulated;
   const decisionPer1k = roi.decision_cost.per_1k ?? perThousand(roi.decision_cost.usd, n);
@@ -346,10 +386,11 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
       c.method === 'static_assumptions' && finite(c.per_1k)
         ? `${costMethodWord(c.method)}: ${formatUsd(c.per_1k)} per 1,000 answers × ${countOf(n, sim ? 'simulated answer' : 'answer')}`
         : costMethodWord(c.method);
+    const detail = notMeasured ? `${method} · ${costNotMeasured}` : method;
     rows.push({
       key: c.kind,
       label: costCounterfactualView(c.kind).label,
-      detail: notMeasured ? `${method} · ${costNotMeasured}` : method,
+      detail: realJudge ? `${detail}. ${realJudgeRowNote(c.kind, realJudge)}` : detail,
       total: finite(c.low) && finite(c.high) ? costRange(c.low, c.high) : formatUsd(c.usd),
       per1k: formatUsd(c.per_1k),
       valueLabel: counterfactualLabel(c, sim),
@@ -360,6 +401,20 @@ export function componentRows(roi: RoiSummary): ComponentRow[] {
   return rows;
 }
 
+/**
+ * Which published figure an alternative's row on a free-mock-judge demo is read against: the full
+ * audit against TrustAgent with a real judge (not the demo's simulated total, whose deep audits are
+ * free), and the same questions against the published figure for a typical request.
+ */
+function realJudgeRowNote(kind: Counterfactual['kind'], realJudge: RealJudgeView): string {
+  if (kind === 'llm_full_claim_audit') {
+    return `Compare it with TrustAgent with a real judge (${realJudge.shippedPer1k} per 1,000 answers) above, not with this simulated total`;
+  }
+  return realJudge.sameChecksPer1k
+    ? `Simulated on the demo’s short scripted answers; for a typical 5,000-token request the published figure is ${realJudge.sameChecksPer1k} per 1,000 answers (above)`
+    : 'Simulated on the demo’s short scripted answers';
+}
+
 /** "about $3", "about $35.50": whole dollars without cents. */
 function aboutUsd(usd: number): string {
   return Number.isInteger(usd) ? `$${usd}` : formatUsd(usd);
@@ -368,6 +423,13 @@ function aboutUsd(usd: number): string {
 export interface RealJudgeView {
   /** The published total at the shipped defaults, per 1,000 answers ("$3"). */
   shippedPer1k: string;
+  /**
+   * What the shipped-defaults total is made of: "fast check $0.21 on every answer + a deep audit of
+   * about 8 in 100 answers" (value claims fast_check_cost_per_1k and default_total_cost_per_1k).
+   */
+  shippedParts: string;
+  /** The published figure for an LLM asking the same questions, per 1,000 answers ("$5.75"), or null. */
+  sameChecksPer1k: string | null;
   /** How many answers the shipped defaults deep-audit ("about 8 in 100"). */
   shippedShare: string;
   basis: string;
@@ -382,13 +444,6 @@ export interface RealJudgeView {
   demoBasis: string;
 }
 
-/** "every answer", "about 67 in 100 answers": a deep-audit rate in words. */
-function auditShareWords(rate: number): string {
-  if (rate >= 0.995) return 'every answer';
-  const pct = Math.round(rate * 100);
-  return pct < 1 ? 'fewer than 1 in 100 answers' : `about ${pct} in 100 answers`;
-}
-
 /**
  * What a real judge would cost, for a demo whose mock judge is free (SPEC §7.4; value claims
  * default_total_cost_per_1k and llm_full_audit_cost_per_1k, both estimates). The headline is the
@@ -401,6 +456,8 @@ export function realJudgeView(
   shipped: typeof costShippedDefaults = costShippedDefaults,
   fullAuditPer1k: number | null = costFullAuditPer1k,
   fullAuditBasis: string = costFullAuditBasis,
+  fastCheck: { value: number | null } = costFastCheckPublished,
+  sameChecks: { value: number | null } = costSameChecksPublished,
 ): RealJudgeView | null {
   if (!finite(shipped.per1k) || shipped.per1k <= 0 || !finite(fullAuditPer1k) || fullAuditPer1k <= 0) return null;
   const n = roi.gated_responses;
@@ -414,9 +471,13 @@ export function realJudgeView(
         ? `This demo ran more deep audits than answers checked (${formatCount(audits)} for ${countOf(n, 'answer')}) to show the audit flow: at that rate ${adds}.`
         : `This demo deep-audits ${auditShareWords(rate)} to show the audit flow: at that rate ${adds}.`;
   }
+  const shippedShare = `about ${Math.round(shipped.auditShare * 100)} in 100`;
+  const fast = finite(fastCheck.value) && fastCheck.value > 0 ? `fast check ${formatUsd(fastCheck.value)} on every answer` : 'the fast check on every answer';
   return {
     shippedPer1k: aboutUsd(shipped.per1k),
-    shippedShare: `about ${Math.round(shipped.auditShare * 100)} in 100`,
+    shippedParts: `${fast} + a deep audit of ${shippedShare} answers`,
+    sameChecksPer1k: finite(sameChecks.value) && sameChecks.value > 0 ? aboutUsd(sameChecks.value) : null,
+    shippedShare,
     basis: shipped.basis,
     fullAuditPer1k: aboutUsd(fullAuditPer1k),
     fullAuditBasis,
@@ -476,7 +537,7 @@ export function alternatives(
         per1k: realJudge.shippedPer1k,
         valueLabel: 'estimate',
         basis: realJudge.basis,
-        note: `At the shipped defaults: ${realJudge.shippedShare} answers deep-audited`,
+        note: `At the shipped defaults: ${realJudge.shippedParts}`,
         subject: 'Checking at the shipped defaults with a real judge',
       },
     ];

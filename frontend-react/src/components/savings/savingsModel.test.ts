@@ -21,6 +21,7 @@ import {
   costBandPoints,
   endLabels,
   freeMockCounterfactual,
+  fullAuditNotComparable,
   counterfactualLabel,
   rangeRatio,
   realJudgeView,
@@ -160,6 +161,36 @@ describe('Savings bands (D73)', () => {
     expect(points.every((p) => p.full_audit === null)).toBe(true);
     expect(availableBands(points)).toEqual(['same_checks']);
   });
+
+  it('offers no full-audit band on a demo whose mock judge is free, and says why', () => {
+    // The live demo: 44 answers, each deep-audited by the free mock judge, beside the published
+    // full-audit figure. With a real judge its own audits would cost about as much as a full audit,
+    // so the $0 spend against the published figure would compare two bases.
+    const published: Counterfactual = { ...full, method: 'static_assumptions', per_1k: 35.5, usd: 1.562, low: null, high: null };
+    const demo = roiSummary({
+      simulated: true,
+      gated_responses: 44,
+      llm_cost: { ...roiSummary().llm_cost, usd: 0, audits: 44 },
+      counterfactuals: [...roiSummary().counterfactuals, published],
+    });
+    expect(fullAuditNotComparable(demo)).toBe(
+      'Full audit is not comparable on the simulated demo: its mock judge is free and it deep-audits every answer. Compare the published figures under “With a real judge” above.',
+    );
+    const points = costBandPoints(series, demo);
+    expect(points.every((p) => p.full_audit === null)).toBe(true);
+    expect(points[0].same_checks).not.toBeNull();
+    expect(chartTotals(demo).bands.full_audit).toBeNull();
+    expect(costBandSummary(chartTotals(demo), 'full_audit', 'estimate', 'today')).not.toContain('auditing every answer');
+    // The replay deep-audits about 67 in 100 answers.
+    const replay = { ...demo, gated_responses: 18, llm_cost: { ...demo.llm_cost, audits: 12 } };
+    expect(fullAuditNotComparable(replay)).toContain('it deep-audits about 67 in 100 answers.');
+    // With a judge that costs something, the full audit is a fair comparison and is drawn.
+    const real = { ...demo, llm_cost: { ...demo.llm_cost, usd: 0.4 } };
+    expect(fullAuditNotComparable(real)).toBeNull();
+    expect(costBandPoints(series, real)[0].full_audit).toEqual({ low: (35.5 * 250) / 1000, high: (35.5 * 250) / 1000 });
+    expect(chartTotals(real).bands.full_audit).toEqual({ low: 1.562, high: 1.562 });
+    expect(fullAuditNotComparable(undefined)).toBeNull();
+  });
 });
 
 describe('Savings figures', () => {
@@ -196,6 +227,27 @@ describe('Savings figures', () => {
     // A full audit fitted to (simulated) audits stays Simulated.
     expect(counterfactualLabel(full, true)).toBe('simulated');
     expect(counterfactualLabel(full, false)).toBe('estimate');
+  });
+
+  it('says which published figure each alternative is read against on a free mock judge', () => {
+    const published: Counterfactual = { ...full, method: 'static_assumptions', low: null, high: null, per_1k: 35.5, usd: 1.562 };
+    const demo = roiSummary({
+      simulated: true,
+      gated_responses: 44,
+      llm_cost: { ...roiSummary().llm_cost, usd: 0, audits: 44 },
+      counterfactuals: [...roiSummary().counterfactuals, published],
+    });
+    const rows = componentRows(demo, realJudgeView(demo));
+    const fullRow = rows.find((r) => r.key === 'llm_full_claim_audit')!;
+    expect(fullRow.detail).toBe(
+      'Published assumptions: $35.50 per 1,000 answers × 44 simulated answers · not measured. Compare it with TrustAgent with a real judge ($3 per 1,000 answers) above, not with this simulated total',
+    );
+    const sameRow = rows.find((r) => r.key === 'llm_same_checks')!;
+    expect(sameRow.detail).toMatch(/Simulated on the demo’s short scripted answers; for a typical 5,000-token request the published figure is \$5\.75 per 1,000 answers \(above\)$/);
+    // Without the real-judge view (a stack with a real judge), the rows keep their method only.
+    expect(componentRows(demo).find((r) => r.key === 'llm_full_claim_audit')!.detail).toBe(
+      'Published assumptions: $35.50 per 1,000 answers × 44 simulated answers · not measured',
+    );
   });
 
   it('says when checking cost more than asking an LLM', () => {
@@ -311,6 +363,13 @@ describe('realJudgeView', () => {
   it('reads the shipped defaults from the published assumptions, consistent with their total', () => {
     const view = realJudgeView(roiSummary())!;
     expect([view.shippedPer1k, view.shippedShare, view.fullAuditPer1k]).toEqual(['$3', 'about 8 in 100', '$35.50']);
+    // The total in its parts: the fast check on every answer plus a deep audit of the share.
+    expect(view.shippedParts).toBe('fast check $0.21 on every answer + a deep audit of about 8 in 100 answers');
+    expect(view.sameChecksPer1k).toBe('$5.75');
+    expect(realJudgeView(roiSummary(), costShippedDefaults, 35.5, '', { value: null }, { value: null })).toMatchObject({
+      shippedParts: 'the fast check on every answer + a deep audit of about 8 in 100 answers',
+      sameChecksPer1k: null,
+    });
     // The share is 5% grounding-flagged + 2% of the other 95% + 1% uniform, and the published total
     // is the fast check on every answer plus a full audit of that share.
     expect(costShippedDefaults.auditShare).toBeCloseTo(0.079, 12);
@@ -353,7 +412,7 @@ describe('alternatives', () => {
       ['$35.50', 'estimate', 'Decompose into 8 claims.'],
     ]);
     expect(view.items.map((a) => a.note)).toEqual([
-      'At the shipped defaults: about 8 in 100 answers deep-audited',
+      'At the shipped defaults: fast check $0.21 on every answer + a deep audit of about 8 in 100 answers',
       'Published assumptions · not measured',
       'Published assumptions · not measured',
     ]);

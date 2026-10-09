@@ -47,6 +47,7 @@ import {
   componentRows,
   costBandPoints,
   countOf,
+  fullAuditNotComparable,
   outcomeSplit,
   realJudgeView,
   samplingLines,
@@ -121,25 +122,30 @@ function AlternativesStrip({ title, items }: AlternativesView) {
 }
 
 /**
- * Why the deep audit reads $0 on a demo whose mock judge is free, and what a real judge would add
- * at this demo's own deep-audit rate, which is far above the shipped defaults to show the audit flow.
+ * Under the alternatives on a demo whose mock judge is free: what a real judge would add at this
+ * demo's own deep-audit rate (far above the shipped defaults, to show the audit flow), and why the
+ * published figures are higher than the demo's simulated ones.
  */
-function FreeMockJudge({ view }: { view: RealJudgeView | null }) {
+function RealJudgeNotes({ view }: { view: RealJudgeView | null }) {
   return (
-    <p className="text-sm text-fg-muted">
-      <span className="tabular">
-        The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
-        {view?.demoLine ?? 'With a real judge, every deep audit adds an LLM cost.'}
-      </span>
-      {view?.demoLine ? (
-        <>
-          {' '}
-          <EvidenceBadge label="estimate" basis={view.demoBasis} subject="What a real judge would add at this demo’s rate" className="align-middle" />
-        </>
-      ) : null}
-    </p>
+    <div className="space-y-1 text-sm text-fg-muted">
+      <p>
+        <span className="tabular">{view?.demoLine ?? 'With a real judge, every deep audit adds an LLM cost.'}</span>
+        {view?.demoLine ? (
+          <>
+            {' '}
+            <EvidenceBadge label="estimate" basis={view.demoBasis} subject="What a real judge would add at this demo’s rate" className="align-middle" />
+          </>
+        ) : null}
+      </p>
+      <p className="text-xs">{PUBLISHED_REQUEST_NOTE}</p>
+    </div>
   );
 }
+
+/** Why the published figures and the demo's simulated ones differ for the same alternative. */
+const PUBLISHED_REQUEST_NOTE =
+  'Published figures assume a typical 5,000-token request; the demo’s scripted answers are shorter, so its simulated figures are lower.';
 
 /**
  * The headline, the savings range and the early-data sentence; then the alternatives per 1,000
@@ -158,6 +164,12 @@ function Headline({ roi }: { roi: RoiSummary }) {
           <span className="tabular">{line.headline}</span>
           <EvidenceBadge label={line.label} basis={roi.total_per_1k.basis} subject="Your cost per 1,000 answers" />
         </h2>
+        {/* The headline's deep audit is $0 only because the mock judge is free: said right under it. */}
+        {line.freeMockJudge ? (
+          <p data-free-mock-judge="" className="text-sm text-fg-muted">
+            The deep audit reads $0 because the demo&rsquo;s mock judge is free{realJudge ? ': the figures with a real judge are below.' : '.'}
+          </p>
+        ) : null}
         {saved ? (
           <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
             {/* The icon stays on the sentence's first line, however narrow the screen. */}
@@ -171,7 +183,8 @@ function Headline({ roi }: { roi: RoiSummary }) {
             <EvidenceBadge label={saved.label} basis={same?.basis} subject="Savings against an LLM asking the same questions" />
           </p>
         ) : null}
-        {line.earlyData && line.earlyDataLabel ? (
+        {/* The early-data sentence repeats the saved line's pair of totals: shown only without it. */}
+        {!saved && line.earlyData && line.earlyDataLabel ? (
           <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
             <span>{line.earlyData}</span>
             <EvidenceBadge label={line.earlyDataLabel} basis={same?.basis} subject="What an LLM would have cost" />
@@ -179,7 +192,7 @@ function Headline({ roi }: { roi: RoiSummary }) {
         ) : null}
       </div>
       {others.items.length > 0 ? <AlternativesStrip {...others} /> : null}
-      {line.freeMockJudge ? <FreeMockJudge view={realJudge} /> : null}
+      {line.freeMockJudge ? <RealJudgeNotes view={realJudge} /> : null}
       <p className="text-xs text-fg-muted">{copy.savings.caption}</p>
     </section>
   );
@@ -218,6 +231,7 @@ function SpendChart({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: 
         // The line is fast check plus deep audit: the weaker label of the two, as the total's (D46).
         measuredLabel={costLabel(roi.simulated, roi.total_per_1k.label)}
         bandLabels={bandLabels(roi)}
+        unavailable={{ full_audit: fullAuditNotComparable(roi) }}
         spanWords={spanWords(timeWindow, replay)}
         windowPicker={!replay}
         headingLevel={2}
@@ -236,7 +250,7 @@ function SpendChart({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: 
  * sits next to the row's name, so the table keeps three columns and fits a phone.
  */
 function ComponentTable({ roi, timeWindow, replay }: { roi: RoiSummary; timeWindow: TimeWindow; replay: boolean }) {
-  const rows = componentRows(roi);
+  const rows = componentRows(roi, savingsLine(roi).freeMockJudge ? realJudgeView(roi) : null);
   const span = spanWords(timeWindow, replay);
   return (
     <Card>

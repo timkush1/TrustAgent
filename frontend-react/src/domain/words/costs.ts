@@ -81,6 +81,12 @@ export const costFullAuditBasis: string = costClaim('llm_full_audit_cost_per_1k'
 export const costSameChecksPublished: CostClaim = costClaim('llm_same_checks_cost_per_1k');
 
 /**
+ * The published assumption for the fast check on every answer, per 1,000 answers (value claim
+ * fast_check_cost_per_1k, an estimate), with its basis: the first part of the shipped-defaults total.
+ */
+export const costFastCheckPublished: CostClaim = costClaim('fast_check_cost_per_1k');
+
+/**
  * What checking costs with a real judge at the shipped defaults (value claim
  * default_total_cost_per_1k, an estimate): the fast check on every answer plus a full audit of the
  * deep-audited share. `auditShare` is that share, from the same inputs the published figure uses
