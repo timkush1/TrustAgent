@@ -175,7 +175,9 @@ class CheckRecordingTest(unittest.TestCase):
 
     def test_no_credentials_or_email_addresses(self) -> None:
         def leak(doc: Dict[str, Any]) -> None:
-            doc["body"]["response_text"] = "Write to jane.doe@acme-mail.io with sk-live1234567890abc"
+            doc["body"][
+                "response_text"
+            ] = "Write to jane.doe@acme-mail.io with sk-live1234567890abc"
 
         self.edit_trace(leak)
         self.assert_problem("an e-mail address")
@@ -191,6 +193,7 @@ class CheckRecordingTest(unittest.TestCase):
 
         self.edit_trace(reserved)
         self.assertEqual([p for p in self.problems() if "e-mail" in p], [])
+
         # A real domain next to them is still refused.
         def mixed(doc: Dict[str, Any]) -> None:
             doc["body"]["response_text"] += " Or jane@acme-mail.io."
@@ -201,10 +204,24 @@ class CheckRecordingTest(unittest.TestCase):
 
 class ReservedHostTest(unittest.TestCase):
     def test_mirrors_the_go_sanitizer(self) -> None:
-        for host in ("localhost", "example.com", "EXAMPLE.NET.", "a.example.org", "x.example", "y.test",
-                     "z.invalid", "w.localhost"):
+        for host in (
+            "localhost",
+            "example.com",
+            "EXAMPLE.NET.",
+            "a.example.org",
+            "x.example",
+            "y.test",
+            "z.invalid",
+            "w.localhost",
+        ):
             self.assertTrue(check_recording.reserved_host(host), host)
-        for host in ("example.co", "notexample.com", "example.com.evil.io", "acme.io", "testing.dev"):
+        for host in (
+            "example.co",
+            "notexample.com",
+            "example.com.evil.io",
+            "acme.io",
+            "testing.dev",
+        ):
             self.assertFalse(check_recording.reserved_host(host), host)
 
 
