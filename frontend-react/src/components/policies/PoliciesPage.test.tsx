@@ -149,7 +149,7 @@ describe('Policies page', { timeout: 20_000 }, () => {
     renderPage('/app/policies', { control: createControlApi({ policies: policyState({ effective_routes: routes }) }) });
     const support = await card('support-bot');
     // Setting the route to Block first would give a route that still cannot block.
-    expect(within(support).getByText('· 2 of 5 done · next: calibrate it for the current fast-check version')).toBeInTheDocument();
+    expect(within(support).getByText('2 of 5 done · next: calibrate it for the current fast-check version')).toBeInTheDocument();
     const steps = within(support).getAllByRole('listitem').filter((li) => li.hasAttribute('data-missing'));
     expect(steps.map((li) => li.textContent?.replace(/:.*$/, ''))).toEqual([
       'Calibrated for the current fast-check version',
@@ -178,7 +178,7 @@ describe('Policies page', { timeout: 20_000 }, () => {
     const support = await card('support-bot');
     expect(within(support).getByText('Block → currently acting as Flag')).toBeInTheDocument();
     // The next requirement reads as an instruction.
-    expect(within(support).getByText(/^· \d of \d done · next: calibrate it for the current fast-check version$/)).toBeInTheDocument();
+    expect(within(support).getByText(/^\d of \d done · next: calibrate it for the current fast-check version$/)).toBeInTheDocument();
     await user.click(within(support).getByRole('button', { name: 'Buffer streams' }));
     expect(await screen.findByRole('region', { name: 'Unsaved changes' })).toBeInTheDocument();
 

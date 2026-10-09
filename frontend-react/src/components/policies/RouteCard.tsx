@@ -180,12 +180,13 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
               )}
               <span className="font-medium text-fg">{evaluatorDisplayName(b.evaluator, names)}</span>
               <span className="text-xs text-fg-muted">{b.ready ? 'ready to block' : 'not ready to block'}</span>
-              {b.ready ? null : (
-                <span className="text-xs text-fg-muted tabular" title={next ? readinessWords(next).missing : undefined}>
-                  · {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).action}` : ''}
-                </span>
-              )}
             </p>
+            {/* Its own line under the name, so a wrap never starts a line with a separator. */}
+            {b.ready ? null : (
+              <p className="pl-5 text-xs text-fg-muted tabular" title={next ? readinessWords(next).missing : undefined}>
+                {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).action}` : ''}
+              </p>
+            )}
             {/* The whole checklist is one click away, not repeated open on every check of every route. */}
             <details className="pl-5 text-xs">
               <summary className="cursor-pointer text-fg-muted select-none">All {shown.length} requirements</summary>
