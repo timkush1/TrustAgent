@@ -30,10 +30,16 @@ paths = [
 description = "Detector golden vectors: synthetic secrets the secret detector must flag"
 paths = ['''^contracts/vectors/detectors/''']
 
-# The fake-key conventions, wherever they appear (for example the dashboard's unit tests), and the
-# one-character placeholder key in the copy-button test.
+# The fake-key conventions in the other test files (the dashboard's unit tests and the scripts'
+# tests), and the one-character placeholder key in the copy-button test. Both conditions must
+# hold: a convention-shaped key anywhere else still fails the job.
 [[allowlists]]
-description = "The project's fake-key conventions"
+description = "The project's fake-key conventions, in the dashboard's and the scripts' tests"
+condition = "AND"
+paths = [
+  '''^frontend-react/src/.+\.test\.tsx?$''',
+  '''^scripts/tests/''',
+]
 regexTarget = "secret"
 regexes = [
   '''^sk-test-[A-Za-z0-9_-]*$''',
