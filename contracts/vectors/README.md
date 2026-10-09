@@ -30,13 +30,16 @@ Every file is `{"vector":"1","kind","name","status","description","input","expec
 | `detectors` | 53 (53 + 0) | 40, at least 5 per detector | hand-authored | `internal/decision` |
 | `evidence` | 23 (19 + 4) | 20 | hand-authored | `internal/evidence` (every `api_format`) |
 | `lint` | 23 (23 + 0) | 14 | hand-authored | `internal/decision` (`lint.go`) |
-| `cost` | 18 (18 + 0) | 8 | generated | Go all `fn`; Python `call_cost`; TS P5 (D85) |
+| `cost` | 24 (24 + 0) | 8 | generated | Go all `fn`; Python `call_cost`; TypeScript (`src/lib/decision/cost.ts`) |
+| `pkce` | 5 (5 + 0) | 4 | generated | Go stdlib reference (`vectors/pkce.go`) and `internal/credentials`; TypeScript (`src/lib/openrouter/pkce.ts`) |
 
 The `decide` vectors cover `calibration_missing`, an `other_snapshot` calibration entry and
 `calibration_warning` (D56). `lint` runs in Go (`backend-go/internal/decision/vectors/lint.go`, D54) and
 TypeScript; `cost` runs in Go for every `fn` (`backend-go/internal/decision/vectors/cost.go`, D85) and in
-Python for `call_cost`; TypeScript skips `cost` until P5. `pkce` vectors are TypeScript-only
-and arrive with `src/lib/openrouter/pkce.ts` in P5.
+Python for `call_cost`, and in TypeScript (`src/lib/decision/cost.ts`, the landing calculator's runner).
+`pkce` runs in Go against a standard-library reference (`backend-go/internal/decision/vectors/pkce.go`),
+in `internal/credentials` (`TestPKCEVectors`, its own challenge and verifier encoding) and in TypeScript
+(`src/lib/openrouter/pkce.ts`, the static site's Connect).
 
 Go runs every vector in `TestVectors` (`backend-go/internal/decision/vectors_test.go`, loaded from the
 `github.com/truthtable/contracts` module): kinds with a Go runner must pass in full, draft and frozen alike;
@@ -301,8 +304,22 @@ at that risk. Input order matters: every sum runs in input order.
   `cost.go` document them; a price table is given inline in the `pricing.v1` shape.
 - `expected`: the function's result as JSON, written by `cmd/vectorgen`.
 - Runners: Go runs every `fn`; Python runs `call_cost` only (`backend-python/tests/unit/test_contract_vectors.py`),
-  because the engine receives the already-effective table; the TypeScript runner joins with the landing
-  calculator in P5.
+  because the engine receives the already-effective table; TypeScript runs every `fn`
+  (`src/lib/decision/cost.ts`, the landing calculator's).
+
+### `pkce`
+
+- `input`: `{op, ...}` (RFC 7636, S256 only): `challenge {verifier}` gives `{challenge}`, base64url of the
+  verifier's SHA-256 without padding; `verifier_from_bytes {bytes_hex}` gives `{verifier}`, the 32 bytes
+  in base64url without padding (43 characters); `auth_url {callback_url, challenge, key_label?}` gives
+  `{url}`, `https://openrouter.ai/auth?` with `callback_url`, `code_challenge`, `code_challenge_method=S256`
+  and `key_label` (when given) in that order, each value percent-encoded except the RFC 3986 unreserved
+  characters.
+- Vectors: RFC 7636 Appendix B (its octets to its verifier, its verifier to its challenge), all-zero and
+  all-0xff bytes, and the Pages callback `https://timkush1.github.io/TrustAgent/connect/callback/`.
+- Runners: Go `vectors/pkce.go` is the reference (standard library only); `internal/credentials`
+  checks `CodeChallenge` and its verifier encoding against them; TypeScript `src/lib/openrouter/pkce.ts`
+  runs every op.
 
 ## SPEC §7.6 coverage
 

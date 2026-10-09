@@ -19,7 +19,10 @@ TraceDetail). This script refuses a recording that could mislead a reader:
 - The directory must be consistent: one trace file per manifest trace (no extras), matching ids and
   answer sources, totals and answer-source counts that add up, events in time order that name
   known traces.
-- No credential or e-mail address may appear anywhere (the recording is public).
+- No credential or e-mail address may appear anywhere (the recording is public). An address at a
+  reserved example domain (RFC 2606 and RFC 6761: example.com/.net/.org, .example, .test, .invalid,
+  .localhost, localhost) is not a real one and passes, as the Go sanitizer keeps those hosts
+  (backend-go/internal/recording/sanitize.go reservedHost).
 
 Exit status: 0 ok, 1 a check failed, 2 usage or environment error (for example jsonschema missing:
 pip install jsonschema).
@@ -49,8 +52,24 @@ SECRET_PATTERNS = [
     ("an x-api-key header", re.compile(r"x-api-key:\s*\S+", re.IGNORECASE)),
     ("a private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     ("a JWT", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
-    ("an e-mail address", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    ("an e-mail address", re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")),
 ]
+
+RESERVED_DOMAINS = ("example.com", "example.net", "example.org")
+RESERVED_TLDS = (".example", ".test", ".invalid", ".localhost")
+
+
+def reserved_host(host: str) -> bool:
+    """A name under the reserved example domains (RFC 2606, RFC 6761), or localhost.
+
+    Mirrors reservedHost in backend-go/internal/recording/sanitize.go.
+    """
+    h = host.lower().rstrip(".")
+    if h == "localhost":
+        return True
+    if any(h == d or h.endswith("." + d) for d in RESERVED_DOMAINS):
+        return True
+    return h.endswith(RESERVED_TLDS)
 
 
 class Problems:
@@ -169,7 +188,11 @@ def check_honesty(doc: Any, where: str, kind: str, problems: Problems) -> None:
 def check_secrets(doc: Any, where: str, problems: Problems) -> None:
     for path, text in strings(doc):
         for name, pattern in SECRET_PATTERNS:
-            if pattern.search(text):
+            if name == "an e-mail address":
+                found = any(not reserved_host(m.group(1)) for m in pattern.finditer(text))
+            else:
+                found = pattern.search(text) is not None
+            if found:
                 problems.add(where, f"{path or '(root)'} contains {name}; sanitize the recording")
 
 

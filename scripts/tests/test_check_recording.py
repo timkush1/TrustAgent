@@ -175,11 +175,37 @@ class CheckRecordingTest(unittest.TestCase):
 
     def test_no_credentials_or_email_addresses(self) -> None:
         def leak(doc: Dict[str, Any]) -> None:
-            doc["body"]["response_text"] = "Write to jane.doe@example.com with sk-live1234567890abc"
+            doc["body"]["response_text"] = "Write to jane.doe@acme-mail.io with sk-live1234567890abc"
 
         self.edit_trace(leak)
         self.assert_problem("an e-mail address")
         self.assert_problem("an sk- API key")
+
+    def test_addresses_at_reserved_example_domains_pass(self) -> None:
+        # RFC 2606 and RFC 6761 names are never real mailboxes (pii-leak-flag answers with one).
+        def reserved(doc: Dict[str, Any]) -> None:
+            doc["body"]["response_text"] = (
+                "Write to jordan.miller@example.net, ops@mail.example.com, a@b.example, "
+                "c@d.test, e@f.invalid or g@h.localhost."
+            )
+
+        self.edit_trace(reserved)
+        self.assertEqual([p for p in self.problems() if "e-mail" in p], [])
+        # A real domain next to them is still refused.
+        def mixed(doc: Dict[str, Any]) -> None:
+            doc["body"]["response_text"] += " Or jane@acme-mail.io."
+
+        self.edit_trace(mixed)
+        self.assert_problem("an e-mail address")
+
+
+class ReservedHostTest(unittest.TestCase):
+    def test_mirrors_the_go_sanitizer(self) -> None:
+        for host in ("localhost", "example.com", "EXAMPLE.NET.", "a.example.org", "x.example", "y.test",
+                     "z.invalid", "w.localhost"):
+            self.assertTrue(check_recording.reserved_host(host), host)
+        for host in ("example.co", "notexample.com", "example.com.evil.io", "acme.io", "testing.dev"):
+            self.assertFalse(check_recording.reserved_host(host), host)
 
 
 if __name__ == "__main__":

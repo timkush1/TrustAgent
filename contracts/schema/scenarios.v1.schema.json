@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/scenarios.v1.schema.json",
   "title": "ScenarioPack",
-  "description": "contracts/demo/scenarios.v1.json: the single source of demo and e2e traffic (SPEC §7.6, §2.13). Go cmd/trafficgen sends each request with X-TrustAgent-Scenario (test mode); the mock decision backend answers from mock_answers (fallback.mock_answers for the re-gated fallback answer), mock-upstream serves response (and fallback.response) as the upstream answer, and the mock judge answers from judge. --expect asserts expect against the response (headers, trailers, the SSE decision comment and the delivered text) and the stored trace.",
+  "description": "contracts/demo/scenarios.v1.json (the main pack) and contracts/demo/faults.v1.json (the faults pack, D119): the single source of demo, e2e and fault traffic (SPEC §7.6, §2.13). Go cmd/trafficgen sends each request with X-TrustAgent-Scenario (test mode); the mock decision backend answers from mock_answers (fallback.mock_answers for the re-gated fallback answer), mock-upstream serves response (and fallback.response) as the upstream answer, and the mock judge answers from judge. --expect asserts expect against the response (headers, trailers, the SSE decision comment and the delivered text) and the stored trace.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "scenarios"],
@@ -10,7 +10,7 @@
     "schema": {"const": "trustagent.scenarios/v1"},
     "scenarios": {
       "type": "array",
-      "minItems": 1,
+      "description": "The scenarios in send order. The main pack is never empty; the faults pack starts empty and GO fills it (validate.mjs).",
       "items": {
         "title": "Scenario",
         "type": "object",
@@ -39,7 +39,7 @@
             "minItems": 1,
             "uniqueItems": true,
             "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
-            "description": "Selection tags for trafficgen --scenarios: s0 (the walking skeleton), demo, e2e, generated (answer_source generated), untagged (documents in shapes evidence extraction does not read, so the gate is not_assessed), knowledge (needs the knowledge add-on). A phase tag (p3, p4, p5) marks a scenario that needs that gateway phase (streaming gating, block and fallback bodies, /v1/messages, /v1/completions, routes in config/policies.pending.yaml); trafficgen skips it unless --phase reaches that phase."
+            "description": "Selection tags for trafficgen --scenarios: s0 (the walking skeleton), demo, e2e, generated (answer_source generated), untagged (documents in shapes evidence extraction does not read, so the gate is not_assessed), knowledge (needs the knowledge add-on), faults (vendor-fault scenarios: only in contracts/demo/faults.v1.json, where every scenario carries it, D119). A phase tag (p3, p4, p5) marks a scenario that needs that gateway phase (streaming gating, block and fallback bodies, /v1/messages, /v1/completions, routes in config/policies.pending.yaml); trafficgen skips it unless --phase reaches that phase."
           },
           "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
           "api_format": {
@@ -121,6 +121,16 @@
             "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
             "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
             "description": "Answers the mock decision backend returns for this scenario, keyed by question id: \"<id>__v<version>\" of each evaluator attached to the route that compile() sends (SPEC §2.9 step 5). Evaluators that compile excludes (for example no_evidence) are not asked and have no answer; evaluators that need no evidence are always asked (validate.mjs checks both against config/policies.yaml)."
+          },
+          "mock_faults": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "description": "Vendor faults mock-upstream injects for this scenario (D119; faults pack only): decision for the decision-model endpoints, upstream for the LLM upstream. A value is a mock-upstream fault name (cmd/mock-upstream Faults), optionally counted: <name>@<n> faults the first n calls of one request (attempt and hedge share the count through X-Mock-Key) and answers normally after. trafficgen sends the decision fault as X-TrustAgent-Scenario fault:<value>, a forward-only value of the test-header seam (internal/jev/testheaders.go).",
+            "properties": {
+              "decision": {"type": "string", "pattern": "^[a-z0-9_]+(@[0-9]+)?$"},
+              "upstream": {"type": "string", "pattern": "^[a-z0-9_]+(@[0-9]+)?$"}
+            }
           },
           "knowledge": {
             "type": "array",
@@ -268,6 +278,21 @@
                 "default": 200,
                 "description": "The HTTP status of the gateway response (a block with style error answers block.status)."
               },
+              "degraded": {
+                "type": "boolean",
+                "description": "Whether the decision is degraded (D119): a vendor fault left the gate without a full answer (status error:<kind>, timeout or partial), and the trace says the check did not complete. Absent: not asserted."
+              },
+              "decision_model": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "description": "What the decision-model client did for this request (D119), read from the stored trace: attempts counts vendor requests (retries and the hedge included), hedged whether a hedge was sent, late whether an answer arrived after the deadline and was recorded late. Absent fields are not asserted.",
+                "properties": {
+                  "attempts": {"type": "integer", "minimum": 0, "maximum": 10},
+                  "hedged": {"type": "boolean"},
+                  "late": {"type": "boolean"}
+                }
+              },
               "stream_decision": {
                 "type": "object",
                 "additionalProperties": false,
@@ -285,7 +310,7 @@
             }
           }
         },
-        "$comment": "A scripted scenario needs response; fallback needs a fallback-mode route, knowledge a route with the knowledge source (checked by validate.mjs)."
+        "$comment": "A scripted scenario needs response; fallback needs a fallback-mode route, knowledge a route with the knowledge source; mock_faults appears only in the faults pack, whose scenarios all carry the faults set and an explicit judge, fixtures or null (checked by validate.mjs)."
       }
     }
   }

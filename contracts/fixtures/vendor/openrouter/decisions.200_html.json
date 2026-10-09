@@ -1,0 +1,38 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "POST",
+    "path": "/api/alpha/decisions",
+    "headers": {
+      "authorization": "Bearer sk-or-v1-e2e-fixture-key",
+      "content-type": "application/json",
+      "x-mock-fault": "html200"
+    },
+    "body": {
+      "model": "typesafe/jev-1.13",
+      "questions": {
+        "contradiction__v1": {
+          "criteria": {
+            "false": "Nothing in it conflicts with the evidence.",
+            "true": "It states something the evidence rules out."
+          },
+          "instructions": "Does the assistant_response contradict the evidence?",
+          "type": "noul"
+        }
+      },
+      "state": {
+        "assistant_response": "You can return it within 60 days for a full refund.",
+        "evidence": [
+          "Refunds are accepted within 30 days of purchase."
+        ]
+      }
+    }
+  },
+  "status": 200,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "text/html; charset=utf-8"
+  },
+  "body": "\u003c!DOCTYPE html\u003e\u003chtml lang=\"en\"\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003ctitle\u003eOpenRouter\u003c/title\u003e\u003c/head\u003e\u003cbody\u003e\u003cdiv id=\"__next\"\u003eA unified interface for LLMs\u003c/div\u003e\u003c/body\u003e\u003c/html\u003e"
+}

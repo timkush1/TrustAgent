@@ -71,7 +71,7 @@ const maxFaultKeys = 100_000
 // Faults are the fault names a spec may use.
 var Faults = []string{
 	"hang", "html200", "402_inflight", "402_credits", "429", "529", "413",
-	"400", "400_context", "401", "403", "404", "404_data_policy", "422", "500", "502", "503", "524",
+	"400", "400_context", "401", "403", "403_moderation", "404", "404_data_policy", "422", "500", "502", "503", "524",
 	"bad_json", "no_answers", "slow",
 }
 

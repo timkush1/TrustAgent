@@ -26,13 +26,17 @@ the `cost` vectors.
 | `pricing/assumptions.v1.json` | The assumptions behind every cost estimate, as checkable arithmetic | `pricing-assumptions.v1` |
 | `claims/value-claims.v1.json` | Every number on the landing page, README and Savings panel, with its label | `value-claims.v1` |
 | `claims/measured.json` | Our measured values; explicit nulls until `make bench-publish` writes them | `measured.v1` |
+| `claims/compare.v1.json` | The landing page's comparison table: kinds of tools by capability, each vendor cell sourced and dated or `unverified` (P5-PLAN D113) | `compare.v1` |
 | `demo/scenarios.v1.json` | Demo and e2e traffic, with mock fast-check answers and mock judge fixtures | `scenarios.v1` |
+| `demo/faults.v1.json` | The faults pack: vendor-fault scenarios (`mock_faults`), kept out of the demo (P5-PLAN D119) | `scenarios.v1` |
 | `ui/outcomes.v1.json` | The single outcome per trace, level words and reason copy | `ui-outcomes.v1` |
 | `ui/copy.v1.json` | User-facing strings (banners, wizard, trace detail, savings, limits) | `ui-copy.v1` |
 | `ui/glossary.v1.json` | Plain-language definitions for `<Term id>` tooltips | `ui-glossary.v1` |
 | `ui/commands.v1.json` | Every copyable command | `ui-commands.v1` |
 | `fixtures/api/<Type>.<case>.json` | One golden REST body or WebSocket event per `api.v1` type (`Page<T>` is spelled `Page-T`); msw handlers and Go handler tests start from them | `api.v1#/$defs/<Type>` |
-| `fixtures/vendor/` | Sanitized vendor captures (P1g) | parse-only |
+| `fixtures/vendor/<vendor>/<endpoint>.<case>.json` | Vendor responses `{source, request, status, headers, body}`; the OpenRouter ones are synthetic (mock-upstream's answers, kept equal by `vendor_fixtures_test.go`) with the CORS headers openrouter.ai sent at P5 Step 0a, and say so in `source` | parse-only, shape checked |
+| `fixtures/prompts/<prompt>-render.<case>.json` | A prompt as the Python engine renders it, for byte parity of other senders (the browser's drafter); `backend-python/tests/unit/test_drafter_fixtures.py` regenerates and checks them | parse-only, shape checked |
+| `fixtures/load/load-run.example.json` | An illustrative load run (not a measurement) | `load-run.v1` |
 | `vectors/<kind>/<name>.json` | Golden vectors; the input and expected shape of each kind is in [`vectors/README.md`](vectors/README.md) | `vector.v1` |
 | `superseded.v1.json` | SPEC Appendix A as data, for `scripts/check-forbidden.mjs` | `superseded.v1` |
 | `go.mod`, `embed.go` | Go module `github.com/truthtable/contracts` exposing `contracts.FS` | |
@@ -163,6 +167,15 @@ security check) are validated like drafts, so changing a rule in the system text
 deterministic story that every service reads, so a zero-key stack (`make demo`: mock decision backend, mock
 judge, test mode) produces the same traces every time.
 
+`demo/faults.v1.json` is a second pack with the same schema for vendor faults (P5-PLAN D119): each
+scenario carries the `faults` set, names its `judge` (fixtures, or `null` for no LLM call; the mock judge
+fails an unscripted audit), and sets `mock_faults {decision?, upstream?}`, the mock-upstream fault each
+endpoint answers with (`<name>` or `<name>@<n>` for the first n calls). Its expectations may also assert
+`expect.degraded` and `expect.decision_model {attempts?, hedged?, late?}`. The main pack never holds a
+fault scenario, so the demo, the Playground examples and the recording never see one; ids are unique
+across both packs, and at most 4 scenarios in a row fault the decision model, so a pack run never opens
+the breaker. It starts empty; the GO stream fills it.
+
 | Field | Meaning and consumer |
 |---|---|
 | `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend (and mock-upstream's decision endpoints) look up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |
@@ -202,8 +215,8 @@ set tag: `p3` for streaming gating, `/v1/messages`, `/v1/completions`, block and
 in `config/policies.pending.yaml`. `trafficgen` skips scenarios whose phase is later than `--phase`
 (default: the phase this build implements, `p4`; no scenario carries `p4` yet), so a gateway of an earlier
 phase can still be driven with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
-that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 26 scenarios
-(6 of them `p3`) and the e2e set 23. A Go test fails when a scenario's tags do not match its features.
+that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 27 scenarios
+(7 of them `p3`) and the e2e set 24. A Go test fails when a scenario's tags do not match its features.
 
 **Calibration.** `config/calibration/mock__jev-heuristic-v1.json` is the calibration of the mock snapshot,
 quality `mock`: an identity table with no labels behind it. It counts only with the mock backend, in demo
@@ -221,7 +234,7 @@ the judge is the mock provider, and traces are written before the response retur
 takes the upstream path; `make e2e-down` removes the stack. Both targets send trafficgen's default phase (`p4`);
 `DEMO_PHASE` and `E2E_PHASE` choose another.
 
-The pack (27 scenarios):
+The pack (28 scenarios):
 
 | Scenario | Route (mode) | Shows | Gate | Deep audit | Outcome |
 |---|---|---|---|---|---|
@@ -248,6 +261,7 @@ The pack (27 scenarios):
 | `completions-extension-grounded` | support-bot (flag) | p3: `/v1/completions` with `trustagent.context` | pass, supported | GROUNDED | passed |
 | `payments-fallback` | payments-faq (fallback) | p3: replaced by a grounded fallback (mock calibration) | fallback | HALLUCINATED (original) | replaced |
 | `help-center-link-block` | help-center (block) | p3: invented link blocked in a buffered stream | block | HALLUCINATED | blocked |
+| `help-center-link-block-json` | help-center (block) | p3: the same block on a JSON answer (the browser recorder replays it) | block | HALLUCINATED | blocked |
 | `help-center-uncalibrated-flag` | help-center (block) | p3: uncalibrated block acts as a flag | flag (would block) | HALLUCINATED | flagged |
 | `knowledge-only-capped` | handbook (flag) | p3, knowledge: knowledge-only evidence capped at warn | flag, contradicted | HALLUCINATED | flagged |
 | `generated-monthly-refund` | support-bot (flag) | generated answer (stand-in) | pass | GROUNDED | passed |
@@ -335,7 +349,13 @@ and then runs the cross-file checks JSON Schema cannot express:
   routes (with the `knowledge` tag), `stream_decision` only on streams, the `generated` set exactly the
   generated scenarios, no phase tag in `s0`; the deep-audit fields agree with `judge` (`NOT_ASSESSED` needs
   `judge: null`); judge quotes occur verbatim in `response` and verifier evidence verbatim in `request` or
-  `knowledge`;
+  `knowledge`; the same rules hold for `demo/faults.v1.json`, where every scenario carries the `faults` set
+  and an explicit `judge`, at most 4 in a row set `mock_faults.decision`, and ids are unique across both
+  packs (`faults` and `mock_faults` never appear in the main pack);
+- claims: a `per_unit_of` claim is its usd_per_1k claim or assumptions figure divided by 1,000; compare
+  cells cover every column, and a cell other than `unverified` has `text`, `source_url` and `as_of`;
+- vendor fixtures: `{source, request, status, headers, body}`, `source` starting `synthetic: ` or
+  `capture: `, lowercase header names, only obvious fake keys; prompt fixtures name an existing prompt;
 - UI: every outcome is reachable and the last rule is a catch-all; glossary `see_also`, `{command:}` and
   `{claim:}` references resolve; commands name real compose services and profiles;
 - `superseded.v1.json` has the shape `scripts/check-forbidden.mjs` accepts, and no contract file uses one of

@@ -1,0 +1,361 @@
+{
+  "id": 1,
+  "created_at": "2026-10-09T20:00:34.394198287Z",
+  "source": "file",
+  "author": "file",
+  "message": "Loaded from /tmp/TestZZDumpPolicyState3453559616/001/policies.yaml",
+  "sha256": "aa05d42663abc2ff1d9774f8d1369103e1156e35203f2e6f818b02327543c406",
+  "yaml": "version: 1\ndefaults:\n  fail: closed\nroutes:\n  - name: support-bot\n    description: Support answers, grounded in the refund policy.\n    match: {headers: {X-TrustAgent-Route: support-bot}}\n    mode: flag\n    sample_rate: 0.5\n    evaluators: [{ref: contradiction@1}]\n",
+  "doc": {
+    "defaults": {
+      "fail": "closed"
+    },
+    "routes": [
+      {
+        "description": "Support answers, grounded in the refund policy.",
+        "evaluators": [
+          {
+            "ref": "contradiction@1"
+          }
+        ],
+        "match": {
+          "headers": {
+            "X-TrustAgent-Route": "support-bot"
+          }
+        },
+        "mode": "flag",
+        "name": "support-bot",
+        "sample_rate": 0.5
+      }
+    ],
+    "version": 1
+  },
+  "etag": "\"v1\"",
+  "locked": false,
+  "persisted": false,
+  "editable": false,
+  "editable_reason": "file-managed (no database)",
+  "effective_routes": [
+    {
+      "name": "support-bot",
+      "match": {
+        "headers": {
+          "X-TrustAgent-Route": "support-bot"
+        }
+      },
+      "mode": "flag",
+      "effective_mode": "flag",
+      "fail": "closed",
+      "downgrades": [],
+      "block_readiness": [
+        {
+          "evaluator": "contradiction@1",
+          "ready": false,
+          "missing": [
+            "mode",
+            "calibration",
+            "buffering"
+          ]
+        }
+      ],
+      "evaluators": [
+        {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "resolved": true,
+          "calibration_state": "none",
+          "threshold_space": "raw",
+          "warn_at": 0.7,
+          "critical_at": 0.95
+        }
+      ],
+      "settings": {
+        "mode": "flag",
+        "fail": "closed",
+        "deadline_ms": 600,
+        "hedge_after_ms": 0,
+        "sample_rate": 0.5,
+        "require_calibration": true,
+        "on_no_evidence": "ignore",
+        "streaming": "passthrough",
+        "stream_annotations": "comment",
+        "buffer_keepalive_s": 15,
+        "headers": "full",
+        "evidence": {
+          "sources": [
+            "request_system",
+            "request_context",
+            "tool_results",
+            "extension"
+          ],
+          "system_mode": "documents_only",
+          "line_headers": true,
+          "tag_patterns": [],
+          "max_tokens": 8000,
+          "untrusted_tools": [],
+          "knowledge": {
+            "when": "fallback",
+            "top_k": 5,
+            "deadline_ms": 150,
+            "min_score": 0.3
+          }
+        },
+        "evaluators": [
+          {
+            "ref": "contradiction@1"
+          }
+        ],
+        "detectors": {
+          "flag_on": [
+            "urls_not_in_evidence",
+            "quotes_not_in_evidence",
+            "citation_out_of_range",
+            "secret_pattern",
+            "system_prompt_leak"
+          ],
+          "block_on": [],
+          "min_integer": 10
+        },
+        "decision": {
+          "max_response_tokens": 6000
+        },
+        "deep_audit": {
+          "enabled": true,
+          "pass_sample_rate": 0.02,
+          "uniform_sample_rate": 0.01,
+          "error_sample_rate": 0.1,
+          "verifier": "auto"
+        },
+        "block": {
+          "style": "message",
+          "message": "I can't provide a verified answer to that right now.",
+          "status": 422,
+          "anthropic_stop_reason": "refusal"
+        },
+        "fallback": {
+          "upstream": "same",
+          "model": "",
+          "system_prompt": "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT.",
+          "on_fail": "block"
+        },
+        "store_bodies": "sampled",
+        "body_sample_rate_pass": 0.2
+      }
+    },
+    {
+      "name": "default",
+      "match": {},
+      "mode": "observe",
+      "effective_mode": "observe",
+      "fail": "closed",
+      "downgrades": [],
+      "block_readiness": [
+        {
+          "evaluator": "groundedness@1",
+          "ready": false,
+          "missing": [
+            "mode",
+            "calibration",
+            "buffering"
+          ]
+        },
+        {
+          "evaluator": "contradiction@1",
+          "ready": false,
+          "missing": [
+            "mode",
+            "calibration",
+            "buffering"
+          ]
+        },
+        {
+          "evaluator": "pii_secret_leak@1",
+          "ready": false,
+          "missing": [
+            "mode",
+            "calibration",
+            "buffering"
+          ]
+        }
+      ],
+      "evaluators": [
+        {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "resolved": true,
+          "calibration_state": "none",
+          "threshold_space": "raw",
+          "warn_at": 0.8,
+          "critical_at": 0.95
+        },
+        {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "resolved": true,
+          "calibration_state": "none",
+          "threshold_space": "raw",
+          "warn_at": 0.7,
+          "critical_at": 0.95
+        },
+        {
+          "ref": "refusal@1",
+          "stage": "active",
+          "resolved": true,
+          "calibration_state": "none",
+          "threshold_space": "raw",
+          "warn_at": 0.7,
+          "critical_at": null
+        },
+        {
+          "ref": "pii_secret_leak@1",
+          "stage": "active",
+          "resolved": true,
+          "calibration_state": "none",
+          "threshold_space": "raw",
+          "warn_at": 0.6,
+          "critical_at": 0.9
+        }
+      ],
+      "settings": {
+        "mode": "observe",
+        "fail": "closed",
+        "deadline_ms": 600,
+        "hedge_after_ms": 0,
+        "sample_rate": 1,
+        "require_calibration": true,
+        "on_no_evidence": "ignore",
+        "streaming": "passthrough",
+        "stream_annotations": "comment",
+        "buffer_keepalive_s": 15,
+        "headers": "full",
+        "evidence": {
+          "sources": [
+            "request_system",
+            "request_context",
+            "tool_results",
+            "extension"
+          ],
+          "system_mode": "documents_only",
+          "line_headers": true,
+          "tag_patterns": [],
+          "max_tokens": 8000,
+          "untrusted_tools": [],
+          "knowledge": {
+            "when": "fallback",
+            "top_k": 5,
+            "deadline_ms": 150,
+            "min_score": 0.3
+          }
+        },
+        "evaluators": [
+          {
+            "ref": "groundedness@1"
+          },
+          {
+            "ref": "contradiction@1"
+          },
+          {
+            "ref": "refusal@1"
+          },
+          {
+            "ref": "pii_secret_leak@1"
+          }
+        ],
+        "detectors": {
+          "flag_on": [
+            "urls_not_in_evidence",
+            "quotes_not_in_evidence",
+            "citation_out_of_range",
+            "secret_pattern",
+            "system_prompt_leak"
+          ],
+          "block_on": [],
+          "min_integer": 10
+        },
+        "decision": {
+          "max_response_tokens": 6000
+        },
+        "deep_audit": {
+          "enabled": true,
+          "pass_sample_rate": 0.02,
+          "uniform_sample_rate": 0.01,
+          "error_sample_rate": 0.1,
+          "verifier": "auto"
+        },
+        "block": {
+          "style": "message",
+          "message": "I can't provide a verified answer to that right now.",
+          "status": 422,
+          "anthropic_stop_reason": "refusal"
+        },
+        "fallback": {
+          "upstream": "same",
+          "model": "",
+          "system_prompt": "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT.",
+          "on_fail": "block"
+        },
+        "store_bodies": "sampled",
+        "body_sample_rate_pass": 0.2
+      }
+    }
+  ],
+  "file": {
+    "path": "config/policies.yaml",
+    "sha256": "e3e7cab385055d4a33946fb8bd8b5deae804a1b44599625abfa0861f22a5faad",
+    "status": "ok",
+    "errors": []
+  },
+  "warnings": [
+    "defaults.fail (line 3, col 9): fail: closed only matters in block and fallback modes (this route is observe)",
+    "routes[0].evaluators[0].ref (line 10, col 24): contradiction@1 implies groundedness, which this route does not attach, so their disagreement is never checked",
+    "defaults.fail (line 3, col 9): fail: closed only matters in block and fallback modes (this route is flag) (in route \"support-bot\")",
+    "routes[0].sample_rate (line 9, col 18): sample_rate applies to observe routes only; this flag route checks every request"
+  ],
+  "warning_details": [
+    {
+      "path": "defaults.fail",
+      "line": 3,
+      "col": 9,
+      "message": "fail: closed only matters in block and fallback modes (this route is observe)",
+      "code": "fail_closed_not_enforcing",
+      "details": {
+        "mode": "observe",
+        "route": "default"
+      }
+    },
+    {
+      "path": "routes[0].evaluators[0].ref",
+      "line": 10,
+      "col": 24,
+      "message": "contradiction@1 implies groundedness, which this route does not attach, so their disagreement is never checked",
+      "code": "implies_unattached",
+      "details": {
+        "implies": "groundedness",
+        "ref": "contradiction@1",
+        "route": "support-bot"
+      }
+    },
+    {
+      "path": "defaults.fail",
+      "line": 3,
+      "col": 9,
+      "message": "fail: closed only matters in block and fallback modes (this route is flag) (in route \"support-bot\")",
+      "code": "fail_closed_not_enforcing",
+      "details": {
+        "mode": "flag",
+        "route": "support-bot"
+      }
+    },
+    {
+      "path": "routes[0].sample_rate",
+      "line": 9,
+      "col": 18,
+      "message": "sample_rate applies to observe routes only; this flag route checks every request",
+      "code": "sample_rate_not_observe",
+      "details": {
+        "mode": "flag",
+        "route": "support-bot"
+      }
+    }
+  ]
+}

@@ -61,6 +61,16 @@
       "value": 0.01,
       "unit": "fraction",
       "basis": "Shipped default deep_audit.uniform_sample_rate."
+    },
+    "studio_draft_input_tokens": {
+      "value": 1500,
+      "unit": "tokens",
+      "basis": "One Studio Draft with AI call: the drafter prompt (contracts/prompts/evaluator-drafter.v1.json) plus the description."
+    },
+    "studio_draft_output_tokens": {
+      "value": 700,
+      "unit": "tokens",
+      "basis": "One drafted evaluator.v1 JSON answer."
     }
   },
   "token_model": {
@@ -139,6 +149,21 @@
               "uniform_sample_rate"
             ]
           }
+        }
+      ]
+    },
+    {
+      "id": "studio_draft_per_1k",
+      "title": "Studio Draft with AI, per 1,000 drafts",
+      "formula": "1,500 input tokens x $1/M + 700 output tokens x $5/M = $0.005 per draft",
+      "per_1k_usd": 5,
+      "terms": [
+        {
+          "label": "draft",
+          "price": "judge",
+          "calls": 1,
+          "input_tokens": "studio_draft_input_tokens",
+          "output_tokens": "studio_draft_output_tokens"
         }
       ]
     },

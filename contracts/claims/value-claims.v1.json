@@ -17,6 +17,34 @@
       "surfaces": ["landing", "readme", "dashboard", "docs"]
     },
     {
+      "id": "fast_check_cost_per_check",
+      "text": "One fast check",
+      "value": 0.00021,
+      "unit": "usd",
+      "display": "~$0.0002 per check",
+      "label": "estimate",
+      "basis": "The fast check on every answer per 1,000 answers (fast_check_cost_per_1k) divided by 1,000: about 5,000 input tokens at the Jev price of $0.042 per million input tokens; output is free.",
+      "source_url": null,
+      "as_of": "2026-10-09",
+      "caveat": null,
+      "per_unit_of": "fast_check_cost_per_1k",
+      "surfaces": ["landing", "dashboard", "docs"]
+    },
+    {
+      "id": "studio_draft_cost_estimate",
+      "text": "One Draft with AI in the Studio",
+      "value": 0.005,
+      "unit": "usd",
+      "display": "≈ $0.005 per draft",
+      "label": "estimate",
+      "basis": "One drafting call of about 1,500 prompt and 700 answer tokens to Claude Haiku 4.5 at $1 and $5 per million tokens (pricing/assumptions.v1.json figure studio_draft_per_1k / 1,000); a repair turn costs about as much again.",
+      "source_url": null,
+      "as_of": "2026-10-09",
+      "caveat": null,
+      "per_unit_of": "studio_draft_per_1k",
+      "surfaces": ["landing", "dashboard", "docs"]
+    },
+    {
       "id": "llm_same_checks_cost_per_1k",
       "text": "Asking an LLM judge (Claude Haiku) the same questions",
       "value": 5.75,
@@ -288,7 +316,7 @@
       "basis": "k6 overhead benchmark (make load-test-gate).",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); {machine}",
       "measured_ref": "proxy_overhead_ms_p50",
       "surfaces": ["readme", "docs"]
     },
@@ -303,7 +331,7 @@
       "basis": "k6 overhead benchmark (make load-test-gate).",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); {machine}",
       "measured_ref": "proxy_overhead_ms_p95",
       "surfaces": ["readme", "docs"]
     },

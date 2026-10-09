@@ -222,6 +222,94 @@ describe('validate.mjs', () => {
     assert.match(r.out, /no-evidence-not-assessed: audit_verdict NOT_ASSESSED makes no LLM call, so judge must be null/);
   });
 
+  test('the faults pack follows the main pack rules, and only it holds faults (D119)', () => {
+    const sb = sandbox();
+    const main = sb.read('demo/scenarios.v1.json');
+    const base = main.scenarios.find((s) => s.id === 'grounded-pass');
+    const fault = (id, decision, extra = {}) => ({ ...structuredClone(base), id, sets: ['faults', 'p5'], mock_faults: { decision }, ...extra });
+    const run5 = ['f1', 'f2', 'f3', 'f4', 'f5'].map((id) => fault(id, '429'));
+    const noJudge = fault('f-no-judge', '529@1');
+    delete noJudge.judge;
+    const untagged = fault('f-untagged', '500');
+    untagged.sets = ['p5'];
+    sb.write('demo/faults.v1.json', { schema: 'trustagent.scenarios/v1', scenarios: [...run5, noJudge, untagged, fault('grounded-pass', '503')] });
+    sb.edit('demo/scenarios.v1.json', (d) => {
+      d.scenarios[1].sets.push('faults');
+      d.scenarios[2].mock_faults = { upstream: '502' };
+    });
+    let r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /f5: more than 4 decision-model faults in a row would open the breaker/);
+    assert.doesNotMatch(r.out, /f4: more than 4/);
+    assert.match(r.out, /f-no-judge: a faults scenario names its judge/);
+    assert.match(r.out, /f-untagged: every scenario of the faults pack carries the faults set/);
+    assert.match(r.out, /grounded-pass: the id is also a scenario of demo\/scenarios\.v1\.json/);
+    assert.match(r.out, /refund-contradiction-flag: the faults set belongs to demo\/faults\.v1\.json/);
+    assert.match(r.out, /no-evidence-not-assessed: mock_faults belongs to demo\/faults\.v1\.json/);
+    // The main pack's rules apply to the faults pack: a broken expectation there is reported too.
+    const other = sandbox();
+    const bad = fault('f-bad-mode', '429');
+    bad.expect.mode = 'observe';
+    other.write('demo/faults.v1.json', { schema: 'trustagent.scenarios/v1', scenarios: [bad] });
+    r = run(other.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /demo\/faults\.v1\.json: f-bad-mode: action pass is impossible in observe mode/);
+    // A bad fault name pattern is a schema error.
+    const third = sandbox();
+    third.write('demo/faults.v1.json', { schema: 'trustagent.scenarios/v1', scenarios: [fault('f-pattern', 'Hang@x')] });
+    assert.match(run(third.root).out, /demo\/faults\.v1\.json: \/scenarios\/0\/mock_faults\/decision must match pattern/);
+    // The pack may be empty, but it must exist.
+    const fourth = sandbox();
+    rmSync(join(fourth.root, 'demo', 'faults.v1.json'));
+    assert.match(run(fourth.root).out, /demo\/faults\.v1\.json is missing/);
+  });
+
+  test('per-unit claims divide their per-1,000 figure; compare cells are sourced (D113, D114)', () => {
+    const sb = sandbox();
+    sb.edit('claims/value-claims.v1.json', (c) => {
+      c.claims.find((x) => x.id === 'fast_check_cost_per_check').value = 0.0003;
+      c.claims.find((x) => x.id === 'studio_draft_cost_estimate').per_unit_of = 'no_such_figure';
+    });
+    sb.edit('claims/compare.v1.json', (c) => {
+      c.rows[0].cells.inline = { value: 'yes', text: 'Runs as a hosted service.', source_url: null, as_of: null, reviewed: false };
+      c.rows[1].cells.self_hosted = { value: 'partial', text: '', source_url: 'https://example.com/docs', as_of: '2026-10-09', reviewed: false };
+      delete c.rows[2].cells.explanations;
+      c.rows[3].cells.extra = { value: 'unverified', text: '', source_url: null, as_of: null, reviewed: false };
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /fast_check_cost_per_check: value 0\.0003 must be fast_check_cost_per_1k \/ 1000/);
+    assert.match(r.out, /studio_draft_cost_estimate: per_unit_of no_such_figure is neither a usd_per_1k claim nor a figure/);
+    assert.match(r.out, /observability_judge\.inline: a yes cell needs the source_url it was read from and as_of/);
+    assert.match(r.out, /guardrails\.self_hosted: a partial cell says what the vendor documents \(text\)/);
+    assert.match(r.out, /cloud_groundedness: no cell for column explanations/);
+    assert.match(r.out, /small_model_evaluators: cell extra is not a column/);
+    // reviewed is a boolean (schema).
+    const other = sandbox();
+    other.edit('claims/compare.v1.json', (c) => { c.rows[0].cells.cost_class.reviewed = 'no'; });
+    assert.match(run(other.root).out, /claims\/compare\.v1\.json: \/rows\/0\/cells\/cost_class\/reviewed must be boolean/);
+  });
+
+  test('vendor, prompt and load fixtures keep their shapes (D108, D118, D122)', () => {
+    const sb = sandbox();
+    const ok = sb.read('fixtures/vendor/openrouter/decisions.401.json');
+    sb.write('fixtures/vendor/openrouter/decisions.captured.json', { ...ok, source: 'from my laptop' });
+    sb.write('fixtures/vendor/openrouter/key.leak.json', { ...ok, body: { key: 'sk-or-v1-0123456789abcdef0123' } });
+    sb.write('fixtures/vendor/openrouter/chat.headers.json', { ...ok, headers: { 'Content-Type': 'application/json' } });
+    sb.write('fixtures/vendor/openrouter/Bad-Name.json', ok);
+    sb.edit('fixtures/prompts/drafter-render.basic.json', (f) => { f.prompt = 'no-such-prompt.v1'; });
+    sb.edit('fixtures/load/load-run.example.json', (f) => { f.scenarios[0].n = 10; f.dirty = true; });
+    const r = run(sb.root);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /decisions\.captured\.json: source starts with "synthetic: "/);
+    assert.match(r.out, /key\.leak\.json: sk-or-v1-012… is not an obvious fake key/);
+    assert.match(r.out, /chat\.headers\.json: headers is an object of lowercase names/);
+    assert.match(r.out, /Bad-Name\.json: (a vendor fixture is named|no schema mapping)/);
+    assert.match(r.out, /drafter-render\.basic\.json: prompt no-such-prompt\.v1 is not in prompts\//);
+    assert.match(r.out, /load-run\.example\.json: \/scenarios\/0\/n must be >= 500/);
+    assert.match(r.out, /load-run\.example\.json: \/dirty must be equal to constant/);
+  });
+
   test('scenario mock answers and routes follow config/policies.yaml', { skip: !existsSync(POLICY) }, () => {
     const sb = sandbox();
     sb.edit('demo/scenarios.v1.json', (d) => {

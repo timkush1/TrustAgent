@@ -853,6 +853,36 @@
       ],
       "type": "object"
     },
+    "BlockReadiness": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluator": {
+          "type": "string"
+        },
+        "missing": {
+          "items": {
+            "enum": [
+              "evidence",
+              "corroborator",
+              "calibration",
+              "buffering",
+              "mode"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evaluator",
+        "ready",
+        "missing"
+      ],
+      "type": "object"
+    },
     "CalibrationEntry": {
       "$ref": "calibration.v1.schema.json#/$defs/CalibrationEntry"
     },
@@ -2662,6 +2692,59 @@
       ],
       "type": "object"
     },
+    "Downgrade": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "stream_not_buffered",
+            "uncalibrated",
+            "snapshot_changed",
+            "budget",
+            "breaker_open",
+            "decision_model_off",
+            "trusts_user_context"
+          ],
+          "type": "string"
+        },
+        "fix": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "link",
+                    "action"
+                  ],
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "target"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "fix"
+      ],
+      "type": "object"
+    },
     "DryRunResult": {
       "additionalProperties": false,
       "properties": {
@@ -2803,6 +2886,108 @@
         "examples",
         "cost_usd",
         "snapshot"
+      ],
+      "type": "object"
+    },
+    "EffectiveRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "block_readiness": {
+          "items": {
+            "$ref": "#/$defs/BlockReadiness"
+          },
+          "type": "array"
+        },
+        "downgrades": {
+          "items": {
+            "$ref": "#/$defs/Downgrade"
+          },
+          "type": "array"
+        },
+        "effective_mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "evaluators": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "calibration_state": {
+                "$ref": "#/$defs/CalibrationState"
+              },
+              "critical_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "resolved": {
+                "type": "boolean"
+              },
+              "stage": {
+                "enum": [
+                  "active",
+                  "shadow"
+                ],
+                "type": "string"
+              },
+              "threshold_space": {
+                "enum": [
+                  "raw",
+                  "calibrated"
+                ],
+                "type": "string"
+              },
+              "warn_at": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "ref",
+              "stage",
+              "resolved",
+              "calibration_state",
+              "threshold_space",
+              "warn_at",
+              "critical_at"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "fail": {
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "type": "string"
+        },
+        "match": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "mode": {
+          "$ref": "#/$defs/PolicyMode"
+        },
+        "name": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/RouteSettings"
+        }
+      },
+      "required": [
+        "name",
+        "match",
+        "mode",
+        "effective_mode",
+        "fail",
+        "downgrades",
+        "block_readiness",
+        "evaluators",
+        "settings"
       ],
       "type": "object"
     },
@@ -4399,6 +4584,9 @@
       ],
       "type": "object"
     },
+    "PolicyDoc": {
+      "$ref": "policy.v1.schema.json"
+    },
     "PolicyMode": {
       "enum": [
         "observe",
@@ -4407,6 +4595,134 @@
         "fallback"
       ],
       "type": "string"
+    },
+    "PolicyState": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "created_at": {
+          "$ref": "#/$defs/ISODateTime"
+        },
+        "doc": {
+          "$ref": "#/$defs/PolicyDoc"
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "editable_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effective_routes": {
+          "items": {
+            "$ref": "#/$defs/EffectiveRoute"
+          },
+          "type": "array"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "file": {
+          "additionalProperties": false,
+          "properties": {
+            "errors": {
+              "items": {
+                "$ref": "#/$defs/FieldError"
+              },
+              "type": "array"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "enum": [
+                "ok",
+                "missing",
+                "invalid",
+                "diverged"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "status",
+            "errors"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "number"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "bootstrap",
+            "file",
+            "dashboard",
+            "rollback",
+            "adopt_file"
+          ],
+          "type": "string"
+        },
+        "warning_details": {
+          "description": "The same warnings in the same order, each with its code (Go internal/policy WarningCodes: no_corroborator, implies_unattached, fail_closed_not_enforcing, sample_rate_not_observe, trusts_user_context, client_rules_enforcing, newest_version_invalid, file_diverged), its path and the details its words need (copy policies.warnings.<code>).",
+          "items": {
+            "$ref": "#/$defs/FieldError"
+          },
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "yaml": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "author",
+        "created_at",
+        "doc",
+        "editable",
+        "editable_reason",
+        "effective_routes",
+        "etag",
+        "file",
+        "id",
+        "locked",
+        "message",
+        "persisted",
+        "sha256",
+        "source",
+        "warnings",
+        "yaml"
+      ],
+      "type": "object"
     },
     "PriceEntry": {
       "additionalProperties": false,
@@ -5426,6 +5742,9 @@
       ],
       "type": "object"
     },
+    "RouteSettings": {
+      "$ref": "policy.v1.schema.json#/$defs/RouteSettings"
+    },
     "RuntimeSettings": {
       "additionalProperties": false,
       "properties": {
@@ -5907,6 +6226,7 @@
           "type": "number"
         },
         "warnings": {
+          "description": "path: the settings field a runtime warning is about, e.g. pricing_overrides[0].input_per_mtok.",
           "items": {
             "additionalProperties": false,
             "properties": {
@@ -5923,6 +6243,9 @@
                 "type": "string"
               },
               "message": {
+                "type": "string"
+              },
+              "path": {
                 "type": "string"
               }
             },
@@ -7848,6 +8171,46 @@
       ],
       "type": "object"
     },
+    "ValidateResult": {
+      "additionalProperties": false,
+      "properties": {
+        "block_readiness": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/BlockReadiness"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "diff": {
+          "type": "string"
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/FieldError"
+          },
+          "type": "array"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/FieldError"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok",
+        "errors",
+        "warnings",
+        "block_readiness",
+        "diff"
+      ],
+      "type": "object"
+    },
     "ValueLabel": {
       "enum": [
         "measured",
@@ -7861,12 +8224,24 @@
     "WarningDetails": {
       "additionalProperties": false,
       "properties": {
+        "contracts_per_mtok": {
+          "description": "price_far_above_contracts: the contracts price of the same model, USD per million tokens.",
+          "type": "number"
+        },
+        "index": {
+          "description": "price_far_above_contracts: the 0-based index of the override in pricing_overrides.",
+          "type": "number"
+        },
         "names": {
           "description": "master_key_changed, reenter_secret: the credential names (D32, D37).",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "ratio": {
+          "description": "price_far_above_contracts: how many times the contracts price the override is (D53).",
+          "type": "number"
         },
         "routes": {
           "description": "fail_closed_unprotected, confirmation_required: the enforcing routes affected (D77).",

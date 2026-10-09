@@ -1,0 +1,195 @@
+{
+  "schema": "trustagent.compare/v1",
+  "columns": [
+    {
+      "id": "inline",
+      "label": "Runs inline in your gateway"
+    },
+    {
+      "id": "self_hosted",
+      "label": "Self-hosted and open source"
+    },
+    {
+      "id": "cost_class",
+      "label": "Per-answer cost class"
+    },
+    {
+      "id": "explanations",
+      "label": "Explanations"
+    },
+    {
+      "id": "calibration",
+      "label": "Calibration workflow"
+    }
+  ],
+  "rows": [
+    {
+      "id": "observability_judge",
+      "name": "LLM-as-judge in observability tools",
+      "examples": "Langfuse, Arize, Datadog",
+      "cells": {
+        "inline": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "self_hosted": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "cost_class": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "explanations": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "calibration": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        }
+      }
+    },
+    {
+      "id": "guardrails",
+      "name": "Guardrail frameworks",
+      "examples": "Guardrails AI, NeMo Guardrails",
+      "cells": {
+        "inline": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "self_hosted": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "cost_class": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "explanations": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "calibration": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        }
+      }
+    },
+    {
+      "id": "cloud_groundedness",
+      "name": "Cloud groundedness APIs",
+      "examples": "Bedrock contextual grounding, Azure groundedness detection",
+      "cells": {
+        "inline": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "self_hosted": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "cost_class": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "explanations": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "calibration": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        }
+      }
+    },
+    {
+      "id": "small_model_evaluators",
+      "name": "Small-model evaluators",
+      "examples": "Galileo Luna",
+      "cells": {
+        "inline": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "self_hosted": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "cost_class": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "explanations": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        },
+        "calibration": {
+          "value": "unverified",
+          "text": "",
+          "source_url": null,
+          "as_of": null,
+          "reviewed": false
+        }
+      }
+    }
+  ]
+}

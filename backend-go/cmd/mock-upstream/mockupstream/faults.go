@@ -39,7 +39,11 @@ var faultTable = map[string]faultSpec{
 	"400_context": {status: 400, errType: "invalid_request_error", message: "This request exceeds the model's maximum context length of 32000 tokens"},
 	"401":         {status: 401, errType: "authentication_error", message: "No auth credentials found"},
 	"403":         {status: 403, errType: "permission_error", message: "This key is disabled"},
-	"404":         {status: 404, errType: "not_found_error", message: "Not Found"},
+	// OpenRouter's moderation refusal: it judges the input, not the key (metadata.reasons and
+	// flagged_input, which internal/jev classify reads).
+	"403_moderation": {status: 403, errType: "moderation", message: "typesafe/jev-1.13 requires moderation on TypeSafe. Your input was flagged for \"harassment\". No credits were charged.",
+		metadata: map[string]any{"reasons": []any{"harassment"}, "flagged_input": "...", "provider_name": "TypeSafe", "model_slug": "typesafe/jev-1.13"}},
+	"404": {status: 404, errType: "not_found_error", message: "Not Found"},
 	"404_data_policy": {status: 404, errType: "not_found_error",
 		message: "No endpoints found matching your data policy (Zero data retention). Configure: https://openrouter.ai/settings/privacy"},
 	"500": {status: 500, errType: "api_error", message: "Internal server error"},

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/compare.v1.schema.json",
+  "title": "CompareTable",
+  "description": "contracts/claims/compare.v1.json (D113): the landing page's comparison table, columns by rows of other kinds of tools. TrustAgent's own row is not here: it reads the value claims. A cell says what the vendor documents, never a ranking. A cell other than unverified needs the source_url its author actually fetched (public docs, read-only) and as_of, the fetch date (validate.mjs). The landing shows unverified as \"Not yet verified\"; check-claims --launch refuses any unverified or reviewed:false cell, and the owner reviews every vendor cell before launch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "columns", "rows"],
+  "properties": {
+    "schema": {"const": "trustagent.compare/v1"},
+    "columns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+          "label": {"type": "string", "minLength": 1, "maxLength": 80}
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "examples", "cells"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 80},
+          "examples": {"type": "string", "minLength": 1, "maxLength": 160, "description": "The products this kind of tool is known by, as the vendors name them."},
+          "cells": {
+            "type": "object",
+            "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,47}$"},
+            "additionalProperties": {"$ref": "#/$defs/Cell"},
+            "description": "One cell per column id (validate.mjs checks that every column has one and no other key appears)."
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "text", "source_url", "as_of", "reviewed"],
+      "properties": {
+        "value": {
+          "enum": ["yes", "no", "partial", "varies", "unverified"],
+          "description": "no only where the vendor's documentation says so; otherwise varies with \"Not documented (as of …)\"."
+        },
+        "text": {"type": "string", "maxLength": 300, "description": "What the vendor documents, in one plain sentence (empty while unverified)."},
+        "source_url": {"anyOf": [{"type": "string", "format": "uri", "pattern": "^https://"}, {"type": "null"}]},
+        "as_of": {"anyOf": [{"type": "string", "format": "date"}, {"type": "null"}]},
+        "reviewed": {"type": "boolean", "description": "The owner reviewed this cell (false until then)."}
+      }
+    }
+  }
+}

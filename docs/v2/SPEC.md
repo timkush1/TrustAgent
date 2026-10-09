@@ -3039,7 +3039,7 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | Assumption | Verified at |
 |---|---|
 | OpenRouter PKCE accepts `localhost` callbacks | P1g; at the end of P4 still unverified against the real openrouter.ai (the owner's §21 #1 check was not run), so Connect stays primary with Paste always visible (D88; verified only against the mock-upstream OpenRouter) |
-| OpenRouter PKCE accepts the Pages callback | P5, when Pages exists |
+| OpenRouter PKCE accepts the Pages callback | P6 (owner), when Pages exists |
 | `GET /api/v1/key` response shape | P1g |
 | `usage.cost` on chat with `usage.include` | P1g |
 | `/alpha/decisions` ≡ `/v1/systemone` bodies | P1g fixtures |
@@ -3051,8 +3051,9 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | Haiku 4.5 price $1/$5 per MTok | Before bench-publish |
 | RAGTruth/AggreFact field names, revisions, licences | P6 |
 | Compose ≥2.24 in WSL | P0 |
-| GHCR multi-arch publishing permissions | P5 |
-| Pages availability for the repo plan | P5 |
+| GHCR multi-arch publishing permissions | P6 (owner) |
+| Pages availability for the repo plan | P6 (owner) |
+| OpenRouter browser CORS (decisions, systemone, chat, auth/keys, key; error readability) | Verified 2026-10-09 (P5 Step 0a, free checks: no key or a fake one). From `Origin: https://timkush1.github.io`, the preflights of `POST /api/alpha/decisions`, `/api/v1/systemone`, `/api/v1/chat/completions`, `/api/v1/auth/keys` and `GET /api/v1/key` answer 204 with `access-control-allow-origin: *` and allow `authorization`, `content-type`, `accept`, `http-referer` and `x-openrouter-title`; a keyless POST answers 401 with the same origin header. From headless Chromium, every endpoint's error (401 `User not found.`, auth/keys 400 `Invalid code`) is readable JSON. OpenRouter's PKCE guide documents `key_label`. So the static site can run live checks, drafts and Connect from the browser (P5-PLAN D100, scope L) |
 | Market-signal claims in §8.3 | P6 re-verification |
 | Default caps ($2 decision, $5 LLM) | Owner confirms at onboarding |
 | 150 ms knowledge deadline | P3 load test |

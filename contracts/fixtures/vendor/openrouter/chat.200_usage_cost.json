@@ -1,0 +1,55 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/chat/completions",
+    "headers": {
+      "authorization": "Bearer sk-or-v1-e2e-fixture-key",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Reply with the word OK.",
+          "role": "user"
+        }
+      ],
+      "model": "anthropic/claude-haiku-4.5",
+      "usage": {
+        "include": true
+      }
+    }
+  },
+  "status": 200,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "application/json"
+  },
+  "body": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "content": "This is a mock answer from mock-upstream.",
+          "refusal": null,
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1760000000,
+    "id": "chatcmpl-mock-ae517bfca2faf4fe",
+    "model": "anthropic/claude-haiku-4.5",
+    "object": "chat.completion",
+    "provider": "Mock",
+    "system_fingerprint": "fp_mock",
+    "usage": {
+      "completion_tokens": 11,
+      "cost": 0.000088,
+      "prompt_tokens": 33,
+      "total_tokens": 44
+    }
+  }
+}

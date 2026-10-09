@@ -57,13 +57,18 @@ const RULES = [
   { re: /^pricing\/assumptions\.v1\.json$/, schema: 'pricing-assumptions.v1' },
   { re: /^claims\/value-claims\.v1\.json$/, schema: 'value-claims.v1' },
   { re: /^claims\/measured\.json$/, schema: 'measured.v1' },
+  { re: /^claims\/compare\.v1\.json$/, schema: 'compare.v1' },
   { re: /^demo\/scenarios\.v1\.json$/, schema: 'scenarios.v1' },
+  { re: /^demo\/faults\.v1\.json$/, schema: 'scenarios.v1' },
   { re: /^ui\/outcomes\.v1\.json$/, schema: 'ui-outcomes.v1' },
   { re: /^ui\/copy\.v1\.json$/, schema: 'ui-copy.v1' },
   { re: /^ui\/glossary\.v1\.json$/, schema: 'ui-glossary.v1' },
   { re: /^ui\/commands\.v1\.json$/, schema: 'ui-commands.v1' },
   { re: /^fixtures\/api\/[^/]+\.json$/, schema: 'api.v1', apiFixture: true },
   { re: /^fixtures\/vendor\/[A-Za-z0-9._-]+\.json$/, schema: null },
+  { re: /^fixtures\/vendor\/[a-z0-9-]+\/[A-Za-z0-9._-]+\.json$/, schema: null, vendorFixture: true },
+  { re: /^fixtures\/prompts\/[a-z0-9-]+\.[a-z0-9_-]+\.json$/, schema: null, promptFixture: true },
+  { re: /^fixtures\/load\/[a-z0-9.-]+\.json$/, schema: 'load-run.v1' },
   { re: /^fixtures\/grpc\/[^/]+\.json$/, schema: null, grpcFixture: true },
   { re: /^vectors\/[^/]+\/[^/]+\.json$/, schema: 'vector.v1' },
   { re: /^superseded\.v1\.json$/, schema: 'superseded.v1' },
@@ -648,7 +653,7 @@ if (claims) {
       else if (Math.abs(c.value - f.value) > f.tolerance + EPS) {
         error(REL, `${c.id}: value ${c.value} differs from figure ${c.assumption_ref} (${f.value.toFixed(4)}, tolerance ${f.tolerance})`);
       }
-    } else if (c.label === 'estimate' && c.unit.startsWith('usd')) {
+    } else if (c.label === 'estimate' && c.unit.startsWith('usd') && c.per_unit_of === undefined) {
       warn(REL, `${c.id}: cost estimate without an assumption_ref cannot be checked against pricing/assumptions.v1.json`);
     }
     if (c.price_ref !== undefined) {
@@ -662,6 +667,39 @@ if (claims) {
       const v = measured?.values?.[c.measured_ref];
       if (!v) error(REL, `${c.id}: measured_ref ${c.measured_ref} is not a key of claims/measured.json values`);
       else if (v.unit !== c.unit) error(REL, `${c.id}: unit ${c.unit} differs from measured.json ${c.measured_ref} unit ${v.unit}`);
+    }
+  }
+  // One unit of a per-1,000 figure (D114): value = the usd_per_1k claim's value, or the assumptions
+  // figure, divided by 1,000.
+  for (const c of claims.claims) {
+    if (c.per_unit_of === undefined) continue;
+    const src = claims.claims.find((o) => o.id === c.per_unit_of);
+    const fig = figureValues.get(c.per_unit_of);
+    if (c.unit !== 'usd') error(REL, `${c.id}: per_unit_of needs unit usd`);
+    if (src && src.unit !== 'usd_per_1k') error(REL, `${c.id}: per_unit_of ${c.per_unit_of} is a ${src.unit} claim, not usd_per_1k`);
+    const per1k = src ? src.value : fig?.value;
+    const tol = src ? EPS : (fig?.tolerance ?? 0) / 1000;
+    if (per1k === undefined || per1k === null) error(REL, `${c.id}: per_unit_of ${c.per_unit_of} is neither a usd_per_1k claim nor a figure of pricing/assumptions.v1.json`);
+    else if (Math.abs(c.value - per1k / 1000) > tol + EPS) {
+      error(REL, `${c.id}: value ${c.value} must be ${c.per_unit_of} / 1000 (${Number((per1k / 1000).toPrecision(12))})`);
+    }
+  }
+}
+
+// The comparison table (D113): every row has one cell per column; a cell other than unverified says
+// where it was read (source_url, the vendor's public docs) and when (as_of, the fetch date).
+const compare = get('claims/compare.v1.json');
+if (compare) {
+  const REL = 'claims/compare.v1.json';
+  const cols = checkUnique(REL, compare.columns, 'id', 'column id');
+  checkUnique(REL, compare.rows, 'id', 'row id');
+  for (const r of compare.rows) {
+    for (const c of cols) if (!(c in r.cells)) error(REL, `${r.id}: no cell for column ${c}`);
+    for (const [c, cell] of Object.entries(r.cells)) {
+      if (!cols.has(c)) error(REL, `${r.id}: cell ${c} is not a column`);
+      if (cell.value === 'unverified') continue;
+      if (!cell.source_url || !cell.as_of) error(REL, `${r.id}.${c}: a ${cell.value} cell needs the source_url it was read from and as_of, the date it was read`);
+      if (!cell.text) error(REL, `${r.id}.${c}: a ${cell.value} cell says what the vendor documents (text)`);
     }
   }
 }
@@ -1284,10 +1322,32 @@ function checkScenarioRoute(rel, s, settings, policyName, seedMode) {
   if (readsKnowledge && !s.sets.includes('knowledge')) error(rel, `${s.id}: a scenario that needs the knowledge add-on carries the knowledge tag`);
 }
 
-const scenarios = get('demo/scenarios.v1.json');
-if (scenarios) {
-  const REL = 'demo/scenarios.v1.json';
-  checkUnique(REL, scenarios.scenarios, 'id', 'scenario id');
+// The two packs (D119): demo/scenarios.v1.json (demo, e2e and the rest) and demo/faults.v1.json (vendor
+// faults only). Both follow the same rules; the faults set and mock_faults belong to the faults pack
+// alone, every faults scenario names its judge (fixtures, or null for no LLM call) since the mock judge
+// fails an unscripted audit (Appendix F D93), and at most MAX_FAULT_RUN scenarios in a row fault the
+// decision model, so the breaker never opens on a pack run (it opens after 5 consecutive vendor faults).
+const MAX_FAULT_RUN = 4;
+const packIds = new Map(); // scenario id -> pack file
+function checkPack(REL, pack, isFaults) {
+  if (!isFaults && pack.scenarios.length === 0) error(REL, 'the main pack holds at least one scenario');
+  checkUnique(REL, pack.scenarios, 'id', 'scenario id');
+  for (const s of pack.scenarios) {
+    if (packIds.has(s.id)) error(REL, `${s.id}: the id is also a scenario of ${packIds.get(s.id)}; mock-upstream embeds both packs, so ids are unique across them`);
+    else packIds.set(s.id, REL);
+  }
+  let run = 0;
+  for (const s of pack.scenarios) {
+    if (isFaults) {
+      if (!s.sets.includes('faults')) error(REL, `${s.id}: every scenario of the faults pack carries the faults set`);
+      if (!Object.hasOwn(s, 'judge')) error(REL, `${s.id}: a faults scenario names its judge: fixtures, or null when no LLM call is expected (the mock judge fails an unscripted audit)`);
+      run = s.mock_faults?.decision ? run + 1 : 0;
+      if (run > MAX_FAULT_RUN) error(REL, `${s.id}: more than ${MAX_FAULT_RUN} decision-model faults in a row would open the breaker; put a scenario without one between them`);
+    } else {
+      if (s.sets.includes('faults')) error(REL, `${s.id}: the faults set belongs to demo/faults.v1.json`);
+      if (s.mock_faults) error(REL, `${s.id}: mock_faults belongs to demo/faults.v1.json, never the main pack`);
+    }
+  }
   const loaded = external.get('../config/policies.yaml');
   let [policyName, policy] = loaded ? ['config/policies.yaml', loaded.data] : ['policies/example.policies.yaml', get('policies/example.policies.yaml')];
   if (loaded && pendingPolicy) {
@@ -1296,7 +1356,7 @@ if (scenarios) {
   }
   const seedMode = keys?.keys.find((k) => k.name === 'TRUTHTABLE_GATE_DEFAULT_MODE')?.default ?? 'observe';
   const outcomeRules = get('ui/outcomes.v1.json')?.rules;
-  for (const s of scenarios.scenarios) {
+  for (const s of pack.scenarios) {
     if (s.answer_source === 'scripted' && s.response === undefined) error(REL, `${s.id}: a scripted scenario needs response`);
     if (s.answer_source === 'generated' && s.response === undefined) error(REL, `${s.id}: a generated scenario needs response, the stand-in answer the zero-key demo uses`);
     if (s.sets.includes('generated') !== (s.answer_source === 'generated')) error(REL, `${s.id}: the generated set holds exactly the scenarios with answer_source generated`);
@@ -1329,6 +1389,11 @@ if (scenarios) {
     checkScenarioRoute(REL, s, merge(merge(ROUTE_DEFAULTS, policy.defaults ?? {}), own), policyName, seedMode);
   }
 }
+for (const [rel, isFaults] of [['demo/scenarios.v1.json', false], ['demo/faults.v1.json', true]]) {
+  const pack = get(rel);
+  if (pack) checkPack(rel, pack, isFaults);
+}
+if (docs.has('demo/scenarios.v1.json') && !docs.has('demo/faults.v1.json')) error('demo', 'demo/faults.v1.json is missing (the faults pack; it may hold no scenarios)');
 
 // ------------------------------------------------------------------------------------------ ui
 
@@ -1385,6 +1450,49 @@ if (glossary) {
   const REL = 'ui/glossary.v1.json';
   const ids = checkUnique(REL, glossary.terms, 'id', 'term id');
   for (const t of glossary.terms) for (const s of t.see_also ?? []) if (!ids.has(s)) error(REL, `${t.id}: see_also ${s} is not a term`);
+}
+
+// ------------------------------------------------------------------------------------------ vendor and prompt fixtures
+
+// fixtures/vendor/<vendor>/<endpoint>.<case>.json (D122): a vendor response as the browser and the
+// gateway see it, {source, status, headers, body}. P5 fixtures are synthetic (from mock-upstream's
+// faultTable and handlers, and SPEC §6), and source says so: none is presented as a capture. Header
+// names are lowercase; a key in a body is an obvious fake.
+const VENDOR_FIXTURE = /^fixtures\/vendor\/[a-z0-9-]+\/([a-z0-9_]+)\.([a-z0-9_]+)\.json$/;
+for (const [rel, doc] of docs) {
+  if (!rel.startsWith('fixtures/vendor/') || rel.split('/').length !== 4) continue;
+  const f = doc.data;
+  if (!VENDOR_FIXTURE.test(rel)) error(rel, 'a vendor fixture is named fixtures/vendor/<vendor>/<endpoint>.<case>.json');
+  if (!isObj(f)) {
+    error(rel, 'a vendor fixture is an object {source, status, headers, body}');
+    continue;
+  }
+  const extra = Object.keys(f).filter((k) => !['source', 'request', 'status', 'headers', 'body'].includes(k));
+  if (extra.length) error(rel, `unknown fields ${extra.join(', ')}`);
+  if (typeof f.source !== 'string' || !/^(synthetic|capture): /.test(f.source)) error(rel, 'source starts with "synthetic: " (made from mock-upstream and the SPEC) or "capture: " (a real response)');
+  if (!Number.isInteger(f.status) || f.status < 100 || f.status > 599) error(rel, 'status is an HTTP status code');
+  if (!isObj(f.headers) || Object.entries(f.headers).some(([k, v]) => k !== k.toLowerCase() || typeof v !== 'string')) {
+    error(rel, 'headers is an object of lowercase names to string values');
+  }
+  if (!('body' in f)) error(rel, 'body is the response body: JSON, or a string for a non-JSON body');
+  for (const s of strings(f)) {
+    for (const [k] of s.matchAll(/sk-[A-Za-z0-9_-]{8,}/g)) {
+      if (!FAKE_SECRET.test(k) && !/^sk-or-v1-mock-/.test(k)) error(rel, `${k.slice(0, 12)}… is not an obvious fake key (sk-or-v1-e2e-, sk-or-v1-mock-, sk-test-)`);
+    }
+  }
+}
+
+// fixtures/prompts/<prompt>-render.<case>.json: a prompt rendered by the Python reference, which the
+// TypeScript port renders byte for byte (D108): {prompt, case, input, rendered}.
+for (const [rel, doc] of docs) {
+  if (!rel.startsWith('fixtures/prompts/')) continue;
+  const f = doc.data;
+  if (!isObj(f) || typeof f.prompt !== 'string' || typeof f.case !== 'string' || !isObj(f.input) || !isObj(f.rendered)) {
+    error(rel, 'a prompt fixture is {prompt, case, input, rendered}');
+    continue;
+  }
+  if (!docs.has(`prompts/${f.prompt}.json`)) error(rel, `prompt ${f.prompt} is not in prompts/`);
+  if (`${basename(rel).split('.')[1]}` !== f.case) error(rel, `case ${f.case} does not match the file name`);
 }
 
 // ------------------------------------------------------------------------------------------ calibration, benchmarks

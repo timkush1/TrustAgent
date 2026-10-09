@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/measured.v1.schema.json",
   "title": "MeasuredValues",
-  "description": "contracts/claims/measured.json: values derived from docs/benchmarks/results/*.json. Written only by make bench-publish, which refuses mock runs; until then every value is an explicit null and the UI shows \"not yet measured\".",
+  "description": "contracts/claims/measured.json: values derived from docs/benchmarks/results/*.json (accuracy and cost runs) and docs/benchmarks/load/*.json (load-run.v1, D118: the proxy overhead of scenario c folds in with system proxy and its run_id). Written only by make bench-publish, which refuses mock runs; until then every value is an explicit null and the UI shows \"not yet measured\".",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "status", "tier", "mock", "generated_by", "generated_at", "runs", "values"],

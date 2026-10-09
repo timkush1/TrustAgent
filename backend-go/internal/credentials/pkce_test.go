@@ -2,7 +2,11 @@ package credentials
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -10,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/truthtable/contracts"
 )
 
 // TestCodeChallengeRFC7636 is RFC 7636 Appendix B.
@@ -333,6 +339,84 @@ func TestPlausibleKey(t *testing.T) {
 	} {
 		if got := plausibleKey(k); got != want {
 			t.Errorf("plausibleKey(%q) = %v", k, got)
+		}
+	}
+}
+
+// TestPKCEVectors checks this package's PKCE against the shared vectors (contracts/vectors/pkce,
+// P5-PLAN D103), which the browser's static /connect/callback/ flow follows too: CodeChallenge for
+// the challenge op, the verifier encoding of NewCodeVerifier (randomToken) for verifier_from_bytes,
+// and, for auth_url, that the parameters ConnectAuthURL sends for the same challenge are the ones
+// the vector's URL carries (the self-hosted flow names its own callback and no key label).
+func TestPKCEVectors(t *testing.T) {
+	type vector struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+		Input  struct {
+			Op          string `json:"op"`
+			Verifier    string `json:"verifier"`
+			BytesHex    string `json:"bytes_hex"`
+			CallbackURL string `json:"callback_url"`
+			Challenge   string `json:"challenge"`
+		} `json:"input"`
+		Expected map[string]string `json:"expected"`
+	}
+	files, err := fs.Glob(contracts.FS, "vectors/pkce/*.json")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no PKCE vectors (%v)", err)
+	}
+	ops := map[string]int{}
+	for _, f := range files {
+		b, err := fs.ReadFile(contracts.FS, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v vector
+		if err := json.Unmarshal(b, &v); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		ops[v.Input.Op]++
+		switch v.Input.Op {
+		case "challenge":
+			if got := CodeChallenge(v.Input.Verifier); got != v.Expected["challenge"] {
+				t.Errorf("%s: CodeChallenge = %q, want %q", v.Name, got, v.Expected["challenge"])
+			}
+		case "verifier_from_bytes":
+			raw, err := hex.DecodeString(v.Input.BytesHex)
+			if err != nil || len(raw) != connectVerifierBytes {
+				t.Fatalf("%s: bytes_hex is not %d bytes", v.Name, connectVerifierBytes)
+			}
+			if got := base64.RawURLEncoding.EncodeToString(raw); got != v.Expected["verifier"] {
+				t.Errorf("%s: verifier = %q, want %q", v.Name, got, v.Expected["verifier"])
+			}
+		case "auth_url":
+			want, err := url.Parse(v.Expected["url"])
+			if err != nil {
+				t.Fatalf("%s: %v", v.Name, err)
+			}
+			raw, err := ConnectAuthURL("", "https://dashboard.example", v.Input.Challenge)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := url.Parse(raw)
+			if got.Scheme+"://"+got.Host+got.Path != want.Scheme+"://"+want.Host+want.Path {
+				t.Errorf("%s: sign-in page %s, the vector's is %s", v.Name, got.Path, want.Path)
+			}
+			for _, k := range []string{"code_challenge", "code_challenge_method"} {
+				if got.Query().Get(k) != want.Query().Get(k) {
+					t.Errorf("%s: %s = %q, the vector's is %q", v.Name, k, got.Query().Get(k), want.Query().Get(k))
+				}
+			}
+			if want.Query().Get("callback_url") != v.Input.CallbackURL {
+				t.Errorf("%s: the vector's URL carries callback_url %q, not its input", v.Name, want.Query().Get("callback_url"))
+			}
+		default:
+			t.Errorf("%s: unknown op %q", v.Name, v.Input.Op)
+		}
+	}
+	for _, op := range []string{"challenge", "verifier_from_bytes", "auth_url"} {
+		if ops[op] == 0 {
+			t.Errorf("no PKCE vector for op %s", op)
 		}
 	}
 }

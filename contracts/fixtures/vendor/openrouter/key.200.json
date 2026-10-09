@@ -1,0 +1,30 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/key",
+    "headers": {
+      "authorization": "Bearer sk-or-v1-e2e-fixture-key"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "application/json"
+  },
+  "body": {
+    "data": {
+      "is_free_tier": false,
+      "is_provisioning_key": false,
+      "label": "sk-or-v1-e…key",
+      "limit": null,
+      "limit_remaining": null,
+      "rate_limit": {
+        "interval": "10s",
+        "requests": 1000
+      },
+      "usage": 0.0123
+    }
+  }
+}

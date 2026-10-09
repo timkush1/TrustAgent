@@ -44,6 +44,8 @@ backend-go/*.exe
 backend-go/*.test
 backend-go/*.out
 backend-go/vendor/
+# Go benchmark output (make bench-go writes backend-go/bench/<sha>.txt)
+backend-go/bench/
 
 # ========== Node / React ==========
 node_modules/

@@ -157,7 +157,7 @@ func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 
 // setSizes is how many scenarios each set sends, and how many of them need phase p3: this build
 // serves every one of them.
-var setSizes = map[string]struct{ all, p3 int }{"demo": {26, 6}, "e2e": {23, 5}}
+var setSizes = map[string]struct{ all, p3 int }{"demo": {27, 7}, "e2e": {24, 6}}
 
 // runScenarios runs trafficgen --once --expect with args against env, and checks that it sends
 // every scenario of set, skips none and that each passes.
