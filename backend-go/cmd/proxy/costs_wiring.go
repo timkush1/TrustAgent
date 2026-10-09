@@ -115,7 +115,7 @@ func (s *server) initCosts(d serverDeps) {
 		}
 	}
 	if d.pg != nil && s.status != nil {
-		day := &decisionDayCache{read: d.pg.Status24h, now: time.Now, log: s.log}
+		day := &decisionDayCache{read: d.pg.Status24h, now: time.Now, log: s.log, maxAge: decisionDayMaxAge}
 		ctx, cancel := context.WithTimeout(context.Background(), costsBootTimeout)
 		day.refresh(ctx)
 		cancel()
@@ -210,36 +210,85 @@ func everyMinute(ctx context.Context, f func(context.Context)) {
 	}
 }
 
+// decisionDayMaxAge is how old the decision-day figures may be when /api/status reads them: an
+// older value is re-read first, so a status read right after traffic shows it rather than the
+// figures of up to a minute before (the boot read on a fresh stack says 0 calls).
+const decisionDayMaxAge = 5 * time.Second
+
+// decisionDayReadTimeout bounds the re-read a status read makes; past it the status keeps the
+// previous figures.
+const decisionDayReadTimeout = 2 * time.Second
+
 // decisionDayCache is the decision model's calls and cost over the last 24 hours, read from
 // cost_events (DecisionModelStatus.calls_24h and cost_24h_usd, D92): it survives a restart, unlike
 // the decision client's own counters, which also restart on a hot swap. The cost loop refreshes it
-// every minute, so /api/status never queries for it; until the first read succeeds, get reports
-// nothing and the status keeps the client's counters.
+// every minute; a status read re-reads a value older than maxAge first, so /api/status queries for
+// it at most once per maxAge, whatever the number of readers. Until the first read succeeds, get
+// reports nothing and the status keeps the client's counters.
 type decisionDayCache struct {
 	read func(ctx context.Context, now time.Time) (store.DecisionDay, error)
 	now  func() time.Time
 	log  *slog.Logger
-	v    atomic.Pointer[store.DecisionDay]
+	// maxAge: get re-reads a value older than this (0: get never reads, only refresh does).
+	maxAge time.Duration
+	// mu keeps reads one at a time; a get that finds one running answers with the last value.
+	mu sync.Mutex
+	v  atomic.Pointer[decisionDayRead]
+	// tried is when the last read started (unix nanoseconds), successful or not: a database that
+	// fails is asked again only after maxAge, so status reads do not each wait for it.
+	tried atomic.Int64
+}
+
+// decisionDayRead is one successful read and when it was made.
+type decisionDayRead struct {
+	day store.DecisionDay
+	at  time.Time
 }
 
 // refresh re-reads the last 24 hours; a failed read keeps the previous value.
 func (c *decisionDayCache) refresh(ctx context.Context) {
-	day, err := c.read(ctx, c.now())
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.readLocked(ctx)
+}
+
+func (c *decisionDayCache) readLocked(ctx context.Context) {
+	now := c.now()
+	c.tried.Store(now.UnixNano())
+	day, err := c.read(ctx, now)
 	if err != nil {
 		if ctx.Err() == nil {
 			c.log.Warn("cost ledger: the decision model's last 24 hours could not be read; /api/status keeps the previous figures", "err", err)
 		}
 		return
 	}
-	c.v.Store(&day)
+	c.v.Store(&decisionDayRead{day: day, at: now})
 }
 
-// get is the last value read (the statusReporter decisionDay hook).
+// get is the statusReporter decisionDay hook: the last value read, re-read first when it is older
+// than maxAge and no read ran within maxAge.
 func (c *decisionDayCache) get() (store.DecisionDay, bool) {
-	if d := c.v.Load(); d != nil {
-		return *d, true
+	if c.maxAge > 0 && c.stale() && c.mu.TryLock() {
+		if c.stale() {
+			ctx, cancel := context.WithTimeout(context.Background(), decisionDayReadTimeout)
+			c.readLocked(ctx)
+			cancel()
+		}
+		c.mu.Unlock()
+	}
+	if r := c.v.Load(); r != nil {
+		return r.day, true
 	}
 	return store.DecisionDay{}, false
+}
+
+// stale: the value is older than maxAge (or missing) and no read started within maxAge.
+func (c *decisionDayCache) stale() bool {
+	now := c.now()
+	if r := c.v.Load(); r != nil && now.Sub(r.at) <= c.maxAge {
+		return false
+	}
+	return now.Sub(time.Unix(0, c.tried.Load())) > c.maxAge
 }
 
 // stopCosts writes the ledger's buffered rows at shutdown, after the audits drained. Rows booked

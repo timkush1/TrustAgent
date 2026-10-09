@@ -320,6 +320,67 @@ func TestCostDecisionDayCacheKeepsTheLastRead(t *testing.T) {
 	}
 }
 
+// A status read re-reads decision-day figures older than maxAge before answering (D92): right
+// after boot the cache holds the boot read (0 calls), and the first status read after traffic
+// shows the traffic, not figures up to a minute old. Reads stay at most one per maxAge, a failing
+// database is asked again only after maxAge, and with maxAge 0 only refresh reads.
+func TestCostDecisionDayCacheReReadsStaleFigures(t *testing.T) {
+	clock := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	stored := int64(0)
+	reads := 0
+	var fail bool
+	c := &decisionDayCache{now: func() time.Time { return clock }, log: slog.New(slog.DiscardHandler), maxAge: 5 * time.Second,
+		read: func(context.Context, time.Time) (store.DecisionDay, error) {
+			reads++
+			if fail {
+				return store.DecisionDay{}, errors.New("database down")
+			}
+			return store.DecisionDay{Calls: stored}, nil
+		}}
+	c.refresh(context.Background()) // the boot read
+	if d, ok := c.get(); !ok || d.Calls != 0 || reads != 1 {
+		t.Fatalf("boot: %+v %v after %d reads", d, ok, reads)
+	}
+	stored = 44 // traffic arrives
+	clock = clock.Add(3 * time.Second)
+	if d, _ := c.get(); d.Calls != 0 || reads != 1 {
+		t.Errorf("a value younger than maxAge was re-read: %+v after %d reads", d, reads)
+	}
+	clock = clock.Add(3 * time.Second)
+	if d, _ := c.get(); d.Calls != 44 || reads != 2 {
+		t.Errorf("a stale value was not re-read: %+v after %d reads", d, reads)
+	}
+	for range 10 {
+		c.get()
+	}
+	if reads != 2 {
+		t.Errorf("status reads within maxAge queried the database: %d reads", reads)
+	}
+	fail = true
+	clock = clock.Add(6 * time.Second)
+	if d, ok := c.get(); !ok || d.Calls != 44 || reads != 3 {
+		t.Errorf("a failed re-read: %+v %v after %d reads, want the last value after one more read", d, ok, reads)
+	}
+	clock = clock.Add(time.Second)
+	c.get()
+	if reads != 3 {
+		t.Errorf("a failing database was asked again within maxAge: %d reads", reads)
+	}
+	clock = clock.Add(5 * time.Second)
+	fail = false
+	stored = 50
+	if d, _ := c.get(); d.Calls != 50 || reads != 4 {
+		t.Errorf("after maxAge the database is asked again: %+v after %d reads", d, reads)
+	}
+
+	never := &decisionDayCache{now: func() time.Time { return clock }, log: slog.New(slog.DiscardHandler),
+		read: func(context.Context, time.Time) (store.DecisionDay, error) { reads++; return store.DecisionDay{}, nil }}
+	before := reads
+	if _, ok := never.get(); ok || reads != before {
+		t.Errorf("with maxAge 0, get read the database (%d reads) or reported a value (%v)", reads-before, ok)
+	}
+}
+
 // Without a database the ledger still enforces the env caps and reports them; nothing is stored.
 func TestCostLedgerWithoutADatabase(t *testing.T) {
 	env := newTestEnv(t, envOpts{publicRead: true, mutate: func(c *config.Config) {
