@@ -232,6 +232,27 @@ describe('Show exact Jev request', { timeout: 20_000 }, () => {
     expect(within(box).getByRole('region', { name: /Request · typesafe\/jev/ })).toBeInTheDocument();
   });
 
+  it('shows the documents it read as titled excerpts, the exact JSON kept in the request block', async () => {
+    const detail = traceDetail('refund');
+    const view = matching(detail);
+    const docs = [
+      { id: 'refund-policy.md', source: 'request_system', text: 'Annual plans can be refunded within 30 days of purchase.' },
+      { source: 'request_user', text: 'I bought it 45 days ago.' },
+    ];
+    const withDocs: DecisionRequestView = { ...view, requests: view.requests.map((r) => ({ ...r, state: { ...r.state, evidence: docs } })) };
+    setup(detail, { control: createControlApi({ decisionRequests: { [detail.trace_id]: withDocs } }) });
+    const box = await openGlassBox();
+    const read = (await within(box).findByText(/what it read$/)).nextElementSibling as HTMLElement;
+    const excerpts = within(read).getAllByRole('listitem');
+    expect(excerpts.map((li) => li.textContent)).toEqual([
+      'refund-policy.mdAnnual plans can be refunded within 30 days of purchase.',
+      'Document 2I bought it 45 days ago.',
+    ]);
+    // No raw JSON among what it read; the request block below keeps it exactly.
+    expect(within(read).queryByText(/"source"/)).toBeNull();
+    expect(within(box).getByRole('region', { name: /Request · typesafe\/jev/ })).toHaveTextContent('"source": "request_system"');
+  });
+
   it('shows how the fast check split its answer', async () => {
     const detail = traceDetail('refund');
     detail.decisions[0].evaluators['groundedness@1'] = { ...detail.decisions[0].evaluators['groundedness@1'], probabilities: { yes: 0.04, no: 0.96 }, top: 'no' };

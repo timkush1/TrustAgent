@@ -327,10 +327,6 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-4">
-        {/* Announced politely; an error is announced at once. */}
-        <div role={status?.kind === 'error' ? 'alert' : 'status'} aria-live={status?.kind === 'error' ? 'assertive' : 'polite'} className="min-h-6">
-          {statusLine}
-        </div>
         {current ? (
           <Card>
             <CardContent className="space-y-5 pt-4">
@@ -377,6 +373,11 @@ function QueueSession({ items, names, onReload }: { items: readonly LabelQueueIt
             <p>New answers near the flag line show up as traffic arrives.</p>
           </EmptyState>
         )}
+        {/* Under the card, beside the session's tally, so the answer card's top lines up with the
+            calibration card's. Announced politely; an error is announced at once. */}
+        <div role={status?.kind === 'error' ? 'alert' : 'status'} aria-live={status?.kind === 'error' ? 'assertive' : 'polite'} className="min-h-6">
+          {statusLine}
+        </div>
         <p className="text-xs text-fg-muted tabular">
           This session: {formatCount(tally.labelled)} labelled · {formatCount(tally.skipped)} skipped
         </p>

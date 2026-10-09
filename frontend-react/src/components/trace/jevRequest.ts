@@ -43,3 +43,24 @@ export function questionsIn(view: DecisionRequestView): number {
   return view.requests.reduce((n, r) => n + Object.keys(r.questions ?? {}).length, 0);
 }
 
+export interface Excerpt {
+  id: string | null;
+  text: string;
+}
+
+/**
+ * A state field that is a list of documents (`[{ id, source, text }]`, how the evidence is sent),
+ * as titled excerpts; null for anything else, which is shown as it was sent. The exact JSON stays
+ * in the request block below.
+ */
+export function documentExcerpts(value: unknown): Excerpt[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const out: Excerpt[] = [];
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) return null;
+    const { id, text } = item as { id?: unknown; text?: unknown };
+    if (typeof text !== 'string') return null;
+    out.push({ id: typeof id === 'string' && id !== '' ? id : null, text });
+  }
+  return out;
+}

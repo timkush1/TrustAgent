@@ -30,11 +30,29 @@ import { useSystemStatus } from '@/data/useSystem';
 import { copy, humanizeId } from '@/domain/presentation';
 import { evalMismatchText, evalRecompileText } from '@/domain/words/evaluators';
 import type { DecisionRequestView, GateDecisionView, JevRequest } from '@/types/api';
-import { askedCount, jevRequestSummary, questionsIn, recompileMatches } from './jevRequest';
+import { askedCount, documentExcerpts, jevRequestSummary, questionsIn, recompileMatches } from './jevRequest';
 import { evaluatorName } from './traceView';
 
 function textOf(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function StateValue({ value }: { value: unknown }) {
+  const excerpts = documentExcerpts(value);
+  const box = 'max-h-40 overflow-auto rounded-sm bg-surface-sunken px-2 py-1 text-xs whitespace-pre-wrap text-fg';
+  if (!excerpts) return <dd className={box}>{textOf(value)}</dd>;
+  return (
+    <dd>
+      <ul className="space-y-1.5">
+        {excerpts.map((e, i) => (
+          <li key={`${e.id ?? 'document'}-${i}`} className={box}>
+            <span className="block font-mono text-2xs text-fg-muted">{e.id ?? `Document ${i + 1}`}</span>
+            {e.text}
+          </li>
+        ))}
+      </ul>
+    </dd>
+  );
 }
 
 /** A question key ("proof_muree135__v1") in words, through the same names as the answers. */
@@ -53,7 +71,7 @@ function RequestView({ request, index, total, names }: { request: JevRequest; in
           {Object.entries(request.state).map(([field, value]) => (
             <div key={field} className="space-y-0.5">
               <dt className="text-xs text-fg-muted">{humanizeId(field)}</dt>
-              <dd className="max-h-40 overflow-auto rounded-sm bg-surface-sunken px-2 py-1 text-xs whitespace-pre-wrap text-fg">{textOf(value)}</dd>
+              <StateValue value={value} />
             </div>
           ))}
         </dl>
