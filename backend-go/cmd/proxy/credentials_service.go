@@ -286,6 +286,9 @@ func (s *server) writeCredential(ctx context.Context, w CredentialWrite) (Creden
 	if ferr != nil {
 		return CredentialWriteResult{}, ferr
 	}
+	if slices.Contains(targets, runtimecfg.TargetJudge) || spec.Side == credentials.SideEngine {
+		s.awaitEngineEnv(ctx)
+	}
 	snap := s.rt.manager.Current()
 	if side := credentialEnvSide(snap, spec); side != "" {
 		// Env keys are read-only (D29); checking a proxy-side one is allowed (D80).
@@ -432,6 +435,31 @@ func (s *server) verifyStoredCredential(ctx context.Context, snap *runtimecfg.Sn
 		cs.publishSettingsUpdated(version, changed)
 	}
 	return res, nil
+}
+
+// engineEnvWait bounds the one health check a credential write runs when the engine has not yet
+// said which judge settings its env pins.
+const engineEnvWait = 3 * time.Second
+
+// awaitEngineEnv runs one engine health check now when the engine has not yet reported its
+// env-managed keys (EngineInfo.env_managed, D80): the pinger's first check can come before the
+// engine is up, and until the next one the gateway cannot tell that the engine's env sets the
+// judge, so a write would bind a judge the engine keeps (and say so). The check reports through
+// the pinger's hooks, so the snapshot read next knows the keys. An engine that does not answer
+// within engineEnvWait leaves the write as it was.
+func (s *server) awaitEngineEnv(ctx context.Context) {
+	if s.pinger == nil || s.apply == nil {
+		return
+	}
+	s.apply.mu.Lock()
+	seen := s.apply.engineEnvSeen
+	s.apply.mu.Unlock()
+	if seen {
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, engineEnvWait)
+	defer cancel()
+	s.pinger.Check(cctx)
 }
 
 // bindStoredCredential applies a #57 check's bindings: when the check passed, the bindings rows
