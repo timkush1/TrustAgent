@@ -296,13 +296,15 @@ phase (P0 → P7).
   mock judge is free. The mock fast check also answers the Studio drafter's own
   samples by their `should_fire`, so the demo's test bench shows the intended
   matches instead of hash answers. Under the headline, the alternatives stand
-  side by side in its unit, per 1,000 answers, each with its value label: an
-  LLM asking the same questions, an LLM auditing every answer claim by claim
-  and, on the demo's free mock judge, TrustAgent with a real judge at the
-  shipped defaults (about $3, with about 8 in 100 answers deep-audited, against
-  $35.50 for the full audit; both published estimates). A line below says what
-  the demo's own (much higher) deep-audit rate would add. The published full-audit figure is labelled
-  Estimate even on a simulated stack, the chart's sentence states the
+  side by side in its unit, per 1,000 answers, each with its value label and
+  on one basis: on a stack with a real judge, this window's LLM asking the
+  same questions and LLM auditing every answer claim by claim; on the demo's
+  free mock judge, the published estimates only, "With a real judge":
+  TrustAgent at the shipped defaults (about $3, with about 8 in 100 answers
+  deep-audited), an LLM asking the same questions ($5.75) and a full audit of
+  every answer ($35.50). A line below says what the demo's own (much higher)
+  deep-audit rate would add. The published full-audit figure is labelled
+  Estimate even on a simulated stack (`/api/roi/summary` keeps its label), the chart's sentence states the
   summary's totals (the spend series polls with it), and the static demo prices
   the same full-audit counterfactual, draws its spend per minute, words every
   span "over the replayed traffic" and says sampling status is not part of the
@@ -405,6 +407,14 @@ phase (P0 → P7).
   off; `POST /api/kb/documents` (admin) is the upload's v2 path.
 
 ### Fixed
+- **A judge bound behind the engine's back right after a start**: until the
+  engine's first health report the gateway did not know that the engine's env
+  (`LLM_PROVIDER`) sets the judge, so a Connect OpenRouter in the first seconds
+  bound the judge and said so. A write that binds the judge now asks a
+  not-yet-reported engine once first, and skips the judge as env-managed.
+- **Phone widths**: Studio's example buttons, a check's page header and the
+  "How well its risk matches your labels" card no longer widen the page at
+  400 px; a route's block progress has its own line.
 - **B4 — duplicate ids corrupted audit history**: trace/audit ids are now
   server-generated UUIDv7; a client `X-Request-ID` is stored only as a
   non-unique `client_request_id`, and a repeated id can no longer append claims
