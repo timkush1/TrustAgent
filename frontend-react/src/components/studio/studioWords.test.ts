@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import dryRunFixture from '@contracts/fixtures/api/DryRunResult.done.json';
 import type { DryRunResult } from '@/types/api';
-import { studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples, studioQuestionParts } from './studioWords';
+import { riskLevelsLine, studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples, studioQuestionParts } from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
 
@@ -75,5 +75,12 @@ describe('studioQuestionParts', () => {
       ' and ',
       'your system prompt',
     ]);
+  });
+});
+
+describe('riskLevelsLine', () => {
+  it('names the thresholds the risk words follow, with or without a block level', () => {
+    expect(riskLevelsLine({ warn_at: 0.6, critical_at: 0.98 })).toBe('Risk words follow this check’s own thresholds: Elevated risk from 0.60, High risk from 0.98.');
+    expect(riskLevelsLine({ warn_at: 0.7, critical_at: null })).toBe('Risk words follow this check’s own thresholds: Elevated risk from 0.70; it has no High risk level.');
   });
 });

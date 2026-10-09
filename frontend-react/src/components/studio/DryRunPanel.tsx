@@ -29,6 +29,7 @@ import { formatCount, formatDateTime, formatRelativeTime, formatRisk, formatUsd 
 import { copy, levelWord } from '@/domain/presentation';
 import type { DryRunResult, EvaluatorSpec, StudioDryRunEvent, StudioDryRunRequest, TraceDetail } from '@/types/api';
 import {
+  riskLevelsLine,
   STUDIO_DRY_RUN_SIMULATED_TITLE,
   STUDIO_SIMULATED_DRY_RUN,
   studioDryRunCancelledText,
@@ -154,7 +155,17 @@ function ExampleList({ examples }: { examples: DryRunResult['examples'] }) {
   );
 }
 
-function DryRunResultView({ result, simulated, names }: { result: DryRunResult; simulated: boolean; names: ReadonlyMap<string, string> }) {
+function DryRunResultView({
+  result,
+  simulated,
+  names,
+  outcomes,
+}: {
+  result: DryRunResult;
+  simulated: boolean;
+  names: ReadonlyMap<string, string>;
+  outcomes: { warn_at: number; critical_at?: number | null };
+}) {
   // Named from the library; a check it does not list reads as its humanized id, never a raw ref.
   const nameOf = (ref: string) => evaluatorName(ref, names);
   const cost = (
@@ -226,6 +237,7 @@ function DryRunResultView({ result, simulated, names }: { result: DryRunResult; 
       {result.examples.length > 0 ? (
         <div className="space-y-1">
           <h4 className="text-xs font-medium text-fg-muted">Answers it would have fired on</h4>
+          <p className="text-xs text-fg-muted tabular">{riskLevelsLine(outcomes)}</p>
           <ExampleList examples={result.examples} />
         </div>
       ) : null}
@@ -390,7 +402,7 @@ export function DryRunPanel({ target, spec, route, simulated, reason, names }: D
         </div>
       ) : null}
 
-      {phase.kind === 'done' ? <DryRunResultView result={phase.result} simulated={simulated} names={names} /> : null}
+      {phase.kind === 'done' ? <DryRunResultView result={phase.result} simulated={simulated} names={names} outcomes={spec.outcomes} /> : null}
       {changedSince ? <p className="text-sm text-fg-muted">The check or the route changed since this test. Test again to see how the new one would fire.</p> : null}
       {phase.kind === 'cancelled' ? (
         <p role="status" className="text-sm text-fg">

@@ -184,7 +184,7 @@ describe('Studio', { timeout: 30_000 }, () => {
     renderPage('/app/evaluators/studio');
     await draftWithAi(user);
     const review = step(/Step 2: Review the check/);
-    const instructions = within(review).getByRole('textbox', { name: 'What should it catch?' });
+    const instructions = within(review).getByRole('textbox', { name: 'The question the fast check answers' });
     // The Simple tab reads the question back in plain words; the raw name stays in the text.
     expect(review.querySelector('[data-reads-as]')).toHaveTextContent('Reads as: Does your model’s answer blame the customer for the problem they describe?');
     expect(within(review).getByTitle('assistant_response')).toHaveTextContent('your model’s answer');
@@ -238,7 +238,7 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(control.callsTo('/api/studio/test')).toHaveLength(1);
 
     // Changing what the check asks does need a new run.
-    await user.type(within(step(/Step 2/)).getByRole('textbox', { name: 'What should it catch?' }), ' Ignore greetings.');
+    await user.type(within(step(/Step 2/)).getByRole('textbox', { name: 'The question the fast check answers' }), ' Ignore greetings.');
     expect(await within(test).findByText(/The check or the samples changed since this run/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /3\. Test \(To do\)/ })).toBeInTheDocument();
   });
@@ -580,6 +580,8 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(rows[0]).toHaveAttribute('href', `/app/traffic/${ids[0]}`);
     expect(rows[0]).toHaveTextContent(/×2 answers like this/);
     expect(rows[1]).not.toHaveTextContent('×');
+    // The risk words follow this check's own thresholds, said once above the rows.
+    expect(within(watch).getByText(/^Risk words follow this check’s own thresholds: Elevated risk from \d\.\d\d(, High risk from \d\.\d\d\.|; it has no High risk level\.)$/)).toBeInTheDocument();
   });
 
   it('names an archived check in a dry run’s overlap, never by its ref', async () => {

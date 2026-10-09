@@ -176,13 +176,14 @@ export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { sp
       <Field label="Name" description="Shown on traces, in the library and in alerts.">
         <Input value={form.name} maxLength={80} disabled={disabled} onChange={(e) => set({ ...form, name: e.target.value })} />
       </Field>
+      {/* The plain-English reading comes first; the raw question, with its backtick names, under it. */}
       <Field
-        label="What should it catch?"
-        description="The question the fast check answers. A name in backticks points it at part of the request: `assistant_response` is your model's answer, `user_request` the user's message, `evidence` your documents, and `rules.…` one of the check's settings, such as `rules.brand_voice`."
+        label="The question the fast check answers"
+        description="A name in backticks points it at part of the request: `assistant_response` is your model's answer, `user_request` the user's message, `evidence` your documents, and `rules.…` one of the check's settings, such as `rules.brand_voice`."
       >
+        <ReadsAs text={form.instructions} params={spec.params} />
         <Textarea rows={3} value={form.instructions} disabled={disabled} onChange={(e) => set({ ...form, instructions: e.target.value })} />
       </Field>
-      <ReadsAs text={form.instructions} params={spec.params} />
       <div className="space-y-1.5">
         <p className="text-sm font-medium text-fg">Answer type</p>
         <SegmentedControl<AnswerType>

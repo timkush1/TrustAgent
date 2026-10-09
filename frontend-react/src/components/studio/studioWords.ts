@@ -6,8 +6,8 @@
  */
 import { CircleCheck, CircleDashed, CircleX, Flag, MinusCircle, type LucideIcon } from 'lucide-react';
 import type { Tone } from '@/domain/contracts';
-import { formatCount, formatUsd } from '@/domain/format';
-import { copy, fillTemplate, humanizeId } from '@/domain/presentation';
+import { formatCount, formatRisk, formatUsd } from '@/domain/format';
+import { copy, fillTemplate, humanizeId, levelWord } from '@/domain/presentation';
 import type { CostRecord, DryRunResult, EvaluatorResultStatus, StudioSamplesRequest, ValueLabel } from '@/types/api';
 
 const humanize = (id: string) => humanizeId(id.replace(/^det:/, ''));
@@ -226,3 +226,14 @@ export const STUDIO_SIMULATED_DRY_RUN =
 
 /** copy.studio.dry_run on a mock fast check, where nothing is billed. */
 export const STUDIO_DRY_RUN_SIMULATED_TITLE = 'Test on past traffic (simulated)';
+
+/**
+ * Which risk words this check uses from where: a level follows each check's own thresholds, so the
+ * same 0.97 can be Elevated here and High on a check that blocks from 0.95.
+ */
+export function riskLevelsLine(outcomes: { warn_at: number; critical_at?: number | null }): string {
+  const warn = `${levelWord('warn').label} from ${formatRisk(outcomes.warn_at)}`;
+  return typeof outcomes.critical_at === 'number'
+    ? `Risk words follow this check’s own thresholds: ${warn}, ${levelWord('critical').label} from ${formatRisk(outcomes.critical_at)}.`
+    : `Risk words follow this check’s own thresholds: ${warn}; it has no ${levelWord('critical').label} level.`;
+}
