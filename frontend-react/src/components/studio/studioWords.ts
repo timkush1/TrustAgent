@@ -222,7 +222,7 @@ export const STUDIO_SIMULATED_TEST =
 
 /** What a dry run on the mock fast check can and cannot tell. */
 export const STUDIO_SIMULATED_DRY_RUN =
-  "Simulated: the demo's mock fast check answers questions about past traffic arbitrarily, so this count says nothing about your check. Connect a key to test it for real.";
+  "Simulated: the demo's mock fast check answers questions about past traffic arbitrarily, except that a check about a list of names (such as competitors) fires only on answers that name one, so this count says little about your check. Connect a key to test it for real.";
 
 /** copy.studio.dry_run on a mock fast check, where nothing is billed. */
 export const STUDIO_DRY_RUN_SIMULATED_TITLE = 'Test on past traffic (simulated)';
