@@ -132,8 +132,8 @@ const READINESS_WORDS: Record<ReadinessItem, ReadinessWords> = {
   },
   calibration: {
     label: 'Calibrated for the current fast-check version',
-    missing: 'Thresholds are not calibrated on at least 200 of your own labels for this fast-check version; a provisional or simulated calibration cannot block.',
-    action: 'calibrate it on at least 200 of your own labels (a simulated calibration cannot block)',
+    missing: 'Thresholds are not calibrated on at least 200 of your own labels for this fast-check version.',
+    action: 'calibrate it on at least 200 of your own labels',
   },
   buffering: {
     label: 'Streams buffered',
@@ -142,8 +142,26 @@ const READINESS_WORDS: Record<ReadinessItem, ReadinessWords> = {
   },
 };
 
-export function readinessWords(item: ReadinessItem): ReadinessWords {
-  return READINESS_WORDS[item] ?? { label: humanizeId(item), missing: humanizeId(item), action: humanizeId(item).toLowerCase() };
+/**
+ * Why the calibration a check has cannot block, by its state; none for a check with no calibration
+ * (or one not read yet), where "calibrate it" says it all.
+ */
+const CALIBRATION_CANNOT_BLOCK: Partial<Record<CalibrationState, string>> = {
+  mock: 'a simulated calibration cannot block',
+  provisional: 'the provisional one has too few labels to block',
+  proxy: 'one fitted on deep audits alone cannot block',
+  family: 'one borrowed from another fast-check version cannot block',
+};
+
+/**
+ * A readiness requirement in words. For `calibration`, the check's calibration state (when known)
+ * says why the one it has cannot block: simulated, provisional, proxy or borrowed.
+ */
+export function readinessWords(item: ReadinessItem, calibration?: CalibrationState): ReadinessWords {
+  const words = READINESS_WORDS[item] ?? { label: humanizeId(item), missing: humanizeId(item), action: humanizeId(item).toLowerCase() };
+  const why = item === 'calibration' && calibration ? CALIBRATION_CANNOT_BLOCK[calibration] : undefined;
+  if (!why) return words;
+  return { ...words, missing: `${words.missing} ${why[0].toUpperCase()}${why.slice(1)}.`, action: `${words.action} (${why})` };
 }
 
 // --------------------------------------------------------------------------------- calibration

@@ -154,7 +154,7 @@ function DowngradeFix({
   }
 }
 
-function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: ReadonlyMap<string, string> }) {
+function Readiness({ items, names, progress }: { items: readonly BlockReadiness[]; names: ReadonlyMap<string, string>; progress: RouteCardProps['progress'] }) {
   if (items.length === 0) {
     return <p className="text-xs text-fg-muted">No check on this route is allowed to block.</p>;
   }
@@ -169,6 +169,9 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
         const done = shown.filter((item) => !b.missing.includes(item)).length;
         const next = shown.find((item) => b.missing.includes(item));
         const MissingIcon = wantsBlock ? CircleAlert : CircleDashed;
+        // Why the calibration it has cannot block depends on its state (simulated, provisional…).
+        const calibration = progress.get(evaluatorId(b.evaluator))?.state;
+        const words = (item: (typeof shown)[number]) => readinessWords(item, calibration);
         const missingTone = wantsBlock ? 'text-tone-warning' : 'text-fg-muted';
         return (
           <li key={b.evaluator} className="space-y-1">
@@ -183,8 +186,8 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
             </p>
             {/* Its own line under the name, so a wrap never starts a line with a separator. */}
             {b.ready ? null : (
-              <p className="pl-5 text-xs text-fg-muted tabular" title={next ? readinessWords(next).missing : undefined}>
-                {done} of {shown.length} done{next ? ` · next: ${readinessWords(next).action}` : ''}
+              <p className="pl-5 text-xs text-fg-muted tabular" title={next ? words(next).missing : undefined}>
+                {done} of {shown.length} done{next ? ` · next: ${words(next).action}` : ''}
                 {/* Labels are what a calibration is fitted on: the queue is the next step's place. */}
                 {next === 'calibration' ? (
                   <>
@@ -208,16 +211,16 @@ function Readiness({ items, names }: { items: readonly BlockReadiness[]; names: 
               <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
                 {shown.map((item) => {
                   const missing = b.missing.includes(item);
-                  const words = readinessWords(item);
+                  const w = words(item);
                   return (
-                    <li key={item} data-missing={missing || undefined} title={missing ? words.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
+                    <li key={item} data-missing={missing || undefined} title={missing ? w.missing : undefined} className={cn('inline-flex items-center gap-1', missing ? 'text-fg' : 'text-fg-muted')}>
                       {missing ? (
                         <MissingIcon aria-hidden="true" className={cn('size-3', missingTone)} />
                       ) : (
                         <Check aria-hidden="true" className="size-3" />
                       )}
-                      {words.label}
-                      <span className="sr-only">{missing ? `: missing. ${words.missing}` : ': met'}</span>
+                      {w.label}
+                      <span className="sr-only">{missing ? `: missing. ${w.missing}` : ': met'}</span>
                     </li>
                   );
                 })}
@@ -312,7 +315,7 @@ export function RouteCard({ route, draftMode, names, progress, writeReason, onMo
                 Ready to <Term id="block">block</Term>?
               </span>
             </h4>
-            <Readiness items={route.block_readiness} names={names} />
+            <Readiness items={route.block_readiness} names={names} progress={progress} />
           </section>
         ) : null}
 

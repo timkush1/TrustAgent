@@ -43,6 +43,18 @@ describe('control presentation', () => {
     }
   });
 
+  it('says why the calibration a check has cannot block, only when it has one', () => {
+    expect(readinessWords('calibration').action).toBe('calibrate it on at least 200 of your own labels');
+    expect(readinessWords('calibration', 'none').action).toBe('calibrate it on at least 200 of your own labels');
+    expect(readinessWords('calibration', 'mock').action).toBe('calibrate it on at least 200 of your own labels (a simulated calibration cannot block)');
+    expect(readinessWords('calibration', 'provisional').action).toBe(
+      'calibrate it on at least 200 of your own labels (the provisional one has too few labels to block)',
+    );
+    expect(readinessWords('calibration', 'provisional').missing).toMatch(/\. The provisional one has too few labels to block\.$/);
+    // Other requirements ignore the state.
+    expect(readinessWords('buffering', 'mock')).toEqual(readinessWords('buffering'));
+  });
+
   it('marks only a measured calibration as good enough to block', () => {
     expect(calibrationStateView('measured').measured).toBe(true);
     for (const s of ['provisional', 'proxy', 'mock', 'family', 'none'] as const) expect(calibrationStateView(s).measured).toBe(false);
