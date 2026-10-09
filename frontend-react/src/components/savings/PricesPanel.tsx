@@ -45,6 +45,16 @@ const readOverrides = (s: SettingsView): PriceEntry[] => s.runtime.pricing_overr
 const KNOWN_PROVIDERS = ['openrouter', 'typesafe', 'anthropic', 'openai', 'ollama'];
 
 /** The effective table: what every cost estimate is priced with right now. */
+/**
+ * The catch-all pattern "*" of `entries[at]` in words. A lookup takes the provider's first matching
+ * entry (decision.LookupPrice), so it is "Any other model" when the provider has an entry listed
+ * before it, else "Any model".
+ */
+function catchAllWords(entries: readonly PriceEntry[], at: number): string {
+  const provider = entries[at]?.provider;
+  return entries.slice(0, at).some((x) => x.provider === provider) ? 'Any other model' : 'Any model';
+}
+
 function EffectiveTable() {
   const ds = useDataSource();
   const q = useQuery(pricingQuery(ds));
@@ -77,7 +87,14 @@ function EffectiveTable() {
           {q.data.entries.map((e, i) => (
             <tr key={`${e.provider}/${e.match}/${i}`} data-price-label={e.label ?? 'none'} className="border-b border-border last:border-b-0">
               <th scope="row" className="px-3 py-1.5 text-left align-top font-normal">
-                <span className="block font-mono text-xs text-fg">{e.match}</span>
+                {e.match === '*' ? (
+                  // The catch-all pattern in words: a bare "*" in mono reads like a model name.
+                  <span className="block text-xs text-fg">
+                    {catchAllWords(q.data.entries, i)} <span className="font-mono text-fg-muted">(*)</span>
+                  </span>
+                ) : (
+                  <span className="block font-mono text-xs text-fg">{e.match}</span>
+                )}
                 <span className="block text-xs text-fg-muted">
                   {costPriceProviderLabel(e.provider)}
                   {costPriceNote(e.note) ? ` · ${costPriceNote(e.note)}` : ''}
@@ -94,7 +111,7 @@ function EffectiveTable() {
                     basis={`${costPriceSourceWord(e.label)}${costPriceNote(e.note) ? `. ${costPriceNote(e.note)}` : ''}`}
                     sourceUrl={e.source}
                     asOf={e.as_of}
-                    subject={`${e.match} price`}
+                    subject={`${e.match === '*' ? catchAllWords(q.data.entries, i) : e.match} price`}
                   />
                 )}
               </td>

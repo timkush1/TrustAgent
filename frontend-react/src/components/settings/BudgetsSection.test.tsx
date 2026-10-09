@@ -299,6 +299,20 @@ describe('Settings → Budgets → Prices', { timeout: 20_000 }, () => {
     const row = within(table).getAllByRole('row').at(-1)!;
     expect(within(row).getByText('Assumed price')).toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: /^Vendor:/ })).toBeNull();
+    // The catch-all pattern reads as words, the glob beside it: the provider's only entry.
+    expect(within(row).getByRole('rowheader')).toHaveTextContent(/^Any model \(\*\)/);
+  });
+
+  it('words a catch-all after a provider’s own entries as any other model', async () => {
+    // The fixture's OpenRouter Jev entry (a vendor price), then a catch-all for the same provider.
+    const first = pricingFixture.entries[1] as PriceEntry;
+    const rest: PriceEntry = { ...first, match: '*' };
+    const control = createControlApi({ pricing: { ...pricingFixture, entries: [first, rest] } as PricingTable });
+    renderPage(PATH, { control });
+    const table = await screen.findByRole('table', { name: /^Prices in use/ });
+    const row = within(table).getAllByRole('row').at(-1)!;
+    expect(within(row).getByRole('rowheader')).toHaveTextContent(/^Any other model \(\*\)/);
+    expect(within(row).getByRole('button', { name: 'Vendor: how “Any other model price” was produced' })).toBeInTheDocument();
   });
 
   it('shows a not-yet-re-verified price note without its [A] marker', async () => {

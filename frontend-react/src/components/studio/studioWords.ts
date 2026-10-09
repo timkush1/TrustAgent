@@ -4,7 +4,7 @@
  * cost by its source (D82). They load with Studio's route, not with the shared presentation chunk
  * the landing page also loads (see domain/words/studio.ts).
  */
-import { CircleCheck, CircleDashed, CircleX, Flame, MinusCircle, type LucideIcon } from 'lucide-react';
+import { CircleCheck, CircleDashed, CircleX, Flag, MinusCircle, type LucideIcon } from 'lucide-react';
 import type { Tone } from '@/domain/contracts';
 import { formatCount, formatUsd } from '@/domain/format';
 import { copy, fillTemplate, humanizeId } from '@/domain/presentation';
@@ -55,7 +55,8 @@ export interface StudioRowView {
 
 /** "Fires" / "Doesn't fire" for a test row, or why it was not assessed. */
 export function studioFireWords(fires: boolean | null, status: EvaluatorResultStatus): StudioRowView {
-  if (fires === true) return { label: 'Fires', icon: Flame, tone: 'warning' };
+  // The flag the rest of the app shows for a flagged answer, not a playful flame.
+  if (fires === true) return { label: 'Fires', icon: Flag, tone: 'warning' };
   if (fires === false) return { label: "Doesn't fire", icon: CircleDashed, tone: 'neutral' };
   if (status === 'not_assessed') return { label: 'Not checked', icon: MinusCircle, tone: 'neutral' };
   return { label: "Couldn't check", icon: CircleX, tone: 'neutral' };
