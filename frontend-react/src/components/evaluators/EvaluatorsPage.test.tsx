@@ -57,7 +57,7 @@ describe('Evaluators library', { timeout: 20_000 }, () => {
     });
     renderPage('/app/evaluators', { control });
     const g = await card('Groundedness');
-    expect(await within(g).findByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toBeInTheDocument();
+    expect(await within(g).findByText('Calibrate now needs 8 labels: your own, plus deep audits from the uniform sample (5 so far). Label 1 more answer in the queue.')).toBeInTheDocument();
     expect(within(g).queryByText(/^Blocking needs/)).toBeNull();
     // No fit to open yet: the card offers the label queue only.
     expect(within(g).queryByRole('link', { name: /^Calibrate/ })).toBeNull();

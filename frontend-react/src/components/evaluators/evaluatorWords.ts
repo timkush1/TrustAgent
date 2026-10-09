@@ -100,15 +100,17 @@ export function canFitOnOwnLabels(p: CalibrationProgress): boolean {
 /**
  * Why "Calibrate now" is not available yet, or null. The server says when your own labels allow a
  * first fit; a fit may also add the deep-audit labels (a Proxy calibration), so it is offered once
- * both together reach the fit's minimum. Their split between kinds is the server's to check: too
- * few of one kind answers 422, which the dialog explains with the counts.
+ * both together reach the fit's minimum. Only deep audits of the uniform sample with a definite
+ * verdict count as labels (the server's proxy_labels), never every deep audit, so the reason says
+ * how many there are. Their split between kinds is the server's to check: too few of one kind
+ * answers 422, which the dialog explains with the counts.
  */
 export function calibrateReason(p: CalibrationProgress): CustomReason | null {
   if (p.snapshot === null) return { text: 'No fast-check version has checked traffic for this check yet, so there is nothing to calibrate.' };
   const more = labelsForFirstFit(p);
   if (more > 0) {
     return {
-      text: `Calibrate now needs ${MIN_FIT_LABELS} labels, and your deep audits count too: label ${more} more ${more === 1 ? 'answer' : 'answers'} in the queue.`,
+      text: `Calibrate now needs ${MIN_FIT_LABELS} labels: your own, plus deep audits from the uniform sample (${formatCount(p.proxy_labels)} so far). Label ${more} more ${more === 1 ? 'answer' : 'answers'} in the queue.`,
     };
   }
   return null;

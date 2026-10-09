@@ -124,7 +124,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     // Beside Calibrate now. The header's fit is off too, and as calibration #3 is for the version the
     // check runs on, its reason points to that record rather than saying nothing can be adopted.
     expect(await screen.findByText(/^Adopt an existing calibration on the Calibration tab, or label 1 more answer for a new fit\.$/)).toBeInTheDocument();
-    expect(screen.getAllByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toHaveLength(1);
+    expect(screen.getAllByText('Calibrate now needs 8 labels: your own, plus deep audits from the uniform sample (5 so far). Label 1 more answer in the queue.')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Fit and adopt from labels' })).toHaveAttribute('aria-disabled', 'true');
     await userEvent.setup().click(screen.getByRole('button', { name: 'Open Calibration' }));
     expect(await screen.findByRole('tab', { name: 'Calibration', selected: true })).toBeInTheDocument();
@@ -137,7 +137,7 @@ describe('Calibrate now', { timeout: 20_000 }, () => {
     bare.state.evaluatorDetails.groundedness = control.state.evaluatorDetails.groundedness;
     renderPage('/app/evaluators/groundedness', { control: bare });
     await screen.findByRole('button', { name: 'Calibrate now' });
-    await waitFor(() => expect(screen.getAllByText('Calibrate now needs 8 labels, and your deep audits count too: label 1 more answer in the queue.')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('Calibrate now needs 8 labels: your own, plus deep audits from the uniform sample (5 so far). Label 1 more answer in the queue.')).toHaveLength(2));
     stopLive();
     cleanup();
 
