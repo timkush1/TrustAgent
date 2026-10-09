@@ -23,7 +23,7 @@ func NewTransport() *http.Transport {
 	// compatible backend's base URL is the admin's choice.
 	d := netguard.Dialer(5*time.Second, 30*time.Second)
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 netguard.Proxy,
 		DialContext:           d.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
