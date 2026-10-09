@@ -1,12 +1,6 @@
-frontend-react/src/components/replay/StaticPlayground.tsx:
-frontend-react/src/components/landing/TryIt.tsx:
-frontend-react/src/components/landing/WriteChecks.tsx:
-frontend-react/src/routes/index.tsx:
-frontend-react/src/routes/app/evaluators/studio/index.tsx:
-frontend-react/src/routes/app/evaluators/studio/$id.$version.tsx:
-frontend-react/src/components/studio/StudioStaticNote.tsx:
-frontend-react/src/components/replay/staticBuild.test.tsx:
-backend-go/internal/store/migrations/0005_p4.up.sql:
+backend-go/internal/store/migrations/0005_p4.up.sql:1:-- 0005: P4 additions to the cost ledger, traces, calibrations and the admin audit
+backend-go/internal/store/migrations/0005_p4.up.sql:2:-- log (P4-PLAN D44, D45, D55; SPEC §2.3 erratum).
+backend-go/internal/store/migrations/0005_p4.up.sql:17:-- traces written before P4).
 defaultPhase = "p4"
 var phases = []string{phaseS0, "p2", "p3", "p4", "p5"}
 !phaseAllows(defaultPhase, "p3") || !phaseAllows(defaultPhase, "p4") || phaseAllows(defaultPhase, "p5")

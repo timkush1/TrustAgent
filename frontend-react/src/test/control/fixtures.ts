@@ -5,8 +5,8 @@
  * cannot drift from what the gateway ships.
  *
  * contracts/schema/api.v1.schema.json (ROOTS in contracts/tools/api-schema/gen-api-schema.mjs)
- * covers the core, the P3 Playground, reliability and recording types, and the P4 settings,
- * costs, evaluator, Studio, label and calibration types, whose golden fixtures in
+ * covers the core, the Playground, reliability and recording types, and the settings, costs,
+ * evaluator, Studio, label and calibration types, whose golden fixtures in
  * contracts/fixtures/api are validated against it. The types it does not root yet (the policy
  * state and its effective routes, the evaluator detail) have no golden fixture to validate: these
  * builders are type-checked against api.ts instead, which is the schema's source.
