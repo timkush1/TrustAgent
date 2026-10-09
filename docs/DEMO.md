@@ -30,7 +30,9 @@ make demo          # OPEN=0 prints the URLs without opening a browser
    ```
 
    Click **Create the admin key**: the dashboard shows the key once (keep it) and signs this
-   browser in, so you can edit policies and use the Playground. When an admin already exists,
+   browser in, so you can edit policies and use the Playground. Tick **I saved it** and go on:
+   step 2 has nothing to connect (the demo already runs simulated checks), and step 3 checks a
+   refund answer that says 60 days against a policy that says 30. When an admin already exists,
    `make demo` opens the dashboard at <http://localhost:3000> instead.
 
 Other ways in: `make demo-setup-url` prints a new link (each one replaces the last);
