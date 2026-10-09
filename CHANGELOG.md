@@ -443,6 +443,26 @@ phase (P0 → P7).
   Prices table words its catch-all pattern; a firing Studio test row shows a
   flag; the top bar is solid, and a command in a banner never breaks across
   lines.
+- **The demo's setup wizard no longer dead-ends** (`make demo` opens it): step
+  2 says the demo already runs simulated checks and nothing needs connecting,
+  Next opens step 3, and its check runs like the Playground's, so a visitor
+  goes from the setup link to a caught wrong answer and on to the dashboard
+  (a vitest and the `demo setup` stack spec walk it).
+- **The real-judge figure states its unit**: "a fast check on every answer
+  ($0.21) + a deep audit of about 8 in 100 answers (about $2.80)" per 1,000
+  answers, where it read as 21 cents per answer; one Estimate line sums the
+  published figures up (about 12x less than an LLM auditing every answer).
+- **Fix round 5 polish**: Savings groups the alternatives under their own
+  heading and labels the sampling counts; Policies says why a calibration
+  cannot block by its state; one verb per calibration action, and short
+  library-card steps; Studio's steps are numbered circles, its dry run names
+  the thresholds its risk words follow, and the mock fast check no longer
+  fires a drafted competitor check at random; the label queue's cards line
+  up; the glass box shows documents as excerpts; Settings tabs stay on one
+  row and an assumed price is an Estimate; only `GET /api/status` re-reads
+  the decision day (the status loop, readiness and the WebSocket hello read
+  the cache); the dial guard also refuses Alibaba Cloud metadata and judges
+  the target behind an HTTP(S) proxy.
 - **B4 — duplicate ids corrupted audit history**: trace/audit ids are now
   server-generated UUIDv7; a client `X-Request-ID` is stored only as a
   non-unique `client_request_id`, and a repeated id can no longer append claims
