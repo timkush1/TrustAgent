@@ -329,6 +329,9 @@ test.describe('onboarding', () => {
     expect(holdsSecret((await page.locator('body').textContent()) ?? ''), 'the pasted key is shown only masked').toBe(false);
   });
 
+  // Connect your app runs before See it work (ON-9 lists them the other way round): the card waits
+  // only while the window has no request, and the wizard's check is one, so after it the card
+  // could never be seen going from waiting to received.
   test('7 · Connect your app: one app key, then waiting, then received after one /v1 request', async ({ request }) => {
     await page.goto('/app/setup?step=try');
     await expect(page.getByRole('heading', { level: 2, name: `3. ${SEE_IT_WORK.title}` })).toBeVisible({ timeout: TIMEOUT });
