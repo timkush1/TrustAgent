@@ -115,7 +115,14 @@ test.describe('savings', () => {
       await expect(headline.getByRole('heading', { level: 3, name: 'With a real judge, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
       expect(await alternatives()).toEqual(['real_judge', 'llm_same_checks', 'llm_full_claim_audit']);
       await expect(realJudge).toContainText(/TrustAgent with a real judge\s*\$3(?![\d.])/);
-      await expect(realJudge).toContainText('At the shipped defaults: fast check $0.21 on every answer + a deep audit of about 8 in 100 answers');
+      // Each part in the total's unit (per 1,000 answers), never "$0.21 on every answer".
+      await expect(realJudge).toContainText(
+        'Per 1,000 answers at the shipped defaults: a fast check on every answer ($0.21) + a deep audit of about 8 in 100 answers (about $2.80)',
+      );
+      // The published figures summed up in one line, labelled Estimate.
+      const takeaway = headline.locator('[data-takeaway]');
+      await expect(takeaway).toContainText(/^With a real judge, TrustAgent costs about \d+× less than an LLM auditing every answer/);
+      await expect(takeaway.getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
       await expect(headline.locator('[data-alternative="llm_same_checks"]')).toContainText('$5.75');
       await expect(headline.locator('[data-alternative="llm_full_claim_audit"]')).toContainText('$35.50');
       for (const key of ['real_judge', 'llm_same_checks', 'llm_full_claim_audit']) {
