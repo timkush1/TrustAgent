@@ -149,10 +149,10 @@ func TestWriteDeadlinePerRoute(t *testing.T) {
 	}
 }
 
-// The owner seams change nothing on the gated path: a gated request flows as
-// before, the stubs register no routes, and the harness options the newer tests use work (a custom
-// engine, a config mutation, the redacting log, WS replay frames).
-func TestP4SeamsKeepTodaysBehaviour(t *testing.T) {
+// The owner seams change nothing on the gated path: a gated request flows as before, every
+// seam's route is served by its owner's handler, and the harness options the newer tests use work
+// (a custom engine, a config mutation, the redacting log, WS replay frames).
+func TestOwnerSeamsKeepTodaysBehaviour(t *testing.T) {
 	const secret = "cmp0e2eZq7Lw4Rt9Yx2Vb6Nm" // matches no redaction pattern
 	var logs bytes.Buffer
 	eng := scenarioEngine(t, false)

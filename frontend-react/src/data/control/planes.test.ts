@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import settingsEnvManaged from '@contracts/fixtures/api/SettingsView.env-managed.json';
 import { unavailableControlPlane } from '@/data/controlPlane';
-import { errorCodeHint, P4_ERROR_CODES } from '@/data/errors';
+import { errorCodeHint, CONTROL_ERROR_CODES } from '@/data/errors';
 import { createHttpClient } from '@/data/http';
 import { LiveControlPlane } from '@/data/live/liveControlPlane';
 import { createControlApi } from '@/test/control/handlers';
@@ -92,14 +92,14 @@ describe('control planes', () => {
   });
 
   it('describes every settings, credentials, cost and Studio error code', async () => {
-    for (const [code, { status, hint }] of Object.entries(P4_ERROR_CODES)) {
+    for (const [code, { status, hint }] of Object.entries(CONTROL_ERROR_CODES)) {
       expect(status, code).toBeGreaterThanOrEqual(400);
       expect(hint, code).not.toBe('');
     }
     const err = await unavailableControlPlane('x')
       .listApiKeys()
       .catch((e: unknown) => e);
-    expect(errorCodeHint(err)).toBe(P4_ERROR_CODES.not_implemented.hint);
+    expect(errorCodeHint(err)).toBe(CONTROL_ERROR_CODES.not_implemented.hint);
     expect(errorCodeHint(new Error('x'))).toBeNull();
   });
 });

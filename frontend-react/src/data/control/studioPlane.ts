@@ -20,7 +20,7 @@ import type {
   StudioTestRequest,
   StudioTestResponse,
 } from '@/types/api';
-import { ApiError, apiErrorFromResponse, isP4ErrorCode, P4_ERROR_CODES } from '../errors';
+import { ApiError, apiErrorFromResponse, isControlErrorCode, CONTROL_ERROR_CODES } from '../errors';
 import type { HttpClient } from '../http';
 import { normalizeShaped, type NestedShape } from '../normalize';
 import { readSse } from '../sse';
@@ -104,7 +104,7 @@ function numbers<T>(payload: unknown, keys: readonly string[], what: string, eve
 function errorEventStatus(payload: unknown): number {
   const error = typeof payload === 'object' && payload !== null ? (payload as { error?: unknown }).error : undefined;
   const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
-  return typeof code === 'string' && isP4ErrorCode(code) ? P4_ERROR_CODES[code].status : 502;
+  return typeof code === 'string' && isControlErrorCode(code) ? CONTROL_ERROR_CODES[code].status : 502;
 }
 
 /** Reads a dry-run stream to its `done` event, reporting `estimate` and `progress` on the way. */

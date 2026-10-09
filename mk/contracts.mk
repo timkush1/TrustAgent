@@ -39,8 +39,10 @@ forbidden-check: ## Fail on a superseded identifier (scripts/check-forbidden.mjs
 
 # The phase grep (P4-PLAN §17 I-3): no code or comment names the delivery phase it shipped in. The
 # only exceptions are the fixed substrings in scripts/phase-refs.allow, matched against git grep's
-# `path:line:text` output. Raise PHASE_REFS_RE to the next phase when that phase's cleanup lands.
-PHASE_REFS_RE ?= \bP4\b|"p4"|in P4|P4_REASONS
+# `path:line:text` output. `P4_` and `P4[A-Z][a-z]` also catch names that run on into an
+# identifier (P4_ERROR_CODES, isP4ErrorCode, TestP4Seams…), which `\bP4\b` misses. Raise
+# PHASE_REFS_RE to the next phase when that phase's cleanup lands.
+PHASE_REFS_RE ?= \bP4\b|"p4"|in P4|P4_|P4[A-Z][a-z]
 PHASE_REFS_PATHS ?= frontend-react/src backend-go backend-python/src scripts
 
 phase-refs-check: ## Fail on a code or comment line that names a delivery phase (scripts/phase-refs.allow lists the exceptions)

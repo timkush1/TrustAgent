@@ -153,7 +153,7 @@ export function errorMessage(err: unknown): string {
  * hint; anything with a name or a route in it (`details.names`, `details.routes`) gets its words
  * from contracts/ui through the domain words modules. `not_implemented` is the Step-0b stub answer.
  */
-export const P4_ERROR_CODES = {
+export const CONTROL_ERROR_CODES = {
   conflict: { status: 409, hint: 'Something else changed this first. Reload and try again.' },
   env_managed: { status: 409, hint: 'This is set by an environment variable. Change it in .env and restart.' },
   ingest_key_required: { status: 409, hint: 'Create an ingest API key first, so only your apps can use the upstream key.' },
@@ -172,21 +172,21 @@ export const P4_ERROR_CODES = {
   not_implemented: { status: 404, hint: 'This dashboard build cannot do this yet.' },
 } as const satisfies Record<string, { status: number; hint: string }>;
 
-export type P4ErrorCode = keyof typeof P4_ERROR_CODES;
+export type ControlErrorCode = keyof typeof CONTROL_ERROR_CODES;
 
 /** Field-error codes inside a 422 `validation_failed` (FieldError.code; D37, D41). */
-export const P4_FIELD_ERROR_CODES = {
+export const CONTROL_FIELD_ERROR_CODES = {
   reenter_secret: 'The address changed, so paste the key again to send it there.',
   fallback_key_required: 'A fallback on another host needs its own upstream key.',
 } as const satisfies Record<string, string>;
 
-export type P4FieldErrorCode = keyof typeof P4_FIELD_ERROR_CODES;
+export type ControlFieldErrorCode = keyof typeof CONTROL_FIELD_ERROR_CODES;
 
-export function isP4ErrorCode(code: string): code is P4ErrorCode {
-  return Object.hasOwn(P4_ERROR_CODES, code);
+export function isControlErrorCode(code: string): code is ControlErrorCode {
+  return Object.hasOwn(CONTROL_ERROR_CODES, code);
 }
 
 /** The plain hint for an error's code, or null when the code is not one of them. */
 export function errorCodeHint(err: unknown): string | null {
-  return isApiError(err) && isP4ErrorCode(err.code) ? P4_ERROR_CODES[err.code].hint : null;
+  return isApiError(err) && isControlErrorCode(err.code) ? CONTROL_ERROR_CODES[err.code].hint : null;
 }
