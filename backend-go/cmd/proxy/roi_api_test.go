@@ -332,10 +332,14 @@ func TestRoiSummaryCountsTheLedger(t *testing.T) {
 		r.LLMCost.Label != labelSimulated || r.TotalPer1k.Label != labelSimulated || r.Savings.Label != labelSimulated {
 		t.Errorf("with the mock answer: %+v", r)
 	}
-	for _, cf := range r.Counterfactual {
-		if cf.Label != labelSimulated {
-			t.Errorf("a counterfactual over simulated traffic is labelled %s", cf.Label)
-		}
+	// Over simulated traffic the same checks are simulated; the published full-audit assumption
+	// stays an estimate, and its basis says the answers it is applied to are simulated.
+	if same := r.Counterfactual[0]; same.Label != labelSimulated {
+		t.Errorf("the same checks over simulated traffic are labelled %s", same.Label)
+	}
+	if full := r.Counterfactual[1]; full.Method != "static_assumptions" || full.Label != labelEstimate ||
+		!strings.Contains(full.Basis, "simulated answers") || !nearUSD(*full.Per1k, 35.5) {
+		t.Errorf("the published full audit over simulated traffic: %+v", full)
 	}
 }
 

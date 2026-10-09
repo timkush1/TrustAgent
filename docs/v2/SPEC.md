@@ -3102,7 +3102,7 @@ Where a section above says otherwise, the decision cited for it here wins.
 | §3.4 (infra) | The onboarding stack overlay; `make configure WITH_SECRETS=1` | D70, D74 |
 | §4.2 gate | Proofs run on two stacks: demo-shaped (studio, savings) and onboarding | D70 |
 | §6 (owner guide) | `configure --with-secrets`; the credit prerequisite is about $5 | D74, D86 |
-| §7.4 (savings) | Simulated spend never counts toward a cap; ROI's decision cost counts the gate component only; overrides > file > contracts | D46, D50, D53 |
+| §7.4 (savings) | Simulated spend never counts toward a cap; ROI's decision cost counts the gate component only; overrides > file > contracts; over simulated traffic every ROI figure is Simulated except the published `static_assumptions` full audit, which stays an Estimate (its basis says the answers are simulated) | D46, D50, D53 |
 | §7.5 (credentials) | Fingerprints are an HMAC of the master key's subkey; secrets re-entered after an origin change; PKCE; credentials bound to canonical origins (and refused at dial time, D96); what non-admin callers see | D30, D37, D38, D78, D79 |
 | §7.6 (vectors) | Cost vectors (`call_cost`, `price_lookup`, `per_1k`), frozen and run in Go and Python; TypeScript in P5 | D85 |
 | Appendix B (metrics) | `trustagent_gateway_cost_write_dropped_total` | D51 |

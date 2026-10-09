@@ -226,7 +226,16 @@ func (s *server) handleRoiSummary(c *gin.Context) {
 		out.Savings.USDLow, out.Savings.USDHigh = ptrF(roundUSD(usd-r.DecisionUSD-r.LLMUSD)), ptrF(roundUSD(usd-r.DecisionUSD))
 	}
 	full := fullAuditCounterfactual(r, n)
-	full.Label = estimate
+	if full.Method == "static_assumptions" {
+		// The published assumption (value claim llm_full_audit_cost_per_1k) stays an estimate over
+		// simulated traffic too: its figure is the published one, and only the answer count it is
+		// applied to is simulated, which the basis says.
+		if simulated {
+			full.Basis += "; applied to this window's simulated answers"
+		}
+	} else {
+		full.Label = estimate
+	}
 	out.Counterfactual = []counterfactual{same, full}
 	if price.note != "" {
 		out.ThirdParty = append(out.ThirdParty, price.note)
