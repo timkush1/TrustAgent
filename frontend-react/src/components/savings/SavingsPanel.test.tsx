@@ -48,6 +48,16 @@ describe('Savings tab', { timeout: 20_000 }, () => {
     expect(screen.getByText(/Saved/)).toHaveTextContent('Saved $0.60–$0.97 against an LLM asking the same questions');
     expect(badge('Estimate', 'Savings against an LLM asking the same questions')).toBeInTheDocument();
     expect(screen.getByText(/So far: 540 answers checked/)).toBeInTheDocument();
+    // The alternatives in the headline's unit: here only an LLM asking the same questions, with
+    // its own label and how it was worked out; no real-judge figure on a stack with a real judge.
+    const others = screen.getByRole('heading', { level: 3, name: 'Against the alternatives, per 1,000 answers' });
+    expect(others).toBeInTheDocument();
+    const same = document.querySelector<HTMLElement>('[data-alternative="llm_same_checks"]')!;
+    expect(within(same).getByText('$2.26')).toBeInTheDocument();
+    expect(same).toHaveTextContent('Token model: your fast-check tokens priced at the judge’s rate');
+    expect(badge('Estimate', 'An LLM asking the same questions, per 1,000 answers')).toBeInTheDocument();
+    expect(document.querySelector('[data-alternative="real_judge"]')).toBeNull();
+    expect(screen.queryByText(/mock judge is free/)).toBeNull();
   });
 
   it('words a savings range that crosses zero as both ways', async () => {
@@ -133,16 +143,24 @@ describe('Savings tab', { timeout: 20_000 }, () => {
       roi: roiSummary({ simulated: true, llm_cost: { ...base.llm_cost, usd: 0, value: 0 }, counterfactuals: [...base.counterfactuals, freeFull] }),
     });
     renderPage('/app/savings', { control });
-    // A real judge's cost leads with the published figures at the shipped defaults, each an
-    // estimate, never this demo's own deep-audit rate scaled up.
-    const shipped = await screen.findByText(/^At the shipped defaults/);
-    expect(shipped).toHaveTextContent(
-      'At the shipped defaults (about 8 in 100 answers deep-audited), checking costs about $3 per 1,000 answers Estimate, against $35.50 to audit every answer claim by claim Estimate.',
-    );
+    // Among the alternatives per 1,000 answers, a real judge's cost at the shipped defaults and the
+    // full audit of every answer come from the published figures, each an estimate, never this
+    // demo's own deep-audit rate scaled up; the simulated same-questions figure keeps its label.
+    const real = (await screen.findByText('TrustAgent with a real judge')).closest<HTMLElement>('[data-alternative]')!;
+    expect(real).toHaveAttribute('data-alternative', 'real_judge');
+    expect(within(real).getByText('$3')).toBeInTheDocument();
+    expect(real).toHaveTextContent('At the shipped defaults: about 8 in 100 answers deep-audited');
     expect(badge('Estimate', 'Checking at the shipped defaults with a real judge')).toBeInTheDocument();
-    expect(badge('Estimate', 'An LLM auditing every answer claim by claim')).toBeInTheDocument();
-    // Then this window's own rate (58 audits over 540 answers), apart from the headline figure.
-    const free = screen.getByText(/^The deep audit above reads \$0 because the demo’s mock judge is free\./);
+    const full = document.querySelector<HTMLElement>('[data-alternative="llm_full_claim_audit"]')!;
+    expect(within(full).getByText('$35.50')).toBeInTheDocument();
+    expect(full).toHaveTextContent('Published assumptions · not measured');
+    expect(badge('Estimate', 'An LLM auditing every answer claim by claim, per 1,000 answers')).toBeInTheDocument();
+    expect(badge('Simulated', 'An LLM asking the same questions, per 1,000 answers')).toBeInTheDocument();
+    expect(
+      [...document.querySelectorAll('[data-alternative]')].map((el) => el.getAttribute('data-alternative')),
+    ).toEqual(['llm_same_checks', 'real_judge', 'llm_full_claim_audit']);
+    // Then this window's own rate (58 audits over 540 answers), apart from the published figures.
+    const free = screen.getByText(/^The deep audit reads \$0 because the demo’s mock judge is free\./);
     expect(free).toHaveTextContent(
       'This demo deep-audits about 11 in 100 answers to show the audit flow: at that rate a real judge would add about $3.81 per 1,000 answers.',
     );

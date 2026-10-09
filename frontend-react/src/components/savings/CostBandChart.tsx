@@ -385,7 +385,8 @@ export function CostBandChart({
               </span>
             ))}
           </div>
-          {/* X axis: a few bucket names under the plot. */}
+          {/* X axis: a few bucket names under the plot; on a phone only the first and the last,
+              which would otherwise run into the ones between them. */}
           <span aria-hidden="true" />
           <div aria-hidden="true" className="relative mt-1 h-4">
             {labelIndexes(n).map((i, k, all) => (
@@ -393,7 +394,7 @@ export function CostBandChart({
                 key={i}
                 className={cn(
                   'absolute text-2xs whitespace-nowrap text-fg-muted',
-                  k === 0 ? 'translate-x-0' : k === all.length - 1 ? '-translate-x-full' : '-translate-x-1/2',
+                  k === 0 ? 'translate-x-0' : k === all.length - 1 ? '-translate-x-full' : '-translate-x-1/2 max-sm:hidden',
                 )}
                 style={{ left: `${xAt(i, n)}%` }}
               >

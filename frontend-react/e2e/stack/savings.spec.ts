@@ -99,20 +99,33 @@ test.describe('savings', () => {
     await expect(sampling.locator('[data-sampling="uniform"]')).toHaveText(/^Uniform sampling/);
   });
 
-  test('on the demo, states a real judge’s cost at the shipped defaults, apart from the demo’s own rate', async ({ page }) => {
+  test('compares the alternatives per 1,000 answers, and states one cost per window', async ({ page }) => {
     await waitForCheckedAnswers(page.request);
-    test.skip(!(await isDemo(page.request)), 'only the demo stack has the free mock judge');
+    const demo = await isDemo(page.request);
     await page.goto('/app/overview?tab=savings');
     const headline = page.getByRole('region', { name: /^Your cost:/ });
-    // The published figures lead: about $3 per 1,000 at the shipped defaults against $35.50 for a
-    // full audit of every answer, each an estimate; never the demo's audit rate scaled up.
-    const shipped = headline.getByText(/^At the shipped defaults/);
-    await expect(shipped).toContainText(/about 8 in 100 answers deep-audited.*about \$3 per 1,000 answers.*\$35\.50 to audit every answer claim by claim/, { timeout: TIMEOUT });
-    await expect(shipped.getByRole('button', { name: /^Estimate: / })).toHaveCount(2);
-    await expect(headline.getByText(/^The deep audit above reads \$0/)).toContainText(/This demo deep-audits (every answer|about \d+ in 100 answers) to show the audit flow/);
+    await expect(headline.getByRole('heading', { level: 3, name: 'Against the alternatives, per 1,000 answers' })).toBeVisible({ timeout: TIMEOUT });
+    const realJudge = headline.locator('[data-alternative="real_judge"]');
+    if (demo) {
+      // The demo's mock judge is free: a real judge's cost is the published figure at the shipped
+      // defaults (about $3 per 1,000), beside $35.50 for a full audit of every answer, each an
+      // estimate; never the demo's own deep-audit rate scaled up, which has its own line.
+      await expect(realJudge).toContainText(/TrustAgent with a real judge\s*\$3(?![\d.])/);
+      await expect(realJudge).toContainText('At the shipped defaults: about 8 in 100 answers deep-audited');
+      await expect(realJudge.getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
+      const full = headline.locator('[data-alternative="llm_full_claim_audit"]');
+      await expect(full).toContainText('$35.50');
+      await expect(full.getByRole('button', { name: /^Estimate: / })).toHaveCount(1);
+      await expect(headline.getByText(/^The deep audit reads \$0/)).toContainText(/This demo deep-audits (every answer|about \d+ in 100 answers) to show the audit flow/);
+    } else {
+      // A stack with a real judge states what its own deep audits cost: no published stand-in.
+      await expect(realJudge).toHaveCount(0);
+      await expect(headline.getByText(/mock judge is free/)).toHaveCount(0);
+    }
     // One window, one cost: the chart's sentence states the headline's totals.
     const early = await headline.getByText(/^So far: /).textContent();
     const [, answers, spent] = /^So far: ([\d,]+) answers checked for (\$[\d.]+)\./.exec(early ?? '') ?? [];
+    expect(answers).toBeTruthy();
     const chart = page.getByRole('figure', { name: 'What checking cost, against asking an LLM' });
     await expect(chart).toContainText(`Checking ${answers} answers cost ${spent}`);
   });

@@ -3,16 +3,17 @@
  * what it saves, where every number says where it comes from.
  *
  * Top to bottom: the headline ("Your cost: $X per 1,000 answers (fast check $a + deep audit $b)")
- * with the savings range against an LLM asking the same questions; the spend line over the
- * counterfactual bands (with its table); the component table, every figure with its value label
- * (Measured, Estimate, Third-party, Vendor or Simulated); what was stopped (block and fallback)
- * apart from what was flagged; fast-check speed; and the sampling status, including when the
- * deep-audit budget ran out.
+ * with the savings range against an LLM asking the same questions, then the alternatives side by
+ * side in the headline's unit (per 1,000 answers); the spend line over the counterfactual bands
+ * (with its table); the component table, every figure with its value label (Measured, Estimate,
+ * Third-party, Vendor or Simulated); what was stopped (block and fallback) apart from what was
+ * flagged; fast-check speed; and the sampling status, including when the deep-audit budget ran out.
  *
- * On a demo whose mock judge is free, the headline says what a real judge costs at the shipped
- * defaults (the published estimates), apart from this demo's own deep-audit rate. The static
- * replay words every span "over the replayed traffic" and says the recording carries no sampling
- * state, since it has no window to pick and no gateway to ask.
+ * On a demo whose mock judge is free, the alternatives include what checking costs with a real
+ * judge at the shipped defaults (the published estimate), and a line below says what this demo's
+ * own, far higher, deep-audit rate would add. The static replay words every span "over the
+ * replayed traffic" and says the recording carries no sampling state, since it has no window to
+ * pick and no gateway to ask.
  *
  * Page contract: the delayed skeleton, the server's message with Retry, a degraded state for a
  * proxy that does not report costs (an older version), an empty state before the first checked
@@ -40,6 +41,7 @@ import { cn } from '@/lib/cn';
 import type { RoiSummary, TimeWindow } from '@/types/api';
 import { CostBandChart } from './CostBandChart';
 import {
+  alternatives,
   bandLabels,
   chartTotals,
   componentRows,
@@ -49,6 +51,7 @@ import {
   realJudgeView,
   samplingLines,
   savingsRange,
+  type Alternative,
   type RealJudgeView,
   type SavingsRange,
 } from './savingsModel';
@@ -82,71 +85,101 @@ const SAVED_WORDS: Record<SavingsRange['direction'], [string, string]> = {
   mixed: ['Between ', ' than'],
 };
 
+/** Tailwind needs whole class names: the strip's columns by how many alternatives it has. */
+const ALTERNATIVE_COLS: Record<number, string> = { 1: 'sm:grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3' };
+
 /**
- * What a real judge costs, on a demo whose mock judge is free: the published figures at the
- * shipped defaults against a full audit of every answer, then this demo's own deep-audit rate,
- * which is far higher than the defaults to show the audit flow.
+ * The alternatives in the headline's unit, side by side: one surface with hairline dividers, not a
+ * row of stat cards (DESIGN.md), each figure with its own value label.
  */
-function RealJudge({ view }: { view: RealJudgeView }) {
+function Alternatives({ items }: { items: Alternative[] }) {
   return (
-    <div className="space-y-1.5 border-t border-border pt-2.5">
-      <h3 className="text-sm font-medium text-fg">With a real judge</h3>
-      <p className="text-sm text-fg">
-        At the shipped defaults ({view.shippedShare} answers deep-audited), checking costs about{' '}
-        <span className="font-medium tabular">{view.shippedPer1k}</span> per 1,000 answers{' '}
-        <EvidenceBadge label="estimate" basis={view.basis} subject="Checking at the shipped defaults with a real judge" className="align-middle" />,
-        against <span className="font-medium tabular">{view.fullAuditPer1k}</span> to audit every answer claim by claim{' '}
-        <EvidenceBadge label="estimate" basis={view.fullAuditBasis} subject="An LLM auditing every answer claim by claim" className="align-middle" />.
-      </p>
-      <p className="text-sm text-fg-muted">
-        The deep audit above reads $0 because the demo&rsquo;s mock judge is free.{' '}
-        {view.demoLine ? (
-          <>
-            <span className="tabular">{view.demoLine}</span>{' '}
-            <EvidenceBadge label="estimate" basis={view.demoBasis} subject="What a real judge would add at this demo’s rate" className="align-middle" />
-          </>
-        ) : null}
-      </p>
+    <div className="space-y-1.5 border-t border-border pt-3">
+      <h3 id="savings-alternatives" className="text-sm font-medium text-fg">
+        Against the alternatives, per 1,000 answers
+      </h3>
+      <dl
+        aria-labelledby="savings-alternatives"
+        className={cn(
+          'grid grid-cols-1 divide-border rounded-md border border-border sm:divide-x max-sm:[&>*]:border-b max-sm:[&>*]:border-border max-sm:[&>*:last-child]:border-b-0',
+          ALTERNATIVE_COLS[items.length],
+        )}
+      >
+        {items.map((a) => (
+          <div key={a.key} data-alternative={a.key} className="min-w-0 space-y-1 px-3 py-2.5">
+            <dt className="text-xs text-fg-muted">{a.label}</dt>
+            <dd className="flex flex-wrap items-center gap-2">
+              <span className="text-lg font-semibold text-fg tabular">{a.per1k}</span>
+              <EvidenceBadge label={a.valueLabel} basis={a.basis} subject={a.subject} />
+            </dd>
+            <dd className="text-xs text-fg-muted">{a.note}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
 
-/** The headline, the savings range, the early-data sentence and, on a free mock judge, a real judge's cost. */
+/**
+ * Why the deep audit reads $0 on a demo whose mock judge is free, and what a real judge would add
+ * at this demo's own deep-audit rate, which is far above the shipped defaults to show the audit flow.
+ */
+function FreeMockJudge({ view }: { view: RealJudgeView | null }) {
+  return (
+    <p className="text-sm text-fg-muted">
+      <span className="tabular">
+        The deep audit reads $0 because the demo&rsquo;s mock judge is free.{' '}
+        {view?.demoLine ?? 'With a real judge, every deep audit adds an LLM cost.'}
+      </span>
+      {view?.demoLine ? (
+        <>
+          {' '}
+          <EvidenceBadge label="estimate" basis={view.demoBasis} subject="What a real judge would add at this demo’s rate" className="align-middle" />
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/**
+ * The headline, the savings range and the early-data sentence; then the alternatives per 1,000
+ * answers (on a free mock judge, with a real judge's cost at the shipped defaults among them).
+ */
 function Headline({ roi }: { roi: RoiSummary }) {
   const line = savingsLine(roi);
   const saved = savingsRange(roi);
   const same = roi.counterfactuals.find((c) => c.kind === 'llm_same_checks');
   const realJudge = line.freeMockJudge ? realJudgeView(roi) : null;
+  const others = alternatives(roi, realJudge);
   return (
-    <section aria-labelledby="savings-headline" className="space-y-2 rounded-lg border border-border bg-surface px-4 py-4">
-      <h2 id="savings-headline" className="flex flex-wrap items-center gap-2 text-lg font-semibold text-fg">
-        <span className="tabular">{line.headline}</span>
-        <EvidenceBadge label={line.label} basis={roi.total_per_1k.basis} subject="Your cost per 1,000 answers" />
-      </h2>
-      {saved ? (
-        <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
-          {/* The icon stays on the sentence's first line, however narrow the screen. */}
-          <span>
-            <PiggyBank aria-hidden="true" className="mr-1.5 inline-block size-4 align-[-0.15em] text-fg-muted" />
-            {SAVED_WORDS[saved.direction][0]}
-            <span className="font-medium tabular">{saved.text}</span>
-            {SAVED_WORDS[saved.direction][1]} an LLM asking the same questions
-            {saved.multiple ? <span className="tabular">{` (the fast check was about ${saved.multiple} cheaper)`}</span> : null}
-          </span>
-          <EvidenceBadge label={saved.label} basis={same?.basis} subject="Savings against an LLM asking the same questions" />
-        </p>
-      ) : null}
-      {line.earlyData && line.earlyDataLabel ? (
-        <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-          <span>{line.earlyData}</span>
-          <EvidenceBadge label={line.earlyDataLabel} basis={same?.basis} subject="What an LLM would have cost" />
-        </p>
-      ) : null}
-      {realJudge ? (
-        <RealJudge view={realJudge} />
-      ) : line.freeMockJudge ? (
-        <p className="text-sm text-fg-muted">The deep audit reads $0 because the demo&rsquo;s mock judge is free. With a real judge, every deep audit adds an LLM cost.</p>
-      ) : null}
+    <section aria-labelledby="savings-headline" className="space-y-3 rounded-lg border border-border bg-surface px-4 py-4">
+      <div className="space-y-2">
+        <h2 id="savings-headline" className="flex flex-wrap items-center gap-2 text-lg font-semibold text-fg">
+          <span className="tabular">{line.headline}</span>
+          <EvidenceBadge label={line.label} basis={roi.total_per_1k.basis} subject="Your cost per 1,000 answers" />
+        </h2>
+        {saved ? (
+          <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
+            {/* The icon stays on the sentence's first line, however narrow the screen. */}
+            <span>
+              <PiggyBank aria-hidden="true" className="mr-1.5 inline-block size-4 align-[-0.15em] text-fg-muted" />
+              {SAVED_WORDS[saved.direction][0]}
+              <span className="font-medium tabular">{saved.text}</span>
+              {SAVED_WORDS[saved.direction][1]} an LLM asking the same questions
+              {saved.multiple ? <span className="tabular">{` (the fast check was about ${saved.multiple} cheaper)`}</span> : null}
+            </span>
+            <EvidenceBadge label={saved.label} basis={same?.basis} subject="Savings against an LLM asking the same questions" />
+          </p>
+        ) : null}
+        {line.earlyData && line.earlyDataLabel ? (
+          <p className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+            <span>{line.earlyData}</span>
+            <EvidenceBadge label={line.earlyDataLabel} basis={same?.basis} subject="What an LLM would have cost" />
+          </p>
+        ) : null}
+      </div>
+      {others.length > 0 ? <Alternatives items={others} /> : null}
+      {line.freeMockJudge ? <FreeMockJudge view={realJudge} /> : null}
       <p className="text-xs text-fg-muted">{copy.savings.caption}</p>
     </section>
   );

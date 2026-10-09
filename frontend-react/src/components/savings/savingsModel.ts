@@ -424,6 +424,80 @@ export function realJudgeView(
   };
 }
 
+export interface Alternative {
+  key: 'llm_same_checks' | 'real_judge' | 'llm_full_claim_audit';
+  /** What it is ("An LLM asking the same questions"). */
+  label: string;
+  /** Its cost per 1,000 answers ("$0.91"). */
+  per1k: string;
+  valueLabel: ValueLabel;
+  basis: string;
+  /** How the figure was worked out, in one short line. */
+  note: string;
+  /** The badge's subject: unique on the page, apart from the component table's rows. */
+  subject: string;
+}
+
+/**
+ * The alternatives beside the headline's cost, all in its unit (per 1,000 answers), so they read
+ * as one comparison: an LLM asking the same questions; on a free mock judge, checking with a real
+ * judge at the shipped defaults (the published estimate, never the demo's audit rate scaled up);
+ * and an LLM auditing every answer claim by claim. A figure the summary does not have is left out,
+ * and a full audit scaled up from free mock audits gives way to the published one.
+ */
+export function alternatives(roi: RoiSummary, realJudge: RealJudgeView | null): Alternative[] {
+  const out: Alternative[] = [];
+  const same = counterfactual(roi, 'llm_same_checks');
+  if (same && finite(same.per_1k)) {
+    const label = costCounterfactualView('llm_same_checks').label;
+    out.push({
+      key: 'llm_same_checks',
+      label,
+      per1k: formatUsd(same.per_1k),
+      valueLabel: counterfactualLabel(same, roi.simulated),
+      basis: same.basis,
+      note: costMethodWord(same.method),
+      subject: `${label}, per 1,000 answers`,
+    });
+  }
+  if (realJudge) {
+    out.push({
+      key: 'real_judge',
+      label: 'TrustAgent with a real judge',
+      per1k: realJudge.shippedPer1k,
+      valueLabel: 'estimate',
+      basis: realJudge.basis,
+      note: `At the shipped defaults: ${realJudge.shippedShare} answers deep-audited`,
+      subject: 'Checking at the shipped defaults with a real judge',
+    });
+  }
+  const label = costCounterfactualView('llm_full_claim_audit').label;
+  const published = `${costMethodWord('static_assumptions')} · ${costNotMeasured}`;
+  const full = counterfactual(roi, 'llm_full_claim_audit');
+  if (full && finite(full.per_1k) && !freeMockCounterfactual(full, roi.simulated)) {
+    out.push({
+      key: 'llm_full_claim_audit',
+      label,
+      per1k: formatUsd(full.per_1k),
+      valueLabel: counterfactualLabel(full, roi.simulated),
+      basis: full.basis,
+      note: costIsMeasuredMethod(full.method) ? costMethodWord(full.method) : published,
+      subject: `${label}, per 1,000 answers`,
+    });
+  } else if (realJudge) {
+    out.push({
+      key: 'llm_full_claim_audit',
+      label,
+      per1k: realJudge.fullAuditPer1k,
+      valueLabel: 'estimate',
+      basis: realJudge.fullAuditBasis,
+      note: published,
+      subject: `${label}, per 1,000 answers`,
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------- savings
 
 export interface SavingsRange {

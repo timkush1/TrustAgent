@@ -5,6 +5,7 @@ import { roiSummary } from '@/test/control/fixtures';
 import type { Counterfactual, RoiTimeseries } from '@/types/api';
 import {
   FREE_MOCK_AUDIT_REASON,
+  alternatives,
   availableBands,
   bandHasRange,
   bandLabels,
@@ -315,5 +316,50 @@ describe('realJudgeView', () => {
     expect(costShippedDefaults.auditShare).toBeCloseTo(0.079, 12);
     const fastCheck = claimsDoc.claims.find((c) => c.id === 'fast_check_cost_per_1k')!.value!;
     expect(fastCheck + costShippedDefaults.auditShare * costFullAuditPer1k!).toBeCloseTo(costShippedDefaults.per1k!, 1);
+  });
+});
+
+describe('alternatives', () => {
+  const shipped = { per1k: 3, basis: 'Fast check on every answer, plus a full LLM audit of the deep-audited share.', auditShare: 0.079 };
+  const published: Counterfactual = { ...full, method: 'static_assumptions', per_1k: 35.5, usd: 0.64, low: null, high: null, label: 'estimate', basis: 'not measured' };
+  const keys = (items: ReturnType<typeof alternatives>) => items.map((a) => a.key);
+
+  it('lists the alternatives per 1,000 answers on a stack with a real judge, each with its own label', () => {
+    const roi = roiSummary({ counterfactuals: [...roiSummary().counterfactuals, full] });
+    const items = alternatives(roi, null);
+    expect(keys(items)).toEqual(['llm_same_checks', 'llm_full_claim_audit']);
+    expect(items.map((a) => [a.per1k, a.valueLabel, a.note])).toEqual([
+      ['$2.26', 'estimate', 'Token model: your fast-check tokens priced at the judge’s rate'],
+      ['$40.00', 'estimate', 'Fitted from your deep audits by answer length'],
+    ]);
+    // A badge subject apart from the component table's row of the same name.
+    expect(items[1]!.subject).toBe('An LLM auditing every answer claim by claim, per 1,000 answers');
+  });
+
+  it('puts a real judge at the shipped defaults between the two on a free mock judge, all from the published figures', () => {
+    const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 }, counterfactuals: [...roiSummary().counterfactuals, published] });
+    const items = alternatives(demo, realJudgeView(demo, shipped, 35.5, 'Decompose into 8 claims.'));
+    expect(keys(items)).toEqual(['llm_same_checks', 'real_judge', 'llm_full_claim_audit']);
+    // The demo's same-questions figure is simulated; the published figures stay estimates.
+    expect(items.map((a) => [a.per1k, a.valueLabel])).toEqual([
+      ['$2.26', 'simulated'],
+      ['$3', 'estimate'],
+      ['$35.50', 'estimate'],
+    ]);
+    expect(items[1]!.note).toBe('At the shipped defaults: about 8 in 100 answers deep-audited');
+    expect(items[2]!.note).toBe('Published assumptions · not measured');
+  });
+
+  it('gives a full audit scaled up from free mock audits way to the published figure, and leaves out what is missing', () => {
+    const freeFull: Counterfactual = { ...full, method: 'uniform_sample', usd: 0, low: 0, high: 0, per_1k: 0, label: 'simulated' };
+    const demo = roiSummary({ simulated: true, llm_cost: { ...roiSummary().llm_cost, usd: 0 }, counterfactuals: [freeFull] });
+    const items = alternatives(demo, realJudgeView(demo, shipped, 35.5, 'Decompose into 8 claims.'));
+    expect(keys(items)).toEqual(['real_judge', 'llm_full_claim_audit']);
+    expect([items[1]!.per1k, items[1]!.valueLabel, items[1]!.basis]).toEqual(['$35.50', 'estimate', 'Decompose into 8 claims.']);
+    // Without a real-judge view (a stack with a real judge) a free full audit is simply left out.
+    expect(alternatives(roiSummary({ simulated: true, counterfactuals: [freeFull] }), null)).toEqual([]);
+    // A same-questions figure without a per-1,000 value is left out, never shown as $0.
+    const noPrice = roiSummary({ counterfactuals: [{ ...roiSummary().counterfactuals[0]!, per_1k: null }] });
+    expect(alternatives(noPrice, null)).toEqual([]);
   });
 });
