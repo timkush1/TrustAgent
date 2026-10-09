@@ -1132,7 +1132,7 @@ class AuditServicer(evaluator_pb2_grpc.AuditServiceServicer):
             return evaluator_pb2.DraftEvaluatorResponse()
         except ProviderError as exc:
             # The words the dashboard shows depend on the cause: an empty account or a refused key
-            # is the owner's to fix, not an outage (P4 D40 kinds).
+            # is the owner's to fix, not an outage (the D40 kinds).
             logger.warning(f"Draft with AI failed: {self.redactor.redact(str(exc))}")
             if exc.kind == CREDITS:
                 context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)

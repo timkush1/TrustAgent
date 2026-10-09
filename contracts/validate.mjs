@@ -93,6 +93,8 @@ const EXTERNAL = [
   { file: 'config/policies.pending.yaml', schema: 'policy.v1', pending: true },
   { dir: 'config/calibration', re: /\.json$/, schema: 'calibration.v1' },
   { dir: 'docs/benchmarks/results', re: /\.json$/, schema: 'benchmark-run.v1' },
+  // Published gateway load runs (D118), written by make load-test-gate LOAD_PUBLISH=1.
+  { dir: 'docs/benchmarks/load', re: /\.json$/, schema: 'load-run.v1' },
 ];
 
 function walk(dir) {
@@ -1455,7 +1457,7 @@ if (glossary) {
 // ------------------------------------------------------------------------------------------ vendor and prompt fixtures
 
 // fixtures/vendor/<vendor>/<endpoint>.<case>.json (D122): a vendor response as the browser and the
-// gateway see it, {source, status, headers, body}. P5 fixtures are synthetic (from mock-upstream's
+// gateway see it, {source, status, headers, body}. These fixtures are synthetic (from mock-upstream's
 // faultTable and handlers, and SPEC §6), and source says so: none is presented as a capture. Header
 // names are lowercase; a key in a body is an obvious fake.
 const VENDOR_FIXTURE = /^fixtures\/vendor\/[a-z0-9-]+\/([a-z0-9_]+)\.([a-z0-9_]+)\.json$/;

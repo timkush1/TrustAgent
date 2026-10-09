@@ -85,7 +85,7 @@ export const ROOTS = [
   'AdminAuditEntry',
   'Page<AdminAuditEntry>',
   'StatusWarning',
-  // P5 Step 0a (CO-5): policy warnings carry codes; the validate answer and the state hold them
+  // Policy warnings carry codes (CO-5): the validate answer and the state hold them
   'ValidateResult',
   'PolicyState',
   // P3 control plane (fixtures added in P4 Step 0b)

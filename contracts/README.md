@@ -26,15 +26,15 @@ the `cost` vectors.
 | `pricing/assumptions.v1.json` | The assumptions behind every cost estimate, as checkable arithmetic | `pricing-assumptions.v1` |
 | `claims/value-claims.v1.json` | Every number on the landing page, README and Savings panel, with its label | `value-claims.v1` |
 | `claims/measured.json` | Our measured values; explicit nulls until `make bench-publish` writes them | `measured.v1` |
-| `claims/compare.v1.json` | The landing page's comparison table: kinds of tools by capability, each vendor cell sourced and dated or `unverified` (P5-PLAN D113) | `compare.v1` |
+| `claims/compare.v1.json` | The landing page's comparison table: kinds of tools by capability, each vendor cell sourced and dated or `unverified` (D113) | `compare.v1` |
 | `demo/scenarios.v1.json` | Demo and e2e traffic, with mock fast-check answers and mock judge fixtures | `scenarios.v1` |
-| `demo/faults.v1.json` | The faults pack: vendor-fault scenarios (`mock_faults`), kept out of the demo (P5-PLAN D119) | `scenarios.v1` |
+| `demo/faults.v1.json` | The faults pack: vendor-fault scenarios (`mock_faults`), kept out of the demo (D119) | `scenarios.v1` |
 | `ui/outcomes.v1.json` | The single outcome per trace, level words and reason copy | `ui-outcomes.v1` |
 | `ui/copy.v1.json` | User-facing strings (banners, wizard, trace detail, savings, limits) | `ui-copy.v1` |
 | `ui/glossary.v1.json` | Plain-language definitions for `<Term id>` tooltips | `ui-glossary.v1` |
 | `ui/commands.v1.json` | Every copyable command | `ui-commands.v1` |
 | `fixtures/api/<Type>.<case>.json` | One golden REST body or WebSocket event per `api.v1` type (`Page<T>` is spelled `Page-T`); msw handlers and Go handler tests start from them | `api.v1#/$defs/<Type>` |
-| `fixtures/vendor/<vendor>/<endpoint>.<case>.json` | Vendor responses `{source, request, status, headers, body}`; the OpenRouter ones are synthetic (mock-upstream's answers, kept equal by `vendor_fixtures_test.go`) with the CORS headers openrouter.ai sent at P5 Step 0a, and say so in `source` | parse-only, shape checked |
+| `fixtures/vendor/<vendor>/<endpoint>.<case>.json` | Vendor responses `{source, request, status, headers, body}`; the OpenRouter ones are synthetic (mock-upstream's answers, kept equal by `vendor_fixtures_test.go`) with the CORS headers openrouter.ai sent on 2026-10-09, and say so in `source` | parse-only, shape checked |
 | `fixtures/prompts/<prompt>-render.<case>.json` | A prompt as the Python engine renders it, for byte parity of other senders (the browser's drafter); `backend-python/tests/unit/test_drafter_fixtures.py` regenerates and checks them | parse-only, shape checked |
 | `fixtures/load/load-run.example.json` | An illustrative load run (not a measurement) | `load-run.v1` |
 | `vectors/<kind>/<name>.json` | Golden vectors; the input and expected shape of each kind is in [`vectors/README.md`](vectors/README.md) | `vector.v1` |
@@ -167,7 +167,7 @@ security check) are validated like drafts, so changing a rule in the system text
 deterministic story that every service reads, so a zero-key stack (`make demo`: mock decision backend, mock
 judge, test mode) produces the same traces every time.
 
-`demo/faults.v1.json` is a second pack with the same schema for vendor faults (P5-PLAN D119): each
+`demo/faults.v1.json` is a second pack with the same schema for vendor faults (D119): each
 scenario carries the `faults` set, names its `judge` (fixtures, or `null` for no LLM call; the mock judge
 fails an unscripted audit), and sets `mock_faults {decision?, upstream?}`, the mock-upstream fault each
 endpoint answers with (`<name>` or `<name>@<n>` for the first n calls). Its expectations may also assert
@@ -366,7 +366,8 @@ Repository files that follow a contract are validated too when present: `config/
 (`policy.v1`, the same policy checks, and the scenario checks above, which fall back to
 `policies/example.policies.yaml` without it), `config/policies.pending.yaml` (`policy.v1`, only `version` and
 `routes`, whose routes are checked merged over the defaults of `config/policies.yaml`), `config/calibration/*.json` (`calibration.v1`, plus a
-non-decreasing table and quality rules) and `docs/benchmarks/results/*.json` (`benchmark-run.v1`).
+non-decreasing table and quality rules), `docs/benchmarks/results/*.json` (`benchmark-run.v1`) and
+`docs/benchmarks/load/*.json` (`load-run.v1`).
 
 ## Changing contracts
 

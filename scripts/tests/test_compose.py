@@ -133,7 +133,7 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
 
     def test_record_and_knowledge_overlays_are_checked(self) -> None:
-        # P5-PLAN D123 and D131: both overlays exist from Step 0 (stubs until DX-RELEASE fills
+        # D123 and D131: both overlays exist from Step 0 (stubs until DX-RELEASE fills
         # them) and compose-check validates them with the files they are layered on.
         for text in (RECORD, KNOWLEDGE):
             self.assertRegex(text, r"(?m)^services:")

@@ -16,7 +16,8 @@ import { ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { tracesQuery } from '@/data/queries';
-import { checkedAgainst, commandText, copy, headlineReason, outcomeOf } from '@/domain/presentation';
+import claimsDoc from '@contracts/claims/value-claims.v1.json';
+import { checkedAgainst, commandText, copy, fillTemplate, headlineReason, outcomeOf } from '@/domain/presentation';
 import type { TraceSummary } from '@/types/api';
 import { distinctExamples } from './examples';
 import { useReplayInfo } from './useReplay';
@@ -51,6 +52,22 @@ function ExampleCard({ trace }: { trace: TraceSummary }) {
     </li>
   );
 }
+
+/**
+ * The consent lines' figures until the live Playground computes its own: the published per-check
+ * estimate (value claim fast_check_cost_per_check, "~$0.0002 per check" shown as "$0.0002") and the
+ * build's call cap (VITE_PLAYGROUND_MAX_CALLS, 100 by default). The contract's "[estimate]" tag is
+ * shown as words, since this page has no chip for it.
+ */
+const PER_CHECK = (
+  (claimsDoc.claims as readonly { id: string; display: string }[]).find((c) => c.id === 'fast_check_cost_per_check')?.display ?? ''
+)
+  .replace(/^~/, '')
+  .replace(/ per check$/, '');
+const MAX_CALLS = (import.meta.env.VITE_PLAYGROUND_MAX_CALLS as string | undefined) || '100';
+const CONSENT_LINES: readonly string[] = copy.playground_static.consent.map((line) =>
+  fillTemplate(line, { cost_per_check: PER_CHECK, max_calls: MAX_CALLS }).replace(/\s*\[estimate\]/g, ' (estimate)'),
+);
 
 export function StaticPlayground() {
   const ds = useDataSource();
@@ -103,7 +120,7 @@ export function StaticPlayground() {
           It is not switched on yet. When it is:
         </p>
         <ul className="space-y-1.5 text-sm text-fg">
-          {copy.playground_static.consent.map((line) => (
+          {CONSENT_LINES.map((line) => (
             <li key={line} className="flex gap-2">
               <span aria-hidden="true" className="mt-2 size-1 shrink-0 rounded-full bg-fg-subtle" />
               {line}

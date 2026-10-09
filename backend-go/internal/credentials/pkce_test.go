@@ -344,7 +344,7 @@ func TestPlausibleKey(t *testing.T) {
 }
 
 // TestPKCEVectors checks this package's PKCE against the shared vectors (contracts/vectors/pkce,
-// P5-PLAN D103), which the browser's static /connect/callback/ flow follows too: CodeChallenge for
+// D103), which the browser's static /connect/callback/ flow follows too: CodeChallenge for
 // the challenge op, the verifier encoding of NewCodeVerifier (randomToken) for verifier_from_bytes,
 // and, for auth_url, that the parameters ConnectAuthURL sends for the same challenge are the ones
 // the vector's URL carries (the self-hosted flow names its own callback and no key label).

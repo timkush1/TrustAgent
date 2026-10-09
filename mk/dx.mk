@@ -131,7 +131,7 @@ e2e-scenarios: ## Check the e2e scenarios against the running e2e stack (E2E_SCE
 	$(E2E_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(E2E_SCENARIOS) --upstream $(E2E_UPSTREAM) \
 		$(if $(E2E_EXCLUDE),--exclude $(E2E_EXCLUDE)) $(if $(E2E_PHASE),--phase $(E2E_PHASE))
 
-# The faults pack (contracts/demo/faults.v1.json, P5-PLAN D119): mock-upstream's fault counters are
+# The faults pack (contracts/demo/faults.v1.json, D119): mock-upstream's fault counters are
 # reset first (from inside the proxy container, which reaches mock-upstream by name), so counted
 # faults such as 429@1 start fresh; then every faults scenario runs against the e2e stack.
 e2e-faults: ## Check the vendor-fault scenarios against the running e2e stack (resets mock-upstream, then trafficgen --pack faults)
@@ -214,7 +214,7 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-# The record and knowledge overlays (P5-PLAN D123, D131) start as stubs; DX-RELEASE fills them.
+# The record and knowledge overlays (D123, D131) start as stubs; DX-RELEASE fills them.
 RECORD_PROJECT    ?= truthtable-record
 RECORD_COMPOSE     = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docker-compose.record.yml
 KNOWLEDGE_COMPOSE  = $(COMPOSE) -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge

@@ -1,5 +1,5 @@
 """
-The drafter's rendered prompts as shared fixtures (P5-PLAN D108).
+The drafter's rendered prompts as shared fixtures (D108).
 
 contracts/fixtures/prompts/drafter-render.<case>.json holds the text the Python
 drafter sends for one input: the user turn of a draft (the existing ids

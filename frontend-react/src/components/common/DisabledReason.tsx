@@ -68,8 +68,10 @@ function contractFix(reason: DisabledReasonId): ReactNode {
     case 'demo':
       return <DemoFix />;
     // Read-only and database-less instances are the operator's choice: the reason is the answer.
+    // On the static site the reason itself says to run TrustAgent yourself.
     case 'readonly':
     case 'needs_database':
+    case 'static':
       return null;
     default: {
       const unhandled: never = reason;

@@ -1,5 +1,5 @@
 # ============================================================================
-# TrustAgent - demo recording stack (P5-PLAN D123; `make record-demo`)
+# TrustAgent - demo recording stack (D123; `make record-demo`)
 # ============================================================================
 # A stub until DX-RELEASE fills it: real backends from .env, test mode for the
 # scripted answers, sync trace flush, small spend caps, no mock-upstream and no

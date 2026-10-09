@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// pkceKind is the Go reference of the PKCE vectors (P5-PLAN D103): the browser's static
+// pkceKind is the Go reference of the PKCE vectors (D103): the browser's static
 // /connect/callback/ flow and the self-hosted Connect OpenRouter both derive a verifier, its S256
 // challenge and the openrouter.ai/auth URL from these rules. The reference uses the standard
 // library only (RFC 7636); internal/credentials checks its own functions against the same vectors

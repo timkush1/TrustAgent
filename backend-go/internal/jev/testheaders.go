@@ -5,7 +5,7 @@ import (
 	"net/url"
 )
 
-// forwardTestHeaders sets the test-mode headers of one decision attempt (P5-PLAN D119): the
+// forwardTestHeaders sets the test-mode headers of one decision attempt (D119): the
 // scenario id as X-TrustAgent-Scenario, and the call's trace id as X-Mock-Key, which mock-upstream
 // uses to count a fault spec such as "429@1" per call (the attempt and its hedge share it). They
 // are sent only when forwarding is on (HTTPConfig.ForwardScenario, test mode) and the endpoint is

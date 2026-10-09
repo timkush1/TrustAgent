@@ -43,7 +43,7 @@ const (
 	codeCredentialsUnavailable   = "credentials_unavailable"
 	codeDecisionModelUnavailable = "decision_model_unavailable"
 	// The judge's provider refused a Studio draft: the account is out of credits (402), or the
-	// key was refused (401/403). Owner fixes, not outages (CO-8; P4 D40 kinds).
+	// key was refused (401/403). Owner fixes, not outages (CO-8; the D40 kinds).
 	codeNoCredits         = "no_credits"
 	codeJudgeUnauthorized = "judge_unauthorized"
 )

@@ -301,6 +301,8 @@ describe('validate.mjs', () => {
     sb.write('fixtures/vendor/openrouter/Bad-Name.json', ok);
     sb.edit('fixtures/prompts/drafter-render.basic.json', (f) => { f.prompt = 'no-such-prompt.v1'; });
     sb.edit('fixtures/load/load-run.example.json', (f) => { f.scenarios[0].n = 10; f.dirty = true; });
+    const published = { ...sb.read('fixtures/load/load-run.example.json'), vendors: 'openrouter' };
+    sb.write('docs/benchmarks/load/run-1.json', published, sb.repo);
     const r = run(sb.root);
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /decisions\.captured\.json: source starts with "synthetic: "/);
@@ -310,6 +312,7 @@ describe('validate.mjs', () => {
     assert.match(r.out, /drafter-render\.basic\.json: prompt no-such-prompt\.v1 is not in prompts\//);
     assert.match(r.out, /load-run\.example\.json: \/scenarios\/0\/n must be >= 500/);
     assert.match(r.out, /load-run\.example\.json: \/dirty must be equal to constant/);
+    assert.match(r.out, /\.\.\/docs\/benchmarks\/load\/run-1\.json: \/vendors must be equal to constant/);
   });
 
   test('scenario mock answers and routes follow config/policies.yaml', { skip: !existsSync(POLICY) }, () => {

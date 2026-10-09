@@ -1,5 +1,5 @@
 # ============================================================================
-# TrustAgent - knowledge add-on proof stack (P5-PLAN D131; DR-10)
+# TrustAgent - knowledge add-on proof stack (D131; DR-10)
 # ============================================================================
 # A stub until DX-RELEASE fills it: COMPOSE_PROFILES=knowledge with the knowledge
 # engine image, the fast check on mock-upstream and the mock judge, for the

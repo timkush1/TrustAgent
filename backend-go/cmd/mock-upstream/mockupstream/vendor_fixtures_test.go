@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-// The OpenRouter vendor fixtures (contracts/fixtures/vendor/openrouter, P5-PLAN D122) are what
+// The OpenRouter vendor fixtures (contracts/fixtures/vendor/openrouter, D122) are what
 // this mock answers, written down for the browser's tests (Playwright's mockOpenRouter, vitest).
 // They are synthetic: made from faultTable, the handlers in openrouter.go and llm.go, and SPEC §6,
 // never captured from openrouter.ai, and each says so in its source. Their access-control-*

@@ -1,6 +1,6 @@
 # ============================================================================
 # mk/load.mk - Gateway load test (k6 on the load stack). Owned by the GO stream
-# (P5-PLAN D132). Moved here from mk/dx.mk at P5 Step 0a. Included by the root
+# (D132). Moved here from mk/dx.mk on 2026-10-09. Included by the root
 # Makefile; targets are declared .PHONY there. compose-check (mk/dx.mk) also
 # validates LOAD_COMPOSE.
 # ============================================================================
@@ -19,7 +19,7 @@ LOAD_BUILD    ?= --build
 # k6 (scripts/load/gateway-overhead.js): requests per second, and the time, of each scenario.
 LOAD_RATE     ?= 20
 LOAD_DURATION ?= 30s
-# Pinned (P5-PLAN D118): the multi-arch index digest of grafana/k6 2.3.0 (2026-09-21).
+# Pinned (D118): the multi-arch index digest of grafana/k6 2.3.0 (2026-09-21).
 K6_IMAGE      ?= grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
 # Where a load run writes its k6 summaries and the run file (scripts/load/report.py).
 LOAD_OUT      ?= tmp/load

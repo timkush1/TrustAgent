@@ -99,7 +99,7 @@ jev-check: ## Check the decision model connection (cmd/jevcheck; in the running 
 		go -C backend-go run ./cmd/jevcheck $(JEV_CHECK_ARGS); \
 	fi
 
-# Go benchmarks (P5-PLAN D120): five counts of every benchmark, written to backend-go/bench/<sha>.txt
+# Go benchmarks (D120): five counts of every benchmark, written to backend-go/bench/<sha>.txt
 # (ignored), so two revisions compare with benchstat. bench-go-smoke runs each benchmark once.
 BENCH_PKGS ?= ./...
 
