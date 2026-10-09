@@ -236,16 +236,18 @@ describe('validate.mjs', () => {
     sb.edit('demo/scenarios.v1.json', (d) => {
       d.scenarios[1].sets.push('faults');
       d.scenarios[2].mock_faults = { upstream: '502' };
+      delete d.scenarios.find((s) => s.id === 'help-center-link-block-json').judge;
     });
     let r = run(sb.root);
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /f5: more than 4 decision-model faults in a row would open the breaker/);
     assert.doesNotMatch(r.out, /f4: more than 4/);
-    assert.match(r.out, /f-no-judge: a faults scenario names its judge/);
+    assert.match(r.out, /f-no-judge: a scenario names its judge/);
     assert.match(r.out, /f-untagged: every scenario of the faults pack carries the faults set/);
     assert.match(r.out, /grounded-pass: the id is also a scenario of demo\/scenarios\.v1\.json/);
     assert.match(r.out, /refund-contradiction-flag: the faults set belongs to demo\/faults\.v1\.json/);
     assert.match(r.out, /no-evidence-not-assessed: mock_faults belongs to demo\/faults\.v1\.json/);
+    assert.match(r.out, /demo\/scenarios\.v1\.json: help-center-link-block-json: a scenario names its judge/);
     // The main pack's rules apply to the faults pack: a broken expectation there is reported too.
     const other = sandbox();
     const bad = fault('f-bad-mode', '429');

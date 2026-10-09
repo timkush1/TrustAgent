@@ -1324,8 +1324,8 @@ function checkScenarioRoute(rel, s, settings, policyName, seedMode) {
 
 // The two packs (D119): demo/scenarios.v1.json (demo, e2e and the rest) and demo/faults.v1.json (vendor
 // faults only). Both follow the same rules; the faults set and mock_faults belong to the faults pack
-// alone, every faults scenario names its judge (fixtures, or null for no LLM call) since the mock judge
-// fails an unscripted audit (Appendix F D93), and at most MAX_FAULT_RUN scenarios in a row fault the
+// alone, every scenario of either pack names its judge (fixtures, or null for no LLM call) since the
+// mock judge fails an unscripted audit (Appendix F D93), and at most MAX_FAULT_RUN scenarios in a row fault the
 // decision model, so the breaker never opens on a pack run (it opens after 5 consecutive vendor faults).
 const MAX_FAULT_RUN = 4;
 const packIds = new Map(); // scenario id -> pack file
@@ -1338,9 +1338,9 @@ function checkPack(REL, pack, isFaults) {
   }
   let run = 0;
   for (const s of pack.scenarios) {
+    if (!Object.hasOwn(s, 'judge')) error(REL, `${s.id}: a scenario names its judge: fixtures, or null when no LLM call is expected (the mock judge fails an unscripted audit)`);
     if (isFaults) {
       if (!s.sets.includes('faults')) error(REL, `${s.id}: every scenario of the faults pack carries the faults set`);
-      if (!Object.hasOwn(s, 'judge')) error(REL, `${s.id}: a faults scenario names its judge: fixtures, or null when no LLM call is expected (the mock judge fails an unscripted audit)`);
       run = s.mock_faults?.decision ? run + 1 : 0;
       if (run > MAX_FAULT_RUN) error(REL, `${s.id}: more than ${MAX_FAULT_RUN} decision-model faults in a row would open the breaker; put a scenario without one between them`);
     } else {

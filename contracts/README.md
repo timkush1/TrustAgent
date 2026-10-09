@@ -349,9 +349,10 @@ and then runs the cross-file checks JSON Schema cannot express:
   routes (with the `knowledge` tag), `stream_decision` only on streams, the `generated` set exactly the
   generated scenarios, no phase tag in `s0`; the deep-audit fields agree with `judge` (`NOT_ASSESSED` needs
   `judge: null`); judge quotes occur verbatim in `response` and verifier evidence verbatim in `request` or
-  `knowledge`; the same rules hold for `demo/faults.v1.json`, where every scenario carries the `faults` set
-  and an explicit `judge`, at most 4 in a row set `mock_faults.decision`, and ids are unique across both
-  packs (`faults` and `mock_faults` never appear in the main pack);
+  `knowledge`; every scenario names its `judge` (fixtures or `null`: the mock judge fails an unscripted
+  audit); the same rules hold for `demo/faults.v1.json`, where every scenario carries the `faults` set, at
+  most 4 in a row set `mock_faults.decision`, and ids are unique across both packs (`faults` and
+  `mock_faults` never appear in the main pack);
 - claims: a `per_unit_of` claim is its usd_per_1k claim or assumptions figure divided by 1,000; compare
   cells cover every column, and a cell other than `unverified` has `text`, `source_url` and `as_of`;
 - vendor fixtures: `{source, request, status, headers, body}`, `source` starting `synthetic: ` or
