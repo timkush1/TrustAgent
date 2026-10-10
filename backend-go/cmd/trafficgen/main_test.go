@@ -891,9 +891,17 @@ func TestPhases(t *testing.T) {
 			t.Errorf("%s: phase %s, want %s", sets, got, want)
 		}
 	}
-	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows("p2", "p3") ||
-		!phaseAllows(defaultPhase, "p3") || !phaseAllows(defaultPhase, "p4") || phaseAllows(defaultPhase, "p5") {
+	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows("p2", "p3") {
 		t.Error("phaseAllows")
+	}
+	// This build serves every phase, and the gateway one phase older does not serve this one.
+	for _, p := range phases {
+		if !phaseAllows(defaultPhase, p) {
+			t.Errorf("the default phase %s does not serve %s", defaultPhase, p)
+		}
+	}
+	if previous := phases[len(phases)-2]; phaseAllows(previous, defaultPhase) {
+		t.Errorf("phase %s serves %s", previous, defaultPhase)
 	}
 }
 

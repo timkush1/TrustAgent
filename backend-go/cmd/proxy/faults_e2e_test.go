@@ -261,7 +261,7 @@ func TestFaultScenariosAgainstMockUpstream(t *testing.T) {
 	}
 	env, mu := newFaultEnv(t)
 	cmd := exec.Command(buildTrafficgen(t), "--once", "--expect", "--pack", "faults", "--scenarios", "faults", "--upstream", "all",
-		"--phase", "p5", "--base-url", env.http.URL, "--audit-timeout", "30s")
+		"--base-url", env.http.URL, "--audit-timeout", "30s")
 	cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
 	b, err := cmd.CombinedOutput()
 	out := string(b)

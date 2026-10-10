@@ -275,7 +275,7 @@ func TestKnowledgeScenarioEndToEnd(t *testing.T) {
 		t.Fatal("the gateway's policy loader refuses the knowledge source although TRUTHTABLE_KNOWLEDGE_ENABLED is set " +
 			"(cmd/proxy/policy_wiring.go passes no Knowledge in policy.Env)")
 	}
-	cmd := exec.Command(buildTrafficgen(t), "--once", "--expect", "--scenarios", "knowledge", "--phase", "p5",
+	cmd := exec.Command(buildTrafficgen(t), "--once", "--expect", "--scenarios", "knowledge",
 		"--base-url", env.http.URL, "--audit-timeout", "30s")
 	cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
 	b, err := cmd.CombinedOutput()

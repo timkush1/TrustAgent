@@ -161,6 +161,48 @@ func TestDemoSelectionRunsOnThisBuild(t *testing.T) {
 	}
 }
 
+// TestFaultScenariosNeedThisPhase: every vendor-fault scenario carries set faults and phase tag
+// p5 (it needs this phase's fault channel), the main pack never does, and this build's default
+// phase sends the whole faults pack (make e2e-faults passes no --phase), while an earlier phase
+// skips all of it.
+func TestFaultScenariosNeedThisPhase(t *testing.T) {
+	if defaultPhase != "p5" {
+		t.Fatalf("defaultPhase %s: the vendor-fault scenarios need p5", defaultPhase)
+	}
+	faults, err := loadPack(packFaults, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(faults) == 0 {
+		t.Fatal("the faults pack is empty")
+	}
+	for _, s := range faults {
+		if scenarioPhase(s.Sets) != "p5" || !slices.Contains(s.Sets, "faults") {
+			t.Errorf("%s: sets %v, want faults and p5", s.ID, s.Sets)
+		}
+	}
+	picked, err := selectScenarios(faults, "faults", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run, skipped := byPhase(picked, defaultPhase); len(skipped) > 0 || len(run) != len(faults) {
+		t.Errorf("--pack faults --scenarios faults at the default phase sends %d and skips %d of %d", len(run), len(skipped), len(faults))
+	}
+	previous := phases[slices.Index(phases, defaultPhase)-1]
+	if run, _ := byPhase(picked, previous); len(run) != 0 {
+		t.Errorf("a gateway of phase %s would be sent %d vendor-fault scenarios", previous, len(run))
+	}
+	main, err := loadScenarios("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range main {
+		if slices.Contains(s.Sets, defaultPhase) || slices.Contains(s.Sets, previous) {
+			t.Errorf("%s: no main-pack scenario needs phase %s or %s (sets %v)", s.ID, previous, defaultPhase, s.Sets)
+		}
+	}
+}
+
 // TestEnforcingDemoRoutesTrustNoUserContext: a demo route in block or fallback mode reads no
 // user-message context, so its block-readiness checklist is clean (SPEC §7.2: validation warns
 // when an enforcing route trusts request_context, which an end user can fill with "documents").
