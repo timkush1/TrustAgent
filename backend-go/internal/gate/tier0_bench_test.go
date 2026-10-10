@@ -5,8 +5,10 @@ package gate_test
 // covers up to a 1 MiB document (report-only), plus the gate's work around the fast-check call.
 // make bench-go runs them five times into backend-go/bench/<sha>.txt; make bench-go-smoke once.
 //
-// Budget statement: "Tier-0 p50 < 2 ms for ≤ 32k-token evidence and ≤ 1k-token answers, on the
-// stated machine" (TestTier0Budget guards it with headroom).
+// Budget statement (D120, D167): "Tier-0 p50 < 2 ms for ≤ 32k-token evidence and a ≤ 1k-token
+// answer, on the stated machine; an answer dense with dates, links and quotations takes longer
+// (report only)". TestTier0Budget guards it with headroom; make bench-go-publish writes the
+// measured figures into docs/GATEWAY.md.
 
 import (
 	"context"
