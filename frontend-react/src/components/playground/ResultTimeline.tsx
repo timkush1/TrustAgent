@@ -90,7 +90,8 @@ function Step({
 }: {
   icon: typeof Bot;
   title: string;
-  status: 'done' | 'active' | 'waiting';
+  /** `off`: this step does not run here (the static live Playground's deep audit). */
+  status: 'done' | 'active' | 'waiting' | 'off';
   children?: ReactNode;
   last?: boolean;
 }) {
@@ -109,7 +110,7 @@ function Step({
       <div className="min-w-0 space-y-2 pb-5">
         <h3 className="pt-1 text-sm font-semibold text-fg">
           {title}{' '}
-          <span className="sr-only">{status === 'done' ? '(done)' : status === 'active' ? '(in progress)' : '(waiting)'}</span>
+          <span className="sr-only">{status === 'done' ? '(done)' : status === 'active' ? '(in progress)' : status === 'off' ? '(not run here)' : '(waiting)'}</span>
         </h3>
         {children}
       </div>
@@ -289,7 +290,7 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
       <Step icon={Inbox} title="What your app received" status={result ? 'done' : running ? 'active' : 'waiting'}>
         {result ? <Received result={result} /> : null}
       </Step>
-      <Step icon={Gavel} title={copy.tiers.deep_audit} status={result && deepAudit === undefined ? 'done' : 'waiting'} last>
+      <Step icon={Gavel} title={copy.tiers.deep_audit} status={deepAudit !== undefined ? 'off' : result ? 'done' : 'waiting'} last>
         {deepAudit !== undefined ? deepAudit : result ? <DeepAudit result={result} /> : null}
       </Step>
     </ol>

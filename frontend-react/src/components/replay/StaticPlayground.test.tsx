@@ -197,6 +197,8 @@ describe('LivePanel', () => {
     expect(within(result).getByTestId('live-check-cost')).toHaveTextContent('This check: $0.000021');
     expect(within(within(result).getByTestId('live-check-cost')).getByRole('button', { name: /^Vendor/ })).toBeInTheDocument();
     expect(within(result).getByText(/does not run in the browser/)).toBeInTheDocument();
+    // A screen reader hears that the deep audit does not run here, not that it is waiting.
+    expect(within(result).getByRole('heading', { name: `${copy.tiers.deep_audit} (not run here)` })).toBeInTheDocument();
     expect(within(result).queryByRole('link', { name: /Open the full trace/ })).toBeNull();
     expect(screen.getByTestId('live-counter')).toHaveTextContent('1 of 100');
     expect(screen.getByTestId('live-spent')).toHaveTextContent('Spent so far: $0.000021');
