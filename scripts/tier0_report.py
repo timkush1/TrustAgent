@@ -139,7 +139,9 @@ def replace_block(text: str, block: str) -> str:
 
 def main(argv: Optional[Sequence[str]] = None, out=sys.stdout, err=sys.stderr) -> int:
     p = argparse.ArgumentParser(description="Publish the Tier-0 benchmark figures in GATEWAY.md.")
-    p.add_argument("--gateway-md", action="store_true", required=True, help="write the GATEWAY.md block")
+    p.add_argument(
+        "--gateway-md", action="store_true", required=True, help="write the GATEWAY.md block"
+    )
     p.add_argument("--check", action="store_true", help="compare the block instead of writing it")
     p.add_argument("--runs-dir", type=Path, default=RUNS_DIR)
     p.add_argument("--doc", type=Path, default=DOC)

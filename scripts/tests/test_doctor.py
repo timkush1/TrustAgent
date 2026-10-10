@@ -568,12 +568,17 @@ class DemoDoctorTest(unittest.TestCase):
         routes[f"{PROXY}/health"] = [unlinked, unlinked, linked]
         clock = FakeClock()
         d = make_doctor(FakeDocker(demo_containers()), FakeHttp(routes), clock)
-        d.check_proxy()
+        proxy = d.check_proxy()
+        self.assertIn("audit_engine=False", proxy.detail)
         check = d.check_engine()
         self.assertEqual(check.status, "PASS")
         self.assertIn("next engine ping", check.detail)
         self.assertEqual(clock.sleeps, [doctor.POLL_INTERVAL_S] * 2)
         self.assertIs(d.health.get("audit_engine"), True)
+        # proxy.live's detail now says what engine.health read: no audit_engine=False above a PASS.
+        self.assertEqual(
+            proxy.detail, "demo=True, audit_engine=True (read again after the engine link)"
+        )
 
     def test_dashboard_that_cannot_reach_the_proxy_fails(self) -> None:
         routes = demo_routes(traces())

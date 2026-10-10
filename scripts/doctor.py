@@ -384,6 +384,8 @@ class Doctor:
     default_project: str = DEFAULT_PROJECT
     containers: Optional[List[Container]] = None
     health: Optional[Dict[str, Any]] = None
+    # proxy.live's result, so the engine-link wait can bring its detail up to date.
+    proxy_check: Optional[Check] = None
     # GET /api/status, read once by the first check that needs it (None: not read yet).
     status: Optional[Dict[str, Any]] = None
     status_error: Optional[Check] = None
@@ -518,17 +520,19 @@ class Doctor:
         if not isinstance(body, dict):
             return Check("proxy.live", "FAIL", "/health did not return a JSON object", fix=fix)
         self.health = body
-        detail = ", ".join(
-            f"{key}={body[key]}" for key in ("version", "demo", "audit_engine") if key in body
-        )
+        detail = health_detail(body)
         if body.get("status") != "ok":
-            return Check(
+            self.proxy_check = Check(
                 "proxy.live",
                 "WARN",
                 f"/health answered with status {body.get('status')!r}, expected 'ok'",
                 detail=detail,
             )
-        return Check("proxy.live", "PASS", f"{self.proxy_url}/health ok", detail=detail)
+        else:
+            self.proxy_check = Check(
+                "proxy.live", "PASS", f"{self.proxy_url}/health ok", detail=detail
+            )
+        return self.proxy_check
 
     def check_engine(self) -> Check:
         linked = None if self.health is None else self.health.get("audit_engine")
@@ -597,6 +601,13 @@ class Doctor:
             if isinstance(body, dict):
                 self.health = body
                 if body.get("audit_engine") is True:
+                    # proxy.live printed the /health it read first: it now says what the
+                    # later checks read, so the report does not show audit_engine=False above
+                    # an engine.health PASS.
+                    if self.proxy_check is not None:
+                        self.proxy_check.detail = (
+                            health_detail(body) + " (read again after the engine link)"
+                        )
                     return True
         return False
 
@@ -2111,6 +2122,13 @@ def render_text(target: str, where: str, results: Sequence[Check], color: bool) 
         f"{counts['SKIP']} skipped"
     )
     return "\n".join(lines)
+
+
+def health_detail(body: Mapping[str, Any]) -> str:
+    """proxy.live's detail: the facts /health reports."""
+    return ", ".join(
+        f"{key}={body[key]}" for key in ("version", "demo", "audit_engine") if key in body
+    )
 
 
 def redact(check: Check, secrets: Sequence[str]) -> Check:

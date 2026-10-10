@@ -33,7 +33,9 @@ BenchmarkGatePreJev-10                           \t     900\t   1312345 ns/op\t 
 """
 
 
-def write_run(directory: Path, commit: str, date: str, counts=(652555, 650000, 640000, 660000, 655000)) -> Path:
+def write_run(
+    directory: Path, commit: str, date: str, counts=(652555, 650000, 640000, 660000, 655000)
+) -> Path:
     text = HEADER.format(commit=commit, date=date)
     text += "".join(BENCH.format(a=a) for a in counts)
     text += "PASS\nok  \tgithub.com/truthtable/backend-go/internal/gate\t40.1s\n"
@@ -50,13 +52,23 @@ class Tier0ReportTest(unittest.TestCase):
         self.runs.mkdir(parents=True)
         self.doc = self.root / "GATEWAY.md"
         self.doc.write_text(
-            f"# Gateway\n\nBefore.\n\n{tr.BLOCK_START}\nold\n{tr.BLOCK_END}\n\nAfter.\n", encoding="utf-8"
+            f"# Gateway\n\nBefore.\n\n{tr.BLOCK_START}\nold\n{tr.BLOCK_END}\n\nAfter.\n",
+            encoding="utf-8",
         )
 
     def main(self, *args: str) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         code = tr.main(
-            ["--gateway-md", "--runs-dir", str(self.runs), "--doc", str(self.doc), "--root", str(self.root), *args],
+            [
+                "--gateway-md",
+                "--runs-dir",
+                str(self.runs),
+                "--doc",
+                str(self.doc),
+                "--root",
+                str(self.root),
+                *args,
+            ],
             out=out,
             err=err,
         )
@@ -100,17 +112,25 @@ class Tier0ReportTest(unittest.TestCase):
     def test_placeholder_without_a_run(self) -> None:
         code, _, _ = self.main()
         self.assertEqual(code, 0)
-        self.assertIn("No Tier-0 benchmark figures are published yet", self.doc.read_text(encoding="utf-8"))
+        self.assertIn(
+            "No Tier-0 benchmark figures are published yet", self.doc.read_text(encoding="utf-8")
+        )
 
     def test_refuses_a_run_without_its_commit_or_a_row(self) -> None:
         path = write_run(self.runs, "abc1234", "2026-10-10T14:00:00Z")
-        path.write_text(path.read_text(encoding="utf-8").replace("commit: abc1234\n", ""), encoding="utf-8")
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("commit: abc1234\n", ""), encoding="utf-8"
+        )
         code, _, err = self.main()
         self.assertEqual(code, 2)
         self.assertIn("no `commit:` line", err)
         path = write_run(self.runs, "abc1234", "2026-10-10T14:00:00Z")
         path.write_text(
-            "\n".join(line for line in path.read_text(encoding="utf-8").splitlines() if "dense" not in line),
+            "\n".join(
+                line
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if "dense" not in line
+            ),
             encoding="utf-8",
         )
         code, _, err = self.main()
@@ -124,7 +144,9 @@ class Tier0ReportTest(unittest.TestCase):
         self.assertIn("markers", err)
 
     def test_the_repository_block_is_current(self) -> None:
-        self.assertEqual(tr.main(["--gateway-md", "--check"], out=io.StringIO(), err=io.StringIO()), 0)
+        self.assertEqual(
+            tr.main(["--gateway-md", "--check"], out=io.StringIO(), err=io.StringIO()), 0
+        )
 
 
 if __name__ == "__main__":
