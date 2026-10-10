@@ -22,16 +22,17 @@ describe('downloadText', () => {
       }),
       revokeObjectURL: revoke,
     });
-    let clicked: HTMLAnchorElement | null = null;
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      clicked = this;
-      expect(document.body.contains(this)).toBe(true);
+    const inPage: boolean[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      inPage.push(document.body.contains(this));
     });
 
     expect(downloadText('check.v1.json', '{"a":1}\n')).toBe(true);
-    expect(clicked).not.toBeNull();
-    expect(clicked!.download).toBe('check.v1.json');
-    expect(clicked!.getAttribute('href')).toBe('blob:test-1');
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(inPage).toEqual([true]);
+    const clicked = click.mock.contexts[0] as HTMLAnchorElement;
+    expect(clicked.download).toBe('check.v1.json');
+    expect(clicked.getAttribute('href')).toBe('blob:test-1');
     expect(document.body.contains(clicked)).toBe(false);
     expect(blobs[0].type).toBe('application/json;charset=utf-8');
     expect(await blobs[0].text()).toBe('{"a":1}\n');
