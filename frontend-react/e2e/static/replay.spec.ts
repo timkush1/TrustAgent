@@ -32,13 +32,21 @@ test.describe('replay', () => {
     await expect(rows.first()).toBeVisible();
     await expect(page.locator('[data-replay-status="finished"]')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('[data-replay-status="finished"]')).toContainText(`Replay finished · ${traces} requests`);
-    // The table renders a window of its rows; its row count covers every request (plus the header).
-    await expect(table).toHaveAttribute('aria-rowcount', String(traces + 1));
+    // The table renders a window of its rows and loads the next page on scroll; once every page is
+    // in, its row count covers every request (plus the header row).
+    const everyRequestListed = async () => {
+      await expect(async () => {
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await expect(table).toHaveAttribute('aria-rowcount', String(traces + 1), { timeout: 1_000 });
+      }).toPass({ timeout: 20_000 });
+      await page.evaluate(() => window.scrollTo(0, 0));
+    };
+    await everyRequestListed();
 
     // Replay again plays the live part of the tape once more.
     await page.getByRole('button', { name: 'Replay the recorded traffic again' }).click();
     await expect(page.locator('[data-replay-status="finished"]')).toBeVisible({ timeout: 30_000 });
-    await expect(table).toHaveAttribute('aria-rowcount', String(traces + 1));
+    await everyRequestListed();
     expect(await seriousViolations(page), 'replay Traffic').toEqual([]);
   });
 
