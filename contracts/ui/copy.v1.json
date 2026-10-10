@@ -136,7 +136,7 @@
     "playground_static": {
       "consent": [
         "Your key stays in this browser tab and is sent only to openrouter.ai. It is cleared after 2 hours or when you press Forget key.",
-        "Requires credits on your OpenRouter account; one check costs about {cost_per_check} [estimate]; this demo stops after {max_calls} calls to OpenRouter (checks and AI drafts).",
+        "Requires credits on your OpenRouter account; a typical check (about 5,000 tokens of documents) costs about {cost_per_check} [estimate], a short example less; this demo stops after {max_calls} calls to OpenRouter (checks and AI drafts).",
         "What you type and the example documents are sent to OpenRouter and the model's provider (TypeSafe for checks, Anthropic for drafts).",
         "Delete the key any time at openrouter.ai/settings/keys."
       ],

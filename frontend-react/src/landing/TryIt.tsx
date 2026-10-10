@@ -133,7 +133,7 @@ const LIVE_WORDS: Record<LiveScenarioId, string> = {
 
 /**
  * The consent line with the check's cost (its Estimate chip) and the call cap filled in. The
- * sentence already says "one check costs about", so the figure drops its own "~" and "per check".
+ * sentence already says "a typical check … costs about", so the figure drops its own "~" and "per check".
  */
 function CostLine() {
   const template = sectionCopy.playground_static.consent[1].replace('{cost_per_check}', '{claim:fast_check_cost_per_check}').replace('{max_calls}', count.format(playground.maxCalls));

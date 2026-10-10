@@ -52,8 +52,9 @@ OpenRouter account:
 1. Pick one of three examples (a grounded answer that passes, the 60-days refund answer, an answer
    that leaks a personal email address), or type your own question, answer and document.
 2. **Connect OpenRouter** (sign in on openrouter.ai and approve) or **Paste a key**. Before
-   anything is sent, a consent box says what goes where and what it costs: one check costs about
-   <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate].
+   anything is sent, a consent box says what goes where and what it costs: a typical check (about
+   5,000 tokens of documents) costs about <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check
+   [estimate]; the short examples cost less.
 3. Run the check. The result is labelled "Live · {snapshot} · uncalibrated · your key": it uses
    the raw fast-check scores, because calibrations belong to a stack.
 

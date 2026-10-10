@@ -61,7 +61,7 @@ describe('ConsentDialog', () => {
     const lines = within(within(dialog).getByRole('list')).getAllByRole('listitem');
     expect(lines).toHaveLength(4);
     expect(lines[0]).toHaveTextContent(copy.playground_static.consent[0]);
-    expect(lines[1]).toHaveTextContent(`one check costs about $0.0002`);
+    expect(lines[1]).toHaveTextContent(`a typical check (about 5,000 tokens of documents) costs about $0.0002`);
     expect(lines[1]).toHaveTextContent(`this demo stops after ${playground.maxCalls} calls to OpenRouter`);
     expect(lines[1].textContent).not.toContain('[estimate]');
     expect(within(lines[1]).getByRole('button', { name: /Estimate: how “One fast check” was produced/ })).toBeInTheDocument();
