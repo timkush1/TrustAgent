@@ -574,6 +574,8 @@
         "too_large": "This request is too large for the model. Shorten the documents or the answer.",
         "moderation": "The provider's moderation flagged this text. Your key is fine; try different text.",
         "bad_response": "OpenRouter sent an answer this page could not read. Retry.",
+        "bad_request": "OpenRouter refused this request, so the check did not run. Your key is fine; try different text.",
+        "not_found": "OpenRouter could not find the model or service this check uses, so the check did not run. Your key is fine.",
         "network": "Could not reach openrouter.ai. Check your connection; if it keeps failing, your browser may be blocking the request.",
         "timeout": "OpenRouter did not answer in time. Retry."
       },

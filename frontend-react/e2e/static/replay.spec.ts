@@ -162,12 +162,18 @@ test.describe('replay', () => {
     }
 
     await page.goto('app/playground/');
-    // One example per outcome: a short tour of what the gateway does.
+    // One example per outcome the tape shows, in the order it first shows them: a short tour of
+    // what the gateway does.
     const examples = page.getByRole('list', { name: 'Example requests' }).getByRole('listitem');
-    await expect(examples.first()).toBeVisible();
-    const shown = await examples.locator('[data-outcome]').evaluateAll((els) => els.map((el) => el.getAttribute('data-outcome')));
-    expect(new Set(shown).size, 'one example per outcome').toBe(shown.length);
-    expect(shown).toEqual(expect.arrayContaining(['passed', 'flagged', 'not_checked', 'blocked']));
+    await expect(examples).toHaveCount(6);
+    expect(await examples.locator('[data-outcome]').evaluateAll((els) => els.map((el) => el.getAttribute('data-outcome')))).toEqual([
+      'passed',
+      'flagged',
+      'not_checked',
+      'would_block',
+      'replaced',
+      'blocked',
+    ]);
 
     await page.goto('app/overview/');
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Run it yourself' }).click();
