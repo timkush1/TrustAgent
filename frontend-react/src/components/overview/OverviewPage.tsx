@@ -104,7 +104,7 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
               {copy.recording.showcase_caveat}
             </p>
           ) : null}
-          <AtAGlance stats={stats} label={label} />
+          <AtAGlance stats={stats} label={label} replay={replay} />
           <Card>
             <CardContent>
               <OutcomeTimeSeries

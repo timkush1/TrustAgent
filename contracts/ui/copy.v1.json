@@ -432,6 +432,7 @@
       "showcase_caveat": "Scripted showcase mix: rates are not representative of real traffic",
       "nav_hint_caught": "Start here: the answer it caught",
       "follow_replay": "Follow replay",
+      "no_uniform_sample": "Not in a replay: its audits were picked by risk, and a fair rate needs {min_n} random ones.",
       "nav_hints": {
         "recorded": "recorded",
         "simulated": "simulated",

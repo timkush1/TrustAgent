@@ -25,7 +25,7 @@ function Item({ label, children, note }: { label: ReactNode; children: ReactNode
   );
 }
 
-export function AtAGlance({ stats, label }: { stats: OverviewStats; label: ValueLabel }) {
+export function AtAGlance({ stats, label, replay = false }: { stats: OverviewStats; label: ValueLabel; replay?: boolean }) {
   const t = stats.totals;
   const stopped = t.blocked + t.fallback;
   const gate = stats.latency_ms.gate;
@@ -88,7 +88,12 @@ export function AtAGlance({ stats, label }: { stats: OverviewStats; label: Value
           </>
         }
       >
-        <LabelledRateView rate={stats.hallucination_rate} subject="Hallucination rate" />
+        {/* A replay's audits were picked by risk: it has no uniform sample, and says why. */}
+        <LabelledRateView
+          rate={stats.hallucination_rate}
+          subject="Hallucination rate"
+          needsTemplate={replay && stats.hallucination_rate.n === 0 ? copy.recording.no_uniform_sample : undefined}
+        />
       </Item>
     </dl>
   );

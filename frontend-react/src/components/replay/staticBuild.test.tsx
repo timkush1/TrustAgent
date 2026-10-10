@@ -14,7 +14,7 @@ import { buildRuntimeConfig } from '@/config/runtime';
 import { createReplayDataSource } from '@/data/replay/replayDataSource';
 import { useReplayStore } from '@/data/replay/replayStore';
 import { useStreamStore } from '@/data/stream/streamStore';
-import { copy } from '@/domain/presentation';
+import { copy, fillTemplate } from '@/domain/presentation';
 import { routeTree } from '@/routeTree.gen';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { committedManifest, ManualClock, recordingFetch } from '@/test/recording';
@@ -368,5 +368,8 @@ describe('static build', () => {
     await renderStatic('/app/overview');
     const caveat = await screen.findByText(copy.recording.showcase_caveat);
     expect(caveat.closest('[data-showcase-caveat]')).not.toBeNull();
+    // Its audits were picked by risk: the hallucination rate says why there is none, not just a count.
+    const glance = document.querySelector('[aria-label="At a glance"]') as HTMLElement;
+    expect(within(glance).getByText(fillTemplate(copy.recording.no_uniform_sample, { min_n: 30 }))).toBeInTheDocument();
   });
 });
