@@ -135,6 +135,21 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(alert).getByText('You can still start from a template.')).toBeInTheDocument();
   });
 
+  it.each([
+    ['no_credits', "The judge's provider says the account is out of credits, so nothing was drafted."],
+    ['judge_unauthorized', "The judge's provider refused its key, so nothing was drafted."],
+  ])('words a draft the judge provider refused (%s) and links to Connections (CO-8)', async (code, start) => {
+    const user = userEvent.setup();
+    const control = createControlApi({ studioDraft: errorReply(503, code, 'The audit engine could not draft.') });
+    renderPage('/app/evaluators/studio', { control });
+    await user.type(await screen.findByRole('textbox', { name: 'What should TrustAgent check?' }), DESCRIPTION);
+    await user.click(screen.getByRole('button', { name: 'Draft with AI' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(new RegExp(`^Couldn't draft: ${start.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(alert).not.toHaveTextContent('engine');
+    expect(within(alert).getByRole('link', { name: 'Open Connections' })).toHaveAttribute('href', '/app/settings/connections');
+  });
+
   it('makes templates the way in when no judge is configured', async () => {
     const user = userEvent.setup();
     renderPage('/app/evaluators/studio', { status: { judge: { state: 'disabled', provider: null, model: null, credential_source: 'none', fallback_active: false, fallback_reason: null, warnings: [] } } });
