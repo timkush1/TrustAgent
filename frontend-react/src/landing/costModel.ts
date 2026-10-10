@@ -77,9 +77,13 @@ function modelKey(match: string): string {
 
 const title = (w: string): string => (w ? w[0].toUpperCase() + w.slice(1) : w);
 
+const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openrouter: 'OpenRouter', typesafe: 'TypeSafe', ollama: 'Ollama' };
+/** "OpenRouter" for a price entry's provider id. */
+const providerName = (p: string): string => PROVIDER_NAMES[p] ?? title(p);
+
 /** A readable model name from a price entry's glob: "claude-haiku-4-5*" → "Claude Haiku 4.5". */
 export function modelName(e: Pick<PriceEntry, 'match' | 'provider'>): string {
-  if (isLocalProvider(e.provider)) return `Local model (${title(e.provider)})`;
+  if (isLocalProvider(e.provider)) return `Local model (${providerName(e.provider)})`;
   const base = e.match.replace(/\*+$/, '').split('/').pop() ?? e.match;
   return base
     .replace(/(\d)-(?=\d)/g, '$1.')
@@ -93,7 +97,8 @@ export function modelName(e: Pick<PriceEntry, 'match' | 'provider'>): string {
  * The judges the price table prices, one per model, in table order: every entry except the
  * decision model's (Jev), mocks and a paid provider's catch-all. A model sold by several providers
  * at the same price is one option, priced by the assumptions' judge provider when it is one of
- * them. A local provider's catch-all is the local model.
+ * them; at different prices each is its own option, named with its provider. A local provider's
+ * catch-all is the local model.
  */
 export function judgeOptions(table: PricingTable = PRICE_TABLE): JudgeOption[] {
   const groups = new Map<string, PriceEntry[]>();
@@ -104,12 +109,16 @@ export function judgeOptions(table: PricingTable = PRICE_TABLE): JudgeOption[] {
     const key = local ? `local:${e.provider}` : `${modelKey(e.match)}:${e.input_per_mtok}:${e.output_per_mtok}`;
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
-  return [...groups.values()].map((entries) => {
+  const options = [...groups.values()].map((entries) => {
     const entry = entries.find((e) => e.provider === REFERENCE_JUDGE.provider) ?? entries[0];
     const local = isLocalProvider(entry.provider);
     const model = entry.match.replaceAll('*', '') || 'local';
     return { id: `${entry.provider}:${entry.match}`, name: modelName(entry), ref: { provider: entry.provider, model }, entry, local };
   });
+  // One model at two prices (two providers) is two options: name the provider, so no two read alike.
+  const named = new Map<string, number>();
+  for (const o of options) named.set(o.name, (named.get(o.name) ?? 0) + 1);
+  return options.map((o) => ((named.get(o.name) ?? 0) > 1 ? { ...o, name: `${o.name} (${providerName(o.entry.provider)})` } : o));
 }
 
 /** The option that prices the reference judge (the default selection). */

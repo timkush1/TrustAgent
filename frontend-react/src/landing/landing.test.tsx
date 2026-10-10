@@ -426,6 +426,12 @@ describe('calculator', () => {
       entries: [...PRICE_TABLE.entries, { ...sonnet, match: 'claude-sonnet-4-5*', provider: 'anthropic' }, { ...sonnet, match: 'anthropic/claude-sonnet-4.5', provider: 'openrouter' }],
     };
     expect(judgeOptions(table).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)', 'Claude Sonnet 4.5']);
+    // The same model at two prices is two options, each naming its provider.
+    const split: PricingTable = {
+      ...table,
+      entries: table.entries.map((e) => (e.provider === 'openrouter' && e.match === 'anthropic/claude-sonnet-4.5' ? { ...e, input_per_mtok: 3.3 } : e)),
+    };
+    expect(judgeOptions(split).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)', 'Claude Sonnet 4.5 (Anthropic)', 'Claude Sonnet 4.5 (OpenRouter)']);
     expect(modelName({ match: 'anthropic/claude-haiku-4.5', provider: 'openrouter' })).toBe('Claude Haiku 4.5');
   });
 
