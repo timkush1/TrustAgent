@@ -4,21 +4,23 @@
  * GET /api/traces/:id) and moves forward as the gate decision and the deep audit land.
  */
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useRouterState } from '@tanstack/react-router';
 import { ArrowLeft, SearchX } from 'lucide-react';
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo } from 'react';
 import { useDataSource } from '@/app/services';
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { isApiError } from '@/data/errors';
 import { auditQuery, evaluatorsQuery, traceQuery } from '@/data/queries';
+import { useReplayStore } from '@/data/replay/replayStore';
 import { useStreamStore } from '@/data/stream/streamStore';
+import { ReplayGuide } from '@/components/replay/ReplayGuide';
 import { AnswerSection } from './AnswerSection';
 import { ChecksList } from './ChecksList';
 import { ClaimsSection } from './ClaimsSection';
 import { OutcomeCard } from './OutcomeCard';
 import { TraceFacts } from './TraceFacts';
-import { auditHasResult, buildTraceView, receivedId } from './traceView';
+import { auditHasResult, buildTraceView, receivedId, TRACE_ANCHORS } from './traceView';
 import { evalNameMap } from '@/domain/words/evaluators';
 
 function BackToTraffic() {
@@ -61,6 +63,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   }, [base, fetched.data, detailQuery.data, live, liveDecision, liveAudit]);
 
   const showLoading = useDelayedLoading(!view && detailQuery.isPending);
+  const featuredTraceId = useReplayStore((s) => s.featuredTraceId);
+  // A link to a part of this request (#answer-title from the replay's tour) lands there once the
+  // request has loaded; the glass box opens and scrolls itself (TraceFacts).
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  const loaded = Boolean(view);
+  useEffect(() => {
+    if (!loaded || !hash || hash === TRACE_ANCHORS.jevRequest) return;
+    document.getElementById(hash)?.scrollIntoView?.({ block: 'start' });
+  }, [loaded, hash]);
 
   if (!view) {
     let state;
@@ -90,6 +101,8 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   return (
     <article aria-label="Request" className="@container space-y-5" data-trace-id={summary.trace_id}>
       <BackToTraffic />
+      {/* The static demo's tour continues on the answer it starts from. */}
+      {summary.trace_id === featuredTraceId ? <ReplayGuide /> : null}
       {partialError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
       <OutcomeCard
         summary={summary}

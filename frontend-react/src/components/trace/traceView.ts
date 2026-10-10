@@ -317,3 +317,9 @@ export function disagreementLine(view: Pick<TraceView, 'summary' | 'audit'>): st
   const { contradicted } = claimCounts(view.audit);
   return contradicted > 0 ? fillTemplate(copy.trace.disagreement, { count: contradicted }) : null;
 }
+
+/**
+ * Ids on the trace page that links can point at (the replay's tour, D117): the answer, and the
+ * first attempt's "Show exact Jev request", which opens when it is the location's hash.
+ */
+export const TRACE_ANCHORS = { answer: 'answer-title', jevRequest: 'jev-request' } as const;

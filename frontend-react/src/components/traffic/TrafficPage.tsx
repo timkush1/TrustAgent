@@ -7,6 +7,8 @@ import { Link } from '@tanstack/react-router';
 import { FlaskConical, SearchX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/StateViews';
+import { useGuideOpen } from '@/components/replay/guideState';
+import { ReplayGuide } from '@/components/replay/ReplayGuide';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { copy } from '@/domain/presentation';
 import { TrafficTable } from './TrafficTable';
@@ -27,6 +29,8 @@ export function TrafficPage({ search }: { search: TrafficSearchParams }) {
   const routes = useMemo(() => distinctValues(rows, 'route', route), [rows, route]);
   const models = useMemo(() => distinctValues(rows, 'model', model), [rows, model]);
   const showLoading = useDelayedLoading(query.isPending && rows.length === 0);
+  // The static demo's tour sits above the list (never over it); the table re-measures when it goes.
+  const guideOpen = useGuideOpen();
 
   let body;
   if (rows.length > 0) {
@@ -39,6 +43,7 @@ export function TrafficPage({ search }: { search: TrafficSearchParams }) {
           hasNextPage={Boolean(hasNextPage) && !query.isError}
           isFetchingNextPage={isFetchingNextPage}
           onLoadMore={loadMore}
+          layoutKey={guideOpen}
         />
       </>
     );
@@ -81,6 +86,7 @@ export function TrafficPage({ search }: { search: TrafficSearchParams }) {
 
   return (
     <section aria-label="Traffic" className="space-y-3">
+      <ReplayGuide />
       <TrafficToolbar filters={filters} routes={routes} models={models} live={live} onLiveChange={setLive} />
       {body}
       {live ? null : <PausedPill held={held} onResume={() => setLive(true)} />}

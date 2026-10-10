@@ -198,6 +198,8 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
         kind: loaded.manifest.kind,
         label: loaded.manifest.label,
         recordedAt: loaded.manifest.recorded_at,
+        snapshot: loaded.manifest.decision_model.snapshot,
+        judge: loaded.manifest.judge.model,
         traces: loaded.manifest.traces.length,
         duration: tape.duration,
         preroll,

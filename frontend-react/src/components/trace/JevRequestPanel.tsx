@@ -35,7 +35,7 @@ import { copy, humanizeId, replayGlassboxBadge, replayMismatchText } from '@/dom
 import { evalMismatchText, evalRecompileText } from '@/domain/words/evaluators';
 import type { DecisionRequestView, GateDecisionView, JevRequest, Recording } from '@/types/api';
 import { askedCount, documentExcerpts, jevRequestSummary, questionsIn, recompileMatches } from './jevRequest';
-import { evaluatorName } from './traceView';
+import { evaluatorName, TRACE_ANCHORS } from './traceView';
 
 function textOf(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
@@ -282,7 +282,12 @@ export function JevRequestPanel({
   // Nothing is fetched until the viewer opens it.
   const [open, setOpen] = useState(false);
   return (
-    <details className="group/jev text-sm" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    // The first attempt's panel is the one a link to #jev-request opens (TraceFacts).
+    <details
+      id={decision.attempt === 0 ? TRACE_ANCHORS.jevRequest : undefined}
+      className="group/jev scroll-mt-4 text-sm"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs font-medium text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
         <ChevronRight aria-hidden="true" className="size-3.5 transition-transform group-open/jev:rotate-90" />
         {copy.trace.show_jev_request}

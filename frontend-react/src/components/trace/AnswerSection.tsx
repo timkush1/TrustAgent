@@ -17,7 +17,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { claimVerdictView, copy, fillTemplate, reasonCopy } from '@/domain/presentation';
 import { claimRuns, segmentClaims, type AnswerSegment, type ClaimRun, type MarkFinding } from '@/domain/segmentClaims';
 import type { ClaimView, GateDecisionView } from '@/types/api';
-import { answerFindings, auditHasResult, claimRowId, fallbackCheckResult, receivedId, type TraceView } from './traceView';
+import { answerFindings, auditHasResult, claimRowId, fallbackCheckResult, receivedId, TRACE_ANCHORS, type TraceView } from './traceView';
 
 /** Scrolls to a claim's row and moves focus there (the row is focusable with tabIndex -1). */
 function jumpToClaim(event: MouseEvent<HTMLAnchorElement>, id: string) {
@@ -202,8 +202,8 @@ export function AnswerSection({
   const replaced = delivered === 'fallback' || delivered === 'blocked';
   const answerLabel = replaced ? copy.trace.answer_not_sent : question ? 'Answer' : null;
   return (
-    <section aria-labelledby="answer-title" className="space-y-3">
-      <h2 id="answer-title" className="text-base font-semibold text-fg">
+    <section aria-labelledby={TRACE_ANCHORS.answer} className="scroll-mt-4 space-y-3">
+      <h2 id={TRACE_ANCHORS.answer} className="scroll-mt-4 text-base font-semibold text-fg">
         Answer
       </h2>
       {summary.redacted ? (
