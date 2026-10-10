@@ -142,6 +142,20 @@ def merge_results(
             )
         s = r["scenarios"][0]
         sid = s.get("id")
+        # k6 reads /metrics and the mock's totals separately: either can fail alone (a wrong
+        # JEV_MOCK_URL leaves mock_requests null while /metrics was read).
+        unread = [
+            k
+            for k in ("attempts", "hedged", "mock_requests")
+            if not isinstance(r["jev"].get(k), (int, float))
+            or isinstance(r["jev"].get(k), bool)
+            or r["jev"][k] < 0
+        ]
+        if unread:
+            raise Refusal(
+                f"scenario {sid}: the fast-check counters {', '.join(unread)} could not be read "
+                "(jev counters missing): is the mock's /_mock/requests reachable from k6?"
+            )
         if sid in seen:
             raise Refusal(f"scenario {sid} appears in two result lines")
         seen.add(sid)

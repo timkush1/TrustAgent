@@ -394,7 +394,7 @@ def scenario_result(sid: str, **over: Any) -> Dict[str, Any]:
 
 
 def result_line(
-    *scenarios: Dict[str, Any], jev: Optional[Dict[str, int]] = None, rate: int = 20
+    *scenarios: Dict[str, Any], jev: Optional[Dict[str, Any]] = None, rate: int = 20
 ) -> str:
     obj = {
         "rate": rate, "duration": "30s", "hang_rate": 0.15, "metrics_read": True, "scenarios": list(scenarios),
@@ -537,6 +537,8 @@ class ReportPublishTest(unittest.TestCase):
             ("several scenarios", lambda: build([k6_log(result_line(scenario_result("a"), scenario_result("c")))])),
             ("appears in two result lines", lambda: build([k6_log(result_line(scenario_result("c")), result_line(scenario_result("c")))])),
             ("jev counters missing", lambda: build([report.RESULT_PREFIX + json.dumps({"rate": 20, "duration": "30s", "scenarios": [scenario_result("c")], "jev": None})])),
+            # /metrics was read but the mock's totals were not (k6 reports the count as null).
+            ("counters mock_requests could not be read", lambda: build([k6_log(result_line(scenario_result("c"), jev={"attempts": 600, "hedged": 0, "mock_requests": None}))])),
             ("different rates", lambda: build([k6_log(result_line(scenario_result("a")), result_line(scenario_result("c"), rate=50))])),
             ("no TRUSTAGENT_LOAD_RESULT", lambda: build(["k6 crashed\n"])),
             ("p95_ms is missing", lambda: build(pass1(scenario_result("c", p95_ms=None)))),
