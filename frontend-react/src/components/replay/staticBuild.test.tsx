@@ -1,7 +1,7 @@
 /**
  * The static build's chrome over the committed recording (SPEC §3.3 "Static build", §0 rows 4-5):
  * the six static nav items, the simulated banner, the hidden pages, the recorded Playground and
- * the Studio placeholder.
+ * the browser Studio.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -237,10 +237,12 @@ describe('static build', () => {
     expect(screen.getByText('Not in the recording')).toBeInTheDocument();
   });
 
-  it('opens the Studio page', async () => {
-    await renderStatic('/app/evaluators/studio');
-    expect(await screen.findByRole('heading', { level: 2 })).toHaveTextContent('Write your own checks');
-  });
+  it('opens the Studio page: it drafts and tests in the browser and exports, with no gateway (D107)', async () => {
+    const { requests } = await renderStatic('/app/evaluators/studio');
+    expect(await screen.findByRole('region', { name: /Step 1: Describe a check in plain English/ }, { timeout: 15_000 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'On your own stack' })).toBeInTheDocument();
+    expect(requests.filter((r) => r.includes('/api/'))).toEqual([]);
+  }, 30_000);
 
   it('hides Benchmarks like the rest of Evaluators, asking no gateway (D111)', async () => {
     const { requests } = await renderStatic('/app/evaluators/benchmarks');
