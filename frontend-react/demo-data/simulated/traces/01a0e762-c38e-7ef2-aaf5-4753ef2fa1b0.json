@@ -80,7 +80,11 @@
   "question_preview": "What is the API rate limit on the free plan?",
   "response_preview": "The free plan allows 1,000 API requests per minute.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

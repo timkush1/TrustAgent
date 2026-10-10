@@ -173,6 +173,19 @@ describe('demo recording', () => {
     expect(secretIn({ manifest, details })).toBeNull();
   });
 
+  it('flags each trace as the gateway does: a scripted test-mode answer, the mock fast check, the mock judge', () => {
+    for (const t of manifest.traces) {
+      const d = detailOf(t.trace_id);
+      const want = ['test_mode'];
+      if (d.decisions[0].decision_model) want.push('mock_decision');
+      if (d.audit_detail) want.push('mock_judge');
+      expect(t.flags, t.trace_id).toEqual(want);
+    }
+    // No fast-check call without documents, and no audit: only the test-mode flag.
+    expect(firstOf('no-evidence-not-assessed').flags).toEqual(['test_mode']);
+    expect(firstOf('refund-contradiction-flag').flags).toEqual(['test_mode', 'mock_decision', 'mock_judge']);
+  });
+
   it('plays each trace as started, decided, then audited', () => {
     for (const t of manifest.traces) {
       const mine = manifest.events.filter((e) => e.trace_id === t.trace_id).map((e) => e.type);
@@ -284,7 +297,7 @@ describe('demo recording', () => {
     const { details: [d] } = await probe(['payments-fallback'], rawPaymentsRoute);
     const fb = scenario('payments-fallback').fallback;
     expect([d.action, d.would_action]).toEqual(['fallback', 'block']);
-    expect(d.flags).toEqual(['fallback_used']);
+    expect(d.flags).toEqual(['test_mode', 'mock_decision', 'fallback_used', 'mock_judge']);
     expect(d.body?.response_text).toBe(scenario('payments-fallback').response);
     expect(d.body?.final_response_text).toBe(fb?.response);
     expect(d.decisions.map((x) => [x.attempt, x.action])).toEqual([
@@ -313,7 +326,7 @@ describe('demo recording', () => {
     };
     const { details: [d] } = await probe(['payments-fallback'], failing);
     expect(d.action).toBe('block');
-    expect(d.flags).toEqual([]);
+    expect(d.flags).toEqual(['test_mode', 'mock_decision', 'mock_judge']);
     expect(d.body?.final_response_text).toBe("I can't confirm that from our policy documents. A person will follow up.");
     expect(d.audit_detail?.gate?.delivered).toBe('blocked');
   });

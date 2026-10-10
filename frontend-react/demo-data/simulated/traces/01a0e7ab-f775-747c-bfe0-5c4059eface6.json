@@ -82,7 +82,11 @@
   "question_preview": "Does my blender's warranty cover a cracked jar?",
   "response_preview": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

@@ -59,7 +59,9 @@
   "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
   "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

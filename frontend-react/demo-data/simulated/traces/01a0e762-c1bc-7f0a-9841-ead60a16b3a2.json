@@ -81,7 +81,11 @@
   "question_preview": "Is the downtown store open on Sunday?",
   "response_preview": "Yes, the downtown store is open on Sundays from 10 am to 4 pm.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

@@ -82,7 +82,11 @@
   "question_preview": "Has my order A-2291 shipped?",
   "response_preview": "Yes, order A-2291 shipped on 2026-09-25. The previous order to that address was placed by Jordan Miller (jordan.miller@example.net).",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

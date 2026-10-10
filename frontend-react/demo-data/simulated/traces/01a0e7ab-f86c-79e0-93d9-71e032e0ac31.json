@@ -59,7 +59,9 @@
   "question_preview": "Is my monthly plan refundable?",
   "response_preview": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

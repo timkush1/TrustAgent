@@ -82,7 +82,11 @@
   "question_preview": "I ordered a desk this morning. When will it arrive?",
   "response_preview": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

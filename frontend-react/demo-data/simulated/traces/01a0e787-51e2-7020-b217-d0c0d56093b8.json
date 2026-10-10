@@ -82,7 +82,11 @@
   "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
   "response_preview": "You can get a full refund within 60 days of purchase.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

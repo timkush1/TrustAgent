@@ -78,7 +78,11 @@
   "question_preview": "Question: Can I get cash back for an unused gift card?",
   "response_preview": "No. Gift cards cannot be exchanged for cash, but they never expire and can be used on any Acme order.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

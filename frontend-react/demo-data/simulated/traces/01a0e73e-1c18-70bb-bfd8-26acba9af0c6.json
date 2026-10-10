@@ -59,7 +59,9 @@
   "question_preview": "How much is express shipping?",
   "response_preview": "Express shipping costs $15, and standard shipping is free on orders over $50.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

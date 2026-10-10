@@ -80,7 +80,11 @@
   "question_preview": "Does the Team plan include priority support?",
   "response_preview": "Yes, the Team plan includes priority support and 100 GB of storage per user.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

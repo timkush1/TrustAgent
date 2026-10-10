@@ -59,7 +59,9 @@
   "question_preview": "Here is the clause from my contract: \"Either party may cancel this agreement with 60 days of written notice.\" How much notice do I need to give to cancel?",
   "response_preview": "You need to give 60 days of written notice to cancel.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

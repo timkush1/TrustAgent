@@ -885,6 +885,14 @@ async function buildTrace(s: Scenario, ctx: TraceContext, round: number, created
 
   // The trace's audit as the store reports it: not_assessed for an audit with nothing to check.
   const auditStatus = auditDetail === null ? 'not_assessed' : auditDetail.verdict === 'NOT_ASSESSED' ? 'not_assessed' : 'completed';
+  // The trace's flags, in the order the gateway adds them: test_mode for trafficgen's scripted
+  // test_response (proxy exchange.go), mock_decision when the mock fast check answered attempt 0
+  // (gate.go), the delivery's flags (sink.go decidedRecord), then mock_judge once the mock judge's
+  // audit is stored (store/audits.go). The trace page lists them as simulated checks.
+  const flags = ['test_mode'];
+  if (decision0.decision_model?.backend === 'mock') flags.push('mock_decision');
+  for (const f of delivery.flags) if (!flags.includes(f)) flags.push(f);
+  if (auditDetail?.judge?.effective_provider === 'mock') flags.push('mock_judge');
   const summary: TraceSummary = {
     trace_id: traceId,
     client_request_id: null,
@@ -931,7 +939,7 @@ async function buildTrace(s: Scenario, ctx: TraceContext, round: number, created
     question_preview: userRequest,
     response_preview: s.response,
     redacted: false,
-    flags: delivery.flags,
+    flags,
   } as TraceSummary;
   check(e.audit === (auditDetail ? 'queued' : summary.audit.status), `${s.id}: audit ${auditDetail ? 'queued' : summary.audit.status}, expected ${e.audit}`);
   check(outcomeOfSummary(summary) === e.outcome, `${s.id}: outcome ${outcomeOfSummary(summary)}, expected ${e.outcome}`);

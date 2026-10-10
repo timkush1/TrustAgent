@@ -79,7 +79,11 @@
   "question_preview": "Where is my order A-1043, and can I still return it?",
   "response_preview": "Order A-1043 was delivered on 2026-09-26. You can return it within 30 days of delivery if it is unused.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

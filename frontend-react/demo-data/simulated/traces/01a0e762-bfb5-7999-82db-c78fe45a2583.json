@@ -72,7 +72,11 @@
   "question_preview": "How do I page through results from the orders endpoint?",
   "response_preview": "I'm sorry, but I can't help with that. Please contact our support team.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,

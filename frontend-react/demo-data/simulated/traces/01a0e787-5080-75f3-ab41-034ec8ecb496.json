@@ -78,7 +78,11 @@
   "question_preview": "How long do I have to get a refund on an annual plan?",
   "response_preview": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
