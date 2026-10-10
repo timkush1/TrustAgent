@@ -140,7 +140,7 @@ describe('landing page', () => {
     expect(within(screen.getByRole('main')).getAllByText(/not yet measured/i)).toHaveLength(1);
     expect(document.querySelector('[data-value-label="measured"]')).toBeNull();
     const measured = document.querySelector('[data-measured]') as HTMLElement;
-    expect(measured).toHaveTextContent('None published yet: measured fast-check cost; fast-check latency, p50; RAGTruth-QA agreement.');
+    expect(measured).toHaveTextContent('Not published yet: our measured fast-check cost, our p50 fast-check latency and our RAGTruth-QA agreement.');
   });
 
   it('lists the source of every landing claim, judge price and comparison cell in the footer', async () => {
@@ -171,6 +171,15 @@ describe('landing page', () => {
     const links = within(nav).getAllByRole('link');
     expect(links.map((a) => a.textContent)).toEqual(expect.arrayContaining(['Try it', 'Checks']));
     for (const a of links) expect(document.getElementById((a.getAttribute('href') ?? '').slice(1)), a.textContent ?? '').not.toBeNull();
+  });
+
+  it('says what Jev is, and why a check is cheap, before the panel that shows what it was asked', async () => {
+    await renderLanding();
+    const how = document.getElementById('how') as HTMLElement;
+    const intro = within(how).getByText(/Jev, TypeSafe AI’s small decision model/);
+    expect(intro).toHaveTextContent('It writes no text, so a check costs input tokens only.');
+    const panel = how.querySelector('[data-glassbox]') as HTMLElement;
+    expect(intro.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('draws the request going out and the answer coming back through the gateway', async () => {

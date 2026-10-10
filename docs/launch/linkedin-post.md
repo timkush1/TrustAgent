@@ -49,7 +49,7 @@ Which row fills which placeholder:
 | Placeholder | Row |
 |---|---|
 | `{measured:fast_check_usd_per_1k}` | Our measured fast-check cost |
-| `{measured:gate_latency_ms_p50}` | Our fast-check latency, p50 |
+| `{measured:gate_latency_ms_p50}` | Our p50 fast-check latency |
 | `{measured:gate_latency_ms_p95}` | Our fast-check latency, p95 |
 | `{measured:ragtruth_qa_agreement}` | Our RAGTruth-QA agreement |
 | `{run date}` | The run named under the table |
@@ -60,7 +60,7 @@ Which row fills which placeholder:
 | What we measure | Our result | Note |
 |---|---|---|
 | Our measured fast-check cost | <!-- claim:fast_check_cost_per_1k_measured --> not yet measured [measured] | |
-| Our fast-check latency, p50 | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
+| Our p50 fast-check latency | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
 | Our fast-check latency, p95 | <!-- claim:gate_latency_p95_measured --> not yet measured [measured] | |
 | Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | |
 | Measured cost ratio: LLM same checks vs fast check | <!-- claim:same_checks_ratio_measured --> not yet measured [measured] | |

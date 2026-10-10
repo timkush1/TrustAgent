@@ -277,7 +277,7 @@
     },
     {
       "id": "gate_latency_p50_measured",
-      "text": "Our fast-check latency, p50",
+      "text": "Our p50 fast-check latency",
       "value": null,
       "unit": "ms",
       "display": "{value} ms p50",

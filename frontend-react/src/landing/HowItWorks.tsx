@@ -17,7 +17,7 @@ const steps: { icon: typeof FileText; title: string; body: ReactNode }[] = [
   {
     icon: Gauge,
     title: copy.tiers.fast_check,
-    body: 'One call answers all your checks at once (groundedness, contradiction, refusals, PII, promises) as probabilities. Your policy observes, flags, blocks or falls back, and blocks only when two signals agree.',
+    body: 'Jev, TypeSafe AI’s small decision model, reads the answer and your documents and returns a probability for every check at once (groundedness, contradiction, refusals, PII, promises). It writes no text, so a check costs input tokens only. Your policy observes, flags, blocks or falls back, and blocks only when two signals agree.',
   },
   {
     icon: ScanSearch,

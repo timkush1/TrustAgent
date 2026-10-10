@@ -76,7 +76,10 @@ function Figure({ title, chip, children }: { title: string; chip: ClaimView; chi
   );
 }
 
-/** "Our fast-check latency" → "fast-check latency"; an acronym ("RAGTruth") keeps its case. */
+/** "a", "a and b", "a, b and c". */
+const listWords = (items: string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+
+/** "Our fast-check latency" → "our fast-check latency"; an acronym ("RAGTruth") keeps its case. */
 const lowerFirst = (t: string) => (/^[A-Z][a-z]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
 
 const num = (c: ClaimView) => <span className="tabular font-medium text-fg">{c.display}</span>;
@@ -102,11 +105,11 @@ function PublishedFigures() {
         {num(jevIn)}, {num(jevOut)}.
       </Figure>
       <Figure title="Arize RAGTruth test" chip={arizeJev}>
-        Jev {num(arizeJev)} at {num(arizeJevCost)} vs Claude Opus 5 {num(arizeOpus)} at {num(arizeOpusCost)}, only at a tuned {num(threshold)}{' '}
-        threshold ({num(atHalf)}).
+        Accuracy: Jev {num(arizeJev)} at {num(arizeJevCost)} vs Claude Opus 5 {num(arizeOpus)} at {num(arizeOpusCost)}, only at a tuned{' '}
+        {num(threshold)} threshold ({num(atHalf)}).
       </Figure>
       <Figure title="OpenRouter faithfulness test" chip={orAcc}>
-        {num(orAcc)} accuracy, {num(orMs)}.
+        {num(orAcc)} accuracy, {num(orMs)} on its own test set (not the fast check’s P50 above).
       </Figure>
       <li className="border-t border-border pt-4" data-measured>
         <p className="text-sm font-semibold text-fg">Our measurements</p>
@@ -122,7 +125,7 @@ function PublishedFigures() {
         ) : null}
         {pending.length > 0 ? (
           <p className="mt-1.5 text-fg-muted">
-            {published.length > 0 ? 'Still to publish' : 'None published yet'}: {pending.map((c) => lowerFirst(c.text.replace(/^Our /, ''))).join('; ')}.
+            {published.length > 0 ? 'Still to publish' : 'Not published yet'}: {listWords(pending.map((c) => lowerFirst(c.text)))}.
           </p>
         ) : null}
         <p className="mt-1.5 text-xs text-fg-subtle">Published only from a committed benchmark run, never from the demo.</p>

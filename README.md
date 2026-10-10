@@ -70,7 +70,7 @@ extension). A verified knowledge base is an optional add-on. The design, tier by
 | What we measure | Our result | Note |
 |---|---|---|
 | Our measured fast-check cost | <!-- claim:fast_check_cost_per_1k_measured --> not yet measured [measured] | |
-| Our fast-check latency, p50 | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
+| Our p50 fast-check latency | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
 | Our fast-check latency, p95 | <!-- claim:gate_latency_p95_measured --> not yet measured [measured] | |
 | Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | |
 | Measured cost ratio: LLM same checks vs fast check | <!-- claim:same_checks_ratio_measured --> not yet measured [measured] | |
