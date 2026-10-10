@@ -26,7 +26,7 @@ import { testCostSource } from '@/lib/studio/costSource';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
 import type { DecisionBackend, DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse, ValueLabel } from '@/types/api';
-import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailureText } from './studioWords';
+import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCapReachedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailureText } from './studioWords';
 import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { SimulatedRunNote } from './SimulatedRunNote';
@@ -69,6 +69,7 @@ function staticRunReason(live: StudioLiveView, samples: number): Reason | null {
   if (!live.checks) return 'static';
   if (!live.connected) return { text: 'Testing calls OpenRouter with your key from this tab. Connect or paste a key first.', fix: <ConnectKeyFix /> };
   const left = callsLeft(live);
+  if (left === 0) return { text: studioCapReachedText(live.maxCalls) };
   if (left !== null && left < samples) return { text: `This test needs ${formatCount(samples)} calls · ${studioCallsUsedText(live.used ?? 0, live.maxCalls)}` };
   return null;
 }

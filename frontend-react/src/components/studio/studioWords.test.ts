@@ -7,7 +7,19 @@
 import { describe, expect, it } from 'vitest';
 import dryRunFixture from '@contracts/fixtures/api/DryRunResult.done.json';
 import type { DryRunResult } from '@/types/api';
-import { riskLevelsLine, studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples, studioQuestionParts } from './studioWords';
+import { copy } from '@/domain/presentation';
+import {
+  riskLevelsLine,
+  studioCallsUsedText,
+  studioCapReachedText,
+  studioDraftFailureText,
+  studioDryRunConfirmText,
+  studioDryRunExtrapolated,
+  studioDryRunResultText,
+  studioGroupExamples,
+  studioLiveFailureText,
+  studioQuestionParts,
+} from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
 
@@ -82,5 +94,31 @@ describe('riskLevelsLine', () => {
   it('names the thresholds the risk words follow, with or without a block level', () => {
     expect(riskLevelsLine({ warn_at: 0.6, critical_at: 0.98 })).toBe('Risk words follow this check’s own thresholds: Elevated risk from 0.60, High risk from 0.98.');
     expect(riskLevelsLine({ warn_at: 0.7, critical_at: null })).toBe('Risk words follow this check’s own thresholds: Elevated risk from 0.70; it has no High risk level.');
+  });
+});
+
+describe('the static Studio’s failure words (D101, CO-8)', () => {
+  const limits = { maxCalls: 100, maxTokens: 8000 };
+
+  it('words the tab’s caps as the live Playground does', () => {
+    expect(studioCapReachedText(100)).toBe('This demo stops after 100 calls to OpenRouter (checks and AI drafts). Run it yourself for more.');
+    expect(studioLiveFailureText('cap_reached', limits)).toBe(studioCapReachedText(100));
+    expect(studioLiveFailureText('token_cap', limits)).toBe("This check is larger than this demo's limit of 8,000 tokens per call. Shorten the documents or the answer.");
+    expect(studioLiveFailureText('rejected_pause', limits)).toBe(copy.playground_live.rejected_pause);
+    expect(studioCallsUsedText(3, 100)).toBe('3 of 100 calls to OpenRouter (checks and AI drafts)');
+  });
+
+  it('words each OpenRouter failure kind, and leaves the rest to the error’s own message', () => {
+    expect(studioLiveFailureText('auth', limits)).toBe(copy.playground_live.errors.unauthorized);
+    expect(studioLiveFailureText('credits', limits)).toBe(copy.playground_live.errors.no_credits);
+    expect(studioLiveFailureText('network', limits)).toBe(copy.playground_live.errors.network);
+    expect(studioLiveFailureText('validation_failed', limits)).toBeNull();
+    expect(studioLiveFailureText('constructor', limits)).toBeNull();
+  });
+
+  it('says out of credits or key refused for a gateway draft, never "engine unavailable" (CO-8)', () => {
+    expect(studioDraftFailureText('no_credits')).toBe(copy.studio.draft_no_credits);
+    expect(studioDraftFailureText('judge_unauthorized')).toBe(copy.studio.draft_key_refused);
+    expect(studioDraftFailureText('engine_unavailable')).toBeNull();
   });
 });

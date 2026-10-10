@@ -12,7 +12,7 @@ import { configure, fireEvent, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import prompt from '@contracts/prompts/evaluator-drafter.v1.json';
-import { copy } from '@/domain/presentation';
+import { copy, fillTemplate } from '@/domain/presentation';
 import { BUILTIN_TEMPLATES } from '@/lib/decision';
 import { checkSpecDocument, isSavable } from '@/lib/evaluator/checkSpec';
 import { chatAnswer, fakeChat, fakeJev, fakeLedger, fakeStudioLive, type FakeChat, type FakeJev } from '@/lib/studio/fakeLive';
@@ -135,6 +135,20 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     expect(within(test).getAllByText(/From the AI's draft/)).toHaveLength(6);
   });
 
+  it('at the cap, drafting is disabled with the cap’s reason and the template is the way in', async () => {
+    view.current = liveView({ connected: true, key: KEY, used: 100 });
+    const user = userEvent.setup();
+    const chat = fakeChat([chatAnswer(JSON.stringify(EXAMPLE))]);
+    renderApp('/app/evaluators/studio', staticSource({ chat }));
+    const describe = await screen.findByRole('region', { name: /Step 1: Describe a check in plain English/ });
+    await user.type(within(describe).getByRole('textbox', { name: 'What should TrustAgent check?' }), 'Flag answers that recommend a competitor.');
+    expect(within(describe).getByRole('button', { name: 'Draft with AI' })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(describe).getByText(fillTemplate(copy.playground_static.cap_reached, { max_calls: '100' }))).toBeInTheDocument();
+    expect(within(describe).getByRole('button', { name: 'Use this template' })).toHaveClass('bg-fg');
+    await user.click(within(describe).getByRole('button', { name: 'Draft with AI' }));
+    expect(chat.calls).toHaveLength(0);
+  });
+
   it('words a refused draft by OpenRouter’s reason', async () => {
     view.current = liveView({ connected: true, key: KEY });
     const user = userEvent.setup();
@@ -172,7 +186,22 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     await user.click(within(test).getByRole('button', { name: 'Load samples' }));
     await within(test).findByText(/^Added \d answers? to the samples above\.$/);
     expect(within(test).getByRole('button', { name: 'Run test' })).toHaveAttribute('aria-disabled', 'true');
-    expect(within(test).getByText(/^This test needs \d calls · 100 of 100 calls to OpenRouter \(checks and AI drafts\)$/)).toBeInTheDocument();
+    expect(within(test).getByText(fillTemplate(copy.playground_static.cap_reached, { max_calls: '100' }))).toBeInTheDocument();
+    expect(jev.requests).toHaveLength(0);
+  });
+
+  it('with fewer calls left than samples, Run says how many the test needs', async () => {
+    view.current = liveView({ connected: true, key: KEY, used: 99 });
+    const user = userEvent.setup();
+    const jev = fakeJev(() => ({ type: 'noul', noul: 0.9 }));
+    renderApp('/app/evaluators/studio', staticSource({ jev }));
+    await startFromTemplate(user);
+    const test = step(/Step 3: Test on samples/);
+    await user.click(within(test).getByRole('button', { name: 'Load samples' }));
+    const added = await within(test).findByText(/^Added \d answers to the samples above\.$/);
+    const n = Number(/\d/.exec(added.textContent ?? '')?.[0]);
+    expect(within(test).getByRole('button', { name: 'Run test' })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(test).getByText(`This test needs ${n} calls · 99 of 100 calls to OpenRouter (checks and AI drafts)`)).toBeInTheDocument();
     expect(jev.requests).toHaveLength(0);
   });
 

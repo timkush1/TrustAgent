@@ -29,7 +29,7 @@ import { draftSamples, draftToSpec } from '@/lib/studio/draftToSpec';
 import { draftEstimate } from '@/lib/studio/estimate';
 import { BLANK_TEMPLATE, blankSpec, specFromTemplate, STUDIO_TEMPLATES } from '@/lib/studio/templates';
 import type { EvaluatorSpec, StudioDraftResponse, StudioSample, SystemStatus } from '@/types/api';
-import { studioCallsUsedText, studioCostLabel, studioDraftFailureText, studioLiveFailureText } from './studioWords';
+import { studioCallsUsedText, studioCapReachedText, studioCostLabel, studioDraftFailureText, studioLiveFailureText } from './studioWords';
 import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { StudioStep } from './StudioStep';
@@ -69,7 +69,7 @@ export interface DescribeStepProps {
 function staticDraftReason(live: StudioLiveView): Reason | null {
   if (!live.drafting) return 'static';
   if (!live.connected) return { text: copy.studio.static_draft_needs_key, fix: <ConnectKeyFix /> };
-  if (callsLeft(live) === 0) return { text: studioCallsUsedText(live.maxCalls, live.maxCalls) };
+  if (callsLeft(live) === 0) return { text: studioCapReachedText(live.maxCalls) };
   return null;
 }
 

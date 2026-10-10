@@ -259,13 +259,18 @@ export function studioCallsUsedText(used: number, max: number): string {
   return fillTemplate(copy.playground_live.checks_used, { n: formatCount(used), max: formatCount(max) });
 }
 
+/** copy.playground_static.cap_reached: the tab has used every call this demo allows (D101), as the live Playground says it. */
+export function studioCapReachedText(maxCalls: number): string {
+  return fillTemplate(copy.playground_static.cap_reached, { max_calls: formatCount(maxCalls) });
+}
+
 /**
  * The words for a static Studio call that failed or was refused before it went out (D101): an
  * OpenRouter error kind, or the tab's caps. Null for a code these words do not cover (the caller
  * shows the error's own message) and for a cancelled call.
  */
 export function studioLiveFailureText(code: string, limits: { maxCalls: number; maxTokens: number }): string | null {
-  if (code === 'cap_reached') return studioCallsUsedText(limits.maxCalls, limits.maxCalls);
+  if (code === 'cap_reached') return studioCapReachedText(limits.maxCalls);
   if (code === 'token_cap') return fillTemplate(copy.playground_live.token_cap, { max_tokens: formatCount(limits.maxTokens) });
   return Object.hasOwn(LIVE_ERRORS, code) ? LIVE_ERRORS[code] : null;
 }
