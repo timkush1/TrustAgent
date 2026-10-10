@@ -493,6 +493,7 @@ describe('ReplayDataSource', () => {
     await Promise.resolve();
     clock.runAll();
     let asked = 0;
+    let fallbackChecks = 0;
     for (const t of manifest.traces) {
       const detail = committedDetail(t.trace_id);
       expect(detail.decisions.length, t.trace_id).toBeGreaterThan(0);
@@ -509,9 +510,13 @@ describe('ReplayDataSource', () => {
           expect(questions.length).toBeGreaterThan(0);
           asked += 1;
         } else expect(questions).toEqual([]);
+        // A fallback check is rebuilt from the fallback answer that was delivered.
+        if (d.attempt === 1) fallbackChecks += 1;
       }
     }
     expect(asked).toBeGreaterThan(0);
+    expect(fallbackChecks).toBe(scenarioTraces('payments-fallback').length);
+    expect(fallbackChecks).toBeGreaterThan(0);
     // An attempt the trace has no decision for, and a trace the recording lacks.
     await expect(ds.getDecisionRequest(refundId, { attempt: 1 })).rejects.toMatchObject({ status: 404, code: 'not_found' });
     await expect(ds.getDecisionRequest('01a0e700-0000-7000-8000-000000000000')).rejects.toMatchObject({ status: 404, code: 'not_found' });

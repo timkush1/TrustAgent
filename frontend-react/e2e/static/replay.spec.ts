@@ -194,7 +194,7 @@ test.describe('replay', () => {
     expect(await seriousViolations(page), 'Savings').toEqual([]);
   });
 
-  test('shows the whole outcome mix of the tape, Blocked included, with the showcase caveat', async ({ page }) => {
+  test('shows the whole outcome mix of the tape, Blocked and Fallback included, with the showcase caveat', async ({ page }) => {
     const { traces } = await recorded(page);
     await page.goto('app/traffic/');
     await finishReplay(page);
@@ -208,7 +208,8 @@ test.describe('replay', () => {
       for (const o of await table.locator('[data-outcome]').evaluateAll((els) => els.map((el) => el.getAttribute('data-outcome') ?? ''))) outcomes.add(o);
       expect(await page.evaluate(() => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2)).toBe(true);
     }).toPass({ timeout: 30_000 });
-    expect([...outcomes]).toEqual(expect.arrayContaining(['blocked', 'flagged', 'passed', 'not_checked', 'would_block']));
+    // Blocked and Fallback (outcome "Replaced": the fallback answer went out instead) among them.
+    expect([...outcomes]).toEqual(expect.arrayContaining(['blocked', 'replaced', 'flagged', 'passed', 'not_checked', 'would_block']));
 
     // ...is the Overview's outcome mix.
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Overview' }).click();
@@ -217,6 +218,7 @@ test.describe('replay', () => {
     const series = await legend.locator('[data-series]').evaluateAll((els) => els.map((el) => el.getAttribute('data-series')));
     expect(new Set(series)).toEqual(outcomes);
     await expect(legend.locator('[data-series="blocked"]')).toHaveText('Blocked');
+    await expect(legend.locator('[data-series="replaced"]')).toHaveText('Replaced');
     // A scripted showcase mix: its rates are not a traffic rate (D117).
     await expect(page.getByText(COPY.recording.showcase_caveat)).toBeVisible();
     expect(await seriousViolations(page), 'Overview').toEqual([]);
