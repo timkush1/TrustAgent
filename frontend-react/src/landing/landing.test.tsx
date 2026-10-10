@@ -206,12 +206,17 @@ describe('landing page', () => {
     expect(light.getAttribute('src')).toBe(`${import.meta.env.BASE_URL}landing/trace-light.jpg`);
     expect(dark.getAttribute('src')).toBe(`${import.meta.env.BASE_URL}landing/trace-dark.jpg`);
     // One shows per theme; both are lazy, sized, and described.
-    expect(light).toHaveClass('dark:hidden');
-    expect(dark).toHaveClass('hidden', 'dark:block');
-    for (const img of [light, dark]) {
+    expect(light.closest('picture')).toHaveClass('dark:hidden');
+    expect(dark.closest('picture')).toHaveClass('hidden', 'dark:block');
+    for (const [img, theme] of [[light, 'light'], [dark, 'dark']] as const) {
       expect(img).toHaveAttribute('loading', 'lazy');
       expect([img.getAttribute('width'), img.getAttribute('height')]).toEqual(['1440', '900']);
       expect(img.getAttribute('alt')).toMatch(/refund answer flagged/);
+      // A phone gets the page as a phone shows it (400×760 at 2×), not the desktop picture shrunk.
+      const phone = img.closest('picture')?.querySelector('source');
+      expect(phone).toHaveAttribute('media', '(max-width: 639px)');
+      expect(phone).toHaveAttribute('srcset', `${import.meta.env.BASE_URL}landing/trace-phone-${theme}.jpg`);
+      expect([phone?.getAttribute('width'), phone?.getAttribute('height')]).toEqual(['800', '1520']);
     }
     expect(within(preview).getByRole('link').getAttribute('href')).toBe(refundTraceHref().href);
     expect(preview.querySelector('figcaption')).toHaveTextContent('Simulated');

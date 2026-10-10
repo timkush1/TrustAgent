@@ -260,10 +260,10 @@ the [top of this page](#trustagent).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/studio-dark.png">
-  <img alt="Evaluator Studio (Simulated): describe a check in plain English, review it, test it on samples, suggest a threshold and export it" src="docs/images/v2/studio-light.png" width="100%">
+  <img alt="Evaluator Studio (Simulated): the Review step of the built-in Contradiction check, with the question the fast check answers, what Yes and No mean, which answer counts as a problem and the flag threshold" src="docs/images/v2/studio-light.png" width="100%">
 </picture>
 
-<sub><b>Studio</b>: write your own check in plain English (Simulated)</sub>
+<sub><b>Studio</b>: a check under review, its question, risk answer and threshold (Simulated)</sub>
 </td>
 </tr>
 </table>

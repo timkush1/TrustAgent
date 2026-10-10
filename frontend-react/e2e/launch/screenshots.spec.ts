@@ -2,7 +2,8 @@
  * The dashboard screenshots (D115; I-5b): `npm run screenshots` builds the launch site, then this
  * spec captures each page the static site shows, in both themes, to
  * docs/images/v2/{page}-{light,dark}.png (1440×900) for the README's screenshot block, and the trace
- * page again as frontend-react/public/landing/trace-{light,dark}.jpg for the landing's replay preview.
+ * page again as frontend-react/public/landing/trace-{light,dark}.jpg for the landing's replay preview,
+ * plus trace-phone-{light,dark}.jpg (400×760 at 2×, from the answer down) for that preview on a phone.
  *
  * The simulated tape is allowed here: every picture then carries the replay's Simulated banner, and
  * the README captions them "Simulated". On a recorded tape the banner carries the recording's label.
@@ -14,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { blockUnmockedExternal, requireStaticSite } from '../static/site';
 import {
   captureContext,
@@ -38,6 +39,13 @@ const COPY = (
 const SIZE = { width: 1440, height: 900 } as const;
 /** The landing shows this page as its replay preview, from frontend-react/public/landing/<name>-<theme>.jpg. */
 const LANDING_PREVIEW = 'trace';
+/**
+ * On a phone the landing shows the trace page as a phone shows it, from its answer down
+ * (public/landing/trace-phone-<theme>.jpg): the desktop picture shrunk to 370 px cannot be read.
+ * Its size is fixed, so the landing can reserve the space (TryIt's ReplayPreview).
+ */
+const PHONE = { width: 400, height: 760 } as const;
+const PHONE_SCALE = 2;
 const LANDING_DIR = 'frontend-react/public/landing';
 const THEMES: readonly Theme[] = ['light', 'dark'];
 
@@ -53,6 +61,25 @@ async function replayFinished(page: Page): Promise<void> {
   await expect(page.locator('[data-replay-status="finished"]')).toBeVisible({ timeout: 60_000 });
 }
 
+/** Scrolls so `target` starts just under the sticky top bar and the replay's banner, which stay in the picture. */
+async function scrollBelowBanner(target: Locator): Promise<void> {
+  await target.evaluate((el) => {
+    const banner = document.querySelector('[data-banner="replay"]');
+    const below = banner ? banner.getBoundingClientRect().bottom : 0;
+    window.scrollBy(0, el.getBoundingClientRect().top - below - 12);
+  });
+}
+
+/** Opens the featured trace (the Trace item of the main nav) and waits for its contradicted words. */
+async function openFeaturedTrace(page: Page): Promise<void> {
+  await page.goto('app/traffic/');
+  await replayFinished(page);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
+  await expect(page.getByRole('region', { name: 'Answer' }).locator('mark[data-v="contradicted"]').first()).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 const SHOTS: readonly Shot[] = [
   {
     name: 'traffic',
@@ -65,12 +92,7 @@ const SHOTS: readonly Shot[] = [
   {
     name: 'trace',
     async open(page) {
-      await page.goto('app/traffic/');
-      await replayFinished(page);
-      await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
-      await expect(page.getByRole('region', { name: 'Answer' }).locator('mark[data-v="contradicted"]').first()).toBeVisible({
-        timeout: 30_000,
-      });
+      await openFeaturedTrace(page);
       await page.getByRole('heading', { name: 'Details' }).click();
       await page.getByText(COPY.trace.show_jev_request, { exact: true }).click();
       await expect(page.getByTestId('jev-request').getByText(/what it was asked$/).first()).toBeVisible({ timeout: 30_000 });
@@ -92,6 +114,12 @@ const SHOTS: readonly Shot[] = [
       await page.goto('app/evaluators/studio/');
       await replayFinished(page);
       await expect(page.getByLabel('What should TrustAgent check?')).toBeVisible({ timeout: 30_000 });
+      // The Review step of a built-in template, not an empty form: a real question with its
+      // options, what counts as risk and its threshold. A template makes no model call.
+      await page.getByRole('button', { name: 'Use this template' }).click();
+      const review = page.getByRole('region', { name: /Step 2: Review the check/ });
+      await expect(review.getByText('The question the fast check answers')).toBeVisible();
+      await scrollBelowBanner(review);
     },
   },
   {
@@ -148,5 +176,28 @@ test.describe('dashboard screenshots', () => {
         }
       });
     }
+
+    test(`trace for phones, ${theme} theme`, async ({ browser, baseURL }) => {
+      const context = await browser.newContext({ ...captureContext(theme, PHONE), deviceScaleFactor: PHONE_SCALE, baseURL });
+      try {
+        const page = await context.newPage();
+        const blocked = await blockUnmockedExternal(page, baseURL);
+        const tape = await shippedTape(page);
+        await presetPreferences(page, theme);
+
+        await openFeaturedTrace(page);
+        await expectTapeLabel(page, tape);
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        // From the answer down, just under the sticky top bar and the Simulated banner: the
+        // contradicted words, the fast check's scores and the claim.
+        await scrollBelowBanner(page.getByRole('region', { name: 'Answer' }));
+
+        const jpeg = await page.screenshot({ type: 'jpeg', quality: 75, animations: 'disabled', caret: 'hide' });
+        expect(blocked, 'requests to an unmocked external origin').toEqual([]);
+        console.log(`screenshots: ${writeCapture(resolve(REPO_ROOT, LANDING_DIR, `${LANDING_PREVIEW}-phone-${theme}.jpg`), jpeg)}`);
+      } finally {
+        await context.close();
+      }
+    });
   }
 });

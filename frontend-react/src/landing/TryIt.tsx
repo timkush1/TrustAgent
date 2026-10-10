@@ -202,20 +202,30 @@ export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
   );
 }
 
+/** Below 640 px the preview is the phone capture (400×760 at 2×), which a phone can read. */
+const PHONE_MEDIA = '(max-width: 639px)';
+
 /**
  * What the replay looks like: the trace page of the refund answer, captured by `make screenshots`
- * from the static site (public/landing/trace-{light,dark}.jpg), in the reader's theme, linking to
- * that request. The capture replays the simulated tape, so the caption says Simulated.
+ * from the static site (public/landing/trace-{light,dark}.jpg; on a phone trace-phone-*.jpg, the
+ * page as a phone shows it, from the answer down), in the reader's theme, linking to that request.
+ * The capture replays the simulated tape, so the caption says Simulated.
  */
 function ReplayPreview() {
   const link = refundTraceHref();
   const alt = 'The replay’s trace page: the refund answer flagged, “60 days” marked as contradicted by refund-policy.md, with the fast-check scores and the deep audit’s claim';
   const img = 'block h-auto w-full';
+  const picture = (theme: 'light' | 'dark', className: string) => (
+    <picture className={className}>
+      <source media={PHONE_MEDIA} srcSet={`${BASE}landing/trace-phone-${theme}.jpg`} width={800} height={1520} />
+      <img src={`${BASE}landing/trace-${theme}.jpg`} alt={alt} width={1440} height={900} loading="lazy" decoding="async" className={img} />
+    </picture>
+  );
   return (
     <figure className="mb-8" data-replay-preview>
       <a href={link.href} className="block overflow-hidden rounded-lg border border-border-strong bg-surface transition-colors hover:border-fg-subtle">
-        <img src={`${BASE}landing/trace-light.jpg`} alt={alt} width={1440} height={900} loading="lazy" decoding="async" className={`${img} dark:hidden`} />
-        <img src={`${BASE}landing/trace-dark.jpg`} alt={alt} width={1440} height={900} loading="lazy" decoding="async" className={`${img} hidden dark:block`} />
+        {picture('light', 'block dark:hidden')}
+        {picture('dark', 'hidden dark:block')}
       </a>
       <figcaption className="mt-2 text-xs text-fg-muted">
         The trace page in the replay: what the gateway caught, the words that contradict the document, and the scores behind it. Simulated:
