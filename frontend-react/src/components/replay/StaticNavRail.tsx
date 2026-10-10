@@ -3,6 +3,10 @@
  * Trace (the flagged refund answer, "caught": where the tour starts), Playground, Studio, and "Run
  * it yourself" at the bottom, which opens the landing page's self-host section. Policies, Settings
  * and Knowledge need a gateway and are not listed.
+ *
+ * The Overview's hint names the tape the site ships (D164): "recorded" for a recording of real
+ * checks, "simulated" for the simulated tape, and nothing until the manifest has loaded, so the
+ * nav never calls mock output recorded.
  */
 import { Link, useRouterState } from '@tanstack/react-router';
 import { FlaskConical, LayoutDashboard, PenLine, Rows3, ScanSearch, Terminal, type LucideIcon } from 'lucide-react';
@@ -67,6 +71,8 @@ export function StaticNavRail() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // Only the featured trace: the nav does not re-render as the tape plays.
   const featuredTraceId = useReplayStore((s) => s.featuredTraceId);
+  const tapeKind = useReplayStore((s) => s.kind);
+  const overviewHint = tapeKind === 'recorded' ? 'recorded' : tapeKind === 'mock' ? 'simulated' : undefined;
   const runHref = useRunItYourselfHref();
   const on = (suffix: string) => pathname.endsWith(suffix) || pathname.includes(`${suffix}/`);
   const onTrace = Boolean(featuredTraceId) && pathname.endsWith(`/app/traffic/${featuredTraceId}`);
@@ -80,7 +86,7 @@ export function StaticNavRail() {
         <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="size-5" />
         <span className="max-lg:sr-only">TrustAgent</span>
       </a>
-      <Item label="Overview" hint="recorded" icon={LayoutDashboard} active={on('/app/overview')}>
+      <Item label="Overview" hint={overviewHint} icon={LayoutDashboard} active={on('/app/overview')}>
         {({ content, ...p }) => (
           <Link to="/app/overview" {...p}>
             {content}

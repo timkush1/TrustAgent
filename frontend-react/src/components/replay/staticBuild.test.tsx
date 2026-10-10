@@ -82,7 +82,7 @@ describe('hiddenStaticPage', () => {
 });
 
 describe('static build', () => {
-  it('lists Overview (recorded), Traffic (replay), Trace, Playground, Studio and Run it yourself', async () => {
+  it('lists Overview (simulated on the simulated tape), Traffic (replay), Trace, Playground, Studio and Run it yourself', async () => {
     await renderStatic('/app/traffic');
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     const labels = within(nav)
@@ -91,7 +91,9 @@ describe('static build', () => {
       .filter(Boolean);
     expect(labels).toEqual(['Overview', 'Traffic', 'Trace', 'Playground', 'Studio', 'Run it yourself']);
     expect(within(nav).getByRole('link', { name: 'Run it yourself' })).toHaveAttribute('href', '/TrustAgent/#self-host');
-    expect(within(nav).getByText('recorded')).toBeInTheDocument();
+    // The committed tape is the simulated one: the nav never calls it recorded (D164).
+    expect(within(nav).getByText('simulated')).toBeInTheDocument();
+    expect(within(nav).queryByText('recorded')).toBeNull();
     expect(within(nav).getByText('replay')).toBeInTheDocument();
   });
 
@@ -127,6 +129,10 @@ describe('static build', () => {
     expect(banner).toHaveAttribute('data-recording-kind', 'recorded');
     expect(banner).toHaveTextContent(/^Recorded 28 Sept? 2026 with typesafe\/jev-1\.13 and claude-haiku-4\.5, replayed in your browser: not live\./);
     expect(banner).not.toHaveTextContent(/simulated/i);
+    // The nav's Overview hint names the same tape (D164).
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByText('recorded')).toBeInTheDocument();
+    expect(within(nav).queryByText('simulated')).toBeNull();
   });
 
   it('lists the recorded requests on Traffic', async () => {

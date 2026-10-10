@@ -148,6 +148,10 @@ test.describe('replay', () => {
     expect(labels).toEqual(['Overview', 'Traffic', 'Trace', 'Playground', 'Studio', 'Run it yourself']);
     // The Trace item says where the tour starts.
     await expect(nav.getByRole('link', { name: 'Trace' })).toHaveAccessibleDescription(COPY.recording.nav_hint_caught);
+    // The Overview's hint names the tape the site ships, never "recorded" for the simulated one (D164).
+    const { kind } = (await (await page.request.get('demo/manifest.json')).json()) as { kind: string };
+    await expect(nav.getByRole('link', { name: 'Overview' })).toContainText(kind === 'recorded' ? 'recorded' : 'simulated');
+    if (kind !== 'recorded') await expect(nav.getByRole('link', { name: 'Overview' })).not.toContainText('recorded');
     await expect(page.getByText(/\d+ requests on \d+ \w+ \d{4}/)).toBeVisible();
 
     for (const [path, name] of [
