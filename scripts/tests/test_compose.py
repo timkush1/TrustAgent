@@ -357,5 +357,89 @@ class ComposeTest(unittest.TestCase):
         self.assertIn("-X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}", go)
 
 
+DOCKERFILES = ("backend-go", "backend-python", "frontend-react")
+# The overlays DX-RELEASE owns (§15). docker-compose.load*.yml belongs to the GO stream;
+# scripts/check_version.py warns when an overlay's default tag differs from VERSION.
+OWNED_OVERLAYS = {
+    "docker-compose.demo.yml": DEMO,
+    "docker-compose.e2e.yml": E2E,
+    "docker-compose.onboarding.yml": ONBOARDING,
+    "docker-compose.record.yml": RECORD,
+    "docker-compose.knowledge.yml": KNOWLEDGE,
+}
+APP_IMAGE = re.compile(r"image: ghcr\.io/timkush1/truthtable-(\w+):(\S+)")
+
+
+class ImagesTest(unittest.TestCase):
+    """DR-2: the release image set, the D126 tags and the D125 base-image pins."""
+
+    def test_every_app_image_uses_the_version_tag_and_only_the_engine_has_extras(self) -> None:
+        tag = "${TRUSTAGENT_VERSION:-" + VERSION + "}"
+        for name, text in {"docker-compose.yml": COMPOSE, **OWNED_OVERLAYS}.items():
+            for service, ref in APP_IMAGE.findall(text):
+                expected = tag + (
+                    "${ENGINE_EXTRAS:+-${ENGINE_EXTRAS:-}}" if service == "engine" else ""
+                )
+                self.assertEqual(ref, expected, f"{name}: truthtable-{service}")
+        # ENGINE_EXTRAS reaches the engine's tag and build only (comments aside).
+        engine = COMPOSE.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0]
+        code = "\n".join(line for line in COMPOSE.splitlines() if not line.lstrip().startswith("#"))
+        self.assertEqual(code.count("ENGINE_EXTRAS"), engine.count("ENGINE_EXTRAS"))
+        self.assertEqual(engine.count("ENGINE_EXTRAS"), 3)
+        self.assertIn("        EXTRAS: ${ENGINE_EXTRAS:-}\n", engine)
+        for name, text in OWNED_OVERLAYS.items():
+            self.assertNotIn("ENGINE_EXTRAS", text.replace("ENGINE_EXTRAS=knowledge", ""), name)
+
+    def test_every_overlay_is_validated_by_compose_check(self) -> None:
+        check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
+        load_mk = (ROOT / "mk" / "load.mk").read_text(encoding="utf-8")
+        files = set(re.findall(r"-f (docker-compose[\w.-]*\.yml)", DX_MK + load_mk))
+        files |= set(re.findall(r"(docker-compose[\w.-]*\.yml)", load_mk))
+        for path in sorted(ROOT.glob("docker-compose.*.yml")):
+            self.assertIn(path.name, files, f"{path.name} is in no compose stack definition")
+        for var in ("DEMO", "E2E", "ONBOARDING", "LOAD", "RECORD", "KNOWLEDGE"):
+            self.assertIn(f"$({var}_COMPOSE)", check, var)
+
+    def test_base_images_are_pinned_by_digest(self) -> None:
+        # D125: every FROM names a tag and its multi-arch index digest; Dependabot's docker
+        # ecosystem reads the tag and moves both. No ARG-built image references (Dependabot
+        # cannot follow them) and no stage built from an unpinned image.
+        for dockerfile in DOCKERFILES:
+            text = (ROOT / dockerfile / "Dockerfile").read_text(encoding="utf-8")
+            froms = re.findall(r"(?m)^FROM\s+(?:--platform=\S+\s+)?(\S+)", text)
+            self.assertGreaterEqual(len(froms), 2, dockerfile)
+            for image in froms:
+                self.assertRegex(
+                    image, r"^[a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$", dockerfile
+                )
+            self.assertIn("Resolved 20", text, f"{dockerfile}: the pin's resolved versions")
+
+    def test_the_proxy_image_ships_every_command_the_targets_run(self) -> None:
+        go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
+        cmds = re.search(r'(?m)^ARG CMDS="([^"]*)"$', go)
+        self.assertIsNotNone(cmds)
+        self.assertEqual(
+            (cmds.group(1) if cmds else "").split(),
+            ["proxy", "trafficgen", "mock-upstream", "jevcheck", "export-replay"],
+        )
+        for cmd in (cmds.group(1) if cmds else "").split():
+            self.assertTrue((ROOT / "backend-go" / "cmd" / cmd / "main.go").is_file(), cmd)
+
+    def test_up_and_demo_build_off_a_release_tag_and_pull_on_one(self) -> None:
+        # D126: RELEASE_CHECKOUT is 1 only when HEAD is exactly the tag v<VERSION>.
+        self.assertIn(
+            'git describe --exact-match --tags --match "v$$(cat VERSION 2>/dev/null)" HEAD', DX_MK
+        )
+        self.assertRegex(
+            DX_MK, r"(?m)^APP_BUILD = \$\(if \$\(filter 1,\$\(RELEASE_CHECKOUT\)\),,--build\)$"
+        )
+        self.assertRegex(DX_MK, r"(?m)^DEMO_BUILD\s+\?= \$\(APP_BUILD\)$")
+        self.assertRegex(DX_MK, r"(?m)^UP_BUILD\s+\?= \$\(APP_BUILD\)$")
+        up = DX_MK.split("\nup:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(COMPOSE) up -d $(UP_BUILD) --wait", up)
+        demo = DX_MK.split("\ndemo:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(DEMO_COMPOSE) up -d $(DEMO_BUILD) --wait", demo)
+
+
 if __name__ == "__main__":
     unittest.main()
