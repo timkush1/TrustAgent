@@ -11,11 +11,12 @@
 import { ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { claim } from './claims';
-import { compareColumns, compareRows, sourceHost, type CompareCell } from './compareData';
+import { COMMON_READ_DATE, compareColumns, compareRows, sourceHost, type CompareCell } from './compareData';
 import { sectionCopy } from './sectionCopy';
 import { ClaimValue, Section } from './ui';
 
-const VALUE_WORD: Partial<Record<CompareCell['value'], string>> = { yes: 'Yes', no: 'No', partial: 'Partly' };
+const VALUE_WORD: Partial<Record<CompareCell['value'], string>> = { yes: 'Yes', no: 'No', partial: 'Partly', varies: 'Varies' };
+
 
 const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 /** "four kinds of tools": the number of rows the contract has, never a fixed word. */
@@ -45,6 +46,11 @@ function KeepDates({ text }: { text: string }) {
   );
 }
 
+/**
+ * A vendor cell: the scannable answer (Yes, No, Partly, Varies) first, what the vendor's docs say
+ * behind a disclosure, and the source link. The date the docs were read shows here only when the
+ * cells were read on different days; otherwise the note under the table says it once.
+ */
 function VendorCell({ cell }: { cell: CompareCell }) {
   if (cell.value === 'unverified' || !cell.source_url || !cell.as_of) {
     return (
@@ -55,13 +61,17 @@ function VendorCell({ cell }: { cell: CompareCell }) {
   }
   const word = VALUE_WORD[cell.value];
   const host = sourceHost(cell.source_url);
+  const ownDate = cell.as_of !== COMMON_READ_DATE;
   return (
     <div data-compare-cell={cell.value}>
-      <p className="text-fg-muted">
-        {word ? <span className="font-medium text-fg">{word}. </span> : null}
-        <KeepDates text={cell.text} />
-      </p>
-      <p className="mt-1.5 text-xs text-fg-subtle">
+      {word ? <p className="font-medium text-fg">{word}</p> : null}
+      <details className="group mt-1">
+        <summary className="cursor-pointer text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline">What its docs say</summary>
+        <p className="mt-1 text-fg-muted">
+          <KeepDates text={cell.text} />
+        </p>
+      </details>
+      <p className="mt-1 text-xs text-fg-subtle">
         <a
           href={cell.source_url}
           rel="noreferrer"
@@ -70,9 +80,9 @@ function VendorCell({ cell }: { cell: CompareCell }) {
         >
           {host}
           <ArrowUpRight aria-hidden="true" className="size-3" />
-        </a>{' '}
-        ·{' '}
-        <time dateTime={cell.as_of} className="whitespace-nowrap">
+        </a>
+        {ownDate ? ' · ' : null}
+        <time dateTime={cell.as_of} className={ownDate ? 'whitespace-nowrap' : 'sr-only whitespace-nowrap'}>
           {cell.as_of}
         </time>
       </p>
@@ -184,9 +194,17 @@ export function Compare() {
     >
       <CompareTable ours={ours} />
       <CompareCards ours={ours} />
-      <p className="mt-3 text-xs text-fg-muted">
-        Each cell says what that vendor’s own public documentation said on the date shown, with a link; it is not a ranking. Where the docs are silent the
-        cell says so.
+      <p className="mt-3 text-xs text-fg-muted" data-compare-note>
+        Each cell says what that vendor’s own public documentation said
+        {COMMON_READ_DATE ? (
+          <>
+            {' '}
+            when it was read on <time dateTime={COMMON_READ_DATE} className="whitespace-nowrap">{COMMON_READ_DATE}</time>
+          </>
+        ) : (
+          ' on the date shown'
+        )}
+        , with a link; it is not a ranking. Where the docs are silent the cell says so.
       </p>
 
       <div className="mt-16 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">

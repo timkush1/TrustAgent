@@ -22,6 +22,14 @@ export interface CompareRow {
 export const compareColumns: readonly { id: string; label: string }[] = compareDoc.columns;
 export const compareRows: readonly CompareRow[] = compareDoc.rows as CompareRow[];
 
+/** The one date every verified cell was read on, or null when they differ (then each cell shows its own). */
+export function commonReadDate(rows: readonly CompareRow[] = compareRows): string | null {
+  const dates = new Set(rows.flatMap((r) => Object.values(r.cells)).flatMap((c) => (c.value !== 'unverified' && c.source_url && c.as_of ? [c.as_of] : [])));
+  return dates.size === 1 ? [...dates][0] : null;
+}
+
+export const COMMON_READ_DATE = commonReadDate();
+
 /** "docs.aws.amazon.com" for a source link's text. */
 export function sourceHost(url: string): string {
   try {

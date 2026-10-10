@@ -21,7 +21,7 @@ import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
 import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
-import { compareRows } from './compareData';
+import { commonReadDate, compareRows } from './compareData';
 import { copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
 import glassbox from './glassbox.gen.json';
@@ -423,6 +423,26 @@ describe('comparison', () => {
         expect(within(cards).getAllByText(cellText(cell.text))).toHaveLength(1);
       }
     }
+  });
+
+  it('leads each cell with Yes, No or Partly, keeps the docs’ words a click away, and says the read date once', async () => {
+    await renderLanding();
+    const table = screen.getByRole('table');
+    for (const cell of table.querySelectorAll<HTMLElement>('[data-compare-cell]')) {
+      if (cell.dataset.compareCell === 'unverified') continue;
+      expect(cell.firstElementChild?.textContent).toMatch(/^(Yes|No|Partly|Varies)$/);
+      expect(cell.querySelector('details > summary')).toHaveTextContent('What its docs say');
+    }
+    const common = commonReadDate();
+    const note = document.querySelector('[data-compare-note]') as HTMLElement;
+    if (common) {
+      expect(note).toHaveTextContent(`when it was read on ${common}`);
+      // No cell repeats it on screen (it stays in the link's name and for screen readers).
+      for (const time of table.querySelectorAll('[data-compare-cell] time')) expect(time).toHaveClass('sr-only');
+    }
+    // Two read dates: each cell shows its own.
+    const rows = compareRows.map((r, i) => (i === 0 ? { ...r, cells: Object.fromEntries(Object.entries(r.cells).map(([k, c]) => [k, { ...c, as_of: '2026-01-02' }])) } : r));
+    expect(commonReadDate(rows)).toBeNull();
   });
 
   it('keeps every date on one line, in the cells and their sources', async () => {
