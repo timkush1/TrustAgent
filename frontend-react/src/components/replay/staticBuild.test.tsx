@@ -158,7 +158,7 @@ describe('static build', () => {
     const cards = within(list).getAllByRole('listitem');
     // One card per outcome the opening half of the tape shows: a short tour, not every request.
     const outcomes = cards.map((c) => c.querySelector('[data-outcome]')?.getAttribute('data-outcome'));
-    expect(outcomes).toEqual(['passed', 'flagged', 'not_checked', 'would_block', 'blocked']);
+    expect(outcomes).toEqual(['passed', 'flagged', 'not_checked', 'would_block', 'replaced', 'blocked']);
     for (const card of cards) expect(within(card).getByRole('link', { name: /Open this request/ }).getAttribute('href')).toMatch(/^\/app\/traffic\//);
     expect(screen.getByText(/checked by the demo’s mock checks and mock judge \(simulated, not model output\)/)).toBeInTheDocument();
     expect(screen.queryByText(/checked by the demo stack/)).toBeNull();

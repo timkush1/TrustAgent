@@ -95,12 +95,13 @@ test.describe('replay', () => {
     await page.goto('app/playground/');
     // One example per outcome: a short tour of what the gateway does.
     const examples = page.getByRole('list', { name: 'Example requests' }).getByRole('listitem');
-    await expect(examples).toHaveCount(5);
+    await expect(examples).toHaveCount(6);
     expect(await examples.locator('[data-outcome]').evaluateAll((els) => els.map((el) => el.getAttribute('data-outcome')))).toEqual([
       'passed',
       'flagged',
       'not_checked',
       'would_block',
+      'replaced',
       'blocked',
     ]);
 
