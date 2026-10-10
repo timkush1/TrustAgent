@@ -7,7 +7,7 @@ import { command, REPO_URL } from './content';
 import { sectionCopy } from './sectionCopy';
 import { oneLineSnippet } from './snippetLine';
 import { buttonClass } from './styles';
-import { Command, GitHubMark, Section } from './ui';
+import { CodeScroll, Command, GitHubMark, Section } from './ui';
 
 export function SelfHost() {
   return (
@@ -38,7 +38,7 @@ export function SelfHost() {
           </div>
           <p className="mt-3 text-sm text-fg-muted">Without make:</p>
           <div className="mt-1.5">
-            <Command command={command('compose_up')} wrap />
+            <Command command={command('compose_up')} scroll />
           </div>
           <ul className="mt-5 space-y-2 text-fg-muted">
             <li>Four services: proxy, engine, Postgres and the dashboard. Add-ons: knowledge base, local LLM, observability.</li>
@@ -50,9 +50,11 @@ export function SelfHost() {
       </div>
       <div className="mt-6 rounded-lg border border-border bg-surface-sunken p-5 max-sm:p-4">
         <p className="text-sm text-fg">Then point your app at it. With the OpenAI Python SDK, the one line that changes:</p>
-        <pre className="mt-3 font-mono text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]" data-snippet>
-          {oneLineSnippet()}
-        </pre>
+        <CodeScroll label="The line that changes" className="mt-3">
+          <pre className="w-max font-mono text-sm whitespace-pre text-fg" data-snippet>
+            {oneLineSnippet()}
+          </pre>
+        </CodeScroll>
         <p className="mt-2 text-xs text-fg-muted">
           Your provider key still goes to your provider. The dashboard’s Connect your app shows the full snippet for OpenAI, Anthropic, LangChain and curl,
           with the ingest key header and the documents to check against.

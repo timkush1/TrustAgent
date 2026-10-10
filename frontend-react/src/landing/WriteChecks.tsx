@@ -9,7 +9,7 @@ import { claim } from './claims';
 import { COMMITMENTS } from './commitments';
 import { STUDIO_HREF } from './links';
 import { buttonClass } from './styles';
-import { ClaimValue, Section, Ticked } from './ui';
+import { ClaimValue, CodeScroll, Section, Ticked } from './ui';
 
 /** Words of `text` in lines of at most `width` characters (a YAML `>-` scalar joins them with spaces). */
 function fold(text: string, width: number): string[] {
@@ -22,6 +22,13 @@ function fold(text: string, width: number): string[] {
   return lines;
 }
 
+/**
+ * The folded lines' width: with their 12-space indent every line fits a 400 px phone without
+ * scrolling (about 43 monospace characters at 12 px); YAML lines never wrap, so a wider screen
+ * shows the same lines.
+ */
+const FOLD_WIDTH = 30;
+
 /** The support-bot route of contracts/policies/example.policies.yaml attaching this check. */
 const ROUTE_SNIPPET = `routes:
   - name: support-bot
@@ -29,7 +36,7 @@ const ROUTE_SNIPPET = `routes:
       - ref: ${COMMITMENTS.ref}
         params:
           allowed_commitments: >-
-${fold(COMMITMENTS.exampleAllowed, 38)
+${fold(COMMITMENTS.exampleAllowed, FOLD_WIDTH)
   .map((line) => `            ${line}`)
   .join('\n')}`;
 
@@ -47,9 +54,11 @@ export function WriteChecks() {
             <p className="text-xs font-medium text-fg-subtle">You write</p>
             <p className="mt-3 text-lg text-fg">“Flag any answer that promises a refund, credit or discount our policy doesn’t allow.”</p>
             <p className="mt-6 text-xs font-medium text-fg-subtle">Then attach it to a route, in policies.yaml or the dashboard</p>
-            <pre className="mt-2 rounded-md border border-border bg-surface-sunken px-3 py-2.5 font-mono text-xs leading-5 whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
-              {ROUTE_SNIPPET}
-            </pre>
+            <CodeScroll label="policies.yaml" className="mt-2 rounded-md border border-border bg-surface-sunken">
+              <pre className="w-max px-3 py-2.5 font-mono text-xs leading-5 whitespace-pre text-fg" data-route-snippet>
+                {ROUTE_SNIPPET}
+              </pre>
+            </CodeScroll>
           </div>
           <div className="flex items-center justify-center text-fg-subtle" aria-hidden="true">
             <ArrowRight className="size-5 max-lg:rotate-90" />

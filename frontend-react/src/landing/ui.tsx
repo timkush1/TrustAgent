@@ -90,16 +90,44 @@ export function Ticked({ text }: { text: string }) {
  * A command with a copy button. A short one stays on one line; `wrap` lets a long one break over
  * lines instead of being cut off, so the reader can see what they copy.
  */
-export function Command({ command, note, className, wrap = false }: { command: string; note?: string; className?: string; wrap?: boolean }) {
+/**
+ * Code that must keep its lines (a wrapped YAML or shell line reads as broken): it never wraps, and
+ * on a narrow screen it scrolls sideways inside a named, focusable region (DESIGN.md: wide content
+ * scrolls inside a named, focusable region, never the page).
+ */
+export function CodeScroll({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  return (
+    // A keyboard has to reach it to scroll it.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+    <div role="region" aria-label={`${label} (scrolls sideways)`} tabIndex={0} className={clsx('min-w-0 overflow-x-auto', className)} data-code-scroll>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A shell command with a copy button. A short one is cut off with an ellipsis if it must be; a long
+ * one (`scroll`) keeps its line and scrolls sideways instead, so no command is shown half.
+ */
+export function Command({ command, note, className, scroll = false }: { command: string; note?: string; className?: string; scroll?: boolean }) {
   const [copied, setCopied] = useState<boolean | null>(null);
+  const code = (
+    <code className={clsx('min-w-0 font-mono text-sm text-fg', scroll ? 'block w-max whitespace-pre' : 'truncate')}>
+      <span aria-hidden="true" className="mr-2 text-fg-muted select-none">
+        $
+      </span>
+      {command}
+    </code>
+  );
   return (
     <div className={clsx('inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-surface-sunken py-1 pr-1 pl-3', className)}>
-      <code className={clsx('min-w-0 font-mono text-sm text-fg', wrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'truncate')} data-command-wrap={wrap || undefined}>
-        <span aria-hidden="true" className="mr-2 text-fg-muted select-none">
-          $
-        </span>
-        {command}
-      </code>
+      {scroll ? (
+        <CodeScroll label="Command" className="py-1">
+          {code}
+        </CodeScroll>
+      ) : (
+        code
+      )}
       {note ? <span className="ml-1 text-xs whitespace-nowrap text-fg-muted max-sm:hidden">{note}</span> : null}
       <button
         type="button"
