@@ -38,10 +38,12 @@ export interface PlaygroundFormProps {
   scripted?: boolean;
   /** The knowledge add-on is on: its scenarios are examples too. */
   knowledge?: boolean;
+  /** The routes the gateway serves, once its policy is read (null: unknown); examples on other routes are not offered. */
+  servedRoutes?: readonly string[] | null;
 }
 
-export function PlaygroundFormView({ routes, maxChars, busy, scripted = false, knowledge = false }: PlaygroundFormProps) {
-  const examples = playgroundExamples({ knowledge });
+export function PlaygroundFormView({ routes, maxChars, busy, scripted = false, knowledge = false, servedRoutes = null }: PlaygroundFormProps) {
+  const examples = playgroundExamples({ knowledge, routes: servedRoutes });
   const { form, set, setMessage, addMessage, removeMessage, setDoc, addDoc, removeDoc, load, reset } = usePlaygroundStore();
   const modelListId = useId();
   const length = textLength(form);

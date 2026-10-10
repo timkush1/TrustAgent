@@ -189,6 +189,7 @@ export function PlaygroundPage() {
               busy={run.running}
               scripted={scripted}
               knowledge={status?.knowledge.enabled === true}
+              servedRoutes={policies.data ? policies.data.effective_routes.map((r) => r.name) : null}
             />
             {/* Stays in view at the bottom of a long form. */}
             <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap items-center gap-2 rounded-b-lg border-t border-border bg-surface px-4 py-3">
