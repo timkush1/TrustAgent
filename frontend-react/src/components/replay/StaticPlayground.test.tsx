@@ -404,7 +404,12 @@ describe('LivePanel', () => {
     );
     browserKeyStore().set(KEY);
     renderPanel();
-    expect(await screen.findByTestId('live-no-limit')).toHaveTextContent(copy.playground_live.key_no_limit);
+    const note = await screen.findByTestId('live-no-limit');
+    // The contract's words, with the page it names a link that opens in a new tab.
+    const link = within(note).getByRole('link', { name: /openrouter\.ai\/settings\/keys/ });
+    expect(link).toHaveAttribute('href', 'https://openrouter.ai/settings/keys');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(note.textContent?.replace(link.querySelector('.sr-only')?.textContent ?? '', '')).toBe(copy.playground_live.key_no_limit);
   });
 
   it('hides the credit-limit note while the out-of-credits screen gives its own advice', async () => {

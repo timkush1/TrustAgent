@@ -65,7 +65,11 @@ describe('ConsentDialog', () => {
     expect(lines[1]).toHaveTextContent(`this demo stops after ${playground.maxCalls} calls to OpenRouter`);
     expect(lines[1].textContent).not.toContain('[estimate]');
     expect(within(lines[1]).getByRole('button', { name: /Estimate: how “One fast check” was produced/ })).toBeInTheDocument();
-    expect(lines[3]).toHaveTextContent('Delete the key any time at openrouter.ai/settings/keys.');
+    // The page it names is a link (opening in a new tab); the words stay the contract's.
+    const keysLink = within(lines[3]).getByRole('link', { name: /openrouter\.ai\/settings\/keys/ });
+    expect(lines[3].textContent?.replace(keysLink.querySelector('.sr-only')?.textContent ?? '', '')).toBe(
+      'Delete the key any time at openrouter.ai/settings/keys.',
+    );
   });
 
   it('labels every dollar figure in the dialog with its value label', async () => {
@@ -94,6 +98,19 @@ describe('ConsentDialog', () => {
     const line = within(dialog).getByTestId('consent-worst-case');
     expect(line).toHaveTextContent(`At most ≈ ${formatUsd(expected)} with these caps`);
     expect(within(line).getByRole('button', { name: /Estimate/ })).toBeInTheDocument();
+    // It says how the cap is reached, so it does not read as the cost of a typical check.
+    expect(within(dialog).getByTestId('consent-worst-case-how')).toHaveTextContent(
+      `${playground.maxCalls.toLocaleString('en-US')} calls × up to ${playground.maxTokens.toLocaleString('en-US')} tokens each, all at the dearer model’s price.`,
+    );
+    // The OpenRouter pages the consent names are links that open in a new tab.
+    // (in the consent's last line and the paste hint).
+    const keys = within(dialog).getAllByRole('link', { name: /openrouter\.ai\/settings\/keys/ });
+    expect(keys).toHaveLength(2);
+    for (const link of keys) {
+      expect(link).toHaveAttribute('href', 'https://openrouter.ai/settings/keys');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    }
   });
 
   it('omits the worst case, never shows $0, when a model has no price', () => {

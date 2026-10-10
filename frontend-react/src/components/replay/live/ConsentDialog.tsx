@@ -62,6 +62,12 @@ function ConsentLines() {
             text={fillTemplate(copy.playground_live.worst_case, { max_spend: formatUsd(worst) })}
             badge={<EvidenceBadge label="estimate" basis={liveText.worst_case_basis} subject={liveText.worst_case_subject} />}
           />
+          <span className="mt-0.5 block text-xs text-fg-muted" data-testid="consent-worst-case-how">
+            {fillTemplate(liveText.worst_case_how, {
+              max_calls: playground.maxCalls.toLocaleString('en-US'),
+              max_tokens: playground.maxTokens.toLocaleString('en-US'),
+            })}
+          </span>
         </p>
       ) : null}
     </div>

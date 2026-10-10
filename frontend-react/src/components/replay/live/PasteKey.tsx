@@ -17,6 +17,7 @@ import { isFramed } from '@/lib/openrouter/frame';
 import { browserKeyStore, isKeyShape } from '@/lib/openrouter/keyStore';
 import { checkKeyOnce } from './keyCheck';
 import { OpenInTab } from './OpenInTab';
+import { OpenRouterLinks } from './OpenRouterLinks';
 
 export interface PasteKeyProps {
   /** Called once the key is stored for this tab. */
@@ -96,7 +97,7 @@ export function PasteKey({ onDone }: PasteKeyProps) {
         </Button>
       </div>
       <p id={`${id}-help`} className="text-xs text-fg-muted">
-        {liveText.paste_help}
+        <OpenRouterLinks text={liveText.paste_help} />
       </p>
       {problemText ? (
         <p id={`${id}-problem`} role="alert" className="text-xs font-medium text-fg">

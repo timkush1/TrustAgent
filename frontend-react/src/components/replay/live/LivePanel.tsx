@@ -40,6 +40,7 @@ import { useBrowserKey } from '@/lib/openrouter/useBrowserKey';
 import { useUsage } from '@/lib/openrouter/useUsage';
 import { ConsentDialog } from './ConsentDialog';
 import { ExternalLink } from './ExternalLink';
+import { OpenRouterLinks } from './OpenRouterLinks';
 import { forgetKey } from './forget';
 import { useKeyInfo } from './keyCheck';
 import { LiveResult } from './LiveResult';
@@ -230,7 +231,9 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
 
       {storageBlocked || keyState === 'memory' ? <Notice testId="live-storage-blocked">{copy.playground_live.storage_blocked}</Notice> : null}
       {/* While the out-of-credits screen shows, its own advice replaces the credit-limit note. */}
-      {keyInfo && hasNoLimit(keyInfo) && !outOfCredits ? <Notice testId="live-no-limit">{copy.playground_live.key_no_limit}</Notice> : null}
+      {keyInfo && hasNoLimit(keyInfo) && !outOfCredits ? <Notice testId="live-no-limit">
+          <OpenRouterLinks text={copy.playground_live.key_no_limit} />
+        </Notice> : null}
 
       {capReached ? (
         <CapReached maxCalls={usage.maxCalls} />

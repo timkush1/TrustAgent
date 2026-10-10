@@ -40,6 +40,8 @@ export const liveText = {
   estimate_basis: 'The tokens this page counts in these requests before sending them, at the Jev input price in the price table (Jev bills input only).',
   worst_case_basis:
     'The call cap times the dearer of one Jev call and one drafting call at the per-call token cap, at the price-table prices (all of it as output for the drafting model, so it is never understated).',
+  /** How the worst case is reached, shown under it: a typical check costs far less (D101). */
+  worst_case_how: '{max_calls} calls × up to {max_tokens} tokens each, all at the dearer model’s price. A typical check is far below this.',
   vendor_basis: 'The cost OpenRouter reported in the response (usage.cost).',
   computed_basis: 'Tokens times the price table, because OpenRouter reported no cost for at least one call.',
   show_request: 'Show exact Jev request',
