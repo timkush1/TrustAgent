@@ -75,7 +75,7 @@ export function allowsMock(variable: string, env: NodeJS.ProcessEnv = process.en
 export function refuseMock(tape: Tape, variable: string, what: string, env: NodeJS.ProcessEnv = process.env): void {
   if (tape.kind !== 'mock' || allowsMock(variable, env)) return;
   throw new Error(
-    `${what} refuses the simulated tape (kind: mock, "${tape.label}"): it is not model output. ` +
+    `${what} refuses the simulated tape (kind: mock): a capture of it would show mock output as the product's. ` +
       'Record the demo first (make record-demo CONFIRM=1) and build with it, or set ' +
       `${variable}=1 for a capture labelled Simulated, written only to frontend-react/test-results/launch/.`,
   );

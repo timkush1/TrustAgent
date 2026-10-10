@@ -45,7 +45,8 @@ test.describe('social card', () => {
     await expect(card, 'the launch build renders the card (VITE_LAUNCH_ROUTES=1)').toBeVisible({ timeout: 30_000 });
     await expect(card).toHaveAttribute('data-og-ready', '', { timeout: 30_000 });
     await expect(card).toHaveAttribute('data-recording-kind', tape.kind);
-    await expect(page.locator('meta[name="robots"][content="noindex"]')).toHaveCount(1);
+    // The card page is never indexed (the 404.html shell may carry its own noindex too).
+    await expect(page.locator('meta[name="robots"][content="noindex"]').first()).toBeAttached();
 
     // Honest numbers: a capture of the simulated tape says so on the card, a recorded one does not.
     const simulated = card.locator('[data-og-simulated]');

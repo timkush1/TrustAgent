@@ -44,7 +44,7 @@ interface Shot {
   open(page: Page): Promise<void>;
 }
 
-/** The replay has played every request of the tape. */
+/** The replay has played every request of the tape: the top bar then reads the same on every run. */
 async function replayFinished(page: Page): Promise<void> {
   await expect(page.locator('[data-replay-status="finished"]')).toBeVisible({ timeout: 60_000 });
 }
@@ -62,6 +62,7 @@ const SHOTS: readonly Shot[] = [
     name: 'trace',
     async open(page) {
       await page.goto('app/traffic/');
+      await replayFinished(page);
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
       await expect(page.getByRole('region', { name: 'Answer' }).locator('mark[data-v="contradicted"]').first()).toBeVisible({
         timeout: 30_000,
@@ -77,6 +78,7 @@ const SHOTS: readonly Shot[] = [
     name: 'playground',
     async open(page) {
       await page.goto('app/playground/');
+      await replayFinished(page);
       await expect(page.getByRole('list', { name: 'Example requests' }).getByRole('listitem').first()).toBeVisible({ timeout: 30_000 });
     },
   },
@@ -84,6 +86,7 @@ const SHOTS: readonly Shot[] = [
     name: 'studio',
     async open(page) {
       await page.goto('app/evaluators/studio/');
+      await replayFinished(page);
       await expect(page.getByLabel('What should TrustAgent check?')).toBeVisible({ timeout: 30_000 });
     },
   },
