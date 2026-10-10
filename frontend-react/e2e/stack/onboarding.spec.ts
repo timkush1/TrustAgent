@@ -17,6 +17,11 @@
  * P4_EVIDENCE_DIR set it writes /api/credentials, /api/settings and /api/status there, after
  * Connect and at the end, once it has checked they hold no secret.
  *
+ * Step 0 (CO-10, D166): on the setup page before sign-in there is no WebSocket ticket request and
+ * no WebSocket for 10 s, and no console error but Chrome's network line for each sign-in probe the
+ * load sends (GET /api/session and /api/status answer 401 to a signed-out page), none of them
+ * after the load; step 1 then checks the stream connects within 5 s of the claim.
+ *
  * Order: Connect your app (8) runs before the refund example (7). A Playground run is traffic
  * too, so once it has run the Overview no longer waits for a first request.
  *
@@ -59,6 +64,46 @@ let page: Page;
 let mockKey: string | null = null;
 /** Where mock-upstream's /auth last redirected: the dashboard's /connect/callback?code=…. Never printed. */
 let lastRedirect: string | null = null;
+/**
+ * The live stream as the page asks for it (CO-10): WebSocket ticket requests, sockets (with when
+ * each opened and received its first frame, the hello), console errors, and when the setup link
+ * was claimed (the first successful POST /api/session).
+ */
+const live = {
+  tickets: 0,
+  sockets: [] as { path: string; at: number; firstFrameAt: number | null }[],
+  errors: [] as string[],
+  /** Every 401 the page received, as "GET /api/session". */
+  refused: [] as string[],
+  claimedAt: 0,
+};
+/** Chrome's own console line for a response with an error status (not the app's console). */
+const NETWORK_401 = 'Failed to load resource: the server responded with a status of 401 (Unauthorized)';
+/** The reads that tell a signed-out page it is signed out (D166): each answers 401 once per load. */
+const SIGN_IN_PROBES = new Set(['GET /api/session', 'GET /api/status']);
+
+/** Records what CO-10 asserts on, for the whole run of `target`. */
+function watchLiveStream(target: Page): void {
+  target.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/ws-ticket') live.tickets += 1;
+  });
+  target.on('websocket', (ws) => {
+    const socket = { path: new URL(ws.url()).pathname, at: Date.now(), firstFrameAt: null as number | null };
+    live.sockets.push(socket);
+    ws.on('framereceived', () => {
+      socket.firstFrameAt ??= Date.now();
+    });
+  });
+  target.on('console', (message) => {
+    if (message.type() === 'error') live.errors.push(message.text());
+  });
+  target.on('pageerror', (error) => live.errors.push(error.message));
+  target.on('response', (response) => {
+    const call = `${response.request().method()} ${new URL(response.url()).pathname}`;
+    if (call === 'POST /api/session' && response.ok() && !live.claimedAt) live.claimedAt = Date.now();
+    if (response.status() === 401) live.refused.push(call);
+  });
+}
 
 /** Routes the proxy's OpenRouter address to mock-upstream's published port (D70). */
 async function routeMockUpstream(route: Route): Promise<void> {
@@ -142,14 +187,50 @@ test.describe('onboarding', () => {
     const dashboard = new URL(baseURL).origin;
     await context.route((url) => url.origin !== dashboard && url.pathname === '/auth', routeMockUpstream);
     page = await context.newPage();
+    watchLiveStream(page);
   });
 
   test.afterAll(async () => {
     await context?.close();
   });
 
+  test('0 · before sign-in: no ticket, no WebSocket and no console error on the setup page for 10 s (CO-10)', async () => {
+    await page.goto('/app/setup');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Setup');
+    // A fixed window, as CO-10 asks: the old shell retried a refused ticket with backoff in it.
+    // The first 2 s are the page load; the 8 s after it must be silent.
+    await page.waitForTimeout(2_000);
+    const loaded = { errors: live.errors.length, refused: live.refused.length };
+    await page.waitForTimeout(8_000);
+    expect(live.tickets, 'no WebSocket ticket request before sign-in').toBe(0);
+    expect(live.sockets.map((socket) => socket.path), 'no WebSocket before sign-in').toEqual([]);
+    // D166: the load's sign-in probes answer 401, and Chrome logs each as a network line; nothing
+    // else may reach the console, and nothing is retried once the page has loaded.
+    expect(live.refused.filter((call) => !SIGN_IN_PROBES.has(call)), 'only the sign-in probes are refused').toEqual([]);
+    expect(live.errors.filter((text) => text !== NETWORK_401), 'no console error from the app before sign-in').toEqual([]);
+    expect(live.errors.length, 'one network line per refused probe, no other').toBe(live.refused.length);
+    expect(live.refused.slice(loaded.refused), 'no 401 after the page loaded (nothing retries)').toEqual([]);
+    expect(live.errors.slice(loaded.errors), 'no console line after the page loaded').toEqual([]);
+    console.log(`CO-10 before sign-in, 10 s: ${live.tickets} ticket requests, ${live.sockets.length} WebSockets, 401s only at load: ${live.refused.join(', ') || 'none'}`);
+    // The setup link then loads the page afresh: from /app/setup its #token would change only the fragment.
+    await page.goto('about:blank');
+  });
+
   test('1 · secure: claim the setup link, copy the admin key, tick I saved it, Next', async () => {
     await secureWithSetupLink(page, journey, setupUrl, { copy: true });
+    // CO-10: once the setup link is claimed, the live stream connects (its hello arrives) within 5 s.
+    expect(live.claimedAt, 'the setup link was claimed (POST /api/session)').toBeGreaterThan(0);
+    await expect
+      .poll(() => live.sockets.find((socket) => socket.path === '/ws' && socket.firstFrameAt !== null)?.firstFrameAt ?? null, {
+        message: 'the live stream connects after the claim',
+        timeout: 5_000,
+      })
+      .not.toBeNull();
+    const connected = live.sockets.find((socket) => socket.path === '/ws' && socket.firstFrameAt !== null);
+    const elapsed = (connected?.firstFrameAt ?? Infinity) - live.claimedAt;
+    console.log(`CO-10 after the claim: the stream's first frame in ${elapsed} ms (budget 5000)`);
+    expect(elapsed, 'ms from the claim to the stream’s first frame').toBeLessThanOrEqual(5_000);
+    expect(live.tickets, 'same origin: no WebSocket ticket').toBe(0);
     await expect(page.getByText(CONNECT.prerequisite)).toBeVisible();
     await expect(page.getByText(CONNECT.privacy)).toBeVisible();
   });
