@@ -146,6 +146,7 @@
     },
     "trace": {
       "checked_against": "Checked against: {sources}",
+      "checked_against_none": "No documents to check against",
       "was_this_right": "Was this right?",
       "correct": "Correct",
       "false_alarm": "False alarm",

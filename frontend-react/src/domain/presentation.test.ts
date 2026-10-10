@@ -175,7 +175,7 @@ describe('copy helpers', () => {
 
   it('says what an answer was checked against', () => {
     expect(checkedAgainst(flaggedTrace().checked_against).text).toBe('Checked against: refund-policy.md');
-    expect(checkedAgainst(null)).toEqual({ items: [], none: true, text: 'Checked against: No documents' });
+    expect(checkedAgainst(null)).toEqual({ items: [], none: true, text: 'No documents to check against' });
     expect(
       checkedAgainst({
         configured: [],

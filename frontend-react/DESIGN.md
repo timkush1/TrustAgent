@@ -98,8 +98,8 @@ underline, which a unit test enforces.
 as soon as the gate decides, before any claim: `<mark data-det="<detector id>">`, a 2px solid
 line in `fg-muted`, drawn 7px below the text (below a claim's underline), and the scan-search
 icon after the finding. It is achromatic because a detector is not a verdict. Where a finding
-overlaps a claim, it nests inside the claim's mark and both lines show; the claim's link names
-the finding ("…, instant checks: links to a URL not in your documents"). A finding on its own
+overlaps a claim, it nests inside the claim's mark and both lines show, with the claim's icon
+alone at the end of the phrase (no scan icon mid-claim); the claim's link names the finding ("…, instant checks: links to a URL not in your documents"). A finding on its own
 repeats the `det:*` reason copy in a tooltip and in screen-reader text, and the answer gets the
 legend "Marked by the instant checks" (a glossary term).
 

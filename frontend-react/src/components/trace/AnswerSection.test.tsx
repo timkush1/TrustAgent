@@ -168,6 +168,10 @@ describe('AnswerSection: instant-check marks', () => {
     });
     expect(link.querySelector('mark[data-det="numbers_not_in_evidence"]')).toHaveTextContent(/^2$/);
     expect(link.closest('mark')).toHaveTextContent('within 2 business days');
+    // The claim reads as one phrase: its line under "2", and one icon, the verdict's, at its end.
+    expect(link.querySelector('mark[data-det] svg')).toBeNull();
+    expect(link.querySelectorAll('svg')).toHaveLength(1);
+    expect(link.lastElementChild?.tagName.toLowerCase()).toBe('svg');
   });
 
   it('marks nothing on a list preview', () => {

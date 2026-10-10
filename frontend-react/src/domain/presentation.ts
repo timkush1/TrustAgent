@@ -427,8 +427,8 @@ export function evidenceSourceLabel(source: EvidenceSource | 'none'): string {
 }
 
 /**
- * What an answer was checked against: document labels when known, else source names, else
- * "No documents". `text` is the full "Checked against: …" line.
+ * What an answer was checked against: document labels when known, else source names. `text` is
+ * the full "Checked against: …" line, or "No documents to check against" when there were none.
  */
 export function checkedAgainst(summary: EvidenceSummary | null | undefined): {
   items: string[];
@@ -438,8 +438,7 @@ export function checkedAgainst(summary: EvidenceSummary | null | undefined): {
   const used = summary?.used ?? [];
   const items = used.flatMap((u) => (u.labels.length > 0 ? u.labels : [evidenceSourceLabel(u.source)]));
   const none = items.length === 0;
-  const sources = none ? evidenceSourceLabel('none') : items.join(' · ');
-  return { items, none, text: fillTemplate(copy.trace.checked_against, { sources }) };
+  return { items, none, text: none ? copy.trace.checked_against_none : fillTemplate(copy.trace.checked_against, { sources: items.join(' · ') }) };
 }
 
 // ------------------------------------------------------------------------------------ tiers & terms

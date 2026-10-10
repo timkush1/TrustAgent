@@ -11,6 +11,7 @@ import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUpRight, SlidersHorizontal } from 'lucide-react';
 import { useId, type MouseEvent } from 'react';
 import { DisabledReason } from '@/components/common/DisabledReason';
+import { Ticked } from '@/components/common/Ticked';
 import { useStaticReason } from '@/components/common/useWriteAccess';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { Button } from '@/components/ui/button';
@@ -88,7 +89,12 @@ export function OutcomeCard({
           ))}
         </ul>
       ) : null}
-      {outcome.next_step ? <p className="text-sm text-fg-muted">{outcome.next_step}</p> : null}
+      {/* A header the app received is backticked in the contract, and reads as code. */}
+      {outcome.next_step ? (
+        <p className="text-sm text-fg-muted">
+          <Ticked text={outcome.next_step} />
+        </p>
+      ) : null}
       {receivedTarget && (delivered === 'fallback' || delivered === 'blocked') && !summary.redacted ? (
         <a
           href={`#${receivedTarget}`}

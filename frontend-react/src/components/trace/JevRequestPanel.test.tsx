@@ -31,8 +31,15 @@ describe('JevRequestBody on a replayed trace', () => {
     expect(badge(container)).toHaveTextContent(copy.recording.glassbox.rebuilt_simulated);
     expect(screen.queryByText(copy.trace.recompile_match)).toBeNull();
     expect(screen.queryByText(copy.recording.glassbox.matches)).toBeNull();
-    // The questions it was asked are listed.
+    // The questions it was asked are listed, their backticked field names as code, never as literal backticks.
     expect(screen.getAllByText(/: what it was asked$/).length).toBeGreaterThan(0);
+    const asked = [...container.querySelectorAll('li')].filter((li) => li.textContent?.includes(' — '));
+    const ticked = Object.values((decisionMatch as DecisionRequestView).requests[0]?.questions ?? {}).filter(
+      (q) => typeof (q as { instructions?: unknown }).instructions === 'string' && (q as { instructions: string }).instructions.includes('`'),
+    );
+    expect(ticked.length, 'the fixture asks a question that names a field in backticks').toBeGreaterThan(0);
+    for (const li of asked) expect(li.textContent).not.toContain('`');
+    expect(asked.some((li) => li.querySelector('code'))).toBe(true);
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
 

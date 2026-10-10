@@ -46,12 +46,13 @@ function findingName(words: readonly string[]): string {
 }
 
 /**
- * A piece of text an instant check marked. Inside a claim mark it is styling only (the claim's
- * link names and explains it); on its own it repeats its words in a tooltip and, once per finding,
- * for screen readers. The icon follows the finding's last piece.
+ * A piece of text an instant check marked. Inside a claim mark it is its line only: the claim's
+ * link names the finding, and the claim's one icon closes the phrase, so "60 days" is not split by
+ * a second icon after "60". On its own it repeats its words in a tooltip and, once per finding,
+ * for screen readers, and the scan icon follows the finding's last piece.
  */
 function DetectorMark({ piece, nested }: { piece: AnswerSegment; nested: boolean }) {
-  const ends = piece.findings.some((f) => f.end === piece.end);
+  const ends = !nested && piece.findings.some((f) => f.end === piece.end);
   const mark = (
     <mark data-det={[...new Set(piece.findings.map((f) => f.detector))].join(' ')}>
       {piece.text}

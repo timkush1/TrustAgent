@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { Check, Copy, Monitor, Moon, Sun } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { copyText } from '@/components/common/clipboard';
+export { Ticked } from '@/components/common/Ticked';
 import { nextThemePreference, setThemePreference, useThemePreference, type ThemePreference } from '@/lib/theme';
 import { sourceAnchor, type ClaimView } from './claims';
 import { buttonClass, container } from './styles';
@@ -68,28 +69,6 @@ export function Section({ id, eyebrow, title, lead, children, className }: { id:
   );
 }
 
-/** Contract text marks field names with backticks: show them as code. */
-export function Ticked({ text }: { text: string }) {
-  return (
-    <>
-      {text.split('`').map((part, i) =>
-        i % 2 === 1 ? (
-          <code key={i} className="font-mono text-[0.85em] text-fg">
-            {part}
-          </code>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
-/** A shell command with a copy button: the command is the text, so nothing hides in the button. */
-/**
- * A command with a copy button. A short one stays on one line; `wrap` lets a long one break over
- * lines instead of being cut off, so the reader can see what they copy.
- */
 /**
  * Code that must keep its lines (a wrapped YAML or shell line reads as broken): it never wraps, and
  * on a narrow screen it scrolls sideways inside a named, focusable region (DESIGN.md: wide content
@@ -106,8 +85,9 @@ export function CodeScroll({ label, className, children }: { label: string; clas
 }
 
 /**
- * A shell command with a copy button. A short one is cut off with an ellipsis if it must be; a long
- * one (`scroll`) keeps its line and scrolls sideways instead, so no command is shown half.
+ * A shell command with a copy button: the command is the text, so nothing hides in the button. A
+ * short one is cut off with an ellipsis if it must be; a long one (`scroll`) keeps its line and
+ * scrolls sideways instead, so the reader can see all of what they copy.
  */
 export function Command({ command, note, className, scroll = false }: { command: string; note?: string; className?: string; scroll?: boolean }) {
   const [copied, setCopied] = useState<boolean | null>(null);

@@ -23,6 +23,7 @@ import { useState, type ReactNode } from 'react';
 import { useDataSource } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { DisabledReason } from '@/components/common/DisabledReason';
+import { Ticked } from '@/components/common/Ticked';
 import { ProbabilityBars } from '@/components/charts/ProbabilityBars';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -88,7 +89,12 @@ function RequestView({ request, index, total, names }: { request: JevRequest; in
             return (
               <li key={key} className="text-sm">
                 <span className="font-medium text-fg">{questionName(key, names)}</span>
-                {typeof question.instructions === 'string' ? <span className="text-fg-muted"> — {question.instructions}</span> : null}
+                {typeof question.instructions === 'string' ? (
+                  <span className="text-fg-muted">
+                    {' '}
+                    — <Ticked text={question.instructions} />
+                  </span>
+                ) : null}
               </li>
             );
           })}

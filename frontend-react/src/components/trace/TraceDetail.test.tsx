@@ -48,6 +48,8 @@ describe('Trace detail', () => {
     await waitFor(() => expect(within(region('Outcome')).getByText('Flagged')).toBeInTheDocument());
     expect(within(region('Outcome')).getByText('Delivered with a risk warning to your app')).toBeInTheDocument();
     expect(within(region('Outcome')).getByText(`Checked against: ${REFUND_DOC}`)).toBeInTheDocument();
+    // The header the app received reads as code, not as a word in the sentence.
+    expect(within(region('Outcome')).getByText('X-TrustAgent-Action: flag').tagName).toBe('CODE');
     expect(within(region('Outcome')).getByRole('list', { name: 'Reasons' })).toHaveTextContent(
       'Mentions a number not in your documents: 60',
     );
@@ -100,7 +102,7 @@ describe('Trace detail', () => {
     const outcome = await screen.findByRole('region', { name: 'Outcome' });
     expect(within(outcome).getByText('Not checked')).toBeInTheDocument();
     expect(within(outcome).getByText('Not checked: no documents in this request')).toBeInTheDocument();
-    expect(within(outcome).getByText('Checked against: No documents')).toBeInTheDocument();
+    expect(within(outcome).getByText('No documents to check against')).toBeInTheDocument();
 
     const checks = within(region('Checks')).getByRole('list', { name: 'Checks' });
     expect(within(checks).getAllByText('Not checked — no documents')).toHaveLength(2);
