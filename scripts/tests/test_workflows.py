@@ -478,7 +478,9 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         self.assertIn("FIRST_RUN_TAG: ${{ needs.plan.outputs.sha_tag }}", job)
         self.assertIn("uses: docker/login-action@", job)
         self.assertIn("run: make first-run\n", job)
-        self.assertIn("first-run.json", job)
+        # The timings land in tmp/ (ignored, D143), where make first-run writes them by default.
+        self.assertIn("            tmp/first-run.json\n", job)
+        self.assertRegex(RELEASE_MK, r"(?m)^FIRST_RUN_OUT\s+\?= tmp/first-run\.json$")
         self.assertIn("FIRST_RUN_KEEP: '1'", job)
         self.assertIn("make -s first-run-logs > first-run-artifacts/compose.log", job)
         self.assertIn("run: make first-run-down", job)

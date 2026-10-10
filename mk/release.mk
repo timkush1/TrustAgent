@@ -152,7 +152,7 @@ record-check-config: ## Prove, without a container, that the gateway accepts the
 #   FIRST_RUN_TAG=<tag>   pulls ghcr.io/timkush1/truthtable-*:<tag> (release-images.yml: sha-<short>)
 # first-run times the run from before `up` (T0): the pull (pull mode), every service healthy,
 # ready (doctor --expect fresh passes) and the first flagged answer the spec sees. The spec writes
-# FIRST_RUN_OUT (first-run.json), labelled measured, locally with prebuilt images or in CI with
+# FIRST_RUN_OUT (tmp/first-run.json), labelled measured, locally with prebuilt images or in CI with
 # pulled ones, and fails past 5 minutes. golden-path walks from the setup link to the flagged
 # trace's detail in at most 8 actions. The default ports keep clear of make up and make demo.
 FIRST_RUN_PROJECT        ?= truthtable-first-run
@@ -164,7 +164,8 @@ FIRST_RUN_KEEP           ?=
 FIRST_RUN_PROXY_PORT     ?= 28080
 FIRST_RUN_DASHBOARD_PORT ?= 23000
 FIRST_RUN_MOCK_PORT      ?= 28090
-FIRST_RUN_OUT            ?= first-run.json
+# tmp/ is scratch space the root .gitignore ignores (D143), so a local run leaves nothing to commit.
+FIRST_RUN_OUT            ?= tmp/first-run.json
 # local or pull; empty when neither or both were asked for.
 FIRST_RUN_MODE = $(if $(FIRST_RUN_TAG),$(if $(filter 1,$(FIRST_RUN_LOCAL)),,pull),$(if $(filter 1,$(FIRST_RUN_LOCAL)),local,))
 FIRST_RUN_IMAGE_TAG = $(if $(FIRST_RUN_TAG),$(FIRST_RUN_TAG),$(FIRST_RUN_LOCAL_TAG))
@@ -206,7 +207,7 @@ FIRST_RUN_PLAYWRIGHT_ENV = env -u TRUSTAGENT_ADMIN_KEY CI=1 TRUSTAGENT_SETUP_URL
 
 ##@ First run and golden path (fresh stacks on mock vendors, $0)
 
-first-run: ## A fresh stack to its first flagged answer, timed (under 5 min): FIRST_RUN_LOCAL=1 (prebuilt images) or FIRST_RUN_TAG=<tag> (pulled); writes first-run.json
+first-run: ## A fresh stack to its first flagged answer, timed (under 5 min): FIRST_RUN_LOCAL=1 (prebuilt images) or FIRST_RUN_TAG=<tag> (pulled); writes tmp/first-run.json
 	@set -e; $(FIRST_RUN_UP); \
 	$(FIRST_RUN_ENV) $(PYTHON) scripts/doctor.py --target docker --expect fresh --project $(FIRST_RUN_PROJECT) --no-probe \
 		--proxy-url http://127.0.0.1:$(FIRST_RUN_PROXY_PORT) --dashboard-url http://127.0.0.1:$(FIRST_RUN_DASHBOARD_PORT); \

@@ -14,7 +14,7 @@ name: Release images
 #   release-notes   on a release tag: each digest and the command that verifies its attestation,
 #                   for the GitHub release (job summary and an artifact).
 #   first-run       on every push: the pulled images, a fresh stack, the first flagged trace
-#                   (make first-run with FIRST_RUN_TAG=sha-<short>; first-run.json uploaded).
+#                   (make first-run with FIRST_RUN_TAG=sha-<short>; tmp/first-run.json uploaded).
 #   anonymous-pull  once the owner made the packages public (repository variable GHCR_PUBLIC =
 #                   'true'): every image pulls without credentials, for both platforms.
 #
@@ -298,7 +298,7 @@ jobs:
         with:
           name: first-run-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            first-run.json
+            tmp/first-run.json
             first-run-artifacts/
             frontend-react/playwright-report/
           if-no-files-found: ignore
