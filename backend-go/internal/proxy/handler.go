@@ -236,6 +236,10 @@ const (
 // scenarioID is the shape of a scenario id (contracts/schema/scenarios.v1.schema.json).
 var scenarioID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,63}$`)
 
+// faultScenario is the shape of a forward-only X-TrustAgent-Scenario value (D119): fault:<name> or
+// fault:<name>@<n>, a mock-upstream fault spec (scenarios.v1 mock_faults) for the decision model.
+var faultScenario = regexp.MustCompile(`^fault:[a-z0-9_]+(@[0-9]+)?$`)
+
 // TraceIDs assigns every /v1 request its UUIDv7 trace id and answers X-TrustAgent-Trace-Id and
 // X-Request-ID on every response, errors included (SPEC §2.1, §2.12). A client X-Request-ID that
 // passes the B4 rule is echoed and recorded as client_request_id; any other is dropped with a

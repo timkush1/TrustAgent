@@ -21,26 +21,81 @@ type Scenario struct {
 		Response    string                     `json:"response"`
 		MockAnswers map[string]json.RawMessage `json:"mock_answers"`
 	} `json:"fallback"`
+	// MockFaults are the vendor faults of a faults-pack scenario (scenarios.v1 mock_faults, D119),
+	// each a fault spec ("<name>" or "<name>@<n>"): Decision for the decision requests that name
+	// the scenario (X-TrustAgent-Scenario, forwarded by the gateway in test mode), Upstream for
+	// the LLM request of its conversation (the gateway strips X-TrustAgent-* upstream).
+	MockFaults *MockFaults `json:"mock_faults"`
 }
 
-func parseScenarios(b []byte) ([]*Scenario, error) {
-	var pack struct {
-		Scenarios []*Scenario `json:"scenarios"`
-	}
-	if err := json.Unmarshal(b, &pack); err != nil {
-		return nil, err
-	}
+// MockFaults is scenarios.v1 mock_faults.
+type MockFaults struct {
+	Decision string `json:"decision"`
+	Upstream string `json:"upstream"`
+}
+
+// parseScenarios reads the scenarios of one or more trustagent.scenarios/v1 packs (the demo pack
+// and the faults pack). Ids are unique across all of them, and every mock_faults value is a known
+// fault spec.
+func parseScenarios(packs ...[]byte) ([]*Scenario, error) {
+	var out []*Scenario
 	seen := map[string]bool{}
-	for _, s := range pack.Scenarios {
-		if s.ID == "" {
-			return nil, fmt.Errorf("a scenario has no id")
+	for _, b := range packs {
+		var pack struct {
+			Scenarios []*Scenario `json:"scenarios"`
 		}
-		if seen[s.ID] {
-			return nil, fmt.Errorf("scenario %q is defined twice", s.ID)
+		if err := json.Unmarshal(b, &pack); err != nil {
+			return nil, err
 		}
-		seen[s.ID] = true
+		for _, s := range pack.Scenarios {
+			if s.ID == "" {
+				return nil, fmt.Errorf("a scenario has no id")
+			}
+			if seen[s.ID] {
+				return nil, fmt.Errorf("scenario %q is defined twice", s.ID)
+			}
+			seen[s.ID] = true
+			if f := s.MockFaults; f != nil {
+				for _, spec := range []string{f.Decision, f.Upstream} {
+					if _, _, err := parseFault(spec); spec != "" && err != nil {
+						return nil, fmt.Errorf("scenario %q: mock_faults: %w", s.ID, err)
+					}
+				}
+			}
+		}
+		out = append(out, pack.Scenarios...)
 	}
-	return pack.Scenarios, nil
+	return out, nil
+}
+
+// decisionFault is the fault spec of the scenario's decision requests ("" for none). A nil
+// scenario has none.
+func (s *Scenario) decisionFault() string {
+	if s == nil || s.MockFaults == nil {
+		return ""
+	}
+	return s.MockFaults.Decision
+}
+
+// upstreamFault is the mock_faults.upstream spec of an LLM request, and the key its count is kept
+// under: the scenario, as an LLM request carries no X-Mock-Key, so a counted spec such as "503@1"
+// faults the scenario's first request after a reset. It applies to the request of the scenario
+// the request names (X-Mock-Scenario or the scenario query parameter), else of the scenario whose
+// conversation it is; a request that only shares a scenario's last user message is another
+// conversation and is not faulted. The gateway's fallback request (req carries the fallback
+// prompt) is never faulted: the fault is the upstream's answer to the scenario's own request.
+func (s *Server) upstreamFault(id string, req map[string]json.RawMessage) (spec, countKey string) {
+	if isFallbackRequest(req) {
+		return "", ""
+	}
+	sc := s.scenarios[id]
+	if sc == nil {
+		sc = s.byConversation[conversationKey(req)]
+	}
+	if sc == nil || sc.MockFaults == nil || sc.MockFaults.Upstream == "" {
+		return "", ""
+	}
+	return sc.MockFaults.Upstream, "scenario:" + sc.ID
 }
 
 // prompt is the scenario's last user message (or completions prompt).
