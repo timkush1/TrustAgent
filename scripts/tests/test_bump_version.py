@@ -84,7 +84,7 @@ class BumpTest(unittest.TestCase):
         self.assertEqual(
             self.rec.calls, [(["npm", "run", "recording"], self.root / "frontend-react")]
         )
-        self.assertIn("Version 1.5.0", out)
+        self.assertIn("bump_version: ok: version 1.5.0", out)
 
     def test_only_the_version_lines_change(self) -> None:
         files = [m.path for m in cv.MIRRORS if m.path != "VERSION"]

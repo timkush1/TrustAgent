@@ -100,7 +100,7 @@ class CheckTest(unittest.TestCase):
         self.assertEqual((report.errors, report.warnings), ([], []))
         code, out, err = run_main(self.root)
         self.assertEqual(code, 0, err)
-        self.assertIn("Version 1.4.2", out)
+        self.assertIn("check_version: ok: version 1.4.2", out)
 
     def test_every_mirror_out_of_step_is_named(self) -> None:
         for mirror in cv.MIRRORS[1:]:

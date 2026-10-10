@@ -380,7 +380,8 @@ def main(argv: Optional[Sequence[str]] = None, root: Path = ROOT) -> int:
         return 2 if any("cannot be read" in e for e in report.errors) else 1
     version = read_version(root)
     suffix = f", tag {args.tag}" if args.tag else ""
-    print(f"✅ Version {version}: VERSION and its {len(MIRRORS) - 1} mirrors agree{suffix}")
+    mirrors = len(MIRRORS) - 1
+    print(f"check_version: ok: version {version}: VERSION and its {mirrors} mirrors agree{suffix}")
     return 0
 
 

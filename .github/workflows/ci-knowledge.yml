@@ -1,0 +1,103 @@
+name: CI (knowledge add-on)
+
+# The knowledge add-on end to end in Docker (D131, D65): the knowledge stack
+# (docker-compose.knowledge.yml: Qdrant, the engine built with the `knowledge`
+# extra, the gateway with the handbook route, every vendor on mock-upstream and
+# the mock judge, so nothing costs anything), its documents seeded, then the
+# knowledge scenarios checked (trafficgen --expect --scenarios knowledge).
+#
+# Not a required check: the engine image with torch and the embedding model
+# make it slow (about 20 minutes), so it runs by hand, weekly, and on pull
+# requests and pushes that touch the knowledge path. The in-process test of the
+# same scenario (TestKnowledgeScenarioEndToEnd) runs in ci-go.yml on every pull
+# request.
+#
+# Hardening (D140): actions pinned to commit SHAs, no persisted git
+# credentials, permissions per job (none at the top), no pull_request_target,
+# no expressions inside run:, no secrets at all.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # weekly, Monday 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - backend-python/src/truthtable/kb/**
+      - backend-python/src/truthtable/vectorstore/**
+      - backend-python/src/truthtable/graphs/nodes/retriever.py
+      - backend-python/pyproject.toml
+      - backend-python/poetry.lock
+      - backend-python/Dockerfile
+      - backend-go/cmd/proxy/kb_api.go
+      - backend-go/cmd/trafficgen/knowledge*.go
+      - config/policies.knowledge.yaml
+      - docker-compose.knowledge.yml
+      - mk/dx.mk
+      - .github/workflows/ci-knowledge.yml
+  pull_request:
+    paths:
+      - backend-python/src/truthtable/kb/**
+      - backend-python/src/truthtable/vectorstore/**
+      - backend-python/src/truthtable/graphs/nodes/retriever.py
+      - backend-python/pyproject.toml
+      - backend-python/poetry.lock
+      - backend-python/Dockerfile
+      - backend-go/cmd/proxy/kb_api.go
+      - backend-go/cmd/trafficgen/knowledge*.go
+      - config/policies.knowledge.yaml
+      - docker-compose.knowledge.yml
+      - mk/dx.mk
+      - .github/workflows/ci-knowledge.yml
+
+permissions: {}
+
+concurrency:
+  group: ci-knowledge-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NO_COLOR: '1'
+
+jobs:
+  knowledge:
+    name: Knowledge add-on (compose stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Builds the proxy and the <version>-knowledge engine (never published), starts Qdrant,
+      # mock-upstream and the database, and waits until every service is healthy; the engine's
+      # first start downloads its embedding model.
+      - name: make knowledge-up
+        run: make knowledge-up
+
+      - name: make knowledge-seed (the handbook documents)
+        run: make knowledge-seed
+
+      - name: make knowledge-scenarios
+        run: make knowledge-scenarios
+
+      - name: Collect logs
+        if: failure()
+        run: |
+          mkdir -p knowledge-artifacts
+          make -s knowledge-logs FOLLOW=0 > knowledge-artifacts/compose.log 2>&1 || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: knowledge-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: knowledge-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: make knowledge-down

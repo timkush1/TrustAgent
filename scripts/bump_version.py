@@ -226,7 +226,7 @@ def main(
             print(f"bump_version: {error}", file=sys.stderr)
         return 1
     print(
-        f"✅ Version {new}. Review `git diff`, then commit; the release steps are in SPEC §4.2 P6."
+        f"bump_version: ok: version {new}. Review `git diff`, then commit; the release steps are in SPEC §4.2 P6."
     )
     return 0
 

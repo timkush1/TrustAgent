@@ -16,13 +16,14 @@ on:
         description: 'Ollama model to use as the audit judge'
         default: 'llama3.2:1b'
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
     services:
       ollama:
         # Pinned to the same tag as docker-compose.yml so the benchmark judge
@@ -35,9 +36,11 @@ jobs:
       SAMPLES: ${{ inputs.samples || '50' }}
       MODEL: ${{ inputs.model || 'llama3.2:1b' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
           cache: pip
@@ -80,7 +83,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: eval-report-${{ github.run_id }}
           path: backend-python/eval-report.json

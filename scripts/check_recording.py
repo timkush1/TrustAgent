@@ -2,7 +2,7 @@
 """Check a static demo recording before it is published (SPEC §2.13, §0 row 19, risk 19).
 
     python3 scripts/check_recording.py frontend-react/demo-data/simulated
-    python3 scripts/check_recording.py DIR --require-recorded   # the P6 launch gate: refuse mock
+    python3 scripts/check_recording.py DIR --require-recorded   # the release gate: refuse mock
 
 A recording is manifest.json (trustagent.recording/v1) plus traces/<trace_id>.json (api.v1
 TraceDetail). This script refuses a recording that could mislead a reader:
@@ -23,9 +23,19 @@ TraceDetail). This script refuses a recording that could mislead a reader:
   reserved example domain (RFC 2606 and RFC 6761: example.com/.net/.org, .example, .test, .invalid,
   .localhost, localhost) is not a real one and passes, as the Go sanitizer keeps those hosts
   (backend-go/internal/recording/sanitize.go reservedHost).
+- The directory holds a recording and nothing else: manifest.json, traces/*.json and an optional
+  .gitkeep. Everything in it is published (the dataset plugin copies it to dist/demo/), so a stray
+  file would be too.
+- The two dataset directories (D110) keep their kind: frontend-react/demo-data/simulated holds the
+  simulated tape (kind mock, `npm run recording`), frontend-react/demo-data/recorded holds only a
+  real recording (kind recorded, `make record-demo`). The rule follows the directory's name, so a
+  copy elsewhere is checked by its content alone.
 
-Exit status: 0 ok, 1 a check failed, 2 usage or environment error (for example jsonschema missing:
-pip install jsonschema).
+--require-recorded (the release gate: pages.yml on a v* tag, record_demo.py before it swaps a new
+recording in) also refuses a mock recording and a missing directory, and says how to make one.
+
+Exit status: 0 ok, 1 a check failed (with --require-recorded, also no recording at all), 2 usage
+or environment error (for example jsonschema missing: pip install jsonschema).
 """
 
 from __future__ import annotations
@@ -54,6 +64,15 @@ SECRET_PATTERNS = [
     ("a JWT", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
     ("an e-mail address", re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")),
 ]
+
+# The dataset directories (D110) and the kind each may hold.
+DATASET_KINDS = {"simulated": "mock", "recorded": "recorded"}
+# What a recording directory may hold besides manifest.json and traces/*.json.
+ALLOWED_EXTRAS = {".gitkeep"}
+RECORD_HINT = (
+    "make one with `make record-demo CONFIRM=1` (the owner's OpenRouter key, about $1; "
+    "docs/JEV-ACCESS.md): it writes frontend-react/demo-data/recorded/"
+)
 
 RESERVED_DOMAINS = ("example.com", "example.net", "example.org")
 RESERVED_TLDS = (".example", ".test", ".invalid", ".localhost")
@@ -228,7 +247,8 @@ def check_manifest_rules(m: dict[str, Any], problems: Problems, require_recorded
         if require_recorded:
             problems.add(
                 where,
-                "this is a mock recording; the launch needs `make record-demo` output (kind recorded)",
+                "kind mock: this is the simulated tape (mock checks, mock judge), and "
+                "--require-recorded accepts only a real recording (kind recorded); " + RECORD_HINT,
             )
     else:
         problems.add(where, f"unknown kind {kind!r}")
@@ -281,6 +301,43 @@ def check_events(m: dict[str, Any], schemas: Schemas, problems: Problems) -> Non
             )
 
 
+def check_layout(directory: Path, kind: Any, problems: Problems) -> None:
+    """Only a recording in the directory, and the dataset directories keep their kind (D110)."""
+    for entry in sorted(directory.iterdir(), key=lambda p: p.name):
+        if entry.name == "manifest.json" and entry.is_file():
+            continue
+        if entry.name == "traces" and entry.is_dir():
+            for item in sorted(entry.iterdir(), key=lambda p: p.name):
+                if not (item.is_file() and item.suffix == ".json"):
+                    problems.add(
+                        f"traces/{item.name}",
+                        "is not a trace file; everything here is published (dist/demo/)",
+                    )
+            continue
+        if entry.name in ALLOWED_EXTRAS and entry.is_file():
+            continue
+        problems.add(
+            entry.name,
+            "is not part of a recording (manifest.json, traces/); everything here is published "
+            "(dist/demo/)",
+        )
+    expected = DATASET_KINDS.get(directory.resolve().name)
+    if expected is None or kind == expected:
+        return
+    if expected == "mock":
+        problems.add(
+            "manifest.json",
+            f"demo-data/simulated holds the simulated tape (kind mock), not kind {kind!r}; a real "
+            "recording belongs in demo-data/recorded (make record-demo)",
+        )
+    else:
+        problems.add(
+            "manifest.json",
+            f"demo-data/recorded holds only a real recording (kind recorded), not kind {kind!r}; "
+            "the simulated tape lives in demo-data/simulated (npm run recording)",
+        )
+
+
 def check_dir(directory: Path, require_recorded: bool) -> Problems:
     problems = Problems()
     schemas = Schemas()
@@ -298,6 +355,7 @@ def check_dir(directory: Path, require_recorded: bool) -> Problems:
             problems.add(f"manifest.json traces/{i} (TraceSummary)", err)
     check_events(m, schemas, problems)
     check_manifest_rules(m, problems, require_recorded)
+    check_layout(directory, m.get("kind"), problems)
     kind = str(m.get("kind"))
     check_honesty(m, "manifest.json", kind, problems)
     check_secrets(m, "manifest.json", problems)
@@ -339,6 +397,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if not (args.directory / "manifest.json").is_file():
+        if args.require_recorded:
+            # The release gate found no recording: a failed check, with what to do about it.
+            print(
+                f"check_recording: no recording in {args.directory} (manifest.json not found); "
+                f"--require-recorded needs a real recording: {RECORD_HINT}",
+                file=sys.stderr,
+            )
+            return 1
         print(f"check_recording: {args.directory}/manifest.json not found", file=sys.stderr)
         return 2
     problems = check_dir(args.directory, args.require_recorded)

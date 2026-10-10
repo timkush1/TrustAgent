@@ -183,6 +183,44 @@ onboarding-check-config: ## Prove, without a container, that the gateway accepts
 		|| { printf '%s\n' "$$out"; echo "onboarding-check-config: failed: the stack is not the fresh install it should be, or the gateway would refuse to start it (see above)"; exit 1; }; \
 	echo "✅ The onboarding stack's proxy configuration passes -check-config (strict config, backend auto, no key)"
 
+##@ Knowledge add-on stack (D131: Qdrant and the knowledge engine, vendors on mock-upstream)
+
+# docker-compose.knowledge.yml says what the stack holds. The variables below are the ones compose
+# reads while it resolves the files (the engine image tag and build, Qdrant's URL), so they go on
+# its command line. The engine image <version>-knowledge is built here and never published (D126).
+# knowledge-up gives the gateway a random admin key (TRUTHTABLE_ADMIN_KEYS) that never leaves the
+# containers: knowledge-seed reads it inside the proxy container to upload the documents.
+KNOWLEDGE_PROJECT      ?= truthtable-knowledge
+KNOWLEDGE_ENV           = COMPOSE_PROFILES=knowledge ENGINE_EXTRAS=knowledge TRUTHTABLE_KNOWLEDGE_ENABLED=true
+KNOWLEDGE_COMPOSE       = $(KNOWLEDGE_ENV) $(COMPOSE) -p $(KNOWLEDGE_PROJECT) -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge
+KNOWLEDGE_BUILD        ?= --build
+# The first start downloads the embedding model.
+KNOWLEDGE_WAIT_TIMEOUT ?= 1800
+
+knowledge-up: ## Start the knowledge stack (builds the <version>-knowledge engine; the first start downloads the embedding model), wait until healthy
+	$(PYTHON) scripts/configure.py --ensure
+	@key="$$($(PYTHON) -c 'import secrets; print(secrets.token_urlsafe(32))')"; \
+	TRUTHTABLE_ADMIN_KEYS="knowledge-seed=$$key" $(KNOWLEDGE_COMPOSE) up -d $(KNOWLEDGE_BUILD) \
+		--wait --wait-timeout $(KNOWLEDGE_WAIT_TIMEOUT) proxy engine
+	@echo "✅ Knowledge stack running (project $(KNOWLEDGE_PROJECT): Qdrant, the knowledge engine, every vendor on mock-upstream, \$$0)"
+	@echo "   Next: make knowledge-seed && make knowledge-scenarios   Stop: make knowledge-down"
+
+knowledge-seed: ## Upload the knowledge scenarios' documents to the running knowledge stack (trafficgen --seed-knowledge with its admin key)
+	$(KNOWLEDGE_COMPOSE) exec -T proxy sh -c 'umask 077; k="$${TRUTHTABLE_ADMIN_KEYS#*=}"; \
+		printf "%s" "$${k%%,*}" > /tmp/knowledge-admin.key; \
+		/trafficgen --seed-knowledge --admin-key-file /tmp/knowledge-admin.key --base-url http://127.0.0.1:8080; \
+		s=$$?; rm -f /tmp/knowledge-admin.key; exit $$s'
+
+knowledge-scenarios: ## Check the knowledge scenarios against the running, seeded knowledge stack (trafficgen --expect --scenarios knowledge)
+	$(KNOWLEDGE_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios knowledge
+
+knowledge-logs: ## Follow the knowledge stack's logs (SERVICE=engine for one service; FOLLOW=0 prints them once)
+	$(KNOWLEDGE_COMPOSE) logs $(if $(filter 0,$(FOLLOW)),--no-color --timestamps,-f) $(SERVICE)
+
+knowledge-down: ## Stop the knowledge stack and delete its volumes (the knowledge base and the database)
+	$(KNOWLEDGE_COMPOSE) down --volumes --remove-orphans
+	@echo "✅ Knowledge stack and its volumes removed"
+
 ##@ Logs, setup links and status
 
 logs: ## Follow the stack's logs (SERVICE=proxy for one service)
@@ -213,7 +251,7 @@ WITH_SECRETS ?=
 configure: ## Create or complete .env (generated values, never overwrites); WITH_SECRETS=1 also asks for vendor keys at hidden prompts
 	$(PYTHON) scripts/configure.py --ensure$(if $(filter 1,$(WITH_SECRETS)), --with-secrets)
 
-doctor: ## Diagnose the running stack (make doctor ARGS="--expect demo --json")
+doctor: ## Diagnose the running stack, no billed call (ARGS="--expect demo|fresh --json"; "--target pages --pages-url URL" checks the static site; "--probe --admin-key-file F" sends one ~$0.00001 test call)
 	$(PYTHON) scripts/doctor.py $(ARGS)
 
 # Both files are generated from contracts/config/keys.v1.json (SPEC §2.7); the
@@ -227,10 +265,8 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-# The record and knowledge overlays (D123, D131) start as stubs; DX-RELEASE fills them.
-RECORD_PROJECT    ?= truthtable-record
-RECORD_COMPOSE     = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docker-compose.record.yml
-KNOWLEDGE_COMPOSE  = $(COMPOSE) -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge
+# The record overlay's stack (RECORD_COMPOSE) is defined in mk/release.mk with make record-demo;
+# the knowledge stack (KNOWLEDGE_COMPOSE) with make knowledge-up above.
 
 compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding, load, record and knowledge overrides (docker compose config -q)
 	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \

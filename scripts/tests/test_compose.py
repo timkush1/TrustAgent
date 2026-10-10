@@ -26,6 +26,7 @@ ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8"
 RECORD = (ROOT / "docker-compose.record.yml").read_text(encoding="utf-8")
 KNOWLEDGE = (ROOT / "docker-compose.knowledge.yml").read_text(encoding="utf-8")
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
+RELEASE_MK = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
@@ -134,23 +135,87 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
 
     def test_record_and_knowledge_overlays_are_checked(self) -> None:
-        # D123 and D131: both overlays exist from Step 0 (stubs until DX-RELEASE fills
-        # them) and compose-check validates them with the files they are layered on.
+        # D123 and D131: compose-check validates both overlays with the files they are layered
+        # on; the record stack (mk/release.mk) always runs as truthtable-record.
         for text in (RECORD, KNOWLEDGE):
             self.assertRegex(text, r"(?m)^services:")
         check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(RECORD_COMPOSE) config -q", check)
         self.assertIn("$(KNOWLEDGE_COMPOSE) config -q", check)
-        record = re.search(r"(?m)^RECORD_COMPOSE\s*=(.*)$", DX_MK)
+        record = re.search(r"(?m)^RECORD_COMPOSE\s*=(.*)$", RELEASE_MK)
         self.assertIsNotNone(record)
         self.assertEqual(
             re.findall(r"-f (\S+)", record.group(1) if record else ""),
             ["docker-compose.yml", "docker-compose.record.yml"],
         )
-        self.assertRegex(DX_MK, r"(?m)^RECORD_PROJECT\s+\?= truthtable-record$")
+        self.assertRegex(RELEASE_MK, r"(?m)^RECORD_PROJECT\s+:= truthtable-record$")
+        self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
         knowledge = re.search(r"(?m)^KNOWLEDGE_COMPOSE\s*=(.*)$", DX_MK)
         self.assertIsNotNone(knowledge)
         self.assertIn("docker-compose.knowledge.yml", knowledge.group(1) if knowledge else "")
+
+    def test_the_record_overlay_holds_the_d123_settings(self) -> None:
+        proxy = RECORD.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0]
+        for line in (
+            "      TRUTHTABLE_TRACE_FLUSH: sync\n",
+            '      TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0.50"\n',
+            '      TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "3"\n',
+            "      TRAFFICGEN_API_KEY:\n",
+            '    ports: !override\n      - "127.0.0.1::8080"',
+        ):
+            self.assertIn(line, proxy)
+        for line in (
+            '  TRUTHTABLE_DEMO_MODE: "false"\n',
+            '  TRUTHTABLE_TEST_MODE: "true"\n',
+            '  TRUTHTABLE_STRICT_CONFIG: "true"\n',
+            '  TRUTHTABLE_PUBLIC_READ: "false"\n',
+        ):
+            self.assertIn(
+                line, RECORD.split("x-record-env: &record-env\n", 1)[1].split("\n\n")[0] + "\n"
+            )
+        self.assertIn("      LLM_FALLBACK: none\n", RECORD)
+        for service in ("postgres", "dashboard"):
+            block = RECORD.split(f"\n  {service}:\n", 1)[1]
+            self.assertTrue(block.startswith("    ports: !reset []"), service)
+        # No mock-upstream, no profile: the record stack talks to the real vendors only.
+        self.assertNotIn("mock-upstream:", RECORD)
+        self.assertNotIn("profiles", RECORD)
+
+    def test_the_knowledge_overlay_holds_the_d131_settings(self) -> None:
+        self.assertRegex(KNOWLEDGE, r"(?m)^name: truthtable-knowledge$")
+        env = KNOWLEDGE.split("x-knowledge-env: &knowledge-env\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn('TRUTHTABLE_KNOWLEDGE_ENABLED: "true"', env)
+        self.assertIn('TRUTHTABLE_TEST_MODE: "true"', env)
+        proxy = KNOWLEDGE.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("TRUTHTABLE_POLICY_FILE: /etc/trustagent/policies.knowledge.yaml", proxy)
+        self.assertIn("TRUTHTABLE_JEV_BACKEND: compatible", proxy)
+        self.assertIn("TRUTHTABLE_JEV_BASE_URL: http://mock-upstream:8090", proxy)
+        engine = KNOWLEDGE.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0]
+        for line in ("QDRANT_URL: http://qdrant:6333", "LLM_PROVIDER: mock", "LLM_FALLBACK: none"):
+            self.assertIn(line, engine)
+        for key in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            self.assertIn(f"{key}: !reset null", engine)
+        self.assertIn("OPENROUTER_API_KEY: !reset null", proxy)
+        self.assertIn("  mock-upstream:\n    profiles: !reset []", KNOWLEDGE)
+        # The variables compose reads while it resolves the files go on its command line.
+        knowledge_env = re.search(r"(?m)^KNOWLEDGE_ENV\s*=(.*)$", DX_MK)
+        self.assertIsNotNone(knowledge_env)
+        self.assertEqual(
+            (knowledge_env.group(1) if knowledge_env else "").split(),
+            [
+                "COMPOSE_PROFILES=knowledge",
+                "ENGINE_EXTRAS=knowledge",
+                "TRUTHTABLE_KNOWLEDGE_ENABLED=true",
+            ],
+        )
+        for target in ("knowledge-up", "knowledge-seed", "knowledge-scenarios", "knowledge-down"):
+            self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
+        seed = DX_MK.split("\nknowledge-seed:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("--seed-knowledge --admin-key-file /tmp/knowledge-admin.key", seed)
+        self.assertIn("umask 077", seed)
+        self.assertIn("rm -f /tmp/knowledge-admin.key", seed)
+        scenarios = DX_MK.split("\nknowledge-scenarios:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(TRAFFICGEN_CHECK) --scenarios knowledge", scenarios)
 
     def test_every_published_port_binds_bind_addr(self) -> None:
         for name, text in (
@@ -393,7 +458,7 @@ class ImagesTest(unittest.TestCase):
     def test_every_overlay_is_validated_by_compose_check(self) -> None:
         check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
         load_mk = (ROOT / "mk" / "load.mk").read_text(encoding="utf-8")
-        files = set(re.findall(r"-f (docker-compose[\w.-]*\.yml)", DX_MK + load_mk))
+        files = set(re.findall(r"-f (docker-compose[\w.-]*\.yml)", DX_MK + RELEASE_MK + load_mk))
         files |= set(re.findall(r"(docker-compose[\w.-]*\.yml)", load_mk))
         for path in sorted(ROOT.glob("docker-compose.*.yml")):
             self.assertIn(path.name, files, f"{path.name} is in no compose stack definition")
@@ -412,7 +477,15 @@ class ImagesTest(unittest.TestCase):
                 self.assertRegex(
                     image, r"^[a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$", dockerfile
                 )
-            self.assertIn("Resolved 20", text, f"{dockerfile}: the pin's resolved versions")
+            # D144: the header says when the pins were taken and that the digest is the pin; it
+            # names no patch release, which a Dependabot digest refresh would change silently.
+            self.assertRegex(text, r"Pinned 20\d\d-\d\d-\d\d:", dockerfile)
+            self.assertIn(
+                "the index digest after it is the pin", " ".join(text.split()), dockerfile
+            )
+            header = text.split("\nFROM", 1)[0]
+            self.assertNotIn("Resolved", header, dockerfile)
+            self.assertNotRegex(header, r"\b\d+\.\d+\.\d+\b", f"{dockerfile}: a patch release")
 
     def test_dependabot_follows_the_pins_and_holds_the_engine_python(self) -> None:
         # The docker ecosystem watches every Dockerfile directory, so tag and digest move together.
