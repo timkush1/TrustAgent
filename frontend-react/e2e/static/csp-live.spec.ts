@@ -69,6 +69,12 @@ test.describe('live mode: network and secrets', () => {
     await live.getByRole('button', { name: 'Run the check live' }).click();
     await expect(live.getByTestId('live-result')).toBeVisible();
     await live.getByText('Show exact Jev request').click();
+    await expect(live.getByTestId('jev-request')).toBeVisible();
+    // With the result and the exact request on screen, as well as after a reload below.
+    for (const secret of [KEY, NO_PATTERN]) {
+      expect(await page.evaluate(() => document.body.innerText), 'the page text with a result').not.toContain(secret);
+      expect(await page.content(), 'the DOM with a result').not.toContain(secret);
+    }
 
     // The violation log is per page load: read it before every navigation.
     expect(await net.violations(), 'CSP violations on the Playground').toEqual([]);

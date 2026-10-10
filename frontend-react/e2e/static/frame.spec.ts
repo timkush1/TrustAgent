@@ -28,13 +28,17 @@ test.describe('framed', () => {
     expect(mock.requests).toEqual([]);
   });
 
-  test('the callback exchanges nothing', async ({ page, baseURL }) => {
+  test('the callback exchanges nothing, even with a pending sign-in in this tab', async ({ page, baseURL }) => {
     const mock = await mockOpenRouter(page, { auth_keys: vendorFixture('auth_keys.200') });
     await page.goto('');
+    // A verifier this tab could exchange (same origin and tab as the frame): framed, it stays unused.
+    await page.evaluate(() => sessionStorage.setItem('ta.pkce.verifier', JSON.stringify({ verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk', created_at: Date.now() })));
     await page.setContent(`<iframe title="framed" src="${baseURL}connect/callback/?code=e2e-code-1"></iframe>`);
     const frame = page.frameLocator('iframe[title="framed"]');
     await expect(frame.getByTestId('callback-state')).toHaveAttribute('data-state', 'framed', { timeout: 30_000 });
     await expect(frame.getByRole('link', { name: 'Open in its own tab' })).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(frame.locator('input[type="password"]')).toHaveCount(0);
     expect(mock.requests).toEqual([]);
+    expect(await page.evaluate(() => sessionStorage.getItem('ta.openrouter.key'))).toBeNull();
   });
 });
