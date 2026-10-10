@@ -334,8 +334,10 @@ Docker Desktop.
 **`Cannot connect to the Docker daemon`.** Docker Desktop is installed but not started, or still
 starting. Start it and wait for **Engine running**.
 
-**`docker compose version` is older than 2.24, or you see an error about `!reset`.** Update Docker
-Desktop; the demo's compose file needs Compose 2.24 or newer.
+**`docker compose version` is older than 2.24, `docker version` shows an Engine older than 25, or
+you see an error about `!reset`.** Update Docker Desktop (or Docker Engine and its Compose plugin):
+the compose files need Compose 2.24 or newer and Docker Engine 25 or newer. `make doctor` warns
+about both.
 
 **A port is already in use** (`port is already allocated`, `address already in use` or `ports are
 not available`). The stacks publish these ports on your machine:
