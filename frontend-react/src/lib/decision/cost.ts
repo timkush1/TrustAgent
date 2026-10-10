@@ -20,6 +20,7 @@ export type CallCostSource = 'reported' | 'computed' | 'free_local' | 'simulated
 export interface CallCostInput {
   provider: string;
   model: string;
+  /** Whole numbers of tokens (Go int64); a negative count counts as 0. */
   input_tokens: number;
   output_tokens: number;
   /** The vendor's own figure (usage.cost); wins when present and not negative. */
@@ -358,6 +359,9 @@ export function tokenCostUSD(inputTokens: number, outputTokens: number, inputPer
  * A reported cost below $0 (or not finite) is not a cost: it is ignored and the call is priced from
  * the table, so a malformed report can never lower the spend. price_table_version is "override"
  * when a dashboard override priced the call, otherwise the table's version.
+ *
+ * @throws RangeError when the call is priced from the table (computed) and a token count is not a
+ *   whole number: an estimate must round its token counts first (Go's int64 cannot carry 1.5).
  */
 export function priceCall(input: CallCostInput): CallCost {
   const version = input.table.version;

@@ -185,6 +185,12 @@ describe('priceCall', () => {
     });
   });
 
+  it('refuses a fractional token count only when it prices the call from the table', () => {
+    expect(() => priceCall({ ...haiku, input_tokens: 1.5 })).toThrow(RangeError);
+    expect(priceCall({ ...haiku, input_tokens: 1.5, reported_cost_usd: 0.001 }).cost_source).toBe('reported');
+    expect(priceCall({ ...haiku, provider: 'openai', model: 'gpt-4o-mini', output_tokens: 0.5 }).cost_source).toBe('unknown');
+  });
+
   it('marshals an unknown cost as null, so it is never summed as $0', () => {
     expect(JSON.stringify(priceCall({ provider: 'openai', model: 'x', input_tokens: 1, output_tokens: 1, table }))).toContain('"cost_usd":null');
   });
