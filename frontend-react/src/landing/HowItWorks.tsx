@@ -1,7 +1,11 @@
-/** Section 2 (SPEC §8.1): three plain steps, the request path, and who it is for. */
+/**
+ * Section 2 (SPEC §8.1): three plain steps, the request path, what Jev was asked about the refund
+ * answer (the glass-box panel, D116, loaded after the first paint), and who it is for.
+ */
 import { ArrowDown, ArrowLeft, ArrowRight, FileText, Gauge, ScanSearch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { copy } from './content';
+import { GlassBox, LazyPart } from './lazyParts';
 import { Section } from './ui';
 
 const steps: { icon: typeof FileText; title: string; body: ReactNode }[] = [
@@ -118,6 +122,9 @@ export function HowItWorks() {
           </li>
         ))}
       </ol>
+      <LazyPart minHeight="30rem" section={false}>
+        <GlassBox />
+      </LazyPart>
       <p className="mt-12 max-w-3xl rounded-lg border border-border bg-surface px-5 py-4 text-fg">
         <span className="font-semibold">Who it’s for: </span>
         <span className="text-fg-muted">
