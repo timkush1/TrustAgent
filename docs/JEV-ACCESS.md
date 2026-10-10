@@ -26,8 +26,8 @@ pick-one and scale questions and returns probabilities. It does not write text.
 
 | | |
 |---|---|
-| Price | $0.042 per 1M input tokens; output is free **[vendor]** |
-| Latency | About 70–500 ms; P50 about 0.23 s on OpenRouter **[third-party]** |
+| Price | <!-- claim:jev_input_price_per_mtok --> $0.042 / M input tokens [vendor]; <!-- claim:jev_output_price_per_mtok --> output free [vendor] |
+| Latency | <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. Latency depends on region and load; independent reports range from about 0.3 s to 0.9 s median. |
 | Cost model | **It is not free.** HTTP 402 means your account has no credits. |
 
 **How TrustAgent uses it.** Each answer that passes through the proxy is checked with one Jev
@@ -87,6 +87,15 @@ openrouter.ai with a `localhost` callback has **not been run yet**, so it is not
 stays the primary button, as planned; if OpenRouter refuses the callback address on your machine,
 use **Paste a key**: it is always offered on the same screen and needs nothing else.
 
+### Connect on the public demo
+
+The live demo's Playground and Studio ([DEMO.md](DEMO.md#try-it-live-in-your-browser)) offer the same
+two ways in, from the browser: **Connect OpenRouter** returns to
+`https://timkush1.github.io/TrustAgent/connect/callback/`, and **Paste a key** is always next to it.
+Whether openrouter.ai accepts that callback address is checked when Pages is turned on; until then
+it is not verified, and if OpenRouter refuses it, Paste becomes the primary action. See
+[Jev from your browser](#jev-from-your-browser) for where the key goes there.
+
 ### Which value wins
 
 For every setting, the first of these that has a value is used: a non-empty environment variable,
@@ -99,6 +108,39 @@ then the value saved in the dashboard, then the built-in default.
   .env". The dashboard cannot test those; `make doctor` reports them.
 - An environment OpenRouter key also means Connect is unavailable (the key in `.env` is the one in
   use).
+
+## Jev from your browser
+
+The public demo (<https://timkush1.github.io/TrustAgent/>) can call Jev **directly from your
+browser**, with your own OpenRouter key and no TrustAgent server in between. It runs the same
+pipeline as the gateway, in TypeScript: the evidence, the instant checks, the compiled question set
+in one call, and `decide()`.
+
+- **Where the key lives:** only in that browser tab (`sessionStorage`), forgotten after 2 hours or
+  at once with **Forget key**. It is sent only to openrouter.ai; nothing is stored by TrustAgent.
+- **What it calls:** `POST https://openrouter.ai/api/alpha/decisions` for checks,
+  `POST /api/v1/chat/completions` for the Studio's drafts (Claude Haiku),
+  `POST /api/v1/auth/keys` for Connect, and `GET /api/v1/key` to read the key's limit.
+- **What it costs:** your OpenRouter credits, the same as a check on a stack (about
+  <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate]). The demo stops after
+  100 calls per tab and refuses a call estimated over 8,000 tokens; give the key a credit limit
+  anyway, because those caps are a courtesy, not a boundary.
+- **What you see:** "Live · {snapshot} · uncalibrated · your key". The browser uses raw scores:
+  calibrations are made from a stack's own labels.
+
+**Browser access (CORS), checked on 2026-10-09** from the Pages origin, with no key or a fake one:
+
+| Endpoint | Preflight | Error bodies |
+|---|---|---|
+| `POST /api/alpha/decisions`, `POST /api/v1/systemone` | 204, `access-control-allow-origin: *` | Readable JSON (401 `User not found.`) |
+| `POST /api/v1/chat/completions` | 204, `access-control-allow-origin: *` | Readable JSON |
+| `POST /api/v1/auth/keys` (PKCE exchange) | 204, `access-control-allow-origin: *` | Readable JSON (400 `Invalid code`) |
+| `GET /api/v1/key` | 204, `access-control-allow-origin: *` | Readable JSON |
+
+Every preflight allowed the five headers the site sends: `authorization`, `content-type`,
+`accept`, `http-referer` and `x-openrouter-title`. The full record is SPEC Appendix D
+([v2/SPEC.md](v2/SPEC.md#appendix-d-assumptions-to-verify-gate)); the security notes are in
+[SECURITY.md](SECURITY.md#the-static-demo).
 
 ## Simulated mode
 
@@ -155,9 +197,9 @@ These are TrustAgent's own costs. Your upstream LLM calls are billed separately,
 
 | Item | Cost |
 |---|---|
-| Fast check | About $0.0002 per answer: $0.21 per 1,000, or about $63 a month at 10,000 answers a day |
-| Deep audit (Claude Haiku via OpenRouter) | About $0.035 per audited answer |
-| Shipped defaults, total (fast checks plus deep audits) | About $3 per 1,000 answers |
+| Fast check | <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate]: <!-- claim:fast_check_cost_per_1k --> ~$0.21 / 1,000 answers [estimate], or about $63 a month at 10,000 answers a day |
+| Deep audit (Claude Haiku via OpenRouter) | <!-- claim:llm_full_audit_cost_per_1k --> ~$35 / 1,000 [estimate] audited answers |
+| Shipped defaults, total (fast checks plus deep audits) | <!-- claim:default_total_cost_per_1k --> ~$3 / 1,000 [estimate] answers |
 | Checking a key, or Settings → Models → Test | About $0.00001 |
 
 $5 of credit covers about 1,600 answers at the default settings, or about 24,000 fast checks with
