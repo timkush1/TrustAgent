@@ -423,7 +423,10 @@ flagged answer, and fails past 5 minutes; the timings go to `tmp/first-run.json`
 image source: `FIRST_RUN_TAG=<tag>` pulls published images, and `FIRST_RUN_LOCAL=1` uses images
 built locally under the tag `FIRST_RUN_LOCAL_TAG` (`FIRST_RUN_BUILD=1` builds them first).
 `make golden-path` walks the same kind of fresh stack from its setup link to the flagged answer's
-detail in at most 8 actions. Both remove their stack when they finish (`FIRST_RUN_KEEP=1` keeps it; `make first-run-down` removes it).
+detail in at most 8 actions, and `make first-run-onboarding` runs the onboarding check (the setup
+wizard, Connect OpenRouter on the mock, a checked answer) the same way. A setup link works once, so
+each starts its own fresh stack; `make first-run-proof` runs the three one after another. Each
+removes its stack when it finishes (`FIRST_RUN_KEEP=1` keeps it; `make first-run-down` removes it).
 
 ## Next steps
 

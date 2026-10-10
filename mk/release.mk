@@ -143,7 +143,7 @@ record-check-config: ## Prove, without a container, that the gateway accepts the
 	echo "✅ The record stack's proxy configuration passes -check-config (test mode with real backends, strict config, caps \$$0.50 + \$$3 a day)"
 
 # ---------- First run and golden path (D130) ----------
-# Both start a fresh stack (the onboarding stack's configuration: no admin, no key, every vendor on
+# Each starts a fresh stack (the onboarding stack's configuration: no admin, no key, every vendor on
 # mock-upstream, so nothing costs anything) as their own project on their own ports, run one
 # Playwright spec against it and remove it with its volumes (FIRST_RUN_KEEP=1 leaves it up; make
 # first-run-down removes it).
@@ -154,7 +154,10 @@ record-check-config: ## Prove, without a container, that the gateway accepts the
 # ready (doctor --expect fresh passes) and the first flagged answer the spec sees. The spec writes
 # FIRST_RUN_OUT (tmp/first-run.json), labelled measured, locally with prebuilt images or in CI with
 # pulled ones, and fails past 5 minutes. golden-path walks from the setup link to the flagged
-# trace's detail in at most 8 actions. The default ports keep clear of make up and make demo.
+# trace's detail in at most 8 actions. first-run-onboarding runs the onboarding spec the same way.
+# Each spec claims its stack's setup link and refuses a stack that already has an admin, so each
+# target starts its own fresh stack; first-run-proof runs the three one after another (D165).
+# The default ports keep clear of make up and make demo.
 FIRST_RUN_PROJECT        ?= truthtable-first-run
 FIRST_RUN_LOCAL          ?=
 FIRST_RUN_LOCAL_TAG      ?= p5local
@@ -173,9 +176,13 @@ FIRST_RUN_ENV = TRUSTAGENT_VERSION=$(FIRST_RUN_IMAGE_TAG) PROXY_HOST_PORT=$(FIRS
 	DASHBOARD_HOST_PORT=$(FIRST_RUN_DASHBOARD_PORT) MOCK_UPSTREAM_HOST_PORT=$(FIRST_RUN_MOCK_PORT)
 FIRST_RUN_COMPOSE = $(FIRST_RUN_ENV) $(COMPOSE) -p $(FIRST_RUN_PROJECT) -f docker-compose.yml \
 	-f docker-compose.e2e.yml -f docker-compose.onboarding.yml --profile e2e
+# Ready means doctor passes on a linked stack: right after `up --wait` the proxy has not always
+# pinged the healthy engine yet (every TRUTHTABLE_ENGINE_HEALTH_INTERVAL, 10 s), and doctor's
+# --wait lets engine.health re-read /health for at most 25 s rather than warn about start-up order.
+FIRST_RUN_DOCTOR_WAIT ?= 25
 NOW_MS = $(PYTHON) -c "import time; print(int(time.time() * 1000))"
 
-# The shell both targets start with: the mode check, .env, a clean slate, the images (checked,
+# The shell every target here starts with: the mode check, .env, a clean slate, the images (checked,
 # built or pulled), T0, `up --wait`, the setup link, and the removal on exit. It sets t0, pull,
 # healthy and url.
 define FIRST_RUN_UP
@@ -210,7 +217,7 @@ FIRST_RUN_PLAYWRIGHT_ENV = env -u TRUSTAGENT_ADMIN_KEY CI=1 TRUSTAGENT_SETUP_URL
 first-run: ## A fresh stack to its first flagged answer, timed (under 5 min): FIRST_RUN_LOCAL=1 (prebuilt images) or FIRST_RUN_TAG=<tag> (pulled); writes tmp/first-run.json
 	@set -e; $(FIRST_RUN_UP); \
 	$(FIRST_RUN_ENV) $(PYTHON) scripts/doctor.py --target docker --expect fresh --project $(FIRST_RUN_PROJECT) --no-probe \
-		--proxy-url http://127.0.0.1:$(FIRST_RUN_PROXY_PORT) --dashboard-url http://127.0.0.1:$(FIRST_RUN_DASHBOARD_PORT); \
+		--wait $(FIRST_RUN_DOCTOR_WAIT) --proxy-url http://127.0.0.1:$(FIRST_RUN_PROXY_PORT) --dashboard-url http://127.0.0.1:$(FIRST_RUN_DASHBOARD_PORT); \
 	ready=$$(( $$($(NOW_MS)) - t0 )); \
 	(cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) FIRST_RUN_T0=$$t0 FIRST_RUN_PULL_MS=$$pull \
 		FIRST_RUN_HEALTHY_MS=$$healthy FIRST_RUN_READY_MS=$$ready FIRST_RUN_MODE=$(FIRST_RUN_MODE) \
@@ -221,10 +228,19 @@ golden-path: ## A fresh stack from its setup link to the flagged trace's detail 
 	@set -e; $(FIRST_RUN_UP); \
 	(cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) npx playwright test --project=stack --workers=1 -g golden-path)
 
-first-run-logs: ## Print the first-run / golden-path stack's logs, setup tokens masked (FIRST_RUN_KEEP=1 runs)
+first-run-onboarding: ## A fresh stack through the onboarding spec, from its setup link to a checked answer on mock vendors (D130, D165): FIRST_RUN_LOCAL=1 or FIRST_RUN_TAG=<tag>
+	@set -e; $(FIRST_RUN_UP); \
+	(cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) npx playwright test --project=stack --workers=1 -g onboarding)
+
+first-run-proof: ## first-run, golden-path and first-run-onboarding one after another, each on its own fresh stack (D165): FIRST_RUN_LOCAL=1 or FIRST_RUN_TAG=<tag>
+	@$(MAKE) --no-print-directory first-run
+	@$(MAKE) --no-print-directory golden-path
+	@$(MAKE) --no-print-directory first-run-onboarding
+
+first-run-logs: ## Print the first-run / golden-path / onboarding stack's logs, setup tokens masked (FIRST_RUN_KEEP=1 runs)
 	@$(FIRST_RUN_COMPOSE) logs --no-color --timestamps 2>&1 | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[masked]/g'
 
-first-run-down: ## Remove the first-run / golden-path stack and its volumes
+first-run-down: ## Remove the first-run / golden-path / onboarding stack and its volumes
 	$(FIRST_RUN_COMPOSE) down -v --remove-orphans
 
 # ---------- Workflow lint (D140) ----------

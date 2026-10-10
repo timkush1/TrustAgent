@@ -75,12 +75,14 @@ export class Journey {
     this.actions.push(what);
   }
 
-  /** Fails, listing every action, when the journey took more than its budget. */
+  /**
+   * Fails, listing every action, when the journey took more than its budget. The count is printed
+   * either way, so a run's log records it (the proof's evidence).
+   */
   expectWithinBudget(goal: string): void {
-    expect(
-      this.actions.length,
-      `${this.actions.length} user actions to ${goal} (budget ${this.budget}): ${this.actions.join(' → ')}`,
-    ).toBeLessThanOrEqual(this.budget);
+    const summary = `${this.actions.length} user actions to ${goal} (budget ${this.budget}): ${this.actions.join(' → ')}`;
+    console.log(summary);
+    expect(this.actions.length, summary).toBeLessThanOrEqual(this.budget);
   }
 
   /** Whether `text` holds a secret. Never print the match: the caller asserts on the boolean. */

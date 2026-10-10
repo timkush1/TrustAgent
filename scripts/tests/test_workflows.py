@@ -566,7 +566,7 @@ class DockerBuildsWorkflowTest(unittest.TestCase):
 
 
 class FirstRunTargetsTest(unittest.TestCase):
-    """make first-run and make golden-path (D130): fresh stacks, timed, on their own ports."""
+    """make first-run, golden-path and first-run-onboarding (D130, D165): fresh stacks on their own ports."""
 
     def recipe(self, target: str) -> str:
         return RELEASE_MK.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
@@ -615,8 +615,13 @@ class FirstRunTargetsTest(unittest.TestCase):
         self.assertIn("measured locally, images prebuilt", spec)
         self.assertIn("measured in CI, images pulled", spec)
 
+    def test_first_run_waits_for_the_proxy_to_reach_the_engine(self) -> None:
+        # Ready is doctor passing on a linked stack, not three start-up WARNs (I-7).
+        self.assertIn("--wait $(FIRST_RUN_DOCTOR_WAIT)", self.recipe("first-run"))
+        self.assertRegex(RELEASE_MK, r"(?m)^FIRST_RUN_DOCTOR_WAIT\s+\?= 25$")
+
     def test_the_specs_run_in_a_subshell_so_the_removal_finds_the_compose_files(self) -> None:
-        for target in ("first-run", "golden-path"):
+        for target in ("first-run", "golden-path", "first-run-onboarding"):
             recipe = self.recipe(target)
             self.assertIn("(cd frontend-react && ", recipe, target)
             self.assertNotRegex(recipe, r"(?m)^\tcd frontend-react", target)
@@ -626,6 +631,18 @@ class FirstRunTargetsTest(unittest.TestCase):
         self.assertIn("$(FIRST_RUN_UP)", recipe)
         self.assertIn("-g golden-path", recipe)
         self.assertNotIn("doctor", recipe)
+
+    def test_onboarding_runs_its_spec_on_a_fresh_stack(self) -> None:
+        recipe = self.recipe("first-run-onboarding")
+        self.assertIn("$(FIRST_RUN_UP)", recipe)
+        self.assertIn("-g onboarding", recipe)
+        self.assertIn("$(FIRST_RUN_PLAYWRIGHT_ENV)", recipe)
+
+    def test_the_proof_runs_each_spec_on_its_own_fresh_stack_in_order(self) -> None:
+        # Each spec spends its stack's setup link, so they never share one (D165).
+        recipe = self.recipe("first-run-proof")
+        steps = re.findall(r"(?m)^\t@\$\(MAKE\) --no-print-directory (\S+)$", recipe)
+        self.assertEqual(steps, ["first-run", "golden-path", "first-run-onboarding"])
 
 
 class KnowledgeWorkflowTest(unittest.TestCase):
