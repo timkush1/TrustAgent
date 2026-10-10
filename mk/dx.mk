@@ -213,7 +213,7 @@ WITH_SECRETS ?=
 configure: ## Create or complete .env (generated values, never overwrites); WITH_SECRETS=1 also asks for vendor keys at hidden prompts
 	$(PYTHON) scripts/configure.py --ensure$(if $(filter 1,$(WITH_SECRETS)), --with-secrets)
 
-doctor: ## Diagnose the running stack (make doctor ARGS="--expect demo --json")
+doctor: ## Diagnose the running stack, no billed call (ARGS="--expect demo|fresh --json"; "--target pages --pages-url URL" checks the static site; "--probe --admin-key-file F" sends one ~$0.00001 test call)
 	$(PYTHON) scripts/doctor.py $(ARGS)
 
 # Both files are generated from contracts/config/keys.v1.json (SPEC §2.7); the
