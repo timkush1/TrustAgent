@@ -71,16 +71,25 @@ def demo_containers() -> List[Dict[str, Any]]:
 
 
 def image(
-    service: str, version: str = "1.0.0", revision: str = REVISION, pulled: bool = False
+    service: str,
+    version: str = "1.0.0",
+    revision: str = REVISION,
+    pulled: bool = False,
+    containerd: bool = False,
 ) -> Dict[str, Any]:
+    """One `docker image inspect` item. A locally built image carries compose's labels; on the
+    containerd image store (containerd=True) it has a repo digest as well, like a pulled one."""
     labels = {"org.opencontainers.image.version": version}
     if revision:
         labels["org.opencontainers.image.revision"] = revision
+    if not pulled:
+        labels["com.docker.compose.project"] = "truthtable"
+        labels["com.docker.compose.service"] = service
     ref = f"ghcr.io/timkush1/truthtable-{service}"
     return {
         "Id": f"sha256:{service}",
         "RepoTags": [f"{ref}:{version}"],
-        "RepoDigests": [f"{ref}@sha256:{'0' * 64}"] if pulled else [],
+        "RepoDigests": [f"{ref}@sha256:{'0' * 64}"] if pulled or containerd else [],
         "Config": {"Labels": labels},
     }
 
@@ -1300,6 +1309,13 @@ class ImagesCheckTest(unittest.TestCase):
         check = self.check(app_images(**pulled))
         self.assertEqual(check.status, "PASS")
         self.assertTrue(check.summary.endswith("; pulled"), check.summary)
+
+    def test_built_images_on_the_containerd_store_are_not_called_pulled(self) -> None:
+        # Docker Desktop's containerd image store gives a built image a repo digest too.
+        built = {s: image(s, containerd=True) for s in ("proxy", "engine", "dashboard")}
+        check = self.check(app_images(**built))
+        self.assertEqual(check.status, "PASS")
+        self.assertTrue(check.summary.endswith("; built locally"), check.summary)
 
     def test_a_revision_mismatch_warns(self) -> None:
         check = self.check(app_images(engine=image("engine", revision="0123456789ab")))

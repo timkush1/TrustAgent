@@ -1514,8 +1514,7 @@ class Doctor:
             labels = (image.get("Config") or {}).get("Labels") or {}
             versions[c.service] = str(labels.get("org.opencontainers.image.version") or "?")
             revisions[c.service] = str(labels.get("org.opencontainers.image.revision") or "")
-            digests = [str(d) for d in image.get("RepoDigests") or []]
-            origin[c.service] = "pulled" if digests else "built locally"
+            origin[c.service] = image_origin(image, labels)
         rebuild = "make demo" if self.expect == "demo" else "make up UP_ARGS=--build"
         detail = "; ".join(
             f"{s} {versions[s]} ({revisions[s][:12] or 'no revision'}, {origin[s]})"
@@ -1941,6 +1940,19 @@ def parse_container(item: Mapping[str, Any]) -> Optional[Container]:
 
 def out_version(version: Optional[Tuple[int, int]]) -> str:
     return f"{version[0]}.{version[1]}" if version else "unknown"
+
+
+def image_origin(image: Dict[str, Any], labels: Dict[str, Any]) -> str:
+    """'built locally' or 'pulled', for one `docker image inspect` item.
+
+    Compose labels every image it builds (com.docker.compose.project), and the release images are
+    built by buildx in CI, without compose, so that label is the first sign. RepoDigests alone is
+    not: Docker's containerd image store (the Docker Desktop default) gives a locally built image a
+    repo digest too, while the classic store gives one only to a pulled image.
+    """
+    if labels.get("com.docker.compose.project"):
+        return "built locally"
+    return "pulled" if image.get("RepoDigests") else "built locally"
 
 
 def same_revision(a: str, b: str) -> bool:
