@@ -47,7 +47,8 @@ export function ClaimCaveat({ claim, className }: { claim: Pick<ClaimView, 'id' 
   if (!claim.caveat) return null;
   return (
     <p data-caveat-for={claim.id} className={clsx('text-xs text-fg-subtle', className)}>
-      {claim.caveat}
+      {/* A figure stays on one line with its unit ("0.3 s", not "0.3" and "s"). */}
+      {claim.caveat.replace(/(\d) (s|ms|%)(?=\W|$)/g, '$1\u00a0$2')}
     </p>
   );
 }
