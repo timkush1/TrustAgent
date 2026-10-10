@@ -153,6 +153,7 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
   const [custom, setCustom] = useState<CustomText>(EMPTY);
   const [consent, setConsent] = useState(openConsent && store.currentKey() === null);
   const running = phase.kind === 'running';
+  const outOfCredits = phase.kind === 'failed' && phase.view.screen === 'no_credits';
   const showSpinner = useDelayedLoading(running);
 
   // What is shown below always belongs to what is picked: another pick or an edit drops the last
@@ -228,7 +229,8 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
       {choice === 'custom' ? <CustomForm value={custom} onChange={edit} problems={problems} locked={running} /> : <ScenarioPreview id={choice} />}
 
       {storageBlocked || keyState === 'memory' ? <Notice testId="live-storage-blocked">{copy.playground_live.storage_blocked}</Notice> : null}
-      {keyInfo && hasNoLimit(keyInfo) ? <Notice testId="live-no-limit">{copy.playground_live.key_no_limit}</Notice> : null}
+      {/* While the out-of-credits screen shows, its own advice replaces the credit-limit note. */}
+      {keyInfo && hasNoLimit(keyInfo) && !outOfCredits ? <Notice testId="live-no-limit">{copy.playground_live.key_no_limit}</Notice> : null}
 
       {capReached ? (
         <CapReached maxCalls={usage.maxCalls} />

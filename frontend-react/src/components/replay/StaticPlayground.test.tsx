@@ -407,6 +407,22 @@ describe('LivePanel', () => {
     expect(await screen.findByTestId('live-no-limit')).toHaveTextContent(copy.playground_live.key_no_limit);
   });
 
+  it('hides the credit-limit note while the out-of-credits screen gives its own advice', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/v1/key')) return json(200, { data: { limit: null, limit_remaining: null } });
+      if (url.endsWith('/alpha/decisions')) return serve(decisions402 as Fixture);
+      throw new TypeError(`unexpected ${url}`);
+    });
+    browserKeyStore().set(KEY);
+    const user = userEvent.setup();
+    renderPanel();
+    expect(await screen.findByTestId('live-no-limit')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: copy.playground_live.run_check }));
+    expect(await screen.findByTestId('live-no-credits')).toBeInTheDocument();
+    expect(screen.queryByTestId('live-no-limit')).toBeNull();
+  });
+
   it('inside a frame shows only Open in its own tab (D106)', () => {
     const top = Object.getOwnPropertyDescriptor(window, 'top');
     Object.defineProperty(window, 'top', { configurable: true, get: () => ({}) });
