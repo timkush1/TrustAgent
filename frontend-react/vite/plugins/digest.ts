@@ -103,6 +103,8 @@ export function buildDigest(manifest: Manifest, rules: OutcomeRules): TapeDigest
   if (typeof manifest.label !== 'string' || typeof manifest.recorded_at !== 'string' || !Array.isArray(manifest.traces)) {
     throw new Error('the recording manifest has no label, recorded_at or traces');
   }
+  // The card prints the date: one it cannot read fails the build here, not the page in a browser.
+  if (Number.isNaN(Date.parse(manifest.recorded_at))) throw new Error(`the recording manifest's recorded_at ${JSON.stringify(manifest.recorded_at)} is not a date`);
   const traces = [...(manifest.traces as ManifestTrace[])].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   const counts: Record<string, number> = {};
   const firstByOutcome = new Map<string, ManifestTrace>();

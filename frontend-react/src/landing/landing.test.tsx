@@ -162,7 +162,8 @@ describe('landing page', () => {
     const manifest = committedManifest();
     expect(within(replay).getByText(new RegExp(`${new Intl.NumberFormat('en-US').format(manifest.traces.length)} requests`))).toBeInTheDocument();
     // A simulated tape is generated from the scenarios; it never claims a stack recorded it.
-    expect(within(replay).getByText(/Generated from the zero-key demo’s scripted scenarios, dated 28 Sept? 2026/)).toBeInTheDocument();
+    const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(Date.parse(manifest.recorded_at));
+    expect(within(replay).getByText(new RegExp(`Generated from the zero-key demo’s scripted scenarios, dated ${dated}`))).toBeInTheDocument();
     expect(within(replay).queryByText(/Recorded/)).toBeNull();
     expect(within(replay).getByText(manifest.decision_model.snapshot ?? 'no snapshot')).toBeInTheDocument();
     const examples = within(within(replay).getByRole('list', { name: 'Examples from the tape' })).getAllByRole('listitem');

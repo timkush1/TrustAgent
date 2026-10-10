@@ -160,6 +160,8 @@ describe('tape digest plugin', () => {
   it('refuses a manifest that is not a recording', () => {
     expect(() => digestMod.buildDigest({ kind: 'surprise', label: 'x', recorded_at: at(0), traces: [] }, outcomesDoc)).toThrow(/kind "surprise"/);
     expect(() => digestMod.buildDigest({ kind: 'mock', label: 'x', recorded_at: at(0), traces: null }, outcomesDoc)).toThrow(/no label, recorded_at or traces/);
+    // The card formats the date; an unreadable one would throw in the browser instead.
+    expect(() => digestMod.buildDigest({ kind: 'mock', label: 'x', recorded_at: 'yesterday', traces: [] }, outcomesDoc)).toThrow(/recorded_at "yesterday" is not a date/);
   });
 
   it('serves the module from the dataset the build ships, and fails the build when there is none', () => {
