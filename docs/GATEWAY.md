@@ -31,6 +31,7 @@ setting named here is in [CONFIGURATION.md](CONFIGURATION.md).
 - [12. Capacity and sampling](#12-capacity-and-sampling)
 - [13. Load test](#13-load-test)
 - [14. Metrics](#14-metrics)
+- [Tier 0: the instant checks](#tier-0-the-instant-checks)
 
 ---
 
@@ -486,7 +487,9 @@ from `X-TrustAgent-Overhead-Ms`, against `mock-upstream` (the `load` compose
 profile), so no vendor is called and nothing is spent:
 
 ```bash
-make load-test-gate            # builds and starts the load stack, runs k6, stops the stack
+make load-test-gate                  # starts the load stack, runs k6 scenario by scenario, removes the stack
+make load-test-gate LOAD_PUBLISH=1   # also writes docs/benchmarks/load/<run_id>.json (clean tree only)
+make load-report                     # checks the published runs and the block below
 ```
 
 | Scenario | Target (overhead p95) |
@@ -497,9 +500,18 @@ make load-test-gate            # builds and starts the load stack, runs k6, stop
 | (d) flag, mock Jev answering in 150 ms | < 175 ms |
 | (e) block with buffered streams | reported only |
 | (f) Jev hangs 15% of the time, hedge at 400 ms | p99 ≤ the deadline, 0% 5xx |
+| (g) block, JSON answers (not streamed) | < 10 ms |
 
-These are design targets, not measurements. Published results state the
-hardware they ran on.
+These are design targets, not measurements. A published run refuses a dirty
+tree, fewer than 500 requests per scenario, a missing environment or a missed
+target, and states the machine it ran on. Every vendor in a load run is
+simulated (mock-upstream answers at once), so its figures are the gateway's own
+time, never a vendor's; scenario (c) is the proxy-overhead figure the README's
+measured table shows. The newest clean run:
+
+<!-- load:start -->
+No load run is published yet: `make load-test-gate LOAD_PUBLISH=1` writes one to `docs/benchmarks/load/`, and `scripts/load/report.py --gateway-md` shows it here.
+<!-- load:end -->
 
 ---
 
@@ -526,3 +538,47 @@ rows); every dashboard query filters by `job="proxy"` or `job="engine"`, and
 `scripts/tests/test_grafana.py` fails on a query naming a metric the code does
 not register. `make doctor` checks that each endpoint serves only its own
 prefix.
+
+---
+
+## Tier 0: the instant checks
+
+Before the fast check, the gateway compares the answer with the evidence the
+request carries, in Go, with no model and no network call
+(`internal/decision/detectors.go`; the TypeScript copy in the browser passes the
+same golden vectors):
+
+| Detector | Fires when the answer |
+|---|---|
+| `det:numbers_not_in_evidence` | states a number (from `detectors.min_integer`, 10 by default) the evidence does not contain |
+| `det:dates_not_in_evidence` | states a date the evidence does not contain |
+| `det:urls_not_in_evidence` | links to a URL the evidence does not contain |
+| `det:quotes_not_in_evidence` | quotes text that is not in the evidence |
+| `det:citation_out_of_range` | cites `[N]` beyond the documents the request carried |
+| `det:secret_pattern` | contains a key or token pattern (`contracts/rules/secrets.v1.json`); the finding is masked |
+| `det:system_prompt_leak` | repeats a window of the system prompt's instructions |
+
+The patterns and normalizations are data in `contracts/rules/`, pinned by the
+golden vectors in `contracts/vectors/detectors/`.
+
+- **Numbers and dates never flag alone.** The route's `detectors.flag_on`
+  lists the detectors that may flag by themselves (URLs, quotes, citations,
+  secrets and prompt leaks by default). Every detector is also a second
+  signal: a groundedness block needs one, or a critical contradiction, to
+  agree.
+- **Findings are located.** Each one carries a half-open UTF-16 span in the
+  answer, so the dashboard marks it inline.
+- **They run on every gated answer**, sampled or not, and cost nothing.
+
+**The budget.** Tier-0 p50 < 2 ms for ≤ 32k-token evidence and ≤ 1k-token
+answers, on the stated machine. `TestTier0Budget` (in `internal/gate`) guards it
+with headroom on 8k-token evidence and a 1k-token answer; `FuzzDetect` checks
+that no input makes a detector panic or return a span outside the answer.
+`make bench-go` runs the benchmarks five times into `backend-go/bench/<sha>.txt`
+(compare two revisions with `benchstat`), and `make bench-go-smoke` runs each
+once.
+
+<!-- tier0:start -->
+No Tier-0 benchmark figures are published yet. Published figures are labelled
+measured (Go benchmark, with the CPU they ran on).
+<!-- tier0:end -->
