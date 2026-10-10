@@ -463,6 +463,27 @@ func calibratedLabels(table []float64, s []LabeledScore) []LabeledScore {
 	return out
 }
 
+// Eight labels split cleanly: every leave-one-out fit keeps 0.92, and only the wide 95% ranges make
+// the suggestion unstable, so the message says that and names no range of one value.
+func TestQuickCalibrateUnstableWithoutLOOMove(t *testing.T) {
+	q, err := QuickCalibrate(&QuickCalibrationRequest{Labeled: labels([3]float64{0.08, 0, 4}, [3]float64{0.92, 4, 0})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.Enough || q.Threshold == nil || *q.Threshold != 0.92 || q.LOORange == nil || q.LOORange[0] != 0.92 || q.LOORange[1] != 0.92 {
+		t.Fatalf("threshold %v, loo_range %v; want 0.92 and [0.92 0.92]", q.Threshold, q.LOORange)
+	}
+	if !q.Unstable {
+		t.Fatalf("8 labels: want unstable from the 95%% ranges (%+v, %+v)", q.Recall, q.Precision)
+	}
+	if strings.Contains(q.Message, "leaving out one label") {
+		t.Errorf("message names a leave-one-out range that does not move: %q", q.Message)
+	}
+	if !strings.Contains(q.Message, "; the suggestion is unstable (too few labels: the 95% ranges are wide). Keep it watching") {
+		t.Errorf("message %q does not say why it is unstable", q.Message)
+	}
+}
+
 func TestQuickCalibrate(t *testing.T) {
 	few := &QuickCalibrationRequest{Labeled: labels([3]float64{0.2, 1, 3}, [3]float64{0.8, 2, 1})}
 	q, err := QuickCalibrate(few)
@@ -493,7 +514,8 @@ func TestQuickCalibrate(t *testing.T) {
 	if !q.Unstable || q.Mapping.Method != nil {
 		t.Errorf("12 labels: unstable %v, mapping %+v", q.Unstable, q.Mapping)
 	}
-	for _, word := range []string{"Suggested threshold from 12 labels", "recall is 83%", "95% range", "Keep it watching and label more traffic", "unstable"} {
+	for _, word := range []string{"Suggested threshold from 12 labels", "recall is 83%", "95% range", "Keep it watching and label more traffic",
+		"unstable (leaving out one label moves it between 0.3 and 0.6)"} {
 		if !strings.Contains(q.Message, word) {
 			t.Errorf("message %q lacks %q", q.Message, word)
 		}
