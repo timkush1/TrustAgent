@@ -443,7 +443,8 @@ def gateway_block(doc: Optional[Dict[str, Any]]) -> str:
         f"{env['cores']} logical CPUs and {env['mem_gb']:g} GB RAM visible to {env['os']}; Docker {env['docker']}; "
         f"proxy {proxy}; {env['rate']} requests/s for {env['duration']} per scenario. "
         f"Run `{doc['run_id']}` at `{doc['git_sha']}`. These are the gateway's own time, not a vendor's. "
-        "The overhead header counts whole milliseconds, so its figures are good to about 1 ms.",
+        "The overhead header counts whole milliseconds, and a gateway-histogram figure is interpolated "
+        "inside its bucket (the first ends at 1 ms), so both are good to about 1 ms.",
         "",
         "| Scenario | Figure | n | p50 | p95 | p99 | Target | Result |",
         "|---|---|---|---|---|---|---|---|",
