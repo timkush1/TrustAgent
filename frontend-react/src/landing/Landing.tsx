@@ -30,19 +30,23 @@ const navLinks = [
 function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur-sm">
-      <div className={`${container} flex h-16 items-center gap-6`}>
-        <a href="#top" className="flex items-center gap-2 text-base font-semibold text-fg">
+      {/* One nav: inline on wide screens, a second row that scrolls sideways below 1024 px. */}
+      <div className={`${container} flex flex-wrap items-center gap-x-6`}>
+        <a href="#top" className="flex h-16 items-center gap-2 text-base font-semibold text-fg">
           <Logo className="size-5" />
           TrustAgent
         </a>
-        <nav aria-label="Sections" className="flex items-center gap-0.5 max-lg:hidden">
+        <nav
+          aria-label="Sections"
+          className="flex items-center gap-0.5 max-lg:order-last max-lg:-mx-2 max-lg:w-[calc(100%+1rem)] max-lg:overflow-x-auto max-lg:pb-2 max-lg:[scrollbar-width:none]"
+        >
           {navLinks.map((l) => (
-            <a key={l.href} href={l.href} className={buttonClass.ghost}>
+            <a key={l.href} href={l.href} className={`${buttonClass.ghost} shrink-0 whitespace-nowrap`}>
               {l.label}
             </a>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex h-16 items-center gap-1">
           <ThemeButton />
           <a href={REPO_URL} className={`${buttonClass.ghost} w-9 px-0`} aria-label="TrustAgent on GitHub" title="TrustAgent on GitHub">
             <GitHubMark className="size-4" />

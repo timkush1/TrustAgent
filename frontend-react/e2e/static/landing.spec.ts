@@ -144,6 +144,10 @@ test.describe('landing', () => {
     await page.setViewportSize({ width: 400, height: 860 });
     await page.goto('');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    // The section nav stays reachable on a phone: a second header row that scrolls sideways.
+    const sections = page.getByRole('navigation', { name: 'Sections' });
+    await expect(sections).toBeVisible();
+    await expect(sections.getByRole('link', { name: 'Run it' })).toBeAttached();
     await settled(page);
     const width = 400;
     for (const anchor of ['#compare', '#try', '#cost', 'footer']) {

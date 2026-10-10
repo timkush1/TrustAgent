@@ -32,6 +32,13 @@
     scroll-padding-top: 4.5rem;
   }
 
+  /* Below 1024 px the section nav is a second header row. */
+  @media (max-width: 1023.98px) {
+    html {
+      scroll-padding-top: 7.25rem;
+    }
+  }
+
   :where(h1, h2, h3) {
     text-wrap: balance;
   }
