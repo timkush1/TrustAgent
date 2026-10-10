@@ -26,6 +26,7 @@ ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8"
 RECORD = (ROOT / "docker-compose.record.yml").read_text(encoding="utf-8")
 KNOWLEDGE = (ROOT / "docker-compose.knowledge.yml").read_text(encoding="utf-8")
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
+RELEASE_MK = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
@@ -134,20 +135,21 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
 
     def test_record_and_knowledge_overlays_are_checked(self) -> None:
-        # D123 and D131: both overlays exist from Step 0 (stubs until DX-RELEASE fills
-        # them) and compose-check validates them with the files they are layered on.
+        # D123 and D131: compose-check validates both overlays with the files they are layered
+        # on; the record stack (mk/release.mk) always runs as truthtable-record.
         for text in (RECORD, KNOWLEDGE):
             self.assertRegex(text, r"(?m)^services:")
         check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(RECORD_COMPOSE) config -q", check)
         self.assertIn("$(KNOWLEDGE_COMPOSE) config -q", check)
-        record = re.search(r"(?m)^RECORD_COMPOSE\s*=(.*)$", DX_MK)
+        record = re.search(r"(?m)^RECORD_COMPOSE\s*=(.*)$", RELEASE_MK)
         self.assertIsNotNone(record)
         self.assertEqual(
             re.findall(r"-f (\S+)", record.group(1) if record else ""),
             ["docker-compose.yml", "docker-compose.record.yml"],
         )
-        self.assertRegex(DX_MK, r"(?m)^RECORD_PROJECT\s+\?= truthtable-record$")
+        self.assertRegex(RELEASE_MK, r"(?m)^RECORD_PROJECT\s+:= truthtable-record$")
+        self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
         knowledge = re.search(r"(?m)^KNOWLEDGE_COMPOSE\s*=(.*)$", DX_MK)
         self.assertIsNotNone(knowledge)
         self.assertIn("docker-compose.knowledge.yml", knowledge.group(1) if knowledge else "")
@@ -393,7 +395,7 @@ class ImagesTest(unittest.TestCase):
     def test_every_overlay_is_validated_by_compose_check(self) -> None:
         check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
         load_mk = (ROOT / "mk" / "load.mk").read_text(encoding="utf-8")
-        files = set(re.findall(r"-f (docker-compose[\w.-]*\.yml)", DX_MK + load_mk))
+        files = set(re.findall(r"-f (docker-compose[\w.-]*\.yml)", DX_MK + RELEASE_MK + load_mk))
         files |= set(re.findall(r"(docker-compose[\w.-]*\.yml)", load_mk))
         for path in sorted(ROOT.glob("docker-compose.*.yml")):
             self.assertIn(path.name, files, f"{path.name} is in no compose stack definition")

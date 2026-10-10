@@ -41,7 +41,9 @@ except ImportError:  # pragma: no cover - depends on the environment
 class CheckRecordingTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="recording-"))
-        self.dir = self.tmp / "recorded"
+        # A neutral name: the dataset directories (simulated/, recorded/) add rules of their own,
+        # tested in the directory tests below.
+        self.dir = self.tmp / "tape"
         shutil.copytree(RECORDING, self.dir)
 
     def tearDown(self) -> None:
@@ -94,9 +96,59 @@ class CheckRecordingTest(unittest.TestCase):
         self.assertIn("kind mock", out.getvalue())
 
     def test_the_launch_gate_refuses_a_mock_recording(self) -> None:
-        self.assert_problem("this is a mock recording", require_recorded=True)
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        self.assert_problem("kind mock: this is the simulated tape", require_recorded=True)
+        self.assert_problem("make record-demo CONFIRM=1", require_recorded=True)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(check_recording.main([str(self.dir), "--require-recorded"]), 1)
+        self.assertIn("accepts only a real recording (kind recorded)", out.getvalue())
+
+    def test_the_launch_gate_explains_a_missing_recording(self) -> None:
+        missing = self.tmp / "recorded"
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.assertEqual(check_recording.main([str(missing), "--require-recorded"]), 1)
+        self.assertIn("no recording in", err.getvalue())
+        self.assertIn("make record-demo CONFIRM=1", err.getvalue())
+        self.assertIn("frontend-react/demo-data/recorded/", err.getvalue())
+        # Without the gate, a missing manifest is a usage error.
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.assertEqual(check_recording.main([str(missing)]), 2)
+        self.assertIn("manifest.json not found", err.getvalue())
+
+    # -------------------------------------------------------------------------- directory rules
+
+    def as_dataset(self, name: str) -> None:
+        """Move the copy to a dataset directory name (D110)."""
+        target = self.tmp / name
+        self.dir.rename(target)
+        self.dir = target
+
+    def test_the_simulated_directory_holds_the_mock_tape(self) -> None:
+        self.as_dataset("simulated")
+        self.assertEqual(self.problems(), [])
+        self.edit_manifest(self.as_recorded)
+        self.assert_problem("demo-data/simulated holds the simulated tape (kind mock)")
+
+    def test_the_recorded_directory_holds_only_a_real_recording(self) -> None:
+        self.as_dataset("recorded")
+        self.assert_problem("demo-data/recorded holds only a real recording (kind recorded)")
+        self.edit_manifest(self.as_recorded)
+        self.assertEqual(self.problems(), [])
+        self.assertEqual(self.problems(require_recorded=True), [])
+
+    def test_the_directory_holds_a_recording_and_nothing_else(self) -> None:
+        (self.dir / ".gitkeep").write_text("", encoding="utf-8")
+        self.assertEqual(self.problems(), [])
+        (self.dir / "notes.txt").write_text("draft", encoding="utf-8")
+        (self.dir / "traces" / "README.md").write_text("x", encoding="utf-8")
+        (self.dir / "extra").mkdir()
+        found = self.problems()
+        self.assertTrue(any(p.startswith("notes.txt: is not part of a recording") for p in found))
+        self.assertTrue(any(p.startswith("extra: is not part of a recording") for p in found))
+        self.assertTrue(any(p.startswith("traces/README.md: is not a trace file") for p in found))
+        self.assertTrue(all("published" in p for p in found), found)
 
     def test_a_mock_recording_keeps_the_simulated_label(self) -> None:
         self.edit_manifest(lambda d: d.update(label="Recorded yesterday · replayed, not live"))

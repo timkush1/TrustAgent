@@ -82,6 +82,11 @@ jobs:
       - name: Onboarding stack configuration (proxy -check-config, strict, no key)
         run: make onboarding-check-config
 
+      # The record stack (docker-compose.record.yml, D123): test mode with real backends under
+      # strict configuration, proved with fake keys; nothing is started and nothing is called.
+      - name: Record stack configuration (proxy -check-config, test mode, fake keys)
+        run: make record-check-config
+
       # actionlint (with shellcheck) and zizmor over .github/, every tool pinned (D140).
       - name: Workflow lint (actionlint, zizmor)
         run: make lint-workflows

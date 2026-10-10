@@ -326,6 +326,7 @@ class EveryWorkflowTest(unittest.TestCase):
         self.assertIn('"shellcheck-py==$(SHELLCHECK_PY_VERSION)"', install)
         scripts = jobs(read("ci-e2e.yml"))["scripts"]
         self.assertIn("run: make lint-workflows", scripts)
+        self.assertIn("run: make record-check-config", scripts)
         # Every accepted zizmor finding says why, next to it.
         for name in ALL:
             for line in read(name).splitlines():

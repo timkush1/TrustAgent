@@ -1009,7 +1009,9 @@ class HostAndCliTest(unittest.TestCase):
             (report["target"], report["project"], report["ok"]), ("docker", "truthtable-demo", True)
         )
         self.assertEqual({c["status"] for c in report["checks"]}, {"PASS"})
-        self.assertEqual(set(report["checks"][0]), {"id", "status", "summary", "detail", "fix"})
+        self.assertEqual(
+            set(report["checks"][0]), {"id", "status", "summary", "detail", "fix", "data"}
+        )
 
     def test_main_exits_1_on_failure_and_honours_skip(self) -> None:
         out = io.StringIO()

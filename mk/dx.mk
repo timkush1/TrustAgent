@@ -227,9 +227,7 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-# The record and knowledge overlays (D123, D131) start as stubs; DX-RELEASE fills them.
-RECORD_PROJECT    ?= truthtable-record
-RECORD_COMPOSE     = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docker-compose.record.yml
+# The record overlay's stack (RECORD_COMPOSE) is defined in mk/release.mk with make record-demo.
 KNOWLEDGE_COMPOSE  = $(COMPOSE) -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge
 
 compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding, load, record and knowledge overrides (docker compose config -q)

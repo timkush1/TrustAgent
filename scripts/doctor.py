@@ -127,6 +127,9 @@ class Check:
     summary: str
     detail: str = ""
     fix: str = ""
+    # Machine-readable facts behind the summary (--json only), for scripts such as
+    # record_demo.py: never a key, only names, states and numbers.
+    data: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -1131,6 +1134,34 @@ class Doctor:
             detail="verdicts: " + ", ".join(verdicts),
         )
 
+    def facts(self, check_id: str) -> Dict[str, Any]:
+        """The /api/status fields a check judged, for --json readers (record_demo.py)."""
+        if not isinstance(self.status, dict):
+            return {}
+        picks = {
+            "decision_model.state": ("decision_model", ("backend", "state", "snapshot")),
+            "judge.credential_source": (
+                "judge",
+                ("provider", "model", "state", "credential_source", "fallback_active"),
+            ),
+            "budgets.today": (
+                "budgets",
+                (
+                    "decision_spent_today_usd",
+                    "decision_usd_day",
+                    "llm_spent_today_usd",
+                    "llm_usd_day",
+                ),
+            ),
+        }
+        if check_id not in picks:
+            return {}
+        section, keys = picks[check_id]
+        value = self.status.get(section)
+        if not isinstance(value, dict):
+            return {}
+        return {k: value.get(k) for k in keys if k in value}
+
     def checks(self) -> List[Tuple[str, Callable[[], Check]]]:
         plan: List[Tuple[str, Callable[[], Check]]] = []
         if self.target == "docker":
@@ -1380,7 +1411,9 @@ def main(
     results: List[Check] = []
     for check_id, check in doctor.checks():
         if selected(check_id, args.only, args.skip):
-            results.append(check())
+            result = check()
+            result.data = result.data or doctor.facts(check_id)
+            results.append(result)
     failed = any(c.status == "FAIL" for c in results)
 
     if args.json:

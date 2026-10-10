@@ -110,6 +110,38 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 	install -m 0755 "$$work/gitleaks" "$(GITLEAKS)"; \
 	echo "✅ gitleaks $(GITLEAKS_VERSION) ($$os-$$arch, SHA-256 checked) in $(GITLEAKS)"
 
+# ---------- Demo recording (D123) ----------
+# scripts/record_demo.py records the public demo with the real fast check and judge into
+# frontend-react/demo-data/recorded/ (P6, the owner's key, about $1). Without CONFIRM=1 it is a dry
+# run: the plan, its estimate and which keys it found. The stack is docker-compose.record.yml's,
+# project truthtable-record, removed with its volumes when the run ends. RECORD_BUILD follows make
+# up: the images are built from this checkout, or pulled on a release tag (D126).
+RECORD_PROJECT := truthtable-record
+RECORD_COMPOSE  = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docker-compose.record.yml
+RECORD_BUILD   ?= $(APP_BUILD)
+CONFIRM        ?=
+RECORD_ARGS    ?=
+# record-check-config: what the proxy must see in the record stack, proved without Docker with
+# fake keys (the project's conventions) in an otherwise empty environment, as onboarding-check-config.
+RECORD_CHECK_ENV = OPENROUTER_API_KEY=sk-or-v1-e2e-record TRAFFICGEN_API_KEY=record-check \
+	TRUTHTABLE_API_KEYS=trafficgen=record-check POSTGRES_PASSWORD=record-check
+RECORD_EXPECT = $(foreach kv,TRUTHTABLE_TEST_MODE=true TRUTHTABLE_STRICT_CONFIG=true \
+		TRUTHTABLE_DEMO_MODE=false TRUTHTABLE_PUBLIC_READ=false TRUTHTABLE_TRACE_FLUSH=sync \
+		TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY=0.50 TRUTHTABLE_SPEND_CAP_LLM_USD_DAY=3,--expect $(kv)) \
+	--expect-default TRUTHTABLE_JEV_BACKEND
+
+##@ Demo recording (real checks; P6)
+
+record-demo: ## Record the public demo with the real fast check and judge into demo-data/recorded (a dry run unless CONFIRM=1; about $1 of the owner's key)
+	CONFIRM="$(CONFIRM)" $(PYTHON) scripts/record_demo.py $(if $(RECORD_BUILD),--build) $(RECORD_ARGS)
+
+record-check-config: ## Prove, without a container, that the gateway accepts the record stack's environment (test mode, real backends, strict config) with fake keys: proxy -check-config
+	@if ! docker compose version >/dev/null 2>&1; then echo "record-check-config: skipped (docker compose not found)"; exit 0; fi; \
+	out="$$($(ONBOARDING_CONFIG_ENV) $(RECORD_CHECK_ENV) $(RECORD_COMPOSE) --env-file /dev/null config --format json \
+		| $(PYTHON) scripts/service_env.py proxy $(RECORD_EXPECT) -- go -C backend-go run ./cmd/proxy -check-config)" \
+		|| { printf '%s\n' "$$out"; echo "record-check-config: failed: the record stack is not configured as D123 says, or the gateway would refuse to start it (see above)"; exit 1; }; \
+	echo "✅ The record stack's proxy configuration passes -check-config (test mode with real backends, strict config, caps \$$0.50 + \$$3 a day)"
+
 # ---------- Workflow lint (D140) ----------
 # actionlint checks the workflow syntax, expressions and (through shellcheck) every run: script;
 # zizmor audits them for security (unpinned actions, persisted credentials, template injection,
@@ -146,3 +178,4 @@ workflow-lint-install: ## Install the pinned zizmor and shellcheck into tmp/tool
 
 # ---------- Aggregate hooks (see the root Makefile) ----------
 check: check-version
+check: record-check-config
