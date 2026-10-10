@@ -1,7 +1,7 @@
 /**
  * `import { digest } from 'virtual:trustagent/tape-digest'`: the landing's tape card, built at
  * build time from the chosen dataset's manifest (kind, label, date, snapshot, judge, outcome counts
- * and five examples), so the landing never fetches the manifest (LD-5). The dataset is the one
+ * and five examples), so the landing never fetches the manifest. The dataset is the one
  * vite/plugins/dataset.ts copies (the same VITE_DEMO_DATASET rule), and outcomes follow the rules of
  * contracts/ui/outcomes.v1.json, as the dashboard decides them. Owned by WEB-LANDING; the module
  * type is declared in src/env.d.ts.

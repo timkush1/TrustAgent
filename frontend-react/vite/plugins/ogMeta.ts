@@ -1,5 +1,5 @@
 /**
- * The landing's social and search meta (D114, D115, LD-7): canonical, og:url, og:site_name,
+ * The landing's social and search meta (D114, D115): canonical, og:url, og:site_name,
  * twitter:card and theme-color, with absolute URLs from VITE_SITE_URL (the published site; never a
  * request), and og:image only when public/og.png exists at build time (`npm run og` writes it; until
  * then the card is a text summary). The landing's title and og:title/og:description live in

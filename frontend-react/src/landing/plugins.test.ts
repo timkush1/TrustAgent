@@ -1,8 +1,8 @@
 /**
- * The landing's build-time plugins and generator: vite/plugins/digest.ts (the tape card, LD-5),
- * vite/plugins/landingData.ts (the landing-only contract data, LD-3), vite/plugins/ogMeta.ts (the
- * share and search meta, LD-7) and scripts/gen-landing-glassbox.ts --check (the "What Jev was asked"
- * panel's drift check, LD-6).
+ * The landing's build-time plugins and generator: vite/plugins/digest.ts (the tape card),
+ * vite/plugins/landingData.ts (the landing-only contract data), vite/plugins/ogMeta.ts (the share
+ * and search meta) and scripts/gen-landing-glassbox.ts --check (the "What Jev was asked" panel's
+ * drift check, D116).
  *
  * The plugins and the script run in Node at build time; the app's tsconfig has no Node types, so
  * they and the Node helpers load through variable specifiers (as replay.test.ts does).
@@ -105,7 +105,7 @@ const hookContext = {
 
 // ------------------------------------------------------------------------------------- digest
 
-describe('tape digest plugin (LD-5)', () => {
+describe('tape digest plugin', () => {
   const trace = (over: Partial<Trace> & { trace_id: string; created_at: string }): Trace => ({
     gate_status: 'ok',
     action: 'pass',
@@ -180,7 +180,7 @@ describe('tape digest plugin (LD-5)', () => {
 
 // -------------------------------------------------------------------------------- landing data
 
-describe('landing data plugin (LD-3)', () => {
+describe('landing data plugin', () => {
   it('serves the example policy as one string and only the outcome fields the landing reads', () => {
     const plugin = landingDataMod.landingDataPlugin(contractsDir);
     const id = plugin.resolveId(landingDataMod.LANDING_DATA_MODULE) as string;
@@ -206,7 +206,7 @@ describe('landing data plugin (LD-3)', () => {
 
 // ------------------------------------------------------------------------------------- og meta
 
-describe('og meta plugin (LD-7)', () => {
+describe('og meta plugin (D115)', () => {
   it('normalizes VITE_SITE_URL like the runtime config, defaulting to the published site', () => {
     expect(ogMod.DEFAULT_SITE_URL).toBe(DEFAULT_SITE_URL);
     expect(ogMod.siteUrlOf(undefined)).toBe(DEFAULT_SITE_URL);
@@ -250,7 +250,7 @@ describe('og meta plugin (LD-7)', () => {
 
 // ------------------------------------------------------------------------------ glass-box drift
 
-describe('gen-landing-glassbox --check (LD-6)', () => {
+describe('gen-landing-glassbox --check (D116)', () => {
   const run = (...args: string[]) =>
     cpMod.spawnSync(proc.execPath, ['--import', './scripts/lib/aliasHooks.ts', 'scripts/gen-landing-glassbox.ts', ...args], {
       cwd: webDir,

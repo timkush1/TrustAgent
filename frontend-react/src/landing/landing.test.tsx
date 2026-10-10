@@ -198,7 +198,9 @@ describe('try it', () => {
     // The cost of one check carries its Estimate chip, and the cap is calls to OpenRouter.
     const cost = card.querySelector('[data-live-cost]') as HTMLElement;
     expect(cost.querySelector('[data-value-label="estimate"]')?.getAttribute('href')).toBe('#source-fast_check_cost_per_check');
-    expect(cost).toHaveTextContent(claim('fast_check_cost_per_check').display);
+    // "one check costs about $0.0002", not "about ~$0.0002 per check".
+    expect(cost).toHaveTextContent('one check costs about $0.0002');
+    expect(cost.textContent).not.toMatch(/about ~|per check/);
     expect(cost).toHaveTextContent(`${playground.maxCalls} calls to OpenRouter`);
     expect(card.textContent).not.toMatch(new RegExp(`${playground.maxCalls}\\s+checks`));
     expect(card.textContent).not.toMatch(/\{max_calls\}|\{cost_per_check\}/);

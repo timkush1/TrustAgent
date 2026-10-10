@@ -96,11 +96,8 @@ function StudioSteps() {
     {
       title: 'Test on samples',
       body: 'Run the draft on example requests and read each answer before you keep it.',
-      cost: (
-        <span className="inline-flex flex-wrap items-baseline gap-x-1">
-          <ClaimValue claim={perCheck} strong={false} /> per sample
-        </span>
-      ),
+      // One sample is one check.
+      cost: <ClaimValue claim={perCheck} strong={false} />,
     },
     { title: 'Watch in shadow', body: 'It answers on live traffic without acting, so you can compare before it flags anyone.', cost: <span className="text-fg-muted">Asked in the same fast-check call</span> },
   ];

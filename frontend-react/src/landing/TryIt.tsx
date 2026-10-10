@@ -131,12 +131,19 @@ const LIVE_WORDS: Record<LiveScenarioId, string> = {
   'pii-leak-flag': 'An answer that leaks a customer’s personal data',
 };
 
-/** The consent line with the check's cost (its Estimate chip) and the call cap filled in. */
+/**
+ * The consent line with the check's cost (its Estimate chip) and the call cap filled in. The
+ * sentence already says "one check costs about", so the figure drops its own "~" and "per check".
+ */
 function CostLine() {
   const template = sectionCopy.playground_static.consent[1].replace('{cost_per_check}', '{claim:fast_check_cost_per_check}').replace('{max_calls}', count.format(playground.maxCalls));
   return (
     <p className="mt-4 text-sm text-fg-muted" data-chip-scope data-live-cost>
-      {splitClaims(template).map((part, i) => ('text' in part ? <span key={i}>{part.text}</span> : <ClaimValue key={i} claim={part.claim} className="inline-flex" />))}
+      {splitClaims(template).map((part, i) => {
+        if ('text' in part) return <span key={i}>{part.text}</span>;
+        const bare = { ...part.claim, display: part.claim.display.replace(/^[~≈]\s*/, '').replace(/\s+per check$/, '') };
+        return <ClaimValue key={i} claim={bare} className="inline-flex" />;
+      })}
     </p>
   );
 }
