@@ -4,6 +4,10 @@
  * as an Estimate, or Simulated with a mock judge) or **Start from a template**, which is the
  * primary start when no judge is configured. A draft is never saved or attached: it fills the
  * steps below, where the viewer reviews and tests it.
+ *
+ * On the static site (D107, D108) the judge is this build's OpenRouter judge model, called with
+ * the tab's own key: without a key, drafting is a disabled action that says why and opens the
+ * consent dialog, and "Start from a template" is the primary start.
  */
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
@@ -25,9 +29,11 @@ import { draftSamples, draftToSpec } from '@/lib/studio/draftToSpec';
 import { draftEstimate } from '@/lib/studio/estimate';
 import { BLANK_TEMPLATE, blankSpec, specFromTemplate, STUDIO_TEMPLATES } from '@/lib/studio/templates';
 import type { EvaluatorSpec, StudioDraftResponse, StudioSample, SystemStatus } from '@/types/api';
-import { studioCostLabel } from './studioWords';
+import { studioCallsUsedText, studioCapReachedText, studioCostLabel, studioDraftFailureText, studioLiveFailure } from './studioWords';
+import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { StudioStep } from './StudioStep';
+import { callsLeft, type StudioLiveView } from './useStudioLive';
 
 const DESCRIBE_EXAMPLES: readonly string[] = [
   'Flag answers that blame the customer for the problem they describe.',
@@ -55,6 +61,45 @@ export interface DescribeStepProps {
   /** Whether a check is already in the steps below (starting again replaces it). */
   hasCheck: boolean;
   onStart: (start: StudioStart) => void;
+  /** The static site's live mode (null in the full build): the judge is called with the tab's key. */
+  live?: StudioLiveView | null;
+}
+
+/** Why a static draft cannot go out now, or null (D101, D108). */
+function staticDraftReason(live: StudioLiveView): Reason | null {
+  if (!live.drafting) return 'static';
+  if (!live.connected) return { text: copy.studio.static_draft_needs_key, fix: <ConnectKeyFix /> };
+  if (callsLeft(live) === 0) return { text: studioCapReachedText(live.maxCalls) };
+  return null;
+}
+
+/** What went wrong with a draft, in words: the browser call's own words, or the judge's provider. */
+function DraftFailure({ error, live }: { error: unknown; live: StudioLiveView | null }) {
+  const failure = describeError(error);
+  const code = isApiError(error) ? error.code : null;
+  const liveWords = live ? studioLiveFailure(error, live) : null;
+  const words = liveWords?.text ?? (code !== null && !live ? studioDraftFailureText(code) : null);
+  const providerRefused = !live && (code === 'no_credits' || code === 'judge_unauthorized');
+  // The gateway's hints name its Settings pages, which the online demo does not have.
+  const hint = live ? (liveWords?.hint ?? null) : words || providerRefused ? null : errorCodeHint(error);
+  return (
+    <div role="alert" className="space-y-1 rounded-md border border-border p-3 text-sm">
+      <p className="flex items-start gap-1.5 text-fg">
+        <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-tone-danger" />
+        <span>Couldn't draft: {words ?? failure.message}</span>
+      </p>
+      {providerRefused ? (
+        <p>
+          <Link to="/app/settings/$section" params={{ section: 'connections' }} className="font-medium text-fg underline underline-offset-2">
+            Open Connections
+          </Link>
+        </p>
+      ) : null}
+      {hint ? <p className="text-fg-muted">{hint}</p> : null}
+      {code === 'no_judge' || (live && code === 'cap_reached') ? <p className="text-fg-muted">You can still start from a template.</p> : null}
+      {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
+    </div>
+  );
 }
 
 function judgeMissing(judge: SystemStatus['judge'] | null): boolean {
@@ -104,12 +149,15 @@ function DraftOutcome({ result }: { result: StudioDraftResponse }) {
   );
 }
 
-export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onStart }: DescribeStepProps) {
+export function DescribeStep({ judge: serverJudge, routes, taken, writeReason, hasCheck, onStart, live = null }: DescribeStepProps) {
   const ds = useDataSource();
   const [description, setDescription] = useState('');
   const [route, setRoute] = useState<string>(ANY_ROUTE);
   const [template, setTemplate] = useState<string>(STUDIO_TEMPLATES[0]?.ref ?? BLANK_TEMPLATE);
-  const noJudge = judgeMissing(judge);
+  const judge = live ? { provider: 'openrouter', model: live.judgeModel } : serverJudge;
+  const staticReason = live ? staticDraftReason(live) : null;
+  // Without a judge to draft with now, the template is the primary start.
+  const noJudge = live ? staticReason !== null : judgeMissing(serverJudge);
   const routeOrNull = route === ANY_ROUTE ? null : route;
   /** Bumped by every start, so a draft that arrives after a later start (a template) is dropped. */
   const starts = useRef(0);
@@ -137,8 +185,8 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
     onStart({ spec, samples: [], draft: null, origin: name ? `From the ${name} template` : 'A blank check', route: routeOrNull });
   };
 
-  let draftReason: Reason | null = writeReason;
-  if (!draftReason && noJudge) {
+  let draftReason: Reason | null = live ? staticReason : writeReason;
+  if (!live && !draftReason && noJudge) {
     draftReason = {
       text: 'No AI judge is set up to draft with',
       fix: (
@@ -151,8 +199,6 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
   if (!draftReason && description.trim().length < 10) draftReason = { text: 'Describe the check in a sentence first' };
 
   const estimate = draftEstimate({ provider: judge?.provider ?? null, model: judge?.model ?? null });
-  const failure = draft.error ? describeError(draft.error) : null;
-  const hint = draft.error ? errorCodeHint(draft.error) : null;
   const length = description.length;
 
   const templateOptions = [
@@ -198,6 +244,8 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
             {(p) => (
               <Button variant={!noJudge && !hasCheck ? 'primary' : 'secondary'} pending={draft.isPending} onClick={() => {
                   starts.current += 1;
+                  // Asking again is the Retry the paused caps offer (copy.playground_live.rejected_pause).
+                  live?.resume();
                   draft.mutate(starts.current);
                 }} {...p}>
                 <Sparkles aria-hidden="true" />
@@ -214,6 +262,7 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
               <CostFigure usd={estimate.usd} label={estimate.label} basis={estimate.basis} subject="Cost of one draft" />
             </p>
           ) : null}
+          {live && (live.connected || live.used > 0) ? <p className="text-xs text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</p> : null}
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <Field label="Start from a template" className="min-w-56">
@@ -227,19 +276,7 @@ export function DescribeStep({ judge, routes, taken, writeReason, hasCheck, onSt
       {hasCheck ? <p className="text-xs text-fg-muted">Starting again replaces the check below (nothing is saved yet).</p> : null}
 
       {draft.data ? <DraftOutcome result={draft.data} /> : null}
-      {failure ? (
-        <div role="alert" className="space-y-1 rounded-md border border-border p-3 text-sm">
-          <p className="flex items-start gap-1.5 text-fg">
-            <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-tone-danger" />
-            Couldn't draft: {failure.message}
-          </p>
-          {hint ? <p className="text-fg-muted">{hint}</p> : null}
-          {isApiError(draft.error) && draft.error.code === 'no_judge' ? (
-            <p className="text-fg-muted">You can still start from a template.</p>
-          ) : null}
-          {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
-        </div>
-      ) : null}
+      {draft.error && !(isApiError(draft.error) && draft.error.code === 'aborted') ? <DraftFailure error={draft.error} live={live} /> : null}
     </StudioStep>
   );
 }

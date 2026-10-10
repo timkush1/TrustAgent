@@ -1,5 +1,8 @@
 /**
- * Writes src/lib/evaluator/evaluatorValidator.gen.ts from contracts/schema.
+ * Writes src/lib/evaluator/evaluatorValidator.gen.ts from contracts/schema: the evaluator.v1 and
+ * evaluator-draft.v1 validators in ONE module that shares ajv's runtime helpers and the evaluator
+ * schema the draft refers to (D108), so Studio's editor and the browser drafter load one copy, and
+ * no ajv (and no eval) ships under the static site's `script-src 'self'`.
  *
  *   node scripts/gen-evaluator-validator.ts          regenerate the file
  *   node scripts/gen-evaluator-validator.ts --check  exit 1 when the committed file is stale

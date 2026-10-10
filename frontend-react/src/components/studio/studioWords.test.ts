@@ -7,7 +7,23 @@
 import { describe, expect, it } from 'vitest';
 import dryRunFixture from '@contracts/fixtures/api/DryRunResult.done.json';
 import type { DryRunResult } from '@/types/api';
-import { riskLevelsLine, studioDryRunConfirmText, studioDryRunExtrapolated, studioDryRunResultText, studioGroupExamples, studioQuestionParts } from './studioWords';
+import { copy } from '@/domain/presentation';
+import { ApiError } from '@/data/errors';
+import { openRouterError, transportError } from '@/lib/openrouter/errors';
+import { OPENROUTER_ERROR_KINDS } from '@/lib/openrouter/types';
+import {
+  riskLevelsLine,
+  studioCallsUsedText,
+  studioCapReachedText,
+  studioDraftFailureText,
+  studioDryRunConfirmText,
+  studioDryRunExtrapolated,
+  studioDryRunResultText,
+  studioGroupExamples,
+  studioLiveFailure,
+  studioQuestionParts,
+  studioRowReasonText,
+} from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
 
@@ -82,5 +98,84 @@ describe('riskLevelsLine', () => {
   it('names the thresholds the risk words follow, with or without a block level', () => {
     expect(riskLevelsLine({ warn_at: 0.6, critical_at: 0.98 })).toBe('Risk words follow this check’s own thresholds: Elevated risk from 0.60, High risk from 0.98.');
     expect(riskLevelsLine({ warn_at: 0.7, critical_at: null })).toBe('Risk words follow this check’s own thresholds: Elevated risk from 0.70; it has no High risk level.');
+  });
+});
+
+describe('the static Studio’s failure words (D101)', () => {
+  const limits = { maxCalls: 100, maxTokens: 8000 };
+  /** A refusal by the tab's caps, as the static plane reports it (staticPlane refusedError). */
+  const refusedError = (reason: string) => new ApiError({ kind: 'http', status: 429, code: reason, message: 'refused' });
+
+  it('words the tab’s caps as the live Playground does', () => {
+    expect(studioCapReachedText(100)).toBe('This demo stops after 100 calls to OpenRouter (checks and AI drafts). Run it yourself for more.');
+    expect(studioLiveFailure(refusedError('cap_reached'), limits)).toEqual({ text: studioCapReachedText(100), hint: null });
+    expect(studioLiveFailure(refusedError('token_cap'), limits)?.text).toBe("This check is larger than this demo's limit of 8,000 tokens per call. Shorten the documents or the answer.");
+    expect(studioLiveFailure(refusedError('rejected_pause'), limits)?.text).toBe(copy.playground_live.rejected_pause);
+    expect(studioCallsUsedText(3, 100)).toBe('3 of 100 calls to OpenRouter (checks and AI drafts)');
+  });
+
+  it('words each OpenRouter failure as the live Playground does (liveErrorView)', () => {
+    const words = (err: unknown) => studioLiveFailure(err, limits)?.text ?? null;
+    expect(words(openRouterError('auth', { status: 401, message: 'no' }))).toBe(copy.playground_live.errors.unauthorized);
+    expect(words(openRouterError('credits', { status: 402, message: 'no' }))).toBe(copy.playground_live.errors.no_credits);
+    expect(words(openRouterError('credits', { status: 402, message: 'no', details: { in_flight: true } }))).toBe(copy.playground_live.errors.credits_inflight);
+    expect(words(openRouterError('retryable', { status: 429, message: 'slow down' }))).toBe(copy.playground_live.errors.rate_limited);
+    expect(words(openRouterError('retryable', { status: 503, message: 'busy' }))).toBe(copy.playground_live.retry_busy);
+    expect(words(openRouterError('bad_request', { status: 403, message: 'flagged', details: { moderation: true } }))).toBe(copy.playground_live.errors.moderation);
+    expect(words(transportError('timeout', 0))).toBe(copy.playground_live.errors.timeout);
+    // Every OpenRouter kind has a sentence (never the raw code or a blank).
+    for (const kind of OPENROUTER_ERROR_KINDS.filter((k) => k !== 'aborted')) {
+      expect(words(openRouterError(kind, { status: 400, message: 'x' })), kind).toMatch(/\w+ \w+ \w+/);
+    }
+  });
+
+  it('adds why nothing was billed when the browser blocked the request, and says nothing about a cancel', () => {
+    expect(studioLiveFailure(transportError('network', 0), limits)).toEqual({ text: copy.playground_live.errors.network, hint: copy.playground_live.browser_blocked });
+    expect(studioLiveFailure(transportError('network', 502), limits)?.hint).toBeNull();
+    expect(studioLiveFailure(transportError('aborted', 0), limits)).toBeNull();
+  });
+
+  it('leaves any other error to its own message', () => {
+    expect(studioLiveFailure(new ApiError({ kind: 'http', status: 422, code: 'validation_failed', message: 'x' }), limits)).toBeNull();
+    expect(studioLiveFailure(new ApiError({ kind: 'http', status: 400, code: 'constructor', message: 'x' }), limits)).toBeNull();
+    expect(studioLiveFailure(new Error('boom'), limits)).toBeNull();
+  });
+
+  it('says out of credits or key refused for a gateway draft, never "engine unavailable"', () => {
+    expect(studioDraftFailureText('no_credits')).toBe(copy.studio.draft_no_credits);
+    expect(studioDraftFailureText('judge_unauthorized')).toBe(copy.studio.draft_key_refused);
+    expect(studioDraftFailureText('engine_unavailable')).toBeNull();
+  });
+});
+
+describe('studioRowReasonText: why a test row has no outcome, never the raw reason', () => {
+  const browser = { maxTokens: 8000 };
+
+  it('uses the status words the trace pages use', () => {
+    expect(studioRowReasonText('timeout')).toBe('The check timed out');
+    expect(studioRowReasonText('no_evidence', browser)).toBe('No documents in this request');
+    expect(studioRowReasonText('evidence_too_short')).toBe('The documents are too short to check against');
+  });
+
+  it('words a failed browser request as the live Playground does, and one too large as the tab’s token limit', () => {
+    expect(studioRowReasonText('error:retryable', browser)).toBe(copy.playground_live.retry_busy);
+    expect(studioRowReasonText('error:bad_response', browser)).toBe(copy.playground_live.errors.bad_response);
+    expect(studioRowReasonText('error:network', browser)).toBe(copy.playground_live.errors.network);
+    expect(studioRowReasonText('error:too_large', browser)).toBe("This check is larger than this demo's limit of 8,000 tokens per call. Shorten the documents or the answer.");
+    // Every OpenRouter kind reads as a sentence, never as error:<kind>.
+    for (const kind of OPENROUTER_ERROR_KINDS) expect(studioRowReasonText(`error:${kind}`, browser), kind).not.toContain(':');
+  });
+
+  it('on a gateway, or for a kind the browser does not report, says the check failed and why in plain words', () => {
+    expect(studioRowReasonText('error:auth')).toBe('The check failed (auth)');
+    expect(studioRowReasonText('error:too_large')).toBe('The check failed (too large)');
+    expect(studioRowReasonText('error:compile', browser)).toBe('The check failed (compile)');
+    expect(studioRowReasonText('error:internal', browser)).toBe('The check failed (internal)');
+  });
+
+  it('humanizes any other reason, including one that names an Object member', () => {
+    expect(studioRowReasonText('not_run')).toBe('Not run');
+    expect(studioRowReasonText('missing_answer')).toBe('Missing answer');
+    expect(studioRowReasonText('constructor')).toBe('Constructor');
   });
 });
