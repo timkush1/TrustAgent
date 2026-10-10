@@ -2,24 +2,27 @@
  * The landing page (SPEC §8.1): at most seven sections, one hero, every number from
  * contracts/claims/value-claims.v1.json with its label chip, and a footer listing where each
  * number comes from. A separate Vite entry: no router, no chart library (SPEC §3.3).
+ *
+ * The first load (110 KB gzip budget, npm run size) is the header, the hero, How it works and the
+ * cost section. The sections below them, and the footer's source list, are their own chunks: they
+ * start loading as soon as the page runs, each behind a placeholder of about its height.
  */
-import { ArrowRight, ArrowUpRight } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { ArrowRight } from 'lucide-react';
+import { useEffect } from 'react';
 import { Affordable } from './Affordable';
-import { CLAIMS_AS_OF, landingClaims, sourceAnchor } from './claims';
-import { Compare } from './Compare';
 import { DEMO_HREF, REPO_URL } from './content';
 import { Hero } from './Hero';
 import { HowItWorks } from './HowItWorks';
-import { SelfHost } from './SelfHost';
-import { TryIt } from './TryIt';
+import { lazyPartsLoaded } from './lazyLoaders';
+import { Compare, LazyPart, SelfHost, Sources, TryIt, WriteChecks } from './lazyParts';
 import { GitHubMark, Logo, ThemeButton } from './ui';
 import { buttonClass, container } from './styles';
-import { WriteChecks } from './WriteChecks';
 
 const navLinks = [
   { href: '#how', label: 'How it works' },
   { href: '#cost', label: 'Cost' },
+  { href: '#checks', label: 'Checks' },
+  { href: '#try', label: 'Try it' },
   { href: '#compare', label: 'Compare' },
   { href: '#self-host', label: 'Run it' },
 ];
@@ -32,7 +35,7 @@ function Header() {
           <Logo className="size-5" />
           TrustAgent
         </a>
-        <nav aria-label="Sections" className="flex items-center gap-1 max-md:hidden">
+        <nav aria-label="Sections" className="flex items-center gap-0.5 max-lg:hidden">
           {navLinks.map((l) => (
             <a key={l.href} href={l.href} className={buttonClass.ghost}>
               {l.label}
@@ -54,64 +57,13 @@ function Header() {
   );
 }
 
-/** Opens the sources list when a label chip (or a shared link) points into it. */
-function useOpenSourcesOnHash(ref: React.RefObject<HTMLDetailsElement | null>) {
-  useEffect(() => {
-    const open = () => {
-      if (!window.location.hash.startsWith('#source-') || !ref.current) return;
-      ref.current.open = true;
-      document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: 'center' });
-    };
-    open();
-    window.addEventListener('hashchange', open);
-    return () => window.removeEventListener('hashchange', open);
-  }, [ref]);
-}
-
 function Footer() {
-  const ref = useRef<HTMLDetailsElement>(null);
-  useOpenSourcesOnHash(ref);
-  const claims = landingClaims();
   return (
     <footer className="border-t border-border bg-surface-sunken">
       <div className={`${container} py-12`}>
-        <details ref={ref} id="sources" className="group">
-          <summary className="cursor-pointer list-none text-sm font-semibold text-fg marker:hidden">
-            <span className="inline-flex items-center gap-1.5">
-              <ArrowRight aria-hidden="true" className="size-4 text-fg-muted transition-transform group-open:rotate-90" />
-              Where every number on this page comes from
-            </span>
-          </summary>
-          <p className="mt-3 max-w-3xl text-sm text-fg-muted">
-            Each figure carries a label. <b className="font-medium text-fg">Measured</b>: our own benchmark run.{' '}
-            <b className="font-medium text-fg">Estimate</b>: our arithmetic from published prices.{' '}
-            <b className="font-medium text-fg">Third-party</b> and <b className="font-medium text-fg">Vendor</b>: someone else’s
-            published numbers. <b className="font-medium text-fg">Simulated</b>: the demo, not model output. Claims as of {CLAIMS_AS_OF}.
-          </p>
-          <ul className="mt-6 grid grid-cols-1 gap-x-10 gap-y-5 md:grid-cols-2">
-            {claims.map((c) => (
-              <li key={c.id} id={sourceAnchor(c.id)} className="scroll-mt-24 text-sm">
-                <p className="text-fg">
-                  <span className="font-medium">{c.text}:</span> <span className="tabular">{c.display}</span>{' '}
-                  <span className="text-fg-muted">({c.labelText})</span>
-                </p>
-                <p className="mt-0.5 text-fg-muted">{c.basis}</p>
-                {c.caveat ? <p className="mt-0.5 text-fg-muted">{c.caveat}</p> : null}
-                <p className="mt-0.5 text-xs text-fg-muted">
-                  {c.sourceUrl ? (
-                    <a href={c.sourceUrl} className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-fg" rel="noreferrer">
-                      Source
-                      <ArrowUpRight aria-hidden="true" className="size-3" />
-                    </a>
-                  ) : (
-                    'Computed in this project'
-                  )}
-                  {c.asOf ? ` · as of ${c.asOf}` : ''}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </details>
+        <LazyPart minHeight="1.5rem" section={false}>
+          <Sources />
+        </LazyPart>
         <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6 text-sm text-fg-muted">
           <span className="flex items-center gap-2">
             <Logo className="size-4" />
@@ -129,13 +81,29 @@ function Footer() {
 
 /**
  * A link into a section from another page (the replay's "Run it yourself" opens #self-host): the
- * browser looks for the anchor before React has rendered it, so scroll there once the page is up.
+ * browser looks for the anchor before React has rendered it, and the sections below the fold load
+ * after the first paint, so scroll there once every part of the page is in place. A source anchor
+ * (#source-…) is the source list's own business.
  */
 function useScrollToHashOnLoad() {
   useEffect(() => {
     const id = decodeURIComponent(window.location.hash.slice(1));
-    if (!id || id.startsWith('source-')) return;
-    document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    if (!id || id.startsWith('source-')) return undefined;
+    let cancelled = false;
+    let frames = 0;
+    const scroll = () => {
+      if (cancelled) return;
+      // React commits a resolved lazy section on its own schedule: wait for the placeholders to go.
+      if (document.querySelector('[data-lazy-placeholder]') && frames++ < 120) {
+        window.requestAnimationFrame(scroll);
+        return;
+      }
+      document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    };
+    void lazyPartsLoaded().then(() => window.requestAnimationFrame(scroll));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 }
 
@@ -154,10 +122,18 @@ export function Landing() {
         <Hero />
         <HowItWorks />
         <Affordable />
-        <WriteChecks />
-        <TryIt />
-        <Compare />
-        <SelfHost />
+        <LazyPart minHeight="44rem">
+          <WriteChecks />
+        </LazyPart>
+        <LazyPart minHeight="40rem">
+          <TryIt />
+        </LazyPart>
+        <LazyPart minHeight="60rem">
+          <Compare />
+        </LazyPart>
+        <LazyPart minHeight="34rem">
+          <SelfHost />
+        </LazyPart>
       </main>
       <Footer />
     </div>
