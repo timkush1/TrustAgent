@@ -11,9 +11,10 @@
  *   throws GateRefusedError and nothing is sent;
  * - the requests run concurrently; each is settled once with its HTTP status and any usage, so a
  *   failed request that did not bill releases its slot;
- * - a failed request becomes its request status (`timeout`, or `error:<kind>`) and decide() applies
- *   the route's fail policy, exactly like the gateway; only a cancelled check (the caller's signal,
- *   or Forget key) rejects, with the `aborted` error.
+ * - a request that fails with an ApiError (the JevCall contract) becomes its request status
+ *   (`timeout`, or `error:<kind>`) and decide() applies the route's fail policy, exactly like the
+ *   gateway; a cancelled check (the caller's signal, or Forget key) rejects with the `aborted`
+ *   error, and any other throw (a bug, or the recorder's build guard) rejects as it is.
  *
  * Step 0b moved this out of the recorder without changing what it computes; `make recording-check`
  * keeps the tape byte-identical. Owned by WEB-LIVE.
@@ -148,6 +149,10 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
         return result;
       } catch (err) {
         input.ledger.settle(err instanceof ApiError ? err.status : 0, errorDetails(err).usage);
+        // A JevCall fails with an ApiError (types.ts). Anything else is a bug or a build guard
+        // (the recorder's "no mock answer"), never a vendor failure: it fails the check instead of
+        // turning into a degraded decision nobody would notice.
+        if (!(err instanceof ApiError)) throw err;
         failures[index] = err;
         return null;
       }

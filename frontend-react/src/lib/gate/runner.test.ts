@@ -4,7 +4,7 @@ import goldenText from '../../../../backend-go/internal/jev/testdata/request_ope
 import scenarioPack from '@contracts/demo/scenarios.v1.json';
 import type { EvaluatorSpec } from '@/lib/contracts/types.gen';
 import type { RawAnswerInput } from '@/lib/decision/normalize';
-import { classifyStatus, liveErrorView, transportError } from '@/lib/openrouter/errors';
+import { classifyStatus, liveErrorView, openRouterError, transportError } from '@/lib/openrouter/errors';
 import type { JevCall, JevCallRequest, JevCallResult, UsageLedger } from '@/lib/openrouter/types';
 import { memoryStorage } from '@/lib/openrouter/testing';
 import { createUsageStore } from '@/lib/openrouter/usage';
@@ -178,7 +178,7 @@ describe('runGate: error paths (gstudio Runner.Evaluate parity)', () => {
       [classifyStatus(429, new Headers({ 'retry-after': '1' }), '{}'), 'error:retryable'],
       [transportError('network', 0, new TypeError('Failed to fetch')), 'error:network'],
       [transportError('timeout', 0), 'timeout'],
-      [new Error('a bug in the transport'), 'error:bad_response'],
+      [openRouterError('bad_response', { status: 200, message: 'not a decision object' }), 'error:bad_response'],
     ];
     for (const [failure, status] of failures) {
       const { call } = fakeCall(s.mock_answers, { fail: () => failure });
@@ -192,6 +192,15 @@ describe('runGate: error paths (gstudio Runner.Evaluate parity)', () => {
       expect(r.usage).toEqual({ input_tokens: 0, cost: null });
       expect(r.snapshot).toBeNull();
     }
+  });
+
+  it('a throw that is not an ApiError (a bug, the recorder build guard) rejects as it is, its slot released', async () => {
+    const s = scenario('refund-contradiction-flag');
+    const usage = ledger();
+    const bug = new Error('scenario has no mock answer for contradiction__v1');
+    const { call } = fakeCall(s.mock_answers, { fail: () => bug });
+    await expect(runGate(input(s, call, { ledger: usage }))).rejects.toBe(bug);
+    expect(usage.getSnapshot()).toMatchObject({ calls: 0, rejected: 0, inflight: 0 });
   });
 
   it('a 402 mid-run: the other request still answers, nothing is counted for the failed one', async () => {
