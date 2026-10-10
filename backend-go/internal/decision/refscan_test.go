@@ -15,6 +15,9 @@ func TestContractPatternsUseTheFastScans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if r.numberScan.hand == nil {
+		t.Errorf("the number pattern %q has no hand-written scanner (handScanners)", r.number)
+	}
 	if !r.numberScan.runs || r.numberScan.alphabet['a'] || !r.numberScan.alphabet['7'] || r.numberScan.first[','] {
 		t.Errorf("the number pattern %q does not scan in digit runs", r.number)
 	}
@@ -74,6 +77,10 @@ func TestRefScanMatchesWholeScan(t *testing.T) {
 			t.Fatalf("%q does not scan in runs", re)
 		}
 	}
+	// The number pattern again, through the runs instead of its hand-written scanner.
+	byRuns := newRefScan(r.number)
+	byRuns.hand = nil
+	patterns, scans = append(patterns, r.number), append(scans, byRuns)
 	rng := rand.New(rand.NewPCG(7, 167))
 	matched := 0
 	for n := 0; n < 6000; n++ {

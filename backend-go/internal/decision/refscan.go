@@ -24,9 +24,11 @@ import (
 // FindAllStringIndex returns (refscan_test.go checks it against the whole-text scan on random
 // texts); a pattern the analysis cannot prove safe is scanned whole, as before.
 
-// refScan is a pattern with its run prefilter; runs is false when it is scanned whole.
+// refScan is a pattern with its run prefilter; runs is false when it is scanned whole. hand is a
+// hand-written scanner for a pattern the contract ships (handScanners), used instead of both.
 type refScan struct {
 	re       *regexp.Regexp
+	hand     func(text string, fn func(start, end int))
 	runs     bool
 	alphabet [256]bool // the bytes a match can hold
 	first    [256]bool // the bytes a match can start with
@@ -35,7 +37,7 @@ type refScan struct {
 
 // newRefScan prepares re for reference scans.
 func newRefScan(re *regexp.Regexp) *refScan {
-	s := &refScan{re: re}
+	s := &refScan{re: re, hand: handScanners[re.String()]}
 	parsed, err := syntax.Parse(re.String(), syntax.Perl)
 	if err != nil || hasAssertion(parsed) {
 		return s
@@ -66,6 +68,10 @@ func (s *refScan) findAllIndex(text string) [][]int {
 // each calls fn with the start and end of every match re.FindAllStringIndex(text, -1) returns,
 // in order.
 func (s *refScan) each(text string, fn func(start, end int)) {
+	if s.hand != nil {
+		s.hand(text, fn)
+		return
+	}
 	if !s.runs {
 		for _, m := range s.re.FindAllStringIndex(text, -1) {
 			fn(m[0], m[1])
@@ -94,6 +100,37 @@ func (s *refScan) each(text string, fn func(start, end int)) {
 		}
 		i = j
 	}
+}
+
+// handScanners are hand-written scanners for patterns the contract ships, keyed by the pattern's
+// source: each finds exactly the matches FindAllStringIndex finds (refscan_test.go checks that on
+// random texts), without a regexp call per match. A contract edit that changes the source turns
+// its scanner off; TestContractPatternsUseTheFastScans then fails, so the change is seen.
+var handScanners = map[string]func(text string, fn func(start, end int)){
+	// numbers_not_in_evidence: every quantifier is greedy and everything after the first digit is
+	// optional, so the leftmost-first match is the longest one: digits and commas, a fraction when a
+	// "." is followed by a digit, then a "%".
+	`[0-9][0-9,]*(?:\.[0-9]+)?%?`: func(text string, fn func(start, end int)) {
+		for i := 0; i < len(text); {
+			if !isDigit(text[i]) {
+				i++
+				continue
+			}
+			j := i + 1
+			for j < len(text) && (isDigit(text[j]) || text[j] == ',') {
+				j++
+			}
+			if j+1 < len(text) && text[j] == '.' && isDigit(text[j+1]) {
+				for j += 2; j < len(text) && isDigit(text[j]); j++ {
+				}
+			}
+			if j < len(text) && text[j] == '%' {
+				j++
+			}
+			fn(i, j)
+			i = j
+		}
+	},
 }
 
 // addRuneByte marks the first byte of r in set. Any rune outside ASCII, including the replacement
