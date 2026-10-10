@@ -85,6 +85,22 @@ describe('OgCard', () => {
     expect(card).not.toHaveTextContent(/real answer/i);
   });
 
+  it('is never ready to capture without a contradicted claim to show', async () => {
+    const s = await services();
+    // The featured answer's deep audit has not played yet at this point of the tape.
+    const getTrace = s.dataSource.getTrace.bind(s.dataSource);
+    const dataSource = Object.assign(Object.create(s.dataSource) as typeof s.dataSource, {
+      getTrace: async (id: string, signal?: AbortSignal) => ({ ...(await getTrace(id, signal)), audit_detail: null }),
+    });
+    const { container } = render(withServices({ ...s, dataSource }, <OgCard />));
+    const card = container.querySelector('[data-og-card]') as HTMLElement;
+    expect(await within(card).findByRole('alert')).toHaveTextContent('no contradicted claim');
+    expect(card.querySelector('[data-og-crop]')).toBeNull();
+    // Fonts load in a tick; the card still never says it is ready.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(card).not.toHaveAttribute('data-og-ready');
+  });
+
   it('is not a page of a build without VITE_LAUNCH_ROUTES', { timeout: 20_000 }, async () => {
     const s = await services();
     const router = createRouter({

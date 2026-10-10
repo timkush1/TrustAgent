@@ -64,10 +64,11 @@ function contradiction(claims: readonly ClaimView[]): { doc: string | null; quot
   return quote ? { doc: null, quote } : null;
 }
 
-function Crop({ detail }: { detail: TraceDetail }) {
+type Contradiction = NonNullable<ReturnType<typeof contradiction>>;
+
+function Crop({ detail, line }: { detail: TraceDetail; line: Contradiction }) {
   const outcome = traceOutcome({ ...detail, degraded: detail.decisions[0]?.degraded ?? null });
   const evidence = checkedAgainst(detail.checked_against ?? detail.decisions[0]?.evidence_summary);
-  const line = contradiction(detail.audit_detail?.claims ?? []);
   return (
     <div className="flex h-full min-h-0 flex-col gap-5 rounded-2xl border border-border-strong bg-surface p-8 shadow-sm" data-og-crop>
       <div className="flex items-center gap-4">
@@ -87,16 +88,14 @@ function Crop({ detail }: { detail: TraceDetail }) {
         <p className="text-sm font-medium tracking-wide text-fg-muted uppercase">Answer</p>
         <MarkedAnswer detail={detail} />
       </div>
-      {line ? (
-        <div className="mt-auto space-y-2 border-t border-border pt-5" data-og-evidence>
-          <VerdictBadge verdict="CONTRADICTED" />
-          <p className="text-lg text-fg">
-            {line.doc ? <span className="font-medium">{line.doc}: </span> : null}“
-            {/* Quantities stand out ("30 days"), so the difference with the answer reads at a glance. */}
-            {line.quote.split(QUANTITY).map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part))}”
-          </p>
-        </div>
-      ) : null}
+      <div className="mt-auto space-y-2 border-t border-border pt-5" data-og-evidence>
+        <VerdictBadge verdict="CONTRADICTED" />
+        <p className="text-lg text-fg">
+          {line.doc ? <span className="font-medium">{line.doc}: </span> : null}“
+          {/* Quantities stand out ("30 days"), so the difference with the answer reads at a glance. */}
+          {line.quote.split(QUANTITY).map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part))}”
+        </p>
+      </div>
     </div>
   );
 }
@@ -119,7 +118,11 @@ export default function OgCard() {
       live = false;
     };
   }, []);
-  const ready = fonts && q.isSuccess;
+  // The og-spec's crop shows a contradicted claim: without one (the featured answer's deep audit has
+  // not played at this point of the tape, or found nothing contradicted) there is no card to
+  // capture, and the page says so instead of becoming ready.
+  const line = q.isSuccess ? contradiction(q.data.audit_detail?.claims ?? []) : null;
+  const ready = fonts && line !== null;
 
   return (
     <main
@@ -152,8 +155,12 @@ export default function OgCard() {
           </p>
         ) : null}
       </div>
-      {q.isSuccess ? (
-        <Crop detail={q.data} />
+      {q.isSuccess && line ? (
+        <Crop detail={q.data} line={line} />
+      ) : q.isSuccess ? (
+        <p role="alert" data-og-blocked className="self-center text-lg text-fg">
+          The featured answer has no contradicted claim at this point of the recording, so there is no card to capture.
+        </p>
       ) : status === 'error' || q.isError ? (
         <p role="alert" className="self-center text-lg text-fg">
           The demo recording could not be read: {q.error?.message ?? error}
