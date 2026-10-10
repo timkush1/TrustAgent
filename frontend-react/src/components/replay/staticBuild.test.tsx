@@ -11,6 +11,7 @@ import { ServicesContext, type AppServices } from '@/app/services';
 import { NotFound, RouteError } from '@/components/common/RouteStates';
 import { buildRuntimeConfig } from '@/config/runtime';
 import { createReplayDataSource } from '@/data/replay/replayDataSource';
+import { useReplayStore } from '@/data/replay/replayStore';
 import { useStreamStore } from '@/data/stream/streamStore';
 import { routeTree } from '@/routeTree.gen';
 import { axeViolations, formatViolations } from '@/test/axe';
@@ -63,10 +64,13 @@ describe('hiddenStaticPage', () => {
     expect(hiddenStaticPage('/app/knowledge')?.name).toBe('Knowledge');
     expect(hiddenStaticPage('/app/evaluators/groundedness')?.name).toBe('Evaluators');
     expect(hiddenStaticPage('/app/setup')?.name).toBe('Setup');
+    // Benchmarks is part of Evaluators, which the static nav does not list (D111, CO-4).
+    expect(hiddenStaticPage('/app/evaluators/benchmarks')?.name).toBe('Evaluators');
+    expect(hiddenStaticPage('/TrustAgent/app/evaluators/benchmarks/run-1')?.name).toBe('Evaluators');
   });
 
-  it('keeps the replay pages, the Studio and the committed benchmark runs (D72)', () => {
-    for (const path of ['/app/overview', '/app/traffic', '/app/traffic/abc', '/app/playground', '/app/evaluators/studio', '/app/evaluators/benchmarks', '/app/policiesx']) {
+  it('keeps the replay pages and the Studio', () => {
+    for (const path of ['/app/overview', '/app/traffic', '/app/traffic/abc', '/app/playground', '/app/savings', '/app/evaluators/studio', '/app/evaluators/studio/x/1', '/app/policiesx']) {
       expect(hiddenStaticPage(path), path).toBeNull();
     }
   });
@@ -214,10 +218,29 @@ describe('static build', () => {
     expect(await screen.findByRole('heading', { level: 2 })).toHaveTextContent('Write your own checks');
   });
 
-  it('opens Benchmarks from the committed runs, with no gateway (D72)', async () => {
+  it('hides Benchmarks like the rest of Evaluators, asking no gateway (D111)', async () => {
     const { requests } = await renderStatic('/app/evaluators/benchmarks');
-    expect(await screen.findByText(/Committed runs only: every figure was measured, none simulated\./)).toBeInTheDocument();
-    expect(screen.queryByText(/needs a running gateway/i)).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Evaluators is not part of the static demo' })).toBeInTheDocument();
+    expect(screen.queryByText(/Committed runs only/)).toBeNull();
     expect(requests.filter((r) => r.includes('/api/'))).toEqual([]);
+  });
+
+  it('keeps the trace page’s actions in view, disabled with the static reason (RP-4)', async () => {
+    const featured = useReplayStore.getState().featuredTraceId;
+    await renderStatic(`/app/traffic/${featured}`);
+    const outcome = await screen.findByRole('region', { name: 'Outcome' });
+    const reason = 'Not available on the online demo: run TrustAgent yourself to use it';
+    for (const name of [/^Open evaluator/, /^Adjust threshold/]) {
+      const action = within(outcome).getByRole('button', { name });
+      expect(action).toHaveAttribute('aria-disabled', 'true');
+      expect(action).toHaveAccessibleDescription(new RegExp(`^${reason}`));
+    }
+    // Nothing links to the hidden evaluator or policy pages.
+    expect(within(outcome).queryByRole('link', { name: /Open evaluator|Adjust threshold/ })).toBeNull();
+    // The reason's fix is the landing's self-host section.
+    expect(within(outcome).getByRole('link', { name: 'Set it up in one command' })).toHaveAttribute('href', '/TrustAgent/#self-host');
+    // Labelling is a write too: it says the same, not "read-only instance".
+    expect(within(outcome).queryByText(/read-only instance/)).toBeNull();
+    expect(formatViolations(await axeViolations(outcome))).toEqual([]);
   });
 });

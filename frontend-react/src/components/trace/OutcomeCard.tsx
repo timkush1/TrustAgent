@@ -4,12 +4,15 @@
  * when it was not the model's answer, "Was this right?" (labels, D59), and the links to the
  * check that drove the outcome: "Open evaluator" (its Calibration tab when a block was capped for
  * want of a calibration) and "Adjust threshold" (its route in Policies, with the threshold editor
- * open).
+ * open). On the static site both stay visible but disabled, with the static reason (RP-4).
  */
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUpRight, SlidersHorizontal } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import { useId, type MouseEvent } from 'react';
+import { DisabledReason } from '@/components/common/DisabledReason';
+import { useStaticReason } from '@/components/common/useWriteAccess';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
+import { Button } from '@/components/ui/button';
 import { reasonLines } from '@/components/traffic/trafficRows';
 import { checkedAgainst, copy, traceOutcome } from '@/domain/presentation';
 import { formatDateTime } from '@/domain/format';
@@ -61,6 +64,8 @@ export function OutcomeCard({
   const check = primaryCheck(decision);
   // A block capped for want of a calibration (D56) is fixed on the check's Calibration tab.
   const needsCalibration = summary.reasons.some((r) => CALIBRATION_CAPS.has(r));
+  const staticReason = useStaticReason();
+  const staticReasonId = useId();
   return (
     <section aria-labelledby="outcome-title" className="space-y-3 rounded-lg border border-border bg-surface p-4">
       <h2 id="outcome-title" className="sr-only">
@@ -92,7 +97,27 @@ export function OutcomeCard({
           <ArrowDown aria-hidden="true" className="size-3.5" />
         </a>
       ) : null}
-      {check ? (
+      {check && staticReason ? (
+        // The static site has no evaluator library or policy editor: both actions stay in place,
+        // disabled (still focusable), and one reason under them says how to get them.
+        <div className="space-y-1" data-static-actions>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" disabled aria-describedby={staticReasonId}>
+              <ArrowUpRight aria-hidden="true" />
+              {copy.trace.open_evaluator}
+              <span className="sr-only">: {evaluatorName(check.ref, names)}</span>
+            </Button>
+            <Button size="sm" variant="secondary" disabled aria-describedby={staticReasonId}>
+              <SlidersHorizontal aria-hidden="true" />
+              {copy.trace.adjust_threshold}
+              <span className="sr-only">
+                : {evaluatorName(check.ref, names)} on {summary.route}
+              </span>
+            </Button>
+          </div>
+          <DisabledReason id={staticReasonId} reason={staticReason} />
+        </div>
+      ) : check ? (
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <Link
             to="/app/evaluators/$id"
