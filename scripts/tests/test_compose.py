@@ -414,6 +414,19 @@ class ImagesTest(unittest.TestCase):
                 )
             self.assertIn("Resolved 20", text, f"{dockerfile}: the pin's resolved versions")
 
+    def test_dependabot_follows_the_pins_and_holds_the_engine_python(self) -> None:
+        # The docker ecosystem watches every Dockerfile directory, so tag and digest move together.
+        # Python 3.11 -> 3.12+ is a semver minor to Dependabot; the engine's ML wheels lag a new
+        # Python, so both minor and major bumps are held back (digest refreshes still arrive).
+        bot = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        docker = bot.split("  - package-ecosystem: docker\n", 1)[1].split("\n\n", 1)[0]
+        for dockerfile in DOCKERFILES:
+            self.assertIn(f"      - /{dockerfile}\n", docker)
+        python = docker.split("- dependency-name: 'python'\n", 1)[1].split("\n", 1)[0]
+        self.assertIn("'version-update:semver-major'", python)
+        self.assertIn("'version-update:semver-minor'", python)
+        self.assertNotIn("semver-patch", python)
+
     def test_the_proxy_image_ships_every_command_the_targets_run(self) -> None:
         go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
         cmds = re.search(r'(?m)^ARG CMDS="([^"]*)"$', go)
