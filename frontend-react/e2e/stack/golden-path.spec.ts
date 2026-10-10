@@ -1,13 +1,13 @@
 /**
- * The golden path (SPEC §4.2, D130): from the setup link `make up` opens to the detail of the
- * first flagged trace in at most 8 user actions, with no key ($0, simulated checks, labelled), no
+ * The golden path (SPEC §4.2, D130, D162): from the setup link `make up` opens to the detail of
+ * the first flagged trace in at most 8 clicks, with no key ($0, simulated checks, labelled), no
  * shell command and no log.
  *
- *   open the setup link → Create the admin key → tick I saved it → Next → Try it without a key →
- *   Next → Check this answer → Open the trace
+ *   (the setup link, opened by make up) → Create the admin key → Copy the admin key →
+ *   tick I saved it → Next → Try it without a key → Next → Check this answer → Open the trace
  *
- * Copying the admin key is not counted: "I saved it" is the action that stands for saving it, and
- * a person may save it any way they like (the onboarding spec checks the Copy button).
+ * Every click counts, Copy included (most people copy the key before ticking "I saved it"). The
+ * setup link is where the path starts: `make up` opens it, so opening it is not a click.
  *
  * `make golden-path` starts a fresh stack (the onboarding stack's configuration, its own project
  * and ports) and passes its setup link; the journey itself only clicks. On failure the message
@@ -18,7 +18,7 @@ import { expect, test } from '@playwright/test';
 import { Journey, SECURE, TIMEOUT, checkTheRefundAnswer, openTheTrace, requireFreshStack, secureWithSetupLink, trySimulated } from './journey';
 import { requireStack } from './stack';
 
-/** D130: at most 8 user actions from the setup link to the flagged trace's detail. */
+/** D130, D162: at most 8 clicks from the setup link to the flagged trace's detail. */
 const BUDGET = 8;
 /** A request for logs, of any kind: the golden path never needs one. */
 const LOGS = /\/logs?(\/|$)/i;
@@ -42,7 +42,7 @@ test.describe('golden-path', () => {
     }
   });
 
-  test('golden-path: from the setup link to the flagged trace in 8 actions or fewer', async ({ page, playwright }, testInfo) => {
+  test('golden-path: from the setup link to the flagged trace in 8 clicks or fewer', async ({ page, playwright }, testInfo) => {
     await requireStack(playwright, testInfo);
     const setupUrl = await requireFreshStack(playwright, testInfo, {
       spec: 'golden-path',
@@ -54,8 +54,10 @@ test.describe('golden-path', () => {
       if (LOGS.test(path)) logRequests.push(path);
     });
     const journey = new Journey(BUDGET);
+    // Copy is a counted click, and the journey checks the clipboard holds the key.
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    await secureWithSetupLink(page, journey, setupUrl, { copy: false });
+    await secureWithSetupLink(page, journey, setupUrl, { copy: true });
     await trySimulated(page, journey);
     await checkTheRefundAnswer(page, journey);
     await openTheTrace(page, journey);

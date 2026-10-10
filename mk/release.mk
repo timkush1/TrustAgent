@@ -217,7 +217,7 @@ first-run: ## A fresh stack to its first flagged answer, timed (under 5 min): FI
 		FIRST_RUN_IMAGES="ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}:$(FIRST_RUN_IMAGE_TAG)" \
 		FIRST_RUN_OUT="$(abspath $(FIRST_RUN_OUT))" npx playwright test --project=stack --workers=1 -g first-run)
 
-golden-path: ## A fresh stack from its setup link to the flagged trace's detail in at most 8 actions (D130): FIRST_RUN_LOCAL=1 or FIRST_RUN_TAG=<tag>
+golden-path: ## A fresh stack from its setup link to the flagged trace's detail in at most 8 clicks (D130, D162): FIRST_RUN_LOCAL=1 or FIRST_RUN_TAG=<tag>
 	@set -e; $(FIRST_RUN_UP); \
 	(cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) npx playwright test --project=stack --workers=1 -g golden-path)
 

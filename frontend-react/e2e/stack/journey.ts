@@ -40,9 +40,10 @@ export const FAST_CHECK = COPY.tiers.fast_check;
 const SECRET_PATTERN = /sk-or-v1-[A-Za-z0-9_-]{8,}|sk-test-[A-Za-z0-9_-]{8,}|cmp0e2eZq7Lw4Rt9Yx2Vb6Nm|mockcode_[0-9a-f]{8,}/;
 
 /**
- * The user actions of a journey's happy path, counted against a budget (D87, D130). Detours (a
- * spec's extra checks) are not counted; an action that happens away from the page (approving at
- * OpenRouter) is counted with `away`.
+ * The user actions of a journey's happy path, counted against a budget (D87, D130, D162): every
+ * click and tick a person makes, Copy included; the setup link the stack opens is the start, not
+ * an action. Detours (a spec's extra checks) are not counted; an action that happens away from the
+ * page (approving at OpenRouter) is counted with `away`.
  */
 export class Journey {
   readonly actions: string[] = [];
@@ -53,6 +54,14 @@ export class Journey {
 
   constructor(budget: number) {
     this.budget = budget;
+  }
+
+  /**
+   * Where the journey starts, not counted: `make up` (and `make first-run`, `make golden-path`)
+   * opens the setup link itself (SPEC §1 row 39), so the person's first action is on that page.
+   */
+  start<T>(what: string, action: () => Promise<T>): Promise<T> {
+    return test.step(`start: ${what}`, action);
   }
 
   /** A counted user action, reported as a Playwright step. */
@@ -153,7 +162,7 @@ export interface SecureOptions {
  */
 export async function secureWithSetupLink(page: Page, journey: Journey, setupUrl: string, options: SecureOptions): Promise<string> {
   // Only the fragment matters: the page is served by the dashboard under test.
-  await journey.step('open the setup link', () => page.goto(`/app/setup${new URL(setupUrl).hash}`));
+  await journey.start('the setup link, opened by make up', () => page.goto(`/app/setup${new URL(setupUrl).hash}`));
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Setup');
   await expect(page, 'the token leaves the address bar').not.toHaveURL(/#token=/);
   await expect(page.getByText(SECURE.no_token), 'a setup link never needs the logs').toHaveCount(0);
