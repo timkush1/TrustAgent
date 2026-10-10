@@ -24,7 +24,7 @@
  *   [measured-mock]       measured.json holds a value but is not a measured run with mock:false
  *   [stray-measured-chip] a [measured] chip outside the text of a measured claim
  *   [measured-placeholder] a {measured:KEY} placeholder names no value in measured.json
- *   [launch-figure]       a $, % or ms figure in docs/launch without a claim marker
+ *   [launch-figure]       a $, %, ms or multiplier (27×) figure in docs/launch without a claim marker
  *   [pkce-wording]        prose says PKCE is verified while SPEC Appendix D says it is not
  *   [block-stale]         a <!-- measured:start --> ... <!-- measured:end --> block differs from what
  *                         --write generates (proxy overhead in a table of its own, D118);
@@ -97,7 +97,8 @@ const BLOCK_RE = /<!--\s*measured:(start|end)\s*-->/;
 const CHIP_RE = /\[(estimate|vendor|third[- ]party|measured|simulated)\]/gi;
 const MEASURED_CHIP_RE = /\[measured\]/gi;
 const PLACEHOLDER_RE = /\{measured:([^{}\s]*)\}/g;
-const FIGURE_RE = /\$\s?\d[\d,]*(?:\.\d+)?|(?<![\w.$])\d[\d,]*(?:\.\d+)?\s?(?:%|ms\b)/g;
+// A money figure, or a number with %, ms or a multiplier (27×, 30x; a 1280×640 size is not one).
+const FIGURE_RE = /\$\s?\d[\d,]*(?:\.\d+)?|(?<![\w.$])\d[\d,]*(?:\.\d+)?\s?(?:%|ms\b|(?:×|x\b)(?!\s?\d))/g;
 const LINK_RE = /\]\(([^)\s]*#[^)\s]+)\)/g;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
 
@@ -1156,6 +1157,11 @@ const CASES = [
       ].join('\n'),
     },
     expect: ['launch-figure', 'launch-figure', 'launch-figure'],
+  },
+  {
+    name: 'a multiplier is a launch figure; an image size is not',
+    files: { 'docs/launch/post.md': 'It is 27× cheaper, or 30x. The card is 1280×640 (or 1200x630).' },
+    expect: ['launch-figure', 'launch-figure'],
   },
   {
     name: 'braces do not hide a launch figure; only a {measured:KEY} placeholder stands in for one',
