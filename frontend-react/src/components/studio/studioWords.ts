@@ -237,3 +237,47 @@ export function riskLevelsLine(outcomes: { warn_at: number; critical_at?: number
     ? `Risk words follow this check’s own thresholds: ${warn}, ${levelWord('critical').label} from ${formatRisk(outcomes.critical_at)}.`
     : `Risk words follow this check’s own thresholds: ${warn}; it has no ${levelWord('critical').label} level.`;
 }
+
+// ------------------------------------------------------------------------ static (browser) Studio
+
+/** The words of an OpenRouter error kind (lib/openrouter OpenRouterErrorKind) a browser call failed with. */
+const LIVE_ERRORS: Readonly<Record<string, string>> = {
+  auth: copy.playground_live.errors.unauthorized,
+  credits: copy.playground_live.errors.no_credits,
+  data_policy: copy.playground_live.errors.data_policy,
+  too_large: copy.playground_live.errors.too_large,
+  retryable: copy.playground_live.retry_busy,
+  timeout: copy.playground_live.errors.timeout,
+  network: copy.playground_live.errors.network,
+  bad_response: copy.playground_live.errors.bad_response,
+  bad_content_type: copy.playground_live.errors.bad_response,
+  rejected_pause: copy.playground_live.rejected_pause,
+};
+
+/** copy.playground_live.checks_used: "{n} of {max} calls to OpenRouter (checks and AI drafts)". */
+export function studioCallsUsedText(used: number, max: number): string {
+  return fillTemplate(copy.playground_live.checks_used, { n: formatCount(used), max: formatCount(max) });
+}
+
+/**
+ * The words for a static Studio call that failed or was refused before it went out (D101): an
+ * OpenRouter error kind, or the tab's caps. Null for a code these words do not cover (the caller
+ * shows the error's own message) and for a cancelled call.
+ */
+export function studioLiveFailureText(code: string, limits: { maxCalls: number; maxTokens: number }): string | null {
+  if (code === 'cap_reached') return studioCallsUsedText(limits.maxCalls, limits.maxCalls);
+  if (code === 'token_cap') return fillTemplate(copy.playground_live.token_cap, { max_tokens: formatCount(limits.maxTokens) });
+  return Object.hasOwn(LIVE_ERRORS, code) ? LIVE_ERRORS[code] : null;
+}
+
+/** The words for a gateway draft the judge's provider refused (CO-8): out of credits, or the key refused. */
+export function studioDraftFailureText(code: string): string | null {
+  if (code === 'no_credits') return copy.studio.draft_no_credits;
+  if (code === 'judge_unauthorized') return copy.studio.draft_key_refused;
+  return null;
+}
+
+/** copy.studio.static_samples_source: where the static test bench's samples come from. */
+export function studioStaticSamplesSource(route: string): string {
+  return fillTemplate(copy.studio.static_samples_source, { route });
+}

@@ -8,6 +8,11 @@
  * `/app/evaluators/studio` starts a new check; `/app/evaluators/studio/$id/$version` starts from a
  * saved version (a built-in or file check is copied as a new check of the viewer's own). Nothing is
  * saved or attached without an explicit action, and every paid action shows its cost first.
+ *
+ * The static site (D107) runs the first four steps in the browser: drafting and testing call
+ * OpenRouter with the tab's own key (every call counts against the tab's caps), samples come from
+ * the replayed recording, and quick calibration is local. Step 5 exports the check as a file
+ * (Copy JSON / Download .json), and one card says what only your own stack does.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -17,6 +22,7 @@ import { type Reason } from '@/components/common/DisabledReason';
 import { PageHeader } from '@/components/common/PageHeader';
 import { ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
+import { useIsStatic } from '@/components/replay/useReplay';
 import { useWriteReason } from '@/components/common/useWriteAccess';
 import { draftRouteNames } from '@/components/policies/policyDraft';
 import { evaluatorQuery, evaluatorsQuery, evaluatorVersionQuery, policiesQuery } from '@/data/queries';
@@ -28,14 +34,18 @@ import { evaluatorIdFrom } from '@/lib/studio/draftToSpec';
 import { sameSpec } from '@/lib/studio/specFields';
 import { runKeys } from '@/lib/studio/testBench';
 import type { EvaluatorDetail, EvaluatorSpec, EvaluatorVersion, StudioDraftResponse, StudioSample } from '@/types/api';
+import { sharedStaticRegistry } from '@/lib/studio/staticRegistry';
 import { CalibrateStep } from './CalibrateStep';
 import { DescribeStep, type StudioStart } from './DescribeStep';
+import { ExportStep } from './ExportStep';
+import { OwnStackCard } from './OwnStackCard';
 import { QuickCalibrationStep } from './QuickCalibrationStep';
 import { ReviewStep } from './ReviewStep';
 import { SaveStep, type StudioBase } from './SaveStep';
 import { StudioStep } from './StudioStep';
 import { StudioSteps, type StepStatus } from './StudioSteps';
 import { TestBench, type TestRun } from './TestBench';
+import { useStudioLive } from './useStudioLive';
 import { WatchStep } from './WatchStep';
 
 interface Session {
@@ -76,8 +86,11 @@ function StudioEditor({ initial }: { initial: Session }) {
   const ds = useDataSource();
   const queryClient = useQueryClient();
   const { status } = useSystemStatus();
-  const writeReason = useWriteReason('admin');
-  const policies = useQuery(policiesQuery(ds));
+  const live = useStudioLive();
+  // The static site writes nothing to a server: its actions are the browser's own.
+  const serverWriteReason = useWriteReason('admin');
+  const writeReason = live ? null : serverWriteReason;
+  const policies = useQuery({ ...policiesQuery(ds), enabled: live === null });
   const evaluators = useQuery(evaluatorsQuery(ds, true));
   const [session, setSession] = useState<Session>(initial);
   const [run, setRun] = useState<TestRun | null>(null);
@@ -89,7 +102,10 @@ function StudioEditor({ initial }: { initial: Session }) {
     return [...ids];
   }, [evaluators.data]);
   const checkOptions = useMemo<CheckOptions>(() => (evaluators.data ? { registry: taken } : {}), [evaluators.data, taken]);
-  const routes = useMemo(() => (policies.data ? draftRouteNames(policies.data.yaml) : []), [policies.data]);
+  const routes = useMemo(() => {
+    if (live) return sharedStaticRegistry().routes();
+    return policies.data ? draftRouteNames(policies.data.yaml) : [];
+  }, [live, policies.data]);
 
   const check = useMemo(() => (spec ? checkSpecDocument(spec, checkOptions) : null), [spec, checkOptions]);
   const savable = check ? isSavable(check) : false;
@@ -136,20 +152,21 @@ function StudioEditor({ initial }: { initial: Session }) {
     !spec ? 'waiting' : run && !stale ? 'done' : 'todo',
     !spec ? 'waiting' : 'optional',
     !spec ? 'waiting' : savedRef ? 'done' : 'todo',
-    !savedRef ? 'waiting' : 'todo',
-    !savedRef ? 'waiting' : 'optional',
+    ...(live ? [] : ([!savedRef ? 'waiting' : 'todo', !savedRef ? 'waiting' : 'optional'] as const)),
   ];
+  // The library's newest version of this id: an export is the version a save would create.
+  const latest = (spec && evaluators.data?.items.find((e) => e.id === spec.id)?.latest_version) || 0;
 
   // The next step to do carries the page's one primary action (DESIGN.md: one primary per view).
   const next = statuses.indexOf('todo');
 
   return (
     <div className="space-y-5">
-      <StudioSteps statuses={statuses} />
+      <StudioSteps statuses={statuses} exportOnly={live !== null} />
       {initial.spec ? (
         <StudioStep n={1} id="step-describe" title="Start from a saved version" description={initial.origin ?? undefined} />
       ) : (
-        <DescribeStep judge={status?.judge ?? null} routes={routes} taken={taken} writeReason={writeReason} hasCheck={spec !== null} onStart={start} />
+        <DescribeStep judge={status?.judge ?? null} routes={routes} taken={taken} writeReason={writeReason} hasCheck={spec !== null} onStart={start} live={live} />
       )}
       {spec && check ? (
         <>
@@ -170,27 +187,38 @@ function StudioEditor({ initial }: { initial: Session }) {
             run={run}
             onRun={setRun}
             onSpecChange={setSpec}
-            decisionModel={decisionModel}
+            decisionModel={live ? null : decisionModel}
             routes={routes}
             defaultRoute={session.route}
             writeReason={writeReason}
             specReason={specReason}
             primary={next === 2}
+            live={live}
           />
           <QuickCalibrationStep spec={spec} results={run?.response.results ?? null} stale={stale} samples={samples} onSpecChange={setSpec} />
-          <SaveStep spec={spec} onSpecChange={setSpec} base={base} specReason={specReason} writeReason={writeReason} taken={taken} onSaved={onSaved} onReloadLatest={reloadLatest} primary={next === 4} />
-          <WatchStep
-            savedRef={savedRef}
-            spec={spec}
-            defaultRoute={session.route}
-            specReason={specReason}
-            simulated={decisionModel?.backend === 'mock'}
-            modelReason={modelReason}
-            primary={next === 5}
-          />
-          <CalibrateStep evaluatorId={base?.id ?? null} />
+          {live ? (
+            <>
+              <ExportStep spec={spec} latest={latest} registry={taken} secret={live.key} specReason={specReason} primary={next === 4} />
+              <OwnStackCard />
+            </>
+          ) : (
+            <>
+              <SaveStep spec={spec} onSpecChange={setSpec} base={base} specReason={specReason} writeReason={writeReason} taken={taken} onSaved={onSaved} onReloadLatest={reloadLatest} primary={next === 4} />
+              <WatchStep
+                savedRef={savedRef}
+                spec={spec}
+                defaultRoute={session.route}
+                specReason={specReason}
+                simulated={decisionModel?.backend === 'mock'}
+                modelReason={modelReason}
+                primary={next === 5}
+              />
+              <CalibrateStep evaluatorId={base?.id ?? null} />
+            </>
+          )}
         </>
       ) : null}
+      {live && !spec ? <OwnStackCard /> : null}
     </div>
   );
 }
@@ -210,6 +238,8 @@ export function StudioPage() {
 /** Studio starting from a saved version (`/app/evaluators/studio/$id/$version`). */
 export function StudioVersionPage({ id, version: param }: { id: string; version: string }) {
   const ds = useDataSource();
+  // The check's own page is not part of the online demo: no link back to it there.
+  const isStatic = useIsStatic();
   const version = /^[1-9][0-9]{0,8}$/.test(param) ? Number(param) : 0;
   const versionQ = useQuery({ ...evaluatorVersionQuery(ds, id, version), enabled: version > 0 });
   const detailQ = useQuery(evaluatorQuery(ds, id));
@@ -244,12 +274,16 @@ export function StudioVersionPage({ id, version: param }: { id: string; version:
     <div>
       <PageHeader
         description={
-          <>
-            {DESCRIPTION}{' '}
-            <Link to="/app/evaluators/$id" params={{ id }} className="font-medium text-fg underline underline-offset-2">
-              Back to {detailQ.data.name}
-            </Link>
-          </>
+          isStatic ? (
+            DESCRIPTION
+          ) : (
+            <>
+              {DESCRIPTION}{' '}
+              <Link to="/app/evaluators/$id" params={{ id }} className="font-medium text-fg underline underline-offset-2">
+                Back to {detailQ.data.name}
+              </Link>
+            </>
+          )
         }
       />
       <StudioEditor key={`${id}@${version}`} initial={initial} />

@@ -3,6 +3,10 @@
  * before "Run", then one row per sample ("Fires / Doesn't fire · Matches your label / Doesn't
  * match", with probabilities, latency, cost and snapshot on click), a summary ("5 of 6 match ·
  * $0.001") and the free threshold what-if, which replays the risks this run already returned.
+ *
+ * On the static site (D107) each sample runs through the browser gate with the tab's own key: Run
+ * needs a key and enough calls left in this tab, and the run's cost is labelled vendor (OpenRouter
+ * reported it) or estimate (the price table).
  */
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
@@ -15,17 +19,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { STUDIO_TEST_MAX_SAMPLES } from '@/data/control/studioPlane';
-import { errorCodeHint } from '@/data/errors';
+import { errorCodeHint, isApiError } from '@/data/errors';
 import { formatCount, formatDurationMs, formatRisk } from '@/domain/format';
 import { copy, decisionBackendLabel } from '@/domain/presentation';
+import { testCostSource } from '@/lib/studio/costSource';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
-import type { DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse } from '@/types/api';
-import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioExpectedWords, studioFireWords } from './studioWords';
+import type { DecisionBackend, DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse, ValueLabel } from '@/types/api';
+import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailureText } from './studioWords';
+import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { SimulatedRunNote } from './SimulatedRunNote';
 import { AddSamples, SampleList } from './SampleList';
 import { StudioStep } from './StudioStep';
+import { callsLeft, type StudioLiveView } from './useStudioLive';
 
 /** A test run and what it ran on, so the bench can say when the check or samples changed since. */
 export interface TestRun {
@@ -50,19 +57,35 @@ export interface TestBenchProps {
   specReason: Reason | null;
   /** This is the step to do next: its action is the page's one primary button. */
   primary: boolean;
+  /** The static site's live mode (null in the full build): samples run with the tab's key. */
+  live?: StudioLiveView | null;
+}
+
+/** The backend a static run asks (OpenRouter's decisions endpoint, D100). */
+const STATIC_BACKEND: DecisionBackend = 'openrouter-decisions';
+
+/** Why a static run cannot go out now, or null (D101, D107). */
+function staticRunReason(live: StudioLiveView, samples: number): Reason | null {
+  if (!live.checks) return 'static';
+  if (!live.connected) return { text: 'Testing calls OpenRouter with your key from this tab. Connect or paste a key first.', fix: <ConnectKeyFix /> };
+  const left = callsLeft(live);
+  if (left !== null && left < samples) return { text: `This test needs ${formatCount(samples)} calls · ${studioCallsUsedText(live.used ?? 0, live.maxCalls)}` };
+  return null;
 }
 
 const pct = (p: number) => `${Math.floor(p * 100 + 0.5)}%`;
 
 interface RunCost {
-  label: 'simulated' | 'estimate';
+  label: ValueLabel;
   basis: string;
 }
 
+/** The label of a run's cost: simulated on a mock, vendor or estimate as the static plane priced it, else an estimate. */
 function runCostOf(response: StudioTestResponse): RunCost {
-  return response.summary.backend === 'mock'
-    ? { label: 'simulated', basis: 'A mock fast check answered; nothing was billed.' }
-    : { label: 'estimate', basis: "Tokens × the price table's price for the fast-check model." };
+  if (response.summary.backend === 'mock') return { label: 'simulated', basis: 'A mock fast check answered; nothing was billed.' };
+  const source = testCostSource(response);
+  const label = source ? studioCostLabel(source) : null;
+  return label ?? { label: 'estimate', basis: "Tokens × the price table's price for the fast-check model." };
 }
 
 function ResultRow({
@@ -141,7 +164,7 @@ function ResultRow({
   );
 }
 
-export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecChange, decisionModel, routes, defaultRoute, writeReason, specReason, primary }: TestBenchProps) {
+export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecChange, decisionModel, routes, defaultRoute, writeReason, specReason, primary, live = null }: TestBenchProps) {
   const ds = useDataSource();
   const [whatIf, setWhatIf] = useState<number | null>(null);
   const warnAt = spec.outcomes.warn_at;
@@ -154,11 +177,12 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
     },
   });
 
-  const backend = decisionModel?.backend ?? null;
-  const estimate = testEstimate(spec, samples, { backend: backend ?? 'openrouter-decisions', name: decisionModel?.snapshot ?? decisionModel?.model_requested ?? null });
+  const backend = live ? STATIC_BACKEND : (decisionModel?.backend ?? null);
+  const modelName = live ? live.jevModel : (decisionModel?.snapshot ?? decisionModel?.model_requested ?? null);
+  const estimate = testEstimate(spec, samples, { backend: backend ?? 'openrouter-decisions', name: modelName });
 
-  let runReason: Reason | null = writeReason;
-  if (!runReason && (backend === 'off' || decisionModel?.state === 'off')) {
+  let runReason: Reason | null = live ? staticRunReason(live, samples.length) : writeReason;
+  if (!live && !runReason && (backend === 'off' || decisionModel?.state === 'off')) {
     runReason = {
       text: 'No fast-check model is connected',
       fix: (
@@ -178,7 +202,8 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
   const threshold = whatIf ?? warnAt;
   const summary = run ? benchAt(run.response.results, labels, threshold) : null;
   const bySample = new Map(samples.map((s) => [s.id, s]));
-  const failure = test.error ? describeError(test.error) : null;
+  const failure = test.error && !(isApiError(test.error) && test.error.code === 'aborted') ? describeError(test.error) : null;
+  const failureWords = failure && live && isApiError(test.error) ? studioLiveFailureText(test.error.code, live) : null;
   const runCost = run ? runCostOf(run.response) : null;
 
   return (
@@ -188,8 +213,8 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
       title={copy.studio.test_on_samples}
       description="Label what the check should catch, then run it on the fast check. Each sample is one call."
     >
-      <SampleList samples={samples} onChange={onSamplesChange} disabled={test.isPending} />
-      <AddSamples samples={samples} onChange={onSamplesChange} routes={routes} defaultRoute={defaultRoute} writeReason={writeReason} />
+      <SampleList samples={samples} onChange={onSamplesChange} disabled={test.isPending} fromRecording={live !== null} />
+      <AddSamples samples={samples} onChange={onSamplesChange} routes={routes} defaultRoute={defaultRoute} writeReason={live ? null : writeReason} fromRecording={live !== null} />
 
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <DisabledAction reason={runReason}>
@@ -207,15 +232,16 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
             {backend ? <span>· {decisionBackendLabel(backend)}</span> : null}
           </span>
         ) : null}
+        {live && live.used !== null ? <span className="text-sm text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</span> : null}
       </div>
 
       {failure ? (
         <div role="alert" className="space-y-1 rounded-md border border-border p-3 text-sm">
           <p className="flex items-start gap-1.5 text-fg">
             <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-tone-danger" />
-            The test did not run: {failure.message}
+            The test did not run: {failureWords ?? failure.message}
           </p>
-          {errorCodeHint(test.error) ? <p className="text-fg-muted">{errorCodeHint(test.error)}</p> : null}
+          {!failureWords && errorCodeHint(test.error) ? <p className="text-fg-muted">{errorCodeHint(test.error)}</p> : null}
           {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
         </div>
       ) : null}
