@@ -27,8 +27,9 @@ run date once at the end of that paragraph. No other number goes into the post.
 > {measured:ragtruth_qa_agreement} of answers. {run date}
 >
 > The finding that changed the design: without source documents, the classifier's groundedness
-> scores invert. A public test found it ranked fabricated citations above honest ones. So
-> TrustAgent never guesses: with nothing to check against, the answer is marked "not checked".
+> scores invert. Haqq's public test of Jev on legal citations found it ranked fabricated citations
+> above honest ones when it had no sources (link in the first comment). So TrustAgent never
+> guesses: with nothing to check against, the answer is marked "not checked".
 >
 > The part I enjoyed building most: you describe a new check in plain English, an LLM drafts it
 > once, and Jev runs it on every request for a fraction of a cent. You test it on samples,
@@ -77,12 +78,14 @@ No benchmark run is published yet, so every row says "not yet measured". The oth
 
 ## Notes for posting
 
-- **Attribution.** The inversion finding is a published third-party test, not our measurement;
-  the post says so ("a public test found"). Do not add its figures: they are not in the claims
-  contract.
+- **Attribution.** The inversion finding is a published third-party test, not our measurement:
+  Haqq, "Jev for legal AI hallucination detection"
+  (https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection). The post names Haqq and puts
+  the link in the first comment. Do not add its figures: they are not in the claims contract.
 - **The link card** comes from the demo URL's `og:image`, the [social card](og-spec.md). Check it
   in LinkedIn's post inspector before posting.
-- **First comment** (optional): the 60-second video from [demo-script.md](demo-script.md), and a
-  line inviting people to run `make demo` with zero keys.
+- **First comment:** the Haqq link above (the post promises it), then optionally the 60-second
+  video from [demo-script.md](demo-script.md) and a line inviting people to run `make demo` with
+  zero keys.
 - **If a value is missing** (a run that did not cover it), cut that clause rather than estimate
   it.

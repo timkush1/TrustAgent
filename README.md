@@ -21,6 +21,12 @@ by your policy, and audited claim by claim on a live dashboard.**
 
 **[Try the demo](https://timkush1.github.io/TrustAgent/)** | [`make demo`](#quick-start)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/trace-dark.png">
+  <img alt="Trace detail (Simulated): the refund answer is flagged, its days figure marked as contradicted by refund-policy.md, with the fast-check scores and the deep audit's claim beside it" src="docs/images/v2/trace-light.png" width="100%">
+</picture>
+<sub>A flagged answer: "60 days" contradicts the refund policy's 30 days. <b>Simulated</b> (the demo's mock checks and mock judge, not model output); more in <a href="#screenshots">Screenshots</a>.</sub>
+
 </div>
 
 - **Every answer checked, for cents.** One fast-check call asks all of a route's questions at once:
@@ -91,8 +97,8 @@ No benchmark run is published yet, so every row says "not yet measured". The oth
 
 ### In your browser (nothing to install)
 
-**[Open the live demo](https://timkush1.github.io/TrustAgent/).** It replays a recorded session of
-the demo traffic through the real dashboard: the Traffic list, a flagged answer with its contradicted
+**[Open the live demo](https://timkush1.github.io/TrustAgent/).** It replays the demo traffic
+through the real dashboard: the Traffic list, a flagged answer with its contradicted
 claim marked, the exact request the fast check was sent, Savings and the Evaluator Studio. Each number
 carries its label, and a tape made with the mock checks says **Simulated** on every page.
 
@@ -200,7 +206,7 @@ Each route runs the checks you attach to it, all asked in the same fast-check ca
   flagged.
 - **Write your own.** The **Evaluator Studio** drafts a check from one sentence, tests it on samples
   and on past traffic, and calibrates its threshold from your labels. The live demo runs the Studio
-  in the browser on the recorded traffic.
+  in the browser on the replayed traffic.
 
 Per-claim verdicts are **SUPPORTED**, **CONTRADICTED** (the evidence disproves it), **UNSUPPORTED**
 (nothing addresses it) and **PARTIALLY_SUPPORTED**, plus **UNKNOWN** when the judge fails and
@@ -214,13 +220,8 @@ Per-claim verdicts are **SUPPORTED**, **CONTRADICTED** (the evidence disproves i
 -->
 Every picture below is **Simulated**: the static site replaying the zero-key demo's tape (mock checks and a
 mock judge, not model output), as each page's banner says. Every page is one click away in the
-[live demo](https://timkush1.github.io/TrustAgent/).
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/trace-dark.png">
-  <img alt="Trace detail (Simulated): the refund answer is flagged, its days figure marked as contradicted by refund-policy.md, with the fast-check scores and the deep audit's claim beside it" src="docs/images/v2/trace-light.png" width="100%">
-</picture>
-<p align="center"><sub><b>Trace</b>: the answer it caught, the words that contradict your documents, and why (Simulated)</sub></p>
+[live demo](https://timkush1.github.io/TrustAgent/). The trace detail of the caught refund answer is at
+the [top of this page](#trustagent).
 
 <table>
 <tr>
