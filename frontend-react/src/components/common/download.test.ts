@@ -5,7 +5,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { downloadText } from './download';
 
+// jsdom has no object URLs: each test sets its own, and they are put back afterwards.
+const original = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL };
+
 afterEach(() => {
+  Object.assign(URL, original);
   vi.restoreAllMocks();
   vi.useRealTimers();
 });

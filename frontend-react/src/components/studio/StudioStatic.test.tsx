@@ -65,7 +65,13 @@ const EXAMPLE = prompt.examples[0].output as unknown as Record<string, unknown>;
 beforeEach(() => {
   view.current = liveView({});
 });
+// The export test sets the clipboard and object URLs this page may use; they are put back afterwards.
+const originalUrl = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL };
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
 afterEach(() => {
+  Object.assign(URL, originalUrl);
+  if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+  else Reflect.deleteProperty(navigator, 'clipboard');
   vi.restoreAllMocks();
 });
 
@@ -220,6 +226,23 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     expect(within(results).getAllByText('Fires').length).toBeGreaterThan(0);
     expect(within(results).getByRole('button', { name: /Vendor: how “Cost of this run” was produced/ })).toBeInTheDocument();
     expect(jev.requests.length).toBeGreaterThan(0);
+  });
+
+  it('shows no cost figure for a run it cannot price, rather than $0', async () => {
+    view.current = liveView({ connected: true, key: KEY, used: 3 });
+    const user = userEvent.setup();
+    // A decision model the price table does not list, and OpenRouter reports no cost.
+    const jev = fakeJev(() => ({ type: 'noul', noul: 0.9 }), { model: 'typesafe/jev-9-preview' });
+    renderApp('/app/evaluators/studio', staticSource({ jev }));
+    await startFromTemplate(user);
+    const test = step(/Step 3: Test on samples/);
+    await user.click(within(test).getByRole('button', { name: 'Load samples' }));
+    await within(test).findByText(/^Added \d answers? to the samples above\.$/);
+    await user.click(within(test).getByRole('button', { name: 'Run test' }));
+    const results = await within(test).findByRole('region', { name: 'Test results' });
+    expect(within(results).getByText(/^Cost unknown: /)).toBeInTheDocument();
+    expect(within(results).queryByRole('button', { name: /how “Cost of this run” was produced/ })).toBeNull();
+    expect(within(results).queryByRole('button', { name: /how “Cost of sample 1” was produced/ })).toBeNull();
   });
 
   it('exports a validated evaluator.v1 that round-trips through the Simple form, without the key', async () => {

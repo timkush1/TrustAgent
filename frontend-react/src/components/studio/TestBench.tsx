@@ -81,12 +81,16 @@ interface RunCost {
   basis: string;
 }
 
-/** The label of a run's cost: simulated on a mock, vendor or estimate as the static plane priced it, else an estimate. */
-function runCostOf(response: StudioTestResponse): RunCost {
+/**
+ * The label of a run's cost: simulated on a mock; vendor or estimate as the static plane priced it,
+ * or null when a call had no known price (its figure would understate the cost, so none is shown);
+ * an estimate for a gateway run.
+ */
+function runCostOf(response: StudioTestResponse): RunCost | null {
   if (response.summary.backend === 'mock') return { label: 'simulated', basis: 'A mock fast check answered; nothing was billed.' };
   const source = testCostSource(response);
-  const label = source ? studioCostLabel(source) : null;
-  return label ?? { label: 'estimate', basis: "Tokens × the price table's price for the fast-check model." };
+  if (source === undefined) return { label: 'estimate', basis: "Tokens × the price table's price for the fast-check model." };
+  return studioCostLabel(source);
 }
 
 function ResultRow({
@@ -104,7 +108,8 @@ function ResultRow({
   fires: boolean | null;
   agrees: boolean | null;
   snapshot: string | null;
-  cost: RunCost;
+  /** Null: the price of a call is unknown. */
+  cost: RunCost | null;
 }) {
   const fire = studioFireWords(fires, row.status);
   const agreement = studioAgreementWords(agrees);
@@ -155,7 +160,7 @@ function ResultRow({
           <dd className="tabular text-fg">{formatDurationMs(row.latency_ms)}</dd>
           <dt className="text-fg-muted">Cost</dt>
           <dd>
-            <CostFigure usd={row.cost_usd} label={cost.label} basis={cost.basis} subject={`Cost of sample ${index + 1}`} approximate={false} />
+            {cost ? <CostFigure usd={row.cost_usd} label={cost.label} basis={cost.basis} subject={`Cost of sample ${index + 1}`} approximate={false} /> : <span className="text-fg">Unknown</span>}
           </dd>
           <dt className="text-fg-muted">Model snapshot</dt>
           <dd className="font-mono text-2xs text-fg">{snapshot ?? '—'}</dd>
@@ -254,7 +259,11 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
               {summary.labelled > 0 ? `${formatCount(summary.matched)} of ${formatCount(summary.labelled)} match` : 'No labelled samples'}
               <span className="font-normal text-fg-muted"> · fires on {formatCount(summary.fired)} of {formatCount(summary.assessed)}</span>
             </p>
-            {runCost ? <CostFigure usd={run.response.summary.cost_usd} label={runCost.label} basis={runCost.basis} subject="Cost of this run" approximate={false} /> : null}
+            {runCost ? (
+              <CostFigure usd={run.response.summary.cost_usd} label={runCost.label} basis={runCost.basis} subject="Cost of this run" approximate={false} />
+            ) : (
+              <span className="text-sm text-fg-muted">Cost unknown: OpenRouter did not report it and the price table could not price it.</span>
+            )}
           </div>
           {run.response.summary.backend === 'mock' ? <SimulatedRunNote>{STUDIO_SIMULATED_TEST}</SimulatedRunNote> : null}
           {stale ? <p className="text-sm text-fg-muted">The check or the samples changed since this run. Run it again to see the new answers.</p> : null}
@@ -268,7 +277,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
                 fires={summary.rows[i].fires}
                 agrees={summary.rows[i].agrees}
                 snapshot={run.response.summary.snapshot}
-                cost={runCostOf(run.response)}
+                cost={runCost}
               />
             ))}
           </ol>
