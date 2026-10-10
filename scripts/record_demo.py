@@ -389,13 +389,16 @@ class Recorder:
             if dm.get("status") == "PASS" and judge.get("status") == "PASS":
                 self.say(f"  preflight: {dm.get('summary')}; {judge.get('summary')}")
                 return
+            lines = [
+                f"{c.get('id')} {c.get('status')}: {c.get('summary')}"
+                + (f" (fix: {c.get('fix')})" if c.get("fix") else "")
+                for c in (dm, judge)
+                if c
+            ]
+            # A rejected key or an empty account does not recover by waiting.
+            if "FAIL" in (dm.get("status"), judge.get("status")):
+                raise Failed("preflight: " + "; ".join(lines))
             if self.clock() >= deadline:
-                lines = [
-                    f"{c.get('id')} {c.get('status')}: {c.get('summary')}"
-                    + (f" (fix: {c.get('fix')})" if c.get("fix") else "")
-                    for c in (dm, judge)
-                    if c
-                ]
                 raise Failed(
                     "preflight: doctor --only decision_model,judge did not pass within "
                     f"{self.preflight_timeout:.0f}s: " + "; ".join(lines or ["no result"])

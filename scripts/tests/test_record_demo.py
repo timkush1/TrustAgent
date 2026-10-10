@@ -324,6 +324,16 @@ class RecordDemoTest(unittest.TestCase):
         self.assertIn("decision_model.state WARN", self.output())
         self.assertNotIn("exec /trafficgen", self.runner.kinds())
 
+    def test_a_failing_preflight_does_not_wait(self) -> None:
+        failing = dm_check("FAIL", state="no_credits")
+        failing["fix"] = "add credits at openrouter.ai/settings/credits"
+        self.runner.preflight = [(failing, judge_check())]
+        self.assertEqual(self.main(), 1)
+        self.assertEqual(self.slept, [])
+        self.assertIn("decision_model.state FAIL", self.output())
+        self.assertIn("fix: add credits", self.output())
+        self.assert_removed_at_the_end()
+
     def test_a_trafficgen_refusal_stops_the_run(self) -> None:
         self.runner.trafficgen_codes = [2]
         self.assertEqual(self.main(), 1)
