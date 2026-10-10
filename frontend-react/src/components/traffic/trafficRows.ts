@@ -71,17 +71,32 @@ export function reasonSince(now: number): string {
 }
 
 /**
- * GET /api/traces parameters for the filters. The reason goes to the proxy with its `since`
- * (`reasonSince`); live traces and an older proxy that ignores it are still filtered here.
+ * What a reason filter is read over: the proxy's lookback (`since`, D68), or the whole recording
+ * the static replay plays (its data source filters the tape itself and needs no bound).
  */
-export function traceListParams(f: TrafficFilters, since?: string): TraceListParams {
+export type ReasonBound = { since: string } | 'recording';
+
+/**
+ * The words of a reason filter's window, for its chip: "last 30 days" over the proxy, nothing in
+ * the replay (the recording is the whole window, and the banner says what it is).
+ */
+export function reasonWindowLabel(bound: ReasonBound): string | null {
+  return bound === 'recording' ? null : `last ${REASON_LOOKBACK_DAYS} days`;
+}
+
+/**
+ * GET /api/traces parameters for the filters. A reason goes with its bound: the proxy needs
+ * `since` with it (`reasonSince`); the replay reads it over the whole recording. Without a bound
+ * the reason is applied only here, to the rows (live traces, and an older proxy that ignores it).
+ */
+export function traceListParams(f: TrafficFilters, bound?: ReasonBound): TraceListParams {
   const params: TraceListParams = { limit: TRAFFIC_PAGE_SIZE };
   if (f.outcome) params.outcome = f.outcome;
   if (f.route) params.route = f.route;
   if (f.model) params.model = f.model;
-  if (f.reason && since) {
+  if (f.reason && bound !== undefined) {
     params.reason = f.reason;
-    params.since = since;
+    if (bound !== 'recording') params.since = bound.since;
   }
   return params;
 }
