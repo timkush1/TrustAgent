@@ -106,7 +106,7 @@ export function isRejected(status: number, usage?: CallUsage): boolean {
 
 const PRICES = prices as unknown as PricingTable;
 
-/** Prices a call through the TS cost runner (CP-COSTTS); null when it cannot. */
+/** Prices a call through the TS cost runner (lib/decision/cost.ts); null when it cannot. */
 export const priceFromTable: UsagePricer = (model, usage) => {
   try {
     const priced = priceCall({ provider: 'openrouter', model, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens ?? 0, reported_cost_usd: null, table: PRICES });

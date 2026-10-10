@@ -24,7 +24,7 @@ export interface PlaygroundResultOptions {
   policyVersion?: number | null;
   /** The route's block message, shown as the delivered text when the action is block or fallback. */
   blockMessage?: string | null;
-  /** The check's cost priced here (CP-COSTTS) when OpenRouter reported none; labelled computed. */
+  /** The check's cost priced here (lib/decision/cost.ts) when OpenRouter reported none; labelled computed. */
   computedCostUsd?: number | null;
 }
 

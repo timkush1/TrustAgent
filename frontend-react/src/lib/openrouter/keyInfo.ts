@@ -2,7 +2,7 @@
  * The free key check (D100, D101): `GET /api/v1/key` with the key, which costs nothing and never
  * counts against the caps. It tells the panel whether the key has a credit limit (a key without
  * one gets the `key_no_limit` advice) and explains an unreadable failure (errors.ts
- * diagnoseOpaqueFailure). Every field stays optional until P6 captures the live shape. Owned by
+ * diagnoseOpaqueFailure). Every field stays optional until a real answer's shape is captured. Owned by
  * WEB-LIVE (LV-2).
  */
 import { checkContentType, classifyStatus, openRouterError } from './errors';
