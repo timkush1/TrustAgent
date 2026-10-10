@@ -206,6 +206,31 @@ describe('testEvaluator', () => {
     expect(jev.requests.length).toBeLessThanOrEqual(1);
   });
 
+  it('marks a sample too large for the per-call token cap and still runs the others', async () => {
+    const jev = fakeJev(yesWhenBad);
+    const settled: number[] = [];
+    // The tab's caps: a request estimated over 400 tokens is refused before any call (D101).
+    const ledger = {
+      reserve: (est: readonly number[]) => (est.some((t) => t > 400) ? ({ ok: false, reason: 'token_cap' } as const) : ({ ok: true } as const)),
+      settle: (status: number) => {
+        settled.push(status);
+      },
+    };
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev, ledger }), registry });
+    const long: StudioSample = { id: 'long', assistant_response: `This is BAD. ${'More words that make the answer long. '.repeat(80)}`, expected: 'fire' };
+    const out = await plane.testEvaluator({ spec, samples: [samples[0], long, samples[2]] });
+    expect(out.results.map((r) => [r.sample_id, r.status, r.reason])).toEqual([
+      ['s1', 'assessed', null],
+      ['long', 'error', 'error:too_large'],
+      ['s3', 'assessed', null],
+    ]);
+    expect(out.results[1]).toMatchObject({ fires: null, cost_usd: 0 });
+    expect(out.summary).toMatchObject({ n: 3, assessed: 2 });
+    // Nothing was sent for the large sample.
+    expect(jev.requests).toHaveLength(2);
+    expect(settled).toEqual([200, 200]);
+  });
+
   it('needs a key, valid samples and a valid spec', async () => {
     const noKey = createStaticStudioPlane(deps, { live: fakeStudioLive({}), registry });
     expect(await failure(noKey.testEvaluator({ spec, samples }))).toMatchObject({ status: 503, code: 'decision_model_unavailable' });

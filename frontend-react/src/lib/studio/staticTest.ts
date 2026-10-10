@@ -22,6 +22,7 @@ import { CompileError } from '@/lib/decision/compile';
 import { lookupPrice, priceCall, type CallCost } from '@/lib/decision/cost';
 import { parseSpec, type Spec } from '@/lib/decision/spec';
 import { mergeSettings, resolveRoute } from '@/lib/gate/route';
+import { GateRefusedError } from '@/lib/gate/runner';
 import type { BrowserGateResult, PolicyInput, ResolvedRoute, RouteEvaluatorRef } from '@/lib/gate/types';
 import type { CallUsage } from '@/lib/openrouter/types';
 import type { CostRecord, EvaluatorSpec, PricingTable, StudioSample, StudioTestRequest, StudioTestResponse } from '@/types/api';
@@ -162,6 +163,8 @@ export function resultRow(result: BrowserGateResult, ref: string, sample: Studio
 /** The reason of a sample whose pipeline stopped before a decision (gstudio ResultOf). */
 export function failureReason(err: unknown): string {
   if (err instanceof CompileError) return err.message.includes('does not fit') ? 'error:too_large' : 'error:compile';
+  // The per-call token cap refused the sample before any call: too large to send.
+  if (err instanceof GateRefusedError && err.reason === 'token_cap') return 'error:too_large';
   const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
   return typeof code === 'string' && code !== '' ? `error:${code}` : 'error:internal';
 }

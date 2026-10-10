@@ -13,7 +13,9 @@
  * - `dryRunEvaluator`: unavailable ("Test on past traffic" needs stored traffic and a gateway).
  *
  * Every call to OpenRouter reserves a slot of the tab's caps first (D101); a refusal is an
- * ApiError whose code is the ledger's reason (`cap_reached`, `token_cap`, `rejected_pause`).
+ * ApiError whose code is the ledger's reason (`cap_reached`, `token_cap`, `rejected_pause`). In a
+ * test, a sample too large for the per-call token cap is that sample's `error:too_large` row (as
+ * the gateway reports a request too large to send) and the other samples still run.
  * The transports and caps come from lib/studio/live.ts at the moment an action runs.
  */
 import { policy as recordedPolicy } from 'virtual:trustagent/policy';
@@ -39,7 +41,7 @@ import {
   type TestRow,
 } from './staticTest';
 import type { CallCost } from '@/lib/decision/cost';
-import type { LedgerRefusal } from '@/lib/openrouter/types';
+import type { JevCall, LedgerRefusal } from '@/lib/openrouter/types';
 import type { EvaluatorSpec, FieldError, QuickCalibration, StudioDraftResponse, StudioSample, StudioTestResponse, TraceDetail } from '@/types/api';
 import { STUDIO_DRAFT_MAX_CHARS, STUDIO_TEST_MAX_SAMPLES, type StudioPlane } from '@/data/control/studioPlane';
 import { rejectNotImplemented } from '@/data/control/shared';
@@ -85,8 +87,33 @@ function unavailable(code: 'no_judge' | 'decision_model_unavailable', message: s
   return new ApiError({ kind: 'http', status: 503, code, message });
 }
 
+/** A refusal by the per-call token cap concerns one sample only (its text is too large). */
+function tooLarge(err: unknown): boolean {
+  return err instanceof GateRefusedError && err.reason === 'token_cap';
+}
+
 function fatal(err: unknown): boolean {
-  return err instanceof GateRefusedError || (isApiError(err) && FATAL_CODES.has(err.code));
+  return (err instanceof GateRefusedError && !tooLarge(err)) || (isApiError(err) && FATAL_CODES.has(err.code));
+}
+
+/**
+ * The decision-model client as a test uses it: every failure is shown to `onFailure` first, so a
+ * failure that ends the test is seen even when runGate keeps only a request status for it (as the
+ * gateway does) instead of rejecting.
+ */
+function watched(jev: JevCall, onFailure: (err: unknown) => void): JevCall {
+  return {
+    backend: jev.backend,
+    model: jev.model,
+    call: async (request, signal) => {
+      try {
+        return await jev.call(request, signal);
+      } catch (err) {
+        onFailure(err);
+        throw err;
+      }
+    },
+  };
 }
 
 /** Runs `work` over every item, at most `limit` at a time, taking no new item once `signal` aborts. */
@@ -198,6 +225,13 @@ export function createStaticStudioPlane(deps: StudioTapeDeps, options: StaticStu
       const snapshots: (string | null)[] = new Array<string | null>(request.samples.length).fill(null);
       // The first failure that ends the test (the others it aborts only follow from it).
       let ended: unknown = null;
+      const end = (err: unknown) => {
+        if (ended === null) ended = err;
+        stop.abort(err);
+      };
+      const call = watched(jev, (err) => {
+        if (fatal(err)) end(err);
+      });
       try {
         await runPool(request.samples, TEST_CONCURRENCY, stop.signal, async (sample, index) => {
           const started = Date.now();
@@ -208,7 +242,7 @@ export function createStaticStudioPlane(deps: StudioTapeDeps, options: StaticStu
               request: sampleRequest(sample),
               response: sample.assistant_response,
               apiFormat: 'openai_chat',
-              call: jev,
+              call,
               ledger,
               maxTokens: live.maxTokens,
               signal: stop.signal,
@@ -222,8 +256,7 @@ export function createStaticStudioPlane(deps: StudioTapeDeps, options: StaticStu
               rows[index] = errorRow(sample, failureReason(err), Math.max(0, Date.now() - started));
               return;
             }
-            if (ended === null) ended = err;
-            stop.abort(err);
+            end(err);
           }
         });
       } finally {
