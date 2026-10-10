@@ -18,7 +18,18 @@
 // the trailers and the `: trustagent {...}` comment), the HTTP status and the delivered text
 // against each scenario's expect, then polls GET /api/traces/:id until the deep audit settles and
 // checks the outcome, the audit verdict, the claim verdicts and, for observe routes (Status:
-// deferred), the stored decision. Any mismatch is printed and the exit status is 1.
+// deferred), the stored decision. Any mismatch is printed and the exit status is 1. A generated
+// scenario answered by a real upstream (--upstream generated) has no expectations: its trace is
+// awaited until it settles, then left unchecked. Under --upstream all, mock-upstream answers a
+// generated scenario with its stand-in response, so its expectations are checked like any other.
+//
+// --record is a recording run (make record-demo, D121): it first reads GET /api/status and refuses
+// a gateway that is not in test mode, whose decision model is the mock, off or mock-upstream, or
+// whose judge is not up, is the mock or runs on its fallback, since such traffic could only be
+// labelled simulated. It then checks like --expect but reports a mismatch as drift without failing
+// (a real model's verdicts may differ from the scripted ones); a request that fails or a trace that
+// does not settle still fails the run. --trace-ids-out writes the trace id of every answered
+// request, one per line in send order, so the export can be checked against the run.
 //
 // --pack faults sends the vendor-fault scenarios of contracts/demo/faults.v1.json (D119) instead:
 // mock-upstream, the e2e stack's decision backend and LLM upstream, answers each with the fault its
@@ -27,6 +38,7 @@
 //	trafficgen --once --expect --scenarios s0
 //	trafficgen --once --expect --scenarios e2e --upstream all
 //	trafficgen --once --expect --pack faults --scenarios faults --upstream all
+//	trafficgen --record --scenarios demo --exclude knowledge --upstream generated --trace-ids-out ids.txt
 //	trafficgen --loop --scenarios demo --base-url http://proxy:8080 --interval 20s
 package main
 
@@ -42,6 +54,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -76,6 +89,8 @@ type options struct {
 	once, loop   bool
 	expect       bool
 	allowSkip    bool
+	record       bool
+	traceIDsOut  string
 	interval     time.Duration
 	auditTimeout time.Duration
 	timeout      time.Duration
@@ -110,11 +125,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.BoolVar(&o.loop, "loop", false, "send the scenarios every --interval until stopped")
 	fl.BoolVar(&o.expect, "expect", false, "check the gate headers and the deep audit against each scenario's expect")
 	fl.BoolVar(&o.allowSkip, "allow-skip", false, "with --expect, pass although selected scenarios are skipped because they need a later gateway phase than --phase")
+	fl.BoolVar(&o.record, "record", false, "a recording run: refuse a gateway whose decision model or judge is the mock or a fallback (GET /api/status), wait for every trace to settle and report expectation drift without failing")
+	fl.StringVar(&o.traceIDsOut, "trace-ids-out", "", "write the trace id of every answered request to this file, one per line in send order")
 	fl.DurationVar(&o.interval, "interval", 20*time.Second, "pause between rounds with --loop")
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
 	fl.Usage = func() {
-		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--pack main | --file pack.json]")
+		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip] | --record] [--trace-ids-out FILE] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--pack main | --file pack.json]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
 	}
@@ -124,9 +141,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	_, knownPack := packFiles[o.pack]
 	if fl.NArg() > 0 || (o.once && o.loop) || o.interval <= 0 || o.auditTimeout <= 0 || o.timeout <= 0 ||
 		!slices.Contains(phases, o.phase) || !slices.Contains([]string{upstreamNone, upstreamGenerated, upstreamAll}, o.upstream) ||
-		!knownPack || (o.file != "" && o.pack != packMain) {
+		!knownPack || (o.file != "" && o.pack != packMain) ||
+		// A recording run sends each scenario once, through a real upstream at most for its
+		// generated answers; a loop never finishes its list of trace ids.
+		(o.record && (o.loop || o.upstream == upstreamAll)) || (o.traceIDsOut != "" && o.loop) {
 		fl.Usage()
 		return exitUsage
+	}
+	if o.record {
+		o.expect = true
 	}
 	base, err := url.Parse(o.baseURL)
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
@@ -165,9 +188,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if o.key == "" {
 		fmt.Fprintln(stderr, "trafficgen: "+keyEnv+" is not set; requests carry no X-TrustAgent-Key")
 	}
+	if o.record {
+		if err := g.recordable(ctx); err != nil {
+			fmt.Fprintln(stderr, "trafficgen: --record refused:", err)
+			return exitUsage
+		}
+	}
 
 	if !o.loop {
-		if g.round(ctx, selected) && !skipFails {
+		ok, results := g.round(ctx, selected)
+		if o.traceIDsOut != "" {
+			if err := writeTraceIDs(o.traceIDsOut, results); err != nil {
+				fmt.Fprintln(stderr, "trafficgen: --trace-ids-out:", err)
+				return exitMismatch
+			}
+		}
+		if ok && !skipFails {
 			return exitOK
 		}
 		return exitMismatch
@@ -200,14 +236,15 @@ type sent struct {
 	// storedDecision is set when the response did not carry the whole decision (Status: deferred
 	// in observe mode, or a stream), so the decision is also checked on the stored trace.
 	storedDecision bool
-	// unchecked is set for a generated answer that came from the upstream: a real model's answer
-	// has no expectations.
+	// unchecked is set for a generated answer that came from a real upstream (--upstream
+	// generated): a real model's answer has no expectations. Its trace is still awaited.
 	unchecked bool
 }
 
-// round sends every scenario once and, with --expect, checks them. It reports whether every
-// scenario passed.
-func (g *generator) round(ctx context.Context, scenarios []scenario) bool {
+// round sends every scenario once and, with --expect, waits for each trace to settle and checks
+// it (a generated upstream answer is only awaited). It reports whether every scenario passed, and
+// the results in send order. In a recording run a mismatch is drift: printed, not failing.
+func (g *generator) round(ctx context.Context, scenarios []scenario) (bool, []*sent) {
 	results := make([]*sent, len(scenarios))
 	for i := range scenarios {
 		results[i] = g.send(ctx, &scenarios[i])
@@ -218,23 +255,29 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) bool {
 			if r.err != nil || r.traceID == "" {
 				continue
 			}
-			if r.unchecked {
-				continue
-			}
+			// An unchecked trace is still awaited (D121): the run ends when every trace it
+			// started is decided and audited, so an export right after it is complete.
 			t, err := g.awaitTrace(ctx, r.traceID, deadline)
-			if err != nil {
+			switch {
+			case err != nil:
 				r.err = err
-				continue
+			case !r.unchecked:
+				r.fails = append(r.fails, checkTrace(r.s, t, r.storedDecision)...)
 			}
-			r.fails = append(r.fails, checkTrace(r.s, t, r.storedDecision)...)
 		}
 	}
-	ok := true
+	ok, drift := true, 0
 	for _, r := range results {
 		switch {
 		case r.err != nil:
 			ok = false
 			fmt.Fprintf(g.out, "FAIL %s: %v\n", r.s.ID, r.err)
+			for _, m := range r.fails {
+				fmt.Fprintf(g.out, "  %s\n", m)
+			}
+		case len(r.fails) > 0 && g.opts.record:
+			drift++
+			fmt.Fprintf(g.out, "drift %s (trace %s, %d ms)\n", r.s.ID, r.traceID, r.ms)
 			for _, m := range r.fails {
 				fmt.Fprintf(g.out, "  %s\n", m)
 			}
@@ -245,19 +288,61 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) bool {
 				fmt.Fprintf(g.out, "  %s\n", m)
 			}
 		case g.opts.expect && r.unchecked:
-			fmt.Fprintf(g.out, "sent %s (trace %s, %d ms; generated upstream answer, not checked)\n", r.s.ID, r.traceID, r.ms)
+			fmt.Fprintf(g.out, "sent %s (trace %s, %d ms; generated upstream answer, settled, not checked)\n", r.s.ID, r.traceID, r.ms)
 		default:
 			fmt.Fprintf(g.out, "ok   %s (trace %s, %d ms)\n", r.s.ID, r.traceID, r.ms)
 		}
 	}
-	if g.opts.expect {
+	switch {
+	case g.opts.record:
+		verdict := "every trace settled"
+		if !ok {
+			verdict = "some requests failed or did not settle"
+		}
+		fmt.Fprintf(g.out, "trafficgen: %d scenario(s) recorded: %s; %d drift from their expectations (reported, not failing)\n",
+			len(results), verdict, drift)
+	case g.opts.expect:
 		verdict := "all scenarios match their expectations"
 		if !ok {
 			verdict = "some scenarios do not match their expectations"
 		}
 		fmt.Fprintf(g.out, "trafficgen: %d scenario(s): %s\n", len(results), verdict)
 	}
-	return ok
+	return ok, results
+}
+
+// writeTraceIDs writes the trace id of every answered request to path, one per line in send order,
+// replacing the file whole (a temporary file renamed into place), so a reader never sees half a list.
+func writeTraceIDs(path string, results []*sent) error {
+	var b strings.Builder
+	for _, r := range results {
+		if r.traceID != "" {
+			b.WriteString(r.traceID + "\n")
+		}
+	}
+	dir, base := filepath.Split(path)
+	if dir == "" {
+		dir = "."
+	}
+	f, err := os.CreateTemp(dir, "."+base+".*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	_, werr := f.WriteString(b.String())
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp, 0o644) // #nosec G302 -- a list of trace ids, read by the recording tooling
+	}
+	if werr == nil {
+		werr = os.Rename(tmp, path)
+	}
+	if werr != nil {
+		_ = os.Remove(tmp)
+	}
+	return werr
 }
 
 // send posts one scenario and, with --expect, checks the response headers.
@@ -310,7 +395,9 @@ func (g *generator) send(ctx context.Context, s *scenario) *sent {
 		return r
 	}
 	if g.opts.expect {
-		if upstream && s.AnswerSource == answerGenerated {
+		// Under --upstream all the answer is mock-upstream's stand-in (the scenario's response), so
+		// the expectations hold; only a real upstream's generated answer has none.
+		if upstream && s.AnswerSource == answerGenerated && g.opts.upstream != upstreamAll {
 			r.unchecked = true
 			return r
 		}

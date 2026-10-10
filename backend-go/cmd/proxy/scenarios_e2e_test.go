@@ -10,9 +10,12 @@ package main
 //     mock-upstream's /v1/systemone and the LLM upstream on mock-upstream too, so every answer
 //     takes the upstream path (trafficgen --upstream all), --scenarios e2e.
 //
-// trafficgen's default phase is p3, the phase this build implements, so both sets are sent whole:
+// trafficgen's default phase reaches every phase tag the sets carry, so both sets are sent whole:
 // streams, /v1/messages and /v1/completions, and the block and fallback routes. A phase skip would
-// fail --expect (D18), and runScenarios also pins how many scenarios each set sends.
+// fail --expect (D18), and runScenarios also pins how many scenarios each set sends. Both runs also
+// check the answer source each trace stored (D121): scripted in the demo stack; in the e2e stack
+// generated for the generated pair, whose stand-in answers mock-upstream serves, and live for the
+// rest.
 
 import (
 	"context"
@@ -24,10 +27,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/truthtable/contracts"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/cmd/mock-upstream/mockupstream"
@@ -157,7 +164,7 @@ func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 
 // setSizes is how many scenarios each set sends, and how many of them need phase p3: this build
 // serves every one of them.
-var setSizes = map[string]struct{ all, p3 int }{"demo": {27, 7}, "e2e": {24, 6}}
+var setSizes = map[string]struct{ all, p3 int }{"demo": {27, 7}, "e2e": {26, 6}}
 
 // runScenarios runs trafficgen --once --expect with args against env, and checks that it sends
 // every scenario of set, skips none and that each passes.
@@ -318,12 +325,75 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 func TestDemoScenariosEndToEnd(t *testing.T) {
 	for _, flush := range traceFlushModes {
 		t.Run("TRACE_FLUSH="+flush, func(t *testing.T) {
-			runScenarios(t, newScenarioEnv(t, func(cfg *config.Config) {
+			env := newScenarioEnv(t, func(cfg *config.Config) {
 				cfg.CalibrationDir = config.RepoPath("config/calibration")
 				cfg.TraceFlush = flush
-			}), "demo")
+			})
+			ids := filepath.Join(t.TempDir(), "trace-ids.txt")
+			out := runScenarios(t, env, "demo", "--trace-ids-out", ids)
+			checkAnswerSources(t, env, out, ids, func(string) string { return "scripted" })
 		})
 	}
+}
+
+// okLine is trafficgen's line for a scenario that passed: its id and its trace id.
+var okLine = regexp.MustCompile(`(?m)^ok   (\S+) \(trace (\S+), `)
+
+// checkAnswerSources checks the answer_source the gateway stored for every scenario of a trafficgen
+// run (out), read back through GET /api/traces/:id, against want(scenario id); and that
+// --trace-ids-out (ids) listed exactly the run's traces, in send order.
+func checkAnswerSources(t *testing.T, env *testEnv, out, ids string, want func(id string) string) {
+	t.Helper()
+	b, err := os.ReadFile(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent []string
+	for _, m := range okLine.FindAllStringSubmatch(out, -1) {
+		sent = append(sent, m[2])
+		code, body := env.get("/api/traces/"+m[2], testKey)
+		var d struct {
+			AnswerSource *string `json:"answer_source"`
+		}
+		if code != http.StatusOK || json.Unmarshal(body, &d) != nil || d.AnswerSource == nil {
+			t.Errorf("%s: GET /api/traces/%s: %d %s", m[1], m[2], code, body)
+			continue
+		}
+		if *d.AnswerSource != want(m[1]) {
+			t.Errorf("%s: answer_source %q, want %q", m[1], *d.AnswerSource, want(m[1]))
+		}
+	}
+	if len(sent) == 0 || string(b) != strings.Join(sent, "\n")+"\n" {
+		t.Errorf("--trace-ids-out holds %q, want the %d traces of the run in send order", b, len(sent))
+	}
+}
+
+// generatedScenarios are the ids of the pack's scenarios whose answer_source is generated.
+func generatedScenarios(t *testing.T) map[string]bool {
+	t.Helper()
+	b, err := contracts.FS.ReadFile("demo/scenarios.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack struct {
+		Scenarios []struct {
+			ID           string `json:"id"`
+			AnswerSource string `json:"answer_source"`
+		} `json:"scenarios"`
+	}
+	if err := json.Unmarshal(b, &pack); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, s := range pack.Scenarios {
+		if s.AnswerSource == "generated" {
+			out[s.ID] = true
+		}
+	}
+	if len(out) != 2 {
+		t.Fatalf("%d generated scenarios, want the pair", len(out))
+	}
+	return out
 }
 
 // traceFlushModes are the TRUTHTABLE_TRACE_FLUSH values the scenario sets run under.
@@ -353,7 +423,15 @@ func e2eScenariosAgainstMockUpstream(t *testing.T, flush string) {
 		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
 		cfg.TraceFlush = flush
 	})
-	runScenarios(t, env, "e2e", "--upstream", "all")
+	ids := filepath.Join(t.TempDir(), "trace-ids.txt")
+	out := runScenarios(t, env, "e2e", "--upstream", "all", "--trace-ids-out", ids)
+	generated := generatedScenarios(t)
+	checkAnswerSources(t, env, out, ids, func(id string) string {
+		if generated[id] {
+			return "generated"
+		}
+		return "live"
+	})
 
 	// What reached the vendors: every answer through the upstream path, with no test_response, no
 	// X-TrustAgent-* header and no trustagent extension; the decisions over HTTP with the scenario.
