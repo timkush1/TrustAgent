@@ -246,7 +246,8 @@ function anchorLine(lines, anchor) {
   const masked = maskCode(lines);
   for (let i = 0; i < lines.length; i += 1) {
     if (tag.test(masked[i])) return i;
-    const h = /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(masked[i]);
+    // A heading outside a fence; its anchor keeps the text of inline code, as GitHub's does.
+    const h = /^ {0,3}#{1,6}\s/.test(masked[i]) && /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(lines[i]);
     if (h && slug(h[1]) === anchor) return i;
   }
   return -1;
@@ -331,7 +332,7 @@ export function renderMeasuredBlock(claims, measured, read) {
       if (machine.problem) problems.push(machine.problem);
       note = note.replace('{machine}', machine.text);
     }
-    return `| ${cell(c.text)} | <!-- claim:${c.id} --> ${cell(shown.text)} [${LABEL_CHIPS.measured}] | ${cell(note)} |`;
+    return `| ${cell(c.text)} | <!-- claim:${c.id} --> ${cell(shown.text)} [${LABEL_CHIPS.measured}] |${note ? ` ${cell(note)} ` : ' '}|`;
   });
   const details = [measured?.generated_by, measured?.generated_at?.slice(0, 10)].filter(Boolean).join(', ');
   const footer = isMeasuredRun(measured)
@@ -962,7 +963,7 @@ const CASES = [
     name: 'caveat through a link to an anchor in another doc',
     files: {
       'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] ([why](docs/NOTES.md#latency-caveat))',
-      'docs/NOTES.md': ['# Notes', '', '## Latency caveat', '', 'Latency depends on region and load.'].join('\n'),
+      'docs/NOTES.md': ['# Notes', '', '## Latency `caveat`', '', 'Latency depends on region and load.'].join('\n'),
     },
     expect: [],
   },
