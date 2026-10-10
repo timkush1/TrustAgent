@@ -84,8 +84,9 @@ check?" to a calibrated evaluator in one place. Nothing it makes is attached to 
 say so.
 
 1. **Describe.** Write what the check should catch and pick a route. **Draft with AI** asks the
-   deep-audit judge for a first version (about $0.005 **[estimate]**; labelled Simulated with the
-   mock judge); without a judge, start from a template.
+   deep-audit judge for a first version (about
+   <!-- claim:studio_draft_cost_estimate --> ≈ $0.005 per draft [estimate]; labelled Simulated
+   with the mock judge); without a judge, start from a template.
 2. **Review.** A simple form (what it catches, Yes/No or Pick one, which answers are a problem,
    whether it needs the app's documents, sensitivity, and whether it may block), an Advanced
    section with every other field, and a JSON tab. Lints run as you type; the proxy runs the same
@@ -108,6 +109,29 @@ say so.
 7. **Make active** creates a new policy version; rollback is one click on the Policies page.
 
 Every Studio run and save is recorded in the admin audit log, dry-runs with their cost.
+
+### The Studio on the static demo
+
+The live demo ([DEMO.md](DEMO.md#the-live-demo-in-your-browser)) runs the Studio in the browser,
+with no stack behind it. What works there:
+
+- **Templates, the editor** (Simple, Advanced and JSON) and the lints, which run in the browser with
+  the same rules as the proxy.
+- **Draft with AI** with your own OpenRouter key, through the same drafting prompt and repair round
+  as the engine. Without a key, **Start from a template** is the way in, and drafting says it needs
+  one.
+- **The test bench**: up to 6 distinct answers from the replayed tape on the route you picked
+  (labelled as coming from the recording), or your own, run through the browser's copy of the
+  gateway's pipeline. It needs your key: one call to the real Jev per sample, with the estimate
+  shown before **Run**. The threshold what-if then replays those answers for free. Without a key,
+  **Run** is disabled and says why.
+- **Quick calibration** on the labels you set in the page (they are not saved anywhere).
+- **Save** becomes **Copy JSON** and **Download .json**: a validated `evaluator/v1` file you can add
+  to your own stack.
+
+Watching on a route, testing on past traffic, making the check active and calibrating it for
+blocking need a stack, so they are one **On your own stack** card that starts with `make demo`.
+Every call with your key counts toward the demo's courtesy cap of 100 calls per tab.
 
 ## Labels: "Was this right?"
 
@@ -200,6 +224,11 @@ so that "critical" can mean "at least 95% of these are real problems".
   enforcing routes are capped at flag (`uncalibrated_snapshot`) until you
   recalibrate. Pin the model per route (`decision.model`) to control when that
   happens.
+- **Retention and route labels.** For an evaluator with parameters (unapproved commitments,
+  off-topic, off-brand tone), **Calibrate now** fits from the route's own labels only, over the
+  last 30 days. Labels carry no route themselves: they are matched through their traces, so with
+  `TRUTHTABLE_RETENTION_DAYS` under 30 the labels whose traces have expired drop out of the fit.
+  Keep retention at 30 days or more while you collect labels for such an evaluator.
 - **The demo** ships `config/calibration/mock__jev-heuristic-v1.json`, a
   simulated calibration of the mock decision model, so `make demo` can show
   block and fallback. Its numbers are simulated and labelled as such.
