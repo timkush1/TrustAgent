@@ -54,7 +54,7 @@
     "upstream_ms": 256,
     "ttft_ms": null,
     "gate_ms": 6,
-    "overhead_ms": 2,
+    "overhead_ms": 8,
     "total_ms": 264
   },
   "decision_model": {
@@ -82,7 +82,11 @@
   "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
   "response_preview": "You can get a full refund within 60 days of purchase.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
@@ -117,7 +121,7 @@
       "spec": "decision/v1",
       "trace_id": "01a0e73e-13ce-7b11-81a0-e00260bd641a",
       "attempt": 0,
-      "created_at": "2026-09-28T09:00:00.598Z",
+      "created_at": "2026-09-28T09:00:00.596Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -156,7 +160,7 @@
           "risk": 0.96,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "critical",
           "capped": null,
@@ -188,7 +192,7 @@
           "risk": 0.98,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "critical",
           "capped": null,
@@ -322,19 +326,7 @@
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "HALLUCINATED",
-    "not_assessed_reason": null,
-    "trust_score": 0,
     "grade": null,
-    "hallucination_detected": true,
-    "verdict_counts": {
-      "SUPPORTED": 0,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
     "processing_ms": 1443,
     "judge": {
       "configured_provider": "mock",
@@ -353,6 +345,63 @@
     "redacted": false,
     "user_query": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
     "llm_response": "You can get a full refund within 60 days of purchase.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "flag",
+      "would_action": "block",
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "request_system",
+          "items": 1,
+          "labels": [
+            "refund-policy.md"
+          ],
+          "tokens": 23
+        }
+      ],
+      "empty": [
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 23
+    },
+    "context_used": [
+      {
+        "id": "refund-policy.md",
+        "source": "request_system",
+        "label": "refund-policy.md",
+        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
     "claims": [
       {
         "index": 0,
@@ -397,58 +446,14 @@
       "claims_decided": 1,
       "claims_unknown": 0
     },
-    "degraded_reasons": [],
-    "error": null,
     "reasoning_trace": "",
     "step_timings": {
-      "decompose": 372,
-      "verify": 1051,
-      "score": 20
+      "decompose_ms": 372,
+      "verify_ms": 1051,
+      "score_ms": 20,
+      "total_ms": 1443
     },
-    "gate": {
-      "action": "flag",
-      "would_action": "block",
-      "verdict": "contradicted",
-      "max_risk": 0.98,
-      "delivered": "original"
-    },
-    "evidence_summary": {
-      "configured": [
-        "request_system",
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "used": [
-        {
-          "source": "request_system",
-          "items": 1,
-          "labels": [
-            "refund-policy.md"
-          ],
-          "tokens": 23
-        }
-      ],
-      "empty": [
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "knowledge": "not_requested",
-      "truncated": false,
-      "tokens": 23
-    },
-    "context_used": [
-      {
-        "id": "refund-policy.md",
-        "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
-        "truncated": false
-      }
-    ],
     "unsupported_policy": "hallucination",
-    "scoring_version": "v2",
     "costs": [
       {
         "component": "decompose",

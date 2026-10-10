@@ -108,7 +108,7 @@ services:
 
   # The 150 ms fast check of scenario d (docker-compose.load-slow-jev.yml points the proxy here).
   mock-jev-slow:
-    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
     pull_policy: never
     profiles: [load]
     command: ["/mock-upstream", "-jev-latency", "150ms"]

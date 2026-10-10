@@ -4,7 +4,12 @@
  * this input. Owners implement the bodies (WEB-LIVE: runner, route, playgroundResult); the shapes
  * change only through the lead.
  */
-import type { DecideInput, DetectorResult, EvidenceSettings } from '@/lib/contracts/types.gen';
+import type {
+  DecideInput,
+  DetectorResult,
+  EvidenceSettings,
+  RouteEvaluatorRef as PolicyRouteEvaluatorRef,
+} from '@/lib/contracts/types.gen';
 import type { Compiled, DecisionEvidenceItem, OnNoEvidence } from '@/lib/decision/compile';
 import type { DecisionCore } from '@/lib/decision/decide';
 import type { ExtractFormat, Extraction } from '@/lib/decision/evidence';
@@ -19,6 +24,8 @@ export interface RouteEvaluatorRef {
   stage?: 'active' | 'shadow';
   enabled?: boolean;
   params?: Record<string, string>;
+  /** Route threshold overrides, as policy.v1 writes them (raw space when unset; D151). */
+  thresholds?: PolicyRouteEvaluatorRef['thresholds'];
 }
 
 /** The parts of a policy.v1 document the browser reads (defaults, overrides and routes). */

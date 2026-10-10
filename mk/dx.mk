@@ -20,12 +20,22 @@ ifeq ($(origin GIT_SHA),undefined)
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null)
 endif
 export GIT_SHA
+# Build or pull (D126). A release checkout (HEAD is exactly the tag v<VERSION>) runs the published
+# images of its version: compose pulls them (pull_policy missing). Any other checkout builds the
+# app images from its own code, so `make up` and `make demo` never run images older than the code.
+# RELEASE_CHECKOUT=1 forces pulling, RELEASE_CHECKOUT=0 building. Read once, from VERSION (not
+# TRUSTAGENT_VERSION, which a proof may set to a local tag such as p5local).
+ifeq ($(origin RELEASE_CHECKOUT),undefined)
+RELEASE_CHECKOUT := $(if $(shell git describe --exact-match --tags --match "v$$(cat VERSION 2>/dev/null)" HEAD 2>/dev/null),1,0)
+endif
+APP_BUILD = $(if $(filter 1,$(RELEASE_CHECKOUT)),,--build)
 
 DEMO_PROJECT ?= truthtable-demo
 DEMO_COMPOSE  = $(COMPOSE) -p $(DEMO_PROJECT) -f docker-compose.yml -f docker-compose.demo.yml --profile demo
-# `make demo` builds the images from this checkout; `make demo DEMO_BUILD=` uses
-# local or published images instead (CI builds them first, with a layer cache).
-DEMO_BUILD   ?= --build
+# `make demo` builds the images from this checkout (pulls them on a release checkout);
+# `make demo DEMO_BUILD=` uses local or published images instead (CI builds them first, with a
+# layer cache).
+DEMO_BUILD   ?= $(APP_BUILD)
 # Scenario checks (trafficgen --expect inside the proxy container): which
 # scenarios (--scenarios, --exclude) and the gateway phase they may need
 # (--phase; empty = trafficgen's default, the phase this build implements).
@@ -61,7 +71,10 @@ ONBOARDING_EXPECT = --expect TRUTHTABLE_STRICT_CONFIG=true \
 ONBOARDING_CONFIG_ENV = env -i PATH="$$PATH" HOME="$$HOME" DOCKER_CONFIG="$${DOCKER_CONFIG:-$$HOME/.docker}"
 # trafficgen flags shared by the scenario targets.
 TRAFFICGEN_CHECK = /trafficgen --once --expect --base-url http://127.0.0.1:8080
-# Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
+# `make up` builds the app images from this checkout, or pulls them on a release checkout
+# (RELEASE_CHECKOUT); UP_BUILD= uses local or published images as they are.
+UP_BUILD     ?= $(APP_BUILD)
+# Extra arguments for `make up`, e.g. UP_ARGS=--force-recreate.
 UP_ARGS      ?=
 # Seconds `up --wait` gives every service to become healthy.
 WAIT_TIMEOUT ?= 600
@@ -85,9 +98,9 @@ SETUP_OPEN = $(PYTHON) scripts/setup_url.py --open $(OPEN_URL_ARGS) --dashboard-
 
 ##@ Stack (docker compose)
 
-up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons), wait until healthy, open the setup link (or the dashboard)
+up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons; builds them, or pulls on a release tag), wait until healthy, open the setup link (or the dashboard)
 	$(PYTHON) scripts/configure.py --ensure
-	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) $(UP_ARGS)
+	$(COMPOSE) up -d $(UP_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT) $(UP_ARGS)
 	@echo "✅ TrustAgent is running (proxy: http://localhost:$$($(PYTHON) scripts/envfile.py get PROXY_HOST_PORT 8080)/v1)"
 	@$(SETUP_OPEN) --project "$(UP_PROJECT)"
 
@@ -101,7 +114,7 @@ up-infra: ## Start only the backing services (postgres + COMPOSE_PROFILES add-on
 		$$($(COMPOSE) config --services | grep -vxE 'proxy|engine|dashboard|trafficgen')
 	@echo "✅ Backing services running (postgres on localhost:$$($(PYTHON) scripts/envfile.py get POSTGRES_HOST_PORT 5432), user truthtable, POSTGRES_PASSWORD in .env)"
 
-demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build, wait until healthy, open the setup link (or the dashboard)
+demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build (or pull on a release tag), wait until healthy, open the setup link (or the dashboard)
 	$(PYTHON) scripts/configure.py --ensure
 	$(DEMO_COMPOSE) up -d $(DEMO_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT)
 	@echo "✅ Demo stack running (project $(DEMO_PROJECT), DEMO MODE: simulated checks, no keys, \$$0)"
