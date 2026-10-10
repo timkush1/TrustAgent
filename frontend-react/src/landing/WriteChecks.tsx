@@ -47,7 +47,7 @@ export function WriteChecks() {
             <p className="text-xs font-medium text-fg-subtle">You write</p>
             <p className="mt-3 text-lg text-fg">“Flag any answer that promises a refund, credit or discount our policy doesn’t allow.”</p>
             <p className="mt-6 text-xs font-medium text-fg-subtle">Then attach it to a route, in policies.yaml or the dashboard</p>
-            <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-surface-sunken px-3 py-2.5 font-mono text-xs leading-5 text-fg">
+            <pre className="mt-2 rounded-md border border-border bg-surface-sunken px-3 py-2.5 font-mono text-xs leading-5 whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
               {ROUTE_SNIPPET}
             </pre>
           </div>
@@ -74,7 +74,7 @@ export function WriteChecks() {
           </div>
         </div>
         <figcaption className="mt-3 text-xs text-fg-muted">
-          The right-hand card is the built-in “{COMMITMENTS.name}” check as it ships in contracts/evaluators. Jev answers it with a
+          This check is the built-in “{COMMITMENTS.name}” as it ships in contracts/evaluators. Jev answers it with a
           probability for each option; your thresholds turn that into a flag or a block.
         </figcaption>
       </figure>

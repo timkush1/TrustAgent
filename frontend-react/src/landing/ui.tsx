@@ -85,11 +85,15 @@ export function Ticked({ text }: { text: string }) {
 }
 
 /** A shell command with a copy button: the command is the text, so nothing hides in the button. */
-export function Command({ command, note, className }: { command: string; note?: string; className?: string }) {
+/**
+ * A command with a copy button. A short one stays on one line; `wrap` lets a long one break over
+ * lines instead of being cut off, so the reader can see what they copy.
+ */
+export function Command({ command, note, className, wrap = false }: { command: string; note?: string; className?: string; wrap?: boolean }) {
   const [copied, setCopied] = useState<boolean | null>(null);
   return (
     <div className={clsx('inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-surface-sunken py-1 pr-1 pl-3', className)}>
-      <code className="min-w-0 truncate font-mono text-sm text-fg">
+      <code className={clsx('min-w-0 font-mono text-sm text-fg', wrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'truncate')} data-command-wrap={wrap || undefined}>
         <span aria-hidden="true" className="mr-2 text-fg-muted select-none">
           $
         </span>

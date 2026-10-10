@@ -34,13 +34,14 @@ export function SelfHost() {
         <div className="rounded-lg border border-border-strong bg-surface p-6 max-sm:p-4">
           <h3 className="text-lg font-semibold text-fg">Your own stack</h3>
           <div className="mt-4">
-            <Command command={command('compose_up')} />
+            <Command command={command('up')} />
+          </div>
+          <p className="mt-3 text-sm text-fg-muted">Without make:</p>
+          <div className="mt-1.5">
+            <Command command={command('compose_up')} wrap />
           </div>
           <ul className="mt-5 space-y-2 text-fg-muted">
-            <li>
-              Four services: proxy, engine, Postgres and the dashboard (or <code className="font-mono text-sm text-fg">{command('up')}</code>). Add-ons:
-              knowledge base, local LLM, observability.
-            </li>
+            <li>Four services: proxy, engine, Postgres and the dashboard. Add-ons: knowledge base, local LLM, observability.</li>
             <li>Pulls the prebuilt images of a published release, otherwise builds them locally.</li>
             <li>One OpenRouter key covers the fast check and the deep-audit judge; the setup wizard connects it, and keys are encrypted at rest.</li>
             <li>{sectionCopy.setup.step_connect.privacy}</li>
@@ -49,7 +50,7 @@ export function SelfHost() {
       </div>
       <div className="mt-6 rounded-lg border border-border bg-surface-sunken p-5 max-sm:p-4">
         <p className="text-sm text-fg">Then point your app at it. With the OpenAI Python SDK, the one line that changes:</p>
-        <pre className="mt-3 overflow-x-auto font-mono text-sm text-fg" data-snippet>
+        <pre className="mt-3 font-mono text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]" data-snippet>
           {oneLineSnippet()}
         </pre>
         <p className="mt-2 text-xs text-fg-muted">

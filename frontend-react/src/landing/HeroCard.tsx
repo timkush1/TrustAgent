@@ -138,9 +138,6 @@ export function HeroCard() {
               <span className="tabular text-sm text-fg-muted">{latency.display}</span>
               <LabelChip claim={latency} />
             </span>
-            <span aria-hidden="true" className="text-fg-subtle">
-              ·
-            </span>
             <span className="inline-flex items-center gap-1.5" data-chip-scope>
               <span className="tabular text-sm text-fg-muted">{cost.display}</span>
               <LabelChip claim={cost} />

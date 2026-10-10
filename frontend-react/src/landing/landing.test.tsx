@@ -541,7 +541,11 @@ describe('run it yourself', () => {
   it('shows compose_up, encrypted keys, build-or-pull and the one SDK line', async () => {
     await renderLanding();
     const section = document.getElementById('self-host') as HTMLElement;
-    expect(within(section).getByText('python3 scripts/configure.py --ensure && docker compose up -d --wait')).toBeInTheDocument();
+    // make up leads; the long no-make command wraps instead of being cut off.
+    expect(within(section).getByText('make up')).toBeInTheDocument();
+    const long = within(section).getByText('python3 scripts/configure.py --ensure && docker compose up -d --wait');
+    expect(long.closest('code')).toHaveAttribute('data-command-wrap');
+    expect(long.closest('code')).not.toHaveClass('truncate');
     expect(section).toHaveTextContent('keys are encrypted at rest');
     expect(section).toHaveTextContent('Pulls the prebuilt images of a published release, otherwise builds them locally.');
     expect(oneLineSnippet()).toBe('client = OpenAI(base_url="http://localhost:8080/v1")');
