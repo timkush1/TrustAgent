@@ -80,6 +80,9 @@ describe('OgCard', () => {
     await waitFor(() => expect(card).toHaveAttribute('data-og-ready'));
     expect(card).toHaveAttribute('data-recording-kind', 'recorded');
     expect(card.querySelector('[data-og-simulated]')).toBeNull();
+    // The recording's own label says the answers were scripted: the card never calls them real.
+    expect(card.querySelector('[data-og-recording-label]')).toHaveTextContent(recorded.label);
+    expect(card).not.toHaveTextContent(/real answer/i);
   });
 
   it('is not a page of a build without VITE_LAUNCH_ROUTES', { timeout: 20_000 }, async () => {

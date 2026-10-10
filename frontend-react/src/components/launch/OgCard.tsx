@@ -7,7 +7,8 @@
  * and headline, what it was checked against, the question, the answer with its claim marks, and
  * the evidence that contradicts it. 64 px margins; the chrome is achromatic, colour only for the
  * outcome and the verdict. A simulated recording says so on the card (a Simulated chip), so a
- * capture of it can never pass for model output.
+ * capture of it can never pass for model output; a recorded one carries its own label, which says
+ * whether its answers were scripted or generated.
  *
  * `data-og-ready` appears once the trace and the fonts have loaded: the capture waits for it.
  */
@@ -104,6 +105,7 @@ export default function OgCard() {
   const ds = useDataSource();
   const featured = useReplayStore((s) => s.featuredTraceId);
   const kind = useReplayStore((s) => s.kind);
+  const label = useReplayStore((s) => s.label);
   const status = useReplayStore((s) => s.status);
   const error = useReplayStore((s) => s.error);
   const q = useQuery({ ...traceQuery(ds, featured ?? ''), enabled: featured !== null });
@@ -141,9 +143,14 @@ export default function OgCard() {
           <p data-og-simulated className="inline-flex w-fit items-center gap-2 rounded-full border border-border-strong px-3 py-1 text-base text-fg-muted">
             {copy.recording.mock}
           </p>
-        ) : (
-          <p className="text-base text-fg-muted">A real answer from the recorded demo, replayed.</p>
-        )}
+        ) : label ? (
+          // A recorded tape's own label (Go recording.recordedLabel): when, with which models, and
+          // whether the answers were scripted or generated. The checks are real; the answer on a
+          // demo tape is usually the scenario's scripted one, so the card never calls it a real answer.
+          <p data-og-recording-label className="text-base text-fg-muted">
+            {label}
+          </p>
+        ) : null}
       </div>
       {q.isSuccess ? (
         <Crop detail={q.data} />
