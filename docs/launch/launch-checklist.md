@@ -18,6 +18,10 @@ post invites people to judge real model output.
       `CONFIRM=1`. Then
       `python3 scripts/check_recording.py --require-recorded frontend-react/demo-data/recorded`
       passes and its manifest says `"kind": "recorded"`.
+- [ ] **Capture the vendor fixtures.**
+      `go -C backend-go run ./cmd/jevcheck --capture contracts/fixtures/vendor/captured` records
+      real vendor answers for the SPEC Appendix D vendor rows; until then the vendor fixtures are
+      synthetic and say so.
 - [ ] **Publish the measurements.** `make bench-publish` (it refuses mock output) fills
       `contracts/claims/measured.json` with `"status": "measured"` and `"mock": false`.
 - [ ] **Refresh every measured table.** `make claims-write`, then commit the regenerated
@@ -60,7 +64,8 @@ post invites people to judge real model output.
 - [ ] **Localhost PKCE check**, if it was skipped earlier: the same, from `make up`. Until a row
       in SPEC Appendix D carries a dated result, no doc may call PKCE verified (`check-claims`
       enforces it).
-- [ ] **Images.** Each GHCR package (`truthtable-proxy`, `-engine`, `-dashboard`) is public;
+- [ ] **Images.** Each GHCR package (`truthtable-proxy`, `-engine`, `-dashboard`) is public, and
+      the Actions variable `GHCR_PUBLIC` = `true` lets the `anonymous-pull` job prove it;
       `docker buildx imagetools inspect ghcr.io/timkush1/truthtable-proxy:<version>` lists
       `linux/amd64` and `linux/arm64`;
       `gh attestation verify oci://ghcr.io/timkush1/truthtable-proxy:<version> -R timkush1/TrustAgent`

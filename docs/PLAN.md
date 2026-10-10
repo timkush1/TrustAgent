@@ -342,7 +342,11 @@ network except the site and openrouter.ai, CSP meta present) and the size budget
 - [ ] A Go-hosted `DecisionService.Decide`, and the per-claim Jev cascade in the deep audit
 - [ ] Knowledge-base Jev gates, an injection screen, a conflict prefilter
 - [ ] The `by_evidence` calibration partition as an A/B
-- [ ] Master-key rotation (`SECRET_KEY_PREVIOUS`); shared PKCE nonces and caps across replicas
+- [ ] Master-key rotation (`SECRET_KEY_PREVIOUS`); shared PKCE nonces and caps across replicas,
+      and a credential-verify limit keyed across replicas (today it is per replica)
+- [ ] Route-filtered calibration fits that keep their labels under short retention (labels carry
+      no route today)
+- [ ] cosign image signatures, on top of the provenance and attestations
 - [ ] Live verification of TypeSafe-direct; the full `eval-live` run
 
 ---
