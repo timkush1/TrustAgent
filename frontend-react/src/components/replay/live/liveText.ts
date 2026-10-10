@@ -1,7 +1,7 @@
 /**
  * The live surfaces' own sentences: headings, field labels, figure bases and short states that
- * contracts/ui copy.playground_live.* (frozen in P5, D136) does not carry. Everything the plan
- * seeded (consent, errors, callback states, caps) comes from the copy contract instead. None names
+ * contracts/ui copy.playground_live.* (D136) does not carry; every sentence the contract has
+ * (consent, errors, callback states, caps) comes from it instead. None names
  * an env var, a settings page or a make target a visitor does not have. Kept beside the components
  * that show them, outside src/domain/words (CO-6: a words module takes its sentences from the copy
  * contract). Owned by WEB-LIVE (LV-6).
