@@ -173,6 +173,12 @@ describe('shapes', () => {
     expect(heading.pattern).toEqual({ pattern: '^#{1,6}[\\t\\f\\r ]*Café "menu"[\\t\\f\\r ]*\\n(.*?)(?:\\n#{1,6}[\\t\\f\\r ]|\\z)', flags: 'ims' });
     expect(quoteMeta('a.b+c*d?(e)|[f]{g}^h$\\')).toBe('a\\.b\\+c\\*d\\?\\(e\\)\\|\\[f\\]\\{g\\}\\^h\\$\\\\');
     expect(goQuote('tab\there\u0001\u0085é')).toBe('"tab\\there\\x01\\u0085é"');
+    // What fmt.Sprintf("%q") prints for runes Go does not print, after encoding/json decoded the
+    // body (a lone surrogate becomes U+FFFD there).
+    expect(goQuote('a b­c​d\ud800e😀f\u0085g"h\\i\u0007j\u007fkl')).toBe(
+      '"a\\u00a0b\\u00adc\\u200bd�e😀f\\u0085g\\"h\\\\i\\aj\\x7fk\\ue000l"',
+    );
+    expect(goQuote('x\u{E0001}y')).toBe('"x\\U000e0001y"');
     expect(goTrimSpace('\u0085 Title  ')).toBe('Title');
     expect(goTrimSpace('﻿Title')).toBe('﻿Title');
   });

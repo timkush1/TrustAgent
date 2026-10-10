@@ -88,16 +88,28 @@ export function quoteMeta(s: string): string {
   return s.replace(/[\\.+*?()|[\]{}^$]/g, '\\$&');
 }
 
-/** Go's strconv.Quote for the label text (control characters escaped; printable text as is). */
+/** Go's unicode.IsPrint: letters, marks, numbers, punctuation, symbols and the ASCII space. */
+const GO_PRINTABLE = /^[\p{L}\p{M}\p{N}\p{P}\p{S} ]$/u;
+const LONE_SURROGATE = /^\p{Cs}$/u;
+const GO_NAMED_ESCAPES: Readonly<Record<string, string>> = { '\x07': '\\a', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\v': '\\v' };
+
+/**
+ * Go's strconv.Quote for the label text: `"` and `\` escaped, printable runes as they are, the
+ * named control escapes, \xhh below U+0020 and for DEL, \uhhhh and \Uhhhhhhhh for every other
+ * rune Go does not print (NBSP, soft hyphen, zero-width and format characters, private use). A lone
+ * surrogate is U+FFFD, as Go reads it once the JSON body is decoded.
+ */
 export function goQuote(s: string): string {
-  const named: Record<string, string> = { '\x07': '\\a', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\v': '\\v', '"': '\\"', '\\': '\\\\' };
   let out = '"';
-  for (const ch of s) {
+  for (const raw of s) {
+    const ch = LONE_SURROGATE.test(raw) ? '\uFFFD' : raw;
     const code = ch.codePointAt(0) ?? 0;
-    if (named[ch] !== undefined) out += named[ch];
+    if (ch === '"' || ch === '\\') out += `\\${ch}`;
+    else if (GO_PRINTABLE.test(ch)) out += ch;
+    else if (GO_NAMED_ESCAPES[ch] !== undefined) out += GO_NAMED_ESCAPES[ch];
     else if (code < 0x20 || code === 0x7f) out += `\\x${code.toString(16).padStart(2, '0')}`;
-    else if (code >= 0x80 && code <= 0x9f) out += `\\u${code.toString(16).padStart(4, '0')}`;
-    else out += ch;
+    else if (code < 0x10000) out += `\\u${code.toString(16).padStart(4, '0')}`;
+    else out += `\\U${code.toString(16).padStart(8, '0')}`;
   }
   return `${out}"`;
 }
