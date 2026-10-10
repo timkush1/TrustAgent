@@ -35,3 +35,33 @@ func TestStatusReportsTheDayWindow(t *testing.T) {
 		t.Errorf("status %+v", st)
 	}
 }
+
+// TestStatusNamesAKeyPauseByItsCause: a success that was in flight before the vendor refused the
+// key or account (the startup probe, a slower answer) can finish after the refusal. While the
+// pause the refusal started lasts, the state still names it (unauthorized, no_credits), so an
+// admin's test may lift it; a pause vendor faults started stays breaker_open.
+func TestStatusNamesAKeyPauseByItsCause(t *testing.T) {
+	t0 := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		name string
+		err  *Error
+		view breakerView
+		want string
+	}{
+		{"credits", &Error{Kind: KindCredits, Status: 402}, breakerView{state: BreakerOpen, cause: KindCredits, keyCause: KindCredits}, "no_credits"},
+		{"auth", &Error{Kind: KindAuth, Status: 401}, breakerView{state: BreakerOpen, cause: KindAuth, keyCause: KindAuth}, "unauthorized"},
+		{"vendor faults", &Error{Kind: KindBadResponse}, breakerView{state: BreakerOpen, cause: KindBadResponse}, "breaker_open"},
+		{"in-flight credits", &Error{Kind: KindCredits, Status: 402, Retryable: true}, breakerView{state: BreakerOpen, cause: KindCredits}, "breaker_open"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var s statusTracker
+			s.attempt(t0, 0, c.err, false, false)
+			s.attempt(t0.Add(5*time.Millisecond), 0, nil, false, false) // the late success
+			var st Status
+			s.fill(&st, c.view, nil)
+			if st.State != c.want {
+				t.Errorf("state %s, want %s", st.State, c.want)
+			}
+		})
+	}
+}

@@ -22,6 +22,7 @@ import (
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/cmd/mock-upstream/mockupstream"
 	"github.com/truthtable/backend-go/internal/config"
+	"github.com/truthtable/backend-go/internal/contractstest"
 	"github.com/truthtable/backend-go/internal/costs"
 	"github.com/truthtable/backend-go/internal/grpc/enginetest"
 	"github.com/truthtable/backend-go/internal/jev"
@@ -50,6 +51,10 @@ func newFaultEnvWith(t *testing.T, eng *enginetest.Engine, tunes ...func(*config
 	env := newScenarioEnvWith(t, func(cfg *config.Config) {
 		cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
 		cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
+		// No startup probe: it runs in its own goroutine, and its success could land between a
+		// test's faults (resetting the consecutive count the breaker tests rely on). The probe
+		// has its own tests (decision_client_test.go).
+		cfg.Jev.StartupProbe = false
 		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL
 		for _, tune := range tunes {
 			tune(cfg)
@@ -408,13 +413,30 @@ func faultStream(t *testing.T, env *testEnv) *gws.Conn {
 	return conn
 }
 
-// nextStatus has the server broadcast the component states that changed (the status watch's
-// tick, run now instead of within 5 s) and returns the next status event of component.
-func nextStatus(t *testing.T, env *testEnv, conn *gws.Conn, component string) string {
+// awaitStatus has the server broadcast the component states that changed (the status watch's
+// tick, run now instead of within 5 s) and reads status events until component reports want. The
+// watch's first tick runs in its own goroutine when the server starts, so a stream that connected
+// before it first sees the component's starting state ("ok", "checking"); states before want are
+// skipped. It fails if want does not arrive within 5 s, naming the states that did.
+func awaitStatus(t *testing.T, env *testEnv, conn *gws.Conn, component, want string) {
 	t.Helper()
 	env.srv.watchStatus()
+	deadline := time.Now().Add(5 * time.Second)
+	var seen []string
 	for {
-		f := readFrame(t, conn)
+		_ = conn.SetReadDeadline(deadline)
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("WS %s status: saw %v, want %s (%v)", component, seen, want, err)
+		}
+		contractstest.ValidateJSON(t, schemaWsEvent, msg)
+		var f struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(msg, &f); err != nil {
+			t.Fatalf("frame %q: %v", msg, err)
+		}
 		if f.Type != "status" {
 			continue // trace lifecycle events and heartbeats
 		}
@@ -422,9 +444,13 @@ func nextStatus(t *testing.T, env *testEnv, conn *gws.Conn, component string) st
 		if err := json.Unmarshal(f.Data, &d); err != nil {
 			t.Fatal(err)
 		}
-		if d.Component == component {
-			return d.State
+		if d.Component != component {
+			continue
 		}
+		if d.State == want {
+			return
+		}
+		seen = append(seen, d.State)
 	}
 }
 
@@ -469,9 +495,7 @@ func TestBreakerOpensSkipsAndRecovers(t *testing.T) {
 	if state, breaker := decisionState(t, env); state != "breaker_open" || breaker != "open" {
 		t.Errorf("after 5 faults: state %s breaker %s, want breaker_open and open", state, breaker)
 	}
-	if got := nextStatus(t, env, conn, "decision_model"); got != "breaker_open" {
-		t.Errorf("WS decision_model status %s, want breaker_open", got)
-	}
+	awaitStatus(t, env, conn, "decision_model", "breaker_open")
 	if g := breakerGauge(t); g != 2 {
 		t.Errorf("breaker gauge %v, want 2 (open)", g)
 	}
@@ -493,9 +517,7 @@ func TestBreakerOpensSkipsAndRecovers(t *testing.T) {
 	if state, breaker := decisionState(t, env); state != "ready" || breaker != "closed" {
 		t.Errorf("after the trial: state %s breaker %s, want ready and closed", state, breaker)
 	}
-	if got := nextStatus(t, env, conn, "decision_model"); got != "ready" {
-		t.Errorf("WS decision_model status %s, want ready", got)
-	}
+	awaitStatus(t, env, conn, "decision_model", "ready")
 	if g := breakerGauge(t); g != 0 {
 		t.Errorf("breaker gauge %v, want 0 (closed)", g)
 	}
@@ -608,9 +630,7 @@ func TestBudgetSkipsAndBlocks(t *testing.T) {
 	if b := env.statusOf(testKey).Budgets; !b.DecisionReserveOnly || b.DecisionExhausted || b.DecisionUSDDay != 1 {
 		t.Errorf("past the line: budgets %+v, want reserve_only", b)
 	}
-	if got := nextStatus(t, env, conn, "budget"); got != "reserve_only" {
-		t.Errorf("WS budget %s, want reserve_only", got)
-	}
+	awaitStatus(t, env, conn, "budget", "reserve_only")
 	before := decisionCalls(mu)
 	expectGate(t, "reserve only, flag route", gateOf(t, env, support, support.ID), "skipped:budget", "pass", "budget")
 	if n := decisionCalls(mu) - before; n != 0 {
@@ -627,9 +647,7 @@ func TestBudgetSkipsAndBlocks(t *testing.T) {
 	if !st.Budgets.DecisionExhausted || st.DecisionModel.State != "budget_exhausted" {
 		t.Errorf("at the cap: budgets %+v, decision model %s, want exhausted", st.Budgets, st.DecisionModel.State)
 	}
-	if got := nextStatus(t, env, conn, "budget"); got != "exhausted" {
-		t.Errorf("WS budget %s, want exhausted", got)
-	}
+	awaitStatus(t, env, conn, "budget", "exhausted")
 	before = decisionCalls(mu)
 	expectGate(t, "exhausted, flag route", gateOf(t, env, support, support.ID), "skipped:budget", "pass", "budget")
 	expectGate(t, "exhausted, fail closed", gateOf(t, env, payments, "upstream-html-fail-closed"), "skipped:budget", "block", "budget")

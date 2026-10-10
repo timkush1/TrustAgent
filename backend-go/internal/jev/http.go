@@ -491,6 +491,10 @@ func (cl *call) launch(ctx context.Context, hedge bool) *Error {
 	ok, trial := c.breaker.allow(hedge)
 	if !ok {
 		v := c.breaker.view()
+		if v.keyCause != "" {
+			// One refusal of the key or account paused fast checks; its own hint says what to fix.
+			return &Error{Kind: KindBreakerOpen, Message: "the vendor refused the key or account (" + v.keyCause + "); fast checks are paused", Hint: Hint(v.keyCause)}
+		}
 		msg := "the breaker is open after repeated vendor faults"
 		if v.cause != "" {
 			msg += " (last: " + v.cause + ")"
