@@ -56,4 +56,19 @@ describe('EvidenceBadge and LabelledRateView', () => {
     expect(screen.queryByText('50%')).not.toBeInTheDocument();
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
+
+  it('draws no meter where the rate cannot be collected, only the sentence that says why', async () => {
+    const { container } = render(
+      <LabelledRateView
+        rate={{ value: null, label: 'simulated', basis: 'uniform', n: 0, ci95: null, min_n: 30 }}
+        subject="Hallucination rate"
+        needsTemplate="Not in a replay: a fair rate needs {min_n} random ones."
+        notApplicable
+      />,
+    );
+    expect(screen.getByText('Not in a replay: a fair rate needs 30 random ones.')).toBeInTheDocument();
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument();
+    expect(screen.queryByText(/samples collected|0 of 30/)).not.toBeInTheDocument();
+    expect(formatViolations(await axeViolations(container))).toEqual([]);
+  });
 });

@@ -375,8 +375,15 @@ describe('static build', () => {
     expect(caveat.closest('[data-showcase-caveat]')).not.toBeNull();
     // Its audits were picked by risk: the hallucination rate says why there is none, not just a count.
     const glance = document.querySelector('[aria-label="At a glance"]') as HTMLElement;
-    expect(within(glance).getByText(fillTemplate(copy.recording.no_uniform_sample, { min_n: 30 }))).toBeInTheDocument();
+    const why = within(glance).getByText(fillTemplate(copy.recording.no_uniform_sample, { min_n: 30 }));
+    // ...and draws no progress meter, which would read as a replay still collecting samples.
+    const tile = why.closest('dd') as HTMLElement;
+    expect(within(tile).queryByRole('meter')).not.toBeInTheDocument();
+    expect(within(glance).queryByRole('meter')).not.toBeInTheDocument();
     // The mock checks' milliseconds are not presented as a real fast check's time.
-    expect(within(glance).getByText(copy.overview.mock_latency_note)).toBeInTheDocument();
+    expect(within(glance).getByText(copy.overview.mock_latency_note, { exact: false })).toBeInTheDocument();
+    // Its headline is a dash; the mock's own milliseconds sit in the note, marked as the mock's.
+    expect(within(glance).getByText('No real time to show')).toBeInTheDocument();
+    expect(within(glance).getByText(/^Mock: \d+ ms \/ \d+ ms$/)).toBeInTheDocument();
   });
 });

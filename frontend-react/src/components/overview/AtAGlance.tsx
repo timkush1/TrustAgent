@@ -29,6 +29,8 @@ export function AtAGlance({ stats, label, replay = false }: { stats: OverviewSta
   const t = stats.totals;
   const stopped = t.blocked + t.fallback;
   const gate = stats.latency_ms.gate;
+  const noUniformSample = replay && stats.hallucination_rate.n === 0;
+  const mockLatency = label === 'simulated';
   return (
     <dl
       aria-label="At a glance"
@@ -71,16 +73,34 @@ export function AtAGlance({ stats, label, replay = false }: { stats: OverviewSta
       <Item
         label={`${copy.tiers.fast_check} p50 / p95`}
         note={
-          <>
-            {/* Mock checks answer in milliseconds: say so, so nobody quotes it as the real time. */}
-            {label === 'simulated' ? copy.overview.mock_latency_note : 'Time the fast check added before the answer was released'}{' '}
-            <EvidenceBadge label={label} subject={`${copy.tiers.fast_check} latency`} />
-          </>
+          mockLatency ? (
+            <>
+              {/* Mock checks answer in milliseconds: the headline is a dash, and the mock's own figures
+                  sit in small type, so nobody quotes them as a real fast check's time. */}
+              {copy.overview.mock_latency_note}{' '}
+              <span className="whitespace-nowrap tabular">
+                Mock: {formatDurationMs(gate.p50)} / {formatDurationMs(gate.p95)}
+              </span>{' '}
+              <EvidenceBadge label={label} subject={`${copy.tiers.fast_check} latency`} />
+            </>
+          ) : (
+            <>
+              Time the fast check added before the answer was released{' '}
+              <EvidenceBadge label={label} subject={`${copy.tiers.fast_check} latency`} />
+            </>
+          )
         }
       >
-        <span className="text-xl font-semibold text-fg tabular">
-          {formatDurationMs(gate.p50)} <span className="text-fg-subtle">/</span> {formatDurationMs(gate.p95)}
-        </span>
+        {mockLatency ? (
+          <span className="text-xl font-semibold text-fg-subtle">
+            <span aria-hidden="true">{formatDurationMs(null)}</span>
+            <span className="sr-only">No real time to show</span>
+          </span>
+        ) : (
+          <span className="text-xl font-semibold text-fg tabular">
+            {formatDurationMs(gate.p50)} <span className="text-fg-subtle">/</span> {formatDurationMs(gate.p95)}
+          </span>
+        )}
       </Item>
       <Item
         label={
@@ -89,11 +109,12 @@ export function AtAGlance({ stats, label, replay = false }: { stats: OverviewSta
           </>
         }
       >
-        {/* A replay's audits were picked by risk: it has no uniform sample, and says why. */}
+        {/* A replay's audits were picked by risk: it has no uniform sample, says why, and draws no meter. */}
         <LabelledRateView
           rate={stats.hallucination_rate}
           subject="Hallucination rate"
-          needsTemplate={replay && stats.hallucination_rate.n === 0 ? copy.recording.no_uniform_sample : undefined}
+          needsTemplate={noUniformSample ? copy.recording.no_uniform_sample : undefined}
+          notApplicable={noUniformSample}
         />
       </Item>
     </dl>

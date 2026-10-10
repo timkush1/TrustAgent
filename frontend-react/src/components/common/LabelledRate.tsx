@@ -1,7 +1,9 @@
 /**
  * A rate that is only honest with enough unbiased samples (SPEC §2.6 LabelledRate): the value with
  * its 95% interval, sample size and value label once n ≥ min_n; before that, "Needs 30 unbiased
- * samples (have 12)" with a progress meter instead of a number that would mislead.
+ * samples (have 12)" with a progress meter instead of a number that would mislead. Where the rate
+ * cannot be collected at all (a replay picked its audits by risk), the sentence says why and no
+ * meter is drawn, since nothing is being collected.
  */
 import { formatCount } from '@/domain/format';
 import { rateReadout } from '@/domain/rates';
@@ -20,11 +22,24 @@ export interface LabelledRateViewProps {
    * which fits only a uniform sample.
    */
   needsTemplate?: string;
+  /**
+   * The rate does not apply here (a replay has no uniform sample): show the `needsTemplate` sentence
+   * and the badge only, with no progress meter that would read as still collecting.
+   */
+  notApplicable?: boolean;
   size?: 'md' | 'lg';
   className?: string;
 }
 
-export function LabelledRateView({ rate, subject, showBasis = false, needsTemplate, size = 'md', className }: LabelledRateViewProps) {
+export function LabelledRateView({
+  rate,
+  subject,
+  showBasis = false,
+  needsTemplate,
+  notApplicable = false,
+  size = 'md',
+  className,
+}: LabelledRateViewProps) {
   const r = rateReadout(rate, needsTemplate);
   if (!r.enough) {
     return (
@@ -33,17 +48,19 @@ export function LabelledRateView({ rate, subject, showBasis = false, needsTempla
           <p className="text-sm text-fg">{r.needs}</p>
           <EvidenceBadge label={rate.label} basis={rate.basis} subject={subject} />
         </div>
-        <div
-          role="meter"
-          aria-label={`${subject}: unbiased samples collected`}
-          aria-valuemin={0}
-          aria-valuemax={rate.min_n}
-          aria-valuenow={Math.min(rate.n, rate.min_n)}
-          aria-valuetext={`${formatCount(rate.n)} of ${formatCount(rate.min_n)} samples`}
-          className="h-1.5 w-full max-w-60 overflow-hidden rounded-full bg-surface-sunken ring-1 ring-border ring-inset"
-        >
-          <div className="h-full rounded-full bg-fg-muted" style={{ width: `${r.progress * 100}%` }} />
-        </div>
+        {notApplicable ? null : (
+          <div
+            role="meter"
+            aria-label={`${subject}: unbiased samples collected`}
+            aria-valuemin={0}
+            aria-valuemax={rate.min_n}
+            aria-valuenow={Math.min(rate.n, rate.min_n)}
+            aria-valuetext={`${formatCount(rate.n)} of ${formatCount(rate.min_n)} samples`}
+            className="h-1.5 w-full max-w-60 overflow-hidden rounded-full bg-surface-sunken ring-1 ring-border ring-inset"
+          >
+            <div className="h-full rounded-full bg-fg-muted" style={{ width: `${r.progress * 100}%` }} />
+          </div>
+        )}
         {showBasis && rate.basis ? <p className="text-xs text-fg-muted">{rate.basis}</p> : null}
       </div>
     );
