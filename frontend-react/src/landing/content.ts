@@ -29,7 +29,7 @@ export const APP_MODE: 'full' | 'static' = import.meta.env.VITE_APP_MODE === 'st
  */
 export const DEMO_HREF = APP_MODE === 'static' ? `${base}app/traffic/` : `${base}app`;
 export const REPO_URL: string = (import.meta.env.VITE_REPO_URL as string | undefined) || 'https://github.com/timkush1/TrustAgent';
-export const RECORDING_URL = `${base}demo/recorded/manifest.json`;
+export const RECORDING_URL = `${base}demo/manifest.json`;
 
 export function command(id: string): string {
   const c = commandsDoc.commands.find((x) => x.id === id);

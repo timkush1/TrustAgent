@@ -2476,7 +2476,7 @@ npm run size && make load-test-gate        # publishes p50/p95 overhead (report-
 Gate:
 
 ```bash
-make check && python3 scripts/check_version.py && node scripts/check-claims.mjs && python3 scripts/check_recording.py frontend-react/public/demo/recorded
+make check && python3 scripts/check_version.py && node scripts/check-claims.mjs && python3 scripts/check_recording.py frontend-react/demo-data/simulated
 ```
 
 **P7 (v2.1)**
@@ -3175,3 +3175,13 @@ Where a section above says otherwise, the decision cited for it here wins.
   words modules (D86 allows them there), details on `price_far_above_contracts` warnings,
   Studio's `Draft with AI` saying "out of credits" instead of "engine unavailable" for a 401 or 402
   judge, and the Docker run of the `handbook` knowledge scenario (D65).
+
+## Appendix G: P5 errata
+
+The lead decisions D99-D141 of `docs/v2/P5-PLAN.md` §1 settle the gaps P5 finds. Where a section
+above (or Appendix F) says otherwise, the decision cited for it here wins. The lead completes this
+table at P5 integration (I-3).
+
+| SPEC section | What changes | Decisions |
+|---|---|---|
+| §2.13, §3.3 (web), Appendix F §3.3 | Committed benchmark runs are `docs/benchmarks/results/<run_id>.json` (the index is `docs/benchmarks/index.json`), not `runs/`; the dashboard reads only measured, non-mock runs. The static build hides Benchmarks, so its nav stays the six items of §3.3; Appendix F's "renders committed benchmark runs" no longer applies to the static build (§23 CO-4). | D111 |

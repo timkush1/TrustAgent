@@ -41,6 +41,8 @@ import { normalize, type RawAnswerInput } from '../normalize';
 import { parseSpec, questionBody, questionId, specHashes, type Spec } from '../spec';
 import { builtinSpec } from '../templates';
 import { countTokens, est } from '../tokens';
+import { costKind } from './cost';
+import { pkceKind } from './pkce';
 
 /** One contracts/vectors/<kind>/<name>.json file (contracts/schema/vector.v1.schema.json). */
 export interface Vector {
@@ -285,8 +287,9 @@ export const KINDS: Readonly<Record<string, VectorKind>> = {
   evidence: { run: runEvidence, go: 'all (internal/evidence, every api_format through llmapi.ParseRequest)' },
   lint: { run: runLint, go: 'all' },
   calibrate_fit: { run: runCalibrateFit, go: 'all' },
-  cost: { skip: 'TS runner with the landing calculator (P5, D85)', go: 'all fn (internal/decision/cost.go)' },
-  pkce: { skip: 'src/lib/openrouter/pkce.ts (P5)', go: 'none (TS-only kind)' },
+  // Filled by their owners (cost: WEB-LANDING LD-1; pkce: WEB-LIVE LV-4).
+  cost: costKind,
+  pkce: pkceKind,
 };
 
 /**

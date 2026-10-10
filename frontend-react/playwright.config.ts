@@ -14,6 +14,8 @@
  *   PLAYWRIGHT_STATIC_BASE_URL does not point elsewhere, or with PLAYWRIGHT_STATIC_PREVIEW=1;
  *   PLAYWRIGHT_STATIC_PREVIEW=0 never starts it. Outside CI a preview already listening on the
  *   port is reused; in CI the port must be free.
+ * - `launch`: the capture specs in e2e/launch/ (`npm run og`, `hero`, `screenshots`; D115) against the
+ *   same static preview, built with `--mode launch` so the /og route renders.
  */
 import { defineConfig, devices } from '@playwright/test';
 
@@ -39,13 +41,16 @@ export function selectedProjects(argv: readonly string[]): string[] {
   return names;
 }
 
+/** The projects that run against the static preview. */
+export const STATIC_PREVIEW_PROJECTS: readonly string[] = ['static', 'launch'];
+
 /** Whether this run serves the static site itself (see the header). */
 export function wantsStaticPreview(argv: readonly string[], env: NodeJS.ProcessEnv): boolean {
   if (env.PLAYWRIGHT_STATIC_PREVIEW === '0') return false;
   if (env.PLAYWRIGHT_STATIC_PREVIEW) return true;
   if (env.PLAYWRIGHT_STATIC_BASE_URL) return false;
   // Project names match case-insensitively, as Playwright's --project filter does.
-  return selectedProjects(argv).some((name) => name.toLowerCase() === 'static');
+  return selectedProjects(argv).some((name) => STATIC_PREVIEW_PROJECTS.includes(name.toLowerCase()));
 }
 
 export default defineConfig({
@@ -78,6 +83,11 @@ export default defineConfig({
     {
       name: 'static',
       testDir: 'e2e/static',
+      use: { ...devices['Desktop Chrome'], baseURL: staticBaseURL },
+    },
+    {
+      name: 'launch',
+      testDir: 'e2e/launch',
       use: { ...devices['Desktop Chrome'], baseURL: staticBaseURL },
     },
   ],

@@ -378,7 +378,7 @@ committed generated file, never from the whole scenario pack.
 | Build | `/` | Dashboard | Landing |
 |---|---|---|---|
 | Full (`npm run build`) | the dashboard | `/app/…` | `/welcome/` |
-| Static (`npm run build:static`, `VITE_APP_MODE=static`, `VITE_BASE_PATH` default `/TrustAgent/`) | the landing page | `/app/…` replaying `demo/` (copied from `demo-data/`, see *Datasets*), with prerendered copies of the static pages, the `connect/callback/` page and `404.html` for other deep links | `/` |
+| Static (`npm run build:static`, `VITE_APP_MODE=static`, `VITE_BASE_PATH` default `/TrustAgent/`) | the landing page | `/app/…` replaying the dataset the build copies to `demo/` (`demo-data/simulated`, or `demo-data/recorded` when it exists; see *Datasets*), with `app/{overview,traffic,playground,evaluators/studio,savings}/index.html` and `connect/callback/index.html` copies and `404.html` for other deep links | `/` |
 
 **Landing page rules.**
 

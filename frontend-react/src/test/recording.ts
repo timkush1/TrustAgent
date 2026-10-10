@@ -1,15 +1,17 @@
 /**
- * The committed demo recording (public/demo/recorded) served by a fake fetch, as the static site
+ * The committed simulated recording (demo-data/simulated, served at demo/; D110) served by a fake fetch, as the static site
  * serves it, plus a manual clock for the replay player.
  */
 import type { ReplayClock } from '@/data/replay/player';
 import type { Recording } from '@/types/api';
 
-const files = import.meta.glob<string>('../../public/demo/recorded/**/*.json', { query: '?raw', import: 'default', eager: true });
+const files = import.meta.glob<string>('../../demo-data/simulated/**/*.json', { query: '?raw', import: 'default', eager: true });
+// A moved or emptied directory must fail loudly, not serve an empty recording (D110).
+if (Object.keys(files).length === 0) throw new Error('src/test/recording.ts found no files under demo-data/simulated');
 
 /** "manifest.json" and "traces/<id>.json" → file text. */
 export const RECORDING_FILES: Readonly<Record<string, string>> = Object.fromEntries(
-  Object.entries(files).map(([path, text]) => [path.slice(path.indexOf('/recorded/') + '/recorded/'.length), text]),
+  Object.entries(files).map(([path, text]) => [path.slice(path.indexOf('/simulated/') + '/simulated/'.length), text]),
 );
 
 export function committedManifest(): Recording {
@@ -22,12 +24,12 @@ export interface RecordingFetch {
 }
 
 /**
- * Serves `${base}demo/recorded/<file>` from the committed files (or `overrides`, raw text), 404
+ * Serves `${base}demo/<file>` from the committed files (or `overrides`, raw text), 404
  * for anything else. `manifest` replaces manifest.json with a document.
  */
 export function recordingFetch(base = '/TrustAgent/', opts: { manifest?: unknown; fail?: boolean } = {}): RecordingFetch {
   const requests: string[] = [];
-  const prefix = `${base}demo/recorded/`;
+  const prefix = `${base}demo/`;
   const impl = async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     requests.push(url);

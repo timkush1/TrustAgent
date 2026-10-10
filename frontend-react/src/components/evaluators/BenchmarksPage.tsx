@@ -1,6 +1,6 @@
 /**
- * Benchmarks (SPEC §3.3 Evaluators, §2.13; D72): the committed benchmark runs in
- * docs/benchmarks/runs/*.json, bundled at build time, so the static build shows the same page. Only
+ * Benchmarks (SPEC §3.3 Evaluators, §2.13; D72, D111): the committed benchmark runs in
+ * docs/benchmarks/results/*.json, bundled at build time (the static build hides this page). Only
  * measured runs are shown (`measured: true`, `mock: false`); every figure sits under a Measured
  * badge, costs carry their own source label, and a confidence interval is written next to a metric
  * when the run has one. With no committed run the page says how to make one (`make bench-lite`).
@@ -161,7 +161,7 @@ function EmptyRuns() {
           ),
         )}
       </p>
-      <p className="mt-2">It needs an OpenRouter key and costs at most $5; the result is committed to docs/benchmarks/runs and shown here.</p>
+      <p className="mt-2">It needs an OpenRouter key and costs at most $5; the result is committed to docs/benchmarks/results and shown here.</p>
     </EmptyState>
   );
 }

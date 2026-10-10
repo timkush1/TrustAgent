@@ -193,3 +193,75 @@ export async function loadRuntimeConfig(options: LoadOptions = {}): Promise<Runt
 
   return buildRuntimeConfig(file, { location, env, warnings });
 }
+
+// ------------------------------------------------------------------ static live mode (build time)
+
+/**
+ * The static site's live-mode caps and models (D101, D137). They come only from build-time
+ * `import.meta.env` (contracts/config/keys.v1.json), never from config.json or the URL, so a link
+ * cannot raise a cap or swap a model. Out-of-range numbers are clamped; a model outside its
+ * family falls back to the default. The caps are a courtesy, not a security boundary: the key's
+ * own credit limit is the real one.
+ */
+export interface PlaygroundConfig {
+  /** Billable calls to OpenRouter per tab, checks and AI drafts together (1-100). */
+  maxCalls: number;
+  /** Token cap per call (at most 8,000). */
+  maxTokens: number;
+  /** The decision model (`typesafe/jev-…`). */
+  jevModel: string;
+  /** The judge and drafter model (`anthropic/claude-haiku…`). */
+  judgeModel: string;
+}
+
+export interface BuildEnv {
+  VITE_PLAYGROUND_MAX_CALLS?: string;
+  VITE_PLAYGROUND_MAX_TOKENS?: string;
+  VITE_JEV_MODEL?: string;
+  VITE_OPENROUTER_JUDGE_MODEL?: string;
+  VITE_SITE_URL?: string;
+}
+
+/** The registry defaults (contracts/config/keys.v1.json). */
+export const PLAYGROUND_DEFAULTS: Readonly<PlaygroundConfig> = {
+  maxCalls: 100,
+  maxTokens: 8000,
+  jevModel: 'typesafe/jev-1.13',
+  judgeModel: 'anthropic/claude-haiku-4.5',
+};
+export const PLAYGROUND_LIMITS = { maxCalls: { min: 1, max: 100 }, maxTokens: { min: 1, max: 8000 } } as const;
+export const DEFAULT_SITE_URL = 'https://timkush1.github.io/TrustAgent/';
+
+const IntText = z.string().check(z.trim(), z.regex(/^\d{1,9}$/));
+const JevModel = z.string().check(z.trim(), z.regex(/^typesafe\/jev-[A-Za-z0-9._:-]+$/));
+const JudgeModel = z.string().check(z.trim(), z.regex(/^anthropic\/claude-haiku[A-Za-z0-9._:-]*$/));
+const SiteUrl = z.string().check(z.trim(), z.regex(/^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?$/));
+
+function clampInt(value: string | undefined, fallback: number, limits: { min: number; max: number }): number {
+  const parsed = IntText.safeParse(value);
+  if (!parsed.success) return fallback;
+  return Math.min(limits.max, Math.max(limits.min, Number(parsed.data)));
+}
+
+export function buildPlaygroundConfig(env: BuildEnv): PlaygroundConfig {
+  const jev = JevModel.safeParse(env.VITE_JEV_MODEL);
+  const judge = JudgeModel.safeParse(env.VITE_OPENROUTER_JUDGE_MODEL);
+  return {
+    maxCalls: clampInt(env.VITE_PLAYGROUND_MAX_CALLS, PLAYGROUND_DEFAULTS.maxCalls, PLAYGROUND_LIMITS.maxCalls),
+    maxTokens: clampInt(env.VITE_PLAYGROUND_MAX_TOKENS, PLAYGROUND_DEFAULTS.maxTokens, PLAYGROUND_LIMITS.maxTokens),
+    jevModel: jev.success ? jev.data : PLAYGROUND_DEFAULTS.jevModel,
+    judgeModel: judge.success ? judge.data : PLAYGROUND_DEFAULTS.judgeModel,
+  };
+}
+
+/** VITE_SITE_URL, absolute and ending in "/": canonical and og:* URLs only, never requests. */
+export function buildSiteUrl(env: BuildEnv): string {
+  const parsed = SiteUrl.safeParse(env.VITE_SITE_URL);
+  if (!parsed.success) return DEFAULT_SITE_URL;
+  return parsed.data.endsWith('/') ? parsed.data : `${parsed.data}/`;
+}
+
+/** This build's live-mode caps and models. */
+export const playground: Readonly<PlaygroundConfig> = Object.freeze(buildPlaygroundConfig(import.meta.env));
+/** This build's published site URL. */
+export const siteUrl: string = buildSiteUrl(import.meta.env);
