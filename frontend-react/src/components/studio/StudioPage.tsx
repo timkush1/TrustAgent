@@ -225,11 +225,16 @@ function StudioEditor({ initial }: { initial: Session }) {
 
 const DESCRIPTION = 'Describe a check in plain English, test it on real answers, then let it watch a route before it changes anything. Jev then asks it on every request, in the same call as the route’s other checks.';
 
+/** The online demo's promise: everything up to the export runs in the browser (D107). */
+const STATIC_DESCRIPTION =
+  'Describe a check in plain English and test it on real answers with your own OpenRouter key. Then take it to your own stack, where it watches a route before it changes anything.';
+
 /** Studio for a new check. */
 export function StudioPage() {
+  const isStatic = useIsStatic();
   return (
     <div>
-      <PageHeader description={DESCRIPTION} />
+      <PageHeader description={isStatic ? STATIC_DESCRIPTION : DESCRIPTION} />
       <StudioEditor initial={EMPTY} />
     </div>
   );
@@ -275,7 +280,7 @@ export function StudioVersionPage({ id, version: param }: { id: string; version:
       <PageHeader
         description={
           isStatic ? (
-            DESCRIPTION
+            STATIC_DESCRIPTION
           ) : (
             <>
               {DESCRIPTION}{' '}

@@ -14,6 +14,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { Input, Textarea } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Slider } from '@/components/ui/slider';
+import { useIsStatic } from '@/components/replay/useReplay';
 import { Switch } from '@/components/ui/switch';
 import { formatRisk } from '@/domain/format';
 import {
@@ -155,6 +156,8 @@ function newOptionKey(existing: readonly string[]): string {
 }
 
 export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { spec: EvaluatorSpec; onChange: (spec: EvaluatorSpec) => void; disabled?: boolean; onOpenJson: () => void }) {
+  // The online demo has no step 7: calibration from labels needs your own stack (D107).
+  const isStatic = useIsStatic();
   const removeReasonId = useId();
   const read = readSimpleForm(spec);
   if (!read.ok) {
@@ -266,7 +269,7 @@ export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { sp
       />
       <Switch
         label="Allow this check to block"
-        description={`Only block when another signal agrees: ${RECOMMENDED_CORROBORATORS.map((c) => studioCorroboratorName(c)).join(', ')}. Blocking also needs a calibration (step 7).`}
+        description={`Only block when another signal agrees: ${RECOMMENDED_CORROBORATORS.map((c) => studioCorroboratorName(c)).join(', ')}. Blocking also needs a calibration ${isStatic ? 'from labels on your own stack' : '(step 7)'}.`}
         checked={form.allowBlock}
         disabled={disabled}
         onCheckedChange={(checked) => set({ ...form, allowBlock: checked })}
