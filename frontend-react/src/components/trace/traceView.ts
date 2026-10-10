@@ -323,3 +323,17 @@ export function disagreementLine(view: Pick<TraceView, 'summary' | 'audit'>): st
  * first attempt's "Show exact Jev request", which opens when it is the location's hash.
  */
 export const TRACE_ANCHORS = { answer: 'answer-title', jevRequest: 'jev-request' } as const;
+
+/** At most this many document lines under a claim. */
+const MAX_CLAIM_EVIDENCE = 2;
+
+/**
+ * The document lines the deep audit judged a claim against, for its row: the located evidence
+ * spans with their document ids, else the judge's plain evidence quotes; blank ones left out.
+ */
+export function claimEvidence(claim: Pick<ClaimView, 'evidence' | 'evidence_spans'>): { doc: string | null; text: string }[] {
+  const spans = (claim.evidence_spans ?? []).filter((s) => s.text.trim() !== '').map((s) => ({ doc: s.doc_id || null, text: s.text.trim() }));
+  const quotes = spans.length > 0 ? spans : (claim.evidence ?? []).filter((e) => e.trim() !== '').map((text) => ({ doc: null, text: text.trim() }));
+  const seen = new Set<string>();
+  return quotes.filter((q) => !seen.has(`${q.doc}\u0000${q.text}`) && seen.add(`${q.doc}\u0000${q.text}`)).slice(0, MAX_CLAIM_EVIDENCE);
+}
