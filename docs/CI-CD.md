@@ -1,8 +1,9 @@
-# CI/CD — the GitHub Actions pipelines, explained
+# CI/CD: the GitHub Actions pipelines, explained
 
 This doc explains, in plain English, everything that runs automatically on this repository:
-what each workflow does, why it exists, how to read a red ✗, and the reliability decisions
-we made. If you've never touched GitHub Actions, start at the top.
+what each workflow does, why it exists, how to read a failed run, the reliability decisions we
+made, and how a release is cut ([Releasing](#releasing)). If you've never touched GitHub Actions,
+start at the top.
 
 ## The 30-second mental model
 
@@ -16,7 +17,7 @@ job — and the workflow — goes red. On a pull request, red checks mean "don't
 dependencies on a weekly schedule. Every Dependabot PR triggers the same CI/Security checks as a
 human PR — which is exactly the point: an update that breaks the build gets caught *before* merge.
 
-CI is split into one workflow per stream (v2, P0.5), plus security and eval:
+CI is split into one workflow per area, plus security, the evaluations and the release workflows:
 
 | Workflow | File | Runs on | Purpose |
 |---|---|---|---|
@@ -24,10 +25,14 @@ CI is split into one workflow per stream (v2, P0.5), plus security and eval:
 | **CI — Python** | `ci-python.yml` | every push to `main` + every PR | ruff, black, unit tests, golden eval gate |
 | **CI — Web** | `ci-web.yml` | every push to `main` + every PR | generated files are current, eslint, `tsc -b`, vitest, production and static builds |
 | **CI — Docker** | `ci-docker.yml` | every push to `main` + every PR | build all three images (not pushed), labelled with their version and git revision |
-| **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability) + forbidden-identifier scan |
+| **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability), the forbidden-identifier scan, every figure in the README and docs against `contracts/claims` (`check-claims.mjs`), and the version mirrors (`check_version.py`) |
 | **E2E** | `ci-e2e.yml` | every push to `main` + every PR + manual button | the DX scripts job, then the demo, e2e and onboarding stacks with trafficgen, doctor and Playwright |
 | **Security** | `security.yml` | every push/PR + weekly Mondays | security scanners (gosec, bandit, gitleaks, npm audit, Trivy) |
-| **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a live model |
+| **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a local model (free) |
+| **Eval (live)** | `eval-live.yml` | manual button only, in the protected `eval-live` environment | the paid benchmark (`make gate-eval`, then `make bench-lite`, hard cap $5) with the real fast check and judge; uploads the run, never publishes it |
+| **Knowledge** | `ci-knowledge.yml` | manual, weekly, and changes to the knowledge path | the knowledge add-on end to end in Docker, on mock vendors; not a required check |
+| **Pages** | `pages.yml` | push to `main`, `v*` tags, PRs (build only), manual | build and check the static site; deploy it only when the owner turned Pages on |
+| **Release images** | `release-images.yml` | push to `main`, `v*.*.*` tags, PRs touching images (build only), manual | multi-arch images, provenance, SBOM, attestations, pushed to GHCR from `main` and tags only |
 
 ## What each workflow does
 
@@ -91,7 +96,35 @@ Five jobs; the first four are **blocking**, Trivy is informational:
 - **Trivy** — broad filesystem/dependency scanner, `continue-on-error: true` (reports but never
   blocks) until its findings have been triaged.
 
-### Eval (`.github/workflows/eval.yml`) — "is the detector actually good?"
+### Release and publishing workflows: "what do we ship?"
+
+- **Pages** (`pages.yml`): the **build** job runs on every trigger and never deploys. It runs the
+  same make targets as `make pages-build`, in order: `check_recording.py` on the tape the site will
+  ship (`--require-recorded` on a tag), the static build under `/TrustAgent/` (the tape is `auto` on
+  `main` and pull requests, `recorded` on a tag), the landing page's size budget, file checks (every
+  page, the 404 fallback, the base path, the shipped tape, no source maps), **gitleaks over the
+  built site**, then the Pages artifact. The **deploy** job runs only when the repository variable
+  `PAGES_ENABLED` is `true`, never for a pull request, only from `main` or a `v*` tag (and, on a
+  manual run, only with the `deploy` input); it alone holds `pages: write` and `id-token: write`.
+- **Release images** (`release-images.yml`): a `plan` job reads `VERSION`, checks a release tag
+  against it (`check_version.py --tag`) and decides whether the run pushes (only from
+  `timkush1/TrustAgent`, only from `main` or a `v*.*.*` tag). One `images` job per service builds
+  `linux/amd64` and `linux/arm64`, with BuildKit provenance (`mode=max`) and an SBOM, pushes the
+  tags `edge` (main), `X.Y.Z`, `X.Y`, `latest` (a release) and `sha-<short>`, and attests each
+  pushed digest. A tag build starts clean (no cache, base images pulled again). Then
+  `release-notes` lists each digest with its verify command, `first-run` times a fresh stack on the
+  pulled `sha-<short>` images, and `anonymous-pull` (once `GHCR_PUBLIC` is `true`) pulls every
+  image without credentials.
+- **Eval (live)** (`eval-live.yml`): runs only by hand, in the `eval-live` environment that holds
+  `OPENROUTER_API_KEY` behind a required reviewer, so every paid run is approved first. Publishing a
+  measured result stays a reviewed, local step (`make bench-publish`).
+
+Every one of these workflows is hardened the same way: actions pinned to a commit SHA, no persisted
+git credentials, no permissions at the top level and only what each job needs, no
+`pull_request_target`, and no `${{ ... }}` expressions inside `run:` (values reach scripts through
+`env:`). `make lint-workflows` runs actionlint and zizmor over every workflow.
+
+### Eval (`.github/workflows/eval.yml`): "is the detector actually good?"
 
 Weekly (and on demand via the *Run workflow* button): starts an Ollama service container, pulls a
 small model, runs the HaluEval-QA benchmark through the real pipeline, and uploads the metrics as
@@ -110,7 +143,7 @@ three Dockerfiles' base images. Two deliberate policies:
 
 These failures were visible on the repo in mid-2026; each is understood and addressed:
 
-### 1. ❌ "Bump python from 3.11-slim to 3.14-slim" (Dependabot docker PR #9)
+### 1. "Bump python from 3.11-slim to 3.14-slim" (Dependabot docker PR #9)
 
 Dependabot proposed bumping the audit-engine base image from Python 3.11 to 3.14. The Docker CI
 job then tried to build that image, and the build has to `pip install torch` inside it. **torch
@@ -122,7 +155,7 @@ The failure is deterministic; re-running will never help.
 major bumps so this PR class stops appearing. Bumping Python is a manual decision made when the
 ML wheels catch up.
 
-### 2. ❌ "Bump the npm-deps group" (Dependabot npm PR #19) — CI *and* Security red
+### 2. "Bump the npm-deps group" (Dependabot npm PR #19) — CI *and* Security red
 
 Two compounding causes:
 
@@ -136,7 +169,7 @@ Two compounding causes:
 `npm ci && npm run lint && npx tsc -b && npm test`, and push that to the PR branch — or close the
 PR and apply the same bumps locally.
 
-### 3. ❌ "Security" workflow failing on `main` (and on every PR)
+### 3. "Security" workflow failing on `main` (and on every PR)
 
 The blocking `npm audit --audit-level=high` job found **two HIGH advisories in `undici`** — a
 transitive dev dependency — plus HIGH advisories in Vite itself (dev-server-only; fixed in v2 P0.5 by
@@ -148,7 +181,7 @@ lint/typecheck/tests all green after), and the audit step now scans **production
 `npm audit --omit=dev --audit-level=high` currently reports **0 vulnerabilities**. Real shipped
 vulns still block.
 
-### 4. ❌ "Bump actions/checkout from 6 to 7" (Dependabot PR #18)
+### 4. "Bump actions/checkout from 6 to 7" (Dependabot PR #18)
 
 The bump itself is harmless (it only changes which version of the checkout action runs). Its
 checks were red because **every PR re-runs the full CI + Security suite** — so it inherited
@@ -171,6 +204,56 @@ Dependabot PRs, and a failing job holds the workflow open until timeout/failure 
 | `poetry.lock` stale (predated Poetry 2.x; `make install` failed) + an unresolvable numpy conflict between `qdrant-client` and never-imported `langchain`/`langchain-community` | Removed the two dead deps, regenerated the lock with Poetry 2.4; torch locked to the CPU wheel index so `poetry install` stays lean |
 | `make proto` produced wrongly-nested Go stubs on a fresh clone | Now mirrors CI exactly (`--go_opt=module=…`); `make proto-tools` installs the pinned plugins |
 
+## Releasing
+
+A release is a version bump, a tag and two workflows. Nothing is published from a laptop.
+
+**Once, before the first release (the owner, in the repository settings):**
+
+1. **Settings → Pages → Source:** choose **GitHub Actions**.
+2. **Settings → Environments → `github-pages` → Deployment branches and tags:** add the tag rule
+   `v*` next to `main`. Without it, the deploy job of a `v2.0.0` tag is rejected by the
+   environment, even though the build passed.
+3. **Settings → Secrets and variables → Actions → Variables:** set `PAGES_ENABLED` to `true`.
+4. After the first `release-images` run, open each package (`truthtable-proxy`, `-engine`,
+   `-dashboard`) → **Package settings** → visibility **Public**, then set the variable
+   `GHCR_PUBLIC` to `true` so the `anonymous-pull` job checks it.
+
+**Each release:**
+
+1. On a clean `main`, set the version everywhere and rename the CHANGELOG heading
+   (`## Unreleased — X.Y.Z ...` becomes `## vX.Y.Z — <date> ...`):
+
+   ```bash
+   make version-bump V=2.0.0 DRY_RUN=1    # print the plan
+   make version-bump V=2.0.0              # VERSION, pyproject.toml, package.json + lock, version.go, __init__.py, compose default
+   make check-version RELEASE_TAG=v2.0.0  # every mirror agrees, and the CHANGELOG has the heading
+   make check && make check-claims-launch # the local gate, and the launch gate for public figures
+   ```
+
+2. Commit, open a pull request, merge it when every check is green.
+3. Tag the merge commit and push the tag:
+
+   ```bash
+   git tag -a v2.0.0 -m "TrustAgent 2.0.0" && git push origin v2.0.0
+   ```
+
+4. Watch the two runs the tag starts: **Release images** (images, provenance, SBOM, attestations,
+   release notes, first run) and **Pages** (which refuses a tag without a recorded tape).
+5. Create the GitHub release from the tag, with the CHANGELOG section and the digests from the
+   `release-notes` job, and attach the hero MP4 if there is one.
+6. Check what was published:
+
+   ```bash
+   for svc in proxy engine dashboard; do
+     gh attestation verify oci://ghcr.io/timkush1/truthtable-$svc:2.0.0 -R timkush1/TrustAgent
+   done
+   docker buildx imagetools inspect ghcr.io/timkush1/truthtable-proxy:2.0.0   # two platforms
+   make doctor ARGS="--target pages --pages-url https://timkush1.github.io/TrustAgent/"
+   ```
+
+   On a fresh clone, `git checkout v2.0.0 && make demo` now pulls these images instead of building.
+
 ## How to read a failure (quick recipe)
 
 1. GitHub → **Actions** tab → click the red run.
@@ -187,8 +270,10 @@ Dependabot PRs, and a failing job holds the workflow open until timeout/failure 
 Everything CI does has a local equivalent — run these before pushing:
 
 ```bash
-make check         # the local gate: lint, unit tests, contracts, compose files, generated files, both web builds
-make eval-golden   # the eval regression gate              (≈ the CI blocker)
+make check          # the local gate: lint, unit tests, contracts, compose files, generated files, both web builds
+make eval-golden    # the eval regression gate              (≈ the CI blocker)
+make pages-build    # the Pages build job, step for step
+make lint-workflows # actionlint and zizmor over .github/workflows
 cd frontend-react && npm audit --omit=dev --audit-level=high
 gitleaks git --config .gitleaks.toml --redact .            # if gitleaks is installed
 ```
