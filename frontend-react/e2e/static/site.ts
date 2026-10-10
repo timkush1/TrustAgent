@@ -2,7 +2,7 @@
  * Helpers for specs against the static GitHub Pages build (`npm run build:static`, served by
  * `vite preview`). Paths are relative to the base URL (…/TrustAgent/): never start one with "/".
  */
-import { test, type Page, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
+import { expect, test, type Page, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
 
 export const MOCK_LABEL = 'Simulated (mock checks + mock judge): not model output';
 
@@ -42,7 +42,7 @@ export interface Recorded {
 
 /** The committed recording's refund trace (flagged, contradicted) and trace count. */
 export async function recorded(page: Page): Promise<Recorded> {
-  const res = await page.request.get('demo/recorded/manifest.json');
+  const res = await page.request.get('demo/manifest.json');
   const manifest = (await res.json()) as { traces: { trace_id: string; action: string | null; audit: { verdict: string | null } }[] };
   const refund = manifest.traces.find((t) => t.action === 'flag' && t.audit.verdict === 'HALLUCINATED');
   if (!refund) throw new Error('the recording has no flagged, hallucinated trace');
@@ -62,4 +62,38 @@ export async function watchNetwork(page: Page): Promise<{ urls: string[]; violat
     urls,
     violations: () => page.evaluate(() => (window as unknown as { __csp?: string[] }).__csp ?? []),
   };
+}
+
+/**
+ * Aborts every request the page makes to another origin than the site's, unless a route registered
+ * later handles it (mockOpenRouter in openrouter.ts: Playwright tries the newest route first), and
+ * returns the URLs it blocked. No static spec reaches the internet (Rule 6, D138).
+ */
+export async function blockUnmockedExternal(page: Page, baseURL?: string): Promise<string[]> {
+  const blocked: string[] = [];
+  await page.route(
+    (url) => {
+      const origin = baseURL ? new URL(baseURL).origin : null;
+      return url.protocol.startsWith('http') && (origin === null ? !/^(localhost|127\.0\.0\.1)$/.test(url.hostname) : url.origin !== origin);
+    },
+    async (route) => {
+      blocked.push(route.request().url());
+      await route.abort('blockedbyclient');
+    },
+  );
+  return blocked;
+}
+
+/**
+ * blockUnmockedExternal for every test of the calling describe block: a test whose page reached an
+ * unmocked external URL fails.
+ */
+export function useExternalGuard(): void {
+  let blocked: string[] = [];
+  test.beforeEach(async ({ page, baseURL }) => {
+    blocked = await blockUnmockedExternal(page, baseURL);
+  });
+  test.afterEach(() => {
+    expect(blocked, 'requests to an unmocked external origin').toEqual([]);
+  });
 }

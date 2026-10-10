@@ -6,7 +6,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { STATIC_CSP } from '../../vite.site';
-import { recorded, requireStaticSite, watchNetwork } from './site';
+import { recorded, requireStaticSite, useExternalGuard, watchNetwork } from './site';
 
 async function expectHardened(page: Page, what: string): Promise<void> {
   await expect(page.locator('meta[http-equiv="Content-Security-Policy"]'), `${what}: CSP meta`).toHaveAttribute('content', STATIC_CSP);
@@ -15,6 +15,7 @@ async function expectHardened(page: Page, what: string): Promise<void> {
 }
 
 test.describe('CSP and network', () => {
+  useExternalGuard();
   test.beforeAll(async ({ playwright }, testInfo) => {
     await requireStaticSite(playwright, testInfo);
   });
@@ -51,7 +52,7 @@ test.describe('CSP and network', () => {
     expect(await net.violations(), 'CSP violations').toEqual([]);
     const elsewhere = net.urls.filter((u) => !u.startsWith('data:') && new URL(u).origin !== origin);
     expect(elsewhere, 'requests that leave the site').toEqual([]);
-    expect(net.urls.some((u) => u.includes('/demo/recorded/manifest.json'))).toBe(true);
+    expect(net.urls.some((u) => u.includes('/demo/manifest.json'))).toBe(true);
     expect(net.urls.some((u) => /\.woff2$/.test(u)), 'self-hosted fonts').toBe(true);
   });
 });

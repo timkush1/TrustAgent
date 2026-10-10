@@ -10,13 +10,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:static": "tsc -b && vite build --mode static",
+    "build:launch": "tsc -b && vite build --mode launch",
     "size": "node scripts/check-size.ts",
     "recording": "node scripts/build-demo-recording.ts",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "preview:static": "vite preview --mode static"
+    "preview:static": "vite preview --mode static",
+    "og": "npm run build:launch && playwright test --project=launch og.spec.ts",
+    "hero": "npm run build:launch && playwright test --project=launch hero.spec.ts",
+    "screenshots": "npm run build:launch && playwright test --project=launch screenshots.spec.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

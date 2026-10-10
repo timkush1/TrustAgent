@@ -27,7 +27,28 @@ export const STATIC_CSP =
  * share and the nav's own URLs answer 200 on GitHub Pages; any other deep link (a trace) is served
  * by 404.html, which boots the same app.
  */
-export const STATIC_APP_PAGES = ['app/overview', 'app/traffic', 'app/playground', 'app/evaluators/studio'] as const;
+export const STATIC_APP_PAGES = [
+  'app/overview',
+  'app/traffic',
+  'app/playground',
+  'app/evaluators/studio',
+  'app/savings',
+  // The static PKCE callback (D105): a real file, so OpenRouter's redirect lands on a 200.
+  'connect/callback',
+] as const;
+
+/**
+ * Build-time secret-name guard (D137): no `VITE_*` name may look like it carries a secret, because
+ * every `VITE_*` value is inlined into the public bundle. VITE_PLAYGROUND_MAX_TOKENS is a cap, not
+ * a token, and is the one name allowed.
+ */
+export const SECRET_ENV_NAME = /KEY|TOKEN|SECRET|PASSWORD/;
+export const SECRET_ENV_NAME_ALLOWED: ReadonlySet<string> = new Set(['VITE_PLAYGROUND_MAX_TOKENS']);
+
+/** The `VITE_*` names that look like secrets (empty when the build may go on). */
+export function secretEnvNames(names: Iterable<string>): string[] {
+  return [...names].filter((n) => n.startsWith('VITE_') && SECRET_ENV_NAME.test(n.toUpperCase()) && !SECRET_ENV_NAME_ALLOWED.has(n)).sort();
+}
 
 /** Build output path of each HTML entry. */
 export function pagePaths(mode: AppMode): { app: string; landing: string; notFound: string | null } {
