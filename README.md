@@ -209,15 +209,61 @@ Per-claim verdicts are **SUPPORTED**, **CONTRADICTED** (the evidence disproves i
 ## Screenshots
 
 <!-- screenshots:start
-     The lead fills this block with docs/images/v2/{page}-{light,dark}.png from `make screenshots`,
-     captioned "Simulated" while they come from the simulated tape. One picture per page:
-     <picture>
-       <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/traffic-dark.png">
-       <img alt="Traffic: one outcome per answer, replaying the simulated demo" src="docs/images/v2/traffic-light.png" width="100%">
-     </picture>
+     Filled by the lead (P5 I-5b) from `make screenshots`: docs/images/v2/{page}-{light,dark}.png, the static
+     site replaying the simulated tape. Re-run it after a recorded tape ships, then drop "Simulated".
 -->
-Every page of the dashboard is one click away in the [live demo](https://timkush1.github.io/TrustAgent/):
-Traffic, the trace detail with its claims marked, the Playground, the Evaluator Studio and Savings.
+Every picture below is **Simulated**: the static site replaying the zero-key demo's tape (mock checks and a
+mock judge, not model output), as each page's banner says. Every page is one click away in the
+[live demo](https://timkush1.github.io/TrustAgent/).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/trace-dark.png">
+  <img alt="Trace detail (Simulated): the refund answer is flagged, its days figure marked as contradicted by refund-policy.md, with the fast-check scores and the deep audit's claim beside it" src="docs/images/v2/trace-light.png" width="100%">
+</picture>
+<p align="center"><sub><b>Trace</b>: the answer it caught, the words that contradict your documents, and why (Simulated)</sub></p>
+
+<table>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/traffic-dark.png">
+  <img alt="Traffic (Simulated): one row per answer with its outcome, route, reason, the documents it was checked against and the deep-audit verdict" src="docs/images/v2/traffic-light.png" width="100%">
+</picture>
+
+<sub><b>Traffic</b>: one outcome per answer (Simulated)</sub>
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/savings-dark.png">
+  <img alt="Savings (Simulated): what checking cost against asking an LLM the same questions, with the published estimates for a real judge" src="docs/images/v2/savings-light.png" width="100%">
+</picture>
+
+<sub><b>Savings</b>: what checking costs, against asking an LLM (Simulated)</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/playground-dark.png">
+  <img alt="Playground (Simulated): the demo's example requests, each with its outcome and the document it was checked against" src="docs/images/v2/playground-light.png" width="100%">
+</picture>
+
+<sub><b>Playground</b>: the demo's examples, and a live check with your own key (Simulated)</sub>
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/studio-dark.png">
+  <img alt="Evaluator Studio (Simulated): describe a check in plain English, review it, test it on samples, suggest a threshold and export it" src="docs/images/v2/studio-light.png" width="100%">
+</picture>
+
+<sub><b>Studio</b>: write your own check in plain English (Simulated)</sub>
+</td>
+</tr>
+</table>
 <!-- screenshots:end -->
 
 ## Security
