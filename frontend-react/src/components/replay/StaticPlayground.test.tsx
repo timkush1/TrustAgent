@@ -361,6 +361,23 @@ describe('LivePanel', () => {
     expect(decisionCalls()).toHaveLength(2);
   });
 
+  it('keeps the visitor’s text as sent while its check runs', async () => {
+    browserKeyStore().set(KEY);
+    let release: () => void = () => {};
+    decisions = (_u, init) => new Promise<Response>((resolve) => (release = () => resolve(answerAll(init, 0.5))));
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByRole('radio', { name: liveText.custom_title }));
+    await user.type(screen.getByLabelText(liveText.documents_label), DOCS);
+    await user.type(screen.getByLabelText(liveText.answer_label), 'Support is open around the clock.');
+    await user.click(screen.getByRole('button', { name: copy.playground_live.run_check }));
+    await waitFor(() => expect(decisionCalls()).toHaveLength(1));
+    expect(screen.getByLabelText(liveText.answer_label)).toHaveAttribute('readonly');
+    release();
+    await screen.findByTestId('live-result');
+    expect(screen.getByLabelText(liveText.answer_label)).not.toHaveAttribute('readonly');
+  });
+
   it('Forget key aborts the running check, clears the key and keeps the counter', async () => {
     browserKeyStore().set(KEY);
     decisions = (_u, init) =>

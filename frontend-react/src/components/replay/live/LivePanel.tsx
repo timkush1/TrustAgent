@@ -88,20 +88,31 @@ function ScenarioPreview({ id }: { id: LiveScenarioId }) {
   );
 }
 
-function CustomForm({ value, onChange, problems }: { value: CustomText; onChange: (v: CustomText) => void; problems: ReturnType<typeof customProblems> }) {
+function CustomForm({
+  value,
+  onChange,
+  problems,
+  locked,
+}: {
+  value: CustomText;
+  onChange: (v: CustomText) => void;
+  problems: ReturnType<typeof customProblems>;
+  /** A check of this text is running: the text stays as sent until it answers. */
+  locked: boolean;
+}) {
   const tooLong = (field: 'documents' | 'question' | 'answer') =>
     problems.includes(`${field}_long` as never) ? liveText.too_long(CUSTOM_LIMITS[field]) : undefined;
   return (
     <div className="space-y-3" data-testid="live-custom">
       <p className="text-xs text-fg-muted">{liveText.custom_hint}</p>
       <Field label={liveText.documents_label} error={tooLong('documents')}>
-        <Textarea rows={4} value={value.documents} onChange={(e) => onChange({ ...value, documents: e.currentTarget.value })} />
+        <Textarea rows={4} value={value.documents} readOnly={locked} onChange={(e) => onChange({ ...value, documents: e.currentTarget.value })} />
       </Field>
       <Field label={liveText.question_label} error={tooLong('question')}>
-        <Textarea rows={2} value={value.question} onChange={(e) => onChange({ ...value, question: e.currentTarget.value })} />
+        <Textarea rows={2} value={value.question} readOnly={locked} onChange={(e) => onChange({ ...value, question: e.currentTarget.value })} />
       </Field>
       <Field label={liveText.answer_label} error={tooLong('answer')}>
-        <Textarea rows={3} value={value.answer} onChange={(e) => onChange({ ...value, answer: e.currentTarget.value })} />
+        <Textarea rows={3} value={value.answer} readOnly={locked} onChange={(e) => onChange({ ...value, answer: e.currentTarget.value })} />
       </Field>
     </div>
   );
@@ -214,7 +225,7 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
     <div className="space-y-5" data-testid="live-panel" data-key-state={keyState}>
       <RadioGroup<Choice> label={liveText.pick_label} options={options} value={choice} onValueChange={choose} name="live-scenario" disabled={running} />
 
-      {choice === 'custom' ? <CustomForm value={custom} onChange={edit} problems={problems} /> : <ScenarioPreview id={choice} />}
+      {choice === 'custom' ? <CustomForm value={custom} onChange={edit} problems={problems} locked={running} /> : <ScenarioPreview id={choice} />}
 
       {storageBlocked || keyState === 'memory' ? <Notice testId="live-storage-blocked">{copy.playground_live.storage_blocked}</Notice> : null}
       {keyInfo && hasNoLimit(keyInfo) ? <Notice testId="live-no-limit">{copy.playground_live.key_no_limit}</Notice> : null}
