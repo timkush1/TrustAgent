@@ -5,6 +5,7 @@
  * calculator on the TS cost core, and a separate entry that never pulls in the router, a chart
  * library or the live code.
  */
+import { lazy } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import assumptions from '@contracts/pricing/assumptions.v1.json';
@@ -24,7 +25,8 @@ import { defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, month
 import glassbox from './glassbox.gen.json';
 import { HeroCard } from './HeroCard';
 import { Landing } from './Landing';
-import { lazyPartsLoaded } from './lazyLoaders';
+import { lazyPartsLoaded, loaders } from './lazyLoaders';
+import { LazyPart } from './lazyParts';
 import { sectionCopy } from './sectionCopy';
 import { refundTraceHref } from './refundTrace';
 import { oneLineSnippet } from './snippetLine';
@@ -180,6 +182,40 @@ describe('landing page', () => {
     expect(screen.queryByText(/TODO/)).toBeNull();
     expect(document.querySelector('[data-compare-todo]')).toBeNull();
     expect(screen.queryByText(/not in the online demo yet/)).toBeNull();
+  });
+
+  it('keeps the page up when a lazy part fails to load, and offers a reload', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const Gone = lazy(() => Promise.reject(new Error('the chunk is gone')));
+      render(
+        <main>
+          <h1>Still here</h1>
+          <LazyPart minHeight="1rem">
+            <Gone />
+          </LazyPart>
+        </main>,
+      );
+      expect(await screen.findByText(/This part of the page could not be loaded/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reload the page' })).toBeEnabled();
+      expect(screen.getByRole('heading', { name: 'Still here' })).toBeInTheDocument();
+      expect(document.querySelector('[data-lazy-placeholder]')).toBeNull();
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it('waits for the calculator with the other lazy parts before a hash scroll', async () => {
+    // The calculator sits above the sections a link can open (#self-host): the scroll must wait for it.
+    const calculator = vi.spyOn(loaders, 'calculator');
+    try {
+      await renderLanding();
+      expect(calculator).toHaveBeenCalled();
+      expect(screen.getByLabelText('Deep-audit judge')).toBeInTheDocument();
+      expect(document.querySelector('#cost [aria-busy="true"]')).toBeNull();
+    } finally {
+      calculator.mockRestore();
+    }
   });
 
   it('has no axe violations', async () => {

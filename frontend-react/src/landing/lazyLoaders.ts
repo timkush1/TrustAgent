@@ -1,6 +1,7 @@
 /**
- * The landing's lazy chunks (lazyParts.tsx): each download starts once, and lazyPartsLoaded() says
- * when all of them are in, so the hash scroll lands on the final layout.
+ * The landing's lazy chunks (lazyParts.tsx, and the cost section's calculator): each download starts
+ * once, and lazyPartsLoaded() says when all of them are in, so the hash scroll lands on the final
+ * layout.
  */
 
 /** Starts a chunk's download once and hands every caller the same promise. */
@@ -10,6 +11,7 @@ function once<T>(load: () => Promise<T>): () => Promise<T> {
 }
 
 export const loaders = {
+  calculator: once(() => import('./Calculator')),
   checks: once(() => import('./WriteChecks')),
   try: once(() => import('./TryIt')),
   compare: once(() => import('./Compare')),

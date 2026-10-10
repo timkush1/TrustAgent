@@ -5,15 +5,19 @@
  */
 import { lazy, Suspense } from 'react';
 import { claim, type ClaimView } from './claims';
+import { loaders } from './lazyLoaders';
+import { PartBoundary } from './lazyParts';
 import { ClaimValue, LabelChip, Section } from './ui';
 
 // The calculator (and the pricing model behind it) loads right after the page, below the fold:
-// it is interactive only, and keeps the first load inside the landing budget.
-const Calculator = lazy(() => import('./Calculator').then((m) => ({ default: m.Calculator })));
+// it is interactive only, and keeps the first load inside the landing budget. It is one of the
+// landing's lazy parts, so the hash scroll waits for it, and a chunk that fails to load says so in
+// its place instead of taking the page down.
+const Calculator = lazy(() => loaders.calculator().then((m) => ({ default: m.Calculator })));
 
 function CalculatorPlaceholder() {
   return (
-    <div className="mt-16 min-h-[26rem] rounded-lg border border-border-strong bg-surface" aria-busy="true">
+    <div data-lazy-placeholder className="mt-16 min-h-[26rem] rounded-lg border border-border-strong bg-surface" aria-busy="true">
       <span className="sr-only" role="status">
         Loading the cost calculator…
       </span>
@@ -139,9 +143,11 @@ export function Affordable() {
         <CostBars />
         <PublishedFigures />
       </div>
-      <Suspense fallback={<CalculatorPlaceholder />}>
-        <Calculator />
-      </Suspense>
+      <PartBoundary>
+        <Suspense fallback={<CalculatorPlaceholder />}>
+          <Calculator />
+        </Suspense>
+      </PartBoundary>
     </Section>
   );
 }

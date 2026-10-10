@@ -23,7 +23,7 @@ function Placeholder({ minHeight, section }: { minHeight: string; section: boole
  * A part whose chunk failed to load (a deploy replaced it, the network dropped) says so in its
  * place instead of taking the whole page down; reloading fetches the current chunks.
  */
-class PartBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+export class PartBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError(): { failed: boolean } {
