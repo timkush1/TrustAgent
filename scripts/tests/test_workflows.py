@@ -478,7 +478,22 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         self.assertIn("uses: docker/login-action@", job)
         self.assertIn("run: make first-run\n", job)
         self.assertIn("first-run.json", job)
+        self.assertIn("FIRST_RUN_KEEP: '1'", job)
+        self.assertIn("make -s first-run-logs > first-run-artifacts/compose.log", job)
         self.assertIn("run: make first-run-down", job)
+        texts = steps(job)
+        order = [
+            next(i for i, s in enumerate(texts) if marker in s)
+            for marker in (
+                "run: make first-run\n",
+                "first-run-logs",
+                "upload-artifact@",
+                "first-run-down",
+            )
+        ]
+        self.assertEqual(order, sorted(order))
+        # make first-run takes FIRST_RUN_TAG from the environment and pulls it.
+        self.assertRegex(RELEASE_MK, r"(?m)^FIRST_RUN_TAG\s+\?=\s*$")
 
     def test_anonymous_pull_logs_out_first(self) -> None:
         job = self.jobs["anonymous-pull"]
@@ -544,6 +559,63 @@ class DockerBuildsWorkflowTest(unittest.TestCase):
         self.assertEqual(files, ["backend-go/Dockerfile", "frontend-react/Dockerfile"])
         self.assertEqual(arm.count("platforms: linux/arm64\n"), 2)
         self.assertIn("release-images.yml", self.text.split("\non:\n", 1)[0])
+
+
+class FirstRunTargetsTest(unittest.TestCase):
+    """make first-run and make golden-path (D130): fresh stacks, timed, on their own ports."""
+
+    def recipe(self, target: str) -> str:
+        return RELEASE_MK.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+
+    def test_modes_and_images(self) -> None:
+        self.assertIn(
+            "FIRST_RUN_MODE = $(if $(FIRST_RUN_TAG),$(if $(filter 1,$(FIRST_RUN_LOCAL)),,pull),"
+            "$(if $(filter 1,$(FIRST_RUN_LOCAL)),local,))",
+            RELEASE_MK,
+        )
+        self.assertRegex(RELEASE_MK, r"(?m)^FIRST_RUN_LOCAL_TAG\s+\?= p5local$")
+        up = RELEASE_MK.split("\ndefine FIRST_RUN_UP\n", 1)[1].split("\nendef\n", 1)[0]
+        # Local mode never rebuilds unless asked, and fails on a missing image; pull mode pulls.
+        self.assertIn('if [ "$(FIRST_RUN_BUILD)" = 1 ]; then $(FIRST_RUN_COMPOSE) build; fi', up)
+        self.assertIn("docker image inspect", up)
+        self.assertIn("$(FIRST_RUN_COMPOSE) pull --quiet", up)
+        self.assertIn("up -d --no-build --pull never --wait", up)
+        # T0 is taken after the clean slate and before the pull and up.
+        self.assertLess(up.index("down -v --remove-orphans"), up.index("t0=$$($(NOW_MS))"))
+        self.assertLess(up.index("t0=$$($(NOW_MS))"), up.index("pull --quiet"))
+        self.assertIn("trap '$(FIRST_RUN_COMPOSE) down -v --remove-orphans", up)
+        self.assertIn('[ "$(FIRST_RUN_KEEP)" != 1 ]', up)
+
+    def test_ports_keep_clear_of_the_owner_stacks(self) -> None:
+        ports = {
+            name: int(value)
+            for name, value in re.findall(r"(?m)^FIRST_RUN_(\w+)_PORT\s+\?= (\d+)$", RELEASE_MK)
+        }
+        self.assertEqual(set(ports), {"PROXY", "DASHBOARD", "MOCK"})
+        self.assertFalse({8080, 3000, 5432, 18090} & set(ports.values()))
+        self.assertIn("-f docker-compose.onboarding.yml --profile e2e", RELEASE_MK)
+
+    def test_first_run_passes_what_the_spec_reads(self) -> None:
+        recipe = self.recipe("first-run")
+        self.assertIn("doctor.py --target docker --expect fresh", recipe)
+        self.assertIn("--no-probe", recipe)
+        self.assertIn("-g first-run", recipe)
+        spec = (ROOT / "frontend-react" / "e2e" / "stack" / "first-run.spec.ts").read_text(
+            encoding="utf-8"
+        )
+        read = set(re.findall(r"process\.env\.(FIRST_RUN_\w+)|'(FIRST_RUN_\w+)'", spec))
+        names = {a or b for a, b in read} | set(re.findall(r"(?m)^  (FIRST_RUN_\w+):", spec))
+        passed = set(re.findall(r"(FIRST_RUN_\w+)=", recipe))
+        self.assertTrue(names, "the spec reads FIRST_RUN_* variables")
+        self.assertEqual(names - passed, set(), "every variable the spec reads is passed")
+        self.assertIn("measured locally, images prebuilt", spec)
+        self.assertIn("measured in CI, images pulled", spec)
+
+    def test_golden_path_runs_its_spec_on_a_fresh_stack(self) -> None:
+        recipe = self.recipe("golden-path")
+        self.assertIn("$(FIRST_RUN_UP)", recipe)
+        self.assertIn("-g golden-path", recipe)
+        self.assertNotIn("doctor", recipe)
 
 
 if __name__ == "__main__":

@@ -142,6 +142,89 @@ record-check-config: ## Prove, without a container, that the gateway accepts the
 		|| { printf '%s\n' "$$out"; echo "record-check-config: failed: the record stack is not configured as D123 says, or the gateway would refuse to start it (see above)"; exit 1; }; \
 	echo "✅ The record stack's proxy configuration passes -check-config (test mode with real backends, strict config, caps \$$0.50 + \$$3 a day)"
 
+# ---------- First run and golden path (D130) ----------
+# Both start a fresh stack (the onboarding stack's configuration: no admin, no key, every vendor on
+# mock-upstream, so nothing costs anything) as their own project on their own ports, run one
+# Playwright spec against it and remove it with its volumes (FIRST_RUN_KEEP=1 leaves it up; make
+# first-run-down removes it).
+#   FIRST_RUN_LOCAL=1     prebuilt images tagged FIRST_RUN_LOCAL_TAG, never rebuilt (FIRST_RUN_BUILD=1
+#                         builds them under that tag first)
+#   FIRST_RUN_TAG=<tag>   pulls ghcr.io/timkush1/truthtable-*:<tag> (release-images.yml: sha-<short>)
+# first-run times the run from before `up` (T0): the pull (pull mode), every service healthy,
+# ready (doctor --expect fresh passes) and the first flagged answer the spec sees. The spec writes
+# FIRST_RUN_OUT (first-run.json), labelled measured, locally with prebuilt images or in CI with
+# pulled ones, and fails past 5 minutes. golden-path walks from the setup link to the flagged
+# trace's detail in at most 8 actions. The default ports keep clear of make up and make demo.
+FIRST_RUN_PROJECT        ?= truthtable-first-run
+FIRST_RUN_LOCAL          ?=
+FIRST_RUN_LOCAL_TAG      ?= p5local
+FIRST_RUN_TAG            ?=
+FIRST_RUN_BUILD          ?=
+FIRST_RUN_KEEP           ?=
+FIRST_RUN_PROXY_PORT     ?= 28080
+FIRST_RUN_DASHBOARD_PORT ?= 23000
+FIRST_RUN_MOCK_PORT      ?= 28090
+FIRST_RUN_OUT            ?= first-run.json
+# local or pull; empty when neither or both were asked for.
+FIRST_RUN_MODE = $(if $(FIRST_RUN_TAG),$(if $(filter 1,$(FIRST_RUN_LOCAL)),,pull),$(if $(filter 1,$(FIRST_RUN_LOCAL)),local,))
+FIRST_RUN_IMAGE_TAG = $(if $(FIRST_RUN_TAG),$(FIRST_RUN_TAG),$(FIRST_RUN_LOCAL_TAG))
+FIRST_RUN_ENV = TRUSTAGENT_VERSION=$(FIRST_RUN_IMAGE_TAG) PROXY_HOST_PORT=$(FIRST_RUN_PROXY_PORT) \
+	DASHBOARD_HOST_PORT=$(FIRST_RUN_DASHBOARD_PORT) MOCK_UPSTREAM_HOST_PORT=$(FIRST_RUN_MOCK_PORT)
+FIRST_RUN_COMPOSE = $(FIRST_RUN_ENV) $(COMPOSE) -p $(FIRST_RUN_PROJECT) -f docker-compose.yml \
+	-f docker-compose.e2e.yml -f docker-compose.onboarding.yml --profile e2e
+NOW_MS = $(PYTHON) -c "import time; print(int(time.time() * 1000))"
+
+# The shell both targets start with: the mode check, .env, a clean slate, the images (checked,
+# built or pulled), T0, `up --wait`, the setup link, and the removal on exit. It sets t0, pull,
+# healthy and url.
+define FIRST_RUN_UP
+if [ -z "$(FIRST_RUN_MODE)" ]; then \
+	echo "$@: set FIRST_RUN_LOCAL=1 (prebuilt images tagged $(FIRST_RUN_LOCAL_TAG)) or FIRST_RUN_TAG=<tag> (pulled), not both"; exit 2; \
+fi; \
+$(PYTHON) scripts/configure.py --ensure >/dev/null; \
+$(FIRST_RUN_COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true; \
+if [ "$(FIRST_RUN_KEEP)" != 1 ]; then trap '$(FIRST_RUN_COMPOSE) down -v --remove-orphans >/dev/null 2>&1' EXIT; fi; \
+if [ "$(FIRST_RUN_MODE)" = local ]; then \
+	if [ "$(FIRST_RUN_BUILD)" = 1 ]; then $(FIRST_RUN_COMPOSE) build; fi; \
+	for svc in proxy engine dashboard; do \
+		docker image inspect "ghcr.io/timkush1/truthtable-$$svc:$(FIRST_RUN_IMAGE_TAG)" >/dev/null 2>&1 \
+			|| { echo "$@: no local image ghcr.io/timkush1/truthtable-$$svc:$(FIRST_RUN_IMAGE_TAG); build them once with FIRST_RUN_BUILD=1"; exit 2; }; \
+	done; \
+fi; \
+t0=$$($(NOW_MS)); pull=null; \
+if [ "$(FIRST_RUN_MODE)" = pull ]; then $(FIRST_RUN_COMPOSE) pull --quiet; pull=$$(( $$($(NOW_MS)) - t0 )); fi; \
+$(FIRST_RUN_COMPOSE) up -d --no-build --pull never --wait --wait-timeout $(WAIT_TIMEOUT); \
+healthy=$$(( $$($(NOW_MS)) - t0 )); \
+url="$$($(FIRST_RUN_ENV) $(PYTHON) scripts/setup_url.py --url-only --project $(FIRST_RUN_PROJECT))"
+endef
+
+# The environment of the Playwright run against that stack: CI=1, because with make every
+# variable is set, so a spec that would skip has found a real problem.
+FIRST_RUN_PLAYWRIGHT_ENV = env -u TRUSTAGENT_ADMIN_KEY CI=1 TRUSTAGENT_SETUP_URL="$$url" \
+	DASHBOARD_HOST_PORT=$(FIRST_RUN_DASHBOARD_PORT) MOCK_UPSTREAM_HOST_PORT=$(FIRST_RUN_MOCK_PORT)
+
+##@ First run and golden path (fresh stacks on mock vendors, $0)
+
+first-run: ## A fresh stack to its first flagged answer, timed (under 5 min): FIRST_RUN_LOCAL=1 (prebuilt images) or FIRST_RUN_TAG=<tag> (pulled); writes first-run.json
+	@set -e; $(FIRST_RUN_UP); \
+	$(FIRST_RUN_ENV) $(PYTHON) scripts/doctor.py --target docker --expect fresh --project $(FIRST_RUN_PROJECT) --no-probe \
+		--proxy-url http://127.0.0.1:$(FIRST_RUN_PROXY_PORT) --dashboard-url http://127.0.0.1:$(FIRST_RUN_DASHBOARD_PORT); \
+	ready=$$(( $$($(NOW_MS)) - t0 )); \
+	cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) FIRST_RUN_T0=$$t0 FIRST_RUN_PULL_MS=$$pull \
+		FIRST_RUN_HEALTHY_MS=$$healthy FIRST_RUN_READY_MS=$$ready FIRST_RUN_MODE=$(FIRST_RUN_MODE) \
+		FIRST_RUN_IMAGES="ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}:$(FIRST_RUN_IMAGE_TAG)" \
+		FIRST_RUN_OUT="$(abspath $(FIRST_RUN_OUT))" npx playwright test --project=stack --workers=1 -g first-run
+
+golden-path: ## A fresh stack from its setup link to the flagged trace's detail in at most 8 actions (D130): FIRST_RUN_LOCAL=1 or FIRST_RUN_TAG=<tag>
+	@set -e; $(FIRST_RUN_UP); \
+	cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) npx playwright test --project=stack --workers=1 -g golden-path
+
+first-run-logs: ## Print the first-run / golden-path stack's logs, setup tokens masked (FIRST_RUN_KEEP=1 runs)
+	@$(FIRST_RUN_COMPOSE) logs --no-color --timestamps 2>&1 | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[masked]/g'
+
+first-run-down: ## Remove the first-run / golden-path stack and its volumes
+	$(FIRST_RUN_COMPOSE) down -v --remove-orphans
+
 # ---------- Workflow lint (D140) ----------
 # actionlint checks the workflow syntax, expressions and (through shellcheck) every run: script;
 # zizmor audits them for security (unpinned actions, persisted credentials, template injection,

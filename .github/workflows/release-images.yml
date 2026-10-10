@@ -250,6 +250,9 @@ jobs:
       packages: read
     env:
       FIRST_RUN_TAG: ${{ needs.plan.outputs.sha_tag }}
+      # The stack stays up after the run so a failure's logs can be collected; the last step
+      # removes it.
+      FIRST_RUN_KEEP: '1'
       NO_COLOR: '1'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -281,6 +284,13 @@ jobs:
       # images pulled).
       - name: make first-run (pulled images)
         run: make first-run
+
+      # Setup tokens are masked in the logs (first-run-logs).
+      - name: Collect logs
+        if: failure()
+        run: |
+          mkdir -p first-run-artifacts
+          make -s first-run-logs > first-run-artifacts/compose.log 2>&1 || true
 
       - name: Upload first-run.json and logs
         if: always()
