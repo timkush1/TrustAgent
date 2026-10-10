@@ -69,6 +69,9 @@ const RULES = [
   { re: /^fixtures\/vendor\/[a-z0-9-]+\/[A-Za-z0-9._-]+\.json$/, schema: null, vendorFixture: true },
   { re: /^fixtures\/prompts\/[a-z0-9-]+\.[a-z0-9_-]+\.json$/, schema: null, promptFixture: true },
   { re: /^fixtures\/load\/[a-z0-9.-]+\.json$/, schema: 'load-run.v1' },
+  // Publish-rule fixtures (D203, D204): <run|measured>.publishable.json passes every rule,
+  // <run|measured>.refused.<code>.json breaks the one it names. Checked in the benchmarks section.
+  { re: /^fixtures\/bench\/(run|measured)\.(publishable|refused\.[a-z_]+)\.json$/, schema: null, benchFixture: true },
   { re: /^fixtures\/grpc\/[^/]+\.json$/, schema: null, grpcFixture: true },
   { re: /^vectors\/[^/]+\/[^/]+\.json$/, schema: 'vector.v1' },
   { re: /^superseded\.v1\.json$/, schema: 'superseded.v1' },
@@ -621,20 +624,46 @@ if (assumptions && prices) {
 
 // ------------------------------------------------------------------------------------------ claims
 
-const measured = get('claims/measured.json');
-if (measured) {
-  const REL = 'claims/measured.json';
-  const values = Object.values(measured.values);
-  if (measured.status === 'not_measured') {
-    if (values.some((v) => v.value !== null || v.run_id !== null) || measured.runs.length) {
-      error(REL, 'status not_measured requires every value and run_id to be null and runs to be empty');
+// The rules bench publish keeps for measured.json beyond its schema (D204, D206, D207, D212).
+// Each problem starts with the code a refusal fixture names (fixtures/bench/measured.refused.<code>.json).
+function measuredProblems(m) {
+  const out = [];
+  const values = Object.values(m.values);
+  if (m.status === 'not_measured') {
+    if (values.some((v) => v.value !== null || v.run_id !== null) || m.runs.length) {
+      out.push('not_measured: status not_measured requires every value and run_id to be null and runs to be empty');
     }
-  } else {
-    for (const [k, v] of Object.entries(measured.values)) {
-      if (v.value !== null && v.run_id !== null && !measured.runs.includes(v.run_id)) error(REL, `values.${k}.run_id ${v.run_id} is not in runs`);
-    }
+    if (m.snapshot !== undefined && m.snapshot !== null) out.push('snapshot: status not_measured has no snapshot');
+    return out;
   }
+  for (const [k, v] of Object.entries(m.values)) {
+    if (v.value !== null && v.run_id !== null && !m.runs.includes(v.run_id)) out.push(`run_id: values.${k}.run_id ${v.run_id} is not in runs`);
+  }
+  if (m.snapshot === undefined || m.snapshot === null) out.push('snapshot: a measured file names the decision-model snapshot of its values (D207)');
+  const split = m.sources?.snapshot_split === true;
+  if (Array.isArray(m.snapshot) !== split) {
+    out.push('snapshot_split: two snapshots only with sources.snapshot_split true, and then both are named (D207)');
+  }
+  if (!m.sources?.attempts) out.push('attempts: sources.attempts discloses every bench run and the refused ones (D204)');
+  for (const [k, v] of Object.entries(m.values)) {
+    if (v.value === null || v.unit !== 'usd_per_1k' || v.system === 'proxy') continue;
+    const src = m.sources?.[k]?.cost_source;
+    if (src === undefined) out.push(`cost_source_missing: values.${k} needs sources.${k}.cost_source (reported or computed)`);
+    else if (!['reported', 'computed'].includes(src)) out.push(`cost_source_unknown: sources.${k}.cost_source ${src} is refused (D204)`);
+  }
+  if ((m.values.groundedness_ece_after?.value ?? null) !== null && m.sources?.groundedness_ece?.method !== 'holdout') {
+    out.push('ece_source: groundedness_ece_after needs sources.groundedness_ece, held out (D206)');
+  }
+  for (const k of Object.keys(m.intervals ?? {})) {
+    const v = m.values[k];
+    if (!v || v.unit !== 'fraction') out.push(`intervals: intervals.${k} is not a fraction in values`);
+    else if (v.value !== null && !(m.intervals[k].lo <= v.value && v.value <= m.intervals[k].hi)) out.push(`intervals: intervals.${k} does not contain its value`);
+  }
+  return out;
 }
+
+const measured = get('claims/measured.json');
+if (measured) for (const p of measuredProblems(measured)) error('claims/measured.json', p.replace(/^[a-z_]+: /, ''));
 
 const claims = get('claims/value-claims.v1.json');
 const claimIds = new Set();
@@ -670,6 +699,18 @@ if (claims) {
       if (!v) error(REL, `${c.id}: measured_ref ${c.measured_ref} is not a key of claims/measured.json values`);
       else if (v.unit !== c.unit) error(REL, `${c.id}: unit ${c.unit} differs from measured.json ${c.measured_ref} unit ${v.unit}`);
     }
+    // An estimate names the measured claim that checks it (D212); check-claims compares the two.
+    if (c.measured_pair !== undefined) {
+      const pair = claims.claims.find((o) => o.id === c.measured_pair);
+      if (c.label === 'measured') error(REL, `${c.id}: a measured claim is the target of measured_pair, never its source`);
+      if (!pair) error(REL, `${c.id}: measured_pair ${c.measured_pair} is not a claim`);
+      else if (pair.label !== 'measured') error(REL, `${c.id}: measured_pair ${c.measured_pair} is a ${pair.label} claim, not measured`);
+      else if (pair.unit !== c.unit) error(REL, `${c.id}: unit ${c.unit} differs from its measured_pair ${c.measured_pair} unit ${pair.unit}`);
+    }
+  }
+  const paired = claims.claims.filter((c) => c.measured_pair !== undefined).map((c) => c.measured_pair);
+  for (const id of new Set(paired)) {
+    if (paired.filter((x) => x === id).length > 1) error(REL, `measured claim ${id} is the measured_pair of more than one estimate`);
   }
   // The cost of one call (D168): input_tokens at the price claim's usd_per_mtok, output free, to two
   // significant digits.
@@ -1547,8 +1588,80 @@ for (const [label, ext] of external) {
       if ((e.quality === 'mock') !== snapshotMock) error(label, `${where}: quality mock is used exactly for mock/* snapshots`);
     });
   }
-  if (ext.schema === 'benchmark-run.v1') checkUnique(label, ext.data.systems, 'id', 'system id');
+  if (ext.schema === 'benchmark-run.v1') {
+    checkUnique(label, ext.data.systems, 'id', 'system id');
+    for (const p of publishProblems(ext.data)) error(label, `bench publish refuses this run: ${p}`);
+  }
 }
+
+// ------------------------------------------------------------------------------------------ bench publish rules
+
+// What bench publish refuses in a benchmark run (D203, D204), checked on every published run and on
+// the fixtures. Each problem starts with its code (fixtures/bench/run.refused.<code>.json).
+function publishProblems(run) {
+  const out = [];
+  const vendorHosts = rawSchema('common.v1')?.$defs?.VendorHost?.enum ?? [];
+  if (run.mock !== false || run.measured !== true) out.push('mock: a mock run is simulated, never measured');
+  const missing = ['vendor', 'inputs', 'quality', 'dirty', 'latency'].filter((k) => run[k] === undefined);
+  if (missing.length) out.push(`missing_fields: a published run records ${missing.join(', ')}`);
+  const systems = Array.isArray(run.systems) ? run.systems : [];
+  const hasGate = systems.some((s) => s.decision_model);
+  const hasJudge = systems.some((s) => s.judge);
+  for (const [field, needed] of [['decision_host', hasGate], ['judge_host', hasJudge]]) {
+    const host = run.vendor?.[field];
+    if (run.vendor === undefined) continue;
+    if ((host === null || host === undefined) ? needed : !vendorHosts.includes(host)) {
+      out.push(`non_vendor_host: vendor.${field} ${host} is not a vendor host (${vendorHosts.join(', ')}); the run is simulated`);
+    }
+  }
+  if (run.dirty !== undefined && run.dirty !== false) out.push('dirty: the run started on a tree with uncommitted tracked changes');
+  const q = run.quality;
+  if (q) {
+    if (q.failure_rate > 0.05 || (q.n > 0 && q.failed / q.n > 0.05)) out.push(`failure_rate: ${q.failed} of ${q.n} failed (more than 5%)`);
+    if (q.scored < 0.95 * q.n) out.push(`scored: ${q.scored} of ${q.n} scored (fewer than 95%)`);
+  }
+  const snapshots = new Set(systems.map((s) => s.decision_model?.snapshot).filter((x) => x));
+  if (snapshots.size > 1) out.push(`mixed_snapshot: the run used ${snapshots.size} decision-model snapshots (${[...snapshots].join(', ')})`);
+  for (const s of systems) {
+    if (s.cost?.cost_source === 'unknown') out.push(`cost_source_unknown: system ${s.id} has cost_source unknown`);
+  }
+  return out;
+}
+
+const schemaPasses = (name, data) => {
+  try {
+    const fn = ajv.getSchema(`${SCHEMA_BASE}${name}.schema.json`);
+    return Boolean(fn && fn(data));
+  } catch {
+    return false;
+  }
+};
+
+let benchFixtures = 0;
+for (const [rel, doc] of docs) {
+  const m = rel.match(/^fixtures\/bench\/(run|measured)\.(publishable|refused\.([a-z_]+))\.json$/);
+  if (!m) continue;
+  benchFixtures++;
+  const [, kind, , code] = m;
+  const schema = kind === 'run' ? 'benchmark-run.v1' : 'measured.v1';
+  const rules = kind === 'run' ? publishProblems : measuredProblems;
+  const problems = rules(doc.data);
+  if (!code) {
+    if (validate(rel, doc.data, schema)) for (const p of problems) error(rel, `a publishable fixture breaks a rule: ${p}`);
+    continue;
+  }
+  const hit = problems.some((p) => p.startsWith(`${code}:`));
+  if (!hit) error(rel, `the fixture must break rule ${code}, but ${problems.length ? `breaks only: ${problems.join('; ')}` : 'breaks none'}`);
+  // A failure rate over 5% always leaves fewer than 95% scored, and a mock run calls a mock host.
+  const companions = { failure_rate: ['scored'], mock: ['non_vendor_host'] }[code] ?? [];
+  const others = problems.filter((p) => ![code, ...companions].some((c) => p.startsWith(`${c}:`)));
+  if (others.length) error(rel, `the fixture must break only rule ${code}, but also breaks: ${others.join('; ')}`);
+  // Rules the schema can say alone are refused by the schema too.
+  if (['non_vendor_host', 'dirty', 'failure_rate', 'mock', 'cost_source_unknown'].includes(code) && schemaPasses(schema, doc.data)) {
+    if (!(kind === 'run' && code === 'cost_source_unknown')) error(rel, `${schema} accepts a document that breaks rule ${code}`);
+  }
+}
+if (benchFixtures === 0) error('fixtures/bench', 'no publish-rule fixtures found (expected run.publishable.json and run.refused.<code>.json)');
 
 // ------------------------------------------------------------------------------------------ superseded identifiers
 

@@ -175,6 +175,80 @@
         "region": {"type": "string", "minLength": 1},
         "concurrency": {"type": "integer", "minimum": 1}
       }
+    },
+    "vendor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_host", "judge_host"],
+      "description": "The hosts the run actually called (D203), resolved from TRUTHTABLE_OPENROUTER_BASE_URL or TRUTHTABLE_JEV_BASE_URL and the judge provider. A published run names vendor hosts only; null when the run has no such system.",
+      "properties": {
+        "decision_host": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/VendorHost"}, {"type": "null"}]},
+        "judge_host": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/VendorHost"}, {"type": "null"}]}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_revision", "policy_source", "gate_eval_sha256", "host_env"],
+      "description": "What the run was made from (D204, D205): the dataset commit, the policy gate-eval ran with (builtin: TRUTHTABLE_POLICY_FILE removed), the gate-eval binary, and the machine's conditions.",
+      "properties": {
+        "dataset_revision": {"type": "string", "minLength": 1},
+        "policy_source": {"enum": ["builtin", "file"]},
+        "gate_eval_sha256": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Sha256Hex"}, {"type": "null"}]},
+        "host_env": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mem_available_mb", "loadavg", "platform", "region"],
+          "properties": {
+            "mem_available_mb": {"type": "integer", "minimum": 0},
+            "loadavg": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number", "minimum": 0}},
+            "platform": {"type": "string", "minLength": 1, "maxLength": 64},
+            "region": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "scored", "failed", "excluded", "failure_rate"],
+      "description": "Examples attempted, scored, failed and excluded over every system (D204). Publish refuses failure_rate > 0.05 or scored < 0.95 * n; by_system has the same counts per system.",
+      "properties": {
+        "n": {"type": "integer", "minimum": 0},
+        "scored": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "excluded": {"type": "integer", "minimum": 0},
+        "failure_rate": {"type": "number", "minimum": 0, "maximum": 0.05},
+        "by_system": {
+          "type": "object",
+          "propertyNames": {"enum": ["gate", "llm_same_checks", "llm_full_audit", "cascade_response"]},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["n", "scored", "failed", "excluded"],
+            "properties": {
+              "n": {"type": "integer", "minimum": 0},
+              "scored": {"type": "integer", "minimum": 0},
+              "failed": {"type": "integer", "minimum": 0},
+              "excluded": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "dirty": {
+      "const": false,
+      "description": "Taken at run start (git status --porcelain --untracked-files=no); publish refuses a run started on a dirty tree (D204)."
+    },
+    "latency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connection", "gate_concurrency"],
+      "description": "How the gate latency was taken (D205): warm (gate-eval --warm made the free key call on the same client first) or cold, and how many gate calls ran at once.",
+      "properties": {
+        "connection": {"enum": ["warm", "cold"]},
+        "gate_concurrency": {"type": "integer", "minimum": 1}
+      }
     }
   }
 }

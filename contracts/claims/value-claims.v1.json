@@ -14,6 +14,7 @@
       "as_of": "2026-09-27",
       "caveat": null,
       "assumption_ref": "fast_check_per_1k",
+      "measured_pair": "fast_check_cost_per_1k_measured",
       "surfaces": ["landing", "readme", "dashboard", "docs"]
     },
     {
@@ -70,6 +71,7 @@
       "as_of": "2026-09-27",
       "caveat": null,
       "assumption_ref": "llm_full_audit_per_1k",
+      "measured_pair": "llm_full_audit_cost_per_1k_measured",
       "surfaces": ["landing", "readme", "dashboard", "docs"]
     },
     {
@@ -98,6 +100,7 @@
       "as_of": "2026-09-27",
       "caveat": null,
       "assumption_ref": "same_checks_vs_fast_check",
+      "measured_pair": "same_checks_ratio_measured",
       "surfaces": ["readme", "docs"]
     },
     {
@@ -346,7 +349,7 @@
       "basis": "Balanced accuracy of the fast check on the bench-lite RAGTruth-QA subset.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "At default thresholds: compare it with Arize's accuracy at a 0.5 threshold, not its tuned-threshold figure. RAGTruth is public, so the model may have seen it in training.",
       "measured_ref": "ragtruth_qa_agreement",
       "surfaces": ["landing", "readme", "docs"]
     },
@@ -363,6 +366,51 @@
       "as_of": null,
       "caveat": null,
       "measured_ref": "same_checks_cost_ratio",
+      "surfaces": ["readme", "docs"]
+    },
+    {
+      "id": "llm_full_audit_cost_per_1k_measured",
+      "text": "Our measured full LLM audit cost",
+      "value": null,
+      "unit": "usd_per_1k",
+      "display": "${value} / 1,000 answers",
+      "empty_display": "not yet measured",
+      "label": "measured",
+      "basis": "usage.cost of the Claude Haiku full audit (decompose, then verify each claim) on the bench-lite RAGTruth-QA subset.",
+      "source_url": null,
+      "as_of": null,
+      "caveat": null,
+      "measured_ref": "llm_full_audit_usd_per_1k",
+      "surfaces": ["readme", "docs"]
+    },
+    {
+      "id": "ragtruth_qa_accuracy_measured",
+      "text": "Our RAGTruth-QA accuracy",
+      "value": null,
+      "unit": "fraction",
+      "display": "{value}",
+      "empty_display": "not yet measured",
+      "label": "measured",
+      "basis": "Plain accuracy of the fast check on the bench-lite RAGTruth-QA subset, at default thresholds.",
+      "source_url": null,
+      "as_of": null,
+      "caveat": "The like-for-like figure for Arize's accuracy at a 0.5 threshold. RAGTruth is public, so the model may have seen it in training.",
+      "measured_ref": "ragtruth_qa_accuracy",
+      "surfaces": ["readme", "docs"]
+    },
+    {
+      "id": "groundedness_ece_after_measured",
+      "text": "Our groundedness calibration error after calibration (ECE)",
+      "value": null,
+      "unit": "fraction",
+      "display": "{value}",
+      "empty_display": "not yet measured",
+      "label": "measured",
+      "basis": "Expected calibration error of groundedness@1 with the calibration fitted on RAGTruth-QA train, measured on the bench-lite test subset.",
+      "source_url": null,
+      "as_of": null,
+      "caveat": "Held out on RAGTruth-QA test; fitted on train. RAGTruth is public, so the model may have seen it in training.",
+      "measured_ref": "groundedness_ece_after",
       "surfaces": ["readme", "docs"]
     },
     {

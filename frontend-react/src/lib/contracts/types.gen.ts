@@ -182,6 +182,10 @@ export type GitSha = string;
  * US dollars as a JSON float64 (fields named *_usd, SPEC §2.1).
  */
 export type Usd = number;
+/**
+ * The vendor hosts a measured run or a recorded tape may name (D203). Any other host (mock-upstream, a proxy, a gateway) makes the run simulated, with the reason non_vendor_host.
+ */
+export type VendorHost = 'openrouter.ai' | 'api.typesafe.ai' | 'api.anthropic.com';
 export type QuestionType = 'noul' | 'choice' | 'score';
 /**
  * Why compile() excluded an evaluator (SPEC §2.9 compile steps 1, 2, 7).
@@ -226,6 +230,10 @@ export type AuditVerdict = 'GROUNDED' | 'HALLUCINATED' | 'UNVERIFIABLE' | 'NO_CL
 export type ClaimVerdict =
   'SUPPORTED' | 'PARTIALLY_SUPPORTED' | 'CONTRADICTED' | 'UNSUPPORTED' | 'UNKNOWN' | 'NOT_CHECKED';
 export type ISODate = string;
+/**
+ * A bare, lowercase host name: no scheme, port, path or user (D203). Recordings and benchmark runs keep hosts bare because the recording sanitizer scrubs hosts inside URLs.
+ */
+export type Hostname = string;
 /**
  * "<id>__v<version>" (SPEC §2.9 compile step 5).
  */
@@ -809,6 +817,60 @@ export interface BenchmarkRun {
   environment: {
     region: string;
     concurrency: number;
+  };
+  /**
+   * The hosts the run actually called (D203), resolved from TRUTHTABLE_OPENROUTER_BASE_URL or TRUTHTABLE_JEV_BASE_URL and the judge provider. A published run names vendor hosts only; null when the run has no such system.
+   */
+  vendor?: {
+    decision_host: VendorHost | null;
+    judge_host: VendorHost | null;
+  };
+  /**
+   * What the run was made from (D204, D205): the dataset commit, the policy gate-eval ran with (builtin: TRUTHTABLE_POLICY_FILE removed), the gate-eval binary, and the machine's conditions.
+   */
+  inputs?: {
+    dataset_revision: string;
+    policy_source: 'builtin' | 'file';
+    gate_eval_sha256: Sha256Hex | null;
+    host_env: {
+      mem_available_mb: number;
+      /**
+       * @minItems 3
+       * @maxItems 3
+       */
+      loadavg: number[];
+      platform: string;
+      region: string;
+    };
+  };
+  /**
+   * Examples attempted, scored, failed and excluded over every system (D204). Publish refuses failure_rate > 0.05 or scored < 0.95 * n; by_system has the same counts per system.
+   */
+  quality?: {
+    n: number;
+    scored: number;
+    failed: number;
+    excluded: number;
+    failure_rate: number;
+    by_system?: {
+      [k: string]: {
+        n: number;
+        scored: number;
+        failed: number;
+        excluded: number;
+      };
+    };
+  };
+  /**
+   * Taken at run start (git status --porcelain --untracked-files=no); publish refuses a run started on a dirty tree (D204).
+   */
+  dirty?: false;
+  /**
+   * How the gate latency was taken (D205): warm (gate-eval --warm made the free key call on the same client first) or cold, and how many gate calls ran at once.
+   */
+  latency?: {
+    connection: 'warm' | 'cold';
+    gate_concurrency: number;
   };
 }
 /**

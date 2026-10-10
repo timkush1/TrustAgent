@@ -67,6 +67,11 @@
             "description": "A usd claim for one unit of a per-1,000 figure: the id of a usd_per_1k claim or of a pricing/assumptions.v1.json figure; validate.mjs checks value = that figure / 1000 (D114)."
           },
           "measured_ref": {"type": "string", "description": "A key of values in claims/measured.json."},
+          "measured_pair": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "On an estimate: the id of the measured claim that checks it (D212). scripts/check-claims.mjs warns when the two differ by more than 2x once the measured value exists, and --launch fails until the estimate's figure or wording is updated."
+          },
           "price_ref": {
             "type": "object",
             "additionalProperties": false,

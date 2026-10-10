@@ -5135,9 +5135,16 @@
       "properties": {
         "answer_sources": {
           "additionalProperties": false,
+          "description": "`generated_host`: the upstream that wrote the generated answers (D203, D208); null when there are none.",
           "properties": {
             "generated": {
               "type": "number"
+            },
+            "generated_host": {
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "scripted": {
               "type": "number"
@@ -5149,14 +5156,43 @@
           ],
           "type": "object"
         },
+        "calibration": {
+          "additionalProperties": false,
+          "description": "The calibration the tape was recorded with (D207, D208); quality none means uncalibrated.",
+          "properties": {
+            "quality": {
+              "enum": [
+                "measured",
+                "provisional",
+                "none"
+              ],
+              "type": "string"
+            },
+            "snapshot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "snapshot",
+            "quality"
+          ],
+          "type": "object"
+        },
         "calibration_state": {
           "$ref": "#/$defs/CalibrationState"
         },
         "decision_model": {
           "additionalProperties": false,
+          "description": "`host`: the bare host the fast check called (D203); a recorded tape names a vendor host.",
           "properties": {
             "backend": {
               "$ref": "#/$defs/DecisionBackend"
+            },
+            "host": {
+              "type": "string"
             },
             "snapshot": {
               "type": [
@@ -5215,14 +5251,40 @@
           },
           "type": "array"
         },
+        "featured": {
+          "additionalProperties": false,
+          "description": "The trace every launch surface shows, picked by rule and never edited (D209).",
+          "properties": {
+            "rule": {
+              "enum": [
+                "contradicted_with_span",
+                "best_flagged",
+                "scripted"
+              ],
+              "type": "string"
+            },
+            "trace_id": {
+              "$ref": "#/$defs/TraceId"
+            }
+          },
+          "required": [
+            "trace_id",
+            "rule"
+          ],
+          "type": "object"
+        },
         "git_sha": {
           "type": "string"
         },
         "judge": {
           "additionalProperties": false,
+          "description": "`host`: the bare host the judge called (D203).",
           "properties": {
             "fallback_active": {
               "type": "boolean"
+            },
+            "host": {
+              "type": "string"
             },
             "model": {
               "type": "string"

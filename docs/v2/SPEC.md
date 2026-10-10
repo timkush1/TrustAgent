@@ -3048,8 +3048,8 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | ZDR behaviour with a single provider | P1g |
 | Vercel `…/typesafe/v1/systemone` path | Doctor |
 | Anthropic structured-output parameter name; `refusal` stop reason | P2/P3 tests |
-| Haiku 4.5 price $1/$5 per MTok | Before bench-publish |
-| RAGTruth/AggreFact field names, revisions, licences | P6 |
+| Haiku 4.5 price $1/$5 per MTok | Before bench-publish. Step 0 (2026-10-10, free check): `GET openrouter.ai/api/v1/models` lists `anthropic/claude-haiku-4.5` at $1 / $5 per MTok, equal to `prices.v1.json`; `typesafe/jev-1.13` (listed only with `output_modalities=all` or `decisions`) at $0.042 input and $0 output, provider TypeSafe, snapshot `jev-1.13-20260917`, 32k max prompt |
+| RAGTruth/AggreFact field names, revisions, licences | P6. Step 0 (2026-10-10, free check): RAGTruth `main` = `c103204b9ce28d6bbad859304bf30de72b8ed8fe` (pinned as `RAGTRUTH_REVISION`), MIT; its QA passages are MS MARCO (non-commercial research only), so only ids, labels and scores are published; the loader's field names convert 4,892 QA train and 875 QA test answers. LLM-AggreFact (`lytang/LLM-AggreFact`, revision `981dfd0`): CC-BY-ND-4.0, gated; its sub-datasets keep their own licences |
 | Compose ≥2.24 in WSL | P0 |
 | GHCR multi-arch publishing permissions | P6 (owner) |
 | Pages availability for the repo plan | P6 (owner) |
@@ -3178,7 +3178,7 @@ Where a section above says otherwise, the decision cited for it here wins.
 
 ## Appendix G: P5 errata
 
-The lead decisions D99-D141 of `docs/v2/P5-PLAN.md` §1, and D142-D168 below (made at the int6
+The lead decisions D99-D141 of `docs/v2/P5-PLAN.md` §1, and D142-D172 below (made at the int6
 checkpoint merges, the integration and its fix round), settled the gaps P5 found. Where a section above (or
 Appendix F) says otherwise, the decision cited for it here wins.
 
@@ -3315,3 +3315,38 @@ headline with the mock's milliseconds in the note.
 - The phase grep covers P5 (`PHASE_REFS_RE`), with the stale allow-list entries removed (D134).
 - `copy.studio.static_soon`, `StudioStaticNote.tsx` and the unused `PhasePlaceholder` are gone; the
   words modules have no pending rewire; `src/landing/TryIt.tsx` left the network allow-list.
+
+## Appendix H: P6 errata
+
+The lead decisions D200-D219 of `docs/v2/P6-PLAN.md` §1 settle the gaps P6 found. Where a section above
+(or Appendices E-G) says otherwise, the decision cited for it here wins. P6 numbers start at D200 so that
+no number is defined twice (`scripts/check_decision_numbers.py`; P5 used up to D172).
+
+| # | SPEC section | What changes | Decisions |
+|---|---|---|---|
+| H-1 | §4.2 P6 step 6 | The terms check (TypeSafe and OpenRouter, publishing benchmarks and redistributing outputs) becomes step 0: no paid Jev run and no push until the owner's G0 answer, recorded in `docs/launch/terms-check.md`. Modes A (go), W (wait; nothing is pushed) and R (no Jev figures published) | D200 |
+| H-2 | §4.2 P6 gate | Already covered by Appendix G (§2.13 row): recordings ship from `frontend-react/demo-data/{simulated,recorded}`, which is the path the P6 gate uses | D110 |
+| H-3 | §4.2 P6 step 2 | `make calibrate WRITE=1` is replaced by the D206 sequence: `make calib-pass` (a natural RAGTruth-QA **train** sample, `CALIB_N=800`, no source shared with the bench's test sample), `make calibrate ... LABEL_SOURCE=public_dataset` (dry run, then `WRITE=1`), then `make calib-holdout`: ECE before and after is measured on the held-out test sample, never in-sample | D206 |
+| H-4 | §8.2 item 3 | The hero is recorded by `frontend-react/e2e/launch/hero.spec.ts` (the `launch` Playwright project), not `e2e/hero.spec.ts`, and it shows the recording's `featured` trace | D115, D209 |
+| H-5 | §4.2 P6 | The owner adds $10 of credit and the measurement key has a limit of $8, set once; each paid tool lowers its own cap to the key's remaining limit minus $0.10. The bench-lite cap stays $5 | D201 |
+| H-6 | §8.2 | The demo video comes from `make launch-video` (static beats from the recorded Pages build, plus stack beats recorded during `make record-demo ACCEPT=1 VIDEO=1`), captions burned in. It is the LinkedIn post's own media. Fallback: a 45-second take from the Pages build only | D210 |
+| H-7 | §8.3 | Only if the owner chooses at S1: `docs/launch/interview-talking-points.md` leaves the public repository | D216 |
+| H-8 | §4.2 P6 step 7 | The version bump to 2.0.0 happens at Gate A, before the recording, so the tape stamps 2.0.0 | D216 |
+| H-9 | §8.1 | Our measured RAGTruth-QA agreement is compared with the third-party accuracy at the default 0.5 threshold, not with the tuned-threshold figure; plain accuracy (`ragtruth_qa_accuracy`) is published beside the balanced accuracy as the like-for-like number, each with n per class and a 95% interval | D212 |
+| H-10 | §2.13 (recording.v1) | The generated answers' host is `answer_sources.generated_host`: `answer_sources.generated` stays the count. The P6 plan's `answer_sources.generated.host` means this field | D203 |
+| H-11 | §2.13, §8.1 | "Measured" and "recorded" need vendor hosts: benchmark runs record `vendor{decision_host, judge_host}`, recordings `decision_model.host`, `judge.host` and `answer_sources.generated_host`, all bare hostnames from `common.v1` `VendorHost` (`openrouter.ai`, `api.typesafe.ai`, `api.anthropic.com`). Any other host makes the run simulated (`non_vendor_host`); bench publish, `recording.go` and `check_recording.py --require-recorded` refuse it | D203 |
+| H-12 | §2.13 | `make bench-lite`, `bench-smoke`, `calib-pass`, `eval-live`, `jev-capture` and `record-demo` are dry runs unless `CONFIRM=1`; `bench-publish` requires `RUN=` and refuses a run with more than 5% failed, fewer than 95% scored, several decision-model snapshots, a dirty tree at its start, a non-vendor host, dataset text in `per_example`, or `cost_source: unknown`. `measured.json` discloses `sources.attempts` | D204 |
+| H-R | §8 | Reserved for mode R (D200): which Jev-derived figures stay unpublished, and whether third-party and vendor Jev figures already public elsewhere stay with their source links. Written only if the owner's G0 answer is mode R, and approved by the owner before launch | D200 |
+
+Appendix D rows get dated results during P6: the Step 0 free checks (2026-10-10) are recorded there, and
+the paid steps add theirs.
+
+### P5 carry-overs (P6-PLAN §16)
+
+Each P5C row is fixed before Gate A, or rejected or changed here with its reason.
+
+- **P5C-26** (fixed at Step 0): Appendix G's opening sentence names D142-D172.
+- **P5C-21** (fixed at Step 0 in the contract): `load-run.v1` records `environment.image_revision` (the
+  proxy image's revision label) and `environment.concurrent_load` (other compose projects running, the load
+  average and the memory available), and the GATEWAY.md block names both when a run has them. The quiet
+  re-run at the release commit is a P6b step (P6a never writes `docs/benchmarks/`).

@@ -22,8 +22,11 @@ measured", and so should you.
 | Our measured fast-check cost | <!-- claim:fast_check_cost_per_1k_measured --> not yet measured [measured] | |
 | Our p50 fast-check latency | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
 | Our fast-check latency, p95 | <!-- claim:gate_latency_p95_measured --> not yet measured [measured] | |
-| Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | |
+| Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | At default thresholds: compare it with Arize's accuracy at a 0.5 threshold, not its tuned-threshold figure. RAGTruth is public, so the model may have seen it in training. |
 | Measured cost ratio: LLM same checks vs fast check | <!-- claim:same_checks_ratio_measured --> not yet measured [measured] | |
+| Our measured full LLM audit cost | <!-- claim:llm_full_audit_cost_per_1k_measured --> not yet measured [measured] | |
+| Our RAGTruth-QA accuracy | <!-- claim:ragtruth_qa_accuracy_measured --> not yet measured [measured] | The like-for-like figure for Arize's accuracy at a 0.5 threshold. RAGTruth is public, so the model may have seen it in training. |
+| Our groundedness calibration error after calibration (ECE) | <!-- claim:groundedness_ece_after_measured --> not yet measured [measured] | Held out on RAGTruth-QA test; fitted on train. RAGTruth is public, so the model may have seen it in training. |
 
 The gateway's own overhead, measured separately by a load test against simulated vendors:
 

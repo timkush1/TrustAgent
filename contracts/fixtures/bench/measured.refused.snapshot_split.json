@@ -1,0 +1,137 @@
+{
+  "schema": "trustagent.measured/v1",
+  "status": "measured",
+  "tier": "lite",
+  "mock": false,
+  "generated_by": "evals.bench publish",
+  "generated_at": "2026-10-12T10:00:00Z",
+  "runs": [
+    "lite-p6-fixture"
+  ],
+  "values": {
+    "fast_check_usd_per_1k": {
+      "value": 0.021,
+      "unit": "usd_per_1k",
+      "description": "Measured fast-check cost per 1,000 answers (usage.cost).",
+      "run_id": "lite-p6-fixture",
+      "system": "gate"
+    },
+    "llm_same_checks_usd_per_1k": {
+      "value": 2.8,
+      "unit": "usd_per_1k",
+      "description": "Measured cost of asking the LLM judge the same questions, per 1,000 answers.",
+      "run_id": "lite-p6-fixture",
+      "system": "llm_same_checks"
+    },
+    "llm_full_audit_usd_per_1k": {
+      "value": null,
+      "unit": "usd_per_1k",
+      "description": "Measured cost of a full claim-level LLM audit (decompose, then verify each claim), per 1,000 answers.",
+      "run_id": null,
+      "system": "llm_full_audit"
+    },
+    "same_checks_cost_ratio": {
+      "value": 133.33,
+      "unit": "multiplier",
+      "description": "llm_same_checks_usd_per_1k / fast_check_usd_per_1k; validates the token model.",
+      "run_id": "lite-p6-fixture",
+      "system": null
+    },
+    "gate_latency_ms_p50": {
+      "value": null,
+      "unit": "ms",
+      "description": "Fast-check latency p50.",
+      "run_id": null,
+      "system": "gate"
+    },
+    "gate_latency_ms_p95": {
+      "value": null,
+      "unit": "ms",
+      "description": "Fast-check latency p95.",
+      "run_id": null,
+      "system": "gate"
+    },
+    "proxy_overhead_ms_p50": {
+      "value": null,
+      "unit": "ms",
+      "description": "Proxy overhead p50 (k6).",
+      "run_id": null,
+      "system": "proxy"
+    },
+    "proxy_overhead_ms_p95": {
+      "value": null,
+      "unit": "ms",
+      "description": "Proxy overhead p95 (k6).",
+      "run_id": null,
+      "system": "proxy"
+    },
+    "ragtruth_qa_agreement": {
+      "value": 0.77,
+      "unit": "fraction",
+      "description": "Balanced accuracy of the fast check on the RAGTruth-QA subset.",
+      "run_id": "lite-p6-fixture",
+      "system": "gate"
+    },
+    "ragtruth_qa_accuracy": {
+      "value": 0.82,
+      "unit": "fraction",
+      "description": "Plain accuracy of the fast check on the RAGTruth-QA subset at default thresholds (the like-for-like figure for third-party accuracy).",
+      "run_id": "lite-p6-fixture",
+      "system": "gate"
+    },
+    "groundedness_ece_before": {
+      "value": 0.09,
+      "unit": "fraction",
+      "description": "Expected calibration error of groundedness@1 before calibration.",
+      "run_id": "lite-p6-fixture",
+      "system": "gate"
+    },
+    "groundedness_ece_after": {
+      "value": 0.04,
+      "unit": "fraction",
+      "description": "Expected calibration error of groundedness@1 after calibration.",
+      "run_id": "lite-p6-fixture",
+      "system": "gate"
+    }
+  },
+  "snapshot": [
+    "typesafe/jev-1.13-20260917",
+    "typesafe/jev-1.14-20261101"
+  ],
+  "intervals": {
+    "ragtruth_qa_accuracy": {
+      "lo": 0.76,
+      "hi": 0.87,
+      "method": "wilson",
+      "n_pos": 31,
+      "n_neg": 169
+    },
+    "ragtruth_qa_agreement": {
+      "lo": 0.71,
+      "hi": 0.83,
+      "method": "bootstrap",
+      "resamples": 2000,
+      "seed": 13,
+      "n_pos": 31,
+      "n_neg": 169
+    }
+  },
+  "sources": {
+    "attempts": {
+      "bench_runs": 1,
+      "refused_run_ids": []
+    },
+    "fast_check_usd_per_1k": {
+      "cost_source": "reported"
+    },
+    "llm_same_checks_usd_per_1k": {
+      "cost_source": "reported"
+    },
+    "groundedness_ece": {
+      "method": "holdout",
+      "calibration_file": "config/calibration/typesafe__jev-1.13-20260917.json",
+      "calibration_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "dataset": "ragtruth:qa-train@c103204"
+    }
+  }
+}
