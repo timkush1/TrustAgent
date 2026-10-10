@@ -7,12 +7,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router';
 import { configure, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ServicesContext, type AppServices } from '@/app/services';
 import { NotFound, RouteError } from '@/components/common/RouteStates';
 import { buildRuntimeConfig } from '@/config/runtime';
 import { createReplayDataSource } from '@/data/replay/replayDataSource';
 import { useReplayStore } from '@/data/replay/replayStore';
 import { useStreamStore } from '@/data/stream/streamStore';
+import { copy } from '@/domain/presentation';
 import { routeTree } from '@/routeTree.gen';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { committedManifest, ManualClock, recordingFetch } from '@/test/recording';
@@ -242,5 +244,24 @@ describe('static build', () => {
     // Labelling is a write too: it says the same, not "read-only instance".
     expect(within(outcome).queryByText(/read-only instance/)).toBeNull();
     expect(formatViolations(await axeViolations(outcome))).toEqual([]);
+  });
+
+  it('shows the exact Jev request of a replayed trace, rebuilt in the browser (D109)', async () => {
+    const featured = useReplayStore.getState().featuredTraceId;
+    const { container, requests } = await renderStatic(`/app/traffic/${featured}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByText(copy.trace.show_jev_request));
+    const panel = await waitFor(() => {
+      const el = container.querySelector('[data-testid="jev-request"]');
+      if (!el?.querySelector('[data-glassbox]')) throw new Error('not rebuilt yet');
+      return el as HTMLElement;
+    });
+    expect(panel.querySelector('[data-glassbox]')).toHaveTextContent('Rebuilt in your browser · simulated recording');
+    // What it read (the refund policy) and what it was asked.
+    expect(within(panel).getAllByText(/: what it was asked$/).length).toBeGreaterThan(0);
+    expect(panel).toHaveTextContent('30 days');
+    expect(within(panel).queryByText(/no gateway to ask|make demo/)).toBeNull();
+    // Rebuilt from the trace file already served: no gateway asked.
+    expect(requests.filter((r) => r.includes('/api/'))).toEqual([]);
   });
 });

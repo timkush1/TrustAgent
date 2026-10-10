@@ -11,7 +11,8 @@
  *   after a `hello` that marks the stream read-only. The first half of the traces is already on
  *   screen when the page opens, so Traffic is never empty; the second half arrives live.
  * - Evidence suggestions run the gateway's scan in the browser over the answers that carried no
- *   evidence (suggest.ts, loaded on demand).
+ *   evidence (suggest.ts), and "Show exact Jev request" rebuilds a decision's requests with TS
+ *   compile() (glassBox.ts, D109); both load on demand.
  * - Everything a recording cannot answer (Policies, Settings, Knowledge, the Playground's gateway
  *   run, evaluator details) comes from unavailableControlPlane with a message that points to
  *   running the stack locally.
@@ -302,6 +303,14 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
       // that fits the whole recording (per hour for the two-hour simulated tape), whatever the
       // window asks for and however far the tape has played.
       return roiTimeseries(played(t), ctx(t, params.window));
+    },
+    async getDecisionRequest(traceId, params, signal) {
+      const t = await ready;
+      const detail = await source.getTrace(traceId, signal);
+      // The glass box rebuilds the request in the browser (D109): compile() and the templates load
+      // only when the panel opens.
+      const [{ rebuildDecisionRequest }, { policy }] = await Promise.all([import('./glassBox'), import('virtual:trustagent/policy')]);
+      return rebuildDecisionRequest(detail, params?.attempt ?? 0, policy, t.recording.decision_model.snapshot);
     },
     async getPricing() {
       // A recording has no dashboard overrides: the built-in table is the effective one.

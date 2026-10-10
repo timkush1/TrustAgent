@@ -14,6 +14,7 @@ import { selectScenarios, type Scenario } from './recorder';
 import { ReplayPlayer } from './player';
 import { checkManifest, MOCK_LABEL, parseDataset } from './recording';
 import { createReplayDataSource, featuredTrace, STATIC_UNAVAILABLE } from './replayDataSource';
+import { replayEvaluatorReads } from './replayEvaluatorReads';
 import { useReplayStore } from './replayStore';
 import { percentile, roiBucketOf } from './stats';
 import { ReplayTape } from './tape';
@@ -462,9 +463,58 @@ describe('ReplayDataSource', () => {
     const { ds } = setup();
     await ds.ready;
     await expect(ds.getPolicies()).rejects.toMatchObject({ status: 404, message: STATIC_UNAVAILABLE });
-    await expect(ds.listEvaluators({})).rejects.toMatchObject({ status: 404 });
+    await expect(ds.getSettings()).rejects.toMatchObject({ status: 404, message: STATIC_UNAVAILABLE });
     await expect(ds.getStatus()).rejects.toMatchObject({ status: 404 });
     expect((await ds.getHealth()).demo).toBe(true);
+  });
+
+  it('answers the evaluator reads through the replay plane (D107)', async () => {
+    const { ds } = setup();
+    await ds.ready;
+    const plane = replayEvaluatorReads({
+      message: STATIC_UNAVAILABLE,
+      traceIds: async () => (await ds.ready).ids(),
+      trace: (id, signal) => ds.getTrace(id, signal),
+    });
+    const settle = (p: Promise<unknown>) =>
+      p.then(
+        (value) => ({ value }),
+        (err: unknown) => ({ error: err instanceof ApiError ? { status: err.status, code: err.code, message: err.message } : String(err) }),
+      );
+    expect(await settle(ds.listEvaluators({}))).toEqual(await settle(plane.listEvaluators({})));
+    expect(await settle(ds.getEvaluator('groundedness'))).toEqual(await settle(plane.getEvaluator('groundedness')));
+    expect(await settle(ds.getEvaluatorVersion('groundedness', 1))).toEqual(await settle(plane.getEvaluatorVersion('groundedness', 1)));
+  });
+
+  it('rebuild is deterministic: every simulated decision rebuilds the requests it recorded (D109)', async () => {
+    const { ds, clock } = setup();
+    await ds.ready;
+    ds.subscribe(sink().s);
+    await Promise.resolve();
+    clock.runAll();
+    let asked = 0;
+    for (const t of manifest.traces) {
+      const detail = committedDetail(t.trace_id);
+      expect(detail.decisions.length, t.trace_id).toBeGreaterThan(0);
+      for (const d of detail.decisions) {
+        const view = await ds.getDecisionRequest(t.trace_id, { attempt: d.attempt });
+        expect(view.request_sha256, `${t.trace_id} attempt ${d.attempt}`).toEqual(d.compile?.request_sha256 ?? []);
+        expect(view.matches_recorded).toBe(true);
+        expect(view.mismatch_reason).toBeNull();
+        expect(view.cpt).toBe(d.compile?.cpt);
+        expect(view.requests).toHaveLength(d.compile?.requests ?? 0);
+        // A decision the fast check answered shows what it was asked; one it was not asked, nothing.
+        const questions = view.requests.flatMap((r) => Object.keys(r.questions));
+        if (d.decision_model) {
+          expect(questions.length).toBeGreaterThan(0);
+          asked += 1;
+        } else expect(questions).toEqual([]);
+      }
+    }
+    expect(asked).toBeGreaterThan(0);
+    // An attempt the trace has no decision for, and a trace the recording lacks.
+    await expect(ds.getDecisionRequest(refundId, { attempt: 1 })).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    await expect(ds.getDecisionRequest('01a0e700-0000-7000-8000-000000000000')).rejects.toMatchObject({ status: 404, code: 'not_found' });
   });
 
   it('reports a recording it cannot load', async () => {
