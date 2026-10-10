@@ -38,7 +38,7 @@ interface Digest {
   snapshot: string | null;
   judge: string | null;
   outcomes: Record<string, number>;
-  examples: Trace[];
+  examples: (Trace & { documents: string[] })[];
 }
 interface DigestModule {
   DIGEST_MODULE: string;
