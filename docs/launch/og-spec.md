@@ -51,9 +51,10 @@ landing page and the LinkedIn post.
 ## Where it comes from
 
 - **Route:** `/og` in the dashboard entry (`src/routes/og.tsx`), outside the app shell and the nav,
-  `noindex`. It exists only in a build with `VITE_LAUNCH_ROUTES=1`, which only `npm run og` sets;
-  every other build, the Pages site and the dashboard image included, renders the not-found page
-  there. The card (`OgCard`) marks itself `data-og-ready` once fonts and data are in.
+  `noindex`. It exists only in the launch build (`npm run build:launch`, `vite build --mode
+  launch`: the static build plus `VITE_LAUNCH_ROUTES=1`), which only the capture scripts run and
+  nothing publishes; every other build, the Pages site and the dashboard image included, renders
+  the not-found page there. The card (`OgCard`) marks itself `data-og-ready` once fonts and data are in.
 - **Capture:** `make og` (`npm run og`: Playwright project `launch`, `e2e/launch/og.spec.ts`)
   screenshots the card at exactly 1280×640 and writes `frontend-react/public/og.png` and
   `docs/launch/og.png`.
