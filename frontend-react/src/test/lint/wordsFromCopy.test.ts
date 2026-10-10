@@ -22,15 +22,6 @@ const FILES = [
   join(web, 'src/components/studio/studioWords.ts'),
 ];
 
-/**
- * Files whose rewire is still open, with the task that closes it. WEB-STUDIO rewires studio.ts and
- * studioWords.ts in SS-6; the lead drops these entries when that lands (I-3).
- */
-const PENDING: Readonly<Record<string, string>> = {
-  'src/domain/words/studio.ts': 'SS-6',
-  'src/components/studio/studioWords.ts': 'SS-6',
-};
-
 const WORD = /[A-Za-z][A-Za-z'’-]*/g;
 /** Words outside `{placeholders}`, which fillTemplate fills and nobody reads as written. */
 const wordCount = (text: string) => (text.replace(/\{[a-z0-9_:]+\}/g, ' ').match(WORD) ?? []).length;
@@ -71,7 +62,6 @@ describe('words modules take their sentences from the copy contract (CO-6)', () 
 
   it.each(FILES.map((f) => [relative(web, f).split('\\').join('/'), f]))('%s', (rel, file) => {
     const found = sentencesIn(rel, readFileSync(file, 'utf8'));
-    if (Object.hasOwn(PENDING, rel)) return;
     expect(found, 'move these words to contracts/ui/copy.v1.json and read them through copy').toEqual([]);
   });
 });

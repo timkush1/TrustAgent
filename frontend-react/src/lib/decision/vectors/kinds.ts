@@ -287,7 +287,7 @@ export const KINDS: Readonly<Record<string, VectorKind>> = {
   evidence: { run: runEvidence, go: 'all (internal/evidence, every api_format through llmapi.ParseRequest)' },
   lint: { run: runLint, go: 'all' },
   calibrate_fit: { run: runCalibrateFit, go: 'all' },
-  // Filled by their owners (cost: WEB-LANDING LD-1; pkce: WEB-LIVE LV-4).
+  // Their runners live next to them: cost.ts (the TS cost core) and pkce.ts (lib/openrouter/pkce).
   cost: costKind,
   pkce: pkceKind,
 };

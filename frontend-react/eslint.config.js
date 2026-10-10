@@ -75,7 +75,6 @@ const linkSelectors = [
 /**
  * D138: the only modules that may reach the network. Everything else goes through them (the
  * DataSource, the OpenRouter transport), so a new request path cannot appear unreviewed.
- * src/landing/TryIt.tsx leaves this list when LD-5 removes its fetch (I-3).
  */
 const NETWORK_ALLOWED = [
   'src/config/runtime.ts',
@@ -84,7 +83,6 @@ const NETWORK_ALLOWED = [
   'src/data/replay/replayDataSource.ts',
   'src/data/replay/recording.ts',
   'src/lib/openrouter/http.ts',
-  'src/landing/TryIt.tsx',
 ]
 const networkMessage = 'Network access goes through the D138 allow-list (data/http.ts, data/live, the replay loader, lib/openrouter/http.ts).'
 const networkGlobals = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'].map((name) => ({ name, message: networkMessage }))

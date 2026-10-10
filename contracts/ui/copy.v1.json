@@ -343,7 +343,6 @@
       "make_active": "Make active",
       "dry_run_confirm": "This test costs about {estimate} ({samples} of {population} past answers). {budget_left} of today's fast-check budget is left.",
       "dry_run_cancelled": "Test stopped. You're charged only for the checks that already ran ({cost}).",
-      "static_soon": "Coming soon to the online demo. Run TrustAgent yourself to use Studio: {command:demo}",
       "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft.",
       "lint": {
         "invalid_spec": "Doesn't match the evaluator format",

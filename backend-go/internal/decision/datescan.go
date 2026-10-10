@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// Date scanning in windows (P5 integration, D161). A date pattern's regexp has no literal prefix
+// Date scanning in windows (D161). A date pattern's regexp has no literal prefix
 // (a case-insensitive month alternation), so scanning a whole reference text with it costs about
 // 100 ns a byte per pattern: tens of milliseconds over 32k-token evidence. Every match of a date
 // pattern contains its year, four ASCII digits, and is at most a fixed number of bytes long. So

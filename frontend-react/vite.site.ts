@@ -6,8 +6,8 @@
  *   page is the site's root, the replay app lives at `/app/` (plus a copy per main page, so
  *   /TrustAgent/app/traffic/ answers 200), and `404.html` is a copy of the app so GitHub Pages
  *   boots it for every other deep link (/TrustAgent/app/traffic/<id>). Both pages carry the
- *   static CSP as a meta tag and `referrer: no-referrer`; the site talks to itself and, from P5,
- *   openrouter.ai only.
+ *   static CSP as a meta tag and `referrer: no-referrer`; the site talks to itself and, for the
+ *   live Playground after consent, openrouter.ai only.
  *
  * `vite preview` of a static build emulates GitHub Pages: a path with no file gets 404.html with
  * status 404 (the Playwright `static` project runs against it).

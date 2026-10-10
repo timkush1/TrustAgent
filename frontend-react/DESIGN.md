@@ -168,9 +168,9 @@ Every page defines these states:
 | Read-only | The badge and banner; writes use `<DisabledReason reason="readonly">` |
 
 **No dead buttons.** A disabled action always says why, next to it, and links to the fix
-(`<DisabledAction reason>` wires the reason to the control). A page
-that is not built yet renders `<PhasePlaceholder>`, which states what the page will show and the
-phase it arrives in, and contains only real links.
+(`<DisabledAction reason>` wires the reason to the control). On the static site, a page that
+needs a running gateway renders the static notice (`StaticRouteGuard`), which says what the page
+does on your own stack and how to run it, and contains only real links.
 
 ## 10. Code rules
 

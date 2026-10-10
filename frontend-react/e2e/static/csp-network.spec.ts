@@ -1,8 +1,9 @@
 /**
  * The static site's security posture (SPEC §7.5 "Static GitHub Pages demo"): every page carries
  * the CSP meta and `referrer: no-referrer`, has no inline script, reports no CSP violation, and
- * talks only to itself (openrouter.ai joins the allowed list with the P5 live playground; nothing
- * calls it yet). No third-party scripts, fonts or images.
+ * talks only to itself on the pages it opens: none of them consents to the live Playground, so
+ * openrouter.ai, the one other host the CSP allows, is never called here (csp-live.spec.ts covers
+ * the live calls after consent). No third-party scripts, fonts or images.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { STATIC_CSP } from '../../vite.site';

@@ -1,6 +1,6 @@
 /**
  * DataSource: everything the pages read, behind one interface (SPEC §3.3). LiveDataSource talks
- * to the proxy (REST + WS v2); ReplayDataSource (static build, P3/P5) replays a recording through
+ * to the proxy (REST + WS v2); ReplayDataSource (static build) replays a recording through
  * the same interface, so pages never know which one they have.
  */
 import type {
