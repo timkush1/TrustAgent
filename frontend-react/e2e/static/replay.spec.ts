@@ -26,7 +26,7 @@ const COPY = (
         guide: Record<'title' | 'step1' | 'step2' | 'step3' | 'step4' | 'dismiss', string>;
         glassbox: { rebuilt_simulated: string };
       };
-      trace: { show_jev_request: string };
+      trace: { show_jev_request: string; open_in_studio: string };
     };
   }
 ).copy;
@@ -107,13 +107,10 @@ test.describe('replay', () => {
     await expect(mark).toHaveText('60 days');
     expect(await mark.evaluate((el) => getComputedStyle(el).textDecorationStyle), 'wavy underline').toBe('wavy');
     await expect(answer.getByRole('link', { name: '60 days, contradicted claim' })).toBeVisible();
-    // The trace's actions stay in view on the static site, disabled with the reason (RP-4).
+    // The trace's check opens in Studio, where its threshold can be tried; no dead button (RP-4).
     const outcome = page.getByRole('region', { name: 'Outcome' });
-    for (const name of [/^Open evaluator/, /^Adjust threshold/]) {
-      const action = outcome.getByRole('button', { name });
-      await expect(action).toHaveAttribute('aria-disabled', 'true');
-      await expect(action).toHaveAccessibleDescription(/^Not available on the online demo: run TrustAgent yourself to use it/);
-    }
+    await expect(outcome.getByRole('button', { name: /^Open evaluator|^Adjust threshold/ })).toHaveCount(0);
+    await expect(outcome.getByRole('link', { name: new RegExp(`^${COPY.trace.open_in_studio}: `) })).toHaveAttribute('href', /app\/evaluators\/studio\/[a-z_]+\/\d+$/);
     expect(await seriousViolations(page), 'replay trace detail').toEqual([]);
   });
 

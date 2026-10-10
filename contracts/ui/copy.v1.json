@@ -151,6 +151,8 @@
       "false_alarm": "False alarm",
       "open_evaluator": "Open evaluator",
       "adjust_threshold": "Adjust threshold",
+      "open_in_studio": "Try its threshold in Studio",
+      "studio_static_note": "Studio opens a copy of this check: test it and try thresholds there, free. Changing the route itself needs your own stack.",
       "checks": "Checks",
       "claims": "Claims",
       "claims_pending": "Deep audit running… usually 5–20 s",

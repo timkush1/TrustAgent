@@ -257,23 +257,26 @@ describe('static build', () => {
     expect(requests.filter((r) => r.includes('/api/'))).toEqual([]);
   });
 
-  it('keeps the trace page’s actions in view, disabled with the static reason (RP-4)', async () => {
+  it('links the trace’s check into Studio, where its threshold can be tried, and says the route needs a stack (RP-4)', async () => {
     const featured = useReplayStore.getState().featuredTraceId;
-    await renderStatic(`/app/traffic/${featured}`);
+    const user = userEvent.setup();
+    const { router } = await renderStatic(`/app/traffic/${featured}`);
     const outcome = await screen.findByRole('region', { name: 'Outcome' });
-    const reason = 'Not available on the online demo: run TrustAgent yourself to use it';
-    for (const name of [/^Open evaluator/, /^Adjust threshold/]) {
-      const action = within(outcome).getByRole('button', { name });
-      expect(action).toHaveAttribute('aria-disabled', 'true');
-      expect(action).toHaveAccessibleDescription(new RegExp(`^${reason}`));
-    }
-    // Nothing links to the hidden evaluator or policy pages.
+    // Nothing links to the hidden evaluator or policy pages, and no dead button is left.
     expect(within(outcome).queryByRole('link', { name: /Open evaluator|Adjust threshold/ })).toBeNull();
-    // The reason's fix is the landing's self-host section.
+    expect(within(outcome).queryByRole('button', { name: /Open evaluator|Adjust threshold/ })).toBeNull();
+    const studio = within(outcome).getByRole('link', { name: new RegExp(`^${copy.trace.open_in_studio}: `) });
+    expect(studio.getAttribute('href')).toMatch(/\/app\/evaluators\/studio\/[a-z_]+\/\d+$/);
+    expect(outcome).toHaveTextContent(copy.trace.studio_static_note);
+    // The note's fix is the landing's self-host section.
     expect(within(outcome).getByRole('link', { name: 'Set it up in one command' })).toHaveAttribute('href', '/TrustAgent/#self-host');
     // Labelling is a write too: it says the same, not "read-only instance".
     expect(within(outcome).queryByText(/read-only instance/)).toBeNull();
     expect(formatViolations(await axeViolations(outcome))).toEqual([]);
+    // Studio opens the check as a copy.
+    await user.click(studio);
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/app\/evaluators\/studio\/[a-z_]+\/\d+$/));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Studio' })).toBeInTheDocument();
   });
 
   it('shows the exact Jev request of a replayed trace, rebuilt in the browser (D109)', async () => {
