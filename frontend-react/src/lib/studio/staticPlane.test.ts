@@ -9,18 +9,19 @@
 import { describe, expect, it } from 'vitest';
 import prompt from '@contracts/prompts/evaluator-drafter.v1.json';
 import { BUILTIN_TEMPLATES } from '@/lib/decision';
-import { renderUserText } from '@/lib/studio/drafter';
-import { chatAnswer, fakeChat, fakeJev, fakeLedger, fakeStudioLive } from '@/lib/studio/fakeLive';
-import { blankSpec } from '@/lib/studio/templates';
+import { ApiError, isApiError } from '@/data/errors';
+import { testCostSource } from './costSource';
+import { renderUserText } from './drafter';
+import { chatAnswer, fakeChat, fakeJev, fakeLedger, fakeStudioLive } from './fakeLive';
+import { createStaticStudioPlane, refusedError, type StudioTapeDeps } from './staticPlane';
+import { staticRegistry } from './staticRegistry';
+import { blankSpec } from './templates';
 import { committedDetail, committedManifest, scenarioTrace } from '@/test/recording';
 import type { EvaluatorSpec, StudioSample } from '@/types/api';
-import { ApiError, isApiError } from '../errors';
-import { staticRegistry } from './replayEvaluatorReads';
-import { createReplayStudioPlane, refusedError, testCostSource, type ReplayPlaneDeps } from './replayStudioPlane';
 
 const MESSAGE = 'Run it yourself with make demo.';
 const manifest = committedManifest();
-const deps: ReplayPlaneDeps = {
+const deps: StudioTapeDeps = {
   message: MESSAGE,
   traceIds: async () => manifest.traces.map((t) => t.trace_id),
   trace: async (id) => committedDetail(id),
@@ -44,7 +45,7 @@ describe('draftEvaluator', () => {
   it('drafts through the tab key with the judge model, the built-ins as the registry and the route description', async () => {
     const chat = fakeChat([chatAnswer(JSON.stringify(EXAMPLE))]);
     const ledger = fakeLedger();
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ chat, ledger }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ chat, ledger }), registry });
     const route = registry.routes()[1];
     const out = await plane.draftEvaluator({ description: '  Flag answers that recommend a competitor.  ', route });
     expect(out).toMatchObject({ draft: EXAMPLE, errors: [], model: 'anthropic/claude-haiku-4.5', attempts: 1, cost_usd: 0.0054, cost_source: 'reported' });
@@ -57,7 +58,7 @@ describe('draftEvaluator', () => {
 
   it('prices a draft from the table when OpenRouter reports no cost (estimate)', async () => {
     const chat = fakeChat([chatAnswer(JSON.stringify(EXAMPLE), { usage: { input_tokens: 2000, output_tokens: 500, cost: null } })]);
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ chat }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ chat }), registry });
     const out = await plane.draftEvaluator({ description: 'Flag answers that recommend a competitor.' });
     // claude-haiku-4.5 on OpenRouter: $1 in and $5 out per million tokens (contracts/pricing).
     expect(out.cost_source).toBe('computed');
@@ -67,7 +68,7 @@ describe('draftEvaluator', () => {
   it('returns no draft, with the schema errors, when even the repair breaks the format', async () => {
     const broken = JSON.stringify({ ...EXAMPLE, category: 'misc' });
     const chat = fakeChat([chatAnswer(broken), chatAnswer(broken)]);
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ chat }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ chat }), registry });
     const out = await plane.draftEvaluator({ description: 'Flag answers that recommend a competitor.' });
     expect(out.draft).toBeNull();
     expect(out.attempts).toBe(2);
@@ -77,28 +78,28 @@ describe('draftEvaluator', () => {
 
   it('says why when the answer was no JSON object at all', async () => {
     const chat = fakeChat([chatAnswer('I cannot.'), chatAnswer('Still no.')]);
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ chat }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ chat }), registry });
     const out = await plane.draftEvaluator({ description: 'Flag answers that recommend a competitor.' });
     expect(out.draft).toBeNull();
     expect(out.errors[0].message).toMatch(/^\(root\): the answer is not valid JSON/);
   });
 
   it('needs a key: without the chat client nothing is sent', async () => {
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({}), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({}), registry });
     const err = await failure(plane.draftEvaluator({ description: 'Flag answers that recommend a competitor.' }));
     expect(err).toMatchObject({ status: 503, code: 'no_judge' });
   });
 
   it('refuses at the cap with the ledger reason, before any call', async () => {
     const chat = fakeChat([]);
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ chat, ledger: fakeLedger(0) }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ chat, ledger: fakeLedger(0) }), registry });
     const err = await failure(plane.draftEvaluator({ description: 'Flag answers that recommend a competitor.' }));
     expect(err).toMatchObject({ code: 'cap_reached', details: { reason: 'cap_reached' } });
     expect(chat.calls).toHaveLength(0);
   });
 
   it('checks the description and the route like the gateway', async () => {
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ chat: fakeChat([]) }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ chat: fakeChat([]) }), registry });
     expect(await failure(plane.draftEvaluator({ description: '   ' }))).toMatchObject({ status: 422, fieldErrors: [{ path: 'description' }] });
     expect(await failure(plane.draftEvaluator({ description: 'x'.repeat(2001) }))).toMatchObject({ status: 422 });
     expect(await failure(plane.draftEvaluator({ description: 'Flag things.', route: 'nope' }))).toMatchObject({ status: 422, fieldErrors: [{ path: 'route' }] });
@@ -121,7 +122,7 @@ describe('testEvaluator', () => {
   it('runs each sample through the gate on a one-evaluator route and reports rows like the gateway', async () => {
     const jev = fakeJev(yesWhenBad, { cost: () => 0.00002 });
     const ledger = fakeLedger();
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev, ledger }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev, ledger }), registry });
     const out = await plane.testEvaluator({ spec, samples });
 
     expect(out.results.map((r) => [r.sample_id, r.status, r.fires, r.agrees])).toEqual([
@@ -142,7 +143,7 @@ describe('testEvaluator', () => {
 
   it('compiles an edit of a built-in id as its next version (CompileUnsaved: latest + 1)', async () => {
     const jev = fakeJev(() => ({ type: 'choice', choice: 'answers_request', probabilities: { answers_request: 0.9, declines_or_deflects: 0.05, asks_clarifying_question: 0.03, nothing_to_answer: 0.02 } }));
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
     const refusal = structuredClone(BUILTIN_TEMPLATES['refusal@1']);
     delete refusal.builtin;
     const out = await plane.testEvaluator({ spec: refusal, samples: [{ id: 'a', user_request: 'Reset my password', assistant_response: 'Click Forgot password.' }] });
@@ -152,7 +153,7 @@ describe('testEvaluator', () => {
 
   it('prices from the table when OpenRouter reports no cost (estimate)', async () => {
     const jev = fakeJev(yesWhenBad);
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
     const out = await plane.testEvaluator({ spec, samples: samples.slice(0, 1) });
     // typesafe/jev-1.13 on OpenRouter: $0.042 per million input tokens.
     expect(out.results[0].cost_usd).toBeCloseTo((jev.requests[0].est_tokens * 0.042) / 1e6, 15);
@@ -168,7 +169,7 @@ describe('testEvaluator', () => {
       evidence: { requires: 'required', min_chars: 10 },
     };
     const jev = fakeJev(() => ({ type: 'noul', noul: 0.1 }));
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
     const out = await plane.testEvaluator({
       spec: docSpec,
       samples: [
@@ -185,30 +186,30 @@ describe('testEvaluator', () => {
   it('marks a sample whose call failed and goes on; a refused key ends the whole test', async () => {
     const timeout = new ApiError({ kind: 'timeout', status: 0, code: 'timeout', message: 'slow' });
     const flaky = fakeJev((state) => (String(state.assistant_response).includes('fine') ? timeout : { type: 'noul', noul: 0.1 }));
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev: flaky }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev: flaky }), registry });
     const out = await plane.testEvaluator({ spec, samples });
     expect(out.results[1]).toMatchObject({ sample_id: 's2', status: 'error', reason: 'error:timeout', fires: null, cost_usd: 0 });
     expect(out.results.map((r) => r.status)).toEqual(['assessed', 'error', 'assessed']);
 
     const auth = new ApiError({ kind: 'http', status: 401, code: 'auth', message: 'refused' });
     const refusing = fakeJev(() => auth);
-    const err = await failure(createReplayStudioPlane(deps, { live: fakeStudioLive({ jev: refusing }), registry }).testEvaluator({ spec, samples }));
+    const err = await failure(createStaticStudioPlane(deps, { live: fakeStudioLive({ jev: refusing }), registry }).testEvaluator({ spec, samples }));
     expect(err.code).toBe('auth');
   });
 
   it('refuses with the ledger reason when the caps run out, and spends no more', async () => {
     const jev = fakeJev(yesWhenBad);
     const ledger = fakeLedger(1);
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev, ledger }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev, ledger }), registry });
     const err = await failure(plane.testEvaluator({ spec, samples }));
     expect(err.code).toBe('cap_reached');
     expect(jev.requests.length).toBeLessThanOrEqual(1);
   });
 
   it('needs a key, valid samples and a valid spec', async () => {
-    const noKey = createReplayStudioPlane(deps, { live: fakeStudioLive({}), registry });
+    const noKey = createStaticStudioPlane(deps, { live: fakeStudioLive({}), registry });
     expect(await failure(noKey.testEvaluator({ spec, samples }))).toMatchObject({ status: 503, code: 'decision_model_unavailable' });
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev: fakeJev(yesWhenBad) }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev: fakeJev(yesWhenBad) }), registry });
     expect(await failure(plane.testEvaluator({ spec, samples: [] }))).toMatchObject({ status: 422, fieldErrors: [{ path: 'samples' }] });
     expect(await failure(plane.testEvaluator({ spec, samples: [{ id: 'x', assistant_response: ' ' }] }))).toMatchObject({ status: 422 });
     const badOrder = { ...spec, outcomes: { ...spec.outcomes, warn_at: 0.5 }, escalation: { ...spec.escalation, escalate_from: 0.7 } };
@@ -221,7 +222,7 @@ describe('testEvaluator', () => {
       controller.abort();
       return { type: 'noul', noul: 0.1 };
     });
-    const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
     expect(await failure(plane.testEvaluator({ spec, samples }, controller.signal))).toMatchObject({ code: 'aborted' });
   });
 });
@@ -229,7 +230,7 @@ describe('testEvaluator', () => {
 // ----------------------------------------------------------------------------------- samples
 
 describe('getStudioSamples', () => {
-  const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({}), registry, random: () => 0 });
+  const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({}), registry, random: () => 0 });
 
   it('gives at most six distinct answers of the chosen route, from the recording', async () => {
     const route = scenarioTrace('grounded-pass').route;
@@ -265,7 +266,7 @@ describe('getStudioSamples', () => {
 // ------------------------------------------------------------------------- calibrate, dry run
 
 describe('quickCalibrate and the dry run', () => {
-  const plane = createReplayStudioPlane(deps, { live: fakeStudioLive({}), registry });
+  const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({}), registry });
 
   it('calibrates in the browser and says when there are too few labels', async () => {
     const labeled = [0.1, 0.2, 0.3, 0.35, 0.7, 0.8, 0.9, 0.95].map((risk_raw, i) => ({ risk_raw, label: i >= 4 }));

@@ -6,11 +6,10 @@
  *
  * Until the live transport lands (CP-LIVE) there is no client: `jev()` and `chat()` answer null,
  * and the page says a key is needed instead of calling anything. Tests pass their own StudioLive
- * (fake clients and a fake ledger) to createReplayStudioPlane.
+ * (fake clients and a fake ledger) to createStaticStudioPlane.
  */
 import { playground } from '@/config/runtime';
 import { CHAT_FROM_BROWSER, LIVE_CHECKS } from '@/domain/liveScenarios';
-import { NOOP_LEDGER } from '@/lib/gate/runner';
 import type { JevCall, UsageLedger } from '@/lib/openrouter/types';
 import type { ChatSend } from './drafter';
 
@@ -33,12 +32,15 @@ export interface StudioLive {
   readonly drafting: boolean;
 }
 
+/** Counts nothing and never refuses: no call can go out without a client anyway. */
+const NO_LEDGER: UsageLedger = { reserve: () => ({ ok: true }), settle: () => {} };
+
 /** The live mode of this build: no client until the tab's transport lands (CP-LIVE). */
 export function studioLive(): StudioLive {
   return {
     jev: () => null,
     chat: () => null,
-    ledger: () => NOOP_LEDGER,
+    ledger: () => NO_LEDGER,
     maxTokens: playground.maxTokens,
     jevModel: playground.jevModel,
     judgeModel: playground.judgeModel,

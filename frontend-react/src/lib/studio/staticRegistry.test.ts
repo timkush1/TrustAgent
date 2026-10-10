@@ -10,14 +10,14 @@ import { BUILTIN_TEMPLATES } from '@/lib/decision';
 import { parseSpec, specHashes } from '@/lib/decision/spec';
 import type { PolicyInput } from '@/lib/gate/types';
 import type { EvaluatorSpec } from '@/types/api';
-import { isApiError } from '../errors';
-import { createReplayEvaluatorReads, DEFAULT_ROUTE, staticRegistry } from './replayEvaluatorReads';
+import { isApiError } from '@/data/errors';
+import { createStaticEvaluatorReads, DEFAULT_ROUTE, staticRegistry } from './staticRegistry';
 
 const STARTED = new Date('2026-10-01T12:00:00Z');
 const ids = [...new Set(Object.values(BUILTIN_TEMPLATES).map((t) => t.id))].sort();
 
 function reads(options: Parameters<typeof staticRegistry>[0] = {}) {
-  return createReplayEvaluatorReads(staticRegistry({ started: STARTED, ...options }));
+  return createStaticEvaluatorReads(staticRegistry({ started: STARTED, ...options }));
 }
 
 describe('static evaluator reads', () => {
