@@ -190,6 +190,24 @@ describe('landing page', () => {
     expect(within(figure).getByText(/· in the background, for flagged and sampled answers/)).toBeInTheDocument();
   });
 
+  it('shows the replay’s trace page above the cards, in both themes, captioned Simulated and linking to that request', async () => {
+    await renderLanding();
+    const preview = document.querySelector('[data-replay-preview]') as HTMLElement;
+    const [light, dark] = [...preview.querySelectorAll('img')];
+    expect(light.getAttribute('src')).toBe(`${import.meta.env.BASE_URL}landing/trace-light.jpg`);
+    expect(dark.getAttribute('src')).toBe(`${import.meta.env.BASE_URL}landing/trace-dark.jpg`);
+    // One shows per theme; both are lazy, sized, and described.
+    expect(light).toHaveClass('dark:hidden');
+    expect(dark).toHaveClass('hidden', 'dark:block');
+    for (const img of [light, dark]) {
+      expect(img).toHaveAttribute('loading', 'lazy');
+      expect([img.getAttribute('width'), img.getAttribute('height')]).toEqual(['1440', '900']);
+      expect(img.getAttribute('alt')).toMatch(/refund answer flagged/);
+    }
+    expect(within(preview).getByRole('link').getAttribute('href')).toBe(refundTraceHref().href);
+    expect(preview.querySelector('figcaption')).toHaveTextContent('Simulated');
+  });
+
   it('shows the replay tape with its own label, counts and one example per outcome', async () => {
     await renderLanding();
     const replay = document.querySelector('[data-tape-card]') as HTMLElement;

@@ -17,6 +17,7 @@ import { LIVE_SCENARIOS, liveHref } from '@/domain/liveScenarios';
 import { splitClaims } from './claims';
 import { BASE, command, DEMO_HREF, OUTCOME_IDS, outcome, outcomeOf } from './content';
 import { demoLinkText, LIVE_ON_THIS_SITE, LIVE_TITLES } from './links';
+import { refundTraceHref } from './refundTrace';
 import { sectionCopy } from './sectionCopy';
 import { buttonClass } from './styles';
 import { ClaimValue, Command, Section } from './ui';
@@ -202,6 +203,29 @@ export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
   );
 }
 
+/**
+ * What the replay looks like: the trace page of the refund answer, captured by `make screenshots`
+ * from the static site (public/landing/trace-{light,dark}.jpg), in the reader's theme, linking to
+ * that request. The capture replays the simulated tape, so the caption says Simulated.
+ */
+function ReplayPreview() {
+  const link = refundTraceHref();
+  const alt = 'The replay’s trace page: the refund answer flagged, “60 days” marked as contradicted by refund-policy.md, and the exact request the fast check was sent';
+  const img = 'block h-auto w-full';
+  return (
+    <figure className="mb-8" data-replay-preview>
+      <a href={link.href} className="block overflow-hidden rounded-lg border border-border-strong bg-surface transition-colors hover:border-fg-subtle">
+        <img src={`${BASE}landing/trace-light.jpg`} alt={alt} width={1440} height={900} loading="lazy" decoding="async" className={`${img} dark:hidden`} />
+        <img src={`${BASE}landing/trace-dark.jpg`} alt={alt} width={1440} height={900} loading="lazy" decoding="async" className={`${img} hidden dark:block`} />
+      </a>
+      <figcaption className="mt-2 text-xs text-fg-muted">
+        The trace page in the replay: what the gateway caught, the words that contradict the document, and what Jev was asked. Simulated: the
+        demo’s mock checks and mock judge, not model output.
+      </figcaption>
+    </figure>
+  );
+}
+
 export function TryIt({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
   return (
     <Section
@@ -214,6 +238,7 @@ export function TryIt({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
           : 'Replay the demo’s traffic in the real dashboard, or run the same checks on your machine.'
       }
     >
+      <ReplayPreview />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TapeCard />
         <LiveCard live={live} />

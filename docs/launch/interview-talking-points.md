@@ -77,9 +77,10 @@ No benchmark run is published yet, so every row says "not yet measured". The oth
   (CONTRADICTED vs UNSUPPORTED, end to end). New checks start in shadow. A route that cannot
   block yet acts as flag and says why, with the fix.
 - **Alternatives.** Score every answer anyway; block on one probability; downgrade silently.
-- **Measured result.** A public test of Jev found that without source documents its groundedness
-  ranking inverts (fabricated citations scored above honest ones); that third-party finding is
-  why groundedness is never asked without evidence.
+- **Measured result.** A public test of Jev (Haqq, on legal citations:
+  https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection) found that without source
+  documents its groundedness ranking inverts (fabricated citations scored above honest ones); that
+  third-party finding is why groundedness is never asked without evidence.
 - **What went wrong.** In 1.0, every claim without context came back UNSUPPORTED, which read as
   "the model made it up". The engine now checks for evidence first and marks such claims
   NOT_CHECKED.

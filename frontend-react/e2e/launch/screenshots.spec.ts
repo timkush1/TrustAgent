@@ -1,7 +1,8 @@
 /**
  * The dashboard screenshots (D115; I-5b): `npm run screenshots` builds the launch site, then this
  * spec captures each page the static site shows, in both themes, to
- * docs/images/v2/{page}-{light,dark}.png (1440×900) for the README's screenshot block.
+ * docs/images/v2/{page}-{light,dark}.png (1440×900) for the README's screenshot block, and the trace
+ * page again as frontend-react/public/landing/trace-{light,dark}.jpg for the landing's replay preview.
  *
  * The simulated tape is allowed here: every picture then carries the replay's Simulated banner, and
  * the README captions them "Simulated". On a recorded tape the banner carries the recording's label.
@@ -35,6 +36,9 @@ const COPY = (
 ).copy;
 
 const SIZE = { width: 1440, height: 900 } as const;
+/** The landing shows this page as its replay preview, from frontend-react/public/landing/<name>-<theme>.jpg. */
+const LANDING_PREVIEW = 'trace';
+const LANDING_DIR = 'frontend-react/public/landing';
 const THEMES: readonly Theme[] = ['light', 'dark'];
 
 interface Shot {
@@ -134,6 +138,11 @@ test.describe('dashboard screenshots', () => {
           expect(blocked, 'requests to an unmocked external origin').toEqual([]);
           const written = writeCapture(resolve(REPO_ROOT, SCREENSHOT_DIR, `${shot.name}-${theme}.png`), png);
           console.log(`screenshots: ${written} (${tape.kind === 'mock' ? 'Simulated' : tape.label})`);
+          if (shot.name === LANDING_PREVIEW) {
+            // The landing's replay preview (ReplayPreview): the same picture as a JPEG it can afford.
+            const jpeg = await page.screenshot({ type: 'jpeg', quality: 80, animations: 'disabled', caret: 'hide' });
+            console.log(`screenshots: ${writeCapture(resolve(REPO_ROOT, LANDING_DIR, `${shot.name}-${theme}.jpg`), jpeg)}`);
+          }
         } finally {
           await context.close();
         }
