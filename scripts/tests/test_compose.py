@@ -415,7 +415,9 @@ class ImagesTest(unittest.TestCase):
             # D144: the header says when the pins were taken and that the digest is the pin; it
             # names no patch release, which a Dependabot digest refresh would change silently.
             self.assertRegex(text, r"Pinned 20\d\d-\d\d-\d\d:", dockerfile)
-            self.assertIn("the index digest after it is the pin", " ".join(text.split()), dockerfile)
+            self.assertIn(
+                "the index digest after it is the pin", " ".join(text.split()), dockerfile
+            )
             header = text.split("\nFROM", 1)[0]
             self.assertNotIn("Resolved", header, dockerfile)
             self.assertNotRegex(header, r"\b\d+\.\d+\.\d+\b", f"{dockerfile}: a patch release")

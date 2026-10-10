@@ -38,8 +38,8 @@ PAGES_RECORDING_DIR ?= $(if $(filter recorded,$(PAGES_DATASET)),$(DEMO_DATA)/rec
 	$(filter mock,$(PAGES_DATASET)),$(DEMO_DATA)/simulated,$(if \
 	$(wildcard $(DEMO_DATA)/recorded/manifest.json),$(DEMO_DATA)/recorded,$(DEMO_DATA)/simulated)))
 
-# Downloaded tools live in tmp/tools (a tmp/.gitignore of "*" keeps them out of git); TOOLS_DIR may
-# point elsewhere, and then no .gitignore is written.
+# Downloaded tools live in tmp/tools: tmp/ is scratch space the root .gitignore ignores (D143).
+# TOOLS_DIR may point elsewhere.
 TOOLS_DIR ?= tmp/tools
 # gitleaks: the release security.yml pins, checked against its published SHA-256 (D137).
 GITLEAKS_VERSION := 8.28.0
@@ -101,7 +101,7 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 		darwin-x64) sum=$(GITLEAKS_SHA256_darwin_x64);; darwin-arm64) sum=$(GITLEAKS_SHA256_darwin_arm64);; \
 		*) echo "gitleaks-install: no pinned checksum for $$os-$$arch; install gitleaks $(GITLEAKS_VERSION) and copy it to $(GITLEAKS)"; exit 2;; \
 	esac; \
-	mkdir -p "$(TOOLS_DIR)"; case "$(TOOLS_DIR)" in tmp/*) test -f tmp/.gitignore || printf '*\n' > tmp/.gitignore;; esac; \
+	mkdir -p "$(TOOLS_DIR)"; \
 	work="$$(mktemp -d)"; trap 'rm -rf "$$work"' EXIT; \
 	curl -fsSLo "$$work/gitleaks.tgz" "https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSION)/gitleaks_$(GITLEAKS_VERSION)_$${os}_$${arch}.tar.gz"; \
 	got="$$($(PYTHON) -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$$work/gitleaks.tgz")"; \
@@ -109,6 +109,40 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 	tar -xzf "$$work/gitleaks.tgz" -C "$$work" gitleaks; \
 	install -m 0755 "$$work/gitleaks" "$(GITLEAKS)"; \
 	echo "✅ gitleaks $(GITLEAKS_VERSION) ($$os-$$arch, SHA-256 checked) in $(GITLEAKS)"
+
+# ---------- Workflow lint (D140) ----------
+# actionlint checks the workflow syntax, expressions and (through shellcheck) every run: script;
+# zizmor audits them for security (unpinned actions, persisted credentials, template injection,
+# excessive permissions, cache poisoning) and the Dependabot settings. Every version is pinned:
+# actionlint runs with `go run` at its tag (Go's checksum database verifies the module), zizmor and
+# shellcheck come from PyPI at an exact version into a venv under TOOLS_DIR. zizmor runs offline
+# (no token, the same answer everywhere) and fails on high-severity findings; an accepted finding
+# carries an inline `# zizmor: ignore[<audit>]` with its reason. CI runs this in the "DX scripts"
+# job.
+ACTIONLINT_VERSION    := 1.7.12
+ZIZMOR_VERSION        := 1.30.1
+SHELLCHECK_PY_VERSION := 0.11.0.1
+WORKFLOW_LINT_VENV = $(TOOLS_DIR)/workflow-lint-$(ZIZMOR_VERSION)-$(SHELLCHECK_PY_VERSION)
+ifeq ($(OS),Windows_NT)
+WORKFLOW_LINT_BIN = $(WORKFLOW_LINT_VENV)/Scripts
+else
+WORKFLOW_LINT_BIN = $(WORKFLOW_LINT_VENV)/bin
+endif
+
+##@ Workflows
+
+lint-workflows: workflow-lint-install ## Lint .github/: actionlint (with shellcheck) and zizmor (high-severity findings fail), all pinned
+	go run github.com/rhysd/actionlint/cmd/actionlint@v$(ACTIONLINT_VERSION) -shellcheck=$(WORKFLOW_LINT_BIN)/shellcheck
+	$(WORKFLOW_LINT_BIN)/zizmor --offline --min-severity high --format plain .
+	@echo "✅ Workflows: actionlint $(ACTIONLINT_VERSION) and zizmor $(ZIZMOR_VERSION) found nothing to fix"
+
+workflow-lint-install: ## Install the pinned zizmor and shellcheck into tmp/tools (a venv; actionlint needs only Go)
+	@set -e; test -x "$(WORKFLOW_LINT_BIN)/zizmor" && test -x "$(WORKFLOW_LINT_BIN)/shellcheck" && exit 0; \
+	mkdir -p "$(TOOLS_DIR)"; \
+	$(PYTHON) -m venv "$(WORKFLOW_LINT_VENV)"; \
+	"$(WORKFLOW_LINT_BIN)/python" -m pip install --quiet --disable-pip-version-check \
+		"zizmor==$(ZIZMOR_VERSION)" "shellcheck-py==$(SHELLCHECK_PY_VERSION)"; \
+	echo "✅ zizmor $(ZIZMOR_VERSION) and shellcheck (shellcheck-py $(SHELLCHECK_PY_VERSION)) in $(WORKFLOW_LINT_VENV)"
 
 # ---------- Aggregate hooks (see the root Makefile) ----------
 check: check-version
