@@ -26,7 +26,7 @@ import { testCostSource } from '@/lib/studio/costSource';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
 import type { DecisionBackend, DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse, ValueLabel } from '@/types/api';
-import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCapReachedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailure } from './studioWords';
+import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCapReachedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailure, studioRowReasonText } from './studioWords';
 import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { SimulatedRunNote } from './SimulatedRunNote';
@@ -101,6 +101,7 @@ function ResultRow({
   agrees,
   snapshot,
   cost,
+  browser,
 }: {
   index: number;
   row: StudioTestResponse['results'][number];
@@ -110,6 +111,8 @@ function ResultRow({
   snapshot: string | null;
   /** Null: the price of a call is unknown. */
   cost: RunCost | null;
+  /** The tab's per-call token cap when the browser ran the test (static site), else null. */
+  browser: { maxTokens: number } | null;
 }) {
   const fire = studioFireWords(fires, row.status);
   const agreement = studioAgreementWords(agrees);
@@ -137,7 +140,7 @@ function ResultRow({
           {row.reason ? (
             <>
               <dt className="text-fg-muted">Why</dt>
-              <dd className="text-fg">{row.reason}</dd>
+              <dd className="text-fg">{studioRowReasonText(row.reason, browser)}</dd>
             </>
           ) : null}
           {probabilities.length > 0 ? (
@@ -289,6 +292,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
                 agrees={summary.rows[i].agrees}
                 snapshot={run.response.summary.snapshot}
                 cost={runCost}
+                browser={live ? { maxTokens: live.maxTokens } : null}
               />
             ))}
           </ol>

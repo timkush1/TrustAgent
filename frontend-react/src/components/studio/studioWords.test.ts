@@ -22,6 +22,7 @@ import {
   studioGroupExamples,
   studioLiveFailure,
   studioQuestionParts,
+  studioRowReasonText,
 } from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
@@ -144,5 +145,37 @@ describe('the static Studio’s failure words (D101, CO-8)', () => {
     expect(studioDraftFailureText('no_credits')).toBe(copy.studio.draft_no_credits);
     expect(studioDraftFailureText('judge_unauthorized')).toBe(copy.studio.draft_key_refused);
     expect(studioDraftFailureText('engine_unavailable')).toBeNull();
+  });
+});
+
+describe('studioRowReasonText: why a test row has no outcome, never the raw reason', () => {
+  const browser = { maxTokens: 8000 };
+
+  it('uses the status words the trace pages use', () => {
+    expect(studioRowReasonText('timeout')).toBe('The check timed out');
+    expect(studioRowReasonText('no_evidence', browser)).toBe('No documents in this request');
+    expect(studioRowReasonText('evidence_too_short')).toBe('The documents are too short to check against');
+  });
+
+  it('words a failed browser request as the live Playground does, and one too large as the tab’s token limit', () => {
+    expect(studioRowReasonText('error:retryable', browser)).toBe(copy.playground_live.retry_busy);
+    expect(studioRowReasonText('error:bad_response', browser)).toBe(copy.playground_live.errors.bad_response);
+    expect(studioRowReasonText('error:network', browser)).toBe(copy.playground_live.errors.network);
+    expect(studioRowReasonText('error:too_large', browser)).toBe("This check is larger than this demo's limit of 8,000 tokens per call. Shorten the documents or the answer.");
+    // Every OpenRouter kind reads as a sentence, never as error:<kind>.
+    for (const kind of OPENROUTER_ERROR_KINDS) expect(studioRowReasonText(`error:${kind}`, browser), kind).not.toContain(':');
+  });
+
+  it('on a gateway, or for a kind the browser does not report, says the check failed and why in plain words', () => {
+    expect(studioRowReasonText('error:auth')).toBe('The check failed (auth)');
+    expect(studioRowReasonText('error:too_large')).toBe('The check failed (too large)');
+    expect(studioRowReasonText('error:compile', browser)).toBe('The check failed (compile)');
+    expect(studioRowReasonText('error:internal', browser)).toBe('The check failed (internal)');
+  });
+
+  it('humanizes any other reason, including one that names an Object member', () => {
+    expect(studioRowReasonText('not_run')).toBe('Not run');
+    expect(studioRowReasonText('missing_answer')).toBe('Missing answer');
+    expect(studioRowReasonText('constructor')).toBe('Constructor');
   });
 });

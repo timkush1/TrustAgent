@@ -8,9 +8,9 @@ import { CircleCheck, CircleDashed, CircleX, Flag, MinusCircle, type LucideIcon 
 import type { Tone } from '@/domain/contracts';
 import { formatCount, formatRisk, formatUsd } from '@/domain/format';
 import { isApiError } from '@/data/errors';
-import { copy, fillTemplate, humanizeId, levelWord } from '@/domain/presentation';
-import { liveErrorView } from '@/lib/openrouter/errors';
-import { OPENROUTER_ERROR_KINDS } from '@/lib/openrouter/types';
+import { copy, fillTemplate, humanizeId, levelWord, statusReason } from '@/domain/presentation';
+import { liveErrorView, openRouterError } from '@/lib/openrouter/errors';
+import { OPENROUTER_ERROR_KINDS, type OpenRouterErrorKind } from '@/lib/openrouter/types';
 import type { CostRecord, DryRunResult, EvaluatorResultStatus, StudioSamplesRequest, ValueLabel } from '@/types/api';
 
 const humanize = (id: string) => humanizeId(id.replace(/^det:/, ''));
@@ -59,6 +59,34 @@ export function studioFireWords(fires: boolean | null, status: EvaluatorResultSt
   if (fires === false) return { label: "Doesn't fire", icon: CircleDashed, tone: 'neutral' };
   if (status === 'not_assessed') return { label: 'Not checked', icon: MinusCircle, tone: 'neutral' };
   return { label: "Couldn't check", icon: CircleX, tone: 'neutral' };
+}
+
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** The words a status reason has on the trace pages ("the check timed out"), capitalised; null for an unknown key. */
+function statusWords(key: string): string | null {
+  const words = statusReason(key);
+  return typeof words === 'string' ? capitalise(words) : null;
+}
+
+/**
+ * Why a test row has no outcome, in words, never the raw reason: the status words the trace pages use
+ * ("The check timed out", "No documents in this request"). A request that failed (`error:<kind>`)
+ * in the browser reads as the live Playground words that OpenRouter failure, and one too large to
+ * send as the tab's per-call token limit; on a gateway it is "The check failed" with the kind.
+ */
+export function studioRowReasonText(reason: string, browser: { maxTokens: number } | null = null): string {
+  const known = statusWords(reason);
+  if (known !== null) return known;
+  const kind = /^error:(.+)$/.exec(reason)?.[1];
+  if (kind === undefined) return humanizeId(reason);
+  if (browser !== null && kind === 'too_large') return fillTemplate(copy.playground_live.token_cap, { max_tokens: formatCount(browser.maxTokens) });
+  if (browser !== null && (OPENROUTER_ERROR_KINDS as readonly string[]).includes(kind)) {
+    const view = liveErrorView(openRouterError(kind as OpenRouterErrorKind, { status: 0, message: reason }));
+    const text = view.silent ? null : liveSentence(view.message);
+    if (text !== null) return text;
+  }
+  return `${statusWords('error') ?? humanizeId('error')} (${humanizeId(kind).toLowerCase()})`;
 }
 
 /** "Matches your label" / "Doesn't match", or nothing for an unlabelled sample. */

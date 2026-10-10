@@ -281,6 +281,24 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     expect(testAlert).not.toHaveTextContent(/Settings/);
   });
 
+  it('says in words why a sample has no outcome, never the raw request status', async () => {
+    view.current = liveView({ connected: true, key: KEY });
+    const user = userEvent.setup();
+    const { openRouterError } = await import('@/lib/openrouter/errors');
+    // OpenRouter is busy for every sample: each row fails alone and the test still reports.
+    const jev = fakeJev(() => openRouterError('retryable', { status: 503, message: 'busy' }));
+    renderApp('/app/evaluators/studio', staticSource({ jev }));
+    await startFromTemplate(user);
+    const test = step(/Step 3: Test on samples/);
+    await user.click(within(test).getByRole('button', { name: 'Load samples' }));
+    await within(test).findByText(/^Added \d answers? to the samples above\.$/);
+    await user.click(within(test).getByRole('button', { name: 'Run test' }));
+    const results = await within(test).findByRole('region', { name: 'Test results' });
+    expect(within(results).getAllByText("Couldn't check").length).toBeGreaterThan(0);
+    expect(within(results).getAllByText(copy.playground_live.retry_busy).length).toBe(within(results).getAllByText("Couldn't check").length);
+    expect(within(results).queryByText(/error:/)).toBeNull();
+  });
+
   it('exports a validated evaluator.v1 that round-trips through the Simple form, without the key', async () => {
     view.current = liveView({ connected: true, key: KEY });
     const user = userEvent.setup();
