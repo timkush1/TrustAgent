@@ -21,7 +21,7 @@ export function LiveResult({ check }: { check: LiveCheckResult }) {
   return (
     <div className="space-y-4" data-testid="live-result">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="inline-flex h-6 items-center rounded-full border border-border bg-surface-sunken px-2 text-xs font-medium text-fg-muted" data-testid="live-label">
+        <span className="inline-flex min-h-6 max-w-full items-center rounded-md border border-border bg-surface-sunken px-2 py-0.5 text-xs font-medium break-words text-fg-muted" data-testid="live-label">
           {liveResultLabel(snapshot)}
         </span>
         {check.cost ? (
