@@ -98,30 +98,33 @@ func TestBreakerTripAndAuthCooldown(t *testing.T) {
 	clk := newFakeClock()
 	b := newBreaker(5, 30*time.Second, 5*time.Minute, clk.Now, nil)
 	b.record(effectTrip, false, KindBadContentType)
-	if v := b.view(); v.state != BreakerOpen || !v.until.Equal(clk.Now().Add(30*time.Second)) {
-		t.Fatalf("200 text/html trips at once: %+v", v)
+	if v := b.view(); v.state != BreakerOpen || !v.until.Equal(clk.Now().Add(30*time.Second)) || v.keyCause != "" {
+		t.Fatalf("200 text/html trips at once, as a vendor fault: %+v", v)
 	}
 	b.reset()
 	b.record(effectAuth, false, KindAuth)
-	if v := b.view(); v.state != BreakerOpen || !v.until.Equal(clk.Now().Add(5*time.Minute)) || v.cause != KindAuth {
-		t.Fatalf("auth opens for the auth cooldown: %+v", v)
+	if v := b.view(); v.state != BreakerOpen || !v.until.Equal(clk.Now().Add(5*time.Minute)) || v.cause != KindAuth || v.keyCause != KindAuth {
+		t.Fatalf("auth opens for the auth cooldown, named by the key: %+v", v)
 	}
-	// A shorter fault cooldown never shortens the auth pause.
+	// A shorter fault cooldown never shortens the auth pause, nor renames it.
 	b.record(effectTrip, false, KindBadContentType)
-	if v := b.view(); !v.until.Equal(clk.Now().Add(5 * time.Minute)) {
-		t.Fatalf("open period shortened: %+v", v)
+	if v := b.view(); !v.until.Equal(clk.Now().Add(5*time.Minute)) || v.keyCause != KindAuth {
+		t.Fatalf("open period shortened or renamed: %+v", v)
 	}
-	// A late success from before the opening does not close it.
+	// A late success from before the opening does not close it, nor rename it.
 	b.record(effectSuccess, false, "")
-	if b.view().state != BreakerOpen {
-		t.Fatal("a stale success closed the breaker")
+	if v := b.view(); v.state != BreakerOpen || v.keyCause != KindAuth {
+		t.Fatalf("a stale success closed or renamed the pause: %+v", v)
 	}
 	clk.Add(5 * time.Minute)
 	if ok, trial := b.allow(false); !ok || !trial {
 		t.Fatal("half-open after the auth cooldown")
 	}
+	if v := b.view(); v.keyCause != "" {
+		t.Fatalf("a half-open breaker names no key pause: %+v", v)
+	}
 	b.reset()
-	if v := b.view(); v.state != BreakerClosed || v.consecutive != 0 {
+	if v := b.view(); v.state != BreakerClosed || v.consecutive != 0 || v.keyCause != "" {
 		t.Fatalf("reset: %+v", v)
 	}
 	if ok, _ := b.allow(false); !ok {

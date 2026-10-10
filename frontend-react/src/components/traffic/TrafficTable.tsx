@@ -6,13 +6,17 @@
  *
  * Columns drop out as the table narrows (container queries): outcome, time and reason always
  * show; route and deep audit from 42rem; checked against and latency from 56rem; model from 64rem.
+ *
+ * On the static site the replay's featured answer (the one the tour starts from, D117) is marked
+ * `data-featured`, with a neutral bar and its words for screen readers.
  */
 import { Link } from '@tanstack/react-router';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AuditState } from '@/components/outcome/AuditState';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { useNow } from '@/components/common/useNow';
+import { useReplayStore } from '@/data/replay/replayStore';
 import { copy, traceOutcome } from '@/domain/presentation';
 import { formatDateTime, formatDurationMs, formatRelativeTime } from '@/domain/format';
 import { cn } from '@/lib/cn';
@@ -54,16 +58,29 @@ export interface TrafficTableProps {
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
+  /**
+   * Changes when something above the table appears or goes (the replay's tour), so the table
+   * measures where it starts again.
+   */
+  layoutKey?: string | number | boolean;
 }
 
-export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage, onLoadMore }: TrafficTableProps) {
+export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage, onLoadMore, layoutKey }: TrafficTableProps) {
   const now = useNow();
-  // Distance from the top of the document, measured once; overscan absorbs a banner that
-  // appears later.
+  // The replay's featured answer (null outside the static site).
+  const featured = useReplayStore((s) => s.featuredTraceId);
+  // Distance from the top of the document, measured when the table mounts and when what is above
+  // it changes; overscan absorbs a banner that appears later.
   const [scrollMargin, setScrollMargin] = useState(0);
+  const body = useRef<HTMLDivElement | null>(null);
   const bodyRef = useCallback((el: HTMLDivElement | null) => {
+    body.current = el;
     if (el) setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
   }, []);
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (el) setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
+  }, [layoutKey]);
 
   const virtualizer = useWindowVirtualizer({
     count: rows.length,
@@ -107,6 +124,7 @@ export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage,
                 index={item.index}
                 top={item.start - scrollMargin}
                 now={now}
+                featured={t.trace_id === featured}
               />
             );
           })}
@@ -127,12 +145,15 @@ function TrafficRow({
   index,
   top,
   now,
+  featured = false,
 }: {
   trace: TraceSummary;
   decision: GateDecisionView | undefined;
   index: number;
   top: number;
   now: number;
+  /** The replay's featured answer: where the tour starts. */
+  featured?: boolean;
 }) {
   const outcome = traceOutcome({ ...t, degraded: decision?.degraded ?? null });
   // `now` ticks every 15 s: a request newer than the last tick (or a server clock ahead of this
@@ -147,11 +168,13 @@ function TrafficRow({
       aria-rowindex={index + 2}
       data-trace-id={t.trace_id}
       data-outcome={outcome.id}
+      data-featured={featured || undefined}
       style={{ height: ROW_HEIGHT, transform: `translateY(${top}px)` }}
       className={cn(
         GRID,
         'absolute inset-x-0 top-0 border-b border-border text-sm last:border-b-0 hover:bg-surface-hover',
         'has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-fg',
+        featured && 'bg-surface-sunken before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-fg',
       )}
     >
       <div role="cell" className={cn(col('outcome'), 'min-w-0 items-center')}>
@@ -162,6 +185,7 @@ function TrafficRow({
         >
           <OutcomePill outcome={outcome} />
           <span className="sr-only">, open request {t.trace_id}</span>
+          {featured ? <span className="sr-only">. {copy.recording.nav_hint_caught}</span> : null}
         </Link>
       </div>
       <div role="cell" className={cn(col('time'), 'min-w-0 text-xs text-fg-muted tabular')}>

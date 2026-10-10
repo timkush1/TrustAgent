@@ -10,11 +10,11 @@ export interface HiddenPage {
 }
 
 /**
- * Checked first: /app/evaluators/studio ("Coming soon" in the static build) and
- * /app/evaluators/benchmarks (the committed runs, bundled at build time; D72) stay visible, the rest
- * of /app/evaluators does not.
+ * Checked first: /app/evaluators/studio (the static Studio) stays visible; the rest of
+ * /app/evaluators, Benchmarks included, does not (D111: the static nav is the six items of SPEC
+ * §3.3, and committed benchmark runs are read on a running stack).
  */
-const VISIBLE = ['/app/evaluators/studio', '/app/evaluators/benchmarks'];
+const VISIBLE = ['/app/evaluators/studio'];
 const HIDDEN: readonly HiddenPage[] = [
   { prefix: '/app/policies', name: 'Policies', does: 'decide what each route does with a risky answer: observe, flag, block or fall back' },
   { prefix: '/app/settings', name: 'Settings', does: 'connect OpenRouter, pick the fast-check and deep-audit models, and set budgets and keys' },

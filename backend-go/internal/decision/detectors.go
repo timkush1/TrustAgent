@@ -99,6 +99,8 @@ type detectorRules struct {
 	currency                                            []string
 	windowTokens                                        int
 	numberRemove                                        []string
+	// numberScan and urlScan scan reference texts in runs (refscan.go, D167).
+	numberScan, urlScan *refScan
 
 	dates  []datePattern
 	months map[string]int
@@ -116,6 +118,10 @@ type detectorRules struct {
 
 	quoteMap   map[string]string
 	whitespace *regexp.Regexp
+	// wsRun is the whitespace pattern's byte set when it is one ASCII class repeated (D167):
+	// normalizeText then collapses runs in a byte loop instead of the regexp.
+	wsRun     [256]bool
+	wsRunFast bool
 
 	leakMin, leakWindow, leakStride int
 }
@@ -124,6 +130,7 @@ type datePattern struct {
 	re                *regexp.Regexp
 	year, month, day  int // capture group numbers; day is 0 for month_year
 	monthIsName, full bool
+	window            int // the most bytes a match spans; 0 scans whole texts (datescan.go)
 }
 
 // rulePattern is a pattern with separately passed flags, as the rules files write them.
@@ -231,13 +238,20 @@ func parseDetectorRules(detJSON, secJSON []byte) (*detectorRules, error) {
 	r.windowToken = must(d.Numbers.SmallIntegers.WindowToken)
 	r.unit = must(d.Numbers.SmallIntegers.Unit)
 	for _, p := range d.Dates.Patterns {
-		dp := datePattern{re: must(p.rulePattern), year: p.Groups["year"], month: p.Groups["month"], day: p.Groups["day"]}
+		dp := datePattern{year: p.Groups["year"], month: p.Groups["month"], day: p.Groups["day"]}
+		var err error
+		if dp.re, dp.window, err = compileDatePattern(p.rulePattern, dp.year); err != nil {
+			errs = append(errs, err)
+		}
 		dp.full = dp.day > 0
 		dp.monthIsName = p.ID != "iso"
 		r.dates = append(r.dates, dp)
 	}
 	r.months = d.Dates.Months
 	r.url = must(d.URLs.URL)
+	if r.number != nil && r.url != nil {
+		r.numberScan, r.urlScan = newRefScan(r.number), newRefScan(r.url)
+	}
 	r.urlStripTail = d.URLs.Normalize.StripTrailing
 	for _, q := range d.Quotes.Quotes {
 		r.quotes = append(r.quotes, must(q))
@@ -252,6 +266,9 @@ func parseDetectorRules(detJSON, secJSON []byte) (*detectorRules, error) {
 	}
 	r.quoteMap = f.TextNormalization.QuoteMap
 	r.whitespace = must(f.TextNormalization.Whitespace)
+	if r.whitespace != nil {
+		r.wsRun, r.wsRunFast = asciiClassRun(r.whitespace)
+	}
 	r.leakMin = d.Leak.MinCodePoints
 	r.leakWindow = d.Leak.WindowCodePoints
 	r.leakStride = d.Leak.StrideCodePoints
@@ -347,18 +364,23 @@ func (d *detection) normNumber(raw string) string {
 	for _, c := range d.r.numberRemove {
 		raw = strings.ReplaceAll(raw, c, "")
 	}
+	// Every match of the suffix pattern begins with its literal prefix ("." for "\.0+$"), so a
+	// number without one is left as it is without running the pattern (D167).
+	if lit, _ := d.r.numberSuffix.LiteralPrefix(); lit != "" && !strings.Contains(raw, lit) {
+		return raw
+	}
 	return d.r.numberSuffix.ReplaceAllString(raw, "")
 }
 
 func (d *detection) numbers() []DetectorFinding {
-	known := map[string]bool{}
-	for _, p := range d.refParts {
-		for _, m := range d.r.number.FindAllString(p, -1) {
-			known[d.normNumber(m)] = true
-		}
+	// Only the response's numbers can fire, so the reference text is read only when one of them
+	// is checked (D167), and then in runs (refscan.go).
+	type checked struct {
+		raw, norm  string
+		start, end int
 	}
 	markers := d.r.listMarker.FindAllStringIndex(d.resp, -1)
-	var out []DetectorFinding
+	var todo []checked
 	for _, m := range d.r.number.FindAllStringIndex(d.resp, -1) {
 		if startsInside(markers, m[0]) {
 			continue
@@ -368,8 +390,27 @@ func (d *detection) numbers() []DetectorFinding {
 		if d.smallInteger(norm) && !d.unitAdjacent(raw, m) {
 			continue
 		}
-		if !known[norm] {
-			out = append(out, d.finding(raw, m[0], m[1]))
+		todo = append(todo, checked{raw: raw, norm: norm, start: m[0], end: m[1]})
+	}
+	if len(todo) == 0 {
+		return orEmpty(nil)
+	}
+	known := make(map[string]bool, len(todo)) // the checked numbers, true once the reference has one
+	for _, c := range todo {
+		known[c.norm] = false
+	}
+	for _, p := range d.refParts {
+		d.r.numberScan.each(p, func(start, end int) {
+			norm := d.normNumber(p[start:end])
+			if seen, checked := known[norm]; checked && !seen {
+				known[norm] = true
+			}
+		})
+	}
+	var out []DetectorFinding
+	for _, c := range todo {
+		if !known[c.norm] {
+			out = append(out, d.finding(c.raw, c.start, c.end))
 		}
 	}
 	return orEmpty(out)
@@ -413,7 +454,7 @@ type foundDate struct {
 func (d *detection) findDates(text string) []foundDate {
 	var found []foundDate
 	for _, p := range d.r.dates {
-		for _, m := range p.re.FindAllStringSubmatchIndex(text, -1) {
+		for _, m := range p.findAll(text) {
 			if slices.ContainsFunc(found, func(f foundDate) bool { return m[0] < f.end && f.start < m[1] }) {
 				continue
 			}
@@ -453,6 +494,12 @@ func (d *detection) normDate(text string, p datePattern, m []int) (string, bool)
 }
 
 func (d *detection) dates() []DetectorFinding {
+	// Only the response's dates can fire, so a response without one never reads the reference
+	// text (the costly part on long evidence, D161).
+	found := d.findDates(d.resp)
+	if len(found) == 0 {
+		return orEmpty(nil)
+	}
 	var known []string
 	for _, p := range d.refParts {
 		for _, f := range d.findDates(p) {
@@ -460,7 +507,7 @@ func (d *detection) dates() []DetectorFinding {
 		}
 	}
 	var out []DetectorFinding
-	for _, f := range d.findDates(d.resp) {
+	for _, f := range found {
 		ok := slices.ContainsFunc(known, func(k string) bool {
 			return k == f.norm || (len(f.norm) == len("YYYY-MM") && strings.HasPrefix(k, f.norm+"-"))
 		})
@@ -492,14 +539,17 @@ func normURL(u string) string {
 }
 
 func (d *detection) urls() []DetectorFinding {
+	// The reference text is read only when the response holds a URL (D167).
+	found := d.r.url.FindAllStringIndex(d.resp, -1)
+	if len(found) == 0 {
+		return orEmpty(nil)
+	}
 	known := map[string]bool{}
 	for _, p := range d.refParts {
-		for _, u := range d.r.url.FindAllString(p, -1) {
-			known[normURL(d.stripURL(u))] = true
-		}
+		d.r.urlScan.each(p, func(start, end int) { known[normURL(d.stripURL(p[start:end]))] = true })
 	}
 	var out []DetectorFinding
-	for _, m := range d.r.url.FindAllStringIndex(d.resp, -1) {
+	for _, m := range found {
 		u := d.stripURL(d.resp[m[0]:m[1]])
 		if u == "" || known[normURL(u)] {
 			continue
@@ -523,17 +573,20 @@ func (d *detection) normalizeText(s string) string {
 			b[i] = c + ('a' - 'A')
 		}
 	}
-	s = d.r.whitespace.ReplaceAllString(string(b), " ")
+	if d.r.wsRunFast {
+		s = collapseRuns(b, &d.r.wsRun)
+	} else {
+		s = d.r.whitespace.ReplaceAllString(string(b), " ")
+	}
 	return strings.Trim(s, " ")
 }
 
 func (d *detection) quotes() []DetectorFinding {
-	parts := make([]string, len(d.refParts))
-	for i, p := range d.refParts {
-		parts[i] = d.normalizeText(p)
+	type quote struct {
+		raw, norm  string
+		start, end int
 	}
-	reference := strings.Join(parts, "\n")
-	var out []DetectorFinding
+	var todo []quote
 	for _, re := range d.r.quotes {
 		for _, m := range re.FindAllStringSubmatchIndex(d.resp, -1) {
 			raw := d.resp[m[2]:m[3]]
@@ -544,10 +597,25 @@ func (d *detection) quotes() []DetectorFinding {
 					words++
 				}
 			}
-			if words < d.r.quoteMinWords || strings.Contains(reference, q) {
-				continue
+			if words >= d.r.quoteMinWords {
+				todo = append(todo, quote{raw: raw, norm: q, start: m[2], end: m[3]})
 			}
-			out = append(out, d.finding(raw, m[2], m[3]))
+		}
+	}
+	// The reference text is normalized only when the response quotes something long enough to
+	// check (D167).
+	if len(todo) == 0 {
+		return orEmpty(nil)
+	}
+	parts := make([]string, len(d.refParts))
+	for i, p := range d.refParts {
+		parts[i] = d.normalizeText(p)
+	}
+	reference := strings.Join(parts, "\n")
+	var out []DetectorFinding
+	for _, q := range todo {
+		if !strings.Contains(reference, q.norm) {
+			out = append(out, d.finding(q.raw, q.start, q.end))
 		}
 	}
 	slices.SortStableFunc(out, func(a, b DetectorFinding) int { return a.Start - b.Start })

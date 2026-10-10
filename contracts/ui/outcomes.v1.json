@@ -27,7 +27,7 @@
       "label": "Flagged",
       "tone": "warning",
       "headline": "Delivered with a risk warning to your app",
-      "next_step": "Your app received X-TrustAgent-Action: flag. Review the reasons below."
+      "next_step": "Your app received `X-TrustAgent-Action: flag`. Review the reasons below."
     },
     {
       "id": "would_block",

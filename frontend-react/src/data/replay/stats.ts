@@ -35,7 +35,18 @@ export interface StatsContext {
   recording: Pick<Recording, 'kind' | 'recorded_at' | 'label'>;
   /** Wall-clock time of the tape position (the end of the played window). */
   now: string;
+  /**
+   * Wall-clock time of the recording's last event. A series' bucket comes from the whole recording
+   * (recorded_at to end), so it stays put while the tape plays.
+   */
+  end: string;
   window: TimeWindow;
+}
+
+/** The recording's span in ms (recorded_at to its last event), 0 when either time is unreadable. */
+function recordingSpan(ctx: StatsContext): number {
+  const span = Date.parse(ctx.end) - Date.parse(ctx.recording.recorded_at);
+  return Number.isNaN(span) ? 0 : Math.max(span, 0);
 }
 
 const MIN_N = 30;
@@ -114,7 +125,19 @@ const SERIES_OF: Record<string, SeriesKey | null> = {
 
 const CAUGHT = new Set(['flagged', 'blocked', 'replaced', 'would_flag', 'would_block']);
 
+/** The first decision assessed a groundedness evaluator (any version): checked against its documents. */
+const checkedGroundedness = (p: PlayedTrace) =>
+  Object.values(p.decision?.evaluators ?? {}).some((e) => e.ref.startsWith('groundedness@') && e.status === 'assessed');
+
 const auditDone = (t: TraceSummary) => t.audit.status === 'completed' || t.audit.status === 'degraded';
+
+/** The audit verdicts that say something about the answer (store/stats.go assessedVerdictSQL). */
+const ASSESSED_VERDICTS: ReadonlySet<string> = new Set(['GROUNDED', 'HALLUCINATED', 'UNVERIFIABLE', 'NO_CLAIMS']);
+/**
+ * An audit that reached a verdict about the answer, as the gateway's rates count it: completed or
+ * degraded, and not NOT_ASSESSED (nothing to check against) or UNKNOWN.
+ */
+const assessedAudit = (a: AuditDetail) => (a.status === 'completed' || a.status === 'degraded') && a.verdict !== null && ASSESSED_VERDICTS.has(a.verdict);
 
 function claimCounts(audits: readonly AuditDetail[]): Record<ClaimVerdict, number> {
   const out = { ...NO_VERDICTS };
@@ -127,7 +150,9 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
   const audits = played.map((p) => p.audit).filter((a): a is AuditDetail => a !== null);
   const from = ctx.recording.recorded_at;
   const to = ctx.now;
-  const bucket = bucketOf(Date.parse(to) - Date.parse(from));
+  // One bucket for the whole recording, chosen from its span, so the chart does not change its
+  // bucket as the tape plays; the points run from the start to the tape position.
+  const bucket = bucketOf(recordingSpan(ctx));
   const step = BUCKET_MS[bucket];
   const start = Math.floor(Date.parse(from) / step) * step;
   const end = Math.floor(Date.parse(to) / step) * step;
@@ -156,9 +181,11 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
 
   const count = (pred: (t: TraceSummary) => boolean) => traces.filter(pred).length;
   const decisions = played.map((p) => p.decision).filter((d): d is GateDecisionView => d !== null);
-  const groundednessAssessed = decisions.filter((d) => Object.values(d.evaluators).some((e) => e.ref.startsWith('groundedness@') && e.status === 'assessed')).length;
+  const groundednessAssessed = played.filter(checkedGroundedness).length;
   const bySource = Object.fromEntries(SOURCES.map((s) => [s, count((t) => (t.checked_against?.used ?? []).some((u) => u.source === s && u.items > 0))])) as Record<EvidenceSource, number>;
-  const uniform = audits.filter((a) => a.selection === 'uniform');
+  // The rates count only audits that reached a verdict about the answer, as the gateway does.
+  const assessed = audits.filter(assessedAudit);
+  const uniform = assessed.filter((a) => a.selection === 'uniform');
 
   const contradicted = new Map<string, { count: number; latest: string; at: number }>();
   for (const a of audits) {
@@ -186,7 +213,7 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
         flagged: mine.filter((t) => t.action === 'flag').length,
         blocked: mine.filter((t) => t.action === 'block').length,
         audited: mine.filter(auditDone).length,
-        hallucination_rate: rate(mineUniform.filter((a) => a.hallucination_detected).length, mineUniform.length, 'uniform-sample deep audits only', ctx),
+        hallucination_rate: rate(mineUniform.filter((a) => a.verdict === 'HALLUCINATED').length, mineUniform.length, 'uniform-sample deep audits only', ctx),
       };
     });
   };
@@ -213,10 +240,10 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
       decision_cost_usd: traces.reduce((acc, t) => acc + (t.decision_model?.cost_usd ?? 0), 0),
       llm_cost_usd: audits.reduce((acc, a) => acc + a.costs.reduce((s, c) => s + c.cost_usd, 0), 0),
     },
-    hallucination_rate: rate(uniform.filter((a) => a.hallucination_detected).length, uniform.length, 'uniform-sample deep audits only', ctx),
+    hallucination_rate: rate(uniform.filter((a) => a.verdict === 'HALLUCINATED').length, uniform.length, 'uniform-sample deep audits only', ctx),
     audited_hallucination_share: rate(
-      audits.filter((a) => a.hallucination_detected).length,
-      audits.length,
+      assessed.filter((a) => a.verdict === 'HALLUCINATED').length,
+      assessed.length,
       'among audited answers (selected by risk; not a traffic rate)',
       ctx,
     ),
@@ -246,10 +273,11 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
       knowledge: { p50: null, p95: null },
       decision: p50p95(decisions.map((d) => d.decision_model?.latency_ms ?? null)),
       queue_wait: { p50: null, p95: null },
-      decompose: p50p95(stepTimings('decompose')),
-      retrieve: { p50: null, p95: null },
-      verify: p50p95(stepTimings('verify')),
-      score: p50p95(stepTimings('score')),
+      // The engine's step_timings keys (backend-python audit nodes; the gateway's stats read the same).
+      decompose: p50p95(stepTimings('decompose_ms')),
+      retrieve: p50p95(stepTimings('retrieve_ms')),
+      verify: p50p95(stepTimings('verify_ms')),
+      score: p50p95(stepTimings('score_ms')),
     },
     backend_mix: hasDecision.length > 0 ? countBy(hasDecision.map((t) => t.decision_model?.backend ?? 'off')) : {},
   };
@@ -397,9 +425,9 @@ export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): R
 const ROI_BUCKET_MS: Record<CostSeries['bucket'], number> = { '1m': 60_000, '1h': 3_600_000, '1d': 86_400_000 };
 
 /**
- * The bucket that fits the played span, as the replay's "Requests by outcome" picks its own: per
- * minute up to an hour (a recording usually spans minutes, which hourly buckets would fold into
- * one point), per hour up to two days, per day beyond.
+ * The bucket that fits a recording's span, as the replay's "Requests by outcome" picks its own: per
+ * minute up to an hour (a short recording would fold into one hourly point), per hour up to two
+ * days (the simulated tape spans two hours: three hourly points), per day beyond.
  */
 export function roiBucketOf(spanMs: number): CostSeries['bucket'] {
   if (!(spanMs > 3_600_000)) return '1m';
@@ -409,14 +437,14 @@ export function roiBucketOf(spanMs: number): CostSeries['bucket'] {
 /**
  * Spend per UTC bucket over the played traces (SPEC §2.4 #48): every bucket from the recording's
  * start to the tape position, empty ones zero-filled, as the gateway serves them, in the bucket
- * that fits the played span (roiBucketOf). An answer's fast-check and deep-audit costs land in the
+ * that fits the whole recording (roiBucketOf), so it stays put while the tape plays. An answer's fast-check and deep-audit costs land in the
  * bucket it was created in; the same-checks counterfactual is the token model above (null without
  * the judge's price).
  */
 export function roiTimeseries(played: readonly PlayedTrace[], ctx: StatsContext): CostSeries {
   const from = Date.parse(ctx.recording.recorded_at);
   const to = Date.parse(ctx.now);
-  const bucket = roiBucketOf(to - from);
+  const bucket = roiBucketOf(recordingSpan(ctx));
   const step = ROI_BUCKET_MS[bucket];
   const points: CostSeries['points'] = [];
   if (Number.isNaN(from) || Number.isNaN(to)) return { window: ctx.window, bucket, points };
@@ -442,18 +470,34 @@ export function roiTimeseries(played: readonly PlayedTrace[], ctx: StatsContext)
 
 // ------------------------------------------------------------------------------------ coverage
 
+/** EvidenceCoverage.top_reasons in the gateway's order (store.CoverageReasons), the ties' order too. */
+const COVERAGE_REASONS = ['no_evidence', 'evidence_too_short', 'evidence_packed_away', 'too_long'] as const;
+type CoverageReason = (typeof COVERAGE_REASONS)[number];
+const isCoverageReason = (r: string | null | undefined): r is CoverageReason => (COVERAGE_REASONS as readonly string[]).includes(r ?? '');
+
+/**
+ * Why an answer's groundedness was not checked, as the gateway counts it (store/stats.go
+ * EvidenceCoverage): the groundedness evaluator's exclusion in the first decision, else
+ * no_evidence for an answer that carried no documents, else nothing (a route without a
+ * groundedness check, for one, is not a coverage gap).
+ */
+function coverageReason(p: PlayedTrace): CoverageReason | null {
+  const excluded = p.decision?.excluded?.find((x) => x.ref.startsWith('groundedness@'))?.reason;
+  if (excluded !== undefined) return isCoverageReason(excluded) ? excluded : null;
+  return (p.summary.checked_against?.used ?? []).length === 0 ? 'no_evidence' : null;
+}
+
 export function evidenceCoverage(played: readonly PlayedTrace[], ctx: StatsContext, route?: string): EvidenceCoverage {
   const mine = played.filter((p) => !route || p.summary.route === route);
-  const reasons = new Map<EvidenceCoverage['top_reasons'][number]['reason'], number>();
+  const reasons = new Map<CoverageReason, number>();
   let assessed = 0;
   for (const p of mine) {
-    const g = p.decision ? Object.values(p.decision.evaluators).find((e) => e.ref.startsWith('groundedness@')) : undefined;
-    if (g?.status === 'assessed') {
+    if (checkedGroundedness(p)) {
       assessed += 1;
       continue;
     }
-    const why = g?.reason === 'evidence_too_short' || g?.reason === 'evidence_packed_away' || g?.reason === 'too_long' ? g.reason : 'no_evidence';
-    reasons.set(why, (reasons.get(why) ?? 0) + 1);
+    const why = coverageReason(p);
+    if (why !== null) reasons.set(why, (reasons.get(why) ?? 0) + 1);
   }
   const summaries = mine.map((p) => p.summary);
   return {
@@ -465,6 +509,9 @@ export function evidenceCoverage(played: readonly PlayedTrace[], ctx: StatsConte
     by_source: Object.fromEntries(
       SOURCES.map((s) => [s, summaries.filter((t) => (t.checked_against?.used ?? []).some((u) => u.source === s && u.items > 0)).length]),
     ) as Record<EvidenceSource, number>,
-    top_reasons: [...reasons.entries()].map(([reason, count]) => ({ reason, count })),
+    // Most frequent first; ties keep the gateway's order.
+    top_reasons: COVERAGE_REASONS.filter((r) => reasons.has(r))
+      .map((reason) => ({ reason, count: reasons.get(reason) ?? 0 }))
+      .sort((a, b) => b.count - a.count),
   };
 }

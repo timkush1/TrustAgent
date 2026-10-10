@@ -1,10 +1,15 @@
 import { fileURLToPath } from 'node:url'
-import { searchForWorkspaceRoot } from 'vite'
+import { loadEnv, searchForWorkspaceRoot } from 'vite'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
-import { copyModules, scenarioModules, sitePages, type AppMode } from './vite.site.ts'
+import { copyModules, moduleMap, scenarioModules, secretEnvNames, sitePages, type AppMode } from './vite.site.ts'
+import { datasetPlugin } from './vite/plugins/dataset.ts'
+import { digestPlugin } from './vite/plugins/digest.ts'
+import { landingDataPlugin } from './vite/plugins/landingData.ts'
+import { ogMetaPlugin } from './vite/plugins/ogMeta.ts'
+import { policyPlugin } from './vite/plugins/policy.ts'
 
 const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
@@ -12,6 +17,8 @@ const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 // (docs/v2/SPEC.md §2.13, §3.3).
 const contractsDir = fromHere('../contracts')
 const benchDir = fromHere('../docs/benchmarks')
+const repoDir = fromHere('..')
+const webDir = fromHere('.')
 
 // The proxy the dev server forwards to: the local stack's published proxy port
 // (PROXY_HOST_PORT, contracts/config/keys.v1.json; default 8080).
@@ -23,7 +30,20 @@ export default defineConfig(({ mode, isPreview }) => {
   // `vite build --mode static` (npm run build:static) implies it; an explicit env var wins. Setting
   // it here, before Vite reads the environment, also exposes it as import.meta.env.VITE_APP_MODE.
   if (mode === 'static' && !process.env.VITE_APP_MODE) process.env.VITE_APP_MODE = 'static'
+  // `vite build --mode launch` (npm run og, hero, screenshots; D115): the static site plus the
+  // launch-only /og route. Never published (pages-build runs build:static).
+  if (mode === 'launch') {
+    process.env.VITE_APP_MODE ||= 'static'
+    process.env.VITE_LAUNCH_ROUTES ||= '1'
+  }
   const appMode: AppMode = process.env.VITE_APP_MODE === 'static' ? 'static' : 'full'
+
+  // D137: every VITE_* value is inlined into the public bundle, so no VITE_* name may look like a
+  // secret (process environment and .env files alike).
+  const secretNames = secretEnvNames(Object.keys(loadEnv(mode, webDir, 'VITE_')))
+  if (secretNames.length > 0) {
+    throw new Error(`VITE_* names that look like secrets would be inlined into the public bundle: ${secretNames.join(', ')} (D137)`)
+  }
 
   return {
     // VITE_BASE_PATH: "/" for the dashboard image, "/TrustAgent/" for GitHub Pages (the static default).
@@ -38,6 +58,13 @@ export default defineConfig(({ mode, isPreview }) => {
       tailwindcss(),
       scenarioModules(contractsDir),
       copyModules(contractsDir),
+      // Build-time data the browser reads as modules (owners: plan §15).
+      policyPlugin(repoDir),
+      datasetPlugin(webDir),
+      digestPlugin(),
+      landingDataPlugin(contractsDir),
+      ogMetaPlugin(),
+      moduleMap(),
       ...sitePages(appMode),
     ],
     build: {

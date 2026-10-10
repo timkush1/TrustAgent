@@ -31,9 +31,11 @@ describe('compareVector', () => {
 });
 
 describe('vector kinds', () => {
-  it('fails an unknown kind and a skipped kind', () => {
+  it('fails an unknown kind, every skipped kind and an input its runner refuses', () => {
     expect(() => runVectorKind('nonsense', {})).toThrow(/unknown vector kind/);
-    expect(() => runVectorKind('cost', {})).toThrow(/no TS runner/);
+    const skipped = Object.keys(KINDS).filter((kind) => KINDS[kind].run === undefined);
+    for (const kind of skipped) expect(() => runVectorKind(kind, {})).toThrow(/no TS runner/);
+    expect(() => runVectorKind('cost', {})).toThrow(/cost vector fn "" is not one of/);
   });
 
   it('has a runner or a skip reason for every kind of vector.v1', () => {

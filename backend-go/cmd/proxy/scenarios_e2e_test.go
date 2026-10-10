@@ -10,24 +10,33 @@ package main
 //     mock-upstream's /v1/systemone and the LLM upstream on mock-upstream too, so every answer
 //     takes the upstream path (trafficgen --upstream all), --scenarios e2e.
 //
-// trafficgen's default phase is p3, the phase this build implements, so both sets are sent whole:
+// trafficgen's default phase reaches every phase tag the sets carry, so both sets are sent whole:
 // streams, /v1/messages and /v1/completions, and the block and fallback routes. A phase skip would
-// fail --expect (D18), and runScenarios also pins how many scenarios each set sends.
+// fail --expect (D18), and runScenarios also pins how many scenarios each set sends. Both runs also
+// check the answer source each trace stored (D121): scripted in the demo stack; in the e2e stack
+// generated for the generated pair, whose stand-in answers mock-upstream serves, and live for the
+// rest.
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/truthtable/contracts"
 
 	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"github.com/truthtable/backend-go/cmd/mock-upstream/mockupstream"
@@ -77,10 +86,17 @@ func scoredVerdict(verdicts []string, confidences []float64, hallucinationPolicy
 // judgedEngine is a fake audit engine that answers like the engine with the mock judge
 // (LLM_PROVIDER=mock): without evidence the preflight answers NOT_ASSESSED (no_evidence) and no
 // judge is called; with evidence, the scenario's judge claims (only for the scenario's own answer,
-// as the mock judge decomposes nothing else) with the verdict scoring v2 gives them.
+// as the mock judge decomposes nothing else) with the verdict scoring v2 gives them. It knows the
+// judges of both packs, the main pack and the vendor-fault pack.
 func judgedEngine(t testing.TB) *enginetest.Engine {
+	return enginetest.Start(t, &enginetest.Engine{EvaluateFunc: judgedAudit(t)})
+}
+
+// judgedAudit is judgedEngine's Evaluate.
+func judgedAudit(t testing.TB) func(context.Context, *pb.AuditRequest) (*pb.AuditResult, error) {
 	scenarios := loadDemoScenarios(t)
-	return enginetest.Start(t, &enginetest.Engine{EvaluateFunc: func(_ context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
+	maps.Copy(scenarios, loadFaultScenarios(t))
+	return func(_ context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
 		res := &pb.AuditResult{AuditId: req.GetAuditId(), TraceId: req.GetTraceId(), RequestId: req.GetRequestId(), ScoringVersion: "v2",
 			ProcessingTimeMs: 3, StepTimings: map[string]int64{"total_ms": 3}, Status: pb.AuditStatus_AUDIT_STATUS_COMPLETED}
 		if len(req.GetContext()) == 0 {
@@ -116,7 +132,7 @@ func judgedEngine(t testing.TB) *enginetest.Engine {
 			res.FaithfulnessScore = score
 		}
 		return res, nil
-	}})
+	}
 }
 
 // newScenarioEnv starts the gateway as the tests' default stack, adjusted by tune, with the
@@ -124,17 +140,26 @@ func judgedEngine(t testing.TB) *enginetest.Engine {
 // batched writer fronts the store as main wires it, and its flush runs after the server's drain.
 func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 	t.Helper()
+	return newScenarioEnvWith(t, tune, judgedEngine(t))
+}
+
+// newScenarioEnvWith is newScenarioEnv with eng as the audit engine; nil runs the gateway with no
+// engine configured (TRUTHTABLE_GRPC_ADDRESS empty), so deep audits are dropped.
+func newScenarioEnvWith(t *testing.T, tune func(*config.Config), eng *enginetest.Engine) *testEnv {
+	t.Helper()
 	cfg := testConfig(t, envOpts{})
 	cfg.TraceFlush = traceFlushSync
 	if tune != nil {
 		tune(cfg)
 	}
-	eng := judgedEngine(t)
-	client, err := grpc.NewAuditClient(eng.Target, 5*time.Second, "", eng.Dialer)
-	if err != nil {
-		t.Fatal(err)
+	var client *grpc.AuditClient
+	if eng != nil {
+		var err error
+		if client, err = grpc.NewAuditClient(eng.Target, 5*time.Second, "", eng.Dialer); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = client.Close() })
 	}
-	t.Cleanup(func() { _ = client.Close() })
 	st, flushTraces := wrapTraceWriter(cfg, newMemStore(), slog.New(slog.DiscardHandler))
 	cfg.DatabaseURL = "postgres://configured-for-status"
 	srv, err := newServer(serverDeps{cfg: cfg, engine: client, store: st, log: slog.New(slog.DiscardHandler)})
@@ -157,7 +182,7 @@ func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 
 // setSizes is how many scenarios each set sends, and how many of them need phase p3: this build
 // serves every one of them.
-var setSizes = map[string]struct{ all, p3 int }{"demo": {26, 6}, "e2e": {23, 5}}
+var setSizes = map[string]struct{ all, p3 int }{"demo": {27, 7}, "e2e": {26, 6}}
 
 // runScenarios runs trafficgen --once --expect with args against env, and checks that it sends
 // every scenario of set, skips none and that each passes.
@@ -318,12 +343,126 @@ func TestV1ErrorShapesOnTheServer(t *testing.T) {
 func TestDemoScenariosEndToEnd(t *testing.T) {
 	for _, flush := range traceFlushModes {
 		t.Run("TRACE_FLUSH="+flush, func(t *testing.T) {
-			runScenarios(t, newScenarioEnv(t, func(cfg *config.Config) {
+			env := newScenarioEnv(t, func(cfg *config.Config) {
 				cfg.CalibrationDir = config.RepoPath("config/calibration")
 				cfg.TraceFlush = flush
-			}), "demo")
+			})
+			ids := filepath.Join(t.TempDir(), "trace-ids.txt")
+			out := runScenarios(t, env, "demo", "--trace-ids-out", ids)
+			checkAnswerSources(t, env, out, ids, func(string) string { return "scripted" })
 		})
 	}
+}
+
+// TestRecordRefusesTheTestStacksFromTheirStatus: trafficgen --record reads the gateway's own GET
+// /api/status (D121), so its reading of that body is checked here against the real handler, not a
+// stub: both test stacks are refused before anything is sent, the demo stack for its mock
+// decision model and the e2e stack for its decision model on mock-upstream, a local endpoint the
+// gateway forwards each scenario id to (D119). No trace is started and no --trace-ids-out file is
+// written.
+func TestRecordRefusesTheTestStacksFromTheirStatus(t *testing.T) {
+	mu, err := mockupstream.New(mockupstream.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(mu)
+	t.Cleanup(upstream.Close)
+	for _, c := range []struct {
+		name string
+		tune func(*config.Config)
+		want string
+	}{
+		{"demo", nil, "the decision model is mock"},
+		{"e2e", func(cfg *config.Config) {
+			cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
+			cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
+			cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL
+		}, "answers from the local endpoint 127.0.0.1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			env := newScenarioEnv(t, c.tune)
+			ids := filepath.Join(t.TempDir(), "trace-ids.txt")
+			cmd := exec.Command(buildTrafficgen(t), "--record", "--scenarios", "s0", "--base-url", env.http.URL, "--trace-ids-out", ids)
+			cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
+			b, err := cmd.CombinedOutput()
+			out := string(b)
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 2 || !strings.Contains(out, "trafficgen: --record refused: ") ||
+				!strings.Contains(out, c.want) {
+				t.Fatalf("want a refusal naming %q (exit 2): %v\n%s", c.want, err, out)
+			}
+			m := env.store.(*memStore)
+			m.mu.Lock()
+			stored := len(m.traces)
+			m.mu.Unlock()
+			if stored != 0 {
+				t.Errorf("%d traces stored after a refusal", stored)
+			}
+			if _, err := os.Stat(ids); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("--trace-ids-out was written after a refusal: %v", err)
+			}
+		})
+	}
+}
+
+// okLine is trafficgen's line for a scenario that passed: its id and its trace id.
+var okLine = regexp.MustCompile(`(?m)^ok   (\S+) \(trace (\S+), `)
+
+// checkAnswerSources checks the answer_source the gateway stored for every scenario of a trafficgen
+// run (out), read back through GET /api/traces/:id, against want(scenario id); and that
+// --trace-ids-out (ids) listed exactly the run's traces, in send order.
+func checkAnswerSources(t *testing.T, env *testEnv, out, ids string, want func(id string) string) {
+	t.Helper()
+	b, err := os.ReadFile(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent []string
+	for _, m := range okLine.FindAllStringSubmatch(out, -1) {
+		sent = append(sent, m[2])
+		code, body := env.get("/api/traces/"+m[2], testKey)
+		var d struct {
+			AnswerSource *string `json:"answer_source"`
+		}
+		if code != http.StatusOK || json.Unmarshal(body, &d) != nil || d.AnswerSource == nil {
+			t.Errorf("%s: GET /api/traces/%s: %d %s", m[1], m[2], code, body)
+			continue
+		}
+		if *d.AnswerSource != want(m[1]) {
+			t.Errorf("%s: answer_source %q, want %q", m[1], *d.AnswerSource, want(m[1]))
+		}
+	}
+	if len(sent) == 0 || string(b) != strings.Join(sent, "\n")+"\n" {
+		t.Errorf("--trace-ids-out holds %q, want the %d traces of the run in send order", b, len(sent))
+	}
+}
+
+// generatedScenarios are the ids of the pack's scenarios whose answer_source is generated.
+func generatedScenarios(t *testing.T) map[string]bool {
+	t.Helper()
+	b, err := contracts.FS.ReadFile("demo/scenarios.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack struct {
+		Scenarios []struct {
+			ID           string `json:"id"`
+			AnswerSource string `json:"answer_source"`
+		} `json:"scenarios"`
+	}
+	if err := json.Unmarshal(b, &pack); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, s := range pack.Scenarios {
+		if s.AnswerSource == "generated" {
+			out[s.ID] = true
+		}
+	}
+	if len(out) != 2 {
+		t.Fatalf("%d generated scenarios, want the pair", len(out))
+	}
+	return out
 }
 
 // traceFlushModes are the TRUTHTABLE_TRACE_FLUSH values the scenario sets run under.
@@ -353,7 +492,15 @@ func e2eScenariosAgainstMockUpstream(t *testing.T, flush string) {
 		cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL // as docker-compose.e2e.yml
 		cfg.TraceFlush = flush
 	})
-	runScenarios(t, env, "e2e", "--upstream", "all")
+	ids := filepath.Join(t.TempDir(), "trace-ids.txt")
+	out := runScenarios(t, env, "e2e", "--upstream", "all", "--trace-ids-out", ids)
+	generated := generatedScenarios(t)
+	checkAnswerSources(t, env, out, ids, func(id string) string {
+		if generated[id] {
+			return "generated"
+		}
+		return "live"
+	})
 
 	// What reached the vendors: every answer through the upstream path, with no test_response, no
 	// X-TrustAgent-* header and no trustagent extension; the decisions over HTTP with the scenario.

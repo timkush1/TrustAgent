@@ -18,6 +18,7 @@ import {
   type TooltipContentProps,
 } from 'recharts';
 import { formatCount } from '@/domain/format';
+import { axisTicks } from './timeTicks';
 import { outcomeView, type OutcomeId } from '@/domain/presentation';
 import { ChartFrame } from './ChartFrame';
 import { ChartTable, ChartTooltipBox } from './ChartParts';
@@ -90,6 +91,8 @@ export function OutcomeTimeSeries({
     [buckets, series, formatBucket],
   );
 
+  const ticks = useMemo(() => axisTicks(data.map((d) => d.t)), [data]);
+  const labelOf = useMemo(() => new Map(data.map((d) => [d.t, d.label])), [data]);
   const ids = series.map((s) => s.id);
   const grandTotal = data.reduce((sum, d) => sum + d.total, 0);
   const peak = data.reduce<Datum | null>((best, d) => (best === null || d.total > best.total ? d : best), null);
@@ -106,7 +109,7 @@ export function OutcomeTimeSeries({
       const v = datum[s.id] ?? 0;
       return { key: s.id, label: s.label, value: formatCount(v), color: s.color, muted: v === 0 };
     });
-    return <ChartTooltipBox title={label} rows={rows} footer={`${formatCount(datum.total)} total`} />;
+    return <ChartTooltipBox title={datum.label ?? label} rows={rows} footer={`${formatCount(datum.total)} total`} />;
   };
 
   const table = (
@@ -141,12 +144,13 @@ export function OutcomeTimeSeries({
         <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="20%" title={title} aria-describedby={summaryId}>
           <CartesianGrid vertical={false} stroke={gridStroke} />
           <XAxis
-            dataKey="label"
+            dataKey="t"
             tickLine={false}
             axisLine={{ stroke: 'var(--border-strong)' }}
             tick={axisTick}
-            interval="preserveStartEnd"
-            minTickGap={16}
+            ticks={ticks}
+            interval={0}
+            tickFormatter={(t: string) => labelOf.get(t) ?? t}
           />
           <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={axisTick} tickFormatter={(v: number) => formatCount(v)} width={40} />
           <Tooltip cursor={{ fill: 'var(--surface-hover)' }} content={renderTooltip} isAnimationActive={false} />

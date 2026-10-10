@@ -10,8 +10,8 @@ name: CI (E2E)
 # OpenRouter on mock-upstream, the wizard); compose logs are uploaded on
 # failure. The scripts job lints and unit-tests the setup scripts the suite
 # relies on, validates every compose profile and runs the gateway's
-# -check-config against the onboarding stack's environment. No path filters on
-# purpose: a required check that never reports would block merges.
+# -check-config against the onboarding and record stacks' environments. No path
+# filters on purpose: a required check that never reports would block merges.
 
 on:
   push:
@@ -23,8 +23,7 @@ concurrency:
   group: ci-e2e-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
 
 env:
   NO_COLOR: '1'
@@ -34,10 +33,14 @@ jobs:
     name: DX scripts
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
 
@@ -62,13 +65,13 @@ jobs:
       # key (D70): run the gateway's -check-config on the host with the environment compose
       # gives its proxy, so a refusal shows here with its warnings instead of as an unhealthy
       # container in the E2E job. Same Go and stub setup as ci-go.yml.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: backend-go/go.mod
           cache-dependency-path: backend-go/go.sum
 
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -78,12 +81,24 @@ jobs:
       - name: Onboarding stack configuration (proxy -check-config, strict, no key)
         run: make onboarding-check-config
 
+      # The record stack (docker-compose.record.yml, D123): test mode with real backends under
+      # strict configuration, proved with fake keys; nothing is started and nothing is called.
+      - name: Record stack configuration (proxy -check-config, test mode, fake keys)
+        run: make record-check-config
+
+      - name: Workflow lint (actionlint, zizmor)
+        run: make lint-workflows
+
   e2e:
     name: E2E (compose stack)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # docker-compose.yml tags the app images with TRUSTAGENT_VERSION and builds
       # them with GIT_SHA (make exports both the same way: the contents of VERSION
@@ -93,13 +108,13 @@ jobs:
           echo "TRUSTAGENT_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
           echo "GIT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Build the three images with the tags and build args docker-compose.yml
       # uses, into the runner's docker, with a GitHub Actions layer cache; make
       # demo then starts them without rebuilding (DEMO_BUILD=).
       - name: Build proxy image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: backend-go/Dockerfile
@@ -112,7 +127,7 @@ jobs:
           cache-to: type=gha,scope=proxy,mode=max
 
       - name: Build engine image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: backend-python/Dockerfile
@@ -125,7 +140,7 @@ jobs:
           cache-to: type=gha,scope=engine,mode=max
 
       - name: Build dashboard image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: frontend-react/Dockerfile
@@ -161,10 +176,10 @@ jobs:
       - name: Doctor (--expect demo)
         run: python3 scripts/doctor.py --target docker --expect demo
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
-          cache: npm
+          cache: npm # zizmor: ignore[cache-poisoning] this workflow publishes nothing (images are loaded, never pushed)
           cache-dependency-path: frontend-react/package-lock.json
 
       - name: Install dashboard dependencies
@@ -210,8 +225,10 @@ jobs:
 
       # Real HTTP paths: the compatible fast-check backend and both LLM upstreams
       # on mock-upstream, traces written synchronously (docker-compose.e2e.yml).
-      - name: E2E stack and its p3 scenarios
-        run: make e2e-up E2E_BUILD= && make e2e-scenarios E2E_PHASE=p3 && make e2e-down
+      # The scenarios run at trafficgen's default phase (p5); the vendor-fault pack follows them,
+      # since its last scenario (F8, credits) leaves the decision model in its auth cooldown.
+      - name: E2E stack, its scenarios and the vendor faults
+        run: make e2e-up E2E_BUILD= && make e2e-scenarios && make e2e-faults && make e2e-down
 
       # A fresh install (docker-compose.onboarding.yml): no admin key and no
       # fast-check key. The onboarding spec claims the one-time setup link,
@@ -254,7 +271,7 @@ jobs:
 
       - name: Upload logs
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

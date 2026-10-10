@@ -2420,7 +2420,7 @@
       "advanced": true,
       "restart": true,
       "group": "deploy",
-      "description": "Replay dataset of the static build."
+      "description": "Replay dataset of the static build: mock is the simulated tape (frontend-react/demo-data/simulated), recorded a real export from make record-demo (demo-data/recorded; the build fails without it), auto the recorded one when it exists, else the simulated one. The build copies only that directory to demo/."
     },
     {
       "name": "VITE_REPLAY_SPEED",
@@ -2496,6 +2496,30 @@
       "restart": true,
       "group": "deploy",
       "description": "Repository link."
+    },
+    {
+      "name": "VITE_SITE_URL",
+      "aliases": [],
+      "services": ["build"],
+      "kind": "url",
+      "default": "https://timkush1.github.io/TrustAgent/",
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Absolute URL of the published static site, used only for the canonical link and the absolute og:* URLs; requests never use it."
+    },
+    {
+      "name": "VITE_LAUNCH_ROUTES",
+      "aliases": [],
+      "services": ["build"],
+      "kind": "bool",
+      "default": "false",
+      "secret": false,
+      "advanced": true,
+      "restart": true,
+      "group": "deploy",
+      "description": "Build the launch-only routes (the /og social card page). Only npm run og sets it; a published build never does."
     }
   ]
 }

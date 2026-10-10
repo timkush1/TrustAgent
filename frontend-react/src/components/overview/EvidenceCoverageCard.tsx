@@ -9,12 +9,14 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronDown, FileSearch } from 'lucide-react';
+import { ChevronDown, FilePlus2, FileSearch } from 'lucide-react';
 import { lazy, Suspense, useId, useState } from 'react';
 import { useDataSource } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { CopyButton } from '@/components/common/CopyButton';
 import { DegradedState } from '@/components/common/DegradedState';
+import { DisabledAction } from '@/components/common/DisabledReason';
+import { useStaticReason } from '@/components/common/useWriteAccess';
 import { Term } from '@/components/common/Term';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -75,6 +77,7 @@ function Gaps({ summary }: { summary: CoverageSummary }) {
 }
 
 function SuggestionItem({ s }: { s: EvidenceSuggestion }) {
+  const staticReason = useStaticReason();
   return (
     <li className="space-y-1.5 rounded-md border border-border px-3 py-2">
       <p className="text-sm font-medium text-fg">{s.label}</p>
@@ -91,9 +94,21 @@ function SuggestionItem({ s }: { s: EvidenceSuggestion }) {
         </div>
       ) : null}
       {s.pattern && s.kind === 'tag_pattern' ? (
-        <Suspense fallback={<Skeleton className="h-8 w-48" />}>
-          <AddTagPatternAction pattern={s.pattern} />
-        </Suspense>
+        staticReason ? (
+          // The static site has no policy to add it to: the step stays in view and says why.
+          <DisabledAction reason={staticReason}>
+            {(p) => (
+              <Button size="sm" {...p}>
+                <FilePlus2 aria-hidden="true" />
+                Add to a route…
+              </Button>
+            )}
+          </DisabledAction>
+        ) : (
+          <Suspense fallback={<Skeleton className="h-8 w-48" />}>
+            <AddTagPatternAction pattern={s.pattern} />
+          </Suspense>
+        )
       ) : null}
       {s.example_trace_id ? (
         <p className="text-xs">

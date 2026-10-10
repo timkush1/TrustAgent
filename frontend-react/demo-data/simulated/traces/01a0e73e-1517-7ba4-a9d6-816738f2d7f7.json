@@ -1,0 +1,257 @@
+{
+  "trace_id": "01a0e73e-1517-7ba4-a9d6-816738f2d7f7",
+  "client_request_id": null,
+  "created_at": "2026-09-28T09:00:00.663Z",
+  "updated_at": "2026-09-28T09:00:00.881Z",
+  "source": "trafficgen",
+  "api_format": "openai_chat",
+  "route": "support-bot",
+  "policy_version": 1,
+  "mode": "flag",
+  "effective_mode": "flag",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "scripted",
+  "action": "pass",
+  "would_action": "pass",
+  "gate_status": "not_assessed",
+  "skip_reason": null,
+  "verdict": "not_assessed",
+  "max_risk": null,
+  "reasons": [],
+  "checked_against": {
+    "configured": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "used": [],
+    "empty": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 0
+  },
+  "timings": {
+    "upstream_ms": 214,
+    "ttft_ms": null,
+    "gate_ms": 1,
+    "overhead_ms": 4,
+    "total_ms": 218
+  },
+  "decision_model": null,
+  "audit": {
+    "audit_id": null,
+    "status": "not_assessed",
+    "lane": null,
+    "selection": null,
+    "verdict": "NOT_ASSESSED",
+    "trust_score": null,
+    "grade": null,
+    "verdict_counts": null
+  },
+  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+  "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+  "redacted": false,
+  "flags": [
+    "test_mode"
+  ],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme support assistant. Answer billing questions briefly and politely."
+      },
+      {
+        "role": "user",
+        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+      }
+    ],
+    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "system_instructions": "You are the Acme support assistant. Answer billing questions briefly and politely.",
+    "response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+    "final_response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+    "evidence": [],
+    "rules": {},
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e73e-1517-7ba4-a9d6-816738f2d7f7",
+      "attempt": 0,
+      "created_at": "2026-09-28T09:00:00.878Z",
+      "route": "support-bot",
+      "policy_version": 1,
+      "mode": "flag",
+      "fail": "open",
+      "status": "not_assessed",
+      "skip_reason": null,
+      "effective_mode": "flag",
+      "action": "pass",
+      "would_action": "pass",
+      "enforced": true,
+      "verdict": "not_assessed",
+      "max_risk": null,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "none",
+      "reasons": [],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "not_assessed",
+          "reason": "no_evidence",
+          "type": "noul",
+          "answer": null,
+          "probabilities": null,
+          "risk_raw": null,
+          "risk": null,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": null,
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.8,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "not_assessed",
+          "reason": "no_evidence",
+          "type": "noul",
+          "answer": null,
+          "probabilities": null,
+          "risk_raw": null,
+          "risk": null,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": null,
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.7,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "dates_not_in_evidence",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "urls_not_in_evidence",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "quotes_not_in_evidence",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "citation_out_of_range",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "secret_pattern",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "system_prompt_leak",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        }
+      ],
+      "excluded": [
+        {
+          "ref": "groundedness@1",
+          "reason": "no_evidence"
+        },
+        {
+          "ref": "contradiction@1",
+          "reason": "no_evidence"
+        }
+      ],
+      "decision_model": null,
+      "compile": {
+        "cpt": 4,
+        "requests": 0,
+        "question_set_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "request_sha256": [],
+        "packed_evidence_ids": [],
+        "truncated_ids": [],
+        "est_tokens": []
+      },
+      "evidence_summary": {
+        "configured": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "used": [],
+        "empty": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 0
+      },
+      "late": false,
+      "gate_ms": 1
+    }
+  ],
+  "audit_detail": null,
+  "labels": []
+}

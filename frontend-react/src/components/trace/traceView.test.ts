@@ -7,6 +7,7 @@ import {
   answerDecision,
   buildTraceView,
   checkRows,
+  claimEvidence,
   claimsSummary,
   decisionAttempts,
   deliveredOf,
@@ -181,5 +182,17 @@ describe('what the user received', () => {
   it('says why a fallback check did not rate the answer', () => {
     expect(fallbackCheckResult(decision({ attempt: 1, status: 'timeout' }))).toBe('the check timed out');
     expect(fallbackCheckResult(null)).toBeNull();
+  });
+
+  it('lists the document lines a claim was judged against, located spans first', () => {
+    const span = { doc_index: 0, doc_id: 'refund-policy.md', start: 0, end: 56, text: 'Annual plans can be refunded within 30 days of purchase.', kind: 'quote_verified' as const };
+    expect(claimEvidence({ evidence: ['ignored when spans exist'], evidence_spans: [span, { ...span }] })).toEqual([
+      { doc: 'refund-policy.md', text: 'Annual plans can be refunded within 30 days of purchase.' },
+    ]);
+    expect(claimEvidence({ evidence: [' a ', '', 'b', 'c'], evidence_spans: [] })).toEqual([
+      { doc: null, text: 'a' },
+      { doc: null, text: 'b' },
+    ]);
+    expect(claimEvidence({ evidence: [], evidence_spans: [{ ...span, doc_id: '', text: ' ' }] })).toEqual([]);
   });
 });

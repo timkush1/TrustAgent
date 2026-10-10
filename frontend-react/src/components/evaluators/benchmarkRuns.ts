@@ -1,10 +1,12 @@
 /**
- * The committed benchmark runs (docs/benchmarks/runs/*.json, SPEC §2.13), bundled at build time so
- * the static build has them too (D72).
+ * The committed benchmark runs (docs/benchmarks/results/<run_id>.json, SPEC §2.13, D111), bundled
+ * at build time. Any run that is not measured is left out. The
+ * static build hides the Benchmarks page (D111, SPEC Appendix G); load runs
+ * (docs/benchmarks/load/) are never read here.
  */
 import type { BenchmarkRun } from '@/types/api';
 
-const files = import.meta.glob<BenchmarkRun>('@bench/runs/*.json', { eager: true, import: 'default' });
+const files = import.meta.glob<BenchmarkRun>('@bench/results/*.json', { eager: true, import: 'default' });
 
 /** Committed runs that are measured (never mock output), newest first. */
 export function committedRuns(all: readonly unknown[] = Object.values(files)): BenchmarkRun[] {

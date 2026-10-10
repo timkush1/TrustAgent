@@ -79,6 +79,11 @@
       "description": "Run the small launch benchmark and record measured results."
     },
     {
+      "id": "compose_up",
+      "command": "python3 scripts/configure.py --ensure && docker compose up -d --wait",
+      "description": "Start the stack without make: write a .env with fresh secrets if there is none, then start every default service and wait until it is healthy."
+    },
+    {
       "id": "contracts_check",
       "command": "make contracts-check",
       "description": "Validate every contract file against its schema."

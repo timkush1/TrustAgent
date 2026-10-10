@@ -1,0 +1,35 @@
+{
+  "prompt": "evaluator-drafter.v1",
+  "case": "repair",
+  "input": {
+    "turn": "repair",
+    "errors": [
+      "question.text: error 1 of the previous draft",
+      "question.text: error 2 of the previous draft",
+      "question.text: error 3 of the previous draft",
+      "question.text: error 4 of the previous draft",
+      "question.text: error 5 of the previous draft",
+      "question.text: error 6 of the previous draft",
+      "question.text: error 7 of the previous draft",
+      "question.text: error 8 of the previous draft",
+      "question.text: error 9 of the previous draft",
+      "question.text: error 10 of the previous draft",
+      "question.text: error 11 of the previous draft",
+      "question.text: error 12 of the previous draft",
+      "question.text: error 13 of the previous draft",
+      "question.text: error 14 of the previous draft",
+      "question.text: error 15 of the previous draft",
+      "question.text: error 16 of the previous draft",
+      "question.text: error 17 of the previous draft",
+      "question.text: error 18 of the previous draft",
+      "question.text: error 19 of the previous draft",
+      "question.text: error 20 of the previous draft",
+      "question.text: error 21 of the previous draft",
+      "question.text: error 22 of the previous draft",
+      "question.text: error 23 of the previous draft"
+    ]
+  },
+  "rendered": {
+    "user": "That JSON failed validation:\nquestion.text: error 1 of the previous draft\nquestion.text: error 2 of the previous draft\nquestion.text: error 3 of the previous draft\nquestion.text: error 4 of the previous draft\nquestion.text: error 5 of the previous draft\nquestion.text: error 6 of the previous draft\nquestion.text: error 7 of the previous draft\nquestion.text: error 8 of the previous draft\nquestion.text: error 9 of the previous draft\nquestion.text: error 10 of the previous draft\nquestion.text: error 11 of the previous draft\nquestion.text: error 12 of the previous draft\nquestion.text: error 13 of the previous draft\nquestion.text: error 14 of the previous draft\nquestion.text: error 15 of the previous draft\nquestion.text: error 16 of the previous draft\nquestion.text: error 17 of the previous draft\nquestion.text: error 18 of the previous draft\nquestion.text: error 19 of the previous draft\nquestion.text: error 20 of the previous draft\n... and 3 more\nFix every problem listed and keep everything else as it was. Reply with the complete corrected JSON object on a single line and nothing else."
+  }
+}

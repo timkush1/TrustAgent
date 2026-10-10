@@ -10,9 +10,16 @@
 // Faults are keyed per request (SPEC §3.1): hang, html200, 402_inflight, 402_credits, 429, 529,
 // 413 and more (see Faults). A fault comes from, in order: the X-Mock-Fault header, the fault
 // query parameter, a /fault/<spec>/ path prefix, a scenario id of the form fault:<spec> (or a bare
-// fault name), or Config.Fault. A spec "<name>@<n>" applies to the first n matching requests of
-// one call (keyed by X-Mock-Key, else the decision session_id, else globally) and then clears, so
-// retries and hedges can be exercised.
+// fault name), the mock_faults of the request's scenario, or Config.Fault. A spec "<name>@<n>"
+// applies to the first n matching requests of one call (keyed by X-Mock-Key, which the gateway
+// sets to the trace id, else the decision session_id, else globally) and then clears, so retries
+// and hedges can be exercised.
+//
+// The scenarios are the demo pack and the faults pack (contracts/demo/faults.v1.json, D119). A
+// faults-pack scenario's mock_faults.decision faults the decision requests that name it (the
+// gateway forwards X-TrustAgent-Scenario to a local decision backend in test mode), and its
+// mock_faults.upstream faults the LLM request of its conversation, counted per scenario (an LLM
+// request carries no X-Mock-Key); the gateway's fallback request is never faulted.
 //
 // Scenario ids come from X-Mock-Scenario, X-TrustAgent-Scenario or the scenario query parameter.
 // The gateway strips X-TrustAgent-* before it calls the LLM upstream, so LLM requests are matched
@@ -31,6 +38,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -46,6 +54,7 @@ import (
 // Config configures a Server.
 type Config struct {
 	// ScenariosPath is a trustagent.scenarios/v1 file; empty uses contracts/demo/scenarios.v1.json.
+	// The embedded faults pack (contracts/demo/faults.v1.json) is always served as well.
 	ScenariosPath string
 	// Latency delays the first byte of every LLM response; JevLatency every decision response.
 	Latency, JevLatency time.Duration
@@ -71,7 +80,7 @@ const maxFaultKeys = 100_000
 // Faults are the fault names a spec may use.
 var Faults = []string{
 	"hang", "html200", "402_inflight", "402_credits", "429", "529", "413",
-	"400", "400_context", "401", "403", "404", "404_data_policy", "422", "500", "502", "503", "524",
+	"400", "400_context", "401", "403", "403_moderation", "404", "404_data_policy", "422", "500", "502", "503", "524",
 	"bad_json", "no_answers", "slow",
 }
 
@@ -91,6 +100,9 @@ type Server struct {
 	counts   map[string]int
 	codes    map[string]issuedCode // PKCE code → its challenge and mock key marker
 	recorded []Recorded
+	// totals counts every API request since the last reset by "<METHOD> <path>", uncapped (the
+	// load test's mock_requests; recorded keeps only the last MaxRecorded).
+	totals   map[string]int
 	snapshot string
 }
 
@@ -134,7 +146,11 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mock-upstream: scenarios: %w", err)
 	}
-	scenarios, err := parseScenarios(b)
+	faults, err := contracts.FS.ReadFile("demo/faults.v1.json")
+	if err != nil {
+		return nil, fmt.Errorf("mock-upstream: faults pack: %w", err)
+	}
+	scenarios, err := parseScenarios(b, faults)
 	if err != nil {
 		return nil, fmt.Errorf("mock-upstream: scenarios: %w", err)
 	}
@@ -206,6 +222,12 @@ func (s *Server) record(r *http.Request, body []byte) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !strings.HasPrefix(r.URL.Path, "/_mock/") && r.URL.Path != "/healthz" {
+		if s.totals == nil {
+			s.totals = map[string]int{}
+		}
+		s.totals[r.Method+" "+r.URL.Path]++
+	}
 	s.recorded = append(s.recorded, Recorded{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Header: h, Body: string(body), At: time.Now()})
 	if n := len(s.recorded) - s.cfg.MaxRecorded; n > 0 {
 		s.recorded = slices.Delete(s.recorded, 0, n)
@@ -219,11 +241,19 @@ func (s *Server) Requests() []Recorded {
 	return slices.Clone(s.recorded)
 }
 
-// Reset clears recorded requests, fault counters and issued PKCE codes.
+// Totals returns how many API requests arrived since the last reset, by "<METHOD> <path>"
+// (health checks and /_mock/ calls not counted).
+func (s *Server) Totals() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.totals)
+}
+
+// Reset clears recorded requests, request totals, fault counters and issued PKCE codes.
 func (s *Server) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.recorded, s.counts, s.codes = nil, map[string]int{}, map[string]issuedCode{}
+	s.recorded, s.totals, s.counts, s.codes = nil, nil, map[string]int{}, map[string]issuedCode{}
 }
 
 // SetSnapshot changes the model id decision responses report ("" = derived from the request).
@@ -233,8 +263,14 @@ func (s *Server) SetSnapshot(snapshot string) {
 	s.mu.Unlock()
 }
 
+// handleRequests serves GET /_mock/requests: the last MaxRecorded requests, and the uncapped
+// totals since the last reset.
 func (s *Server) handleRequests(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"requests": s.Requests()})
+	totals := s.Totals()
+	if totals == nil {
+		totals = map[string]int{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": s.Requests(), "totals": totals})
 }
 
 func (s *Server) handleReset(w http.ResponseWriter, _ *http.Request) {
@@ -252,9 +288,10 @@ func scenarioID(r *http.Request) string {
 	return ""
 }
 
-// fault resolves the fault spec of a request and consumes one use of a counted spec. countKey
-// scopes counted specs to one call.
-func (s *Server) fault(r *http.Request, countKey string) string {
+// fault resolves the fault spec of a request and consumes one use of a counted spec. packSpec is
+// the mock_faults spec of the request's scenario ("" for none). countKey scopes counted specs to
+// one call; X-Mock-Key overrides it.
+func (s *Server) fault(r *http.Request, countKey, packSpec string) string {
 	spec := ""
 	for _, v := range []string{r.Header.Get("X-Mock-Fault"), r.URL.Query().Get("fault"), r.Header.Get("X-Mock-Path-Fault")} {
 		if v != "" {
@@ -269,6 +306,9 @@ func (s *Server) fault(r *http.Request, countKey string) string {
 		} else if name, _, err := parseFault(sc); err == nil && name != "" {
 			spec = sc
 		}
+	}
+	if spec == "" {
+		spec = packSpec
 	}
 	if spec == "" {
 		spec = s.cfg.Fault

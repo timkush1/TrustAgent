@@ -6,8 +6,9 @@
  * check of every attempt (attempt 1 is the fallback check) with its raw decision/v1 and "Show exact
  * Jev request", the glass box (JevRequestPanel, GET /api/traces/:id/decision-request).
  */
+import { useRouterState } from '@tanstack/react-router';
 import { ChevronRight } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { KeyValueList, type KeyValueItem } from '@/components/common/KeyValue';
 import { decisionHeaders, deferredHeaders } from '@/domain/decisionHeaders';
@@ -23,7 +24,7 @@ import {
 import type { AuditDetail, GateDecisionView, TraceSummary } from '@/types/api';
 import { TimingWaterfall } from './TimingWaterfall';
 import { JevRequestPanel } from './JevRequestPanel';
-import { attemptLabel, attemptSummary } from './traceView';
+import { attemptLabel, attemptSummary, TRACE_ANCHORS } from './traceView';
 import { useRouteHeaders } from './useRouteHeaders';
 import { waterfallRows } from './waterfall';
 
@@ -168,6 +169,19 @@ export function TraceFacts({
 }) {
   // What only Details needs (the route's headers setting) is read once it opens.
   const [open, setOpen] = useState(false);
+  // A link to the glass box (#jev-request, the replay's tour step 3) opens Details and the first
+  // attempt's "Show exact Jev request", and brings it into view.
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (hash !== TRACE_ANCHORS.jevRequest || !detailsRef.current) return;
+    detailsRef.current.open = true;
+    const panel = document.getElementById(TRACE_ANCHORS.jevRequest);
+    if (!(panel instanceof HTMLDetailsElement)) return;
+    panel.open = true;
+    panel.scrollIntoView?.({ block: 'start' });
+    panel.querySelector('summary')?.focus({ preventScroll: true });
+  }, [hash]);
   const t = summary.timings;
   const policy = summary.policy_version === null ? summary.route : `${summary.route} · policy version ${summary.policy_version}`;
   const ids: KeyValueItem[] = [
@@ -189,7 +203,7 @@ export function TraceFacts({
   const rows = waterfallRows({ timings: t, gateMs: decision?.gate_ms, deferred: deferredHeaders(summary, decision) });
   const flags = summary.flags ?? [];
   return (
-    <details className="group rounded-lg border border-border bg-surface" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details ref={detailsRef} className="group rounded-lg border border-border bg-surface" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-3 text-base font-semibold text-fg hover:bg-surface-hover [&::-webkit-details-marker]:hidden">
         <ChevronRight aria-hidden="true" className="size-4 shrink-0 transition-transform group-open:rotate-90" />
         <h2 className="text-base font-semibold">{copy.trace.details}</h2>

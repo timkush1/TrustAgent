@@ -57,7 +57,7 @@ func TestPricingOverridesFindings(t *testing.T) {
 			t.Errorf("finding %d = %+v, want %s %s warning=%v", i, g, w.path, w.code, w.warning)
 		}
 	}
-	if d := got[5].Details; d["contracts_per_mtok"] != 0.042 || d["ratio"] != 119.0 {
+	if d := got[5].Details; d["contracts_per_mtok"] != 0.042 || d["ratio"] != 119.0 || d["index"] != 5 {
 		t.Errorf("far-above details = %v", d)
 	}
 	if !strings.Contains(got[5].Message, "119×") || !strings.Contains(got[5].Message, "$0.042") {

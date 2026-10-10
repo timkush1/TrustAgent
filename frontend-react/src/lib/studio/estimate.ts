@@ -2,11 +2,13 @@
  * What a Studio action will cost, before it runs (SPEC §7.3: "Run" first shows the estimated cost;
  * "Draft with AI" shows "≈ $0.005" [E]). Every figure is labelled: an Estimate from the price table
  * (contracts/pricing/prices.v1.json, the same entries the gateway starts from), Simulated ($0) for
- * a mock model, or no figure at all when the model has no known price. The server's own numbers
- * replace these once a run reports them.
+ * a mock model, or no figure at all when the model has no known price. The lookup and the arithmetic
+ * are the TS cost core's (lib/decision/cost.ts, exact decimal like Go; D150), with whole token
+ * counts. The server's own numbers replace these once a run reports them.
  */
 import prices from '@contracts/pricing/prices.v1.json';
-import { DEFAULT_CPT, est, globMatch, OVERHEAD } from '@/lib/decision';
+import { DEFAULT_CPT, est, OVERHEAD } from '@/lib/decision';
+import { lookupPrice, tokenCostUSD } from '@/lib/decision/cost';
 import type { DecisionBackend, EvaluatorSpec, PriceEntry, StudioSample, ValueLabel } from '@/types/api';
 
 export interface CostEstimate {
@@ -31,14 +33,12 @@ const PROVIDERS: Partial<Record<DecisionBackend, string>> = {
 const ENTRIES = (prices as { entries: PriceEntry[] }).entries;
 
 /**
- * The price-table entry for a model (D53 without the server's overrides): an entry for the
- * model's provider first, then another provider's entry that names the model (a catch-all "*",
- * such as the local models' $0, applies only to its own provider).
+ * The price-table entry for a model (D53 without the server's overrides), by the TS cost core's
+ * lookup (cost.go LookupPrice, D150): an entry of the model's provider first, then another
+ * provider's entry that names the model; a local or mock catch-all "*" prices only its own provider.
  */
 export function priceEntryFor(model: string, provider: string | null): PriceEntry | null {
-  const bare = model.includes('/') ? model.slice(model.indexOf('/') + 1) : model;
-  const matches = (e: PriceEntry) => globMatch(e.match, model) || globMatch(e.match, bare);
-  return ENTRIES.find((e) => e.provider === provider && matches(e)) ?? ENTRIES.find((e) => e.match !== '*' && matches(e)) ?? null;
+  return lookupPrice(ENTRIES, provider ?? '', model);
 }
 
 const tokens = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
@@ -61,7 +61,7 @@ export function draftEstimate(judge: { provider: string | null; model: string | 
     return { usd: 0, label: 'estimate', basis: `A local model (${judge.model}): no API fee; compute is not priced.` };
   }
   return {
-    usd: (DRAFT_TOKENS.input * entry.input_per_mtok + DRAFT_TOKENS.output * entry.output_per_mtok) / 1e6,
+    usd: tokenCostUSD(DRAFT_TOKENS.input, DRAFT_TOKENS.output, entry.input_per_mtok, entry.output_per_mtok),
     label: 'estimate',
     basis: `One drafting call to ${judge.model}: about 1,500 prompt and 700 answer tokens at $${entry.input_per_mtok} and $${entry.output_per_mtok} per million (${entry.match}, price table).`,
   };
@@ -93,7 +93,7 @@ export function testEstimate(
   if (!entry) {
     return { usd: null, label: 'estimate', basis: `About ${tokens.format(total)} input tokens; the price of this fast-check model is not in the price table.` };
   }
-  const usd = (total * entry.input_per_mtok) / 1e6;
+  const usd = tokenCostUSD(total, 0, entry.input_per_mtok, entry.output_per_mtok);
   return {
     usd,
     label: 'estimate',

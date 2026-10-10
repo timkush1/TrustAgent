@@ -4,17 +4,18 @@
  * block ticks, or "Not checked — no documents". Shadow evaluators are labelled "Watching". A
  * decision that arrived after the deadline says so: it was recorded, never enforced. Each name
  * opens its evaluator; an assessed row of a check the route lists also offers "Adjust threshold" on
- * this request's route.
+ * this request's route. The static site has neither page, so there both open the check in Studio.
  */
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Clock, SlidersHorizontal } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import { useContext, type CSSProperties } from 'react';
+import { ServicesContext } from '@/app/services';
 import { RiskBar, RiskBarLegend } from '@/components/outcome/RiskBar';
 import { IconButton } from '@/components/ui/icon-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { copy, levelWord, statusReason, statusReasonKey, toneVar } from '@/domain/presentation';
 import { formatRisk } from '@/domain/format';
-import { evalRefId } from '@/domain/words/evaluators';
+import { evalRefId, evalRefVersion } from '@/domain/words/evaluators';
 import { cn } from '@/lib/cn';
 import type { GateDecisionView, TraceSummary } from '@/types/api';
 import { checkRows, type CheckRow } from './traceView';
@@ -22,13 +23,25 @@ import { checkRows, type CheckRow } from './traceView';
 function CheckItem({ row, route }: { row: CheckRow; route: string }) {
   const navigate = useNavigate();
   const level = row.kind === 'assessed' && row.level ? levelWord(row.level) : null;
+  // The static site has no evaluator or policy pages: a check opens in Studio as a copy, with the
+  // free threshold what-if, as the outcome card's link does.
+  // Read without requiring the services (the list also renders on its own, in tests).
+  const isStatic = useContext(ServicesContext)?.config.appMode === 'static';
+  const version = evalRefVersion(row.ref);
+  const studio = isStatic && version !== null ? { id: evalRefId(row.ref), version: String(version) } : null;
   return (
     <li className="space-y-1.5 py-2.5">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-          <Link to="/app/evaluators/$id" params={{ id: evalRefId(row.ref) }} className="underline-offset-2 hover:underline">
-            {row.name}
-          </Link>
+          {studio ? (
+            <Link to="/app/evaluators/studio/$id/$version" params={studio} className="underline-offset-2 hover:underline">
+              {row.name}
+            </Link>
+          ) : (
+            <Link to="/app/evaluators/$id" params={{ id: evalRefId(row.ref) }} className="underline-offset-2 hover:underline">
+              {row.name}
+            </Link>
+          )}
           {row.shadow ? (
             <>
               {' '}
@@ -47,12 +60,21 @@ function CheckItem({ row, route }: { row: CheckRow; route: string }) {
         ) : null}
         {/* An internal check is not on the route, so it has no threshold there to adjust. */}
         {row.kind === 'assessed' && !row.internal ? (
-          <IconButton
-            size="sm"
-            icon={SlidersHorizontal}
-            aria-label={`${copy.trace.adjust_threshold}: ${row.name}`}
-            onClick={() => void navigate({ to: '/app/policies', search: { route, evaluator: row.ref } })}
-          />
+          studio ? (
+            <IconButton
+              size="sm"
+              icon={SlidersHorizontal}
+              aria-label={`${copy.trace.open_in_studio}: ${row.name}`}
+              onClick={() => void navigate({ to: '/app/evaluators/studio/$id/$version', params: studio })}
+            />
+          ) : (
+            <IconButton
+              size="sm"
+              icon={SlidersHorizontal}
+              aria-label={`${copy.trace.adjust_threshold}: ${row.name}`}
+              onClick={() => void navigate({ to: '/app/policies', search: { route, evaluator: row.ref } })}
+            />
+          )
         ) : null}
       </div>
       {row.kind === 'assessed' && row.level && row.risk !== null ? (

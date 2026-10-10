@@ -1174,6 +1174,10 @@ func TestStudioDraftRefusals(t *testing.T) {
 		{"no judge", status.Error(codes.FailedPrecondition, "no_judge"), codeNoJudge},
 		{"unreachable", status.Error(codes.Unavailable, "connection refused"), codeEngineUnavailable},
 		{"too slow", status.Error(codes.DeadlineExceeded, "deadline"), codeEngineUnavailable},
+		// CO-8: an empty account or a refused key is named, never "engine unavailable", and the
+		// reservation is released (the provider refused before drafting).
+		{"no credits", status.Error(codes.ResourceExhausted, "no_credits"), codeNoCredits},
+		{"key refused", status.Error(codes.PermissionDenied, "judge_unauthorized"), codeJudgeUnauthorized},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "pkce",
+  "name": "rfc7636-verifier-from-bytes",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@8c68cdad853d",
+  "description": "RFC 7636 Appendix B: the specification's 32 random octets become its code verifier (base64url, no padding).",
+  "input": {
+    "op": "verifier_from_bytes",
+    "bytes_hex": "7418dfb49799e0254ffa607dd8adbbba16d4254d69d6bff05b58055853848d79"
+  },
+  "expected": {"verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"}
+}

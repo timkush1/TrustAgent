@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -616,7 +617,22 @@ func TestRecordingAndReset(t *testing.T) {
 	if strings.Contains(string(b), "secret") {
 		t.Error("credentials must be redacted")
 	}
+	// The totals are uncapped (the load test counts its requests with them) and leave out health
+	// checks and the mock's own endpoints.
+	var listed struct {
+		Totals map[string]int `json:"totals"`
+	}
+	if err := json.Unmarshal(b, &listed); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"POST /v1/chat/completions": 1, "POST /v1/messages": 1}
+	if !maps.Equal(listed.Totals, want) || !maps.Equal(s.Totals(), want) {
+		t.Errorf("totals %v (served %v), want %v", s.Totals(), listed.Totals, want)
+	}
 	s.Reset()
+	if len(s.Totals()) != 0 {
+		t.Errorf("totals after reset %v", s.Totals())
+	}
 	do(t, srv, call{path: "/v1/chat/completions", header: map[string]string{"Authorization": "Bearer secret"}, body: `{}`})
 	if r := s.Requests(); len(r) != 1 || r[0].Header.Get("Authorization") != "[redacted]" {
 		t.Errorf("after reset %+v", r)

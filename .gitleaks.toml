@@ -65,3 +65,11 @@ commits = [
   "e0c1e4ddfca180a99ef7b81b26d49a4e2b846ecb",
 ]
 paths = ['''^docs/''']
+
+# The P5 contract PR's validator test wrote a non-fake key shape on purpose (the validator must
+# refuse a vendor fixture that carries one); the test now builds that string at run time.
+[[allowlists]]
+description = "Reviewed false positive: the vendor-fixture key test in the P5 contract PR"
+condition = "AND"
+commits = ["12486e800ee57917639dcff797c995539110c77b"]
+paths = ['''^contracts/validate\.test\.mjs$''']

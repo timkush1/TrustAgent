@@ -7,7 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import { blankSpec } from '@/lib/studio/templates';
 import committed from './evaluatorValidator.gen.ts?raw';
-import { validateEvaluatorSpec as generated } from './evaluatorValidator.gen';
+import drafterPrompt from '@contracts/prompts/evaluator-drafter.v1.json';
+import { validateEvaluatorDraft as generatedDraft, validateEvaluatorSpec as generated } from './evaluatorValidator.gen';
 import { DRAFT_SCHEMA, EVALUATOR_SCHEMA, generateEvaluatorValidator, VALIDATOR_EXPORTS } from './generateValidator';
 
 const schemaFiles = import.meta.glob<unknown>('@contracts/schema/*.schema.json', { eager: true, import: 'default' });
@@ -31,6 +32,22 @@ describe('evaluatorValidator.gen.ts', () => {
     for (const name of Object.keys(VALIDATOR_EXPORTS)) expect(committed).toMatch(new RegExp(`export const ${name} = `));
     expect(committed).not.toMatch(/\brequire\(|new Function|\beval\(/);
     expect(committed).not.toMatch(/from ['"]ajv/);
+  });
+
+  it('is one module for both validators: each ajv helper and each schema appears once (D108)', () => {
+    const count = (re: RegExp) => committed.match(re)?.length ?? 0;
+    expect(count(/^function ucs2length\(/gm)).toBe(1);
+    expect(count(/^function equal\(/gm)).toBe(1);
+    expect(count(/"\$id":"[^"]*\/evaluator\.v1\.schema\.json"/g)).toBe(1);
+    expect(count(/"\$id":"[^"]*\/evaluator-draft\.v1\.schema\.json"/g)).toBe(1);
+  });
+
+  it('validates an AI draft with the draft schema: the drafter prompt example passes, an id does not', () => {
+    const validateEvaluatorDraft = generatedDraft as unknown as ((data: unknown) => boolean) & { errors?: unknown[] | null };
+    const example = drafterPrompt.examples[0].output;
+    expect(validateEvaluatorDraft(example)).toBe(true);
+    expect(validateEvaluatorDraft({ ...example, id: 'competitor_mention' })).toBe(false);
+    expect(validateEvaluatorDraft.errors).toContainEqual(expect.objectContaining({ instancePath: '', keyword: 'additionalProperties' }));
   });
 
   it('marks for the forbidden-identifier scan exactly the lines that test the spec field escalation.numeric_or_date', () => {

@@ -8,7 +8,7 @@
 # Configuration reference
 
 TrustAgent is configured with environment variables. This page lists every one of them:
-190 keys in 13 groups, generated from the key registry
+192 keys in 13 groups, generated from the key registry
 [`contracts/config/keys.v1.json`](../contracts/config/keys.v1.json).
 
 **You rarely need this page.** The demo (`make demo`) needs no settings at all, and a
@@ -60,7 +60,7 @@ every other key is marked *advanced* and has a safe default.
 - [Budgets, Studio](#budgets-studio): 6 keys
 - [Engine: judge](#engine-judge): 11 keys
 - [Engine: pipeline and server](#engine-pipeline-and-server): 26 keys
-- [Compose, host, dashboard, build](#compose-host-dashboard-build): 26 keys
+- [Compose, host, dashboard, build](#compose-host-dashboard-build): 28 keys
 
 ## Core
 
@@ -335,10 +335,12 @@ Compose, host ports, the dashboard container and frontend build.
 | `DASHBOARD_CONNECT_SRC` | *empty* | dashboard | yes | no | yes | Extra CSP connect-src entries.<br>Comma-separated list. |
 | `VITE_APP_MODE` | `full` | build | yes | no | rebuild | Frontend build: the full dashboard or the static GitHub Pages site.<br>One of `full`, `static`. |
 | `VITE_BASE_PATH` | `/` | build | yes | no | rebuild | Base path of the build (Pages: /TrustAgent/).<br>Text. |
-| `VITE_DEMO_DATASET` | `auto` | build | yes | no | rebuild | Replay dataset of the static build.<br>One of `recorded`, `mock`, `auto`. |
+| `VITE_DEMO_DATASET` | `auto` | build | yes | no | rebuild | Replay dataset of the static build: mock is the simulated tape (frontend-react/demo-data/simulated), recorded a real export from make record-demo (demo-data/recorded; the build fails without it), auto the recorded one when it exists, else the simulated one. The build copies only that directory to demo/.<br>One of `recorded`, `mock`, `auto`. |
 | `VITE_REPLAY_SPEED` | `20` | build | yes | no | rebuild | Replay speed multiplier of the static build.<br>Number, at least 0. |
 | `VITE_PLAYGROUND_MAX_CALLS` | `100` | build | yes | no | rebuild | Static in-browser playground call cap (Studio drafts included).<br>Integer, at least 0. |
 | `VITE_PLAYGROUND_MAX_TOKENS` | `8000` | build | yes | no | rebuild | Static in-browser playground token cap per call.<br>Integer, at least 0. |
 | `VITE_JEV_MODEL` | `typesafe/jev-1.13` | build | yes | no | rebuild | Decision model used by the static playground.<br>Text. |
 | `VITE_OPENROUTER_JUDGE_MODEL` | `anthropic/claude-haiku-4.5` | build | yes | no | rebuild | Judge and drafter model used by the static site.<br>Text. |
 | `VITE_REPO_URL` | `https://github.com/timkush1/TrustAgent` | build | yes | no | rebuild | Repository link.<br>URL. |
+| `VITE_SITE_URL` | `https://timkush1.github.io/TrustAgent/` | build | yes | no | rebuild | Absolute URL of the published static site, used only for the canonical link and the absolute og:\* URLs; requests never use it.<br>URL. |
+| `VITE_LAUNCH_ROUTES` | `false` | build | yes | no | rebuild | Build the launch-only routes (the /og social card page). Only npm run og sets it; a published build never does.<br>`true` or `false`. |

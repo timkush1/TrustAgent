@@ -1,16 +1,19 @@
 /**
  * Above the Traffic list: the filters (outcome, route, model, and the reason a link brought in)
- * and the Live toggle. Below it, while paused, the "Paused · 12 new · Resume" pill.
+ * and the Live toggle ("Follow replay" on the static site, which replays a tape). Below it, while
+ * paused, the "Paused · 12 new · Resume" pill.
  */
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Pause, X } from 'lucide-react';
 import { useId } from 'react';
 import { Button } from '@/components/ui/button';
+import { useRuntimeConfig } from '@/app/services';
 import { OUTCOME_IDS } from '@/domain/contracts';
-import { outcomeView } from '@/domain/presentation';
+import { copy, outcomeView } from '@/domain/presentation';
 import { formatCount } from '@/domain/format';
 import { cn } from '@/lib/cn';
-import { hasFilters, reasonFilterLabel, type TrafficFilters } from './trafficRows';
+import { hasFilters, reasonFilterLabel, reasonWindowLabel, type TrafficFilters } from './trafficRows';
+import { useReasonBound } from './useTrafficRows';
 
 interface Option {
   value: string;
@@ -72,8 +75,12 @@ export function TrafficToolbar({
   onLiveChange: (live: boolean) => void;
 }) {
   const navigate = useNavigate({ from: '/app/traffic/' });
+  // The reason chip says what it is read over (the proxy looks back a fixed number of days).
+  const reasonWindow = reasonWindowLabel(useReasonBound());
   const setFilter = (key: keyof TrafficFilters, value: string | undefined) =>
     void navigate({ search: (prev) => ({ ...prev, [key]: value }) });
+  // The static site replays a tape: the toggle follows the replay, nothing is live.
+  const followLabel = useRuntimeConfig().appMode === 'static' ? copy.recording.follow_replay : 'Live';
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -102,6 +109,7 @@ export function TrafficToolbar({
         {filters.reason ? (
           <span className="inline-flex h-8 items-center gap-1 rounded-md border border-border-strong bg-surface pr-1 pl-2 text-sm text-fg">
             <span className="text-fg-muted">Reason:</span> {reasonFilterLabel(filters.reason)}
+            {reasonWindow ? <span className="text-fg-muted"> · {reasonWindow}</span> : null}
             <Link
               from="/app/traffic/"
               search={(prev) => ({ ...prev, reason: undefined })}
@@ -133,7 +141,7 @@ export function TrafficToolbar({
           aria-hidden="true"
           className={cn('size-2 rounded-full border border-fg', live ? 'bg-fg' : 'bg-transparent')}
         />
-        Live
+        {followLabel}
       </Button>
     </div>
   );

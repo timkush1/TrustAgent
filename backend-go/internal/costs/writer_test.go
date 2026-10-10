@@ -16,13 +16,14 @@ import (
 // rowSink is a RowStore and LedgerStore in memory: it keeps every inserted batch and fails the
 // next failNext inserts (or every insert while failAll is set).
 type rowSink struct {
-	mu       sync.Mutex
-	batches  [][]store.CostEvent
-	failNext int
-	failAll  bool
-	inserted chan int
-	totals   store.SpendTotals
-	totalsAt []time.Time
+	mu        sync.Mutex
+	batches   [][]store.CostEvent
+	failNext  int
+	failAll   bool
+	inserted  chan int
+	totals    store.SpendTotals
+	totalsAt  []time.Time
+	crossedAt *time.Time
 }
 
 func newRowSink() *rowSink { return &rowSink{inserted: make(chan int, 100)} }
@@ -42,6 +43,13 @@ func (s *rowSink) InsertCostEvents(_ context.Context, rows []store.CostEvent) er
 	default:
 	}
 	return nil
+}
+
+// CapCrossedAt answers crossedAt for every cap (nil: the stored rows never reached it).
+func (s *rowSink) CapCrossedAt(context.Context, time.Time, bool, float64, float64, float64) (*time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.crossedAt, nil
 }
 
 func (s *rowSink) SpendToday(_ context.Context, dayStart time.Time) (store.SpendTotals, error) {

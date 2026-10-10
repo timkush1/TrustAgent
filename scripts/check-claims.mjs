@@ -1,0 +1,1521 @@
+#!/usr/bin/env node
+/**
+ * check-claims.mjs - keep every figure in the README and the docs honest.
+ *
+ * contracts/claims/value-claims.v1.json is the one list of public figures, each with its label
+ * (measured, estimate, third-party, vendor or simulated). The landing page renders from it; prose
+ * cites it with an HTML comment in front of the figure:
+ *
+ *   - Fast check on every answer: <!-- claim:fast_check_cost_per_1k --> ~$0.21 / 1,000 answers [estimate]
+ *
+ * This script reads README.md and docs/**\/*.md (docs/launch included) and fails when the prose
+ * drifts from the contract.
+ *
+ * Rules (rule ids in brackets, as printed)
+ *   [unknown-claim]       the marker's id is not in value-claims.v1.json
+ *   [wrong-surface]       the claim is not written for the readme or docs surface
+ *   [display-missing]     the text after the marker does not hold the claim's display (for a measured
+ *                         claim: its value from measured.json, or its empty_display while that is null)
+ *   [chip-missing]        no label chip ([estimate], [vendor], [third-party], [measured], [simulated])
+ *                         follows the display
+ *   [chip-mismatch]       the first chip after the display is not the claim's own label
+ *   [caveat-missing]      a claim with a caveat has neither the caveat text nor a link to an anchor
+ *                         that holds it within 3 lines after the marker
+ *   [measured-mock]       measured.json holds a value but is not a measured run with mock:false
+ *   [stray-measured-chip] a [measured] chip outside the text of a measured claim
+ *   [measured-placeholder] a {measured:KEY} placeholder names no value in measured.json
+ *   [launch-figure]       a $, %, ms or multiplier (27×) figure in docs/launch without a claim marker
+ *   [pkce-wording]        prose says PKCE is verified while SPEC Appendix D says it is not
+ *   [block-stale]         a <!-- measured:start --> ... <!-- measured:end --> block differs from what
+ *                         --write generates (proxy overhead in a table of its own, D118);
+ *                         [block-unpaired] when the markers do not pair up
+ *   [load-run-missing]    a measured overhead value names a run with no docs/benchmarks/load file
+ *   [third-party-stale]   (warning) a third-party claim's as_of is more than 120 days old
+ *   [launch-*]            with --launch: the recorded dataset, a measured run, a reviewed
+ *                         comparison table and the og.png card (see launchChecks)
+ *
+ * Markers, chips and figures inside code (fenced blocks and inline code spans) are not read, so a
+ * doc can show the syntax. A display, chip, caveat or link inside an HTML comment does not count
+ * either: nobody sees it. The prose rules (stray chips, placeholders, launch figures, PKCE wording)
+ * apply to the published docs: README.md and docs/ outside docs/v2 (design records) and
+ * docs/archive (historical logs).
+ *
+ * Usage
+ *   node scripts/check-claims.mjs                check the repository
+ *   node scripts/check-claims.mjs --write        regenerate the measured blocks, then check
+ *   node scripts/check-claims.mjs --launch       also run the launch checks
+ *   node scripts/check-claims.mjs --self-test    run the built-in fixture tests
+ *   options: --root <dir> (another checkout), --today YYYY-MM-DD (the date the age rule uses)
+ *
+ * Exit codes: 0 no errors (warnings allowed); 1 at least one error, or a self-test failure;
+ * 2 usage or configuration error (a missing or unreadable contract file, a bad option).
+ */
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, posix, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+
+export const CLAIMS_PATH = 'contracts/claims/value-claims.v1.json';
+export const MEASURED_PATH = 'contracts/claims/measured.json';
+export const COMPARE_PATH = 'contracts/claims/compare.v1.json';
+export const SPEC_PATH = 'docs/v2/SPEC.md';
+export const RECORDED_MANIFEST_PATH = 'frontend-react/demo-data/recorded/manifest.json';
+export const OG_PATHS = ['docs/launch/og.png', 'frontend-react/public/og.png'];
+export const LOAD_RUNS_DIR = 'docs/benchmarks/load';
+export const OG_WIDTH = 1280;
+export const OG_HEIGHT = 640;
+export const OG_MAX_BYTES = 1_000_000;
+export const THIRD_PARTY_MAX_AGE_DAYS = 120;
+export const CAVEAT_WINDOW_LINES = 3;
+
+/** The chip each label is written with in prose. */
+export const LABEL_CHIPS = {
+  measured: 'measured',
+  estimate: 'estimate',
+  third_party: 'third-party',
+  vendor: 'vendor',
+  simulated: 'simulated',
+};
+
+const SURFACES = ['readme', 'docs'];
+const WRITE_HINT = 'run `node scripts/check-claims.mjs --write` (make claims-write)';
+const BLOCK_HEADER =
+  '<!-- Generated by `node scripts/check-claims.mjs --write` from contracts/claims/measured.json; do not edit by hand. -->';
+
+const MARKER_RE = /<!--\s*claim:([^>]*?)\s*-->/g;
+const BLOCK_RE = /<!--\s*measured:(start|end)\s*-->/;
+const CHIP_RE = /\[(estimate|vendor|third[- ]party|measured|simulated)\]/gi;
+const MEASURED_CHIP_RE = /\[measured\]/gi;
+const PLACEHOLDER_RE = /\{measured:([^{}\s]*)\}/g;
+// A money figure, or a number with %, ms or a multiplier (27×, 30x; a 1280×640 size is not one).
+const FIGURE_RE = /\$\s?\d[\d,]*(?:\.\d+)?|(?<![\w.$])\d[\d,]*(?:\.\d+)?\s?(?:%|ms\b|(?:×|x\b)(?!\s?\d))/g;
+const LINK_RE = /\]\(([^)\s]*#[^)\s]+)\)/g;
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+/** A contract file that cannot be read or parsed: exit 2, not a finding. */
+export class ConfigError extends Error {}
+
+// ---------------------------------------------------------------------------------------------
+// Markdown helpers
+
+/**
+ * Replace fenced code blocks and inline code spans with spaces, keeping every column. With
+ * `inline: false` inline code keeps its text (a caveat may name `mock-upstream` in backticks).
+ */
+export function maskCode(lines, { inline = true } = {}) {
+  const out = [];
+  let fence = null;
+  for (const line of lines) {
+    const m = FENCE_RE.exec(line);
+    if (fence) {
+      out.push(' '.repeat(line.length));
+      const rest = m ? line.slice(m.index + m[0].length) : '';
+      if (m && m[1][0] === fence[0] && m[1].length >= fence.length && rest.trim() === '') fence = null;
+      continue;
+    }
+    if (m) {
+      fence = m[1];
+      out.push(' '.repeat(line.length));
+      continue;
+    }
+    out.push(inline ? maskInlineCode(line) : line);
+  }
+  return out;
+}
+
+function maskInlineCode(line) {
+  let out = '';
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] !== '`') {
+      out += line[i];
+      i += 1;
+      continue;
+    }
+    let n = 0;
+    while (line[i + n] === '`') n += 1;
+    const ticks = '`'.repeat(n);
+    let close = -1;
+    for (let j = i + n; j < line.length; ) {
+      const k = line.indexOf(ticks, j);
+      if (k < 0) break;
+      let run = 0;
+      while (line[k + run] === '`') run += 1;
+      if (run === n) {
+        close = k;
+        break;
+      }
+      j = k + run;
+    }
+    if (close < 0) {
+      out += ticks;
+      i += n;
+      continue;
+    }
+    out += ' '.repeat(close + n - i);
+    i = close + n;
+  }
+  return out;
+}
+
+/**
+ * Per line, which columns sit inside an HTML comment (a comment may span lines). Run it on
+ * code-masked lines, so a `<!--` inside code never opens one.
+ */
+function commentColumns(lines) {
+  const out = [];
+  let open = false;
+  for (const line of lines) {
+    const cols = new Uint8Array(line.length);
+    let i = 0;
+    while (i < line.length) {
+      if (open) {
+        const end = line.indexOf('-->', i);
+        const stop = end < 0 ? line.length : end + 3;
+        cols.fill(1, i, stop);
+        i = stop;
+        if (end >= 0) open = false;
+      } else {
+        const start = line.indexOf('<!--', i);
+        if (start < 0) break;
+        i = start;
+        open = true;
+      }
+    }
+    out.push(cols);
+  }
+  return out;
+}
+
+function blankColumns(lines, cols) {
+  return lines.map((line, k) => {
+    let s = '';
+    for (let c = 0; c < line.length; c += 1) s += cols[k][c] ? ' ' : line[c];
+    return s;
+  });
+}
+
+/** Also blank every HTML comment (claim markers included), for the rules that read prose. */
+export function maskComments(lines) {
+  return blankColumns(lines, commentColumns(lines));
+}
+
+/**
+ * The text a reader sees, column for column: fenced code and HTML comments blanked, inline code
+ * kept (a caveat may name `mock-upstream` in backticks). A chip or a caveat hidden in a comment
+ * is not next to anything.
+ */
+export function visibleText(lines) {
+  return blankColumns(maskCode(lines, { inline: false }), commentColumns(maskCode(lines)));
+}
+
+/** Whitespace, typographic quotes and emphasis do not change what a sentence says. */
+export function normalize(text) {
+  return text
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\*\*|__|[*`]/g, '')
+    .replace(/[\s   ]+/g, ' ')
+    .trim();
+}
+
+/** A line that starts a new Markdown block, which ends a claim's text. */
+function startsBlock(maskedLine) {
+  return (
+    maskedLine.trim() === '' ||
+    /^ {0,3}#{1,6}(\s|$)/.test(maskedLine) ||
+    /^\s*([-*+]|\d{1,9}[.)])\s/.test(maskedLine) ||
+    /^\s*\|/.test(maskedLine) ||
+    /^\s*>/.test(maskedLine) ||
+    FENCE_RE.test(maskedLine) ||
+    BLOCK_RE.test(maskedLine)
+  );
+}
+
+function isTableRow(maskedLine) {
+  return /^\s*\|/.test(maskedLine);
+}
+
+/** The column of the next unescaped `|` at or after `from`, or -1. */
+function nextCellBreak(maskedLine, from) {
+  for (let i = from; i < maskedLine.length; i += 1) {
+    if (maskedLine[i] === '|' && maskedLine[i - 1] !== '\\') return i;
+  }
+  return -1;
+}
+
+/** GitHub's heading anchor: lowercase, punctuation dropped, spaces to hyphens. */
+export function slug(heading) {
+  return normalize(heading)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+    .replace(/ /g, '-');
+}
+
+function anchorLine(lines, anchor) {
+  const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tag = new RegExp(`<a\\s+(?:[^>]*\\s)?(?:id|name)=["']${escaped}["']`);
+  const masked = maskCode(lines);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (tag.test(masked[i])) return i;
+    // A heading outside a fence; its anchor keeps the text of inline code, as GitHub's does.
+    const h = /^ {0,3}#{1,6}\s/.test(masked[i]) && /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(lines[i]);
+    if (h && slug(h[1]) === anchor) return i;
+  }
+  return -1;
+}
+
+/**
+ * A regex for a caveat, case-insensitive so it can sit mid-sentence; `{name}` placeholders (the
+ * run's machine, say) match any text.
+ */
+function caveatPattern(caveat) {
+  const parts = normalize(caveat)
+    .split(/\{[a-z_]+\}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(parts.join('[\\s\\S]*?'), 'i');
+}
+
+// ---------------------------------------------------------------------------------------------
+// Claims and measured values
+
+/** Same formatting as the landing page (frontend-react/src/landing/claims.ts). */
+export function formatValue(value, unit) {
+  if (unit === 'fraction') return `${Math.round(value * 1000) / 10}%`;
+  if (unit === 'usd_per_1k') return value >= 1 ? value.toFixed(2) : value.toFixed(3);
+  return String(Math.round(value * 100) / 100);
+}
+
+function isMeasuredRun(measured) {
+  return Boolean(measured) && measured.mock === false && measured.status === 'measured';
+}
+
+/**
+ * What the prose must say for a claim: its display, or for a measured claim the published value
+ * (only from a measured run with mock:false) or its empty display.
+ */
+export function expectedDisplay(claim, measured) {
+  if (claim.label !== 'measured') return { text: claim.display, problem: null };
+  const entry = measured?.values?.[claim.measured_ref];
+  const value = entry ? entry.value : null;
+  const empty = claim.empty_display ?? 'not yet measured';
+  if (value === null || value === undefined) return { text: empty, problem: null };
+  if (!isMeasuredRun(measured)) {
+    return {
+      text: empty,
+      problem:
+        `${MEASURED_PATH} holds a value for ${claim.measured_ref} but is not a measured run ` +
+        `(status ${measured?.status}, mock ${measured?.mock}); a measured figure comes only from a measured run with mock:false`,
+    };
+  }
+  return { text: claim.display.replace('{value}', formatValue(value, claim.unit)), problem: null };
+}
+
+/** Says where the latest load run is when a load run is published but no measured run adopts it. */
+export const LOAD_RUN_NOT_ADOPTED = 'not adopted yet: the latest laptop load run is in GATEWAY.md (Load test)';
+
+/**
+ * The run machine for a caveat's {machine}, from the load run that measured the claim. Before a
+ * measured run adopts one, it says where a published load run is (loadRuns, the files of
+ * docs/benchmarks/load), or that none is published.
+ */
+function machineText(claim, measured, read, loadRuns = []) {
+  const runId = measured?.values?.[claim.measured_ref]?.run_id;
+  if (!isMeasuredRun(measured) || !runId) {
+    return { text: loadRuns.length > 0 ? LOAD_RUN_NOT_ADOPTED : 'no run published yet', problem: null };
+  }
+  const path = `${LOAD_RUNS_DIR}/${runId}.json`;
+  const raw = read(path);
+  if (raw === null) return { text: 'machine unknown', problem: `${path} (the run behind ${claim.id}) is missing` };
+  try {
+    const env = JSON.parse(raw.toString('utf8')).environment;
+    return { text: `measured on ${env.cpu_model}, ${env.cores} logical CPUs and ${env.mem_gb} GB RAM visible to ${env.os}`, problem: null };
+  } catch (err) {
+    return { text: 'machine unknown', problem: `${path}: ${err.message}` };
+  }
+}
+
+function inMeasuredBlock(claim) {
+  return claim.label === 'measured' && claim.surfaces.some((s) => SURFACES.includes(s));
+}
+
+/** A measured claim about the gateway's own time (measured.json system "proxy"), not the fast check. */
+function isProxyOverhead(claim, measured) {
+  return measured?.values?.[claim.measured_ref]?.system === 'proxy';
+}
+
+export const OVERHEAD_INTRO = "The gateway's own overhead, measured separately by a load test against simulated vendors:";
+
+/**
+ * The lines between <!-- measured:start --> and <!-- measured:end -->, as --write writes them.
+ * Proxy overhead gets a table of its own after the fast-check results, so it never sits next to
+ * the fast check's latency (D118).
+ */
+export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
+  const problems = [];
+  const cell = (s) => s.replace(/\|/g, '\\|');
+  const row = (c) => {
+    const shown = expectedDisplay(c, measured);
+    let note = c.caveat ?? '';
+    if (note.includes('{machine}')) {
+      const machine = machineText(c, measured, read, loadRuns);
+      if (machine.problem) problems.push(machine.problem);
+      note = note.replace('{machine}', machine.text);
+    }
+    return `| ${cell(c.text)} | <!-- claim:${c.id} --> ${cell(shown.text)} [${LABEL_CHIPS.measured}] |${note ? ` ${cell(note)} ` : ' '}|`;
+  };
+  const table = (rows) => ['| What we measure | Our result | Note |', '|---|---|---|', ...rows];
+  const listed = claims.claims.filter(inMeasuredBlock);
+  const results = listed.filter((c) => !isProxyOverhead(c, measured)).map(row);
+  const overhead = listed.filter((c) => isProxyOverhead(c, measured)).map(row);
+  const details = [measured?.generated_by, measured?.generated_at?.slice(0, 10)].filter(Boolean).join(', ');
+  const footer = isMeasuredRun(measured)
+    ? `From ${measured.runs.length === 1 ? 'the measured run' : 'the measured runs'} ${measured.runs.join(', ')}` +
+      `${details ? ` (${details})` : ''}. A row without a measured value says "not yet measured".`
+    : 'No benchmark run is published yet, so every row says "not yet measured". The other figures here are ' +
+      'labelled estimates, vendor prices or third-party results, not our measurements.';
+  const lines = [BLOCK_HEADER, ''];
+  if (results.length) lines.push(...table(results), '');
+  if (overhead.length) lines.push(OVERHEAD_INTRO, '', ...table(overhead), '');
+  lines.push(footer);
+  return { lines, problems };
+}
+
+// ---------------------------------------------------------------------------------------------
+// PKCE wording (SPEC Appendix D)
+
+/** Which OpenRouter PKCE callbacks SPEC Appendix D records as verified, with a date. */
+export function pkceStatus(specText) {
+  const status = { localhost: false, pages: false, found: false };
+  if (!specText) return status;
+  let inAppendix = false;
+  for (const line of specText.split(/\r?\n/)) {
+    if (/^## /.test(line)) inAppendix = /^## Appendix D\b/.test(line);
+    if (!inAppendix || !/^\s*\|/.test(line)) continue;
+    const cells = line.split(/(?<!\\)\|/).slice(1, -1).map((c) => c.trim());
+    if (cells.length < 2 || !/\bPKCE\b/.test(cells[0])) continue;
+    const verified = /\bVerified\s+(?:on\s+)?\d{4}-\d{2}-\d{2}\b/i.test(cells[1]) && !/\bunverified\b/i.test(cells[1]);
+    if (/localhost/i.test(cells[0])) {
+      status.localhost = verified;
+      status.found = true;
+    } else if (/\bPages\b/i.test(cells[0])) {
+      status.pages = verified;
+      status.found = true;
+    }
+  }
+  return status;
+}
+
+// "Verified" is not a claim after a negation earlier in the sentence ("not yet verified", "no doc
+// may call PKCE verified"), after a condition in the same clause ("until PKCE is verified"), or in
+// a sentence about the mock OpenRouter. "Unverified" never matches \bverified\b. Words after
+// "verified" ("verified only on localhost", "verified after a real round trip") hedge nothing.
+const PKCE_NEGATION_RE = /\b(?:not|never|no|yet|without|pending)\b|n't\b/i;
+const PKCE_CONDITION_RE = /\b(?:until|unless|once|after|before|when|if|whether)\b/i;
+const PKCE_MOCK_RE = /\bmock/i;
+const CLAUSE_BREAK_RE = /[,;:()\u2013\u2014]/;
+
+/** True when a sentence calls PKCE verified without a hedge. */
+export function pkceCalledVerified(sentence) {
+  if (!/\bPKCE\b/i.test(sentence) || PKCE_MOCK_RE.test(sentence)) return false;
+  for (const m of sentence.matchAll(/\bverified\b/gi)) {
+    const before = sentence.slice(0, m.index);
+    const clause = before.split(CLAUSE_BREAK_RE).pop();
+    if (!PKCE_NEGATION_RE.test(before) && !PKCE_CONDITION_RE.test(clause)) return true;
+  }
+  return false;
+}
+
+/**
+ * Sentences that call PKCE verified, unhedged, where Appendix D says that callback is not. A
+ * paragraph is read as sentences across its wrapped lines; a list item or a quote starts a new
+ * unit, and a heading or a table row is a unit of its own (a row's cells are clauses of one unit).
+ */
+export function pkceWordingHits(proseLines, status) {
+  const hits = [];
+  if (status.localhost && status.pages) return hits;
+  let block = [];
+  const flush = () => {
+    if (!block.length) return;
+    let text = '';
+    const lineAt = [];
+    for (const { line, text: t } of block) {
+      for (let k = 0; k <= t.length; k += 1) lineAt.push(line);
+      text += `${t} `;
+    }
+    const re = /[^.!?]+[.!?]*/g;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      const sentence = m[0];
+      if (!pkceCalledVerified(sentence)) continue;
+      const localhost = /localhost|self-hosted|self hosted/i.test(sentence);
+      const pages = /\bpages\b|github\.io|static/i.test(sentence);
+      const unverified =
+        (localhost && !status.localhost) ||
+        (pages && !status.pages) ||
+        (!localhost && !pages && !(status.localhost && status.pages));
+      if (unverified) hits.push({ line: lineAt[m.index] ?? block[0].line, sentence: normalize(sentence) });
+    }
+    block = [];
+  };
+  proseLines.forEach((t, i) => {
+    if (t.trim() === '') {
+      flush();
+    } else if (isTableRow(t) || /^ {0,3}#{1,6}(\s|$)/.test(t)) {
+      flush();
+      block.push({ line: i + 1, text: t.replace(/(?<!\\)\|/g, ';') });
+      flush();
+    } else {
+      if (/^\s*([-*+]|\d{1,9}[.)])\s/.test(t) || /^\s*>/.test(t)) flush();
+      block.push({ line: i + 1, text: t });
+    }
+  });
+  flush();
+  return hits;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The check
+
+function isPublished(path) {
+  return path === 'README.md' || (path.startsWith('docs/') && !/^docs\/(v2|archive)\//.test(path));
+}
+
+/**
+ * Every claim marker of a file, with the text that follows it (the claim's span). Markers are
+ * found in `masked` (code blanked); the span's text is read from `prose` (comments blanked too), so
+ * a display or chip inside an HTML comment, which nobody sees, does not count.
+ */
+function findMarkers(masked, prose) {
+  const markers = [];
+  masked.forEach((line, i) => {
+    for (const m of line.matchAll(MARKER_RE)) {
+      markers.push({ line: i, start: m.index, end: m.index + m[0].length, id: m[1].trim() });
+    }
+  });
+  for (const mk of markers) {
+    const segments = [];
+    let ln = mk.line;
+    let from = mk.end;
+    for (;;) {
+      const text = masked[ln];
+      const next = markers.find((o) => o.line === ln && o.start >= from);
+      let to = next ? next.start : text.length;
+      if (!next && isTableRow(masked[ln])) {
+        const cell = nextCellBreak(text, from);
+        if (cell >= 0) to = cell;
+      }
+      segments.push({ line: ln, start: from, end: to });
+      if (next || isTableRow(masked[mk.line]) || to < text.length) break;
+      ln += 1;
+      if (ln >= masked.length || startsBlock(masked[ln])) break;
+      from = 0;
+    }
+    mk.segments = segments;
+    mk.text = segments.map((s) => prose[s.line].slice(s.start, s.end)).join(' ');
+  }
+  return markers;
+}
+
+function insideSegments(segments, line, col) {
+  return segments.some((s) => s.line === line && col >= s.start && col < s.end);
+}
+
+/**
+ * The caveat, or a link to an anchor whose next lines hold it, within the window after the marker.
+ * Both are read as a reader sees them: a caveat or a link inside an HTML comment does not count.
+ */
+function checkCaveat(claim, mk, file, lines, visible, prose, files, read) {
+  const pattern = caveatPattern(claim.caveat);
+  const last = Math.min(lines.length - 1, mk.line + CAVEAT_WINDOW_LINES);
+  const windowText = [visible[mk.line].slice(mk.end), ...visible.slice(mk.line + 1, last + 1)].join(' ');
+  if (pattern.test(normalize(windowText))) return true;
+  for (let ln = mk.line; ln <= last; ln += 1) {
+    const from = ln === mk.line ? mk.end : 0;
+    for (const m of prose[ln].slice(from).matchAll(LINK_RE)) {
+      const [target, anchor] = m[1].split('#');
+      const path = target ? posix.normalize(posix.join(posix.dirname(file), target)) : file;
+      let targetLines = path === file ? lines : null;
+      if (!targetLines) {
+        const raw = files.has(path) ? files.get(path) : read(path)?.toString('utf8');
+        if (raw === undefined || raw === null) continue;
+        targetLines = raw.split(/\r?\n/);
+      }
+      let name;
+      try {
+        name = decodeURIComponent(anchor);
+      } catch {
+        continue;
+      }
+      const at = anchorLine(targetLines, name);
+      if (at < 0) continue;
+      const near = visibleText(targetLines).slice(at, at + CAVEAT_WINDOW_LINES + 1).join(' ');
+      if (pattern.test(normalize(near))) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Check the scanned files against the contracts. Pure: every input is passed in.
+ *
+ *   files     Map of repo-relative path -> text (README.md and docs/**\/*.md)
+ *   claims    parsed value-claims.v1.json;  measured  parsed measured.json
+ *   compare   parsed compare.v1.json (launch only); specText  docs/v2/SPEC.md text or null
+ *   read      (path) => Buffer | null, for anchors in other files, load runs and launch files
+ *   today     YYYY-MM-DD;  launch  run the launch checks
+ *
+ * Returns { problems, markers, blocks, files, rewrites } where rewrites maps each file whose measured
+ * blocks are stale to its regenerated text.
+ */
+export function checkClaims({ files, claims, measured, compare = null, specText = null, read = () => null, loadRuns = [], today, launch = false }) {
+  const problems = [];
+  const report = (level, rule, file, line, message) => problems.push({ level, rule, file, line, message });
+  const byId = new Map(claims.claims.map((c) => [c.id, c]));
+  const block = renderMeasuredBlock(claims, measured, read, loadRuns);
+  for (const p of block.problems) report('error', 'load-run-missing', MEASURED_PATH, null, p);
+  const pkce = pkceStatus(specText);
+  const rewrites = new Map();
+  let markerCount = 0;
+  let blockCount = 0;
+
+  for (const [file, text] of files) {
+    const lines = text.split(/\r?\n/);
+    const masked = maskCode(lines);
+    const prose = maskComments(masked);
+    const visible = visibleText(lines);
+    const markers = findMarkers(masked, prose);
+    markerCount += markers.length;
+    const measuredSegments = [];
+
+    for (const mk of markers) {
+      const line = mk.line + 1;
+      const claim = byId.get(mk.id);
+      if (!claim) {
+        report('error', 'unknown-claim', file, line, `claim "${mk.id}" is not in ${CLAIMS_PATH}`);
+        continue;
+      }
+      if (!claim.surfaces.some((s) => SURFACES.includes(s))) {
+        report('error', 'wrong-surface', file, line,
+          `claim ${claim.id} is written for ${claim.surfaces.join(', ')}, not the readme or docs; add the surface in ${CLAIMS_PATH} first`);
+      }
+      if (claim.label === 'measured') measuredSegments.push(...mk.segments);
+      const expected = expectedDisplay(claim, measured);
+      if (expected.problem) report('error', 'measured-mock', file, line, expected.problem);
+      const said = normalize(mk.text);
+      mk.expected = normalize(expected.text);
+      const at = said.indexOf(mk.expected);
+      if (at < 0) {
+        report('error', 'display-missing', file, line,
+          `claim ${claim.id}: the text after the marker must say "${expected.text}"` +
+            (claim.label === 'measured' ? ` (from ${MEASURED_PATH}; measured blocks: ${WRITE_HINT})` : ''));
+      } else {
+        const want = LABEL_CHIPS[claim.label];
+        const after = said.slice(at + mk.expected.length);
+        const chip = [...after.matchAll(CHIP_RE)][0];
+        if (!chip) {
+          report('error', 'chip-missing', file, line, `claim ${claim.id}: "${expected.text}" needs its label chip [${want}] after it`);
+        } else if (chip[1].toLowerCase().replace(' ', '-') !== want) {
+          report('error', 'chip-mismatch', file, line,
+            `claim ${claim.id} is labelled ${claim.label}: its chip is [${want}], not [${chip[1]}]`);
+        }
+      }
+      if (claim.caveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
+        report('error', 'caveat-missing', file, line,
+          `claim ${claim.id}: its caveat ("${claim.caveat}") or a link to an anchor holding it must follow within ${CAVEAT_WINDOW_LINES} lines`);
+      }
+    }
+
+    // Measured blocks.
+    const starts = [];
+    const ends = [];
+    masked.forEach((l, i) => {
+      const m = BLOCK_RE.exec(l);
+      if (m) (m[1] === 'start' ? starts : ends).push(i);
+    });
+    let out = null;
+    let paired = starts.length === ends.length;
+    for (let k = 0; paired && k < starts.length; k += 1) {
+      if (!(starts[k] < ends[k] && (k === 0 || ends[k - 1] < starts[k]))) paired = false;
+    }
+    if (!paired) {
+      report('error', 'block-unpaired', file, (starts[0] ?? ends[0]) + 1,
+        'every <!-- measured:start --> needs its own <!-- measured:end --> after it, with no nesting');
+    } else {
+      blockCount += starts.length;
+      out = [...lines];
+      for (let k = starts.length - 1; k >= 0; k -= 1) {
+        const current = lines.slice(starts[k] + 1, ends[k]);
+        if (current.join('\n') !== block.lines.join('\n')) {
+          report('error', 'block-stale', file, starts[k] + 1, `the measured block differs from ${MEASURED_PATH}: ${WRITE_HINT}`);
+          out.splice(starts[k] + 1, ends[k] - starts[k] - 1, ...block.lines);
+        }
+      }
+      const eol = text.includes('\r\n') ? '\r\n' : '\n';
+      const rewritten = out.join(eol);
+      if (rewritten !== text) rewrites.set(file, rewritten);
+    }
+
+    if (!isPublished(file)) continue;
+
+    // A [measured] chip belongs to a measured claim's text only.
+    prose.forEach((l, i) => {
+      for (const m of l.matchAll(MEASURED_CHIP_RE)) {
+        if (!insideSegments(measuredSegments, i, m.index)) {
+          report('error', 'stray-measured-chip', file, i + 1,
+            'a [measured] chip outside a measured claim: measured figures come only from contracts/claims/measured.json through a <!-- claim:ID --> marker');
+        }
+      }
+      for (const m of l.matchAll(PLACEHOLDER_RE)) {
+        if (!measured?.values || !Object.hasOwn(measured.values, m[1])) {
+          report('error', 'measured-placeholder', file, i + 1, `{measured:${m[1]}} names no value in ${MEASURED_PATH}`);
+        }
+      }
+    });
+
+    // Every figure in a launch draft carries a claim marker: it sits in the text after a marker and
+    // is part of that claim's display, so a second, unmarked number in the same sentence still fails.
+    if (file.startsWith('docs/launch/')) {
+      prose.forEach((l, i) => {
+        // Only a {measured:KEY} placeholder stands in for a figure; any other braces hide nothing.
+        const placeholders = [...l.matchAll(PLACEHOLDER_RE)].map((m) => [m.index, m.index + m[0].length]);
+        for (const m of l.matchAll(FIGURE_RE)) {
+          const figure = normalize(m[0]);
+          if (markers.some((mk) => mk.expected?.includes(figure) && insideSegments(mk.segments, i, m.index))) continue;
+          if (placeholders.some(([a, b]) => m.index >= a && m.index < b)) continue;
+          report('error', 'launch-figure', file, i + 1,
+            `"${m[0].trim()}" needs a <!-- claim:ID --> marker in front of it (or a {measured:KEY} placeholder): every figure in a launch draft is a contract claim`);
+        }
+      });
+    }
+
+    for (const hit of pkceWordingHits(prose, pkce)) {
+      report('error', 'pkce-wording', file, hit.line,
+        `"${hit.sentence.slice(0, 120)}" calls OpenRouter PKCE verified, but ${SPEC_PATH} Appendix D records no dated verification for it`);
+    }
+  }
+
+  // Third-party figures go stale.
+  const now = Date.parse(`${today}T00:00:00Z`);
+  for (const c of claims.claims) {
+    if (c.label !== 'third_party') continue;
+    if (!c.as_of) {
+      report('warn', 'third-party-stale', CLAIMS_PATH, null, `${c.id}: a third-party claim without as_of cannot be dated`);
+      continue;
+    }
+    const age = Math.floor((now - Date.parse(`${c.as_of}T00:00:00Z`)) / 86_400_000);
+    if (age > THIRD_PARTY_MAX_AGE_DAYS) {
+      report('warn', 'third-party-stale', CLAIMS_PATH, null,
+        `${c.id}: as_of ${c.as_of} is ${age} days old (over ${THIRD_PARTY_MAX_AGE_DAYS}); re-check ${c.source_url} and update the claim`);
+    }
+  }
+
+  if (launch) problems.push(...launchChecks({ measured, compare, read }));
+  return { problems, markers: markerCount, blocks: blockCount, files: files.size, rewrites };
+}
+
+/** PNG width and height from the IHDR chunk, or null when the bytes are not a PNG. */
+export function pngSize(buf) {
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (!buf || buf.length < 24 || !buf.subarray(0, 8).equals(sig) || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+/**
+ * --launch: nothing goes public on simulated or unreviewed material. Refuses a missing or mock
+ * recorded dataset, a not_measured measured.json, any comparison cell that is unverified or not
+ * reviewed by the owner, and a missing or malformed og.png.
+ */
+export function launchChecks({ measured, compare, read }) {
+  const problems = [];
+  const report = (rule, file, message) => problems.push({ level: 'error', rule, file, line: null, message });
+
+  const manifest = read(RECORDED_MANIFEST_PATH);
+  if (manifest === null) {
+    report('launch-recorded', RECORDED_MANIFEST_PATH, 'no recorded dataset: run `make record-demo` (the site would replay simulated traffic)');
+  } else {
+    let parsed;
+    try {
+      parsed = JSON.parse(manifest.toString('utf8'));
+    } catch (err) {
+      report('launch-recorded', RECORDED_MANIFEST_PATH, `not valid JSON: ${err.message}`);
+    }
+    // Only an explicit kind "recorded" launches; a manifest without one is not evidence of a recording.
+    if (parsed !== undefined && parsed?.kind !== 'recorded') {
+      const kind = parsed !== null && typeof parsed === 'object' && 'kind' in parsed ? `"${parsed.kind}"` : 'missing';
+      report('launch-recorded', RECORDED_MANIFEST_PATH, `kind is ${kind}, not "recorded": a simulated tape is never launched as a recording`);
+    }
+  }
+
+  if (!isMeasuredRun(measured)) {
+    report('launch-not-measured', MEASURED_PATH,
+      `status is ${measured?.status ?? 'missing'}: publish a measured run first (make bench-lite, then make bench-publish)`);
+  }
+
+  if (!compare) {
+    report('launch-compare', COMPARE_PATH, 'the comparison table is missing');
+  } else {
+    const open = [];
+    let unverified = 0;
+    let unreviewed = 0;
+    let total = 0;
+    for (const row of compare.rows ?? []) {
+      for (const [col, cell] of Object.entries(row.cells ?? {})) {
+        total += 1;
+        const bad = cell.value === 'unverified' || cell.reviewed !== true;
+        if (cell.value === 'unverified') unverified += 1;
+        else if (cell.reviewed !== true) unreviewed += 1;
+        if (bad) open.push(`${row.id}.${col}`);
+      }
+    }
+    if (open.length) {
+      const more = open.length > 8 ? `, and ${open.length - 8} more` : '';
+      report('launch-compare', COMPARE_PATH,
+        `${open.length} of ${total} cells are not ready (${unverified} unverified, ${unreviewed} not reviewed by the owner): ` +
+          `${open.slice(0, 8).join(', ')}${more}`);
+    }
+  }
+
+  for (const path of OG_PATHS) {
+    const buf = read(path);
+    if (buf === null) {
+      report('launch-og', path, 'missing: run `make og` on a recorded dataset');
+      continue;
+    }
+    const size = pngSize(buf);
+    if (!size) report('launch-og', path, 'not a PNG');
+    else if (size.width !== OG_WIDTH || size.height !== OG_HEIGHT) {
+      report('launch-og', path, `${size.width}×${size.height}, not ${OG_WIDTH}×${OG_HEIGHT}`);
+    }
+    if (buf.length >= OG_MAX_BYTES) report('launch-og', path, `${buf.length} bytes, not under ${OG_MAX_BYTES}`);
+  }
+  return problems;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Files
+
+/** README.md and every docs/**\/*.md under `root`, sorted, as repo-relative "/" paths. */
+export function scanList(root) {
+  const out = [];
+  if (existsSync(join(root, 'README.md'))) out.push('README.md');
+  const walk = (rel) => {
+    let entries;
+    try {
+      entries = readdirSync(join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const path = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(path);
+      else if (e.isFile() && e.name.endsWith('.md')) out.push(path);
+    }
+  };
+  walk('docs');
+  return out.sort();
+}
+
+function readJson(root, rel, required) {
+  const full = join(root, rel);
+  if (!existsSync(full)) {
+    if (required) throw new ConfigError(`${rel}: not found`);
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(full, 'utf8'));
+  } catch (err) {
+    throw new ConfigError(`${rel}: invalid JSON (${err.message})`);
+  }
+}
+
+function formatProblem(p) {
+  return `${p.file}${p.line ? `:${p.line}` : ''}: ${p.level} [${p.rule}] ${p.message}`;
+}
+
+function annotation(p) {
+  const esc = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  const where = `file=${p.file}${p.line ? `,line=${p.line}` : ''}`;
+  return `::${p.level === 'warn' ? 'warning' : 'error'} ${where}::${esc(`[${p.rule}] ${p.message}`)}`;
+}
+
+/** Load everything from `root`, check (and with `write`, regenerate blocks first), print, exit code. */
+export function run({ root, write = false, launch = false, today, log = console.log, env = process.env }) {
+  const claims = readJson(root, CLAIMS_PATH, true);
+  const measured = readJson(root, MEASURED_PATH, true);
+  const compare = launch ? readJson(root, COMPARE_PATH, false) : null;
+  const specFile = join(root, SPEC_PATH);
+  const specText = existsSync(specFile) ? readFileSync(specFile, 'utf8') : null;
+  const read = (rel) => {
+    const full = join(root, rel);
+    if (!full.startsWith(join(root, '/')) || !existsSync(full)) return null;
+    try {
+      return readFileSync(full);
+    } catch {
+      return null;
+    }
+  };
+  const load = () => new Map(scanList(root).map((p) => [p, readFileSync(join(root, p), 'utf8')]));
+  const loadDir = join(root, LOAD_RUNS_DIR);
+  const loadRuns = existsSync(loadDir) ? readdirSync(loadDir).filter((f) => f.endsWith('.json')).sort() : [];
+  const check = () => checkClaims({ files: load(), claims, measured, compare, specText, read, loadRuns, today, launch });
+
+  let result = check();
+  if (write && result.rewrites.size) {
+    for (const [path, text] of result.rewrites) {
+      writeFileSync(join(root, path), text);
+      log(`check-claims: regenerated the measured block(s) in ${path}`);
+    }
+    result = check();
+  }
+  const errors = result.problems.filter((p) => p.level === 'error');
+  const warnings = result.problems.length - errors.length;
+  for (const p of result.problems) {
+    log(formatProblem(p));
+    if (env.GITHUB_ACTIONS === 'true') log(annotation(p));
+  }
+  if (!specText) log(`check-claims: ${SPEC_PATH} not found; PKCE wording is held to "unverified".`);
+  log(
+    `check-claims: ${result.markers} claim marker(s) and ${result.blocks} measured block(s) in ${result.files} file(s)` +
+      `${launch ? ', launch checks on' : ''}: ${errors.length} error(s), ${warnings} warning(s).`,
+  );
+  return errors.length ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Self-test (--self-test): one fixture per rule against checkClaims, then an end-to-end run()
+// over a throwaway directory (loading, --write, --launch and the exit codes).
+
+const TODAY = '2026-10-09';
+
+const FIXTURE_CLAIMS = {
+  version: '1',
+  as_of: TODAY,
+  claims: [
+    { id: 'est_cost', text: 'Fast check', value: 0.21, unit: 'usd_per_1k', display: '~$0.21 / 1,000 answers',
+      label: 'estimate', basis: 'b', source_url: null, as_of: TODAY, caveat: null, surfaces: ['landing', 'readme', 'docs'] },
+    { id: 'vendor_price', text: 'Jev price', value: 0.042, unit: 'usd_per_mtok', display: '$0.042 / M input tokens',
+      label: 'vendor', basis: 'b', source_url: 'https://example.com/p', as_of: TODAY, caveat: null, surfaces: ['readme'] },
+    { id: 'tp_latency', text: 'Jev p50', value: 0.23, unit: 's', display: 'P50 0.23 s on OpenRouter', label: 'third_party',
+      basis: 'b', source_url: 'https://example.com/l', as_of: '2026-03-01', caveat: 'Latency depends on region and load.',
+      surfaces: ['readme', 'docs'] },
+    { id: 'tp_fresh', text: 'Arize', value: 0.87, unit: 'fraction', display: '87%', label: 'third_party', basis: 'b',
+      source_url: 'https://example.com/a', as_of: '2026-09-27', caveat: null, surfaces: ['docs'] },
+    { id: 'landing_only', text: 'Hero', value: 212, unit: 'ms', display: '212 ms', label: 'simulated', basis: 'b',
+      source_url: null, as_of: null, caveat: 'Replayed illustration.', surfaces: ['landing'] },
+    { id: 'meas_cost', text: 'Our fast-check cost per 1,000 answers', value: null, unit: 'usd_per_1k',
+      display: '${value} / 1,000 answers', empty_display: 'not yet measured', label: 'measured', basis: 'b',
+      source_url: null, as_of: null, caveat: null, measured_ref: 'fast_check_usd_per_1k', surfaces: ['readme'] },
+    { id: 'meas_overhead', text: 'Gateway overhead, p50', value: null, unit: 'ms', display: '{value} ms p50',
+      empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null,
+      caveat: "Gateway's own time with simulated vendors; {machine}", measured_ref: 'proxy_overhead_ms_p50',
+      surfaces: ['readme', 'docs'] },
+    { id: 'meas_latency', text: 'Fast-check latency, p50', value: null, unit: 'ms', display: '{value} ms p50',
+      empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null, caveat: null,
+      measured_ref: 'gate_latency_ms_p50', surfaces: ['readme'] },
+  ],
+};
+
+const NOT_MEASURED = {
+  schema: 'trustagent.measured/v1', status: 'not_measured', tier: null, mock: false, generated_by: null, generated_at: null,
+  runs: [],
+  values: {
+    fast_check_usd_per_1k: { value: null, unit: 'usd_per_1k', description: 'd', run_id: null, system: 'gate' },
+    proxy_overhead_ms_p50: { value: null, unit: 'ms', description: 'd', run_id: null, system: 'proxy' },
+    gate_latency_ms_p50: { value: null, unit: 'ms', description: 'd', run_id: null, system: 'gate' },
+  },
+};
+
+const MEASURED = {
+  ...NOT_MEASURED,
+  status: 'measured',
+  tier: 'lite',
+  generated_by: 'bench-publish',
+  generated_at: '2026-11-02T10:00:00Z',
+  runs: ['bench-1', 'load-1'],
+  values: {
+    fast_check_usd_per_1k: { ...NOT_MEASURED.values.fast_check_usd_per_1k, value: 0.2134, run_id: 'bench-1' },
+    proxy_overhead_ms_p50: { ...NOT_MEASURED.values.proxy_overhead_ms_p50, value: 1.234, run_id: 'load-1' },
+    gate_latency_ms_p50: { ...NOT_MEASURED.values.gate_latency_ms_p50, value: 212.4, run_id: 'bench-1' },
+  },
+};
+
+const LOAD_RUN = { environment: { cpu_model: 'Test CPU', cores: 10, mem_gb: 8, os: 'Linux' } };
+
+const SPEC_UNVERIFIED = [
+  '## Appendix D: assumptions to verify (gate)',
+  '',
+  '| Assumption | Verified at |',
+  '|---|---|',
+  '| OpenRouter PKCE accepts `localhost` callbacks | still unverified against the real openrouter.ai |',
+  '| OpenRouter PKCE accepts the Pages callback | the owner, when Pages exists |',
+  '',
+  '## Appendix E: errata',
+].join('\n');
+
+const SPEC_VERIFIED = SPEC_UNVERIFIED
+  .replace('still unverified against the real openrouter.ai', 'Verified 2026-11-01 against openrouter.ai')
+  .replace('the owner, when Pages exists', 'Verified 2026-11-03 from the Pages origin');
+
+const REVIEWED_CELL = { value: 'yes', text: 't', source_url: 'https://example.com/c', as_of: TODAY, reviewed: true };
+const COMPARE = (cell) => ({
+  schema: 'trustagent.compare/v1',
+  columns: [{ id: 'inline', label: 'Inline' }, { id: 'cost', label: 'Cost' }],
+  rows: [{ id: 'judges', name: 'Judges', examples: 'x', cells: { inline: REVIEWED_CELL, cost: cell } }],
+});
+
+function png(width, height, extra = 0) {
+  const buf = Buffer.alloc(33 + extra);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
+  buf.writeUInt32BE(13, 8);
+  buf.write('IHDR', 12, 'latin1');
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  return buf;
+}
+
+const RECORDED = Buffer.from(JSON.stringify({ schema: 'trustagent.recording/v1', kind: 'recorded' }));
+const MOCK_RECORDING = Buffer.from(JSON.stringify({ schema: 'trustagent.recording/v1', kind: 'mock' }));
+
+/** Each case: files, optional overrides, the exact sorted set of rule ids it must report. */
+const CASES = [
+  {
+    name: 'valid markers pass (estimate, vendor, third-party with its caveat)',
+    files: {
+      'README.md': [
+        '- Fast check: <!-- claim:est_cost --> **~$0.21 / 1,000 answers** [estimate]',
+        '- Price: <!-- claim:vendor_price --> $0.042 / M input tokens [vendor]',
+        '- Latency: <!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party].',
+        '  Latency depends on region and load.',
+      ].join('\n'),
+    },
+    expect: [],
+  },
+  {
+    name: 'a fenced block and inline code are not read',
+    files: {
+      'docs/GUIDE.md': ['Write `<!-- claim:nope -->` before a figure; `[measured]` is a chip.', '```', '<!-- claim:nope --> x', '```'].join('\n'),
+    },
+    expect: [],
+  },
+  { name: 'unknown id', files: { 'README.md': '<!-- claim:nope --> 12 [estimate]' }, expect: ['unknown-claim'] },
+  {
+    name: 'a claim for the landing only',
+    files: { 'README.md': 'Hero: <!-- claim:landing_only --> 212 ms [simulated]. Replayed illustration.' },
+    expect: ['wrong-surface'],
+  },
+  { name: 'display drifted', files: { 'README.md': '<!-- claim:est_cost --> ~$0.25 / 1,000 answers [estimate]' }, expect: ['display-missing'] },
+  { name: 'no chip', files: { 'README.md': '<!-- claim:est_cost --> ~$0.21 / 1,000 answers' }, expect: ['chip-missing'] },
+  { name: 'chip before the display does not count', files: { 'README.md': '<!-- claim:est_cost --> [estimate] ~$0.21 / 1,000 answers' }, expect: ['chip-missing'] },
+  { name: 'wrong chip', files: { 'README.md': '<!-- claim:est_cost --> ~$0.21 / 1,000 answers [vendor] [estimate]' }, expect: ['chip-mismatch'] },
+  {
+    name: 'a second marker on the line ends the first claim',
+    files: { 'README.md': '<!-- claim:est_cost --> about a fifth of a dollar, <!-- claim:vendor_price --> $0.042 / M input tokens [vendor] ~$0.21 / 1,000 answers [estimate]' },
+    expect: ['display-missing'],
+  },
+  {
+    name: 'a table cell ends the claim',
+    files: { 'README.md': '| Fast check | <!-- claim:est_cost --> ~$0.21 / 1,000 answers | [estimate] |' },
+    expect: ['chip-missing'],
+  },
+  {
+    name: 'a wrapped list item continues the claim; a new item ends it',
+    files: { 'README.md': ['- Fast check: <!-- claim:est_cost --> ~$0.21 / 1,000', '  answers [estimate]', '- <!-- claim:vendor_price --> $0.042 / M input tokens', '- [vendor]'].join('\n') },
+    expect: ['chip-missing'],
+  },
+  {
+    name: 'caveat missing',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party]' },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'caveat four lines later is too far',
+    files: { 'README.md': ['<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party]', '', 'a', 'b', 'Latency depends on region and load.'].join('\n') },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'caveat within three lines, wrapped, passes',
+    files: { 'README.md': ['<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party]', '', 'Latency depends on', 'region and load.'].join('\n') },
+    expect: [],
+  },
+  {
+    name: 'a caveat may sit mid-sentence, lowercase',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party], though latency depends on region and load.' },
+    expect: [],
+  },
+  {
+    name: 'caveat through a link to an anchor in another doc',
+    files: {
+      'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] ([why](docs/NOTES.md#latency-caveat))',
+      'docs/NOTES.md': ['# Notes', '', '## Latency `caveat`', '', 'Latency depends on region and load.'].join('\n'),
+    },
+    expect: [],
+  },
+  {
+    name: 'a link to an anchor without the caveat does not count',
+    files: {
+      'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] ([why](#notes))',
+      'docs/X.md': '',
+    },
+    extraReadme: ['', '<a id="notes"></a>', 'Something else.'],
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'a chip inside an HTML comment is not a chip (the reader sees an unlabelled figure)',
+    files: { 'README.md': '<!-- claim:est_cost --> ~$0.21 / 1,000 answers <!-- [estimate] -->' },
+    expect: ['chip-missing'],
+  },
+  {
+    name: 'a display inside an HTML comment is not a display',
+    files: { 'README.md': 'Fast check: <!-- claim:est_cost --> cheap <!-- ~$0.21 / 1,000 answers [estimate] -->' },
+    expect: ['display-missing'],
+  },
+  {
+    name: 'a caveat inside an HTML comment is not next to the chip',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] <!-- Latency depends on region and load. -->' },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'a link inside an HTML comment is not a link to the caveat',
+    files: {
+      'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] <!-- [why](docs/NOTES.md#latency) -->',
+      'docs/NOTES.md': ['## Latency', '', 'Latency depends on region and load.'].join('\n'),
+    },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'an anchor whose caveat sits in a comment does not count',
+    files: {
+      'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] ([why](docs/NOTES.md#latency))',
+      'docs/NOTES.md': ['## Latency', '', '<!-- Latency depends on region and load. -->'].join('\n'),
+    },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'a caveat may set words in inline code',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party]; latency depends on `region` and load.' },
+    expect: [],
+  },
+  {
+    name: 'a measured claim with no value says its empty display',
+    files: { 'README.md': "Ours: <!-- claim:meas_overhead --> not yet measured [measured]. Gateway's own time with simulated vendors; no run yet" },
+    expect: [],
+  },
+  {
+    name: 'a measured claim may not show a number nobody measured',
+    files: { 'README.md': "Ours: <!-- claim:meas_overhead --> 1.2 ms p50 [measured]. Gateway's own time with simulated vendors; laptop" },
+    expect: ['display-missing'],
+  },
+  {
+    name: 'a measured value is read from a measured run',
+    measured: MEASURED,
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]' },
+    expect: [],
+  },
+  {
+    name: 'a value in a file that is not a measured run is refused',
+    measured: { ...MEASURED, status: 'not_measured' },
+    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]' },
+    expect: ['display-missing', 'measured-mock'],
+  },
+  {
+    name: 'a measured value from a mock run is refused',
+    measured: { ...MEASURED, mock: true },
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> not yet measured [measured]' },
+    expect: ['measured-mock'],
+  },
+  {
+    name: 'a measured overhead value needs its load run file',
+    measured: MEASURED,
+    files: {},
+    expect: ['load-run-missing'],
+  },
+  {
+    name: 'a [measured] chip without a measured claim',
+    files: { 'docs/GUIDE.md': 'Our gateway adds 1 ms [measured].' },
+    expect: ['stray-measured-chip'],
+  },
+  {
+    name: 'a [measured] chip in a design record is not prose we publish',
+    files: { 'docs/v2/NOTES.md': 'Our gateway adds 1 ms [measured].' },
+    expect: [],
+  },
+  {
+    name: 'a {measured:KEY} placeholder must name a measured.json value',
+    files: { 'docs/launch/post.md': 'Our fast check costs {measured:fast_check_usd_per_1k}; overhead {measured:nope}.' },
+    expect: ['measured-placeholder'],
+  },
+  {
+    name: 'every figure in a launch draft carries a marker',
+    files: {
+      'docs/launch/post.md': [
+        'The fast check costs <!-- claim:est_cost --> ~$0.21 / 1,000 answers [estimate].',
+        'It answers in 212 ms and saves 90%, about $5.',
+        '`CAP=$5` in a command is not a figure.',
+      ].join('\n'),
+    },
+    expect: ['launch-figure', 'launch-figure', 'launch-figure'],
+  },
+  {
+    name: 'a multiplier is a launch figure; an image size is not',
+    files: { 'docs/launch/post.md': 'It is 27× cheaper, or 30x. The card is 1280×640 (or 1200x630).' },
+    expect: ['launch-figure', 'launch-figure'],
+  },
+  {
+    name: 'braces do not hide a launch figure; only a {measured:KEY} placeholder stands in for one',
+    files: { 'docs/launch/post.md': 'We save {about $5 a day}, and the check costs {measured:fast_check_usd_per_1k}.' },
+    expect: ['launch-figure'],
+  },
+  {
+    name: 'PKCE called verified while Appendix D says unverified',
+    files: { 'docs/SECURITY.md': 'Connect OpenRouter uses PKCE, verified against openrouter.ai.\n\nThe PKCE verifier is kept server-side.' },
+    expect: ['pkce-wording'],
+  },
+  {
+    name: 'PKCE wording that is hedged passes',
+    files: { 'docs/SECURITY.md': 'PKCE is not yet verified against openrouter.ai; it was verified only against the mock OpenRouter. Connect becomes primary once PKCE is verified.' },
+    expect: [],
+  },
+  {
+    name: 'words after "verified" do not hedge it; a condition in another clause does not either',
+    files: {
+      'docs/SECURITY.md': [
+        'Connect OpenRouter (PKCE) is verified only on localhost.',
+        '',
+        'PKCE sign-in was verified after a real round trip.',
+        '',
+        'When you click Connect, PKCE is verified end to end.',
+      ].join('\n'),
+    },
+    expect: ['pkce-wording', 'pkce-wording', 'pkce-wording'],
+  },
+  {
+    name: 'a table row is read on its own: a verified row fails, a hedged row passes',
+    files: {
+      'docs/SECURITY.md': [
+        '| Check | Status |',
+        '|---|---|',
+        '| OpenRouter PKCE, Pages | not verified yet |',
+        '| OpenRouter PKCE, localhost | Verified |',
+      ].join('\n'),
+    },
+    expect: ['pkce-wording'],
+  },
+  {
+    name: 'a list item without a full stop does not borrow the previous item\'s hedge',
+    files: { 'docs/SECURITY.md': ['- Paste stays visible until the owner checks it', '- PKCE from the browser is verified'].join('\n') },
+    expect: ['pkce-wording'],
+  },
+  {
+    name: 'PKCE verified wording passes once Appendix D has dated results',
+    spec: SPEC_VERIFIED,
+    files: { 'docs/SECURITY.md': 'Connect OpenRouter uses PKCE, verified against openrouter.ai.' },
+    expect: [],
+  },
+  {
+    name: 'a stale measured block',
+    files: { 'README.md': ['<!-- measured:start -->', '| old | table |', '<!-- measured:end -->'].join('\n') },
+    expect: ['block-stale'],
+  },
+  {
+    name: 'unpaired measured markers',
+    files: { 'README.md': ['<!-- measured:end -->', '<!-- measured:start -->'].join('\n') },
+    expect: ['block-unpaired'],
+  },
+  {
+    name: 'launch: everything ready passes',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
+      [RECORDED_MANIFEST_PATH]: RECORDED,
+      'docs/launch/og.png': png(OG_WIDTH, OG_HEIGHT),
+      'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT),
+    },
+    files: {},
+    expect: [],
+  },
+  {
+    name: 'launch: no recorded dataset, not measured, an unverified cell, no og.png',
+    launch: true,
+    compare: COMPARE({ value: 'unverified', text: '', source_url: null, as_of: null, reviewed: false }),
+    files: {},
+    expect: ['launch-compare', 'launch-not-measured', 'launch-og', 'launch-og', 'launch-recorded'],
+  },
+  {
+    name: 'launch: a manifest that does not say kind "recorded" is not a recording',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
+      [RECORDED_MANIFEST_PATH]: JSON.stringify({ schema: 'trustagent.recording/v1' }),
+      'docs/launch/og.png': png(OG_WIDTH, OG_HEIGHT),
+      'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT),
+    },
+    files: {},
+    expect: ['launch-recorded'],
+  },
+  {
+    name: 'launch: a mock recording, a cell the owner has not reviewed, a wrong-size og.png',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE({ ...REVIEWED_CELL, reviewed: false }),
+    read: {
+      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
+      [RECORDED_MANIFEST_PATH]: MOCK_RECORDING,
+      'docs/launch/og.png': png(1200, 630),
+      'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT, OG_MAX_BYTES),
+    },
+    files: {},
+    expect: ['launch-compare', 'launch-og', 'launch-og', 'launch-recorded'],
+  },
+];
+
+function runCase(c) {
+  const files = new Map(Object.entries(c.files));
+  if (c.extraReadme) files.set('README.md', `${files.get('README.md')}\n${c.extraReadme.join('\n')}`);
+  const extra = c.read ?? {};
+  const read = (p) => (p in extra ? Buffer.from(extra[p]) : files.has(p) ? Buffer.from(files.get(p)) : null);
+  return checkClaims({
+    files,
+    claims: FIXTURE_CLAIMS,
+    measured: c.measured ?? NOT_MEASURED,
+    compare: c.compare ?? null,
+    specText: c.spec ?? SPEC_UNVERIFIED,
+    read,
+    today: TODAY,
+    launch: Boolean(c.launch),
+  });
+}
+
+function selfTestRun(check) {
+  const dir = mkdtempSync(join(tmpdir(), 'check-claims-'));
+  try {
+    const write = (path, content) => {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), content);
+    };
+    write(CLAIMS_PATH, JSON.stringify(FIXTURE_CLAIMS));
+    write(MEASURED_PATH, JSON.stringify(NOT_MEASURED));
+    write(SPEC_PATH, SPEC_UNVERIFIED);
+    const readme = [
+      '# Fixture',
+      '',
+      '<!-- measured:start -->',
+      '<!-- measured:end -->',
+      '',
+      '- <!-- claim:est_cost --> ~$0.21 / 1,000 answers [estimate]',
+      '',
+    ].join('\n');
+    write('README.md', readme);
+    write('docs/archive/old.md', 'Ours: 1 ms [measured]\n');
+    const scan = (opts = {}) => {
+      const out = [];
+      const code = run({ root: dir, today: TODAY, log: (l) => out.push(l), env: {}, ...opts });
+      return { code, out };
+    };
+
+    const stale = scan();
+    check('run: a stale block exits 1', stale.code === 1, JSON.stringify(stale.out));
+    check('run: the stale block is named', stale.out.some((l) => l.startsWith('README.md:3: error [block-stale]')), JSON.stringify(stale.out));
+    check('run: the archive is not prose we publish', !stale.out.some((l) => l.startsWith('docs/archive')), JSON.stringify(stale.out));
+
+    const written = scan({ write: true });
+    check('run: --write fixes the block and exits 0', written.code === 0, JSON.stringify(written.out));
+    const text = readFileSync(join(dir, 'README.md'), 'utf8');
+    check('run: --write keeps the prose around the block', text.startsWith('# Fixture\n\n<!-- measured:start -->\n') && text.endsWith('[estimate]\n'));
+    check('run: the block holds a marker per measured readme or docs claim',
+      text.includes('<!-- claim:meas_cost --> not yet measured [measured]') &&
+        text.includes("<!-- claim:meas_overhead --> not yet measured [measured] | Gateway's own time with simulated vendors; no run published yet |"));
+    const again = scan({ write: true });
+    check('run: a second --write changes nothing', again.code === 0 && !again.out.some((l) => l.includes('regenerated')), JSON.stringify(again.out));
+
+    // A load run published before a measured run adopts it: the note says where it is.
+    write(`${LOAD_RUNS_DIR}/load-1.json`, JSON.stringify(LOAD_RUN));
+    const published = scan();
+    check('run: a published load run makes the block stale', published.code === 1 && published.out.some((l) => l.includes('[block-stale]')), JSON.stringify(published.out));
+    scan({ write: true });
+    check('run: the block says where the published load run is',
+      readFileSync(join(dir, 'README.md'), 'utf8').includes(`not yet measured [measured] | Gateway's own time with simulated vendors; ${LOAD_RUN_NOT_ADOPTED} |`));
+
+    write(MEASURED_PATH, JSON.stringify(MEASURED));
+    write(`${LOAD_RUNS_DIR}/load-1.json`, JSON.stringify(LOAD_RUN));
+    const afterRun = scan();
+    check('run: a new measured run makes the block stale', afterRun.code === 1 && afterRun.out.some((l) => l.includes('[block-stale]')), JSON.stringify(afterRun.out));
+    scan({ write: true });
+    const measuredText = readFileSync(join(dir, 'README.md'), 'utf8');
+    check('run: the block shows the measured values and the run machine',
+      measuredText.includes('<!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]') &&
+        measuredText.includes('<!-- claim:meas_overhead --> 1.23 ms p50 [measured]') &&
+        measuredText.includes('<!-- claim:meas_latency --> 212.4 ms p50 [measured]') &&
+        measuredText.includes('measured on Test CPU, 10 logical CPUs and 8 GB RAM visible to Linux') &&
+        measuredText.includes('From the measured runs bench-1, load-1 (bench-publish, 2026-11-02).'),
+      measuredText);
+
+    const launch = scan({ launch: true });
+    check('run: --launch refuses a missing recording, comparison and og.png', launch.code === 1 &&
+      ['launch-recorded', 'launch-compare', 'launch-og'].every((r) => launch.out.some((l) => l.includes(`[${r}]`))), JSON.stringify(launch.out));
+    const annotated = scan({ launch: true, env: { GITHUB_ACTIONS: 'true' } });
+    check('run: GitHub annotations in Actions', annotated.out.some((l) => l.startsWith('::error file=frontend-react/demo-data/recorded/manifest.json::')),
+      JSON.stringify(annotated.out));
+
+    rmSync(join(dir, MEASURED_PATH));
+    let error;
+    try {
+      scan();
+    } catch (err) {
+      error = err;
+    }
+    check('run: a missing measured.json is a ConfigError', error instanceof ConfigError && error.message.includes(MEASURED_PATH),
+      error ? error.message : 'no error');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export function selfTest() {
+  let passed = 0;
+  const failures = [];
+  const check = (name, ok, detail = '') => {
+    if (ok) passed += 1;
+    else failures.push(detail ? `${name}: ${detail}` : name);
+  };
+
+  for (const c of CASES) {
+    let result;
+    try {
+      result = runCase(c);
+    } catch (err) {
+      check(c.name, false, `threw ${err.stack ?? err}`);
+      continue;
+    }
+    const errors = result.problems.filter((p) => p.level === 'error').map((p) => p.rule).sort();
+    const warnings = result.problems.filter((p) => p.level === 'warn').map((p) => p.rule).sort();
+    check(c.name, JSON.stringify(errors) === JSON.stringify([...c.expect].sort()),
+      `expected ${JSON.stringify(c.expect)}, got ${JSON.stringify(result.problems.map(formatProblem))}`);
+    // The fixture's one stale third-party claim warns in every case; the age rule has its own case.
+    const wantWarnings = ['third-party-stale'];
+    check(`${c.name} (warnings)`, JSON.stringify(warnings) === JSON.stringify(wantWarnings), `got ${JSON.stringify(warnings)}`);
+  }
+
+  // The age rule: only the claim older than 120 days warns, and it names the age.
+  const aged = runCase({ files: {} }).problems.filter((p) => p.rule === 'third-party-stale');
+  check('age: one warning, for tp_latency at 222 days', aged.length === 1 && aged[0].message.startsWith('tp_latency: as_of 2026-03-01 is 222 days old'),
+    JSON.stringify(aged));
+
+  // Generated blocks pass their own rules, measured or not.
+  for (const measured of [NOT_MEASURED, MEASURED]) {
+    const read = (p) => (p === `${LOAD_RUNS_DIR}/load-1.json` ? Buffer.from(JSON.stringify(LOAD_RUN)) : null);
+    const block = renderMeasuredBlock(FIXTURE_CLAIMS, measured, read);
+    const text = ['<!-- measured:start -->', ...block.lines, '<!-- measured:end -->'].join('\n');
+    const result = checkClaims({ files: new Map([['README.md', text]]), claims: FIXTURE_CLAIMS, measured, specText: SPEC_UNVERIFIED, read, today: TODAY });
+    const errors = result.problems.filter((p) => p.level === 'error');
+    check(`generated block (${measured.status}) passes`, errors.length === 0 && result.markers === 3 && result.blocks === 1,
+      JSON.stringify(result.problems.map(formatProblem)));
+    // D118: the overhead row has a table of its own, after the fast-check results and their latency.
+    const at = (id) => block.lines.findIndex((l) => l.includes(`<!-- claim:${id} -->`));
+    const intro = block.lines.indexOf(OVERHEAD_INTRO);
+    check(`generated block (${measured.status}): proxy overhead is a separate table after the latency`,
+      at('meas_latency') >= 0 && at('meas_latency') < intro && intro < at('meas_overhead') &&
+        block.lines[at('meas_overhead') - 1] === '|---|---|---|' && block.lines[at('meas_latency') + 1] === '',
+      JSON.stringify(block.lines));
+  }
+
+  // Helpers.
+  check('format: usd_per_1k under $1 keeps 3 decimals', formatValue(0.2134, 'usd_per_1k') === '0.213');
+  check('format: fraction as a percentage', formatValue(0.873, 'fraction') === '87.3%');
+  check('format: ms to 2 decimals', formatValue(1.234, 'ms') === '1.23');
+  check('slug: GitHub heading anchors', slug('Latency `caveat` (P50)!') === 'latency-caveat-p50');
+  check('pkce: unverified rows', JSON.stringify(pkceStatus(SPEC_UNVERIFIED)) === '{"localhost":false,"pages":false,"found":true}');
+  check('pkce: dated rows', JSON.stringify(pkceStatus(SPEC_VERIFIED)) === '{"localhost":true,"pages":true,"found":true}');
+  const half = SPEC_UNVERIFIED.replace('still unverified against the real openrouter.ai', 'Verified 2026-11-01');
+  check('pkce: a sentence about the verified callback passes, the other fails',
+    pkceWordingHits(['PKCE with a localhost callback is verified.'], pkceStatus(half)).length === 0 &&
+      pkceWordingHits(['PKCE from the Pages site is verified.'], pkceStatus(half)).length === 1);
+  check('png: size from IHDR', JSON.stringify(pngSize(png(1280, 640))) === '{"width":1280,"height":640}' && pngSize(Buffer.from('nope')) === null);
+  check('mask: inline code keeps columns', maskCode(['a `<!-- x -->` b'])[0] === `a ${' '.repeat(12)} b`);
+  check('mask: comments span lines', JSON.stringify(maskComments(['a <!-- x', 'y --> b'])) === JSON.stringify(['a       ', '      b']));
+
+  try {
+    selfTestRun(check);
+  } catch (err) {
+    check('run: end-to-end fixture', false, `threw ${err.stack ?? err}`);
+  }
+
+  for (const failure of failures) console.error(`FAIL ${failure}`);
+  console.log(`check-claims self-test: ${passed} passed, ${failures.length} failed.`);
+  return failures.length ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+
+const USAGE = 'Usage: node scripts/check-claims.mjs [--write] [--launch] [--self-test] [--root <dir>] [--today YYYY-MM-DD]';
+
+function main(argv) {
+  let args;
+  try {
+    ({ values: args } = parseArgs({
+      args: argv,
+      options: {
+        write: { type: 'boolean' },
+        launch: { type: 'boolean' },
+        'self-test': { type: 'boolean' },
+        root: { type: 'string' },
+        today: { type: 'string' },
+        help: { type: 'boolean', short: 'h' },
+      },
+    }));
+  } catch (err) {
+    console.error(`check-claims: ${err.message}\n${USAGE}`);
+    return 2;
+  }
+  if (args.help) {
+    console.log(USAGE);
+    return 0;
+  }
+  if (args['self-test']) return selfTest();
+  const today = args.today ?? new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today) || Number.isNaN(Date.parse(`${today}T00:00:00Z`))) {
+    console.error(`check-claims: --today must be a date (YYYY-MM-DD), got ${today}\n${USAGE}`);
+    return 2;
+  }
+  const root = args.root ? resolve(args.root) : resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  try {
+    return run({ root, write: Boolean(args.write), launch: Boolean(args.launch), today });
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error(`check-claims: ${err.message}`);
+      return 2;
+    }
+    throw err;
+  }
+}
+
+/** True when this file is the program being run (compared as real paths, so symlinks work). */
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
+  process.exitCode = main(process.argv.slice(2));
+}

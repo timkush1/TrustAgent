@@ -141,10 +141,12 @@ func (s *statusTracker) fill(st *Status, b breakerView, spend *SpendStatus) {
 			kind = KindRetryable // OpenRouter's in-flight budget: busy, not out of credits
 		}
 	}
+	// An open period a refused key or account started is named by its own cause: a success that
+	// was in flight before it (the startup probe, a slower answer) can land after the refusal.
 	switch {
-	case b.state == BreakerOpen && kind == KindAuth:
+	case b.keyCause == KindAuth, b.state == BreakerOpen && kind == KindAuth:
 		st.State = "unauthorized"
-	case b.state == BreakerOpen && kind == KindCredits:
+	case b.keyCause == KindCredits, b.state == BreakerOpen && kind == KindCredits:
 		st.State = "no_credits"
 	case b.state != BreakerClosed:
 		st.State = "breaker_open"

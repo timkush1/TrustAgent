@@ -2034,7 +2034,7 @@ Other routes:
 - `/app/setup` (wizard; `#token=`).
 - `/connect/callback` (PKCE).
 - Full build: `/` → `/app`, landing at `/welcome`.
-- Static build: `/` is the landing page; nav = Overview (recorded), Traffic (replay), Trace, Playground, Studio, and "Run it yourself". Policies, Settings and Knowledge are hidden.
+- Static build: `/` is the landing page; nav = Overview ("recorded" for a recorded tape, "simulated" for the simulated one; Appendix G, D164), Traffic (replay), Trace, Playground, Studio, and "Run it yourself". Policies, Settings and Knowledge are hidden.
 
 **Shell and data layer:**
 - Top bar: title, time window, a **Health pill** (dot plus count, opening a checklist popover), demo/readonly badge, theme toggle.
@@ -2476,7 +2476,7 @@ npm run size && make load-test-gate        # publishes p50/p95 overhead (report-
 Gate:
 
 ```bash
-make check && python3 scripts/check_version.py && node scripts/check-claims.mjs && python3 scripts/check_recording.py frontend-react/public/demo/recorded
+make check && python3 scripts/check_version.py && node scripts/check-claims.mjs && python3 scripts/check_recording.py frontend-react/demo-data/simulated
 ```
 
 **P7 (v2.1)**
@@ -3039,7 +3039,7 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | Assumption | Verified at |
 |---|---|
 | OpenRouter PKCE accepts `localhost` callbacks | P1g; at the end of P4 still unverified against the real openrouter.ai (the owner's §21 #1 check was not run), so Connect stays primary with Paste always visible (D88; verified only against the mock-upstream OpenRouter) |
-| OpenRouter PKCE accepts the Pages callback | P5, when Pages exists |
+| OpenRouter PKCE accepts the Pages callback | P6 (owner), when Pages exists |
 | `GET /api/v1/key` response shape | P1g |
 | `usage.cost` on chat with `usage.include` | P1g |
 | `/alpha/decisions` ≡ `/v1/systemone` bodies | P1g fixtures |
@@ -3051,8 +3051,9 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | Haiku 4.5 price $1/$5 per MTok | Before bench-publish |
 | RAGTruth/AggreFact field names, revisions, licences | P6 |
 | Compose ≥2.24 in WSL | P0 |
-| GHCR multi-arch publishing permissions | P5 |
-| Pages availability for the repo plan | P5 |
+| GHCR multi-arch publishing permissions | P6 (owner) |
+| Pages availability for the repo plan | P6 (owner) |
+| OpenRouter browser CORS (decisions, systemone, chat, auth/keys, key; error readability) | Verified 2026-10-09 (P5 Step 0a, free checks: no key or a fake one). From `Origin: https://timkush1.github.io`, the preflights of `POST /api/alpha/decisions`, `/api/v1/systemone`, `/api/v1/chat/completions`, `/api/v1/auth/keys` and `GET /api/v1/key` answer 204 with `access-control-allow-origin: *` and allow `authorization`, `content-type`, `accept`, `http-referer` and `x-openrouter-title`; a keyless POST answers 401 with the same origin header. From headless Chromium, every endpoint's error (401 `User not found.`, auth/keys 400 `Invalid code`) is readable JSON. OpenRouter's PKCE guide documents `key_label`. So the static site can run live checks, drafts and Connect from the browser (P5-PLAN D100, scope L) |
 | Market-signal claims in §8.3 | P6 re-verification |
 | Default caps ($2 decision, $5 LLM) | Owner confirms at onboarding |
 | 150 ms knowledge deadline | P3 load test |
@@ -3174,3 +3175,143 @@ Where a section above says otherwise, the decision cited for it here wins.
   words modules (D86 allows them there), details on `price_far_above_contracts` warnings,
   Studio's `Draft with AI` saying "out of credits" instead of "engine unavailable" for a 401 or 402
   judge, and the Docker run of the `handbook` knowledge scenario (D65).
+
+## Appendix G: P5 errata
+
+The lead decisions D99-D141 of `docs/v2/P5-PLAN.md` §1, and D142-D168 below (made at the int6
+checkpoint merges, the integration and its fix round), settled the gaps P5 found. Where a section above (or
+Appendix F) says otherwise, the decision cited for it here wins.
+
+| SPEC section | What changes | Decisions |
+|---|---|---|
+| §2.13, §3.3 (web), Appendix F §3.3 | Committed benchmark runs are `docs/benchmarks/results/<run_id>.json` (the index is `docs/benchmarks/index.json`), not `runs/`; the dashboard reads only measured, non-mock runs. The static build hides Benchmarks, so its nav stays the six items of §3.3; Appendix F's "renders committed benchmark runs" no longer applies to the static build (§23 CO-4). | D111 |
+| §1 (Tier 0), §2.10 | "<2 ms" is the Tier-0 budget statement ("Tier-0 p50 < 2 ms for ≤ 32k-token evidence and a ≤ 1k-token answer, on the stated machine; an answer dense with dates, links and quotations takes longer (report only)"), not a measured figure: `TestTier0Budget` guards 8k- and 32k-token evidence with a 1k-token answer at < 4 ms locally and < 12 ms with `CI=true`, outside `-race`. GATEWAY.md publishes the measured Go benchmark run that `make bench-tier0-publish` keeps in `docs/benchmarks/tier0/<sha>.txt` (labelled with its CPU; `make bench-tier0-report`, part of `make check`, keeps the block in step). The detectors read the reference text only when the answer holds something to check against it (a date, a checked number, a URL, a long quote), scan it in windows around four-digit years (dates) or in runs of the pattern's alphabet (numbers, URLs; the shipped number pattern has a hand-written scanner), with the same findings | D120, D161, D167 |
+| §2.13 | Recordings ship from `frontend-react/demo-data/{simulated,recorded}/` (no longer `public/`): the dataset plugin copies exactly one to `dist/demo/` (`VITE_DEMO_DATASET` mock, recorded or auto), and a `recorded/` manifest that is not `kind: recorded` fails every build. The simulated tape is built by the TypeScript recorder through the browser gate pipeline (`runGate`) and must reproduce each scenario's `expect` block; since runGate resolves route thresholds and rules it holds every recordable demo scenario (20 × 4 rounds, 80 traces). Load runs are `trustagent.load-run/v1` files in `docs/benchmarks/load/`, written only by `make load-test-gate LOAD_PUBLISH=1` from a clean tree. Vendor faults are a separate pack, `contracts/demo/faults.v1.json` (`mock_faults`, `expect.degraded`, `expect.decision_model`): trafficgen sends the scenario id, the gateway forwards it to a local decision backend in test mode only, and the mock judge loads both packs | D110, D111, D118, D119, D135, D145, D146, D151, D155, D156 |
+| §3.3 (web) | Static site: "Try Jev live" is a `#live` section of `/app/playground` only (three scenarios; the landing links there only when `LIVE_CHECKS`); the Studio drafts and tests in the browser with the visitor's key and exports `evaluator.v1` JSON instead of saving; replayed traces rebuild the Jev request in the browser ("Rebuilt in your browser · simulated recording"); bundle budgets are landing ≤ 110 KB, app entry ≤ measured + 6 KB, lazy chunks ≤ 130 KB, `dist` ≤ 10 MB, no live module up front and no preconnect to openrouter.ai; `/og` exists only in launch builds; the replay says "simulated" once, carries the showcase caveat and a four-step guide; the static nav's Overview hint names the shipped tape ("recorded" or "simulated"), and its words are `copy.recording.nav_hints`; a replayed trace links its check into Studio (a copy with the free threshold what-if) instead of the hidden evaluator and policy pages | D99, D107, D109, D112, D115, D117, D164, D168 |
+| §3.4 | `make record-demo` (dry run unless `CONFIRM=1`; record overlay, test mode, capped spend); `pages.yml` builds always and deploys only with `PAGES_ENABLED` from main or a `v*` tag; `release-images.yml` publishes multi-arch images with provenance and SBOM; compose defaults every app image to `${TRUSTAGENT_VERSION:-<VERSION>}` and pulls on a release tag; `bump_version.py` / `check_version.py` keep VERSION's mirrors; the knowledge overlay builds its engine locally (`<version>-knowledge`, never published) and its Docker run is P6; privileged workflows are SHA-pinned, credential-less and linted (actionlint, zizmor); scratch output goes under the ignored `tmp/` | D123-D127, D131, D132, D140, D142, D143 |
+| §4.2 P5 gate | The static build names its dataset (`VITE_DEMO_DATASET=mock`); first-run and golden-path run on locally built `p5local` images in P5 (pulled images in P6); golden-path counts every click from the setup link `make up` opens, Copy included (8), and first-run.json says its timing skips that optional click; first-run, golden-path and onboarding each claim a fresh stack's one-time setup link, so `make first-run-proof FIRST_RUN_LOCAL=1` runs them one after another on separate fresh stacks (`make first-run` stays the timed first-run alone; `FIRST_RUN_LOCAL=1` already means the `p5local` tag and is refused together with `FIRST_RUN_TAG`); onboarding's signed-out check allows one console line per refused sign-in probe at load and nothing after; the demo pack has 27 scenarios and the e2e set 26 (`help-center-link-block-json`, the generated pair) | D130, D139, D162, D165, D166 |
+| §5 | Risk 24 (Pages unavailable for the repo plan) moves to P6 with the owner's Pages and repository-visibility steps | risk 24 → P6 |
+| §7.5 | Static Pages demo: consent bullets 1–2 read "Your key stays in this browser tab and is sent only to openrouter.ai. It is cleared after 2 hours or when you press Forget key." and "Requires credits on your OpenRouter account; a typical check (about 5,000 tokens of documents) costs about {cost_per_check} [estimate], a short example less; this demo stops after {max_calls} calls to OpenRouter (checks and AI drafts)."; the out-of-credits screen replaces the no-credit-limit note; only billable calls (2xx or a response with `usage`) use the cap, rejected calls pause the panel after 10 in a row, and a 402 never counts (an in-flight 402 says so, with Retry); sessionStorage only (key TTL 2 h, verifier 10 min, restored pages re-check it); the callback scrubs the URL before any request, never renders the vendor's error text and returns only to an allow-listed path; consent, Paste and the callback refuse to run framed; the request headers are a fixed allowed set and the decisions path is chosen at build time; builds refuse secret-looking `VITE_*` names; only the listed modules may reach the network; browser error words include `bad_request` and `not_found` | D100-D102, D105, D106, D114, D137, D138, D157, D159 |
+| §7.6 | `pkce` vectors (challenge, verifier_from_bytes, auth_url with `key_label`), frozen and run in Go and TypeScript; TypeScript runs every cost function, and its cost core throws on fractional token counts and invalid per-1k settings (callers round up and validate first) | D103, D150 |
+| §8.1 | The comparison table is data (`contracts/claims/compare.v1.json`, `trustagent.compare/v1`): a vendor cell needs a fetched source and a date, and launch needs the owner's review of every cell; new claims `fast_check_cost_per_check` and `studio_draft_cost_estimate` (estimates); the Studio strip shows steps and cost labels only, and the "What Jev was asked" panel reads a committed, drift-checked compile of the refund scenario; the calculator's judge list comes from the price table (no Sonnet price in P5). The hero card's and the panel's cost is that request priced: its estimated input tokens at the Jev price (`hero_card_cost_usd`, $0.000024, Estimate, derivation in the claim's `tokens_x_price`, checked by `validate.mjs`), and the panel shows no time; every claim with a caveat shows it next to its chip (`ClaimCaveat`), so the hero's latency row carries its range and the subhead no longer repeats the latency; `demo_cost_usd` is gone (a demo that cannot bill costs $0 as a fact, said in words); the comparison leads each cell with Yes, No or Partly and says a shared read date once | D113, D114, D116, D149, D168 |
+| §8.2 | OG card, hero GIF and screenshots are captured by `make og`, `make hero-gif` and the `launch` Playwright project; a mock tape is refused unless explicitly allowed, and then labelled Simulated | D115 |
+| Appendix D | The OpenRouter browser CORS row is added (verified 2026-10-09); "PKCE accepts the Pages callback", "GHCR multi-arch publishing permissions" and "Pages availability" move to P6 (owner); the localhost PKCE row still says unverified (CO-14) | D100 |
+| P4-PLAN D65 | The knowledge Docker proof moves to P6 (`ci-knowledge.yml`); P5 proves it in process | D131 |
+| P4-PLAN D72 | The static `/connect/callback/` is a prerendered page (D105); the static Studio ships (D107); Benchmarks stays hidden on the static site (D111) | D105, D107, D111 |
+| P4-PLAN D87 | P5 times first-run on locally built images ("measured locally, images prebuilt") | D130 |
+| P3-PLAN §13 | The #66 zip bundle moves to P7 | §19 P7 |
+
+### Decisions made during the P5 wave (D142-D168)
+
+- **D142 (image defaults):** every app image default in every compose file equals VERSION
+  (`${TRUSTAGENT_VERSION:-1.0.0}`); `bump_version.py` keeps the overlays in step and
+  `check_version.py` warns on drift.
+- **D143 (scratch output):** the root `.gitignore` ignores `/tmp/`; kept load results go to
+  `docs/benchmarks/load/`, never under `tmp/`.
+- **D144 (base-image comments):** Dockerfile headers name the tag on the FROM line and say the index
+  digest is the pin; they name no patch release a digest refresh could change.
+- **D145, D146 (fault channel):** the `mock_faults` schema text says how a fault reaches
+  mock-upstream (scenario id forwarded in test mode; counted per trace id or per scenario); the mock
+  judge loads the faults pack next to the main pack and refuses an id in both.
+- **D147, D148 (cost runner records):** the frozen cost-vector test and comment changes the TS cost
+  runner needed were accepted and reworded.
+- **D149 (no Sonnet price in P5):** the calculator lists only priced judge entries plus a custom
+  $/MTok field; a sourced Sonnet pair is a P6 owner re-check.
+- **D150 (TS cost core):** see §7.6 above; a RangeError never reaches the UI.
+- **D151, D155, D156 (runGate parity):** the browser gate passes each route evaluator's thresholds
+  and the route's resolved rules as the Go gate does; the recorder's `AWAITING_RUNNER` list is
+  empty and the tape holds the payments and billing routes.
+- **D152 (tape size in tests):** tests select tape traces by scenario id and never hard-code the
+  tape size.
+- **D153, D158 (comments):** the `recording` help text and the gate result type comments say what
+  the code does.
+- **D154 (checkpoint scope):** a checkpoint merges the reviewed commit, not a moving branch tip.
+- **D157, D159 (browser error words):** see §7.5 above.
+- **D160 (gate scope):** WEB-LIVE's gate runs the recorder tests; the lead runs the full vitest
+  suite at every checkpoint.
+- **D161 (date detector cost):** see §1/§2.10 above. Measured on the dev laptop (report only):
+  the date detector on the dense 8k case went from 14.8 ms to 1.5 ms; the guarded case's p50 is about
+  2.3 ms.
+- **D162 (golden-path count):** every click counts, Copy included; the setup link `make up` opens is
+  the journey's start, not a click.
+- **D163 (live-surface sentences):** the live Playground's headings, labels and figure bases stay in
+  `components/replay/live/liveText.ts` in P5; moving them into `copy.playground_live.ui.*` is a P6
+  copy-contract change. Its error and consent words already come from the copy contract.
+- **D164 (static nav hint):** the Overview's hint follows the shipped manifest's kind: "recorded" for
+  a recording of real checks, "simulated" for the simulated tape, nothing until the manifest has
+  loaded. §3.3's "Overview (recorded)" described the recorded tape; see §3.3 above.
+- **D165 (fresh-stack proof):** see §4.2 above. `make first-run-onboarding` runs the onboarding spec
+  on a fresh stack of the same project and ports; `make first-run-proof` runs first-run,
+  golden-path and first-run-onboarding one after another, each on its own fresh stack. P5-PLAN
+  §17 I-7's `make first-run FIRST_RUN_LOCAL=1 FIRST_RUN_TAG=p5local` is superseded by
+  `make first-run-proof FIRST_RUN_LOCAL=1`.
+- **D166 (signed-out console):** a signed-out page learns it is signed out from its load's sign-in
+  probes (GET /api/session and GET /api/status answer 401, one console line each); onboarding's
+  CO-10 check allows exactly those lines at load, fails on any other 401 or console error, and
+  requires the 8 s after the first 2 s to be silent. A setup page that sends no probe at all is P6.
+- **D167 (Tier-0 budget):** see §1/§2.10 above. Measured with `make bench-tier0-publish` on the dev
+  laptop (i5-12450H): 8k-token evidence with a 1k-token answer about 0.3 ms, 32k about 0.4 ms;
+  the dense 32k answer (report only) about 7 ms, mostly the date detector. Before the change:
+  2.1 ms at 8k and about 9 ms at 32k (the number and URL scans were quadratic per document).
+- **D168 (landing figures and caveats):** see §7.5 and §8.1 above. `hero_card_latency_ms` keeps its
+  212 ms beat (Simulated), its caveat moved into its basis.
+
+The fix round also fixed the gateway's decision-model status: a pause that the vendor's refusal of
+the key or account started (401, 403, a 402 without in-flight credits) keeps its state,
+`unauthorized` or `no_credits`, when a success that was already in flight lands after it, so an
+admin's test can still lift it; a pause vendor faults started stays `breaker_open`.
+
+### Decisions made in the second fix round (D169-D172)
+
+- **D169 (comparison cells name their vendor; amends D113):** a `compare.v1` cell carries
+  `vendor`, the product whose docs it cites, shown with its answer ("Yes · Langfuse"), and the
+  value `not_documented` ("Not documented") where the docs are silent; `varies` is only for docs
+  that say the answer depends. `validate.mjs` requires a verified cell's vendor in its row's
+  examples, every product the examples name to be cited by a cell, and no vendor name or "Not
+  documented (as of …)" in the text. §8.1's example list "(Langfuse, Arize, Datadog)" became
+  "Langfuse": no cell cited Arize or Datadog. A managed service's self-host cell reads No when its
+  docs call it fully managed (Amazon Bedrock). Each cell has one control, Source, holding the docs'
+  words and link; on a phone the other kinds of tools sit behind one disclosure. Every cell stays
+  `reviewed:false` for the owner's review before launch.
+- **D170 (one approximation sign per surface):** value-claim displays write an approximation as
+  "~" (`studio_draft_cost_estimate` is "~$0.005 per draft"), and so does the landing; the
+  dashboard's computed figures keep "≈" (§7.4's Studio button, the consent dialog's worst case).
+  The consent dialog says how its worst case is reached (calls × the token cap × the dearer
+  model's price), and the live surfaces link each OpenRouter settings page they name.
+- **D171 (RP-4 as built):** on the static site a replayed check links into Studio ("Try its
+  threshold in Studio", `copy.trace.open_in_studio` and `studio_static_note`) instead of P5-PLAN RP-4's
+  disabled "Open evaluator" / "Adjust threshold" pair, which remains only for a check without a
+  version; the Studio copy is free to test, so no dead control is shown.
+- **D172 (nested instant-check marks):** a finding inside a claim's mark draws its line only; the
+  claim's verdict icon alone ends the phrase (DESIGN.md §3). A finding on its own keeps its scan
+  icon. A trace with no documents says "No documents to check against"
+  (`copy.trace.checked_against_none`), and the flag outcome's next step sets the header it names
+  as code.
+
+The replay Overview draws no progress meter for a hallucination rate a replay cannot have
+(`LabelledRateView notApplicable`), and a simulated fast-check p50 / p95 shows a dash in its
+headline with the mock's milliseconds in the note.
+
+### Plan text superseded at the P5 integration
+
+- P5-PLAN §17 I-7: `make first-run-proof FIRST_RUN_LOCAL=1` (D165), not
+  `make first-run FIRST_RUN_LOCAL=1 FIRST_RUN_TAG=p5local`.
+- P5-PLAN §17 I-8: `python3 scripts/load/report.py --gateway-md` reads the published runs and takes
+  no file argument (`--gateway-md <file>` is refused).
+- P5-PLAN §17 I-5b: the README shows Traffic, Trace, Playground, Savings and Studio; Policies is not
+  captured because the static site hides it (D111).
+- P5-PLAN §17 I-9: `s-hosts.txt` holds self, openrouter.ai and documentation hosts, or inert text
+  (default values and example names in the bundle that no code requests); the CSP's `connect-src`
+  and the `csp-network` and `csp-live` specs check the network itself.
+- P5-PLAN §20, "Compose does not fall back to build on a missing tag": disproved. On a tag the
+  registry refuses, Compose warns "denied" and builds the image locally (I-7 `b-pull-fallback.txt`).
+
+### Requests answered at the P5 integration
+
+- The policy loader accepts the knowledge evidence source when `TRUTHTABLE_KNOWLEDGE_ENABLED=true`
+  (CO-9, GO-6).
+- gitleaks passes over the whole history: the vendor-fixture key test builds its key at run time,
+  and its Step 0a commit is a reviewed false positive in `.gitleaks.toml`.
+- The phase grep covers P5 (`PHASE_REFS_RE`), with the stale allow-list entries removed (D134).
+- `copy.studio.static_soon`, `StudioStaticNote.tsx` and the unused `PhasePlaceholder` are gone; the
+  words modules have no pending rewire; `src/landing/TryIt.tsx` left the network allow-list.

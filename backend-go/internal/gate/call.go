@@ -94,7 +94,7 @@ func (g *Gate) ask(ctx context.Context, x *Exchange, c *decision.Compiled, base 
 	r := &callRound{compiled: c, outs: make([]callOutcome, len(c.Requests)), base: base, started: g.cfg.Now(),
 		late: &lateGate{g: g, traceID: x.Trace.TraceID}}
 	opt := jev.CallOptions{
-		Class: jev.ClassSync, Scenario: x.Trace.Scenario,
+		Class: jev.ClassSync, Scenario: x.decisionScenario(),
 		HedgeAfter: time.Duration(x.Route.HedgeAfterMs) * time.Millisecond,
 		Enforcing:  !x.Advisory && (x.Trace.Mode == decision.ModeBlock || x.Trace.Mode == decision.ModeFallback),
 		TraceID:    x.Trace.TraceID, Route: x.Route.Name, KeyLabel: x.Trace.KeyLabel,
@@ -135,6 +135,7 @@ func (g *Gate) spentBy(r *callRound) spent {
 	for _, o := range r.outs {
 		if o.err != nil {
 			s.attempts += attemptsOf(o.err)
+			s.hedged = s.hedged || hedgedOf(o.err)
 			continue
 		}
 		s.attempts += max(o.resp.Attempts, 1)
@@ -170,6 +171,7 @@ func (g *Gate) collect(r *callRound, model string) (usage *DecisionModelUsage, a
 		key := strconv.Itoa(k)
 		if o.err != nil {
 			usage.Attempts += attemptsOf(o.err)
+			usage.Hedged = usage.Hedged || hedgedOf(o.err)
 			kind := jev.ErrorKind(o.err)
 			if reason, ok := jev.SkipReason(o.err); ok {
 				skips = append(skips, reason)
@@ -227,6 +229,12 @@ func attemptsOf(err error) int {
 		return e.Attempts
 	}
 	return 1
+}
+
+// hedgedOf reports whether a failed decision-model call had sent its hedge.
+func hedgedOf(err error) bool {
+	var e *jev.Error
+	return errors.As(err, &e) && e.Hedged
 }
 
 // continued is the requests of a round whose attempts went on after the deadline: their outcome

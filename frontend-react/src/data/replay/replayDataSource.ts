@@ -1,6 +1,6 @@
 /**
  * ReplayDataSource (SPEC §3.3): the static build's DataSource. It serves a recording
- * (public/demo/recorded, trustagent.recording/v1) through the same interface as the live gateway,
+ * (served at demo/ from demo-data/, trustagent.recording/v1; D110) through the same interface as the live gateway,
  * so Overview, Traffic and Trace render unchanged:
  *
  * - REST reads answer from the tape at its current position: traces, decisions and audits the
@@ -10,6 +10,9 @@
  * - subscribe() plays the rest of the tape as WS v2 frames in compressed time (VITE_REPLAY_SPEED),
  *   after a `hello` that marks the stream read-only. The first half of the traces is already on
  *   screen when the page opens, so Traffic is never empty; the second half arrives live.
+ * - Evidence suggestions run the gateway's scan in the browser over the answers that carried no
+ *   evidence (suggest.ts), and "Show exact Jev request" rebuilds a decision's requests with TS
+ *   compile() (glassBox.ts, D109); both load on demand.
  * - Everything a recording cannot answer (Policies, Settings, Knowledge, the Playground's gateway
  *   run, evaluator details) comes from unavailableControlPlane with a message that points to
  *   running the stack locally.
@@ -29,10 +32,13 @@ import type {
 import { unavailableControlPlane, type ControlPlane } from '../controlPlane';
 import { ApiError } from '../errors';
 import type { AuditListParams, DataSource, DecisionListParams, LiveControl, PageParams, StreamSink, TraceListParams } from '../source';
+import { hasReason } from '@/components/traffic/trafficRows';
 import { outcomeOf } from '@/domain/presentation';
 import { browserClock, DEFAULT_MAX_GAP_MS, ReplayPlayer, type ReplayClock } from './player';
 import { loadRecording, type DemoDataset, type RecordingFiles } from './recording';
 import { INITIAL_REPLAY, useReplayStore } from './replayStore';
+import { replayEvaluatorReads } from './replayEvaluatorReads';
+import { replayStudioPlane, type ReplayPlaneDeps } from './replayStudioPlane';
 import pricingTable from '@contracts/pricing/prices.v1.json';
 import { evidenceCoverage, overviewStats, roiSummary, roiTimeseries, type PlayedTrace } from './stats';
 import { envelope, ReplayTape } from './tape';
@@ -86,6 +92,9 @@ function matchesTrace(t: TraceSummary, p: TraceListParams): boolean {
   if (p.audit_verdict && t.audit.verdict !== p.audit_verdict) return false;
   if (p.source && t.source !== p.source) return false;
   if (p.outcome && outcomeOf(t) !== p.outcome) return false;
+  // A whole code, or every code a colon-ended prefix starts (D68). The proxy needs `since` with it;
+  // the replay reads it over the whole recording.
+  if (p.reason && !hasReason(t.reasons, p.reason)) return false;
   if (!after(p.since, t.created_at) || !after(p.updated_since, t.updated_at)) return false;
   if (p.until && Date.parse(t.created_at) >= Date.parse(p.until)) return false;
   if (p.q) {
@@ -189,6 +198,8 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
         kind: loaded.manifest.kind,
         label: loaded.manifest.label,
         recordedAt: loaded.manifest.recorded_at,
+        snapshot: loaded.manifest.decision_model.snapshot,
+        judge: loaded.manifest.judge.model,
         traces: loaded.manifest.traces.length,
         duration: tape.duration,
         preroll,
@@ -216,6 +227,7 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
   const ctx = (t: ReplayTape, window: Parameters<ControlPlane['getRoiSummary']>[0]) => ({
     recording: t.recording,
     now: t.timeAt(position),
+    end: t.timeAt(t.duration),
     window,
   });
 
@@ -268,8 +280,17 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
     play(tape);
   }
 
+  // The Studio plane and the evaluator reads answer from the tape and the browser (WEB-STUDIO).
+  const planeDeps: ReplayPlaneDeps = {
+    message: STATIC_UNAVAILABLE,
+    traceIds: async () => (await ready).ids(),
+    trace: (id, signal) => source.getTrace(id, signal),
+  };
+
   const control: ControlPlane = {
     ...unavailableControlPlane(STATIC_UNAVAILABLE),
+    ...replayStudioPlane(planeDeps),
+    ...replayEvaluatorReads(planeDeps),
     async getOverview(params) {
       const t = await ready;
       return overviewStats(played(t), ctx(t, params.window));
@@ -281,8 +302,17 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
     async getRoiTimeseries(params) {
       const t = await ready;
       // A recording is one fixed stretch of minutes to hours, so the series comes in the bucket
-      // that fits it (per minute for this demo's recording), whatever the window asks for.
+      // that fits the whole recording (per hour for the two-hour simulated tape), whatever the
+      // window asks for and however far the tape has played.
       return roiTimeseries(played(t), ctx(t, params.window));
+    },
+    async getDecisionRequest(traceId, params, signal) {
+      const t = await ready;
+      const detail = await source.getTrace(traceId, signal);
+      // The glass box rebuilds the request in the browser (D109): compile() and the templates load
+      // only when the panel opens.
+      const [{ rebuildDecisionRequest }, { policy }] = await Promise.all([import('./glassBox'), import('virtual:trustagent/policy')]);
+      return rebuildDecisionRequest(detail, params?.attempt ?? 0, policy, t.recording.decision_model.snapshot);
     },
     async getPricing() {
       // A recording has no dashboard overrides: the built-in table is the effective one.
@@ -292,13 +322,28 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
       const t = await ready;
       return evidenceCoverage(played(t), ctx(t, params.window), params.route);
     },
-    async getEvidenceSuggestions() {
-      await ready;
-      return { items: [] };
+    async getEvidenceSuggestions(params, signal) {
+      const t = await ready;
+      // The gateway's scan (D64) over the played answers that carried no evidence, most recent
+      // first; none gives no suggestion, and the card says so.
+      const untagged = played(t)
+        .map((p) => p.summary)
+        .filter((s) => (!params.route || s.route === params.route) && s.source !== 'direct' && (s.checked_against?.used ?? []).length === 0)
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || (a.trace_id < b.trace_id ? 1 : -1));
+      if (untagged.length === 0) return { items: [] };
+      const [{ MAX_SUGGEST_SCAN, policyEvidenceSettings, suggestEvidence }, { policy }] = await Promise.all([
+        import('./suggest'),
+        import('virtual:trustagent/policy'),
+      ]);
+      const details = await Promise.all(untagged.slice(0, MAX_SUGGEST_SCAN).map((s) => source.getTrace(s.trace_id, signal)));
+      const bodies = details
+        .filter((d) => d.body.available)
+        .map((d) => ({ traceId: d.trace_id, route: d.route, messages: d.body.messages }));
+      return { items: suggestEvidence(bodies, policyEvidenceSettings(policy)) };
     },
   };
 
-  return {
+  const source: ReplayDataSource = {
     ...control,
     kind: 'replay',
     ready,
@@ -378,4 +423,5 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
       };
     },
   };
+  return source;
 }

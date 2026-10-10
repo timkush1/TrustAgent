@@ -1,7 +1,8 @@
 # ============================================================================
 # mk/dx.mk - Compose stacks (default, demo and e2e), setup tools, local models,
-# load test, monitoring shortcuts. Owned by the W-DX stream. Included by the
-# root Makefile; targets are declared .PHONY there.
+# monitoring shortcuts. Owned by the DX-RELEASE stream. Included by the root
+# Makefile; targets are declared .PHONY there. The load test lives in
+# mk/load.mk (GO), release targets in mk/release.mk, launch in mk/launch.mk.
 #
 # Services are addressed by compose service name (`$(COMPOSE) exec ollama ...`);
 # there are no fixed container names. The default stack's project name comes
@@ -19,12 +20,22 @@ ifeq ($(origin GIT_SHA),undefined)
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null)
 endif
 export GIT_SHA
+# Build or pull (D126). A release checkout (HEAD is exactly the tag v<VERSION>) runs the published
+# images of its version: compose pulls them (pull_policy missing). Any other checkout builds the
+# app images from its own code, so `make up` and `make demo` never run images older than the code.
+# RELEASE_CHECKOUT=1 forces pulling, RELEASE_CHECKOUT=0 building. Read once, from VERSION (not
+# TRUSTAGENT_VERSION, which a proof may set to a local tag such as p5local).
+ifeq ($(origin RELEASE_CHECKOUT),undefined)
+RELEASE_CHECKOUT := $(if $(shell git describe --exact-match --tags --match "v$$(cat VERSION 2>/dev/null)" HEAD 2>/dev/null),1,0)
+endif
+APP_BUILD = $(if $(filter 1,$(RELEASE_CHECKOUT)),,--build)
 
 DEMO_PROJECT ?= truthtable-demo
 DEMO_COMPOSE  = $(COMPOSE) -p $(DEMO_PROJECT) -f docker-compose.yml -f docker-compose.demo.yml --profile demo
-# `make demo` builds the images from this checkout; `make demo DEMO_BUILD=` uses
-# local or published images instead (CI builds them first, with a layer cache).
-DEMO_BUILD   ?= --build
+# `make demo` builds the images from this checkout (pulls them on a release checkout);
+# `make demo DEMO_BUILD=` uses local or published images instead (CI builds them first, with a
+# layer cache).
+DEMO_BUILD   ?= $(APP_BUILD)
 # Scenario checks (trafficgen --expect inside the proxy container): which
 # scenarios (--scenarios, --exclude) and the gateway phase they may need
 # (--phase; empty = trafficgen's default, the phase this build implements).
@@ -60,7 +71,10 @@ ONBOARDING_EXPECT = --expect TRUTHTABLE_STRICT_CONFIG=true \
 ONBOARDING_CONFIG_ENV = env -i PATH="$$PATH" HOME="$$HOME" DOCKER_CONFIG="$${DOCKER_CONFIG:-$$HOME/.docker}"
 # trafficgen flags shared by the scenario targets.
 TRAFFICGEN_CHECK = /trafficgen --once --expect --base-url http://127.0.0.1:8080
-# Extra arguments for `make up`, e.g. UP_ARGS=--build after changing code.
+# `make up` builds the app images from this checkout, or pulls them on a release checkout
+# (RELEASE_CHECKOUT); UP_BUILD= uses local or published images as they are.
+UP_BUILD     ?= $(APP_BUILD)
+# Extra arguments for `make up`, e.g. UP_ARGS=--force-recreate.
 UP_ARGS      ?=
 # Seconds `up --wait` gives every service to become healthy.
 WAIT_TIMEOUT ?= 600
@@ -84,9 +98,9 @@ SETUP_OPEN = $(PYTHON) scripts/setup_url.py --open $(OPEN_URL_ARGS) --dashboard-
 
 ##@ Stack (docker compose)
 
-up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons), wait until healthy, open the setup link (or the dashboard)
+up: ## Start proxy, engine, postgres, dashboard (+ COMPOSE_PROFILES add-ons; builds them, or pulls on a release tag), wait until healthy, open the setup link (or the dashboard)
 	$(PYTHON) scripts/configure.py --ensure
-	$(COMPOSE) up -d --wait --wait-timeout $(WAIT_TIMEOUT) $(UP_ARGS)
+	$(COMPOSE) up -d $(UP_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT) $(UP_ARGS)
 	@echo "✅ TrustAgent is running (proxy: http://localhost:$$($(PYTHON) scripts/envfile.py get PROXY_HOST_PORT 8080)/v1)"
 	@$(SETUP_OPEN) --project "$(UP_PROJECT)"
 
@@ -100,7 +114,7 @@ up-infra: ## Start only the backing services (postgres + COMPOSE_PROFILES add-on
 		$$($(COMPOSE) config --services | grep -vxE 'proxy|engine|dashboard|trafficgen')
 	@echo "✅ Backing services running (postgres on localhost:$$($(PYTHON) scripts/envfile.py get POSTGRES_HOST_PORT 5432), user truthtable, POSTGRES_PASSWORD in .env)"
 
-demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build, wait until healthy, open the setup link (or the dashboard)
+demo: ## Zero-key demo (mock fast check, mock judge, scripted traffic, no cost): build (or pull on a release tag), wait until healthy, open the setup link (or the dashboard)
 	$(PYTHON) scripts/configure.py --ensure
 	$(DEMO_COMPOSE) up -d $(DEMO_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT)
 	@echo "✅ Demo stack running (project $(DEMO_PROJECT), DEMO MODE: simulated checks, no keys, \$$0)"
@@ -126,9 +140,16 @@ e2e-up: ## Start the e2e stack (compatible fast check and LLM upstreams on mock-
 	@echo "✅ E2E stack running (project $(E2E_PROJECT): every vendor is mock-upstream, \$$0)"
 	@echo "   Check: make e2e-scenarios   Stop: make e2e-down"
 
-e2e-scenarios: ## Check the e2e scenarios against the running e2e stack (E2E_SCENARIOS=e2e E2E_EXCLUDE= E2E_PHASE=p3 E2E_UPSTREAM=all)
+e2e-scenarios: ## Check the e2e scenarios against the running e2e stack (E2E_SCENARIOS=e2e E2E_EXCLUDE= E2E_PHASE= (trafficgen default p5) E2E_UPSTREAM=all)
 	$(E2E_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(E2E_SCENARIOS) --upstream $(E2E_UPSTREAM) \
 		$(if $(E2E_EXCLUDE),--exclude $(E2E_EXCLUDE)) $(if $(E2E_PHASE),--phase $(E2E_PHASE))
+
+# The faults pack (contracts/demo/faults.v1.json, D119): mock-upstream's fault counters are
+# reset first (from inside the proxy container, which reaches mock-upstream by name), so counted
+# faults such as 429@1 start fresh; then every faults scenario runs against the e2e stack.
+e2e-faults: ## Check the vendor-fault scenarios against the running e2e stack (resets mock-upstream, then trafficgen --pack faults)
+	$(E2E_COMPOSE) exec -T proxy wget -q -O /dev/null --post-data= http://mock-upstream:8090/_mock/reset
+	$(E2E_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --pack faults --scenarios faults --upstream all
 
 e2e-logs: ## Follow the e2e stack's logs (SERVICE=mock-upstream for one service)
 	$(E2E_COMPOSE) logs -f $(SERVICE)
@@ -162,6 +183,44 @@ onboarding-check-config: ## Prove, without a container, that the gateway accepts
 		|| { printf '%s\n' "$$out"; echo "onboarding-check-config: failed: the stack is not the fresh install it should be, or the gateway would refuse to start it (see above)"; exit 1; }; \
 	echo "✅ The onboarding stack's proxy configuration passes -check-config (strict config, backend auto, no key)"
 
+##@ Knowledge add-on stack (D131: Qdrant and the knowledge engine, vendors on mock-upstream)
+
+# docker-compose.knowledge.yml says what the stack holds. The variables below are the ones compose
+# reads while it resolves the files (the engine image tag and build, Qdrant's URL), so they go on
+# its command line. The engine image <version>-knowledge is built here and never published (D126).
+# knowledge-up gives the gateway a random admin key (TRUTHTABLE_ADMIN_KEYS) that never leaves the
+# containers: knowledge-seed reads it inside the proxy container to upload the documents.
+KNOWLEDGE_PROJECT      ?= truthtable-knowledge
+KNOWLEDGE_ENV           = COMPOSE_PROFILES=knowledge ENGINE_EXTRAS=knowledge TRUTHTABLE_KNOWLEDGE_ENABLED=true
+KNOWLEDGE_COMPOSE       = $(KNOWLEDGE_ENV) $(COMPOSE) -p $(KNOWLEDGE_PROJECT) -f docker-compose.yml -f docker-compose.knowledge.yml --profile knowledge
+KNOWLEDGE_BUILD        ?= --build
+# The first start downloads the embedding model.
+KNOWLEDGE_WAIT_TIMEOUT ?= 1800
+
+knowledge-up: ## Start the knowledge stack (builds the <version>-knowledge engine; the first start downloads the embedding model), wait until healthy
+	$(PYTHON) scripts/configure.py --ensure
+	@key="$$($(PYTHON) -c 'import secrets; print(secrets.token_urlsafe(32))')"; \
+	TRUTHTABLE_ADMIN_KEYS="knowledge-seed=$$key" $(KNOWLEDGE_COMPOSE) up -d $(KNOWLEDGE_BUILD) \
+		--wait --wait-timeout $(KNOWLEDGE_WAIT_TIMEOUT) proxy engine
+	@echo "✅ Knowledge stack running (project $(KNOWLEDGE_PROJECT): Qdrant, the knowledge engine, every vendor on mock-upstream, \$$0)"
+	@echo "   Next: make knowledge-seed && make knowledge-scenarios   Stop: make knowledge-down"
+
+knowledge-seed: ## Upload the knowledge scenarios' documents to the running knowledge stack (trafficgen --seed-knowledge with its admin key)
+	$(KNOWLEDGE_COMPOSE) exec -T proxy sh -c 'umask 077; k="$${TRUTHTABLE_ADMIN_KEYS#*=}"; \
+		printf "%s" "$${k%%,*}" > /tmp/knowledge-admin.key; \
+		/trafficgen --seed-knowledge --admin-key-file /tmp/knowledge-admin.key --base-url http://127.0.0.1:8080; \
+		s=$$?; rm -f /tmp/knowledge-admin.key; exit $$s'
+
+knowledge-scenarios: ## Check the knowledge scenarios against the running, seeded knowledge stack (trafficgen --expect --scenarios knowledge)
+	$(KNOWLEDGE_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios knowledge
+
+knowledge-logs: ## Follow the knowledge stack's logs (SERVICE=engine for one service; FOLLOW=0 prints them once)
+	$(KNOWLEDGE_COMPOSE) logs $(if $(filter 0,$(FOLLOW)),--no-color --timestamps,-f) $(SERVICE)
+
+knowledge-down: ## Stop the knowledge stack and delete its volumes (the knowledge base and the database)
+	$(KNOWLEDGE_COMPOSE) down --volumes --remove-orphans
+	@echo "✅ Knowledge stack and its volumes removed"
+
 ##@ Logs, setup links and status
 
 logs: ## Follow the stack's logs (SERVICE=proxy for one service)
@@ -192,7 +251,7 @@ WITH_SECRETS ?=
 configure: ## Create or complete .env (generated values, never overwrites); WITH_SECRETS=1 also asks for vendor keys at hidden prompts
 	$(PYTHON) scripts/configure.py --ensure$(if $(filter 1,$(WITH_SECRETS)), --with-secrets)
 
-doctor: ## Diagnose the running stack (make doctor ARGS="--expect demo --json")
+doctor: ## Diagnose the running stack, no billed call (ARGS="--expect demo|fresh --json"; "--target pages --pages-url URL" checks the static site; "--probe --admin-key-file F" sends one ~$0.00001 test call)
 	$(PYTHON) scripts/doctor.py $(ARGS)
 
 # Both files are generated from contracts/config/keys.v1.json (SPEC §2.7); the
@@ -206,7 +265,10 @@ config-docs-check: ## Fail with a diff when docs/CONFIGURATION.md or .env.exampl
 # Every profile on its own, all of them together, and the demo override.
 COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*"
 
-compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding and load overrides (docker compose config -q)
+# The record overlay's stack (RECORD_COMPOSE) is defined in mk/release.mk with make record-demo;
+# the knowledge stack (KNOWLEDGE_COMPOSE) with make knowledge-up above.
+
+compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding, load, record and knowledge overrides (docker compose config -q)
 	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \
 	set -e; for p in $(COMPOSE_CHECK_PROFILES); do \
 		$(COMPOSE) $${p:+--profile "$$p"} config -q; echo "compose config ok: profile $${p:-default}"; \
@@ -215,7 +277,12 @@ compose-check: ## Validate the compose files: every profile and the demo, e2e, o
 	$(E2E_COMPOSE) config -q; echo "compose config ok: e2e override"; \
 	$(ONBOARDING_COMPOSE) config -q; echo "compose config ok: onboarding override"; \
 	$(LOAD_COMPOSE) config -q; echo "compose config ok: load override"; \
-	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) config -q; echo "compose config ok: load override, slow fast check"
+	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) config -q; echo "compose config ok: load override, slow fast check"; \
+	$(RECORD_COMPOSE) config -q; echo "compose config ok: record override"; \
+	$(KNOWLEDGE_COMPOSE) config -q; echo "compose config ok: knowledge override"
+
+docs-links: ## Check the relative links and heading anchors of README.md, docs/*.md and docs/launch/*.md (scripts/check_links.py)
+	$(PYTHON) scripts/check_links.py
 
 test-scripts: ## Unit tests of the setup scripts (scripts/tests, standard library only)
 	$(PYTHON) -m unittest discover -s scripts/tests -v
@@ -233,53 +300,7 @@ ollama-pull: ## Pull OLLAMA_MODEL into the running ollama service (ollama-init p
 ollama-list: ## List the models in the ollama service
 	$(COMPOSE) --profile local-llm exec -T ollama ollama list
 
-##@ Load testing and monitoring
-
-# The load-test stack (docker-compose.load.yml): every vendor on mock-upstream, the load policy of
-# scripts/load/policies.yaml, no published host port (k6 joins the proxy container), so it can
-# run next to a demo. docker-compose.load-slow-jev.yml turns the fast check into a 150 ms one for
-# scenario d. docs/GATEWAY.md §13 lists the scenarios and their targets.
-comma := ,
-LOAD_PROJECT  ?= truthtable-load
-LOAD_COMPOSE   = $(COMPOSE) -p $(LOAD_PROJECT) -f docker-compose.yml -f docker-compose.load.yml --profile load
-LOAD_SLOW_JEV  = -f docker-compose.load-slow-jev.yml
-LOAD_BUILD    ?= --build
-# k6 (scripts/load/gateway-overhead.js): requests per second, and the time, of each scenario.
-LOAD_RATE     ?= 20
-LOAD_DURATION ?= 30s
-K6_IMAGE      ?= grafana/k6
-# k6 joins the running proxy container's network namespace and calls it on 127.0.0.1: no bridge
-# hop in the measurement, and no run at all (docker refuses) when the proxy is not running.
-# $(call k6_run,<scenarios>): k6 reads the container environment as __ENV. The proxy key reaches
-# it through docker's own environment (`-e API_KEY` without a value), never the command line,
-# where other local users could read it.
-k6_run = API_KEY="$$($(PYTHON) scripts/envfile.py get TRAFFICGEN_API_KEY)" \
-	docker run --rm -i --network "container:$$($(LOAD_COMPOSE) ps -q proxy)" \
-	-e BASE_URL=http://127.0.0.1:8080 -e API_KEY \
-	-e RATE=$(LOAD_RATE) -e DURATION=$(LOAD_DURATION) -e SCENARIOS=$(1) \
-	$(K6_IMAGE) run - < scripts/load/gateway-overhead.js
-
-load-up: ## Start the load-test stack (vendors on mock-upstream, no host ports) and wait until healthy
-	$(PYTHON) scripts/configure.py --ensure
-	$(LOAD_COMPOSE) up -d $(LOAD_BUILD) --wait --wait-timeout $(WAIT_TIMEOUT) proxy
-
-# Pass 1 runs scenarios a, b, c, e and f; pass 2 recreates the proxy on the 150 ms fast check for
-# scenario d. The stack is removed whatever happened, and the exit status says whether every
-# target held. (No $$(MAKE) inside the recipe: `make -n` would run such a line for real.)
-load-test-gate: load-up ## Gateway overhead under load: k6 scenarios a-f on the load stack (starts it, removes it after; LOAD_RATE=, LOAD_DURATION=)
-	@status=0; \
-	echo "Pass 1: scenarios a, b, c, e, f (the fast check answers at once)"; \
-	$(call k6_run,a$(comma)b$(comma)c$(comma)e$(comma)f) || status=1; \
-	echo "Pass 2: scenario d (the fast check answers in 150 ms)"; \
-	if $(LOAD_COMPOSE) $(LOAD_SLOW_JEV) up -d --wait --wait-timeout $(WAIT_TIMEOUT) --no-deps mock-jev-slow proxy; then \
-		$(call k6_run,d) || status=1; \
-	else status=1; fi; \
-	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) down --volumes --remove-orphans; \
-	if [ $$status -ne 0 ]; then echo "load-test-gate: a target was missed or a pass did not run (see above)"; fi; \
-	exit $$status
-
-load-down: ## Stop the load-test stack and delete its volumes
-	$(LOAD_COMPOSE) down --volumes --remove-orphans
+##@ Monitoring
 
 metrics: ## Open the Prometheus UI (profile observability; WSL/macOS/Linux aware)
 	@$(PYTHON) scripts/open_url.py --label "Prometheus" http://localhost:9090
@@ -291,5 +312,6 @@ dashboards: ## Open the Grafana dashboards (profile observability; WSL/macOS/Lin
 test: test-scripts
 lint: lint-scripts
 check: compose-check
+check: docs-links
 check: config-docs-check
 check: onboarding-check-config

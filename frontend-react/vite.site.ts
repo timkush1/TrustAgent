@@ -6,8 +6,8 @@
  *   page is the site's root, the replay app lives at `/app/` (plus a copy per main page, so
  *   /TrustAgent/app/traffic/ answers 200), and `404.html` is a copy of the app so GitHub Pages
  *   boots it for every other deep link (/TrustAgent/app/traffic/<id>). Both pages carry the
- *   static CSP as a meta tag and `referrer: no-referrer`; the site talks to itself and, from P5,
- *   openrouter.ai only.
+ *   static CSP as a meta tag and `referrer: no-referrer`; the site talks to itself and, for the
+ *   live Playground after consent, openrouter.ai only.
  *
  * `vite preview` of a static build emulates GitHub Pages: a path with no file gets 404.html with
  * status 404 (the Playwright `static` project runs against it).
@@ -27,7 +27,28 @@ export const STATIC_CSP =
  * share and the nav's own URLs answer 200 on GitHub Pages; any other deep link (a trace) is served
  * by 404.html, which boots the same app.
  */
-export const STATIC_APP_PAGES = ['app/overview', 'app/traffic', 'app/playground', 'app/evaluators/studio'] as const;
+export const STATIC_APP_PAGES = [
+  'app/overview',
+  'app/traffic',
+  'app/playground',
+  'app/evaluators/studio',
+  'app/savings',
+  // The static PKCE callback (D105): a real file, so OpenRouter's redirect lands on a 200.
+  'connect/callback',
+] as const;
+
+/**
+ * Build-time secret-name guard (D137): no `VITE_*` name may look like it carries a secret, because
+ * every `VITE_*` value is inlined into the public bundle. VITE_PLAYGROUND_MAX_TOKENS is a cap, not
+ * a token, and is the one name allowed.
+ */
+export const SECRET_ENV_NAME = /KEY|TOKEN|SECRET|PASSWORD/;
+export const SECRET_ENV_NAME_ALLOWED: ReadonlySet<string> = new Set(['VITE_PLAYGROUND_MAX_TOKENS']);
+
+/** The `VITE_*` names that look like secrets (empty when the build may go on). */
+export function secretEnvNames(names: Iterable<string>): string[] {
+  return [...names].filter((n) => n.startsWith('VITE_') && SECRET_ENV_NAME.test(n.toUpperCase()) && !SECRET_ENV_NAME_ALLOWED.has(n)).sort();
+}
 
 /** Build output path of each HTML entry. */
 export function pagePaths(mode: AppMode): { app: string; landing: string; notFound: string | null } {
@@ -112,6 +133,36 @@ export function pickCopy(all: Record<string, unknown>, paths: string[], missing:
     into[keys[keys.length - 1]] = value;
   }
   return out;
+}
+
+/** Written next to the manifest: every output chunk with the source modules it holds. */
+export const MODULE_MAP_FILE = '.vite/modules.json';
+
+/**
+ * Writes `.vite/modules.json` ({"<chunk file>": ["src/…", …]}), the module list the manifest lacks,
+ * so scripts/check-size.ts can prove that no live-mode module (lib/openrouter, lib/gate,
+ * components/replay/live) reaches the landing's first load or the app entry (D112).
+ */
+export function moduleMap(): Plugin {
+  let root = '';
+  return {
+    name: 'trustagent:module-map',
+    apply: 'build',
+    configResolved(resolved) {
+      root = resolved.root;
+    },
+    generateBundle(_options, bundle) {
+      const map: Record<string, string[]> = {};
+      for (const out of Object.values(bundle)) {
+        if (out.type !== 'chunk') continue;
+        map[out.fileName] = out.moduleIds
+          .filter((id) => !id.startsWith('\0'))
+          .map((id) => (id.startsWith(root) ? id.slice(root.length + 1) : id).split(sep).join('/'))
+          .sort();
+      }
+      this.emitFile({ type: 'asset', fileName: MODULE_MAP_FILE, source: `${JSON.stringify(map, null, 1)}\n` });
+    },
+  };
 }
 
 export function sitePages(mode: AppMode): Plugin[] {

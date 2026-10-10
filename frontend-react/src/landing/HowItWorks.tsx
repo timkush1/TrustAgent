@@ -1,7 +1,11 @@
-/** Section 2 (SPEC §8.1): three plain steps, the request path, and who it is for. */
+/**
+ * Section 2 (SPEC §8.1): three plain steps, the request path, what Jev was asked about the refund
+ * answer (the glass-box panel, D116, loaded after the first paint), and who it is for.
+ */
 import { ArrowDown, ArrowLeft, ArrowRight, FileText, Gauge, ScanSearch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { copy } from './content';
+import { GlassBox, LazyPart } from './lazyParts';
 import { Section } from './ui';
 
 const steps: { icon: typeof FileText; title: string; body: ReactNode }[] = [
@@ -13,7 +17,7 @@ const steps: { icon: typeof FileText; title: string; body: ReactNode }[] = [
   {
     icon: Gauge,
     title: copy.tiers.fast_check,
-    body: 'One call answers all your checks at once (groundedness, contradiction, refusals, PII, promises) as probabilities. Your policy observes, flags, blocks or falls back, and blocks only when two signals agree.',
+    body: 'Jev, TypeSafe AI’s small decision model, reads the answer and your documents and returns a probability for every check at once (groundedness, contradiction, refusals, PII, promises). It writes no text, so a check costs input tokens only. Your policy observes, flags, blocks or falls back, and blocks only when two signals agree.',
   },
   {
     icon: ScanSearch,
@@ -64,7 +68,8 @@ function PathDiagram() {
         <Connector />
         <Box title="TrustAgent gateway" strong>
           <ol className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-            {[copy.tiers.instant_checks, copy.tiers.fast_check, 'Your policy'].map((t, i) => (
+            {/* "Fast check", without "(Jev)": the tiles stay one line each, and the cards below introduce Jev. */}
+            {[copy.tiers.instant_checks, copy.tiers.fast_check.replace(/\s*\(.*\)$/, ''), 'Your policy'].map((t, i) => (
               <li key={t} className="rounded-md border border-border bg-surface-sunken px-2.5 py-2 text-fg">
                 <span className="mr-1.5 font-mono text-xs text-fg-muted">{i + 1}</span>
                 {t}
@@ -118,13 +123,9 @@ export function HowItWorks() {
           </li>
         ))}
       </ol>
-      <p className="mt-12 max-w-3xl rounded-lg border border-border bg-surface px-5 py-4 text-fg">
-        <span className="font-semibold">Who it’s for: </span>
-        <span className="text-fg-muted">
-          teams shipping RAG, support or agent bots who need a per-answer safety signal without paying LLM-judge prices on every
-          answer.
-        </span>
-      </p>
+      <LazyPart minHeight="30rem" section={false}>
+        <GlassBox />
+      </LazyPart>
     </Section>
   );
 }

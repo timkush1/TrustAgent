@@ -151,6 +151,12 @@ func checkURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
+// LocalHost reports whether host is a local decision endpoint: localhost, a loopback address or a
+// single-label name such as mock-upstream. In test mode the gateway forwards each scenario id to
+// such an endpoint (testheaders.go), which may then answer by script; a recording run refuses one
+// (trafficgen --record).
+func LocalHost(host string) bool { return localHost(host) }
+
 func localHost(host string) bool {
 	h := strings.ToLower(strings.TrimSuffix(host, "."))
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") {

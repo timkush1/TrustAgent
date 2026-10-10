@@ -26,13 +26,17 @@ the `cost` vectors.
 | `pricing/assumptions.v1.json` | The assumptions behind every cost estimate, as checkable arithmetic | `pricing-assumptions.v1` |
 | `claims/value-claims.v1.json` | Every number on the landing page, README and Savings panel, with its label | `value-claims.v1` |
 | `claims/measured.json` | Our measured values; explicit nulls until `make bench-publish` writes them | `measured.v1` |
+| `claims/compare.v1.json` | The landing page's comparison table: kinds of tools by capability, each vendor cell sourced and dated or `unverified` (D113) | `compare.v1` |
 | `demo/scenarios.v1.json` | Demo and e2e traffic, with mock fast-check answers and mock judge fixtures | `scenarios.v1` |
+| `demo/faults.v1.json` | The faults pack: vendor-fault scenarios (`mock_faults`), kept out of the demo (D119) | `scenarios.v1` |
 | `ui/outcomes.v1.json` | The single outcome per trace, level words and reason copy | `ui-outcomes.v1` |
 | `ui/copy.v1.json` | User-facing strings (banners, wizard, trace detail, savings, limits) | `ui-copy.v1` |
 | `ui/glossary.v1.json` | Plain-language definitions for `<Term id>` tooltips | `ui-glossary.v1` |
 | `ui/commands.v1.json` | Every copyable command | `ui-commands.v1` |
 | `fixtures/api/<Type>.<case>.json` | One golden REST body or WebSocket event per `api.v1` type (`Page<T>` is spelled `Page-T`); msw handlers and Go handler tests start from them | `api.v1#/$defs/<Type>` |
-| `fixtures/vendor/` | Sanitized vendor captures (P1g) | parse-only |
+| `fixtures/vendor/<vendor>/<endpoint>.<case>.json` | Vendor responses `{source, request, status, headers, body}`; the OpenRouter ones are synthetic (mock-upstream's answers, kept equal by `vendor_fixtures_test.go`) with the CORS headers openrouter.ai sent on 2026-10-09, and say so in `source` | parse-only, shape checked |
+| `fixtures/prompts/<prompt>-render.<case>.json` | A prompt as the Python engine renders it, for byte parity of other senders (the browser's drafter); `backend-python/tests/unit/test_drafter_fixtures.py` regenerates and checks them | parse-only, shape checked |
+| `fixtures/load/load-run.example.json` | An illustrative load run (not a measurement) | `load-run.v1` |
 | `vectors/<kind>/<name>.json` | Golden vectors; the input and expected shape of each kind is in [`vectors/README.md`](vectors/README.md) | `vector.v1` |
 | `superseded.v1.json` | SPEC Appendix A as data, for `scripts/check-forbidden.mjs` | `superseded.v1` |
 | `go.mod`, `embed.go` | Go module `github.com/truthtable/contracts` exposing `contracts.FS` | |
@@ -163,12 +167,58 @@ security check) are validated like drafts, so changing a rule in the system text
 deterministic story that every service reads, so a zero-key stack (`make demo`: mock decision backend, mock
 judge, test mode) produces the same traces every time.
 
+`demo/faults.v1.json` is a second pack with the same schema for vendor faults (D119): each
+scenario carries the `faults` set, names its `judge` (fixtures, or `null` for no LLM call; the mock judge
+fails an unscripted audit), and sets `mock_faults {decision?, upstream?}`, the mock-upstream fault each
+endpoint answers with (`<name>` or `<name>@<n>` for the first n calls). Its expectations may also assert
+`expect.degraded` and `expect.decision_model {attempts?, hedged?, late?}`. The main pack never holds a
+fault scenario, so the demo, the Playground examples and the recording never see one; ids are unique
+across both packs, and at most 4 scenarios in a row fault the decision model, so a pack run never opens
+the breaker on vendor faults.
+
+Every answer is grounded, so only the fault drives the result. The pack runs on the e2e stack (`make
+e2e-faults`, and `TestFaultScenariosAgainstMockUpstream` in process), in file order:
+
+| Row | Scenario | Fault | Route | Status | Action |
+|---|---|---|---|---|---|
+| F1 | `fault-429-no-time-to-retry` | decision `429@1` | support-bot | `error:retryable` (Retry-After 1 s does not fit 600 ms) | pass (fail open) |
+| F2 | `fault-429-retried` | decision `429@1` | payments-faq | `ok`, 2 attempts | pass |
+| F3 | `fault-503-retried` | decision `503@1` | support-bot | `ok`, 2 attempts | pass |
+| F4 | `fault-hang-hedged` | decision `hang@1` | payments-faq | `ok`, hedged | pass |
+| U1 | `upstream-503-relayed` | upstream `503` | support-bot | `skipped:upstream_error`, HTTP 503 relayed | pass (never enforced) |
+| F5 | `fault-hang-fail-open` | decision `hang` | support-bot | `timeout` | pass (fail open) |
+| F6 | `fault-slow-late-decision` | decision `slow` | support-bot | `timeout`, then a late decision (never enforced) | pass |
+| F7 | `fault-hang-fail-closed` | decision `hang` | payments-faq | `timeout`, hedged | block (`fail_closed`) |
+| F10 | `fault-413-evidence-halved` | decision `413@1` | support-bot | `ok`, sent again with half the evidence | pass |
+| U2 | `upstream-html-fail-closed` | upstream `html200` | payments-faq | `skipped:upstream_error` | block (`fail_closed`) |
+| F9 | `fault-bad-json` | decision `bad_json` | support-bot | `error:bad_response` | pass (fail open) |
+| F8 | `fault-402-credits` | decision `402_inflight@1` | support-bot | `error:credits` | pass (fail open) |
+
+F8 comes last: the TypeSafe-shaped endpoint carries no `limit_source`, so its 402 reads as an account out of
+credits and opens the breaker for the auth cooldown (`TRUTHTABLE_JEV_AUTH_COOLDOWN`, 5 minutes). A stack
+that ran the pack answers `skipped:breaker_open` until the cooldown ends or an admin runs Settings → Test
+(`POST /api/decision-model/test`, which lifts a credits pause). The demo routes audit every answer whose
+check failed (`error_sample_rate: 1.0`), so each failed row with an answer has judge fixtures (GROUNDED);
+the two upstream rows have no answer, so their audit is `NOT_ASSESSED` with no LLM call. The stateful
+faults (breaker, cooldowns, budget, rate limit, engine down, missing credentials) are in-process tests only
+(`backend-go/cmd/proxy/faults_e2e_test.go`).
+
+How a fault reaches its endpoint: `trafficgen --pack faults` sends each scenario id as
+`X-TrustAgent-Scenario`, and the gateway in test mode forwards it to a local decision backend
+(`internal/jev/testheaders.go`), so mock-upstream answers the decision requests that name the scenario
+with `mock_faults.decision`, counted per call through `X-Mock-Key` (the trace id). The gateway strips
+`X-TrustAgent-*` before the LLM upstream, so mock-upstream finds the LLM request by its conversation and
+answers it with `mock_faults.upstream`, counted per scenario until `_mock/reset`; a scenario that faults
+its upstream therefore has a conversation of its own, and the gateway's fallback request is never faulted.
+Outside the packs, a test-mode client may send `X-TrustAgent-Scenario: fault:<spec>` (the load test's
+`fault:hang@1`): the gateway forwards that value to the decision backend but never stores it.
+
 | Field | Meaning and consumer |
 |---|---|
 | `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend (and mock-upstream's decision endpoints) look up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |
-| `sets` | Selection for `trafficgen --scenarios <set>` (and `--exclude`): `s0` (walking skeleton), `demo`, `e2e`, `untagged`, `generated`, `knowledge`, and a phase tag (below). |
+| `sets` | Selection for `trafficgen --scenarios <set>` (and `--exclude`): `s0` (walking skeleton), `demo`, `e2e`, `untagged`, `generated`, `knowledge`, `faults` (only in `demo/faults.v1.json`, every scenario there), and a phase tag (below). |
 | `route`, `headers`, `api_format`, `stream`, `request` | What `trafficgen` sends: `request` is the client body, with evidence placed where SPEC §2.10 extracts it; `headers` holds extra request headers (`X-TrustAgent-Route` selects the route). The body has the shape of its `api_format`: `openai_chat` has `messages` (which may hold `tool_calls` with `content: null` and `tool` messages), `anthropic_messages` has `messages` plus a top-level `system` (a string or text blocks), and `openai_completions` has a `prompt` and no `messages`. A consumer that reads requests itself (a Playground example list, a recording) picks the scenarios it can represent by `api_format`, `stream` and the phase and `knowledge` tags instead of assuming every body is a chat. |
-| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in. `trafficgen --upstream all` sends no `test_response`, and mock-upstream answers with `response` (JSON or SSE). |
+| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in; in test mode the gateway stamps an upstream answer to a `generated` scenario `answer_source: generated` (scripted when it came as `test_response`, live otherwise), so a recording says "generated answers". `trafficgen --upstream all` sends no `test_response`, and mock-upstream answers with `response` (JSON or SSE). |
 | `mock_answers` | Raw answers the mock backend (`TRUTHTABLE_JEV_BACKEND=mock`, `TRUTHTABLE_JEV_MOCK_MODE=scenario`) returns, keyed by question id `<id>__v<version>` (SPEC §2.9 compile step 5) for each evaluator the route asks. Evaluators that compile excludes (for example `no_evidence`) are not asked and have no answer. |
 | `fallback` | Only on a fallback route: the fallback answer (`response`), the raw answers to its re-gate (`mock_answers`, used when the state's `assistant_response` is the fallback answer) and the re-gate's expected decision (`expect`). In test mode, when the original answer is scripted (`test_response`) and `X-TrustAgent-Scenario` names the scenario, the gateway answers its fallback call with `fallback.response` and calls no upstream (the zero-key demo has none); otherwise it calls the upstream, and mock-upstream serves `fallback.response` to a request that carries the fallback prompt's `CONTEXT` block. |
 | `knowledge` | Only on a route that reads the knowledge add-on: the knowledge-base documents `RetrieveContext` returns for this request (the knowledge profile must hold them). |
@@ -194,16 +244,23 @@ settled trace and its audit.
 enforcing demo routes `payments-faq` (fallback) and `help-center` (block) included, and in
 `config/policies.pending.yaml`, which holds `handbook`: it reads the knowledge add-on, which the demo and
 e2e stacks run without. Its routes merge over the defaults of `config/policies.yaml`; the gateway never
-reads it. Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`), draws no uniform
-sample and stores every body, so runs are deterministic.
+reads it. A stack with the add-on loads `config/policies.knowledge.yaml`, which is generated: the whole of
+`config/policies.yaml` with the `handbook` route appended (`TestKnowledgePolicyInSync` keeps it in step;
+`go -C backend-go test ./cmd/proxy -run TestKnowledgePolicyInSync -update-knowledge-policy` rewrites it),
+and `trafficgen --seed-knowledge --admin-key-file FILE` uploads the `knowledge` documents its scenarios
+need. Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`, and `error_sample_rate:
+1.0` for an answer whose check failed), draws no uniform sample and stores every body, so runs are
+deterministic.
 
 **Phases.** A scenario that needs a later gateway phase than the walking skeleton carries that phase as a
 set tag: `p3` for streaming gating, `/v1/messages`, `/v1/completions`, block and fallback bodies, and routes
-in `config/policies.pending.yaml`. `trafficgen` skips scenarios whose phase is later than `--phase`
-(default: the phase this build implements, `p4`; no scenario carries `p4` yet), so a gateway of an earlier
-phase can still be driven with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
-that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 26 scenarios
-(6 of them `p3`) and the e2e set 23. A Go test fails when a scenario's tags do not match its features.
+in `config/policies.pending.yaml`; `p5` for the vendor-fault scenarios, which need this phase's fault channel
+(every scenario of `demo/faults.v1.json`). No scenario carries `p4`, whose work was the control plane.
+`trafficgen` skips scenarios whose phase is later than `--phase` (default: the phase this build implements,
+`p5`), so a gateway of an earlier phase can still be driven with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
+that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 27 scenarios
+(7 of them `p3`) and the e2e set 26 (6 of them `p3`), the generated pair included: under `--upstream all`
+mock-upstream answers them with their stand-in `response`, so their expectations hold. A Go test fails when a scenario's tags do not match its features.
 
 **Calibration.** `config/calibration/mock__jev-heuristic-v1.json` is the calibration of the mock snapshot,
 quality `mock`: an identity table with no labels behind it. It counts only with the mock backend, in demo
@@ -218,10 +275,15 @@ starts the e2e stack (`docker-compose.e2e.yml`, project `truthtable-e2e`): the `
 calls mock-upstream's `/v1/systemone` over HTTP, the OpenAI and Anthropic upstreams are mock-upstream too,
 the judge is the mock provider, and traces are written before the response returns
 (`TRUTHTABLE_TRACE_FLUSH=sync`). `make e2e-scenarios` sends set `e2e` with `--upstream all`, so every answer
-takes the upstream path; `make e2e-down` removes the stack. Both targets send trafficgen's default phase (`p4`);
+takes the upstream path; `make e2e-down` removes the stack. A recording run (`trafficgen --record --upstream
+generated`, `make record-demo`) sends the generated scenarios to a real model: their answers have no
+expectations, so trafficgen only waits for each trace to settle, reports any other mismatch as drift without
+failing, and refuses (exit 2, nothing sent) a gateway whose decision model or judge is the mock or a fallback,
+whose decision model answers from a local endpoint such as mock-upstream, or cannot answer (a rejected key, no
+credits, an open breaker); `--trace-ids-out` lists the trace ids it started. Both targets send trafficgen's default phase (`p5`);
 `DEMO_PHASE` and `E2E_PHASE` choose another.
 
-The pack (27 scenarios):
+The pack (28 scenarios):
 
 | Scenario | Route (mode) | Shows | Gate | Deep audit | Outcome |
 |---|---|---|---|---|---|
@@ -248,6 +310,7 @@ The pack (27 scenarios):
 | `completions-extension-grounded` | support-bot (flag) | p3: `/v1/completions` with `trustagent.context` | pass, supported | GROUNDED | passed |
 | `payments-fallback` | payments-faq (fallback) | p3: replaced by a grounded fallback (mock calibration) | fallback | HALLUCINATED (original) | replaced |
 | `help-center-link-block` | help-center (block) | p3: invented link blocked in a buffered stream | block | HALLUCINATED | blocked |
+| `help-center-link-block-json` | help-center (block) | p3: the same block on a JSON answer (the browser recorder replays it) | block | HALLUCINATED | blocked |
 | `help-center-uncalibrated-flag` | help-center (block) | p3: uncalibrated block acts as a flag | flag (would block) | HALLUCINATED | flagged |
 | `knowledge-only-capped` | handbook (flag) | p3, knowledge: knowledge-only evidence capped at warn | flag, contradicted | HALLUCINATED | flagged |
 | `generated-monthly-refund` | support-bot (flag) | generated answer (stand-in) | pass | GROUNDED | passed |
@@ -335,7 +398,14 @@ and then runs the cross-file checks JSON Schema cannot express:
   routes (with the `knowledge` tag), `stream_decision` only on streams, the `generated` set exactly the
   generated scenarios, no phase tag in `s0`; the deep-audit fields agree with `judge` (`NOT_ASSESSED` needs
   `judge: null`); judge quotes occur verbatim in `response` and verifier evidence verbatim in `request` or
-  `knowledge`;
+  `knowledge`; every scenario names its `judge` (fixtures or `null`: the mock judge fails an unscripted
+  audit); the same rules hold for `demo/faults.v1.json`, where every scenario carries the `faults` set, at
+  most 4 in a row set `mock_faults.decision`, and ids are unique across both packs (`faults` and
+  `mock_faults` never appear in the main pack);
+- claims: a `per_unit_of` claim is its usd_per_1k claim or assumptions figure divided by 1,000; compare
+  cells cover every column, and a cell other than `unverified` has `text`, `source_url` and `as_of`;
+- vendor fixtures: `{source, request, status, headers, body}`, `source` starting `synthetic: ` or
+  `capture: `, lowercase header names, only obvious fake keys; prompt fixtures name an existing prompt;
 - UI: every outcome is reachable and the last rule is a catch-all; glossary `see_also`, `{command:}` and
   `{claim:}` references resolve; commands name real compose services and profiles;
 - `superseded.v1.json` has the shape `scripts/check-forbidden.mjs` accepts, and no contract file uses one of
@@ -345,7 +415,8 @@ Repository files that follow a contract are validated too when present: `config/
 (`policy.v1`, the same policy checks, and the scenario checks above, which fall back to
 `policies/example.policies.yaml` without it), `config/policies.pending.yaml` (`policy.v1`, only `version` and
 `routes`, whose routes are checked merged over the defaults of `config/policies.yaml`), `config/calibration/*.json` (`calibration.v1`, plus a
-non-decreasing table and quality rules) and `docs/benchmarks/results/*.json` (`benchmark-run.v1`).
+non-decreasing table and quality rules), `docs/benchmarks/results/*.json` (`benchmark-run.v1`) and
+`docs/benchmarks/load/*.json` (`load-run.v1`).
 
 ## Changing contracts
 

@@ -9,7 +9,13 @@ import { cn } from '@/lib/cn';
 
 export type StepStatus = 'done' | 'todo' | 'optional' | 'waiting';
 
-const STEPS = [
+interface StudioStepLink {
+  id: string;
+  title: string;
+}
+
+/** The seven steps on a TrustAgent stack. */
+const STUDIO_STEPS: readonly StudioStepLink[] = [
   { id: 'step-describe', title: 'Describe' },
   { id: 'step-review', title: 'Review' },
   { id: 'step-test', title: 'Test' },
@@ -17,7 +23,10 @@ const STEPS = [
   { id: 'step-save', title: 'Save' },
   { id: 'step-watch', title: 'Watch on a route' },
   { id: 'step-calibrate', title: 'Calibrate' },
-] as const;
+];
+
+/** The five steps of the online demo (D107): it exports the check instead of saving it. */
+const STATIC_STUDIO_STEPS: readonly StudioStepLink[] = [...STUDIO_STEPS.slice(0, 4), { id: 'step-save', title: 'Export' }];
 
 const STATUS_LABEL: Record<StepStatus, string> = {
   done: 'Done',
@@ -41,11 +50,13 @@ function Marker({ n, status }: { n: number; status: StepStatus }) {
   );
 }
 
-export function StudioSteps({ statuses }: { statuses: readonly StepStatus[] }) {
+/** `exportOnly`: the online demo's five steps, which end in an export instead of a save (D107). */
+export function StudioSteps({ statuses, exportOnly = false }: { statuses: readonly StepStatus[]; exportOnly?: boolean }) {
+  const steps = exportOnly ? STATIC_STUDIO_STEPS : STUDIO_STEPS;
   return (
     <nav aria-label="Studio steps">
       <ol className="flex flex-wrap gap-x-4 gap-y-2">
-        {STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const status = statuses[i] ?? 'waiting';
           const inner = (
             <>

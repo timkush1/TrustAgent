@@ -528,6 +528,28 @@ func TestHedgeCancelsTheLoser(t *testing.T) {
 	}
 }
 
+// TestTimeoutAfterHedgeSaysHedged: a call whose attempt and hedge both hang past the deadline
+// fails with a timeout that still counts both requests and says a hedge was sent, so the stored
+// decision_model of a failed check does not hide the hedge (D119 F7).
+func TestTimeoutAfterHedgeSaysHedged(t *testing.T) {
+	h := newHarness(t, mockupstream.Config{})
+	cl := h.client(BackendOpenRouterDecisions, h.withFault("hang"))
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	_, err := cl.Decide(ctx, testRequest("trace-hedge-timeout"), CallOptions{HedgeAfter: 50 * time.Millisecond, TraceID: "trace-hedge-timeout"})
+	var e *Error
+	if !errors.As(err, &e) || e.Kind != KindTimeout || e.Attempts != 2 || !e.Hedged {
+		t.Fatalf("a hedged call that times out: %+v (%v)", e, err)
+	}
+
+	// A call that fails before its hedge is due did not hedge.
+	h2 := newHarness(t, mockupstream.Config{})
+	_, err = decide(t, h2.client(BackendOpenRouterDecisions, h2.withFault("401")), testRequest("t"), CallOptions{HedgeAfter: 2 * time.Second})
+	if !errors.As(err, &e) || e.Kind != KindAuth || e.Attempts != 1 || e.Hedged {
+		t.Fatalf("an unhedged failure: %+v (%v)", e, err)
+	}
+}
+
 func TestLateDecisions(t *testing.T) {
 	h := newHarness(t, mockupstream.Config{JevLatency: 200 * time.Millisecond})
 	cl := h.client(BackendOpenRouterDecisions, nil)

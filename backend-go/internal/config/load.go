@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/truthtable/backend-go/internal/decision"
 )
 
 // Source says where an effective value came from (api.ts SettingKeyView.source).
@@ -631,6 +633,25 @@ func (l *loader) crossChecks(c *Config) {
 		l.warn("TRUTHTABLE_SETUP_TOKEN", fmt.Sprintf("the value is shorter than %d characters", minSetupTokenLen),
 			"a random token is generated instead")
 		c.Auth.SetupToken = ""
+	}
+	l.checkPriceTableFile(c.PriceTableFile)
+}
+
+// checkPriceTableFile reports a TRUTHTABLE_PRICE_TABLE_FILE that cannot be read or is not a valid
+// pricing.v1 table (CO-12): the cost ledger then prices everything from the built-in table, which
+// would otherwise show only in the boot log. The value stays as set; the cost wiring falls back.
+func (l *loader) checkPriceTableFile(path string) {
+	const key, hint = "TRUTHTABLE_PRICE_TABLE_FILE", "costs are priced from the built-in table until the file is fixed or the key is unset"
+	if path == "" {
+		return
+	}
+	raw, err := os.ReadFile(path) // #nosec G304 -- the operator names the price table file
+	if err != nil {
+		l.warn(key, "the price table file cannot be read: "+scrubPathError(err), hint)
+		return
+	}
+	if _, err := decision.ParsePriceTable(raw); err != nil {
+		l.warn(key, fmt.Sprintf("the file %q is not a valid pricing.v1 price table: %v", path, err), hint)
 	}
 }
 

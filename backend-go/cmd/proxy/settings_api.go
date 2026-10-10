@@ -84,10 +84,14 @@ type settingsGroup struct {
 	Keys []settingKeyView `json:"keys"`
 }
 
-// warningDetails is api.ts WarningDetails: credential names or enforcing routes.
+// warningDetails is api.ts WarningDetails: credential names or enforcing routes, or the numbers of
+// a price_far_above_contracts warning (the ratio, the contracts price and the override's index).
 type warningDetails struct {
-	Names  []string `json:"names,omitempty"`
-	Routes []string `json:"routes,omitempty"`
+	Names            []string `json:"names,omitempty"`
+	Routes           []string `json:"routes,omitempty"`
+	Ratio            *float64 `json:"ratio,omitempty"`
+	ContractsPerMTok *float64 `json:"contracts_per_mtok,omitempty"`
+	Index            *int     `json:"index,omitempty"`
 }
 
 // settingsWarning is one SettingsView.warnings entry: a configuration diagnostic ({key, message,
@@ -97,6 +101,7 @@ type settingsWarning struct {
 	Message string          `json:"message"`
 	Hint    string          `json:"hint"`
 	Code    string          `json:"code,omitempty"`
+	Path    string          `json:"path,omitempty"`
 	Details *warningDetails `json:"details,omitempty"`
 }
 
@@ -660,7 +665,7 @@ func (s *server) planSettingsWrite(ctx context.Context, snap *runtimecfg.Snapsho
 		for _, f := range validateOverrides(after.PricingOverrides) {
 			if f.Warning {
 				overrideWarnings = append(overrideWarnings, settingsWarning{Key: "pricing_overrides", Code: f.Code, Message: f.Message,
-					Hint: "Check the price against the provider's price page."})
+					Hint: "Check the price against the provider's price page.", Path: f.Path, Details: farAboveDetails(f.Details)})
 				continue
 			}
 			fields = append(fields, fieldError{Path: f.Path, Message: f.Message, Code: f.Code, Details: f.Details})
@@ -906,4 +911,23 @@ func (s *server) checkURL(fields *[]fieldError, snap *runtimecfg.Snapshot, path 
 	}
 	*fields = append(*fields, fieldError{Path: path, Code: fieldOriginNotAllowed, Details: names,
 		Message: fmt.Sprintf("the %s key may not be sent to %s", *bound, origin)})
+}
+
+// farAboveDetails carries a price_far_above_contracts finding's numbers (costs.ValidateOverrides)
+// into the warning's details; nil when it has none.
+func farAboveDetails(d map[string]any) *warningDetails {
+	var out warningDetails
+	if v, ok := d["ratio"].(float64); ok {
+		out.Ratio = &v
+	}
+	if v, ok := d["contracts_per_mtok"].(float64); ok {
+		out.ContractsPerMTok = &v
+	}
+	if v, ok := d["index"].(int); ok {
+		out.Index = &v
+	}
+	if out.Ratio == nil && out.ContractsPerMTok == nil && out.Index == nil {
+		return nil
+	}
+	return &out
 }

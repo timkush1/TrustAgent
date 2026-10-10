@@ -346,18 +346,18 @@ func TestBudgetSeedTakesTheHigherSpend(t *testing.T) {
 	b := NewBudget(KindDecision, BudgetConfig{CapUSD: 1, EnforcingReserve: 0.25, PerKeyCapUSD: 0.5, Now: newClock(day1).Now})
 	h, _ := b.Reserve(0.2, false, "")
 	h.Settle(0.2)
-	b.seed("2026-10-02", 0.1, map[string]float64{"app-a": 0.5})
+	b.seed("2026-10-02", 0.1, map[string]float64{"app-a": 0.5}, nil)
 	if st := b.State(); !near(st.SpentUSD, 0.2) {
 		t.Errorf("a lower stored total lowered the spend: %+v", st)
 	}
 	if _, err := b.Reserve(0.01, false, "app-a"); err == nil {
 		t.Error("the seeded key spend did not reach the key cap")
 	}
-	b.seed("2026-10-02", 0.6, nil)
+	b.seed("2026-10-02", 0.6, nil, nil)
 	if st := b.State(); !near(st.SpentUSD, 0.6) {
 		t.Errorf("a higher stored total = %+v", st)
 	}
-	b.seed("2026-10-01", 5, nil)
+	b.seed("2026-10-01", 5, nil, nil)
 	if st := b.State(); !near(st.SpentUSD, 0.6) {
 		t.Errorf("yesterday's total was applied: %+v", st)
 	}

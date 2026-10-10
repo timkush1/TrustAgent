@@ -644,6 +644,50 @@ func TestSettingsSurfaceOtherChecks(t *testing.T) {
 	}
 }
 
+// TestSettingsPriceFarAboveDetails (CO-7): through the real override check, a price 150 times the
+// contracts price saves with a price_far_above_contracts warning that names the field and carries
+// the ratio, the contracts price and the override's index, so the Prices panel can attach it to
+// its row.
+func TestSettingsPriceFarAboveDetails(t *testing.T) {
+	env := newSettingsEnv(t, envOpts{})
+	_, etag := env.settings(settingsAdminKey)
+	v := env.patched(env.patchSettings(etag, `{"pricing_overrides":[{"match":"claude-haiku-4-5*","provider":"anthropic","input_per_mtok":150,"output_per_mtok":5}]}`, ""))
+	i := slices.IndexFunc(v.Warnings, func(w settingsWarning) bool { return w.Code == costs.CodePriceFarAboveContracts })
+	if i < 0 || len(v.Runtime.PricingOverrides) != 1 {
+		t.Fatalf("no far-above warning: %+v", v.Warnings)
+	}
+	w := v.Warnings[i]
+	d := w.Details
+	if w.Path != "pricing_overrides[0].input_per_mtok" || d == nil || d.Ratio == nil || *d.Ratio != 150 ||
+		d.Index == nil || *d.Index != 0 || d.ContractsPerMTok == nil || *d.ContractsPerMTok != 1 {
+		t.Errorf("warning %+v details %+v", w, d)
+	}
+}
+
+// TestPriceTableFileDiagnosticShows (CO-12): the load-time diagnostic of a missing price table file
+// reaches the settings page (keyed by its name) and the /api/status warnings.
+func TestPriceTableFileDiagnosticShows(t *testing.T) {
+	missing := t.TempDir() + "/none.json"
+	loaded := config.LoadWith(config.LoadOptions{Environ: []string{"TRUTHTABLE_PRICE_TABLE_FILE=" + missing}})
+	env := newSettingsEnv(t, envOpts{mutate: func(cfg *config.Config) {
+		cfg.PriceTableFile = missing
+		cfg.Diagnostics = append(cfg.Diagnostics, loaded.Diagnostics...)
+		cfg.Warnings = append(cfg.Warnings, loaded.Warnings...)
+	}})
+	v, _ := env.settings(settingsAdminKey)
+	if !slices.ContainsFunc(v.Warnings, func(w settingsWarning) bool { return w.Key == "TRUTHTABLE_PRICE_TABLE_FILE" }) {
+		t.Errorf("settings warnings %+v", v.Warnings)
+	}
+	resp, body := env.request(http.MethodGet, "/api/status", settingsAdminKey, nil)
+	var st struct {
+		Warnings []string `json:"warnings"`
+	}
+	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &st) != nil ||
+		!slices.ContainsFunc(st.Warnings, func(w string) bool { return strings.HasPrefix(w, "TRUTHTABLE_PRICE_TABLE_FILE") }) {
+		t.Errorf("status %d warnings %v", resp.StatusCode, st.Warnings)
+	}
+}
+
 // TestSettingsFallbackNeedsItsOwnKey runs PATCH /api/settings through GCONN's real upstream checks
 // (upstream.RuntimeRisks; D41, P3 D23 and D15). A fallback upstream on another origin than the
 // default upstream, with no key of its own, is refused: the callers' keys would go to a server they

@@ -10,6 +10,8 @@ nul
 *~
 *.tmp
 *.bak
+# Scratch space at the repo root: downloaded tools (tmp/tools), load output (tmp/load)
+/tmp/
 
 # ========== Environment & Secrets ==========
 .env
@@ -44,6 +46,8 @@ backend-go/*.exe
 backend-go/*.test
 backend-go/*.out
 backend-go/vendor/
+# Go benchmark output (make bench-go writes backend-go/bench/<sha>.txt)
+backend-go/bench/
 
 # ========== Node / React ==========
 node_modules/

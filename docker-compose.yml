@@ -7,7 +7,9 @@
 #
 # Add-ons are compose profiles (COMPOSE_PROFILES in .env, or --profile):
 #   knowledge      qdrant (also set TRUTHTABLE_KNOWLEDGE_ENABLED=true and
-#                  ENGINE_EXTRAS=knowledge, then rebuild the engine)
+#                  ENGINE_EXTRAS=knowledge: the engine image becomes
+#                  …-engine:<version>-knowledge, which is never published, so it
+#                  is built from this checkout)
 #   local-llm      ollama + ollama-init (pulls OLLAMA_FALLBACK_MODEL once)
 #   observability  prometheus + grafana
 #   redis          redis (also set REDIS_URL=redis://redis:6379)
@@ -21,9 +23,13 @@
 #   POSTGRES_HOST_PORT (per-worktree offsets go in that worktree's .env, next to
 #   COMPOSE_PROJECT_NAME).
 # - App images are ghcr.io/timkush1/truthtable-<svc>:${TRUSTAGENT_VERSION}
-#   (make exports the contents of VERSION; `edge` otherwise). pull_policy
-#   missing uses a local image, else pulls it, else builds it from this checkout
-#   (build context: the repository root).
+#   (D126). make exports the contents of VERSION; without make the default is
+#   the same version, written here and kept in step by scripts/bump_version.py
+#   (scripts/check_version.py fails when it is not). The engine tag gains
+#   -${ENGINE_EXTRAS} when extras are set. pull_policy missing uses a local
+#   image, else pulls the published one, else builds it from this checkout
+#   (build context: the repository root). make up / make demo build from the
+#   checkout unless it is a release tag (RELEASE_CHECKOUT, mk/dx.mk).
 # - Every key in contracts/config/keys.v1.json that the proxy or the engine
 #   reads is passed through from .env / the shell (x-proxy-env, x-engine-env
 #   below); unset keys stay unset in the container. A bare `KEY:` that is unset
@@ -225,13 +231,13 @@ services:
   # ========== Default set ==========
 
   proxy:
-    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
     pull_policy: missing
     build:
       context: .
       dockerfile: backend-go/Dockerfile
       args:
-        VERSION: ${TRUSTAGENT_VERSION:-edge}
+        VERSION: ${TRUSTAGENT_VERSION:-1.0.0}
         # The git revision (make sets it): the images' org.opencontainers.image.revision label, and
         # the revision GET /api/export/replay names once the proxy reads internal/version.GitSHA.
         GIT_SHA: ${GIT_SHA:-}
@@ -290,13 +296,13 @@ services:
     restart: unless-stopped
 
   engine:
-    image: ghcr.io/timkush1/truthtable-engine:${TRUSTAGENT_VERSION:-edge}
+    image: ghcr.io/timkush1/truthtable-engine:${TRUSTAGENT_VERSION:-1.0.0}${ENGINE_EXTRAS:+-${ENGINE_EXTRAS:-}}
     pull_policy: missing
     build:
       context: .
       dockerfile: backend-python/Dockerfile
       args:
-        VERSION: ${TRUSTAGENT_VERSION:-edge}
+        VERSION: ${TRUSTAGENT_VERSION:-1.0.0}
         GIT_SHA: ${GIT_SHA:-}
         EXTRAS: ${ENGINE_EXTRAS:-}
     # gRPC (:50051) and metrics (:8001) stay on the compose network.
@@ -365,13 +371,13 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/timkush1/truthtable-dashboard:${TRUSTAGENT_VERSION:-edge}
+    image: ghcr.io/timkush1/truthtable-dashboard:${TRUSTAGENT_VERSION:-1.0.0}
     pull_policy: missing
     build:
       context: .
       dockerfile: frontend-react/Dockerfile
       args:
-        VERSION: ${TRUSTAGENT_VERSION:-edge}
+        VERSION: ${TRUSTAGENT_VERSION:-1.0.0}
         GIT_SHA: ${GIT_SHA:-}
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${DASHBOARD_HOST_PORT:-3000}:3000"
@@ -409,7 +415,7 @@ services:
   # A round is every demo scenario this build serves (about 20), so a round a
   # minute keeps the demo database growing slowly on a small machine.
   trafficgen:
-    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
     pull_policy: never
     profiles: [demo]
     command: ["/trafficgen", "--loop", "--scenarios", "demo", "--base-url", "http://proxy:8080", "--interval", "60s"]
@@ -447,7 +453,7 @@ services:
   # image as the proxy, built by the proxy service; reachable on the compose
   # network only.
   mock-upstream:
-    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
     pull_policy: never
     profiles: [e2e, load]
     command: ["/mock-upstream"]

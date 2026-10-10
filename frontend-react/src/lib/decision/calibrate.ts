@@ -797,7 +797,11 @@ function quickMapping(samples: readonly LabeledScore[], pos: number, neg: number
   return { method: null, table: null, platt: null };
 }
 
-/** The §7.3 honesty text: "suggested threshold", never "calibrated". */
+/**
+ * The §7.3 honesty text: "suggested threshold", never "calibrated". An unstable suggestion says
+ * why: the leave-one-out range when that range is what makes it unstable, else the wide 95% ranges
+ * (a range of one value, "between 0.92 and 0.92", explains nothing).
+ */
 function quickMessage(q: QuickCalibration): string {
   const t = q.threshold ?? 0;
   const r = q.recall as PointCI;
@@ -806,7 +810,11 @@ function quickMessage(q: QuickCalibration): string {
   s += `With ${q.n} labels, recall is ${percent(r.point)} (95% range ${percent(r.ci95[0])}–${percent(r.ci95[1])}) and precision is ${percent(p.point)} (95% range ${percent(p.ci95[0])}–${percent(p.ci95[1])})`;
   if (q.unstable) {
     s += '; the suggestion is unstable';
-    if (q.loo_range !== null) s += ` (leaving out one label moves it between ${plain(q.loo_range[0])} and ${plain(q.loo_range[1])})`;
+    if (q.loo_range !== null && q.loo_range[1] - q.loo_range[0] > QUICK_MAX_LOO_RANGE + EPS) {
+      s += ` (leaving out one label moves it between ${plain(q.loo_range[0])} and ${plain(q.loo_range[1])})`;
+    } else {
+      s += ' (too few labels: the 95% ranges are wide)';
+    }
   }
   return `${s}. Keep it watching and label more traffic.`;
 }

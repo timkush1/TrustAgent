@@ -20,8 +20,8 @@ import (
 //	              -> decision.Per1k
 //
 // cmd/vectorgen fills in expected, so the kind is mechanical. Python runs call_cost only (it is
-// pushed the already-effective table); the TypeScript runner arrives with the landing calculator
-// (P5).
+// pushed the already-effective table); TypeScript (frontend-react/src/lib/decision/vectors/cost.ts)
+// runs every fn too.
 var costKind = Kind{Mechanical: true, run: runCost}
 
 // Cost vector functions.

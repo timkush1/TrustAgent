@@ -74,8 +74,9 @@ func TestRepoPolicy(t *testing.T) {
 	if sb.Mode != decision.ModeFlag || len(sb.Evaluators) != 2 || sb.Evaluators[1].Ref != "contradiction@1" {
 		t.Errorf("support-bot %+v", sb.Settings)
 	}
-	// deep_audit merges key by key: the route sets two rates, the rest comes from defaults.
-	want := DeepAuditSettings{Enabled: true, PassSampleRate: 1, UniformSampleRate: 0, ErrorSampleRate: 0.1, Verifier: "auto"}
+	// deep_audit merges key by key: the route sets the three rates (every failed check audited, so
+	// fault runs are deterministic, GO-4); enabled and verifier come from the defaults.
+	want := DeepAuditSettings{Enabled: true, PassSampleRate: 1, UniformSampleRate: 0, ErrorSampleRate: 1, Verifier: "auto"}
 	if sb.DeepAudit != want {
 		t.Errorf("support-bot deep_audit %+v, want %+v", sb.DeepAudit, want)
 	}

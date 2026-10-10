@@ -1,16 +1,18 @@
 /**
  * Writes the static demo's recording (trustagent.recording/v1, SPEC §2.13) to
- * public/demo/recorded: manifest.json plus traces/<trace_id>.json.
+ * demo-data/simulated (D110; the build serves it at demo/): manifest.json plus traces/<trace_id>.json.
  *
  *   node scripts/build-demo-recording.ts            regenerate the committed recording
  *   node scripts/build-demo-recording.ts --check    exit 1 when the committed files are stale
- *   node scripts/build-demo-recording.ts --out DIR --set s0 --rounds 8 --interval-s 30 --start 2026-09-28T09:00:00Z
+ *   node scripts/build-demo-recording.ts --out DIR --set demo --rounds 4 --interval-s 2400 --start 2026-09-28T09:00:00Z
  *
  * The recording is SIMULATED: the demo scenario pack (contracts/demo/scenarios.v1.json, set
- * `s0`: grounded, refund 60 vs 30 days, no documents) run through the TypeScript decision core with the scenarios' scripted mock answers and
- * mock judge claims, on the support-bot route of config/policies.yaml. Its manifest is kind `mock`
- * with the fixed label "Simulated (mock checks + mock judge): not model output". P5/P6 replace it
- * with `make record-demo` (Go export-replay) output; scripts/check_recording.py checks either.
+ * `demo`, the scenarios the recorder can record: see selectScenarios) run through the browser gate
+ * pipeline with the scenarios' scripted mock answers and mock judge claims, on the routes of
+ * config/policies.yaml with the mock calibration of config/calibration (as `make demo` runs them).
+ * Its manifest is kind `mock` with the fixed label "Simulated (mock checks + mock judge): not model
+ * output". P6 replaces it with `make record-demo` (Go export-replay) output in demo-data/recorded;
+ * scripts/check_recording.py checks either.
  *
  * The drift test (src/data/replay/recorder/demoRecording.test.ts) runs the same build under vitest.
  */
@@ -28,7 +30,7 @@ const web = fileURLToPath(new URL('../', import.meta.url));
 
 const { values } = parseArgs({
   options: {
-    out: { type: 'string', default: join(web, 'public/demo/recorded') },
+    out: { type: 'string', default: join(web, 'demo-data/simulated') },
     set: { type: 'string' },
     rounds: { type: 'string' },
     'interval-s': { type: 'string' },
@@ -54,14 +56,22 @@ function gitSha(): string {
 
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
 const templatesDir = join(repo, 'contracts/evaluators');
+const calibrationDir = join(repo, 'config/calibration');
+const jsonFiles = (dir: string) =>
+  readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort()
+    .map((f) => readJson(join(dir, f)));
 const inputs = {
   scenarios: readJson(join(repo, 'contracts/demo/scenarios.v1.json')),
   policy: parseYaml(readFileSync(join(repo, 'config/policies.yaml'), 'utf8')),
-  templates: readdirSync(templatesDir)
-    .filter((f) => f.endsWith('.json'))
-    .sort()
-    .map((f) => readJson(join(templatesDir, f))),
+  templates: jsonFiles(templatesDir),
+  calibrations: jsonFiles(calibrationDir),
 };
+if (inputs.calibrations.length === 0) {
+  console.error(`build-demo-recording: ${calibrationDir} has no calibration file (the demo stack loads the mock one)`);
+  process.exit(2);
+}
 const version = readFileSync(join(repo, 'VERSION'), 'utf8').trim();
 
 const opts = {
@@ -74,7 +84,8 @@ const opts = {
   version,
 };
 
-const built = buildDemoRecording(inputs, opts);
+const built = await buildDemoRecording(inputs, opts);
+for (const skip of built.skipped) console.log(`not recorded: ${skip.id} (${skip.reason}: ${skip.detail})`);
 const files: Record<string, string> = serializeRecording(built);
 const out = values.out;
 

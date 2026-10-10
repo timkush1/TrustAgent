@@ -6,7 +6,7 @@ Guidance for AI-assisted development in this repository.
 
 TrustAgent (internal package name: `truthtable`) is an open-source **hallucination gateway** for
 LLM apps. Clients point their OpenAI/Anthropic SDK at a Go proxy. Each answer is checked in tiers:
-Tier-0 deterministic detectors (Go, <2 ms), Tier-1 **Fast check (Jev)** — TypeSafe AI's decision
+Tier-0 deterministic detectors (Go, 2 ms budget), Tier-1 **Fast check (Jev)** — TypeSafe AI's decision
 model, all route evaluators as questions in ONE call behind a vendor-neutral `DecisionModel` — then
 a per-route policy (observe / flag / block / fallback). Tier-2 **Deep audit** runs asynchronously in
 a Python LangGraph engine (decompose → optional knowledge retrieve → verify claims → score) and
@@ -29,15 +29,16 @@ streams to a React dashboard over WebSocket v2.
 
 | Path | What |
 |---|---|
-| `backend-go/` | Go 1.25 gateway (gin): `internal/{gate,decision,jev,evidence,policy,llmapi,upstream,authz,store,websocket,worker,grpc,metrics}`, `cmd/{proxy,trafficgen,vectorgen}` |
+| `backend-go/` | Go 1.25 gateway (gin): `internal/{gate,decision,jev,evidence,policy,llmapi,upstream,authz,store,websocket,worker,grpc,metrics}`, `cmd/{proxy,trafficgen,mock-upstream,export-replay,gate-eval,calibrate,jevcheck,vectorgen}` |
 | `backend-python/` | Python 3.11 audit engine (Poetry): LangGraph graph, providers, scoring, KB (optional), gRPC server (`Evaluate`) |
 | `frontend-react/` | React 19.3 + TypeScript 6 + Vite 8 + TanStack Router/Query + Tailwind 4 dashboard; house rules in `frontend-react/DESIGN.md` |
 | `contracts/` | Cross-language source of truth: JSON Schemas, config-key registry (`config/keys.v1.json`), evaluator templates, question sets, rules, demo scenarios, UI copy/glossary, pricing, value claims, golden vectors |
 | `proto/evaluator.proto` | Go↔Python gRPC contract (v2, additive) |
 | `docker-compose.yml` (+ `.demo.yml`, `.e2e.yml`, `.onboarding.yml`, `.load*.yml`) | Default set: proxy, engine, postgres, dashboard. Profiles: `knowledge`, `local-llm`, `observability`, `redis`, `demo`, `e2e`, `load`. No fixed container names: `docker compose exec <service>` (engine service is `engine`). make passes `GIT_SHA` as a build arg |
-| `Makefile`, `mk/*.mk` | Thin root Makefile including one fragment per stream (`go`, `py`, `web`, `dx`, `contracts`) |
-| `.github/workflows/` | `ci-{go,python,web,contracts,docker,e2e}.yml` (job names are branch-protection checks: keep them stable), `security.yml` (gosec, bandit, npm audit, gitleaks with `.gitleaks.toml`), `eval.yml` |
-| `VERSION` | Project version (mirror into pyproject.toml, package.json, `backend-go/internal/version/version.go`, `truthtable/__init__.py`) |
+| `Makefile`, `mk/*.mk` | Thin root Makefile including one fragment per stream (`go`, `py`, `web`, `dx`, `contracts`, `load`, `release`, `launch`) |
+| `.github/workflows/` | `ci-{go,python,web,contracts,docker,e2e}.yml` (job names are branch-protection checks: keep them stable), `security.yml` (gosec, bandit, npm audit, gitleaks with `.gitleaks.toml`), `eval.yml`; release side: `pages.yml` (deploys only once the owner enables Pages), `release-images.yml` (GHCR), `eval-live.yml` |
+| `VERSION` | Project version (mirrors: pyproject.toml, package.json and its lockfile, `backend-go/internal/version/version.go`, `truthtable/__init__.py`, the compose image tag) |
+| `docs/` | Curated docs (index `docs/README.md`); `docs/v2/` SPEC and phase plans; `docs/launch/` launch drafts; `docs/archive/` history |
 
 ## Commands
 
@@ -65,6 +66,20 @@ make gate-eval      # build backend-go/bin/gate-eval;  make calibrate EVALUATOR=
 make export-replay REPLAY_OUT=<dir>               # sanitized replay recording from the database
 make bench-lite / bench-publish / eval-live       # capped benchmark runs (real keys); publish refuses mock output
 make test-e2e-web   # Playwright specs against a running stack
+make e2e-faults     # vendor-fault scenarios against the running e2e stack
+make jev-check      # check the decision-model connection (cmd/jevcheck)
+make bench-go / bench-go-smoke                    # Go benchmarks into backend-go/bench / each one once
+make load-test-gate [LOAD_PUBLISH=1]              # k6 gateway overhead on mock-upstream; publishing writes docs/benchmarks/load
+make build-static / test-e2e-static               # the static Pages site / its Playwright specs (vite preview)
+make recording (+ -check)                         # rebuild the simulated demo tape (frontend-react/demo-data/simulated)
+make record-demo    # record the real demo dataset: a dry run with an estimate unless CONFIRM=1 (real keys)
+make pages-build    # build the Pages site exactly as pages.yml does (never deploys)
+make version-bump V=X.Y.Z / check-version         # set VERSION, every mirror and the CHANGELOG heading / check they agree
+make first-run      # a fresh stack to its first flagged trace, timed (Playwright)
+make lint-workflows # actionlint + zizmor over .github/workflows
+make check-claims   # every <!-- claim:ID --> figure in README/docs vs contracts/claims; claims-write regenerates measured tables
+make check-claims-launch                          # launch gate: recorded dataset, measured run, reviewed comparison, og.png
+make og / hero-gif / screenshots                  # launch captures (og and hero-gif refuse the simulated tape; screenshots show its label)
 ```
 
 Per-project:
@@ -96,9 +111,17 @@ Per-project:
   HALLUCINATED / UNVERIFIABLE / NO_CLAIMS / NOT_ASSESSED. CONTRADICTED (evidence disproves) stays
   distinct from UNSUPPORTED (nothing addresses it) end to end. Text spans are UTF-16, half-open.
 - **Honest numbers**: every user-facing figure carries a label (measured / estimate / third-party /
-  vendor / simulated); never present mock output as measured.
+  vendor / simulated); never present mock output as measured. In README and docs a figure from
+  `contracts/claims/value-claims.v1.json` follows a `<!-- claim:ID -->` marker with its chip (for
+  example `[estimate]`) and any caveat within 3 lines; measured figures come only from
+  `contracts/claims/measured.json`, through the generated `<!-- measured:start/end -->` tables.
+  `make check-claims` enforces this.
+- **Judge**: `LLM_PROVIDER=auto` picks explicit > Anthropic key > OpenRouter key > OpenAI key >
+  Ollama (if reachable) > none (mock in demo mode). A failing judge is never swapped silently:
+  `LLM_FALLBACK=none` is the default, so audits fail with `judge_unavailable` until it recovers.
 - **Metrics**: gateway `trustagent_gateway_*`, engine `trustagent_engine_*`.
-- **Versioning**: bump `VERSION` and all four mirrors together.
+- **Versioning**: `make version-bump V=X.Y.Z` (`scripts/bump_version.py`) writes `VERSION`, every
+  mirror and the CHANGELOG heading together; `make check-version` verifies them.
 
 ## Gotchas
 

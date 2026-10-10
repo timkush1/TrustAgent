@@ -1,8 +1,10 @@
 /**
  * The hero's answer card (SPEC §8.1), in three beats: the answer arrives; "Flagged · 212 ms ·
- * $0.0002"; "60 days" gets a wavy underline next to the evidence "…within 30 days of purchase"
+ * $0.000024"; "60 days" gets a wavy underline next to the evidence "…within 30 days of purchase"
  * (refund-policy.md). The words are the scenario pack's refund example; the time and cost are the
- * `hero_card_*` claims, labelled Simulated. With reduced motion the card shows its last beat at once
+ * `hero_card_*` claims with their chips (the time Simulated; the cost an Estimate, the request "What
+ * Jev was asked" shows at the Jev price, D168), and beat 2 names the document the answer was
+ * checked against. With reduced motion the card shows its last beat at once
  * and offers no "Play again" (there is nothing to replay).
  */
 import { Flag, OctagonX, RotateCcw } from 'lucide-react';
@@ -109,7 +111,7 @@ export function HeroCard() {
           <span className="truncate font-mono text-xs text-fg-muted">
             {REFUND.route} · {REFUND.model}
           </span>
-          <span className="text-xs text-fg-muted">Illustration</span>
+          <span className="shrink-0 text-xs text-fg-muted">Example · Simulated</span>
         </div>
 
         <div aria-hidden="true" className="space-y-5 px-5 py-5 max-sm:px-4">
@@ -126,23 +128,30 @@ export function HeroCard() {
           </div>
         </div>
 
-        <div className="beat border-t border-border px-5 py-4 max-sm:px-4" data-on={on(2)} aria-hidden={beat < 2}>
+        <div className="beat border-t border-border px-5 py-4 max-sm:px-4" data-on={on(2)} aria-hidden={beat < 2} inert={beat < 2}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color-mix(in_oklab,var(--tone-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--tone-warning)_var(--tint),transparent)] px-2.5 text-sm font-medium text-tone-warning">
               <Flag aria-hidden="true" className="size-3.5" />
               {flagged.label}
             </span>
-            <span className="tabular text-sm text-fg-muted">
-              {latency.display} · {cost.display}
+            <span className="inline-flex items-center gap-1.5" data-chip-scope>
+              <span className="tabular text-sm text-fg-muted">{latency.display}</span>
+              <LabelChip claim={latency} />
             </span>
-            <LabelChip claim={latency} />
+            <span className="inline-flex items-center gap-1.5" data-chip-scope>
+              <span className="tabular text-sm text-fg-muted">{cost.display}</span>
+              <LabelChip claim={cost} />
+            </span>
           </div>
           <p className="mt-2 text-sm text-fg-muted">
             {copy.tiers.fast_check}: {REFUND.reason.toLowerCase()}.
           </p>
+          <p className="mt-1 text-sm text-fg-muted" data-checked-against>
+            Checked against: <span className="font-mono text-fg">{REFUND.docId}</span>
+          </p>
         </div>
 
-        <div className="beat border-t border-border bg-surface-sunken px-5 py-4 max-sm:px-4" data-on={on(3)} aria-hidden={beat < 3}>
+        <div className="beat border-t border-border bg-surface-sunken px-5 py-4 max-sm:px-4" data-on={on(3)} aria-hidden={beat < 3} inert={beat < 3}>
           <p className="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
             <OctagonX aria-hidden="true" className="size-3.5 text-v-contradicted" />
             <span className="text-v-contradicted">Contradicted</span>

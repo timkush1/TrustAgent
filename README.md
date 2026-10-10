@@ -2,161 +2,164 @@
 
 # TrustAgent
 
-### A hallucination gateway for LLM apps
+### Catch hallucinations before your users do.
 
-**Point your OpenAI or Anthropic SDK at it. Every answer is checked against the documents your request already carries, then passed, flagged, blocked or replaced with a grounded one by your policy, and audited claim by claim on a live dashboard.**
+**An open-source gateway for LLM apps. Point your OpenAI or Anthropic SDK at it, and every answer is
+checked against the documents your request already carries, then passed, flagged, blocked or replaced
+by your policy, and audited claim by claim on a live dashboard.**
 
-[![Go](https://github.com/timkush1/TrustAgent/actions/workflows/ci-go.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-go.yml)
-[![Python](https://github.com/timkush1/TrustAgent/actions/workflows/ci-python.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-python.yml)
-[![Web](https://github.com/timkush1/TrustAgent/actions/workflows/ci-web.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-web.yml)
-[![E2E](https://github.com/timkush1/TrustAgent/actions/workflows/ci-e2e.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-e2e.yml)
-[![Security](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/security.yml)
-![Version](https://img.shields.io/badge/version-1.0.0%20%E2%86%92%202.0%20in%20progress-blue)
-![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
+[![CI: Go](https://github.com/timkush1/TrustAgent/actions/workflows/ci-go.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-go.yml)
+[![CI: Python](https://github.com/timkush1/TrustAgent/actions/workflows/ci-python.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-python.yml)
+[![CI: Web](https://github.com/timkush1/TrustAgent/actions/workflows/ci-web.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-web.yml)
+[![CI: E2E](https://github.com/timkush1/TrustAgent/actions/workflows/ci-e2e.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-e2e.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/timkush1/TrustAgent?sort=semver&display_name=tag)](https://github.com/timkush1/TrustAgent/releases)
+[![Live demo](https://img.shields.io/badge/live%20demo-open-2ea44f)](https://timkush1.github.io/TrustAgent/)
+
+<!-- hero-gif: docs/images/v2/hero.gif (1200 px, 12 fps, at most 8 MB) goes here once `make hero-gif`
+     has run on a recorded tape; see docs/launch/launch-checklist.md. Never from the simulated tape. -->
+
+**[Try the demo](https://timkush1.github.io/TrustAgent/)** | [`make demo`](#quick-start)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/trace-dark.png">
+  <img alt="Trace detail (Simulated): the refund answer is flagged, its days figure marked as contradicted by refund-policy.md, with the fast-check scores and the deep audit's claim beside it" src="docs/images/v2/trace-light.png" width="100%">
+</picture>
+<sub>A flagged answer: "60 days" contradicts the refund policy's 30 days. <b>Simulated</b> (the demo's mock checks and mock judge, not model output); more in <a href="#screenshots">Screenshots</a>.</sub>
 
 </div>
 
----
-
-## Table of Contents
-
-- [What it is](#what-it-is)
-- [How it works](#how-it-works)
-- [Quick start](#quick-start)
-- [Use it from your app](#use-it-from-your-app)
-- [The checks](#the-checks)
-- [Screenshots](#screenshots)
-- [Tech stack](#tech-stack)
-- [Configuration](#configuration)
-- [Testing and evaluation](#testing-and-evaluation)
-- [Observability](#observability)
-- [Security](#security)
-- [Project structure](#project-structure)
-- [Documentation](#documentation)
-- [Roadmap](#roadmap)
-- [Honest limitations](#honest-limitations)
-- [License](#license)
-
----
-
-## What it is
-
-Large language models state falsehoods with total confidence. **TrustAgent** is a gateway that
-sits between your app and the model and checks every answer before your user acts on it.
-
-Your app keeps its SDK and changes one line, the base URL. For each answer, TrustAgent runs
-deterministic detectors, then asks **Jev** (TypeSafe AI's fast decision model) all of the route's
-checks as questions in **one** call, and applies your policy: **observe** (measure only),
-**flag** (headers tell your app the risk), **block** (a safe message instead) or **fallback**
-(a second answer written only from your documents, checked again). A **deep audit** then
-verifies the answer claim by claim with an LLM judge, off the request path, and streams to the
-dashboard.
-
-Evidence is **pluggable, with no RAG by default**: TrustAgent checks against what the request
-already carries (documents in the system prompt, a `Context:` block, tool results, or the
-`trustagent.context` extension). With nothing to check against, it says **not checked** instead
-of guessing. A verified knowledge base is an optional add-on.
-
-**In the dashboard:** live traffic with one outcome per answer and its claims marked inline;
-versioned policies with a free preview of their impact; an **Evaluator Studio** that drafts a new
-check from one sentence, tests it on your own traffic and calibrates it from your labels;
-**Savings**, which shows what the checks actually cost (the vendor's reported cost, or an estimate
-from the price table where it reports none) next to labelled estimates of what the same checks
-would cost with an LLM judge; and **Settings**, where you connect OpenRouter,
-set daily budgets and manage API keys.
+- **Every answer checked, for cents.** One fast-check call asks all of a route's questions at once:
+  <!-- claim:fast_check_cost_per_1k --> ~$0.21 / 1,000 answers [estimate], where asking an LLM judge
+  the same questions costs <!-- claim:llm_same_checks_cost_per_1k --> ~$6 / 1,000 [estimate].
+- **Fast enough to sit in the request path.** The fast check answers in
+  <!-- claim:fast_check_latency_approx --> about 0.2 s [third-party], and routes in observe mode
+  never wait for it at all. Third-party figure, not our measurement; it depends on region and load,
+  and independent reports range from about 0.3 s to 0.9 s median.
+- **A full audit only where it matters.** Risky answers and a small sample go on to a claim-by-claim
+  LLM audit: <!-- claim:default_total_cost_per_1k --> ~$3 / 1,000 [estimate] in total with the
+  defaults, against <!-- claim:llm_full_audit_cost_per_1k --> ~$35 / 1,000 [estimate] to audit every
+  answer. With no documents to check against, it says *not checked* instead of guessing.
 
 ## How it works
 
-```
-  Your app (OpenAI / Anthropic SDK)        TrustAgent gateway (Go)                  LLM API
-          │                                        │                                   │
-          │── POST /v1/chat/completions ──────────▶│──────── forward request ────────▶│
-          │                                        │◀─────────── answer ──────────────│
-          │                                        │
-          │                          Tier 0: detectors (numbers, dates, URLs, quotes,
-          │                                  citations, secrets, prompt leaks)
-          │                          Tier 1: fast check, every evaluator in ONE Jev call
-          │                          Policy: observe | flag | block | fallback (re-gated)
-          │◀── answer + X-TrustAgent-* headers ────│
-          │                                        ├──▶ deep-audit job (async, sampled)
-          │                                        │        │ gRPC
-          │                                        │        ▼
-          │                                        │   Tier 2: Python engine (LangGraph)
-          │                                        │   decompose → [retrieve] → verify → score
-          │          Dashboard ◀── WebSocket v2 ◀──┘
+```mermaid
+flowchart LR
+    App["Your app<br/>OpenAI or Anthropic SDK"] -->|"one line: the base URL"| T0
+    subgraph GW["TrustAgent gateway (Go)"]
+        direction TB
+        T0["Instant checks<br/>numbers, dates, links, quotes,<br/>secrets, prompt leaks"] --> T1["Fast check (Jev)<br/>every question in one call"]
+        T1 --> P{"Your route's policy"}
+    end
+    GW <-->|"forward and answer"| LLM["Your LLM API"]
+    P -->|"pass, flag, block or fallback"| App
+    P -.->|"risky answers and a sample, after the reply"| T2["Deep audit (Python, LangGraph)<br/>claim by claim, with an LLM judge"]
+    T2 -.->|"live, over WebSocket"| Dash["Dashboard"]
 ```
 
-Observe routes never wait: the answer goes out byte-identical and the check runs after it. Flag,
-block and fallback routes decide before they answer, within the route's deadline (600 ms by
-default); what happens when the check is slow or down is set per route
-([docs/GATEWAY.md](docs/GATEWAY.md#6-when-something-fails)).
+Your app keeps its SDK and changes one line, the base URL. For each answer TrustAgent runs the
+**instant checks** (deterministic Go detectors with a 2 ms budget; [benchmark figures](docs/GATEWAY.md#tier-0-the-instant-checks)), then asks **Jev**, TypeSafe AI's fast
+decision model, every check of the route as a question in **one** call, and applies the route's
+policy: **observe** (measure only), **flag** (headers tell your app the risk), **block** (a safe
+message instead) or **fallback** (a second answer written only from your documents, checked again).
+The **deep audit** runs off the request path and streams to the dashboard.
+
+Evidence is **pluggable, with no RAG by default**: TrustAgent checks against what the request already
+carries (documents in the system prompt, a `Context:` block, tool results, or the `trustagent.context`
+extension). A verified knowledge base is an optional add-on. The design, tier by tier, is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### Measured results
+
+<!-- measured:start -->
+<!-- Generated by `node scripts/check-claims.mjs --write` from contracts/claims/measured.json; do not edit by hand. -->
+
+| What we measure | Our result | Note |
+|---|---|---|
+| Our measured fast-check cost | <!-- claim:fast_check_cost_per_1k_measured --> not yet measured [measured] | |
+| Our p50 fast-check latency | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
+| Our fast-check latency, p95 | <!-- claim:gate_latency_p95_measured --> not yet measured [measured] | |
+| Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | |
+| Measured cost ratio: LLM same checks vs fast check | <!-- claim:same_checks_ratio_measured --> not yet measured [measured] | |
+
+The gateway's own overhead, measured separately by a load test against simulated vendors:
+
+| What we measure | Our result | Note |
+|---|---|---|
+| Proxy overhead, p50 | <!-- claim:proxy_overhead_p50_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); not adopted yet: the latest laptop load run is in GATEWAY.md (Load test) |
+| Proxy overhead, p95 | <!-- claim:proxy_overhead_p95_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); not adopted yet: the latest laptop load run is in GATEWAY.md (Load test) |
+
+No benchmark run is published yet, so every row says "not yet measured". The other figures here are labelled estimates, vendor prices or third-party results, not our measurements.
+<!-- measured:end -->
+
+[docs/EVALUATION.md](docs/EVALUATION.md) says how the measured runs are made and published.
 
 ## Quick start
 
-**Prerequisites:** Docker with Compose 2.24+, `make` and `python3`. On Windows, use WSL 2 with
-Docker Desktop's WSL integration ([docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) walks
+### In your browser (nothing to install)
+
+**[Open the live demo](https://timkush1.github.io/TrustAgent/).** It replays the demo traffic
+through the real dashboard: the Traffic list, a flagged answer with its contradicted
+claim marked, the exact request the fast check was sent, Savings and the Evaluator Studio. Each number
+carries its label, and a tape made with the mock checks says **Simulated** on every page.
+
+**Try it live in your browser:** on the demo's Playground, connect or paste your own OpenRouter key and
+run three examples against the real fast check, on your own credits. The key stays in that browser
+tab and is sent only to openrouter.ai.
+
+### On your machine: the zero-key demo
+
+**Prerequisites:** Docker Engine 25+ with Compose 2.24+, `make` and `python3`. On Windows, use WSL 2
+with Docker Desktop's WSL integration ([docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) walks
 through it).
 
-### 1. The zero-key demo ($0, everything simulated)
-
 ```bash
-make demo
+git clone https://github.com/timkush1/TrustAgent.git && cd TrustAgent
+make demo          # opens the one-time setup link when every part is healthy
+make demo-down     # stop it (make demo-clean also deletes its data)
 ```
 
-It builds the images, starts the demo stack (proxy, engine, Postgres, dashboard and a scripted
-traffic generator) as its own Docker project, waits until every part is healthy, then opens the
-one-time **setup link** that creates your admin key (or the dashboard at
-<http://localhost:3000> when an admin already exists; `OPEN=0` only prints the URL).
+The demo bills nothing: the fast check and the judge are mocks, no vendor key reaches the
+containers, and a traffic generator replays scripted scenarios. Demo numbers are simulated, not
+model output. The dashboard labels them that way.
 
-The fast check and the judge are mocks and no vendor key reaches the containers, so every number
-on screen is **simulated** and labelled that way. The traffic generator replays 26 scripted
-scenarios: grounded answers that pass, a contradicted refund window that is flagged, a leaked
-email address, an invented link that is blocked, a payments answer replaced by a grounded
-fallback, streams, and the Anthropic API.
+On a release tag, `make demo` and `make up` pull the published images
+(`ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}`); on any other commit they build them from
+your checkout, so the images always match the code.
 
-```bash
-make doctor ARGS="--expect demo"   # checks every part: health, fast check, calibration, policy, metrics
-make demo-setup-url                # a new one-time setup link, if you need one
-make demo-down                     # stop (make demo-clean also deletes the demo data)
-```
+### With your own key
 
-### 2. Real mode (your own OpenRouter key)
-
-One OpenRouter key runs both the fast check (Jev) and the deep-audit judge (Claude Haiku). With
-the shipped defaults that costs about $3 per 1,000 answers **[estimate]**, under daily budgets of
-$2 for fast checks and $5 for deep audits. [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) has the steps
-and the costs.
+One OpenRouter key runs both the fast check and the deep-audit judge (Claude Haiku). With the
+shipped defaults that is about <!-- claim:default_total_cost_per_1k --> ~$3 / 1,000 [estimate],
+under daily budgets you set ([docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) has the steps and the costs).
 
 ```bash
-make up        # proxy, engine, Postgres, dashboard; opens the one-time setup link
+make up            # proxy, engine, Postgres and dashboard; opens the setup wizard
+make doctor        # which fast-check backend is live and why, latency, cost, keys, budgets
 ```
 
-The setup wizard creates your admin key, then offers **Connect OpenRouter**: sign in on
-openrouter.ai, approve, and you are back with a key that is stored encrypted and never reaches the
-browser. You can also paste a key, put `OPENROUTER_API_KEY=…` in `.env` (an environment key always
-wins), or answer hidden prompts with `make configure WITH_SECRETS=1`. No account yet? **Try it
-without a key (simulated checks, $0)**. Then:
+The wizard creates your admin key, offers **Connect OpenRouter** (or paste a key; it is stored
+encrypted and never reaches the browser), and gives you an app key and a snippet.
+
+**Without make:**
 
 ```bash
-make doctor    # the fast-check backend and why, snapshot, latency and cost; saved keys; budgets
+python3 scripts/configure.py --ensure && docker compose up -d --wait
 ```
 
-Before saving keys in the dashboard on a stack you keep, back up the `trustagent-secrets` Docker
-volume or set `TRUTHTABLE_SECRET_KEY` ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
+On a commit that is not a release tag, run `docker compose build` first.
 
-## Use it from your app
+### Use it from your app
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",                  # TrustAgent instead of the provider
-    api_key="sk-...",                                      # your provider key, passed through
+    base_url="http://localhost:8080/v1",                 # TrustAgent instead of the provider
+    api_key="sk-...",                                     # your provider key, passed through
     default_headers={
-        "X-TrustAgent-Key": "<a key from TRUTHTABLE_API_KEYS>",
-        "X-TrustAgent-Route": "support-bot",               # which policy route applies
+        "X-TrustAgent-Key": "<your app key>",             # from the setup wizard or Settings > Access
+        "X-TrustAgent-Route": "support-bot",              # which policy route applies
     },
 )
 reply = client.chat.completions.with_raw_response.create(
@@ -169,204 +172,203 @@ reply = client.chat.completions.with_raw_response.create(
 print(reply.headers["X-TrustAgent-Action"], reply.headers.get("X-TrustAgent-Reasons"))
 ```
 
-`/v1/chat/completions`, `/v1/completions` and `/v1/messages` (Anthropic) are gated, JSON and
-streaming. Streams carry the decision as an SSE comment and HTTP trailers, or through
-`GET /v1/trustagent/decisions/:trace_id`. Headers, modes, streaming, block and fallback bodies,
-errors and credentials are in [docs/GATEWAY.md](docs/GATEWAY.md); policies live in
-[`config/policies.yaml`](config/policies.yaml) and on the dashboard's **Policies** page.
+```python
+from anthropic import Anthropic
 
-## The checks
+client = Anthropic(
+    base_url="http://localhost:8080",                     # the SDK adds /v1/messages
+    api_key="sk-ant-...",
+    default_headers={"X-TrustAgent-Key": "<your app key>", "X-TrustAgent-Route": "support-bot"},
+)
+```
 
-| Tier | Where | What it does |
-|---|---|---|
-| **0. Detectors** | Go, in the gateway (budget: under 2 ms) | Numbers, dates, URLs, quotes and citations that are not in the evidence; secret patterns; system-prompt leaks. Numbers and dates never flag alone. |
-| **1. Fast check (Jev)** | One Jev call per answer | Every evaluator of the route as a question: groundedness, contradiction, unapproved commitments, PII or secret leaks, prompt-injection success, refusals, off-topic, off-brand tone, ... ([docs/EVALUATORS.md](docs/EVALUATORS.md)). Blocks only when two signals agree. |
-| **2. Deep audit** | Python engine, async | Decomposes the answer into claims (with UTF-16 spans the dashboard marks), verifies each against the evidence with an LLM judge, and scores it. |
+`/v1/chat/completions`, `/v1/completions` and `/v1/messages` are gated, JSON and streaming. Streams
+carry the decision as an SSE comment and HTTP trailers, or through
+`GET /v1/trustagent/decisions/:trace_id`. Modes, headers, block and fallback bodies, errors and
+credentials are in [docs/GATEWAY.md](docs/GATEWAY.md).
 
-The deep audit is a [LangGraph](https://github.com/langchain-ai/langgraph) state machine:
+## Evaluators
 
-| Node | What it does |
+Each route runs the checks you attach to it, all asked in the same fast-check call
+([docs/EVALUATORS.md](docs/EVALUATORS.md)):
+
+| Category | Built-in evaluators |
 |---|---|
-| **decompose** | An LLM extracts atomic, checkable claims, each with the quote it came from (injection-hardened prompt; malformed output degrades safely). |
-| **retrieve** | Only with the knowledge add-on: hybrid BM25 + dense retrieval from Qdrant, used when the request carries no evidence. |
-| **verify** | Per-claim verdicts: **SUPPORTED**, **CONTRADICTED** (the evidence disproves it), **UNSUPPORTED** (nothing addresses it) or **PARTIALLY_SUPPORTED**; **UNKNOWN** when the judge fails and **NOT_CHECKED** when there is no evidence for that claim. |
-| **score** | A trust score that is absent (never 0) when it cannot be computed, and an audit verdict: GROUNDED, HALLUCINATED, UNVERIFIABLE, NO_CLAIMS or NOT_ASSESSED. |
+| Grounding | groundedness, contradiction, factual claims |
+| Compliance | unapproved commitments, regulated advice |
+| Security | PII or secret leaks, prompt-injection success |
+| Safety and quality | unsafe content, refusals, off-topic answers, off-brand tone |
 
-**The knowledge add-on** (`COMPOSE_PROFILES=knowledge`, `TRUTHTABLE_KNOWLEDGE_ENABLED=true`) adds
-a verified knowledge base: uploaded documents are decomposed into claims, each claim must be
-entailed by its own source to be accepted (else it is quarantined), and contradictions between
-sources are flagged at ingest ([docs/KB-DESIGN.md](docs/KB-DESIGN.md)).
+- **Evidence first.** Groundedness and contradiction are asked only when the request carries
+  evidence; without it they are *not checked*, because the fast check's scores invert without
+  documents.
+- **Two signals to block.** A grounding, commitment, leak or injection check blocks only when a
+  second signal agrees: another critical evaluator or an instant check. Otherwise the answer is
+  flagged.
+- **Write your own.** The **Evaluator Studio** drafts a check from one sentence, tests it on samples
+  and on past traffic, and calibrates its threshold from your labels. On the live demo the Studio
+  runs in your browser: it drafts and tests a check on samples with your own OpenRouter key and
+  exports it; testing on past traffic, shadow and calibration need your own stack.
+
+Per-claim verdicts are **SUPPORTED**, **CONTRADICTED** (the evidence disproves it), **UNSUPPORTED**
+(nothing addresses it) and **PARTIALLY_SUPPORTED**, plus **UNKNOWN** when the judge fails and
+**NOT_CHECKED** when there is no evidence for that claim.
 
 ## Screenshots
 
-<p align="center">
-  <img src="docs/images/dashboard.png" alt="The TrustAgent 1.0 dashboard: live audit feed, trust gauge, service status" width="100%"/>
-  <br/><em>The 1.0 dashboard. The 2.0 dashboard (Traffic, trace detail with inline claim marks, Policies, Playground) replaces it; its screenshots land with the 2.0 demo milestone.</em>
-</p>
+<!-- screenshots:start
+     Filled from `make screenshots`: docs/images/v2/{page}-{light,dark}.png, the static
+     site replaying the simulated tape. Re-run it after a recorded tape ships, then drop "Simulated".
+-->
+Every picture below is **Simulated**: the static site replaying the zero-key demo's tape (mock checks and a
+mock judge, not model output), as each page's banner says. Every page is one click away in the
+[live demo](https://timkush1.github.io/TrustAgent/). The trace detail of the caught refund answer is at
+the [top of this page](#trustagent).
 
-<p align="center">
-  <img src="docs/images/knowledge-base.png" alt="Verified knowledge base: accepted and quarantined claims with entailment scores" width="100%"/>
-  <br/><em>The verified knowledge base (knowledge add-on): every claim carries an entailment score and is <strong>accepted</strong> or <strong>quarantined</strong>.</em>
-</p>
+<table>
+<tr>
+<td width="50%">
 
-## Tech stack
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/traffic-dark.png">
+  <img alt="Traffic (Simulated): one row per answer with its outcome, route, reason, the documents it was checked against and the deep-audit verdict" src="docs/images/v2/traffic-light.png" width="100%">
+</picture>
 
-| Layer | Technology | Role |
-|---|---|---|
-| **Gateway** | Go 1.25 · Gin · pgx · gorilla/websocket | OpenAI and Anthropic APIs, SSE relay and buffering, detectors, the Jev client (retries, hedging, breaker, spend caps), policies, WebSocket v2, REST API |
-| **Fast check** | Jev (TypeSafe AI) via OpenRouter, TypeSafe or a compatible gateway | Every evaluator as a question in one call; a mock backend for the demo and CI |
-| **Audit engine** | Python 3.11 · LangGraph · gRPC | Claim decomposition, verification, scoring |
-| **Judge (LLM)** | Claude Haiku via OpenRouter or Anthropic · OpenAI · Ollama | `LLM_PROVIDER=auto` picks from the keys you set and reports any fallback |
-| **Dashboard** | React 19 · TypeScript 6 · Vite 8 · TanStack Router and Query · Tailwind 4 | Overview, Traffic, trace detail, Policies, Playground; a static replay site |
-| **Contracts** | JSON Schema · Protocol Buffers · golden vectors | One source of truth for Go, Python and TypeScript (`contracts/`, `proto/evaluator.proto`) |
-| **Storage** | Postgres 16 · Redis (optional) · Qdrant (knowledge add-on) | Traces, decisions, audits, policy versions · rate limits · knowledge base |
-| **Observability** | Prometheus · Grafana | `trustagent_gateway_*` and `trustagent_engine_*` metrics and a provisioned dashboard |
+<sub><b>Traffic</b>: one outcome per answer (Simulated)</sub>
+</td>
+<td width="50%">
 
-## Configuration
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/savings-dark.png">
+  <img alt="Savings (Simulated): what checking cost against asking an LLM the same questions, with the published estimates for a real judge" src="docs/images/v2/savings-light.png" width="100%">
+</picture>
 
-`make up` and `make demo` create `.env` from [`.env.example`](.env.example) and fill in the
-generated secrets. The settings most people touch:
+<sub><b>Savings</b>: what checking costs, against asking an LLM (Simulated)</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
 
-| Variable | Default | What it does |
-|---|---|---|
-| `OPENROUTER_API_KEY` | — | Runs the fast check and the judge (or connect it in the dashboard) |
-| `TRUTHTABLE_JEV_BACKEND` | `auto` | `openrouter-decisions`, `typesafe`, `compatible`, `mock` or `off`; `auto` picks from your keys |
-| `LLM_PROVIDER` | `auto` | The deep-audit judge |
-| `TRUTHTABLE_UPSTREAM_URL` / `_API_KEY` | api.openai.com / — | The LLM API the gateway forwards to; a key turns on inject mode |
-| `TRUTHTABLE_API_KEYS` / `TRUTHTABLE_ADMIN_KEYS` | — | Client keys (`label=key,...`) and admin keys |
-| `TRUTHTABLE_GATE_DEFAULT_MODE` | `observe` | The mode of routes that do not set one |
-| `TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY` / `_LLM_USD_DAY` | 2.00 / 5.00 | Daily budgets for fast checks and deep audits |
-| `COMPOSE_PROFILES` | — | Add-ons: `knowledge`, `local-llm`, `observability`, `redis` |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/playground-dark.png">
+  <img alt="Playground (Simulated): the demo's example requests, each with its outcome and the document it was checked against" src="docs/images/v2/playground-light.png" width="100%">
+</picture>
 
-Most of these can also be changed while the stack runs, on the dashboard's **Settings** page
-(Connections, Models, Budgets and prices, Access); a non-empty environment value wins and shows
-there as read-only. Every key, with its default and who reads it, is in
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md) (generated from `contracts/config/keys.v1.json`;
-`proxy -check-config` checks a configuration).
+<sub><b>Playground</b>: the demo's examples, and a live check with your own key (Simulated)</sub>
+</td>
+<td width="50%">
 
-## Testing and evaluation
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/studio-dark.png">
+  <img alt="Evaluator Studio (Simulated): the Review step of the built-in Contradiction check, with the question the fast check answers, what Yes and No mean, which answer counts as a problem and the flag threshold" src="docs/images/v2/studio-light.png" width="100%">
+</picture>
 
-```bash
-make check          # the local gate, the same checks CI runs: lint, unit tests, contracts,
-                    # superseded identifiers, compose files, generated files, both web builds
-make test           # unit tests: Go, Python, React and the setup scripts
-make eval-golden    # the deterministic eval regression gate (no model needed)
-make vectors-ts     # the golden vectors against the TypeScript decision core
-make test-e2e-web   # Playwright against a running stack (make demo first)
-```
-
-**The golden regression gate** runs the real audit pipeline with recorded judge answers and
-fails CI when a single prediction moves. The judge there is a mock replaying hand-written
-fixtures, a few of them wrong on purpose, so these numbers show that the pipeline is stable;
-they are not a model's accuracy **[simulated]**:
-
-| Set | Examples | Precision | Recall | F1 | AUROC | ECE |
-|---|---|---|---|---|---|---|
-| golden_v2 | 91 | 0.960 | 0.941 | 0.950 | 0.985 | 0.076 |
-| golden (v1) | 50 | 0.920 | 0.885 | 0.902 | 0.983 | 0.085 |
-
-Live benchmarks against the real Jev and judge (`make bench-lite`, hard cost cap) are described
-in [docs/EVALUATION.md](docs/EVALUATION.md); their results are published only from measured runs.
-
-## Observability
-
-`COMPOSE_PROFILES=observability make up` adds Prometheus and Grafana (<http://localhost:3001>).
-The gateway's metrics are `trustagent_gateway_*` (job `proxy`, port 8002) and the engine's
-`trustagent_engine_*` (job `engine`, port 8001); every Grafana query filters by `job`.
-
-- Gateway: `trustagent_gateway_requests_total{route,format,action}`,
-  `trustagent_gateway_overhead_seconds{route,mode}`,
-  `trustagent_gateway_gate_decisions_total{route,mode,action,status}`,
-  `trustagent_gateway_jev_requests_total{backend,outcome}`,
-  `trustagent_gateway_fallback_total{outcome}`, `trustagent_gateway_audit_jobs_total`,
-  `trustagent_gateway_spend_usd_today{kind}`, `trustagent_gateway_jev_cost_usd_total{component}`, ...
-- Engine: `trustagent_engine_audits_total{status}`, `trustagent_engine_claims_total{verdict}`,
-  `trustagent_engine_stage_duration_seconds{stage}`,
-  `trustagent_engine_judge_requests_total{provider,outcome}`,
-  `trustagent_engine_gate_vs_audit_total{gate_action,audit_verdict}`, ...
-
-The 2.0 names replace the 1.0 `trustagent_*` names; [CHANGELOG.md](CHANGELOG.md) maps old to
-new.
+<sub><b>Studio</b>: a check under review, its question, risk answer and threshold (Simulated)</sub>
+</td>
+</tr>
+</table>
+<!-- screenshots:end -->
 
 ## Security
 
-Controls map to the [OWASP LLM Top 10](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
-([docs/SECURITY.md](docs/SECURITY.md)):
+Controls map to the [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/);
+the threat model and the known gaps are in [docs/SECURITY.md](docs/SECURITY.md).
 
-- **Keys:** the proxy key (`X-TrustAgent-Key`) is never forwarded upstream; in inject mode every
-  client credential is stripped. Vendor keys saved in the dashboard are encrypted (AES-256-GCM,
-  bound to their name, provider and the origins they may be sent to), masked everywhere, and
-  never reach the browser; logs, API errors and WebSocket events are redacted.
-- **Access:** scoped keys (ingest, read, content, admin), a one-time setup link for the first
-  admin, sessions with CSRF protection, per-key rate limits, 127.0.0.1-only ports by default,
-  an authenticated internal gRPC channel.
-- **Prompt injection:** untrusted evidence is delimiter-tagged, the judge treats it as data, and
+- **Keys.** The app key (`X-TrustAgent-Key`) is never forwarded upstream. Vendor keys saved in the
+  dashboard are encrypted (AES-256-GCM, bound to their name, provider and allowed origins), masked
+  everywhere, and never reach the browser; logs, API errors and WebSocket events are redacted.
+- **Access.** Scoped keys (ingest, read, content, admin), a one-time setup link for the first admin,
+  sessions with CSRF protection, per-key rate limits, ports bound to 127.0.0.1 by default, and a
+  token-authenticated internal gRPC channel.
+- **Prompt injection.** Untrusted evidence is delimiter-tagged, the judge treats it as data and its
   output is schema-validated; a manipulated answer degrades to UNKNOWN, never to a verdict.
-- **Accountability:** an append-only admin audit log of every key, setting and evaluator change.
-- **Blocking CI scanners:** gosec, bandit, npm audit, gitleaks over the whole history, and a
-  checker that fails on superseded identifiers.
+- **Supply chain.** Base images pinned by digest, workflow actions pinned by commit, release images
+  with provenance and an SBOM, blocking scanners in CI (gosec, bandit, npm audit, gitleaks).
+- **Accountability.** An append-only admin audit log of every key, setting and evaluator change.
 
-## Project structure
+## Limitations
 
-```
-TrustAgent/
-├── backend-go/            # the gateway: /v1 handler, detectors, Jev client, policies, REST, WebSocket v2
-├── backend-python/        # the audit engine: LangGraph pipeline, judges, scoring, knowledge base, gRPC
-├── frontend-react/        # the dashboard and the static replay site (Playwright specs in e2e/)
-├── contracts/             # schemas, key registry, evaluators, scenarios, golden vectors (Go/Python/TS)
-├── proto/evaluator.proto  # the Go↔Python gRPC contract
-├── config/                # policies, calibration, Prometheus and Grafana provisioning
-├── scripts/               # configure, doctor, setup link, config docs, load tests
-├── mk/                    # one Makefile fragment per stream (make help lists every target)
-├── docs/                  # guides and references; v2/ holds the 2.0 spec
-└── docker-compose*.yml    # the stack, the demo and the e2e overrides
-```
+- Jev launched on 2026-09-15 on an alpha endpoint with no published calibration, so thresholds are
+  calibrated locally per version.
+- Weak on numbers, dates and negation; instant checks and the deep audit cover them.
+- Needs documents for groundedness; otherwise the answer is marked not checked.
+- English-first.
+- Not a security boundary.
+
+Also: tool calls are not gated, only the first choice of an `n > 1` answer is, and the gateway is
+single-tenant.
+
+## Roadmap
+
+- **Done:** the gateway with the instant checks, the fast check and per-route policies (observe,
+  flag, block, fallback) on OpenAI and Anthropic APIs, JSON and streaming; the deep-audit engine;
+  the dashboard with Traffic, the trace detail, Policies, Playground, Savings, the Evaluator Studio,
+  labels and calibration; encrypted credentials and Connect OpenRouter; the landing page and the
+  live in-browser demo; the release pipeline for versioned, multi-arch images.
+- **Next:** a measured benchmark and a recorded demo tape on the real models, the first published
+  images, then shared limits for running several gateway replicas.
+
+The full plan is [docs/PLAN.md](docs/PLAN.md); the 2.0 specification is
+[docs/v2/SPEC.md](docs/v2/SPEC.md).
 
 ## Documentation
 
 | Doc | What's inside |
 |---|---|
-| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | From a fresh laptop to the demo and real mode, with troubleshooting |
-| [docs/DEMO.md](docs/DEMO.md) | Running and presenting the zero-key demo |
-| [docs/GATEWAY.md](docs/GATEWAY.md) | The gateway reference: modes, headers, streaming, failures, block, fallback, credentials, errors |
-| [docs/EVALUATORS.md](docs/EVALUATORS.md) | Evaluators, routes, the Evaluator Studio, labels and calibration |
-| [docs/JEV-ACCESS.md](docs/JEV-ACCESS.md) | Getting Jev access: Connect OpenRouter or a key, costs, settings, errors |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | The tiers, the control plane, failure modes and ports |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every configuration key (generated) |
-| [docs/EVALUATION.md](docs/EVALUATION.md) · [docs/SECURITY.md](docs/SECURITY.md) | Evaluation methodology · threat model |
-| [docs/v2/SPEC.md](docs/v2/SPEC.md) | The 2.0 specification |
+| [GETTING-STARTED](docs/GETTING-STARTED.md) | From a fresh laptop to the demo and real mode, with troubleshooting |
+| [DEMO](docs/DEMO.md) | The live demo, the zero-key demo, its scenarios and how to present it |
+| [GATEWAY](docs/GATEWAY.md) | Modes, headers, streaming, failures, block, fallback, credentials, errors, overhead |
+| [EVALUATORS](docs/EVALUATORS.md) | Evaluators, routes, the Evaluator Studio, labels and calibration |
+| [JEV-ACCESS](docs/JEV-ACCESS.md) | Getting Jev access: Connect OpenRouter or a key, costs, browser live mode |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | Tiers, failure modes, ports, the static site and the release flow |
+| [SECURITY](docs/SECURITY.md) | Threat model, keys, the static demo, supply chain, known gaps |
+| [CONFIGURATION](docs/CONFIGURATION.md) | Every configuration key (generated) |
+| [CI-CD](docs/CI-CD.md) | The workflows and the release runbook |
 
-The full index is [docs/README.md](docs/README.md). Component guides:
-[backend-go](backend-go/README.md) · [backend-python](backend-python/README.md) ·
+The full index is [docs/README.md](docs/README.md); [CHANGELOG.md](CHANGELOG.md) lists what changed
+and how to migrate from 1.0.
+
+<details>
+<summary><strong>Tech stack</strong></summary>
+
+| Layer | Technology |
+|---|---|
+| Gateway | Go 1.25, Gin, pgx, gorilla/websocket |
+| Fast check | Jev (TypeSafe AI) via OpenRouter, TypeSafe or a compatible gateway; a mock for the demo and CI |
+| Audit engine | Python 3.11, LangGraph, gRPC |
+| Judge | Claude Haiku via OpenRouter or Anthropic, OpenAI, or Ollama locally |
+| Dashboard | React 19, TypeScript 6, Vite 8, TanStack Router and Query, Tailwind 4 |
+| Contracts | JSON Schema, Protocol Buffers, golden vectors shared by Go, Python and TypeScript |
+| Storage | Postgres 16; Redis and Qdrant as add-ons |
+| Observability | Prometheus and Grafana (`trustagent_gateway_*`, `trustagent_engine_*`) |
+
+</details>
+
+<details>
+<summary><strong>Development</strong></summary>
+
+```bash
+make help           # every target
+make check          # the local gate: lint, unit tests, contracts, compose files, generated files
+make vectors-ts     # the golden vectors against the TypeScript decision core
+make test-e2e-web   # Playwright against a running stack (make demo first)
+make check-claims   # every figure in the README and docs/ against contracts/claims
+```
+
+```
+backend-go/        the gateway: /v1, detectors, Jev client, policies, REST, WebSocket v2
+backend-python/    the audit engine: LangGraph pipeline, judges, scoring, knowledge base, gRPC
+frontend-react/    the dashboard, the landing page and the static demo site
+contracts/         schemas, key registry, evaluators, scenarios, claims, golden vectors
+proto/             the Go-Python gRPC contract
+docs/              guides, references, decisions and the launch kit
+```
+
+Component guides: [backend-go](backend-go/README.md) · [backend-python](backend-python/README.md) ·
 [frontend-react](frontend-react/README.md).
 
-## Roadmap
-
-2.0 is built in phases ([docs/v2/SPEC.md §4](docs/v2/SPEC.md#4-implementation-sequence)):
-
-- **Done:** the walking skeleton, the fast-check backends, access control, versioned policies and
-  evaluators, the deep-audit engine v2, the dashboard shell and trace detail, the static replay
-  site; enforcement on `/v1` (block and fallback, streaming with trailers, Anthropic Messages and
-  completions), the Traffic, Policies and Playground pages (P3); encrypted credentials and
-  Connect OpenRouter, dashboard Settings, the cost ledger with daily budgets and the Savings page,
-  the Evaluator Studio, labels and calibration in the dashboard, the admin audit log (P4).
-- **Next:** the landing page and a richer static demo (P5); release images and the measured
-  benchmark (P6).
-
-## Honest limitations
-
-- **The fast check is only as good as its calibration.** Jev's thresholds shift between
-  snapshots; blocking waits for a measured calibration of the snapshot in use, and until then
-  enforcing routes act as flag.
-- **No evidence, no verdict.** Without documents in the request (or the knowledge add-on),
-  groundedness is "not checked", by design.
-- **Jev is English-first** and weak on numbers, dates and double negatives; the detectors cover
-  numbers and dates, and the deep audit explains what Jev cannot.
-- **Tool calls are not gated** in 2.0, and only the first choice of an `n > 1` answer is.
-- **The demo's numbers are simulated**, and so are the golden metrics: they characterize the
-  pipeline on hand-written judge answers, not a live model.
-- **Single-tenant:** no per-user data isolation.
+</details>
 
 ## License
 
-See [LICENSE](LICENSE).
+[MIT](LICENSE)

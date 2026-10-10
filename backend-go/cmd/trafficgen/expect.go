@@ -25,6 +25,7 @@ const (
 	headerReasons        = "X-TrustAgent-Reasons"
 	headerCheckedAgainst = "X-TrustAgent-Checked-Against"
 	headerAudit          = "X-TrustAgent-Audit"
+	headerDegraded       = "X-TrustAgent-Degraded"
 )
 
 // statusDeferred is X-TrustAgent-Status on an observe-mode response: the gate runs after it.
@@ -55,6 +56,36 @@ func (e expectation) str(k string) string {
 	var s string
 	_ = json.Unmarshal(e[k], &s)
 	return s
+}
+
+// degraded is expect.degraded, and whether it is asserted.
+func (e expectation) degraded() (want, ok bool) {
+	raw, present := e["degraded"]
+	if !present || json.Unmarshal(raw, &want) != nil {
+		return false, false
+	}
+	return want, true
+}
+
+// decisionModelExpect is scenarios.v1 expect.decision_model: what the decision-model client did
+// (D119). A nil member is not asserted.
+type decisionModelExpect struct {
+	Attempts *int  `json:"attempts"`
+	Hedged   *bool `json:"hedged"`
+	Late     *bool `json:"late"`
+}
+
+// decisionModel is expect.decision_model, or nil when it is not asserted.
+func (e expectation) decisionModel() *decisionModelExpect {
+	raw, ok := e["decision_model"]
+	if !ok || string(raw) == "null" {
+		return nil
+	}
+	var dm decisionModelExpect
+	if json.Unmarshal(raw, &dm) != nil {
+		return nil
+	}
+	return &dm
 }
 
 // checkHeaders compares the gate headers of a response with the scenario's expect.
@@ -102,6 +133,18 @@ func checkDecision(s *scenario, v *decisionView, streamed bool) []mismatch {
 	for member, name := range map[string]string{"checked_against": headerCheckedAgainst, "audit": headerAudit} {
 		if _, ok := v.get(name); ok || !streamed {
 			equal(member, name)
+		}
+	}
+	// expect.degraded (D119): X-TrustAgent-Degraded names the degradation of a decision that did
+	// not get a full answer, and is absent otherwise. A stream's comment does not carry it, so a
+	// stream is checked on the stored decision only.
+	if want, ok := e.degraded(); ok && !streamed {
+		got, has := v.get(headerDegraded)
+		switch {
+		case want && !has:
+			out = append(out, mismatch{headerDegraded, "a degradation (the check did not complete)", absent})
+		case !want && has:
+			out = append(out, mismatch{headerDegraded, absent, show(got, has)})
 		}
 	}
 
@@ -253,11 +296,49 @@ type traceView struct {
 			Status string `json:"status"`
 		} `json:"claims"`
 	} `json:"audit_detail"`
+	// Decisions are the stored decision/v1 documents, one per attempt (0 the answer, 1 a fallback
+	// re-gate); a late decision replaces its attempt's document and says late.
+	Decisions []storedDecision `json:"decisions"`
+}
+
+// storedDecision is the part of a stored decision/v1 document --expect reads.
+type storedDecision struct {
+	Attempt       int     `json:"attempt"`
+	Late          bool    `json:"late"`
+	Degraded      *string `json:"degraded"`
+	DecisionModel *struct {
+		Attempts int  `json:"attempts"`
+		Hedged   bool `json:"hedged"`
+	} `json:"decision_model"`
+}
+
+// decision is the stored decision of attempt n, or nil.
+func (t *traceView) decision(n int) *storedDecision {
+	for i := range t.Decisions {
+		if t.Decisions[i].Attempt == n {
+			return &t.Decisions[i]
+		}
+	}
+	return nil
 }
 
 // settled reports whether the trace is decided and its deep audit is no longer pending.
 func (t *traceView) settled() bool {
 	return t.GateStatus != store.GateStatusPending && t.Audit.Status != store.AuditQueued && t.Audit.Status != store.AuditRunning
+}
+
+// settledFor reports whether the trace is settled for s: decided, its deep audit no longer
+// pending and, when s expects a late decision (expect.decision_model.late), that decision
+// recorded. A late decision arrives after the response, often after the audit is queued.
+func (t *traceView) settledFor(s *scenario) bool {
+	if !t.settled() {
+		return false
+	}
+	if dm := expectation(s.Expect).decisionModel(); dm != nil && dm.Late != nil && *dm.Late {
+		d := t.decision(0)
+		return d != nil && d.Late
+	}
+	return true
 }
 
 // checkedAgainst formats the trace's evidence summary as X-TrustAgent-Checked-Against does.
@@ -288,6 +369,7 @@ func checkTrace(s *scenario, t *traceView, storedDecision bool) []mismatch {
 	if storedDecision {
 		out = append(out, checkStoredDecision(e, t)...)
 	}
+	out = append(out, checkDecisionModel(e, t)...)
 	if present, null := e.has("audit_verdict"); present {
 		got := absent
 		if t.Audit.Verdict != nil {
@@ -363,6 +445,54 @@ func checkStoredDecision(e expectation, t *traceView) []mismatch {
 				out = append(out, mismatch{"stored reasons", "to include " + fmt.Sprintf("%q", r), fmt.Sprintf("%q", strings.Join(t.Reasons, ","))})
 			}
 		}
+	}
+	return out
+}
+
+// checkDecisionModel checks expect.degraded and expect.decision_model (D119) on the stored decision
+// of the answer (attempt 0). attempts and hedged count the vendor requests of the decision the
+// gate enforced. A late decision replaces that document with the decision made from the late
+// answer, so it is checked for late only: the response headers carried the degradation.
+func checkDecisionModel(e expectation, t *traceView) []mismatch {
+	wantDegraded, checkDegraded := e.degraded()
+	dm := e.decisionModel()
+	if !checkDegraded && dm == nil {
+		return nil
+	}
+	d := t.decision(0)
+	if d == nil {
+		return []mismatch{{"stored decision", "the decision of attempt 0", absent}}
+	}
+	var out []mismatch
+	if dm != nil && dm.Late != nil && *dm.Late != d.Late {
+		out = append(out, mismatch{"stored decision late", strconv.FormatBool(*dm.Late), strconv.FormatBool(d.Late)})
+	}
+	if d.Late {
+		return out
+	}
+	if checkDegraded && wantDegraded != (d.Degraded != nil) {
+		got := absent
+		if d.Degraded != nil {
+			got = *d.Degraded
+		}
+		want := absent
+		if wantDegraded {
+			want = "a degradation (the check did not complete)"
+		}
+		out = append(out, mismatch{"stored degraded", want, got})
+	}
+	if dm == nil {
+		return out
+	}
+	attempts, hedged := 0, false
+	if d.DecisionModel != nil {
+		attempts, hedged = d.DecisionModel.Attempts, d.DecisionModel.Hedged
+	}
+	if dm.Attempts != nil && *dm.Attempts != attempts {
+		out = append(out, mismatch{"decision_model attempts", strconv.Itoa(*dm.Attempts), strconv.Itoa(attempts)})
+	}
+	if dm.Hedged != nil && *dm.Hedged != hedged {
+		out = append(out, mismatch{"decision_model hedged", strconv.FormatBool(*dm.Hedged), strconv.FormatBool(hedged)})
 	}
 	return out
 }

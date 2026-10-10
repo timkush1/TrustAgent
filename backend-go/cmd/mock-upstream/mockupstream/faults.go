@@ -16,6 +16,9 @@ const (
 	envAnthropic                  // {"type":"error","error":{"type","message"}}
 )
 
+// SlowDelay is how long the slow fault holds a request before answering normally.
+const SlowDelay = 2 * time.Second
+
 // htmlPage is what a site's catch-all route returns for a wrong API path.
 const htmlPage = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>OpenRouter</title></head>` +
 	`<body><div id="__next">A unified interface for LLMs</div></body></html>`
@@ -39,7 +42,11 @@ var faultTable = map[string]faultSpec{
 	"400_context": {status: 400, errType: "invalid_request_error", message: "This request exceeds the model's maximum context length of 32000 tokens"},
 	"401":         {status: 401, errType: "authentication_error", message: "No auth credentials found"},
 	"403":         {status: 403, errType: "permission_error", message: "This key is disabled"},
-	"404":         {status: 404, errType: "not_found_error", message: "Not Found"},
+	// OpenRouter's moderation refusal: it judges the input, not the key (metadata.reasons and
+	// flagged_input, which internal/jev classify reads).
+	"403_moderation": {status: 403, errType: "moderation", message: "typesafe/jev-1.13 requires moderation on TypeSafe. Your input was flagged for \"harassment\". No credits were charged.",
+		metadata: map[string]any{"reasons": []any{"harassment"}, "flagged_input": "...", "provider_name": "TypeSafe", "model_slug": "typesafe/jev-1.13"}},
+	"404": {status: 404, errType: "not_found_error", message: "Not Found"},
 	"404_data_policy": {status: 404, errType: "not_found_error",
 		message: "No endpoints found matching your data policy (Zero data retention). Configure: https://openrouter.ai/settings/privacy"},
 	"500": {status: 500, errType: "api_error", message: "Internal server error"},
@@ -60,7 +67,7 @@ func (s *Server) writeFault(w http.ResponseWriter, r *http.Request, name string,
 		}
 		return true
 	case "slow":
-		sleepCtx(r, 2*time.Second)
+		sleepCtx(r, SlowDelay)
 		return false
 	case "html200":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

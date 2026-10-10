@@ -17,8 +17,36 @@
       "surfaces": ["landing", "readme", "dashboard", "docs"]
     },
     {
+      "id": "fast_check_cost_per_check",
+      "text": "One fast check",
+      "value": 0.00021,
+      "unit": "usd",
+      "display": "~$0.0002 per check",
+      "label": "estimate",
+      "basis": "The fast check on every answer per 1,000 answers (fast_check_cost_per_1k) divided by 1,000: about 5,000 input tokens at the Jev price of $0.042 per million input tokens; output is free.",
+      "source_url": null,
+      "as_of": "2026-10-09",
+      "caveat": null,
+      "per_unit_of": "fast_check_cost_per_1k",
+      "surfaces": ["landing", "dashboard", "docs"]
+    },
+    {
+      "id": "studio_draft_cost_estimate",
+      "text": "One Draft with AI in the Studio",
+      "value": 0.005,
+      "unit": "usd",
+      "display": "~$0.005 per draft",
+      "label": "estimate",
+      "basis": "One drafting call of about 1,500 prompt and 700 answer tokens to Claude Haiku 4.5 at $1 and $5 per million tokens (pricing/assumptions.v1.json figure studio_draft_per_1k / 1,000); a repair turn costs about as much again.",
+      "source_url": null,
+      "as_of": "2026-10-09",
+      "caveat": null,
+      "per_unit_of": "studio_draft_per_1k",
+      "surfaces": ["landing", "dashboard", "docs"]
+    },
+    {
       "id": "llm_same_checks_cost_per_1k",
-      "text": "Asking an LLM judge (Claude Haiku) the same questions",
+      "text": "LLM judge, same questions (Claude Haiku)",
       "value": 5.75,
       "unit": "usd_per_1k",
       "display": "~$6 / 1,000",
@@ -123,8 +151,8 @@
       "basis": "Rounded from the OpenRouter P50 (jev_p50_latency_openrouter).",
       "source_url": "https://openrouter.ai/typesafe/jev-1.13",
       "as_of": "2026-09-27",
-      "caveat": "Third-party figure, not our measurement.",
-      "surfaces": ["landing", "readme"]
+      "caveat": "Third-party figure, not our measurement; it depends on region and load, and independent reports range from about 0.3 s to 0.9 s median.",
+      "surfaces": ["readme"]
     },
     {
       "id": "arize_ragtruth_jev_accuracy",
@@ -249,7 +277,7 @@
     },
     {
       "id": "gate_latency_p50_measured",
-      "text": "Our fast-check latency, p50",
+      "text": "Our p50 fast-check latency",
       "value": null,
       "unit": "ms",
       "display": "{value} ms p50",
@@ -288,7 +316,7 @@
       "basis": "k6 overhead benchmark (make load-test-gate).",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); {machine}",
       "measured_ref": "proxy_overhead_ms_p50",
       "surfaces": ["readme", "docs"]
     },
@@ -303,7 +331,7 @@
       "basis": "k6 overhead benchmark (make load-test-gate).",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); {machine}",
       "measured_ref": "proxy_overhead_ms_p95",
       "surfaces": ["readme", "docs"]
     },
@@ -344,37 +372,25 @@
       "unit": "ms",
       "display": "212 ms",
       "label": "simulated",
-      "basis": "Illustrative animation of the scripted refund-policy example (60 days vs 30 days).",
+      "basis": "Illustrative animation of the scripted refund-policy example (60 days vs 30 days): replayed, not a live measurement. The fast check's published latency is the third-party figure beside it.",
       "source_url": null,
       "as_of": null,
-      "caveat": "Replayed illustration, not a live measurement.",
+      "caveat": null,
       "surfaces": ["landing"]
     },
     {
       "id": "hero_card_cost_usd",
-      "text": "Hero animation: the check cost",
-      "value": 0.0002,
+      "text": "The refund example's fast check costs",
+      "value": 0.000024,
       "unit": "usd",
-      "display": "$0.0002",
-      "label": "simulated",
-      "basis": "Illustrative animation of the scripted refund-policy example; about one fast check at the Jev price.",
+      "display": "$0.000024",
+      "label": "estimate",
+      "basis": "The refund example's compiled fast-check request (What Jev was asked): about 565 input tokens, as the gateway's request builder estimates them, at the Jev price of $0.042 per million input tokens; output is free. A typical check carries more documents (about 5,000 tokens) and costs about $0.0002.",
       "source_url": null,
       "as_of": null,
-      "caveat": "Replayed illustration, not a live measurement.",
+      "caveat": null,
+      "tokens_x_price": {"input_tokens": 565, "price_claim": "jev_input_price_per_mtok"},
       "surfaces": ["landing"]
-    },
-    {
-      "id": "demo_cost_usd",
-      "text": "make demo runs with no keys and costs",
-      "value": 0,
-      "unit": "usd",
-      "display": "$0",
-      "label": "simulated",
-      "basis": "The demo stack blanks every vendor key and uses mock checks and a mock judge; no billed calls are possible.",
-      "source_url": null,
-      "as_of": null,
-      "caveat": "Demo numbers are simulated, not model output.",
-      "surfaces": ["landing", "readme", "docs"]
     }
   ]
 }

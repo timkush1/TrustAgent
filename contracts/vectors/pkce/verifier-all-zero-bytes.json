@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "pkce",
+  "name": "verifier-all-zero-bytes",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@8c68cdad853d",
+  "description": "32 zero bytes become a 43-character base64url verifier without padding.",
+  "input": {
+    "op": "verifier_from_bytes",
+    "bytes_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "expected": {"verifier": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+}

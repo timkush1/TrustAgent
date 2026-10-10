@@ -491,6 +491,10 @@ func (cl *call) launch(ctx context.Context, hedge bool) *Error {
 	ok, trial := c.breaker.allow(hedge)
 	if !ok {
 		v := c.breaker.view()
+		if v.keyCause != "" {
+			// One refusal of the key or account paused fast checks; its own hint says what to fix.
+			return &Error{Kind: KindBreakerOpen, Message: "the vendor refused the key or account (" + v.keyCause + "); fast checks are paused", Hint: Hint(v.keyCause)}
+		}
 		msg := "the breaker is open after repeated vendor faults"
 		if v.cause != "" {
 			msg += " (last: " + v.cause + ")"
@@ -566,7 +570,7 @@ func (cl *call) leave(ctx context.Context) (*Response, error) {
 		}
 	}
 	return nil, &Error{Kind: KindTimeout, Message: "no decision before the deadline", Err: ctx.Err(), Hint: Hint(KindTimeout),
-		Attempts: len(cl.attempts), Continued: continued}
+		Attempts: len(cl.attempts), Hedged: cl.hedged, Continued: continued}
 }
 
 // drainLate waits for the n running attempts after the caller left and reports the first
@@ -586,10 +590,10 @@ func (cl *call) drainLate(n int) {
 	cl.opt.OnLate(nil, cl.fail(lastErr))
 }
 
-// fail returns a copy of e with the call's attempt count.
+// fail returns a copy of e with the call's attempt count and whether it hedged.
 func (cl *call) fail(e *Error) *Error {
 	out := *e
-	out.Attempts = len(cl.attempts)
+	out.Attempts, out.Hedged = len(cl.attempts), cl.hedged
 	return &out
 }
 
@@ -655,9 +659,7 @@ func (c *httpClient) do(ctx context.Context, cl *call, a *attempt, key string) a
 		return res
 	}
 	c.setHeaders(hreq.Header, key)
-	if c.cfg.ForwardScenario && cl.opt.Scenario != "" {
-		hreq.Header.Set("X-TrustAgent-Scenario", cl.opt.Scenario)
-	}
+	forwardTestHeaders(hreq.Header, hreq.URL, cl.opt, c.cfg.ForwardScenario)
 	resp, err := c.hc.Do(hreq)
 	res.connectMs, res.wrote = ct.result()
 	if err != nil {

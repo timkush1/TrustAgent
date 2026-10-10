@@ -1,0 +1,68 @@
+# ============================================================================
+# TrustAgent - demo recording stack (D123; `make record-demo`)
+# ============================================================================
+# scripts/record_demo.py runs this stack to record the public demo with the real
+# fast check (Jev) and the real deep-audit judge, then exports it to
+# frontend-react/demo-data/recorded/ (SPEC §2.13). It is a dry run unless
+# CONFIRM=1; the plan and its estimate come first:
+#
+#   make record-demo              # the plan, the estimate, which keys it found
+#   make record-demo CONFIRM=1    # record (about $1 on your OpenRouter key)
+#
+# What this overlay changes on top of docker-compose.yml:
+# - the backends come from .env, as in `make up` (one OpenRouter key covers Jev
+#   and the judge; docs/JEV-ACCESS.md); the recording refuses the mock, `off`,
+#   a local endpoint (mock-upstream) and a judge on its fallback;
+# - test mode is on, so scripted scenarios send their answers as test_response
+#   and the generated ones go through the real upstream (trafficgen --record
+#   --upstream generated). The test-header seam (internal/jev/testheaders.go)
+#   never sends test headers to a vendor host;
+# - traces are written before the response returns (sync), as the export reads
+#   them straight after the run;
+# - daily caps: $0.50 of fast checks and $3 of deep audits, whatever .env says;
+# - no judge fallback (a fallback verdict cannot be labelled recorded), no
+#   public read, strict configuration, demo mode off;
+# - nothing reachable from outside: the database and the dashboard publish no
+#   port, and the proxy publishes on an ephemeral 127.0.0.1 port that
+#   record_demo.py reads back (`docker compose port proxy 8080`), so it never
+#   collides with `make up` (8080) or `make demo`;
+# - no mock-upstream and no trafficgen loop: neither profile is enabled.
+#
+# Its own project, truthtable-record: `make record-demo` removes its volumes
+# when it ends (down -v). Without Docker, `make record-check-config` proves that
+# the gateway accepts this environment under strict configuration with fake
+# keys (proxy -check-config):
+#
+#   docker compose -p truthtable-record -f docker-compose.yml -f docker-compose.record.yml config -q
+
+name: truthtable-record
+
+x-record-env: &record-env
+  TRUTHTABLE_DEMO_MODE: "false"
+  TRUTHTABLE_TEST_MODE: "true"
+  TRUTHTABLE_STRICT_CONFIG: "true"
+  TRUTHTABLE_PUBLIC_READ: "false"
+
+services:
+  proxy:
+    environment:
+      <<: *record-env
+      TRUTHTABLE_TRACE_FLUSH: sync
+      TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0.50"
+      TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "3"
+      # The key in-container trafficgen sends (TRUTHTABLE_API_KEYS gives it ingest, read and
+      # content: --record reads GET /api/status first).
+      TRAFFICGEN_API_KEY:
+    ports: !override
+      - "127.0.0.1::8080"
+
+  engine:
+    environment:
+      <<: *record-env
+      LLM_FALLBACK: none
+
+  postgres:
+    ports: !reset []
+
+  dashboard:
+    ports: !reset []

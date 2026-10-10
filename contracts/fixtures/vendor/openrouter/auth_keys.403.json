@@ -1,0 +1,27 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/keys",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "code": "mockcode_000000000000000000000000",
+      "code_challenge_method": "S256",
+      "code_verifier": "a-verifier-that-does-not-match-the-challenge-0000"
+    }
+  },
+  "status": 403,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "code": 403,
+      "message": "Invalid code_verifier"
+    }
+  }
+}

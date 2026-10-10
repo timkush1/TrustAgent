@@ -197,6 +197,9 @@ func quickMapping(samples []LabeledScore, pos, neg int) QuickMapping {
 }
 
 // quickMessage is the honesty text of §7.3. It says "suggested threshold", never "calibrated".
+// An unstable suggestion says why: the leave-one-out range when that range is what makes it
+// unstable, else the wide 95% ranges (a range of one value, "between 0.92 and 0.92", explains
+// nothing).
 func quickMessage(q *QuickCalibration) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Suggested threshold from %d labels: %s. ", q.N, strconv.FormatFloat(*q.Threshold, 'f', -1, 64))
@@ -205,9 +208,11 @@ func quickMessage(q *QuickCalibration) string {
 		percent(q.Precision.Point), percent(q.Precision.CI95[0]), percent(q.Precision.CI95[1]))
 	if q.Unstable {
 		b.WriteString("; the suggestion is unstable")
-		if q.LOORange != nil {
+		if q.LOORange != nil && q.LOORange[1]-q.LOORange[0] > QuickMaxLOORange+EPS {
 			fmt.Fprintf(&b, " (leaving out one label moves it between %s and %s)",
 				strconv.FormatFloat(q.LOORange[0], 'f', -1, 64), strconv.FormatFloat(q.LOORange[1], 'f', -1, 64))
+		} else {
+			b.WriteString(" (too few labels: the 95% ranges are wide)")
 		}
 	}
 	b.WriteString(". Keep it watching and label more traffic.")

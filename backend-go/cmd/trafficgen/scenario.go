@@ -34,6 +34,9 @@ type scenario struct {
 	Request      json.RawMessage   `json:"request"`
 	Response     *string           `json:"response"`
 	Judge        *judgeFixture     `json:"judge"`
+	// Knowledge are the documents a knowledge-base route retrieves for the scenario
+	// (--seed-knowledge uploads them).
+	Knowledge []knowledgeDoc `json:"knowledge"`
 	// Expect keeps its raw members: an absent member is not checked, a null one is.
 	Expect map[string]json.RawMessage `json:"expect"`
 }
@@ -52,15 +55,34 @@ type judgeFixture struct {
 	} `json:"claims"`
 }
 
-// loadScenarios reads the pack at path, or the embedded contracts/demo/scenarios.v1.json.
+// Embedded scenario packs (--pack): the main pack (demo, e2e and the rest) and the vendor-fault
+// pack (D119), which the main pack's sets never select.
+const (
+	packMain   = "main"
+	packFaults = "faults"
+)
+
+// packFiles are the embedded files of the packs, under contracts/.
+var packFiles = map[string]string{packMain: "demo/scenarios.v1.json", packFaults: "demo/faults.v1.json"}
+
+// loadScenarios reads the pack at path, or the embedded main pack (contracts/demo/scenarios.v1.json).
 func loadScenarios(path string) ([]scenario, error) {
+	return loadPack(packMain, path)
+}
+
+// loadPack reads the pack at path, or else the embedded pack name (main or faults).
+func loadPack(name, path string) ([]scenario, error) {
 	var (
 		b   []byte
 		err error
 	)
 	if path == "" {
-		b, err = contracts.FS.ReadFile("demo/scenarios.v1.json")
-		path = "contracts/demo/scenarios.v1.json"
+		file, ok := packFiles[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown pack %q (main or faults)", name)
+		}
+		b, err = contracts.FS.ReadFile(file)
+		path = "contracts/" + file
 	} else {
 		b, err = os.ReadFile(path) // #nosec G304 -- the operator names the scenario pack (--file)
 	}
@@ -131,12 +153,13 @@ func selectScenarios(all []scenario, sel, exclude string) ([]scenario, error) {
 // when --phase reaches that phase.
 const (
 	phaseS0 = "s0"
-	// defaultPhase is the phase this build's gateway implements: it adds knowledge on the hot path,
-	// Playground streaming and the batched trace writer to P3's block and fallback enforcement,
-	// stream gating, /v1/messages and /v1/completions. This phase added no traffic scenario of its own
-	// (its work is the control plane), so no scenario carries its tag; p5 is the next phase a tag may
-	// name.
-	defaultPhase = "p4"
+	// defaultPhase is the phase this build's gateway implements: the vendor-fault channel (the
+	// forward-only fault:<spec> scenario value, X-Mock-Key) and the generated-answer stamp, on top of
+	// knowledge on the hot path, Playground streaming, the batched trace writer, block and fallback
+	// enforcement, stream gating, /v1/messages and /v1/completions. The vendor-fault scenarios
+	// (contracts/demo/faults.v1.json) carry its tag; no scenario carries the tag of the phase before
+	// it, whose work was the control plane.
+	defaultPhase = "p5"
 )
 
 var phases = []string{phaseS0, "p2", "p3", "p4", "p5"}

@@ -23,7 +23,11 @@ COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 DEMO = (ROOT / "docker-compose.demo.yml").read_text(encoding="utf-8")
 E2E = (ROOT / "docker-compose.e2e.yml").read_text(encoding="utf-8")
 ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8")
+RECORD = (ROOT / "docker-compose.record.yml").read_text(encoding="utf-8")
+KNOWLEDGE = (ROOT / "docker-compose.knowledge.yml").read_text(encoding="utf-8")
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
+RELEASE_MK = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 REGISTRY = json.loads((ROOT / "contracts" / "config" / "keys.v1.json").read_text(encoding="utf-8"))
 KEYS: Dict[str, Dict[str, Any]] = {entry["name"]: entry for entry in REGISTRY["keys"]}
 ALIASES: Dict[str, str] = {
@@ -87,6 +91,8 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.demo.yml", DEMO),
             ("docker-compose.e2e.yml", E2E),
             ("docker-compose.onboarding.yml", ONBOARDING),
+            ("docker-compose.record.yml", RECORD),
+            ("docker-compose.knowledge.yml", KNOWLEDGE),
         ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
@@ -110,6 +116,8 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.demo.yml", DEMO),
             ("docker-compose.e2e.yml", E2E),
             ("docker-compose.onboarding.yml", ONBOARDING),
+            ("docker-compose.record.yml", RECORD),
+            ("docker-compose.knowledge.yml", KNOWLEDGE),
         ):
             for key in set(pattern.findall(text)):
                 if key in allowed_foreign:
@@ -124,6 +132,90 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(DEMO, r"(?m)^name: truthtable-demo$")
         self.assertRegex(E2E, r"(?m)^name: truthtable-e2e$")
         self.assertRegex(ONBOARDING, r"(?m)^name: truthtable-onboarding$")
+        self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
+
+    def test_record_and_knowledge_overlays_are_checked(self) -> None:
+        # D123 and D131: compose-check validates both overlays with the files they are layered
+        # on; the record stack (mk/release.mk) always runs as truthtable-record.
+        for text in (RECORD, KNOWLEDGE):
+            self.assertRegex(text, r"(?m)^services:")
+        check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(RECORD_COMPOSE) config -q", check)
+        self.assertIn("$(KNOWLEDGE_COMPOSE) config -q", check)
+        record = re.search(r"(?m)^RECORD_COMPOSE\s*=(.*)$", RELEASE_MK)
+        self.assertIsNotNone(record)
+        self.assertEqual(
+            re.findall(r"-f (\S+)", record.group(1) if record else ""),
+            ["docker-compose.yml", "docker-compose.record.yml"],
+        )
+        self.assertRegex(RELEASE_MK, r"(?m)^RECORD_PROJECT\s+:= truthtable-record$")
+        self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
+        knowledge = re.search(r"(?m)^KNOWLEDGE_COMPOSE\s*=(.*)$", DX_MK)
+        self.assertIsNotNone(knowledge)
+        self.assertIn("docker-compose.knowledge.yml", knowledge.group(1) if knowledge else "")
+
+    def test_the_record_overlay_holds_the_d123_settings(self) -> None:
+        proxy = RECORD.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0]
+        for line in (
+            "      TRUTHTABLE_TRACE_FLUSH: sync\n",
+            '      TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0.50"\n',
+            '      TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "3"\n',
+            "      TRAFFICGEN_API_KEY:\n",
+            '    ports: !override\n      - "127.0.0.1::8080"',
+        ):
+            self.assertIn(line, proxy)
+        for line in (
+            '  TRUTHTABLE_DEMO_MODE: "false"\n',
+            '  TRUTHTABLE_TEST_MODE: "true"\n',
+            '  TRUTHTABLE_STRICT_CONFIG: "true"\n',
+            '  TRUTHTABLE_PUBLIC_READ: "false"\n',
+        ):
+            self.assertIn(
+                line, RECORD.split("x-record-env: &record-env\n", 1)[1].split("\n\n")[0] + "\n"
+            )
+        self.assertIn("      LLM_FALLBACK: none\n", RECORD)
+        for service in ("postgres", "dashboard"):
+            block = RECORD.split(f"\n  {service}:\n", 1)[1]
+            self.assertTrue(block.startswith("    ports: !reset []"), service)
+        # No mock-upstream, no profile: the record stack talks to the real vendors only.
+        self.assertNotIn("mock-upstream:", RECORD)
+        self.assertNotIn("profiles", RECORD)
+
+    def test_the_knowledge_overlay_holds_the_d131_settings(self) -> None:
+        self.assertRegex(KNOWLEDGE, r"(?m)^name: truthtable-knowledge$")
+        env = KNOWLEDGE.split("x-knowledge-env: &knowledge-env\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn('TRUTHTABLE_KNOWLEDGE_ENABLED: "true"', env)
+        self.assertIn('TRUTHTABLE_TEST_MODE: "true"', env)
+        proxy = KNOWLEDGE.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("TRUTHTABLE_POLICY_FILE: /etc/trustagent/policies.knowledge.yaml", proxy)
+        self.assertIn("TRUTHTABLE_JEV_BACKEND: compatible", proxy)
+        self.assertIn("TRUTHTABLE_JEV_BASE_URL: http://mock-upstream:8090", proxy)
+        engine = KNOWLEDGE.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0]
+        for line in ("QDRANT_URL: http://qdrant:6333", "LLM_PROVIDER: mock", "LLM_FALLBACK: none"):
+            self.assertIn(line, engine)
+        for key in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            self.assertIn(f"{key}: !reset null", engine)
+        self.assertIn("OPENROUTER_API_KEY: !reset null", proxy)
+        self.assertIn("  mock-upstream:\n    profiles: !reset []", KNOWLEDGE)
+        # The variables compose reads while it resolves the files go on its command line.
+        knowledge_env = re.search(r"(?m)^KNOWLEDGE_ENV\s*=(.*)$", DX_MK)
+        self.assertIsNotNone(knowledge_env)
+        self.assertEqual(
+            (knowledge_env.group(1) if knowledge_env else "").split(),
+            [
+                "COMPOSE_PROFILES=knowledge",
+                "ENGINE_EXTRAS=knowledge",
+                "TRUTHTABLE_KNOWLEDGE_ENABLED=true",
+            ],
+        )
+        for target in ("knowledge-up", "knowledge-seed", "knowledge-scenarios", "knowledge-down"):
+            self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
+        seed = DX_MK.split("\nknowledge-seed:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("--seed-knowledge --admin-key-file /tmp/knowledge-admin.key", seed)
+        self.assertIn("umask 077", seed)
+        self.assertIn("rm -f /tmp/knowledge-admin.key", seed)
+        scenarios = DX_MK.split("\nknowledge-scenarios:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(TRAFFICGEN_CHECK) --scenarios knowledge", scenarios)
 
     def test_every_published_port_binds_bind_addr(self) -> None:
         for name, text in (
@@ -136,9 +228,14 @@ class ComposeTest(unittest.TestCase):
                 self.assertTrue(port.startswith("${BIND_ADDR:-127.0.0.1}:"), f"{name}: {port}")
 
     def test_app_images_and_pull_policy(self) -> None:
+        # D126: the default tag is the version (a mirror of VERSION, kept by bump_version.py),
+        # and only the engine tag carries the ENGINE_EXTRAS suffix.
+        tag = "${TRUSTAGENT_VERSION:-" + VERSION + "}"
+        extras = "${ENGINE_EXTRAS:+-${ENGINE_EXTRAS:-}}"
         for service in ("proxy", "engine", "dashboard"):
+            suffix = extras if service == "engine" else ""
             self.assertIn(
-                f"image: ghcr.io/timkush1/truthtable-{service}:${{TRUSTAGENT_VERSION:-edge}}",
+                f"    image: ghcr.io/timkush1/truthtable-{service}:{tag}{suffix}\n",
                 COMPOSE,
             )
             self.assertIn(
@@ -191,7 +288,8 @@ class ComposeTest(unittest.TestCase):
         # own); its healthcheck probes its own port, not the proxy's.
         service = COMPOSE.split("\n  mock-upstream:\n", 1)[1].split("\n\n", 1)[0]
         self.assertIn(
-            "image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-edge}", service
+            "image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-" + VERSION + "}",
+            service,
         )
         self.assertIn("pull_policy: never", service)
         self.assertIn("profiles: [e2e, load]", service)
@@ -322,6 +420,111 @@ class ComposeTest(unittest.TestCase):
             self.assertEqual(final.count("GIT_SHA"), 2, dockerfile)
         go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("-X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}", go)
+
+
+DOCKERFILES = ("backend-go", "backend-python", "frontend-react")
+# The overlays DX-RELEASE owns (§15). docker-compose.load*.yml belongs to the GO stream;
+# scripts/check_version.py warns when an overlay's default tag differs from VERSION.
+OWNED_OVERLAYS = {
+    "docker-compose.demo.yml": DEMO,
+    "docker-compose.e2e.yml": E2E,
+    "docker-compose.onboarding.yml": ONBOARDING,
+    "docker-compose.record.yml": RECORD,
+    "docker-compose.knowledge.yml": KNOWLEDGE,
+}
+APP_IMAGE = re.compile(r"image: ghcr\.io/timkush1/truthtable-(\w+):(\S+)")
+
+
+class ImagesTest(unittest.TestCase):
+    """DR-2: the release image set, the D126 tags and the D125 base-image pins."""
+
+    def test_every_app_image_uses_the_version_tag_and_only_the_engine_has_extras(self) -> None:
+        tag = "${TRUSTAGENT_VERSION:-" + VERSION + "}"
+        for name, text in {"docker-compose.yml": COMPOSE, **OWNED_OVERLAYS}.items():
+            for service, ref in APP_IMAGE.findall(text):
+                expected = tag + (
+                    "${ENGINE_EXTRAS:+-${ENGINE_EXTRAS:-}}" if service == "engine" else ""
+                )
+                self.assertEqual(ref, expected, f"{name}: truthtable-{service}")
+        # ENGINE_EXTRAS reaches the engine's tag and build only (comments aside).
+        engine = COMPOSE.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0]
+        code = "\n".join(line for line in COMPOSE.splitlines() if not line.lstrip().startswith("#"))
+        self.assertEqual(code.count("ENGINE_EXTRAS"), engine.count("ENGINE_EXTRAS"))
+        self.assertEqual(engine.count("ENGINE_EXTRAS"), 3)
+        self.assertIn("        EXTRAS: ${ENGINE_EXTRAS:-}\n", engine)
+        for name, text in OWNED_OVERLAYS.items():
+            self.assertNotIn("ENGINE_EXTRAS", text.replace("ENGINE_EXTRAS=knowledge", ""), name)
+
+    def test_every_overlay_is_validated_by_compose_check(self) -> None:
+        check = DX_MK.split("\ncompose-check:", 1)[1].split("\n\n", 1)[0]
+        load_mk = (ROOT / "mk" / "load.mk").read_text(encoding="utf-8")
+        files = set(re.findall(r"-f (docker-compose[\w.-]*\.yml)", DX_MK + RELEASE_MK + load_mk))
+        files |= set(re.findall(r"(docker-compose[\w.-]*\.yml)", load_mk))
+        for path in sorted(ROOT.glob("docker-compose.*.yml")):
+            self.assertIn(path.name, files, f"{path.name} is in no compose stack definition")
+        for var in ("DEMO", "E2E", "ONBOARDING", "LOAD", "RECORD", "KNOWLEDGE"):
+            self.assertIn(f"$({var}_COMPOSE)", check, var)
+
+    def test_base_images_are_pinned_by_digest(self) -> None:
+        # D125: every FROM names a tag and its multi-arch index digest; Dependabot's docker
+        # ecosystem reads the tag and moves both. No ARG-built image references (Dependabot
+        # cannot follow them) and no stage built from an unpinned image.
+        for dockerfile in DOCKERFILES:
+            text = (ROOT / dockerfile / "Dockerfile").read_text(encoding="utf-8")
+            froms = re.findall(r"(?m)^FROM\s+(?:--platform=\S+\s+)?(\S+)", text)
+            self.assertGreaterEqual(len(froms), 2, dockerfile)
+            for image in froms:
+                self.assertRegex(
+                    image, r"^[a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$", dockerfile
+                )
+            # D144: the header says when the pins were taken and that the digest is the pin; it
+            # names no patch release, which a Dependabot digest refresh would change silently.
+            self.assertRegex(text, r"Pinned 20\d\d-\d\d-\d\d:", dockerfile)
+            self.assertIn(
+                "the index digest after it is the pin", " ".join(text.split()), dockerfile
+            )
+            header = text.split("\nFROM", 1)[0]
+            self.assertNotIn("Resolved", header, dockerfile)
+            self.assertNotRegex(header, r"\b\d+\.\d+\.\d+\b", f"{dockerfile}: a patch release")
+
+    def test_dependabot_follows_the_pins_and_holds_the_engine_python(self) -> None:
+        # The docker ecosystem watches every Dockerfile directory, so tag and digest move together.
+        # Python 3.11 -> 3.12+ is a semver minor to Dependabot; the engine's ML wheels lag a new
+        # Python, so both minor and major bumps are held back (digest refreshes still arrive).
+        bot = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        docker = bot.split("  - package-ecosystem: docker\n", 1)[1].split("\n\n", 1)[0]
+        for dockerfile in DOCKERFILES:
+            self.assertIn(f"      - /{dockerfile}\n", docker)
+        python = docker.split("- dependency-name: 'python'\n", 1)[1].split("\n", 1)[0]
+        self.assertIn("'version-update:semver-major'", python)
+        self.assertIn("'version-update:semver-minor'", python)
+        self.assertNotIn("semver-patch", python)
+
+    def test_the_proxy_image_ships_every_command_the_targets_run(self) -> None:
+        go = (ROOT / "backend-go" / "Dockerfile").read_text(encoding="utf-8")
+        cmds = re.search(r'(?m)^ARG CMDS="([^"]*)"$', go)
+        self.assertIsNotNone(cmds)
+        self.assertEqual(
+            (cmds.group(1) if cmds else "").split(),
+            ["proxy", "trafficgen", "mock-upstream", "jevcheck", "export-replay"],
+        )
+        for cmd in (cmds.group(1) if cmds else "").split():
+            self.assertTrue((ROOT / "backend-go" / "cmd" / cmd / "main.go").is_file(), cmd)
+
+    def test_up_and_demo_build_off_a_release_tag_and_pull_on_one(self) -> None:
+        # D126: RELEASE_CHECKOUT is 1 only when HEAD is exactly the tag v<VERSION>.
+        self.assertIn(
+            'git describe --exact-match --tags --match "v$$(cat VERSION 2>/dev/null)" HEAD', DX_MK
+        )
+        self.assertRegex(
+            DX_MK, r"(?m)^APP_BUILD = \$\(if \$\(filter 1,\$\(RELEASE_CHECKOUT\)\),,--build\)$"
+        )
+        self.assertRegex(DX_MK, r"(?m)^DEMO_BUILD\s+\?= \$\(APP_BUILD\)$")
+        self.assertRegex(DX_MK, r"(?m)^UP_BUILD\s+\?= \$\(APP_BUILD\)$")
+        up = DX_MK.split("\nup:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(COMPOSE) up -d $(UP_BUILD) --wait", up)
+        demo = DX_MK.split("\ndemo:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(DEMO_COMPOSE) up -d $(DEMO_BUILD) --wait", demo)
 
 
 if __name__ == "__main__":

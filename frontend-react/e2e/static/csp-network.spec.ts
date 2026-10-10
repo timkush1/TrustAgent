@@ -1,12 +1,13 @@
 /**
  * The static site's security posture (SPEC §7.5 "Static GitHub Pages demo"): every page carries
  * the CSP meta and `referrer: no-referrer`, has no inline script, reports no CSP violation, and
- * talks only to itself (openrouter.ai joins the allowed list with the P5 live playground; nothing
- * calls it yet). No third-party scripts, fonts or images.
+ * talks only to itself on the pages it opens: none of them consents to the live Playground, so
+ * openrouter.ai, the one other host the CSP allows, is never called here (csp-live.spec.ts covers
+ * the live calls after consent). No third-party scripts, fonts or images.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { STATIC_CSP } from '../../vite.site';
-import { recorded, requireStaticSite, watchNetwork } from './site';
+import { recorded, requireStaticSite, useExternalGuard, watchNetwork } from './site';
 
 async function expectHardened(page: Page, what: string): Promise<void> {
   await expect(page.locator('meta[http-equiv="Content-Security-Policy"]'), `${what}: CSP meta`).toHaveAttribute('content', STATIC_CSP);
@@ -15,6 +16,7 @@ async function expectHardened(page: Page, what: string): Promise<void> {
 }
 
 test.describe('CSP and network', () => {
+  useExternalGuard();
   test.beforeAll(async ({ playwright }, testInfo) => {
     await requireStaticSite(playwright, testInfo);
   });
@@ -51,7 +53,7 @@ test.describe('CSP and network', () => {
     expect(await net.violations(), 'CSP violations').toEqual([]);
     const elsewhere = net.urls.filter((u) => !u.startsWith('data:') && new URL(u).origin !== origin);
     expect(elsewhere, 'requests that leave the site').toEqual([]);
-    expect(net.urls.some((u) => u.includes('/demo/recorded/manifest.json'))).toBe(true);
+    expect(net.urls.some((u) => u.includes('/demo/manifest.json'))).toBe(true);
     expect(net.urls.some((u) => /\.woff2$/.test(u)), 'self-hosted fonts').toBe(true);
   });
 });

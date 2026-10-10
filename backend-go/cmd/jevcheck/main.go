@@ -4,9 +4,15 @@
 // the snapshot, latency and cost, or the error kind with a plain-language fix (SPEC §3.1, §6).
 //
 //	jevcheck [-backend id] [-model id] [-base-url url] [-path /v1/systemone] [-timeout 10s] [-json]
+//	jevcheck --gateway http://localhost:8080 --admin-key-file admin.key [-timeout 10s] [-json]
 //
 // It reads the same environment as the proxy (OPENROUTER_API_KEY, TYPESAFE_API_KEY,
-// TRUTHTABLE_JEV_*, TRUTHTABLE_OPENROUTER_BASE_URL, TRUTHTABLE_DEMO_MODE); flags override it.
+// TRUTHTABLE_JEV_*, TRUTHTABLE_OPENROUTER_BASE_URL, TRUTHTABLE_DEMO_MODE); flags override it. That
+// probe is jevcheck's own call: the gateway's cost ledger does not book it. A key connected in
+// the dashboard lives in the gateway's credential store, which the environment cannot see:
+// --gateway asks a running gateway to test its own decision model instead (POST
+// /api/decision-model/test with the admin key read from --admin-key-file, as Settings → Test
+// does), and the gateway books that probe.
 // Exit status: 0 ready, 1 the check failed (including a backend that is off), 2 usage error.
 package main
 
@@ -39,9 +45,16 @@ const (
 
 type options struct {
 	backend, model, baseURL, path string
+	gateway, adminKeyFile         string
 	timeout                       time.Duration
 	json, noKeyCheck              bool
 }
+
+// How the check reached the decision model (report.Via).
+const (
+	viaEnv     = "env"
+	viaGateway = "gateway"
+)
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	o := options{}
@@ -54,6 +67,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	fs.DurationVar(&o.timeout, "timeout", 10*time.Second, "overall time limit of the check")
 	fs.BoolVar(&o.json, "json", false, "print one JSON object instead of text")
 	fs.BoolVar(&o.noKeyCheck, "no-key-check", false, "skip the free OpenRouter key check")
+	fs.StringVar(&o.gateway, "gateway", "", "test the decision model of the gateway at this base URL (its credentials, a dashboard key included)")
+	fs.StringVar(&o.adminKeyFile, "admin-key-file", "", "with -gateway: file holding an admin key of that gateway")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -63,6 +78,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	if fs.NArg() > 0 || o.timeout <= 0 {
 		fmt.Fprintln(stderr, "jevcheck: unexpected arguments or a non-positive -timeout")
 		return exitUsage
+	}
+	if o.gateway != "" || o.adminKeyFile != "" {
+		return runGateway(ctx, o, stdout, stderr)
 	}
 
 	cfg, warnings := configFromEnv(getenv)
@@ -83,8 +101,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		defer c.Close()
 	}
 	info := client.Info()
-	rep := report{Backend: info.Backend, Reason: info.Reason, Endpoint: info.Endpoint, Model: info.Model,
+	rep := report{Via: viaEnv, Backend: info.Backend, Reason: info.Reason, Endpoint: info.Endpoint, Model: info.Model,
 		Credential: info.CredentialSource, Warnings: append(warnings, info.Warnings...)}
+	if info.Backend != jev.BackendMock && !envHasKey(getenv) {
+		rep.Notes = append(rep.Notes, dashboardKeyHint)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
@@ -96,24 +117,72 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		}
 	default:
 		rep.check(ctx, client, o.noKeyCheck)
+		if rep.LatencyMs != nil || rep.Attempts > 0 {
+			rep.CostLedger = ledgerNotBooked
+		}
 	}
-	rep.OK = rep.Error == nil
-	if o.json {
+	return rep.finish(o.json, stdout)
+}
+
+// finish prints the report and returns the exit status.
+func (r *report) finish(asJSON bool, stdout io.Writer) int {
+	r.OK = r.Error == nil
+	if asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(rep)
+		_ = enc.Encode(r)
 	} else {
-		rep.print(stdout)
+		r.print(stdout)
 	}
-	if !rep.OK {
+	if !r.OK {
 		return exitFailed
 	}
 	return exitOK
 }
 
+// runGateway is a --gateway check.
+func runGateway(ctx context.Context, o options, stdout, stderr io.Writer) int {
+	if o.backend != "" || o.model != "" || o.baseURL != "" || o.path != "" || o.noKeyCheck {
+		fmt.Fprintln(stderr, "jevcheck:", errGatewayFlags)
+		return exitUsage
+	}
+	if o.gateway == "" || o.adminKeyFile == "" {
+		fmt.Fprintln(stderr, "jevcheck: --gateway and --admin-key-file go together (the test needs an admin key)")
+		return exitUsage
+	}
+	base, err := gatewayURL(o.gateway)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevcheck:", err)
+		return exitUsage
+	}
+	key, err := readKeyFile(o.adminKeyFile)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevcheck: --admin-key-file:", err)
+		return exitUsage
+	}
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
+	rep := checkGateway(ctx, base, key)
+	return rep.finish(o.json, stdout)
+}
+
+// envHasKey reports whether the environment holds a decision-model credential.
+func envHasKey(getenv func(string) string) bool {
+	for _, k := range []string{"OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "TRUTHTABLE_JEV_API_KEY", "TRUTHTABLE_JEV_API_KEY_FILE"} {
+		if strings.TrimSpace(getenv(k)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // report is the check result (also the -json output).
 type report struct {
-	OK         bool         `json:"ok"`
+	OK bool `json:"ok"`
+	// Via is env (jevcheck's own probe) or gateway (the gateway's test, --gateway); Gateway is
+	// the gateway's host.
+	Via        string       `json:"via"`
+	Gateway    string       `json:"gateway,omitempty"`
 	Backend    string       `json:"backend"`
 	Reason     string       `json:"reason"`
 	Endpoint   string       `json:"endpoint,omitempty"`
@@ -130,6 +199,11 @@ type report struct {
 	Tokens     *int         `json:"input_tokens,omitempty"`
 	CostUSD    *float64     `json:"cost_usd,omitempty"`
 	CostSource string       `json:"cost_source,omitempty"`
+	// CostLedger says whether the gateway's cost ledger counts the probe: booked (the gateway called
+	// the vendor) or not_booked (jevcheck called it, or the mock backend answered); empty when no
+	// probe reached a decision model (a check the gateway skipped, or a usage error).
+	CostLedger string       `json:"cost_ledger,omitempty"`
+	Notes      []string     `json:"notes,omitempty"`
 	Error      *reportError `json:"error,omitempty"`
 }
 
@@ -187,11 +261,30 @@ func (r *report) check(ctx context.Context, client jev.Client, noKeyCheck bool) 
 }
 
 func (r *report) print(w io.Writer) {
-	fmt.Fprintln(w, "TrustAgent jevcheck: decision-model connectivity")
+	if r.Via == viaGateway {
+		fmt.Fprintln(w, "TrustAgent jevcheck: decision-model connectivity, tested by the gateway at "+r.Gateway)
+	} else {
+		fmt.Fprintln(w, "TrustAgent jevcheck: decision-model connectivity")
+	}
 	fmt.Fprintln(w)
 	row := func(k, v string) {
 		if v != "" {
 			fmt.Fprintf(w, "  %-10s %s\n", k, v)
+		}
+	}
+	ledger := func() {
+		switch {
+		case r.CostLedger == ledgerBooked:
+			row("Ledger", "booked: the gateway made the call, so its cost ledger counts it")
+		case r.CostLedger == ledgerNotBooked && r.Simulated:
+			row("Ledger", "not booked (simulated: nothing was spent)")
+		case r.CostLedger == ledgerNotBooked:
+			row("Ledger", "not booked: jevcheck called the vendor itself, so the gateway's cost ledger does not count this probe")
+		}
+	}
+	notes := func() {
+		for _, n := range r.Notes {
+			row("Note", n)
 		}
 	}
 	row("Backend", r.Backend)
@@ -234,6 +327,8 @@ func (r *report) print(w io.Writer) {
 		if r.CostUSD != nil {
 			row("Cost", fmt.Sprintf("$%s (%s)", formatUSD(*r.CostUSD), r.CostSource))
 		}
+		ledger()
+		notes()
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Ready.")
 		return
@@ -244,8 +339,10 @@ func (r *report) print(w io.Writer) {
 			row("Attempts", strconv.Itoa(r.Attempts))
 		}
 		row("Message", r.Error.Message)
+		ledger()
 	}
 	row("Hint", r.Error.Hint)
+	notes()
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Not ready.")
 }

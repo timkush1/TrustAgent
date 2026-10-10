@@ -3,9 +3,8 @@
  * Owned by WEB-EV. presentation.ts re-exports this module with `export *`, so every export here
  * starts with `eval` (D86) and can never collide with another plane's words.
  *
- * Contract text comes from contracts/ui (`copy.labels`, `copy.trace`, `copy.evaluators`). The few
- * sentences below that are not in copy.v1.json yet are listed in the WEB-EV checkpoint report for
- * the lead to add (D86 rule 5); until then they live here, never in a component.
+ * Every sentence comes from contracts/ui (`copy.labels`, `copy.trace`, `copy.evaluators`; D86,
+ * CO-6); src/test/lint/wordsFromCopy.test.ts keeps it that way.
  *
  * This module imports only `../contracts` (not presentation.ts), because presentation.ts
  * re-exports it and a cycle would read `copy` before it is initialised.
@@ -18,6 +17,11 @@ import type {
   LabelValue,
 } from '@/types/api';
 import { copy, outcomesContract } from '../contracts';
+
+/** `{name}` placeholders filled in order (presentation.ts fillTemplate would be an import cycle). */
+function fill(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{([a-z_]+)\}/g, (m, name: string) => vars[name] ?? m);
+}
 
 // ------------------------------------------------------------------------------------- labels
 
@@ -54,8 +58,8 @@ export function evalLabelWord(label: string): string {
 export function evalLabelerName(labeledBy: string): string {
   const env = /^env:(.+)#[0-9a-f]+$/.exec(labeledBy);
   if (env) return env[1];
-  if (labeledBy.startsWith('key:')) return 'an API key';
-  if (labeledBy === 'public') return 'someone without a key';
+  if (labeledBy.startsWith('key:')) return copy.evaluators.labeler.api_key;
+  if (labeledBy === 'public') return copy.evaluators.labeler.public;
   return labeledBy;
 }
 
@@ -73,7 +77,7 @@ export const EVAL_QUEUE_KEYS = { c: 'should_fire', f: 'should_not_fire', s: 'ski
 
 /** "Saved. Thanks — 157 more and this check can be calibrated." (or a plain thanks once there are enough). */
 export function evalSavedText(labelsStillNeeded: number | null): string {
-  if (labelsStillNeeded === null || labelsStillNeeded <= 0) return 'Saved. Thanks — this check has enough labels to calibrate.';
+  if (labelsStillNeeded === null || labelsStillNeeded <= 0) return copy.evaluators.saved_enough;
   return copy.labels.saved.replace('{n}', labelsStillNeeded.toLocaleString('en-US'));
 }
 
@@ -100,56 +104,33 @@ export interface EvalQualityView {
   canBlock: boolean;
 }
 
+const QUALITY_WORDS = copy.evaluators.quality;
 const QUALITY: Record<CalibrationRecordMeta['quality'], EvalQualityView> = {
-  measured: {
-    label: 'Measured',
-    description: 'Fitted on at least 200 human or public-dataset labels (30 of each kind): good enough to block on.',
-    icon: BadgeCheck,
-    canBlock: true,
-  },
-  provisional: {
-    label: 'Provisional',
-    description: 'Fitted on fewer labels than a measured calibration needs: it can flag, not block.',
-    icon: Hourglass,
-    canBlock: false,
-  },
-  proxy: {
-    label: 'Proxy',
-    description: 'Uses deep-audit (LLM judge) labels, a weaker signal than your own: it can flag, not block.',
-    icon: Users,
-    canBlock: false,
-  },
-  mock: {
-    label: 'Simulated',
-    description: 'Mock thresholds for the demo and test stacks; never used with a real fast check.',
-    icon: FlaskConical,
-    canBlock: false,
-  },
+  measured: { ...QUALITY_WORDS.measured, icon: BadgeCheck, canBlock: true },
+  provisional: { ...QUALITY_WORDS.provisional, icon: Hourglass, canBlock: false },
+  proxy: { ...QUALITY_WORDS.proxy, icon: Users, canBlock: false },
+  mock: { ...QUALITY_WORDS.mock, icon: FlaskConical, canBlock: false },
 };
 
 export function evalQualityView(quality: CalibrationRecordMeta['quality']): EvalQualityView {
-  return QUALITY[quality] ?? { label: 'Unknown quality', description: 'The server reported a quality this dashboard does not know.', icon: CircleDashed, canBlock: false };
+  return QUALITY[quality] ?? { ...QUALITY_WORDS.unknown, icon: CircleDashed, canBlock: false };
 }
 
 /** The fit dialog's honesty note (SPEC §2.11 quality rules). */
-export const EVAL_FIT_HONESTY = [
-  'A calibration maps the fast check’s raw score to how often your own labels agreed: it measures agreement with labels, not ground truth.',
-  'Only your own labels (or a public dataset) can make it Measured: at least 200 labels, with 30 answers that have the problem and 30 that are fine. Deep-audit labels make it a Proxy, which can flag but never block.',
-  'Fitting is free and changes nothing on its own: answers keep their current thresholds until you adopt it.',
-] as const;
+export const EVAL_FIT_HONESTY: readonly string[] = copy.evaluators.fit_honesty;
 
 /**
  * Why a fit recommends no blocking threshold (SPEC §2.11: no threshold whose 95% lower bound on
  * precision reaches the target). The server's `critical_null_reason` is a fixed technical phrase
  * ("insufficient evidence to block"), so the dashboard says it in its own words and never shows it.
  */
-export const EVAL_CRITICAL_NULL_TEXT = 'There is not enough evidence yet that blocks would be right at least 95% of the time.';
+export const EVAL_CRITICAL_NULL_TEXT: string = copy.evaluators.critical_null;
 
 /** Why an import skipped an entry (copy.evaluators.calibration_import_rejected, D86). */
 const IMPORT_REJECTIONS: Record<CalibrationImportResult['rejected'][number]['reason'], string> = copy.evaluators.calibration_import_rejected;
 
 export function evalImportRejectionText(reason: CalibrationImportResult['rejected'][number]['reason']): string {
-  return IMPORT_REJECTIONS[reason] ?? 'Skipped: the gateway refused this entry.';
+  return IMPORT_REJECTIONS[reason] ?? copy.evaluators.import_rejected_other;
 }
 
 /**
@@ -159,8 +140,8 @@ export function evalImportRejectionText(reason: CalibrationImportResult['rejecte
  */
 export function evalCalibrationWarningText(warning: string | null | undefined): string | null {
   if (!warning) return null;
-  const words = outcomesContract.status_reasons.calibration_warning ?? 'its calibration was fitted under different conditions (it still applies)';
-  return `Calibration note: ${words}.`;
+  const words = outcomesContract.status_reasons.calibration_warning ?? copy.evaluators.calibration_warning_fallback;
+  return fill(copy.evaluators.calibration_note, { words });
 }
 
 /**
@@ -174,10 +155,7 @@ export function evalNotEnoughLabelsText(details: unknown): string | null {
   if (!nums.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
   const [n, pos, neg, needN, perClass] = nums as number[];
   const fmt = (v: number) => v.toLocaleString('en-US');
-  return (
-    `Not enough labels to fit yet: ${fmt(n)} so far (${fmt(pos)} with the problem, ${fmt(neg)} fine). ` +
-    `A fit needs at least ${fmt(needN)} labels with ${fmt(perClass)} of each kind. Label more answers in the label queue, then try again.`
-  );
+  return fill(copy.evaluators.not_enough_labels, { n: fmt(n), pos: fmt(pos), neg: fmt(neg), needed_n: fmt(needN), per_class: fmt(perClass) });
 }
 
 /** "groundedness@1" from a target key "groundedness@1#<key>#<params>" (SPEC §2.11). */
@@ -202,15 +180,11 @@ export function evalRefVersion(ref: string): number | null {
 
 // -------------------------------------------------------------------------- glass box (#12)
 
-const MISMATCH: Record<NonNullable<DecisionRequestView['mismatch_reason']>, string> = {
-  body_truncated: 'The stored text was cut to the storage limit, so the recompile sees less than the fast check did.',
-  policy_missing: 'The policy version this request ran under is no longer stored, so the recompile uses another one.',
-  evaluator_missing: 'An evaluator version this request used is no longer in the library.',
-};
+const MISMATCH: Record<NonNullable<DecisionRequestView['mismatch_reason']>, string> = copy.evaluators.mismatch;
 
 /** Why a recompile differs from what was sent, in words. */
 export function evalMismatchText(reason: DecisionRequestView['mismatch_reason']): string {
-  return reason ? MISMATCH[reason] ?? 'The recompile differs for a reason this dashboard does not know.' : 'The recompile differs from the request that was sent.';
+  return reason ? (Object.hasOwn(MISMATCH, reason) ? MISMATCH[reason] : copy.evaluators.mismatch.unknown) : copy.evaluators.mismatch.differs;
 }
 
 /** "Rebuilt from the stored request: identical" / "…: different". */

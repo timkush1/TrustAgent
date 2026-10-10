@@ -354,6 +354,9 @@ func TestEngineFileDivergence(t *testing.T) {
 		if w := e.View(st, true).Warnings; len(w) != 1 || !strings.Contains(w[0], "adopt the file") {
 			t.Errorf("warnings %v", w)
 		}
+		if d := e.View(st, true).WarningDetails; len(d) != 1 || d[0].Code != WarnFileDiverged || d[0].Details["path"] != st.File.Path {
+			t.Errorf("warning details %+v", d)
+		}
 		// Another replica booting now agrees.
 		if other := f.engine(t); other.State().File.Status != FileDiverged || other.State().Version.ID != dashID {
 			t.Errorf("replica %+v", other.State().File)
@@ -560,6 +563,10 @@ func TestEngineInvalidStoredVersions(t *testing.T) {
 		if st := e.State(); st.HeadID != bad || st.ETag() != fmt.Sprintf(`"v%d"`, bad) || len(st.Warnings) != 1 ||
 			!strings.Contains(st.Warnings[0], "no longer validates") {
 			t.Errorf("running state %+v %s %v", st.Version, st.ETag(), st.Warnings)
+		}
+		if d := e.View(e.State(), true).WarningDetails; len(d) != 1 || d[0].Code != WarnNewestVersionInvalid ||
+			d[0].Details["bad_version"] != bad || d[0].Details["active_version"] != e.State().Version.ID {
+			t.Errorf("warning details %+v", d)
 		}
 		// A restart runs the newest valid version and says why.
 		restarted := f.engine(t)

@@ -1,0 +1,43 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "POST",
+    "path": "/api/alpha/decisions",
+    "headers": {
+      "authorization": "Bearer sk-or-v1-e2e-fixture-key",
+      "content-type": "application/json",
+      "x-mock-fault": "404_data_policy"
+    },
+    "body": {
+      "model": "typesafe/jev-1.13",
+      "questions": {
+        "contradiction__v1": {
+          "criteria": {
+            "false": "Nothing in it conflicts with the evidence.",
+            "true": "It states something the evidence rules out."
+          },
+          "instructions": "Does the assistant_response contradict the evidence?",
+          "type": "noul"
+        }
+      },
+      "state": {
+        "assistant_response": "You can return it within 60 days for a full refund.",
+        "evidence": [
+          "Refunds are accepted within 30 days of purchase."
+        ]
+      }
+    }
+  },
+  "status": 404,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "code": 404,
+      "message": "No endpoints found matching your data policy (Zero data retention). Configure: https://openrouter.ai/settings/privacy"
+    }
+  }
+}

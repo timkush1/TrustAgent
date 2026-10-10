@@ -30,6 +30,10 @@ type breaker struct {
 	openUntil   time.Time
 	trial       bool // the half-open trial is in flight
 	lastCause   string
+	// byKey marks an open period the vendor's refusal of the key or account started (effectAuth):
+	// its cause, not the latest outcome, names the pause, since a success that was already in
+	// flight can land after it.
+	byKey bool
 }
 
 func newBreaker(failures int, cooldown, authCooldown time.Duration, now func() time.Time, onChange func(string)) *breaker {
@@ -90,17 +94,22 @@ func (b *breaker) record(effect breakerEffect, trial bool, cause string) {
 		b.open(b.cooldown, cause)
 	case effectAuth:
 		b.consecutive++
-		b.open(b.authCooldown, cause)
+		b.openFor(b.authCooldown, cause, true)
 	}
 }
 
-// open opens the breaker for d (never shortening an open period). Caller holds mu.
-func (b *breaker) open(d time.Duration, cause string) {
+// open opens the breaker for d after vendor faults (never shortening an open period). Caller
+// holds mu.
+func (b *breaker) open(d time.Duration, cause string) { b.openFor(d, cause, false) }
+
+// openFor opens the breaker for d; byKey marks a refused key or account. An open period is never
+// shortened, and the period that stays keeps its own cause. Caller holds mu.
+func (b *breaker) openFor(d time.Duration, cause string, byKey bool) {
 	until := b.now().Add(d)
 	if b.state == BreakerOpen && until.Before(b.openUntil) {
 		return
 	}
-	b.openUntil, b.lastCause, b.trial = until, cause, false
+	b.openUntil, b.lastCause, b.byKey, b.trial = until, cause, byKey, false
 	b.set(BreakerOpen)
 }
 
@@ -118,7 +127,7 @@ func (b *breaker) set(state string) {
 func (b *breaker) reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.consecutive, b.trial, b.lastCause = 0, false, ""
+	b.consecutive, b.trial, b.lastCause, b.byKey = 0, false, "", false
 	b.set(BreakerClosed)
 }
 
@@ -128,6 +137,9 @@ type breakerView struct {
 	until       time.Time
 	consecutive int
 	cause       string
+	// keyCause is the error kind (auth or credits) of an open period a refused key or account
+	// started; "" otherwise.
+	keyCause string
 }
 
 func (b *breaker) view() breakerView {
@@ -137,6 +149,9 @@ func (b *breaker) view() breakerView {
 	v := breakerView{state: b.state, consecutive: b.consecutive, cause: b.lastCause}
 	if b.state == BreakerOpen {
 		v.until = b.openUntil
+		if b.byKey {
+			v.keyCause = b.lastCause
+		}
 	}
 	return v
 }

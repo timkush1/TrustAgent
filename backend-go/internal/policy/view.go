@@ -19,6 +19,9 @@ type StateView struct {
 	EffectiveRoutes []EffectiveRoute `json:"effective_routes"`
 	File            FileState        `json:"file"`
 	Warnings        []string         `json:"warnings"`
+	// WarningDetails are the same warnings, in the same order, each with its code (WarningCodes),
+	// path and details, so the dashboard words them by code.
+	WarningDetails []FieldError `json:"warning_details"`
 }
 
 // View renders st for a caller; admin reports whether the caller holds the admin scope.
@@ -26,7 +29,7 @@ func (e *Engine) View(st *State, admin bool) StateView {
 	v := StateView{
 		Version: st.Version, ETag: st.ETag(), Locked: st.Locked, Persisted: st.Persisted,
 		EffectiveRoutes: st.Policy.EffectiveRoutes(e.cfg.Env.Specs, e.cfg.Env, e.Runtime()),
-		File:            st.File, Warnings: []string{},
+		File:            st.File, Warnings: []string{}, WarningDetails: []FieldError{},
 	}
 	var reason string
 	switch {
@@ -42,12 +45,21 @@ func (e *Engine) View(st *State, admin bool) StateView {
 	} else {
 		v.EditableReason = &reason
 	}
-	v.Warnings = append(v.Warnings, st.Warnings...)
+	// st.Warnings holds the operational warning only: the newest stored version (HeadID) no longer
+	// validates, so Version stays in effect.
+	for _, w := range st.Warnings {
+		v.Warnings = append(v.Warnings, w)
+		v.WarningDetails = append(v.WarningDetails, FieldError{Message: w, Code: WarnNewestVersionInvalid,
+			Details: map[string]any{"bad_version": st.HeadID, "active_version": st.Version.ID}})
+	}
 	for _, w := range st.Policy.Warnings {
 		v.Warnings = append(v.Warnings, w.String())
+		v.WarningDetails = append(v.WarningDetails, w)
 	}
 	if st.File.Status == FileDiverged {
-		v.Warnings = append(v.Warnings, fmt.Sprintf("%s changed after the newest dashboard edit and is not applied: adopt the file or keep the dashboard version", st.File.Path))
+		msg := fmt.Sprintf("%s changed after the newest dashboard edit and is not applied: adopt the file or keep the dashboard version", st.File.Path)
+		v.Warnings = append(v.Warnings, msg)
+		v.WarningDetails = append(v.WarningDetails, FieldError{Message: msg, Code: WarnFileDiverged, Details: map[string]any{"path": st.File.Path}})
 	}
 	return v
 }

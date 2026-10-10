@@ -17,62 +17,93 @@
  * P4_EVIDENCE_DIR set it writes /api/credentials, /api/settings and /api/status there, after
  * Connect and at the end, once it has checked they hold no secret.
  *
+ * Step 0 (CO-10, D166): on the setup page before sign-in there is no WebSocket ticket request and
+ * no WebSocket for 10 s, and no console error but Chrome's network line for each sign-in probe the
+ * load sends (GET /api/session and /api/status answer 401 to a signed-out page), none of them
+ * after the load; step 1 then checks the stream connects within 5 s of the claim.
+ *
  * Order: Connect your app (8) runs before the refund example (7). A Playground run is traffic
  * too, so once it has run the Overview no longer waits for a first request.
+ *
+ * The journey's words, counted actions, secret checks and wizard steps are shared with the
+ * first-run and golden-path specs (journey.ts).
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
 import type { CredentialList, SettingsView, SetupStatus, SystemStatus } from '../../src/types/api';
+import {
+  CONNECT,
+  COPY,
+  FAST_CHECK,
+  Journey,
+  SEE_IT_WORK,
+  TIMEOUT,
+  checkTheRefundAnswer,
+  createAppKey,
+  openTheTrace,
+  outcome,
+  requireFreshStack,
+  secureWithSetupLink,
+} from './journey';
 import { requireStack, seriousViolations, skipOrFail } from './stack';
 
-const TIMEOUT = 30_000;
 const MOCK_UPSTREAM_ON_HOST = `http://127.0.0.1:${process.env.MOCK_UPSTREAM_HOST_PORT || '18090'}`;
-/** D87: at most 8 user actions from the setup link to "Ready". */
-const CLICK_BUDGET = 8;
-
-/** The words the wizard shows, from the copy contract (contracts/ui/copy.v1.json). */
-const COPY = (
-  JSON.parse(readFileSync(fileURLToPath(new URL('../../../contracts/ui/copy.v1.json', import.meta.url)), 'utf8')) as {
-    copy: {
-      setup: Record<'step_connect' | 'step_secure' | 'step_see_it_work', Record<string, string>>;
-      connect_app: Record<string, string>;
-      tiers: Record<string, string>;
-      badges: Record<string, string>;
-    };
-  }
-).copy;
-const CONNECT = COPY.setup.step_connect;
-const SEE_IT_WORK = COPY.setup.step_see_it_work;
-const FAST_CHECK = COPY.tiers.fast_check;
+/** D87: at most 8 user actions from the setup link to "Ready". Detours (steps 2 to 4) are not counted. */
+const journey = new Journey(8);
 
 /** Fake keys only (P4-PLAN §0 rule 8). The replacement key matches no redaction pattern. */
 const run = Date.now().toString(16);
 const NO_CREDITS_KEY = `sk-or-v1-e2e-nocredits-${run}0123456789abcdef`;
 const UNMATCHED_KEY = 'cmp0e2eZq7Lw4Rt9Yx2Vb6Nm';
-/** What must never appear in an API body or on screen once saved: the I-6 log grep, plus the keys seen here. */
-const SECRET_PATTERN = /sk-or-v1-[A-Za-z0-9_-]{8,}|sk-test-[A-Za-z0-9_-]{8,}|cmp0e2eZq7Lw4Rt9Yx2Vb6Nm|mockcode_[0-9a-f]{8,}/;
-const shownOnce: string[] = [];
 
-/** Whether `text` holds a secret. Never print the match: the caller asserts on the boolean. */
-function holdsSecret(text: string): boolean {
-  return SECRET_PATTERN.test(text) || shownOnce.some((s) => s !== '' && text.includes(s));
-}
-
-/** The user actions of the happy path, counted (D87). Detours (steps 2 to 4) are not counted. */
-const happyPath: string[] = [];
-async function step<T>(what: string, action: () => Promise<T>): Promise<T> {
-  happyPath.push(what);
-  return test.step(`user action ${happyPath.length}: ${what}`, action);
-}
-
+let setupUrl = '';
 let context: BrowserContext;
 let page: Page;
 /** How mock-upstream's /auth should mint the next key (mock_key=nocredits), or null for a working one. */
 let mockKey: string | null = null;
 /** Where mock-upstream's /auth last redirected: the dashboard's /connect/callback?code=…. Never printed. */
 let lastRedirect: string | null = null;
+/**
+ * The live stream as the page asks for it (CO-10): WebSocket ticket requests, sockets (with when
+ * each opened and received its first frame, the hello), console errors, and when the setup link
+ * was claimed (the first successful POST /api/session).
+ */
+const live = {
+  tickets: 0,
+  sockets: [] as { path: string; at: number; firstFrameAt: number | null }[],
+  errors: [] as string[],
+  /** Every 401 the page received, as "GET /api/session". */
+  refused: [] as string[],
+  claimedAt: 0,
+};
+/** Chrome's own console line for a response with an error status (not the app's console). */
+const NETWORK_401 = 'Failed to load resource: the server responded with a status of 401 (Unauthorized)';
+/** The reads that tell a signed-out page it is signed out (D166): each answers 401 once per load. */
+const SIGN_IN_PROBES = new Set(['GET /api/session', 'GET /api/status']);
+
+/** Records what CO-10 asserts on, for the whole run of `target`. */
+function watchLiveStream(target: Page): void {
+  target.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/ws-ticket') live.tickets += 1;
+  });
+  target.on('websocket', (ws) => {
+    const socket = { path: new URL(ws.url()).pathname, at: Date.now(), firstFrameAt: null as number | null };
+    live.sockets.push(socket);
+    ws.on('framereceived', () => {
+      socket.firstFrameAt ??= Date.now();
+    });
+  });
+  target.on('console', (message) => {
+    if (message.type() === 'error') live.errors.push(message.text());
+  });
+  target.on('pageerror', (error) => live.errors.push(error.message));
+  target.on('response', (response) => {
+    const call = `${response.request().method()} ${new URL(response.url()).pathname}`;
+    if (call === 'POST /api/session' && response.ok() && !live.claimedAt) live.claimedAt = Date.now();
+    if (response.status() === 401) live.refused.push(call);
+  });
+}
 
 /** Routes the proxy's OpenRouter address to mock-upstream's published port (D70). */
 async function routeMockUpstream(route: Route): Promise<void> {
@@ -105,13 +136,8 @@ async function connectThroughMock(click: () => Promise<void>): Promise<void> {
   await page.goto(lastRedirect ?? '/connect/callback');
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const res = await page.request.get(path, { failOnStatusCode: false });
-  expect(res.status(), `GET ${path}`).toBe(200);
-  const text = await res.text();
-  expect(holdsSecret(text), `GET ${path} carries no secret`).toBe(false);
-  return JSON.parse(text) as T;
-}
+const getJson = <T>(path: string) => journey.getJson<T>(page, path);
+const holdsSecret = (text: string) => journey.holdsSecret(text);
 
 const settings = () => getJson<SettingsView>('/api/settings');
 const status = () => getJson<SystemStatus>('/api/status');
@@ -135,33 +161,19 @@ async function writeEvidence(stage: string): Promise<void> {
   }
 }
 
-/** The text of a key shown once (`title` names it), kept only to check it never shows again. */
-async function shownOnceSecret(title: string): Promise<string> {
-  const value = (await page.getByText(title, { exact: true }).locator('xpath=..').locator('code').textContent())?.trim() ?? '';
-  expect(value.length > 0, `${title} is on screen`).toBe(true);
-  shownOnce.push(value);
-  return value;
-}
-
-/** The outcome a key write or a Connect left on the page (CredentialResult). */
-const outcome = () => page.getByRole('status').filter({ hasText: /Ready: |no credits|Saved/ }).last();
-
 test.describe('onboarding', () => {
   test.describe.configure({ mode: 'serial', retries: 0, timeout: 120_000 });
 
   test.beforeAll(async ({ browser, playwright }, testInfo) => {
     await requireStack(playwright, testInfo);
-    const setupUrl = process.env.TRUSTAGENT_SETUP_URL;
-    skipOrFail(!setupUrl, 'set TRUSTAGENT_SETUP_URL to the onboarding stack’s setup link (make -s onboarding-setup-url)');
+    // Checked before anything is clicked: on any other stack the spec would spend its setup link.
+    setupUrl = await requireFreshStack(playwright, testInfo, {
+      spec: 'onboarding',
+      start: 'make onboarding-down, make onboarding-up, then make -s onboarding-setup-url',
+    });
     const baseURL = String(testInfo.project.use.baseURL ?? '');
     const probe = await playwright.request.newContext({ baseURL });
     try {
-      // Checked before anything is clicked: on any other stack the spec would spend its setup link.
-      const res = await probe.get('/api/setup/status', { failOnStatusCode: false });
-      const setup = res.ok() ? ((await res.json()) as Partial<SetupStatus>) : null;
-      skipOrFail(setup?.demo !== false, 'this is the demo stack (or its setup status did not answer): the onboarding spec needs the onboarding stack (make onboarding-up)');
-      skipOrFail(setup?.persistence !== true || setup.readonly !== false, 'the onboarding spec needs a writable stack with a database, as make onboarding-up starts it');
-      skipOrFail(setup?.setup_required !== true, 'this stack already has an admin: the onboarding spec needs a fresh onboarding stack (make onboarding-down, then make onboarding-up)');
       const mock = await probe.get(`${MOCK_UPSTREAM_ON_HOST}/healthz`, { failOnStatusCode: false, timeout: 5_000 }).catch(() => null);
       skipOrFail(!mock?.ok(), `mock-upstream does not answer at ${MOCK_UPSTREAM_ON_HOST}: set MOCK_UPSTREAM_HOST_PORT to its published port`);
     } finally {
@@ -175,33 +187,50 @@ test.describe('onboarding', () => {
     const dashboard = new URL(baseURL).origin;
     await context.route((url) => url.origin !== dashboard && url.pathname === '/auth', routeMockUpstream);
     page = await context.newPage();
+    watchLiveStream(page);
   });
 
   test.afterAll(async () => {
     await context?.close();
   });
 
-  test('1 · secure: claim the setup link, copy the admin key, tick I saved it, Next', async () => {
-    const setupUrl = new URL(process.env.TRUSTAGENT_SETUP_URL ?? '');
-    // Only the fragment matters: the page is served by the dashboard under test.
-    await step('open the setup link', () => page.goto(`/app/setup${setupUrl.hash}`));
+  test('0 · before sign-in: no ticket, no WebSocket and no console error on the setup page for 10 s (CO-10)', async () => {
+    await page.goto('/app/setup');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Setup');
-    await expect(page, 'the token leaves the address bar').not.toHaveURL(/#token=/);
-    await step('Create the admin key', () => page.getByRole('button', { name: 'Create the admin key' }).click());
-    await expect(page.getByText('Your admin key (shown once)')).toBeVisible({ timeout: TIMEOUT });
-    const adminKey = await shownOnceSecret('Your admin key (shown once)');
-    await expect(page.getByText(/Admin actions are available/)).toBeVisible();
+    // A fixed window, as CO-10 asks: the old shell retried a refused ticket with backoff in it.
+    // The first 2 s are the page load; the 8 s after it must be silent.
+    await page.waitForTimeout(2_000);
+    const loaded = { errors: live.errors.length, refused: live.refused.length };
+    await page.waitForTimeout(8_000);
+    expect(live.tickets, 'no WebSocket ticket request before sign-in').toBe(0);
+    expect(live.sockets.map((socket) => socket.path), 'no WebSocket before sign-in').toEqual([]);
+    // D166: the load's sign-in probes answer 401, and Chrome logs each as a network line; nothing
+    // else may reach the console, and nothing is retried once the page has loaded.
+    expect(live.refused.filter((call) => !SIGN_IN_PROBES.has(call)), 'only the sign-in probes are refused').toEqual([]);
+    expect(live.errors.filter((text) => text !== NETWORK_401), 'no console error from the app before sign-in').toEqual([]);
+    expect(live.errors.length, 'one network line per refused probe, no other').toBe(live.refused.length);
+    expect(live.refused.slice(loaded.refused), 'no 401 after the page loaded (nothing retries)').toEqual([]);
+    expect(live.errors.slice(loaded.errors), 'no console line after the page loaded').toEqual([]);
+    console.log(`CO-10 before sign-in, 10 s: ${live.tickets} ticket requests, ${live.sockets.length} WebSockets, 401s only at load: ${live.refused.join(', ') || 'none'}`);
+    // The setup link then loads the page afresh: from /app/setup its #token would change only the fragment.
+    await page.goto('about:blank');
+  });
 
-    const next = page.getByRole('button', { name: 'Next', exact: true });
-    await expect(next, 'Next waits for “I saved it”').toBeDisabled();
-    await step('Copy the admin key', () => page.getByRole('button', { name: 'Copy the admin key' }).click());
-    await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
-    const clipboard = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clipboard === adminKey, 'the clipboard holds the admin key').toBe(true);
-    await step('tick I saved it', () => page.getByRole('checkbox', { name: COPY.setup.step_secure.saved_confirm }).check());
-    await step('Next', () => next.click());
-    await expect(page).toHaveURL(/\/app\/setup\?step=connect$/);
-    await expect(page.getByRole('heading', { level: 2, name: `2. ${CONNECT.title}` })).toBeVisible();
+  test('1 · secure: claim the setup link, copy the admin key, tick I saved it, Next', async () => {
+    await secureWithSetupLink(page, journey, setupUrl, { copy: true });
+    // CO-10: once the setup link is claimed, the live stream connects (its hello arrives) within 5 s.
+    expect(live.claimedAt, 'the setup link was claimed (POST /api/session)').toBeGreaterThan(0);
+    await expect
+      .poll(() => live.sockets.find((socket) => socket.path === '/ws' && socket.firstFrameAt !== null)?.firstFrameAt ?? null, {
+        message: 'the live stream connects after the claim',
+        timeout: 5_000,
+      })
+      .not.toBeNull();
+    const connected = live.sockets.find((socket) => socket.path === '/ws' && socket.firstFrameAt !== null);
+    const elapsed = (connected?.firstFrameAt ?? Infinity) - live.claimedAt;
+    console.log(`CO-10 after the claim: the stream's first frame in ${elapsed} ms (budget 5000)`);
+    expect(elapsed, 'ms from the claim to the stream’s first frame').toBeLessThanOrEqual(5_000);
+    expect(live.tickets, 'same origin: no WebSocket ticket').toBe(0);
     await expect(page.getByText(CONNECT.prerequisite)).toBeVisible();
     await expect(page.getByText(CONNECT.privacy)).toBeVisible();
   });
@@ -267,15 +296,15 @@ test.describe('onboarding', () => {
 
   test('5 · Connect OpenRouter: Ready, the fast check bound, the judge left to the environment', async () => {
     mockKey = null;
-    await step('Connect OpenRouter', () =>
+    await journey.step('Connect OpenRouter', () =>
       connectThroughMock(() => page.getByRole('button', { name: CONNECT.primary, exact: true }).click()),
     );
     // A real OpenRouter asks the viewer to approve; mock-upstream approves on its own.
-    happyPath.push('approve at OpenRouter');
+    journey.away('approve at OpenRouter');
     await expect(page).toHaveURL(/\/app\/setup\?step=connect$/, { timeout: TIMEOUT });
-    const result = outcome();
+    const result = outcome(page);
     await expect(result).toContainText(/Ready: the test call took [\d,]+ ms/, { timeout: TIMEOUT });
-    expect(happyPath.length, `happy-path actions: ${happyPath.join(' → ')}`).toBeLessThanOrEqual(CLICK_BUDGET);
+    journey.expectWithinBudget('Ready');
     await expect(result).toContainText(`Now used for: ${FAST_CHECK}.`);
     await expect(result).toContainText(CONNECT.simulated_off);
     await expect(result).toContainText(CONNECT.judge_env_managed);
@@ -335,9 +364,7 @@ test.describe('onboarding', () => {
   test('7 · Connect your app: one app key, then waiting, then received after one /v1 request', async ({ request }) => {
     await page.goto('/app/setup?step=try');
     await expect(page.getByRole('heading', { level: 2, name: `3. ${SEE_IT_WORK.title}` })).toBeVisible({ timeout: TIMEOUT });
-    await page.getByRole('button', { name: 'Create an app key' }).click();
-    await expect(page.getByText('my-app (shown once)')).toBeVisible({ timeout: TIMEOUT });
-    const appKey = await shownOnceSecret('my-app (shown once)');
+    const appKey = await createAppKey(page, journey);
     // Only one app key: the wizard offers none once it exists.
     await page.reload();
     await expect(page.getByText(/with the key “my-app”/)).toBeVisible({ timeout: TIMEOUT });
@@ -366,12 +393,8 @@ test.describe('onboarding', () => {
 
   test('8 · see it work: the refund answer is flagged and its contradicted claim marked', async () => {
     await page.goto('/app/setup?step=try');
-    await expect(page.getByText(SEE_IT_WORK.body)).toBeVisible({ timeout: TIMEOUT });
-    await page.getByRole('button', { name: 'Check this answer' }).click();
-    const timeline = page.getByRole('list', { name: 'What happened to the request' });
-    await expect(timeline.getByText('Flagged', { exact: true }).first()).toBeVisible({ timeout: TIMEOUT });
-    await page.getByRole('link', { name: 'Open the trace', exact: true }).click();
-    await expect(page).toHaveURL(/\/app\/traffic\/[^/?#]+$/);
+    await checkTheRefundAnswer(page, journey);
+    await openTheTrace(page, journey);
     // The deep audit lands a little later: the 60-day claim is contradicted by refund-policy.md.
     const claims = page.getByRole('list', { name: 'Claims' });
     await expect(claims.getByText('Contradicted', { exact: true })).toBeVisible({ timeout: 60_000 });

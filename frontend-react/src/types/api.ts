@@ -576,6 +576,12 @@ export interface WarningDetails {
   routes?: string[];
   /** master_key_changed, reenter_secret: the credential names (D32, D37). */
   names?: string[];
+  /** price_far_above_contracts: how many times the contracts price the override is (D53). */
+  ratio?: number;
+  /** price_far_above_contracts: the contracts price of the same model, USD per million tokens. */
+  contracts_per_mtok?: number;
+  /** price_far_above_contracts: the 0-based index of the override in pricing_overrides. */
+  index?: number;
 }
 export type SystemStatusLite = Pick<SystemStatus, 'version' | 'demo' | 'readonly'> & {
   engine: ComponentStateName;
@@ -893,6 +899,13 @@ export interface PolicyState extends PolicyVersion {
     errors: FieldError[];
   };
   warnings: string[];
+  /**
+   * The same warnings in the same order, each with its code (Go internal/policy WarningCodes:
+   * no_corroborator, implies_unattached, fail_closed_not_enforcing, sample_rate_not_observe,
+   * trusts_user_context, client_rules_enforcing, newest_version_invalid, file_diverged), its path
+   * and the details its words need (copy policies.warnings.<code>).
+   */
+  warning_details?: FieldError[];
 }
 export interface ValidateResult {
   ok: boolean;
@@ -1283,7 +1296,8 @@ export interface SettingsView {
   groups: { name: string; keys: SettingKeyView[] }[];
   runtime: RuntimeSettings;
   env_managed: string[];
-  warnings: { key: string; message: string; hint: string; code?: string; details?: WarningDetails }[];
+  /** path: the settings field a runtime warning is about, e.g. pricing_overrides[0].input_per_mtok. */
+  warnings: { key: string; message: string; hint: string; code?: string; path?: string; details?: WarningDetails }[];
   dotenv_path: string | null;
 }
 export interface CredentialView {

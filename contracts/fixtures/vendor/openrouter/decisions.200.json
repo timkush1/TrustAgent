@@ -1,0 +1,53 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "POST",
+    "path": "/api/alpha/decisions",
+    "headers": {
+      "authorization": "Bearer sk-or-v1-e2e-fixture-key",
+      "content-type": "application/json"
+    },
+    "body": {
+      "model": "typesafe/jev-1.13",
+      "questions": {
+        "contradiction__v1": {
+          "criteria": {
+            "false": "Nothing in it conflicts with the evidence.",
+            "true": "It states something the evidence rules out."
+          },
+          "instructions": "Does the assistant_response contradict the evidence?",
+          "type": "noul"
+        }
+      },
+      "state": {
+        "assistant_response": "You can return it within 60 days for a full refund.",
+        "evidence": [
+          "Refunds are accepted within 30 days of purchase."
+        ]
+      }
+    }
+  },
+  "status": 200,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "application/json"
+  },
+  "body": {
+    "answers": {
+      "contradiction__v1": {
+        "confidence": 0.46,
+        "noul": 0.49,
+        "type": "noul"
+      }
+    },
+    "id": "dec_mock_c9a765a26ba3c2f0",
+    "model": "typesafe/jev-1.13-20260917",
+    "provider": "TypeSafe",
+    "usage": {
+      "cost": 0.000015372,
+      "input_tokens": 366,
+      "output_tokens": 0
+    }
+  }
+}

@@ -108,6 +108,11 @@ const LATER_PHASES: ReadonlySet<string> = new Set(['p5']);
 export interface ExampleOptions {
   /** The knowledge add-on is on (`status.knowledge.enabled`): its scenarios have documents to find. */
   knowledge?: boolean;
+  /**
+   * The routes the running gateway serves (its policy's routes); null or absent while unknown (the
+   * policy is loading or could not be read), when every example is offered.
+   */
+  routes?: readonly string[] | null;
 }
 
 /**
@@ -162,10 +167,16 @@ const WITH_KNOWLEDGE: readonly PlaygroundExample[] = SCENARIOS.filter((s) => for
 /**
  * The demo scenarios the form holds, as audit-mode examples: no upstream model is needed to try them. Each keeps
  * its scenario id until the viewer edits what the scenario scripts (the conversation, documents,
- * answer, mode or route), so a demo stack plays it exactly as trafficgen does.
+ * answer, mode or route), so a demo stack plays it exactly as trafficgen does. When the served
+ * routes are known, an example is offered only on a route the gateway serves (§23 CO-23: the
+ * knowledge example needs a `handbook` route, which the add-on alone does not add).
  */
 export function playgroundExamples(options: ExampleOptions = {}): readonly PlaygroundExample[] {
-  return options.knowledge ? WITH_KNOWLEDGE : WITHOUT_KNOWLEDGE;
+  const all = options.knowledge ? WITH_KNOWLEDGE : WITHOUT_KNOWLEDGE;
+  const routes = options.routes;
+  if (routes === null || routes === undefined) return all;
+  const served = new Set(routes);
+  return all.every((e) => served.has(e.form.route)) ? all : all.filter((e) => served.has(e.form.route));
 }
 
 /** The examples of a stack without the knowledge add-on. */

@@ -3,7 +3,7 @@
  * draft with AI, review with live lints, the test bench (estimate first, results, free what-if),
  * quick calibration gating, saving (new check, next version, 412), save and watch on a route through
  * the policy review dialog, and "Test on past traffic" (the D82 confirmation, SSE progress, cancel).
- * The evaluator writes are spied on the data source: their plane belongs to WEB-EV.
+ * The evaluator writes are spied on the data source: their plane is not Studio's.
  */
 import { EditorView } from '@codemirror/view';
 import { act, configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -133,6 +133,21 @@ describe('Studio', { timeout: 30_000 }, () => {
     expect(within(alert).getByText("Couldn't draft: No judge is configured.")).toBeInTheDocument();
     expect(within(alert).getByText('No deep-audit judge is set. Choose one in Settings → Models.')).toBeInTheDocument();
     expect(within(alert).getByText('You can still start from a template.')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['no_credits', "The judge's provider says the account is out of credits, so nothing was drafted."],
+    ['judge_unauthorized', "The judge's provider refused its key, so nothing was drafted."],
+  ])('words a draft the judge provider refused (%s) and links to Connections', async (code, start) => {
+    const user = userEvent.setup();
+    const control = createControlApi({ studioDraft: errorReply(503, code, 'The audit engine could not draft.') });
+    renderPage('/app/evaluators/studio', { control });
+    await user.type(await screen.findByRole('textbox', { name: 'What should TrustAgent check?' }), DESCRIPTION);
+    await user.click(screen.getByRole('button', { name: 'Draft with AI' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(new RegExp(`^Couldn't draft: ${start.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(alert).not.toHaveTextContent('engine');
+    expect(within(alert).getByRole('link', { name: 'Open Connections' })).toHaveAttribute('href', '/app/settings/connections');
   });
 
   it('makes templates the way in when no judge is configured', async () => {

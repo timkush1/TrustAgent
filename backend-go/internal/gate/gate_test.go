@@ -348,8 +348,10 @@ func TestOffBackendSkips(t *testing.T) {
 	if d.DecisionModel != nil || d.Compile == nil {
 		t.Errorf("off: nothing called but compile recorded: %+v %+v", d.DecisionModel, d.Compile)
 	}
-	// deep_audit sample_error; support-bot's error_sample_rate 0.1 with a 0.5 draw is sampled out.
-	if d.DeepAudit != decision.DeepAuditSampleError || r.Audit.Status != AuditSampledOut {
+	// deep_audit sample_error; support-bot audits every answer whose fast check failed
+	// (error_sample_rate 1.0), so the audit is queued in the error lane.
+	if d.DeepAudit != decision.DeepAuditSampleError || r.Audit.Status != "" || r.Audit.Selection != SelectionErrorSample ||
+		r.Audit.InclusionProb != 1 {
 		t.Errorf("deep audit %s plan %+v", d.DeepAudit, r.Audit)
 	}
 	contractstest.Validate(t, "decision.v1.schema.json", d)

@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { Check, Copy, Monitor, Moon, Sun } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { copyText } from '@/components/common/clipboard';
+export { Ticked } from '@/components/common/Ticked';
 import { nextThemePreference, setThemePreference, useThemePreference, type ThemePreference } from '@/lib/theme';
 import { sourceAnchor, type ClaimView } from './claims';
 import { buttonClass, container } from './styles';
@@ -32,10 +33,24 @@ export function LabelChip({ claim, className }: { claim: Pick<ClaimView, 'id' | 
 export function ClaimValue({ claim, className, strong = true }: { claim: ClaimView; className?: string; strong?: boolean }) {
   if (!claim.hasValue) return <span className={clsx('text-fg-muted', className)}>{claim.display}</span>;
   return (
-    <span className={clsx('inline-flex flex-wrap items-baseline gap-x-1.5', className)}>
+    <span data-chip-scope className={clsx('inline-flex flex-wrap items-baseline gap-x-1.5', className)}>
       <span className={clsx('tabular', strong && 'font-medium text-fg')}>{claim.display}</span>
       <LabelChip claim={claim} className="self-center" />
     </span>
+  );
+}
+
+/**
+ * A claim's caveat, placed next to its chip (D128, DESIGN §12b): inside the claim's chip scope or
+ * the small block marked data-caveat-scope that holds it. Nothing for a claim without one.
+ */
+export function ClaimCaveat({ claim, className }: { claim: Pick<ClaimView, 'id' | 'caveat'>; className?: string }) {
+  if (!claim.caveat) return null;
+  return (
+    <p data-caveat-for={claim.id} className={clsx('text-xs text-fg-subtle', className)}>
+      {/* A figure stays on one line with its unit ("0.3 s", not "0.3" and "s"). */}
+      {claim.caveat.replace(/(\d) (s|ms|%)(?=\W|$)/g, '$1\u00a0$2')}
+    </p>
   );
 }
 
@@ -54,17 +69,45 @@ export function Section({ id, eyebrow, title, lead, children, className }: { id:
   );
 }
 
-/** A shell command with a copy button: the command is the text, so nothing hides in the button. */
-export function Command({ command, note, className }: { command: string; note?: string; className?: string }) {
+/**
+ * Code that must keep its lines (a wrapped YAML or shell line reads as broken): it never wraps, and
+ * on a narrow screen it scrolls sideways inside a named, focusable region (DESIGN.md: wide content
+ * scrolls inside a named, focusable region, never the page).
+ */
+export function CodeScroll({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  return (
+    // A keyboard has to reach it to scroll it.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+    <div role="region" aria-label={`${label} (scrolls sideways)`} tabIndex={0} className={clsx('min-w-0 overflow-x-auto', className)} data-code-scroll>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A shell command with a copy button: the command is the text, so nothing hides in the button. A
+ * short one is cut off with an ellipsis if it must be; a long one (`scroll`) keeps its line and
+ * scrolls sideways instead, so the reader can see all of what they copy.
+ */
+export function Command({ command, note, className, scroll = false }: { command: string; note?: string; className?: string; scroll?: boolean }) {
   const [copied, setCopied] = useState<boolean | null>(null);
+  const code = (
+    <code className={clsx('min-w-0 font-mono text-sm text-fg', scroll ? 'block w-max whitespace-pre' : 'truncate')}>
+      <span aria-hidden="true" className="mr-2 text-fg-muted select-none">
+        $
+      </span>
+      {command}
+    </code>
+  );
   return (
     <div className={clsx('inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-surface-sunken py-1 pr-1 pl-3', className)}>
-      <code className="min-w-0 truncate font-mono text-sm text-fg">
-        <span aria-hidden="true" className="mr-2 text-fg-muted select-none">
-          $
-        </span>
-        {command}
-      </code>
+      {scroll ? (
+        <CodeScroll label="Command" className="py-1">
+          {code}
+        </CodeScroll>
+      ) : (
+        code
+      )}
       {note ? <span className="ml-1 text-xs whitespace-nowrap text-fg-muted max-sm:hidden">{note}</span> : null}
       <button
         type="button"

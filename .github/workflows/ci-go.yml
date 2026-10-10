@@ -15,14 +15,15 @@ concurrency:
   group: ci-go-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   go:
     name: Go (proxy)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -40,16 +41,18 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://truthtable:ci-test@localhost:5432/truthtable
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       # Reads the `toolchain` directive in go.mod (go1.25.11).
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: backend-go/go.mod
           cache-dependency-path: backend-go/go.sum
 
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -85,6 +88,18 @@ jobs:
       - name: Coverage summary
         working-directory: backend-go
         run: go tool cover -func=coverage.out | tail -n 1
+
+      # Every Go benchmark once (-benchtime 1x): they compile and run (P5 I-2).
+      - name: Go benchmarks (smoke)
+        run: make bench-go-smoke
+
+      # The Tier-0 budget guard (D120): timings mean nothing under -race, so it runs on its own,
+      # with the shared-runner budget that CI=true selects.
+      - name: Tier-0 budget (TestTier0Budget, no -race)
+        working-directory: backend-go
+        env:
+          CI: 'true'
+        run: go test -count=1 -run '^TestTier0Budget$' -v ./internal/gate/
 
       # Informational until the findings are triaged (SPEC §3.4): reported in
       # the log, never fails the job. Version-pinned like gosec.

@@ -8,12 +8,51 @@ import (
 
 // FieldError is one validation finding (api.ts FieldError): a dotted path into the policy
 // document ("routes[1].evaluators[0].thresholds.warn_at"), the 1-based line and column of the
-// YAML node it refers to (0 when unknown), and a message.
+// YAML node it refers to (0 when unknown), and a message. A warning also carries its code (one of
+// WarningCodes) and the values its words need (Details), so the dashboard words it by code and
+// never parses the message.
 type FieldError struct {
-	Path    string `json:"path"`
-	Line    int    `json:"line,omitempty"`
-	Col     int    `json:"col,omitempty"`
-	Message string `json:"message"`
+	Path    string         `json:"path"`
+	Line    int            `json:"line,omitempty"`
+	Col     int            `json:"col,omitempty"`
+	Message string         `json:"message"`
+	Code    string         `json:"code,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
+// Policy warning codes: every warning the policy check and the engine write carries one, and the
+// list is closed (contracts/ui copy policies.warnings.<code> words each one). Details by code:
+//
+//	no_corroborator:           {route, ref, corroborators[]}
+//	implies_unattached:        {route, ref, implies}
+//	fail_closed_not_enforcing: {route, mode}
+//	sample_rate_not_observe:   {route, mode}
+//	trusts_user_context:       {route, mode}
+//	client_rules_enforcing:    {route}
+//	newest_version_invalid:    {bad_version, active_version}
+//	file_diverged:             {path}
+//
+// route is the route's name, "default" for the defaults.
+const (
+	WarnNoCorroborator         = "no_corroborator"
+	WarnImpliesUnattached      = "implies_unattached"
+	WarnFailClosedNotEnforcing = "fail_closed_not_enforcing"
+	WarnSampleRateNotObserve   = "sample_rate_not_observe"
+	WarnTrustsUserContext      = "trusts_user_context"
+	WarnClientRulesEnforcing   = "client_rules_enforcing"
+	WarnNewestVersionInvalid   = "newest_version_invalid"
+	WarnFileDiverged           = "file_diverged"
+)
+
+// ErrEscalateNotBelowWarn is the code of the error that refuses thresholds whose escalate_from is
+// not below warn_at (SPEC §2.8 hard rule), for example a calibrated warn_at under the evaluator's
+// escalate_from. Details: {route, ref, warn_at, escalate_from}.
+const ErrEscalateNotBelowWarn = "escalate_not_below_warn"
+
+// WarningCodes is the closed list of policy warning codes.
+var WarningCodes = []string{
+	WarnNoCorroborator, WarnImpliesUnattached, WarnFailClosedNotEnforcing, WarnSampleRateNotObserve,
+	WarnTrustsUserContext, WarnClientRulesEnforcing, WarnNewestVersionInvalid, WarnFileDiverged,
 }
 
 // String renders "path (line L, col C): message".

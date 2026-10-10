@@ -14,12 +14,19 @@
 # Dependencies come from poetry.lock (D11): the exact locked versions, including
 # the CPU-only torch wheel from the explicit pytorch-cpu source, with no
 # hand-maintained pip list. EXTRAS names optional Poetry extras to add (the
-# compose key ENGINE_EXTRAS; `knowledge` for the knowledge-base add-on).
-
-ARG PYTHON_VERSION=3.11
+# compose key ENGINE_EXTRAS; `knowledge` for the knowledge-base add-on). An image
+# built with extras is tagged <version>-<extras> by compose (D126) and is never
+# published: the knowledge profile builds it locally.
+#
+# The base image is pinned by its multi-arch INDEX digest (D125), so every
+# platform of a release builds from the same bytes; the tag stays next to the
+# digest for readers and for Dependabot's docker ecosystem, which moves both
+# together. Pinned 2026-10-09: the tag on each FROM line names the release line,
+# and the index digest after it is the pin (a Dependabot digest refresh may move
+# the patch release behind the same tag).
 
 # --- Stage 1: dependencies, stubs --------------------------------------------
-FROM python:${PYTHON_VERSION}-slim AS build
+FROM python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce AS build
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -49,7 +56,7 @@ RUN .venv/bin/python -m grpc_tools.protoc -I/tmp/proto \
       /tmp/proto/evaluator.proto
 
 # --- Stage 2: runtime ---------------------------------------------------------
-FROM python:${PYTHON_VERSION}-slim
+FROM python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="truthtable-engine" \

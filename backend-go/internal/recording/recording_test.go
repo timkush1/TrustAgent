@@ -152,6 +152,35 @@ func TestBuildRecorded(t *testing.T) {
 	}
 }
 
+// TestRecordedLabelNamesTheAnswerSources: the recorded label names the answer sources its traces
+// carry, so a recording run whose answers came from the upstream (stamped generated in test mode,
+// D121) says "generated answers", never "live".
+func TestRecordedLabelNamesTheAnswerSources(t *testing.T) {
+	base := time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC)
+	refund := recordingtest.Fixture(t, "refund-contradiction-flag")
+	for _, c := range []struct {
+		sources []string
+		want    string
+		counts  recording.AnswerSources
+	}{
+		{[]string{"generated", "generated"}, "generated answers", recording.AnswerSources{Generated: 2}},
+		{[]string{"scripted"}, "scripted answers", recording.AnswerSources{Scripted: 1}},
+		{[]string{"generated", "scripted", "generated"}, "scripted and generated answers", recording.AnswerSources{Scripted: 1, Generated: 2}},
+		{[]string{"live", "generated"}, "generated and live answers", recording.AnswerSources{Generated: 1}},
+	} {
+		var traces []recording.Trace
+		for i, source := range c.sources {
+			id := "01a0e780-fe6b-74b8-a21f-00000000010" + string(rune('0'+i))
+			traces = append(traces, recordingtest.Variant(t, refund, id, base.Add(time.Duration(i)*time.Minute), source))
+		}
+		rec, _ := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+		want := "Recorded 2026-10-05 · typesafe/jev-1.13-20260917 + anthropic claude-haiku-4-5 · " + c.want + " · replayed, not live"
+		if rec.Kind != recording.KindRecorded || rec.Label != want || rec.AnswerSources != c.counts {
+			t.Errorf("%v: kind %s, label %q, counts %+v; want %q, %+v", c.sources, rec.Kind, rec.Label, rec.AnswerSources, want, c.counts)
+		}
+	}
+}
+
 func TestBuildMock(t *testing.T) {
 	var traces []recording.Trace
 	for _, tr := range recordingtest.Set(t) {

@@ -1407,6 +1407,67 @@
       }
     },
     {
+      "id": "help-center-link-block-json",
+      "title": "Invented link blocked in a JSON answer",
+      "description": "help-center (block), stream false: the non-streamed twin of help-center-link-block (the user asks where rather than how, so mock-upstream tells their conversations apart), so the browser recorder (which refuses streams) and the replay show a block (D139). The answer links to a page password-reset.md does not mention, so urls_not_in_evidence fires, and it is in the route's block_on: would block, block mode acts block. A detector block needs no calibration, so it is not capped. The JSON answer is replaced by the block message (finish_reason content_filter). groundedness 0.84 is warn, contradiction 0.10 ok. Reasons: groundedness:warn, det:urls_not_in_evidence. Verdict unsupported, deep_audit high (a grounding detector fired). Judge on the original answer: the link UNSUPPORTED, the expiry SUPPORTED, audit HALLUCINATED.",
+      "sets": ["p3", "demo", "e2e"],
+      "route": "help-center",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "help-center"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme help-center assistant. Answer only from the articles below, and link only to pages they mention.\n\n<document id=\"password-reset.md\">To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.</document>"
+          },
+          {
+            "role": "user",
+            "content": "Where do I reset my password?"
+          }
+        ]
+      },
+      "response": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
+      "mock_answers": {"groundedness__v1": {"type": "noul", "noul": 0.84}, "contradiction__v1": {"type": "noul", "noul": 0.1}},
+      "judge": {
+        "claims": [
+          {
+            "claim": "The password can be reset at https://acme.example/reset-password.",
+            "quote": "Open https://acme.example/reset-password and follow the steps",
+            "verdict": "UNSUPPORTED",
+            "confidence": 0.9,
+            "evidence": [],
+            "reasoning": "The article links to https://acme.example/account/security, not to this page."
+          },
+          {
+            "claim": "The reset link expires after 1 hour.",
+            "quote": "The reset link expires after 1 hour",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": ["The reset link expires after 1 hour."],
+            "reasoning": "The article gives the same expiry."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "block",
+        "action": "block",
+        "would_action": "block",
+        "status": "ok",
+        "verdict": "unsupported",
+        "max_risk": 0.84,
+        "reasons": ["groundedness:warn", "det:urls_not_in_evidence"],
+        "checked_against": "request_system:1",
+        "deep_audit": "high",
+        "audit": "queued",
+        "audit_verdict": "HALLUCINATED",
+        "outcome": "blocked",
+        "delivered_text": "I can't verify that answer against our help articles, so I've held it back."
+      }
+    },
+    {
       "id": "help-center-uncalibrated-flag",
       "title": "Block route without calibration acts as a flag",
       "description": "help-center (block). The answer gives the paid-plan limit for the free plan; 1,000 occurs in api-limits.md, so no detector fires. contradiction 0.98 and groundedness 0.95 are critical and corroborate each other: would block. The route keeps raw thresholds (it has not adopted a calibration) and require_calibration holds, so the block is capped to a flag with degraded uncalibrated and reason calibration_missing, whichever calibration the backend has. Reasons: contradiction:critical, groundedness:critical, calibration_missing. Verdict contradicted, deep_audit high. Judge: one CONTRADICTED claim, audit HALLUCINATED.",
@@ -1520,7 +1581,7 @@
       "id": "generated-monthly-refund",
       "title": "Generated answer: are monthly plans refundable?",
       "description": "support-bot (flag), refund-policy.md in the system prompt. Stand-in answer: grounded, groundedness 0.05 and contradiction 0.03, pass, verdict supported, deep_audit sample, audited; judge two SUPPORTED claims, GROUNDED. answer_source generated: when recording (make record-demo) the real upstream writes the answer; response is the stand-in the zero-key demo uses, and the expectations hold for that stand-in only.",
-      "sets": ["generated", "demo"],
+      "sets": ["generated", "demo", "e2e"],
       "route": "support-bot",
       "api_format": "openai_chat",
       "stream": false,
@@ -1580,7 +1641,7 @@
       "id": "generated-weekend-shipping",
       "title": "Generated answer: do orders ship on weekends?",
       "description": "support-bot (flag), shipping-policy.md in the system prompt, which does not mention weekends. Stand-in answer: says so and restates the policy (2 is not unit-adjacent), groundedness 0.12 and contradiction 0.04, pass, verdict supported, deep_audit sample, audited; judge one SUPPORTED claim, GROUNDED. answer_source generated: when recording (make record-demo) the real upstream writes the answer; response is the stand-in the zero-key demo uses, and the expectations hold for that stand-in only.",
-      "sets": ["generated", "demo"],
+      "sets": ["generated", "demo", "e2e"],
       "route": "support-bot",
       "api_format": "openai_chat",
       "stream": false,

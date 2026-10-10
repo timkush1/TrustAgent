@@ -13,7 +13,12 @@ judge is **simulated** (honest numbers: never present mock output as measured).
   run (MockOutputRefused, BenchmarkSchemaError). It writes
   docs/benchmarks/results/<run_id>.json, rebuilds docs/benchmarks/index.json
   and derives contracts/claims/measured.json from the published runs; the
-  landing page and the dashboard read only those files.
+  landing page and the dashboard read only those files. The proxy overhead
+  comes from the newest clean gateway load run in docs/benchmarks/load
+  (load-run.v1, scripts/load/report.py, D118): its scenario c (flag, the fast
+  check at 0 ms) gives proxy_overhead_ms_p50/p95 with system proxy and the
+  load run's id. A load run alone publishes nothing: bench-publish still needs
+  a benchmark run.
 
 System summaries carry what the section 8.3 Pareto chart needs: cost per
 1,000 answers, balanced accuracy with its 95% CI, latency p50/p95, and the
@@ -51,6 +56,11 @@ from .metrics import (
     percentile,
     reliability_bins,
 )
+
+# Gateway load runs (D118): the schema, and the scenario whose overhead is the headline figure.
+LOAD_RUN_SCHEMA = "load-run.v1.schema.json"
+LOAD_RUN_ID = "trustagent.load-run/v1"
+PROXY_SCENARIO = "c"
 
 LABEL_MEASURED = "measured"
 LABEL_SIMULATED = "simulated"
@@ -433,13 +443,63 @@ def _latest(
     return max(candidates, key=lambda run: (run["created_at"], run["run_id"]))
 
 
+def load_load_runs(load_dir: Path) -> List[Dict[str, Any]]:
+    """The published gateway load runs in load_dir, each checked against load-run.v1."""
+    out: List[Dict[str, Any]] = []
+    if not load_dir.is_dir():
+        return out
+    for path in sorted(load_dir.glob("*.json")):
+        with open(path, encoding="utf-8") as f:
+            run = json.load(f)
+        errors = schema_errors(run, LOAD_RUN_SCHEMA)
+        if errors:
+            raise BenchmarkSchemaError(f"load run {path.name}", errors)
+        out.append(run)
+    return out
+
+
+def is_clean_load_run(run: Mapping[str, Any]) -> bool:
+    """
+    A clean load run: published from a clean tree, every target met, and no
+    targeted scenario published report-only (scripts/load/report.py is_clean).
+    """
+    if run.get("schema") != LOAD_RUN_ID or run.get("dirty") is not False:
+        return False
+    return all(
+        scenario.get("ok") and (scenario.get("target") is None or not scenario.get("report_only"))
+        for scenario in run.get("scenarios", [])
+    )
+
+
+def _proxy_scenario(run: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    for scenario in run.get("scenarios", []):
+        if isinstance(scenario, dict) and scenario.get("id") == PROXY_SCENARIO:
+            found: Mapping[str, Any] = scenario
+            return found
+    return None
+
+
+def _latest_load(load_runs: Sequence[Mapping[str, Any]]) -> Optional[Mapping[str, Any]]:
+    candidates = [
+        run for run in load_runs if is_clean_load_run(run) and _proxy_scenario(run) is not None
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda run: (run["created_at"], run["run_id"]))
+
+
 def derive_measured(
-    runs: Sequence[Mapping[str, Any]], previous: Mapping[str, Any], generated_at: str
+    runs: Sequence[Mapping[str, Any]],
+    previous: Mapping[str, Any],
+    generated_at: str,
+    load_runs: Sequence[Mapping[str, Any]] = (),
 ) -> Dict[str, Any]:
     """
     contracts/claims/measured.json from the published runs: each value from
-    the newest run that measures it. Values no run provides (k6 overhead,
-    post-calibration ECE) keep their previous value and run id.
+    the newest run that measures it, and the proxy overhead from the newest
+    clean load run (its scenario c). Values no run provides (post-calibration
+    ECE) keep their previous value and run id. The tier is the benchmark runs'
+    (a load run has none).
     """
     values: Dict[str, Dict[str, Any]] = {
         key: dict(entry) for key, entry in (previous.get("values") or {}).items()
@@ -482,6 +542,14 @@ def derive_measured(
         ragtruth,
         metric(ragtruth, "gate", "metrics", "balanced_accuracy"),
     )
+    load_run = _latest_load(load_runs)
+    if load_run is not None:
+        proxy = _proxy_scenario(load_run) or {}
+        for key, stat in (("proxy_overhead_ms_p50", "p50_ms"), ("proxy_overhead_ms_p95", "p95_ms")):
+            value = proxy.get(stat)
+            if key in values and isinstance(value, (int, float)):
+                values[key]["value"] = float(value)
+                values[key]["run_id"] = load_run["run_id"]
 
     run_ids = sorted(
         {
@@ -490,7 +558,12 @@ def derive_measured(
             if entry.get("value") is not None and entry.get("run_id")
         }
     )
-    measured = bool(run_ids)
+    # Measured means a benchmark run measured something: a load run alone (system proxy) is no
+    # benchmark, and has no tier.
+    measured = any(
+        entry.get("value") is not None and entry.get("run_id") and entry.get("system") != "proxy"
+        for entry in values.values()
+    )
     tiers = {str(run["tier"]) for run in used.values()}
     tier = previous.get("tier") if not tiers else ("lite" if "lite" in tiers else "full")
     return {
@@ -520,12 +593,14 @@ def publish(
     index_path: Optional[Path] = None,
     measured_path: Optional[Path] = None,
     generated_at: Optional[str] = None,
+    load_dir: Optional[Path] = None,
 ) -> Dict[str, Path]:
     """
     Publish a local measured run (make bench-publish; see the module docstring).
 
     Everything is checked before anything is written: a refused run leaves
-    docs/benchmarks and measured.json as they were.
+    docs/benchmarks and measured.json as they were. The load runs are read
+    from load_dir, by default docs/benchmarks/load beside the results.
 
     Raises:
         MockOutputRefused: The run is simulated.
@@ -551,7 +626,8 @@ def publish(
     runs.append(document)
     with open(claims, encoding="utf-8") as f:
         previous = json.load(f)
-    derived = derive_measured(runs, previous, now)
+    load_runs = load_load_runs(load_dir or results.parent / "load")
+    derived = derive_measured(runs, previous, now, load_runs)
     errors = schema_errors(derived, MEASURED_SCHEMA)
     if errors:
         raise BenchmarkSchemaError("derived measured.json", errors)

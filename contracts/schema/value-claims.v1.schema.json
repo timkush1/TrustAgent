@@ -61,6 +61,11 @@
           "as_of": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Date"}, {"type": "null"}]},
           "caveat": {"anyOf": [{"type": "string", "minLength": 1, "maxLength": 400}, {"type": "null"}]},
           "assumption_ref": {"type": "string", "description": "A figure id in pricing/assumptions.v1.json."},
+          "per_unit_of": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "A usd claim for one unit of a per-1,000 figure: the id of a usd_per_1k claim or of a pricing/assumptions.v1.json figure; validate.mjs checks value = that figure / 1000 (D114)."
+          },
           "measured_ref": {"type": "string", "description": "A key of values in claims/measured.json."},
           "price_ref": {
             "type": "object",
@@ -70,6 +75,16 @@
               "provider": {"type": "string", "minLength": 1},
               "match": {"type": "string", "minLength": 1},
               "field": {"enum": ["input_per_mtok", "output_per_mtok"]}
+            }
+          },
+          "tokens_x_price": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input_tokens", "price_claim"],
+            "description": "The claim is the cost of one call: input_tokens at the usd_per_mtok claim price_claim (output free), rounded to two significant digits. validate.mjs checks the arithmetic; the web tests tie input_tokens to the request it prices.",
+            "properties": {
+              "input_tokens": {"type": "integer", "minimum": 1},
+              "price_claim": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"}
             }
           },
           "surfaces": {

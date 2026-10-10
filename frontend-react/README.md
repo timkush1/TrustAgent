@@ -50,7 +50,7 @@ src/
 │   └── format.ts            numbers, money, durations, times
 ├── components/
 │   ├── ui/                  Button, Popover, Tooltip, Skeleton (over Base UI)
-│   ├── layout/              AppShell, NavRail, TopBar, HealthPill, Banner, PhasePlaceholder
+│   ├── layout/              AppShell, NavRail, TopBar, HealthPill, Banner
 │   ├── common/              Empty, Error and Loading states, QueryState, Term, DisabledReason
 │   ├── outcome/             OutcomePill, VerdictBadge, AuditState, RiskBar
 │   ├── traffic/             Traffic list: rows model, virtualized table, filters, Live toggle

@@ -1,0 +1,27 @@
+{
+  "source": "synthetic: mock-upstream faultTable + SPEC §6",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/keys",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "code": "mockcode_000000000000000000000000",
+      "code_challenge_method": "S256",
+      "code_verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+    }
+  },
+  "status": 400,
+  "headers": {
+    "access-control-allow-origin": "*",
+    "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,request-id,cf-ray",
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "code": 400,
+      "message": "Invalid code"
+    }
+  }
+}

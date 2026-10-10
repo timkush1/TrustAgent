@@ -1,0 +1,123 @@
+name: Pages
+
+# The public site (SPEC §3.3, §7.5): the landing page at the root and the dashboard replaying the
+# demo recording under app/, built as a static site for GitHub Pages under /TrustAgent/.
+#
+# The build job runs on every trigger and never deploys (D124). Its steps call the same make
+# targets as `make pages-build`, in the same order:
+#   1. jsonschema for check_recording.py;
+#   2. check_recording.py on the dataset the site will ship (--require-recorded on a tag);
+#   3. the static build (VITE_BASE_PATH /TrustAgent/; dataset auto on main and pull requests,
+#      recorded on a tag: D110);
+#   4. the landing page's size budget (then the build manifests in dist/.vite go: the site does not
+#      need them);
+#   5. file checks (pages, 404 fallback, base path, the shipped dataset, no source maps or build
+#      manifests);
+#   6. gitleaks over the built site (a pinned release, SHA-256 checked, as in security.yml);
+#   7. the Pages artifact.
+#
+# The deploy job publishes only when the owner turned Pages on (repository variable
+# PAGES_ENABLED = 'true'), never for a pull request, only from main or a v* tag, and on a manual
+# run only when asked to (input deploy).
+#
+# Hardening (D140): actions pinned to commit SHAs, no persisted git credentials, permissions per
+# job (none at the top), no pull_request_target, no expressions inside run:, no secrets in the
+# build job, and no dependency cache (a tag build publishes, and a cache another run wrote must
+# not reach it).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy this build to GitHub Pages (main or a v* tag only, and only with PAGES_ENABLED)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Pages build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # The build's VITE_BASE_PATH: the site lives at https://timkush1.github.io/TrustAgent/.
+      PAGES_BASE_PATH: /TrustAgent/
+      # The build's VITE_DEMO_DATASET (D110): a release tag ships a real recording or fails; main
+      # and pull requests ship the recorded dataset when one is committed, else the simulated one.
+      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && 'recorded' || 'auto' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Install jsonschema (check_recording.py)
+        run: python -m pip install jsonschema==4.26.0
+
+      # SPEC §2.13, risk 19: the site never ships a recording that passes mock output for real.
+      - name: Check the demo recording (check_recording.py)
+        run: make pages-recording-check
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install dependencies
+        working-directory: frontend-react
+        run: npm ci
+
+      - name: Static site build
+        run: make pages-static
+
+      - name: Landing page size budget
+        run: make pages-size
+
+      - name: Site file checks
+        run: make pages-files
+
+      # D137: the artifact is public; no key may reach it (gitleaks' default rules, .gitleaks.toml).
+      - name: gitleaks over the built site
+        run: make pages-gitleaks
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: frontend-react/dist
+
+  deploy:
+    name: Pages deploy
+    needs: build
+    if: >-
+      vars.PAGES_ENABLED == 'true'
+      && github.event_name != 'pull_request'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      && (github.event_name != 'workflow_dispatch' || inputs.deploy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

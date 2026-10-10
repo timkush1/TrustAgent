@@ -1,6 +1,6 @@
 /**
  * Copy-paste snippets for "Connect your app" (SPEC §3.3 Overview), and the quoting helpers the
- * Playground's curl equivalent (components/playground/playgroundCurl.ts) shares: point an SDK at the gateway, send the ingest key in `X-TrustAgent-Key`, and attach
+ * Playground's curl equivalent (components/playground/playgroundCurl.ts) shares: point an SDK at the gateway, send the app key in `X-TrustAgent-Key`, and attach
  * the documents the answer should be checked against with the `trustagent.context` extension
  * (SPEC §2.12; the gateway strips it before the request goes upstream).
  *
@@ -25,7 +25,7 @@ export const SNIPPET_TABS: readonly SnippetTab[] = [
   { id: 'langchain', label: 'LangChain', language: 'Python' },
 ];
 
-/** The environment variable every snippet reads the ingest key from. */
+/** The environment variable every snippet reads the app key from. */
 export const INGEST_KEY_ENV = 'TRUSTAGENT_KEY';
 
 export interface SnippetInput {

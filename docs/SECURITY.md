@@ -1,7 +1,7 @@
 # Security
 
 How TrustAgent protects the keys it holds, who may do what, which controls guard the audit itself,
-and the gaps that remain on purpose. The design source is [SPEC §7.5](v2/SPEC.md#75-credentials-auth-oauth);
+the public static demo, the supply chain, and the gaps that remain on purpose. The design source is [SPEC §7.5](v2/SPEC.md#75-credentials-auth-oauth);
 this page is the operator's view of it. Scanners in CI keep the code clean (see
 [Scanners](#scanners-ci)).
 
@@ -196,6 +196,49 @@ rate limits, size caps, ingest-time entailment gating). What a poisoned document
 instructions into the verifier prompt (delimited and declared untrusted), smuggle malformed
 verdicts (schema validation), or hide payloads in invisible characters (sanitized).
 
+## The static demo
+
+The public demo (<https://timkush1.github.io/TrustAgent/>) is static files on GitHub Pages: no
+TrustAgent server, no cookies, nothing a visitor types is stored by us. Its one sensitive thing is a
+visitor's own OpenRouter key, when they choose **Try Jev live** or the Studio's **Draft with AI**.
+
+| Concern | What the site does |
+|---|---|
+| **Where the key lives** | Only in that tab's `sessionStorage`, with the time it was stored. It is forgotten after **2 hours**, or at once with **Forget key** (which also aborts any request in flight; the call counter stays). Live mode writes nothing to `localStorage`, cookies or IndexedDB. A tab restored from the back-forward cache re-reads storage and applies the 2-hour limit, so it never shows a forgotten key. When the browser blocks storage, the key lives in memory until the page is left, and Connect is disabled |
+| **Connect OpenRouter (PKCE) from the browser** | The verifier is kept in `sessionStorage` for **10 minutes**; the callback page removes the `code` from the address bar before anything else, exchanges it once (never twice, even under React's double effects), never shows OpenRouter's error text, and refuses a code this tab did not start (login CSRF). **Paste a key** is always offered |
+| **Where the key goes** | Only to `https://openrouter.ai/api/...`, with at most five request headers (`authorization`, `content-type`, `accept`, `http-referer`, `x-openrouter-title`), with `credentials: 'omit'`, and the site's address in `HTTP-Referer` (OpenRouter's app attribution). No other origin ever sees it; links that leave the site open with `noopener noreferrer`, so a new tab gets no copy of `sessionStorage` |
+| **The shared origin** | Every Pages site of the account shares the origin `https://timkush1.github.io`, and with it `sessionStorage` per tab. A script on another of those sites, opened **in the same tab**, could read the key. That is why the key is per tab, short-lived and forgettable, and why the owner checks that no other site on the origin loads third-party scripts before launch (a custom domain or an organisation site removes the sharing) |
+| **Content Security Policy** | A `<meta>` CSP: `default-src 'self'; connect-src 'self' https://openrouter.ai; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'`, and `referrer` `no-referrer`. Inline styles are allowed; inline and third-party scripts are not. Pages cannot send response headers, so there is **no** `frame-ancestors`, HSTS or `X-Frame-Options` beyond what GitHub sets |
+| **Framing** | Because a meta CSP cannot forbid framing, the consent dialog, the key field and the callback check `window.top !== window.self`; framed, they show only "Open in its own tab", with no key input and no exchange |
+| **Courtesy caps** | At most **100** calls to OpenRouter per tab (checks and AI drafts) and **8,000** estimated tokens per call, reserved before each request. Only calls that bill count; a 402 (no credits), network errors and refusals before sending do not. After **10 refused requests in a row** the panel pauses ("OpenRouter keeps refusing these requests") with Retry and Forget key. These caps keep a mistake small; they are **not a security boundary**, because anyone can call openrouter.ai with their own key. The real limit is the credit limit you give the key on openrouter.ai |
+| **What leaves the browser** | What you type and the example documents go to OpenRouter and the model's provider (TypeSafe for checks, Anthropic for drafts). The consent box says so before the first call |
+| **The published files** | The Pages build runs gitleaks over the built site and fails on any key-like string; no `VITE_*` build variable may be named like a secret |
+
+**Cross-origin access (CORS).** The browser may read OpenRouter's answers only because OpenRouter
+allows it: on 2026-10-09 the preflights from the Pages origin to the decisions, chat, key-exchange
+and key endpoints answered with `access-control-allow-origin: *` for those five headers, and error
+bodies were readable ([SPEC Appendix D](v2/SPEC.md#appendix-d-assumptions-to-verify-gate)). If
+OpenRouter changes that, live mode fails closed with a network error; the replay is unaffected.
+
+**Connect on the Pages address is not verified yet.** Whether OpenRouter accepts the
+`/TrustAgent/connect/callback/` address is checked by the owner when Pages is enabled (SPEC
+Appendix D). Until then Paste stays available next to Connect, and if OpenRouter refuses the
+address, Paste becomes the primary action.
+
+## Supply chain
+
+| Control | What it gives |
+|---|---|
+| Base images pinned by multi-arch **index digest** (`@sha256:...`) with a version comment | A rebuild cannot pick up a different base silently; Dependabot proposes digest refreshes as reviewable PRs |
+| Workflow actions pinned to a full **commit SHA** (with a `# vX.Y.Z` comment), `persist-credentials: false` on every checkout, top-level `permissions: {}` with each job granted only what it needs, no `pull_request_target`, no `${{ github.event.* }}` inside `run:` | A moved tag or a compromised action release cannot change what CI runs; a job holds no write token it does not need |
+| `actionlint` and `zizmor` over every workflow (`make lint-workflows`) | Workflow mistakes and the known GitHub Actions attack patterns fail the lint |
+| Release images with BuildKit **provenance** (`mode=max`) and an **SBOM** | What each image was built from, and what is inside it |
+| A GitHub **artifact attestation** for each pushed image digest | Anyone can check an image came from this repository's workflow: `gh attestation verify oci://ghcr.io/timkush1/truthtable-proxy:<version> -R timkush1/TrustAgent` |
+| Pages deploys only from `main` or a `v*` tag, when the owner sets `PAGES_ENABLED`, through the `github-pages` environment; images are pushed only from `main` or a `v*` tag of this repository | A pull request builds the site and the images and publishes nothing |
+
+There is no cosign signature: the GitHub attestation covers provenance for now (see the gaps
+below).
+
 ## Scanners (CI)
 
 | Scanner | Scope | Policy |
@@ -221,13 +264,22 @@ Accepted findings:
 ## Known gaps (deliberate)
 
 - **Plaintext internal gRPC** (above). mTLS was weighed and cut for a single-host deployment.
-- **Budgets and PKCE nonces are per process** (above): multi-replica deployments overspend by up to
-  a minute and need sticky sessions for Connect.
+- **Several gateway replicas share less than one.** Budgets, rate limits without Redis, and PKCE
+  nonces are per process (above): multi-replica deployments overspend by up to a minute and need
+  sticky sessions for Connect. **The per-name limit on credential checks is also per replica**, so
+  N replicas allow N times the checks. A shared nonce store, shared caps and a keyed verify limiter
+  are planned for a later release.
 - **No master-key rotation** before v2.1: rotating means re-entering saved keys.
-- **The static demo shares an origin.** The GitHub Pages demo runs at `timkush1.github.io`, an origin
-  shared with any other Pages site of that account. A visitor's own OpenRouter key, if they try Jev
-  live there, stays in that tab's `sessionStorage` and is sent only to openrouter.ai, under a strict
-  CSP.
+- **The static demo shares an origin** with every other Pages site of the account, and its CSP is a
+  `<meta>` tag with no `frame-ancestors` (Pages sends no custom headers). Framing is refused in
+  the page instead, and the key is per tab, short-lived and forgettable
+  ([The static demo](#the-static-demo)).
+- **The static demo's caps are a courtesy**, not a security boundary: the key's credit limit on
+  openrouter.ai is the real one.
+- **Connect on the Pages address is unverified** until the owner's check when Pages is enabled;
+  Paste is always offered.
+- **No cosign signatures** on release images yet: provenance, SBOMs and GitHub artifact
+  attestations only.
 - **Host access is admin access** (see [Setup link and recovery](#setup-link-and-recovery)).
 
 ## Reporting

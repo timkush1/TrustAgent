@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # ============================================================================
-# TrustAgent proxy (Go): the gateway binary, the demo traffic generator and the
-# mock vendor APIs of the e2e and load stacks.
+# TrustAgent proxy (Go): the gateway binary, the demo traffic generator, the
+# mock vendor APIs of the e2e and load stacks, the decision-model check and the
+# replay exporter.
 # ============================================================================
 # Build context: the REPOSITORY ROOT (SPEC §3.4), so the image can generate the
 # gRPC stubs from proto/ and compile the contracts module that backend-go/go.mod
@@ -18,13 +19,17 @@
 #   build  compiles every command in CMDS into /out, on the build platform
 #          (GOOS/GOARCH come from the target platform, so multi-arch is cheap)
 #   final  alpine, non-root uid 1001, binaries at /<cmd> (/proxy, /trafficgen,
-#          /mock-upstream)
-
-ARG GO_VERSION=1.25.11
-ARG ALPINE_VERSION=3.24
+#          /mock-upstream, /jevcheck, /export-replay)
+#
+# Base images are pinned by their multi-arch INDEX digest (D125), so every
+# platform of a release (linux/amd64, linux/arm64) builds from the same bytes;
+# the tag stays next to the digest for readers and for Dependabot's docker
+# ecosystem, which moves both together. Pinned 2026-10-09: the tag on each FROM
+# line names the release line, and the index digest after it is the pin (a
+# Dependabot digest refresh may move the patch release behind the same tag).
 
 # --- Stage 1: gRPC stubs ------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS proto
+FROM --platform=$BUILDPLATFORM golang:1.25.11-alpine@sha256:523c3effe300580ed375e43f43b1c9b091b68e935a7c3a92bfcc4e7ed55b18c2 AS proto
 
 # protobuf-dev ships the well-known .proto includes. Alpine packages are not
 # version-pinned: the base image tag fixes the release branch.
@@ -48,7 +53,7 @@ RUN mkdir -p /out \
       proto/evaluator.proto
 
 # --- Stage 2: build -----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.11-alpine@sha256:523c3effe300580ed375e43f43b1c9b091b68e935a7c3a92bfcc4e7ed55b18c2 AS build
 
 WORKDIR /src/backend-go
 
@@ -68,10 +73,13 @@ COPY --from=proto /out/ ./
 # proxy reports it as status build_sha and names it as the git revision of a
 # recording (GET /api/export/replay); the image label below carries it too.
 # Empty leaves it unset.
-# CMDS lists the ./cmd/<name> packages to ship; each lands at /<name>.
+# CMDS lists the ./cmd/<name> packages to ship; each lands at /<name>: the gateway, the demo
+# traffic generator, the mock vendor APIs, the decision-model check (`make jev-check` runs
+# /jevcheck in the proxy container) and the replay exporter (`make record-demo` runs
+# /export-replay in it).
 ARG VERSION=dev
 ARG GIT_SHA=""
-ARG CMDS="proxy trafficgen mock-upstream"
+ARG CMDS="proxy trafficgen mock-upstream jevcheck export-replay"
 ARG TARGETOS
 ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -84,11 +92,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     done
 
 # --- Stage 3: runtime ---------------------------------------------------------
-FROM alpine:${ALPINE_VERSION}
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="truthtable-proxy" \
-      org.opencontainers.image.description="TrustAgent gateway proxy, demo traffic generator and mock vendor APIs" \
+      org.opencontainers.image.description="TrustAgent gateway proxy, demo traffic generator, mock vendor APIs, decision-model check and replay exporter" \
       org.opencontainers.image.source="https://github.com/timkush1/TrustAgent" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${VERSION}"

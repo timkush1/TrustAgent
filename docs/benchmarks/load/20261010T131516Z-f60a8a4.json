@@ -1,0 +1,188 @@
+{
+  "schema": "trustagent.load-run/v1",
+  "run_id": "20261010T131516Z-f60a8a4",
+  "created_at": "2026-10-10T13:15:16Z",
+  "git_sha": "f60a8a4",
+  "dirty": false,
+  "vendors": "simulated (mock-upstream)",
+  "environment": {
+    "cpu_model": "12th Gen Intel(R) Core(TM) i5-12450H",
+    "cores": 10,
+    "mem_gb": 7.8,
+    "os": "Ubuntu 24.04.2 LTS (WSL2)",
+    "kernel": "5.15.167.4-microsoft-standard-WSL2",
+    "docker": "28.4.0",
+    "proxy_limits": {
+      "cpus": 1.0,
+      "mem": "512m"
+    },
+    "trace_flush": "async",
+    "k6_image": "grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34",
+    "rate": 20,
+    "duration": "30s"
+  },
+  "scenarios": [
+    {
+      "id": "a",
+      "route": "load-a",
+      "mode": "disabled",
+      "streaming": false,
+      "n": 600,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 1.0,
+      "max_ms": 2.0,
+      "source": "header",
+      "target": {
+        "stat": "p95_ms",
+        "max_ms": 3
+      },
+      "ok": true,
+      "report_only": false,
+      "jev": {
+        "attempts": 0,
+        "hedged": 0,
+        "mock_requests": 0
+      }
+    },
+    {
+      "id": "b",
+      "route": "load-b",
+      "mode": "observe",
+      "streaming": false,
+      "n": 600,
+      "p50_ms": 0.509,
+      "p95_ms": 0.968,
+      "p99_ms": 1.682,
+      "max_ms": 2.5,
+      "source": "metrics",
+      "target": {
+        "stat": "p95_ms",
+        "max_ms": 5
+      },
+      "ok": true,
+      "report_only": false,
+      "jev": {
+        "attempts": 600,
+        "hedged": 0,
+        "mock_requests": 600
+      }
+    },
+    {
+      "id": "c",
+      "route": "load-c",
+      "mode": "flag",
+      "streaming": false,
+      "n": 601,
+      "p50_ms": 1.0,
+      "p95_ms": 2.0,
+      "p99_ms": 3.0,
+      "max_ms": 4.0,
+      "source": "header",
+      "target": {
+        "stat": "p95_ms",
+        "max_ms": 10
+      },
+      "ok": true,
+      "report_only": false,
+      "jev": {
+        "attempts": 601,
+        "hedged": 0,
+        "mock_requests": 601
+      }
+    },
+    {
+      "id": "d",
+      "route": "load-d",
+      "mode": "flag",
+      "streaming": false,
+      "n": 600,
+      "p50_ms": 152.0,
+      "p95_ms": 153.0,
+      "p99_ms": 155.0,
+      "max_ms": 157.0,
+      "source": "header",
+      "target": {
+        "stat": "p95_ms",
+        "max_ms": 175
+      },
+      "ok": true,
+      "report_only": false,
+      "jev": {
+        "attempts": 600,
+        "hedged": 0,
+        "mock_requests": 600
+      }
+    },
+    {
+      "id": "e",
+      "route": "load-e",
+      "mode": "block",
+      "streaming": true,
+      "n": 600,
+      "p50_ms": 1.0,
+      "p95_ms": 2.0,
+      "p99_ms": 3.0,
+      "max_ms": 8.0,
+      "source": "header",
+      "target": null,
+      "ok": true,
+      "report_only": true,
+      "jev": {
+        "attempts": 600,
+        "hedged": 0,
+        "mock_requests": 600
+      }
+    },
+    {
+      "id": "f",
+      "route": "load-f",
+      "mode": "flag",
+      "streaming": false,
+      "n": 600,
+      "p50_ms": 1.0,
+      "p95_ms": 402.0,
+      "p99_ms": 403.0,
+      "max_ms": 405.0,
+      "source": "header",
+      "target": {
+        "stat": "p99_ms",
+        "max_ms": 1500
+      },
+      "ok": true,
+      "report_only": false,
+      "jev": {
+        "attempts": 692,
+        "hedged": 92,
+        "mock_requests": 692
+      }
+    },
+    {
+      "id": "g",
+      "route": "load-g",
+      "mode": "block",
+      "streaming": false,
+      "n": 600,
+      "p50_ms": 1.0,
+      "p95_ms": 2.0,
+      "p99_ms": 2.01,
+      "max_ms": 5.0,
+      "source": "header",
+      "target": {
+        "stat": "p95_ms",
+        "max_ms": 10
+      },
+      "ok": true,
+      "report_only": false,
+      "jev": {
+        "attempts": 600,
+        "hedged": 0,
+        "mock_requests": 600
+      }
+    }
+  ],
+  "errors": {
+    "rate_5xx": 0.0,
+    "non_200": 0
+  }
+}

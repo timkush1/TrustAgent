@@ -1,7 +1,8 @@
 /**
  * "Claims" (SPEC §3.3 "Trace detail" 2, right): a skeleton reading "Deep audit running… usually
- * 5–20 s" while the audit is on its way, then one row per claim with its verdict icon and label.
- * Without a deep audit it says why ("Not assessed", "Not sampled for deep audit", …).
+ * 5–20 s" while the audit is on its way, then one row per claim with its verdict icon and label,
+ * the judge's reasoning and the document lines it was judged against. Without a deep audit it says
+ * why ("Not assessed", "Not sampled for deep audit", …).
  */
 import { LoaderCircle } from 'lucide-react';
 import { AuditState } from '@/components/outcome/AuditState';
@@ -9,7 +10,7 @@ import { VerdictBadge } from '@/components/outcome/VerdictBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auditStateView, copy } from '@/domain/presentation';
 import type { AuditDetail, TraceSummary } from '@/types/api';
-import { auditHasResult, claimRowId, claimsSummary, disagreementLine, orderedClaims } from './traceView';
+import { auditHasResult, claimEvidence, claimRowId, claimsSummary, disagreementLine, orderedClaims } from './traceView';
 
 const DEEP_AUDIT = copy.tiers.deep_audit;
 
@@ -23,6 +24,21 @@ function ClaimsPending({ label }: { label: string }) {
       <Skeleton className="h-10 w-full" />
       <Skeleton className="h-10 w-4/5" />
     </div>
+  );
+}
+
+/** The document lines a claim was judged against: "refund-policy.md: “Annual plans … 30 days …”". */
+function ClaimEvidence({ quotes }: { quotes: { doc: string | null; text: string }[] }) {
+  if (quotes.length === 0) return null;
+  return (
+    <ul aria-label="Evidence" className="space-y-1" data-claim-evidence>
+      {quotes.map((q, i) => (
+        <li key={i} className="border-l-2 border-border-strong pl-2 text-xs text-fg-muted">
+          {q.doc ? <span className="font-medium text-fg">{q.doc}: </span> : null}
+          <q>{q.text}</q>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -61,6 +77,7 @@ export function ClaimsSection({
               </div>
               <p className="text-sm text-fg">{c.claim ?? 'Hidden: this key cannot see claim text.'}</p>
               {c.reasoning ? <p className="text-xs text-fg-muted">{c.reasoning}</p> : null}
+              <ClaimEvidence quotes={claimEvidence(c)} />
             </li>
           ))}
         </ol>

@@ -6,7 +6,8 @@
 import type { Recording, TraceDetail } from '@/types/api';
 import { ApiError } from '../errors';
 
-export const RECORDING_DIR = 'demo/recorded/';
+/** Where the build serves the chosen dataset (vite/plugins/dataset.ts, D110). */
+export const RECORDING_DIR = 'demo/';
 export const MOCK_LABEL = 'Simulated (mock checks + mock judge): not model output';
 const RECORDED_LABEL = /^Recorded .+ · replayed, not live$/;
 
@@ -80,7 +81,7 @@ export interface RecordingFiles {
   detail(id: string, signal?: AbortSignal): Promise<TraceDetail>;
 }
 
-/** Fetches manifest.json under `${basePath}demo/recorded/` and serves trace files on demand. */
+/** Fetches manifest.json under `${basePath}demo/` and serves trace files on demand. */
 export async function loadRecording(basePath: string, fetchImpl: typeof fetch, dataset: DemoDataset): Promise<RecordingFiles> {
   const dir = `${basePath.replace(/\/?$/, '/')}${RECORDING_DIR}`;
   const manifest = checkManifest(await getJson(`${dir}manifest.json`, fetchImpl), dataset);

@@ -53,6 +53,9 @@ gen-evaluator-validator: ## Regenerate src/lib/evaluator/evaluatorValidator.gen.
 gen-evaluator-validator-check: ## Fail when src/lib/evaluator/evaluatorValidator.gen.ts is stale
 	cd frontend-react && node scripts/gen-evaluator-validator.ts --check
 
+gen-landing-glassbox-check: ## Fail when src/landing/glassbox.gen.json is stale (D116)
+	cd frontend-react && node --import ./scripts/lib/aliasHooks.ts scripts/gen-landing-glassbox.ts --check
+
 gen-api-schema: ## Regenerate contracts/schema/api.v1.schema.json from src/types/api.ts (commit the result)
 	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs
 
@@ -81,7 +84,7 @@ test-e2e-web: ## Run the dashboard e2e specs against a running stack (make demo 
 
 # ---------- Static site (GitHub Pages) and its demo recording (SPEC §3.3, §2.13, §7.5) ----------
 # The static build is the landing page at the site root plus the dashboard replaying
-# frontend-react/public/demo/recorded (no backend). VITE_BASE_PATH defaults to /TrustAgent/.
+# frontend-react/demo-data/simulated, served at demo/ (no backend; D110). VITE_BASE_PATH defaults to /TrustAgent/.
 
 build-static: ## Build the static site (landing page + replay) into frontend-react/dist
 	cd frontend-react && npm run build:static
@@ -89,12 +92,12 @@ build-static: ## Build the static site (landing page + replay) into frontend-rea
 size-landing: ## Fail when the landing page's first load is over 110 KB gzip (run after build-static)
 	cd frontend-react && npm run size
 
-recording: ## Rebuild the simulated demo recording from the s0 scenarios (commit the result)
+recording: ## Rebuild the simulated demo recording from the demo scenarios (commit the result)
 	cd frontend-react && npm run recording
 
 recording-check: ## Fail when the demo recording is stale or check_recording.py refuses it
 	cd frontend-react && node scripts/build-demo-recording.ts --check
-	$(PYTHON) scripts/check_recording.py frontend-react/public/demo/recorded
+	$(PYTHON) scripts/check_recording.py frontend-react/demo-data/simulated
 
 test-e2e-static: ## Build the static site and run the Playwright static specs against vite preview
 	cd frontend-react && npm run build:static && PLAYWRIGHT_STATIC_PREVIEW=1 npx playwright test --project=static $(PLAYWRIGHT_ARGS)
@@ -103,10 +106,11 @@ test-e2e-static: ## Build the static site and run the Playwright static specs ag
 # `make check` runs eslint (lint) and vitest (test) already; this runs everything else CI does, one
 # step after another even under `make -j`: `npm run build` and `build:static` both write dist/, the
 # size budget reads the static build, and one build at a time suits a small machine.
-check-web-ci: ## CI's other web gates in order: generated types, policy and evaluator validators, api.v1 schema, tsc -b, build, build-static, size, recording
+check-web-ci: ## CI's other web gates in order: generated types, policy and evaluator validators, landing glass box, api.v1 schema, tsc -b, build, build-static, size, recording
 	@$(MAKE) --no-print-directory gen-types-check
 	@$(MAKE) --no-print-directory gen-policy-validator-check
 	@$(MAKE) --no-print-directory gen-evaluator-validator-check
+	@$(MAKE) --no-print-directory gen-landing-glassbox-check
 	@$(MAKE) --no-print-directory gen-api-schema-check
 	cd frontend-react && npx tsc -b
 	cd frontend-react && npm run build

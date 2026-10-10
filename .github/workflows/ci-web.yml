@@ -17,21 +17,24 @@ concurrency:
   group: ci-web-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   frontend:
     name: Frontend (dashboard)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: frontend-react
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
           cache: npm
@@ -52,6 +55,9 @@ jobs:
       - name: Evaluator validator is current (gen-evaluator-validator-check)
         run: node scripts/gen-evaluator-validator.ts --check
 
+      - name: Landing glass box is current (gen-landing-glassbox-check, D116)
+        run: node --import ./scripts/lib/aliasHooks.ts scripts/gen-landing-glassbox.ts --check
+
       - name: eslint
         run: npm run lint
 
@@ -66,14 +72,17 @@ jobs:
 
       # The static GitHub Pages site (SPEC §3.3, §7.5): the landing page is its own entry with a
       # blocking 110 KB gzip budget. The vitest run above already fails on a stale demo recording.
+      # The simulated tape, named: the Pages build picks its dataset explicitly (D110).
       - name: Static site build
+        env:
+          VITE_DEMO_DATASET: mock
         run: npm run build:static
 
       - name: Landing page size budget
         run: npm run size
 
       # SPEC §2.13, risk 19: the published recording never passes for real model output.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
 
@@ -81,5 +90,5 @@ jobs:
         working-directory: .
         run: |
           python -m pip install jsonschema==4.26.0
-          python scripts/check_recording.py frontend-react/public/demo/recorded
+          python scripts/check_recording.py frontend-react/demo-data/simulated
           python -m unittest scripts/tests/test_check_recording.py -v

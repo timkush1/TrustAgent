@@ -4,16 +4,21 @@
  * when it was not the model's answer, "Was this right?" (labels, D59), and the links to the
  * check that drove the outcome: "Open evaluator" (its Calibration tab when a block was capped for
  * want of a calibration) and "Adjust threshold" (its route in Policies, with the threshold editor
- * open).
+ * open). The static site has neither page: it links the check into Studio, which opens a copy
+ * with the free threshold what-if, and says that changing the route needs a stack (RP-4).
  */
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUpRight, SlidersHorizontal } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import { useId, type MouseEvent } from 'react';
+import { DisabledReason } from '@/components/common/DisabledReason';
+import { Ticked } from '@/components/common/Ticked';
+import { useStaticReason } from '@/components/common/useWriteAccess';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
+import { Button } from '@/components/ui/button';
 import { reasonLines } from '@/components/traffic/trafficRows';
 import { checkedAgainst, copy, traceOutcome } from '@/domain/presentation';
 import { formatDateTime } from '@/domain/format';
-import { evalRefId } from '@/domain/words/evaluators';
+import { evalRefId, evalRefVersion } from '@/domain/words/evaluators';
 import type { GateDecisionView, LabelView, TraceDetail, TraceSummary } from '@/types/api';
 import { evaluatorName, primaryCheck, type Delivered } from './traceView';
 import { WasThisRight } from './WasThisRight';
@@ -61,6 +66,9 @@ export function OutcomeCard({
   const check = primaryCheck(decision);
   // A block capped for want of a calibration (D56) is fixed on the check's Calibration tab.
   const needsCalibration = summary.reasons.some((r) => CALIBRATION_CAPS.has(r));
+  const staticReason = useStaticReason();
+  const staticReasonId = useId();
+  const studioVersion = check ? evalRefVersion(check.ref) : null;
   return (
     <section aria-labelledby="outcome-title" className="space-y-3 rounded-lg border border-border bg-surface p-4">
       <h2 id="outcome-title" className="sr-only">
@@ -81,7 +89,12 @@ export function OutcomeCard({
           ))}
         </ul>
       ) : null}
-      {outcome.next_step ? <p className="text-sm text-fg-muted">{outcome.next_step}</p> : null}
+      {/* A header the app received is backticked in the contract, and reads as code. */}
+      {outcome.next_step ? (
+        <p className="text-sm text-fg-muted">
+          <Ticked text={outcome.next_step} />
+        </p>
+      ) : null}
       {receivedTarget && (delivered === 'fallback' || delivered === 'blocked') && !summary.redacted ? (
         <a
           href={`#${receivedTarget}`}
@@ -92,7 +105,47 @@ export function OutcomeCard({
           <ArrowDown aria-hidden="true" className="size-3.5" />
         </a>
       ) : null}
-      {check ? (
+      {check && staticReason && studioVersion !== null ? (
+        // The static site has no evaluator library or policy editor, but its Studio opens a copy of
+        // the check with the free threshold what-if (Quick calibration): link there, and say what
+        // still needs a stack.
+        <div className="space-y-1" data-static-actions>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Link
+              to="/app/evaluators/studio/$id/$version"
+              params={{ id: evalRefId(check.ref), version: String(studioVersion) }}
+              className={linkClass}
+            >
+              <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+              {copy.trace.open_in_studio}
+              <span className="sr-only">: {evaluatorName(check.ref, names)}</span>
+            </Link>
+          </p>
+          <p className="text-xs text-fg-muted">
+            {copy.trace.studio_static_note} {staticReason.fix}
+          </p>
+        </div>
+      ) : check && staticReason ? (
+        // A check without a version cannot open in Studio: both actions stay in place, disabled
+        // (still focusable), and one reason under them says how to get them.
+        <div className="space-y-1" data-static-actions>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="secondary" disabled aria-describedby={staticReasonId}>
+              <ArrowUpRight aria-hidden="true" />
+              {copy.trace.open_evaluator}
+              <span className="sr-only">: {evaluatorName(check.ref, names)}</span>
+            </Button>
+            <Button size="sm" variant="secondary" disabled aria-describedby={staticReasonId}>
+              <SlidersHorizontal aria-hidden="true" />
+              {copy.trace.adjust_threshold}
+              <span className="sr-only">
+                : {evaluatorName(check.ref, names)} on {summary.route}
+              </span>
+            </Button>
+          </div>
+          <DisabledReason id={staticReasonId} reason={staticReason} />
+        </div>
+      ) : check ? (
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <Link
             to="/app/evaluators/$id"
