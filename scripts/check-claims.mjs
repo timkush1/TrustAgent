@@ -332,7 +332,7 @@ function machineText(claim, measured, read) {
   if (raw === null) return { text: 'machine unknown', problem: `${path} (the run behind ${claim.id}) is missing` };
   try {
     const env = JSON.parse(raw.toString('utf8')).environment;
-    return { text: `measured on ${env.cpu_model}, ${env.cores} cores, ${env.mem_gb} GB RAM, ${env.os}`, problem: null };
+    return { text: `measured on ${env.cpu_model}, ${env.cores} logical CPUs and ${env.mem_gb} GB RAM visible to ${env.os}`, problem: null };
   } catch (err) {
     return { text: 'machine unknown', problem: `${path}: ${err.message}` };
   }
@@ -1344,7 +1344,7 @@ function selfTestRun(check) {
       measuredText.includes('<!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]') &&
         measuredText.includes('<!-- claim:meas_overhead --> 1.23 ms p50 [measured]') &&
         measuredText.includes('<!-- claim:meas_latency --> 212.4 ms p50 [measured]') &&
-        measuredText.includes('measured on Test CPU, 10 cores, 8 GB RAM, Linux') &&
+        measuredText.includes('measured on Test CPU, 10 logical CPUs and 8 GB RAM visible to Linux') &&
         measuredText.includes('From the measured runs bench-1, load-1 (bench-publish, 2026-11-02).'),
       measuredText);
 

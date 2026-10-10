@@ -813,6 +813,9 @@ class ReportGatewayMdTest(unittest.TestCase):
             block = report.gateway_block(run)
             self.assertIn("docs/benchmarks/load/newer.json", block)
             self.assertIn("**Measured** (k6, simulated vendors", block)
+            # The machine as the run saw it (a VM's share on WSL2), and the header's resolution.
+            self.assertIn("logical CPUs and", block)
+            self.assertIn("whole milliseconds", block)
             self.assertIn(
                 "| (c) flag, mock Jev 0 ms | overhead header | 600 | 1.2 ms | 2.4 ms | 3.9 ms | p95 < 10.0 ms | met |",
                 block,
