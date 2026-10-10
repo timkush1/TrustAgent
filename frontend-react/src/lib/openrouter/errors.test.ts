@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/data/errors';
 import { liveActionLabel, liveErrorWords, liveMessage } from '@/domain/words/live';
+import { copy } from '@/domain/presentation';
 import { GateRefusedError } from '@/lib/gate/runner';
 import {
   checkContentType,
@@ -48,7 +49,7 @@ function classifyFixture(f: VendorFixture): ApiError | null {
 /** Every vendor fixture: its kind (null for a usable 2xx), whether it is retryable and billable (D101). */
 const TABLE: Record<string, { kind: string | null; retryable: boolean; billable: boolean; message: LiveMessageId | null }> = {
   'auth_keys.200': { kind: null, retryable: false, billable: true, message: null },
-  'auth_keys.400': { kind: 'bad_request', retryable: false, billable: false, message: 'errors.bad_response' },
+  'auth_keys.400': { kind: 'bad_request', retryable: false, billable: false, message: 'errors.bad_request' },
   'auth_keys.403': { kind: 'auth', retryable: false, billable: false, message: 'errors.unauthorized' },
   'chat.200_usage_cost': { kind: null, retryable: false, billable: true, message: null },
   'decisions.200': { kind: null, retryable: false, billable: true, message: null },
@@ -130,6 +131,16 @@ describe('errors: classifyStatus beyond the fixtures', () => {
     expect(liveErrorView(cls(503))).toMatchObject({ message: 'retry_busy', actions: ['retry'] });
     expect(liveErrorView(cls(429, {}, { 'retry-after': '2' }))).toMatchObject({ message: 'errors.rate_limited', actions: ['retry'] });
     expect(cls(429, {}, { 'retry-after': '2' }).retryAfterMs).toBe(2000);
+  });
+
+  it('a refused request and a missing model have their own sentences and no Retry (D157)', () => {
+    for (const status of [400, 422, 418]) expect(liveErrorView(cls(status, { error: { message: 'bad question type' } }))).toMatchObject({ message: 'errors.bad_request', actions: [] });
+    expect(liveErrorView(cls(404, { error: { message: 'Model not found' } }))).toMatchObject({ message: 'errors.not_found', actions: [] });
+    expect(liveErrorView(classifyFixture(byName['decisions.403_moderation'])!)).toMatchObject({ message: 'errors.moderation', actions: [] });
+    // The data-policy 404 keeps its own sentence and the privacy settings link.
+    expect(liveErrorView(classifyFixture(byName['decisions.404_data_policy'])!)).toMatchObject({ message: 'errors.data_policy' });
+    expect(liveMessage('errors.bad_request')).toBe(copy.playground_live.errors.bad_request);
+    expect(liveMessage('errors.not_found')).toBe(copy.playground_live.errors.not_found);
   });
 
   it('an error body that reports usage is billable', () => {
