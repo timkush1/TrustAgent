@@ -1,5 +1,5 @@
 /**
- * Studio on the static site (D107, SS-3/SS-4), through the route tree with the static plane over
+ * Studio on the static site (D107), through the route tree with the static plane over
  * fakes: without a key "Start from a template" is the primary start and drafting is a disabled
  * action that says why and offers Connect; with a key, Draft with AI shows the judge and the
  * estimate and drafts through the tab's chat client; the test bench shows the estimate before Run,
@@ -36,7 +36,7 @@ const NO_PATTERN = 'cmp0e2eZq7Lw4Rt9Yx2Vb6Nm';
 
 const view: { current: StudioLiveView } = { current: liveView({}) };
 function liveView(over: Partial<StudioLiveView>): StudioLiveView {
-  return { checks: true, drafting: true, connected: false, key: null, judgeModel: 'anthropic/claude-haiku-4.5', jevModel: 'typesafe/jev-1.13', maxCalls: 100, maxTokens: 8000, used: null, ...over };
+  return { checks: true, drafting: true, connected: false, key: null, judgeModel: 'anthropic/claude-haiku-4.5', jevModel: 'typesafe/jev-1.13', maxCalls: 100, maxTokens: 8000, used: 0, inflight: 0, paused: false, resume: () => {}, ...over };
 }
 
 vi.mock('@/components/replay/useReplay', async (importOriginal) => ({
@@ -166,6 +166,20 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     await user.click(within(describe).getByRole('button', { name: 'Draft with AI' }));
     const alert = await within(describe).findByRole('alert');
     expect(alert).toHaveTextContent(`Couldn't draft: ${copy.playground_live.errors.no_credits}`);
+  });
+
+  it('asking for a draft again is the Retry the paused caps offer: it resumes them first', async () => {
+    const resume = vi.fn();
+    view.current = liveView({ connected: true, key: KEY, used: 7, paused: true, resume });
+    const user = userEvent.setup();
+    const chat = fakeChat([chatAnswer(JSON.stringify(EXAMPLE))]);
+    renderApp('/app/evaluators/studio', staticSource({ chat }));
+    const describe = await screen.findByRole('region', { name: /Step 1: Describe a check in plain English/ });
+    expect(within(describe).getByText('7 of 100 calls to OpenRouter (checks and AI drafts)')).toBeInTheDocument();
+    await user.type(within(describe).getByRole('textbox', { name: 'What should TrustAgent check?' }), 'Flag answers that recommend a competitor.');
+    await user.click(within(describe).getByRole('button', { name: 'Draft with AI' }));
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(await within(describe).findByText(/Drafted “.+” with anthropic\/claude-haiku-4\.5/)).toBeInTheDocument();
   });
 
   it('test bench: the estimate first, Run needs a key, and at the cap Run is disabled with a reason', async () => {

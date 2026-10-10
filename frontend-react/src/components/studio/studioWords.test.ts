@@ -8,6 +8,9 @@ import { describe, expect, it } from 'vitest';
 import dryRunFixture from '@contracts/fixtures/api/DryRunResult.done.json';
 import type { DryRunResult } from '@/types/api';
 import { copy } from '@/domain/presentation';
+import { ApiError } from '@/data/errors';
+import { openRouterError, transportError } from '@/lib/openrouter/errors';
+import { OPENROUTER_ERROR_KINDS } from '@/lib/openrouter/types';
 import {
   riskLevelsLine,
   studioCallsUsedText,
@@ -17,7 +20,7 @@ import {
   studioDryRunExtrapolated,
   studioDryRunResultText,
   studioGroupExamples,
-  studioLiveFailureText,
+  studioLiveFailure,
   studioQuestionParts,
 } from './studioWords';
 
@@ -99,21 +102,42 @@ describe('riskLevelsLine', () => {
 
 describe('the static Studio’s failure words (D101, CO-8)', () => {
   const limits = { maxCalls: 100, maxTokens: 8000 };
+  /** A refusal by the tab's caps, as the static plane reports it (staticPlane refusedError). */
+  const refusedError = (reason: string) => new ApiError({ kind: 'http', status: 429, code: reason, message: 'refused' });
 
   it('words the tab’s caps as the live Playground does', () => {
     expect(studioCapReachedText(100)).toBe('This demo stops after 100 calls to OpenRouter (checks and AI drafts). Run it yourself for more.');
-    expect(studioLiveFailureText('cap_reached', limits)).toBe(studioCapReachedText(100));
-    expect(studioLiveFailureText('token_cap', limits)).toBe("This check is larger than this demo's limit of 8,000 tokens per call. Shorten the documents or the answer.");
-    expect(studioLiveFailureText('rejected_pause', limits)).toBe(copy.playground_live.rejected_pause);
+    expect(studioLiveFailure(refusedError('cap_reached'), limits)).toEqual({ text: studioCapReachedText(100), hint: null });
+    expect(studioLiveFailure(refusedError('token_cap'), limits)?.text).toBe("This check is larger than this demo's limit of 8,000 tokens per call. Shorten the documents or the answer.");
+    expect(studioLiveFailure(refusedError('rejected_pause'), limits)?.text).toBe(copy.playground_live.rejected_pause);
     expect(studioCallsUsedText(3, 100)).toBe('3 of 100 calls to OpenRouter (checks and AI drafts)');
   });
 
-  it('words each OpenRouter failure kind, and leaves the rest to the error’s own message', () => {
-    expect(studioLiveFailureText('auth', limits)).toBe(copy.playground_live.errors.unauthorized);
-    expect(studioLiveFailureText('credits', limits)).toBe(copy.playground_live.errors.no_credits);
-    expect(studioLiveFailureText('network', limits)).toBe(copy.playground_live.errors.network);
-    expect(studioLiveFailureText('validation_failed', limits)).toBeNull();
-    expect(studioLiveFailureText('constructor', limits)).toBeNull();
+  it('words each OpenRouter failure as the live Playground does (liveErrorView)', () => {
+    const words = (err: unknown) => studioLiveFailure(err, limits)?.text ?? null;
+    expect(words(openRouterError('auth', { status: 401, message: 'no' }))).toBe(copy.playground_live.errors.unauthorized);
+    expect(words(openRouterError('credits', { status: 402, message: 'no' }))).toBe(copy.playground_live.errors.no_credits);
+    expect(words(openRouterError('credits', { status: 402, message: 'no', details: { in_flight: true } }))).toBe(copy.playground_live.errors.credits_inflight);
+    expect(words(openRouterError('retryable', { status: 429, message: 'slow down' }))).toBe(copy.playground_live.errors.rate_limited);
+    expect(words(openRouterError('retryable', { status: 503, message: 'busy' }))).toBe(copy.playground_live.retry_busy);
+    expect(words(openRouterError('bad_request', { status: 403, message: 'flagged', details: { moderation: true } }))).toBe(copy.playground_live.errors.moderation);
+    expect(words(transportError('timeout', 0))).toBe(copy.playground_live.errors.timeout);
+    // Every OpenRouter kind has a sentence (never the raw code or a blank).
+    for (const kind of OPENROUTER_ERROR_KINDS.filter((k) => k !== 'aborted')) {
+      expect(words(openRouterError(kind, { status: 400, message: 'x' })), kind).toMatch(/\w+ \w+ \w+/);
+    }
+  });
+
+  it('adds why nothing was billed when the browser blocked the request, and says nothing about a cancel', () => {
+    expect(studioLiveFailure(transportError('network', 0), limits)).toEqual({ text: copy.playground_live.errors.network, hint: copy.playground_live.browser_blocked });
+    expect(studioLiveFailure(transportError('network', 502), limits)?.hint).toBeNull();
+    expect(studioLiveFailure(transportError('aborted', 0), limits)).toBeNull();
+  });
+
+  it('leaves any other error to its own message', () => {
+    expect(studioLiveFailure(new ApiError({ kind: 'http', status: 422, code: 'validation_failed', message: 'x' }), limits)).toBeNull();
+    expect(studioLiveFailure(new ApiError({ kind: 'http', status: 400, code: 'constructor', message: 'x' }), limits)).toBeNull();
+    expect(studioLiveFailure(new Error('boom'), limits)).toBeNull();
   });
 
   it('says out of credits or key refused for a gateway draft, never "engine unavailable" (CO-8)', () => {

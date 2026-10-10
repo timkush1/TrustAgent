@@ -166,6 +166,8 @@ export function failureReason(err: unknown): string {
   // The per-call token cap refused the sample before any call: too large to send.
   if (err instanceof GateRefusedError && err.reason === 'token_cap') return 'error:too_large';
   const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  // A timeout is its own request status, as in Go (decision.RequestTimeout); other kinds are error:<kind>.
+  if (code === 'timeout') return 'timeout';
   return typeof code === 'string' && code !== '' ? `error:${code}` : 'error:internal';
 }
 

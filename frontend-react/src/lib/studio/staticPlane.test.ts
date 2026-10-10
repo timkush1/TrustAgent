@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The static Studio plane (D107, SS-2) on fakes: drafting through the tab's chat client (checked
+ * The static Studio plane (D107) on fakes: drafting through the tab's chat client (checked
  * as the gateway checks a draft, priced vendor or estimate, refused by the caps), testing through
  * runGate on a one-evaluator route (latest + 1, one slot per sample, rows like gstudio ResultOf,
  * fatal and per-sample failures), samples from the committed recording, quick calibration, and
@@ -188,7 +188,8 @@ describe('testEvaluator', () => {
     const flaky = fakeJev((state) => (String(state.assistant_response).includes('fine') ? timeout : { type: 'noul', noul: 0.1 }));
     const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev: flaky }), registry });
     const out = await plane.testEvaluator({ spec, samples });
-    expect(out.results[1]).toMatchObject({ sample_id: 's2', status: 'error', reason: 'error:timeout', fires: null, cost_usd: 0 });
+    // A timed-out request keeps the request status `timeout` (Go studio Runner, decision.RequestTimeout).
+    expect(out.results[1]).toMatchObject({ sample_id: 's2', status: 'error', reason: 'timeout', fires: null, cost_usd: 0 });
     expect(out.results.map((r) => r.status)).toEqual(['assessed', 'error', 'assessed']);
 
     const auth = new ApiError({ kind: 'http', status: 401, code: 'auth', message: 'refused' });

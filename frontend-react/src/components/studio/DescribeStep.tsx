@@ -29,7 +29,7 @@ import { draftSamples, draftToSpec } from '@/lib/studio/draftToSpec';
 import { draftEstimate } from '@/lib/studio/estimate';
 import { BLANK_TEMPLATE, blankSpec, specFromTemplate, STUDIO_TEMPLATES } from '@/lib/studio/templates';
 import type { EvaluatorSpec, StudioDraftResponse, StudioSample, SystemStatus } from '@/types/api';
-import { studioCallsUsedText, studioCapReachedText, studioCostLabel, studioDraftFailureText, studioLiveFailureText } from './studioWords';
+import { studioCallsUsedText, studioCapReachedText, studioCostLabel, studioDraftFailureText, studioLiveFailure } from './studioWords';
 import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { StudioStep } from './StudioStep';
@@ -77,9 +77,10 @@ function staticDraftReason(live: StudioLiveView): Reason | null {
 function DraftFailure({ error, live }: { error: unknown; live: StudioLiveView | null }) {
   const failure = describeError(error);
   const code = isApiError(error) ? error.code : null;
-  const words = code === null ? null : live ? studioLiveFailureText(code, live) : studioDraftFailureText(code);
+  const liveWords = live ? studioLiveFailure(error, live) : null;
+  const words = liveWords?.text ?? (code !== null && !live ? studioDraftFailureText(code) : null);
   const providerRefused = !live && (code === 'no_credits' || code === 'judge_unauthorized');
-  const hint = words || providerRefused ? null : errorCodeHint(error);
+  const hint = liveWords ? liveWords.hint : words || providerRefused ? null : errorCodeHint(error);
   return (
     <div role="alert" className="space-y-1 rounded-md border border-border p-3 text-sm">
       <p className="flex items-start gap-1.5 text-fg">
@@ -242,6 +243,8 @@ export function DescribeStep({ judge: serverJudge, routes, taken, writeReason, h
             {(p) => (
               <Button variant={!noJudge && !hasCheck ? 'primary' : 'secondary'} pending={draft.isPending} onClick={() => {
                   starts.current += 1;
+                  // Asking again is the Retry the paused caps offer (copy.playground_live.rejected_pause).
+                  live?.resume();
                   draft.mutate(starts.current);
                 }} {...p}>
                 <Sparkles aria-hidden="true" />
@@ -258,7 +261,7 @@ export function DescribeStep({ judge: serverJudge, routes, taken, writeReason, h
               <CostFigure usd={estimate.usd} label={estimate.label} basis={estimate.basis} subject="Cost of one draft" />
             </p>
           ) : null}
-          {live && live.used !== null ? <p className="text-xs text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</p> : null}
+          {live && (live.connected || live.used > 0) ? <p className="text-xs text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</p> : null}
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <Field label="Start from a template" className="min-w-56">

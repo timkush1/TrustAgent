@@ -7,7 +7,10 @@
 import { CircleCheck, CircleDashed, CircleX, Flag, MinusCircle, type LucideIcon } from 'lucide-react';
 import type { Tone } from '@/domain/contracts';
 import { formatCount, formatRisk, formatUsd } from '@/domain/format';
+import { isApiError } from '@/data/errors';
 import { copy, fillTemplate, humanizeId, levelWord } from '@/domain/presentation';
+import { liveErrorView } from '@/lib/openrouter/errors';
+import { OPENROUTER_ERROR_KINDS } from '@/lib/openrouter/types';
 import type { CostRecord, DryRunResult, EvaluatorResultStatus, StudioSamplesRequest, ValueLabel } from '@/types/api';
 
 const humanize = (id: string) => humanizeId(id.replace(/^det:/, ''));
@@ -240,20 +243,6 @@ export function riskLevelsLine(outcomes: { warn_at: number; critical_at?: number
 
 // ------------------------------------------------------------------------ static (browser) Studio
 
-/** The words of an OpenRouter error kind (lib/openrouter OpenRouterErrorKind) a browser call failed with. */
-const LIVE_ERRORS: Readonly<Record<string, string>> = {
-  auth: copy.playground_live.errors.unauthorized,
-  credits: copy.playground_live.errors.no_credits,
-  data_policy: copy.playground_live.errors.data_policy,
-  too_large: copy.playground_live.errors.too_large,
-  retryable: copy.playground_live.retry_busy,
-  timeout: copy.playground_live.errors.timeout,
-  network: copy.playground_live.errors.network,
-  bad_response: copy.playground_live.errors.bad_response,
-  bad_content_type: copy.playground_live.errors.bad_response,
-  rejected_pause: copy.playground_live.rejected_pause,
-};
-
 /** copy.playground_live.checks_used: "{n} of {max} calls to OpenRouter (checks and AI drafts)". */
 export function studioCallsUsedText(used: number, max: number): string {
   return fillTemplate(copy.playground_live.checks_used, { n: formatCount(used), max: formatCount(max) });
@@ -264,15 +253,46 @@ export function studioCapReachedText(maxCalls: number): string {
   return fillTemplate(copy.playground_static.cap_reached, { max_calls: formatCount(maxCalls) });
 }
 
+/** What a static Studio call that failed, or was refused before it went out, says (D101). */
+export interface StudioLiveFailure {
+  text: string;
+  /** A second sentence (the browser blocked the request), or null. */
+  hint: string | null;
+}
+
+/** A sentence of copy.playground_live by its LiveMessageId path ("errors.timeout", "retry_busy"). */
+function liveSentence(id: string): string | null {
+  let node: unknown = copy.playground_live;
+  for (const part of id.split('.')) {
+    if (typeof node !== 'object' || node === null || !Object.hasOwn(node, part)) return null;
+    node = (node as Record<string, unknown>)[part];
+  }
+  return typeof node === 'string' ? node : null;
+}
+
 /**
- * The words for a static Studio call that failed or was refused before it went out (D101): an
- * OpenRouter error kind, or the tab's caps. Null for a code these words do not cover (the caller
- * shows the error's own message) and for a cancelled call.
+ * The words for a static Studio call that failed or was refused before it went out (D101): the
+ * tab's caps by the ledger's reason, and an OpenRouter failure in the live Playground's own words
+ * (lib/openrouter liveErrorView, D157, D159). Null for an error these words do not cover (the
+ * caller shows the error's own message) and for one the viewer needs no words for (a cancel).
  */
-export function studioLiveFailureText(code: string, limits: { maxCalls: number; maxTokens: number }): string | null {
-  if (code === 'cap_reached') return studioCapReachedText(limits.maxCalls);
-  if (code === 'token_cap') return fillTemplate(copy.playground_live.token_cap, { max_tokens: formatCount(limits.maxTokens) });
-  return Object.hasOwn(LIVE_ERRORS, code) ? LIVE_ERRORS[code] : null;
+export function studioLiveFailure(error: unknown, limits: { maxCalls: number; maxTokens: number }): StudioLiveFailure | null {
+  if (!isApiError(error)) return null;
+  const plain = (text: string): StudioLiveFailure => ({ text, hint: null });
+  switch (error.code) {
+    case 'cap_reached':
+      return plain(studioCapReachedText(limits.maxCalls));
+    case 'token_cap':
+      return plain(fillTemplate(copy.playground_live.token_cap, { max_tokens: formatCount(limits.maxTokens) }));
+    case 'rejected_pause':
+      return plain(copy.playground_live.rejected_pause);
+  }
+  if (!(OPENROUTER_ERROR_KINDS as readonly string[]).includes(error.code)) return null;
+  const view = liveErrorView(error);
+  const text = view.silent ? null : liveSentence(view.message);
+  if (text === null) return null;
+  // A refused key is forgotten at once, so the action's own reason then offers Connect (no second button here).
+  return { text, hint: view.hint === null ? null : liveSentence(view.hint) };
 }
 
 /** The words for a gateway draft the judge's provider refused (CO-8): out of credits, or the key refused. */

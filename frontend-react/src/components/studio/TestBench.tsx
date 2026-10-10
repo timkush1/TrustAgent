@@ -26,7 +26,7 @@ import { testCostSource } from '@/lib/studio/costSource';
 import { testEstimate } from '@/lib/studio/estimate';
 import { benchAt, runKeys, type Expected } from '@/lib/studio/testBench';
 import type { DecisionBackend, DecisionModelStatus, EvaluatorSpec, StudioSample, StudioTestResponse, ValueLabel } from '@/types/api';
-import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCapReachedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailureText } from './studioWords';
+import { STUDIO_SIMULATED_TEST, studioAgreementWords, studioCallsUsedText, studioCapReachedText, studioCostLabel, studioExpectedWords, studioFireWords, studioLiveFailure } from './studioWords';
 import { ConnectKeyFix } from './ConnectKeyFix';
 import { CostFigure } from './CostFigure';
 import { SimulatedRunNote } from './SimulatedRunNote';
@@ -70,7 +70,7 @@ function staticRunReason(live: StudioLiveView, samples: number): Reason | null {
   if (!live.connected) return { text: 'Testing calls OpenRouter with your key from this tab. Connect or paste a key first.', fix: <ConnectKeyFix /> };
   const left = callsLeft(live);
   if (left === 0) return { text: studioCapReachedText(live.maxCalls) };
-  if (left !== null && left < samples) return { text: `This test needs ${formatCount(samples)} calls · ${studioCallsUsedText(live.used ?? 0, live.maxCalls)}` };
+  if (left < samples) return { text: `This test needs ${formatCount(samples)} calls · ${studioCallsUsedText(live.used + live.inflight, live.maxCalls)}` };
   return null;
 }
 
@@ -209,7 +209,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
   const summary = run ? benchAt(run.response.results, labels, threshold) : null;
   const bySample = new Map(samples.map((s) => [s.id, s]));
   const failure = test.error && !(isApiError(test.error) && test.error.code === 'aborted') ? describeError(test.error) : null;
-  const failureWords = failure && live && isApiError(test.error) ? studioLiveFailureText(test.error.code, live) : null;
+  const liveFailure = failure && live ? studioLiveFailure(test.error, live) : null;
   const runCost = run ? runCostOf(run.response) : null;
 
   return (
@@ -225,7 +225,16 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
         <DisabledAction reason={runReason}>
           {(p) => (
-            <Button variant={primary ? 'primary' : 'secondary'} pending={test.isPending} onClick={() => test.mutate({ spec, samples })} {...p}>
+            <Button
+              variant={primary ? 'primary' : 'secondary'}
+              pending={test.isPending}
+              onClick={() => {
+                // Running again is the Retry the paused caps offer (copy.playground_live.rejected_pause).
+                live?.resume();
+                test.mutate({ spec, samples });
+              }}
+              {...p}
+            >
               {run ? <RefreshCw aria-hidden="true" /> : null}
               {run ? 'Run again' : 'Run test'}
             </Button>
@@ -238,16 +247,17 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
             {backend ? <span>· {decisionBackendLabel(backend)}</span> : null}
           </span>
         ) : null}
-        {live && live.used !== null ? <span className="text-sm text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</span> : null}
+        {live && (live.connected || live.used > 0) ? <span className="text-sm text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</span> : null}
       </div>
 
       {failure ? (
         <div role="alert" className="space-y-1 rounded-md border border-border p-3 text-sm">
           <p className="flex items-start gap-1.5 text-fg">
             <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-tone-danger" />
-            The test did not run: {failureWords ?? failure.message}
+            The test did not run: {liveFailure?.text ?? failure.message}
           </p>
-          {!failureWords && errorCodeHint(test.error) ? <p className="text-fg-muted">{errorCodeHint(test.error)}</p> : null}
+          {liveFailure?.hint ? <p className="text-fg-muted">{liveFailure.hint}</p> : null}
+          {!liveFailure && errorCodeHint(test.error) ? <p className="text-fg-muted">{errorCodeHint(test.error)}</p> : null}
           {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
         </div>
       ) : null}

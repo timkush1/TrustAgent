@@ -92,7 +92,8 @@ describe('failureReason', () => {
   it('names the stage or the transport code', () => {
     expect(failureReason(new CompileError('question does not fit in a request with the state: q needs 99999 tokens'))).toBe('error:too_large');
     expect(failureReason(new CompileError('no spec for evaluator x@1'))).toBe('error:compile');
-    expect(failureReason({ code: 'timeout' })).toBe('error:timeout');
+    expect(failureReason({ code: 'timeout' })).toBe('timeout');
+    expect(failureReason({ code: 'network' })).toBe('error:network');
     expect(failureReason(new Error('boom'))).toBe('error:internal');
   });
 });

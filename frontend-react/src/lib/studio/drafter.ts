@@ -21,7 +21,7 @@
 import prompt from '@contracts/prompts/evaluator-drafter.v1.json';
 import { DEFAULT_CPT } from '@/lib/decision/tokens';
 import { checkSpecDocument } from '@/lib/evaluator/checkSpec';
-import type { ChatCall, ChatResult, LedgerRefusal, UsageLedger } from '@/lib/openrouter/types';
+import type { CallUsage, ChatCall, ChatResult, LedgerRefusal, UsageLedger } from '@/lib/openrouter/types';
 
 /** The drafter prompt's id and version, for cost records and tests. */
 export const DRAFTER_PROMPT_ID = `${prompt.id}.v${prompt.version}`;
@@ -229,6 +229,13 @@ function failedStatus(err: unknown): number {
   return typeof status === 'number' && Number.isInteger(status) && status >= 0 ? status : 0;
 }
 
+/** The usage a failed response reported (an OpenRouter ApiError's details.usage): it is then billable (D101). */
+function failedUsage(err: unknown): CallUsage | undefined {
+  const details = typeof err === 'object' && err !== null ? (err as { details?: unknown }).details : undefined;
+  const usage = typeof details === 'object' && details !== null ? (details as { usage?: unknown }).usage : undefined;
+  return typeof usage === 'object' && usage !== null && typeof (usage as CallUsage).input_tokens === 'number' ? (usage as CallUsage) : undefined;
+}
+
 /** A call that ended without a whole answer: max_tokens cut it (OpenAI and Anthropic spellings). */
 const truncated = (r: ChatResult) => r.finish_reason === 'length' || r.finish_reason === 'max_tokens';
 
@@ -260,7 +267,7 @@ export async function draftEvaluator(input: DraftInput, deps: DrafterDeps): Prom
         deps.signal,
       );
     } catch (err) {
-      deps.ledger.settle(failedStatus(err));
+      deps.ledger.settle(failedStatus(err), failedUsage(err));
       if (attempt === 0) throw err;
       break; // keep the first draft and its errors
     }

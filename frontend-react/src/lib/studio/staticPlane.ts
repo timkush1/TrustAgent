@@ -173,7 +173,7 @@ export function createStaticStudioPlane(deps: StudioTapeDeps, options: StaticStu
       try {
         run = await draftEvaluator(
           { description, routeName: route, routeDescription: route === '' ? '' : registry.routeDescription(route), existingIds },
-          { chat, ledger: live.ledger(), model: live.judgeModel, signal },
+          { chat, ledger: live.ledger(live.judgeModel), model: live.judgeModel, signal },
         );
       } catch (err) {
         if (err instanceof DraftRefusedError) throw refusedError(err.reason);
@@ -214,7 +214,7 @@ export function createStaticStudioPlane(deps: StudioTapeDeps, options: StaticStu
       const specs = registry.specs();
       specs.set(unsaved.ref, unsaved.spec);
       const route = studioTestRoute(policy, unsaved.ref, request.thresholds);
-      const ledger = live.ledger();
+      const ledger = live.ledger(jev.model);
       const stop = new AbortController();
       const onAbort = () => stop.abort(signal?.reason);
       signal?.addEventListener('abort', onAbort, { once: true });

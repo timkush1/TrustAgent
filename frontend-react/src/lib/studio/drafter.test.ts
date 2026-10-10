@@ -10,6 +10,7 @@ import basic from '@contracts/fixtures/prompts/drafter-render.basic.json';
 import escape from '@contracts/fixtures/prompts/drafter-render.escape.json';
 import repair from '@contracts/fixtures/prompts/drafter-render.repair.json';
 import prompt from '@contracts/prompts/evaluator-drafter.v1.json';
+import { ApiError } from '@/data/errors';
 import type { CallUsage, ChatCall, ChatResult, LedgerRefusal, ReserveResult, UsageLedger } from '@/lib/openrouter/types';
 import {
   checkDraft,
@@ -237,6 +238,15 @@ describe('draftEvaluator', () => {
     const ledger = fakeLedger();
     await expect(draftEvaluator(INPUT, { chat, ledger, model: MODEL })).rejects.toThrow('Failed to fetch');
     expect(ledger.settled).toEqual([{ status: 0 }]);
+  });
+
+  it('settles a failed call with the usage its error reported, so the ledger bills it (D101)', async () => {
+    const usage = { input_tokens: 2400, output_tokens: 0, cost: 0.0012 };
+    const failure = new ApiError({ kind: 'invalid_response', status: 200, code: 'bad_response', message: 'no message', details: { usage } });
+    const chat = fakeChat([failure]);
+    const ledger = fakeLedger();
+    await expect(draftEvaluator(INPUT, { chat, ledger, model: MODEL })).rejects.toBe(failure);
+    expect(ledger.settled).toEqual([{ status: 200, usage }]);
   });
 
   it('says when a draft was cut off at the token limit', async () => {
