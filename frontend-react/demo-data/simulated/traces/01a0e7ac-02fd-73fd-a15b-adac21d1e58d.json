@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e73e-2323-755b-a4d3-1878e7c081b7",
+  "trace_id": "01a0e7ac-02fd-73fd-a15b-adac21d1e58d",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:00:04.259Z",
-  "updated_at": "2026-09-28T09:00:05.658Z",
+  "created_at": "2026-09-28T11:00:04.989Z",
+  "updated_at": "2026-09-28T11:00:06.326Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "payments-faq",
@@ -49,11 +49,11 @@
     "tokens": 23
   },
   "timings": {
-    "upstream_ms": 236,
+    "upstream_ms": 159,
     "ttft_ms": null,
-    "gate_ms": 7,
-    "overhead_ms": 260,
-    "total_ms": 496
+    "gate_ms": 6,
+    "overhead_ms": 170,
+    "total_ms": 329
   },
   "decision_model": {
     "backend": "mock",
@@ -61,7 +61,7 @@
     "cost_usd": 0.000023856000000000003
   },
   "audit": {
-    "audit_id": "01a0e73e-2513-74b6-9038-c4f10adf7b83",
+    "audit_id": "01a0e7ac-0446-7d12-8b19-00fdbb82da83",
     "status": "completed",
     "lane": "high",
     "selection": "high",
@@ -118,9 +118,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73e-2323-755b-a4d3-1878e7c081b7",
+      "trace_id": "01a0e7ac-02fd-73fd-a15b-adac21d1e58d",
       "attempt": 0,
-      "created_at": "2026-09-28T09:00:04.502Z",
+      "created_at": "2026-09-28T11:00:05.154Z",
       "route": "payments-faq",
       "policy_version": 1,
       "mode": "fallback",
@@ -266,7 +266,7 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 5,
+        "latency_ms": 4,
         "connect_ms": null,
         "input_tokens": 568,
         "cost_usd": 0.000023856000000000003,
@@ -312,13 +312,13 @@
         "tokens": 23
       },
       "late": false,
-      "gate_ms": 7
+      "gate_ms": 6
     },
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73e-2323-755b-a4d3-1878e7c081b7",
+      "trace_id": "01a0e7ac-02fd-73fd-a15b-adac21d1e58d",
       "attempt": 1,
-      "created_at": "2026-09-28T09:00:04.750Z",
+      "created_at": "2026-09-28T11:00:05.315Z",
       "route": "payments-faq",
       "policy_version": 1,
       "mode": "fallback",
@@ -454,7 +454,7 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 7,
+        "latency_ms": 4,
         "connect_ms": null,
         "input_tokens": 575,
         "cost_usd": 0.00002415,
@@ -500,19 +500,19 @@
         "tokens": 23
       },
       "late": false,
-      "gate_ms": 10
+      "gate_ms": 7
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e73e-2513-74b6-9038-c4f10adf7b83",
-    "trace_id": "01a0e73e-2323-755b-a4d3-1878e7c081b7",
-    "created_at": "2026-09-28T09:00:04.755Z",
+    "audit_id": "01a0e7ac-0446-7d12-8b19-00fdbb82da83",
+    "trace_id": "01a0e7ac-02fd-73fd-a15b-adac21d1e58d",
+    "created_at": "2026-09-28T11:00:05.318Z",
     "route": "payments-faq",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
     "grade": null,
-    "processing_ms": 903,
+    "processing_ms": 1008,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -631,10 +631,10 @@
     },
     "reasoning_trace": "",
     "step_timings": {
-      "decompose_ms": 453,
-      "verify_ms": 430,
+      "decompose_ms": 328,
+      "verify_ms": 660,
       "score_ms": 20,
-      "total_ms": 903
+      "total_ms": 1008
     },
     "unsupported_policy": "hallucination",
     "costs": [
@@ -647,7 +647,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 453,
+        "latency_ms": 328,
         "status": "ok",
         "questions": 0
       },
@@ -660,7 +660,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 430,
+        "latency_ms": 660,
         "status": "ok",
         "questions": 0
       }

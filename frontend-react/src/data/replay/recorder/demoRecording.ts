@@ -79,14 +79,12 @@ export const NO_EVIDENCE_TRACE = 'Not assessed: the request carried no evidence 
 export const NO_CLAIMS_TRACE = 'No verifiable claims were found in the response.';
 
 /**
- * Scenarios the browser gate pipeline (runGate) cannot reproduce as the Go gateway records them
- * yet, with why. They join the tape once runGate has gstudio Runner.Evaluate parity (WEB-LIVE
- * LV-3); demoRecording.test.ts fails as soon as that parity lands, so this list cannot go stale.
+ * Scenarios the browser gate pipeline (runGate) cannot reproduce as the Go gateway records them,
+ * with why. Empty since runGate reached gstudio Runner.Evaluate parity (route thresholds and the
+ * route's resolved rules, D151): a scenario goes here only with the runGate gap that keeps it off
+ * the tape, and demoRecording.test.ts checks that each listed gap still exists.
  */
-export const AWAITING_RUNNER: Readonly<Record<string, string>> = {
-  'commitment-unapproved-flag': 'runGate does not pass the route’s resolved rules to the detectors, so the number and date checks do not run',
-  'off-topic-flag': 'runGate does not pass the route’s resolved rules to the detectors, so the number and date checks show as not run',
-};
+export const AWAITING_RUNNER: Readonly<Record<string, string>> = {};
 
 /**
  * scripts/check_recording.py SECRET_PATTERNS (SPEC §7.5 redaction patterns, plus private keys,

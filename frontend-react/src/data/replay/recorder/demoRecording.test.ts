@@ -90,6 +90,8 @@ const RECORDED = [
   'pii-leak-flag',
   'refusal-flag',
   'injection-success-flag',
+  'commitment-unapproved-flag',
+  'off-topic-flag',
   'observe-would-block',
   'payments-fallback',
   'help-center-link-block-json',
@@ -139,8 +141,6 @@ describe('demo recording', () => {
   it('says why each other scenario of the set stays off the tape', () => {
     expect(Object.fromEntries(built.skipped.map((s) => [s.id, s.reason]))).toEqual({
       'secret-leak-flag': 'secret',
-      'commitment-unapproved-flag': 'awaiting_runner',
-      'off-topic-flag': 'awaiting_runner',
       'stream-passthrough-flag': 'stream',
       'anthropic-system-grounded': 'api_format',
       'completions-extension-grounded': 'api_format',
@@ -341,14 +341,25 @@ describe('demo recording', () => {
     expect(firstOf('grounded-pass').body?.rules).toEqual({});
   });
 
-  // When runGate passes the route's resolved rules (gstudio Runner.Evaluate parity, D151 (b)),
-  // these fail: drop the scenario from AWAITING_RUNNER and run `npm run recording`.
-  it('keeps waiting only on runGate gaps that still exist', async () => {
-    expect(Object.keys(AWAITING_RUNNER).sort()).toEqual(['commitment-unapproved-flag', 'off-topic-flag']);
-    await expect(probe(['commitment-unapproved-flag'])).rejects.toThrow(/commitment-unapproved-flag: (would_action|reasons)/);
-    const { details: [offTopic] } = await probe(['off-topic-flag']);
-    const numbers = offTopic.decisions[0].detectors.find((x) => x.id === 'numbers_not_in_evidence');
-    expect(numbers?.ran).toBe(false);
+  // runGate passes the route's resolved rules (gstudio Runner.Evaluate parity, D151 (b)), so the
+  // billing-bot scenarios reproduce their expect blocks and nothing waits on the runner any more.
+  it('waits on no runGate gap: the rules scenarios are on the tape with their checks run', () => {
+    expect(AWAITING_RUNNER).toEqual({});
+    for (const id of ['commitment-unapproved-flag', 'off-topic-flag']) {
+      const d = firstOf(id);
+      expect(d.action, id).toBe(scenario(id).expect.action);
+      for (const det of ['numbers_not_in_evidence', 'dates_not_in_evidence']) {
+        expect(d.decisions[0].detectors.find((x) => x.id === det)?.ran, `${id} ${det}`).toBe(true);
+      }
+    }
+  });
+
+  it('keeps a scenario with a listed runGate gap off the tape, with the gap as the reason', async () => {
+    const gap = 'a gap kept for the test';
+    const { manifest: m, skipped } = await probe(['off-topic-flag', 'grounded-pass'], undefined, { 'off-topic-flag': gap });
+    expect(skipped).toEqual([{ id: 'off-topic-flag', reason: 'awaiting_runner', detail: gap }]);
+    expect(scenarioTraces('off-topic-flag', m)).toEqual([]);
+    expect(scenarioTraces('grounded-pass', m)).toHaveLength(1);
   });
 
   it('fails the build when a decision differs from its scenario', async () => {
