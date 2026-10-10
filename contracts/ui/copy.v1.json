@@ -565,7 +565,6 @@
       "check_again": "Check again",
       "deep_audit_not_in_browser": "The deep audit (claim by claim, by an LLM judge) does not run in the browser. Run it yourself to see it: {command:demo}",
       "recording_is_simulated": "The examples above replay a simulated recording; a live check is a real call with your key.",
-      "run_locally": "Run it yourself: {command:demo}",
       "callback": {
         "working": "Connecting your OpenRouter key…",
         "missing_verifier": "This sign-in did not start in this tab, so it cannot finish here. Start again with Connect, or paste a key instead.",
