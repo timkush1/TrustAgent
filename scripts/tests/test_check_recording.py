@@ -21,7 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_recording  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-RECORDING = ROOT / "frontend-react" / "public" / "demo" / "recorded"
+# The committed simulated tape (D110: the datasets live in frontend-react/demo-data/). It is always
+# committed, so a missing tape fails setUp instead of skipping the class.
+RECORDING = ROOT / "frontend-react" / "demo-data" / "simulated"
 RECORDED_LABEL = (
     "Recorded 28 Sep 2026 · typesafe/jev-1.13 + anthropic/claude-haiku-4.5 · "
     "scripted answers · replayed, not live"
@@ -36,7 +38,6 @@ except ImportError:  # pragma: no cover - depends on the environment
 
 
 @unittest.skipUnless(HAVE_JSONSCHEMA, "jsonschema is not installed (pip install jsonschema)")
-@unittest.skipUnless((RECORDING / "manifest.json").is_file(), "no committed demo recording")
 class CheckRecordingTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="recording-"))
