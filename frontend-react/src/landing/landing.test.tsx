@@ -32,7 +32,7 @@ import { refundTraceHref } from './refundTrace';
 import { oneLineSnippet } from './snippetLine';
 import { TryIt } from './TryIt';
 import { COMMITMENTS } from './commitments';
-import { STUDIO_HREF } from './links';
+import { demoLinkText, STUDIO_HREF } from './links';
 
 const MOCK_LABEL = 'Simulated (mock checks + mock judge): not model output';
 
@@ -313,6 +313,17 @@ describe('what Jev was asked', () => {
     // The dashboard image's build has its own traffic: no tape trace to point at.
     expect(refundTraceHref('full')).toEqual({ href: DEMO_HREF, exact: false });
     expect(DEMO_HREF).toBe(`${base}app`);
+    // There it opens that stack's own dashboard, so it never calls it the replay.
+    expect([demoLinkText('static'), demoLinkText('full')]).toEqual(['Open the replay', 'Open the dashboard']);
+  });
+
+  it('names the dashboard, not a replay, where the build has no replay', async () => {
+    await renderLanding();
+    // The test build is the full one: the tape card's link and the panel's go to the stack's dashboard.
+    const tape = document.querySelector('[data-tape-card]') as HTMLElement;
+    expect(within(tape).getByRole('link', { name: 'Open the dashboard' })).toHaveAttribute('href', DEMO_HREF);
+    expect(document.querySelector('[data-glassbox-link]')).toHaveTextContent('Open the dashboard');
+    expect(screen.queryByRole('link', { name: 'Open the replay' })).toBeNull();
   });
 });
 

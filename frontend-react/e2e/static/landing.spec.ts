@@ -66,6 +66,7 @@ test.describe('landing', () => {
     await settled(page);
     await expect(page.locator('[data-tape-card]')).toContainText('requests');
     expect(asked.filter((p) => p.includes('/demo/'))).toEqual([]);
+    await expect(page.locator('[data-tape-card]').getByRole('link', { name: 'Open the replay' })).toHaveAttribute('href', /\/TrustAgent\/app\/traffic\/$/);
   });
 
   test('"Try the demo" opens the replay', async ({ page }) => {

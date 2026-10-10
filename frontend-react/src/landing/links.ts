@@ -6,6 +6,14 @@
 import { LIVE_CHECKS } from '@/domain/liveScenarios';
 import { APP_MODE, BASE } from './content';
 
+/**
+ * The words of a link to DEMO_HREF: the static site replays the demo's tape there; the dashboard
+ * image's build opens its own dashboard, which shows that stack's traffic, not a replay.
+ */
+export function demoLinkText(mode: typeof APP_MODE = APP_MODE): string {
+  return mode === 'static' ? 'Open the replay' : 'Open the dashboard';
+}
+
 /** The Studio: a real page of the static site (vite.site.ts STATIC_APP_PAGES), the dashboard's route otherwise. */
 export const STUDIO_HREF = APP_MODE === 'static' ? `${BASE}app/evaluators/studio/` : `${BASE}app/evaluators/studio`;
 

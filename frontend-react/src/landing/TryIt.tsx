@@ -16,7 +16,7 @@ import { playground } from '@/config/runtime';
 import { LIVE_SCENARIOS, liveHref, type LiveScenarioId } from '@/domain/liveScenarios';
 import { splitClaims } from './claims';
 import { BASE, command, DEMO_HREF, OUTCOME_IDS, outcome, outcomeOf } from './content';
-import { LIVE_ON_THIS_SITE } from './links';
+import { demoLinkText, LIVE_ON_THIS_SITE } from './links';
 import { sectionCopy } from './sectionCopy';
 import { buttonClass } from './styles';
 import { ClaimValue, Command, Section } from './ui';
@@ -116,7 +116,7 @@ export function TapeCard() {
       </ul>
       <div className="mt-auto pt-6">
         <a href={DEMO_HREF} className={buttonClass.primary}>
-          Open the replay
+          {demoLinkText()}
           <ArrowRight aria-hidden="true" />
         </a>
       </div>

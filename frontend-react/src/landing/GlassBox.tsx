@@ -10,6 +10,7 @@ import { ArrowRight, FileText } from 'lucide-react';
 import { claim } from './claims';
 import { REFUND } from './content';
 import glassbox from './glassbox.gen.json';
+import { demoLinkText } from './links';
 import { refundTraceHref } from './refundTrace';
 import { ClaimValue, Ticked } from './ui';
 
@@ -78,7 +79,7 @@ export function GlassBox() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm max-sm:px-4">
         <span className="text-xs text-fg-muted">Compiled by the gateway’s own request builder from the demo’s refund scenario.</span>
         <a href={link.href} className="inline-flex items-center gap-1 font-medium text-fg underline underline-offset-2" data-glassbox-link>
-          {link.exact ? 'See this request on the replay' : 'Open the replay'}
+          {link.exact ? 'See this request on the replay' : demoLinkText()}
           <ArrowRight aria-hidden="true" className="size-4" />
         </a>
       </div>
