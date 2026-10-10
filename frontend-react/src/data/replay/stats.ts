@@ -409,8 +409,8 @@ const ROI_BUCKET_MS: Record<CostSeries['bucket'], number> = { '1m': 60_000, '1h'
 
 /**
  * The bucket that fits the played span, as the replay's "Requests by outcome" picks its own: per
- * minute up to an hour (a recording usually spans minutes, which hourly buckets would fold into
- * one point), per hour up to two days, per day beyond.
+ * minute up to an hour (a short recording would fold into one hourly point), per hour up to two
+ * days (the simulated tape spans two hours: three hourly points), per day beyond.
  */
 export function roiBucketOf(spanMs: number): CostSeries['bucket'] {
   if (!(spanMs > 3_600_000)) return '1m';
