@@ -1,45 +1,25 @@
 /**
- * Section 5 (SPEC §8.1): try it. The replay tape is the primary way in. Its card says what the tape
- * is (simulated or recorded), when, and whose answers; a simulated tape says it was generated from
- * the demo's scripted scenarios, never that a running stack recorded it. Trying it live in the
- * browser with your own OpenRouter key arrives in P5 and is shown as coming soon, with no control
- * that pretends to work.
+ * Section 5 (SPEC §8.1): try it. The replay tape is the primary way in. Its card is built at build
+ * time from the dataset this site ships (virtual:trustagent/tape-digest), so the page fetches
+ * nothing: what the tape is (simulated or recorded), when, which fast-check snapshot and judge, how
+ * its requests came out, and five examples. A simulated tape says it was generated from the demo's
+ * scripted scenarios, never that a running stack recorded it.
+ *
+ * Trying it live with your own OpenRouter key opens the static Playground's live section on one of
+ * three scenarios (D99). The landing only links there: it never imports the live code. Where the
+ * browser cannot run live checks, or this is the self-hosted dashboard's build, the card says how to
+ * run the same checks locally instead, so no link goes nowhere.
  */
-import { ArrowRight, CircleCheck, CircleMinus, Flag, Hourglass, type LucideIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { command, copy, DEMO_HREF, outcome, RECORDING_URL } from './content';
-import { Command, Section } from './ui';
+import { ArrowRight, ArrowUpRight, CircleCheck, CircleMinus, CircleX, Eye, Flag, Repeat, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { digest, type TapeDigestTrace } from 'virtual:trustagent/tape-digest';
+import { playground } from '@/config/runtime';
+import { LIVE_SCENARIOS, liveHref, type LiveScenarioId } from '@/domain/liveScenarios';
+import { splitClaims } from './claims';
+import { BASE, command, DEMO_HREF, OUTCOME_IDS, outcome, outcomeOf } from './content';
+import { LIVE_ON_THIS_SITE } from './links';
+import { sectionCopy } from './sectionCopy';
 import { buttonClass } from './styles';
-import outcomesDoc from '@contracts/ui/outcomes.v1.json';
-
-interface TapeTrace {
-  trace_id: string;
-  created_at: string;
-  gate_status: string;
-  action: string | null;
-  would_action: string | null;
-  answer_source: string | null;
-  question_preview: string | null;
-  response_preview: string | null;
-}
-
-interface Tape {
-  kind: 'recorded' | 'mock';
-  label: string;
-  recorded_at: string;
-  traces: TapeTrace[];
-}
-
-type TapeState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; tape: Tape };
-
-/** The first matching rule of ui/outcomes.v1.json, as the dashboard decides it. */
-function outcomeId(t: TapeTrace): string {
-  const fields: Record<string, string | null> = { gate_status: t.gate_status, action: t.action, would_action: t.would_action };
-  for (const rule of outcomesDoc.rules) {
-    if (Object.entries(rule.when).every(([k, list]) => (list as string[]).includes(fields[k] ?? ''))) return rule.outcome;
-  }
-  return 'passed';
-}
+import { ClaimValue, Command, Section } from './ui';
 
 const toneVar: Record<string, string> = {
   success: '--tone-success',
@@ -48,7 +28,16 @@ const toneVar: Record<string, string> = {
   info: '--tone-info',
   neutral: '--tone-neutral',
 };
-const outcomeIcon: Record<string, LucideIcon> = { passed: CircleCheck, flagged: Flag, not_checked: CircleMinus };
+const outcomeIcon: Record<string, LucideIcon> = {
+  passed: CircleCheck,
+  flagged: Flag,
+  blocked: CircleX,
+  replaced: Repeat,
+  would_block: Eye,
+  would_flag: Eye,
+  error: TriangleAlert,
+  not_checked: CircleMinus,
+};
 
 function Pill({ id }: { id: string }) {
   const o = outcome(id);
@@ -69,81 +58,62 @@ function Pill({ id }: { id: string }) {
   );
 }
 
-function useTape(): TapeState {
-  const [state, setState] = useState<TapeState>({ status: 'loading' });
-  useEffect(() => {
-    const ctrl = new AbortController();
-    fetch(RECORDING_URL, { signal: ctrl.signal, headers: { Accept: 'application/json' } })
-      .then(async (res) => {
-        if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) throw new Error(`HTTP ${res.status}`);
-        const doc = (await res.json()) as Tape;
-        if (!Array.isArray(doc.traces) || typeof doc.label !== 'string') throw new Error('not a recording');
-        setState({ status: 'ready', tape: doc });
-      })
-      .catch((err: unknown) => {
-        if (!ctrl.signal.aborted) setState({ status: 'error', message: err instanceof Error ? err.message : String(err) });
-      });
-    return () => ctrl.abort();
-  }, []);
-  return state;
+const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const count = new Intl.NumberFormat('en-US');
+
+/** "scripted answer" / "generated answer": where an example's answer came from. */
+function sourceWords(t: TapeDigestTrace): string | null {
+  if (t.answer_source === 'scripted') return 'scripted answer';
+  if (t.answer_source === 'generated') return 'generated answer';
+  return null;
 }
 
-const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+/** The outcomes in contract order (the order the dashboard lists them), with their counts. */
+function outcomeCounts(): { id: string; n: number }[] {
+  return OUTCOME_IDS.map((id) => ({ id, n: digest.outcomes[id] ?? 0 })).filter(({ n }) => n > 0);
+}
 
-function TapeCard() {
-  const state = useTape();
-  let body;
-  if (state.status === 'loading') {
-    body = (
-      <div aria-busy="true" className="space-y-3">
-        <span className="sr-only" role="status">
-          Loading the recording…
-        </span>
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-9 rounded-md bg-surface-sunken" />
-        ))}
-      </div>
-    );
-  } else if (state.status === 'error') {
-    body = <p className="text-sm text-fg-muted">The recording could not be loaded here ({state.message}); the replay page shows it too.</p>;
-  } else {
-    const { tape } = state;
-    const examples = new Map<string, TapeTrace>();
-    for (const t of tape.traces) examples.set(`${t.question_preview}\u0000${t.response_preview}`, t);
-    const counts = new Map<string, number>();
-    for (const t of tape.traces) counts.set(outcomeId(t), (counts.get(outcomeId(t)) ?? 0) + 1);
-    const sources = [...new Set(tape.traces.map((t) => t.answer_source).filter(Boolean))].join(' and ') || 'unlabelled';
-    body = (
-      <>
-        <p className="text-sm text-fg" data-recording-label>
-          {tape.label}
-        </p>
-        <p className="mt-1 text-xs text-fg-muted">
-          {tape.kind === 'mock'
-            ? `Generated from the zero-key demo’s scripted scenarios, dated ${date.format(Date.parse(tape.recorded_at))}`
-            : `Recorded on ${date.format(Date.parse(tape.recorded_at))}`}{' '}
-          ·{' '}
-          {tape.traces.length} requests · {sources} answers ·{' '}
-          {[...counts.entries()].map(([id, n]) => `${n} ${outcome(id).label.toLowerCase()}`).join(', ')}
-        </p>
-        <ul className="mt-5 space-y-2" aria-label="Requests on the tape">
-          {[...examples.values()].map((t) => (
-            <li key={t.trace_id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
-              <Pill id={outcomeId(t)} />
-              <span className="min-w-0 truncate text-sm text-fg-muted">{t.question_preview}</span>
-            </li>
-          ))}
-        </ul>
-      </>
-    );
-  }
+export function TapeCard() {
+  const total = Object.values(digest.outcomes).reduce((a, n) => a + n, 0);
+  const when = date.format(Date.parse(digest.recorded_at));
   return (
-    <div className="flex flex-col rounded-lg border border-border-strong bg-surface p-6 max-sm:p-4">
+    <div className="flex flex-col rounded-lg border border-border-strong bg-surface p-6 max-sm:p-4" data-tape-card>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-fg">The replay</h3>
         <span className="text-xs text-fg-subtle">replayed, not live</span>
       </div>
-      {body}
+      <p className="text-sm text-fg" data-recording-label>
+        {digest.label}
+      </p>
+      <p className="mt-1 text-xs text-fg-muted">
+        {digest.kind === 'mock' ? `Generated from the zero-key demo’s scripted scenarios, dated ${when}` : `Recorded on ${when}`} · {count.format(total)}{' '}
+        requests · {outcomeCounts().map(({ id, n }) => `${count.format(n)} ${outcome(id).label.toLowerCase()}`).join(', ')}
+      </p>
+      {digest.snapshot || digest.judge ? (
+        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
+          {digest.snapshot ? (
+            <div className="flex gap-1">
+              <dt>Fast check:</dt>
+              <dd className="font-mono text-fg">{digest.snapshot}</dd>
+            </div>
+          ) : null}
+          {digest.judge ? (
+            <div className="flex gap-1">
+              <dt>Judge:</dt>
+              <dd className="font-mono text-fg">{digest.judge}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+      <ul className="mt-5 space-y-2" aria-label="Examples from the tape">
+        {digest.examples.map((t) => (
+          <li key={t.trace_id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
+            <Pill id={outcomeOf(t)} />
+            <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{t.question_preview}</span>
+            {sourceWords(t) ? <span className="shrink-0 text-2xs text-fg-subtle max-sm:hidden">{sourceWords(t)}</span> : null}
+          </li>
+        ))}
+      </ul>
       <div className="mt-auto pt-6">
         <a href={DEMO_HREF} className={buttonClass.primary}>
           Open the replay
@@ -154,41 +124,81 @@ function TapeCard() {
   );
 }
 
-const liveScenarios = ['A grounded answer that passes', 'A refund answer that says 60 days when the policy says 30', 'An answer that leaks a customer’s personal data'];
+/** What each live scenario shows, in the landing's words (keyed by the frozen LIVE_SCENARIOS). */
+const LIVE_WORDS: Record<LiveScenarioId, string> = {
+  'grounded-pass': 'A grounded answer that passes',
+  'refund-contradiction-flag': 'A refund answer that says 60 days when the policy says 30',
+  'pii-leak-flag': 'An answer that leaks a customer’s personal data',
+};
 
-export function TryIt() {
+/** The consent line with the check's cost (its Estimate chip) and the call cap filled in. */
+function CostLine() {
+  const template = sectionCopy.playground_static.consent[1].replace('{cost_per_check}', '{claim:fast_check_cost_per_check}').replace('{max_calls}', count.format(playground.maxCalls));
+  return (
+    <p className="mt-4 text-sm text-fg-muted" data-chip-scope data-live-cost>
+      {splitClaims(template).map((part, i) => ('text' in part ? <span key={i}>{part.text}</span> : <ClaimValue key={i} claim={part.claim} className="inline-flex" />))}
+    </p>
+  );
+}
+
+/**
+ * "Try it live in your browser": three links into the static Playground's live section when the
+ * browser can run live checks; otherwise how to run the same checks locally.
+ */
+
+export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
+  return (
+    <div className="flex flex-col rounded-lg border border-border-strong bg-surface p-6 max-sm:p-4" data-live-card={live ? 'live' : 'local'}>
+      <h3 className="mb-4 text-lg font-semibold text-fg">{live ? 'Try it live in your browser' : 'Run it yourself'}</h3>
+      {live ? (
+        <>
+          <p className="text-sm text-fg-muted">Connect your OpenRouter key and run one of three examples, each with its documents:</p>
+          <ul className="mt-3 space-y-2">
+            {LIVE_SCENARIOS.map((id) => (
+              <li key={id}>
+                <a
+                  href={liveHref(BASE, id)}
+                  data-live-scenario={id}
+                  className="group flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 text-sm text-fg transition-colors hover:border-border-strong hover:bg-surface-hover"
+                >
+                  {LIVE_WORDS[id]}
+                  <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted group-hover:text-fg" />
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-sm text-fg-muted">{sectionCopy.playground_static.consent[0]}</p>
+          <CostLine />
+        </>
+      ) : (
+        <p className="text-sm text-fg-muted">The same checks run on your machine with mock backends and no keys:</p>
+      )}
+      <div className="mt-auto space-y-2 pt-6">
+        {live ? <p className="text-sm text-fg">Or run it all on your machine, no keys needed:</p> : null}
+        <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
+          <span>Run it yourself:</span>
+          <Command command={command('demo')} />
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function TryIt({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
   return (
     <Section
       id="try"
       eyebrow="Try it"
       title="Watch it catch the refund answer."
-      lead="Open the dashboard on a replay of the demo’s traffic: every request, what it was checked against, and the claim the deep audit found contradicted."
+      lead={
+        live
+          ? 'Replay the demo’s traffic in the real dashboard, or run three checks live with your own key.'
+          : 'Replay the demo’s traffic in the real dashboard, or run the same checks on your machine.'
+      }
     >
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <TapeCard />
-        <div className="flex flex-col rounded-lg border border-dashed border-border-strong p-6 max-sm:p-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-fg">Try it live in your browser</h3>
-            <span className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-xs font-medium text-fg-muted">
-              <Hourglass aria-hidden="true" className="size-3.5" />
-              Coming soon
-            </span>
-          </div>
-          <p className="text-sm text-fg-muted">Connect OpenRouter and run three one-click examples, each with its documents:</p>
-          <ul className="mt-3 space-y-1.5 text-sm text-fg">
-            {liveScenarios.map((s) => (
-              <li key={s} className="flex gap-2">
-                <span aria-hidden="true" className="mt-2 size-1 shrink-0 rounded-full bg-fg-subtle" />
-                {s}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-sm text-fg-muted">{copy.playground_static.consent[0]}</p>
-          <div className="mt-auto space-y-2 pt-6">
-            <p className="text-sm text-fg">Until then, the same checks run on your machine with no keys:</p>
-            <Command command={command('demo')} />
-          </div>
-        </div>
+        <LiveCard live={live} />
       </div>
     </Section>
   );
