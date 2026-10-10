@@ -10,7 +10,7 @@
  * browser cannot run live checks, or this is the self-hosted dashboard's build, the card says how to
  * run the same checks locally instead, so no link goes nowhere.
  */
-import { ArrowRight, ArrowUpRight, CircleCheck, CircleMinus, CircleX, Eye, Flag, Repeat, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CircleCheck, CircleMinus, CircleX, Eye, Flag, Repeat, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { digest, type TapeDigestTrace } from 'virtual:trustagent/tape-digest';
 import { playground } from '@/config/runtime';
 import { LIVE_SCENARIOS, liveHref, type LiveScenarioId } from '@/domain/liveScenarios';
@@ -110,7 +110,7 @@ export function TapeCard() {
           <li key={t.trace_id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
             <Pill id={outcomeOf(t)} />
             <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{t.question_preview}</span>
-            {sourceWords(t) ? <span className="shrink-0 text-2xs text-fg-subtle max-sm:hidden">{sourceWords(t)}</span> : null}
+            {sourceWords(t) ? <span className="shrink-0 text-2xs text-fg-subtle">{sourceWords(t)}</span> : null}
           </li>
         ))}
       </ul>
@@ -162,7 +162,7 @@ export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
                   className="group flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 text-sm text-fg transition-colors hover:border-border-strong hover:bg-surface-hover"
                 >
                   {LIVE_WORDS[id]}
-                  <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted group-hover:text-fg" />
+                  <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted group-hover:text-fg" />
                 </a>
               </li>
             ))}

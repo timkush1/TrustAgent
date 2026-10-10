@@ -19,7 +19,7 @@ import { committedManifest, scenarioTrace } from '@/test/recording';
 import { digest } from 'virtual:trustagent/tape-digest';
 import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
 import { compareRows } from './compareData';
-import { copy as landingCopy, REFUND } from './content';
+import { copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
 import glassbox from './glassbox.gen.json';
 import { HeroCard } from './HeroCard';
@@ -158,7 +158,7 @@ describe('landing page', () => {
     const replay = document.querySelector('[data-tape-card]') as HTMLElement;
     expect(within(replay).getByText(MOCK_LABEL)).toBeInTheDocument();
     const manifest = committedManifest();
-    expect(within(replay).getByText(new RegExp(`${manifest.traces.length} requests`))).toBeInTheDocument();
+    expect(within(replay).getByText(new RegExp(`${new Intl.NumberFormat('en-US').format(manifest.traces.length)} requests`))).toBeInTheDocument();
     // A simulated tape is generated from the scenarios; it never claims a stack recorded it.
     expect(within(replay).getByText(/Generated from the zero-key demo’s scripted scenarios, dated 28 Sept? 2026/)).toBeInTheDocument();
     expect(within(replay).queryByText(/Recorded/)).toBeNull();
@@ -267,10 +267,11 @@ describe('what Jev was asked', () => {
     const base = import.meta.env.BASE_URL;
     // The digest's flagged example is the tape's featured trace: the refund scenario's first run.
     expect(refundTraceHref('static')).toEqual({ href: `${base}app/traffic/${scenarioTrace('refund-contradiction-flag').trace_id}`, exact: true });
-    // A tape without the refund request opens Traffic instead of a trace that is not there.
-    expect(refundTraceHref('static', [])).toEqual({ href: `${base}app`, exact: false });
+    // A tape without the refund request opens the replay instead of a trace that is not there.
+    expect(refundTraceHref('static', [])).toEqual({ href: DEMO_HREF, exact: false });
     // The dashboard image's build has its own traffic: no tape trace to point at.
-    expect(refundTraceHref('full')).toEqual({ href: `${base}app`, exact: false });
+    expect(refundTraceHref('full')).toEqual({ href: DEMO_HREF, exact: false });
+    expect(DEMO_HREF).toBe(`${base}app`);
   });
 });
 
