@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e740-d2dd-7164-a7b0-9bbad2f43694",
+  "trace_id": "01a0e73e-187c-71e7-a591-b7a1d1737820",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:03:00.317Z",
-  "updated_at": "2026-09-28T09:03:01.641Z",
+  "created_at": "2026-09-28T09:00:01.532Z",
+  "updated_at": "2026-09-28T09:00:02.972Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -14,15 +14,13 @@
   "upstream_status": 200,
   "answer_source": "scripted",
   "action": "flag",
-  "would_action": "block",
+  "would_action": "flag",
   "gate_status": "ok",
   "skip_reason": null,
-  "verdict": "contradicted",
-  "max_risk": 0.98,
+  "verdict": "unsupported",
+  "max_risk": 0.86,
   "reasons": [
-    "contradiction:critical",
-    "groundedness:critical",
-    "det:numbers_not_in_evidence"
+    "groundedness:warn"
   ],
   "checked_against": {
     "configured": [
@@ -36,9 +34,9 @@
         "source": "request_system",
         "items": 1,
         "labels": [
-          "refund-policy.md"
+          "plans.md"
         ],
-        "tokens": 23
+        "tokens": 22
       }
     ],
     "empty": [
@@ -48,64 +46,68 @@
     ],
     "knowledge": "not_requested",
     "truncated": false,
-    "tokens": 23
+    "tokens": 22
   },
   "timings": {
-    "upstream_ms": 251,
+    "upstream_ms": 153,
     "ttft_ms": null,
-    "gate_ms": 8,
-    "overhead_ms": 2,
-    "total_ms": 261
+    "gate_ms": 6,
+    "overhead_ms": 9,
+    "total_ms": 162
   },
   "decision_model": {
     "backend": "mock",
     "snapshot": "mock/jev-heuristic-v1",
-    "cost_usd": 0.000023772000000000002
+    "cost_usd": 0.000023856000000000003
   },
   "audit": {
-    "audit_id": "01a0e740-d3e2-78d5-b3f8-115a1fe21008",
+    "audit_id": "01a0e73e-191e-73fb-82c9-3994176a338b",
     "status": "completed",
     "lane": "high",
     "selection": "high",
     "verdict": "HALLUCINATED",
-    "trust_score": 0,
+    "trust_score": 0.5,
     "grade": null,
     "verdict_counts": {
-      "SUPPORTED": 0,
+      "SUPPORTED": 1,
       "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
       "UNKNOWN": 0,
       "NOT_CHECKED": 0
     }
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "You can get a full refund within 60 days of purchase.",
+  "question_preview": "Does the Team plan include priority support?",
+  "response_preview": "Yes, the Team plan includes priority support and 100 GB of storage per user.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
     "messages": [
       {
-        "role": "system",
-        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+        "role": "developer",
+        "content": "Answer from the plan sheet below. If it does not cover the question, say so.\n\n<document id=\"plans.md\">The Team plan costs $12 per user per month and includes 100 GB of storage per user.</document>"
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "Does the Team plan include priority support?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
-    "response_text": "You can get a full refund within 60 days of purchase.",
-    "final_response_text": "You can get a full refund within 60 days of purchase.",
+    "user_request": "Does the Team plan include priority support?",
+    "system_instructions": "Answer from the plan sheet below. If it does not cover the question, say so.",
+    "response_text": "Yes, the Team plan includes priority support and 100 GB of storage per user.",
+    "final_response_text": "Yes, the Team plan includes priority support and 100 GB of storage per user.",
     "evidence": [
       {
-        "id": "refund-policy.md",
+        "id": "plans.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "plans.md",
+        "text": "The Team plan costs $12 per user per month and includes 100 GB of storage per user.",
         "truncated": false
       }
     ],
@@ -115,9 +117,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e740-d2dd-7164-a7b0-9bbad2f43694",
+      "trace_id": "01a0e73e-187c-71e7-a591-b7a1d1737820",
       "attempt": 0,
-      "created_at": "2026-09-28T09:03:00.578Z",
+      "created_at": "2026-09-28T09:00:01.691Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -126,18 +128,16 @@
       "skip_reason": null,
       "effective_mode": "flag",
       "action": "flag",
-      "would_action": "block",
+      "would_action": "flag",
       "enforced": true,
-      "verdict": "contradicted",
-      "max_risk": 0.98,
+      "verdict": "unsupported",
+      "max_risk": 0.86,
       "calibration": "none",
       "degraded": null,
       "disagreement": false,
       "deep_audit": "high",
       "reasons": [
-        "contradiction:critical",
-        "groundedness:critical",
-        "det:numbers_not_in_evidence"
+        "groundedness:warn"
       ],
       "evaluators": {
         "groundedness@1": {
@@ -149,22 +149,22 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.96
+            "noul": 0.86
           },
           "probabilities": null,
-          "risk_raw": 0.96,
-          "risk": 0.96,
+          "risk_raw": 0.86,
+          "risk": 0.86,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
-          "level": "critical",
+          "level": "warn",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
-          "escalate": "numeric_or_date_unverified",
-          "corroborated": true,
+          "escalate": null,
+          "corroborated": null,
           "block_eligible": true,
           "thresholds": {
             "warn_at": 0.8,
@@ -181,22 +181,22 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.98
+            "noul": 0.12
           },
           "probabilities": null,
-          "risk_raw": 0.98,
-          "risk": 0.98,
+          "risk_raw": 0.12,
+          "risk": 0.12,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
-          "level": "critical",
+          "level": "ok",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
-          "escalate": "numeric_or_date_unverified",
-          "corroborated": true,
+          "escalate": null,
+          "corroborated": null,
           "block_eligible": true,
           "thresholds": {
             "warn_at": 0.7,
@@ -209,14 +209,8 @@
         {
           "id": "numbers_not_in_evidence",
           "ran": true,
-          "fired": true,
-          "findings": [
-            {
-              "text": "60",
-              "start": 33,
-              "end": 35
-            }
-          ]
+          "fired": false,
+          "findings": []
         },
         {
           "id": "dates_not_in_evidence",
@@ -265,8 +259,8 @@
         "hedged": false,
         "latency_ms": 5,
         "connect_ms": null,
-        "input_tokens": 566,
-        "cost_usd": 0.000023772000000000002,
+        "input_tokens": 568,
+        "cost_usd": 0.000023856000000000003,
         "cost_source": "simulated"
       },
       "compile": {
@@ -274,14 +268,14 @@
         "requests": 1,
         "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
         "request_sha256": [
-          "c8297b97c2c5848435ad8812b03149f3e9716773bb44613e511b73ea54abe8a5"
+          "1e84d41713946190adeeecf1a6b4740026f01cde7b125c3ca13d4bc5794f2da3"
         ],
         "packed_evidence_ids": [
-          "refund-policy.md"
+          "plans.md"
         ],
         "truncated_ids": [],
         "est_tokens": [
-          566
+          568
         ]
       },
       "evidence_summary": {
@@ -296,9 +290,9 @@
             "source": "request_system",
             "items": 1,
             "labels": [
-              "refund-policy.md"
+              "plans.md"
             ],
-            "tokens": 23
+            "tokens": 22
           }
         ],
         "empty": [
@@ -308,34 +302,22 @@
         ],
         "knowledge": "not_requested",
         "truncated": false,
-        "tokens": 23
+        "tokens": 22
       },
       "late": false,
-      "gate_ms": 8
+      "gate_ms": 6
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e740-d3e2-78d5-b3f8-115a1fe21008",
-    "trace_id": "01a0e740-d2dd-7164-a7b0-9bbad2f43694",
-    "created_at": "2026-09-28T09:03:00.578Z",
+    "audit_id": "01a0e73e-191e-73fb-82c9-3994176a338b",
+    "trace_id": "01a0e73e-187c-71e7-a591-b7a1d1737820",
+    "created_at": "2026-09-28T09:00:01.694Z",
     "route": "support-bot",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "HALLUCINATED",
-    "not_assessed_reason": null,
-    "trust_score": 0,
     "grade": null,
-    "hallucination_detected": true,
-    "verdict_counts": {
-      "SUPPORTED": 0,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
-    "processing_ms": 1063,
+    "processing_ms": 1278,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -349,67 +331,17 @@
     "gate_action": "flag",
     "selection": "high",
     "inclusion_prob": 1,
-    "query_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "query_preview": "Does the Team plan include priority support?",
     "redacted": false,
-    "user_query": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "llm_response": "You can get a full refund within 60 days of purchase.",
-    "claims": [
-      {
-        "index": 0,
-        "claim": "A full refund is available within 60 days of purchase.",
-        "status": "CONTRADICTED",
-        "confidence": 0.96,
-        "evidence": [
-          "Annual plans can be refunded within 30 days of purchase."
-        ],
-        "reasoning": "The refund policy allows refunds within 30 days of purchase, not 60 days.",
-        "decided_by": "llm",
-        "verdict_probabilities": {},
-        "probability_source": "llm_confidence",
-        "span": {
-          "start": 33,
-          "end": 40,
-          "method": "exact"
-        },
-        "quote": "60 days",
-        "evidence_spans": [
-          {
-            "doc_index": 0,
-            "doc_id": "refund-policy.md",
-            "start": 0,
-            "end": 56,
-            "text": "Annual plans can be refunded within 30 days of purchase.",
-            "kind": "quote_verified"
-          }
-        ]
-      }
-    ],
-    "scores": {
-      "trust_score": 0,
-      "faithfulness": 0,
-      "contradiction_rate": 1,
-      "unverified_rate": 0,
-      "coverage": 1,
-      "accuracy_addressed": 0,
-      "max_contradiction": 1,
-      "p_hallucinated": null,
-      "claims_total": 1,
-      "claims_decided": 1,
-      "claims_unknown": 0
-    },
+    "user_query": "Does the Team plan include priority support?",
+    "llm_response": "Yes, the Team plan includes priority support and 100 GB of storage per user.",
     "degraded_reasons": [],
     "error": null,
-    "reasoning_trace": "",
-    "step_timings": {
-      "decompose": 404,
-      "verify": 639,
-      "score": 20
-    },
     "gate": {
       "action": "flag",
-      "would_action": "block",
-      "verdict": "contradicted",
-      "max_risk": 0.98,
+      "would_action": "flag",
+      "verdict": "unsupported",
+      "max_risk": 0.86,
       "delivered": "original"
     },
     "evidence_summary": {
@@ -424,9 +356,9 @@
           "source": "request_system",
           "items": 1,
           "labels": [
-            "refund-policy.md"
+            "plans.md"
           ],
-          "tokens": 23
+          "tokens": 22
         }
       ],
       "empty": [
@@ -436,19 +368,100 @@
       ],
       "knowledge": "not_requested",
       "truncated": false,
-      "tokens": 23
+      "tokens": 22
     },
     "context_used": [
       {
-        "id": "refund-policy.md",
+        "id": "plans.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "plans.md",
+        "text": "The Team plan costs $12 per user per month and includes 100 GB of storage per user.",
         "truncated": false
       }
     ],
-    "unsupported_policy": "hallucination",
     "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0.5,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "The Team plan includes priority support.",
+        "status": "UNSUPPORTED",
+        "confidence": 0.88,
+        "evidence": [],
+        "reasoning": "The plan sheet lists the price and the storage of the Team plan but says nothing about priority support.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 5,
+          "end": 44,
+          "method": "exact"
+        },
+        "quote": "the Team plan includes priority support",
+        "evidence_spans": []
+      },
+      {
+        "index": 1,
+        "claim": "The Team plan includes 100 GB of storage per user.",
+        "status": "SUPPORTED",
+        "confidence": 0.97,
+        "evidence": [
+          "The Team plan costs $12 per user per month and includes 100 GB of storage per user."
+        ],
+        "reasoning": "The plan sheet gives the same storage.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 49,
+          "end": 75,
+          "method": "exact"
+        },
+        "quote": "100 GB of storage per user",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "plans.md",
+            "start": 0,
+            "end": 83,
+            "text": "The Team plan costs $12 per user per month and includes 100 GB of storage per user.",
+            "kind": "quote_verified"
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "trust_score": 0.5,
+      "faithfulness": 0.5,
+      "contradiction_rate": 0,
+      "unverified_rate": 0.5,
+      "coverage": 0.5,
+      "accuracy_addressed": 1,
+      "max_contradiction": 0,
+      "p_hallucinated": null,
+      "claims_total": 2,
+      "claims_decided": 2,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 425,
+      "verify_ms": 833,
+      "score_ms": 20,
+      "total_ms": 1278
+    },
+    "unsupported_policy": "hallucination",
     "costs": [
       {
         "component": "decompose",
@@ -459,7 +472,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 404,
+        "latency_ms": 425,
         "status": "ok",
         "questions": 0
       },
@@ -472,7 +485,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 639,
+        "latency_ms": 833,
         "status": "ok",
         "questions": 0
       }

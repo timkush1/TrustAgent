@@ -1,28 +1,27 @@
 {
-  "trace_id": "01a0e73f-7372-7020-b217-d0c0d56093b8",
+  "trace_id": "01a0e7ab-ffb3-7903-a825-bf61e3b4e6ed",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:01:30.354Z",
-  "updated_at": "2026-09-28T09:01:31.772Z",
+  "created_at": "2026-09-28T11:00:04.147Z",
+  "updated_at": "2026-09-28T11:00:05.282Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
-  "route": "support-bot",
+  "route": "faq-bot",
   "policy_version": 1,
-  "mode": "flag",
-  "effective_mode": "flag",
+  "mode": "observe",
+  "effective_mode": "observe",
   "model": "gpt-4o-mini",
   "stream": false,
   "upstream_status": 200,
   "answer_source": "scripted",
-  "action": "flag",
+  "action": "observe",
   "would_action": "block",
   "gate_status": "ok",
   "skip_reason": null,
   "verdict": "contradicted",
-  "max_risk": 0.98,
+  "max_risk": 0.97,
   "reasons": [
     "contradiction:critical",
-    "groundedness:critical",
-    "det:numbers_not_in_evidence"
+    "groundedness:critical"
   ],
   "checked_against": {
     "configured": [
@@ -36,9 +35,9 @@
         "source": "request_system",
         "items": 1,
         "labels": [
-          "refund-policy.md"
+          "store-hours.md"
         ],
-        "tokens": 23
+        "tokens": 22
       }
     ],
     "empty": [
@@ -48,22 +47,22 @@
     ],
     "knowledge": "not_requested",
     "truncated": false,
-    "tokens": 23
+    "tokens": 22
   },
   "timings": {
-    "upstream_ms": 249,
+    "upstream_ms": 212,
     "ttft_ms": null,
-    "gate_ms": 6,
-    "overhead_ms": 4,
-    "total_ms": 259
+    "gate_ms": 12,
+    "overhead_ms": 5,
+    "total_ms": 217
   },
   "decision_model": {
     "backend": "mock",
     "snapshot": "mock/jev-heuristic-v1",
-    "cost_usd": 0.000023772000000000002
+    "cost_usd": 0.000023814
   },
   "audit": {
-    "audit_id": "01a0e73f-7475-7bb4-90fe-41f68aeefa87",
+    "audit_id": "01a0e7ac-0098-7dcf-997b-b31bfbcbe24c",
     "status": "completed",
     "lane": "high",
     "selection": "high",
@@ -79,33 +78,37 @@
       "NOT_CHECKED": 0
     }
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "You can get a full refund within 60 days of purchase.",
+  "question_preview": "Is the downtown store open on Sunday?",
+  "response_preview": "Yes, the downtown store is open on Sundays from 10 am to 4 pm.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+        "content": "You are the Acme help-center assistant. Answer only from the documents below.\n\n<document id=\"store-hours.md\">Acme stores are open 9 am to 6 pm, Monday to Saturday. Stores are closed on Sundays.</document>"
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "Is the downtown store open on Sunday?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
-    "response_text": "You can get a full refund within 60 days of purchase.",
-    "final_response_text": "You can get a full refund within 60 days of purchase.",
+    "user_request": "Is the downtown store open on Sunday?",
+    "system_instructions": "You are the Acme help-center assistant. Answer only from the documents below.",
+    "response_text": "Yes, the downtown store is open on Sundays from 10 am to 4 pm.",
+    "final_response_text": "Yes, the downtown store is open on Sundays from 10 am to 4 pm.",
     "evidence": [
       {
-        "id": "refund-policy.md",
+        "id": "store-hours.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "store-hours.md",
+        "text": "Acme stores are open 9 am to 6 pm, Monday to Saturday. Stores are closed on Sundays.",
         "truncated": false
       }
     ],
@@ -115,29 +118,28 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73f-7372-7020-b217-d0c0d56093b8",
+      "trace_id": "01a0e7ab-ffb3-7903-a825-bf61e3b4e6ed",
       "attempt": 0,
-      "created_at": "2026-09-28T09:01:30.613Z",
-      "route": "support-bot",
+      "created_at": "2026-09-28T11:00:04.376Z",
+      "route": "faq-bot",
       "policy_version": 1,
-      "mode": "flag",
+      "mode": "observe",
       "fail": "open",
       "status": "ok",
       "skip_reason": null,
-      "effective_mode": "flag",
-      "action": "flag",
+      "effective_mode": "observe",
+      "action": "observe",
       "would_action": "block",
-      "enforced": true,
+      "enforced": false,
       "verdict": "contradicted",
-      "max_risk": 0.98,
+      "max_risk": 0.97,
       "calibration": "none",
       "degraded": null,
       "disagreement": false,
       "deep_audit": "high",
       "reasons": [
         "contradiction:critical",
-        "groundedness:critical",
-        "det:numbers_not_in_evidence"
+        "groundedness:critical"
       ],
       "evaluators": {
         "groundedness@1": {
@@ -156,14 +158,14 @@
           "risk": 0.96,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "critical",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
-          "escalate": "numeric_or_date_unverified",
+          "escalate": null,
           "corroborated": true,
           "block_eligible": true,
           "thresholds": {
@@ -181,21 +183,21 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.98
+            "noul": 0.97
           },
           "probabilities": null,
-          "risk_raw": 0.98,
-          "risk": 0.98,
+          "risk_raw": 0.97,
+          "risk": 0.97,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "critical",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
-          "escalate": "numeric_or_date_unverified",
+          "escalate": null,
           "corroborated": true,
           "block_eligible": true,
           "thresholds": {
@@ -209,14 +211,8 @@
         {
           "id": "numbers_not_in_evidence",
           "ran": true,
-          "fired": true,
-          "findings": [
-            {
-              "text": "60",
-              "start": 33,
-              "end": 35
-            }
-          ]
+          "fired": false,
+          "findings": []
         },
         {
           "id": "dates_not_in_evidence",
@@ -263,10 +259,10 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 5,
+        "latency_ms": 9,
         "connect_ms": null,
-        "input_tokens": 566,
-        "cost_usd": 0.000023772000000000002,
+        "input_tokens": 567,
+        "cost_usd": 0.000023814,
         "cost_source": "simulated"
       },
       "compile": {
@@ -274,14 +270,14 @@
         "requests": 1,
         "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
         "request_sha256": [
-          "c8297b97c2c5848435ad8812b03149f3e9716773bb44613e511b73ea54abe8a5"
+          "46ae315a9f177bd618ff52d2066a99ec5df53a766466d1199d6a1a2512f6c4a8"
         ],
         "packed_evidence_ids": [
-          "refund-policy.md"
+          "store-hours.md"
         ],
         "truncated_ids": [],
         "est_tokens": [
-          566
+          567
         ]
       },
       "evidence_summary": {
@@ -296,9 +292,9 @@
             "source": "request_system",
             "items": 1,
             "labels": [
-              "refund-policy.md"
+              "store-hours.md"
             ],
-            "tokens": 23
+            "tokens": 22
           }
         ],
         "empty": [
@@ -308,34 +304,22 @@
         ],
         "knowledge": "not_requested",
         "truncated": false,
-        "tokens": 23
+        "tokens": 22
       },
       "late": false,
-      "gate_ms": 6
+      "gate_ms": 12
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e73f-7475-7bb4-90fe-41f68aeefa87",
-    "trace_id": "01a0e73f-7372-7020-b217-d0c0d56093b8",
-    "created_at": "2026-09-28T09:01:30.613Z",
-    "route": "support-bot",
+    "audit_id": "01a0e7ac-0098-7dcf-997b-b31bfbcbe24c",
+    "trace_id": "01a0e7ab-ffb3-7903-a825-bf61e3b4e6ed",
+    "created_at": "2026-09-28T11:00:04.376Z",
+    "route": "faq-bot",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "HALLUCINATED",
-    "not_assessed_reason": null,
-    "trust_score": 0,
     "grade": null,
-    "hallucination_detected": true,
-    "verdict_counts": {
-      "SUPPORTED": 0,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
-    "processing_ms": 1159,
+    "processing_ms": 906,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -346,39 +330,96 @@
       "healthy": true,
       "credential_source": "none"
     },
-    "gate_action": "flag",
+    "gate_action": "observe",
     "selection": "high",
     "inclusion_prob": 1,
-    "query_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "query_preview": "Is the downtown store open on Sunday?",
     "redacted": false,
-    "user_query": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "llm_response": "You can get a full refund within 60 days of purchase.",
+    "user_query": "Is the downtown store open on Sunday?",
+    "llm_response": "Yes, the downtown store is open on Sundays from 10 am to 4 pm.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "observe",
+      "would_action": "block",
+      "verdict": "contradicted",
+      "max_risk": 0.97,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "request_system",
+          "items": 1,
+          "labels": [
+            "store-hours.md"
+          ],
+          "tokens": 22
+        }
+      ],
+      "empty": [
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 22
+    },
+    "context_used": [
+      {
+        "id": "store-hours.md",
+        "source": "request_system",
+        "label": "store-hours.md",
+        "text": "Acme stores are open 9 am to 6 pm, Monday to Saturday. Stores are closed on Sundays.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
     "claims": [
       {
         "index": 0,
-        "claim": "A full refund is available within 60 days of purchase.",
+        "claim": "The downtown store is open on Sundays from 10 am to 4 pm.",
         "status": "CONTRADICTED",
         "confidence": 0.96,
         "evidence": [
-          "Annual plans can be refunded within 30 days of purchase."
+          "Stores are closed on Sundays."
         ],
-        "reasoning": "The refund policy allows refunds within 30 days of purchase, not 60 days.",
+        "reasoning": "The store-hours document says Acme stores are closed on Sundays.",
         "decided_by": "llm",
         "verdict_probabilities": {},
         "probability_source": "llm_confidence",
         "span": {
-          "start": 33,
-          "end": 40,
+          "start": 5,
+          "end": 61,
           "method": "exact"
         },
-        "quote": "60 days",
+        "quote": "the downtown store is open on Sundays from 10 am to 4 pm",
         "evidence_spans": [
           {
             "doc_index": 0,
-            "doc_id": "refund-policy.md",
-            "start": 0,
-            "end": 56,
-            "text": "Annual plans can be refunded within 30 days of purchase.",
+            "doc_id": "store-hours.md",
+            "start": 55,
+            "end": 84,
+            "text": "Stores are closed on Sundays.",
             "kind": "quote_verified"
           }
         ]
@@ -397,58 +438,14 @@
       "claims_decided": 1,
       "claims_unknown": 0
     },
-    "degraded_reasons": [],
-    "error": null,
     "reasoning_trace": "",
     "step_timings": {
-      "decompose": 305,
-      "verify": 834,
-      "score": 20
+      "decompose_ms": 324,
+      "verify_ms": 562,
+      "score_ms": 20,
+      "total_ms": 906
     },
-    "gate": {
-      "action": "flag",
-      "would_action": "block",
-      "verdict": "contradicted",
-      "max_risk": 0.98,
-      "delivered": "original"
-    },
-    "evidence_summary": {
-      "configured": [
-        "request_system",
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "used": [
-        {
-          "source": "request_system",
-          "items": 1,
-          "labels": [
-            "refund-policy.md"
-          ],
-          "tokens": 23
-        }
-      ],
-      "empty": [
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "knowledge": "not_requested",
-      "truncated": false,
-      "tokens": 23
-    },
-    "context_used": [
-      {
-        "id": "refund-policy.md",
-        "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
-        "truncated": false
-      }
-    ],
     "unsupported_policy": "hallucination",
-    "scoring_version": "v2",
     "costs": [
       {
         "component": "decompose",
@@ -459,7 +456,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 305,
+        "latency_ms": 324,
         "status": "ok",
         "questions": 0
       },
@@ -472,7 +469,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 834,
+        "latency_ms": 562,
         "status": "ok",
         "questions": 0
       }

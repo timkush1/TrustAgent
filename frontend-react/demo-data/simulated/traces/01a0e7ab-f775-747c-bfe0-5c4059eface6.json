@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e741-8234-716f-85d2-e15b45431a15",
+  "trace_id": "01a0e7ab-f775-747c-bfe0-5c4059eface6",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:03:45.204Z",
-  "updated_at": "2026-09-28T09:03:46.457Z",
+  "created_at": "2026-09-28T11:00:02.037Z",
+  "updated_at": "2026-09-28T11:00:03.474Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -14,15 +14,15 @@
   "upstream_status": 200,
   "answer_source": "scripted",
   "action": "flag",
-  "would_action": "block",
+  "would_action": "flag",
   "gate_status": "ok",
   "skip_reason": null,
   "verdict": "contradicted",
-  "max_risk": 0.98,
+  "max_risk": 0.93,
   "reasons": [
-    "contradiction:critical",
-    "groundedness:critical",
-    "det:numbers_not_in_evidence"
+    "contradiction:warn",
+    "groundedness:warn",
+    "det:quotes_not_in_evidence"
   ],
   "checked_against": {
     "configured": [
@@ -33,37 +33,37 @@
     ],
     "used": [
       {
-        "source": "request_system",
+        "source": "extension",
         "items": 1,
         "labels": [
-          "refund-policy.md"
+          "crm"
         ],
-        "tokens": 23
+        "tokens": 40
       }
     ],
     "empty": [
+      "request_system",
       "request_context",
-      "tool_results",
-      "extension"
+      "tool_results"
     ],
     "knowledge": "not_requested",
     "truncated": false,
-    "tokens": 23
+    "tokens": 40
   },
   "timings": {
-    "upstream_ms": 237,
+    "upstream_ms": 143,
     "ttft_ms": null,
-    "gate_ms": 8,
-    "overhead_ms": 4,
-    "total_ms": 249
+    "gate_ms": 11,
+    "overhead_ms": 15,
+    "total_ms": 158
   },
   "decision_model": {
     "backend": "mock",
     "snapshot": "mock/jev-heuristic-v1",
-    "cost_usd": 0.000023772000000000002
+    "cost_usd": 0.000025074
   },
   "audit": {
-    "audit_id": "01a0e741-832d-78e5-8824-b92127590a8e",
+    "audit_id": "01a0e7ab-f813-7558-8ae7-5e3a9a6a3bda",
     "status": "completed",
     "lane": "high",
     "selection": "high",
@@ -79,33 +79,37 @@
       "NOT_CHECKED": 0
     }
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "You can get a full refund within 60 days of purchase.",
+  "question_preview": "Does my blender's warranty cover a cracked jar?",
+  "response_preview": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+        "content": "You are the Acme support assistant. Answer warranty questions from the product records you are given."
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "Does my blender's warranty cover a cracked jar?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
-    "response_text": "You can get a full refund within 60 days of purchase.",
-    "final_response_text": "You can get a full refund within 60 days of purchase.",
+    "user_request": "Does my blender's warranty cover a cracked jar?",
+    "system_instructions": "You are the Acme support assistant. Answer warranty questions from the product records you are given.",
+    "response_text": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
+    "final_response_text": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
     "evidence": [
       {
-        "id": "refund-policy.md",
-        "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "id": "warranty-blender-x2",
+        "source": "extension",
+        "label": "crm",
+        "text": "The Blender X2 warranty covers manufacturing defects in the motor base for two years. Accidental damage, including cracked or dropped jars, is not covered.",
         "truncated": false
       }
     ],
@@ -115,9 +119,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e741-8234-716f-85d2-e15b45431a15",
+      "trace_id": "01a0e7ab-f775-747c-bfe0-5c4059eface6",
       "attempt": 0,
-      "created_at": "2026-09-28T09:03:45.453Z",
+      "created_at": "2026-09-28T11:00:02.191Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -126,18 +130,18 @@
       "skip_reason": null,
       "effective_mode": "flag",
       "action": "flag",
-      "would_action": "block",
+      "would_action": "flag",
       "enforced": true,
       "verdict": "contradicted",
-      "max_risk": 0.98,
+      "max_risk": 0.93,
       "calibration": "none",
       "degraded": null,
       "disagreement": false,
       "deep_audit": "high",
       "reasons": [
-        "contradiction:critical",
-        "groundedness:critical",
-        "det:numbers_not_in_evidence"
+        "contradiction:warn",
+        "groundedness:warn",
+        "det:quotes_not_in_evidence"
       ],
       "evaluators": {
         "groundedness@1": {
@@ -149,22 +153,22 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.96
+            "noul": 0.91
           },
           "probabilities": null,
-          "risk_raw": 0.96,
-          "risk": 0.96,
+          "risk_raw": 0.91,
+          "risk": 0.91,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
-          "level": "critical",
+          "level": "warn",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
-          "escalate": "numeric_or_date_unverified",
-          "corroborated": true,
+          "escalate": null,
+          "corroborated": null,
           "block_eligible": true,
           "thresholds": {
             "warn_at": 0.8,
@@ -181,22 +185,22 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.98
+            "noul": 0.93
           },
           "probabilities": null,
-          "risk_raw": 0.98,
-          "risk": 0.98,
+          "risk_raw": 0.93,
+          "risk": 0.93,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
-          "level": "critical",
+          "level": "warn",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
-          "escalate": "numeric_or_date_unverified",
-          "corroborated": true,
+          "escalate": null,
+          "corroborated": null,
           "block_eligible": true,
           "thresholds": {
             "warn_at": 0.7,
@@ -209,14 +213,8 @@
         {
           "id": "numbers_not_in_evidence",
           "ran": true,
-          "fired": true,
-          "findings": [
-            {
-              "text": "60",
-              "start": 33,
-              "end": 35
-            }
-          ]
+          "fired": false,
+          "findings": []
         },
         {
           "id": "dates_not_in_evidence",
@@ -233,8 +231,14 @@
         {
           "id": "quotes_not_in_evidence",
           "ran": true,
-          "fired": false,
-          "findings": []
+          "fired": true,
+          "findings": [
+            {
+              "text": "covers accidental damage to the jar for two years",
+              "start": 28,
+              "end": 77
+            }
+          ]
         },
         {
           "id": "citation_out_of_range",
@@ -263,10 +267,10 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 5,
+        "latency_ms": 9,
         "connect_ms": null,
-        "input_tokens": 566,
-        "cost_usd": 0.000023772000000000002,
+        "input_tokens": 597,
+        "cost_usd": 0.000025074,
         "cost_source": "simulated"
       },
       "compile": {
@@ -274,14 +278,14 @@
         "requests": 1,
         "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
         "request_sha256": [
-          "c8297b97c2c5848435ad8812b03149f3e9716773bb44613e511b73ea54abe8a5"
+          "a74d30214faacedcc09b34d0e4e0567e4bd02e4b7402ab114a145c746cadf9f6"
         ],
         "packed_evidence_ids": [
-          "refund-policy.md"
+          "warranty-blender-x2"
         ],
         "truncated_ids": [],
         "est_tokens": [
-          566
+          597
         ]
       },
       "evidence_summary": {
@@ -293,49 +297,37 @@
         ],
         "used": [
           {
-            "source": "request_system",
+            "source": "extension",
             "items": 1,
             "labels": [
-              "refund-policy.md"
+              "crm"
             ],
-            "tokens": 23
+            "tokens": 40
           }
         ],
         "empty": [
+          "request_system",
           "request_context",
-          "tool_results",
-          "extension"
+          "tool_results"
         ],
         "knowledge": "not_requested",
         "truncated": false,
-        "tokens": 23
+        "tokens": 40
       },
       "late": false,
-      "gate_ms": 8
+      "gate_ms": 11
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e741-832d-78e5-8824-b92127590a8e",
-    "trace_id": "01a0e741-8234-716f-85d2-e15b45431a15",
-    "created_at": "2026-09-28T09:03:45.453Z",
+    "audit_id": "01a0e7ab-f813-7558-8ae7-5e3a9a6a3bda",
+    "trace_id": "01a0e7ab-f775-747c-bfe0-5c4059eface6",
+    "created_at": "2026-09-28T11:00:02.195Z",
     "route": "support-bot",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "HALLUCINATED",
-    "not_assessed_reason": null,
-    "trust_score": 0,
     "grade": null,
-    "hallucination_detected": true,
-    "verdict_counts": {
-      "SUPPORTED": 0,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
-    "processing_ms": 1004,
+    "processing_ms": 1279,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -349,36 +341,93 @@
     "gate_action": "flag",
     "selection": "high",
     "inclusion_prob": 1,
-    "query_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "query_preview": "Does my blender's warranty cover a cracked jar?",
     "redacted": false,
-    "user_query": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "llm_response": "You can get a full refund within 60 days of purchase.",
+    "user_query": "Does my blender's warranty cover a cracked jar?",
+    "llm_response": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "flag",
+      "would_action": "flag",
+      "verdict": "contradicted",
+      "max_risk": 0.93,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "extension",
+          "items": 1,
+          "labels": [
+            "crm"
+          ],
+          "tokens": 40
+        }
+      ],
+      "empty": [
+        "request_system",
+        "request_context",
+        "tool_results"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 40
+    },
+    "context_used": [
+      {
+        "id": "warranty-blender-x2",
+        "source": "extension",
+        "label": "crm",
+        "text": "The Blender X2 warranty covers manufacturing defects in the motor base for two years. Accidental damage, including cracked or dropped jars, is not covered.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
     "claims": [
       {
         "index": 0,
-        "claim": "A full refund is available within 60 days of purchase.",
+        "claim": "The warranty covers accidental damage to the jar for two years.",
         "status": "CONTRADICTED",
-        "confidence": 0.96,
+        "confidence": 0.95,
         "evidence": [
-          "Annual plans can be refunded within 30 days of purchase."
+          "Accidental damage, including cracked or dropped jars, is not covered."
         ],
-        "reasoning": "The refund policy allows refunds within 30 days of purchase, not 60 days.",
+        "reasoning": "The warranty record excludes accidental damage, including cracked jars; it covers only manufacturing defects in the motor base.",
         "decided_by": "llm",
         "verdict_probabilities": {},
         "probability_source": "llm_confidence",
         "span": {
-          "start": 33,
-          "end": 40,
+          "start": 28,
+          "end": 77,
           "method": "exact"
         },
-        "quote": "60 days",
+        "quote": "covers accidental damage to the jar for two years",
         "evidence_spans": [
           {
             "doc_index": 0,
-            "doc_id": "refund-policy.md",
-            "start": 0,
-            "end": 56,
-            "text": "Annual plans can be refunded within 30 days of purchase.",
+            "doc_id": "warranty-blender-x2",
+            "start": 86,
+            "end": 155,
+            "text": "Accidental damage, including cracked or dropped jars, is not covered.",
             "kind": "quote_verified"
           }
         ]
@@ -397,58 +446,14 @@
       "claims_decided": 1,
       "claims_unknown": 0
     },
-    "degraded_reasons": [],
-    "error": null,
     "reasoning_trace": "",
     "step_timings": {
-      "decompose": 495,
-      "verify": 489,
-      "score": 20
+      "decompose_ms": 499,
+      "verify_ms": 760,
+      "score_ms": 20,
+      "total_ms": 1279
     },
-    "gate": {
-      "action": "flag",
-      "would_action": "block",
-      "verdict": "contradicted",
-      "max_risk": 0.98,
-      "delivered": "original"
-    },
-    "evidence_summary": {
-      "configured": [
-        "request_system",
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "used": [
-        {
-          "source": "request_system",
-          "items": 1,
-          "labels": [
-            "refund-policy.md"
-          ],
-          "tokens": 23
-        }
-      ],
-      "empty": [
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "knowledge": "not_requested",
-      "truncated": false,
-      "tokens": 23
-    },
-    "context_used": [
-      {
-        "id": "refund-policy.md",
-        "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
-        "truncated": false
-      }
-    ],
     "unsupported_policy": "hallucination",
-    "scoring_version": "v2",
     "costs": [
       {
         "component": "decompose",
@@ -459,7 +464,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 495,
+        "latency_ms": 499,
         "status": "ok",
         "questions": 0
       },
@@ -472,7 +477,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 489,
+        "latency_ms": 760,
         "status": "ok",
         "questions": 0
       }

@@ -116,6 +116,14 @@ const CAUGHT = new Set(['flagged', 'blocked', 'replaced', 'would_flag', 'would_b
 
 const auditDone = (t: TraceSummary) => t.audit.status === 'completed' || t.audit.status === 'degraded';
 
+/** The audit verdicts that say something about the answer (store/stats.go assessedVerdictSQL). */
+const ASSESSED_VERDICTS: ReadonlySet<string> = new Set(['GROUNDED', 'HALLUCINATED', 'UNVERIFIABLE', 'NO_CLAIMS']);
+/**
+ * An audit that reached a verdict about the answer, as the gateway's rates count it: completed or
+ * degraded, and not NOT_ASSESSED (nothing to check against) or UNKNOWN.
+ */
+const assessedAudit = (a: AuditDetail) => (a.status === 'completed' || a.status === 'degraded') && a.verdict !== null && ASSESSED_VERDICTS.has(a.verdict);
+
 function claimCounts(audits: readonly AuditDetail[]): Record<ClaimVerdict, number> {
   const out = { ...NO_VERDICTS };
   for (const a of audits) for (const [k, v] of Object.entries(a.verdict_counts)) out[k as ClaimVerdict] += v;
@@ -158,7 +166,9 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
   const decisions = played.map((p) => p.decision).filter((d): d is GateDecisionView => d !== null);
   const groundednessAssessed = decisions.filter((d) => Object.values(d.evaluators).some((e) => e.ref.startsWith('groundedness@') && e.status === 'assessed')).length;
   const bySource = Object.fromEntries(SOURCES.map((s) => [s, count((t) => (t.checked_against?.used ?? []).some((u) => u.source === s && u.items > 0))])) as Record<EvidenceSource, number>;
-  const uniform = audits.filter((a) => a.selection === 'uniform');
+  // The rates count only audits that reached a verdict about the answer, as the gateway does.
+  const assessed = audits.filter(assessedAudit);
+  const uniform = assessed.filter((a) => a.selection === 'uniform');
 
   const contradicted = new Map<string, { count: number; latest: string; at: number }>();
   for (const a of audits) {
@@ -186,7 +196,7 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
         flagged: mine.filter((t) => t.action === 'flag').length,
         blocked: mine.filter((t) => t.action === 'block').length,
         audited: mine.filter(auditDone).length,
-        hallucination_rate: rate(mineUniform.filter((a) => a.hallucination_detected).length, mineUniform.length, 'uniform-sample deep audits only', ctx),
+        hallucination_rate: rate(mineUniform.filter((a) => a.verdict === 'HALLUCINATED').length, mineUniform.length, 'uniform-sample deep audits only', ctx),
       };
     });
   };
@@ -213,10 +223,10 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
       decision_cost_usd: traces.reduce((acc, t) => acc + (t.decision_model?.cost_usd ?? 0), 0),
       llm_cost_usd: audits.reduce((acc, a) => acc + a.costs.reduce((s, c) => s + c.cost_usd, 0), 0),
     },
-    hallucination_rate: rate(uniform.filter((a) => a.hallucination_detected).length, uniform.length, 'uniform-sample deep audits only', ctx),
+    hallucination_rate: rate(uniform.filter((a) => a.verdict === 'HALLUCINATED').length, uniform.length, 'uniform-sample deep audits only', ctx),
     audited_hallucination_share: rate(
-      audits.filter((a) => a.hallucination_detected).length,
-      audits.length,
+      assessed.filter((a) => a.verdict === 'HALLUCINATED').length,
+      assessed.length,
       'among audited answers (selected by risk; not a traffic rate)',
       ctx,
     ),
@@ -246,10 +256,11 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
       knowledge: { p50: null, p95: null },
       decision: p50p95(decisions.map((d) => d.decision_model?.latency_ms ?? null)),
       queue_wait: { p50: null, p95: null },
-      decompose: p50p95(stepTimings('decompose')),
-      retrieve: { p50: null, p95: null },
-      verify: p50p95(stepTimings('verify')),
-      score: p50p95(stepTimings('score')),
+      // The engine's step_timings keys (backend-python audit nodes; the gateway's stats read the same).
+      decompose: p50p95(stepTimings('decompose_ms')),
+      retrieve: p50p95(stepTimings('retrieve_ms')),
+      verify: p50p95(stepTimings('verify_ms')),
+      score: p50p95(stepTimings('score_ms')),
     },
     backend_mix: hasDecision.length > 0 ? countBy(hasDecision.map((t) => t.decision_model?.backend ?? 'off')) : {},
   };
@@ -398,8 +409,8 @@ const ROI_BUCKET_MS: Record<CostSeries['bucket'], number> = { '1m': 60_000, '1h'
 
 /**
  * The bucket that fits the played span, as the replay's "Requests by outcome" picks its own: per
- * minute up to an hour (a recording usually spans minutes, which hourly buckets would fold into
- * one point), per hour up to two days, per day beyond.
+ * minute up to an hour (a short recording would fold into one hourly point), per hour up to two
+ * days (the simulated tape spans two hours: three hourly points), per day beyond.
  */
 export function roiBucketOf(spanMs: number): CostSeries['bucket'] {
   if (!(spanMs > 3_600_000)) return '1m';

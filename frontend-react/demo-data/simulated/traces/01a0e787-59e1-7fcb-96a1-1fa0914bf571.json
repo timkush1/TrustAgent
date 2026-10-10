@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e73f-74dc-74f7-baae-11701d9fae74",
+  "trace_id": "01a0e787-59e1-7fcb-96a1-1fa0914bf571",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:01:30.716Z",
-  "updated_at": "2026-09-28T09:01:30.863Z",
+  "created_at": "2026-09-28T10:20:02.401Z",
+  "updated_at": "2026-09-28T10:20:02.640Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -39,11 +39,11 @@
     "tokens": 0
   },
   "timings": {
-    "upstream_ms": 144,
+    "upstream_ms": 233,
     "ttft_ms": null,
-    "gate_ms": 1,
-    "overhead_ms": 2,
-    "total_ms": 147
+    "gate_ms": 2,
+    "overhead_ms": 6,
+    "total_ms": 239
   },
   "decision_model": null,
   "audit": {
@@ -56,27 +56,29 @@
     "grade": null,
     "verdict_counts": null
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+  "question_preview": "Is my monthly plan refundable?",
+  "response_preview": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer billing questions briefly and politely."
+        "content": "You are the Acme support assistant. Answer only from the policy below.\n\nRefund policy (updated August 2026): annual plans can be refunded within 30 days of purchase; monthly plans are non-refundable."
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "Is my monthly plan refundable?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "system_instructions": "You are the Acme support assistant. Answer billing questions briefly and politely.",
-    "response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
-    "final_response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+    "user_request": "Is my monthly plan refundable?",
+    "system_instructions": "You are the Acme support assistant. Answer only from the policy below.\n\nRefund policy (updated August 2026): annual plans can be refunded within 30 days of purchase; monthly plans are non-refundable.",
+    "response_text": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
+    "final_response_text": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
     "evidence": [],
     "rules": {},
     "truncated": false
@@ -84,9 +86,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73f-74dc-74f7-baae-11701d9fae74",
+      "trace_id": "01a0e787-59e1-7fcb-96a1-1fa0914bf571",
       "attempt": 0,
-      "created_at": "2026-09-28T09:01:30.863Z",
+      "created_at": "2026-09-28T10:20:02.636Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -118,7 +120,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -147,7 +149,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -247,7 +249,7 @@
         "tokens": 0
       },
       "late": false,
-      "gate_ms": 1
+      "gate_ms": 2
     }
   ],
   "audit_detail": null,
