@@ -105,6 +105,8 @@ func newPolicyServices(ctx context.Context, w policyWiring) (*policyServices, er
 			Enforcing: w.enforcing,
 			// fallback.upstream: fallback needs an upstream to call.
 			FallbackUpstream: w.cfg.FallbackUpstreamURL != "",
+			// evidence.sources: knowledge needs the knowledge add-on (CO-9, GO-6).
+			Knowledge: w.cfg.KnowledgeEnabled,
 		},
 		Store: versions, Lock: w.cfg.ConfigLock, ReloadInterval: w.cfg.PolicyReloadInterval, Channel: w.channel,
 		Runtime: w.runtime, OnUpdate: ps.policyUpdated, OnError: ps.policyFailed, OnNotify: notify.Dispatch, Logger: log,
