@@ -767,6 +767,13 @@ if (compare) {
         error(REL, `${r.id}.${c}: the text says what the docs say; "Not documented" is the value not_documented, and the date is as_of`);
       }
     }
+    // The vendor is shown beside the text ("Yes · Langfuse"), so the text never names one (D169).
+    const rowVendors = [...new Set(Object.values(r.cells).map((cell) => cell.vendor).filter(Boolean))];
+    for (const [c, cell] of Object.entries(r.cells)) {
+      for (const v of rowVendors) {
+        if (cell.text && cell.text.toLowerCase().includes(v.toLowerCase())) error(REL, `${r.id}.${c}: the text names the vendor ${v}, which is shown beside it; say what the docs say without the name`);
+      }
+    }
     // A row names only the products its cells cite: one vendor's docs never speak for another.
     const verified = Object.values(r.cells).some((cell) => cell.value !== 'unverified');
     for (const product of verified ? r.examples.split(',').map((x) => x.trim()).filter(Boolean) : []) {

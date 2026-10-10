@@ -27,7 +27,7 @@ pick-one and scale questions and returns probabilities. It does not write text.
 | | |
 |---|---|
 | Price | <!-- claim:jev_input_price_per_mtok --> $0.042 / M input tokens [vendor]; <!-- claim:jev_output_price_per_mtok --> output free [vendor] |
-| Latency | <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. Latency depends on region and load; independent reports range from about 0.3 s to 0.9 s median. |
+| Latency | <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. OpenRouter's rolling figure over the Jev traffic it routes; it moves with region and load, and it is not our measurement. |
 | Cost model | **It is not free.** HTTP 402 means your account has no credits. |
 
 **How TrustAgent uses it.** Each answer that passes through the proxy is checked with one Jev

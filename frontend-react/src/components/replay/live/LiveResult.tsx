@@ -6,6 +6,7 @@
  * scenario's expected outcome. Owned by WEB-LIVE (LV-6).
  */
 import { ChevronRight } from 'lucide-react';
+import { CommandText } from '@/components/common/CommandText';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { ResultTimeline } from '@/components/playground/ResultTimeline';
 import { JevRequestBody } from '@/components/trace/JevRequestPanel';
@@ -42,7 +43,11 @@ export function LiveResult({ check }: { check: LiveCheckResult }) {
           decision: null,
           result: check.result,
           running: false,
-          deepAudit: <p className="text-sm text-fg-muted">{fillTemplate(copy.playground_live.deep_audit_not_in_browser)}</p>,
+          deepAudit: (
+            <p className="text-sm text-fg-muted">
+              <CommandText text={fillTemplate(copy.playground_live.deep_audit_not_in_browser)} />
+            </p>
+          ),
         }}
       />
       <details className="group">

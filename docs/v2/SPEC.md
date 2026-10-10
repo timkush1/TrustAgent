@@ -3345,6 +3345,17 @@ the paid steps add theirs.
 
 Each P5C row is fixed before Gate A, or rejected or changed here with its reason.
 
+- **P5C-1, P5C-23** (changed at Step 0): the "independent reports range from about 0.3 s to 0.9 s
+  median" caveat had no source, so it is dropped rather than cited. `jev_p50_latency_openrouter` keeps
+  its dated third-party value; its caveat now says it is OpenRouter's rolling figure over the Jev traffic
+  it routes, and its basis gives the label reason: OpenRouter measures latency on the traffic it routes
+  (third-party), while its faithfulness test is an evaluation it published of a model it distributes
+  (vendor). The headline no longer sits below its own caveat.
+- **P5C-7** (contract part fixed at Step 0): claim bases use plain words, not claim ids or file names.
+- **P5C-9** (fixed at Step 0): the own-stack sentences read "Try it on the zero-key demo: `make demo`;
+  on your own stack: `make up`", and the live Playground renders both commands as code.
+- **P5C-16** (fixed at Step 0): `validate.mjs` enforces D169 as written (a compare cell's text names no
+  vendor of its row); three texts are reworded without changing what they say.
 - **P5C-26** (fixed at Step 0): Appendix G's opening sentence names D142-D172.
 - **P5C-21** (fixed at Step 0 in the contract): `load-run.v1` records `environment.image_revision` (the
   proxy image's revision label) and `environment.concurrent_load` (other compose projects running, the load

@@ -34,8 +34,7 @@ by your policy, and audited claim by claim on a live dashboard.**
   the same questions costs <!-- claim:llm_same_checks_cost_per_1k --> ~$6 / 1,000 [estimate].
 - **Fast enough to sit in the request path.** The fast check answers in
   <!-- claim:fast_check_latency_approx --> about 0.2 s [third-party], and routes in observe mode
-  never wait for it at all. Third-party figure, not our measurement; it depends on region and load,
-  and independent reports range from about 0.3 s to 0.9 s median.
+  never wait for it at all. Third-party figure, not our measurement; it depends on region and load.
 - **A full audit only where it matters.** Risky answers and a small sample go on to a claim-by-claim
   LLM audit: <!-- claim:default_total_cost_per_1k --> ~$3 / 1,000 [estimate] in total with the
   defaults, against <!-- claim:llm_full_audit_cost_per_1k --> ~$35 / 1,000 [estimate] to audit every

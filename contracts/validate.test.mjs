@@ -299,6 +299,8 @@ describe('validate.mjs', () => {
       c.rows[1].cells.inline.vendor = 'Someone Else';
       c.rows[2].cells.cost_class.vendor = null;
       c.rows[3].cells.explanations.text = 'Not documented (as of 2026-10-10): scores only.';
+      // The vendor is shown beside the text, so the text never names it (D169).
+      c.rows[3].cells.cost_class.text = `${c.rows[3].cells.cost_class.vendor} says it is cheap.`;
     });
     const v = run(vend.root);
     assert.equal(v.code, 1, v.out);
@@ -306,6 +308,7 @@ describe('validate.mjs', () => {
     assert.match(v.out, /guardrails\.inline: vendor Someone Else is not in the row's examples/);
     assert.match(v.out, /cloud_groundedness\.cost_class: a varies cell names the vendor whose docs it cites \(vendor\)/);
     assert.match(v.out, /small_model_evaluators\.explanations: the text says what the docs say; "Not documented" is the value not_documented/);
+    assert.match(v.out, /small_model_evaluators\.cost_class: the text names the vendor Galileo, which is shown beside it/);
     // reviewed is a boolean (schema).
     const other = sandbox();
     other.edit('claims/compare.v1.json', (c) => {

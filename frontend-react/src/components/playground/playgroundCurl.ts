@@ -4,7 +4,7 @@
  *
  * - Chat mode is what an app does: POST /v1/chat/completions through the gateway, with the
  *   documents as the `trustagent.context` extension, the route and the stricter mode as headers,
-^ *   and an app key. The answer is checked exactly as the Playground's is.
+ *   and an app key. The answer is checked exactly as the Playground's is.
  * - Audit mode checks an answer without calling a model, which no /v1 call does: it is the
  *   Playground's own endpoint, POST /api/playground/run (SPEC §2.4 #61), with the same body the
  *   page sends and an admin key. A deep audit is submitted as from the page.

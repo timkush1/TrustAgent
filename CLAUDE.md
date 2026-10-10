@@ -64,7 +64,10 @@ make gen-evaluator-validator (+ -check)           # regenerate the CSP-safe eval
 make setup-url      # print a new one-time SETUP link (claim it at /app/setup to create the admin key)
 make gate-eval      # build backend-go/bin/gate-eval;  make calibrate EVALUATOR=… IN=… [WRITE=1]
 make export-replay REPLAY_OUT=<dir>               # sanitized replay recording from the database
-make bench-lite / bench-publish / eval-live       # capped benchmark runs (real keys); publish refuses mock output
+make bench-lite / bench-publish / eval-live       # capped benchmark runs (real keys; dry run unless CONFIRM=1); publish refuses mock output
+make bench-tier0-publish / bench-tier0-report     # Tier-0 benchmarks into docs/GATEWAY.md (clean commit); check that block
+make first-run-proof  # first-run, golden-path and first-run-onboarding, each on a fresh stack on mock vendors ($0)
+make docs-links     # relative links and heading anchors of README.md, docs/*.md and docs/launch/*.md
 make test-e2e-web   # Playwright specs against a running stack
 make e2e-faults     # vendor-fault scenarios against the running e2e stack
 make jev-check      # check the decision-model connection (cmd/jevcheck)

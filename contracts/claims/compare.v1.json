@@ -31,7 +31,7 @@
         "inline": {
           "value": "no",
           "vendor": "Langfuse",
-          "text": "Judges run asynchronously in the Langfuse worker on ingested traces; nothing runs inside your application.",
+          "text": "Judges run asynchronously in its own worker on ingested traces; nothing runs inside your application.",
           "source_url": "https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge",
           "as_of": "2026-10-10",
           "reviewed": false
@@ -133,7 +133,7 @@
         "self_hosted": {
           "value": "no",
           "vendor": "Amazon Bedrock",
-          "text": "Amazon Bedrock is a fully managed AWS service; the contextual grounding check runs in Bedrock Guardrails, and no self-hosted or open-source edition is documented.",
+          "text": "A fully managed AWS service; the contextual grounding check runs in its Guardrails feature, and no self-hosted or open-source edition is documented.",
           "source_url": "https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html",
           "as_of": "2026-10-10",
           "reviewed": false
@@ -188,7 +188,7 @@
         "cost_class": {
           "value": "not_documented",
           "vendor": "Galileo",
-          "text": "No public per-answer price; Galileo says a small fine-tuned model scoring each metric lowers latency and cost compared with LLM judges.",
+          "text": "No public per-answer price; the docs say a small fine-tuned model scoring each metric lowers latency and cost compared with LLM judges.",
           "source_url": "https://docs.galileo.ai/concepts/luna/luna",
           "as_of": "2026-10-10",
           "reviewed": false
