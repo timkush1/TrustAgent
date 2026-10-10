@@ -22,6 +22,7 @@ const COPY = (
         banner_simulated: string;
         showcase_caveat: string;
         nav_hint_caught: string;
+        nav_hints: { recorded: string; simulated: string; replay: string; trace: string };
         guide: Record<'title' | 'step1' | 'step2' | 'step3' | 'step4' | 'dismiss', string>;
         glassbox: { rebuilt_simulated: string };
       };
@@ -148,10 +149,12 @@ test.describe('replay', () => {
     expect(labels).toEqual(['Overview', 'Traffic', 'Trace', 'Playground', 'Studio', 'Run it yourself']);
     // The Trace item says where the tour starts.
     await expect(nav.getByRole('link', { name: 'Trace' })).toHaveAccessibleDescription(COPY.recording.nav_hint_caught);
+    await expect(nav.getByRole('link', { name: 'Trace' })).toContainText(COPY.recording.nav_hints.trace);
     // The Overview's hint names the tape the site ships, never "recorded" for the simulated one (D164).
     const { kind } = (await (await page.request.get('demo/manifest.json')).json()) as { kind: string };
-    await expect(nav.getByRole('link', { name: 'Overview' })).toContainText(kind === 'recorded' ? 'recorded' : 'simulated');
-    if (kind !== 'recorded') await expect(nav.getByRole('link', { name: 'Overview' })).not.toContainText('recorded');
+    const hints = COPY.recording.nav_hints;
+    await expect(nav.getByRole('link', { name: 'Overview' })).toContainText(kind === 'recorded' ? hints.recorded : hints.simulated);
+    if (kind !== 'recorded') await expect(nav.getByRole('link', { name: 'Overview' })).not.toContainText(hints.recorded);
     await expect(page.getByText(/\d+ requests on \d+ \w+ \d{4}/)).toBeVisible();
 
     for (const [path, name] of [

@@ -341,7 +341,7 @@ describe('static build', () => {
     expect(within(marked[0] as HTMLElement).getByRole('link')).toHaveAccessibleName(new RegExp(`${copy.recording.nav_hint_caught}$`));
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'Trace' })).toHaveAccessibleDescription(copy.recording.nav_hint_caught);
-    expect(within(nav).getByText('caught')).toBeInTheDocument();
+    expect(within(nav).getByText(copy.recording.nav_hints.trace)).toBeInTheDocument();
   });
 
   it('continues the tour on the answer it caught, and opens the glass box from its link', async () => {

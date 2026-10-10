@@ -6,7 +6,8 @@
  *
  * The Overview's hint names the tape the site ships (D164): "recorded" for a recording of real
  * checks, "simulated" for the simulated tape, and nothing until the manifest has loaded, so the
- * nav never calls mock output recorded.
+ * nav never calls mock output recorded. The hints are copy.recording.nav_hints; Trace's says the
+ * tour starts there.
  */
 import { Link, useRouterState } from '@tanstack/react-router';
 import { FlaskConical, LayoutDashboard, PenLine, Rows3, ScanSearch, Terminal, type LucideIcon } from 'lucide-react';
@@ -72,7 +73,8 @@ export function StaticNavRail() {
   // Only the featured trace: the nav does not re-render as the tape plays.
   const featuredTraceId = useReplayStore((s) => s.featuredTraceId);
   const tapeKind = useReplayStore((s) => s.kind);
-  const overviewHint = tapeKind === 'recorded' ? 'recorded' : tapeKind === 'mock' ? 'simulated' : undefined;
+  const hints = copy.recording.nav_hints;
+  const overviewHint = tapeKind === 'recorded' ? hints.recorded : tapeKind === 'mock' ? hints.simulated : undefined;
   const runHref = useRunItYourselfHref();
   const on = (suffix: string) => pathname.endsWith(suffix) || pathname.includes(`${suffix}/`);
   const onTrace = Boolean(featuredTraceId) && pathname.endsWith(`/app/traffic/${featuredTraceId}`);
@@ -93,7 +95,7 @@ export function StaticNavRail() {
           </Link>
         )}
       </Item>
-      <Item label="Traffic" hint="replay" icon={Rows3} active={on('/app/traffic') && !onTrace}>
+      <Item label="Traffic" hint={hints.replay} icon={Rows3} active={on('/app/traffic') && !onTrace}>
         {({ content, ...p }) => (
           <Link to="/app/traffic" {...p}>
             {content}
@@ -101,7 +103,7 @@ export function StaticNavRail() {
         )}
       </Item>
       {/* The first stop of the tour (D117): the answer the gate caught. */}
-      <Item label="Trace" hint="caught" description={copy.recording.nav_hint_caught} icon={ScanSearch} active={onTrace}>
+      <Item label="Trace" hint={hints.trace} description={copy.recording.nav_hint_caught} icon={ScanSearch} active={onTrace}>
         {({ content, ...p }) =>
           featuredTraceId ? (
             <Link to="/app/traffic/$traceId" params={{ traceId: featuredTraceId }} {...p}>
