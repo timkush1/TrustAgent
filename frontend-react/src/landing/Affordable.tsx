@@ -5,15 +5,19 @@
  */
 import { lazy, Suspense } from 'react';
 import { claim, type ClaimView } from './claims';
+import { loaders } from './lazyLoaders';
+import { PartBoundary } from './lazyParts';
 import { ClaimValue, LabelChip, Section } from './ui';
 
 // The calculator (and the pricing model behind it) loads right after the page, below the fold:
-// it is interactive only, and keeps the first load inside the landing budget.
-const Calculator = lazy(() => import('./Calculator').then((m) => ({ default: m.Calculator })));
+// it is interactive only, and keeps the first load inside the landing budget. It is one of the
+// landing's lazy parts, so the hash scroll waits for it, and a chunk that fails to load says so in
+// its place instead of taking the page down.
+const Calculator = lazy(() => loaders.calculator().then((m) => ({ default: m.Calculator })));
 
 function CalculatorPlaceholder() {
   return (
-    <div className="mt-16 min-h-[26rem] rounded-lg border border-border-strong bg-surface" aria-busy="true">
+    <div data-lazy-placeholder className="mt-16 min-h-[26rem] rounded-lg border border-border-strong bg-surface" aria-busy="true">
       <span className="sr-only" role="status">
         Loading the cost calculator…
       </span>
@@ -40,7 +44,7 @@ function CostBars() {
         {costLines.map(({ claim: c, ours }) => {
           const value = c.value ?? 0;
           return (
-            <li key={c.id}>
+            <li key={c.id} data-chip-scope>
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <span className={ours ? 'text-fg' : 'text-fg-muted'}>{c.text}</span>
                 <ClaimValue claim={c} />
@@ -61,7 +65,7 @@ function CostBars() {
 
 function Figure({ title, chip, children, caveat }: { title: string; chip: ClaimView; children: React.ReactNode; caveat?: string | null }) {
   return (
-    <li className="border-t border-border py-4 first:border-t-0 first:pt-0">
+    <li className="border-t border-border py-4 first:border-t-0 first:pt-0" data-chip-scope>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-fg">{title}</p>
         <LabelChip claim={chip} />
@@ -71,6 +75,9 @@ function Figure({ title, chip, children, caveat }: { title: string; chip: ClaimV
     </li>
   );
 }
+
+/** "Our fast-check latency" → "fast-check latency"; an acronym ("RAGTruth") keeps its case. */
+const lowerFirst = (t: string) => (/^[A-Z][a-z]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
 
 const num = (c: ClaimView) => <span className="tabular font-medium text-fg">{c.display}</span>;
 
@@ -86,6 +93,9 @@ function PublishedFigures() {
   const orAcc = claim('openrouter_faithfulness_accuracy');
   const orMs = claim('openrouter_faithfulness_median_ms');
   const measured = [claim('fast_check_cost_per_1k_measured'), claim('gate_latency_p50_measured'), claim('ragtruth_qa_agreement_measured')];
+  // The hero already says "not yet measured" once; here the unpublished ones are named, not repeated.
+  const published = measured.filter((c) => c.hasValue);
+  const pending = measured.filter((c) => !c.hasValue);
   return (
     <ul>
       <Figure title="Jev price" chip={jevIn}>
@@ -98,16 +108,23 @@ function PublishedFigures() {
       <Figure title="OpenRouter faithfulness test" chip={orAcc} caveat={orAcc.caveat}>
         {num(orAcc)} accuracy, {num(orMs)}.
       </Figure>
-      <li className="border-t border-border pt-4">
+      <li className="border-t border-border pt-4" data-measured>
         <p className="text-sm font-semibold text-fg">Our measurements</p>
-        <ul className="mt-1.5 space-y-1 text-fg-muted">
-          {measured.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
-              <span>{c.text}:</span>
-              <ClaimValue claim={c} />
-            </li>
-          ))}
-        </ul>
+        {published.length > 0 ? (
+          <ul className="mt-1.5 space-y-1 text-fg-muted">
+            {published.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline gap-x-2" data-chip-scope>
+                <span>{c.text}:</span>
+                <ClaimValue claim={c} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {pending.length > 0 ? (
+          <p className="mt-1.5 text-fg-muted">
+            {published.length > 0 ? 'Still to publish' : 'None published yet'}: {pending.map((c) => lowerFirst(c.text.replace(/^Our /, ''))).join('; ')}.
+          </p>
+        ) : null}
         <p className="mt-1.5 text-xs text-fg-subtle">Published only from a committed benchmark run, never from the demo.</p>
       </li>
     </ul>
@@ -120,15 +137,17 @@ export function Affordable() {
       id="cost"
       eyebrow="Why it’s affordable"
       title="Check every answer for a fraction of a cent. Audit only the risky ones."
-      lead="The fast check triages; the claim-by-claim audit runs only on flagged answers and a small sample. Every figure below says where it comes from."
+      lead="A fast check on every answer; a claim-by-claim audit only for flagged answers and a small sample. Every figure says where it comes from."
     >
       <div className="grid grid-cols-1 gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <CostBars />
         <PublishedFigures />
       </div>
-      <Suspense fallback={<CalculatorPlaceholder />}>
-        <Calculator />
-      </Suspense>
+      <PartBoundary>
+        <Suspense fallback={<CalculatorPlaceholder />}>
+          <Calculator />
+        </Suspense>
+      </PartBoundary>
     </Section>
   );
 }

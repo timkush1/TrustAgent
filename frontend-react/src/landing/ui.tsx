@@ -32,7 +32,7 @@ export function LabelChip({ claim, className }: { claim: Pick<ClaimView, 'id' | 
 export function ClaimValue({ claim, className, strong = true }: { claim: ClaimView; className?: string; strong?: boolean }) {
   if (!claim.hasValue) return <span className={clsx('text-fg-muted', className)}>{claim.display}</span>;
   return (
-    <span className={clsx('inline-flex flex-wrap items-baseline gap-x-1.5', className)}>
+    <span data-chip-scope className={clsx('inline-flex flex-wrap items-baseline gap-x-1.5', className)}>
       <span className={clsx('tabular', strong && 'font-medium text-fg')}>{claim.display}</span>
       <LabelChip claim={claim} className="self-center" />
     </span>
@@ -51,6 +51,23 @@ export function Section({ id, eyebrow, title, lead, children, className }: { id:
         <div className="mt-10 max-sm:mt-8">{children}</div>
       </div>
     </section>
+  );
+}
+
+/** Contract text marks field names with backticks: show them as code. */
+export function Ticked({ text }: { text: string }) {
+  return (
+    <>
+      {text.split('`').map((part, i) =>
+        i % 2 === 1 ? (
+          <code key={i} className="font-mono text-[0.85em] text-fg">
+            {part}
+          </code>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
   );
 }
 
