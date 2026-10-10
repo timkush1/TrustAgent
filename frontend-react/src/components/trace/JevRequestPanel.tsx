@@ -17,7 +17,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { CheckCheck, ChevronRight, CircleAlert, FlaskConical } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useDataSource } from '@/app/services';
 import { CodeBlock } from '@/components/common/CodeBlock';
 import { DisabledReason } from '@/components/common/DisabledReason';
@@ -140,8 +140,6 @@ function Body({ traceId, decision, redacted, names }: { traceId: string; decisio
   const scopes = status?.auth.caller_scopes;
   const noContent = Boolean(scopes && !scopes.includes('content'));
   const q = useQuery({ ...decisionRequestQuery(ds, traceId, { attempt: decision.attempt }), enabled: !noContent });
-  const simulated = decision.decision_model?.backend === 'mock';
-  const questions = q.data ? questionsIn(q.data) : askedCount(decision);
 
   let content;
   const contentReason = {
@@ -182,17 +180,31 @@ function Body({ traceId, decision, redacted, names }: { traceId: string; decisio
           {code ? <span className="ml-1 font-mono text-2xs text-fg-subtle">{code}</span> : null}
         </p>
       );
-  } else {
-    content = (
-      <div className="space-y-4">
-        <MatchBadge view={q.data} decision={decision} />
-        {q.data.requests.map((r, i) => (
-          <RequestView key={i} request={r} index={i} total={q.data.requests.length} names={names} />
-        ))}
-      </div>
-    );
   }
 
+  return <JevRequestBody decision={decision} view={q.isSuccess && !noContent ? q.data : undefined} redacted={redacted} names={names} pending={content} />;
+}
+
+/**
+ * The glass box for a request already in hand: the summary line, the probabilities, the match
+ * badge and each request sent. Fetches nothing, so the static live Playground shows the request it
+ * just sent through it (LV-6); `pending` is shown instead of the requests while `view` is absent.
+ */
+export function JevRequestBody({
+  decision,
+  view,
+  redacted = false,
+  names,
+  pending,
+}: {
+  decision: GateDecisionView;
+  view?: DecisionRequestView;
+  redacted?: boolean;
+  names?: ReadonlyMap<string, string>;
+  pending?: ReactNode;
+}) {
+  const simulated = decision.decision_model?.backend === 'mock';
+  const questions = view ? questionsIn(view) : askedCount(decision);
   return (
     <div className="mt-2 space-y-4 rounded-md border border-border px-3 py-3" data-testid="jev-request">
       <p className="text-sm text-fg tabular">{jevRequestSummary(decision, questions)}</p>
@@ -208,7 +220,16 @@ function Body({ traceId, decision, redacted, names }: { traceId: string; decisio
         </p>
       ) : null}
       <Probabilities decision={decision} names={names} />
-      {content}
+      {view ? (
+        <div className="space-y-4">
+          <MatchBadge view={view} decision={decision} />
+          {view.requests.map((r, i) => (
+            <RequestView key={i} request={r} index={i} total={view.requests.length} names={names} />
+          ))}
+        </div>
+      ) : (
+        pending
+      )}
     </div>
   );
 }

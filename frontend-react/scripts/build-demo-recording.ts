@@ -1,6 +1,6 @@
 /**
  * Writes the static demo's recording (trustagent.recording/v1, SPEC §2.13) to
- * public/demo/recorded: manifest.json plus traces/<trace_id>.json.
+ * demo-data/simulated (D110; the build serves it at demo/): manifest.json plus traces/<trace_id>.json.
  *
  *   node scripts/build-demo-recording.ts            regenerate the committed recording
  *   node scripts/build-demo-recording.ts --check    exit 1 when the committed files are stale
@@ -28,7 +28,7 @@ const web = fileURLToPath(new URL('../', import.meta.url));
 
 const { values } = parseArgs({
   options: {
-    out: { type: 'string', default: join(web, 'public/demo/recorded') },
+    out: { type: 'string', default: join(web, 'demo-data/simulated') },
     set: { type: 'string' },
     rounds: { type: 'string' },
     'interval-s': { type: 'string' },
@@ -74,7 +74,7 @@ const opts = {
   version,
 };
 
-const built = buildDemoRecording(inputs, opts);
+const built = await buildDemoRecording(inputs, opts);
 const files: Record<string, string> = serializeRecording(built);
 const out = values.out;
 

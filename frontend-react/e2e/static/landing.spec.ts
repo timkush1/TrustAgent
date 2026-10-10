@@ -4,9 +4,10 @@
  */
 import { expect, test } from '@playwright/test';
 import { seriousViolations } from '../stack/stack';
-import { MOCK_LABEL, requireStaticSite } from './site';
+import { MOCK_LABEL, requireStaticSite, useExternalGuard } from './site';
 
 test.describe('landing', () => {
+  useExternalGuard();
   test.beforeAll(async ({ playwright }, testInfo) => {
     await requireStaticSite(playwright, testInfo);
   });

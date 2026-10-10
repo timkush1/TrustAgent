@@ -8,9 +8,10 @@ import { expect, test } from '@playwright/test';
 import { hiddenStaticPage } from '../../src/components/replay/staticPages';
 import { STATIC_APP_PAGES } from '../../vite.site';
 import { seriousViolations } from '../stack/stack';
-import { MOCK_LABEL, recorded, requireStaticSite } from './site';
+import { MOCK_LABEL, recorded, requireStaticSite, useExternalGuard } from './site';
 
 test.describe('replay', () => {
+  useExternalGuard();
   test.beforeAll(async ({ playwright }, testInfo) => {
     await requireStaticSite(playwright, testInfo);
   });
@@ -83,7 +84,6 @@ test.describe('replay', () => {
 
     await page.goto('app/playground/');
     await expect(page.getByRole('list', { name: 'Example requests' }).getByRole('listitem')).toHaveCount(3);
-    await expect(page.getByText('Coming soon')).toBeVisible();
 
     await nav.getByRole('link', { name: 'Run it yourself' }).click();
     await expect(page).toHaveURL(/\/TrustAgent\/#self-host$/);
