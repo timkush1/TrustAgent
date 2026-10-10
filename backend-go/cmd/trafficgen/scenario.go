@@ -52,15 +52,34 @@ type judgeFixture struct {
 	} `json:"claims"`
 }
 
-// loadScenarios reads the pack at path, or the embedded contracts/demo/scenarios.v1.json.
+// Embedded scenario packs (--pack): the main pack (demo, e2e and the rest) and the vendor-fault
+// pack (D119), which the main pack's sets never select.
+const (
+	packMain   = "main"
+	packFaults = "faults"
+)
+
+// packFiles are the embedded files of the packs, under contracts/.
+var packFiles = map[string]string{packMain: "demo/scenarios.v1.json", packFaults: "demo/faults.v1.json"}
+
+// loadScenarios reads the pack at path, or the embedded main pack (contracts/demo/scenarios.v1.json).
 func loadScenarios(path string) ([]scenario, error) {
+	return loadPack(packMain, path)
+}
+
+// loadPack reads the pack at path, or else the embedded pack name (main or faults).
+func loadPack(name, path string) ([]scenario, error) {
 	var (
 		b   []byte
 		err error
 	)
 	if path == "" {
-		b, err = contracts.FS.ReadFile("demo/scenarios.v1.json")
-		path = "contracts/demo/scenarios.v1.json"
+		file, ok := packFiles[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown pack %q (main or faults)", name)
+		}
+		b, err = contracts.FS.ReadFile(file)
+		path = "contracts/" + file
 	} else {
 		b, err = os.ReadFile(path) // #nosec G304 -- the operator names the scenario pack (--file)
 	}

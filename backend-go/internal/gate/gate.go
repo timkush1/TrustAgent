@@ -148,6 +148,21 @@ type Exchange struct {
 	// decision-model calls never spend the enforcing reserve, whatever the mode (jev
 	// CallOptions.Enforcing false, D82).
 	Advisory bool
+	// FaultScenario is a test-mode X-TrustAgent-Scenario value of the form fault:<spec> (D119), such
+	// as the load test's fault:hang@1. It is forward-only: the decision-model calls name it as their
+	// scenario, so the test-header seam (internal/jev/testheaders.go) sends it to a local backend
+	// such as mock-upstream, which faults exactly this request. It is never stored: Trace.Scenario
+	// stays empty, the trace keeps its own source, and the deep audit never sees it.
+	FaultScenario string
+}
+
+// decisionScenario is the scenario the decision-model calls name: the trace's scenario, else the
+// forward-only fault value.
+func (x *Exchange) decisionScenario() string {
+	if x.Trace.Scenario != "" {
+		return x.Trace.Scenario
+	}
+	return x.FaultScenario
 }
 
 // hasText reports whether there is an answer to check against a parsed request.

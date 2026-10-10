@@ -176,12 +176,22 @@ fault scenario, so the demo, the Playground examples and the recording never see
 across both packs, and at most 4 scenarios in a row fault the decision model, so a pack run never opens
 the breaker. It starts empty; the GO stream fills it.
 
+How a fault reaches its endpoint: `trafficgen --pack faults` sends each scenario id as
+`X-TrustAgent-Scenario`, and the gateway in test mode forwards it to a local decision backend
+(`internal/jev/testheaders.go`), so mock-upstream answers the decision requests that name the scenario
+with `mock_faults.decision`, counted per call through `X-Mock-Key` (the trace id). The gateway strips
+`X-TrustAgent-*` before the LLM upstream, so mock-upstream finds the LLM request by its conversation and
+answers it with `mock_faults.upstream`, counted per scenario until `_mock/reset`; a scenario that faults
+its upstream therefore has a conversation of its own, and the gateway's fallback request is never faulted.
+Outside the packs, a test-mode client may send `X-TrustAgent-Scenario: fault:<spec>` (the load test's
+`fault:hang@1`): the gateway forwards that value to the decision backend but never stores it.
+
 | Field | Meaning and consumer |
 |---|---|
 | `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend (and mock-upstream's decision endpoints) look up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |
 | `sets` | Selection for `trafficgen --scenarios <set>` (and `--exclude`): `s0` (walking skeleton), `demo`, `e2e`, `untagged`, `generated`, `knowledge`, and a phase tag (below). |
 | `route`, `headers`, `api_format`, `stream`, `request` | What `trafficgen` sends: `request` is the client body, with evidence placed where SPEC §2.10 extracts it; `headers` holds extra request headers (`X-TrustAgent-Route` selects the route). The body has the shape of its `api_format`: `openai_chat` has `messages` (which may hold `tool_calls` with `content: null` and `tool` messages), `anthropic_messages` has `messages` plus a top-level `system` (a string or text blocks), and `openai_completions` has a `prompt` and no `messages`. A consumer that reads requests itself (a Playground example list, a recording) picks the scenarios it can represent by `api_format`, `stream` and the phase and `knowledge` tags instead of assuming every body is a chat. |
-| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in. `trafficgen --upstream all` sends no `test_response`, and mock-upstream answers with `response` (JSON or SSE). |
+| `answer_source`, `response` | The upstream answer. `scripted` answers go out as `test_response`, so no upstream is called; `generated` answers come from a real model when recording, and `response` is then the mock-mode stand-in; in test mode the gateway stamps an upstream answer to a `generated` scenario `answer_source: generated` (scripted when it came as `test_response`, live otherwise), so a recording says "generated answers". `trafficgen --upstream all` sends no `test_response`, and mock-upstream answers with `response` (JSON or SSE). |
 | `mock_answers` | Raw answers the mock backend (`TRUTHTABLE_JEV_BACKEND=mock`, `TRUTHTABLE_JEV_MOCK_MODE=scenario`) returns, keyed by question id `<id>__v<version>` (SPEC §2.9 compile step 5) for each evaluator the route asks. Evaluators that compile excludes (for example `no_evidence`) are not asked and have no answer. |
 | `fallback` | Only on a fallback route: the fallback answer (`response`), the raw answers to its re-gate (`mock_answers`, used when the state's `assistant_response` is the fallback answer) and the re-gate's expected decision (`expect`). In test mode, when the original answer is scripted (`test_response`) and `X-TrustAgent-Scenario` names the scenario, the gateway answers its fallback call with `fallback.response` and calls no upstream (the zero-key demo has none); otherwise it calls the upstream, and mock-upstream serves `fallback.response` to a request that carries the fallback prompt's `CONTEXT` block. |
 | `knowledge` | Only on a route that reads the knowledge add-on: the knowledge-base documents `RetrieveContext` returns for this request (the knowledge profile must hold them). |
@@ -216,7 +226,8 @@ in `config/policies.pending.yaml`. `trafficgen` skips scenarios whose phase is l
 (default: the phase this build implements, `p4`; no scenario carries `p4` yet), so a gateway of an earlier
 phase can still be driven with `--phase p2`. With `--expect` a skipped scenario fails the check (exit status 1), because a check
 that skips a scenario has not tested it; `--allow-skip` accepts the skips. The demo set sends 27 scenarios
-(7 of them `p3`) and the e2e set 24. A Go test fails when a scenario's tags do not match its features.
+(7 of them `p3`) and the e2e set 26 (6 of them `p3`), the generated pair included: under `--upstream all`
+mock-upstream answers them with their stand-in `response`, so their expectations hold. A Go test fails when a scenario's tags do not match its features.
 
 **Calibration.** `config/calibration/mock__jev-heuristic-v1.json` is the calibration of the mock snapshot,
 quality `mock`: an identity table with no labels behind it. It counts only with the mock backend, in demo
@@ -231,7 +242,12 @@ starts the e2e stack (`docker-compose.e2e.yml`, project `truthtable-e2e`): the `
 calls mock-upstream's `/v1/systemone` over HTTP, the OpenAI and Anthropic upstreams are mock-upstream too,
 the judge is the mock provider, and traces are written before the response returns
 (`TRUTHTABLE_TRACE_FLUSH=sync`). `make e2e-scenarios` sends set `e2e` with `--upstream all`, so every answer
-takes the upstream path; `make e2e-down` removes the stack. Both targets send trafficgen's default phase (`p4`);
+takes the upstream path; `make e2e-down` removes the stack. A recording run (`trafficgen --record --upstream
+generated`, `make record-demo`) sends the generated scenarios to a real model: their answers have no
+expectations, so trafficgen only waits for each trace to settle, reports any other mismatch as drift without
+failing, and refuses (exit 2, nothing sent) a gateway whose decision model or judge is the mock or a fallback,
+whose decision model answers from a local endpoint such as mock-upstream, or cannot answer (a rejected key, no
+credits, an open breaker); `--trace-ids-out` lists the trace ids it started. Both targets send trafficgen's default phase (`p4`);
 `DEMO_PHASE` and `E2E_PHASE` choose another.
 
 The pack (28 scenarios):
