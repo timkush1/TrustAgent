@@ -425,7 +425,12 @@ Details follow in the per-phase sections and under *Migration notes*.
 - **Gateway tools.** The vendor-fault scenario pack (`make e2e-faults`),
   `trafficgen --record`, the knowledge scenario run in process, published k6
   overhead runs (`docs/benchmarks/load/`), Tier-0 benchmarks (`make bench-go`,
-  `make bench-go-smoke`) and `make jev-check`.
+  `make bench-go-smoke`, and `make bench-tier0-publish`, which keeps a run with its
+  commit in `docs/benchmarks/tier0/` and writes the measured figures into
+  GATEWAY.md) and `make jev-check`.
+- **Link check.** `make docs-links` (`scripts/check_links.py`, part of `make check`
+  and ci-contracts) checks every relative link and heading anchor of the README and
+  docs.
 - **Release tooling.** `scripts/bump_version.py` and `check_version.py` keep the
   version and every mirror in step; multi-arch GHCR images with provenance, SBOMs
   and build attestations (`release-images.yml`); the pull-based quickstart;
@@ -507,6 +512,21 @@ Details follow in the per-phase sections and under *Migration notes*.
   off; `POST /api/kb/documents` (admin) is the upload's v2 path.
 
 ### Fixed
+- **Tier-0 on long documents**: the number and URL scans over the request's
+  documents were quadratic per document (Go's regexp backtracker clears a visited
+  set as long as the text on every call), so 32k tokens of evidence took about 9 ms.
+  They now scan short runs, read the documents only when the answer has something
+  to check against them, and the shipped number pattern has a hand-written scanner,
+  with the same findings: about 0.4 ms at 32k tokens on the dev laptop, inside the
+  "< 2 ms" budget (see GATEWAY.md's Tier-0 table).
+- **A key or credit pause named as a fault pause**: a success already in flight
+  (the startup probe, a slower answer) that landed after a 401 or 402 turned the
+  decision model's status from `unauthorized` / `no_credits` into `breaker_open`,
+  so Settings → Test could not lift the pause. The pause keeps its cause.
+- **The landing's refund example cost**: the hero card and "What Jev was asked"
+  showed $0.0002 next to the request's 565 tokens; at the Jev price that request
+  costs about $0.000024 (now its labelled estimate, checked against the tokens), and
+  every claim's caveat shows next to its chip.
 - **A judge bound behind the engine's back right after a start**: until the
   engine's first health report the gateway did not know that the engine's env
   (`LLM_PROVIDER`) sets the judge, so a Connect OpenRouter in the first seconds
