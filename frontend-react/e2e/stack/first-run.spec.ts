@@ -43,7 +43,9 @@ interface FirstRunRecord {
   timings_ms: { pull: number | null; healthy: number; ready: number; first_flag: number };
   budget_ms: number;
   within_budget: boolean;
+  /** The clicks this timing took; actions_note says how they relate to golden-path's count. */
   actions: string[];
+  actions_note: string;
   machine: { platform: string; cpus: number; memory_gb: number };
 }
 
@@ -106,6 +108,7 @@ test.describe('first-run', () => {
       budget_ms: BUDGET_MS,
       within_budget: firstFlag < BUDGET_MS,
       actions: journey.actions,
+      actions_note: 'Timed without the optional Copy click; make golden-path counts every click, Copy included.',
       machine: { platform: process.platform, cpus: cpus().length, memory_gb: Math.round((totalmem() / 1024 ** 3) * 10) / 10 },
     };
     const out = process.env.FIRST_RUN_OUT ?? '';
