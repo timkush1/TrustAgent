@@ -125,6 +125,9 @@ describe('Traffic list', () => {
     await router.navigate({ to: '/app/traffic', search: { reason: 'det:numbers_not_in_evidence' } });
     await waitFor(() => expect(dataRows()).toHaveLength(1));
     expect(screen.getByText('Mentions a number not in your documents')).toBeInTheDocument();
+    // The chip says what the filter is read over (CO-15).
+    const chip = screen.getByRole('link', { name: 'Remove the reason filter' }).parentElement as HTMLElement;
+    expect(chip).toHaveTextContent('Reason: Mentions a number not in your documents · last 30 days');
     // The reason goes to the proxy with its 30-day since (D68).
     const q = api.traceQueries.at(-1);
     expect(q?.get('reason')).toBe('det:numbers_not_in_evidence');

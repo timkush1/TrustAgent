@@ -6,14 +6,15 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import scenarioPack from '@contracts/demo/scenarios.v1.json';
 import { ApiError } from '../errors';
-import type { StreamSink } from '../source';
+import type { StreamSink, TraceListParams } from '../source';
 import type { StreamEvent } from '../stream/types';
 import { committedDetail, committedManifest, ManualClock, recordingFetch, scenarioTrace, scenarioTraces } from '@/test/recording';
-import type { Recording } from '@/types/api';
+import type { Recording, TraceSummary } from '@/types/api';
 import { selectScenarios, type Scenario } from './recorder';
 import { ReplayPlayer } from './player';
 import { checkManifest, MOCK_LABEL, parseDataset } from './recording';
 import { createReplayDataSource, featuredTrace, STATIC_UNAVAILABLE } from './replayDataSource';
+import { replayEvaluatorReads } from './replayEvaluatorReads';
 import { useReplayStore } from './replayStore';
 import { percentile, roiBucketOf } from './stats';
 import { ReplayTape } from './tape';
@@ -277,6 +278,74 @@ describe('ReplayDataSource', () => {
     expect((await ds.listAudits({ verdict: 'HALLUCINATED', limit: 200 })).items).toHaveLength(tracesWhere((s) => s.expect.audit_verdict === 'HALLUCINATED'));
   });
 
+  it('filters by reason like GET /api/traces (D68), over the whole recording, page by page', async () => {
+    const { ds, clock } = setup();
+    await ds.ready;
+    ds.subscribe(sink().s);
+    await Promise.resolve();
+    clock.runAll();
+    /** Every page of a listing (3 per page), and how many pages it took. */
+    const everyPage = async (params: TraceListParams) => {
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const page = await ds.listTraces({ ...params, limit: 3, cursor });
+        expect(page.items.length).toBeLessThanOrEqual(3);
+        ids.push(...page.items.map((t) => t.trace_id));
+        cursor = page.next_cursor ?? undefined;
+        pages += 1;
+      } while (cursor !== undefined);
+      return { ids, pages };
+    };
+    const where = (pred: (t: TraceSummary) => boolean) => manifest.traces.filter(pred).map((t) => t.trace_id);
+    const sorted = (ids: readonly string[]) => [...ids].sort();
+
+    // A whole code matches that code only.
+    const critical = await everyPage({ reason: 'contradiction:critical' });
+    const criticalIds = where((t) => t.reasons.includes('contradiction:critical'));
+    expect(criticalIds.length).toBeGreaterThan(3);
+    expect(sorted(critical.ids)).toEqual(sorted(criticalIds));
+    expect(new Set(critical.ids).size).toBe(critical.ids.length);
+    expect(critical.pages).toBe(Math.ceil(criticalIds.length / 3));
+    expect(critical.ids).toEqual(expect.arrayContaining(scenarioTraces('refund-contradiction-flag').map((t) => t.trace_id)));
+    // A prefix ending in a colon matches every code it starts: the evaluator at any level.
+    const anyLevel = await everyPage({ reason: 'contradiction:' });
+    const anyLevelIds = where((t) => t.reasons.some((r) => r.startsWith('contradiction:')));
+    expect(anyLevelIds.length).toBeGreaterThan(criticalIds.length);
+    expect(sorted(anyLevel.ids)).toEqual(sorted(anyLevelIds));
+    const det = await everyPage({ reason: 'det:' });
+    expect(sorted(det.ids)).toEqual(sorted(where((t) => t.reasons.some((r) => r.startsWith('det:')))));
+    // A bare id is a whole code, never a prefix.
+    expect((await everyPage({ reason: 'contradiction' })).ids).toEqual([]);
+    // With the other filters, and without a since: the replay needs no bound.
+    const onRoute = await everyPage({ reason: 'det:', route: 'support-bot' });
+    expect(onRoute.ids.length).toBeGreaterThan(0);
+    expect(sorted(onRoute.ids)).toEqual(sorted(where((t) => t.route === 'support-bot' && t.reasons.some((r) => r.startsWith('det:')))));
+  });
+
+  it('suggests evidence patterns from the answers that carried none, as the gateway scans them (D64)', async () => {
+    const { ds, clock } = setup();
+    await ds.ready;
+    ds.subscribe(sink().s);
+    await Promise.resolve();
+    clock.runAll();
+    const untagged = manifest.traces.filter((t) => (t.checked_against?.used ?? []).length === 0);
+    expect(untagged.length).toBeGreaterThan(0);
+    const { items } = await ds.getEvidenceSuggestions({ window: '24h' });
+    // support-bot's shipping prompt keeps its policy in a <policy> tag the doc rules do not know.
+    const shipping = scenarioTraces('untagged-custom-tag').map((t) => t.trace_id);
+    expect(items[0]).toMatchObject({ kind: 'tag_pattern', label: '<policy> blocks in the system prompt', would_gain: shipping.length, sample: untagged.length });
+    expect(items[0].pattern).toEqual({ pattern: '<policy(?:[\\t\\n\\f\\r ][^>]*)?>(.*?)</policy>', flags: 'is' });
+    // The example is the most recent answer it would have helped.
+    expect(items[0].example_trace_id).toBe(shipping.at(-1));
+    expect(items.at(-1)).toMatchObject({ kind: 'extension', pattern: null, sample: untagged.length });
+    // Per route, and an honest nothing where every answer carried documents.
+    const onRoute = await ds.getEvidenceSuggestions({ window: '24h', route: 'support-bot' });
+    expect(onRoute.items[0].sample).toBe(untagged.filter((t) => t.route === 'support-bot').length);
+    expect(await ds.getEvidenceSuggestions({ window: '24h', route: 'help-center' })).toEqual({ items: [] });
+  });
+
   it('serves a trace file, and 404 for an id the recording lacks', async () => {
     const { ds, clock } = setup();
     await ds.ready;
@@ -335,7 +404,16 @@ describe('ReplayDataSource', () => {
     const coverage = await ds.getEvidenceCoverage({ window: '24h' });
     expect(coverage.requests).toBe(total);
     expect(coverage.groundedness_assessed).toBe(assessed);
-    expect(coverage.top_reasons).toEqual([{ reason: 'no_evidence', count: total - assessed }]);
+    // Why the others were not checked, as the gateway counts it: the groundedness check's own
+    // exclusion, else no documents at all. A route with documents but no groundedness check (the
+    // assistant's rubric) is not a gap.
+    const unchecked = manifest.traces.filter((t) => committedDetail(t.trace_id).decisions[0]?.evaluators['groundedness@1']?.status !== 'assessed');
+    const noDocuments = unchecked.filter((t) => (t.checked_against?.used ?? []).length === 0);
+    const documentsNoCheck = unchecked.filter((t) => (t.checked_against?.used ?? []).length > 0 && !committedDetail(t.trace_id).decisions[0]?.evaluators['groundedness@1']);
+    expect(noDocuments.length).toBeGreaterThan(0);
+    expect(documentsNoCheck.length).toBeGreaterThan(0);
+    expect(coverage.top_reasons).toEqual([{ reason: 'no_evidence', count: noDocuments.length }]);
+    expect(coverage.top_reasons[0].count).toBeLessThan(total - assessed);
   });
 
   it('serves spend per bucket that adds up to the ROI summary, and the built-in prices', async () => {
@@ -360,6 +438,18 @@ describe('ReplayDataSource', () => {
     const same = roi.counterfactuals.find((c) => c.kind === 'llm_same_checks');
     expect(sum((p) => p.same_checks_usd ?? 0)).toBeCloseTo(same?.usd ?? 0, 12);
 
+    // The bucket comes from the whole recording, so a chart keeps it while the tape plays: a tape
+    // that opens empty draws per hour (spend) and per 15 minutes (outcomes) from its first moment.
+    expect((await ds.getOverview({ window: '24h' })).bucket).toBe('15m');
+    const f = recordingFetch('/TrustAgent/');
+    const fromStart = createReplayDataSource({ basePath: '/TrustAgent/', fetchImpl: f.fetch, clock: new ManualClock(), preroll: 0 });
+    await fromStart.ready;
+    expect((await fromStart.listTraces({ limit: 200 })).items.length).toBeLessThanOrEqual(1);
+    const opening = await fromStart.getRoiTimeseries({ window: '24h', bucket: '1d' });
+    expect(opening.bucket).toBe('1h');
+    expect(opening.points).toHaveLength(1);
+    expect((await fromStart.getOverview({ window: '24h' })).bucket).toBe('15m');
+
     const week = await ds.getRoiTimeseries({ window: '7d', bucket: '1d' });
     expect(week.bucket).toBe('1h');
     expect(week.points.reduce((s, p) => s + p.gated, 0)).toBe(roi.gated_responses);
@@ -373,9 +463,63 @@ describe('ReplayDataSource', () => {
     const { ds } = setup();
     await ds.ready;
     await expect(ds.getPolicies()).rejects.toMatchObject({ status: 404, message: STATIC_UNAVAILABLE });
-    await expect(ds.listEvaluators({})).rejects.toMatchObject({ status: 404 });
+    await expect(ds.getSettings()).rejects.toMatchObject({ status: 404, message: STATIC_UNAVAILABLE });
     await expect(ds.getStatus()).rejects.toMatchObject({ status: 404 });
     expect((await ds.getHealth()).demo).toBe(true);
+  });
+
+  it('answers the evaluator reads through the replay plane (D107)', async () => {
+    const { ds } = setup();
+    await ds.ready;
+    const plane = replayEvaluatorReads({
+      message: STATIC_UNAVAILABLE,
+      traceIds: async () => (await ds.ready).ids(),
+      trace: (id, signal) => ds.getTrace(id, signal),
+    });
+    const settle = (p: Promise<unknown>) =>
+      p.then(
+        (value) => ({ value }),
+        (err: unknown) => ({ error: err instanceof ApiError ? { status: err.status, code: err.code, message: err.message } : String(err) }),
+      );
+    expect(await settle(ds.listEvaluators({}))).toEqual(await settle(plane.listEvaluators({})));
+    expect(await settle(ds.getEvaluator('groundedness'))).toEqual(await settle(plane.getEvaluator('groundedness')));
+    expect(await settle(ds.getEvaluatorVersion('groundedness', 1))).toEqual(await settle(plane.getEvaluatorVersion('groundedness', 1)));
+  });
+
+  it('rebuild is deterministic: every simulated decision rebuilds the requests it recorded (D109)', async () => {
+    const { ds, clock } = setup();
+    await ds.ready;
+    ds.subscribe(sink().s);
+    await Promise.resolve();
+    clock.runAll();
+    let asked = 0;
+    let fallbackChecks = 0;
+    for (const t of manifest.traces) {
+      const detail = committedDetail(t.trace_id);
+      expect(detail.decisions.length, t.trace_id).toBeGreaterThan(0);
+      for (const d of detail.decisions) {
+        const view = await ds.getDecisionRequest(t.trace_id, { attempt: d.attempt });
+        expect(view.request_sha256, `${t.trace_id} attempt ${d.attempt}`).toEqual(d.compile?.request_sha256 ?? []);
+        expect(view.matches_recorded).toBe(true);
+        expect(view.mismatch_reason).toBeNull();
+        expect(view.cpt).toBe(d.compile?.cpt);
+        expect(view.requests).toHaveLength(d.compile?.requests ?? 0);
+        // A decision the fast check answered shows what it was asked; one it was not asked, nothing.
+        const questions = view.requests.flatMap((r) => Object.keys(r.questions));
+        if (d.decision_model) {
+          expect(questions.length).toBeGreaterThan(0);
+          asked += 1;
+        } else expect(questions).toEqual([]);
+        // A fallback check is rebuilt from the fallback answer that was delivered.
+        if (d.attempt === 1) fallbackChecks += 1;
+      }
+    }
+    expect(asked).toBeGreaterThan(0);
+    expect(fallbackChecks).toBe(scenarioTraces('payments-fallback').length);
+    expect(fallbackChecks).toBeGreaterThan(0);
+    // An attempt the trace has no decision for, and a trace the recording lacks.
+    await expect(ds.getDecisionRequest(refundId, { attempt: 1 })).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    await expect(ds.getDecisionRequest('01a0e700-0000-7000-8000-000000000000')).rejects.toMatchObject({ status: 404, code: 'not_found' });
   });
 
   it('reports a recording it cannot load', async () => {

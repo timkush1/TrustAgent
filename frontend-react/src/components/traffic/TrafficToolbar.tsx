@@ -10,7 +10,8 @@ import { OUTCOME_IDS } from '@/domain/contracts';
 import { outcomeView } from '@/domain/presentation';
 import { formatCount } from '@/domain/format';
 import { cn } from '@/lib/cn';
-import { hasFilters, reasonFilterLabel, type TrafficFilters } from './trafficRows';
+import { hasFilters, reasonFilterLabel, reasonWindowLabel, type TrafficFilters } from './trafficRows';
+import { useReasonBound } from './useTrafficRows';
 
 interface Option {
   value: string;
@@ -72,6 +73,8 @@ export function TrafficToolbar({
   onLiveChange: (live: boolean) => void;
 }) {
   const navigate = useNavigate({ from: '/app/traffic/' });
+  // The reason chip says what it is read over (the proxy looks back a fixed number of days).
+  const reasonWindow = reasonWindowLabel(useReasonBound());
   const setFilter = (key: keyof TrafficFilters, value: string | undefined) =>
     void navigate({ search: (prev) => ({ ...prev, [key]: value }) });
 
@@ -102,6 +105,7 @@ export function TrafficToolbar({
         {filters.reason ? (
           <span className="inline-flex h-8 items-center gap-1 rounded-md border border-border-strong bg-surface pr-1 pl-2 text-sm text-fg">
             <span className="text-fg-muted">Reason:</span> {reasonFilterLabel(filters.reason)}
+            {reasonWindow ? <span className="text-fg-muted"> · {reasonWindow}</span> : null}
             <Link
               from="/app/traffic/"
               search={(prev) => ({ ...prev, reason: undefined })}

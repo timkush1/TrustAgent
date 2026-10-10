@@ -12,7 +12,9 @@
  *   recorded with the decision (`CompileInfo.request_sha256`) whenever the decision carries them.
  *
  * States: a key without the content scope (not fetched), stored text that expired (409), a proxy
- * that cannot recompile (404), redacted text, and a simulated (mock) fast check.
+ * that cannot recompile (404), redacted text, and a simulated (mock) fast check. On the static
+ * site the replay rebuilds the request in the browser (D109) and the badge says so; the
+ * `not_implemented` branch is left for a data source that cannot rebuild at all.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -27,11 +29,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { isApiError } from '@/data/errors';
 import { decisionRequestQuery } from '@/data/queries/evaluators';
 import { useSystemStatus } from '@/data/useSystem';
-import { copy, humanizeId } from '@/domain/presentation';
+import { useIsStatic } from '@/components/replay/useReplay';
+import { useReplayStore } from '@/data/replay/replayStore';
+import { copy, humanizeId, replayGlassboxBadge, replayMismatchText } from '@/domain/presentation';
 import { evalMismatchText, evalRecompileText } from '@/domain/words/evaluators';
-import type { DecisionRequestView, GateDecisionView, JevRequest } from '@/types/api';
+import type { DecisionRequestView, GateDecisionView, JevRequest, Recording } from '@/types/api';
 import { askedCount, documentExcerpts, jevRequestSummary, questionsIn, recompileMatches } from './jevRequest';
-import { evaluatorName } from './traceView';
+import { evaluatorName, TRACE_ANCHORS } from './traceView';
 
 function textOf(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
@@ -95,8 +99,21 @@ function RequestView({ request, index, total, names }: { request: JevRequest; in
   );
 }
 
-function MatchBadge({ view, decision }: { view: DecisionRequestView; decision: GateDecisionView }) {
+function MatchBadge({ view, decision, replayKind }: { view: DecisionRequestView; decision: GateDecisionView; replayKind?: Recording['kind'] | null }) {
   const matches = recompileMatches(view, decision);
+  if (replayKind) {
+    // Rebuilt in the browser from the recording (D109). On the simulated tape a match proves
+    // nothing: the tape was made by the same compile().
+    const why = replayKind === 'mock' || matches ? null : replayMismatchText(view.mismatch_reason);
+    return (
+      <div className="space-y-1" data-glassbox={replayKind === 'mock' ? 'simulated' : matches ? 'matches' : 'differs'}>
+        <Badge icon={replayKind === 'mock' ? FlaskConical : matches ? CheckCheck : CircleAlert} emphasis="quiet">
+          {replayGlassboxBadge(replayKind, matches)}
+        </Badge>
+        {why ? <p className="text-xs text-fg-muted">{why}</p> : null}
+      </div>
+    );
+  }
   const why = matches
     ? null
     : view.matches_recorded
@@ -137,6 +154,10 @@ function Probabilities({ decision, names }: { decision: GateDecisionView; names?
 function Body({ traceId, decision, redacted, names }: { traceId: string; decision: GateDecisionView; redacted: boolean; names?: ReadonlyMap<string, string> }) {
   const ds = useDataSource();
   const { status } = useSystemStatus();
+  // On the static site the request is rebuilt from the recording in the browser (D109).
+  const isStatic = useIsStatic();
+  const recordingKind = useReplayStore((r) => r.kind);
+  const replayKind = isStatic ? recordingKind : null;
   const scopes = status?.auth.caller_scopes;
   const noContent = Boolean(scopes && !scopes.includes('content'));
   const q = useQuery({ ...decisionRequestQuery(ds, traceId, { attempt: decision.attempt }), enabled: !noContent });
@@ -182,13 +203,24 @@ function Body({ traceId, decision, redacted, names }: { traceId: string; decisio
       );
   }
 
-  return <JevRequestBody decision={decision} view={q.isSuccess && !noContent ? q.data : undefined} redacted={redacted} names={names} pending={content} />;
+  return (
+    <JevRequestBody
+      decision={decision}
+      view={q.isSuccess && !noContent ? q.data : undefined}
+      redacted={redacted}
+      names={names}
+      pending={content}
+      replayKind={replayKind}
+    />
+  );
 }
 
 /**
  * The glass box for a request already in hand: the summary line, the probabilities, the match
  * badge and each request sent. Fetches nothing, so the static live Playground shows the request it
  * just sent through it (LV-6); `pending` is shown instead of the requests while `view` is absent.
+ * `replayKind` marks a request rebuilt from the static replay's recording (D109), which words the
+ * badge for that recording.
  */
 export function JevRequestBody({
   decision,
@@ -196,12 +228,14 @@ export function JevRequestBody({
   redacted = false,
   names,
   pending,
+  replayKind = null,
 }: {
   decision: GateDecisionView;
   view?: DecisionRequestView;
   redacted?: boolean;
   names?: ReadonlyMap<string, string>;
   pending?: ReactNode;
+  replayKind?: Recording['kind'] | null;
 }) {
   const simulated = decision.decision_model?.backend === 'mock';
   const questions = view ? questionsIn(view) : askedCount(decision);
@@ -222,7 +256,7 @@ export function JevRequestBody({
       <Probabilities decision={decision} names={names} />
       {view ? (
         <div className="space-y-4">
-          <MatchBadge view={view} decision={decision} />
+          <MatchBadge view={view} decision={decision} replayKind={replayKind} />
           {view.requests.map((r, i) => (
             <RequestView key={i} request={r} index={i} total={view.requests.length} names={names} />
           ))}
@@ -248,7 +282,12 @@ export function JevRequestPanel({
   // Nothing is fetched until the viewer opens it.
   const [open, setOpen] = useState(false);
   return (
-    <details className="group/jev text-sm" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    // The first attempt's panel is the one a link to #jev-request opens (TraceFacts).
+    <details
+      id={decision.attempt === 0 ? TRACE_ANCHORS.jevRequest : undefined}
+      className="group/jev scroll-mt-4 text-sm"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs font-medium text-fg-muted hover:text-fg [&::-webkit-details-marker]:hidden">
         <ChevronRight aria-hidden="true" className="size-3.5 transition-transform group-open/jev:rotate-90" />
         {copy.trace.show_jev_request}

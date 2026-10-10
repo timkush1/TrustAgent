@@ -1,38 +1,72 @@
 /**
  * The static build's navigation (SPEC §3.3 "Static build"): Overview (recorded), Traffic (replay),
- * Trace (the flagged refund answer), Playground, Studio, and "Run it yourself" at the bottom, which
- * opens the landing page's self-host section. Policies, Settings and Knowledge need a gateway and
- * are not listed.
+ * Trace (the flagged refund answer, "caught": where the tour starts), Playground, Studio, and "Run
+ * it yourself" at the bottom, which opens the landing page's self-host section. Policies, Settings
+ * and Knowledge need a gateway and are not listed.
  */
 import { Link, useRouterState } from '@tanstack/react-router';
 import { FlaskConical, LayoutDashboard, PenLine, Rows3, ScanSearch, Terminal, type LucideIcon } from 'lucide-react';
-import type { ReactElement, ReactNode } from 'react';
+import { useId, type ReactElement, type ReactNode } from 'react';
 import { Tooltip } from '@/components/ui/tooltip';
+import { copy } from '@/domain/presentation';
 import { cn } from '@/lib/cn';
-import { useReplayInfo, useRunItYourselfHref } from './useReplay';
+import { useReplayStore } from '@/data/replay/replayStore';
+import { useRunItYourselfHref } from './useReplay';
 
 const itemClass =
   'flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg max-lg:w-9 max-lg:justify-center max-lg:px-0';
 const activeClass = 'bg-surface-hover font-medium text-fg';
 
-function Item({ label, icon: Icon, active, hint, children }: { label: string; icon: LucideIcon; active: boolean; hint?: string; children: (props: { className: string; 'aria-current'?: 'page'; 'aria-label': string; content: ReactNode }) => ReactElement }) {
+function Item({
+  label,
+  icon: Icon,
+  active,
+  hint,
+  description,
+  children,
+}: {
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+  hint?: string;
+  /** A sentence about the item, in its tooltip and read after its name. */
+  description?: string;
+  children: (props: { className: string; 'aria-current'?: 'page'; 'aria-label': string; 'aria-describedby'?: string; content: ReactNode }) => ReactElement;
+}) {
+  const descriptionId = useId();
   const content = (
     <>
       <Icon aria-hidden="true" className="size-4 shrink-0" />
       <span className="max-lg:sr-only">{label}</span>
-      {hint ? <span className="ml-auto text-2xs font-normal text-fg-muted max-lg:hidden">{hint}</span> : null}
+      {hint ? (
+        <span aria-hidden={description ? true : undefined} className="ml-auto text-2xs font-normal text-fg-muted max-lg:hidden">
+          {hint}
+        </span>
+      ) : null}
+      {description ? (
+        <span id={descriptionId} className="sr-only">
+          {description}
+        </span>
+      ) : null}
     </>
   );
   return (
-    <Tooltip label={label}>
-      {children({ className: cn(itemClass, active && activeClass), 'aria-current': active ? 'page' : undefined, 'aria-label': label, content })}
+    <Tooltip label={description ? `${label}: ${description}` : label}>
+      {children({
+        className: cn(itemClass, active && activeClass),
+        'aria-current': active ? 'page' : undefined,
+        'aria-label': label,
+        'aria-describedby': description ? descriptionId : undefined,
+        content,
+      })}
     </Tooltip>
   );
 }
 
 export function StaticNavRail() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { featuredTraceId } = useReplayInfo();
+  // Only the featured trace: the nav does not re-render as the tape plays.
+  const featuredTraceId = useReplayStore((s) => s.featuredTraceId);
   const runHref = useRunItYourselfHref();
   const on = (suffix: string) => pathname.endsWith(suffix) || pathname.includes(`${suffix}/`);
   const onTrace = Boolean(featuredTraceId) && pathname.endsWith(`/app/traffic/${featuredTraceId}`);
@@ -60,7 +94,8 @@ export function StaticNavRail() {
           </Link>
         )}
       </Item>
-      <Item label="Trace" icon={ScanSearch} active={onTrace}>
+      {/* The first stop of the tour (D117): the answer the gate caught. */}
+      <Item label="Trace" hint="caught" description={copy.recording.nav_hint_caught} icon={ScanSearch} active={onTrace}>
         {({ content, ...p }) =>
           featuredTraceId ? (
             <Link to="/app/traffic/$traceId" params={{ traceId: featuredTraceId }} {...p}>

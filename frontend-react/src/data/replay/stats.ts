@@ -35,7 +35,18 @@ export interface StatsContext {
   recording: Pick<Recording, 'kind' | 'recorded_at' | 'label'>;
   /** Wall-clock time of the tape position (the end of the played window). */
   now: string;
+  /**
+   * Wall-clock time of the recording's last event. A series' bucket comes from the whole recording
+   * (recorded_at to end), so it stays put while the tape plays.
+   */
+  end: string;
   window: TimeWindow;
+}
+
+/** The recording's span in ms (recorded_at to its last event), 0 when either time is unreadable. */
+function recordingSpan(ctx: StatsContext): number {
+  const span = Date.parse(ctx.end) - Date.parse(ctx.recording.recorded_at);
+  return Number.isNaN(span) ? 0 : Math.max(span, 0);
 }
 
 const MIN_N = 30;
@@ -114,6 +125,10 @@ const SERIES_OF: Record<string, SeriesKey | null> = {
 
 const CAUGHT = new Set(['flagged', 'blocked', 'replaced', 'would_flag', 'would_block']);
 
+/** The first decision assessed a groundedness evaluator (any version): checked against its documents. */
+const checkedGroundedness = (p: PlayedTrace) =>
+  Object.values(p.decision?.evaluators ?? {}).some((e) => e.ref.startsWith('groundedness@') && e.status === 'assessed');
+
 const auditDone = (t: TraceSummary) => t.audit.status === 'completed' || t.audit.status === 'degraded';
 
 /** The audit verdicts that say something about the answer (store/stats.go assessedVerdictSQL). */
@@ -135,7 +150,9 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
   const audits = played.map((p) => p.audit).filter((a): a is AuditDetail => a !== null);
   const from = ctx.recording.recorded_at;
   const to = ctx.now;
-  const bucket = bucketOf(Date.parse(to) - Date.parse(from));
+  // One bucket for the whole recording, chosen from its span, so the chart does not change its
+  // bucket as the tape plays; the points run from the start to the tape position.
+  const bucket = bucketOf(recordingSpan(ctx));
   const step = BUCKET_MS[bucket];
   const start = Math.floor(Date.parse(from) / step) * step;
   const end = Math.floor(Date.parse(to) / step) * step;
@@ -164,7 +181,7 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
 
   const count = (pred: (t: TraceSummary) => boolean) => traces.filter(pred).length;
   const decisions = played.map((p) => p.decision).filter((d): d is GateDecisionView => d !== null);
-  const groundednessAssessed = decisions.filter((d) => Object.values(d.evaluators).some((e) => e.ref.startsWith('groundedness@') && e.status === 'assessed')).length;
+  const groundednessAssessed = played.filter(checkedGroundedness).length;
   const bySource = Object.fromEntries(SOURCES.map((s) => [s, count((t) => (t.checked_against?.used ?? []).some((u) => u.source === s && u.items > 0))])) as Record<EvidenceSource, number>;
   // The rates count only audits that reached a verdict about the answer, as the gateway does.
   const assessed = audits.filter(assessedAudit);
@@ -408,7 +425,7 @@ export function roiSummary(played: readonly PlayedTrace[], ctx: StatsContext): R
 const ROI_BUCKET_MS: Record<CostSeries['bucket'], number> = { '1m': 60_000, '1h': 3_600_000, '1d': 86_400_000 };
 
 /**
- * The bucket that fits the played span, as the replay's "Requests by outcome" picks its own: per
+ * The bucket that fits a recording's span, as the replay's "Requests by outcome" picks its own: per
  * minute up to an hour (a short recording would fold into one hourly point), per hour up to two
  * days (the simulated tape spans two hours: three hourly points), per day beyond.
  */
@@ -420,14 +437,14 @@ export function roiBucketOf(spanMs: number): CostSeries['bucket'] {
 /**
  * Spend per UTC bucket over the played traces (SPEC §2.4 #48): every bucket from the recording's
  * start to the tape position, empty ones zero-filled, as the gateway serves them, in the bucket
- * that fits the played span (roiBucketOf). An answer's fast-check and deep-audit costs land in the
+ * that fits the whole recording (roiBucketOf), so it stays put while the tape plays. An answer's fast-check and deep-audit costs land in the
  * bucket it was created in; the same-checks counterfactual is the token model above (null without
  * the judge's price).
  */
 export function roiTimeseries(played: readonly PlayedTrace[], ctx: StatsContext): CostSeries {
   const from = Date.parse(ctx.recording.recorded_at);
   const to = Date.parse(ctx.now);
-  const bucket = roiBucketOf(to - from);
+  const bucket = roiBucketOf(recordingSpan(ctx));
   const step = ROI_BUCKET_MS[bucket];
   const points: CostSeries['points'] = [];
   if (Number.isNaN(from) || Number.isNaN(to)) return { window: ctx.window, bucket, points };
@@ -453,18 +470,34 @@ export function roiTimeseries(played: readonly PlayedTrace[], ctx: StatsContext)
 
 // ------------------------------------------------------------------------------------ coverage
 
+/** EvidenceCoverage.top_reasons in the gateway's order (store.CoverageReasons), the ties' order too. */
+const COVERAGE_REASONS = ['no_evidence', 'evidence_too_short', 'evidence_packed_away', 'too_long'] as const;
+type CoverageReason = (typeof COVERAGE_REASONS)[number];
+const isCoverageReason = (r: string | null | undefined): r is CoverageReason => (COVERAGE_REASONS as readonly string[]).includes(r ?? '');
+
+/**
+ * Why an answer's groundedness was not checked, as the gateway counts it (store/stats.go
+ * EvidenceCoverage): the groundedness evaluator's exclusion in the first decision, else
+ * no_evidence for an answer that carried no documents, else nothing (a route without a
+ * groundedness check, for one, is not a coverage gap).
+ */
+function coverageReason(p: PlayedTrace): CoverageReason | null {
+  const excluded = p.decision?.excluded?.find((x) => x.ref.startsWith('groundedness@'))?.reason;
+  if (excluded !== undefined) return isCoverageReason(excluded) ? excluded : null;
+  return (p.summary.checked_against?.used ?? []).length === 0 ? 'no_evidence' : null;
+}
+
 export function evidenceCoverage(played: readonly PlayedTrace[], ctx: StatsContext, route?: string): EvidenceCoverage {
   const mine = played.filter((p) => !route || p.summary.route === route);
-  const reasons = new Map<EvidenceCoverage['top_reasons'][number]['reason'], number>();
+  const reasons = new Map<CoverageReason, number>();
   let assessed = 0;
   for (const p of mine) {
-    const g = p.decision ? Object.values(p.decision.evaluators).find((e) => e.ref.startsWith('groundedness@')) : undefined;
-    if (g?.status === 'assessed') {
+    if (checkedGroundedness(p)) {
       assessed += 1;
       continue;
     }
-    const why = g?.reason === 'evidence_too_short' || g?.reason === 'evidence_packed_away' || g?.reason === 'too_long' ? g.reason : 'no_evidence';
-    reasons.set(why, (reasons.get(why) ?? 0) + 1);
+    const why = coverageReason(p);
+    if (why !== null) reasons.set(why, (reasons.get(why) ?? 0) + 1);
   }
   const summaries = mine.map((p) => p.summary);
   return {
@@ -476,6 +509,9 @@ export function evidenceCoverage(played: readonly PlayedTrace[], ctx: StatsConte
     by_source: Object.fromEntries(
       SOURCES.map((s) => [s, summaries.filter((t) => (t.checked_against?.used ?? []).some((u) => u.source === s && u.items > 0)).length]),
     ) as Record<EvidenceSource, number>,
-    top_reasons: [...reasons.entries()].map(([reason, count]) => ({ reason, count })),
+    // Most frequent first; ties keep the gateway's order.
+    top_reasons: COVERAGE_REASONS.filter((r) => reasons.has(r))
+      .map((reason) => ({ reason, count: reasons.get(reason) ?? 0 }))
+      .sort((a, b) => b.count - a.count),
   };
 }

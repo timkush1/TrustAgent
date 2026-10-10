@@ -12,6 +12,9 @@ export interface ReplayInfo {
   kind: Recording['kind'] | null;
   label: string | null;
   recordedAt: string | null;
+  /** The decision model's snapshot and the judge model the recording was made with (the banner's words). */
+  snapshot: string | null;
+  judge: string | null;
   traces: number;
   /** Recording ms of the last event. */
   duration: number;
@@ -39,6 +42,8 @@ export const INITIAL_REPLAY: ReplayInfo = {
   kind: null,
   label: null,
   recordedAt: null,
+  snapshot: null,
+  judge: null,
   traces: 0,
   duration: 0,
   preroll: 0,

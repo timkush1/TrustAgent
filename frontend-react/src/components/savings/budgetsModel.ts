@@ -228,3 +228,34 @@ export function overrideFindings(errors: readonly FieldError[]): RowFinding[] {
   }
   return out;
 }
+
+/** A saved settings warning on the price overrides (PATCH /api/settings `warnings`). */
+type SettingsWarning = SettingsView['warnings'][number];
+
+export interface OverrideWarnings {
+  /** Warnings about one override, by its index in the saved list, with the field they name. */
+  onRow: Map<number, { field: string | null; warning: SettingsWarning }[]>;
+  /** The rest, shown under the list. */
+  rest: SettingsWarning[];
+}
+
+/**
+ * The pricing_overrides warnings of a save, each on the row it concerns (CO-7): the row is
+ * `details.index` (price_far_above_contracts), else the index in `path`. A warning naming no row,
+ * or one the saved list does not have, stays with the list.
+ */
+export function overrideWarnings(warnings: readonly SettingsWarning[], rows: number): OverrideWarnings {
+  const out: OverrideWarnings = { onRow: new Map(), rest: [] };
+  for (const w of warnings) {
+    if (w.key !== 'pricing_overrides') continue;
+    const m = w.path ? OVERRIDE_PATH.exec(w.path) : null;
+    const index = typeof w.details?.index === 'number' ? w.details.index : m ? Number(m[1]) : null;
+    if (index === null || !Number.isInteger(index) || index < 0 || index >= rows) {
+      out.rest.push(w);
+      continue;
+    }
+    const field = m && Number(m[1]) === index ? (m[2] ?? null) : null;
+    out.onRow.set(index, [...(out.onRow.get(index) ?? []), { field, warning: w }]);
+  }
+  return out;
+}

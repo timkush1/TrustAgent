@@ -8,6 +8,7 @@ import {
   enforcingReserve,
   isEnvManaged,
   overrideFindings,
+  overrideWarnings,
   overridesFromRows,
   parseCap,
   rebaseCaps,
@@ -129,5 +130,20 @@ describe('price overrides', () => {
     // Without the numbers its words need, the server's own message.
     expect(costOverrideFinding({ code: 'price_far_above_contracts', message: 'raw' })).toBe('raw');
     expect(costOverrideFinding({ code: 'price_zero_not_local', message: 'raw' }, 'openai')).toBe('$0 is only allowed for local models. openai bills its calls.');
+  });
+
+  it('puts each saved warning on the override it is about, the rest under the list (CO-7)', () => {
+    const far = { key: 'pricing_overrides', message: '$150 is 150x', hint: 'Check it.', code: 'price_far_above_contracts', path: 'pricing_overrides[1].input_per_mtok', details: { ratio: 150, contracts_per_mtok: 1, index: 1 } };
+    const byPath = { key: 'pricing_overrides', message: 'odd note', hint: '', path: 'pricing_overrides[0].note' };
+    const listWide = { key: 'pricing_overrides', message: 'Two overrides price the same model.', hint: '' };
+    const gone = { ...far, details: { ...far.details, index: 5 }, path: 'pricing_overrides[5].input_per_mtok' };
+    const other = { key: 'budgets', message: 'not about prices', hint: '' };
+    const got = overrideWarnings([far, byPath, listWide, gone, other], 2);
+    expect([...got.onRow.entries()]).toEqual([
+      [1, [{ field: 'input_per_mtok', warning: far }]],
+      [0, [{ field: 'note', warning: byPath }]],
+    ]);
+    // No row named, or a row the saved list does not have: with the list. Other keys: not here.
+    expect(got.rest).toEqual([listWide, gone]);
   });
 });

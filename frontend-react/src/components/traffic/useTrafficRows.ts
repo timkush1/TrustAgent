@@ -5,8 +5,8 @@
  * stop refreshing too, so nothing new slides in; loading older pages at the bottom still works.
  *
  * A reason filter goes to the proxy (D68) with `since` REASON_LOOKBACK_DAYS before the page opened,
- * fixed for the visit so the query stays put. The static replay has no proxy to ask: it filters by
- * reason here, like the live rows.
+ * fixed for the visit so the query stays put. The static replay filters the whole recording by
+ * reason in its data source, so its pages and counts are the filtered ones too.
  */
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -14,7 +14,17 @@ import { useDataSource, useRuntimeConfig } from '@/app/services';
 import { useStreamStore } from '@/data/stream/streamStore';
 import type { TraceSummary } from '@/types/api';
 import { tracePagesQuery } from './trafficQuery';
-import { combineTrafficRows, reasonSince, traceListParams, type TrafficFilters } from './trafficRows';
+import { combineTrafficRows, reasonSince, traceListParams, type ReasonBound, type TrafficFilters } from './trafficRows';
+
+/**
+ * What a reason filter is read over on this page: the proxy's lookback from when the page opened
+ * (fixed for the visit, so the query stays put), or the whole recording in the static replay.
+ */
+export function useReasonBound(): ReasonBound {
+  const replay = useRuntimeConfig().appMode === 'static';
+  const [openedAt] = useState(() => Date.now());
+  return useMemo<ReasonBound>(() => (replay ? 'recording' : { since: reasonSince(openedAt) }), [replay, openedAt]);
+}
 
 export function useTrafficRows(filters: TrafficFilters) {
   const ds = useDataSource();
@@ -25,10 +35,8 @@ export function useTrafficRows(filters: TrafficFilters) {
   const visibleOrder = useStreamStore((s) => s.visibleOrder);
   const decisions = useStreamStore((s) => s.decisions);
 
-  const replay = useRuntimeConfig().appMode === 'static';
-  const [openedAt] = useState(() => Date.now());
-  const since = reason && !replay ? reasonSince(openedAt) : undefined;
-  const params = useMemo(() => traceListParams({ outcome, route, model, reason }, since), [outcome, route, model, reason, since]);
+  const bound = useReasonBound();
+  const params = useMemo(() => traceListParams({ outcome, route, model, reason }, bound), [outcome, route, model, reason, bound]);
   const query = useInfiniteQuery({
     ...tracePagesQuery(ds, params),
     // Paused: keep the pages on screen (a first load for new filters still runs).

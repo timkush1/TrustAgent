@@ -31,11 +31,13 @@ import {
   emptyRow,
   overrideFindings,
   overridesFromRows,
+  overrideWarnings,
   rebaseOverrides,
   rowProblems,
   rowsFromOverrides,
   sameOverrides,
   type OverrideRow,
+  type OverrideWarnings,
   type RowField,
 } from './budgetsModel';
 import { useSettingsDraft } from './useSettingsDraft';
@@ -43,6 +45,13 @@ import { useSettingsDraft } from './useSettingsDraft';
 const readOverrides = (s: SettingsView): PriceEntry[] => s.runtime.pricing_overrides;
 
 const KNOWN_PROVIDERS = ['openrouter', 'typesafe', 'anthropic', 'openai', 'ollama'];
+
+/** A saved warning in the words of a finding (costOverrideFinding reads its code and details). */
+const warningWords = (w: SettingsView['warnings'][number], provider?: string): string =>
+  costOverrideFinding({ code: w.code, message: w.message, details: w.details ? { ...w.details } : undefined }, provider);
+
+/** The fields a saved warning can name, in the row's words. */
+const FIELD_WORDS: Record<string, string> = { provider: 'Provider', match: 'Model', input_per_mtok: 'Input price', output_per_mtok: 'Output price', note: 'Note' };
 
 /** The effective table: what every cost estimate is priced with right now. */
 /**
@@ -138,13 +147,15 @@ interface OverrideEditorProps {
   showProblems: boolean;
   /** The server's findings on `pricing_overrides[i]`, by row index. */
   serverFindings: Map<number, FieldError[]>;
+  /** The last save's warnings on `pricing_overrides[i]`, by row index (CO-7). */
+  rowWarnings?: OverrideWarnings['onRow'];
   /** Saving is off here (read-only, not an admin, no database): the rows are shown, not edited. */
   readOnly: boolean;
   /** A save is in flight. */
   busy: boolean;
 }
 
-function OverrideEditor({ rows, onChange, showProblems, serverFindings, readOnly, busy }: OverrideEditorProps) {
+function OverrideEditor({ rows, onChange, showProblems, serverFindings, rowWarnings, readOnly, busy }: OverrideEditorProps) {
   const listId = useId();
   const set = (id: string, patch: Partial<OverrideRow>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   if (rows.length === 0) {
@@ -168,6 +179,7 @@ function OverrideEditor({ rows, onChange, showProblems, serverFindings, readOnly
             .join(' ') ||
             undefined);
         const rowLevel = findings.filter((x) => !/\.(provider|match|input_per_mtok|output_per_mtok|note)$/.test(x.path));
+        const warned = rowWarnings?.get(index) ?? [];
         return (
           <li key={row.id} data-override-row={index} className="space-y-2 rounded-md border border-border p-3">
             <div className="flex items-center justify-between gap-2">
@@ -207,6 +219,16 @@ function OverrideEditor({ rows, onChange, showProblems, serverFindings, readOnly
                 {rowLevel.map((x) => costOverrideFinding(x, row.provider)).join(' ')}
               </p>
             ) : null}
+            {warned.map(({ field, warning }, i) => (
+              // Saved, but worth a second look: next to the price it is about.
+              <p key={i} data-override-warning className="flex items-start gap-1 text-xs text-fg">
+                <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0 text-tone-warning" />
+                <span>
+                  {field && FIELD_WORDS[field] ? <span className="font-medium">{FIELD_WORDS[field]}: </span> : null}
+                  {warningWords(warning, row.provider)}
+                </span>
+              </p>
+            ))}
           </li>
         );
       })}
@@ -230,10 +252,14 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
     rebase: rebaseOverrides,
   });
   const rows = form.draft;
-  const setRows = (next: OverrideRow[]) => form.setDraft(() => next);
+  // An edit moves rows about, so the last save's warnings no longer point at the right one.
+  const setRows = (next: OverrideRow[]) => {
+    setWarnings(null);
+    form.setDraft(() => next);
+  };
   const [showProblems, setShowProblems] = useState(false);
   const [findings, setFindings] = useState<FieldError[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<OverrideWarnings | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
 
@@ -248,13 +274,13 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
     setPending(true);
     setError(null);
     setFindings([]);
-    setWarnings([]);
+    setWarnings(null);
     try {
       const view = await ds.patchSettings({ pricing_overrides: overridesFromRows(rows) }, form.etag);
       queryClient.setQueryData(qkcSecurity.settings, view);
       form.reset(view);
       setShowProblems(false);
-      setWarnings(view.warnings.filter((w) => w.key === 'pricing_overrides').map((w) => costOverrideFinding({ code: w.code, message: w.message })));
+      setWarnings(overrideWarnings(view.warnings, readOverrides(view).length));
       void queryClient.invalidateQueries({ queryKey: pricingQuery(ds).queryKey });
       notify.success('Prices saved');
     } catch (err) {
@@ -289,15 +315,16 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
           onChange={setRows}
           showProblems={showProblems}
           serverFindings={byRow}
+          rowWarnings={warnings?.onRow}
           readOnly={writeReason !== null}
           busy={pending}
         />
-        {warnings.length > 0 ? (
+        {warnings && warnings.rest.length > 0 ? (
           <ul aria-label="Check these prices" className="space-y-1">
-            {warnings.map((w, i) => (
+            {warnings.rest.map((w, i) => (
               <li key={i} className="flex items-start gap-1 text-xs text-fg">
                 <CircleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0 text-tone-warning" />
-                {w}
+                {warningWords(w)}
               </li>
             ))}
           </ul>
@@ -351,6 +378,7 @@ export function PricesPanel({ settings, writeReason }: PricesPanelProps) {
               onClick={() => {
                 form.reset(settings);
                 setFindings([]);
+                setWarnings(null);
                 setShowProblems(false);
                 setError(null);
               }}

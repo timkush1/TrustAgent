@@ -12,7 +12,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Info } from 'lucide-react';
 import { useDataSource, useRuntimeConfig } from '@/app/services';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { recordingDate, useReplayInfo } from '@/components/replay/useReplay';
@@ -96,6 +96,14 @@ function Summary({ stats, timeWindow, demo, replay }: { stats: OverviewStats; ti
       ) : null}
       {noTraffic ? null : (
         <>
+          {/* A replay plays a scripted mix chosen to show every outcome (D117): its counts keep
+              their dataset label, and its rates are not a traffic rate. */}
+          {replay ? (
+            <p data-showcase-caveat className="flex items-start gap-1.5 text-xs text-fg-muted">
+              <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+              {copy.recording.showcase_caveat}
+            </p>
+          ) : null}
           <AtAGlance stats={stats} label={label} />
           <Card>
             <CardContent>

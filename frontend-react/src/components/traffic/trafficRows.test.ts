@@ -13,6 +13,7 @@ import {
   reasonFilterLabel,
   REASON_LOOKBACK_DAYS,
   reasonSince,
+  reasonWindowLabel,
   rowReason,
   traceListParams,
   TRAFFIC_PAGE_SIZE,
@@ -56,7 +57,7 @@ describe('filters', () => {
     const since = reasonSince(Date.parse('2026-10-02T12:34:56.789Z'));
     expect(since).toBe('2026-09-02T12:34:00.000Z');
     expect(REASON_LOOKBACK_DAYS).toBe(30);
-    expect(traceListParams({ outcome: 'flagged', route: 'support-bot', model: 'm', reason: 'contradiction:' }, since)).toEqual({
+    expect(traceListParams({ outcome: 'flagged', route: 'support-bot', model: 'm', reason: 'contradiction:' }, { since })).toEqual({
       limit: TRAFFIC_PAGE_SIZE,
       outcome: 'flagged',
       route: 'support-bot',
@@ -64,11 +65,18 @@ describe('filters', () => {
       reason: 'contradiction:',
       since,
     });
-    // Without a since (the static replay) the reason stays local.
+    // The static replay reads it over the whole recording: no since.
+    expect(traceListParams({ reason: 'disagreement' }, 'recording')).toEqual({ limit: TRAFFIC_PAGE_SIZE, reason: 'disagreement' });
+    // Without a bound the reason stays local (applied to the rows only).
     expect(traceListParams({ reason: 'disagreement' })).toEqual({ limit: TRAFFIC_PAGE_SIZE });
     expect(traceListParams({})).toEqual({ limit: TRAFFIC_PAGE_SIZE });
     expect(hasFilters({})).toBe(false);
     expect(hasFilters({ reason: 'x' })).toBe(true);
+  });
+
+  it('says what a reason filter is read over (CO-15)', () => {
+    expect(reasonWindowLabel({ since: reasonSince(Date.parse('2026-10-02T12:00:00Z')) })).toBe('last 30 days');
+    expect(reasonWindowLabel('recording')).toBeNull();
   });
 
   it('words a reason filter, a prefix as the check at any level', () => {
