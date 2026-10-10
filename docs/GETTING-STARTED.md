@@ -419,11 +419,11 @@ the stack with its volumes.
 
 **Time a fresh install.** `make first-run` starts a brand-new stack (its own project and ports, every
 vendor on a local mock, so it costs $0), times it from before `docker compose up` to the first
-flagged answer, and fails past 5 minutes; the timings go to `tmp/first-run.json`. Use
-`FIRST_RUN_TAG=<tag>` to pull published images, or `FIRST_RUN_LOCAL=1` for images you built
-(`FIRST_RUN_BUILD=1` builds them first). `make golden-path` walks the same kind of fresh stack from
-its setup link to the flagged answer's detail in at most 8 actions. Both remove their stack when they
-finish (`FIRST_RUN_KEEP=1` keeps it; `make first-run-down` removes it).
+flagged answer, and fails past 5 minutes; the timings go to `tmp/first-run.json`. It needs one
+image source: `FIRST_RUN_TAG=<tag>` pulls published images, and `FIRST_RUN_LOCAL=1` uses images
+built locally under the tag `FIRST_RUN_LOCAL_TAG` (`FIRST_RUN_BUILD=1` builds them first).
+`make golden-path` walks the same kind of fresh stack from its setup link to the flagged answer's
+detail in at most 8 actions. Both remove their stack when they finish (`FIRST_RUN_KEEP=1` keeps it; `make first-run-down` removes it).
 
 ## Next steps
 

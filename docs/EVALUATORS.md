@@ -38,10 +38,11 @@ came from.
   Jev is never asked a groundedness question without evidence, because its
   scores invert.
 - **Corroboration.** A block-eligible evaluator blocks only when a second
-  signal agrees: another critical evaluator it names, or a Tier-0 detector
-  (`det:urls_not_in_evidence`, `det:numbers_not_in_evidence`, ...).
-  Otherwise the reason `needs_second_signal` is added and the answer is
-  flagged.
+  signal it names (`requires_corroboration`) agrees: another critical
+  evaluator, or a Tier-0 detector (`det:urls_not_in_evidence`,
+  `det:numbers_not_in_evidence`, ...). Otherwise the reason
+  `needs_second_signal` is added and the answer is flagged. An evaluator
+  that names no corroborator (unsafe content) blocks on its own.
 
 ## Attaching evaluators to a route
 

@@ -195,8 +195,9 @@ Each route runs the checks you attach to it, all asked in the same fast-check ca
 - **Evidence first.** Groundedness and contradiction are asked only when the request carries
   evidence; without it they are *not checked*, because the fast check's scores invert without
   documents.
-- **Two signals to block.** A block needs a second signal that agrees: another critical evaluator or
-  an instant check.
+- **Two signals to block.** A grounding, commitment, leak or injection check blocks only when a
+  second signal agrees: another critical evaluator or an instant check. Otherwise the answer is
+  flagged.
 - **Write your own.** The **Evaluator Studio** drafts a check from one sentence, tests it on samples
   and on past traffic, and calibrates its threshold from your labels. The live demo runs the Studio
   in the browser on the recorded traffic.

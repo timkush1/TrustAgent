@@ -294,8 +294,10 @@ overload, missing credentials): `X-TrustAgent-Status` says so
 ## 7. Block
 
 A route blocks only when the policy is sure: a **critical** evaluator that is
-block-eligible and **corroborated** by a second signal (another critical
-evaluator or a Tier-0 detector), or a detector listed in `detectors.block_on`.
+block-eligible and **corroborated** by a second signal it names (another
+critical evaluator or a Tier-0 detector; an evaluator that names none, such as
+unsafe content, needs no second signal), or a detector listed in
+`detectors.block_on`.
 Numbers and dates never flag or block alone.
 
 **Block readiness.** For a route in block or fallback mode, the Policies page
@@ -550,7 +552,7 @@ same golden vectors):
 
 | Detector | Fires when the answer |
 |---|---|
-| `det:numbers_not_in_evidence` | states a number (from `detectors.min_integer`, 10 by default) the evidence does not contain |
+| `det:numbers_not_in_evidence` | states a number the evidence does not contain (a whole number up to `detectors.min_integer`, 10 by default, counts only next to a unit) |
 | `det:dates_not_in_evidence` | states a date the evidence does not contain |
 | `det:urls_not_in_evidence` | links to a URL the evidence does not contain |
 | `det:quotes_not_in_evidence` | quotes text that is not in the evidence |
@@ -563,9 +565,10 @@ golden vectors in `contracts/vectors/detectors/`.
 
 - **Numbers and dates never flag alone.** The route's `detectors.flag_on`
   lists the detectors that may flag by themselves (URLs, quotes, citations,
-  secrets and prompt leaks by default). Every detector is also a second
-  signal: a groundedness block needs one, or a critical contradiction, to
-  agree.
+  secrets and prompt leaks by default). Detectors are also second signals:
+  a groundedness block needs a critical contradiction or a number, date,
+  URL, quote or citation finding to agree, and a secret-leak or
+  prompt-injection block needs a secret or prompt-leak finding.
 - **Findings are located.** Each one carries a half-open UTF-16 span in the
   answer, so the dashboard marks it inline.
 - **They run on every gated answer**, sampled or not, and cost nothing.

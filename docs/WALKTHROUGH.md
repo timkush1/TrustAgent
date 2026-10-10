@@ -224,7 +224,8 @@ answered (Platt or isotonic fits from labels, `internal/calibration`) and calls 
 per evaluator (pass, warn, critical) and an **action**:
 
 - **block** only when the route enforces, the evaluator may block, its threshold is calibrated
-  for this snapshot, and a **second signal** agrees (another critical evaluator or a detector).
+  for this snapshot, and a **second signal** it names agrees (another critical evaluator or a
+  detector; an evaluator that names none, such as unsafe content, needs no second signal).
   Otherwise the action is capped at flag with the reason `needs_second_signal`;
 - **flag** when a warn or critical level is reached;
 - **pass** otherwise.
@@ -649,7 +650,7 @@ several rules above. The 2.0 bug list, with where each one was fixed, is in
 | **Mode** | observe, flag, block or fallback |
 | **Calibration** | A fit that turns a snapshot's raw probability into a calibrated one, from labels |
 | **Snapshot** | A specific version of the Jev model; calibrations are per snapshot |
-| **Second signal** | The agreeing evidence a block needs: another critical evaluator or a detector |
+| **Second signal** | The agreeing evidence a block needs: another critical evaluator or a detector that the blocking evaluator names |
 | **Claim** | One atomic, checkable statement extracted from an answer |
 | **Verdict** | A claim's SUPPORTED, CONTRADICTED, UNSUPPORTED, PARTIALLY_SUPPORTED, UNKNOWN or NOT_CHECKED; an audit's GROUNDED, HALLUCINATED, UNVERIFIABLE, NO_CLAIMS or NOT_ASSESSED |
 | **Glass box** | "Show exact Jev request": the exact request the fast check was sent, rebuilt and fingerprinted |
