@@ -232,7 +232,7 @@ export function Calculator() {
               <Row
                 testId="deep_audit"
                 label="Deep audits"
-                note={`${auditShareWords(flagRate, passRate, result.cost.auditedShare)} · ${judgeName}`}
+                note={auditShareWords(judgeName.charAt(0).toUpperCase() + judgeName.slice(1), flagRate, passRate, result.cost.auditedShare)}
                 value={money(result.cost.deepAudit)}
               />
               <Row testId="total" label="Your total" value={money(result.cost.total)} strong />

@@ -53,13 +53,13 @@ OpenRouter account:
    that leaks a personal email address), or type your own question, answer and document.
 2. **Connect OpenRouter** (sign in on openrouter.ai and approve) or **Paste a key**. Before
    anything is sent, a consent box says what goes where and what it costs: a typical check (about
-   5,000 tokens of documents) costs about <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check
+   5,000 tokens of documents) costs <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check
    [estimate]; the short examples cost less.
 3. Run the check. The result is labelled "Live · {snapshot} · uncalibrated · your key": it uses
    the raw fast-check scores, because calibrations belong to a stack.
 
 The Studio's **Draft with AI** uses the same key, at about
-<!-- claim:studio_draft_cost_estimate --> ≈ $0.005 per draft [estimate].
+<!-- claim:studio_draft_cost_estimate --> ~$0.005 per draft [estimate].
 
 **Your key stays in that browser tab** (`sessionStorage`) and is sent only to openrouter.ai. It is
 forgotten after 2 hours, or at once with **Forget key**, which also stops any request in flight;

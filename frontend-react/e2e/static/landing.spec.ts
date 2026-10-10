@@ -148,6 +148,11 @@ test.describe('landing', () => {
     const sections = page.getByRole('navigation', { name: 'Sections' });
     await expect(sections).toBeVisible();
     await expect(sections.getByRole('link', { name: 'Run it' })).toBeAttached();
+    // A chevron says more links lie past the edge, and scrolls them into view.
+    const more = page.getByRole('button', { name: 'Show more section links' });
+    await expect(more).toBeVisible();
+    await more.click();
+    await expect.poll(() => sections.evaluate((nav) => nav.scrollLeft)).toBeGreaterThan(0);
     await settled(page);
     const width = 400;
     for (const anchor of ['#compare', '#try', '#cost', 'footer']) {
@@ -155,10 +160,15 @@ test.describe('landing', () => {
       const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(scrollWidth, `no horizontal page scroll at ${anchor}`).toBeLessThanOrEqual(width);
     }
-    // A phone gets one card per kind of tool, not a table wider than the page.
+    // A phone gets TrustAgent's card, then one card per kind of tool behind one disclosure, not a
+    // table wider than the page.
     await expect(page.getByRole('table')).toBeHidden();
     const cards = page.getByRole('list', { name: 'Comparison' });
+    await expect(cards).toBeHidden();
+    await page.locator('[data-compare-others] > summary').click();
     await expect(cards).toBeVisible();
+    const pageWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(pageWidth, 'no horizontal page scroll with the comparison open').toBeLessThanOrEqual(width);
     const box = await cards.boundingBox();
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
   });

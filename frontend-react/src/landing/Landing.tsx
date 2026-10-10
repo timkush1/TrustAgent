@@ -7,8 +7,8 @@
  * cost section. The sections below them, and the footer's source list, are their own chunks: they
  * start loading as soon as the page runs, each behind a placeholder of about its height.
  */
-import { ArrowRight } from 'lucide-react';
-import { useEffect } from 'react';
+import { ArrowRight, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Affordable } from './Affordable';
 import { DEMO_HREF, REPO_URL } from './content';
 import { Hero } from './Hero';
@@ -27,6 +27,49 @@ const navLinks = [
   { href: '#self-host', label: 'Run it' },
 ];
 
+/**
+ * The section links. Below 1024 px they are a second header row that scrolls sideways; while more
+ * links lie past the right edge, a chevron there says so and scrolls them into view.
+ */
+function SectionNav() {
+  const ref = useRef<HTMLElement>(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const nav = ref.current;
+    if (!nav) return;
+    const update = () => setMore(nav.scrollWidth - nav.clientWidth - nav.scrollLeft > 4);
+    update();
+    nav.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      nav.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+  return (
+    <div className="relative max-lg:order-last max-lg:-mx-2 max-lg:w-[calc(100%+1rem)]">
+      <nav ref={ref} aria-label="Sections" className="flex items-center gap-0.5 max-lg:overflow-x-auto max-lg:pb-2 max-lg:[scrollbar-width:none]">
+        {navLinks.map((l) => (
+          <a key={l.href} href={l.href} className={`${buttonClass.ghost} shrink-0 whitespace-nowrap`}>
+            {l.label}
+          </a>
+        ))}
+      </nav>
+      {more ? (
+        <button
+          type="button"
+          onClick={() => ref.current?.scrollBy({ left: ref.current.clientWidth / 2, behavior: 'smooth' })}
+          aria-label="Show more section links"
+          data-nav-more
+          className="absolute top-0 right-0 inline-flex h-9 w-9 items-center justify-center border-l border-border bg-bg text-fg-muted hover:text-fg lg:hidden"
+        >
+          <ChevronRight aria-hidden="true" className="size-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur-sm">
@@ -36,16 +79,7 @@ function Header() {
           <Logo className="size-5" />
           TrustAgent
         </a>
-        <nav
-          aria-label="Sections"
-          className="flex items-center gap-0.5 max-lg:order-last max-lg:-mx-2 max-lg:w-[calc(100%+1rem)] max-lg:overflow-x-auto max-lg:pb-2 max-lg:[scrollbar-width:none]"
-        >
-          {navLinks.map((l) => (
-            <a key={l.href} href={l.href} className={`${buttonClass.ghost} shrink-0 whitespace-nowrap`}>
-              {l.label}
-            </a>
-          ))}
-        </nav>
+        <SectionNav />
         <div className="ml-auto flex h-16 items-center gap-1">
           <ThemeButton />
           <a href={REPO_URL} className={`${buttonClass.ghost} w-9 px-0`} aria-label="TrustAgent on GitHub" title="TrustAgent on GitHub">

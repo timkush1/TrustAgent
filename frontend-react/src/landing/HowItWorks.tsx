@@ -68,7 +68,8 @@ function PathDiagram() {
         <Connector />
         <Box title="TrustAgent gateway" strong>
           <ol className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-            {[copy.tiers.instant_checks, copy.tiers.fast_check, 'Your policy'].map((t, i) => (
+            {/* "Fast check", without "(Jev)": the tiles stay one line each, and the cards below introduce Jev. */}
+            {[copy.tiers.instant_checks, copy.tiers.fast_check.replace(/\s*\(.*\)$/, ''), 'Your policy'].map((t, i) => (
               <li key={t} className="rounded-md border border-border bg-surface-sunken px-2.5 py-2 text-fg">
                 <span className="mr-1.5 font-mono text-xs text-fg-muted">{i + 1}</span>
                 {t}
@@ -125,13 +126,6 @@ export function HowItWorks() {
       <LazyPart minHeight="30rem" section={false}>
         <GlassBox />
       </LazyPart>
-      <p className="mt-12 max-w-3xl rounded-lg border border-border bg-surface px-5 py-4 text-fg">
-        <span className="font-semibold">Who it’s for: </span>
-        <span className="text-fg-muted">
-          teams shipping RAG, support or agent bots who need a per-answer safety signal without paying LLM-judge prices on every
-          answer.
-        </span>
-      </p>
     </Section>
   );
 }

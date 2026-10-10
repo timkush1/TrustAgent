@@ -235,17 +235,25 @@ export function defaultCalculatorInputs(answersPerMonth = 100_000): CalculatorIn
 }
 
 /**
- * The deep-audit share as the sum it is (costPer1k): every flagged answer, the sample of the
- * others, and the uniform sample, e.g. "5% flagged + 1.9% sampled + 1% uniform = 7.9% of answers".
+ * Who audits what (costPer1k's audited share), as a sentence that never shows arithmetic that
+ * does not add up on screen: "Claude Haiku 4.5 audits 7.9% of answers: every flagged one (5%), 2%
+ * of the other 95% (1.9%), and a 1% random sample of all answers, for an unbiased hallucination
+ * rate." When the parts add up to more than every answer, costPer1k caps the share at 100%, and
+ * the sentence says so.
  */
-export function auditShareWords(flagRate: number, passRate: number, share: number): string {
+export function auditShareWords(judge: string, flagRate: number, passRate: number, share: number): string {
   const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
-  const sampled = (1 - flagRate) * passRate;
-  return `${pct(flagRate)} flagged + ${pct(sampled)} sampled + ${pct(defaultInput('uniform_sample_rate'))} uniform = ${pct(share)} of answers`;
+  const uniform = defaultInput('uniform_sample_rate');
+  const sum = flagRate + (1 - flagRate) * passRate + uniform;
+  const total = sum > share + 1e-9 ? 'every answer (the parts below add up to more)' : `${pct(share)} of answers`;
+  return (
+    `${judge} audits ${total}: every flagged one (${pct(flagRate)}), ${pct(passRate)} of the other ${pct(1 - flagRate)} ` +
+    `(${pct((1 - flagRate) * passRate)}), and a ${pct(uniform)} random sample of all answers, for an unbiased hallucination rate.`
+  );
 }
 
-/** "≈ 27×": whole numbers from 10 up, one decimal below. */
+/** "~27×": whole numbers from 10 up, one decimal below; the landing writes every approximation with "~". */
 export function formatMultiple(x: number): string {
   if (!Number.isFinite(x)) return 'many times';
-  return `≈ ${x >= 10 ? Math.round(x) : Math.round(x * 10) / 10}×`;
+  return `~${x >= 10 ? Math.round(x) : Math.round(x * 10) / 10}×`;
 }

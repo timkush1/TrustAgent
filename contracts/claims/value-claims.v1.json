@@ -35,7 +35,7 @@
       "text": "One Draft with AI in the Studio",
       "value": 0.005,
       "unit": "usd",
-      "display": "≈ $0.005 per draft",
+      "display": "~$0.005 per draft",
       "label": "estimate",
       "basis": "One drafting call of about 1,500 prompt and 700 answer tokens to Claude Haiku 4.5 at $1 and $5 per million tokens (pricing/assumptions.v1.json figure studio_draft_per_1k / 1,000); a repair turn costs about as much again.",
       "source_url": null,
@@ -46,7 +46,7 @@
     },
     {
       "id": "llm_same_checks_cost_per_1k",
-      "text": "Asking an LLM judge (Claude Haiku) the same questions",
+      "text": "LLM judge, same questions (Claude Haiku)",
       "value": 5.75,
       "unit": "usd_per_1k",
       "display": "~$6 / 1,000",
@@ -151,7 +151,7 @@
       "basis": "Rounded from the OpenRouter P50 (jev_p50_latency_openrouter).",
       "source_url": "https://openrouter.ai/typesafe/jev-1.13",
       "as_of": "2026-09-27",
-      "caveat": "Third-party figure, not our measurement.",
+      "caveat": "Third-party figure, not our measurement; it depends on region and load, and independent reports range from about 0.3 s to 0.9 s median.",
       "surfaces": ["readme"]
     },
     {

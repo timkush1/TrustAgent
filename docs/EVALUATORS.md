@@ -86,7 +86,7 @@ say so.
 
 1. **Describe.** Write what the check should catch and pick a route. **Draft with AI** asks the
    deep-audit judge for a first version (about
-   <!-- claim:studio_draft_cost_estimate --> ≈ $0.005 per draft [estimate]; labelled Simulated
+   <!-- claim:studio_draft_cost_estimate --> ~$0.005 per draft [estimate]; labelled Simulated
    with the mock judge); without a judge, start from a template.
 2. **Review.** A simple form (what it catches, Yes/No or Pick one, which answers are a problem,
    whether it needs the app's documents, sensitivity, and whether it may block), an Advanced

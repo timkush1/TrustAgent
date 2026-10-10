@@ -133,6 +133,14 @@ describe('landing page', () => {
     expect(latency?.closest('section')?.getAttribute('aria-labelledby')).toBe('hero-title');
   });
 
+  it('says why Arize’s Jev price per 1,000 is lower than the fast check’s: the token basis', async () => {
+    await renderLanding();
+    const note = document.querySelector('[data-arize-tokens]') as HTMLElement;
+    const tokens = (assumptions.inputs as Record<string, { value: number }>).fast_check_input_tokens.value;
+    expect(note).toHaveTextContent(`about ${new Intl.NumberFormat('en-US').format(tokens)} tokens per request`);
+    expect(note).toHaveTextContent(claim('fast_check_cost_per_1k').display);
+  });
+
   it('says "not yet measured" once instead of borrowing an estimate', async () => {
     await renderLanding();
     for (const id of ['gate_latency_p50_measured', 'fast_check_cost_per_1k_measured', 'ragtruth_qa_agreement_measured']) {
@@ -558,7 +566,7 @@ describe('calculator', () => {
 
   it('says the fast check is about 27× cheaper than the same questions to an LLM judge', () => {
     const cost = ok(inputs());
-    expect(formatMultiple(cost.sameChecksMultiple)).toBe('≈ 27×');
+    expect(formatMultiple(cost.sameChecksMultiple)).toBe('~27×');
     expect(claim('same_checks_cost_multiple').display).toBe('about 27×');
     // 1,000 answers: the monthly figure is the per-1,000 one.
     expect(Math.abs(cost.sameChecks - (claim('llm_same_checks_cost_per_1k').value ?? 0))).toBeLessThan(0.5);
@@ -629,9 +637,14 @@ describe('calculator', () => {
     expect(before.total).toBe('$301');
     // The audited share reads as the sum it is, next to the sliders it comes from.
     expect(document.querySelector('[data-cost-row="deep_audit"]')).toHaveTextContent(
-      `${auditShareWords(defaultCalculatorInputs().flagRate, defaultCalculatorInputs().passSampleRate, 0.079)}`,
+      auditShareWords(referenceJudge().name, defaultCalculatorInputs().flagRate, defaultCalculatorInputs().passSampleRate, 0.079),
     );
-    expect(auditShareWords(0.05, 0.02, 0.079)).toBe('5% flagged + 1.9% sampled + 1% uniform = 7.9% of answers');
+    // It names the slider's own 2% and says what the uniform sample is for, with no sum to check.
+    expect(auditShareWords('Claude Haiku 4.5', 0.05, 0.02, 0.079)).toBe(
+      'Claude Haiku 4.5 audits 7.9% of answers: every flagged one (5%), 2% of the other 95% (1.9%), and a 1% random sample of all answers, for an unbiased hallucination rate.',
+    );
+    // Parts that add up to more than every answer: the share is capped, and the sentence says so.
+    expect(auditShareWords('Your judge', 0.995, 1, 1)).toMatch(/^Your judge audits every answer \(the parts below add up to more\): every flagged one \(99\.5%\)/);
     const select = screen.getByLabelText('Deep-audit judge');
     fireEvent.change(select, { target: { value: judgeOptions().find((o) => o.local)?.id } });
     expect(row('deep_audit')).toBe('$0.00');

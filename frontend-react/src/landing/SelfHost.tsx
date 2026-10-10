@@ -17,7 +17,7 @@ export function SelfHost() {
       title="On your laptop in one command."
       lead="Everything on this site runs locally with Docker. The demo needs no keys; your own stack needs one OpenRouter key."
     >
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <div className="rounded-lg border border-border-strong bg-surface p-6 max-sm:p-4">
           <h3 className="text-lg font-semibold text-fg">The zero-key demo</h3>
           <div className="mt-4">
@@ -26,6 +26,7 @@ export function SelfHost() {
           <ul className="mt-5 space-y-2 text-fg-muted">
             <li>Docker only: no keys, and nothing is billed.</li>
             <li>Mock checks, a mock judge and scripted traffic; every number it shows is labelled simulated.</li>
+            <li>The whole dashboard: live traffic, each request’s trace and checks, Savings and the Studio.</li>
             <li>
               Opens the dashboard on localhost. Stop it with <code className="font-mono text-sm text-fg">{command('demo_down')}</code>.
             </li>
@@ -57,7 +58,7 @@ export function SelfHost() {
         </CodeScroll>
         <p className="mt-2 text-xs text-fg-muted">
           Your provider key still goes to your provider. The dashboard’s Connect your app shows the full snippet for OpenAI, Anthropic, LangChain and curl,
-          with the ingest key header and the documents to check against.
+          with the app key header (<code className="font-mono text-[0.85em] text-fg">X-TrustAgent-Key</code>) and the documents to check against.
         </p>
       </div>
       <div className="mt-10 flex flex-wrap items-center gap-3">

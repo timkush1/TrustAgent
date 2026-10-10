@@ -82,6 +82,15 @@ const listWords = (items: string[]) => (items.length < 2 ? items.join('') : `${i
 /** "Our fast-check latency" → "our fast-check latency"; an acronym ("RAGTruth") keeps its case. */
 const lowerFirst = (t: string) => (/^[A-Z][a-z]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
 
+/**
+ * Why Arize's Jev price per 1,000 is lower than the fast check's: its RAGTruth prompts are shorter
+ * than the request the fast-check figure assumes per answer, documents, questions and answer
+ * together (pricing/assumptions.v1.json fast_check_input_tokens; a test keeps them in step).
+ */
+const FAST_CHECK_TOKENS_WORDS = '5,000';
+const arizeTokensNote = (fastCheck: ClaimView) =>
+  `Its prompts are shorter: the fast check’s ${fastCheck.display} assumes about ${FAST_CHECK_TOKENS_WORDS} tokens per request.`;
+
 const num = (c: ClaimView) => <span className="tabular font-medium text-fg">{c.display}</span>;
 
 function PublishedFigures() {
@@ -106,7 +115,7 @@ function PublishedFigures() {
       </Figure>
       <Figure title="Arize RAGTruth test" chip={arizeJev}>
         Accuracy: Jev {num(arizeJev)} at {num(arizeJevCost)} vs Claude Opus 5 {num(arizeOpus)} at {num(arizeOpusCost)}, only at a tuned{' '}
-        {num(threshold)} threshold ({num(atHalf)}).
+        {num(threshold)} threshold ({num(atHalf)}). <span data-arize-tokens>{arizeTokensNote(claim('fast_check_cost_per_1k'))}</span>
       </Figure>
       <Figure title="OpenRouter faithfulness test" chip={orAcc}>
         {num(orAcc)} accuracy, {num(orMs)} on its own test set (not the fast check’s P50 above).

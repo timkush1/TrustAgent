@@ -114,11 +114,12 @@ export function TapeCard() {
       ) : null}
       <ul className="mt-5 space-y-2" aria-label="Examples from the tape">
         {digest.examples.map((t) => (
-          <li key={t.trace_id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
+          <li key={t.trace_id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2 max-sm:items-start">
             <Pill id={outcomeOf(t)} />
+            {/* On a phone the question takes two lines and the documents wrap, rather than both being cut. */}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-fg-muted">{t.question_preview}</span>
-              <span className="block truncate text-2xs text-fg-subtle" data-example-documents>
+              <span className="block truncate text-sm text-fg-muted max-sm:line-clamp-2 max-sm:whitespace-normal">{t.question_preview}</span>
+              <span className="block truncate text-2xs text-fg-subtle max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]" data-example-documents>
                 {t.documents.length > 0 ? (
                   <>
                     Checked against <span className="font-mono">{t.documents.join(', ')}</span>
@@ -128,7 +129,7 @@ export function TapeCard() {
                 )}
               </span>
             </span>
-            {sourceWords(t) ? <span className="shrink-0 text-2xs text-fg-subtle">{sourceWords(t)}</span> : null}
+            {sourceWords(t) ? <span className="shrink-0 text-2xs text-fg-subtle max-sm:hidden">{sourceWords(t)}</span> : null}
           </li>
         ))}
       </ul>
@@ -141,7 +142,6 @@ export function TapeCard() {
     </div>
   );
 }
-
 
 /**
  * The consent line with the check's cost (its Estimate chip) and the call cap filled in. The
@@ -164,7 +164,6 @@ function CostLine() {
  * "Try it live in your browser": three links into the static Playground's live section when the
  * browser can run live checks; otherwise how to run the same checks locally.
  */
-
 export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
   return (
     <div className="flex flex-col rounded-lg border border-border-strong bg-surface p-6 max-sm:p-4" data-live-card={live ? 'live' : 'local'}>
