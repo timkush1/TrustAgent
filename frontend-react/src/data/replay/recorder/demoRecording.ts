@@ -84,7 +84,6 @@ export const NO_CLAIMS_TRACE = 'No verifiable claims were found in the response.
  * LV-3); demoRecording.test.ts fails as soon as that parity lands, so this list cannot go stale.
  */
 export const AWAITING_RUNNER: Readonly<Record<string, string>> = {
-  'payments-fallback': 'runGate ignores the route evaluators’ thresholds (space: calibrated), so the fallback is capped to a flag',
   'commitment-unapproved-flag': 'runGate does not pass the route’s resolved rules to the detectors, so the number and date checks do not run',
   'off-topic-flag': 'runGate does not pass the route’s resolved rules to the detectors, so the number and date checks show as not run',
 };

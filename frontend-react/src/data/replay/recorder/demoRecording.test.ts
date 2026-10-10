@@ -91,6 +91,7 @@ const RECORDED = [
   'refusal-flag',
   'injection-success-flag',
   'observe-would-block',
+  'payments-fallback',
   'help-center-link-block-json',
   'help-center-uncalibrated-flag',
 ];
@@ -103,7 +104,7 @@ async function probe(ids: readonly string[], change: (i: BuildInputs) => void = 
   return buildDemoRecording(i, { ...opts, set: 'probe', rounds: 1, awaiting });
 }
 
-/** payments-faq as runGate can run it today: raw thresholds and no calibration requirement. */
+/** payments-faq with raw thresholds and no calibration requirement (the fallback mechanics alone). */
 function rawPaymentsRoute(i: BuildInputs): void {
   const route = i.policy.routes?.find((r) => r.name === 'payments-faq') as Record<string, unknown>;
   route.require_calibration = false;
@@ -143,7 +144,6 @@ describe('demo recording', () => {
       'stream-passthrough-flag': 'stream',
       'anthropic-system-grounded': 'api_format',
       'completions-extension-grounded': 'api_format',
-      'payments-fallback': 'awaiting_runner',
       'help-center-link-block': 'stream',
       'generated-monthly-refund': 'generated',
       'generated-weekend-shipping': 'generated',
@@ -157,7 +157,7 @@ describe('demo recording', () => {
       for (const t of scenarioTraces(id, manifest)) expect(outcomeOf(t), id).toBe(want);
     }
     const outcomes = new Set(manifest.traces.map((t) => outcomeOf(t)));
-    expect([...outcomes].sort()).toEqual(['blocked', 'flagged', 'not_checked', 'passed', 'would_block']);
+    expect([...outcomes].sort()).toEqual(['blocked', 'flagged', 'not_checked', 'passed', 'replaced', 'would_block']);
   });
 
   it('says it is simulated, everywhere', () => {
@@ -178,6 +178,7 @@ describe('demo recording', () => {
       const d = detailOf(t.trace_id);
       const want = ['test_mode'];
       if (d.decisions[0].decision_model) want.push('mock_decision');
+      if (t.action === 'fallback') want.push('fallback_used');
       if (d.audit_detail) want.push('mock_judge');
       expect(t.flags, t.trace_id).toEqual(want);
     }
@@ -340,11 +341,10 @@ describe('demo recording', () => {
     expect(firstOf('grounded-pass').body?.rules).toEqual({});
   });
 
-  // When runGate gains gstudio Runner.Evaluate parity (route thresholds and rules, WEB-LIVE LV-3),
+  // When runGate passes the route's resolved rules (gstudio Runner.Evaluate parity, D151 (b)),
   // these fail: drop the scenario from AWAITING_RUNNER and run `npm run recording`.
   it('keeps waiting only on runGate gaps that still exist', async () => {
-    expect(Object.keys(AWAITING_RUNNER).sort()).toEqual(['commitment-unapproved-flag', 'off-topic-flag', 'payments-fallback']);
-    await expect(probe(['payments-fallback'])).rejects.toThrow(/payments-fallback: would_action .*|payments-fallback: reasons .*calibration_missing/);
+    expect(Object.keys(AWAITING_RUNNER).sort()).toEqual(['commitment-unapproved-flag', 'off-topic-flag']);
     await expect(probe(['commitment-unapproved-flag'])).rejects.toThrow(/commitment-unapproved-flag: (would_action|reasons)/);
     const { details: [offTopic] } = await probe(['off-topic-flag']);
     const numbers = offTopic.decisions[0].detectors.find((x) => x.id === 'numbers_not_in_evidence');

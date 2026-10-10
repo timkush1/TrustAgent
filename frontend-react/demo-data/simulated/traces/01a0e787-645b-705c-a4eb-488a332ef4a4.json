@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e787-6243-705c-a4eb-488a332ef4a4",
+  "trace_id": "01a0e787-645b-705c-a4eb-488a332ef4a4",
   "client_request_id": null,
-  "created_at": "2026-09-28T10:20:04.547Z",
-  "updated_at": "2026-09-28T10:20:06.229Z",
+  "created_at": "2026-09-28T10:20:05.083Z",
+  "updated_at": "2026-09-28T10:20:06.765Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "help-center",
@@ -60,7 +60,7 @@
     "cost_usd": 0.000024696000000000002
   },
   "audit": {
-    "audit_id": "01a0e787-6301-7e62-9396-6728cb923698",
+    "audit_id": "01a0e787-6519-7e62-9396-6728cb923698",
     "status": "completed",
     "lane": "high",
     "selection": "high",
@@ -116,9 +116,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e787-6243-705c-a4eb-488a332ef4a4",
+      "trace_id": "01a0e787-645b-705c-a4eb-488a332ef4a4",
       "attempt": 0,
-      "created_at": "2026-09-28T10:20:04.733Z",
+      "created_at": "2026-09-28T10:20:05.269Z",
       "route": "help-center",
       "policy_version": 1,
       "mode": "block",
@@ -313,9 +313,9 @@
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e787-6301-7e62-9396-6728cb923698",
-    "trace_id": "01a0e787-6243-705c-a4eb-488a332ef4a4",
-    "created_at": "2026-09-28T10:20:04.737Z",
+    "audit_id": "01a0e787-6519-7e62-9396-6728cb923698",
+    "trace_id": "01a0e787-645b-705c-a4eb-488a332ef4a4",
+    "created_at": "2026-09-28T10:20:05.273Z",
     "route": "help-center",
     "source": "trafficgen",
     "model": "gpt-4o-mini",

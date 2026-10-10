@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e7ac-00e1-7f44-9b27-b19558fb9ec7",
+  "trace_id": "01a0e762-c48c-7405-b9b6-9e07af1e5fe4",
   "client_request_id": null,
-  "created_at": "2026-09-28T11:00:04.449Z",
-  "updated_at": "2026-09-28T11:00:06.019Z",
+  "created_at": "2026-09-28T09:40:04.876Z",
+  "updated_at": "2026-09-28T09:40:06.099Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "help-center",
@@ -48,11 +48,11 @@
     "tokens": 33
   },
   "timings": {
-    "upstream_ms": 211,
+    "upstream_ms": 182,
     "ttft_ms": null,
-    "gate_ms": 9,
-    "overhead_ms": 11,
-    "total_ms": 222
+    "gate_ms": 6,
+    "overhead_ms": 8,
+    "total_ms": 190
   },
   "decision_model": {
     "backend": "mock",
@@ -60,7 +60,7 @@
     "cost_usd": 0.000024696000000000002
   },
   "audit": {
-    "audit_id": "01a0e7ac-01bf-75d2-95db-12ee540d62fc",
+    "audit_id": "01a0e762-c54a-7497-98b7-5def37180216",
     "status": "completed",
     "lane": "high",
     "selection": "high",
@@ -116,9 +116,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e7ac-00e1-7f44-9b27-b19558fb9ec7",
+      "trace_id": "01a0e762-c48c-7405-b9b6-9e07af1e5fe4",
       "attempt": 0,
-      "created_at": "2026-09-28T11:00:04.669Z",
+      "created_at": "2026-09-28T09:40:05.064Z",
       "route": "help-center",
       "policy_version": 1,
       "mode": "block",
@@ -263,7 +263,7 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 8,
+        "latency_ms": 5,
         "connect_ms": null,
         "input_tokens": 588,
         "cost_usd": 0.000024696000000000002,
@@ -309,19 +309,19 @@
         "tokens": 33
       },
       "late": false,
-      "gate_ms": 9
+      "gate_ms": 6
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e7ac-01bf-75d2-95db-12ee540d62fc",
-    "trace_id": "01a0e7ac-00e1-7f44-9b27-b19558fb9ec7",
-    "created_at": "2026-09-28T11:00:04.671Z",
+    "audit_id": "01a0e762-c54a-7497-98b7-5def37180216",
+    "trace_id": "01a0e762-c48c-7405-b9b6-9e07af1e5fe4",
+    "created_at": "2026-09-28T09:40:05.066Z",
     "route": "help-center",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
     "grade": null,
-    "processing_ms": 1348,
+    "processing_ms": 1033,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -458,10 +458,10 @@
     },
     "reasoning_trace": "",
     "step_timings": {
-      "decompose_ms": 464,
-      "verify_ms": 864,
+      "decompose_ms": 377,
+      "verify_ms": 636,
       "score_ms": 20,
-      "total_ms": 1348
+      "total_ms": 1033
     },
     "unsupported_policy": "hallucination",
     "costs": [
@@ -474,7 +474,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 464,
+        "latency_ms": 377,
         "status": "ok",
         "questions": 0
       },
@@ -487,7 +487,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 864,
+        "latency_ms": 636,
         "status": "ok",
         "questions": 0
       }
