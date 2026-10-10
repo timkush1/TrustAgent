@@ -131,8 +131,8 @@ No benchmark run is published yet, so every row says "not yet measured". The oth
 ## 7. Evaluator Studio
 
 - **Decision.** An LLM (System 2) writes the check once; Jev (System 1) runs it on every request.
-  A draft costs about <!-- claim:studio_draft_cost_estimate --> ≈ $0.005 per draft [estimate];
-  running it costs about <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate].
+  A draft costs <!-- claim:studio_draft_cost_estimate --> ~$0.005 per draft [estimate];
+  running it costs <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate].
   Every draft is validated by a schema and lints, tested on samples, dry-run on past traffic,
   watched in shadow and calibrated before it can act.
 - **Alternatives.** Hand-write classifier prompts; run the LLM on every request.
@@ -179,9 +179,12 @@ No benchmark run is published yet, so every row says "not yet measured". The oth
 ## What is most impressive, and do people value it?
 
 - **Not "integrated Jev".** It is:
-  1. a measured cost, accuracy and latency trade-off, with calibration error and confidence
-     intervals, on our own benchmark;
-  2. a fail-safe hot path with published overhead;
+  1. a cost, accuracy and latency trade-off measured on our own benchmark, with calibration error
+     and confidence intervals: the harness is built, but say "measured" only after a published
+     benchmark run (today every measured row says "not yet measured");
+  2. a fail-safe hot path whose overhead is published once the release load run is in
+     `measured.json` (the gateway's Tier-0 timings are already published, measured on the dev
+     laptop);
   3. decision logic identical in Go and in the browser, proven by golden vectors;
   4. honesty built into the product: every number labelled, and "not checked" instead of an
      invented score.

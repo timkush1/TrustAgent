@@ -3261,6 +3261,37 @@ the key or account started (401, 403, a 402 without in-flight credits) keeps its
 `unauthorized` or `no_credits`, when a success that was already in flight lands after it, so an
 admin's test can still lift it; a pause vendor faults started stays `breaker_open`.
 
+### Decisions made in the second fix round (D169-D172)
+
+- **D169 (comparison cells name their vendor; amends D113):** a `compare.v1` cell carries
+  `vendor`, the product whose docs it cites, shown with its answer ("Yes · Langfuse"), and the
+  value `not_documented` ("Not documented") where the docs are silent; `varies` is only for docs
+  that say the answer depends. `validate.mjs` requires a verified cell's vendor in its row's
+  examples, every product the examples name to be cited by a cell, and no vendor name or "Not
+  documented (as of …)" in the text. §8.1's example list "(Langfuse, Arize, Datadog)" became
+  "Langfuse": no cell cited Arize or Datadog. A managed service's self-host cell reads No when its
+  docs call it fully managed (Amazon Bedrock). Each cell has one control, Source, holding the docs'
+  words and link; on a phone the other kinds of tools sit behind one disclosure. Every cell stays
+  `reviewed:false` for the owner's review before launch.
+- **D170 (one approximation sign per surface):** value-claim displays write an approximation as
+  "~" (`studio_draft_cost_estimate` is "~$0.005 per draft"), and so does the landing; the
+  dashboard's computed figures keep "≈" (§7.4's Studio button, the consent dialog's worst case).
+  The consent dialog says how its worst case is reached (calls × the token cap × the dearer
+  model's price), and the live surfaces link each OpenRouter settings page they name.
+- **D171 (RP-4 as built):** on the static site a replayed check links into Studio ("Try its
+  threshold in Studio", `copy.trace.open_in_studio` and `studio_static_note`) instead of P5-PLAN RP-4's
+  disabled "Open evaluator" / "Adjust threshold" pair, which remains only for a check without a
+  version; the Studio copy is free to test, so no dead control is shown.
+- **D172 (nested instant-check marks):** a finding inside a claim's mark draws its line only; the
+  claim's verdict icon alone ends the phrase (DESIGN.md §3). A finding on its own keeps its scan
+  icon. A trace with no documents says "No documents to check against"
+  (`copy.trace.checked_against_none`), and the flag outcome's next step sets the header it names
+  as code.
+
+The replay Overview draws no progress meter for a hallucination rate a replay cannot have
+(`LabelledRateView notApplicable`), and a simulated fast-check p50 / p95 shows a dash in its
+headline with the mock's milliseconds in the note.
+
 ### Plan text superseded at the P5 integration
 
 - P5-PLAN §17 I-7: `make first-run-proof FIRST_RUN_LOCAL=1` (D165), not

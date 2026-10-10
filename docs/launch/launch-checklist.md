@@ -95,7 +95,13 @@ post invites people to judge real model output.
 ## 5. Announce
 
 - [ ] **Links.** The README badges, the demo URL, the repository URL and every link in the docs
-      and in the post open (no 404, no redirect to a login).
+      and in the post open (no 404, no redirect to a login). The **Live demo** and **Release**
+      badges point at the Pages site and the first GitHub release, which exist only after the
+      steps above: check both badges render a value, not "not found".
+- [ ] **Load run at the release commit.** Re-run `make load-test-gate LOAD_PUBLISH=1` on a quiet
+      machine (no other stack running) at the release commit before `bench-publish` folds
+      scenario c into `measured.json`: the P5 run predates the fix round's gateway changes and ran
+      beside the owner's demo stack.
 - [ ] **GitHub metadata** from [github-metadata.md](github-metadata.md) is applied, and
       `docs/launch/og.png` is uploaded as the social preview.
 - [ ] **The post.** Every `{measured:…}` placeholder in [linkedin-post.md](linkedin-post.md) is
