@@ -120,7 +120,7 @@ bench-tier0-publish: ## Run the Tier-0 benchmarks (-count 5) at a clean commit a
 		echo "bench-tier0-publish: commit backend-go/ and contracts/ first: the figures name the commit"; exit 2; }
 	@mkdir -p docs/benchmarks/tier0
 	@sha=$$(git rev-parse --short HEAD); out=docs/benchmarks/tier0/$$sha.txt; \
-	{ echo "commit: $$sha"; echo "date: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "go: $$(go version | cut -d' ' -f3)"; \
+	{ echo "commit: $$sha"; echo "date: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "go: $$(go -C backend-go version | cut -d' ' -f3)"; \
 	  go -C backend-go test -run '^$$' -bench '$(TIER0_BENCH)' -benchmem -count 5 ./internal/gate/; } > $$out.tmp \
 	  && mv $$out.tmp $$out && echo "bench-tier0-publish: wrote $$out" || { rm -f $$out.tmp; exit 1; }
 	$(PYTHON) scripts/tier0_report.py --gateway-md
