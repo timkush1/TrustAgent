@@ -58,6 +58,11 @@ export interface TimelineState {
   timing?: RunTiming;
   /** A demo stack: its model answers are mocks, so their timings are simulated. */
   demo?: boolean;
+  /**
+   * Replaces the deep-audit lane (the static live Playground: the deep audit does not run in the
+   * browser, so there is no audit to follow and no trace to open).
+   */
+  deepAudit?: ReactNode;
 }
 
 const BROWSER_BASIS = 'Measured in this browser from sending the request, so it includes the network to the gateway.';
@@ -248,7 +253,7 @@ function DeepAudit({ result }: { result: PlaygroundResult }) {
 }
 
 export function ResultTimeline({ state }: { state: TimelineState }) {
-  const { mode, tokens, decision, result, running, streamed = false, timing, demo = false } = state;
+  const { mode, tokens, decision, result, running, streamed = false, timing, demo = false, deepAudit } = state;
   const d = result?.decision ?? decision;
   // A mock fast check (simulated checks, or the demo) decides on a script, not at Jev's speed.
   const mockDecision = demo || d?.decision_model?.backend === 'mock';
@@ -284,8 +289,8 @@ export function ResultTimeline({ state }: { state: TimelineState }) {
       <Step icon={Inbox} title="What your app received" status={result ? 'done' : running ? 'active' : 'waiting'}>
         {result ? <Received result={result} /> : null}
       </Step>
-      <Step icon={Gavel} title={copy.tiers.deep_audit} status={result ? 'done' : 'waiting'} last>
-        {result ? <DeepAudit result={result} /> : null}
+      <Step icon={Gavel} title={copy.tiers.deep_audit} status={result && deepAudit === undefined ? 'done' : 'waiting'} last>
+        {deepAudit !== undefined ? deepAudit : result ? <DeepAudit result={result} /> : null}
       </Step>
     </ol>
   );

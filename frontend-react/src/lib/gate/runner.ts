@@ -95,11 +95,24 @@ export function compileRouteOf(route: ResolvedRoute, model: string): CompileRout
   };
 }
 
-export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
-  const { route, specs, call } = input;
-  const clock = input.clock ?? Date.now;
+/** What a check computes before any call: Tier 0 and the compiled requests. */
+export interface PreparedCheck {
+  extraction: BrowserGateResult['extraction'];
+  evidence: BrowserGateResult['evidence'];
+  detectors: BrowserGateResult['detectors'];
+  compiled: BrowserGateResult['compiled'];
+}
 
-  // Tier 0: extraction and the detectors.
+/**
+ * Tier 0 (extraction and the detectors) and compile within min(24000, maxTokens), without any
+ * call: runGate's first half, and the live panel's estimate before Run. A question that cannot fit
+ * next to the state within the per-call cap throws GateRefusedError('token_cap').
+ */
+export function prepareCheck(
+  input: Pick<RunGateInput, 'route' | 'specs' | 'request' | 'response' | 'apiFormat' | 'maxTokens'>,
+  model: string,
+): PreparedCheck {
+  const { route, specs } = input;
   const extraction = extractEvidence(input.apiFormat, input.request, route.evidence);
   const evidence = decisionItems(extraction.items);
   const detectors = detect({
@@ -112,14 +125,10 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
     maxMarker: extraction.max_marker,
     minInteger: route.detectors.min_integer,
   });
-
-  // The fast check: compile within min(24000, maxTokens), reserve every slot, then ask.
-  if (input.signal?.aborted) throw transportError('aborted', 0, input.signal.reason);
   const base = defaultBudget();
-  let compiled: ReturnType<typeof compile>;
   try {
-    compiled = compile(
-      compileRouteOf(route, call.model),
+    const compiled = compile(
+      compileRouteOf(route, model),
       specs,
       {
         user_request: extraction.user_request,
@@ -130,11 +139,21 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
       },
       { ...base, tokens: Math.min(base.tokens, input.maxTokens) },
     );
+    return { extraction, evidence, detectors, compiled };
   } catch (err) {
     // A question that cannot fit next to the state within the per-call cap.
     if (err instanceof CompileError && err.message.includes('does not fit')) throw new GateRefusedError('token_cap');
     throw err;
   }
+}
+
+export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
+  const { route, specs, call } = input;
+  const clock = input.clock ?? Date.now;
+
+  // Tier 0, then the fast check: compile within min(24000, maxTokens), reserve every slot, then ask.
+  if (input.signal?.aborted) throw transportError('aborted', 0, input.signal.reason);
+  const { extraction, evidence, detectors, compiled } = prepareCheck(input, call.model);
   const started = clock();
   if (compiled.requests.length > 0) {
     const reserved = input.ledger.reserve(compiled.est_tokens);
