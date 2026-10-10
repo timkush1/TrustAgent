@@ -2,8 +2,8 @@
  * Words, icons and tones for the costs server values (cost sources, budget states and price labels).
  * Owned by WEB-SV after Step 0b. presentation.ts re-exports this module with `export *`, so every
  * export here starts with `cost` (D86) and can never collide with another plane's words.
- * Text comes from contracts/ui (copy.v1.json, outcomes.v1.json) where a key exists; the words below
- * without one are listed for the lead to move into copy.v1.json at the next checkpoint (D86).
+ * Every sentence comes from contracts/ui (copy.costs, copy.savings, copy.settings; D86, CO-6);
+ * src/test/lint/wordsFromCopy.test.ts keeps it that way.
  */
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import assumptions from '@contracts/pricing/assumptions.v1.json';
@@ -21,27 +21,13 @@ export interface CostCounterfactualView {
   description: string;
 }
 
-const COUNTERFACTUALS: Record<Counterfactual['kind'], CostCounterfactualView> = {
-  llm_same_checks: {
-    label: 'An LLM asking the same questions',
-    description: 'The fast check’s questions sent to an LLM judge instead of Jev.',
-  },
-  llm_full_claim_audit: {
-    label: 'An LLM auditing every answer claim by claim',
-    description: 'A deep audit of every answer, not only the risky ones.',
-  },
-};
+const COUNTERFACTUALS: Record<Counterfactual['kind'], CostCounterfactualView> = copy.costs.counterfactuals;
 
 export function costCounterfactualView(kind: Counterfactual['kind']): CostCounterfactualView {
   return COUNTERFACTUALS[kind];
 }
 
-const METHODS: Record<Counterfactual['method'], string> = {
-  token_model: 'Token model: your fast-check tokens priced at the judge’s rate',
-  uniform_sample: 'Mean cost of uniformly sampled deep audits × answers',
-  fitted_from_audits: 'Fitted from your deep audits by answer length',
-  static_assumptions: 'Published assumptions',
-};
+const METHODS: Record<Counterfactual['method'], string> = copy.costs.methods;
 
 /** How a counterfactual was worked out, in words. */
 export function costMethodWord(method: Counterfactual['method']): string {
@@ -104,15 +90,7 @@ export const costNotMeasured: string = copy.savings.not_measured;
 
 // ----------------------------------------------------------------------------------- selections
 
-const SELECTIONS: Record<AuditSelection, string> = {
-  high: 'high risk',
-  sample: 'pass sample',
-  error_sample: 'sampled after a failed check',
-  uniform: 'uniform sample',
-  direct: 'sent directly',
-  playground: 'from the Playground',
-  studio: 'from Studio',
-};
+const SELECTIONS: Record<AuditSelection, string> = copy.costs.selections;
 
 /** Why a deep audit ran, as a short phrase ("high risk", "uniform sample"). */
 export function costSelectionWord(selection: AuditSelection): string {
@@ -166,17 +144,8 @@ export interface CostBudgetView {
 }
 
 const BUDGETS: Record<CostBudgetKind, CostBudgetView> = {
-  decision: {
-    title: 'Fast-check budget',
-    description:
-      'Daily cap on Jev calls. Observe and flag routes stop being checked once their share is spent; routes that block or fall back keep the reserve, then follow their fail mode.',
-    path: 'budgets.decision_usd_day',
-  },
-  llm: {
-    title: 'Deep-audit budget',
-    description: 'Daily cap on the LLM judge. Past it, deep audits pause until midnight UTC; fast checks keep running.',
-    path: 'budgets.llm_usd_day',
-  },
+  decision: { ...copy.settings.budgets.decision, path: 'budgets.decision_usd_day' },
+  llm: { ...copy.settings.budgets.llm, path: 'budgets.llm_usd_day' },
 };
 
 export function costBudgetView(kind: CostBudgetKind): CostBudgetView {
@@ -190,22 +159,16 @@ export function costBudgetView(kind: CostBudgetKind): CostBudgetView {
  * table carries without a source, such as a local model whose compute is not priced): an assumption.
  */
 export function costPriceSourceWord(label: PriceEntry['label']): string {
-  if (label === 'override') return 'Your price';
-  return label === 'vendor_price' ? 'Vendor list price' : 'Assumed price';
+  const words = copy.costs.price_sources;
+  if (label === 'override') return words.override;
+  return label === 'vendor_price' ? words.vendor_price : words.assumed;
 }
 
-const PRICE_PROVIDERS: Record<string, string> = {
-  openrouter: 'OpenRouter',
-  typesafe: 'TypeSafe',
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  ollama: 'Ollama (on your machine)',
-  mock: 'Mock (simulated)',
-};
+const PRICE_PROVIDERS: Record<string, string> = copy.costs.price_providers;
 
 /** Words for PriceEntry.provider ("OpenRouter", "Ollama (on your machine)"), never the raw id. */
 export function costPriceProviderLabel(provider: string): string {
-  return PRICE_PROVIDERS[provider] ?? humanizeId(provider);
+  return Object.hasOwn(PRICE_PROVIDERS, provider) ? PRICE_PROVIDERS[provider] : humanizeId(provider);
 }
 
 /**

@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import codedState from '@contracts/fixtures/api/PolicyState.coded-warnings.json';
+import codedValidate from '@contracts/fixtures/api/ValidateResult.coded-warnings.json';
+import type { FieldError } from '@/types/api';
 import { fieldWarningView, isDivergedWarning, policyWarningView } from './policyWarnings';
 
 const ctx = {
@@ -73,5 +76,54 @@ describe('policy warnings in plain words', () => {
   it('recognises the diverged-file warning the banner already shows', () => {
     expect(isDivergedWarning('/etc/trustagent/policies.yaml changed after the newest dashboard edit and is not applied: adopt the file or keep the dashboard version')).toBe(true);
     expect(isDivergedWarning('anything else')).toBe(false);
+  });
+});
+
+describe('policy warnings by code (CO-5)', () => {
+  const reword = (w: FieldError): FieldError => ({ ...w, message: `reworded by a later gateway: ${w.message.split('').reverse().join('')}` });
+
+  it('words PolicyState warnings by code, whatever the message says', () => {
+    const details = codedState.warning_details as FieldError[];
+    const views = codedState.warnings.map((raw, i) => policyWarningView(raw, ctx, details[i]));
+    const reworded = codedState.warnings.map((raw, i) => policyWarningView(`x ${raw} y`, ctx, reword(details[i])));
+    expect(reworded.map((v) => [v.route, v.text])).toEqual(views.map((v) => [v.route, v.text]));
+    expect(views[0].text).toBe(
+      'Default route: Blocking an answer when a check cannot finish (fail closed) only matters on Block and Fallback routes; this route is set to Observe.',
+    );
+    // A defaults setting a route inherits names that route.
+    expect(views[2].route).toBe('support-bot');
+    expect(views[1].text).toMatch(/is cross-checked against Groundedness to catch the two disagreeing/);
+  });
+
+  it('words ValidateResult warnings by code, whatever the message says', () => {
+    const warnings = codedValidate.warnings as FieldError[];
+    const views = warnings.map((w) => fieldWarningView(w, ctx));
+    expect(warnings.map((w) => fieldWarningView(reword(w), ctx).text)).toEqual(views.map((v) => v.text));
+    for (const v of views) expect(v.text).not.toMatch(/reworded|sample_rate|client_rules|det:/);
+    expect(views.find((v) => v.route === 'nodocs')?.text).toMatch(/Give the route documents to check against/);
+  });
+
+  it('gives the same words by code as by the text of a gateway without codes', () => {
+    const details = codedState.warning_details as FieldError[];
+    for (const i of [0, 1, 3]) {
+      expect(policyWarningView(codedState.warnings[i], ctx, details[i]).text).toBe(policyWarningView(codedState.warnings[i], ctx).text);
+    }
+  });
+
+  it('falls back to the text when a code lacks the details its words need, and to the server sentence for an unknown code', () => {
+    const raw = 'routes[0].sample_rate: sample_rate applies to observe routes only; this flag route checks every request';
+    const noMode: FieldError = { path: 'routes[0].sample_rate', message: 'sample_rate applies to observe routes only; this flag route checks every request', code: 'sample_rate_not_observe', details: {} };
+    expect(policyWarningView(raw, ctx, noMode).text).toBe(policyWarningView(raw, ctx).text);
+    const unknown: FieldError = { path: 'version', message: 'something new', code: 'brand_new_code', details: {} };
+    expect(fieldWarningView(unknown, ctx).text).toBe('Something new');
+  });
+
+  it('words the version and file warnings by code', () => {
+    expect(policyWarningView('anything', ctx, { path: '', message: 'anything', code: 'newest_version_invalid', details: { bad_version: 7, active_version: 6 } }).text).toBe(
+      'Policy version 7 no longer passes validation, so version 6 stays in effect until a valid version is saved.',
+    );
+    const diverged = { path: '', message: 'reworded', code: 'file_diverged', details: { path: 'config/policies.yaml' } };
+    expect(isDivergedWarning('reworded', diverged)).toBe(true);
+    expect(policyWarningView('reworded', ctx, diverged).text).toMatch(/^config\/policies\.yaml changed after the newest dashboard edit/);
   });
 });

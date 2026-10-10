@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import settingsEnvManaged from '@contracts/fixtures/api/SettingsView.env-managed.json';
 import { unavailableControlPlane } from '@/data/controlPlane';
-import { errorCodeHint, CONTROL_ERROR_CODES } from '@/data/errors';
+import { ApiError, errorCodeHint, CONTROL_ERROR_CODES } from '@/data/errors';
 import { createHttpClient } from '@/data/http';
 import { LiveControlPlane } from '@/data/live/liveControlPlane';
 import { createControlApi } from '@/test/control/handlers';
@@ -101,5 +101,11 @@ describe('control planes', () => {
       .catch((e: unknown) => e);
     expect(errorCodeHint(err)).toBe(CONTROL_ERROR_CODES.not_implemented.hint);
     expect(errorCodeHint(new Error('x'))).toBeNull();
+    // A Studio draft the judge's provider refused says why, never "engine unavailable" (CO-8).
+    for (const code of ['no_credits', 'judge_unauthorized'] as const) {
+      const refused = new ApiError({ kind: 'http', status: 503, code, message: 'The judge refused.' });
+      expect(errorCodeHint(refused)).toBe(CONTROL_ERROR_CODES[code].hint);
+      expect(errorCodeHint(refused)).not.toBe(CONTROL_ERROR_CODES.engine_unavailable.hint);
+    }
   });
 });

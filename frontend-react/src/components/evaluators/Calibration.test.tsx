@@ -208,6 +208,39 @@ describe('Adopt calibration', { timeout: 20_000 }, () => {
     await waitFor(() => expect(within(d).getByRole('button', { name: 'Adopt calibration' })).not.toHaveAttribute('aria-disabled', 'true'));
   });
 
+  it('says why the gateway refuses the calibrated threshold, with the fix, not "Preview impact failed" (CO-18)', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/groundedness');
+    server.use(
+      http.post(`${API}/api/policies/dry-run`, () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'validation_failed',
+              message: 'The policy is not valid.',
+              field_errors: [
+                {
+                  path: 'routes[0].evaluators[0].thresholds',
+                  message: 'escalate_from 0.6 must be below warn_at 0.5',
+                  code: 'escalate_not_below_warn',
+                  details: { route: 'support-bot', ref: 'groundedness@1', warn_at: 0.5, escalate_from: 0.6 },
+                },
+              ],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Calibrate and adopt' }));
+    const d = await dialog(/Adopt calibration: Groundedness/);
+    await user.click(within(d).getByRole('button', { name: 'Fit and preview (free)' }));
+    const why = await within(d).findAllByText(/^This calibration's flag threshold \(0\.50\) is below the deep-audit threshold of route .+ \(0\.60\)/);
+    expect(why.length).toBeGreaterThan(0);
+    expect(within(d).queryByText(/Preview impact failed/)).toBeNull();
+    expect(within(d).getByRole('button', { name: 'Adopt calibration' })).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('says the calibration is active but the policy unchanged when the save is refused', async () => {
     const user = userEvent.setup();
     const control = createControlApi({ save: errorReply(409, 'file_managed', 'The policy is managed by policies.yaml.') });

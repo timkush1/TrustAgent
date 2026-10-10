@@ -135,7 +135,7 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
       <p className="text-sm text-fg">
         {copy.setup.step_connect.prerequisite}{' '}
         <EvidenceBadge label="estimate" basis={copy.setup.step_connect.prerequisite_basis} subject="Answers $5 of credit covers" className="align-middle" />{' '}
-        <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-medium underline underline-offset-2">
+        <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 font-medium underline underline-offset-2">
           {copy.setup.step_connect.prerequisite_link}
           <ExternalLink aria-hidden="true" className="size-3" />
         </a>
@@ -179,7 +179,7 @@ export function StepConnect({ progress, writeReason }: StepConnectProps) {
             description={
               <>
                 Create one at{' '}
-                <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer" className="font-medium text-fg underline underline-offset-2">
+                <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer" className="font-medium text-fg underline underline-offset-2">
                   openrouter.ai/settings/keys
                 </a>{' '}
                 (set a credit limit on it, for example $2). It is encrypted here and only ever shown masked.
