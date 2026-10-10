@@ -124,6 +124,7 @@ type datePattern struct {
 	re                *regexp.Regexp
 	year, month, day  int // capture group numbers; day is 0 for month_year
 	monthIsName, full bool
+	window            int // the most bytes a match spans; 0 scans whole texts (datescan.go)
 }
 
 // rulePattern is a pattern with separately passed flags, as the rules files write them.
@@ -231,7 +232,11 @@ func parseDetectorRules(detJSON, secJSON []byte) (*detectorRules, error) {
 	r.windowToken = must(d.Numbers.SmallIntegers.WindowToken)
 	r.unit = must(d.Numbers.SmallIntegers.Unit)
 	for _, p := range d.Dates.Patterns {
-		dp := datePattern{re: must(p.rulePattern), year: p.Groups["year"], month: p.Groups["month"], day: p.Groups["day"]}
+		dp := datePattern{year: p.Groups["year"], month: p.Groups["month"], day: p.Groups["day"]}
+		var err error
+		if dp.re, dp.window, err = compileDatePattern(p.rulePattern, dp.year); err != nil {
+			errs = append(errs, err)
+		}
 		dp.full = dp.day > 0
 		dp.monthIsName = p.ID != "iso"
 		r.dates = append(r.dates, dp)
@@ -413,7 +418,7 @@ type foundDate struct {
 func (d *detection) findDates(text string) []foundDate {
 	var found []foundDate
 	for _, p := range d.r.dates {
-		for _, m := range p.re.FindAllStringSubmatchIndex(text, -1) {
+		for _, m := range p.findAll(text) {
 			if slices.ContainsFunc(found, func(f foundDate) bool { return m[0] < f.end && f.start < m[1] }) {
 				continue
 			}
@@ -453,6 +458,12 @@ func (d *detection) normDate(text string, p datePattern, m []int) (string, bool)
 }
 
 func (d *detection) dates() []DetectorFinding {
+	// Only the response's dates can fire, so a response without one never reads the reference
+	// text (the costly part on long evidence, D161).
+	found := d.findDates(d.resp)
+	if len(found) == 0 {
+		return orEmpty(nil)
+	}
 	var known []string
 	for _, p := range d.refParts {
 		for _, f := range d.findDates(p) {
@@ -460,7 +471,7 @@ func (d *detection) dates() []DetectorFinding {
 		}
 	}
 	var out []DetectorFinding
-	for _, f := range d.findDates(d.resp) {
+	for _, f := range found {
 		ok := slices.ContainsFunc(known, func(k string) bool {
 			return k == f.norm || (len(f.norm) == len("YYYY-MM") && strings.HasPrefix(k, f.norm+"-"))
 		})
