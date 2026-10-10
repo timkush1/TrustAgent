@@ -55,7 +55,7 @@ The app keeps its SDK and changes one line, the base URL. TrustAgent then:
    - the **instant checks** (Tier 0): deterministic Go detectors for numbers, dates, links, quotes
      and citations that are not in the evidence, secret patterns and system-prompt leaks, with a
      budget of under 2 ms for up to 32k tokens of documents
-     ([measured](GATEWAY.md#tier-0-the-instant-checks));
+     ([benchmark figures](GATEWAY.md#tier-0-the-instant-checks));
    - the **fast check** (Tier 1): every check of the route, asked as a question to **Jev**,
      TypeSafe AI's decision model, in **one** call;
 3. **applies the route's policy**: observe (measure only), flag (headers tell the app), block (a

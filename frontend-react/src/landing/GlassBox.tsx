@@ -2,7 +2,9 @@
  * "What Jev was asked" (D116): the exact fast-check request for the hero's refund answer, from the
  * committed glassbox.gen.json (scripts/gen-landing-glassbox.ts runs the gate's own compile() over the
  * pack scenario; `--check` keeps it in step). It shows what the request carried as evidence, the
- * questions, and the raw body; the time and cost are the hero card's Simulated figures. On the
+ * questions, and the raw body; the cost is the hero card's estimate, those tokens at the Jev price
+ * (hero_card_cost_usd, checked by validate.mjs and landing.test). It shows no time: the replayed
+ * trace has its own simulated one, and the hero gives the published latency. On the
  * static site it links to the same request on the replay, where "Show exact Jev request" opens the
  * glass box. Loaded after the first paint.
  */
@@ -17,7 +19,6 @@ import { ClaimValue, Ticked } from './ui';
 const count = new Intl.NumberFormat('en-US');
 
 export function GlassBox() {
-  const latency = claim('hero_card_latency_ms');
   const cost = claim('hero_card_cost_usd');
   const link = refundTraceHref();
   const calls = glassbox.calls === 1 ? '1 call' : `${glassbox.calls} calls`;
@@ -30,8 +31,6 @@ export function GlassBox() {
           <span>
             {calls} · {questions} · an estimated {count.format(glassbox.est_tokens)} tokens ·
           </span>
-          <ClaimValue claim={latency} strong={false} />
-          <span>·</span>
           <ClaimValue claim={cost} strong={false} />
         </p>
       </div>

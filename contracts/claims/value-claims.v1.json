@@ -152,7 +152,7 @@
       "source_url": "https://openrouter.ai/typesafe/jev-1.13",
       "as_of": "2026-09-27",
       "caveat": "Third-party figure, not our measurement.",
-      "surfaces": ["landing", "readme"]
+      "surfaces": ["readme"]
     },
     {
       "id": "arize_ragtruth_jev_accuracy",
@@ -372,37 +372,25 @@
       "unit": "ms",
       "display": "212 ms",
       "label": "simulated",
-      "basis": "Illustrative animation of the scripted refund-policy example (60 days vs 30 days).",
+      "basis": "Illustrative animation of the scripted refund-policy example (60 days vs 30 days): replayed, not a live measurement. The fast check's published latency is the third-party figure beside it.",
       "source_url": null,
       "as_of": null,
-      "caveat": "Replayed illustration, not a live measurement.",
+      "caveat": null,
       "surfaces": ["landing"]
     },
     {
       "id": "hero_card_cost_usd",
-      "text": "Hero animation: the check cost",
-      "value": 0.0002,
+      "text": "The refund example's fast check costs",
+      "value": 0.000024,
       "unit": "usd",
-      "display": "$0.0002",
-      "label": "simulated",
-      "basis": "Illustrative animation of the scripted refund-policy example; about one fast check at the Jev price.",
+      "display": "$0.000024",
+      "label": "estimate",
+      "basis": "The refund example's compiled fast-check request (What Jev was asked): about 565 input tokens, as the gateway's request builder estimates them, at the Jev price of $0.042 per million input tokens; output is free. A typical check carries more documents (about 5,000 tokens) and costs about $0.0002.",
       "source_url": null,
       "as_of": null,
-      "caveat": "Replayed illustration, not a live measurement.",
+      "caveat": null,
+      "tokens_x_price": {"input_tokens": 565, "price_claim": "jev_input_price_per_mtok"},
       "surfaces": ["landing"]
-    },
-    {
-      "id": "demo_cost_usd",
-      "text": "make demo runs with no keys and costs",
-      "value": 0,
-      "unit": "usd",
-      "display": "$0",
-      "label": "simulated",
-      "basis": "The demo stack blanks every vendor key and uses mock checks and a mock judge; no billed calls are possible.",
-      "source_url": null,
-      "as_of": null,
-      "caveat": "Demo numbers are simulated, not model output.",
-      "surfaces": ["landing", "readme", "docs"]
     }
   ]
 }

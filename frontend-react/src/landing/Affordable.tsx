@@ -7,7 +7,7 @@ import { lazy, Suspense } from 'react';
 import { claim, type ClaimView } from './claims';
 import { loaders } from './lazyLoaders';
 import { PartBoundary } from './lazyParts';
-import { ClaimValue, LabelChip, Section } from './ui';
+import { ClaimCaveat, ClaimValue, LabelChip, Section } from './ui';
 
 // The calculator (and the pricing model behind it) loads right after the page, below the fold:
 // it is interactive only, and keeps the first load inside the landing budget. It is one of the
@@ -63,7 +63,7 @@ function CostBars() {
   );
 }
 
-function Figure({ title, chip, children, caveat }: { title: string; chip: ClaimView; children: React.ReactNode; caveat?: string | null }) {
+function Figure({ title, chip, children }: { title: string; chip: ClaimView; children: React.ReactNode }) {
   return (
     <li className="border-t border-border py-4 first:border-t-0 first:pt-0" data-chip-scope>
       <div className="flex items-center justify-between gap-3">
@@ -71,7 +71,7 @@ function Figure({ title, chip, children, caveat }: { title: string; chip: ClaimV
         <LabelChip claim={chip} />
       </div>
       <div className="mt-1.5 text-fg-muted">{children}</div>
-      {caveat ? <p className="mt-1.5 text-xs text-fg-subtle">{caveat}</p> : null}
+      <ClaimCaveat claim={chip} className="mt-1.5" />
     </li>
   );
 }
@@ -101,11 +101,11 @@ function PublishedFigures() {
       <Figure title="Jev price" chip={jevIn}>
         {num(jevIn)}, {num(jevOut)}.
       </Figure>
-      <Figure title="Arize RAGTruth test" chip={arizeJev} caveat={arizeJev.caveat}>
+      <Figure title="Arize RAGTruth test" chip={arizeJev}>
         Jev {num(arizeJev)} at {num(arizeJevCost)} vs Claude Opus 5 {num(arizeOpus)} at {num(arizeOpusCost)}, only at a tuned {num(threshold)}{' '}
         threshold ({num(atHalf)}).
       </Figure>
-      <Figure title="OpenRouter faithfulness test" chip={orAcc} caveat={orAcc.caveat}>
+      <Figure title="OpenRouter faithfulness test" chip={orAcc}>
         {num(orAcc)} accuracy, {num(orMs)}.
       </Figure>
       <li className="border-t border-border pt-4" data-measured>

@@ -51,7 +51,7 @@ flowchart LR
 ```
 
 Your app keeps its SDK and changes one line, the base URL. For each answer TrustAgent runs the
-**instant checks** (deterministic Go detectors with a 2 ms budget, [measured](docs/GATEWAY.md#tier-0-the-instant-checks)), then asks **Jev**, TypeSafe AI's fast
+**instant checks** (deterministic Go detectors with a 2 ms budget; [benchmark figures](docs/GATEWAY.md#tier-0-the-instant-checks)), then asks **Jev**, TypeSafe AI's fast
 decision model, every check of the route as a question in **one** call, and applies the route's
 policy: **observe** (measure only), **flag** (headers tell your app the risk), **block** (a safe
 message instead) or **fallback** (a second answer written only from your documents, checked again).
@@ -112,9 +112,9 @@ make demo          # opens the one-time setup link when every part is healthy
 make demo-down     # stop it (make demo-clean also deletes its data)
 ```
 
-The demo costs <!-- claim:demo_cost_usd --> $0 [simulated]: the fast check and the judge are mocks, no
-vendor key reaches the containers, and a traffic generator replays scripted scenarios.
-Demo numbers are simulated, not model output. The dashboard labels them that way.
+The demo bills nothing: the fast check and the judge are mocks, no vendor key reaches the
+containers, and a traffic generator replays scripted scenarios. Demo numbers are simulated, not
+model output. The dashboard labels them that way.
 
 On a release tag, `make demo` and `make up` pull the published images
 (`ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}`); on any other commit they build them from

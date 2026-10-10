@@ -18,6 +18,8 @@ import type { PricingTable } from '@/types/api';
 import { axeViolations, formatViolations } from '@/test/axe';
 import { committedManifest, scenarioTrace } from '@/test/recording';
 import { digest } from 'virtual:trustagent/tape-digest';
+import claimsDoc from '@contracts/claims/value-claims.v1.json';
+import { priceCall } from '@/lib/decision/cost';
 import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
 import { compareRows } from './compareData';
 import { copy as landingCopy, DEMO_HREF, REFUND } from './content';
@@ -96,14 +98,38 @@ describe('landing page', () => {
       const text = node.textContent ?? '';
       if (!FIGURE.test(text)) continue;
       const el = node.parentElement as HTMLElement;
-      // The reader's own calculator inputs are not claims.
-      if (el.closest('[data-input]')) continue;
+      // The reader's own calculator inputs are not claims, and a caveat qualifies the claim whose
+      // chip it sits next to (checked below).
+      if (el.closest('[data-input]') || el.closest('[data-caveat-for]')) continue;
       figures += 1;
       const scope = el.closest('[data-chip-scope]');
       expect(scope, `"${text.trim()}" has no chip next to it`).not.toBeNull();
       expect(scope?.querySelector('[data-value-label]'), `"${text.trim()}" has no chip next to it`).not.toBeNull();
     }
     expect(figures).toBeGreaterThan(15);
+  });
+
+  it('shows each claim’s caveat next to its chip', async () => {
+    await renderLanding();
+    const ids = new Set(landingClaims().map((c) => c.id));
+    let caveats = 0;
+    for (const chip of document.querySelectorAll<HTMLAnchorElement>('[data-value-label]')) {
+      const id = chip.getAttribute('href')?.replace('#source-', '') ?? '';
+      if (!ids.has(id)) continue; // a judge price in the calculator, not a claim
+      const c = claim(id);
+      if (!c.caveat) continue;
+      caveats += 1;
+      // The caveat sits in the chip's own scope, or in the small block that holds the claim.
+      const scope = chip.closest('[data-caveat-scope]') ?? chip.closest('[data-chip-scope]');
+      const note = scope?.querySelector(`[data-caveat-for="${id}"]`);
+      expect(note, `${id}: its caveat sits next to its chip`).not.toBeNull();
+      expect(note).toHaveTextContent(c.caveat);
+      expect(scope?.querySelectorAll('[data-value-label]').length, `${id}: the block holding its caveat is small`).toBeLessThanOrEqual(2);
+    }
+    // The hero's third-party latency, the Arize test and OpenRouter's own test.
+    expect(caveats).toBeGreaterThanOrEqual(3);
+    const latency = document.querySelector('[data-caveat-for="jev_p50_latency_openrouter"]');
+    expect(latency?.closest('section')?.getAttribute('aria-labelledby')).toBe('hero-title');
   });
 
   it('says "not yet measured" once instead of borrowing an estimate', async () => {
@@ -291,9 +317,21 @@ describe('what Jev was asked', () => {
     expect(within(panel).getByText(/"assistant_response": "You can get a full refund within 60 days of purchase."/)).toBeInTheDocument();
     // The token count is the request builder's estimate, and says so.
     expect(panel).toHaveTextContent(`an estimated ${new Intl.NumberFormat('en-US').format(glassbox.est_tokens)} tokens`);
-    // Time and cost are the hero card's figures, each with its Simulated chip.
-    const chips = [...panel.querySelectorAll('[data-value-label]')].map((c) => c.getAttribute('href'));
-    expect(chips).toEqual(['#source-hero_card_latency_ms', '#source-hero_card_cost_usd']);
+    // The cost is the hero card's, with its Estimate chip; no time (the replay has its own).
+    const chips = [...panel.querySelectorAll('[data-value-label]')].map((c) => [c.getAttribute('href'), c.getAttribute('data-value-label')]);
+    expect(chips).toEqual([['#source-hero_card_cost_usd', 'estimate']]);
+    expect(panel.textContent).toContain(`tokens ·${claim('hero_card_cost_usd').display}Estimate`);
+  });
+
+  it('prices the request it shows: its tokens at the Jev price (D168)', () => {
+    const cost = claim('hero_card_cost_usd');
+    const priced = priceCall({ provider: 'openrouter', model: glassbox.model, input_tokens: glassbox.est_tokens, output_tokens: 0, reported_cost_usd: null, table: PRICE_TABLE });
+    expect(priced.cost_usd).not.toBeNull();
+    // The claim is that price to two significant digits, and says it is computed from these tokens.
+    expect(cost.value).toBe(Number(priced.cost_usd?.toPrecision(2)));
+    expect(cost.label).toBe('estimate');
+    const entries = claimsDoc.claims as { id: string; tokens_x_price?: { input_tokens: number; price_claim: string } }[];
+    expect(entries.find((c) => c.id === 'hero_card_cost_usd')?.tokens_x_price).toEqual({ input_tokens: glassbox.est_tokens, price_claim: 'jev_input_price_per_mtok' });
   });
 
   it('is the gate’s own compile of the pack’s refund scenario', () => {

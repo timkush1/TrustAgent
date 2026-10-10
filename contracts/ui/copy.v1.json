@@ -4,7 +4,7 @@
     "product": {
       "name": "TrustAgent",
       "tagline": "Catch hallucinations before your users do.",
-      "subhead": "An open-source gateway that checks every LLM answer against the documents your app already sent — in {claim:fast_check_latency_approx}, for {claim:fast_check_cost_per_1k} [estimate] — and sends only the risky ones to a full LLM audit."
+      "subhead": "An open-source gateway that checks every LLM answer against the documents your app already sent, for {claim:fast_check_cost_per_1k} [estimate], and sends only the risky ones to a full LLM audit."
     },
     "tiers": {
       "instant_checks": "Instant checks",

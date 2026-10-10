@@ -1,8 +1,9 @@
 /**
  * The hero's answer card (SPEC §8.1), in three beats: the answer arrives; "Flagged · 212 ms ·
- * $0.0002"; "60 days" gets a wavy underline next to the evidence "…within 30 days of purchase"
+ * $0.000024"; "60 days" gets a wavy underline next to the evidence "…within 30 days of purchase"
  * (refund-policy.md). The words are the scenario pack's refund example; the time and cost are the
- * `hero_card_*` claims, each with its Simulated chip, and beat 2 names the document the answer was
+ * `hero_card_*` claims with their chips (the time Simulated; the cost an Estimate, the request "What
+ * Jev was asked" shows at the Jev price, D168), and beat 2 names the document the answer was
  * checked against. With reduced motion the card shows its last beat at once
  * and offers no "Play again" (there is nothing to replay).
  */

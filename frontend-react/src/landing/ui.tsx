@@ -39,6 +39,19 @@ export function ClaimValue({ claim, className, strong = true }: { claim: ClaimVi
   );
 }
 
+/**
+ * A claim's caveat, placed next to its chip (D128, DESIGN §12b): inside the claim's chip scope or
+ * the small block marked data-caveat-scope that holds it. Nothing for a claim without one.
+ */
+export function ClaimCaveat({ claim, className }: { claim: Pick<ClaimView, 'id' | 'caveat'>; className?: string }) {
+  if (!claim.caveat) return null;
+  return (
+    <p data-caveat-for={claim.id} className={clsx('text-xs text-fg-subtle', className)}>
+      {claim.caveat}
+    </p>
+  );
+}
+
 export function Section({ id, eyebrow, title, lead, children, className }: { id: string; eyebrow: string; title: string; lead?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className={clsx('border-t border-border py-20 max-sm:py-14', className)}>

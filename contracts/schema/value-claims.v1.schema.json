@@ -77,6 +77,16 @@
               "field": {"enum": ["input_per_mtok", "output_per_mtok"]}
             }
           },
+          "tokens_x_price": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input_tokens", "price_claim"],
+            "description": "The claim is the cost of one call: input_tokens at the usd_per_mtok claim price_claim (output free), rounded to two significant digits. validate.mjs checks the arithmetic; the web tests tie input_tokens to the request it prices.",
+            "properties": {
+              "input_tokens": {"type": "integer", "minimum": 1},
+              "price_claim": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"}
+            }
+          },
           "surfaces": {
             "type": "array",
             "minItems": 1,

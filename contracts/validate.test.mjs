@@ -271,6 +271,9 @@ describe('validate.mjs', () => {
     sb.edit('claims/value-claims.v1.json', (c) => {
       c.claims.find((x) => x.id === 'fast_check_cost_per_check').value = 0.0003;
       c.claims.find((x) => x.id === 'studio_draft_cost_estimate').per_unit_of = 'no_such_figure';
+      // D168: the cost of one call is its tokens at the price claim, to two significant digits.
+      c.claims.find((x) => x.id === 'hero_card_cost_usd').value = 0.0002;
+      c.claims.find((x) => x.id === 'llm_full_audit_cost_per_1k').tokens_x_price = { input_tokens: 10, price_claim: 'hero_card_latency_ms' };
     });
     sb.edit('claims/compare.v1.json', (c) => {
       c.rows[0].cells.inline = { value: 'yes', text: 'Runs as a hosted service.', source_url: null, as_of: null, reviewed: false };
@@ -282,6 +285,9 @@ describe('validate.mjs', () => {
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /fast_check_cost_per_check: value 0\.0003 must be fast_check_cost_per_1k \/ 1000/);
     assert.match(r.out, /studio_draft_cost_estimate: per_unit_of no_such_figure is neither a usd_per_1k claim nor a figure/);
+    assert.match(r.out, /hero_card_cost_usd: value 0\.0002 must be 565 tokens × jev_input_price_per_mtok \(0\.042 per million\) = 0\.000024/);
+    assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price needs unit usd/);
+    assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price\.price_claim hero_card_latency_ms is not a usd_per_mtok claim with a value/);
     assert.match(r.out, /observability_judge\.inline: a yes cell needs the source_url it was read from and as_of/);
     assert.match(r.out, /guardrails\.self_hosted: a partial cell says what the vendor documents \(text\)/);
     assert.match(r.out, /cloud_groundedness: no cell for column explanations/);

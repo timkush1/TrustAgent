@@ -655,7 +655,7 @@ if (claims) {
       else if (Math.abs(c.value - f.value) > f.tolerance + EPS) {
         error(REL, `${c.id}: value ${c.value} differs from figure ${c.assumption_ref} (${f.value.toFixed(4)}, tolerance ${f.tolerance})`);
       }
-    } else if (c.label === 'estimate' && c.unit.startsWith('usd') && c.per_unit_of === undefined) {
+    } else if (c.label === 'estimate' && c.unit.startsWith('usd') && c.per_unit_of === undefined && c.tokens_x_price === undefined) {
       warn(REL, `${c.id}: cost estimate without an assumption_ref cannot be checked against pricing/assumptions.v1.json`);
     }
     if (c.price_ref !== undefined) {
@@ -669,6 +669,20 @@ if (claims) {
       const v = measured?.values?.[c.measured_ref];
       if (!v) error(REL, `${c.id}: measured_ref ${c.measured_ref} is not a key of claims/measured.json values`);
       else if (v.unit !== c.unit) error(REL, `${c.id}: unit ${c.unit} differs from measured.json ${c.measured_ref} unit ${v.unit}`);
+    }
+  }
+  // The cost of one call (D168): input_tokens at the price claim's usd_per_mtok, output free, to two
+  // significant digits.
+  for (const c of claims.claims) {
+    if (c.tokens_x_price === undefined) continue;
+    const { input_tokens: tokens, price_claim: priceId } = c.tokens_x_price;
+    const price = claims.claims.find((o) => o.id === priceId);
+    if (c.unit !== 'usd') error(REL, `${c.id}: tokens_x_price needs unit usd`);
+    if (!price || price.unit !== 'usd_per_mtok' || typeof price.value !== 'number') {
+      error(REL, `${c.id}: tokens_x_price.price_claim ${priceId} is not a usd_per_mtok claim with a value`);
+    } else {
+      const want = Number(((tokens * price.value) / 1e6).toPrecision(2));
+      if (Math.abs(c.value - want) > EPS) error(REL, `${c.id}: value ${c.value} must be ${tokens} tokens × ${priceId} (${price.value} per million) = ${want}`);
     }
   }
   // One unit of a per-1,000 figure (D114): value = the usd_per_1k claim's value, or the assumptions

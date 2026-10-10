@@ -3,15 +3,13 @@
  * line your app changes. Commands come from contracts/ui/commands.v1.json; the SDK line is the
  * dashboard's own "Connect your app" snippet (src/domain/snippets.ts), cut to the line that changes.
  */
-import { claim } from './claims';
 import { command, REPO_URL } from './content';
 import { sectionCopy } from './sectionCopy';
 import { oneLineSnippet } from './snippetLine';
 import { buttonClass } from './styles';
-import { ClaimValue, Command, GitHubMark, Section } from './ui';
+import { Command, GitHubMark, Section } from './ui';
 
 export function SelfHost() {
-  const demoCost = claim('demo_cost_usd');
   return (
     <Section
       id="self-host"
@@ -26,9 +24,7 @@ export function SelfHost() {
             <Command command={command('demo')} />
           </div>
           <ul className="mt-5 space-y-2 text-fg-muted">
-            <li className="flex flex-wrap items-baseline gap-x-1.5" data-chip-scope>
-              Docker only, costs <ClaimValue claim={demoCost} />
-            </li>
+            <li>Docker only: no keys, and nothing is billed.</li>
             <li>Mock checks, a mock judge and scripted traffic; every number it shows is labelled simulated.</li>
             <li>
               Opens the dashboard on localhost. Stop it with <code className="font-mono text-sm text-fg">{command('demo_down')}</code>.

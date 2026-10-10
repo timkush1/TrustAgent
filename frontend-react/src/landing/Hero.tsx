@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { claim, splitClaims } from './claims';
 import { command, copy, DEMO_HREF, REPO_URL } from './content';
 import { HeroCard } from './HeroCard';
-import { ClaimValue, Command, GitHubMark } from './ui';
+import { ClaimCaveat, ClaimValue, Command, GitHubMark } from './ui';
 import { buttonClass, container } from './styles';
 
 export function Hero() {
@@ -47,10 +47,13 @@ export function Hero() {
             <Command command={command('demo')} note="no keys, Docker only" />
           </div>
           <dl className="mt-8 space-y-1.5 border-t border-border pt-5 text-sm">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-caveat-scope>
               <dt className="text-fg-muted">Fast-check latency:</dt>
               <dd>
                 <ClaimValue claim={thirdParty} />
+              </dd>
+              <dd className="basis-full">
+                <ClaimCaveat claim={thirdParty} className="max-w-md" />
               </dd>
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
