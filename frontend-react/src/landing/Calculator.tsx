@@ -250,7 +250,7 @@ export function Calculator() {
           </>
         ) : (
           <p className="mt-4 rounded-md border border-border-strong px-4 py-3 text-sm text-fg" role="status">
-            {result.problem.field === 'settings' ? result.problem.message : 'Enter both judge prices to see the estimate.'}
+            {result.problem.field === 'settings' ? result.problem.message : 'Enter both judge prices, $0 or more, to see the estimate.'}
           </p>
         )}
         <p className="mt-auto pt-5 text-xs text-fg-muted">

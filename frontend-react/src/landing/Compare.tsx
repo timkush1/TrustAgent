@@ -17,6 +17,12 @@ import { ClaimValue, Section } from './ui';
 
 const VALUE_WORD: Partial<Record<CompareCell['value'], string>> = { yes: 'Yes', no: 'No', partial: 'Partly' };
 
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+/** "four kinds of tools": the number of rows the contract has, never a fixed word. */
+function kindsOfTools(n: number): string {
+  return `${COUNT_WORDS[n] ?? String(n)} ${n === 1 ? 'kind' : 'kinds'} of tools`;
+}
+
 function VendorCell({ cell }: { cell: CompareCell }) {
   if (cell.value === 'unverified' || !cell.source_url || !cell.as_of) {
     return (
@@ -72,8 +78,8 @@ function CompareTable({ ours }: { ours: Record<string, ReactNode> }) {
     <div className="overflow-x-auto rounded-lg border border-border max-md:hidden" tabIndex={0} role="region" aria-label="Comparison table (scrolls sideways)">
       <table className="w-full min-w-[60rem] border-collapse text-left text-sm">
         <caption className="sr-only">
-          TrustAgent compared with four kinds of tools. Each other cell says what that vendor’s documentation says, with its link and the date it was
-          read.
+          TrustAgent compared with {kindsOfTools(compareRows.length)}. Each other cell says what that vendor’s documentation says, with its link and the
+          date it was read.
         </caption>
         <thead>
           <tr className="border-b border-border bg-surface-sunken">
@@ -155,7 +161,7 @@ export function Compare() {
       <CompareCards ours={ours} />
       <p className="mt-3 text-xs text-fg-muted">
         Each cell says what that vendor’s own public documentation said on the date shown, with a link; it is not a ranking. Where the docs are silent the
-        cell says so. Cells are re-checked before every release.
+        cell says so.
       </p>
 
       <div className="mt-16 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">

@@ -289,6 +289,8 @@ describe('what Jev was asked', () => {
     expect(within(panel).getByText(REFUND.docText)).toBeInTheDocument();
     for (const q of glassbox.questions) expect(within(panel).getByText(q.name)).toBeInTheDocument();
     expect(within(panel).getByText(/"assistant_response": "You can get a full refund within 60 days of purchase."/)).toBeInTheDocument();
+    // The token count is the request builder's estimate, and says so.
+    expect(panel).toHaveTextContent(`an estimated ${new Intl.NumberFormat('en-US').format(glassbox.est_tokens)} tokens`);
     // Time and cost are the hero card's figures, each with its Simulated chip.
     const chips = [...panel.querySelectorAll('[data-value-label]')].map((c) => c.getAttribute('href'));
     expect(chips).toEqual(['#source-hero_card_latency_ms', '#source-hero_card_cost_usd']);
@@ -319,6 +321,10 @@ describe('comparison', () => {
     await renderLanding();
     const table = screen.getByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(2 + compareRows.length);
+    // The caption counts the contract's rows; it never promises re-checks nothing enforces.
+    const howMany = ['no', 'one', 'two', 'three', 'four', 'five', 'six'][compareRows.length] ?? String(compareRows.length);
+    expect(table.querySelector('caption')).toHaveTextContent(`TrustAgent compared with ${howMany} kinds of tools.`);
+    expect(document.getElementById('compare')?.textContent).not.toMatch(/re-checked/);
     const cells = table.querySelectorAll<HTMLElement>('[data-compare-cell]');
     expect(cells).toHaveLength(compareRows.length * compareDoc.columns.length);
     for (const cell of cells) {
@@ -438,6 +444,7 @@ describe('calculator', () => {
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Enter a price of $0 or more per million tokens.')).toBeInTheDocument();
     expect(document.querySelector('[data-cost-row]')).toBeNull();
+    expect(screen.getByText('Enter both judge prices, $0 or more, to see the estimate.')).toBeInTheDocument();
     fireEvent.change(input, { target: { value: '1' } });
     expect(row('deep_audit')).toBe(before.deep_audit);
   });

@@ -27,7 +27,7 @@ export function GlassBox() {
         <figcaption className="text-sm font-semibold text-fg">What Jev was asked about the refund answer</figcaption>
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-fg-muted" data-chip-scope>
           <span>
-            {calls} · {questions} · about {count.format(glassbox.est_tokens)} tokens ·
+            {calls} · {questions} · an estimated {count.format(glassbox.est_tokens)} tokens ·
           </span>
           <ClaimValue claim={latency} strong={false} />
           <span>·</span>
