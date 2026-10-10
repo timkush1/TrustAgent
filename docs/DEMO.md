@@ -1,12 +1,71 @@
 # The demo
 
-`make demo` runs all of TrustAgent on your machine with **no keys and no cost**: the fast check
-(Jev) and the deep-audit judge are mocks, and a traffic generator replays scripted scenarios, so
-the dashboard fills up by itself. Every number it shows is **simulated** and labelled that way.
+TrustAgent has two demos:
 
-This page covers running the demo, what to show in a few minutes, checking it from the terminal,
+- **[The live demo in your browser](#the-live-demo-in-your-browser)**, at
+  <https://timkush1.github.io/TrustAgent/>: nothing to install. It replays a tape of demo traffic
+  through the real dashboard, and its Playground can run real checks with your own OpenRouter key.
+- **`make demo`**, which runs all of TrustAgent on your machine with **no keys and no cost**: the
+  fast check (Jev) and the deep-audit judge are mocks, and a traffic generator replays scripted
+  scenarios, so the dashboard fills up by itself. Every number it shows is **simulated** and
+  labelled that way.
+
+This page covers both, what to show in a few minutes, checking the local demo from the terminal,
 and sharing it. First-time setup (Docker, WSL) is in [GETTING-STARTED.md](GETTING-STARTED.md);
 the gateway's behaviour is in [GATEWAY.md](GATEWAY.md).
+
+## The live demo in your browser
+
+Open <https://timkush1.github.io/TrustAgent/>. The landing page explains the idea in a minute;
+**Try the demo** opens the dashboard, which has no server behind it: it replays a tape of the demo
+scenarios in compressed time, so Traffic fills up as you watch.
+
+**What to try:**
+
+1. **The caught answer.** A short guide points at it: a support answer that promises a refund
+   after 60 days, **Flagged** because the refund policy it was sent says 30. Open it to see "60 days"
+   marked as contradicted and the policy line that disproves it.
+2. **Show exact Jev request**, in the answer's details: the exact questions the fast check was
+   asked, rebuilt in your browser from the recorded request.
+3. **Savings**: what the checks cost, next to labelled estimates of an LLM judge doing the same.
+4. **Studio**: describe a new check in one sentence, draft it, test it on samples from the tape,
+   and download it as JSON for your own stack.
+
+The pages that need a running gateway (Policies, Settings, Knowledge, the evaluator list and
+Setup) say what they do there and link to **Run it yourself**.
+
+**Which tape it replays, and its label.** Every page says where the numbers come from:
+
+| Tape | Made by | Label |
+|---|---|---|
+| **Simulated** (`frontend-react/demo-data/simulated/`) | Every demo scenario run through the browser's copy of the gateway's pipeline, with the mock fast check and mock judge | "Simulated (mock checks + mock judge): not model output" |
+| **Recorded** (`frontend-react/demo-data/recorded/`) | `make record-demo`: the demo scenarios sent through a real stack with the real fast check and judge, then exported and sanitized | "Recorded {date} · {snapshot} + {judge} · ... · replayed, not live" |
+
+The site ships the recorded tape when one exists and the simulated tape otherwise; a release
+build refuses to ship without a recorded one. Simulated numbers are never labelled measured.
+
+### Try it live in your browser
+
+The Playground's **Try Jev live** section runs real checks from your browser, on your own
+OpenRouter account:
+
+1. Pick one of three examples (a grounded answer that passes, the 60-days refund answer, an answer
+   that leaks a personal email address), or type your own question, answer and document.
+2. **Connect OpenRouter** (sign in on openrouter.ai and approve) or **Paste a key**. Before
+   anything is sent, a consent box says what goes where and what it costs: one check costs about
+   <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate].
+3. Run the check. The result is labelled "Live · {snapshot} · uncalibrated · your key": it uses
+   the raw fast-check scores, because calibrations belong to a stack.
+
+The Studio's **Draft with AI** uses the same key, at about
+<!-- claim:studio_draft_cost_estimate --> ≈ $0.005 per draft [estimate].
+
+**Your key stays in that browser tab** (`sessionStorage`) and is sent only to openrouter.ai. It is
+forgotten after 2 hours, or at once with **Forget key**, which also stops any request in flight;
+delete or limit the key itself at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
+The demo stops after 100 calls to OpenRouter per tab (checks and AI drafts) and refuses a call over
+8,000 tokens. Those caps are a courtesy that keeps a mistake small, not a security boundary: give
+the key a credit limit on openrouter.ai. [SECURITY.md](SECURITY.md#the-static-demo) has the details.
 
 ## 1. Start it
 
@@ -16,8 +75,9 @@ make demo          # OPEN=0 prints the URLs without opening a browser
 
 1. `scripts/configure.py --ensure` creates `.env` from `.env.example` and fills in the generated
    passwords (never printed).
-2. The images are built from your checkout. The first run takes about 5 to 15 minutes
-   **[estimate]**; later runs reuse the build cache.
+2. The images are built from your checkout, or pulled when you are on a release tag
+   ([GETTING-STARTED.md §7](GETTING-STARTED.md#7-images-built-or-pulled)). A first build takes about
+   5 to 15 minutes **[estimate]**; later runs reuse the build cache.
 3. The demo stack starts as its own Docker project, `truthtable-demo`: proxy, engine, Postgres,
    dashboard and the traffic generator. `docker-compose.demo.yml` removes every vendor key from
    the containers, whatever your `.env` holds, and turns on the mocks, test mode and a simulated
@@ -150,11 +210,11 @@ Expect `X-TrustAgent-Action: flag`, `X-TrustAgent-Would-Action: block` and, in
 
 ## 5. Share it
 
-- **The static replay site** needs no backend at all: the landing page and the dashboard
-  replaying a recorded demo session, labelled simulated. Build and preview it with
-  `make test-e2e-static`, or `make build-static && cd frontend-react && npx vite preview --mode
-  static` and open <http://localhost:4173/TrustAgent/>. This is the safest thing to send
-  someone.
+- **The live demo** at <https://timkush1.github.io/TrustAgent/> is the safest thing to send
+  someone: no backend, nothing of yours on it. To build the same site locally, run
+  `make pages-build` (the workflow's steps, with `PAGES_DATASET=auto|mock|recorded`), then
+  `cd frontend-react && npx vite preview --mode static` and open
+  <http://localhost:4173/TrustAgent/>; `make test-e2e-static` builds it and runs its specs.
 - **Record your own session** for the replay site: `make export-replay REPLAY_OUT=<dir>` writes a
   sanitized recording of the newest stored traces (the manifest alone is also served by
   `GET /api/export/replay`, admin). A recording names the build it came from: `make

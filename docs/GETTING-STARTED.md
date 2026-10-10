@@ -4,25 +4,34 @@ This guide takes you from a fresh Windows laptop to TrustAgent running on it. Yo
 **demo**, which needs no keys and costs nothing, and then switch to **real mode** with your own
 OpenRouter key. Everything runs in Docker on your own machine; there is nothing to deploy.
 
+**Just want to look first?** The [live demo](https://timkush1.github.io/TrustAgent/) runs in your
+browser with nothing to install: it replays recorded demo traffic through the real dashboard, and
+its Playground can run real checks with your own OpenRouter key
+([DEMO.md](DEMO.md#the-live-demo-in-your-browser)).
+
 **Contents:** [1. What you need](#1-what-you-need) ·
 [2. Start the demo](#2-start-the-demo-no-keys-0) ·
 [3. What you will see](#3-what-you-will-see) ·
 [4. Stop the demo](#4-stop-the-demo) ·
 [5. Real mode](#5-real-mode-your-own-openrouter-key) ·
 [6. Memory](#6-how-much-memory-it-needs) ·
-[7. Troubleshooting](#7-troubleshooting)
+[7. Images: built or pulled](#7-images-built-or-pulled) ·
+[8. Troubleshooting](#8-troubleshooting) ·
+[9. For maintainers](#9-for-maintainers-the-static-site-the-recording-and-the-first-run-check)
 
 ## 1. What you need
 
 | What | Why | Check it with |
 |---|---|---|
 | Windows 10 or 11 with **WSL 2** and a Linux distribution (Ubuntu is fine) | TrustAgent's commands run in a Linux terminal | `wsl -l -v` in PowerShell shows your distribution with VERSION 2 |
-| **Docker Desktop**, with WSL integration turned on | Builds and runs every part of TrustAgent | `docker compose version` in the WSL terminal prints 2.24 or newer |
+| **Docker Desktop**, with WSL integration turned on: Docker Engine 25 or newer with Compose 2.24 or newer | Builds or pulls, and runs, every part of TrustAgent | In the WSL terminal, `docker version --format '{{.Server.Version}}'` prints 25 or newer and `docker compose version` prints 2.24 or newer |
 | `git`, `make` and `python3` (3.9 or newer) in WSL | The `make` commands and the small setup scripts | `git --version && make --version && python3 --version` |
 | About 8 GB of RAM and 10 GB of free disk | See [section 6](#6-how-much-memory-it-needs) | |
 
 You do **not** need Go, Node.js or a Python virtual environment: Docker builds everything. (Those
-are only for working on the code; see the component READMEs.)
+are only for working on the code; see the component READMEs.) **On Linux or macOS** you need the
+same Docker Engine 25+ and Compose 2.24+ (Docker Desktop, or Docker Engine with the Compose plugin),
+`git`, `make` and `python3`; skip the WSL steps below.
 
 **Set up Docker Desktop for WSL, once:**
 
@@ -33,8 +42,9 @@ are only for working on the code; see the component READMEs.)
 3. Close your WSL terminal and open a new one, then check:
 
    ```bash
-   docker compose version          # 2.24 or newer
-   docker run --rm hello-world     # prints "Hello from Docker!"
+   docker version --format '{{.Server.Version}}'   # 25 or newer
+   docker compose version                          # 2.24 or newer
+   docker run --rm hello-world                     # prints "Hello from Docker!"
    ```
 
 4. If `make` or `python3` is missing, install them:
@@ -64,9 +74,11 @@ This one command:
 
 1. Creates `.env` from [`.env.example`](../.env.example) if you don't have one yet, and fills in
    the passwords the stack needs (they are random and never printed).
-2. Builds the images from your checkout. **The first run takes a while** (about 5–15 minutes
-   [estimate], depending on your laptop and connection); later runs reuse the build cache and
-   are ready in a minute or two.
+2. Gets the images. On a release tag (for example after `git checkout v2.0.0`) it **pulls** the
+   published ones; on any other commit it **builds** them from your checkout, so they always match
+   the code ([section 7](#7-images-built-or-pulled)). **A first build takes a while** (about 5–15
+   minutes [estimate], depending on your laptop and connection); later runs reuse the build cache
+   and are ready in a minute or two.
 3. Starts the demo stack: the proxy, the audit engine, a database, the dashboard and a small
    traffic generator. They run as their own Docker project, `truthtable-demo`, so demo data never
    mixes with real data.
@@ -105,8 +117,7 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
 - **Click a row** to open the trace: the answer, the reasons for its outcome, what it was
   **checked against** (for example the system-prompt document), and the **deep audit**, which
   arrives a few seconds later and explains the verdict claim by claim.
-- Pages that are not built yet show a short placeholder that says what they will do and which
-  phase brings them. There are no dead buttons.
+- There are no dead buttons: an action that cannot run here is shown disabled, with the reason.
 
 **Check it from the terminal** (optional):
 
@@ -225,6 +236,17 @@ received. More keys for more apps: **Settings → Access** (or a `label=key` ent
 
 **Stop:** `make down` (keeps your data). `make clean-data` deletes all of it.
 
+**Without make.** `make up` is a thin wrapper; the same stack starts with plain Docker Compose:
+
+```bash
+python3 scripts/configure.py --ensure      # create or complete .env (generated passwords, never printed)
+docker compose build                       # only on a commit that is not a release tag
+docker compose up -d --wait
+```
+
+On a release tag you can leave out `docker compose build`: Compose pulls the images of that
+version. Then print the setup link with `python3 scripts/setup_url.py`.
+
 ## 6. How much memory it needs
 
 The default stack is small enough for an 8 GB laptop. These are estimates; see real numbers any
@@ -266,7 +288,36 @@ memory=5GB
 then run `wsl --shutdown` in PowerShell and start Docker Desktop again. Close heavy Windows
 apps (extra browser windows, for example) while TrustAgent builds.
 
-## 7. Troubleshooting
+## 7. Images: built or pulled
+
+TrustAgent's three app images are `ghcr.io/timkush1/truthtable-proxy`, `-engine` and
+`-dashboard`, tagged with the version in the `VERSION` file (for example `:1.0.0`). Postgres and the
+add-ons use their own public images.
+
+| You are on | `make demo` / `make up` | Why |
+|---|---|---|
+| A release tag (`git checkout v2.0.0`) | Pull the published images of that version | They are exactly what was released, built for amd64 and arm64 |
+| Any other commit (a branch, `main`) | Build the images from your checkout (`--build`) | So the images never run older code than you have |
+
+Override the guess when you need to:
+
+- `make demo RELEASE_CHECKOUT=1` (or `make up RELEASE_CHECKOUT=1`) pulls; `RELEASE_CHECKOUT=0`
+  builds.
+- `make demo DEMO_BUILD=` and `make up UP_BUILD=` use the images already on your machine (or pull
+  missing ones) without building.
+- `TRUSTAGENT_VERSION=<tag> make up` runs another tag, for example `edge` (the latest `main`).
+
+**The knowledge add-on builds its own engine.** With `COMPOSE_PROFILES=knowledge` the engine needs
+extra Python packages, so its image is tagged `<version>-knowledge` (for example
+`truthtable-engine:1.0.0-knowledge`). That variant is **never published**: it is always built
+locally from your checkout, and the first start also downloads the embedding model.
+`make knowledge-up` starts that stack, `make knowledge-seed` loads the example documents and
+`make knowledge-down` removes it ([KB-DESIGN.md](KB-DESIGN.md)).
+
+`make doctor` lists the images the stack runs, whether each was pulled or built, and warns when
+they come from different versions.
+
+## 8. Troubleshooting
 
 **`docker: command not found` in the WSL terminal.** Docker Desktop is not running, or WSL
 integration is off for this distribution.
@@ -333,6 +384,44 @@ becoming healthy. If nothing shows after a minute, check the generator:
 
 **Everything is slow.** Check that the repository is under your Linux home folder (`pwd` prints
 `/home/...`, not `/mnt/c/...`), and see [section 6](#6-how-much-memory-it-needs).
+
+**`manifest unknown` or `pull access denied` for a `truthtable-*` image.** That version is not
+published (yet), or you are on a commit that is not a release tag with `UP_BUILD=` or
+`DEMO_BUILD=`. Build it instead: `make up RELEASE_CHECKOUT=0`, or `docker compose build` before
+`docker compose up`.
+
+## 9. For maintainers: the static site, the recording and the first-run check
+
+None of these is needed to use TrustAgent.
+
+**Build the static site exactly as GitHub Pages will.** `make pages-build` runs the same steps as
+the `pages.yml` workflow: it checks the recording the site will ship, builds the landing page and
+the replay with the `/TrustAgent/` base path, checks the size budget and the built files, and runs
+gitleaks over the output, so the public site can never carry a key. `PAGES_DATASET` picks the tape:
+
+| `PAGES_DATASET` | Ships | Label on the site |
+|---|---|---|
+| `auto` (the default) | `demo-data/recorded/` when it exists, otherwise `demo-data/simulated/` | Whatever the tape is |
+| `mock` | `demo-data/simulated/`: every demo scenario run through the browser's gate with the mock checks and judge | **Simulated** on every page |
+| `recorded` | `demo-data/recorded/` only, and fails when it is missing or not a real recording | Recorded with the real fast check and judge |
+
+`make test-e2e-static` builds the site and runs its Playwright specs against a local preview.
+
+**Record the public demo.** `make record-demo` records the demo scenarios with the **real** fast
+check and judge, on your OpenRouter key from `.env`, into `frontend-react/demo-data/recorded/`. It
+is a dry run until you add `CONFIRM=1`: first it prints the plan, the estimated cost (about $1
+**[estimate]**) and which keys it found. The real run uses its own stack (project
+`truthtable-record`) with daily caps of $0.50 for fast checks and $3 for the LLM, refuses a mock or
+fallback backend, checks the result, swaps it in atomically, prints its label and spend, and removes
+the stack with its volumes.
+
+**Time a fresh install.** `make first-run` starts a brand-new stack (its own project and ports, every
+vendor on a local mock, so it costs $0), times it from before `docker compose up` to the first
+flagged answer, and fails past 5 minutes; the timings go to `tmp/first-run.json`. Use
+`FIRST_RUN_TAG=<tag>` to pull published images, or `FIRST_RUN_LOCAL=1` for images you built
+(`FIRST_RUN_BUILD=1` builds them first). `make golden-path` walks the same kind of fresh stack from
+its setup link to the flagged answer's detail in at most 8 actions. Both remove their stack when they
+finish (`FIRST_RUN_KEEP=1` keeps it; `make first-run-down` removes it).
 
 ## Next steps
 
