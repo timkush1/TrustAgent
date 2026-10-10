@@ -8,7 +8,7 @@
  * Wide screens get a table; a phone gets one card per kind of tool (DESIGN.md: no table wider than
  * the page).
  */
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { claim } from './claims';
 import { COMMON_READ_DATE, compareColumns, compareRows, sourceHost, type CompareCell } from './compareData';
@@ -66,7 +66,10 @@ function VendorCell({ cell }: { cell: CompareCell }) {
     <div data-compare-cell={cell.value}>
       {word ? <p className="font-medium text-fg">{word}</p> : null}
       <details className="group mt-1">
-        <summary className="cursor-pointer text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline">What its docs say</summary>
+        <summary className="inline-flex min-h-6 cursor-pointer list-none items-center gap-1 text-xs text-fg-muted underline-offset-2 marker:hidden hover:text-fg hover:underline">
+          <ChevronRight aria-hidden="true" className="size-3 transition-transform group-open:rotate-90" />
+          What its docs say
+        </summary>
         <p className="mt-1 text-fg-muted">
           <KeepDates text={cell.text} />
         </p>
@@ -76,7 +79,7 @@ function VendorCell({ cell }: { cell: CompareCell }) {
           href={cell.source_url}
           rel="noreferrer"
           aria-label={`Source: ${host}, read ${cell.as_of}`}
-          className="inline-flex items-center gap-0.5 text-fg-muted underline underline-offset-2 hover:text-fg"
+          className="inline-flex min-h-6 items-center gap-0.5 text-fg-muted underline underline-offset-2 hover:text-fg"
         >
           {host}
           <ArrowUpRight aria-hidden="true" className="size-3" />

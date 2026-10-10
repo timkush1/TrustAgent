@@ -110,7 +110,8 @@ test.describe('replay', () => {
     // The trace's check opens in Studio, where its threshold can be tried; no dead button (RP-4).
     const outcome = page.getByRole('region', { name: 'Outcome' });
     await expect(outcome.getByRole('button', { name: /^Open evaluator|^Adjust threshold/ })).toHaveCount(0);
-    await expect(outcome.getByRole('link', { name: new RegExp(`^${COPY.trace.open_in_studio}: `) })).toHaveAttribute('href', /app\/evaluators\/studio\/[a-z_]+\/\d+$/);
+    // Chromium names it "Try its threshold in Studio : Contradiction" (the sr-only part is its own box).
+    await expect(outcome.getByRole('link', { name: new RegExp(`^${COPY.trace.open_in_studio}\\s*: `) })).toHaveAttribute('href', /app\/evaluators\/studio\/[a-z_]+\/\d+$/);
     expect(await seriousViolations(page), 'replay trace detail').toEqual([]);
   });
 

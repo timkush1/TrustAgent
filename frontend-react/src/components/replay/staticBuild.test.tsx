@@ -268,6 +268,11 @@ describe('static build', () => {
     const studio = within(outcome).getByRole('link', { name: new RegExp(`^${copy.trace.open_in_studio}: `) });
     expect(studio.getAttribute('href')).toMatch(/\/app\/evaluators\/studio\/[a-z_]+\/\d+$/);
     expect(outcome).toHaveTextContent(copy.trace.studio_static_note);
+    // The checks list sends each check to Studio too, never to the hidden Policies page.
+    const checks = await screen.findByRole('list', { name: 'Checks' });
+    expect(within(checks).queryByRole('button', { name: /^Adjust threshold/ })).toBeNull();
+    expect(within(checks).getAllByRole('button', { name: new RegExp(`^${copy.trace.open_in_studio}: `) }).length).toBeGreaterThan(0);
+    for (const a of within(checks).getAllByRole('link')) expect(a.getAttribute('href')).toMatch(/\/app\/evaluators\/studio\/[a-z_]+\/\d+$/);
     // The note's fix is the landing's self-host section.
     expect(within(outcome).getByRole('link', { name: 'Set it up in one command' })).toHaveAttribute('href', '/TrustAgent/#self-host');
     // Labelling is a write too: it says the same, not "read-only instance".
