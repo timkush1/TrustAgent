@@ -281,10 +281,11 @@ describe('landing page', () => {
     }
   });
 
+  // axe walks every section of the page, lazy ones included: seconds of work on a loaded machine.
   it('has no axe violations', async () => {
     const { container } = await renderLanding();
     expect(formatViolations(await axeViolations(container))).toEqual([]);
-  });
+  }, 20_000);
 });
 
 describe('try it', () => {
