@@ -222,10 +222,17 @@ export function DescribeStep({ judge: serverJudge, routes, taken, writeReason, h
           placeholder="Flag answers that…"
         />
       </Field>
+      {/* Chips that fill the description: the label on its own line, so each chip starts at the same indent. */}
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Examples">
-        <span className="text-xs text-fg-muted">Examples:</span>
+        <span className="basis-full text-xs text-fg-muted">Examples (click to use):</span>
         {DESCRIBE_EXAMPLES.map((example) => (
-          <Button key={example} size="sm" variant="ghost" className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal" onClick={() => setDescription(example)}>
+          <Button
+            key={example}
+            size="sm"
+            variant="secondary"
+            className="h-auto min-h-7 max-w-full rounded-full py-1 text-left font-normal whitespace-normal"
+            onClick={() => setDescription(example)}
+          >
             {example}
           </Button>
         ))}
