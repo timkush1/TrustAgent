@@ -154,6 +154,69 @@ class ComposeTest(unittest.TestCase):
         self.assertIsNotNone(knowledge)
         self.assertIn("docker-compose.knowledge.yml", knowledge.group(1) if knowledge else "")
 
+    def test_the_record_overlay_holds_the_d123_settings(self) -> None:
+        proxy = RECORD.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0]
+        for line in (
+            "      TRUTHTABLE_TRACE_FLUSH: sync\n",
+            '      TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0.50"\n',
+            '      TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "3"\n',
+            "      TRAFFICGEN_API_KEY:\n",
+            '    ports: !override\n      - "127.0.0.1::8080"',
+        ):
+            self.assertIn(line, proxy)
+        for line in (
+            '  TRUTHTABLE_DEMO_MODE: "false"\n',
+            '  TRUTHTABLE_TEST_MODE: "true"\n',
+            '  TRUTHTABLE_STRICT_CONFIG: "true"\n',
+            '  TRUTHTABLE_PUBLIC_READ: "false"\n',
+        ):
+            self.assertIn(
+                line, RECORD.split("x-record-env: &record-env\n", 1)[1].split("\n\n")[0] + "\n"
+            )
+        self.assertIn("      LLM_FALLBACK: none\n", RECORD)
+        for service in ("postgres", "dashboard"):
+            block = RECORD.split(f"\n  {service}:\n", 1)[1]
+            self.assertTrue(block.startswith("    ports: !reset []"), service)
+        # No mock-upstream, no profile: the record stack talks to the real vendors only.
+        self.assertNotIn("mock-upstream:", RECORD)
+        self.assertNotIn("profiles", RECORD)
+
+    def test_the_knowledge_overlay_holds_the_d131_settings(self) -> None:
+        self.assertRegex(KNOWLEDGE, r"(?m)^name: truthtable-knowledge$")
+        env = KNOWLEDGE.split("x-knowledge-env: &knowledge-env\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn('TRUTHTABLE_KNOWLEDGE_ENABLED: "true"', env)
+        self.assertIn('TRUTHTABLE_TEST_MODE: "true"', env)
+        proxy = KNOWLEDGE.split("\n  proxy:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("TRUTHTABLE_POLICY_FILE: /etc/trustagent/policies.knowledge.yaml", proxy)
+        self.assertIn("TRUTHTABLE_JEV_BACKEND: compatible", proxy)
+        self.assertIn("TRUTHTABLE_JEV_BASE_URL: http://mock-upstream:8090", proxy)
+        engine = KNOWLEDGE.split("\n  engine:\n", 1)[1].split("\n\n", 1)[0]
+        for line in ("QDRANT_URL: http://qdrant:6333", "LLM_PROVIDER: mock", "LLM_FALLBACK: none"):
+            self.assertIn(line, engine)
+        for key in ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            self.assertIn(f"{key}: !reset null", engine)
+        self.assertIn("OPENROUTER_API_KEY: !reset null", proxy)
+        self.assertIn("  mock-upstream:\n    profiles: !reset []", KNOWLEDGE)
+        # The variables compose reads while it resolves the files go on its command line.
+        knowledge_env = re.search(r"(?m)^KNOWLEDGE_ENV\s*=(.*)$", DX_MK)
+        self.assertIsNotNone(knowledge_env)
+        self.assertEqual(
+            (knowledge_env.group(1) if knowledge_env else "").split(),
+            [
+                "COMPOSE_PROFILES=knowledge",
+                "ENGINE_EXTRAS=knowledge",
+                "TRUTHTABLE_KNOWLEDGE_ENABLED=true",
+            ],
+        )
+        for target in ("knowledge-up", "knowledge-seed", "knowledge-scenarios", "knowledge-down"):
+            self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
+        seed = DX_MK.split("\nknowledge-seed:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("--seed-knowledge --admin-key-file /tmp/knowledge-admin.key", seed)
+        self.assertIn("umask 077", seed)
+        self.assertIn("rm -f /tmp/knowledge-admin.key", seed)
+        scenarios = DX_MK.split("\nknowledge-scenarios:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("$(TRAFFICGEN_CHECK) --scenarios knowledge", scenarios)
+
     def test_every_published_port_binds_bind_addr(self) -> None:
         for name, text in (
             ("docker-compose.yml", COMPOSE),

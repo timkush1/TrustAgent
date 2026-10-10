@@ -618,5 +618,47 @@ class FirstRunTargetsTest(unittest.TestCase):
         self.assertNotIn("doctor", recipe)
 
 
+class KnowledgeWorkflowTest(unittest.TestCase):
+    """ci-knowledge.yml (D131): the knowledge stack in Docker, not a required check."""
+
+    def setUp(self) -> None:
+        self.text = read("ci-knowledge.yml")
+        self.job = jobs(self.text)["knowledge"]
+
+    def test_triggers_dispatch_weekly_and_the_knowledge_path(self) -> None:
+        on = on_block(self.text)
+        self.assertIn("  workflow_dispatch:\n", on)
+        self.assertRegex(on, r"(?m)^  schedule:\n    - cron: '\d+ \d+ \* \* \d'")
+        push = on.split("\n  push:\n", 1)[1].split("\n  pull_request:\n", 1)[0]
+        pr = on.split("\n  pull_request:\n", 1)[1]
+        push_paths = re.findall(r"(?m)^      - (\S+)$", push)
+        self.assertEqual(push_paths, re.findall(r"(?m)^      - (\S+)$", pr))
+        for path in (
+            "docker-compose.knowledge.yml",
+            "config/policies.knowledge.yaml",
+            "backend-python/src/truthtable/kb/**",
+            ".github/workflows/ci-knowledge.yml",
+        ):
+            self.assertIn(path, push_paths)
+
+    def test_not_a_required_check(self) -> None:
+        names = {name for checks in REQUIRED_JOBS.values() for name in checks.values()}
+        self.assertNotIn(job_name(self.job), names)
+        self.assertNotIn("ci-knowledge.yml", REQUIRED_JOBS)
+
+    def test_up_seed_check_and_always_down(self) -> None:
+        texts = steps(self.job)
+        markers = [
+            "run: make knowledge-up",
+            "run: make knowledge-seed",
+            "run: make knowledge-scenarios",
+            "run: make knowledge-down",
+        ]
+        found = [next(i for i, s in enumerate(texts) if m in s) for m in markers]
+        self.assertEqual(found, sorted(found))
+        self.assertIn("if: always()", texts[found[-1]])
+        self.assertNotIn("secrets.", code(self.text))
+
+
 if __name__ == "__main__":
     unittest.main()
