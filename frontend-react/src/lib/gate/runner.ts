@@ -5,6 +5,8 @@
  * OpenRouter from the browser, and the static Studio's test bench with a draft spec.
  *
  * Parity with backend-go internal/studio Runner.Evaluate (gstudio):
+ * - the detectors get the route's resolved rules and compile() the request's own trustagent.rules
+ *   (Go gate.go resolveRules and CompileInputsOf, D155);
  * - compile within min(24000, maxTokens) (a question that cannot fit is the token cap, refused
  *   before any call), with the route's threshold overrides for decide();
  * - every request of the check is reserved before the first call, all or none (D101); a refusal
@@ -25,6 +27,7 @@ import { decide } from '@/lib/decision/decide';
 import { detect, detectorStates } from '@/lib/decision/detectors';
 import { decisionItems, extractEvidence } from '@/lib/decision/evidence';
 import type { RawAnswerInput } from '@/lib/decision/normalize';
+import type { Spec } from '@/lib/decision/spec';
 import { errorDetails, errorKind, transportError } from '@/lib/openrouter/errors';
 import type { JevCall, JevCallResult, LedgerRefusal, UsageLedger } from '@/lib/openrouter/types';
 import type { BrowserGateResult, ResolvedRoute, RunGateInput } from './types';
@@ -53,6 +56,40 @@ export function routeThresholds(route: ResolvedRoute): Record<string, ThresholdO
     if (typeof th === 'object' && th !== null && !Array.isArray(th)) out[e.ref] = th as ThresholdOverrides;
   }
   return out;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * The string-valued members of the request's `trustagent.rules` (Go llmapi parseExtension): any
+ * other value is skipped, and a request without them has none (undefined).
+ */
+export function requestRules(request: unknown): Readonly<Record<string, string>> | undefined {
+  if (!isObject(request) || !isObject(request.trustagent) || !isObject(request.trustagent.rules)) return undefined;
+  const entries = Object.entries(request.trustagent.rules).filter((e): e is [string, string] => typeof e[1] === 'string');
+  // fromEntries defines own properties, so even a `__proto__` member stays a plain value.
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+/**
+ * The rules params of the route's enabled evaluators (Go gate.go resolveRules): the request's value
+ * when the route's client_rules allows it, else the route evaluator's params value, else the spec
+ * default. The detectors read them (the reference text); a later evaluator's value wins a shared
+ * name, in route order.
+ */
+export function resolveRules(route: ResolvedRoute, specs: ReadonlyMap<string, Spec>, reqRules: Readonly<Record<string, string>> | undefined): Record<string, string> {
+  const out = new Map<string, string>();
+  for (const e of route.evaluators) {
+    const spec = specs.get(e.ref);
+    if (spec === undefined || e.enabled === false) continue;
+    for (const [name, p] of spec.params) {
+      let v = p.default;
+      if (e.params !== undefined && Object.hasOwn(e.params, name)) v = e.params[name];
+      if (route.clientRules && reqRules !== undefined && Object.hasOwn(reqRules, name)) v = reqRules[name];
+      out.set(name, v);
+    }
+  }
+  return Object.fromEntries(out);
 }
 
 /** The request status decide() reads for a failed request (gstudio: `timeout` or `error:<kind>`). */
@@ -113,6 +150,7 @@ export function prepareCheck(
   model: string,
 ): PreparedCheck {
   const { route, specs } = input;
+  const reqRules = requestRules(input.request);
   const extraction = extractEvidence(input.apiFormat, input.request, route.evidence);
   const evidence = decisionItems(extraction.items);
   const detectors = detect({
@@ -120,7 +158,7 @@ export function prepareCheck(
     evidence,
     userRequest: extraction.user_request,
     systemInstructions: extraction.system_instructions,
-    rules: null,
+    rules: resolveRules(route, specs, reqRules),
     preDedupItems: extraction.pre_dedup_items,
     maxMarker: extraction.max_marker,
     minInteger: route.detectors.min_integer,
@@ -135,7 +173,8 @@ export function prepareCheck(
         assistant_response: input.response,
         system_instructions: extraction.system_instructions,
         evidence,
-        rules: {},
+        // The request's own rules; compile() honours them only with client_rules (gate.go:422).
+        rules: reqRules ?? {},
       },
       { ...base, tokens: Math.min(base.tokens, input.maxTokens) },
     );
