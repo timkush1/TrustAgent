@@ -2,33 +2,12 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createKeyStore, KEY_TTL_MS, PKCE_TTL_MS, type KeyStore, type KeyStoreOptions } from './keyStore';
 import { useBrowserKey } from './useBrowserKey';
+import { MemoryStorage } from './testing';
 
 const KEY = 'sk-or-v1-e2e-0123456789abcdef0123456789abcdef';
 const OTHER = 'sk-or-v1-e2e-ffffffffffffffffffffffffffffffff';
 const NO_PATTERN = 'cmp0e2eZq7Lw4Rt9Yx2Vb6Nm';
 
-/** A Map-backed Storage. */
-class MemoryStorage implements Storage {
-  readonly map = new Map<string, string>();
-  get length() {
-    return this.map.size;
-  }
-  clear() {
-    this.map.clear();
-  }
-  getItem(k: string) {
-    return this.map.get(k) ?? null;
-  }
-  key(i: number) {
-    return [...this.map.keys()][i] ?? null;
-  }
-  removeItem(k: string) {
-    this.map.delete(k);
-  }
-  setItem(k: string, v: string) {
-    this.map.set(k, String(v));
-  }
-}
 
 /** A clock and a timer queue the test advances by hand. */
 function fakeTime(start = 1_760_000_000_000) {

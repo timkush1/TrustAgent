@@ -4,16 +4,28 @@
  * scripted answers (so the simulated tape is this code's output), the static live Playground with
  * OpenRouter from the browser, and the static Studio's test bench with a draft spec.
  *
- * Step 0b moved this out of the recorder without changing what it computes (`make recording-check`
- * stays byte-identical). WEB-LIVE completes it in LV-3: gstudio Runner.Evaluate parity, the error
- * paths and playgroundResult.ts. Owned by WEB-LIVE.
+ * Parity with backend-go internal/studio Runner.Evaluate (gstudio):
+ * - compile within min(24000, maxTokens) (a question that cannot fit is the token cap, refused
+ *   before any call), with the route's threshold overrides for decide();
+ * - every request of the check is reserved before the first call, all or none (D101); a refusal
+ *   throws GateRefusedError and nothing is sent;
+ * - the requests run concurrently; each is settled once with its HTTP status and any usage, so a
+ *   failed request that did not bill releases its slot;
+ * - a failed request becomes its request status (`timeout`, or `error:<kind>`) and decide() applies
+ *   the route's fail policy, exactly like the gateway; only a cancelled check (the caller's signal,
+ *   or Forget key) rejects, with the `aborted` error.
+ *
+ * Step 0b moved this out of the recorder without changing what it computes; `make recording-check`
+ * keeps the tape byte-identical. Owned by WEB-LIVE.
  */
-import { compile, decideEvaluators, defaultBudget, type CompileRoute } from '@/lib/decision/compile';
+import { ApiError } from '@/data/errors';
+import { compile, CompileError, decideEvaluators, defaultBudget, type CompileRoute, type ThresholdOverrides } from '@/lib/decision/compile';
 import { decide } from '@/lib/decision/decide';
 import { detect, detectorStates } from '@/lib/decision/detectors';
 import { decisionItems, extractEvidence } from '@/lib/decision/evidence';
 import type { RawAnswerInput } from '@/lib/decision/normalize';
-import type { JevCallResult, LedgerRefusal, UsageLedger } from '@/lib/openrouter/types';
+import { errorDetails, errorKind, transportError } from '@/lib/openrouter/errors';
+import type { JevCall, JevCallResult, LedgerRefusal, UsageLedger } from '@/lib/openrouter/types';
 import type { BrowserGateResult, ResolvedRoute, RunGateInput } from './types';
 
 /** A ledger that never refuses and counts nothing (the recorder, tests). */
@@ -30,6 +42,45 @@ export class GateRefusedError extends Error {
     this.name = 'GateRefusedError';
     this.reason = reason;
   }
+}
+
+/** decide()'s threshold overrides: each route evaluator's `thresholds` (Go Runner.Thresholds). */
+export function routeThresholds(route: ResolvedRoute): Record<string, ThresholdOverrides> {
+  const out: Record<string, ThresholdOverrides> = {};
+  for (const e of route.evaluators) {
+    const th = (e as { thresholds?: unknown }).thresholds;
+    if (typeof th === 'object' && th !== null && !Array.isArray(th)) out[e.ref] = th as ThresholdOverrides;
+  }
+  return out;
+}
+
+/** The request status decide() reads for a failed request (gstudio: `timeout` or `error:<kind>`). */
+export function failedStatus(err: unknown): string {
+  const kind = errorKind(err);
+  return kind === 'timeout' ? 'timeout' : `error:${kind}`;
+}
+
+/**
+ * Wraps a JevCall so the caller can see why each request failed (runGate keeps only the request
+ * status, as the gateway does; the live panel words the failure itself).
+ */
+export function recordFailures(call: JevCall): { call: JevCall; failures: Map<number, unknown> } {
+  const failures = new Map<number, unknown>();
+  return {
+    failures,
+    call: {
+      backend: call.backend,
+      model: call.model,
+      call: async (request, signal) => {
+        try {
+          return await call.call(request, signal);
+        } catch (err) {
+          failures.set(request.index, err);
+          throw err;
+        }
+      },
+    },
+  };
 }
 
 /** compile()'s route for a resolved route and the transport's model. */
@@ -62,24 +113,33 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
   });
 
   // The fast check: compile within min(24000, maxTokens), reserve every slot, then ask.
+  if (input.signal?.aborted) throw transportError('aborted', 0, input.signal.reason);
   const base = defaultBudget();
-  const compiled = compile(
-    compileRouteOf(route, call.model),
-    specs,
-    {
-      user_request: extraction.user_request,
-      assistant_response: input.response,
-      system_instructions: extraction.system_instructions,
-      evidence,
-      rules: {},
-    },
-    { ...base, tokens: Math.min(base.tokens, input.maxTokens) },
-  );
+  let compiled: ReturnType<typeof compile>;
+  try {
+    compiled = compile(
+      compileRouteOf(route, call.model),
+      specs,
+      {
+        user_request: extraction.user_request,
+        assistant_response: input.response,
+        system_instructions: extraction.system_instructions,
+        evidence,
+        rules: {},
+      },
+      { ...base, tokens: Math.min(base.tokens, input.maxTokens) },
+    );
+  } catch (err) {
+    // A question that cannot fit next to the state within the per-call cap.
+    if (err instanceof CompileError && err.message.includes('does not fit')) throw new GateRefusedError('token_cap');
+    throw err;
+  }
   const started = clock();
   if (compiled.requests.length > 0) {
     const reserved = input.ledger.reserve(compiled.est_tokens);
     if (!reserved.ok) throw new GateRefusedError(reserved.reason);
   }
+  const failures: unknown[] = compiled.requests.map(() => undefined);
   const calls: (JevCallResult | null)[] = await Promise.all(
     compiled.requests.map(async (body, index) => {
       try {
@@ -87,12 +147,20 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
         input.ledger.settle(200, result.usage);
         return result;
       } catch (err) {
-        input.ledger.settle(0);
-        throw err;
+        input.ledger.settle(err instanceof ApiError ? err.status : 0, errorDetails(err).usage);
+        failures[index] = err;
+        return null;
       }
     }),
   );
   const finished = clock();
+
+  // A cancelled check has no decision: the caller's signal, or Forget key aborting every request.
+  const failed = failures.filter((f) => f !== undefined);
+  if (input.signal?.aborted || (failed.length > 0 && failed.every((f) => errorKind(f) === 'aborted'))) {
+    const abort = failed.find((f) => errorKind(f) === 'aborted');
+    throw abort instanceof ApiError ? abort : transportError('aborted', 0, input.signal?.reason);
+  }
 
   // In question_map order, as the gateway merges the answers of its requests.
   const answers: Record<string, RawAnswerInput> = {};
@@ -100,7 +168,7 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
     const answer = calls[compiled.qid_request[qid]]?.answers[qid];
     if (answer !== undefined) answers[qid] = answer;
   }
-  const request_status = Object.fromEntries(compiled.requests.map((_, k) => [String(k), calls[k] ? 'ok' : 'bad_response']));
+  const request_status = Object.fromEntries(compiled.requests.map((_, k) => [String(k), calls[k] ? 'ok' : failedStatus(failures[k])]));
 
   const decision = decide({
     policy: {
@@ -110,7 +178,7 @@ export async function runGate(input: RunGateInput): Promise<BrowserGateResult> {
       on_no_evidence: route.onNoEvidence,
       detectors: { flag_on: route.detectors.flag_on, block_on: route.detectors.block_on },
     },
-    evaluators: decideEvaluators(compiled, specs),
+    evaluators: decideEvaluators(compiled, specs, routeThresholds(route)),
     answers: compiled.requests.length === 0 ? null : (answers as never),
     question_map: compiled.question_map,
     excluded: compiled.excluded,

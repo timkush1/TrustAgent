@@ -36,6 +36,8 @@ export interface OpenRouterErrorDetails {
   usage?: CallUsage;
   /** The kind was found by the free key check after an unreadable failure. */
   diagnosed?: boolean;
+  /** There was no key to send (the call was never made; the panel shows Connect and Paste). */
+  no_key?: boolean;
 }
 
 const API_KIND: Partial<Record<OpenRouterErrorKind, ApiErrorKind>> = {
@@ -89,7 +91,7 @@ export function errorKind(err: unknown): OpenRouterErrorKind {
 /** The details of an OpenRouter ApiError (defaults for anything else). */
 export function errorDetails(err: unknown): OpenRouterErrorDetails {
   const d = err instanceof ApiError ? (err.details as Partial<OpenRouterErrorDetails>) : {};
-  return { retryable: d.retryable === true, moderation: d.moderation === true, in_flight: d.in_flight === true, usage: d.usage, diagnosed: d.diagnosed };
+  return { retryable: d.retryable === true, moderation: d.moderation === true, in_flight: d.in_flight === true, usage: d.usage, diagnosed: d.diagnosed, no_key: d.no_key };
 }
 
 // ------------------------------------------------------------------------------------ envelopes
@@ -337,7 +339,7 @@ export function liveErrorView(err: unknown): LiveErrorView {
     case 'aborted':
       return view(kind, 'errors.network', [], { silent: true });
     case 'auth':
-      return view(kind, 'errors.unauthorized', ['paste_new_key']);
+      return view(kind, 'errors.unauthorized', ['paste_new_key'], { silent: d.no_key === true });
     case 'credits':
       return d.in_flight ? view(kind, 'errors.credits_inflight', ['retry']) : view(kind, 'errors.no_credits', ['open_credits', 'check_again'], { screen: 'no_credits' });
     case 'data_policy':

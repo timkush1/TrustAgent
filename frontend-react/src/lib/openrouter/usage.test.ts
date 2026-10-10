@@ -3,28 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createKeyStore } from './keyStore';
 import { createUsageStore, isBillable, isRejected, REJECTED_PAUSE, USAGE_NAME, type UsageStore, type UsageStoreOptions } from './usage';
 import { useUsage } from './useUsage';
+import { MemoryStorage } from './testing';
 
-class MemoryStorage implements Storage {
-  readonly map = new Map<string, string>();
-  get length() {
-    return this.map.size;
-  }
-  clear() {
-    this.map.clear();
-  }
-  getItem(k: string) {
-    return this.map.get(k) ?? null;
-  }
-  key(i: number) {
-    return [...this.map.keys()][i] ?? null;
-  }
-  removeItem(k: string) {
-    this.map.delete(k);
-  }
-  setItem(k: string, v: string) {
-    this.map.set(k, String(v));
-  }
-}
 
 const stores: UsageStore[] = [];
 function make(opts: UsageStoreOptions = {}): UsageStore {
