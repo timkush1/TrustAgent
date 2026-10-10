@@ -132,6 +132,17 @@ demo-clean: ## Stop the demo stack and delete its volumes (demo database and sec
 demo-scenarios: ## Check the demo scenarios against the running demo stack (trafficgen --expect; DEMO_SCENARIOS=s0, DEMO_PHASE=p3)
 	$(DEMO_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(DEMO_SCENARIOS) $(if $(DEMO_PHASE),--phase $(DEMO_PHASE))
 
+# D218 seams (the CLOUD stream fills them in): the always-on public demo on a small VM, the demo
+# stack plus docker-compose.public.yml (Caddy on 80/443, read-only, 7-day retention, pulled images).
+public-demo-up: ## Start the public demo on a VM: pull the release images, then up --no-build with docker-compose.public.yml (P6 CL-2)
+	@echo "public-demo-up: not implemented (P6 CL-2)"; exit 2
+
+public-demo-down: ## Stop the public demo (keeps its volumes; P6 CL-2)
+	@echo "public-demo-down: not implemented (P6 CL-2)"; exit 2
+
+public-demo-setup-url: ## Print a one-time setup link for the public demo (P6 CL-2)
+	@echo "public-demo-setup-url: not implemented (P6 CL-2)"; exit 2
+
 ##@ End-to-end stack (real HTTP paths against mock-upstream)
 
 e2e-up: ## Start the e2e stack (compatible fast check and LLM upstreams on mock-upstream, mock judge, sync traces), wait until healthy

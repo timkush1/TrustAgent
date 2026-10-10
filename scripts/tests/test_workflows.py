@@ -536,6 +536,11 @@ class EvalLiveWorkflowTest(unittest.TestCase):
         bench = [s for s in steps(self.job) if "run: make bench-lite" in s][0]
         self.assertIn("OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}", bench)
 
+    def test_the_bench_step_confirms_the_spend(self) -> None:
+        # make bench-lite is a dry run unless CONFIRM=1 (D204): without it the paid run spends nothing.
+        bench = [s for s in steps(self.job) if "run: make bench-lite" in s][0]
+        self.assertIn('CONFIRM: "1"', bench)
+
     def test_the_free_tier_stays_in_eval_yml(self) -> None:
         free = read("eval.yml")
         self.assertIn("--provider ollama", free)

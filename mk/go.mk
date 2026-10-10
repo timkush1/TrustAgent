@@ -99,6 +99,13 @@ jev-check: ## Check the decision model connection (cmd/jevcheck; in the running 
 		go -C backend-go run ./cmd/jevcheck $(JEV_CHECK_ARGS); \
 	fi
 
+# D211: jevcheck --capture records one sanitized 200 per vendor path into CAPTURE_DIR (a dry run
+# unless CONFIRM=1; hard cap USD 0.01). Seam; the VEND stream fills it in.
+CAPTURE_DIR ?= contracts/fixtures/vendor/captured
+
+jev-capture: ## Capture sanitized vendor fixtures with jevcheck --capture into CAPTURE_DIR (a dry run unless CONFIRM=1; cap USD 0.01; P6 V-1)
+	@echo "jev-capture: not implemented (P6 V-1)"; exit 2
+
 # Go benchmarks (D120): five counts of every benchmark, written to backend-go/bench/<sha>.txt
 # (ignored), so two revisions compare with benchstat. bench-go-smoke runs each benchmark once.
 BENCH_PKGS ?= ./...

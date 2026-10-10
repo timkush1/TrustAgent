@@ -43,5 +43,21 @@ test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py) and t
 	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_make_hero_gif.py
 	cd "$(LAUNCH_WEB)" && npx playwright test --list --project=launch
 
+# ---------- Launch post and video (D210, D213; seams the SHIP and VEND streams fill in) ----------
+CLIP ?=
+FILE ?=
+
+linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it; P6 S-9)
+	@echo "linkedin-post: not implemented (P6 S-9)"; exit 2
+
+clip: ## Copy a file to the Windows clipboard as UTF-16LE (make clip FILE=...; stdout without clip.exe; P6 S-9)
+	@echo "clip: not implemented (P6 S-9)"; exit 2
+
+launch-video: ## The 60-second launch video: static beats from the recorded Pages build plus the stack beats, captions burned in (tmp/launch/*.mp4; P6 V-7)
+	@echo "launch-video: not implemented (P6 V-7)"; exit 2
+
+launch-video-stack: ## The launch video's stack beats on the record stack: make launch-video-stack ATTEMPT=<id> (run by record-demo ACCEPT=1 VIDEO=1; P6 V-7)
+	@echo "launch-video-stack: not implemented (P6 V-7)"; exit 2
+
 # ---------- Aggregate hook (see the root Makefile; P5 I-2) ----------
 check: check-claims

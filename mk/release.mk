@@ -21,6 +21,11 @@ version-bump: ## Set a new version everywhere: make version-bump V=2.0.0 (DRY_RU
 check-version: ## Check that every version mirror agrees with VERSION (RELEASE_TAG=v2.0.0 also checks a release tag)
 	$(PYTHON) scripts/check_version.py $(if $(RELEASE_TAG),--tag $(RELEASE_TAG))
 
+TAG ?=
+
+release-notes: ## Release notes for a tag: make release-notes TAG=v2.0.0 (CHANGELOG section, image digests, verify commands, measured labels; P6 S-1)
+	@echo "release-notes: not implemented (P6 S-1)"; exit 2
+
 # ---------- GitHub Pages site (D124, D110, D137) ----------
 # `make pages-build` runs, in the same order, the steps of the build job of
 # .github/workflows/pages.yml, which calls the same targets: the recording check, the static build,
@@ -126,6 +131,16 @@ RECORD_COMPOSE  = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docke
 RECORD_BUILD   ?= $(APP_BUILD)
 CONFIRM        ?=
 RECORD_ARGS    ?=
+# D208-D210 seams (the VEND stream fills them in): an attempt's tape waits in
+# tmp/record-demo/<attempt>/ until ACCEPT=1 ATTEMPT=<id> (VIDEO=1 also records the video's stack
+# beats) or DISCARD=1; RECORD_MAX_TOTAL_USD caps every attempt together, RECORD_PASSES the rounds.
+ACCEPT               ?=
+DISCARD              ?=
+VIDEO                ?=
+ATTEMPT              ?=
+RECORD_MAX_TOTAL_USD ?= 4
+RECORD_PASSES        ?= 2
+ALLOW_UNCALIBRATED   ?=
 # record-check-config: what the proxy must see in the record stack, proved without Docker with
 # fake keys (the project's conventions) in an otherwise empty environment, as onboarding-check-config.
 RECORD_CHECK_ENV = OPENROUTER_API_KEY=sk-or-v1-e2e-record TRAFFICGEN_API_KEY=record-check \
@@ -138,7 +153,11 @@ RECORD_EXPECT = $(foreach kv,TRUTHTABLE_TEST_MODE=true TRUTHTABLE_STRICT_CONFIG=
 ##@ Demo recording (the real fast check and judge; your OpenRouter key)
 
 record-demo: ## Record the public demo with the real fast check and judge into demo-data/recorded (a dry run unless CONFIRM=1; about $1 on your OpenRouter key)
+ifneq ($(ACCEPT)$(DISCARD),)
+	@echo "record-demo ACCEPT=1 / DISCARD=1: not implemented (P6 V-4)"; exit 2
+else
 	CONFIRM="$(CONFIRM)" $(PYTHON) scripts/record_demo.py $(if $(RECORD_BUILD),--build) $(RECORD_ARGS)
+endif
 
 record-check-config: ## Prove, without a container, that the gateway accepts the record stack's environment (test mode, real backends, strict config) with fake keys: proxy -check-config
 	@if ! docker compose version >/dev/null 2>&1; then echo "record-check-config: skipped (docker compose not found)"; exit 0; fi; \
