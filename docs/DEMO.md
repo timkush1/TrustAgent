@@ -148,14 +148,14 @@ other.
 ## 3. The scenarios
 
 The traffic generator (`cmd/trafficgen`) replays the `demo` set of
-[`contracts/demo/scenarios.v1.json`](../contracts/demo/scenarios.v1.json): 26 scenarios, each
+[`contracts/demo/scenarios.v1.json`](../contracts/demo/scenarios.v1.json): 27 scenarios, each
 with the outcome it expects.
 
 | Outcome | Scenarios |
 |---|---|
 | **Passed** | a grounded support answer; answers from tool results, a `Context:` block, Anthropic Messages with top-level system documents, legacy completions with `trustagent.context`; two generated answers |
 | **Flagged** | the 60-vs-30-day refund window; an invented delivery date; an unsupported detail from a developer-role document; a misquoted warranty; another customer's email; a leaked internal token; a needless refusal; a successful prompt injection; an unapproved credit and date; an off-topic billing answer; a streamed answer flagged by comment and trailers; a block route that is not calibrated, so it flags |
-| **Blocked** | an invented link in a buffered stream |
+| **Blocked** | an invented link, once in a buffered stream and once in a plain JSON answer |
 | **Replaced** | the payments answer replaced by a grounded fallback |
 | **Would block** | an observe route that records what it would have blocked |
 | **Not checked** | no documents at all; documents TrustAgent cannot find (prose in the system prompt, an unknown tag, a clause pasted into the question) |

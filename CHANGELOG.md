@@ -440,11 +440,21 @@ Details follow in the per-phase sections and under *Migration notes*.
   next to it, and measured values only from a measured run. `--write` regenerates
   the measured-results tables; `--launch` refuses a simulated recording, an
   unmeasured run, an unreviewed comparison cell or a missing social card.
-- **Docs and launch kit.** ADR-005 to ADR-010, phases 8–15 in
-  [docs/PLAN.md](docs/PLAN.md), and launch drafts in
-  [docs/launch/](docs/launch/) (social card spec, 60-second demo script, GitHub
-  metadata, a LinkedIn post with its figures left as placeholders until measured,
-  interview talking points, the launch checklist).
+- **Docs and launch kit.** A README that says what TrustAgent is in a minute
+  (the live demo, three labelled value bullets, the tier diagram, the
+  measured-results table, a pull-based quick start); the walkthrough rewritten
+  for 2.0; GETTING-STARTED and DEMO for the browser demo and build or pull;
+  SECURITY on the static demo and the supply chain; a release runbook in CI-CD
+  (with `gh attestation verify`); the Tier-0 section and the load-run table in
+  GATEWAY. ADR-005 to ADR-010, phases 8–15 in [docs/PLAN.md](docs/PLAN.md), and
+  launch drafts in [docs/launch/](docs/launch/) (social card spec, 60-second
+  demo script, GitHub metadata, a LinkedIn post with its figures left as
+  placeholders until measured, interview talking points, the launch checklist).
+- **Capture tooling.** `make og` (the 1280×640 social card), `make hero-gif`
+  (the README GIF, at most 8 MB, and the release MP4, through
+  `scripts/make_hero_gif.py`) and `make screenshots` (every static page in both
+  themes), as the Playwright `launch` project. The card and the hero refuse a
+  simulated tape; the screenshots carry its Simulated label.
 
 ### Changed
 - **Security (P4 integration):** link-local and cloud-metadata addresses are

@@ -97,7 +97,7 @@ vendor key reaches the demo containers, even if your `.env` holds one. It costs 
 - A **Demo stack** banner at the top: *"Mock checks and a mock judge: every number here is
   simulated, except the published estimates, which say so."* (The Savings tab sets the demo's
   simulated costs beside the published per-1,000-answer estimates, each labelled Estimate.)
-- **Traffic** (in the left navigation): the traffic generator sends a round of about 20 scripted
+- **Traffic** (in the left navigation): the traffic generator sends a round of the 27 scripted
   requests about once a minute, so new rows keep appearing. Each row has an outcome pill; a round
   starts with these three:
 
