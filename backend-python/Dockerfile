@@ -21,7 +21,9 @@
 # The base image is pinned by its multi-arch INDEX digest (D125), so every
 # platform of a release builds from the same bytes; the tag stays next to the
 # digest for readers and for Dependabot's docker ecosystem, which moves both
-# together. Resolved 2026-10-09: python 3.11.17 (slim).
+# together. Pinned 2026-10-09: the tag on each FROM line names the release line,
+# and the index digest after it is the pin (a Dependabot digest refresh may move
+# the patch release behind the same tag).
 
 # --- Stage 1: dependencies, stubs --------------------------------------------
 FROM python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce AS build

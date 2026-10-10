@@ -412,7 +412,13 @@ class ImagesTest(unittest.TestCase):
                 self.assertRegex(
                     image, r"^[a-z0-9./-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$", dockerfile
                 )
-            self.assertIn("Resolved 20", text, f"{dockerfile}: the pin's resolved versions")
+            # D144: the header says when the pins were taken and that the digest is the pin; it
+            # names no patch release, which a Dependabot digest refresh would change silently.
+            self.assertRegex(text, r"Pinned 20\d\d-\d\d-\d\d:", dockerfile)
+            self.assertIn("the index digest after it is the pin", " ".join(text.split()), dockerfile)
+            header = text.split("\nFROM", 1)[0]
+            self.assertNotIn("Resolved", header, dockerfile)
+            self.assertNotRegex(header, r"\b\d+\.\d+\.\d+\b", f"{dockerfile}: a patch release")
 
     def test_dependabot_follows_the_pins_and_holds_the_engine_python(self) -> None:
         # The docker ecosystem watches every Dockerfile directory, so tag and digest move together.

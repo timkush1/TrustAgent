@@ -18,8 +18,9 @@
 # Base images are pinned by their multi-arch INDEX digest (D125), so every
 # platform of a release builds from the same bytes; the tag stays next to the
 # digest for readers and for Dependabot's docker ecosystem, which moves both
-# together. Resolved 2026-10-09: node 22.23.3 (alpine), nginx 1.31.6
-# (unprivileged, alpine).
+# together. Pinned 2026-10-09: the tag on each FROM line names the release line,
+# and the index digest after it is the pin (a Dependabot digest refresh may move
+# the patch release behind the same tag).
 
 # --- Stage 1: build -----------------------------------------------------------
 FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
