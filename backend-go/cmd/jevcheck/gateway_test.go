@@ -33,6 +33,12 @@ func fakeGateway(t *testing.T, fixture string) (*httptest.Server, *atomic.Int32)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return fakeGatewayAnswering(t, body)
+}
+
+// fakeGatewayAnswering is fakeGateway answering the admin key with body.
+func fakeGatewayAnswering(t *testing.T, body []byte) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -124,6 +130,43 @@ func TestGatewayModeFailures(t *testing.T) {
 	}
 	contains(t, out, "redirect")
 	noKey(t, out)
+}
+
+// TestGatewayModeBooksOnlyAVendorCall: the ledger line says booked only when the gateway's probe
+// called a vendor. A test the gateway answered without a call (an open breaker: no latency) books
+// nothing and shows no ledger line; the mock backend answers in process and books nothing either.
+func TestGatewayModeBooksOnlyAVendorCall(t *testing.T) {
+	skipped := []byte(`{"ok": false, "backend": "openrouter-decisions", "endpoint_host": "openrouter.ai",
+		"model_requested": "typesafe/jev", "snapshot": null, "latency_ms": null, "input_tokens": null, "cost_usd": null,
+		"cost_source": null, "error": {"kind": "breaker_open", "status": null,
+		"message": "the decision model is paused after repeated vendor faults", "hint": "Wait for the cooldown."}}`)
+	srv, _ := fakeGatewayAnswering(t, skipped)
+	code, out := runCheck(t, nil, "--gateway", srv.URL, "--admin-key-file", keyFile(t, gatewayAdminKey))
+	if code != exitFailed {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	contains(t, out, "Probe      FAILED: breaker_open", "Not ready.")
+	if strings.Contains(out, "Ledger") {
+		t.Errorf("a test the gateway skipped claims a ledger entry:\n%s", out)
+	}
+	_, out = runCheck(t, nil, "--gateway", srv.URL, "--admin-key-file", keyFile(t, gatewayAdminKey), "-json")
+	var r report
+	if err := json.Unmarshal([]byte(out), &r); err != nil || r.CostLedger != "" || r.Attempts != 0 {
+		t.Errorf("skipped: cost_ledger %q attempts %d (%v)\n%s", r.CostLedger, r.Attempts, err, out)
+	}
+
+	mock := []byte(`{"ok": true, "backend": "mock", "endpoint_host": null, "model_requested": "typesafe/jev-1.13",
+		"snapshot": "typesafe/jev-1.13-mock", "latency_ms": 0, "input_tokens": 41, "cost_usd": 0, "cost_source": "computed",
+		"error": null}`)
+	srv, _ = fakeGatewayAnswering(t, mock)
+	code, out = runCheck(t, nil, "--gateway", srv.URL, "--admin-key-file", keyFile(t, gatewayAdminKey))
+	if code != exitOK {
+		t.Fatalf("mock: exit %d:\n%s", code, out)
+	}
+	contains(t, out, "Probe      OK (simulated", "Ledger     not booked (simulated: nothing was spent)", "Ready.")
+	if strings.Contains(out, "Ledger     booked") {
+		t.Errorf("a mock probe claims a ledger entry:\n%s", out)
+	}
 }
 
 // TestGatewayModeRefusesMetadataAddresses: the call goes through the decision-model transport

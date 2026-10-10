@@ -125,10 +125,16 @@ func checkGateway(ctx context.Context, base *url.URL, adminKey string) report {
 	rep.Backend, rep.Simulated = res.Backend, res.Backend == jev.BackendMock
 	rep.Endpoint, rep.Model, rep.Snapshot = deref(res.EndpointHost), deref(res.ModelRequested), deref(res.Snapshot)
 	rep.LatencyMs, rep.Tokens, rep.CostUSD, rep.CostSource = res.LatencyMs, res.InputTokens, res.CostUSD, deref(res.CostSource)
+	// A probe the gateway skipped without a call (off, an open breaker, the budget) has no
+	// latency: nothing reached a vendor, so nothing was booked. The mock backend answers in
+	// process and books nothing either (simulated: nothing was spent).
 	if res.LatencyMs != nil {
 		rep.Attempts = 1
+		rep.CostLedger = ledgerBooked
+		if rep.Simulated {
+			rep.CostLedger = ledgerNotBooked
+		}
 	}
-	rep.CostLedger = ledgerBooked
 	if res.Error != nil {
 		rep.Error = &reportError{Kind: res.Error.Kind, Message: res.Error.Message, Hint: res.Error.Hint}
 		if res.Error.Status != nil {

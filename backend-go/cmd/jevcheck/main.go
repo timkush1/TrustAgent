@@ -199,8 +199,9 @@ type report struct {
 	Tokens     *int         `json:"input_tokens,omitempty"`
 	CostUSD    *float64     `json:"cost_usd,omitempty"`
 	CostSource string       `json:"cost_source,omitempty"`
-	// CostLedger says whether the gateway's cost ledger counts the probe: booked (the gateway made
-	// the call) or not_booked (jevcheck made it); empty when no probe ran.
+	// CostLedger says whether the gateway's cost ledger counts the probe: booked (the gateway called
+	// the vendor) or not_booked (jevcheck called it, or the mock backend answered); empty when no
+	// probe reached a decision model (a check the gateway skipped, or a usage error).
 	CostLedger string       `json:"cost_ledger,omitempty"`
 	Notes      []string     `json:"notes,omitempty"`
 	Error      *reportError `json:"error,omitempty"`
