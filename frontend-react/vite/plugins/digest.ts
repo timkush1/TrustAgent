@@ -27,6 +27,8 @@ export interface DigestTrace {
   answer_source: string | null;
   question_preview: string | null;
   response_preview: string | null;
+  /** The documents the request was checked against (evidence labels); empty when it had none. */
+  documents: string[];
 }
 
 /** src/env.d.ts TapeDigest. */
@@ -40,9 +42,10 @@ export interface TapeDigest {
   examples: DigestTrace[];
 }
 
-interface ManifestTrace extends DigestTrace {
+interface ManifestTrace extends Omit<DigestTrace, 'documents'> {
   verdict?: string | null;
   audit?: { verdict?: string | null } | null;
+  checked_against?: { used?: { labels?: string[] }[] } | null;
 }
 
 interface Manifest {
@@ -91,6 +94,7 @@ const pick = (t: ManifestTrace): DigestTrace => ({
   answer_source: t.answer_source,
   question_preview: t.question_preview,
   response_preview: t.response_preview,
+  documents: (t.checked_against?.used ?? []).flatMap((u) => u.labels ?? []),
 });
 
 /**

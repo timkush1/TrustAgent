@@ -73,6 +73,8 @@ declare module 'virtual:trustagent/tape-digest' {
     answer_source: string | null;
     question_preview: string | null;
     response_preview: string | null;
+    /** The documents the request was checked against (evidence labels); empty when it had none. */
+    documents: string[];
   }
   export interface TapeDigest {
     kind: 'mock' | 'recorded';

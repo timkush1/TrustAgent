@@ -29,6 +29,7 @@ interface Trace {
   response_preview: string | null;
   verdict?: string | null;
   audit?: { verdict?: string | null } | null;
+  checked_against?: { used?: { labels?: string[] }[] } | null;
 }
 interface Digest {
   kind: string;
@@ -133,9 +134,13 @@ describe('tape digest plugin', () => {
     const outcomes = d.examples.map((t) => digestMod.outcomeOf(t, outcomesDoc.rules));
     expect(new Set(outcomes).size).toBe(outcomes.length);
     expect(d.examples.map((t) => t.created_at)).toEqual([...d.examples.map((t) => t.created_at)].sort());
-    for (const t of d.examples) expect(Object.keys(t).sort()).toEqual(['action', 'answer_source', 'created_at', 'gate_status', 'question_preview', 'response_preview', 'trace_id', 'would_action']);
-    // The featured refund request is the flagged example.
-    expect(d.examples.find((t) => t.action === 'flag')?.trace_id).toBe(scenarioTrace('refund-contradiction-flag').trace_id);
+    for (const t of d.examples) expect(Object.keys(t).sort()).toEqual(['action', 'answer_source', 'created_at', 'documents', 'gate_status', 'question_preview', 'response_preview', 'trace_id', 'would_action']);
+    // The featured refund request is the flagged example, checked against the refund policy; an
+    // example the gateway could not check had no documents.
+    const flagged = d.examples.find((t) => t.action === 'flag');
+    expect(flagged?.trace_id).toBe(scenarioTrace('refund-contradiction-flag').trace_id);
+    expect(flagged?.documents).toEqual(['refund-policy.md']);
+    for (const t of d.examples.filter((x) => x.gate_status === 'not_assessed')) expect(t.documents).toEqual([]);
   });
 
   it('keeps the featured answer, a pass and the gateway’s actions when there are more outcomes than examples', () => {

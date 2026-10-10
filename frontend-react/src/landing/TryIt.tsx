@@ -89,7 +89,13 @@ export function TapeCard() {
         {digest.kind === 'mock' ? `Generated from the zero-key demo’s scripted scenarios, dated ${when}` : `Recorded on ${when}`} · {count.format(total)}{' '}
         requests · {outcomeCounts().map(({ id, n }) => `${count.format(n)} ${outcome(id).label.toLowerCase()}`).join(', ')}
       </p>
-      {digest.snapshot || digest.judge ? (
+      {digest.kind === 'mock' ? (
+        <p className="mt-1 text-xs text-fg-subtle" data-showcase-mix>
+          A scripted showcase of every outcome, so its rates are not a real flag rate.
+        </p>
+      ) : null}
+      {/* A simulated tape's models are the mocks its label names; a recording names its own. */}
+      {digest.kind === 'recorded' && (digest.snapshot || digest.judge) ? (
         <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
           {digest.snapshot ? (
             <div className="flex gap-1">
@@ -109,7 +115,18 @@ export function TapeCard() {
         {digest.examples.map((t) => (
           <li key={t.trace_id} className="flex items-center gap-3 rounded-md border border-border px-3 py-2">
             <Pill id={outcomeOf(t)} />
-            <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{t.question_preview}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-fg-muted">{t.question_preview}</span>
+              <span className="block truncate text-2xs text-fg-subtle" data-example-documents>
+                {t.documents.length > 0 ? (
+                  <>
+                    Checked against <span className="font-mono">{t.documents.join(', ')}</span>
+                  </>
+                ) : (
+                  'No documents to check against'
+                )}
+              </span>
+            </span>
             {sourceWords(t) ? <span className="shrink-0 text-2xs text-fg-subtle">{sourceWords(t)}</span> : null}
           </li>
         ))}

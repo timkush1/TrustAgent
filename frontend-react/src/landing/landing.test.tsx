@@ -191,7 +191,11 @@ describe('landing page', () => {
     const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(Date.parse(manifest.recorded_at));
     expect(within(replay).getByText(new RegExp(`Generated from the zero-key demo’s scripted scenarios, dated ${dated}`))).toBeInTheDocument();
     expect(within(replay).queryByText(/Recorded/)).toBeNull();
-    expect(within(replay).getByText(manifest.decision_model.snapshot ?? 'no snapshot')).toBeInTheDocument();
+    // Its models are the mocks the label names: no raw "mock/mock" ids.
+    expect(within(replay).queryByText(manifest.decision_model.snapshot ?? 'no snapshot')).toBeNull();
+    expect(replay.textContent).not.toContain('mock/mock');
+    // Its 50% flag rate is a showcase mix, and says so.
+    expect(replay.querySelector('[data-showcase-mix]')).toHaveTextContent('not a real flag rate');
     const examples = within(within(replay).getByRole('list', { name: 'Examples from the tape' })).getAllByRole('listitem');
     expect(examples.length).toBeGreaterThanOrEqual(3);
     expect(examples.length).toBeLessThanOrEqual(5);
@@ -201,6 +205,11 @@ describe('landing page', () => {
     // The featured refund request is one of them (the glass-box panel links to it on the static site).
     expect(digest.examples.map((t) => t.trace_id)).toContain(scenarioTrace('refund-contradiction-flag').trace_id);
     expect(within(replay).getAllByText(REFUND.question, { exact: false }).length).toBeGreaterThanOrEqual(1);
+    // Each example says what it was checked against, so the same question with and without
+    // documents reads as two requests, not a duplicate.
+    const docs = examples.map((li) => li.querySelector('[data-example-documents]')?.textContent);
+    expect(docs).toContain('Checked against refund-policy.md');
+    expect(docs).toContain('No documents to check against');
   });
 
   it('never says "Coming soon" and leaves no TODO', async () => {
