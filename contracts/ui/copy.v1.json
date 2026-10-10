@@ -429,6 +429,7 @@
       "banner_recorded": "Recorded {date} with {snapshot} and {judge}, replayed in your browser: not live.",
       "showcase_caveat": "Scripted showcase mix: rates are not representative of real traffic",
       "nav_hint_caught": "Start here: the answer it caught",
+      "follow_replay": "Follow replay",
       "nav_hints": {
         "recorded": "recorded",
         "simulated": "simulated",

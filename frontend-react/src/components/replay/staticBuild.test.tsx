@@ -342,6 +342,9 @@ describe('static build', () => {
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'Trace' })).toHaveAccessibleDescription(copy.recording.nav_hint_caught);
     expect(within(nav).getByText(copy.recording.nav_hints.trace)).toBeInTheDocument();
+    // The list follows the replay; nothing on the static site is called live.
+    expect(screen.getByRole('button', { name: copy.recording.follow_replay })).toHaveAttribute('aria-pressed');
+    expect(screen.queryByRole('button', { name: 'Live' })).toBeNull();
   });
 
   it('continues the tour on the answer it caught, and opens the glass box from its link', async () => {
