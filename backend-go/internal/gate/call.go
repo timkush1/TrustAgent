@@ -135,6 +135,7 @@ func (g *Gate) spentBy(r *callRound) spent {
 	for _, o := range r.outs {
 		if o.err != nil {
 			s.attempts += attemptsOf(o.err)
+			s.hedged = s.hedged || hedgedOf(o.err)
 			continue
 		}
 		s.attempts += max(o.resp.Attempts, 1)
@@ -170,6 +171,7 @@ func (g *Gate) collect(r *callRound, model string) (usage *DecisionModelUsage, a
 		key := strconv.Itoa(k)
 		if o.err != nil {
 			usage.Attempts += attemptsOf(o.err)
+			usage.Hedged = usage.Hedged || hedgedOf(o.err)
 			kind := jev.ErrorKind(o.err)
 			if reason, ok := jev.SkipReason(o.err); ok {
 				skips = append(skips, reason)
@@ -227,6 +229,12 @@ func attemptsOf(err error) int {
 		return e.Attempts
 	}
 	return 1
+}
+
+// hedgedOf reports whether a failed decision-model call had sent its hedge.
+func hedgedOf(err error) bool {
+	var e *jev.Error
+	return errors.As(err, &e) && e.Hedged
 }
 
 // continued is the requests of a round whose attempts went on after the deadline: their outcome

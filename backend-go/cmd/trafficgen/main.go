@@ -34,7 +34,9 @@
 //
 // --pack faults sends the vendor-fault scenarios of contracts/demo/faults.v1.json (D119) instead:
 // mock-upstream, the e2e stack's decision backend and LLM upstream, answers each with the fault its
-// mock_faults names.
+// mock_faults names. Their expectations also check X-TrustAgent-Degraded and the stored decision's
+// degraded (expect.degraded) and decision_model attempts, hedged and late (expect.decision_model);
+// a trace that expects a late decision is awaited until it is recorded.
 //
 //	trafficgen --once --expect --scenarios s0
 //	trafficgen --once --expect --scenarios e2e --upstream all
@@ -258,7 +260,7 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) (bool, []*s
 			}
 			// An unchecked trace is still awaited (D121): the run ends when every trace it
 			// started is decided and audited, so an export right after it is complete.
-			t, err := g.awaitTrace(ctx, r.traceID, deadline)
+			t, err := g.awaitTrace(ctx, r.s, r.traceID, deadline)
 			switch {
 			case err != nil:
 				r.err = err
@@ -414,9 +416,10 @@ func (g *generator) send(ctx context.Context, s *scenario) *sent {
 	return r
 }
 
-// awaitTrace polls GET /api/traces/:id until the trace is decided and its deep audit settled,
-// backing off from 100 ms to 1 s (the API is rate limited per client).
-func (g *generator) awaitTrace(ctx context.Context, traceID string, deadline time.Time) (*traceView, error) {
+// awaitTrace polls GET /api/traces/:id until the trace of s is decided and its deep audit settled
+// (and its late decision recorded, when s expects one), backing off from 100 ms to 1 s (the API is
+// rate limited per client).
+func (g *generator) awaitTrace(ctx context.Context, s *scenario, traceID string, deadline time.Time) (*traceView, error) {
 	wait := 100 * time.Millisecond
 	var last *traceView
 	var lastErr error
@@ -425,7 +428,7 @@ func (g *generator) awaitTrace(ctx context.Context, traceID string, deadline tim
 		switch {
 		case err != nil && !errors.Is(err, errRetry):
 			return nil, err
-		case err == nil && t.settled():
+		case err == nil && t.settledFor(s):
 			return t, nil
 		case err == nil:
 			last = t
@@ -435,6 +438,8 @@ func (g *generator) awaitTrace(ctx context.Context, traceID string, deadline tim
 		pause := max(wait, retryAfter)
 		if time.Now().Add(pause).After(deadline) {
 			switch {
+			case last != nil && last.settled():
+				return nil, fmt.Errorf("trace %s: no late decision was recorded within --audit-timeout (expect.decision_model.late)", traceID)
 			case last != nil:
 				return nil, fmt.Errorf("trace %s did not settle within --audit-timeout (gate %s, audit %s)",
 					traceID, last.GateStatus, last.Audit.Status)

@@ -5,10 +5,13 @@ package main
 // demo policy (config/policies.yaml plus config/policies.pending.yaml) and the mock calibration
 // (config/calibration), with the mock decision backend answering from mock_answers:
 //
-//   - TestScenariosMatchTheReference runs the SPEC pipeline for every scenario: route match,
-//     evidence extraction, detectors, compile, the scripted answers, decide(), the X-TrustAgent-*
-//     header values, the deep-audit plan, the fallback re-gate and the delivered text, and the
-//     audit verdict the scoring v2 rules give the judge fixture;
+//   - TestScenariosMatchTheReference runs the SPEC pipeline for every scenario of both packs: route
+//     match, evidence extraction, detectors, compile, the scripted answers, decide(), the
+//     X-TrustAgent-* header values, the deep-audit plan, the fallback re-gate and the delivered
+//     text, and the audit verdict the scoring v2 rules give the judge fixture. A vendor-fault
+//     scenario (contracts/demo/faults.v1.json, D119) first has its fault turned into what the
+//     decision-model client makes of it on its route (faultModel), so each row's status, action,
+//     degraded and decision_model are confirmed against decide();
 //   - TestRunnableScenariosThroughTheGate sends each scenario this build can serve (no phase tag)
 //     through the real internal/gate with the real mock backend, so the S0 gate keeps holding;
 //   - TestMockCalibrationFitsTheDemoRoutes pins the mock calibration to the routes that adopt it.
@@ -73,6 +76,11 @@ type refScenario struct {
 			Confidence float64 `json:"confidence"`
 		} `json:"claims"`
 	} `json:"judge"`
+	// MockFaults are the vendor faults of a faults-pack scenario (D119).
+	MockFaults *struct {
+		Decision string `json:"decision"`
+		Upstream string `json:"upstream"`
+	} `json:"mock_faults"`
 	Expect    refExpect                  `json:"expect"`
 	ExpectRaw map[string]json.RawMessage `json:"-"`
 }
@@ -96,15 +104,33 @@ type refExpect struct {
 		Comment  bool     `json:"comment"`
 		Trailers []string `json:"trailers"`
 	} `json:"stream_decision"`
+	Degraded      *bool `json:"degraded"`
+	DecisionModel *struct {
+		Attempts *int  `json:"attempts"`
+		Hedged   *bool `json:"hedged"`
+		Late     *bool `json:"late"`
+	} `json:"decision_model"`
 }
 
 // coreExpectFields are the expect members every scenario states.
 var coreExpectFields = []string{"mode", "action", "would_action", "status", "verdict", "max_risk", "reasons",
 	"checked_against", "deep_audit", "audit", "audit_verdict", "outcome"}
 
+// Scenario packs (D119): the main pack and the vendor-fault pack.
+const (
+	mainPackFile   = "demo/scenarios.v1.json"
+	faultsPackFile = "demo/faults.v1.json"
+)
+
 func loadRefScenarios(t *testing.T) []*refScenario {
 	t.Helper()
-	b, err := contracts.FS.ReadFile("demo/scenarios.v1.json")
+	return loadRefPack(t, mainPackFile)
+}
+
+// loadRefPack reads the scenarios of an embedded pack (contracts/<file>).
+func loadRefPack(t *testing.T, file string) []*refScenario {
+	t.Helper()
+	b, err := contracts.FS.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,6 +412,9 @@ type reference struct {
 	evidence   *evidence.Result
 	knowledge  bool // knowledge-only evidence
 	httpStatus int
+	// fault is what the decision-model client makes of a faults-pack scenario's vendor fault
+	// (nil for the main pack).
+	fault *refFault
 }
 
 // runReference replays a scenario through the SPEC pipeline, the way internal/gate runs it plus
@@ -401,7 +430,7 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 	if route.Name != s.Route {
 		t.Fatalf("the request lands on route %s, not %s", route.Name, s.Route)
 	}
-	ref := &reference{route: route, httpStatus: http.StatusOK}
+	ref := &reference{route: route, httpStatus: http.StatusOK, fault: faultModel(t, s, route)}
 
 	settings := route.Evidence.Extraction()
 	ev, err := evidence.Extract(req, &settings)
@@ -436,7 +465,43 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		stream = route.Streaming
 	}
 
-	decide := func(text string, answers map[string]*decision.RawAnswer) (*decision.Core, *decision.Compiled) {
+	// The faults pack runs on the e2e stack: the compatible backend on mock-upstream, whose
+	// snapshot no calibration covers.
+	backend, calibration := jev.BackendMock, calibrationFor(t, route, specs, cal)
+	if ref.fault != nil {
+		backend, calibration = jev.BackendCompatible, map[string]decision.CalibrationEntry{}
+	}
+	policyOf := func() decision.Policy {
+		return decision.Policy{
+			ConfiguredMode: route.Mode, Fail: route.Fail, RequireCalibration: route.RequireCalibration, OnNoEvidence: route.OnNoEvidence,
+			Detectors: decision.DetectorPolicy{FlagOn: route.Detectors.FlagOn, BlockOn: route.Detectors.BlockOn},
+		}
+	}
+	// decide replays the gate for one answer; fault, for the scenario's own answer, is the vendor
+	// fault the decision-model client met (nil: the backend answered from the script).
+	decide := func(text string, answers map[string]*decision.RawAnswer, fault *refFault) (*decision.Core, *decision.Compiled) {
+		if fault != nil && fault.skip != "" {
+			// The upstream failed, so there is no answer: no detector runs, nothing is compiled
+			// or asked, and the route's evaluators fail with the skip (internal/gate failAll).
+			in := &decision.Input{
+				Policy: policyOf(), QuestionMap: map[string]string{}, Excluded: []decision.Exclusion{}, Calibration: calibration,
+				Meta: decision.Meta{
+					Backend: backend, Stream: stream, EvidencePresent: ev.Trusted(), KnowledgeOnly: ref.knowledge,
+					RequestStatus: map[string]string{}, QIDRequest: map[string]int{}, SkipReason: &fault.skip,
+				},
+				Detectors: decision.DetectorStates(notRunDetectors()),
+			}
+			for _, e := range route.Evaluators {
+				if spec, ok := specs[e.Ref]; ok && e.IsEnabled() {
+					in.Evaluators = append(in.Evaluators, decision.EvaluatorInput{Ref: e.Ref, Spec: spec, Stage: e.StageOrDefault(), Thresholds: e.Thresholds.Decision()})
+				}
+			}
+			core, err := decision.Decide(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return core, nil
+		}
 		rules := resolveRules(route, dp.Overrides.ClientRules, req.Extension.Rules, specs)
 		dets, err := decision.Detect(&decision.DetectorInput{
 			Response: text, Evidence: ev.DecisionItems(), UserRequest: ev.UserRequest, SystemInstructions: ev.SystemInstructions,
@@ -453,26 +518,37 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		}
 		b := decision.DefaultBudget()
 		b.MaxResponseTokens, b.EvidenceMaxTokens = route.Decision.MaxResponseTokens, route.Evidence.MaxTokens
-		compiled, err := decision.Compile(cr, specs, &decision.CompileInputs{
+		inputs := &decision.CompileInputs{
 			UserRequest: ev.UserRequest, AssistantResponse: text, SystemInstructions: ev.SystemInstructions,
 			Evidence: ev.DecisionItems(), Rules: req.Extension.Rules,
-		}, b)
+		}
+		compiled, err := decision.Compile(cr, specs, inputs, b)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if fault != nil && fault.halve {
+			// SPEC §2.9 compile: a request refused as too large is compiled again once with half
+			// the evidence cap, and that compile's requests are the ones answered.
+			b.EvidenceMaxTokens = compiled.EvidenceCap / 2
+			smaller, err := decision.Compile(cr, specs, inputs, b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if slices.Equal(smaller.RequestSHA256, compiled.RequestSHA256) {
+				t.Fatalf("halving the evidence cap (%d tokens) changes no request, so the gate would not send again: the evidence is too short for a too_large retry", compiled.EvidenceCap)
+			}
+			compiled = smaller
 		}
 		evs, err := compiled.DecideEvaluators(specs, th)
 		if err != nil {
 			t.Fatal(err)
 		}
 		in := &decision.Input{
-			Policy: decision.Policy{
-				ConfiguredMode: route.Mode, Fail: route.Fail, RequireCalibration: route.RequireCalibration, OnNoEvidence: route.OnNoEvidence,
-				Detectors: decision.DetectorPolicy{FlagOn: route.Detectors.FlagOn, BlockOn: route.Detectors.BlockOn},
-			},
+			Policy:     policyOf(),
 			Evaluators: evs, QuestionMap: compiled.QuestionMap, Excluded: compiled.Excluded,
-			Calibration: calibrationFor(t, route, specs, cal),
+			Calibration: calibration,
 			Meta: decision.Meta{
-				Backend: jev.BackendMock, Stream: stream, EvidencePresent: ev.Trusted(), EvidenceTruncated: compiled.Truncated,
+				Backend: backend, Stream: stream, EvidencePresent: ev.Trusted(), EvidenceTruncated: compiled.Truncated,
 				KnowledgeOnly: ref.knowledge, RequestStatus: map[string]string{}, QIDRequest: compiled.QIDRequest,
 			},
 			Detectors: decision.DetectorStates(dets),
@@ -482,6 +558,9 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		asked := map[string]bool{}
 		for k, r := range compiled.Requests {
 			in.Meta.RequestStatus[fmt.Sprint(k)] = decision.RequestOK
+			if fault != nil && !fault.answered {
+				in.Meta.RequestStatus[fmt.Sprint(k)] = fault.status
+			}
 			for qid := range r.Questions {
 				asked[qid] = true
 			}
@@ -496,7 +575,7 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 				t.Errorf("the script answers %s, which compile does not ask", qid)
 			}
 		}
-		if len(asked) > 0 {
+		if len(asked) > 0 && (fault == nil || fault.answered) {
 			in.Answers = answers
 		}
 		core, err := decision.Decide(in)
@@ -506,15 +585,20 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		return core, compiled
 	}
 
-	core, compiled := decide(*s.Response, s.MockAnswers)
+	core, compiled := decide(*s.Response, s.MockAnswers, ref.fault)
 	ref.core = core
 	ref.action = core.Action
-	ref.status = core.Status
+	ref.status = refStatus(core, ref.fault)
 	if route.Mode == decision.ModeObserve {
 		ref.status = "deferred"
 	}
-	ref.checked = evidence.Summarize(ev, route.Evidence.Sources, compiled.Truncated, decision.DefaultCPT).CheckedAgainst()
+	truncated := compiled != nil && compiled.Truncated
+	ref.checked = evidence.Summarize(ev, route.Evidence.Sources, truncated, decision.DefaultCPT).CheckedAgainst()
 	ref.audit = auditPlan(t, route, core)
+	if ref.fault != nil && ref.fault.skip != "" {
+		// No answer, nothing to audit (internal/gate planAudit).
+		ref.audit = gate.AuditNotAssessed
+	}
 
 	ref.delivered = *s.Response
 	blockText := func() string {
@@ -534,7 +618,7 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		// SPEC §2.12 Fallback: re-gate the fallback answer (attempt 1) and deliver it unless it
 		// would block too; then on_fail decides: block sends the block body (Action: block), flag
 		// the fallback answer and original the answer (both Action: flag).
-		ref.regate, _ = decide(s.Fallback.Response, s.Fallback.MockAnswers)
+		ref.regate, _ = decide(s.Fallback.Response, s.Fallback.MockAnswers, nil)
 		switch {
 		case ref.regate.WouldAction != decision.ActionBlock:
 			ref.delivered = s.Fallback.Response
@@ -549,6 +633,10 @@ func runReference(t *testing.T, s *refScenario, dp *demoPolicy, specs map[string
 		if s.Fallback != nil {
 			t.Error("the scenario has a fallback answer, but the gate does not fall back")
 		}
+	}
+	if ref.fault != nil && ref.fault.upstreamStatus != 0 {
+		// GATEWAY.md §6: a non-2xx upstream answer reaches the client as it is.
+		ref.httpStatus = ref.fault.upstreamStatus
 	}
 	return ref
 }
@@ -655,7 +743,7 @@ func TestScenariosMatchTheReference(t *testing.T) {
 	specs := reg.Specs()
 	dp := loadDemoPolicy(t, reg)
 	cal := mockCalibration(t)
-	for _, s := range loadRefScenarios(t) {
+	for _, s := range append(loadRefScenarios(t), loadRefPack(t, faultsPackFile)...) {
 		t.Run(s.ID, func(t *testing.T) {
 			for _, f := range coreExpectFields {
 				if _, ok := s.ExpectRaw[f]; !ok {
@@ -683,6 +771,7 @@ func TestScenariosMatchTheReference(t *testing.T) {
 			eq("deep_audit", x.DeepAudit, c.DeepAudit)
 			eq("audit", x.Audit, ref.audit)
 			eq("outcome", x.Outcome, store.Outcome(store.OutcomeFields{GateStatus: c.Status, Action: ref.action, WouldAction: c.WouldAction}))
+			checkFaultExpect(t, s, ref)
 
 			delivered := *s.Response
 			if x.DeliveredText != nil {

@@ -196,8 +196,10 @@ type Error struct {
 	Retryable bool
 	// RetryAfter is the vendor's Retry-After, capped at TRUTHTABLE_JEV_RETRY_AFTER_CAP.
 	RetryAfter time.Duration
-	// Attempts is the number of vendor requests the call made before failing.
+	// Attempts is the number of vendor requests the call made before failing; Hedged is set
+	// when one of them was the hedge (decision_model.hedged records it for a failed call too).
 	Attempts int
+	Hedged   bool
 	// Continued is set on a timeout whose attempts go on after the caller stopped waiting:
 	// CallOptions.OnLate then receives their outcome, exactly once (SPEC §2.9 late decisions).
 	Continued bool

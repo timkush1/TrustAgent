@@ -23,6 +23,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -85,9 +86,11 @@ func scoredVerdict(verdicts []string, confidences []float64, hallucinationPolicy
 // judgedEngine is a fake audit engine that answers like the engine with the mock judge
 // (LLM_PROVIDER=mock): without evidence the preflight answers NOT_ASSESSED (no_evidence) and no
 // judge is called; with evidence, the scenario's judge claims (only for the scenario's own answer,
-// as the mock judge decomposes nothing else) with the verdict scoring v2 gives them.
+// as the mock judge decomposes nothing else) with the verdict scoring v2 gives them. It knows the
+// judges of both packs, the main pack and the vendor-fault pack.
 func judgedEngine(t testing.TB) *enginetest.Engine {
 	scenarios := loadDemoScenarios(t)
+	maps.Copy(scenarios, loadFaultScenarios(t))
 	return enginetest.Start(t, &enginetest.Engine{EvaluateFunc: func(_ context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
 		res := &pb.AuditResult{AuditId: req.GetAuditId(), TraceId: req.GetTraceId(), RequestId: req.GetRequestId(), ScoringVersion: "v2",
 			ProcessingTimeMs: 3, StepTimings: map[string]int64{"total_ms": 3}, Status: pb.AuditStatus_AUDIT_STATUS_COMPLETED}

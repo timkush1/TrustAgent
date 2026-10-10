@@ -174,7 +174,34 @@ endpoint answers with (`<name>` or `<name>@<n>` for the first n calls). Its expe
 `expect.degraded` and `expect.decision_model {attempts?, hedged?, late?}`. The main pack never holds a
 fault scenario, so the demo, the Playground examples and the recording never see one; ids are unique
 across both packs, and at most 4 scenarios in a row fault the decision model, so a pack run never opens
-the breaker. It starts empty; the GO stream fills it.
+the breaker on vendor faults.
+
+Every answer is grounded, so only the fault drives the result. The pack runs on the e2e stack (`make
+e2e-faults`, and `TestFaultScenariosAgainstMockUpstream` in process), in file order:
+
+| Row | Scenario | Fault | Route | Status | Action |
+|---|---|---|---|---|---|
+| F1 | `fault-429-no-time-to-retry` | decision `429@1` | support-bot | `error:retryable` (Retry-After 1 s does not fit 600 ms) | pass (fail open) |
+| F2 | `fault-429-retried` | decision `429@1` | payments-faq | `ok`, 2 attempts | pass |
+| F3 | `fault-503-retried` | decision `503@1` | support-bot | `ok`, 2 attempts | pass |
+| F4 | `fault-hang-hedged` | decision `hang@1` | payments-faq | `ok`, hedged | pass |
+| U1 | `upstream-503-relayed` | upstream `503` | support-bot | `skipped:upstream_error`, HTTP 503 relayed | pass (never enforced) |
+| F5 | `fault-hang-fail-open` | decision `hang` | support-bot | `timeout` | pass (fail open) |
+| F6 | `fault-slow-late-decision` | decision `slow` | support-bot | `timeout`, then a late decision (never enforced) | pass |
+| F7 | `fault-hang-fail-closed` | decision `hang` | payments-faq | `timeout`, hedged | block (`fail_closed`) |
+| F10 | `fault-413-evidence-halved` | decision `413@1` | support-bot | `ok`, sent again with half the evidence | pass |
+| U2 | `upstream-html-fail-closed` | upstream `html200` | payments-faq | `skipped:upstream_error` | block (`fail_closed`) |
+| F9 | `fault-bad-json` | decision `bad_json` | support-bot | `error:bad_response` | pass (fail open) |
+| F8 | `fault-402-credits` | decision `402_inflight@1` | support-bot | `error:credits` | pass (fail open) |
+
+F8 comes last: the TypeSafe-shaped endpoint carries no `limit_source`, so its 402 reads as an account out of
+credits and opens the breaker for the auth cooldown (`TRUTHTABLE_JEV_AUTH_COOLDOWN`, 5 minutes). A stack
+that ran the pack answers `skipped:breaker_open` until the cooldown ends or an admin runs Settings → Test
+(`POST /api/decision-model/test`, which lifts a credits pause). The demo routes audit every answer whose
+check failed (`error_sample_rate: 1.0`), so each failed row with an answer has judge fixtures (GROUNDED);
+the two upstream rows have no answer, so their audit is `NOT_ASSESSED` with no LLM call. The stateful
+faults (breaker, cooldowns, budget, rate limit, engine down, missing credentials) are in-process tests only
+(`backend-go/cmd/proxy/faults_e2e_test.go`).
 
 How a fault reaches its endpoint: `trafficgen --pack faults` sends each scenario id as
 `X-TrustAgent-Scenario`, and the gateway in test mode forwards it to a local decision backend

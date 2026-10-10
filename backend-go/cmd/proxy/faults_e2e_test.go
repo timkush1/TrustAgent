@@ -6,12 +6,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/truthtable/backend-go/cmd/mock-upstream/mockupstream"
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/jev"
 	"github.com/truthtable/backend-go/internal/store"
+	"github.com/truthtable/contracts"
 )
 
 // newFaultEnv is the e2e stack in process (docker-compose.e2e.yml): the compatible decision
@@ -156,5 +159,139 @@ func TestFaultChannelReachesMockUpstream(t *testing.T) {
 				t.Errorf("the trace stored scenario %q: a fault value is forward-only", *row.Scenario)
 			}
 		})
+	}
+}
+
+// loadFaultScenarios reads the vendor-fault pack (contracts/demo/faults.v1.json, D119).
+func loadFaultScenarios(t testing.TB) map[string]*demoScenario {
+	t.Helper()
+	out := map[string]*demoScenario{}
+	for _, s := range faultPack(t) {
+		out[s.ID] = s.demoScenario
+	}
+	return out
+}
+
+// faultScenario is a faults-pack scenario: a demo scenario with the vendor faults mock-upstream
+// answers it with.
+type faultScenario struct {
+	*demoScenario
+	MockFaults struct {
+		Decision string `json:"decision"`
+		Upstream string `json:"upstream"`
+	}
+}
+
+// faultPack is the vendor-fault pack's scenarios in file order.
+func faultPack(t testing.TB) []faultScenario {
+	t.Helper()
+	b, err := contracts.FS.ReadFile("demo/faults.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack struct {
+		Scenarios []json.RawMessage `json:"scenarios"`
+	}
+	if err := json.Unmarshal(b, &pack); err != nil {
+		t.Fatal(err)
+	}
+	out := make([]faultScenario, len(pack.Scenarios))
+	for i, raw := range pack.Scenarios {
+		out[i].demoScenario = &demoScenario{}
+		var faults struct {
+			MockFaults json.RawMessage `json:"mock_faults"`
+		}
+		if err := json.Unmarshal(raw, out[i].demoScenario); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &faults); err != nil || json.Unmarshal(faults.MockFaults, &out[i].MockFaults) != nil {
+			t.Fatalf("%s: mock_faults %s: %v", out[i].ID, faults.MockFaults, err)
+		}
+	}
+	return out
+}
+
+// TestFaultScenariosAgainstMockUpstream is make e2e-faults in process: the e2e stack (decision
+// backend and LLM upstream on mock-upstream) gets the whole vendor-fault pack once, in file order,
+// through trafficgen --expect --pack faults --upstream all, so each row's status, action, degraded
+// and decision_model are checked on the response and the settled trace (D119).
+//
+// The pack's order is part of what it proves. The client's breaker opens after 5 consecutive
+// vendor faults, and the pack never sends more than 4 decision-model faults in a row; the 402 of F8
+// reads as an account out of credits on the TypeSafe-shaped endpoint (no limit_source), which opens
+// the breaker for the auth cooldown, so F8 is the last scenario. The run ends with that cooldown
+// open (status no_credits), and an answer sent after it is skipped without a decision request.
+func TestFaultScenariosAgainstMockUpstream(t *testing.T) {
+	pack := faultPack(t)
+	if len(pack) != 12 {
+		t.Fatalf("the faults pack holds %d scenarios, want F1-F10 and U1-U2", len(pack))
+	}
+	if last := pack[len(pack)-1]; last.ID != "fault-402-credits" {
+		t.Fatalf("the last scenario is %s: F8 (fault-402-credits) opens the auth cooldown, so it comes last", last.ID)
+	}
+	env, mu := newFaultEnv(t)
+	cmd := exec.Command(buildTrafficgen(t), "--once", "--expect", "--pack", "faults", "--scenarios", "faults", "--upstream", "all",
+		"--phase", "p5", "--base-url", env.http.URL, "--audit-timeout", "30s")
+	cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	if err != nil {
+		t.Fatalf("trafficgen --pack faults: %v\n%s", err, out)
+	}
+	t.Logf("trafficgen --pack faults:\n%s", out)
+	lines := okLine.FindAllStringSubmatch(out, -1)
+	if len(lines) != len(pack) {
+		t.Fatalf("%d scenarios passed, want all %d in order:\n%s", len(lines), len(pack), out)
+	}
+	for i, s := range pack {
+		if lines[i][1] != s.ID {
+			t.Errorf("line %d is %s, want %s (file order)", i, lines[i][1], s.ID)
+		}
+	}
+
+	// What reached mock-upstream: each decision fault on the requests that name its scenario (the
+	// forwarded id, with X-Mock-Key the trace id), and no decision request for the two upstream
+	// faults, whose answers were never gated.
+	decisions := map[string]int{}
+	for _, r := range mu.Requests() {
+		if r.Path == "/v1/systemone" && r.Method == http.MethodPost {
+			if id := r.Header.Get("X-TrustAgent-Scenario"); id != "" {
+				decisions[id]++
+			}
+		}
+	}
+	for _, s := range pack {
+		switch {
+		case s.MockFaults.Decision != "" && decisions[s.ID] == 0:
+			t.Errorf("%s: no decision request named the scenario, so mock_faults.decision %s never applied", s.ID, s.MockFaults.Decision)
+		case s.MockFaults.Upstream != "" && decisions[s.ID] != 0:
+			t.Errorf("%s: %d decision requests for an answer the upstream fault leaves ungated", s.ID, decisions[s.ID])
+		}
+	}
+
+	// F8 left the auth cooldown open: the status says so, and the next answer is skipped with no
+	// decision request (which is why F8 comes last).
+	code, body := env.get("/api/status", testKey)
+	var st struct {
+		DecisionModel struct {
+			State   string `json:"state"`
+			Breaker string `json:"breaker"`
+		} `json:"decision_model"`
+	}
+	if code != http.StatusOK || json.Unmarshal(body, &st) != nil {
+		t.Fatalf("GET /api/status: %d %s", code, body)
+	}
+	if st.DecisionModel.State != "no_credits" || st.DecisionModel.Breaker != "open" {
+		t.Errorf("after F8 the decision model is %s with the breaker %s, want no_credits and open", st.DecisionModel.State, st.DecisionModel.Breaker)
+	}
+	before := len(mu.Requests())
+	h := sendWithScenarioHeader(t, env, loadDemoScenarios(t)["grounded-pass"], "grounded-pass")
+	if got := h.Get("X-TrustAgent-Status"); got != "skipped:breaker_open" {
+		t.Errorf("an answer after F8 has status %q, want skipped:breaker_open", got)
+	}
+	for _, r := range mu.Requests()[before:] {
+		if r.Path == "/v1/systemone" {
+			t.Errorf("a decision request reached mock-upstream while the auth cooldown is open: %+v", r)
+		}
 	}
 }
