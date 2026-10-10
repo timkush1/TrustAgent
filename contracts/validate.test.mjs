@@ -296,7 +296,9 @@ describe('validate.mjs', () => {
     const sb = sandbox();
     const ok = sb.read('fixtures/vendor/openrouter/decisions.401.json');
     sb.write('fixtures/vendor/openrouter/decisions.captured.json', { ...ok, source: 'from my laptop' });
-    sb.write('fixtures/vendor/openrouter/key.leak.json', { ...ok, body: { key: 'sk-or-v1-0123456789abcdef0123' } });
+    // A key that is not an obvious fake, built at run time so no key-shaped literal sits in the
+    // source for the secret scanner (security.yml gitleaks) to report.
+    sb.write('fixtures/vendor/openrouter/key.leak.json', { ...ok, body: { key: ['sk-or-v1', '0123456789abcdef0123'].join('-') } });
     sb.write('fixtures/vendor/openrouter/chat.headers.json', { ...ok, headers: { 'Content-Type': 'application/json' } });
     sb.write('fixtures/vendor/openrouter/Bad-Name.json', ok);
     sb.edit('fixtures/prompts/drafter-render.basic.json', (f) => { f.prompt = 'no-such-prompt.v1'; });
