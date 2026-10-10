@@ -25,7 +25,25 @@ export interface DatasetChoice {
   expected: DatasetKind;
 }
 
-/** Picks the dataset directory for a VITE_DEMO_DATASET value (unknown values mean `auto`). */
+/** A manifest's `kind`, failing the build when the file is not JSON. */
+function manifestKind(dir: string): unknown {
+  const file = join(dir, 'manifest.json');
+  let doc: unknown;
+  try {
+    doc = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new Error(`${file} is not a readable JSON manifest: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return typeof doc === 'object' && doc !== null ? (doc as { kind?: unknown }).kind : undefined;
+}
+
+/**
+ * Picks the dataset directory for a VITE_DEMO_DATASET value (unknown values mean `auto`). Each
+ * directory must hold its own kind: a `recorded/` manifest that is not `kind: recorded` (a
+ * simulated tape copied there, or a hand edit) fails every build, and a `simulated/` one that is
+ * not `kind: mock` fails the build that picks it, so a build can never present one kind under the
+ * other's name.
+ */
 export function chooseDataset(dataDir: string, value: string | undefined): DatasetChoice {
   const simulated = join(dataDir, 'simulated');
   const recorded = join(dataDir, 'recorded');
@@ -34,12 +52,15 @@ export function chooseDataset(dataDir: string, value: string | undefined): Datas
   if (want === 'recorded' && !hasRecorded) {
     throw new Error(`VITE_DEMO_DATASET=recorded, but ${recorded}/manifest.json does not exist (run make record-demo)`);
   }
-  if (want === 'recorded' || (want === 'auto' && hasRecorded)) {
-    const kind = (JSON.parse(readFileSync(join(recorded, 'manifest.json'), 'utf8')) as { kind?: unknown }).kind;
+  // A recorded/ manifest is checked whichever value is set: a mislabelled one is a repo error.
+  if (hasRecorded) {
+    const kind = manifestKind(recorded);
     if (kind !== 'recorded') throw new Error(`${recorded}/manifest.json is kind ${JSON.stringify(kind)}, not "recorded"`);
-    return { dir: recorded, expected: 'recorded' };
   }
+  if (want === 'recorded' || (want === 'auto' && hasRecorded)) return { dir: recorded, expected: 'recorded' };
   if (!existsSync(join(simulated, 'manifest.json'))) throw new Error(`${simulated}/manifest.json does not exist (run npm run recording)`);
+  const kind = manifestKind(simulated);
+  if (kind !== 'mock') throw new Error(`${simulated}/manifest.json is kind ${JSON.stringify(kind)}, not "mock"`);
   return { dir: simulated, expected: 'mock' };
 }
 
