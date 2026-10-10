@@ -1,7 +1,7 @@
 /**
  * The static build's one banner (SPEC §3.3 "at most one banner"; §0 rows 4-5; D117): what the
  * reader is looking at, a replay, in the contract's words. A simulated tape says "simulated" once
- * (copy.recording.banner_simulated: mock checks and a mock judge, replayed in the browser, not
+ * (copy.recording.banner_simulated: the replayed traffic and examples use mock checks and a mock judge, not
  * model output); a recorded one says when and with which models it was recorded, and that it is
  * not live (copy.recording.banner_recorded). Both point to running it yourself.
  */
