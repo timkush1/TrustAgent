@@ -375,6 +375,19 @@ describe('demo recording', () => {
     await expect(buildDemoRecording(inputs(), { ...opts, intervalMs: 1000 })).rejects.toThrow(/raise intervalMs/);
   });
 
+  it('starts a round only once the last answer of the round before it is in', async () => {
+    const one = await buildDemoRecording(inputs(), { ...opts, rounds: 1 });
+    const last = one.manifest.traces[one.manifest.traces.length - 1];
+    // Not observe mode: the answer is in when the decision is (created + total_ms).
+    expect(last.action).not.toBe('observe');
+    const answered = Date.parse(last.created_at) + (last.timings.total_ms ?? 0) - Date.parse(opts.startAt);
+    expect(answered).toBeGreaterThan(Date.parse(last.created_at) - Date.parse(opts.startAt));
+    // Round 1 would start after round 0's last request was sent, but before its answer came back.
+    await expect(buildDemoRecording(inputs(), { ...opts, rounds: 2, intervalMs: answered })).rejects.toThrow(/round 1 starts before round 0 ended/);
+    const two = await buildDemoRecording(inputs(), { ...opts, rounds: 2, intervalMs: answered + 1 });
+    expect(two.manifest.traces).toHaveLength(2 * one.manifest.traces.length);
+  });
+
   it('keeps text a published recording may not carry off the tape', () => {
     expect(secretIn({ a: ['fine', 'key sk-abcdefgh12345'] })).toBe('an sk- API key');
     expect(secretIn('Authorization: Bearer abcdefgh.ijk')).toBe('a bearer token');

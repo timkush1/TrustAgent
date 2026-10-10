@@ -200,7 +200,10 @@ export interface BuildOptions {
   set: string;
   /** Rounds of the scenario set (trafficgen --loop). */
   rounds: number;
-  /** Pause between the starts of two rounds (trafficgen --interval). */
+  /**
+   * Time between the starts of two rounds. trafficgen --interval is the pause after a round ends;
+   * a round takes seconds, so the two differ by that much.
+   */
   intervalMs: number;
   /** When the first request was sent (RFC 3339 UTC). */
   startAt: string;
@@ -1061,7 +1064,8 @@ export async function buildDemoRecording(inputs: BuildInputs, opts: BuildOptions
   const built: BuiltTrace[] = [];
   for (let round = 0; round < opts.rounds; round += 1) {
     let t = start + round * opts.intervalMs;
-    check(built.length === 0 || t > built[built.length - 1].times.created, `round ${round} starts before round ${round - 1} ended: raise intervalMs`);
+    // trafficgen sends one request at a time: a round starts once the last answer of the round before it is in.
+    check(built.length === 0 || t > built[built.length - 1].times.decided, `round ${round} starts before round ${round - 1} ended: raise intervalMs`);
     for (const s of scenarios) {
       const trace = await buildTrace(s, contextOf(s.route), round, t);
       built.push(trace);
