@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e73e-c492-738b-aa65-0bf6575c5520",
+  "trace_id": "01a0e762-b3ca-738b-aa65-0bf6575c5520",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:00:45.586Z",
-  "updated_at": "2026-09-28T09:00:45.792Z",
+  "created_at": "2026-09-28T09:40:00.586Z",
+  "updated_at": "2026-09-28T09:40:00.792Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -42,7 +42,7 @@
     "upstream_ms": 200,
     "ttft_ms": null,
     "gate_ms": 1,
-    "overhead_ms": 5,
+    "overhead_ms": 6,
     "total_ms": 206
   },
   "decision_model": null,
@@ -59,7 +59,9 @@
   "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
   "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
@@ -84,9 +86,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73e-c492-738b-aa65-0bf6575c5520",
+      "trace_id": "01a0e762-b3ca-738b-aa65-0bf6575c5520",
       "attempt": 0,
-      "created_at": "2026-09-28T09:00:45.792Z",
+      "created_at": "2026-09-28T09:40:00.787Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -118,7 +120,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -147,7 +149,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,

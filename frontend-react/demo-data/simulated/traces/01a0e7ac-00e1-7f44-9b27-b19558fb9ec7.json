@@ -1,29 +1,31 @@
 {
-  "trace_id": "01a0e740-21d8-71a7-a932-b0bf535b4983",
+  "trace_id": "01a0e7ac-00e1-7f44-9b27-b19558fb9ec7",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:02:15.000Z",
-  "updated_at": "2026-09-28T09:02:16.262Z",
+  "created_at": "2026-09-28T11:00:04.449Z",
+  "updated_at": "2026-09-28T11:00:06.019Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
-  "route": "support-bot",
+  "route": "help-center",
   "policy_version": 1,
-  "mode": "flag",
-  "effective_mode": "flag",
+  "mode": "block",
+  "effective_mode": "block",
   "model": "gpt-4o-mini",
   "stream": false,
   "upstream_status": 200,
   "answer_source": "scripted",
-  "action": "pass",
-  "would_action": "pass",
+  "action": "block",
+  "would_action": "block",
   "gate_status": "ok",
   "skip_reason": null,
-  "verdict": "supported",
-  "max_risk": 0.06,
-  "reasons": [],
+  "verdict": "unsupported",
+  "max_risk": 0.84,
+  "reasons": [
+    "groundedness:warn",
+    "det:urls_not_in_evidence"
+  ],
   "checked_against": {
     "configured": [
       "request_system",
-      "request_context",
       "tool_results",
       "extension"
     ],
@@ -32,76 +34,79 @@
         "source": "request_system",
         "items": 1,
         "labels": [
-          "refund-policy.md"
+          "password-reset.md"
         ],
-        "tokens": 23
+        "tokens": 33
       }
     ],
     "empty": [
-      "request_context",
       "tool_results",
       "extension"
     ],
     "knowledge": "not_requested",
     "truncated": false,
-    "tokens": 23
+    "tokens": 33
   },
   "timings": {
-    "upstream_ms": 163,
+    "upstream_ms": 211,
     "ttft_ms": null,
-    "gate_ms": 6,
-    "overhead_ms": 4,
-    "total_ms": 173
+    "gate_ms": 9,
+    "overhead_ms": 11,
+    "total_ms": 222
   },
   "decision_model": {
     "backend": "mock",
     "snapshot": "mock/jev-heuristic-v1",
-    "cost_usd": 0.000024276
+    "cost_usd": 0.000024696000000000002
   },
   "audit": {
-    "audit_id": "01a0e740-2285-7dd2-b48c-124c80e90701",
+    "audit_id": "01a0e7ac-01bf-75d2-95db-12ee540d62fc",
     "status": "completed",
-    "lane": "low",
-    "selection": "sample",
-    "verdict": "GROUNDED",
-    "trust_score": 1,
+    "lane": "high",
+    "selection": "high",
+    "verdict": "HALLUCINATED",
+    "trust_score": 0.5,
     "grade": null,
     "verdict_counts": {
-      "SUPPORTED": 2,
+      "SUPPORTED": 1,
       "PARTIALLY_SUPPORTED": 0,
       "CONTRADICTED": 0,
-      "UNSUPPORTED": 0,
+      "UNSUPPORTED": 1,
       "UNKNOWN": 0,
       "NOT_CHECKED": 0
     }
   },
-  "question_preview": "How long do I have to get a refund on an annual plan?",
-  "response_preview": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
+  "question_preview": "Where do I reset my password?",
+  "response_preview": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
   "redacted": false,
-  "flags": [],
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
   "body": {
     "available": true,
     "unavailable_reason": null,
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+        "content": "You are the Acme help-center assistant. Answer only from the articles below, and link only to pages they mention.\n\n<document id=\"password-reset.md\">To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.</document>"
       },
       {
         "role": "user",
-        "content": "How long do I have to get a refund on an annual plan?"
+        "content": "Where do I reset my password?"
       }
     ],
-    "user_request": "How long do I have to get a refund on an annual plan?",
-    "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
-    "response_text": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
-    "final_response_text": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
+    "user_request": "Where do I reset my password?",
+    "system_instructions": "You are the Acme help-center assistant. Answer only from the articles below, and link only to pages they mention.",
+    "response_text": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
+    "final_response_text": "I can't verify that answer against our help articles, so I've held it back.",
     "evidence": [
       {
-        "id": "refund-policy.md",
+        "id": "password-reset.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "password-reset.md",
+        "text": "To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.",
         "truncated": false
       }
     ],
@@ -111,26 +116,29 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e740-21d8-71a7-a932-b0bf535b4983",
+      "trace_id": "01a0e7ac-00e1-7f44-9b27-b19558fb9ec7",
       "attempt": 0,
-      "created_at": "2026-09-28T09:02:15.173Z",
-      "route": "support-bot",
+      "created_at": "2026-09-28T11:00:04.669Z",
+      "route": "help-center",
       "policy_version": 1,
-      "mode": "flag",
+      "mode": "block",
       "fail": "open",
       "status": "ok",
       "skip_reason": null,
-      "effective_mode": "flag",
-      "action": "pass",
-      "would_action": "pass",
+      "effective_mode": "block",
+      "action": "block",
+      "would_action": "block",
       "enforced": true,
-      "verdict": "supported",
-      "max_risk": 0.06,
+      "verdict": "unsupported",
+      "max_risk": 0.84,
       "calibration": "none",
       "degraded": null,
       "disagreement": false,
-      "deep_audit": "sample",
-      "reasons": [],
+      "deep_audit": "high",
+      "reasons": [
+        "groundedness:warn",
+        "det:urls_not_in_evidence"
+      ],
       "evaluators": {
         "groundedness@1": {
           "ref": "groundedness@1",
@@ -141,16 +149,16 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.06
+            "noul": 0.84
           },
           "probabilities": null,
-          "risk_raw": 0.06,
-          "risk": 0.06,
+          "risk_raw": 0.84,
+          "risk": 0.84,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
-          "level": "ok",
+          "level": "warn",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
@@ -173,14 +181,14 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.03
+            "noul": 0.1
           },
           "probabilities": null,
-          "risk_raw": 0.03,
-          "risk": 0.03,
+          "risk_raw": 0.1,
+          "risk": 0.1,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "ok",
           "capped": null,
@@ -213,8 +221,14 @@
         {
           "id": "urls_not_in_evidence",
           "ran": true,
-          "fired": false,
-          "findings": []
+          "fired": true,
+          "findings": [
+            {
+              "text": "https://acme.example/reset-password",
+              "start": 5,
+              "end": 40
+            }
+          ]
         },
         {
           "id": "quotes_not_in_evidence",
@@ -249,10 +263,10 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 4,
+        "latency_ms": 8,
         "connect_ms": null,
-        "input_tokens": 578,
-        "cost_usd": 0.000024276,
+        "input_tokens": 588,
+        "cost_usd": 0.000024696000000000002,
         "cost_source": "simulated"
       },
       "compile": {
@@ -260,20 +274,19 @@
         "requests": 1,
         "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
         "request_sha256": [
-          "c22837e2468927d0ed469f6e8a201194c9ad72d4a2cfb710e87e78bb6cc785e0"
+          "c1d4f8f9ce91a1dc1d531b1e09f0832e56952e0d8a384a8e9f709fe1c8827730"
         ],
         "packed_evidence_ids": [
-          "refund-policy.md"
+          "password-reset.md"
         ],
         "truncated_ids": [],
         "est_tokens": [
-          578
+          588
         ]
       },
       "evidence_summary": {
         "configured": [
           "request_system",
-          "request_context",
           "tool_results",
           "extension"
         ],
@@ -282,46 +295,33 @@
             "source": "request_system",
             "items": 1,
             "labels": [
-              "refund-policy.md"
+              "password-reset.md"
             ],
-            "tokens": 23
+            "tokens": 33
           }
         ],
         "empty": [
-          "request_context",
           "tool_results",
           "extension"
         ],
         "knowledge": "not_requested",
         "truncated": false,
-        "tokens": 23
+        "tokens": 33
       },
       "late": false,
-      "gate_ms": 6
+      "gate_ms": 9
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e740-2285-7dd2-b48c-124c80e90701",
-    "trace_id": "01a0e740-21d8-71a7-a932-b0bf535b4983",
-    "created_at": "2026-09-28T09:02:15.173Z",
-    "route": "support-bot",
+    "audit_id": "01a0e7ac-01bf-75d2-95db-12ee540d62fc",
+    "trace_id": "01a0e7ac-00e1-7f44-9b27-b19558fb9ec7",
+    "created_at": "2026-09-28T11:00:04.671Z",
+    "route": "help-center",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "GROUNDED",
-    "not_assessed_reason": null,
-    "trust_score": 1,
     "grade": null,
-    "hallucination_detected": false,
-    "verdict_counts": {
-      "SUPPORTED": 2,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 0,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
-    "processing_ms": 1089,
+    "processing_ms": 1348,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -332,105 +332,25 @@
       "healthy": true,
       "credential_source": "none"
     },
-    "gate_action": "pass",
-    "selection": "sample",
+    "gate_action": "block",
+    "selection": "high",
     "inclusion_prob": 1,
-    "query_preview": "How long do I have to get a refund on an annual plan?",
+    "query_preview": "Where do I reset my password?",
     "redacted": false,
-    "user_query": "How long do I have to get a refund on an annual plan?",
-    "llm_response": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
-    "claims": [
-      {
-        "index": 0,
-        "claim": "Annual plans can be refunded within 30 days of purchase.",
-        "status": "SUPPORTED",
-        "confidence": 0.97,
-        "evidence": [
-          "Annual plans can be refunded within 30 days of purchase."
-        ],
-        "reasoning": "The refund policy gives the same 30-day window for annual plans.",
-        "decided_by": "llm",
-        "verdict_probabilities": {},
-        "probability_source": "llm_confidence",
-        "span": {
-          "start": 0,
-          "end": 65,
-          "method": "exact"
-        },
-        "quote": "You can get a refund on an annual plan within 30 days of purchase",
-        "evidence_spans": [
-          {
-            "doc_index": 0,
-            "doc_id": "refund-policy.md",
-            "start": 0,
-            "end": 56,
-            "text": "Annual plans can be refunded within 30 days of purchase.",
-            "kind": "quote_verified"
-          }
-        ]
-      },
-      {
-        "index": 1,
-        "claim": "Monthly plans are non-refundable.",
-        "status": "SUPPORTED",
-        "confidence": 0.98,
-        "evidence": [
-          "Monthly plans are non-refundable."
-        ],
-        "reasoning": "The refund policy states that monthly plans are non-refundable.",
-        "decided_by": "llm",
-        "verdict_probabilities": {},
-        "probability_source": "llm_confidence",
-        "span": {
-          "start": 67,
-          "end": 99,
-          "method": "exact"
-        },
-        "quote": "Monthly plans are non-refundable",
-        "evidence_spans": [
-          {
-            "doc_index": 0,
-            "doc_id": "refund-policy.md",
-            "start": 57,
-            "end": 90,
-            "text": "Monthly plans are non-refundable.",
-            "kind": "quote_verified"
-          }
-        ]
-      }
-    ],
-    "scores": {
-      "trust_score": 1,
-      "faithfulness": 1,
-      "contradiction_rate": 0,
-      "unverified_rate": 0,
-      "coverage": 1,
-      "accuracy_addressed": 1,
-      "max_contradiction": 0,
-      "p_hallucinated": null,
-      "claims_total": 2,
-      "claims_decided": 2,
-      "claims_unknown": 0
-    },
+    "user_query": "Where do I reset my password?",
+    "llm_response": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
     "degraded_reasons": [],
     "error": null,
-    "reasoning_trace": "",
-    "step_timings": {
-      "decompose": 408,
-      "verify": 661,
-      "score": 20
-    },
     "gate": {
-      "action": "pass",
-      "would_action": "pass",
-      "verdict": "supported",
-      "max_risk": 0.06,
-      "delivered": "original"
+      "action": "block",
+      "would_action": "block",
+      "verdict": "unsupported",
+      "max_risk": 0.84,
+      "delivered": "blocked"
     },
     "evidence_summary": {
       "configured": [
         "request_system",
-        "request_context",
         "tool_results",
         "extension"
       ],
@@ -439,31 +359,111 @@
           "source": "request_system",
           "items": 1,
           "labels": [
-            "refund-policy.md"
+            "password-reset.md"
           ],
-          "tokens": 23
+          "tokens": 33
         }
       ],
       "empty": [
-        "request_context",
         "tool_results",
         "extension"
       ],
       "knowledge": "not_requested",
       "truncated": false,
-      "tokens": 23
+      "tokens": 33
     },
     "context_used": [
       {
-        "id": "refund-policy.md",
+        "id": "password-reset.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "password-reset.md",
+        "text": "To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.",
         "truncated": false
       }
     ],
-    "unsupported_policy": "hallucination",
     "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0.5,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "The password can be reset at https://acme.example/reset-password.",
+        "status": "UNSUPPORTED",
+        "confidence": 0.9,
+        "evidence": [],
+        "reasoning": "The article links to https://acme.example/account/security, not to this page.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 0,
+          "end": 61,
+          "method": "exact"
+        },
+        "quote": "Open https://acme.example/reset-password and follow the steps",
+        "evidence_spans": []
+      },
+      {
+        "index": 1,
+        "claim": "The reset link expires after 1 hour.",
+        "status": "SUPPORTED",
+        "confidence": 0.97,
+        "evidence": [
+          "The reset link expires after 1 hour."
+        ],
+        "reasoning": "The article gives the same expiry.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 63,
+          "end": 98,
+          "method": "exact"
+        },
+        "quote": "The reset link expires after 1 hour",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "password-reset.md",
+            "start": 94,
+            "end": 130,
+            "text": "The reset link expires after 1 hour.",
+            "kind": "quote_verified"
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "trust_score": 0.5,
+      "faithfulness": 0.5,
+      "contradiction_rate": 0,
+      "unverified_rate": 0.5,
+      "coverage": 0.5,
+      "accuracy_addressed": 1,
+      "max_contradiction": 0,
+      "p_hallucinated": null,
+      "claims_total": 2,
+      "claims_decided": 2,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 464,
+      "verify_ms": 864,
+      "score_ms": 20,
+      "total_ms": 1348
+    },
+    "unsupported_policy": "hallucination",
     "costs": [
       {
         "component": "decompose",
@@ -474,7 +474,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 408,
+        "latency_ms": 464,
         "status": "ok",
         "questions": 0
       },
@@ -487,7 +487,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 661,
+        "latency_ms": 864,
         "status": "ok",
         "questions": 0
       }

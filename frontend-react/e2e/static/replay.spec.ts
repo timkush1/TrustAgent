@@ -27,16 +27,26 @@ test.describe('replay', () => {
     await expect(banner.locator('[data-recording-label]')).toHaveText(MOCK_LABEL);
     await expect(page.locator('[data-banner]')).toHaveCount(1);
 
-    const rows = page.getByRole('table', { name: 'Requests' }).locator('[role="row"][data-trace-id]');
+    const table = page.getByRole('table', { name: 'Requests' });
+    const rows = table.locator('[role="row"][data-trace-id]');
     await expect(rows.first()).toBeVisible();
     await expect(page.locator('[data-replay-status="finished"]')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('[data-replay-status="finished"]')).toContainText(`Replay finished · ${traces} requests`);
-    await expect(rows).toHaveCount(traces);
+    // The table renders a window of its rows and loads the next page on scroll; once every page is
+    // in, its row count covers every request (plus the header row).
+    const everyRequestListed = async () => {
+      await expect(async () => {
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await expect(table).toHaveAttribute('aria-rowcount', String(traces + 1), { timeout: 1_000 });
+      }).toPass({ timeout: 20_000 });
+      await page.evaluate(() => window.scrollTo(0, 0));
+    };
+    await everyRequestListed();
 
     // Replay again plays the live part of the tape once more.
     await page.getByRole('button', { name: 'Replay the recorded traffic again' }).click();
     await expect(page.locator('[data-replay-status="finished"]')).toBeVisible({ timeout: 30_000 });
-    await expect(rows).toHaveCount(traces);
+    await everyRequestListed();
     expect(await seriousViolations(page), 'replay Traffic').toEqual([]);
   });
 
@@ -83,7 +93,16 @@ test.describe('replay', () => {
     await expect(page.getByRole('main').getByText('make demo')).toBeVisible();
 
     await page.goto('app/playground/');
-    await expect(page.getByRole('list', { name: 'Example requests' }).getByRole('listitem')).toHaveCount(3);
+    // One example per outcome: a short tour of what the gateway does.
+    const examples = page.getByRole('list', { name: 'Example requests' }).getByRole('listitem');
+    await expect(examples).toHaveCount(5);
+    expect(await examples.locator('[data-outcome]').evaluateAll((els) => els.map((el) => el.getAttribute('data-outcome')))).toEqual([
+      'passed',
+      'flagged',
+      'not_checked',
+      'would_block',
+      'blocked',
+    ]);
 
     await nav.getByRole('link', { name: 'Run it yourself' }).click();
     await expect(page).toHaveURL(/\/TrustAgent\/#self-host$/);

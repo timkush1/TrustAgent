@@ -1,9 +1,11 @@
 /**
- * The committed simulated recording (demo-data/simulated, served at demo/; D110) served by a fake fetch, as the static site
- * serves it, plus a manual clock for the replay player.
+ * The committed simulated recording (demo-data/simulated, served at demo/; D110) served by a fake
+ * fetch, as the static site serves it, the traces of each demo scenario by scenario id (never by
+ * position: the tape grows with the scenario pack), and a manual clock for the replay player.
  */
 import type { ReplayClock } from '@/data/replay/player';
-import type { Recording } from '@/types/api';
+import { DEFAULT_BUILD_OPTIONS, traceSeed, uuidv7 } from '@/data/replay/recorder';
+import type { Recording, TraceDetail, TraceSummary } from '@/types/api';
 
 const files = import.meta.glob<string>('../../demo-data/simulated/**/*.json', { query: '?raw', import: 'default', eager: true });
 // A moved or emptied directory must fail loudly, not serve an empty recording (D110).
@@ -16,6 +18,32 @@ export const RECORDING_FILES: Readonly<Record<string, string>> = Object.fromEntr
 
 export function committedManifest(): Recording {
   return JSON.parse(RECORDING_FILES['manifest.json']) as Recording;
+}
+
+/**
+ * The committed traces of a demo scenario (contracts/demo/scenarios.v1.json id), oldest first: one
+ * per round. A trace's id carries its scenario's seed (the recorder's traceSeed) in its random
+ * bits, so the lookup needs no position and no text match. Empty for a scenario the tape skips.
+ */
+export function scenarioTraces(scenarioId: string, manifest: Recording = committedManifest()): TraceSummary[] {
+  const tails = new Set<string>();
+  for (let round = 0; round < DEFAULT_BUILD_OPTIONS.rounds; round += 1) tails.add(uuidv7(0, traceSeed(scenarioId, round)).slice(13));
+  return manifest.traces.filter((t) => tails.has(t.trace_id.slice(13)));
+}
+
+/** A scenario's trace in one round (default the first); throws when the tape does not have it. */
+export function scenarioTrace(scenarioId: string, round = 0, manifest: Recording = committedManifest()): TraceSummary {
+  const tail = uuidv7(0, traceSeed(scenarioId, round)).slice(13);
+  const found = manifest.traces.find((t) => t.trace_id.slice(13) === tail);
+  if (!found) throw new Error(`the committed recording has no round-${round} trace of scenario ${scenarioId}`);
+  return found;
+}
+
+/** A committed trace file (traces/<id>.json). */
+export function committedDetail(traceId: string): TraceDetail {
+  const text = RECORDING_FILES[`traces/${traceId}.json`];
+  if (text === undefined) throw new Error(`the committed recording has no traces/${traceId}.json`);
+  return JSON.parse(text) as TraceDetail;
 }
 
 export interface RecordingFetch {
