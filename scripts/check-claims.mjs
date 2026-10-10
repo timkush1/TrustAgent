@@ -252,14 +252,17 @@ function anchorLine(lines, anchor) {
   return -1;
 }
 
-/** A regex for a caveat; `{name}` placeholders (the run's machine, say) match any text. */
+/**
+ * A regex for a caveat, case-insensitive so it can sit mid-sentence; `{name}` placeholders (the
+ * run's machine, say) match any text.
+ */
 function caveatPattern(caveat) {
   const parts = normalize(caveat)
     .split(/\{[a-z_]+\}/)
     .map((p) => p.trim())
     .filter(Boolean)
     .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp(parts.join('[\\s\\S]*?'));
+  return new RegExp(parts.join('[\\s\\S]*?'), 'i');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -948,6 +951,11 @@ const CASES = [
   {
     name: 'caveat within three lines, wrapped, passes',
     files: { 'README.md': ['<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party]', '', 'Latency depends on', 'region and load.'].join('\n') },
+    expect: [],
+  },
+  {
+    name: 'a caveat may sit mid-sentence, lowercase',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party], though latency depends on region and load.' },
     expect: [],
   },
   {

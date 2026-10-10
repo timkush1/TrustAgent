@@ -6,7 +6,48 @@ TrustAgent 2.0 turns the async auditor into a **hallucination gateway**: a fast
 Jev decision check on every answer, per-route policies, pluggable evidence (no
 RAG by default), Evaluator Studio, and a redesigned dashboard. The full
 specification is [docs/v2/SPEC.md](docs/v2/SPEC.md); progress is tracked by
-phase (P0 → P7).
+phase (P0 → P7) in [docs/PLAN.md](docs/PLAN.md), and the reasons behind the big
+choices are ADR-005 to ADR-010 in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+### Upgrading from 1.x: every breaking change at a glance
+Details follow in the per-phase sections and under *Migration notes*.
+- **Metric names.** The engine exports `trustagent_engine_*` and the gateway
+  `trustagent_gateway_*`; every Grafana query filters by `job` (table under
+  *Breaking changes (P3)*).
+- **WebSocket v2 only.** `GET /ws?protocol=2` with the v2 events; the 1.0
+  `audit_result` frames and `/api/audits` shape are gone.
+- **The gateway's key travels in `X-TrustAgent-Key`.** 1.0 read its own key from
+  `Authorization`, the header provider SDKs fill with the upstream key (bug B1).
+  2.0 reads `X-TrustAgent-Key` first; `Authorization` and `x-api-key` go upstream
+  untouched unless the gateway injects its own upstream key (inject mode, where a
+  proxy key in the SDK's key slot is accepted). Cross-origin browsers may send only
+  `X-TrustAgent-Key` (*Breaking changes (P4)*).
+- **Test mode is off by default.** `test_response` and `X-TrustAgent-Scenario` are
+  honoured only with `TRUTHTABLE_TEST_MODE=true` (1.0 honoured them on every
+  request, M7); otherwise `/v1` answers 400 `test_mode_disabled`. `make demo` and
+  the e2e stack set it.
+- **`VITE_TRUTHTABLE_API_KEY` is removed.** The dashboard bundle carries no key;
+  it signs in with a session (the one-time setup link creates the first admin
+  key). Delete the variable from your build environment.
+- **`/health` is liveness only.** It always answers 200
+  `{status, version, demo, audit_engine}`, with `audit_engine` from a cached real
+  gRPC ping (1.0 reported only that a client existed). Readiness is
+  `/health/ready` (`?strict=1` answers 503 until ready); component detail is
+  `/api/status` for signed-in users.
+- **Ingest keys are required by default.** `TRUTHTABLE_INGEST_AUTH=keys`: `/v1`
+  traffic needs a key with the `ingest` scope (the setup wizard mints one;
+  `scripts/configure.py --ensure` mints the traffic generator's). `open` must be
+  set explicitly and is refused while the gateway injects an upstream key.
+- **The compose service `audit-engine` is now `engine`** (and so is its Prometheus
+  job). Services set no `container_name`: use `docker compose exec engine …`.
+- **Ports bind to `127.0.0.1`.** Every published port binds
+  `${BIND_ADDR:-127.0.0.1}`; set `BIND_ADDR=0.0.0.0` only behind a firewall.
+- **Images come from GHCR.** Compose names
+  `ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}`, tagged by
+  `TRUSTAGENT_VERSION`. On a release checkout `make up` and `make demo` pull them;
+  elsewhere they build from source as before. The `knowledge` profile builds its
+  engine locally: no knowledge image is published.
+- **No downgrade after migration 0002.** Back up the database before upgrading.
 
 ### Breaking changes (P4)
 - **CORS allows exactly the SPEC request headers (D43).** A cross-origin browser
@@ -356,6 +397,55 @@ phase (P0 → P7).
   `mock_judge` (Simulated, and out of the measured figures); Benchmarks renders
   in the static build; a cross-origin dashboard's live stream uses a WS ticket.
 
+### Added (P5: static site, landing, release tooling)
+- **Try it live in your browser.** The static site's Playground gains a `#live`
+  section below the replayed examples: the three showcase scenarios (a grounded
+  answer, the refund contradiction, a PII leak) or your own text, checked by Jev
+  with your own OpenRouter key. Connect (PKCE from the browser, through the static
+  `/connect/callback/` page) or paste a key; it stays in that tab's
+  `sessionStorage` for at most 2 hours (Forget key clears it) and is sent only to
+  openrouter.ai. Courtesy caps (`VITE_PLAYGROUND_MAX_CALLS`,
+  `VITE_PLAYGROUND_MAX_TOKENS`), a running cost, a dedicated screen for 402 (no
+  credits), and the same decision code as the gateway, pinned by the golden
+  vectors (PKCE vectors included).
+- **Evaluator Studio on the static site.** Templates, the editor, a test bench on
+  the browser Jev client, the free threshold what-if, quick calibration on labels
+  made in the page, Draft with AI through the browser key, and Copy JSON /
+  Download .json in place of Save; watching, dry-runs and activation point to
+  your own stack.
+- **Landing page.** A cost calculator pinned by the `cost` vectors, the comparison
+  table (each vendor cell dated and sourced, "Not yet verified" until the owner
+  reviews it), Try it, Write your own checks, "What Jev was asked" (the exact
+  request, rebuilt from the refund example), and self-hosting.
+- **Replay.** Simulated and recorded datasets (`VITE_DEMO_DATASET` `mock`,
+  `recorded` or `auto`, from `frontend-react/demo-data/`), a richer simulated
+  tape, the glass box rebuilt in the browser for replayed traces, the "scripted
+  showcase mix" caveat, a first-visit guide, and the `/og` social card (built only
+  for capture).
+- **Gateway tools.** The vendor-fault scenario pack (`make e2e-faults`),
+  `trafficgen --record`, the knowledge scenario run in process, published k6
+  overhead runs (`docs/benchmarks/load/`), Tier-0 benchmarks (`make bench-go`,
+  `make bench-go-smoke`) and `make jev-check`.
+- **Release tooling.** `scripts/bump_version.py` and `check_version.py` keep the
+  version and every mirror in step; multi-arch GHCR images with provenance, SBOMs
+  and build attestations (`release-images.yml`); the pull-based quickstart;
+  `pages.yml`, which builds on every push and deploys only once the owner turns
+  Pages on; `eval-live.yml`; workflows pinned to commit SHAs and linted
+  (`make lint-workflows`); `make record-demo` (a dry run unless `CONFIRM=1`);
+  `doctor.py` checks the environment, images and add-ons, with an opt-in
+  `--probe`; `make first-run` and the golden-path test.
+- **Honest-numbers check.** `scripts/check-claims.mjs` (`make check-claims`)
+  holds every `<!-- claim:ID -->` figure in the README and docs to
+  `contracts/claims/value-claims.v1.json`: its display, its label chip, its caveat
+  next to it, and measured values only from a measured run. `--write` regenerates
+  the measured-results tables; `--launch` refuses a simulated recording, an
+  unmeasured run, an unreviewed comparison cell or a missing social card.
+- **Docs and launch kit.** ADR-005 to ADR-010, phases 8–15 in
+  [docs/PLAN.md](docs/PLAN.md), and launch drafts in
+  [docs/launch/](docs/launch/) (social card spec, 60-second demo script, GitHub
+  metadata, a LinkedIn post with its figures left as placeholders until measured,
+  interview talking points, the launch checklist).
+
 ### Changed
 - **Security (P4 integration):** link-local and cloud-metadata addresses are
   refused at dial time, after DNS, by the upstream proxy, the decision-model
@@ -507,10 +597,10 @@ phase (P0 → P7).
   `TRUTHTABLE_DATA_DIR` on a persistent volume (compose does), or sessions end
   at every restart.
 
-## Unreleased — hardening & audit-quality pass
+## Post-1.0 hardening and audit-quality pass (released in 2.0.0)
 
-Foundation work making the system demo-ready and accurate before the Playground
-+ Settings feature (see [docs/PLAN.md](docs/PLAN.md)).
+Foundation work after 1.0 that made the system demo-ready and accurate before the
+2.0 work began; it was never released on its own (see [docs/PLAN.md](docs/PLAN.md)).
 
 ### Changed
 - **Audit judge now defaults to Anthropic Claude Haiku** (`claude-haiku-4-5`)
