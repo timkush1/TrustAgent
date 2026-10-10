@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The static build's evaluator reads (D107, SS-2): the built-in templates as the library, with the
+ * The static build's evaluator reads (D107): the built-in templates as the library, with the
  * routes each runs on from the recording's policy, details with the versions' hashes, and 404s for
  * anything the demo does not carry.
  */

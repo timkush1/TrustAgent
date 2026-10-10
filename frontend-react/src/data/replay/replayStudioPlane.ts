@@ -1,5 +1,5 @@
 /**
- * The static build's Studio plane (D107), owned by WEB-STUDIO: drafting through the tab's own
+ * The static build's Studio plane (D107), owned by Evaluator Studio: drafting through the tab's own
  * OpenRouter key, the test bench through the browser gate (runGate), samples from the tape and the
  * local quick calibration; the dry run stays unavailable. The work lives in
  * lib/studio/staticPlane.ts, loaded the first time a Studio action runs, so the drafter, its prompt,

@@ -1,5 +1,5 @@
 /**
- * The static build's evaluator reads (D107), owned by WEB-STUDIO: the built-in templates as the
+ * The static build's evaluator reads (D107), owned by Evaluator Studio: the built-in templates as the
  * library, with the routes each runs on from the recording's policy (lib/studio/staticRegistry.ts,
  * loaded the first time a page asks, so the templates stay out of the replay's own chunk).
  */

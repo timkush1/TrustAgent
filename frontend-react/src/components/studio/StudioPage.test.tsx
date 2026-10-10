@@ -3,7 +3,7 @@
  * draft with AI, review with live lints, the test bench (estimate first, results, free what-if),
  * quick calibration gating, saving (new check, next version, 412), save and watch on a route through
  * the policy review dialog, and "Test on past traffic" (the D82 confirmation, SSE progress, cancel).
- * The evaluator writes are spied on the data source: their plane belongs to WEB-EV.
+ * The evaluator writes are spied on the data source: their plane is not Studio's.
  */
 import { EditorView } from '@codemirror/view';
 import { act, configure, fireEvent, screen, waitFor, within } from '@testing-library/react';

@@ -17,11 +17,7 @@ const humanize = (id: string) => humanizeId(id.replace(/^det:/, ''));
 
 export type StudioSampleFilter = StudioSamplesRequest['filter'];
 
-const SAMPLE_FILTERS: Record<StudioSampleFilter, { label: string; description: string }> = {
-  flagged: { label: 'Flagged answers', description: 'Answers the fast check flagged or blocked' },
-  random: { label: 'Random answers', description: 'A random sample of recent answers' },
-  disagreement: { label: 'Disagreements', description: 'Answers where the fast check and the deep audit disagreed' },
-};
+const SAMPLE_FILTERS: Record<StudioSampleFilter, { label: string; description: string }> = copy.studio.sample_filters;
 
 export const STUDIO_SAMPLE_FILTERS = Object.keys(SAMPLE_FILTERS) as StudioSampleFilter[];
 
@@ -69,15 +65,15 @@ export function studioFireWords(fires: boolean | null, status: EvaluatorResultSt
 export function studioAgreementWords(agrees: boolean | null): StudioRowView | null {
   if (agrees === null) return null;
   return agrees
-    ? { label: 'Matches your label', icon: CircleCheck, tone: 'success' }
-    : { label: "Doesn't match", icon: CircleX, tone: 'danger' };
+    ? { label: copy.studio.agreement.matches, icon: CircleCheck, tone: 'success' }
+    : { label: copy.studio.agreement.differs, icon: CircleX, tone: 'danger' };
 }
 
 /** A label the viewer gives a sample. */
 export function studioExpectedWords(expected: 'fire' | 'no_fire' | undefined | null): string {
-  if (expected === 'fire') return 'Should fire';
-  if (expected === 'no_fire') return "Shouldn't fire";
-  return 'Not labelled';
+  if (expected === 'fire') return copy.studio.expected.fire;
+  if (expected === 'no_fire') return copy.studio.expected.no_fire;
+  return copy.studio.expected.none;
 }
 
 
@@ -86,13 +82,7 @@ const WINDOWS: Record<string, string> = { '1h': 'hour', '24h': '24 h', '7d': '7 
 // ---------------------------------------------------------------------------- readable question
 
 /** What each part of the request a question can name is, in the Simple tab's words. */
-const STATE_WORDS: Record<string, string> = {
-  assistant_response: 'your model’s answer',
-  user_request: 'the user’s message',
-  evidence: 'your documents',
-  system_instructions: 'your system prompt',
-  rules: 'the check’s settings',
-};
+const STATE_WORDS: Readonly<Record<string, string>> = copy.studio.state_words;
 
 /** A question split into its words and the names it points at, each name with its readable label. */
 export type StudioQuestionPart = { kind: 'text'; text: string } | { kind: 'name'; raw: string; label: string };
@@ -185,7 +175,7 @@ export function studioDryRunConfirmText(d: { estimate_usd: number; samples: numb
   const values = { estimate: formatUsd(d.estimate_usd), samples: formatCount(d.samples), population: formatCount(d.population) };
   if (d.decision_budget_left_usd !== null) return fillTemplate(copy.studio.dry_run_confirm, { ...values, budget_left: formatUsd(d.decision_budget_left_usd) });
   const sentences = copy.studio.dry_run_confirm.split(/(?<=\.)\s+/).filter((sentence) => !sentence.includes('{budget_left}'));
-  return `${fillTemplate(sentences.join(' '), values)} No daily fast-check budget is set.`;
+  return `${fillTemplate(sentences.join(' '), values)} ${copy.studio.no_budget_set}`;
 }
 
 /** The window of a dry run in words ("24 h", "7 days"). */
@@ -207,38 +197,36 @@ export function studioSaveAndWatchLabel(route: string): string {
 export function studioCostLabel(source: CostRecord['cost_source']): { label: ValueLabel; basis: string } | null {
   switch (source) {
     case 'reported':
-      return { label: 'vendor', basis: 'As the provider reported it for this call.' };
+      return { label: 'vendor', basis: copy.studio.cost_basis.reported };
     case 'computed':
-      return { label: 'estimate', basis: "Tokens × the price table's price for this model." };
+      return { label: 'estimate', basis: copy.studio.cost_basis.computed };
     case 'simulated':
-      return { label: 'simulated', basis: 'A mock model answered; nothing was billed.' };
+      return { label: 'simulated', basis: copy.studio.cost_basis.simulated };
     case 'free_local':
-      return { label: 'estimate', basis: 'A local model: no API fee (compute is not priced).' };
+      return { label: 'estimate', basis: copy.studio.cost_basis.free_local };
     default:
       return null;
   }
 }
 
 /** What a test bench run on the mock fast check can and cannot tell. */
-export const STUDIO_SIMULATED_TEST =
-  "Simulated: the demo's mock fast check knows only the drafted example's own samples. It answers your own samples and edited questions arbitrarily, so those matches say nothing about your check. Connect a key to test it for real.";
+export const STUDIO_SIMULATED_TEST = copy.studio.simulated_test;
 
 /** What a dry run on the mock fast check can and cannot tell. */
-export const STUDIO_SIMULATED_DRY_RUN =
-  "Simulated: the demo's mock fast check answers questions about past traffic arbitrarily, except that a check about a list of names (such as competitors) fires only on answers that name one, so this count says little about your check. Connect a key to test it for real.";
+export const STUDIO_SIMULATED_DRY_RUN = copy.studio.simulated_dry_run;
 
 /** copy.studio.dry_run on a mock fast check, where nothing is billed. */
-export const STUDIO_DRY_RUN_SIMULATED_TITLE = 'Test on past traffic (simulated)';
+export const STUDIO_DRY_RUN_SIMULATED_TITLE = copy.studio.dry_run_simulated_title;
 
 /**
  * Which risk words this check uses from where: a level follows each check's own thresholds, so the
  * same 0.97 can be Elevated here and High on a check that blocks from 0.95.
  */
 export function riskLevelsLine(outcomes: { warn_at: number; critical_at?: number | null }): string {
-  const warn = `${levelWord('warn').label} from ${formatRisk(outcomes.warn_at)}`;
+  const levels = { warn_level: levelWord('warn').label, warn_at: formatRisk(outcomes.warn_at), critical_level: levelWord('critical').label };
   return typeof outcomes.critical_at === 'number'
-    ? `Risk words follow this check’s own thresholds: ${warn}, ${levelWord('critical').label} from ${formatRisk(outcomes.critical_at)}.`
-    : `Risk words follow this check’s own thresholds: ${warn}; it has no ${levelWord('critical').label} level.`;
+    ? fillTemplate(copy.studio.risk_levels.both, { ...levels, critical_at: formatRisk(outcomes.critical_at) })
+    : fillTemplate(copy.studio.risk_levels.warn_only, levels);
 }
 
 // ------------------------------------------------------------------------ static (browser) Studio
