@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { evaluatorMeta, evaluatorMetas, playgroundResult } from '@/test/control/fixtures';
+import { effectiveRoutes, evaluatorMeta, evaluatorMetas, playgroundResult, policyState } from '@/test/control/fixtures';
 import { createControlApi, errorReply } from '@/test/control/handlers';
 import { renderPage } from '@/test/control/renderPage';
 import { API, installMswServer, server } from '@/test/msw';
@@ -23,6 +23,12 @@ beforeEach(() => {
 });
 afterEach(() => stopLive());
 configure({ asyncUtilTimeout: 4000 });
+
+/** The fixture policy plus routes named `names` (copies of support-bot under another name). */
+function policyWithRoutes(...names: string[]) {
+  const base = effectiveRoutes();
+  return policyState({ effective_routes: [...base, ...names.map((name) => ({ ...base[0], name, match: { headers: { 'X-TrustAgent-Route': name } } }))] });
+}
 
 async function fillChat(user: ReturnType<typeof userEvent.setup>) {
   await user.type(await screen.findByRole('textbox', { name: 'Message 2' }), 'Can I get a refund after 45 days?');
@@ -95,6 +101,12 @@ describe('Playground model', () => {
     expect(withKnowledge.filter((id) => id !== 'knowledge-only-capped')).toEqual(ids);
     expect(playgroundExamples({ knowledge: true }).find((e) => e.id === 'knowledge-only-capped')?.form).toMatchObject({ mode: 'audit', route: 'handbook' });
     expect(playgroundExamples()).toBe(EXAMPLES);
+    // Served routes, once known, narrow the examples to them (CO-23); unknown routes leave them all.
+    expect(playgroundExamples({ knowledge: true, routes: ['support-bot'] }).every((e) => e.form.route === 'support-bot')).toBe(true);
+    expect(playgroundExamples({ knowledge: true, routes: ['support-bot'] }).map((e) => e.id)).not.toContain('knowledge-only-capped');
+    const everyRoute = [...new Set(playgroundExamples({ knowledge: true }).map((e) => e.form.route))];
+    expect(playgroundExamples({ knowledge: true, routes: everyRoute }).map((e) => e.id)).toEqual(withKnowledge);
+    expect(playgroundExamples({ knowledge: true, routes: null }).map((e) => e.id)).toEqual(withKnowledge);
     expect(EXAMPLES.find((e) => e.id === 'payments-fallback')?.form).toMatchObject({
       mode: 'audit',
       route: 'payments-faq',
@@ -397,11 +409,19 @@ describe('Playground page', { timeout: 20_000 }, () => {
     expect(control.callsTo('/api/playground/run')[0].body).not.toHaveProperty('scenario');
   });
 
-  it('offers the knowledge examples only while the knowledge add-on is on', async () => {
+  it('offers the knowledge examples only while the knowledge add-on is on and the policy serves their route', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/playground', { status: { knowledge: { state: 'up', enabled: true } }, control: createControlApi({ policies: policyWithRoutes('handbook') }) });
+    await user.click(await screen.findByRole('button', { name: 'Load an example' }));
+    expect(await screen.findByRole('menuitem', { name: 'Knowledge-base evidence only: capped at warn' })).toBeInTheDocument();
+  });
+
+  it('leaves out an example whose route the policy does not serve, even with the add-on on (CO-23)', async () => {
     const user = userEvent.setup();
     renderPage('/app/playground', { status: { knowledge: { state: 'up', enabled: true } } });
     await user.click(await screen.findByRole('button', { name: 'Load an example' }));
-    expect(await screen.findByRole('menuitem', { name: 'Knowledge-base evidence only: capped at warn' })).toBeInTheDocument();
+    await screen.findByRole('menuitem', { name: 'Refund window: 60 days vs 30 days' });
+    expect(screen.queryByRole('menuitem', { name: 'Knowledge-base evidence only: capped at warn' })).toBeNull();
   });
 
   it('leaves the knowledge examples out without the add-on', async () => {

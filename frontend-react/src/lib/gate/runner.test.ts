@@ -11,7 +11,7 @@ import { createUsageStore } from '@/lib/openrouter/usage';
 import { builtinSpecs, liveRoute, LIVE_POLICY } from './livePolicy';
 import { evidenceSummaryOf } from './playgroundResult';
 import { resolveRoute, specMap } from './route';
-import { GateRefusedError, NOOP_LEDGER, recordFailures, routeThresholds, runGate } from './runner';
+import { GateRefusedError, NOOP_LEDGER, prepareCheck, recordFailures, requestRules, resolveRules, routeThresholds, runGate } from './runner';
 import type { PolicyInput, ResolvedRoute, RunGateInput } from './types';
 
 interface PackScenario {
@@ -332,5 +332,87 @@ describe('runGate: route threshold overrides reach decide()', () => {
   it('the live policy is the one the recording was built with', () => {
     expect(LIVE_POLICY.routes?.map((r) => r.name)).toEqual(expect.arrayContaining(['support-bot', 'account-bot']));
     expect(routeThresholds(liveRoute('support-bot'))).toEqual({});
+  });
+});
+
+describe('runGate: the route rules reach the detectors and compile() (D151 b, D155)', () => {
+  const BILLING = {
+    allowed_commitments: 'Annual plans: refund within 30 days of purchase. No other refunds, credits or discounts.',
+    allowed_scope: 'Acme billing: invoices, payments, plans, refunds and credits.',
+  };
+  const withEvaluators = (route: ResolvedRoute, map: (e: ResolvedRoute['evaluators'][number]) => ResolvedRoute['evaluators'][number]): ResolvedRoute => ({
+    ...route,
+    evaluators: route.evaluators.map(map),
+  });
+
+  it.each(['commitment-unapproved-flag', 'off-topic-flag'])('%s (billing-bot) reproduces its expect block', async (id) => {
+    const s = scenario(id);
+    const { call } = fakeCall(s.mock_answers);
+    const r = await runGate(input(s, call));
+    const d = r.decision;
+    expect({ action: d.action, would_action: d.would_action, status: d.status, verdict: d.verdict, reasons: d.reasons, deep_audit: d.deep_audit }).toEqual({
+      action: s.expect.action,
+      would_action: s.expect.would_action,
+      status: s.expect.status,
+      verdict: s.expect.verdict,
+      reasons: s.expect.reasons,
+      deep_audit: s.expect.deep_audit,
+    });
+    // Raw scores (no calibration): the risk matches the scripted one to float precision.
+    expect(d.max_risk).toBeCloseTo(s.expect.max_risk!, 9);
+    // The rules are the reference text, so the number and date checks run without documents.
+    expect(r.detectors.find((x) => x.id === 'numbers_not_in_evidence')?.ran).toBe(true);
+    expect(r.detectors.find((x) => x.id === 'dates_not_in_evidence')?.ran).toBe(true);
+  });
+
+  it('a number the rules state is known; one they do not state fires', async () => {
+    const s = scenario('off-topic-flag');
+    const { call } = fakeCall(s.mock_answers);
+    const known = await runGate({ ...input(s, call), response: 'Annual plans can be refunded within 30 days.' });
+    expect(known.detectors.find((x) => x.id === 'numbers_not_in_evidence')).toMatchObject({ ran: true, fired: false });
+    const unknown = await runGate({ ...input(s, call), response: 'Annual plans can be refunded within 45 days.' });
+    expect(unknown.detectors.find((x) => x.id === 'numbers_not_in_evidence')).toMatchObject({ ran: true, fired: true });
+  });
+
+  it('resolves each param: the request value with client_rules, else the route value, else the spec default', () => {
+    const specs = builtinSpecs();
+    const billing = liveRoute('billing-bot');
+    expect(resolveRules(billing, specs, undefined)).toEqual(BILLING);
+    // client_rules off (the live policy): the request cannot change a param.
+    expect(billing.clientRules).toBe(false);
+    expect(resolveRules(billing, specs, { allowed_scope: 'Anything' })).toEqual(BILLING);
+    // client_rules on: the request wins, for the params it names only.
+    expect(resolveRules({ ...billing, clientRules: true }, specs, { allowed_scope: 'Anything', unrelated: 'x' })).toEqual({ ...BILLING, allowed_scope: 'Anything' });
+    // No route value: the spec default.
+    const bare = withEvaluators(billing, (e) => ({ ...e, params: undefined }));
+    expect(resolveRules(bare, specs, undefined)).toEqual({
+      allowed_commitments: specs.get('commitments@1')!.params.get('allowed_commitments')!.default,
+      allowed_scope: specs.get('off_topic@1')!.params.get('allowed_scope')!.default,
+    });
+    // A disabled evaluator contributes nothing; a route whose evaluators declare no params has none.
+    const offTopicOff = withEvaluators(billing, (e) => (e.ref === 'off_topic@1' ? { ...e, enabled: false } : e));
+    expect(resolveRules(offTopicOff, specs, undefined)).toEqual({ allowed_commitments: BILLING.allowed_commitments });
+    expect(resolveRules(liveRoute('support-bot'), specs, { allowed_scope: 'x' })).toEqual({});
+  });
+
+  it('reads only the string members of trustagent.rules (Go parseExtension)', () => {
+    expect(requestRules({ messages: [] })).toBeUndefined();
+    expect(requestRules({ trustagent: 'rules' })).toBeUndefined();
+    expect(requestRules({ trustagent: { rules: ['a'] } })).toBeUndefined();
+    expect(requestRules({ trustagent: { rules: { n: 3, b: true, o: {} } } })).toBeUndefined();
+    expect(requestRules({ trustagent: { rules: { allowed_scope: 'Billing', n: 3 } } })).toEqual({ allowed_scope: 'Billing' });
+    const proto = requestRules(JSON.parse('{"trustagent":{"rules":{"__proto__":"x"}}}'));
+    expect(proto && Object.hasOwn(proto, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(proto)).toBe(Object.prototype);
+  });
+
+  it("compile() reads the request's own rules, honoured only with client_rules (gate.go:422)", () => {
+    const s = scenario('off-topic-flag');
+    const request = { ...s.request, trustagent: { rules: { allowed_scope: 'Laptops and video editing.' } } };
+    const state = (route: ResolvedRoute) =>
+      prepareCheck({ route, specs: builtinSpecs(), request, response: s.response, apiFormat: 'openai_chat', maxTokens: 8000 }, 'typesafe/jev-1.13').compiled.requests[0].state;
+    const billing = liveRoute('billing-bot');
+    expect(state(billing).rules).toEqual(BILLING);
+    expect(state({ ...billing, clientRules: true }).rules).toEqual({ ...BILLING, allowed_scope: 'Laptops and video editing.' });
   });
 });

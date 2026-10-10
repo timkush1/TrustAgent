@@ -39,3 +39,13 @@ export function liveActionLabel(action: LiveErrorAction): string {
   if (action === 'check_again') return copy.playground_live.check_again;
   return copy.playground_live.actions[action];
 }
+
+/** "{n} of {max} calls to OpenRouter (checks and AI drafts)". */
+export function liveChecksUsed(n: number, max: number): string {
+  return fillTemplate(copy.playground_live.checks_used, { n: n.toLocaleString('en-US'), max: max.toLocaleString('en-US') });
+}
+
+/** "Live · {snapshot} · uncalibrated · your key". */
+export function liveResultLabel(snapshot: string): string {
+  return fillTemplate(copy.playground_live.live_label, { snapshot });
+}

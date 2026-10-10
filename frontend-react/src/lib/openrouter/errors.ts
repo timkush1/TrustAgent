@@ -281,6 +281,8 @@ export type LiveMessageId =
   | 'errors.too_large'
   | 'errors.moderation'
   | 'errors.bad_response'
+  | 'errors.bad_request'
+  | 'errors.not_found'
   | 'errors.network'
   | 'errors.timeout'
   | 'retry_busy'
@@ -349,11 +351,12 @@ export function liveErrorView(err: unknown): LiveErrorView {
     case 'too_large':
       return view(kind, 'errors.too_large', []);
     case 'bad_request':
-      // A refused request other than moderation (400/422) has no sentence of its own yet; it is a
-      // reply the page cannot use, so Retry is not offered (it would be refused again).
-      return d.moderation ? view(kind, 'errors.moderation', []) : view(kind, 'errors.bad_response', []);
+      // A refused request (400/422): moderation has its own sentence. Neither offers Retry, since
+      // the same request would be refused again (D157).
+      return d.moderation ? view(kind, 'errors.moderation', []) : view(kind, 'errors.bad_request', []);
     case 'not_found':
-      return view(kind, 'errors.bad_response', []);
+      // A 404 that is not the data-policy one: the model or the endpoint is gone (D157).
+      return view(kind, 'errors.not_found', []);
     case 'bad_content_type':
     case 'bad_response':
       return view(kind, 'errors.bad_response', ['retry']);

@@ -1,26 +1,30 @@
 /**
- * Playground in the static build (SPEC §7.5 "Static GitHub Pages demo"). Replay is the primary
+ * Playground in the static build (SPEC §7.5 "Static GitHub Pages demo"; D99). Replay is the primary
  * experience: the three example requests open their runs on the tape (simulated for a mock
- * recording, which the header says). Checking your own answers live
- * in the browser (your OpenRouter key, kept in this tab) arrives in P5, so it is described as coming
- * soon, with no control that pretends to work.
+ * recording, which the header says). Below them, the `#live` section runs the fast check from this
+ * tab with the visitor's own OpenRouter key (components/replay/live/LivePanel, loaded lazily so the
+ * live feature stays out of the app entry, D112). `scenario` preselects a live example and `paste`
+ * opens the consent dialog (routes/app/playground.tsx validates both).
  */
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Hourglass } from 'lucide-react';
-import { useMemo } from 'react';
+import { ArrowRight } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useDataSource } from '@/app/services';
-import { CodeBlock } from '@/components/common/CodeBlock';
 import { PageHeader } from '@/components/common/PageHeader';
 import { ErrorState, LoadingState } from '@/components/common/StateViews';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { tracesQuery } from '@/data/queries';
-import claimsDoc from '@contracts/claims/value-claims.v1.json';
-import { checkedAgainst, commandText, copy, fillTemplate, headlineReason, outcomeOf } from '@/domain/presentation';
+import type { LiveScenarioId } from '@/domain/liveScenarios';
+import { checkedAgainst, copy, headlineReason, outcomeOf } from '@/domain/presentation';
+import { liveText } from './live/liveText';
 import type { TraceSummary } from '@/types/api';
 import { distinctExamples } from './examples';
 import { useReplayInfo } from './useReplay';
+
+/** The live check (lazy: nothing of lib/openrouter, lib/gate or replay/live in the app entry, D112). */
+const LivePanel = lazy(() => import('./live/LivePanel'));
 
 function ExampleCard({ trace }: { trace: TraceSummary }) {
   const outcome = outcomeOf(trace);
@@ -53,29 +57,24 @@ function ExampleCard({ trace }: { trace: TraceSummary }) {
   );
 }
 
-/**
- * The consent lines' figures until the live Playground computes its own: the published per-check
- * estimate (value claim fast_check_cost_per_check, "~$0.0002 per check" shown as "$0.0002") and the
- * build's call cap (VITE_PLAYGROUND_MAX_CALLS, 100 by default). The contract's "[estimate]" tag is
- * shown as words, since this page has no chip for it.
- */
-const PER_CHECK = (
-  (claimsDoc.claims as readonly { id: string; display: string }[]).find((c) => c.id === 'fast_check_cost_per_check')?.display ?? ''
-)
-  .replace(/^~/, '')
-  .replace(/ per check$/, '');
-const MAX_CALLS = (import.meta.env.VITE_PLAYGROUND_MAX_CALLS as string | undefined) || '100';
-const CONSENT_LINES: readonly string[] = copy.playground_static.consent.map((line) =>
-  fillTemplate(line, { cost_per_check: PER_CHECK, max_calls: MAX_CALLS }).replace(/\s*\[estimate\]/g, ' (estimate)'),
-);
+export interface StaticPlaygroundProps {
+  /** `?scenario=`: the live example to preselect. */
+  scenario?: LiveScenarioId;
+  /** `?paste=1`: open the consent dialog on arrival. */
+  paste?: boolean;
+}
 
-export function StaticPlayground() {
+export function StaticPlayground({ scenario, paste = false }: StaticPlaygroundProps) {
   const ds = useDataSource();
   const q = useQuery(tracesQuery(ds, { limit: 200 }));
   const examples = useMemo(() => distinctExamples(q.data?.items ?? []), [q.data]);
   const showLoading = useDelayedLoading(q.isPending);
-  const demo = commandText('demo') ?? 'make demo';
   const simulated = useReplayInfo().kind === 'mock';
+
+  // A link to #live (the landing's "Try it live", the callback's way back) lands on the section.
+  useEffect(() => {
+    if (window.location.hash === '#live') document.getElementById('live')?.scrollIntoView({ block: 'start' });
+  }, []);
 
   let body;
   if (q.isPending) body = showLoading ? <LoadingState rows={3} /> : null;
@@ -105,32 +104,17 @@ export function StaticPlayground() {
         {body}
       </section>
 
-      <section aria-labelledby="live-title" className="max-w-3xl space-y-3 rounded-lg border border-dashed border-border-strong p-4">
-        <div className="flex flex-wrap items-center gap-2">
+      <section id="live" aria-labelledby="live-title" className="max-w-4xl scroll-mt-16 space-y-4 rounded-lg border border-border bg-surface p-4 sm:p-5">
+        <div className="space-y-1.5">
           <h2 id="live-title" className="text-base font-semibold text-fg">
-            Check your own answers, live in this tab
+            {liveText.section_title}
           </h2>
-          <span className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed border-border-strong px-2 text-xs font-medium text-fg-muted">
-            <Hourglass aria-hidden="true" className="size-3.5" />
-            Coming soon
-          </span>
+          <p className="text-sm text-fg-muted">{liveText.section_intro}</p>
+          {simulated ? <p className="text-xs text-fg-muted">{copy.playground_live.recording_is_simulated}</p> : null}
         </div>
-        <p className="text-sm text-fg-muted">
-          Connect your OpenRouter account and run the same checks on your own question, answer and documents, right here.
-          It is not switched on yet. When it is:
-        </p>
-        <ul className="space-y-1.5 text-sm text-fg">
-          {CONSENT_LINES.map((line) => (
-            <li key={line} className="flex gap-2">
-              <span aria-hidden="true" className="mt-2 size-1 shrink-0 rounded-full bg-fg-subtle" />
-              {line}
-            </li>
-          ))}
-        </ul>
-        <div className="space-y-2 pt-1">
-          <p className="text-sm text-fg">Until then, run everything locally. Docker only, no keys, $0:</p>
-          <CodeBlock code={demo} label="Start the demo stack" />
-        </div>
+        <Suspense fallback={<LoadingState rows={2} />}>
+          <LivePanel scenario={scenario} openConsent={paste} />
+        </Suspense>
       </section>
     </div>
   );
