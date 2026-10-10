@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"math"
@@ -332,6 +333,57 @@ func TestDemoScenariosEndToEnd(t *testing.T) {
 			ids := filepath.Join(t.TempDir(), "trace-ids.txt")
 			out := runScenarios(t, env, "demo", "--trace-ids-out", ids)
 			checkAnswerSources(t, env, out, ids, func(string) string { return "scripted" })
+		})
+	}
+}
+
+// TestRecordRefusesTheTestStacksFromTheirStatus: trafficgen --record reads the gateway's own GET
+// /api/status (D121), so its reading of that body is checked here against the real handler, not a
+// stub: both test stacks are refused before anything is sent, the demo stack for its mock
+// decision model and the e2e stack for its decision model on mock-upstream, a local endpoint the
+// gateway forwards each scenario id to (D119). No trace is started and no --trace-ids-out file is
+// written.
+func TestRecordRefusesTheTestStacksFromTheirStatus(t *testing.T) {
+	mu, err := mockupstream.New(mockupstream.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(mu)
+	t.Cleanup(upstream.Close)
+	for _, c := range []struct {
+		name string
+		tune func(*config.Config)
+		want string
+	}{
+		{"demo", nil, "the decision model is mock"},
+		{"e2e", func(cfg *config.Config) {
+			cfg.Jev.Backend, cfg.Jev.BaseURL, cfg.Jev.Path = jev.BackendCompatible, upstream.URL, "/v1/systemone"
+			cfg.Jev.APIKey, cfg.Jev.Model = "e2e-mock-upstream-key", "typesafe/jev-1.13"
+			cfg.UpstreamURL, cfg.AnthropicUpstreamURL = upstream.URL, upstream.URL
+		}, "answers from the local endpoint 127.0.0.1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			env := newScenarioEnv(t, c.tune)
+			ids := filepath.Join(t.TempDir(), "trace-ids.txt")
+			cmd := exec.Command(buildTrafficgen(t), "--record", "--scenarios", "s0", "--base-url", env.http.URL, "--trace-ids-out", ids)
+			cmd.Env = append(os.Environ(), "TRAFFICGEN_API_KEY="+testKey)
+			b, err := cmd.CombinedOutput()
+			out := string(b)
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 2 || !strings.Contains(out, "trafficgen: --record refused: ") ||
+				!strings.Contains(out, c.want) {
+				t.Fatalf("want a refusal naming %q (exit 2): %v\n%s", c.want, err, out)
+			}
+			m := env.store.(*memStore)
+			m.mu.Lock()
+			stored := len(m.traces)
+			m.mu.Unlock()
+			if stored != 0 {
+				t.Errorf("%d traces stored after a refusal", stored)
+			}
+			if _, err := os.Stat(ids); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("--trace-ids-out was written after a refusal: %v", err)
+			}
 		})
 	}
 }

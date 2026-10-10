@@ -245,8 +245,9 @@ the judge is the mock provider, and traces are written before the response retur
 takes the upstream path; `make e2e-down` removes the stack. A recording run (`trafficgen --record --upstream
 generated`, `make record-demo`) sends the generated scenarios to a real model: their answers have no
 expectations, so trafficgen only waits for each trace to settle, reports any other mismatch as drift without
-failing, and refuses a gateway whose decision model or judge is the mock or a fallback; `--trace-ids-out`
-lists the trace ids it started. Both targets send trafficgen's default phase (`p4`);
+failing, and refuses (exit 2, nothing sent) a gateway whose decision model or judge is the mock or a fallback,
+whose decision model answers from a local endpoint such as mock-upstream, or cannot answer (a rejected key, no
+credits, an open breaker); `--trace-ids-out` lists the trace ids it started. Both targets send trafficgen's default phase (`p4`);
 `DEMO_PHASE` and `E2E_PHASE` choose another.
 
 The pack (28 scenarios):

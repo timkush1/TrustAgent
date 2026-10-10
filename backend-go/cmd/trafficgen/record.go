@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+
+	"github.com/truthtable/backend-go/internal/jev"
 )
 
 // statusView is the part of GET /api/status (api.ts SystemStatus) a recording run reads.
@@ -26,14 +29,17 @@ type statusView struct {
 	} `json:"judge"`
 }
 
-// mockUpstreamHost is the e2e and load stacks' fake vendor (cmd/mock-upstream): a decision backend
-// on it is simulated, whatever its backend id says.
-const mockUpstreamHost = "mock-upstream"
+// recordableStates are the decision-model states (api.ts DecisionModelStatus.state) a recording run
+// accepts: the backend answers (ready, degraded) or its first check is still running (checking).
+// Every other state (breaker_open, unauthorized, no_credits, budget_exhausted, misconfigured,
+// unreachable, and mock or off) would leave the run's traces without a real decision.
+var recordableStates = []string{"ready", "degraded", "checking"}
 
 // recordable reads GET /api/status before a recording run (D121) and refuses a gateway whose
 // traffic could not be labelled recorded: one not in test mode (scripted answers go out as
-// test_response), a decision model that is the mock, off or mock-upstream, or a judge that is not
-// up, is the mock (or none) or runs on its fallback. export-replay applies the same rules to the
+// test_response), a decision model that is the mock or off, answers from a local endpoint such as
+// mock-upstream, or is in no state to answer, or a judge that is not up, is the mock (or none) or
+// runs on its fallback. export-replay applies the same rules to the
 // traces; checking first refuses the run before it spends anything.
 func (g *generator) recordable(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.opts.baseURL+"/api/status", nil)
@@ -53,7 +59,7 @@ func (g *generator) recordable(ctx context.Context) error {
 		return fmt.Errorf("GET /api/status: HTTP %d: %s", resp.StatusCode, snippet(body))
 	}
 	var st statusView
-	if err := json.Unmarshal(body, &st); err != nil || st.TestMode == nil || st.DecisionModel.Backend == "" {
+	if err := json.Unmarshal(body, &st); err != nil || st.TestMode == nil || st.DecisionModel.Backend == "" || st.DecisionModel.State == "" {
 		return errors.New("GET /api/status did not answer a gateway status")
 	}
 	return st.recordProblems()
@@ -69,8 +75,12 @@ func (st *statusView) recordProblems() error {
 	switch {
 	case dm.Backend == "mock" || dm.Backend == "off" || dm.State == "mock" || dm.State == "off":
 		problems = append(problems, fmt.Sprintf("the decision model is %s, not a real backend", dm.Backend))
-	case dm.EndpointHost != nil && strings.EqualFold(*dm.EndpointHost, mockUpstreamHost):
-		problems = append(problems, "the decision model answers from mock-upstream, whose answers are simulated")
+	case dm.EndpointHost != nil && jev.LocalHost(*dm.EndpointHost):
+		// In test mode the gateway forwards each scenario id to a local endpoint (D119), such as
+		// mock-upstream, which answers by script.
+		problems = append(problems, fmt.Sprintf("the decision model answers from the local endpoint %s, which gets each scenario id in test mode, so its answers are simulated", *dm.EndpointHost))
+	case !slices.Contains(recordableStates, dm.State):
+		problems = append(problems, fmt.Sprintf("the decision model is %s, so it cannot answer the run's checks", dm.State))
 	}
 	j := st.Judge
 	provider := ""

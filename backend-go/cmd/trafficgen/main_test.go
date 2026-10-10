@@ -614,11 +614,11 @@ func TestTraceIDsOut(t *testing.T) {
 }
 
 // recordableStatus is a GET /api/status body a recording run accepts: test mode, a real decision
-// backend, and a judge that is up on its configured provider.
+// backend that is ready, and a judge that is up on its configured provider.
 func recordableStatus() map[string]any {
 	return map[string]any{
 		"test_mode":      true,
-		"decision_model": map[string]any{"backend": "openrouter-decisions", "state": "up", "endpoint_host": "openrouter.ai"},
+		"decision_model": map[string]any{"backend": "openrouter-decisions", "state": "ready", "endpoint_host": "openrouter.ai"},
 		"judge":          map[string]any{"state": "up", "provider": "openrouter", "fallback_active": false, "fallback_reason": nil},
 	}
 }
@@ -685,16 +685,26 @@ func TestRecordRefusesASimulatedGateway(t *testing.T) {
 		"mock decision model": {func(st map[string]any) { st["decision_model"] = map[string]any{"backend": "mock", "state": "mock"} }, "the decision model is mock"},
 		"decision model off":  {func(st map[string]any) { st["decision_model"] = map[string]any{"backend": "off", "state": "off"} }, "the decision model is off"},
 		"mock-upstream": {func(st map[string]any) {
-			st["decision_model"] = map[string]any{"backend": "compatible", "state": "up", "endpoint_host": "mock-upstream"}
-		}, "answers from mock-upstream"},
-		"mock judge": {func(st map[string]any) { st["judge"].(map[string]any)["provider"] = "mock" }, "the judge is the mock"},
-		"no judge":   {func(st map[string]any) { st["judge"].(map[string]any)["provider"] = nil }, "the deep audit has no judge"},
+			st["decision_model"] = map[string]any{"backend": "compatible", "state": "ready", "endpoint_host": "mock-upstream"}
+		}, "answers from the local endpoint mock-upstream, which gets each scenario id in test mode"},
+		"localhost": {func(st map[string]any) {
+			st["decision_model"] = map[string]any{"backend": "compatible", "state": "ready", "endpoint_host": "localhost"}
+		}, "answers from the local endpoint localhost"},
+		"loopback": {func(st map[string]any) {
+			st["decision_model"] = map[string]any{"backend": "typesafe", "state": "ready", "endpoint_host": "127.0.0.1"}
+		}, "answers from the local endpoint 127.0.0.1"},
+		"rejected key": {func(st map[string]any) { st["decision_model"].(map[string]any)["state"] = "unauthorized" }, "the decision model is unauthorized, so it cannot answer"},
+		"breaker open": {func(st map[string]any) { st["decision_model"].(map[string]any)["state"] = "breaker_open" }, "the decision model is breaker_open"},
+		"no credits":   {func(st map[string]any) { st["decision_model"].(map[string]any)["state"] = "no_credits" }, "the decision model is no_credits"},
+		"mock judge":   {func(st map[string]any) { st["judge"].(map[string]any)["provider"] = "mock" }, "the judge is the mock"},
+		"no judge":     {func(st map[string]any) { st["judge"].(map[string]any)["provider"] = nil }, "the deep audit has no judge"},
 		"fallback judge": {func(st map[string]any) {
 			j := st["judge"].(map[string]any)
 			j["state"], j["fallback_active"], j["fallback_reason"] = "degraded", true, "key refused"
 		}, "the judge runs on its fallback provider (key refused)"},
 		"judge down":    {func(st map[string]any) { st["judge"].(map[string]any)["state"] = "down" }, "the judge is down, not up"},
 		"not a status":  {func(st map[string]any) { delete(st, "test_mode") }, "did not answer a gateway status"},
+		"no state":      {func(st map[string]any) { delete(st["decision_model"].(map[string]any), "state") }, "did not answer a gateway status"},
 		"several kinds": {func(st map[string]any) { st["test_mode"] = false; st["judge"].(map[string]any)["provider"] = "mock" }, "not in test mode (TRUTHTABLE_TEST_MODE=true sends scripted answers as test_response); the judge is the mock"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -713,6 +723,18 @@ func TestRecordRefusesASimulatedGateway(t *testing.T) {
 	}
 	if requests, _, _ := stub.snapshot(); len(requests) != 0 {
 		t.Errorf("%d requests sent after a refusal", len(requests))
+	}
+
+	// A degraded decision model still answers, and one whose first check is running will: both
+	// record.
+	for _, state := range []string{"degraded", "checking"} {
+		stub, srv := newStub(t)
+		stub.status = recordableStatus()
+		stub.status["decision_model"].(map[string]any)["state"] = state
+		if code, out := runTG(t, "--record", "--scenarios", "grounded-pass", "--base-url", srv.URL, "--audit-timeout", "10s"); code != exitOK ||
+			!strings.Contains(out, "ok   grounded-pass (trace") {
+			t.Errorf("decision model %s: exit %d:\n%s", state, code, out)
+		}
 	}
 }
 

@@ -24,9 +24,10 @@
 // generated scenario with its stand-in response, so its expectations are checked like any other.
 //
 // --record is a recording run (make record-demo, D121): it first reads GET /api/status and refuses
-// a gateway that is not in test mode, whose decision model is the mock, off or mock-upstream, or
-// whose judge is not up, is the mock or runs on its fallback, since such traffic could only be
-// labelled simulated. It then checks like --expect but reports a mismatch as drift without failing
+// a gateway that is not in test mode, whose decision model is the mock or off, answers from a local
+// endpoint such as mock-upstream or is in no state to answer (a rejected key, no credits, an open
+// breaker), or whose judge is not up, is the mock or runs on its fallback, since such traffic could
+// only be labelled simulated or would hold no real decision. It then checks like --expect but reports a mismatch as drift without failing
 // (a real model's verdicts may differ from the scripted ones); a request that fails or a trace that
 // does not settle still fails the run. --trace-ids-out writes the trace id of every answered
 // request, one per line in send order, so the export can be checked against the run.
