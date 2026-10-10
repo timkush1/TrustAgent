@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { requireStaticSite, useExternalGuard } from '../static/site';
+import { blockUnmockedExternal, requireStaticSite } from '../static/site';
 import {
   captureContext,
   OG_MAX_BYTES,
@@ -27,26 +27,34 @@ import {
   writeCapture,
 } from './capture';
 
+/** The `<meta name="robots" content="noindex">` tags in a served HTML document. */
+function noindexTags(html: string): number {
+  return (html.match(/<meta\b[^>]*>/gi) ?? []).filter((tag) => /\bname=["']robots["']/i.test(tag) && /\bcontent=["']noindex["']/i.test(tag)).length;
+}
+
 test.describe('social card', () => {
-  useExternalGuard();
   test.beforeAll(async ({ playwright }, testInfo) => {
     await requireStaticSite(playwright, testInfo);
   });
   test.use(captureContext('light', OG_SIZE));
 
-  test('captures /og as a 1280×640 PNG under 1 MB, from a recorded tape only', async ({ page }) => {
+  test('captures /og as a 1280×640 PNG under 1 MB, from a recorded tape only', async ({ page, baseURL }) => {
+    const blocked = await blockUnmockedExternal(page, baseURL);
     const tape = await shippedTape(page);
     refuseMock(tape, 'OG_ALLOW_MOCK', 'npm run og');
     await presetPreferences(page, 'light');
 
     // GitHub Pages has no og/ file: 404.html boots the app, which renders the route.
-    await page.goto('og');
+    const shell = await page.goto('og');
+    if (!shell) throw new Error('no response for og');
+    const shellNoindex = noindexTags(await shell.text());
     const card = page.locator('[data-og-card]');
     await expect(card, 'the launch build renders the card (VITE_LAUNCH_ROUTES=1)').toBeVisible({ timeout: 30_000 });
     await expect(card).toHaveAttribute('data-og-ready', '', { timeout: 30_000 });
     await expect(card).toHaveAttribute('data-recording-kind', tape.kind);
-    // The card page is never indexed (the 404.html shell may carry its own noindex too).
-    await expect(page.locator('meta[name="robots"][content="noindex"]').first()).toBeAttached();
+    // The card page is never indexed: the route adds its own noindex to whatever the served shell
+    // (404.html on Pages) already carries.
+    await expect(page.locator('meta[name="robots"][content="noindex"]')).toHaveCount(shellNoindex + 1);
 
     // Honest numbers: a capture of the simulated tape says so on the card, a recorded one does not.
     const simulated = card.locator('[data-og-simulated]');
@@ -61,6 +69,8 @@ test.describe('social card', () => {
     const png = await card.screenshot({ animations: 'disabled', caret: 'hide' });
     expect(pngSize(png), 'the card is exactly 1280×640').toEqual(OG_SIZE);
     expect(png.byteLength, 'the card is under 1 MB').toBeLessThan(OG_MAX_BYTES);
+    // A page that tried to reach another origin may not look as it should: nothing is written then.
+    expect(blocked, 'requests to an unmocked external origin').toEqual([]);
 
     const written = ogTargets(tape.kind).map((path) => writeCapture(path, png));
     for (const path of written) {

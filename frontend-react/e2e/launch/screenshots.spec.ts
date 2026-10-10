@@ -130,8 +130,9 @@ test.describe('dashboard screenshots', () => {
 
           const png = await page.screenshot({ animations: 'disabled', caret: 'hide' });
           expect(pngSize(png)).toEqual(SIZE);
-          const written = writeCapture(resolve(REPO_ROOT, SCREENSHOT_DIR, `${shot.name}-${theme}.png`), png);
+          // A page that tried to reach another origin may not look as it should: nothing is written then.
           expect(blocked, 'requests to an unmocked external origin').toEqual([]);
+          const written = writeCapture(resolve(REPO_ROOT, SCREENSHOT_DIR, `${shot.name}-${theme}.png`), png);
           console.log(`screenshots: ${written} (${tape.kind === 'mock' ? 'Simulated' : tape.label})`);
         } finally {
           await context.close();
