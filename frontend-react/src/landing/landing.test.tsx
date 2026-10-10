@@ -34,7 +34,7 @@ import { refundTraceHref } from './refundTrace';
 import { oneLineSnippet } from './snippetLine';
 import { TryIt } from './TryIt';
 import { COMMITMENTS } from './commitments';
-import { demoLinkText, STUDIO_HREF } from './links';
+import { demoLinkText, LIVE_TITLES, STUDIO_HREF } from './links';
 
 const MOCK_LABEL = 'Simulated (mock checks + mock judge): not model output';
 
@@ -276,6 +276,10 @@ describe('try it', () => {
     const links = [...card.querySelectorAll<HTMLAnchorElement>('a[data-live-scenario]')];
     expect(links.map((a) => a.getAttribute('href'))).toEqual(LIVE_SCENARIOS.map((id) => liveHref(import.meta.env.BASE_URL, id)));
     for (const a of links) expect(a.getAttribute('href')).toMatch(/app\/playground\/\?scenario=[a-z-]+#live$/);
+    // Each link says what the Playground's picker says: the scenario pack's title.
+    const titles = LIVE_SCENARIOS.map((id) => scenarioPack.scenarios.find((x) => x.id === id)?.title);
+    expect(LIVE_SCENARIOS.map((id) => LIVE_TITLES[id])).toEqual(titles);
+    expect(links.map((a) => a.textContent)).toEqual(titles);
     // The cost of one check carries its Estimate chip, and the cap is calls to OpenRouter.
     const cost = card.querySelector('[data-live-cost]') as HTMLElement;
     expect(cost.querySelector('[data-value-label="estimate"]')?.getAttribute('href')).toBe('#source-fast_check_cost_per_check');

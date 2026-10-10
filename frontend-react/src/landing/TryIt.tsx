@@ -13,10 +13,10 @@
 import { ArrowRight, CircleCheck, CircleMinus, CircleX, Eye, Flag, Repeat, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { digest, type TapeDigestTrace } from 'virtual:trustagent/tape-digest';
 import { playground } from '@/config/runtime';
-import { LIVE_SCENARIOS, liveHref, type LiveScenarioId } from '@/domain/liveScenarios';
+import { LIVE_SCENARIOS, liveHref } from '@/domain/liveScenarios';
 import { splitClaims } from './claims';
 import { BASE, command, DEMO_HREF, OUTCOME_IDS, outcome, outcomeOf } from './content';
-import { demoLinkText, LIVE_ON_THIS_SITE } from './links';
+import { demoLinkText, LIVE_ON_THIS_SITE, LIVE_TITLES } from './links';
 import { sectionCopy } from './sectionCopy';
 import { buttonClass } from './styles';
 import { ClaimValue, Command, Section } from './ui';
@@ -141,12 +141,6 @@ export function TapeCard() {
   );
 }
 
-/** What each live scenario shows, in the landing's words (keyed by the frozen LIVE_SCENARIOS). */
-const LIVE_WORDS: Record<LiveScenarioId, string> = {
-  'grounded-pass': 'A grounded answer that passes',
-  'refund-contradiction-flag': 'A refund answer that says 60 days when the policy says 30',
-  'pii-leak-flag': 'An answer that leaks a customer’s personal data',
-};
 
 /**
  * The consent line with the check's cost (its Estimate chip) and the call cap filled in. The
@@ -185,7 +179,7 @@ export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
                   data-live-scenario={id}
                   className="group flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 text-sm text-fg transition-colors hover:border-border-strong hover:bg-surface-hover"
                 >
-                  {LIVE_WORDS[id]}
+                  {LIVE_TITLES[id]}
                   <ArrowRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted group-hover:text-fg" />
                 </a>
               </li>
