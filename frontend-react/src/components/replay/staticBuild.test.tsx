@@ -14,11 +14,12 @@ import { createReplayDataSource } from '@/data/replay/replayDataSource';
 import { useStreamStore } from '@/data/stream/streamStore';
 import { routeTree } from '@/routeTree.gen';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { ManualClock, recordingFetch } from '@/test/recording';
+import { committedManifest, ManualClock, recordingFetch } from '@/test/recording';
 import { createTestQueryClient } from '@/test/renderApp';
 import { hiddenStaticPage } from './staticPages';
 
 const MOCK_LABEL = 'Simulated (mock checks + mock judge): not model output';
+const TRACES = committedManifest().traces.length;
 
 async function renderStatic(path: string) {
   const config = buildRuntimeConfig(undefined, {
@@ -102,19 +103,31 @@ describe('static build', () => {
 
   it('lists the recorded requests on Traffic', async () => {
     await renderStatic('/app/traffic');
+    const table = () => screen.getByRole('table', { name: 'Requests' });
+    const rows = () =>
+      within(table())
+        .getAllByRole('row')
+        .filter((r) => r.hasAttribute('data-trace-id'));
+    // Half of the recording is on screen before the tape plays (the table renders a window of it).
+    await waitFor(() => expect(table()).toHaveAttribute('aria-rowcount', String(Math.floor(TRACES / 2) + 1)));
+    expect(rows().length).toBeGreaterThan(0);
+    const times = rows().map((r) => r.querySelector('time')?.textContent ?? '');
+    // Times follow the tape's clock ("just now", "1 hr. ago"), not the days since the recording.
+    expect(times.filter((t) => /Sep/.test(t))).toEqual([]);
+    expect(times.some((t) => /now|ago/.test(t))).toBe(true);
+  });
+
+  it('shows what was caught and against which document on a filtered Traffic', async () => {
+    await renderStatic('/app/traffic?route=support-bot&outcome=flagged');
     const rows = () =>
       within(screen.getByRole('table', { name: 'Requests' }))
         .getAllByRole('row')
         .filter((r) => r.hasAttribute('data-trace-id'));
-    // Half of the recording is on screen before the tape plays.
-    await waitFor(() => expect(rows()).toHaveLength(9));
-    const flagged = rows().find((r) => within(r).queryByText('Flagged')) as HTMLElement;
+    await waitFor(() => expect(rows().some((r) => within(r).queryByText('refund-policy.md'))).toBe(true));
+    for (const r of rows()) expect(within(r).getByText('Flagged')).toBeInTheDocument();
+    const flagged = rows().find((r) => within(r).queryByText('refund-policy.md')) as HTMLElement;
     expect(within(flagged).getByText('refund-policy.md')).toBeInTheDocument();
     expect(within(flagged).getByText('Hallucinated')).toBeInTheDocument();
-    // Times follow the tape's clock ("just now", "1 min. ago"), not the days since the recording.
-    const times = rows().map((r) => r.querySelector('time')?.textContent ?? '');
-    expect(times.filter((t) => /Sep/.test(t))).toEqual([]);
-    expect(times.some((t) => /now|ago/.test(t))).toBe(true);
   });
 
   it('shows why Policies is not here, with a real way to run it', async () => {
@@ -143,7 +156,9 @@ describe('static build', () => {
     await renderStatic('/app/playground');
     const list = await screen.findByRole('list', { name: 'Example requests' });
     const cards = within(list).getAllByRole('listitem');
-    expect(cards).toHaveLength(3);
+    // One card per outcome the opening half of the tape shows: a short tour, not every request.
+    const outcomes = cards.map((c) => c.querySelector('[data-outcome]')?.getAttribute('data-outcome'));
+    expect(outcomes).toEqual(['passed', 'flagged', 'not_checked', 'would_block', 'blocked']);
     for (const card of cards) expect(within(card).getByRole('link', { name: /Open this request/ }).getAttribute('href')).toMatch(/^\/app\/traffic\//);
     expect(screen.getByText(/checked by the demo’s mock checks and mock judge \(simulated, not model output\)/)).toBeInTheDocument();
     expect(screen.queryByText(/checked by the demo stack/)).toBeNull();
@@ -152,15 +167,15 @@ describe('static build', () => {
 
   it('shows the Overview of the recording with its Simulated badge', async () => {
     await renderStatic('/app/overview');
-    expect(await screen.findByText(/18 requests on 28 Sept? 2026/)).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(`${TRACES} requests on 28 Sept? 2026`))).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Time window' })).toBeNull();
   });
 
-  it('shows the recording’s Savings in its own words: per minute, one basis per comparison, no live sampling', async () => {
+  it('shows the recording’s Savings in its own words: per hour, one basis per comparison, no live sampling', async () => {
     await renderStatic('/app/overview?tab=savings');
     const chart = await screen.findByRole('figure', { name: 'What checking cost, against asking an LLM' });
-    // The recording spans minutes, so the chart draws per minute, as Requests by outcome does.
-    const plot = await within(chart).findByRole('slider', { name: 'What checking cost per minute' });
+    // The recording spans two hours, so the chart draws per hour.
+    const plot = await within(chart).findByRole('slider', { name: 'What checking cost per hour' });
     expect(plot).toHaveAccessibleDescription(/^Checking \d+ answers cost \$[\d.]+ over the replayed traffic\./);
     // The recording's mock judge is free while it deep-audits most answers: the chart never sets
     // that spend against the published full audit. The option stays, disabled, and says why.
