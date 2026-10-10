@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -416,9 +417,11 @@ func faultStream(t *testing.T, env *testEnv) *gws.Conn {
 // awaitStatus has the server broadcast the component states that changed (the status watch's
 // tick, run now instead of within 5 s) and reads status events until component reports want. The
 // watch's first tick runs in its own goroutine when the server starts, so a stream that connected
-// before it first sees the component's starting state ("ok", "checking"); states before want are
-// skipped. It fails if want does not arrive within 5 s, naming the states that did.
-func awaitStatus(t *testing.T, env *testEnv, conn *gws.Conn, component, want string) {
+// before it first sees the component's starting state ("ok", "checking"), and a state the test
+// just left can still be in flight: those, and only those, are listed in before and skipped. Any
+// other state of the component fails at once, as does want not arriving within 5 s; both name the
+// states that did arrive.
+func awaitStatus(t *testing.T, env *testEnv, conn *gws.Conn, component, want string, before ...string) {
 	t.Helper()
 	env.srv.watchStatus()
 	deadline := time.Now().Add(5 * time.Second)
@@ -451,6 +454,9 @@ func awaitStatus(t *testing.T, env *testEnv, conn *gws.Conn, component, want str
 			return
 		}
 		seen = append(seen, d.State)
+		if !slices.Contains(before, d.State) {
+			t.Fatalf("WS %s status: saw %v before %s; only %v may come first", component, seen, want, before)
+		}
 	}
 }
 
@@ -495,7 +501,7 @@ func TestBreakerOpensSkipsAndRecovers(t *testing.T) {
 	if state, breaker := decisionState(t, env); state != "breaker_open" || breaker != "open" {
 		t.Errorf("after 5 faults: state %s breaker %s, want breaker_open and open", state, breaker)
 	}
-	awaitStatus(t, env, conn, "decision_model", "breaker_open")
+	awaitStatus(t, env, conn, "decision_model", "breaker_open", "checking", "ready", "degraded")
 	if g := breakerGauge(t); g != 2 {
 		t.Errorf("breaker gauge %v, want 2 (open)", g)
 	}
@@ -517,7 +523,7 @@ func TestBreakerOpensSkipsAndRecovers(t *testing.T) {
 	if state, breaker := decisionState(t, env); state != "ready" || breaker != "closed" {
 		t.Errorf("after the trial: state %s breaker %s, want ready and closed", state, breaker)
 	}
-	awaitStatus(t, env, conn, "decision_model", "ready")
+	awaitStatus(t, env, conn, "decision_model", "ready", "breaker_open")
 	if g := breakerGauge(t); g != 0 {
 		t.Errorf("breaker gauge %v, want 0 (closed)", g)
 	}
@@ -630,7 +636,7 @@ func TestBudgetSkipsAndBlocks(t *testing.T) {
 	if b := env.statusOf(testKey).Budgets; !b.DecisionReserveOnly || b.DecisionExhausted || b.DecisionUSDDay != 1 {
 		t.Errorf("past the line: budgets %+v, want reserve_only", b)
 	}
-	awaitStatus(t, env, conn, "budget", "reserve_only")
+	awaitStatus(t, env, conn, "budget", "reserve_only", "ok")
 	before := decisionCalls(mu)
 	expectGate(t, "reserve only, flag route", gateOf(t, env, support, support.ID), "skipped:budget", "pass", "budget")
 	if n := decisionCalls(mu) - before; n != 0 {
@@ -647,7 +653,7 @@ func TestBudgetSkipsAndBlocks(t *testing.T) {
 	if !st.Budgets.DecisionExhausted || st.DecisionModel.State != "budget_exhausted" {
 		t.Errorf("at the cap: budgets %+v, decision model %s, want exhausted", st.Budgets, st.DecisionModel.State)
 	}
-	awaitStatus(t, env, conn, "budget", "exhausted")
+	awaitStatus(t, env, conn, "budget", "exhausted", "reserve_only")
 	before = decisionCalls(mu)
 	expectGate(t, "exhausted, flag route", gateOf(t, env, support, support.ID), "skipped:budget", "pass", "budget")
 	expectGate(t, "exhausted, fail closed", gateOf(t, env, payments, "upstream-html-fail-closed"), "skipped:budget", "block", "budget")

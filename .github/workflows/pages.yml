@@ -9,8 +9,10 @@ name: Pages
 #   2. check_recording.py on the dataset the site will ship (--require-recorded on a tag);
 #   3. the static build (VITE_BASE_PATH /TrustAgent/; dataset auto on main and pull requests,
 #      recorded on a tag: D110);
-#   4. the landing page's size budget;
-#   5. file checks (pages, 404 fallback, base path, the shipped dataset, no source maps);
+#   4. the landing page's size budget (then the build manifests in dist/.vite go: the site does not
+#      need them);
+#   5. file checks (pages, 404 fallback, base path, the shipped dataset, no source maps or build
+#      manifests);
 #   6. gitleaks over the built site (a pinned release, SHA-256 checked, as in security.yml);
 #   7. the Pages artifact.
 #

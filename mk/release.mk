@@ -68,14 +68,18 @@ pages-recording-check: ## Pages step 1: check_recording.py on the dataset the si
 pages-static: ## Pages step 2: the static build (VITE_BASE_PATH from PAGES_BASE_PATH, VITE_DEMO_DATASET from PAGES_DATASET)
 	cd frontend-react && VITE_APP_MODE=static VITE_BASE_PATH=$(PAGES_BASE_PATH) VITE_DEMO_DATASET=$(PAGES_DATASET) npm run build:static
 
-pages-size: ## Pages step 3: the landing page's size budget over the built site
+# The size check reads the build's manifests in dist/.vite; the site has no use for them, so they
+# go once it has run (the public artifact would otherwise publish the whole source module map).
+pages-size: ## Pages step 3: the landing page's size budget over the built site, then drops the build manifests
 	cd frontend-react && npm run size
+	rm -rf $(PAGES_DIST)/.vite
 
 # The site's shape: the landing page at the root, the app under app/, 404.html a copy of the app
 # (GitHub Pages serves it for every path with no file, and it boots the router); every page loads
 # its assets under the base path; the dataset in demo/ is byte for byte the one that was checked
-# (.gitkeep placeholders aside: vite/plugins/dataset.ts does not copy them); no source maps.
-pages-files: ## Pages step 4: file checks over the built site (pages, 404 fallback, base path, shipped dataset, no source maps)
+# (.gitkeep placeholders aside: vite/plugins/dataset.ts does not copy them); no source maps and no
+# build manifests (dist/.vite).
+pages-files: ## Pages step 4: file checks over the built site (pages, 404 fallback, base path, shipped dataset, no source maps or build manifests)
 	@set -e; d="$(PAGES_DIST)"; fail() { echo "pages-files: $$1"; exit 1; }; \
 	for f in index.html app/index.html 404.html demo/manifest.json; do \
 		test -s "$$d/$$f" || fail "$$d/$$f is missing (run make pages-static first)"; done; \
@@ -87,7 +91,8 @@ pages-files: ## Pages step 4: file checks over the built site (pages, 404 fallba
 	diff -r -q -x .gitkeep "$(PAGES_RECORDING_DIR)" "$$d/demo" >/dev/null \
 		|| fail "$$d/demo is not the checked dataset $(PAGES_RECORDING_DIR): $$(diff -r -q -x .gitkeep '$(PAGES_RECORDING_DIR)' "$$d/demo" | head -3)"; \
 	maps="$$(find "$$d" -name '*.map' | head -3)"; test -z "$$maps" || fail "source maps in the site: $$maps"; \
-	echo "✅ Pages files: landing, app, 404 fallback, base path $(PAGES_BASE_PATH), dataset $(PAGES_RECORDING_DIR), no source maps"
+	test ! -e "$$d/.vite" || fail "$$d/.vite (the build manifests) is in the site: run make pages-size, which drops it"; \
+	echo "✅ Pages files: landing, app, 404 fallback, base path $(PAGES_BASE_PATH), dataset $(PAGES_RECORDING_DIR), no source maps or build manifests"
 
 pages-gitleaks: gitleaks-install ## Pages step 5: gitleaks over the built site (the public artifact holds no key)
 	$(GITLEAKS) dir --config .gitleaks.toml --redact --no-banner --exit-code 1 $(PAGES_DIST)
