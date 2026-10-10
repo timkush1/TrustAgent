@@ -40,8 +40,8 @@ func (s *Server) llm(f llmFormat, openRouter bool) http.HandlerFunc {
 			writeError(w, env, http.StatusBadRequest, "invalid_request_error", "the request body is not a JSON object", nil)
 			return
 		}
-		sc, text := s.llmAnswer(scenarioID(r), req)
-		packSpec, countKey := sc.upstreamFault(req)
+		_, text := s.llmAnswer(scenarioID(r), req)
+		packSpec, countKey := s.upstreamFault(scenarioID(r), req)
 		if s.writeFault(w, r, s.fault(r, countKey, packSpec), env) {
 			return
 		}

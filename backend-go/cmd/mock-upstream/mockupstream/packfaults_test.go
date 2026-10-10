@@ -232,6 +232,18 @@ func TestPackFaultsByScenario(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || answerText(t, "openai_chat", b, false) != up.Fallback.Response {
 		t.Errorf("the fallback request is not faulted: %d %s", resp.StatusCode, b)
 	}
+	// The same last user message in another conversation (no system message) is matched on its
+	// prompt for its answer, but it is not the scenario's request, so it is not faulted.
+	other := forwarded(t, up, false)
+	other["messages"] = json.RawMessage(`[{"role":"user","content":"How long do refunds take?"}]`)
+	if resp, b := llm(other); resp.StatusCode != http.StatusOK || answerText(t, "openai_chat", b, false) != up.Response {
+		t.Errorf("another conversation with the same prompt: %d %s", resp.StatusCode, b)
+	}
+	// A request that names the scenario is its request, whatever its conversation.
+	b, _ = json.Marshal(other)
+	if resp, _ := do(t, srv, call{path: "/v1/chat/completions", header: map[string]string{"X-Mock-Scenario": up.ID}, body: string(b)}); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("a request naming the scenario is faulted: %d", resp.StatusCode)
+	}
 	html := s.scenarios["pf-upstream-html"]
 	if resp, b := llm(forwarded(t, html, false)); resp.StatusCode != http.StatusOK ||
 		!strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(b), "<html") {

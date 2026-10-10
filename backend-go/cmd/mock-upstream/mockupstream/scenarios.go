@@ -77,16 +77,25 @@ func (s *Scenario) decisionFault() string {
 	return s.MockFaults.Decision
 }
 
-// upstreamFault is the fault spec of the scenario's LLM request, and the key its count is kept
+// upstreamFault is the mock_faults.upstream spec of an LLM request, and the key its count is kept
 // under: the scenario, as an LLM request carries no X-Mock-Key, so a counted spec such as "503@1"
-// faults the scenario's first request after a reset. The gateway's fallback request (req carries
-// the fallback prompt) is never faulted: the fault is the upstream's answer to the scenario's own
-// request.
-func (s *Scenario) upstreamFault(req map[string]json.RawMessage) (spec, countKey string) {
-	if s == nil || s.MockFaults == nil || s.MockFaults.Upstream == "" || isFallbackRequest(req) {
+// faults the scenario's first request after a reset. It applies to the request of the scenario
+// the request names (X-Mock-Scenario or the scenario query parameter), else of the scenario whose
+// conversation it is; a request that only shares a scenario's last user message is another
+// conversation and is not faulted. The gateway's fallback request (req carries the fallback
+// prompt) is never faulted: the fault is the upstream's answer to the scenario's own request.
+func (s *Server) upstreamFault(id string, req map[string]json.RawMessage) (spec, countKey string) {
+	if isFallbackRequest(req) {
 		return "", ""
 	}
-	return s.MockFaults.Upstream, "scenario:" + s.ID
+	sc := s.scenarios[id]
+	if sc == nil {
+		sc = s.byConversation[conversationKey(req)]
+	}
+	if sc == nil || sc.MockFaults == nil || sc.MockFaults.Upstream == "" {
+		return "", ""
+	}
+	return sc.MockFaults.Upstream, "scenario:" + sc.ID
 }
 
 // prompt is the scenario's last user message (or completions prompt).
