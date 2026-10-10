@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createKeyStore } from './keyStore';
-import { createUsageStore, isBillable, isRejected, REJECTED_PAUSE, USAGE_NAME, type UsageStore, type UsageStoreOptions } from './usage';
+import { createUsageStore, isBillable, isRejected, priceFromTable, REJECTED_PAUSE, USAGE_NAME, type UsageStore, type UsageStoreOptions } from './usage';
 import { useUsage } from './useUsage';
 import { MemoryStorage } from './testing';
 
@@ -165,6 +165,26 @@ describe('usage ledger: cost (D101)', () => {
     const s = make({ price: () => 0.5 });
     s.forModel('m').settle(200, { input_tokens: 1, cost: -1 });
     expect(s.getSnapshot()).toMatchObject({ cost_usd: 0.5, cost_source: 'estimate' });
+  });
+});
+
+describe('usage ledger: pricing from contracts/pricing (the TS cost core)', () => {
+  it('prices the live models from the table, and nothing it does not list', () => {
+    expect(priceFromTable('typesafe/jev-1.13', { input_tokens: 1_000_000, cost: null })).toBeCloseTo(0.042, 12);
+    expect(priceFromTable('anthropic/claude-haiku-4.5', { input_tokens: 1_000_000, output_tokens: 1_000_000, cost: null })).toBeCloseTo(6, 12);
+    expect(priceFromTable('someone/else', { input_tokens: 1000, cost: null })).toBeNull();
+  });
+
+  it('rounds a fractional estimate up instead of failing (D150)', () => {
+    expect(priceFromTable('typesafe/jev-1.13', { input_tokens: 999_999.2, cost: null })).toBeCloseTo(0.042, 12);
+  });
+
+  it('the default ledger labels a call priced from the table an estimate', () => {
+    const s = createUsageStore({ maxCalls: 100, maxTokens: 8000, storage: () => new MemoryStorage(), target: null });
+    stores.push(s);
+    s.forModel('typesafe/jev-1.13').settle(200, { input_tokens: 400, cost: null });
+    expect(s.getSnapshot()).toMatchObject({ calls: 1, cost_source: 'estimate' });
+    expect(s.getSnapshot().cost_usd).toBeCloseTo((400 * 0.042) / 1e6, 12);
   });
 });
 

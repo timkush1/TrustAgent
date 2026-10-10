@@ -109,8 +109,10 @@ const PRICES = prices as unknown as PricingTable;
 /** Prices a call through the TS cost runner (lib/decision/cost.ts); null when it cannot. */
 export const priceFromTable: UsagePricer = (model, usage) => {
   try {
-    const priced = priceCall({ provider: 'openrouter', model, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens ?? 0, reported_cost_usd: null, table: PRICES });
-    return priced.cost_usd;
+    // Whole token counts, rounded up so an estimate never understates (D150).
+    const tokens = (n: number | undefined) => Math.max(0, Math.ceil(n ?? 0));
+    const priced = priceCall({ provider: 'openrouter', model, input_tokens: tokens(usage.input_tokens), output_tokens: tokens(usage.output_tokens), reported_cost_usd: null, table: PRICES });
+    return priced.cost_source === 'computed' ? priced.cost_usd : null;
   } catch {
     return null;
   }
