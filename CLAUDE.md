@@ -79,7 +79,7 @@ make first-run      # a fresh stack to its first flagged trace, timed (Playwrigh
 make lint-workflows # actionlint + zizmor over .github/workflows
 make check-claims   # every <!-- claim:ID --> figure in README/docs vs contracts/claims; claims-write regenerates measured tables
 make check-claims-launch                          # launch gate: recorded dataset, measured run, reviewed comparison, og.png
-make og / hero-gif / screenshots                  # launch captures (they refuse a simulated recording)
+make og / hero-gif / screenshots                  # launch captures (og and hero-gif refuse the simulated tape; screenshots show its label)
 ```
 
 Per-project:
