@@ -27,5 +27,5 @@ routes:
     evaluators:
       - ref: groundedness@1
       - ref: contradiction@1
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all

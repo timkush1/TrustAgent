@@ -5,8 +5,9 @@
 #
 #   docker compose -p truthtable-load -f docker-compose.yml -f docker-compose.load.yml \
 #     --profile load up -d --build --wait proxy
-#   docker run --rm -i --network container:<the proxy container> -e BASE_URL=http://127.0.0.1:8080 \
-#     ... grafana/k6 run - < scripts/load/gateway-overhead.js            # scenarios a, b, c, e, f
+#   docker run --rm --network container:<the proxy container> -v ./scripts/load:/scripts/load:ro \
+#     -e BASE_URL=http://127.0.0.1:8080 ... grafana/k6 run /scripts/load/gateway-overhead.js
+#                                       # once per scenario: a, b, c, e, f and g
 #   ... -f docker-compose.load-slow-jev.yml up -d --wait --no-deps mock-jev-slow proxy   # then d
 #   docker compose -p truthtable-load ... down --volumes
 #
@@ -18,7 +19,8 @@
 # the proxy runs without the audit engine (TRUTHTABLE_GRPC_ADDRESS is empty, and the engine is not
 # a dependency here), so a load run needs no engine image and no engine start.
 #
-# The stack publishes no host port: k6 runs inside the proxy container's network namespace, so a
+# The stack publishes no host port: k6 runs inside the proxy container's network namespace (it
+# reads the proxy's /metrics on 127.0.0.1:8002 and the mocks' request totals there too), so a
 # demo or `make up` stack can keep running next to it. Test mode is on so the k6 script can
 # make mock-upstream hang one decision call (X-TrustAgent-Scenario: fault:hang@1, scenario f).
 # Rate limits, the fast-check rate limit and the spend caps are lifted: they would shape the
@@ -92,7 +94,7 @@ services:
   dashboard:
     ports: !reset []
 
-  # The LLM upstream and the fast check of scenarios a, b, c, e and f. A load run needs more CPU
+  # The LLM upstream and the fast check of scenarios a, b, c, e, f and g. A load run needs more CPU
   # than the e2e stack gives it, or the mock would shape the measurement.
   mock-upstream:
     profiles: !reset []

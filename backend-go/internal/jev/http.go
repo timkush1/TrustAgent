@@ -566,7 +566,7 @@ func (cl *call) leave(ctx context.Context) (*Response, error) {
 		}
 	}
 	return nil, &Error{Kind: KindTimeout, Message: "no decision before the deadline", Err: ctx.Err(), Hint: Hint(KindTimeout),
-		Attempts: len(cl.attempts), Continued: continued}
+		Attempts: len(cl.attempts), Hedged: cl.hedged, Continued: continued}
 }
 
 // drainLate waits for the n running attempts after the caller left and reports the first
@@ -586,10 +586,10 @@ func (cl *call) drainLate(n int) {
 	cl.opt.OnLate(nil, cl.fail(lastErr))
 }
 
-// fail returns a copy of e with the call's attempt count.
+// fail returns a copy of e with the call's attempt count and whether it hedged.
 func (cl *call) fail(e *Error) *Error {
 	out := *e
-	out.Attempts = len(cl.attempts)
+	out.Attempts, out.Hedged = len(cl.attempts), cl.hedged
 	return &out
 }
 

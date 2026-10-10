@@ -16,6 +16,9 @@ const (
 	envAnthropic                  // {"type":"error","error":{"type","message"}}
 )
 
+// SlowDelay is how long the slow fault holds a request before answering normally.
+const SlowDelay = 2 * time.Second
+
 // htmlPage is what a site's catch-all route returns for a wrong API path.
 const htmlPage = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>OpenRouter</title></head>` +
 	`<body><div id="__next">A unified interface for LLMs</div></body></html>`
@@ -64,7 +67,7 @@ func (s *Server) writeFault(w http.ResponseWriter, r *http.Request, name string,
 		}
 		return true
 	case "slow":
-		sleepCtx(r, 2*time.Second)
+		sleepCtx(r, SlowDelay)
 		return false
 	case "html200":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

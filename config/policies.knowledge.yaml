@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../contracts/schema/policy.v1.schema.json
+#
+# GENERATED: do not edit. It is config/policies.yaml with the handbook route of
+# config/policies.pending.yaml appended; regenerate it after changing either:
+#   go -C backend-go test ./cmd/proxy -run TestKnowledgePolicyInSync -update-knowledge-policy
+#
+# The policy of a stack with the knowledge add-on (TRUTHTABLE_KNOWLEDGE_ENABLED=true, D131): every
+# demo route, plus handbook, whose evidence comes from the knowledge base when a request carries no
+# documents (contracts/demo/scenarios.v1.json knowledge-only-capped). The gateway refuses the
+# knowledge source without the add-on, which is why handbook waits in config/policies.pending.yaml
+# for the stacks that run without it.
+version: 1
+defaults:
+  # No mode here: the default route takes the TRUTHTABLE_GATE_DEFAULT_MODE seed (observe).
+  deadline_ms: 600
+  sample_rate: 1.0
+  require_calibration: true
+  on_no_evidence: ignore
+  streaming: passthrough
+  headers: full
+  evidence:
+    sources: [request_system, request_context, tool_results, extension]
+    system_mode: documents_only
+    line_headers: true
+    max_tokens: 8000
+  evaluators: # question set gateway-default
+    - ref: groundedness@1
+    - ref: contradiction@1
+    - ref: refusal@1
+    - ref: pii_secret_leak@1
+  deep_audit: {enabled: true, pass_sample_rate: 0.02, uniform_sample_rate: 0.01, error_sample_rate: 0.1, verifier: auto}
+  store_bodies: sampled
+  block: {style: message, message: "I can't provide a verified answer to that right now."}
+overrides: {client_mode: none, client_rules: false}
+routes:
+  - name: support-bot
+    description: >-
+      Demo support assistant that answers from the policy documents in its system prompt. Flags answers
+      that the documents contradict or do not contain; says "not checked" when a request has no documents.
+    match: {headers: {X-TrustAgent-Route: support-bot}}
+    mode: flag
+    # Only the two evidence checks, so a request without documents sends nothing and the gate reports
+    # not_assessed. Rubric checks such as refusal@1 and pii_secret_leak@1 run without documents.
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    # Deterministic demo, e2e and fault runs: every passed answer and every answer whose fast check
+    # failed gets a deep audit, and no uniform draw turns a no-evidence trace into a queued audit.
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    # Keep every body, so trace details show the answer for passed traces too.
+    store_bodies: all
+  - name: account-bot
+    description: >-
+      Demo account assistant that answers order questions from tool results. Adds the PII or secret
+      leak check to the two evidence checks: leaking a stranger's personal data flags, but never
+      blocks, because no deterministic check can confirm it.
+    match: {headers: {X-TrustAgent-Route: account-bot}}
+    mode: flag
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+      - ref: pii_secret_leak@1
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: assistant
+    description: >-
+      Demo developer-support assistant for an app without documents: the rubric-only question set
+      (refusal, unsafe or policy violation, PII or secret leak, prompt-injection success). None of
+      these checks needs documents, so every answer is checked.
+    match: {headers: {X-TrustAgent-Route: assistant}}
+    mode: flag
+    evaluators: # question set rubric-only
+      - ref: refusal@1
+      - ref: unsafe_policy@1
+      - ref: pii_secret_leak@1
+      - ref: injection_success@1
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: billing-bot
+    description: >-
+      Demo billing assistant without documents. Flags promises the allowed commitments do not permit
+      and answers outside billing. The number and date checks compare the answer with these rules, so
+      an unapproved promise with a new amount or date would be blocked in block mode.
+    match: {headers: {X-TrustAgent-Route: billing-bot}}
+    mode: flag
+    evaluators:
+      - ref: commitments@1
+        params: {allowed_commitments: "Annual plans: refund within 30 days of purchase. No other refunds, credits or discounts."}
+      - ref: off_topic@1
+        params: {allowed_scope: "Acme billing: invoices, payments, plans, refunds and credits."}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: faq-bot
+    description: >-
+      Demo help-center assistant in observe mode: answers are never changed, and each decision
+      (including what the gate would have done) is recorded after the response.
+    match: {headers: {X-TrustAgent-Route: faq-bot}}
+    mode: observe
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: payments-faq
+    description: >-
+      Demo payments assistant (the SPEC §2.7 example). Replaces an answer the documents contradict
+      with a fallback answer written from the documents only, and blocks if that fails too. Its
+      evidence checks adopt the calibration for the current snapshot (the mock calibration with the
+      mock backend), so the fallback is not capped to a flag.
+    match: {headers: {X-TrustAgent-Route: payments-faq}, paths: ["/v1/chat/completions"]}
+    mode: fallback
+    fail: closed
+    streaming: buffer
+    deadline_ms: 1500
+    hedge_after_ms: 400
+    evidence: {sources: [request_system, tool_results, extension]} # end users cannot inject "documents"
+    evaluators:
+      - ref: groundedness@1
+        thresholds: {space: calibrated}
+      - ref: contradiction@1
+        thresholds: {space: calibrated}
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    fallback:
+      upstream: same
+      model: gpt-4o
+      system_prompt: "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT."
+      on_fail: block
+    block: {style: message, message: "I can't confirm that from our policy documents. A person will follow up."}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: help-center
+    description: >-
+      Demo help-center assistant in block mode with buffered streams. A link the articles do not
+      contain blocks at once (a deterministic check needs no calibration); a contradiction alone acts
+      as a flag until the evidence checks are calibrated (raw thresholds).
+    match: {headers: {X-TrustAgent-Route: help-center}}
+    mode: block
+    streaming: buffer
+    # An enforcing route trusts no user-message context (SPEC §7.2 block readiness): end users
+    # cannot inject "documents" that make a false answer look supported.
+    evidence: {sources: [request_system, tool_results, extension]}
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    block: {style: message, message: "I can't verify that answer against our help articles, so I've held it back."}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all
+  - name: handbook
+    description: >-
+      Demo HR assistant whose documents come from the knowledge base (knowledge add-on) when the
+      request carries none. Knowledge-only evidence caps the evidence checks at warn, so answers are
+      flagged, never blocked.
+    match: {headers: {X-TrustAgent-Route: handbook}}
+    mode: flag
+    evidence:
+      sources: [request_system, knowledge]
+      knowledge: {when: fallback, top_k: 5, deadline_ms: 150, min_score: 0.3}
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all

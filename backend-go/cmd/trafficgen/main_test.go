@@ -781,6 +781,13 @@ func TestUsageErrors(t *testing.T) {
 		{"--record", "--loop"},
 		{"--record", "--upstream", "all"}, // mock-upstream's stand-ins are no recording
 		{"--loop", "--trace-ids-out", "ids.txt"},
+		{"--seed-knowledge"}, // the upload needs the admin key
+		{"--seed-knowledge", "--admin-key-file", "k", "--expect"},
+		{"--seed-knowledge", "--admin-key-file", "k", "--loop"},
+		{"--seed-knowledge", "--admin-key-file", "k", "--trace-ids-out", "ids.txt"},
+		{"--admin-key-file", "k"},                                          // only a seeding run reads it
+		{"--seed-knowledge", "--admin-key-file", "/does/not/exist"},        // unreadable key file
+		{"--seed-knowledge", "--admin-key-file", "k", "--scenarios", "s0"}, // no knowledge documents
 	} {
 		if code, out := runTG(t, args...); code != exitUsage {
 			t.Errorf("%v: exit %d:\n%s", args, code, out)
@@ -884,9 +891,17 @@ func TestPhases(t *testing.T) {
 			t.Errorf("%s: phase %s, want %s", sets, got, want)
 		}
 	}
-	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows("p2", "p3") ||
-		!phaseAllows(defaultPhase, "p3") || !phaseAllows(defaultPhase, "p4") || phaseAllows(defaultPhase, "p5") {
+	if !phaseAllows("p3", "p3") || !phaseAllows("p3", phaseS0) || phaseAllows("p2", "p3") {
 		t.Error("phaseAllows")
+	}
+	// This build serves every phase, and the gateway one phase older does not serve this one.
+	for _, p := range phases {
+		if !phaseAllows(defaultPhase, p) {
+			t.Errorf("the default phase %s does not serve %s", defaultPhase, p)
+		}
+	}
+	if previous := phases[len(phases)-2]; phaseAllows(previous, defaultPhase) {
+		t.Errorf("phase %s serves %s", previous, defaultPhase)
 	}
 }
 

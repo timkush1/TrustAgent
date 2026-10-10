@@ -7,10 +7,12 @@
 # contracts/policies/example.policies.yaml is the full SPEC example (block and fallback routes, rules
 # parameters, shadow evaluators) to copy routes from.
 #
-# The demo scenarios (contracts/demo/scenarios.v1.json) run on the routes below. Their expected
-# outcomes depend on these settings, so change them together: make contracts-check and the
-# cmd/trafficgen reference test cross-check both. Every demo route audits each answer it may audit
-# (pass_sample_rate 1.0) and draws no uniform sample, so demo and e2e runs are deterministic.
+# The demo scenarios (contracts/demo/scenarios.v1.json) and the vendor-fault scenarios
+# (contracts/demo/faults.v1.json) run on the routes below. Their expected outcomes depend on these
+# settings, so change them together: make contracts-check and the cmd/trafficgen reference test
+# cross-check both. Every demo route audits each answer it may audit (pass_sample_rate 1.0, and
+# error_sample_rate 1.0 for an answer whose fast check failed) and draws no uniform sample, so demo,
+# e2e and fault runs are deterministic.
 #
 # payments-faq (fallback) and help-center (block) enforce: the /v1 handler replaces or blocks the
 # answers their checks fail (SPEC §2.12). The route that reads the knowledge add-on (handbook) is in
@@ -50,9 +52,9 @@ routes:
     evaluators:
       - ref: groundedness@1
       - ref: contradiction@1
-    # Deterministic demo and e2e runs: every passed answer gets a deep audit, and no uniform draw turns a
-    # no-evidence trace into a queued audit.
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    # Deterministic demo, e2e and fault runs: every passed answer and every answer whose fast check
+    # failed gets a deep audit, and no uniform draw turns a no-evidence trace into a queued audit.
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     # Keep every body, so trace details show the answer for passed traces too.
     store_bodies: all
   - name: account-bot
@@ -66,7 +68,7 @@ routes:
       - ref: groundedness@1
       - ref: contradiction@1
       - ref: pii_secret_leak@1
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all
   - name: assistant
     description: >-
@@ -80,7 +82,7 @@ routes:
       - ref: unsafe_policy@1
       - ref: pii_secret_leak@1
       - ref: injection_success@1
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all
   - name: billing-bot
     description: >-
@@ -94,7 +96,7 @@ routes:
         params: {allowed_commitments: "Annual plans: refund within 30 days of purchase. No other refunds, credits or discounts."}
       - ref: off_topic@1
         params: {allowed_scope: "Acme billing: invoices, payments, plans, refunds and credits."}
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all
   - name: faq-bot
     description: >-
@@ -105,7 +107,7 @@ routes:
     evaluators:
       - ref: groundedness@1
       - ref: contradiction@1
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all
   - name: payments-faq
     description: >-
@@ -132,7 +134,7 @@ routes:
       system_prompt: "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT."
       on_fail: block
     block: {style: message, message: "I can't confirm that from our policy documents. A person will follow up."}
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all
   - name: help-center
     description: >-
@@ -150,5 +152,5 @@ routes:
       - ref: contradiction@1
     detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
     block: {style: message, message: "I can't verify that answer against our help articles, so I've held it back."}
-    deep_audit: {pass_sample_rate: 1.0, uniform_sample_rate: 0}
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
     store_bodies: all

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../contracts/schema/policy.v1.schema.json
 #
 # The policy of the load-test stack (docker-compose.load.yml mounts this file and points
-# TRUTHTABLE_POLICY_FILE at it). One route per scenario of scripts/load/gateway-overhead.js
+# TRUTHTABLE_POLICY_FILE at it). One route per scenario (a-g) of scripts/load/gateway-overhead.js
 # (docs/v2/design-notes/design-gateway.md §14, docs/GATEWAY.md §13); the k6 script selects a route
 # with X-TrustAgent-Route and checks that X-TrustAgent-Route names it back.
 #
@@ -70,3 +70,11 @@ routes:
     mode: flag
     deadline_ms: 1500
     hedge_after_ms: 400
+
+  # (g) Block with JSON answers (not streamed): the gate decides before the answer is sent, as on
+  #     an enforcing route without a stream. Target: p95 < 10 ms, like (c).
+  - name: load-g
+    match: {headers: {X-TrustAgent-Route: load-g}}
+    mode: block
+    evidence: {sources: [request_system, tool_results, extension]}
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}

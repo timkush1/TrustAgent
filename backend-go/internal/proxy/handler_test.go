@@ -128,7 +128,7 @@ type fakeUpstream struct {
 	echoHeader string
 }
 
-func newFakeUpstream(t *testing.T) *fakeUpstream {
+func newFakeUpstream(t testing.TB) *fakeUpstream {
 	f := &fakeUpstream{status: http.StatusOK, ctype: "application/json",
 		body: `{"id":"chatcmpl-up","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"Priority tickets get a first response within 4 hours."},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29}}`}
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +233,7 @@ const anthropicBody = `{"id":"msg_up","type":"message","role":"assistant","model
 // loadPolicy loads config/policies.yaml, or yaml when set, as the gateway does with env's
 // Enforcing (block and fallback accepted) and FallbackUpstream (fallback.upstream: fallback). The
 // repo policy has block and fallback routes since P3, so it always loads enforcing.
-func loadPolicy(t *testing.T, reg *evaluators.Registry, yaml string, env policy.Env) *policy.Policy {
+func loadPolicy(t testing.TB, reg *evaluators.Registry, yaml string, env policy.Env) *policy.Policy {
 	t.Helper()
 	src := []byte(yaml)
 	if yaml == "" {

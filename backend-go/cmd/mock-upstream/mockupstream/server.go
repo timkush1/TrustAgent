@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -99,6 +100,9 @@ type Server struct {
 	counts   map[string]int
 	codes    map[string]issuedCode // PKCE code → its challenge and mock key marker
 	recorded []Recorded
+	// totals counts every API request since the last reset by "<METHOD> <path>", uncapped (the
+	// load test's mock_requests; recorded keeps only the last MaxRecorded).
+	totals   map[string]int
 	snapshot string
 }
 
@@ -218,6 +222,12 @@ func (s *Server) record(r *http.Request, body []byte) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !strings.HasPrefix(r.URL.Path, "/_mock/") && r.URL.Path != "/healthz" {
+		if s.totals == nil {
+			s.totals = map[string]int{}
+		}
+		s.totals[r.Method+" "+r.URL.Path]++
+	}
 	s.recorded = append(s.recorded, Recorded{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Header: h, Body: string(body), At: time.Now()})
 	if n := len(s.recorded) - s.cfg.MaxRecorded; n > 0 {
 		s.recorded = slices.Delete(s.recorded, 0, n)
@@ -231,11 +241,19 @@ func (s *Server) Requests() []Recorded {
 	return slices.Clone(s.recorded)
 }
 
-// Reset clears recorded requests, fault counters and issued PKCE codes.
+// Totals returns how many API requests arrived since the last reset, by "<METHOD> <path>"
+// (health checks and /_mock/ calls not counted).
+func (s *Server) Totals() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.totals)
+}
+
+// Reset clears recorded requests, request totals, fault counters and issued PKCE codes.
 func (s *Server) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.recorded, s.counts, s.codes = nil, map[string]int{}, map[string]issuedCode{}
+	s.recorded, s.totals, s.counts, s.codes = nil, nil, map[string]int{}, map[string]issuedCode{}
 }
 
 // SetSnapshot changes the model id decision responses report ("" = derived from the request).
@@ -245,8 +263,14 @@ func (s *Server) SetSnapshot(snapshot string) {
 	s.mu.Unlock()
 }
 
+// handleRequests serves GET /_mock/requests: the last MaxRecorded requests, and the uncapped
+// totals since the last reset.
 func (s *Server) handleRequests(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"requests": s.Requests()})
+	totals := s.Totals()
+	if totals == nil {
+		totals = map[string]int{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": s.Requests(), "totals": totals})
 }
 
 func (s *Server) handleReset(w http.ResponseWriter, _ *http.Request) {

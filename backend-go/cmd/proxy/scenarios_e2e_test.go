@@ -23,6 +23,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -85,10 +86,17 @@ func scoredVerdict(verdicts []string, confidences []float64, hallucinationPolicy
 // judgedEngine is a fake audit engine that answers like the engine with the mock judge
 // (LLM_PROVIDER=mock): without evidence the preflight answers NOT_ASSESSED (no_evidence) and no
 // judge is called; with evidence, the scenario's judge claims (only for the scenario's own answer,
-// as the mock judge decomposes nothing else) with the verdict scoring v2 gives them.
+// as the mock judge decomposes nothing else) with the verdict scoring v2 gives them. It knows the
+// judges of both packs, the main pack and the vendor-fault pack.
 func judgedEngine(t testing.TB) *enginetest.Engine {
+	return enginetest.Start(t, &enginetest.Engine{EvaluateFunc: judgedAudit(t)})
+}
+
+// judgedAudit is judgedEngine's Evaluate.
+func judgedAudit(t testing.TB) func(context.Context, *pb.AuditRequest) (*pb.AuditResult, error) {
 	scenarios := loadDemoScenarios(t)
-	return enginetest.Start(t, &enginetest.Engine{EvaluateFunc: func(_ context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
+	maps.Copy(scenarios, loadFaultScenarios(t))
+	return func(_ context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
 		res := &pb.AuditResult{AuditId: req.GetAuditId(), TraceId: req.GetTraceId(), RequestId: req.GetRequestId(), ScoringVersion: "v2",
 			ProcessingTimeMs: 3, StepTimings: map[string]int64{"total_ms": 3}, Status: pb.AuditStatus_AUDIT_STATUS_COMPLETED}
 		if len(req.GetContext()) == 0 {
@@ -124,7 +132,7 @@ func judgedEngine(t testing.TB) *enginetest.Engine {
 			res.FaithfulnessScore = score
 		}
 		return res, nil
-	}})
+	}
 }
 
 // newScenarioEnv starts the gateway as the tests' default stack, adjusted by tune, with the
@@ -132,17 +140,26 @@ func judgedEngine(t testing.TB) *enginetest.Engine {
 // batched writer fronts the store as main wires it, and its flush runs after the server's drain.
 func newScenarioEnv(t *testing.T, tune func(*config.Config)) *testEnv {
 	t.Helper()
+	return newScenarioEnvWith(t, tune, judgedEngine(t))
+}
+
+// newScenarioEnvWith is newScenarioEnv with eng as the audit engine; nil runs the gateway with no
+// engine configured (TRUTHTABLE_GRPC_ADDRESS empty), so deep audits are dropped.
+func newScenarioEnvWith(t *testing.T, tune func(*config.Config), eng *enginetest.Engine) *testEnv {
+	t.Helper()
 	cfg := testConfig(t, envOpts{})
 	cfg.TraceFlush = traceFlushSync
 	if tune != nil {
 		tune(cfg)
 	}
-	eng := judgedEngine(t)
-	client, err := grpc.NewAuditClient(eng.Target, 5*time.Second, "", eng.Dialer)
-	if err != nil {
-		t.Fatal(err)
+	var client *grpc.AuditClient
+	if eng != nil {
+		var err error
+		if client, err = grpc.NewAuditClient(eng.Target, 5*time.Second, "", eng.Dialer); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = client.Close() })
 	}
-	t.Cleanup(func() { _ = client.Close() })
 	st, flushTraces := wrapTraceWriter(cfg, newMemStore(), slog.New(slog.DiscardHandler))
 	cfg.DatabaseURL = "postgres://configured-for-status"
 	srv, err := newServer(serverDeps{cfg: cfg, engine: client, store: st, log: slog.New(slog.DiscardHandler)})
