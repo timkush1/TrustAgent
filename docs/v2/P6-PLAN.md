@@ -225,6 +225,17 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 | LD-3 compare cells filled from fetched sources | SHIP S-5 re-verifies them | S-5 fills cells from fetched sources only, or drops them |
 | P5 I-8 published load run (`docs/benchmarks/load/*.json`) | Folded by `bench-publish` | The lead runs `make load-test-gate LOAD_PUBLISH=1` before Gate A |
 
+**Step 0 result (2026-10-10, on the merged head `b39e61c`):**
+
+| P5 item | State | What P6 does |
+|---|---|---|
+| GO-10 load fold | **Landed.** `evals/report.py` `derive_measured(..., load_runs=...)` takes `proxy_overhead_ms_p50/p95` from the newest clean load run (`load_load_runs`, `is_clean_load_run`). | MEAS only adds keys (M-8 drops its GO-10 part). |
+| DR-4 `release-images.yml` | **Landed** (`.github/workflows/release-images.yml`). | SHIP S-7 checks it. P6c is not blocked. |
+| DR-6 `record-demo` | **Landed as D123**: `docker-compose.record.yml` (68 lines, project `truthtable-record`), `scripts/record_demo.py` (657 lines: dry run unless `CONFIRM=1`, preflight, traffic rounds, export, check, swap-in), `make record-demo` and `make record-check-config`. The D208–D209 parts (generated-answer upstream, ledger across attempts, `ACCEPT`/`DISCARD`, drift review, `featured`) are not there. | VEND skips V-0 (the +2 d is not needed) and finishes it per D208. |
+| D115 capture | **Landed**: `npm run og`, `e2e/launch/{capture.ts,hero.spec.ts,og.spec.ts,screenshots.spec.ts}`, `scripts/make_hero_gif.py`, `make og`, `make hero-gif`, `make screenshots`. | VEND V-6 switches them to `featured`. |
+| LD-3 compare cells | **Landed, unreviewed**: all 20 cells carry a `source_url`; all 20 are `reviewed:false` (P5C-28). P5C-16 (vendor names in cell text versus D169) and P5C-17 (a stale fetch-log row) are open. | SHIP S-5 re-verifies every cell and fixes P5C-16/17; the owner reviews at G5. |
+| I-8 published load run | **Landed**: `docs/benchmarks/load/20261010T131516Z-f60a8a4.json`. Not folded yet (`measured.json` is still `not_measured`). P5C-21: it predates the fix-round gateway changes and ran beside the owner's demo. | `bench-publish` folds it. Because P6a never writes `docs/benchmarks/**`, the quiet re-run is a P6b step: at the release commit, while the owner's demo is down (B3–B8) and before `bench-publish`, the lead runs `make load-test-gate LOAD_PUBLISH=1` ($0, mock vendors) with nothing else running. `load-run.v1` has no field for the image revision or concurrent load (P5C-21); the lead's contract PR adds them (§2.3 g). |
+
 ### 2.2 Free checks (no key)
 
 1. **Repository state.**
@@ -257,6 +268,18 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
    - `tmp/launch/video-4x5.mp4`
    - `backend-python/evals/calibration/x/gate.jsonl`
    - `backend-python/evals/results/x/run.json`
+
+**Step 0 results (2026-10-10, free reads only, no key):**
+
+| Check | Result |
+|---|---|
+| Repository | `api.github.com/repos/timkush1/TrustAgent` 200 (public). `ls-remote`: `main`, a `copilot/*` branch and dependabot branches; **no `v*` tags**. After `git fetch origin`, `feat/v2-jev-gateway..origin/main` counts **0** (`origin/main` is still `7ddc270`), so nothing is merged into int7. `https://timkush1.github.io/` answers 404 (no user site). |
+| RAGTruth | `refs/heads/main` = `c103204b9ce28d6bbad859304bf30de72b8ed8fe`, now the `RAGTRUTH_REVISION` default (`mk/py.mk`). Licence MIT (GitHub licence API). `response.jsonl` sha256 `e4c2e4ac…18073`, `source_info.jsonl` `0dffc26e…d578b`. |
+| Calibration sample (D206) | The loader's own conversion (`convert`, good quality only): QA **train** 4,892 answers, 1,546 hallucinated, 3,346 clean, **342 with a conflict span**, 1,204 baseless-only, 839 sources. QA **test** 875 answers, 160 hallucinated, 26 conflict, 150 sources. **Train and test share no `source_id`** (0 of 839 and 150). A natural sample of 800 expects 55.9 conflicts (sd 6.6, so about 42.7 at −2 sd), 253 hallucinated and 547 clean. **`CALIB_N ?= 800`** (`mk/py.mk`). Mean example size 515 tokens (p95 772), so about $0.03 at Jev's price, inside the $0.30 cap. `--split train` exists. M-6 must add `source_id` to the prepared examples: `meta` has only `model`, `spans` and `task_type` today. |
+| Licences | RAGTruth: MIT. MS MARCO (the QA passages), from microsoft.github.io/msmarco: "The MS MARCO datasets are intended for non-commercial research purposes only to promote advancement in the field of artificial intelligence and related areas, and is made available free of charge without extending any license or other intellectual property rights." So `per_example` keeps ids, labels and scores only. LLM-AggreFact (`lytang/LLM-AggreFact`): CC-BY-ND-4.0, gated (auto), revision `981dfd0`; its sub-datasets keep their own licences. All of this goes into the `terms-check.md` template (S-4). |
+| Prices and ids | `/api/v1/models`: `anthropic/claude-haiku-4.5` $1 / $5 per M tokens, the same as `prices.v1.json`, so no pricing edit. `openai/gpt-4o-mini` exists ($0.15 / $0.60). **`typesafe/jev-1.13` is missing from the default list**, which returns only text-output models. It is listed with `?output_modalities=all` or `?output_modalities=decisions`, next to `~typesafe/jev-latest`, at $0.042 per M input and $0 output (matches). Its endpoint: provider "TypeSafe", 64k context, 32k max prompt, snapshot `jev-1.13-20260917`. **Any tool that checks the id against `/api/v1/models` must pass `output_modalities=all`.** A new `typesafe/jev-router` (a chat-model router with price −1) is not ours. |
+| G0 links | `openrouter.ai/typesafe/jev-1.13`, `typesafe.ai/legal/terms`, `typesafe.ai/legal/acceptable-use-policy` and `openrouter.ai/terms` all answer 200. The model page's data policy for TypeSafe: `training:false`, `retainsPrompts:false`, `canPublish:false` (OpenRouter's flag for publishing prompts; it says nothing about benchmarks). |
+| Gitignore | `backend-python/evals/.gitignore` adds `calibration/`; `scripts/tests/test_gitignore_p6.py` checks the scratch paths are ignored and the published ones are not. |
 
 ### 2.3 Contract PR (additive; `make contracts-check contracts-test gen-types`)
 
@@ -823,7 +846,12 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
    - interview talking points public in the repo, or private (the default is private);
    - your preferred launch day;
    - your audience: Israel, or US and EU.
-4. **OpenRouter account.** Sign in or sign up at https://openrouter.ai. **Do not add credit yet.** Open https://openrouter.ai/settings/privacy and allow the provider Claude names, using exactly the wording Claude gives you.
+4. **OpenRouter account.** Sign in or sign up at https://openrouter.ai. **Do not add credit yet.** Open https://openrouter.ai/settings/privacy and check that Jev's provider can be reached:
+   - **The provider is "TypeSafe".** OpenRouter lists exactly one endpoint for `typesafe/jev-1.13`, named "TypeSafe | typesafe/jev-1.13-20260917" (the snapshot of 2026-09-17), served from `api.typesafe.ai`. Its published data policy: it does not train on prompts, does not retain prompts, and OpenRouter does not train on them either (Step 0, 2026-10-10, from the public model page and `/api/v1/models/typesafe/jev-1.13/endpoints`).
+   - OpenRouter's privacy guide says: "On your account settings page, you can set whether you would like to allow routing to providers that may train on your data (according to their own policies). There are separate settings for paid and free models." TypeSafe does not train, so you can leave both of those settings **off**.
+   - Make sure "TypeSafe" is not on any list of ignored or blocked providers on that page.
+   - If the page has a setting that allows only Zero Data Retention (ZDR) endpoints, leave it **off**: TypeSafe's ZDR status is not published, and with it on every Jev call can fail with a 404 `data_policy` error.
+   - The settings page needs a signed-in account, so Step 0 could not read its exact labels. Read them out to Claude if anything looks different from this.
 5. **ffmpeg.** In your Ubuntu terminal: `sudo apt-get install -y ffmpeg`.
 6. **Power.** Windows Settings → System → Power & battery → Screen and sleep → "When plugged in, put my device to sleep after": **Never**, for the P6 days.
 7. **Push guard.** In your own terminal:

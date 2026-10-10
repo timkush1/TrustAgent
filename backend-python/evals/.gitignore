@@ -2,3 +2,6 @@
 # outputs. Published runs go to docs/benchmarks/ via `make bench-publish`.
 .cache/
 results/
+# Calibration passes (make calib-pass): the labelled train sample and its gate-eval
+# output. Only the fitted file is committed, under config/calibration/ (P6 D206).
+calibration/
