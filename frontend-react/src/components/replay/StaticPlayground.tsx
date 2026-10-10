@@ -18,7 +18,7 @@ import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { tracesQuery } from '@/data/queries';
 import type { LiveScenarioId } from '@/domain/liveScenarios';
 import { checkedAgainst, copy, headlineReason, outcomeOf } from '@/domain/presentation';
-import { liveWords } from '@/domain/words/live';
+import { liveText } from './live/liveText';
 import type { TraceSummary } from '@/types/api';
 import { distinctExamples } from './examples';
 import { useReplayInfo } from './useReplay';
@@ -107,9 +107,9 @@ export function StaticPlayground({ scenario, paste = false }: StaticPlaygroundPr
       <section id="live" aria-labelledby="live-title" className="max-w-4xl scroll-mt-16 space-y-4 rounded-lg border border-border bg-surface p-4 sm:p-5">
         <div className="space-y-1.5">
           <h2 id="live-title" className="text-base font-semibold text-fg">
-            {liveWords.section_title}
+            {liveText.section_title}
           </h2>
-          <p className="text-sm text-fg-muted">{liveWords.section_intro}</p>
+          <p className="text-sm text-fg-muted">{liveText.section_intro}</p>
           {simulated ? <p className="text-xs text-fg-muted">{copy.playground_live.recording_is_simulated}</p> : null}
         </div>
         <Suspense fallback={<LoadingState rows={2} />}>

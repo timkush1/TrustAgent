@@ -9,7 +9,7 @@ import { CreditCard } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { copy } from '@/domain/presentation';
-import { liveWords } from '@/domain/words/live';
+import { liveText } from './liveText';
 import { OPENROUTER_PAGES } from '@/lib/openrouter/endpoints';
 import { getKeyInfo } from '@/lib/openrouter/keyInfo';
 import { errorKind } from '@/lib/openrouter/errors';
@@ -53,7 +53,7 @@ export function NoCreditsScreen({ store, onRecovered }: NoCreditsScreenProps) {
     <div role="alert" className="space-y-3 rounded-lg border border-border-strong bg-surface p-4" data-testid="live-no-credits">
       <p className="flex items-center gap-2 text-sm font-semibold text-fg">
         <CreditCard aria-hidden="true" className="size-4" />
-        {liveWords.no_credits_title}
+        {liveText.no_credits_title}
       </p>
       <p className="text-sm text-fg">{copy.playground_live.errors.no_credits}</p>
       <div className="flex flex-wrap items-center gap-3">
@@ -65,7 +65,7 @@ export function NoCreditsScreen({ store, onRecovered }: NoCreditsScreenProps) {
         </Button>
       </div>
       <p aria-live="polite" className="text-xs text-fg-muted">
-        {checking ? liveWords.no_credits_checking : still ? liveWords.no_credits_still : ''}
+        {checking ? liveText.no_credits_checking : still ? liveText.no_credits_still : ''}
       </p>
     </div>
   );

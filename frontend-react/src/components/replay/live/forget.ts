@@ -5,10 +5,10 @@
  */
 import { notify } from '@/components/common/notify';
 import { copy } from '@/domain/presentation';
-import { liveWords } from '@/domain/words/live';
+import { liveText } from './liveText';
 import { browserKeyStore, type KeyStore } from '@/lib/openrouter/keyStore';
 
 export function forgetKey(store: KeyStore = browserKeyStore()): void {
   store.forget();
-  notify.success(liveWords.forgotten, { description: copy.playground_live.forget_note });
+  notify.success(liveText.forgotten, { description: copy.playground_live.forget_note });
 }

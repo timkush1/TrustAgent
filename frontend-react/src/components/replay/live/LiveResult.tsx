@@ -11,7 +11,8 @@ import { ResultTimeline } from '@/components/playground/ResultTimeline';
 import { JevRequestBody } from '@/components/trace/JevRequestPanel';
 import { formatUsd } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
-import { liveResultLabel, liveWords } from '@/domain/words/live';
+import { liveResultLabel } from '@/domain/words/live';
+import { liveText } from './liveText';
 import type { LiveCheckResult } from '@/lib/gate/liveCheck';
 
 export function LiveResult({ check }: { check: LiveCheckResult }) {
@@ -25,11 +26,11 @@ export function LiveResult({ check }: { check: LiveCheckResult }) {
         </span>
         {check.cost ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-fg-muted tabular" data-testid="live-check-cost">
-            {liveWords.this_check}: {formatUsd(check.cost.usd)}
+            {liveText.this_check}: {formatUsd(check.cost.usd)}
             <EvidenceBadge
               label={check.cost.label}
-              basis={check.cost.label === 'vendor' ? liveWords.vendor_basis : liveWords.computed_basis}
-              subject={liveWords.check_cost_subject}
+              basis={check.cost.label === 'vendor' ? liveText.vendor_basis : liveText.computed_basis}
+              subject={liveText.check_cost_subject}
             />
           </span>
         ) : null}
@@ -47,7 +48,7 @@ export function LiveResult({ check }: { check: LiveCheckResult }) {
       <details className="group">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
           <ChevronRight aria-hidden="true" className="size-4 transition-transform group-open:rotate-90" />
-          {liveWords.show_request}
+          {liveText.show_request}
         </summary>
         <JevRequestBody decision={check.result.decision} view={check.request} />
       </details>

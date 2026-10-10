@@ -10,7 +10,7 @@ import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { fieldControlClass } from '@/components/ui/control-styles';
 import { copy } from '@/domain/presentation';
-import { liveWords } from '@/domain/words/live';
+import { liveText } from './liveText';
 import { cn } from '@/lib/cn';
 import { errorKind } from '@/lib/openrouter/errors';
 import { isFramed } from '@/lib/openrouter/frame';
@@ -69,7 +69,7 @@ export function PasteKey({ onDone }: PasteKeyProps) {
   return (
     <div className="space-y-2">
       <label htmlFor={`${id}-key`} className="block text-sm font-medium text-fg">
-        {liveWords.paste_label}
+        {liveText.paste_label}
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
@@ -92,11 +92,11 @@ export function PasteKey({ onDone }: PasteKeyProps) {
           placeholder="sk-or-v1-…"
         />
         <Button type="button" variant="secondary" onClick={() => void save()} pending={checking}>
-          {checking ? liveWords.paste_checking : liveWords.paste_save}
+          {checking ? liveText.paste_checking : liveText.paste_save}
         </Button>
       </div>
       <p id={`${id}-help`} className="text-xs text-fg-muted">
-        {liveWords.paste_help}
+        {liveText.paste_help}
       </p>
       {problemText ? (
         <p id={`${id}-problem`} role="alert" className="text-xs font-medium text-fg">

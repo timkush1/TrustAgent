@@ -6,14 +6,14 @@
  */
 import { KeyRound, X } from 'lucide-react';
 import { copy } from '@/domain/presentation';
-import { liveWords } from '@/domain/words/live';
+import { liveText } from './liveText';
 import { useBrowserKey } from '@/lib/openrouter/useBrowserKey';
 import { forgetKey } from './forget';
 
 export default function LiveKeyChip() {
   const { key, state } = useBrowserKey();
   if (key === null) return null;
-  const title = state === 'memory' ? liveWords.key_in_memory : liveWords.key_in_tab;
+  const title = state === 'memory' ? liveText.key_in_memory : liveText.key_in_tab;
   return (
     <span
       className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface pr-0.5 pl-2 text-xs font-medium text-fg"
@@ -21,7 +21,7 @@ export default function LiveKeyChip() {
       data-testid="live-key-chip"
     >
       <KeyRound aria-hidden="true" className="size-3.5 text-fg-muted" />
-      <span className="max-sm:sr-only">{liveWords.key_chip}</span>
+      <span className="max-sm:sr-only">{liveText.key_chip}</span>
       <span className="sr-only">: {title}</span>
       <button
         type="button"

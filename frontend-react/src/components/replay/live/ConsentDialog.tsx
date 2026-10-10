@@ -17,7 +17,7 @@ import { playground } from '@/config/runtime';
 import { PKCE_FROM_BROWSER, STATIC_CONNECT_PRIMARY } from '@/domain/liveScenarios';
 import { formatUsd } from '@/domain/format';
 import { copy, fillTemplate } from '@/domain/presentation';
-import { liveWords } from '@/domain/words/live';
+import { liveText } from './liveText';
 import { beginConnect } from '@/lib/openrouter/connect';
 import { isFramed } from '@/lib/openrouter/frame';
 import { useBrowserKey } from '@/lib/openrouter/useBrowserKey';
@@ -42,11 +42,11 @@ function ConsentLines() {
     fillTemplate(line, { cost_per_check: perCheck?.text ?? null, max_calls: playground.maxCalls.toLocaleString('en-US') }),
   );
   const perCheckBadge = perCheck ? (
-    <EvidenceBadge label={perCheck.label} basis={perCheck.basis} asOf={perCheck.asOf} sourceUrl={perCheck.sourceUrl} subject={liveWords.per_check_subject} />
+    <EvidenceBadge label={perCheck.label} basis={perCheck.basis} asOf={perCheck.asOf} sourceUrl={perCheck.sourceUrl} subject={liveText.per_check_subject} />
   ) : null;
   return (
     <div className="space-y-3">
-      <ul className="space-y-2 text-sm text-fg" aria-label={liveWords.consent_intro}>
+      <ul className="space-y-2 text-sm text-fg" aria-label={liveText.consent_intro}>
         {lines.map((line) => (
           <li key={line} className="flex gap-2">
             <span aria-hidden="true" className="mt-2 size-1 shrink-0 rounded-full bg-fg-subtle" />
@@ -60,7 +60,7 @@ function ConsentLines() {
         <p className="text-sm text-fg" data-testid="consent-worst-case">
           <Tagged
             text={fillTemplate(copy.playground_live.worst_case, { max_spend: formatUsd(worst) })}
-            badge={<EvidenceBadge label="estimate" basis={liveWords.worst_case_basis} subject={liveWords.worst_case_subject} />}
+            badge={<EvidenceBadge label="estimate" basis={liveText.worst_case_basis} subject={liveText.worst_case_subject} />}
           />
         </p>
       ) : null}
@@ -112,7 +112,7 @@ function ConsentBody({ onClose, returnTo }: Omit<ConsentDialogProps, 'open'>) {
         <PasteKey onDone={onClose} />
       </div>
       {!connectPrimary && connectOffered ? <div className="flex flex-wrap gap-2 border-t border-border pt-4">{connectButton}</div> : null}
-      {!connectOffered ? <p className="text-xs text-fg-muted">{liveWords.connect_off_paste}</p> : null}
+      {!connectOffered ? <p className="text-xs text-fg-muted">{liveText.connect_off_paste}</p> : null}
     </div>
   );
 }
@@ -126,7 +126,7 @@ export function ConsentDialog({ open, onClose, returnTo }: ConsentDialogProps) {
       }}
     >
       {open ? (
-        <DialogContent title={liveWords.consent_title} size="md">
+        <DialogContent title={liveText.consent_title} size="md">
           {isFramed() ? <OpenInTab /> : <ConsentBody onClose={onClose} returnTo={returnTo} />}
         </DialogContent>
       ) : null}

@@ -17,7 +17,8 @@ import { NotFound, RouteError } from '@/components/common/RouteStates';
 import { buildRuntimeConfig } from '@/config/runtime';
 import { createReplayDataSource } from '@/data/replay/replayDataSource';
 import { copy } from '@/domain/presentation';
-import { liveMessage, liveWords } from '@/domain/words/live';
+import { liveMessage } from '@/domain/words/live';
+import { liveText } from './live/liveText';
 import { browserKeyStore } from '@/lib/openrouter/keyStore';
 import { memoryStorage } from '@/lib/openrouter/testing';
 import { createUsageStore, type UsageStore } from '@/lib/openrouter/usage';
@@ -146,7 +147,7 @@ describe('StaticPlayground', () => {
   it('shows the recorded examples first, then the live check with the scenario from ?scenario=', async () => {
     await renderStatic('/app/playground?scenario=pii-leak-flag');
     const examples = await screen.findByRole('list', { name: 'Example requests' });
-    const live = await screen.findByRole('region', { name: liveWords.section_title });
+    const live = await screen.findByRole('region', { name: liveText.section_title });
     expect(examples.compareDocumentPosition(live) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(live.id).toBe('live');
     expect(within(live).getByText(copy.playground_live.recording_is_simulated)).toBeInTheDocument();
@@ -159,13 +160,13 @@ describe('StaticPlayground', () => {
 
   it('ignores a ?scenario= that is not a live scenario', async () => {
     await renderStatic('/app/playground?scenario=javascript:alert(1)');
-    const live = await screen.findByRole('region', { name: liveWords.section_title });
+    const live = await screen.findByRole('region', { name: liveText.section_title });
     expect(await within(live).findByRole('radio', { checked: true })).toHaveAccessibleName(/Grounded answer passes/);
   });
 
   it('opens the consent dialog for ?paste=1 (the callback’s Paste a key instead)', async () => {
     await renderStatic('/app/playground?paste=1');
-    expect(await screen.findByRole('dialog', { name: liveWords.consent_title })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: liveText.consent_title })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -175,10 +176,10 @@ describe('LivePanel', () => {
     const user = userEvent.setup();
     renderPanel();
     const run = screen.getByRole('button', { name: copy.playground_live.run_check });
-    expect(run).toHaveAccessibleDescription(liveWords.connect_first);
+    expect(run).toHaveAccessibleDescription(liveText.connect_first);
     expect(screen.getByTestId('live-estimate')).toHaveTextContent(/≈ \$0\.0000\d/);
     await user.click(run);
-    expect(await screen.findByRole('dialog', { name: liveWords.consent_title })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: liveText.consent_title })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId('live-counter')).toBeNull();
   });
@@ -200,7 +201,7 @@ describe('LivePanel', () => {
     expect(screen.getByTestId('live-counter')).toHaveTextContent('1 of 100');
     expect(screen.getByTestId('live-spent')).toHaveTextContent('Spent so far: $0.000021');
     // The exact request: the body that was sent.
-    await user.click(within(result).getByText(liveWords.show_request));
+    await user.click(within(result).getByText(liveText.show_request));
     const sent = JSON.parse(String(decisionCalls()[0][1].body)) as { state: { assistant_response: string } };
     expect(sent.state.assistant_response).toBe('You can get a full refund within 60 days of purchase.');
     expect(within(result).getByTestId('jev-request')).toBeInTheDocument();
@@ -220,7 +221,7 @@ describe('LivePanel', () => {
     await act(async () => {
       vi.advanceTimersByTime(250);
     });
-    expect(screen.getByTestId('live-running')).toHaveTextContent(liveWords.running);
+    expect(screen.getByTestId('live-running')).toHaveTextContent(liveText.running);
     expect(screen.getByRole('radiogroup')).toBeInTheDocument();
     await act(async () => {
       release();
@@ -262,7 +263,7 @@ describe('LivePanel', () => {
     expect(browserKeyStore().currentKey()).toBeNull();
     expect(document.body.textContent).not.toContain('User not found');
     await user.click(within(error).getByRole('button', { name: copy.playground_live.actions.paste_new_key }));
-    expect(await screen.findByRole('dialog', { name: liveWords.consent_title })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: liveText.consent_title })).toBeInTheDocument();
   });
 
   it('a 429 offers Retry, which runs the check again', async () => {
@@ -335,14 +336,14 @@ describe('LivePanel', () => {
     browserKeyStore().set(KEY);
     const user = userEvent.setup();
     renderPanel();
-    await user.click(screen.getByRole('radio', { name: liveWords.custom_title }));
+    await user.click(screen.getByRole('radio', { name: liveText.custom_title }));
     const run = screen.getByRole('button', { name: copy.playground_live.run_check });
     expect(run).toHaveAttribute('aria-disabled', 'true');
-    expect(run).toHaveAccessibleDescription(liveWords.documents_missing);
+    expect(run).toHaveAccessibleDescription(liveText.documents_missing);
     expectDisabledSayWhy();
-    await user.type(screen.getByLabelText(liveWords.documents_label), DOCS);
-    expect(run).toHaveAccessibleDescription(liveWords.answer_missing);
-    await user.type(screen.getByLabelText(liveWords.answer_label), 'Support is open around the clock.');
+    await user.type(screen.getByLabelText(liveText.documents_label), DOCS);
+    expect(run).toHaveAccessibleDescription(liveText.answer_missing);
+    await user.type(screen.getByLabelText(liveText.answer_label), 'Support is open around the clock.');
     expect(run).not.toHaveAttribute('aria-disabled', 'true');
     await user.click(run);
     await screen.findByTestId('live-result');

@@ -27,7 +27,8 @@ import { playground } from '@/config/runtime';
 import { LIVE_CHECKS, LIVE_SCENARIOS, type LiveScenarioId } from '@/domain/liveScenarios';
 import { formatUsd } from '@/domain/format';
 import { commandText, copy, fillTemplate } from '@/domain/presentation';
-import { liveActionLabel, liveChecksUsed, liveErrorWords, liveMessage, liveWords } from '@/domain/words/live';
+import { liveActionLabel, liveChecksUsed, liveErrorWords, liveMessage } from '@/domain/words/live';
+import { liveText } from './liveText';
 import { CUSTOM_LIMITS, customInput, customProblems, estimateCheck, liveScenario, type CustomText, type LiveInput } from '@/lib/gate/liveCheck';
 import { OPENROUTER_PAGES } from '@/lib/openrouter/endpoints';
 import type { LiveErrorAction, LiveErrorView } from '@/lib/openrouter/errors';
@@ -76,11 +77,11 @@ function ScenarioPreview({ id }: { id: LiveScenarioId }) {
   return (
     <div className="grid gap-3 md:grid-cols-2" data-testid="live-preview">
       <div className="space-y-1">
-        <p className="text-xs font-medium text-fg-muted">{liveWords.asked}</p>
+        <p className="text-xs font-medium text-fg-muted">{liveText.asked}</p>
         <p className="text-sm text-fg">{s.question}</p>
       </div>
       <div className="space-y-1">
-        <p className="text-xs font-medium text-fg-muted">{liveWords.answered}</p>
+        <p className="text-xs font-medium text-fg-muted">{liveText.answered}</p>
         <p className="text-sm text-fg">{s.response}</p>
       </div>
     </div>
@@ -89,17 +90,17 @@ function ScenarioPreview({ id }: { id: LiveScenarioId }) {
 
 function CustomForm({ value, onChange, problems }: { value: CustomText; onChange: (v: CustomText) => void; problems: ReturnType<typeof customProblems> }) {
   const tooLong = (field: 'documents' | 'question' | 'answer') =>
-    problems.includes(`${field}_long` as never) ? liveWords.too_long(CUSTOM_LIMITS[field]) : undefined;
+    problems.includes(`${field}_long` as never) ? liveText.too_long(CUSTOM_LIMITS[field]) : undefined;
   return (
     <div className="space-y-3" data-testid="live-custom">
-      <p className="text-xs text-fg-muted">{liveWords.custom_hint}</p>
-      <Field label={liveWords.documents_label} error={tooLong('documents')}>
+      <p className="text-xs text-fg-muted">{liveText.custom_hint}</p>
+      <Field label={liveText.documents_label} error={tooLong('documents')}>
         <Textarea rows={4} value={value.documents} onChange={(e) => onChange({ ...value, documents: e.currentTarget.value })} />
       </Field>
-      <Field label={liveWords.question_label} error={tooLong('question')}>
+      <Field label={liveText.question_label} error={tooLong('question')}>
         <Textarea rows={2} value={value.question} onChange={(e) => onChange({ ...value, question: e.currentTarget.value })} />
       </Field>
-      <Field label={liveWords.answer_label} error={tooLong('answer')}>
+      <Field label={liveText.answer_label} error={tooLong('answer')}>
         <Textarea rows={3} value={value.answer} onChange={(e) => onChange({ ...value, answer: e.currentTarget.value })} />
       </Field>
     </div>
@@ -109,7 +110,7 @@ function CustomForm({ value, onChange, problems }: { value: CustomText; onChange
 function Unavailable() {
   return (
     <Notice testId="live-unavailable">
-      <p className="font-medium">{liveWords.unavailable_title}</p>
+      <p className="font-medium">{liveText.unavailable_title}</p>
       <p>{fillTemplate(copy.playground_live.live_unavailable)}</p>
     </Notice>
   );
@@ -119,7 +120,7 @@ function CapReached({ maxCalls }: { maxCalls: number }) {
   return (
     <Notice testId="live-cap-reached" role="status">
       <p>{liveMessage('cap_reached', { max_calls: maxCalls })}</p>
-      <CodeBlock code={commandText('demo') ?? 'make demo'} label={liveWords.run_yourself} />
+      <CodeBlock code={commandText('demo') ?? 'make demo'} label={liveText.run_yourself} />
     </Notice>
   );
 }
@@ -161,7 +162,7 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
   const capReached = usage.calls >= usage.maxCalls;
   const tokenCap = estimate?.ok === false;
   const problemText =
-    problems.includes('documents') ? liveWords.documents_missing : problems.includes('answer') ? liveWords.answer_missing : problems.length > 0 ? liveWords.shorten : null;
+    problems.includes('documents') ? liveText.documents_missing : problems.includes('answer') ? liveText.answer_missing : problems.length > 0 ? liveText.shorten : null;
   const blockedReason = running ? null : capReached ? null : usage.paused ? null : problemText ?? (tokenCap ? liveMessage('token_cap', { max_tokens: maxTokens }) : null);
   const canRun = !running && !capReached && !usage.paused && input !== null && !tokenCap;
 
@@ -195,12 +196,12 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
 
   const options = [
     ...LIVE_SCENARIOS.map((s) => ({ value: s as Choice, label: liveScenario(s).title })),
-    { value: 'custom' as Choice, label: liveWords.custom_title },
+    { value: 'custom' as Choice, label: liveText.custom_title },
   ];
 
   return (
     <div className="space-y-5" data-testid="live-panel" data-key-state={keyState}>
-      <RadioGroup<Choice> label={liveWords.pick_label} options={options} value={choice} onValueChange={setChoice} name="live-scenario" disabled={running} />
+      <RadioGroup<Choice> label={liveText.pick_label} options={options} value={choice} onValueChange={setChoice} name="live-scenario" disabled={running} />
 
       {choice === 'custom' ? <CustomForm value={custom} onChange={setCustom} problems={problems} /> : <ScenarioPreview id={choice} />}
 
@@ -231,12 +232,12 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
             </Button>
             {estimate?.ok && estimate.est_tokens.length === 0 ? (
               <span className="text-sm text-fg-muted" data-testid="live-estimate">
-                {liveWords.no_call}
+                {liveText.no_call}
               </span>
             ) : estimate?.ok && estimate.cost_usd !== null ? (
               <span className="inline-flex items-center gap-1.5 text-sm text-fg-muted tabular" data-testid="live-estimate">
                 ≈ {formatUsd(estimate.cost_usd)}
-                <EvidenceBadge label="estimate" basis={liveWords.estimate_basis} subject={liveWords.estimate_subject} />
+                <EvidenceBadge label="estimate" basis={liveText.estimate_basis} subject={liveText.estimate_subject} />
               </span>
             ) : null}
           </div>
@@ -246,7 +247,7 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
             </p>
           ) : !key ? (
             <p id={`${id}-why`} className="text-xs text-fg-muted">
-              {liveWords.connect_first}
+              {liveText.connect_first}
             </p>
           ) : null}
         </div>
@@ -258,14 +259,14 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
             {liveChecksUsed(usage.calls, usage.maxCalls)}
           </span>
           {usage.cost_source === null ? null : usage.cost_source === 'unknown' ? (
-            <span>{liveWords.spent_unknown}</span>
+            <span>{liveText.spent_unknown}</span>
           ) : (
             <span className="inline-flex items-center gap-1.5 tabular" data-testid="live-spent">
               {fillTemplate(copy.playground_static.running_cost, { cost: formatUsd(usage.cost_usd) })}
               <EvidenceBadge
                 label={usage.cost_source}
-                basis={usage.cost_source === 'vendor' ? liveWords.vendor_basis : liveWords.computed_basis}
-                subject={liveWords.spent_subject}
+                basis={usage.cost_source === 'vendor' ? liveText.vendor_basis : liveText.computed_basis}
+                subject={liveText.spent_subject}
               />
             </span>
           )}
@@ -283,7 +284,7 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
           showSpinner ? (
             <p className="flex items-center gap-2 text-sm text-fg-muted" data-testid="live-running">
               <Spinner size="sm" />
-              {liveWords.running}
+              {liveText.running}
             </p>
           ) : null
         ) : phase.kind === 'failed' ? (
