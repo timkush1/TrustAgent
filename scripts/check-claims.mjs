@@ -27,14 +27,16 @@
  *   [launch-figure]       a $, % or ms figure in docs/launch without a claim marker
  *   [pkce-wording]        prose says PKCE is verified while SPEC Appendix D says it is not
  *   [block-stale]         a <!-- measured:start --> ... <!-- measured:end --> block differs from what
- *                         --write generates; [block-unpaired] when the markers do not pair up
+ *                         --write generates (proxy overhead in a table of its own, D118);
+ *                         [block-unpaired] when the markers do not pair up
  *   [load-run-missing]    a measured overhead value names a run with no docs/benchmarks/load file
  *   [third-party-stale]   (warning) a third-party claim's as_of is more than 120 days old
  *   [launch-*]            with --launch: the recorded dataset, a measured run, a reviewed
  *                         comparison table and the og.png card (see launchChecks)
  *
  * Markers, chips and figures inside code (fenced blocks and inline code spans) are not read, so a
- * doc can show the syntax. The prose rules (stray chips, placeholders, launch figures, PKCE wording)
+ * doc can show the syntax. A display, chip, caveat or link inside an HTML comment does not count
+ * either: nobody sees it. The prose rules (stray chips, placeholders, launch figures, PKCE wording)
  * apply to the published docs: README.md and docs/ outside docs/v2 (design records) and
  * docs/archive (historical logs).
  *
@@ -95,7 +97,6 @@ const BLOCK_RE = /<!--\s*measured:(start|end)\s*-->/;
 const CHIP_RE = /\[(estimate|vendor|third[- ]party|measured|simulated)\]/gi;
 const MEASURED_CHIP_RE = /\[measured\]/gi;
 const PLACEHOLDER_RE = /\{measured:([^{}\s]*)\}/g;
-const ANY_PLACEHOLDER_RE = /\{[^{}\n]*\}/g;
 const FIGURE_RE = /\$\s?\d[\d,]*(?:\.\d+)?|(?<![\w.$])\d[\d,]*(?:\.\d+)?\s?(?:%|ms\b)/g;
 const LINK_RE = /\]\(([^)\s]*#[^)\s]+)\)/g;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
@@ -106,8 +107,11 @@ export class ConfigError extends Error {}
 // ---------------------------------------------------------------------------------------------
 // Markdown helpers
 
-/** Replace fenced code blocks and inline code spans with spaces, keeping every column. */
-export function maskCode(lines) {
+/**
+ * Replace fenced code blocks and inline code spans with spaces, keeping every column. With
+ * `inline: false` inline code keeps its text (a caveat may name `mock-upstream` in backticks).
+ */
+export function maskCode(lines, { inline = true } = {}) {
   const out = [];
   let fence = null;
   for (const line of lines) {
@@ -123,7 +127,7 @@ export function maskCode(lines) {
       out.push(' '.repeat(line.length));
       continue;
     }
-    out.push(maskInlineCode(line));
+    out.push(inline ? maskInlineCode(line) : line);
   }
   return out;
 }
@@ -163,39 +167,55 @@ function maskInlineCode(line) {
   return out;
 }
 
-/** Also blank every HTML comment (claim markers included), for the rules that read prose. */
-export function maskComments(lines) {
+/**
+ * Per line, which columns sit inside an HTML comment (a comment may span lines). Run it on
+ * code-masked lines, so a `<!--` inside code never opens one.
+ */
+function commentColumns(lines) {
   const out = [];
   let open = false;
   for (const line of lines) {
-    let s = '';
+    const cols = new Uint8Array(line.length);
     let i = 0;
     while (i < line.length) {
       if (open) {
         const end = line.indexOf('-->', i);
-        if (end < 0) {
-          s += ' '.repeat(line.length - i);
-          i = line.length;
-        } else {
-          s += ' '.repeat(end + 3 - i);
-          i = end + 3;
-          open = false;
-        }
+        const stop = end < 0 ? line.length : end + 3;
+        cols.fill(1, i, stop);
+        i = stop;
+        if (end >= 0) open = false;
       } else {
         const start = line.indexOf('<!--', i);
-        if (start < 0) {
-          s += line.slice(i);
-          i = line.length;
-        } else {
-          s += line.slice(i, start);
-          i = start;
-          open = true;
-        }
+        if (start < 0) break;
+        i = start;
+        open = true;
       }
     }
-    out.push(s);
+    out.push(cols);
   }
   return out;
+}
+
+function blankColumns(lines, cols) {
+  return lines.map((line, k) => {
+    let s = '';
+    for (let c = 0; c < line.length; c += 1) s += cols[k][c] ? ' ' : line[c];
+    return s;
+  });
+}
+
+/** Also blank every HTML comment (claim markers included), for the rules that read prose. */
+export function maskComments(lines) {
+  return blankColumns(lines, commentColumns(lines));
+}
+
+/**
+ * The text a reader sees, column for column: fenced code and HTML comments blanked, inline code
+ * kept (a caveat may name `mock-upstream` in backticks). A chip or a caveat hidden in a comment
+ * is not next to anything.
+ */
+export function visibleText(lines) {
+  return blankColumns(maskCode(lines, { inline: false }), commentColumns(maskCode(lines)));
 }
 
 /** Whitespace, typographic quotes and emphasis do not change what a sentence says. */
@@ -321,11 +341,22 @@ function inMeasuredBlock(claim) {
   return claim.label === 'measured' && claim.surfaces.some((s) => SURFACES.includes(s));
 }
 
-/** The lines between <!-- measured:start --> and <!-- measured:end -->, as --write writes them. */
+/** A measured claim about the gateway's own time (measured.json system "proxy"), not the fast check. */
+function isProxyOverhead(claim, measured) {
+  return measured?.values?.[claim.measured_ref]?.system === 'proxy';
+}
+
+export const OVERHEAD_INTRO = "The gateway's own overhead, measured separately by a load test against simulated vendors:";
+
+/**
+ * The lines between <!-- measured:start --> and <!-- measured:end -->, as --write writes them.
+ * Proxy overhead gets a table of its own after the fast-check results, so it never sits next to
+ * the fast check's latency (D118).
+ */
 export function renderMeasuredBlock(claims, measured, read) {
   const problems = [];
   const cell = (s) => s.replace(/\|/g, '\\|');
-  const rows = claims.claims.filter(inMeasuredBlock).map((c) => {
+  const row = (c) => {
     const shown = expectedDisplay(c, measured);
     let note = c.caveat ?? '';
     if (note.includes('{machine}')) {
@@ -334,17 +365,22 @@ export function renderMeasuredBlock(claims, measured, read) {
       note = note.replace('{machine}', machine.text);
     }
     return `| ${cell(c.text)} | <!-- claim:${c.id} --> ${cell(shown.text)} [${LABEL_CHIPS.measured}] |${note ? ` ${cell(note)} ` : ' '}|`;
-  });
+  };
+  const table = (rows) => ['| What we measure | Our result | Note |', '|---|---|---|', ...rows];
+  const listed = claims.claims.filter(inMeasuredBlock);
+  const results = listed.filter((c) => !isProxyOverhead(c, measured)).map(row);
+  const overhead = listed.filter((c) => isProxyOverhead(c, measured)).map(row);
   const details = [measured?.generated_by, measured?.generated_at?.slice(0, 10)].filter(Boolean).join(', ');
   const footer = isMeasuredRun(measured)
     ? `From ${measured.runs.length === 1 ? 'the measured run' : 'the measured runs'} ${measured.runs.join(', ')}` +
       `${details ? ` (${details})` : ''}. A row without a measured value says "not yet measured".`
     : 'No benchmark run is published yet, so every row says "not yet measured". The other figures here are ' +
       'labelled estimates, vendor prices or third-party results, not our measurements.';
-  return {
-    lines: [BLOCK_HEADER, '', '| What we measure | Our result | Note |', '|---|---|---|', ...rows, '', footer],
-    problems,
-  };
+  const lines = [BLOCK_HEADER, ''];
+  if (results.length) lines.push(...table(results), '');
+  if (overhead.length) lines.push(OVERHEAD_INTRO, '', ...table(overhead), '');
+  lines.push(footer);
+  return { lines, problems };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -372,10 +408,31 @@ export function pkceStatus(specText) {
   return status;
 }
 
-const PKCE_HEDGE_RE =
-  /\b(not|never|no|unverified|yet|without|until|unless|once|after|when|if|pending|whether|only)\b|n't\b|mock/i;
+// "Verified" is not a claim after a negation earlier in the sentence ("not yet verified", "no doc
+// may call PKCE verified"), after a condition in the same clause ("until PKCE is verified"), or in
+// a sentence about the mock OpenRouter. "Unverified" never matches \bverified\b. Words after
+// "verified" ("verified only on localhost", "verified after a real round trip") hedge nothing.
+const PKCE_NEGATION_RE = /\b(?:not|never|no|yet|without|pending)\b|n't\b/i;
+const PKCE_CONDITION_RE = /\b(?:until|unless|once|after|before|when|if|whether)\b/i;
+const PKCE_MOCK_RE = /\bmock/i;
+const CLAUSE_BREAK_RE = /[,;:()\u2013\u2014]/;
 
-/** Sentences that call PKCE verified, unhedged, where Appendix D says that callback is not. */
+/** True when a sentence calls PKCE verified without a hedge. */
+export function pkceCalledVerified(sentence) {
+  if (!/\bPKCE\b/i.test(sentence) || PKCE_MOCK_RE.test(sentence)) return false;
+  for (const m of sentence.matchAll(/\bverified\b/gi)) {
+    const before = sentence.slice(0, m.index);
+    const clause = before.split(CLAUSE_BREAK_RE).pop();
+    if (!PKCE_NEGATION_RE.test(before) && !PKCE_CONDITION_RE.test(clause)) return true;
+  }
+  return false;
+}
+
+/**
+ * Sentences that call PKCE verified, unhedged, where Appendix D says that callback is not. A
+ * paragraph is read as sentences across its wrapped lines; a list item or a quote starts a new
+ * unit, and a heading or a table row is a unit of its own (a row's cells are clauses of one unit).
+ */
 export function pkceWordingHits(proseLines, status) {
   const hits = [];
   if (status.localhost && status.pages) return hits;
@@ -388,10 +445,10 @@ export function pkceWordingHits(proseLines, status) {
       for (let k = 0; k <= t.length; k += 1) lineAt.push(line);
       text += `${t} `;
     }
-    const re = /[^.!?|]+[.!?]*/g;
+    const re = /[^.!?]+[.!?]*/g;
     for (let m = re.exec(text); m; m = re.exec(text)) {
       const sentence = m[0];
-      if (!/\bPKCE\b/i.test(sentence) || !/\bverified\b/i.test(sentence) || PKCE_HEDGE_RE.test(sentence)) continue;
+      if (!pkceCalledVerified(sentence)) continue;
       const localhost = /localhost|self-hosted|self hosted/i.test(sentence);
       const pages = /\bpages\b|github\.io|static/i.test(sentence);
       const unverified =
@@ -403,8 +460,16 @@ export function pkceWordingHits(proseLines, status) {
     block = [];
   };
   proseLines.forEach((t, i) => {
-    if (t.trim() === '') flush();
-    else block.push({ line: i + 1, text: t });
+    if (t.trim() === '') {
+      flush();
+    } else if (isTableRow(t) || /^ {0,3}#{1,6}(\s|$)/.test(t)) {
+      flush();
+      block.push({ line: i + 1, text: t.replace(/(?<!\\)\|/g, ';') });
+      flush();
+    } else {
+      if (/^\s*([-*+]|\d{1,9}[.)])\s/.test(t) || /^\s*>/.test(t)) flush();
+      block.push({ line: i + 1, text: t });
+    }
   });
   flush();
   return hits;
@@ -417,8 +482,12 @@ function isPublished(path) {
   return path === 'README.md' || (path.startsWith('docs/') && !/^docs\/(v2|archive)\//.test(path));
 }
 
-/** Every claim marker of a file, with the text that follows it (the claim's span). */
-function findMarkers(lines, masked) {
+/**
+ * Every claim marker of a file, with the text that follows it (the claim's span). Markers are
+ * found in `masked` (code blanked); the span's text is read from `prose` (comments blanked too), so
+ * a display or chip inside an HTML comment, which nobody sees, does not count.
+ */
+function findMarkers(masked, prose) {
   const markers = [];
   masked.forEach((line, i) => {
     for (const m of line.matchAll(MARKER_RE)) {
@@ -444,7 +513,7 @@ function findMarkers(lines, masked) {
       from = 0;
     }
     mk.segments = segments;
-    mk.text = segments.map((s) => lines[s.line].slice(s.start, s.end)).join(' ');
+    mk.text = segments.map((s) => prose[s.line].slice(s.start, s.end)).join(' ');
   }
   return markers;
 }
@@ -453,14 +522,18 @@ function insideSegments(segments, line, col) {
   return segments.some((s) => s.line === line && col >= s.start && col < s.end);
 }
 
-function checkCaveat(claim, mk, file, lines, masked, files, read) {
+/**
+ * The caveat, or a link to an anchor whose next lines hold it, within the window after the marker.
+ * Both are read as a reader sees them: a caveat or a link inside an HTML comment does not count.
+ */
+function checkCaveat(claim, mk, file, lines, visible, prose, files, read) {
   const pattern = caveatPattern(claim.caveat);
   const last = Math.min(lines.length - 1, mk.line + CAVEAT_WINDOW_LINES);
-  const windowText = [lines[mk.line].slice(mk.end), ...lines.slice(mk.line + 1, last + 1)].join(' ');
+  const windowText = [visible[mk.line].slice(mk.end), ...visible.slice(mk.line + 1, last + 1)].join(' ');
   if (pattern.test(normalize(windowText))) return true;
   for (let ln = mk.line; ln <= last; ln += 1) {
     const from = ln === mk.line ? mk.end : 0;
-    for (const m of masked[ln].slice(from).matchAll(LINK_RE)) {
+    for (const m of prose[ln].slice(from).matchAll(LINK_RE)) {
       const [target, anchor] = m[1].split('#');
       const path = target ? posix.normalize(posix.join(posix.dirname(file), target)) : file;
       let targetLines = path === file ? lines : null;
@@ -477,7 +550,7 @@ function checkCaveat(claim, mk, file, lines, masked, files, read) {
       }
       const at = anchorLine(targetLines, name);
       if (at < 0) continue;
-      const near = targetLines.slice(at, at + CAVEAT_WINDOW_LINES + 1).join(' ');
+      const near = visibleText(targetLines).slice(at, at + CAVEAT_WINDOW_LINES + 1).join(' ');
       if (pattern.test(normalize(near))) return true;
     }
   }
@@ -511,7 +584,8 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
     const lines = text.split(/\r?\n/);
     const masked = maskCode(lines);
     const prose = maskComments(masked);
-    const markers = findMarkers(lines, masked);
+    const visible = visibleText(lines);
+    const markers = findMarkers(masked, prose);
     markerCount += markers.length;
     const measuredSegments = [];
 
@@ -547,7 +621,7 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
             `claim ${claim.id} is labelled ${claim.label}: its chip is [${want}], not [${chip[1]}]`);
         }
       }
-      if (claim.caveat && !checkCaveat(claim, mk, file, lines, masked, files, read)) {
+      if (claim.caveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
         report('error', 'caveat-missing', file, line,
           `claim ${claim.id}: its caveat ("${claim.caveat}") or a link to an anchor holding it must follow within ${CAVEAT_WINDOW_LINES} lines`);
       }
@@ -604,7 +678,8 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
     // is part of that claim's display, so a second, unmarked number in the same sentence still fails.
     if (file.startsWith('docs/launch/')) {
       prose.forEach((l, i) => {
-        const placeholders = [...l.matchAll(ANY_PLACEHOLDER_RE)].map((m) => [m.index, m.index + m[0].length]);
+        // Only a {measured:KEY} placeholder stands in for a figure; any other braces hide nothing.
+        const placeholders = [...l.matchAll(PLACEHOLDER_RE)].map((m) => [m.index, m.index + m[0].length]);
         for (const m of l.matchAll(FIGURE_RE)) {
           const figure = normalize(m[0]);
           if (markers.some((mk) => mk.expected?.includes(figure) && insideSegments(mk.segments, i, m.index))) continue;
@@ -660,14 +735,16 @@ export function launchChecks({ measured, compare, read }) {
   if (manifest === null) {
     report('launch-recorded', RECORDED_MANIFEST_PATH, 'no recorded dataset: run `make record-demo` (the site would replay simulated traffic)');
   } else {
-    let kind;
+    let parsed;
     try {
-      kind = JSON.parse(manifest.toString('utf8')).kind;
+      parsed = JSON.parse(manifest.toString('utf8'));
     } catch (err) {
       report('launch-recorded', RECORDED_MANIFEST_PATH, `not valid JSON: ${err.message}`);
     }
-    if (kind !== undefined && kind !== 'recorded') {
-      report('launch-recorded', RECORDED_MANIFEST_PATH, `kind is "${kind}", not "recorded": a simulated tape is never launched as a recording`);
+    // Only an explicit kind "recorded" launches; a manifest without one is not evidence of a recording.
+    if (parsed !== undefined && parsed?.kind !== 'recorded') {
+      const kind = parsed !== null && typeof parsed === 'object' && 'kind' in parsed ? `"${parsed.kind}"` : 'missing';
+      report('launch-recorded', RECORDED_MANIFEST_PATH, `kind is ${kind}, not "recorded": a simulated tape is never launched as a recording`);
     }
   }
 
@@ -832,6 +909,9 @@ const FIXTURE_CLAIMS = {
       empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null,
       caveat: "Gateway's own time with simulated vendors; {machine}", measured_ref: 'proxy_overhead_ms_p50',
       surfaces: ['readme', 'docs'] },
+    { id: 'meas_latency', text: 'Fast-check latency, p50', value: null, unit: 'ms', display: '{value} ms p50',
+      empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null, caveat: null,
+      measured_ref: 'gate_latency_ms_p50', surfaces: ['readme'] },
   ],
 };
 
@@ -841,6 +921,7 @@ const NOT_MEASURED = {
   values: {
     fast_check_usd_per_1k: { value: null, unit: 'usd_per_1k', description: 'd', run_id: null, system: 'gate' },
     proxy_overhead_ms_p50: { value: null, unit: 'ms', description: 'd', run_id: null, system: 'proxy' },
+    gate_latency_ms_p50: { value: null, unit: 'ms', description: 'd', run_id: null, system: 'gate' },
   },
 };
 
@@ -854,6 +935,7 @@ const MEASURED = {
   values: {
     fast_check_usd_per_1k: { ...NOT_MEASURED.values.fast_check_usd_per_1k, value: 0.2134, run_id: 'bench-1' },
     proxy_overhead_ms_p50: { ...NOT_MEASURED.values.proxy_overhead_ms_p50, value: 1.234, run_id: 'load-1' },
+    gate_latency_ms_p50: { ...NOT_MEASURED.values.gate_latency_ms_p50, value: 212.4, run_id: 'bench-1' },
   },
 };
 
@@ -978,6 +1060,42 @@ const CASES = [
     expect: ['caveat-missing'],
   },
   {
+    name: 'a chip inside an HTML comment is not a chip (the reader sees an unlabelled figure)',
+    files: { 'README.md': '<!-- claim:est_cost --> ~$0.21 / 1,000 answers <!-- [estimate] -->' },
+    expect: ['chip-missing'],
+  },
+  {
+    name: 'a display inside an HTML comment is not a display',
+    files: { 'README.md': 'Fast check: <!-- claim:est_cost --> cheap <!-- ~$0.21 / 1,000 answers [estimate] -->' },
+    expect: ['display-missing'],
+  },
+  {
+    name: 'a caveat inside an HTML comment is not next to the chip',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] <!-- Latency depends on region and load. -->' },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'a link inside an HTML comment is not a link to the caveat',
+    files: {
+      'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] <!-- [why](docs/NOTES.md#latency) -->',
+      'docs/NOTES.md': ['## Latency', '', 'Latency depends on region and load.'].join('\n'),
+    },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'an anchor whose caveat sits in a comment does not count',
+    files: {
+      'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party] ([why](docs/NOTES.md#latency))',
+      'docs/NOTES.md': ['## Latency', '', '<!-- Latency depends on region and load. -->'].join('\n'),
+    },
+    expect: ['caveat-missing'],
+  },
+  {
+    name: 'a caveat may set words in inline code',
+    files: { 'README.md': '<!-- claim:tp_latency --> P50 0.23 s on OpenRouter [third-party]; latency depends on `region` and load.' },
+    expect: [],
+  },
+  {
     name: 'a measured claim with no value says its empty display',
     files: { 'README.md': "Ours: <!-- claim:meas_overhead --> not yet measured [measured]. Gateway's own time with simulated vendors; no run yet" },
     expect: [],
@@ -1040,6 +1158,11 @@ const CASES = [
     expect: ['launch-figure', 'launch-figure', 'launch-figure'],
   },
   {
+    name: 'braces do not hide a launch figure; only a {measured:KEY} placeholder stands in for one',
+    files: { 'docs/launch/post.md': 'We save {about $5 a day}, and the check costs {measured:fast_check_usd_per_1k}.' },
+    expect: ['launch-figure'],
+  },
+  {
     name: 'PKCE called verified while Appendix D says unverified',
     files: { 'docs/SECURITY.md': 'Connect OpenRouter uses PKCE, verified against openrouter.ai.\n\nThe PKCE verifier is kept server-side.' },
     expect: ['pkce-wording'],
@@ -1048,6 +1171,36 @@ const CASES = [
     name: 'PKCE wording that is hedged passes',
     files: { 'docs/SECURITY.md': 'PKCE is not yet verified against openrouter.ai; it was verified only against the mock OpenRouter. Connect becomes primary once PKCE is verified.' },
     expect: [],
+  },
+  {
+    name: 'words after "verified" do not hedge it; a condition in another clause does not either',
+    files: {
+      'docs/SECURITY.md': [
+        'Connect OpenRouter (PKCE) is verified only on localhost.',
+        '',
+        'PKCE sign-in was verified after a real round trip.',
+        '',
+        'When you click Connect, PKCE is verified end to end.',
+      ].join('\n'),
+    },
+    expect: ['pkce-wording', 'pkce-wording', 'pkce-wording'],
+  },
+  {
+    name: 'a table row is read on its own: a verified row fails, a hedged row passes',
+    files: {
+      'docs/SECURITY.md': [
+        '| Check | Status |',
+        '|---|---|',
+        '| OpenRouter PKCE, Pages | not verified yet |',
+        '| OpenRouter PKCE, localhost | Verified |',
+      ].join('\n'),
+    },
+    expect: ['pkce-wording'],
+  },
+  {
+    name: 'a list item without a full stop does not borrow the previous item\'s hedge',
+    files: { 'docs/SECURITY.md': ['- Paste stays visible until the owner checks it', '- PKCE from the browser is verified'].join('\n') },
+    expect: ['pkce-wording'],
   },
   {
     name: 'PKCE verified wording passes once Appendix D has dated results',
@@ -1085,6 +1238,20 @@ const CASES = [
     compare: COMPARE({ value: 'unverified', text: '', source_url: null, as_of: null, reviewed: false }),
     files: {},
     expect: ['launch-compare', 'launch-not-measured', 'launch-og', 'launch-og', 'launch-recorded'],
+  },
+  {
+    name: 'launch: a manifest that does not say kind "recorded" is not a recording',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
+      [RECORDED_MANIFEST_PATH]: JSON.stringify({ schema: 'trustagent.recording/v1' }),
+      'docs/launch/og.png': png(OG_WIDTH, OG_HEIGHT),
+      'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT),
+    },
+    files: {},
+    expect: ['launch-recorded'],
   },
   {
     name: 'launch: a mock recording, a cell the owner has not reviewed, a wrong-size og.png',
@@ -1169,7 +1336,8 @@ function selfTestRun(check) {
     const measuredText = readFileSync(join(dir, 'README.md'), 'utf8');
     check('run: the block shows the measured values and the run machine',
       measuredText.includes('<!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]') &&
-        measuredText.includes('1.23 ms p50 [measured]') &&
+        measuredText.includes('<!-- claim:meas_overhead --> 1.23 ms p50 [measured]') &&
+        measuredText.includes('<!-- claim:meas_latency --> 212.4 ms p50 [measured]') &&
         measuredText.includes('measured on Test CPU, 10 cores, 8 GB RAM, Linux') &&
         measuredText.includes('From the measured runs bench-1, load-1 (bench-publish, 2026-11-02).'),
       measuredText);
@@ -1232,8 +1400,15 @@ export function selfTest() {
     const text = ['<!-- measured:start -->', ...block.lines, '<!-- measured:end -->'].join('\n');
     const result = checkClaims({ files: new Map([['README.md', text]]), claims: FIXTURE_CLAIMS, measured, specText: SPEC_UNVERIFIED, read, today: TODAY });
     const errors = result.problems.filter((p) => p.level === 'error');
-    check(`generated block (${measured.status}) passes`, errors.length === 0 && result.markers === 2 && result.blocks === 1,
+    check(`generated block (${measured.status}) passes`, errors.length === 0 && result.markers === 3 && result.blocks === 1,
       JSON.stringify(result.problems.map(formatProblem)));
+    // D118: the overhead row has a table of its own, after the fast-check results and their latency.
+    const at = (id) => block.lines.findIndex((l) => l.includes(`<!-- claim:${id} -->`));
+    const intro = block.lines.indexOf(OVERHEAD_INTRO);
+    check(`generated block (${measured.status}): proxy overhead is a separate table after the latency`,
+      at('meas_latency') >= 0 && at('meas_latency') < intro && intro < at('meas_overhead') &&
+        block.lines[at('meas_overhead') - 1] === '|---|---|---|' && block.lines[at('meas_latency') + 1] === '',
+      JSON.stringify(block.lines));
   }
 
   // Helpers.

@@ -22,10 +22,15 @@ measured", and so should you.
 | Our measured fast-check cost | <!-- claim:fast_check_cost_per_1k_measured --> not yet measured [measured] | |
 | Our fast-check latency, p50 | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
 | Our fast-check latency, p95 | <!-- claim:gate_latency_p95_measured --> not yet measured [measured] | |
-| Proxy overhead, p50 | <!-- claim:proxy_overhead_p50_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); no run published yet |
-| Proxy overhead, p95 | <!-- claim:proxy_overhead_p95_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); no run published yet |
 | Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | |
 | Measured cost ratio: LLM same checks vs fast check | <!-- claim:same_checks_ratio_measured --> not yet measured [measured] | |
+
+The gateway's own overhead, measured separately by a load test against simulated vendors:
+
+| What we measure | Our result | Note |
+|---|---|---|
+| Proxy overhead, p50 | <!-- claim:proxy_overhead_p50_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); no run published yet |
+| Proxy overhead, p95 | <!-- claim:proxy_overhead_p95_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); no run published yet |
 
 No benchmark run is published yet, so every row says "not yet measured". The other figures here are labelled estimates, vendor prices or third-party results, not our measurements.
 <!-- measured:end -->
