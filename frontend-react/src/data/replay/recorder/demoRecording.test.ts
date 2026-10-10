@@ -1,5 +1,5 @@
 /**
- * The committed demo recording (public/demo/recorded) is exactly what the recorder builds from the
+ * The committed simulated recording (demo-data/simulated) is exactly what the recorder builds from the
  * contracts today, and it is honest about being simulated. When this fails after a contract change,
  * run `npm run recording` and commit the result.
  */
@@ -32,9 +32,9 @@ const repoFile = (path: string) => readFileSync(fileURLToPath(new URL(`../../../
 const policyYaml = repoFile('config/policies.yaml');
 const versionText = repoFile('VERSION');
 
-const committed = import.meta.glob<string>('../../../../public/demo/recorded/**/*.json', { query: '?raw', import: 'default', eager: true });
+const committed = import.meta.glob<string>('../../../../demo-data/simulated/**/*.json', { query: '?raw', import: 'default', eager: true });
 const committedFiles = Object.fromEntries(
-  Object.entries(committed).map(([path, text]) => [path.slice(path.indexOf('/recorded/') + '/recorded/'.length), text]),
+  Object.entries(committed).map(([path, text]) => [path.slice(path.indexOf('/simulated/') + '/simulated/'.length), text]),
 );
 
 const inputs = (): BuildInputs => ({
@@ -44,17 +44,18 @@ const inputs = (): BuildInputs => ({
 });
 const opts = { ...DEFAULT_BUILD_OPTIONS, gitSha: '0000000', version: versionText.trim() };
 
+const built = await buildDemoRecording(inputs(), opts);
+const { manifest, details } = built;
+
 describe('demo recording', () => {
-  const built = buildDemoRecording(inputs(), opts);
-  const { manifest, details } = built;
 
   it('matches the committed files (run `npm run recording` after a contract change)', () => {
     expect(Object.keys(committedFiles).length).toBeGreaterThan(1);
     expect(sameRecordingFiles(committedFiles, serializeRecording(built))).toBe(true);
   });
 
-  it('is deterministic', () => {
-    expect(serializeRecording(buildDemoRecording(inputs(), opts))).toEqual(serializeRecording(built));
+  it('is deterministic', async () => {
+    expect(serializeRecording(await buildDemoRecording(inputs(), opts))).toEqual(serializeRecording(built));
   });
 
   it('records the s0 scenarios, six rounds of three', () => {
@@ -111,18 +112,28 @@ describe('demo recording', () => {
     expect(bare.audit_detail).toBeNull();
   });
 
-  it('fails the build when a decision differs from its scenario', () => {
+  it('fails the build when a decision differs from its scenario', async () => {
     const changed = inputs();
     const refund = changed.scenarios.scenarios.find((s) => s.id === 'refund-contradiction-flag') as Scenario;
     refund.expect.action = 'block';
-    expect(() => buildDemoRecording(changed, opts)).toThrow(RecordingBuildError);
-    expect(() => buildDemoRecording(changed, opts)).toThrow(/refund-contradiction-flag: action flag, expected block/);
+    await expect(buildDemoRecording(changed, opts)).rejects.toThrow(RecordingBuildError);
+    await expect(buildDemoRecording(changed, opts)).rejects.toThrow(/refund-contradiction-flag: action flag, expected block/);
   });
 
-  it('refuses an empty set and bad options', () => {
-    expect(() => buildDemoRecording(inputs(), { ...opts, set: 'nope' })).toThrow(/no scenario is in set/);
-    expect(() => buildDemoRecording(inputs(), { ...opts, rounds: 0 })).toThrow(/rounds/);
-    expect(() => buildDemoRecording(inputs(), { ...opts, startAt: 'soon' })).toThrow(/not a time/);
+  it('fails the build for a missing scripted answer or route', async () => {
+    const noAnswer = inputs();
+    const refund = noAnswer.scenarios.scenarios.find((s) => s.id === 'refund-contradiction-flag') as Scenario;
+    refund.mock_answers = {};
+    await expect(buildDemoRecording(noAnswer, opts)).rejects.toThrow(/refund-contradiction-flag has no mock answer/);
+    const noRoute = inputs();
+    noRoute.policy = { ...noRoute.policy, routes: [] };
+    await expect(buildDemoRecording(noRoute, opts)).rejects.toThrow(RecordingBuildError);
+  });
+
+  it('refuses an empty set and bad options', async () => {
+    await expect(buildDemoRecording(inputs(), { ...opts, set: 'nope' })).rejects.toThrow(/no scenario is in set/);
+    await expect(buildDemoRecording(inputs(), { ...opts, rounds: 0 })).rejects.toThrow(/rounds/);
+    await expect(buildDemoRecording(inputs(), { ...opts, startAt: 'soon' })).rejects.toThrow(/not a time/);
   });
 
   it('writes canonical UUIDv7 ids', () => {

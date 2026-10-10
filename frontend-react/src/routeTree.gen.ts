@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as OgRouteImport } from './routes/og'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppKnowledgeRouteImport } from './routes/app/knowledge'
 import { Route as AppOverviewRouteImport } from './routes/app/overview'
@@ -40,6 +41,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OgRoute = OgRouteImport.update({
+  id: '/og',
+  path: '/og',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -148,6 +154,7 @@ const AppEvaluatorsStudioIdVersionRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/og': typeof OgRoute
   '/app/knowledge': typeof AppKnowledgeRoute
   '/app/overview': typeof AppOverviewRoute
   '/app/playground': typeof AppPlaygroundRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/og': typeof OgRoute
   '/app/knowledge': typeof AppKnowledgeRoute
   '/app/overview': typeof AppOverviewRoute
   '/app/playground': typeof AppPlaygroundRoute
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/og': typeof OgRoute
   '/app/knowledge': typeof AppKnowledgeRoute
   '/app/overview': typeof AppOverviewRoute
   '/app/playground': typeof AppPlaygroundRoute
@@ -222,6 +231,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/og'
     | '/app/knowledge'
     | '/app/overview'
     | '/app/playground'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/og'
     | '/app/knowledge'
     | '/app/overview'
     | '/app/playground'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/og'
     | '/app/knowledge'
     | '/app/overview'
     | '/app/playground'
@@ -294,6 +306,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  OgRoute: typeof OgRoute
   ConnectCallbackRoute: typeof ConnectCallbackRoute
 }
 
@@ -311,6 +324,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/og': {
+      id: '/og'
+      path: '/og'
+      fullPath: '/og'
+      preLoaderRoute: typeof OgRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -505,6 +525,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  OgRoute: OgRoute,
   ConnectCallbackRoute: ConnectCallbackRoute,
 }
 export const routeTree = rootRouteImport

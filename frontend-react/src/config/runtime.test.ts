@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildRuntimeConfig, DEFAULT_REPO_URL, deriveWsUrl, loadRuntimeConfig, type PageLocation } from './runtime';
+import {
+  buildPlaygroundConfig,
+  buildRuntimeConfig,
+  buildSiteUrl,
+  DEFAULT_REPO_URL,
+  DEFAULT_SITE_URL,
+  deriveWsUrl,
+  loadRuntimeConfig,
+  PLAYGROUND_DEFAULTS,
+  type PageLocation,
+} from './runtime';
 
 const page = (href: string): PageLocation => {
   const u = new URL(href);
@@ -109,5 +119,38 @@ describe('deriveWsUrl', () => {
   it('follows the page protocol for same-origin bases and the base protocol otherwise', () => {
     expect(deriveWsUrl('', page('http://localhost:5173/app'))).toBe('ws://localhost:5173/ws');
     expect(deriveWsUrl('https://api.example.com/x', page('http://localhost:5173/'))).toBe('wss://api.example.com/x/ws');
+  });
+});
+
+describe('static live mode build config (D101, D137)', () => {
+  it('uses the registry defaults when nothing is set', () => {
+    expect(buildPlaygroundConfig({})).toEqual(PLAYGROUND_DEFAULTS);
+    expect(buildSiteUrl({})).toBe(DEFAULT_SITE_URL);
+  });
+
+  it('clamps the caps to 1-100 calls and at most 8,000 tokens', () => {
+    expect(buildPlaygroundConfig({ VITE_PLAYGROUND_MAX_CALLS: '500', VITE_PLAYGROUND_MAX_TOKENS: '64000' })).toMatchObject({ maxCalls: 100, maxTokens: 8000 });
+    expect(buildPlaygroundConfig({ VITE_PLAYGROUND_MAX_CALLS: '0', VITE_PLAYGROUND_MAX_TOKENS: '0' })).toMatchObject({ maxCalls: 1, maxTokens: 1 });
+    expect(buildPlaygroundConfig({ VITE_PLAYGROUND_MAX_CALLS: ' 12 ', VITE_PLAYGROUND_MAX_TOKENS: '4000' })).toMatchObject({ maxCalls: 12, maxTokens: 4000 });
+    for (const bad of ['-5', '1e3', 'ten', '', '3.5']) {
+      expect(buildPlaygroundConfig({ VITE_PLAYGROUND_MAX_CALLS: bad }).maxCalls).toBe(100);
+    }
+  });
+
+  it('keeps each model in its family, else the default', () => {
+    expect(buildPlaygroundConfig({ VITE_JEV_MODEL: 'typesafe/jev-2.0', VITE_OPENROUTER_JUDGE_MODEL: 'anthropic/claude-haiku-5' })).toMatchObject({
+      jevModel: 'typesafe/jev-2.0',
+      judgeModel: 'anthropic/claude-haiku-5',
+    });
+    expect(buildPlaygroundConfig({ VITE_JEV_MODEL: 'openai/gpt-5', VITE_OPENROUTER_JUDGE_MODEL: 'anthropic/claude-opus-5' })).toMatchObject({
+      jevModel: PLAYGROUND_DEFAULTS.jevModel,
+      judgeModel: PLAYGROUND_DEFAULTS.judgeModel,
+    });
+  });
+
+  it('reads the site URL as an absolute URL ending in a slash', () => {
+    expect(buildSiteUrl({ VITE_SITE_URL: 'https://example.github.io/TrustAgent' })).toBe('https://example.github.io/TrustAgent/');
+    expect(buildSiteUrl({ VITE_SITE_URL: '/TrustAgent/' })).toBe(DEFAULT_SITE_URL);
+    expect(buildSiteUrl({ VITE_SITE_URL: 'javascript:alert(1)' })).toBe(DEFAULT_SITE_URL);
   });
 });

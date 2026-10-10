@@ -1,6 +1,6 @@
 /**
  * ReplayDataSource (SPEC §3.3): the static build's DataSource. It serves a recording
- * (public/demo/recorded, trustagent.recording/v1) through the same interface as the live gateway,
+ * (served at demo/ from demo-data/, trustagent.recording/v1; D110) through the same interface as the live gateway,
  * so Overview, Traffic and Trace render unchanged:
  *
  * - REST reads answer from the tape at its current position: traces, decisions and audits the
@@ -33,6 +33,8 @@ import { outcomeOf } from '@/domain/presentation';
 import { browserClock, DEFAULT_MAX_GAP_MS, ReplayPlayer, type ReplayClock } from './player';
 import { loadRecording, type DemoDataset, type RecordingFiles } from './recording';
 import { INITIAL_REPLAY, useReplayStore } from './replayStore';
+import { replayEvaluatorReads } from './replayEvaluatorReads';
+import { replayStudioPlane, type ReplayPlaneDeps } from './replayStudioPlane';
 import pricingTable from '@contracts/pricing/prices.v1.json';
 import { evidenceCoverage, overviewStats, roiSummary, roiTimeseries, type PlayedTrace } from './stats';
 import { envelope, ReplayTape } from './tape';
@@ -268,8 +270,17 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
     play(tape);
   }
 
+  // The Studio plane and the evaluator reads answer from the tape and the browser (WEB-STUDIO).
+  const planeDeps: ReplayPlaneDeps = {
+    message: STATIC_UNAVAILABLE,
+    traceIds: async () => (await ready).ids(),
+    trace: (id, signal) => source.getTrace(id, signal),
+  };
+
   const control: ControlPlane = {
     ...unavailableControlPlane(STATIC_UNAVAILABLE),
+    ...replayStudioPlane(planeDeps),
+    ...replayEvaluatorReads(planeDeps),
     async getOverview(params) {
       const t = await ready;
       return overviewStats(played(t), ctx(t, params.window));
@@ -298,7 +309,7 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
     },
   };
 
-  return {
+  const source: ReplayDataSource = {
     ...control,
     kind: 'replay',
     ready,
@@ -378,4 +389,5 @@ export function createReplayDataSource(opts: ReplayOptions): ReplayDataSource {
       };
     },
   };
+  return source;
 }

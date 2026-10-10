@@ -90,7 +90,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['vite.config.ts', 'playwright.config.ts', 'e2e/**/*.ts'],
+    files: ['vite.config.ts', 'vite.site.ts', 'vite/**/*.ts', 'playwright.config.ts', 'e2e/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
 ])

@@ -193,7 +193,7 @@ describe('ReplayDataSource', () => {
   it('loads the recording from the site itself', async () => {
     const { ds, requests } = setup();
     await ds.ready;
-    expect(requests).toEqual(['/TrustAgent/demo/recorded/manifest.json']);
+    expect(requests).toEqual(['/TrustAgent/demo/manifest.json']);
     const info = useReplayStore.getState();
     expect(info.status).toBe('ready');
     expect(info.kind).toBe('mock');

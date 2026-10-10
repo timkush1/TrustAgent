@@ -14,7 +14,7 @@
 // blocks included), emails and hosts are masked in place, keeping UTF-16 offsets valid. Human
 // labels are left out of the trace files.
 //
-//	export-replay --out frontend-react/public/demo/recorded --since 2026-10-05T10:00:00Z --source trafficgen
+//	export-replay --out frontend-react/demo-data/recorded --since 2026-10-05T10:00:00Z --source trafficgen
 //	export-replay --api http://127.0.0.1:8080 --api-key-file admin.key --out /tmp/rec --route support-bot
 package main
 

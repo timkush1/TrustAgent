@@ -134,12 +134,12 @@ describe('static build', () => {
     // The replay control plane answers without asking anyone.
     await expect(dataSource.getSession()).rejects.toMatchObject({ status: 404 });
     await expect(dataSource.getSetupStatus()).rejects.toMatchObject({ status: 404 });
-    expect(requests.filter((url) => !url.includes('/demo/recorded/'))).toEqual([]);
+    expect(requests.filter((url) => !url.includes('/demo/'))).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
-  it('opens the recorded runs from the Playground, and says the live check is coming soon', async () => {
+  it('opens the recorded runs from the Playground', async () => {
     await renderStatic('/app/playground');
     const list = await screen.findByRole('list', { name: 'Example requests' });
     const cards = within(list).getAllByRole('listitem');
@@ -147,7 +147,6 @@ describe('static build', () => {
     for (const card of cards) expect(within(card).getByRole('link', { name: /Open this request/ }).getAttribute('href')).toMatch(/^\/app\/traffic\//);
     expect(screen.getByText(/checked by the demo’s mock checks and mock judge \(simulated, not model output\)/)).toBeInTheDocument();
     expect(screen.queryByText(/checked by the demo stack/)).toBeNull();
-    expect(screen.getByText('Coming soon')).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
@@ -195,10 +194,9 @@ describe('static build', () => {
     expect(screen.getByText('Not in the recording')).toBeInTheDocument();
   });
 
-  it('opens the Studio placeholder, labelled coming soon', async () => {
+  it('opens the Studio page', async () => {
     await renderStatic('/app/evaluators/studio');
-    expect(await screen.findByText('Coming soon')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Write your own checks');
+    expect(await screen.findByRole('heading', { level: 2 })).toHaveTextContent('Write your own checks');
   });
 
   it('opens Benchmarks from the committed runs, with no gateway (D72)', async () => {

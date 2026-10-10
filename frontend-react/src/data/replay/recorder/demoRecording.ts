@@ -6,9 +6,10 @@
  * mock judge returns the scenario's scripted claims. The `s0` set is fixed; the larger `demo` set
  * grows with streaming, Anthropic and multi-route scenarios this build does not model.
  *
- * Nothing here is typed by hand. Each decision runs through the TypeScript decision core
- * (src/lib/decision: evidence extraction, detectors, compile, decide), the port the golden vectors
- * pin to the Go gateway, and must reproduce the scenario's `expect` block, or the build fails. The
+ * Nothing here is typed by hand. Each decision runs through the browser gate pipeline (runGate in
+ * src/lib/gate, D135: evidence extraction, detectors, compile, decide over the TypeScript decision
+ * core the golden vectors pin to the Go gateway) with the scenario's scripted answers, and must
+ * reproduce the scenario's `expect` block, or the build fails. The
  * manifest mirrors backend-go/internal/recording (Build, events, the pending and decided summaries
  * of the stream), so P5 can swap this file set for `export-replay` output without touching the
  * replay.
@@ -20,13 +21,14 @@
  * Pure: no clock, no randomness, no I/O. The caller passes the parsed contract files and the start
  * time; ids and jitter are derived from sha256 of (scenario, round).
  */
-import type { EvaluatorSpec, EvidenceSettings } from '@/lib/contracts/types.gen';
-import { compile, decideEvaluators, defaultBudget, type CompileRoute, type OnNoEvidence } from '@/lib/decision/compile';
-import { decide } from '@/lib/decision/decide';
-import { detect, detectorStates } from '@/lib/decision/detectors';
-import { decisionItems, extractEvidence } from '@/lib/decision/evidence';
+import type { EvaluatorSpec } from '@/lib/contracts/types.gen';
+import { defaultBudget } from '@/lib/decision/compile';
 import { sha256Hex } from '@/lib/decision/jcs';
-import { parseSpec, specRef, type Spec } from '@/lib/decision/spec';
+import type { Spec } from '@/lib/decision/spec';
+import { resolveRoute as resolveGateRoute, RouteError, specMap } from '@/lib/gate/route';
+import { NOOP_LEDGER, runGate } from '@/lib/gate/runner';
+import type { PolicyInput, ResolvedRoute } from '@/lib/gate/types';
+import type { JevCall } from '@/lib/openrouter/types';
 import { DEFAULT_CPT, est } from '@/lib/decision/tokens';
 import type {
   AuditDetail,
@@ -36,9 +38,7 @@ import type {
   ClaimVerdict,
   ClaimView,
   CostRecord,
-  DetectorId,
   EvidenceItem,
-  EvidenceSource,
   EvidenceSpan,
   EvidenceSummary,
   GateDecisionView,
@@ -59,16 +59,6 @@ export const MOCK_SNAPSHOT = 'mock/jev-heuristic-v1';
 export const MOCK_PRICE_PER_MTOK = 0.042;
 /** The Python mock judge names itself provider "mock", model "mock". */
 export const MOCK_JUDGE = { provider: 'mock', model: 'mock' } as const;
-
-/** The detector defaults of policy.v1 DetectorSettings. */
-const DEFAULT_FLAG_ON: DetectorId[] = [
-  'urls_not_in_evidence',
-  'quotes_not_in_evidence',
-  'citation_out_of_range',
-  'secret_pattern',
-  'system_prompt_leak',
-];
-const DEFAULT_SOURCES: EvidenceSource[] = ['request_system', 'request_context', 'tool_results', 'extension'];
 
 // ------------------------------------------------------------------------------------ inputs
 
@@ -109,20 +99,7 @@ export interface Scenario {
   };
 }
 
-interface RouteEvaluatorRef {
-  ref: string;
-  stage?: 'active' | 'shadow';
-  enabled?: boolean;
-  params?: Record<string, string>;
-}
-
-/** The parts of a policy.v1 document the recording reads (defaults and routes). */
-export interface PolicyInput {
-  version: number;
-  defaults?: Record<string, unknown>;
-  overrides?: Record<string, unknown>;
-  routes?: ({ name: string } & Record<string, unknown>)[];
-}
+export type { PolicyInput } from '@/lib/gate/types';
 
 export interface BuildInputs {
   /** contracts/demo/scenarios.v1.json */
@@ -168,8 +145,6 @@ export class RecordingBuildError extends Error {
 
 // ------------------------------------------------------------------------------------ helpers
 
-type Obj = Record<string, unknown>;
-const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** RFC 3339 UTC with milliseconds, as the gateway writes times. */
 function iso(ms: number): string {
@@ -194,57 +169,31 @@ export function uuidv7(ms: number, hex: string): string {
   return `${t.slice(0, 8)}-${t.slice(8, 12)}-7${hex.slice(0, 3)}-${variant}${hex.slice(4, 7)}-${hex.slice(7, 19)}`;
 }
 
-/** Nested settings merge key by key, like the gateway merges a route over its defaults. */
-function mergeSettings(base: unknown, over: unknown): Obj {
-  const out: Obj = isObj(base) ? { ...base } : {};
-  if (!isObj(over)) return out;
-  for (const [k, v] of Object.entries(over)) out[k] = isObj(v) && isObj(out[k]) ? mergeSettings(out[k], v) : v;
-  return out;
-}
-
-interface ResolvedRoute {
-  name: string;
-  mode: PolicyMode;
-  fail: 'open' | 'closed';
-  requireCalibration: boolean;
-  onNoEvidence: OnNoEvidence;
-  evidence: EvidenceSettings & { sources: EvidenceSource[] };
-  detectors: { flag_on: DetectorId[]; block_on: DetectorId[]; min_integer: number };
-  evaluators: RouteEvaluatorRef[];
-  deepAudit: { pass_sample_rate: number; uniform_sample_rate: number };
-  clientRules: boolean;
-}
-
-/** A route's effective settings: the route merged over `defaults` (policy.v1 schema defaults last). */
+/** A route's effective settings (lib/gate/route.ts), failing the build for a route the policy lacks. */
 export function resolveRoute(policy: PolicyInput, name: string): ResolvedRoute {
-  const route = policy.routes?.find((r) => r.name === name);
-  if (!route) throw new RecordingBuildError(`the policy has no route ${JSON.stringify(name)}`);
-  const s = mergeSettings(policy.defaults ?? {}, route);
-  const evidence = mergeSettings({ sources: DEFAULT_SOURCES }, s.evidence) as unknown as ResolvedRoute['evidence'];
-  const detectors = mergeSettings({ flag_on: DEFAULT_FLAG_ON, block_on: [], min_integer: 10 }, s.detectors) as unknown as ResolvedRoute['detectors'];
-  const deepAudit = mergeSettings({ pass_sample_rate: 0.02, uniform_sample_rate: 0.01 }, s.deep_audit) as unknown as ResolvedRoute['deepAudit'];
-  const overrides = isObj(policy.overrides) ? policy.overrides : {};
-  return {
-    name,
-    mode: ((route.mode as PolicyMode | undefined) ?? (s.mode as PolicyMode | undefined) ?? 'observe'),
-    fail: (s.fail as 'open' | 'closed' | undefined) ?? 'open',
-    requireCalibration: (s.require_calibration as boolean | undefined) ?? true,
-    onNoEvidence: (s.on_no_evidence as OnNoEvidence | undefined) ?? 'ignore',
-    evidence,
-    detectors,
-    evaluators: (Array.isArray(route.evaluators) ? route.evaluators : (s.evaluators as RouteEvaluatorRef[] | undefined) ?? []) as RouteEvaluatorRef[],
-    deepAudit,
-    clientRules: overrides.client_rules === true,
-  };
+  try {
+    return resolveGateRoute(policy, name);
+  } catch (err) {
+    if (err instanceof RouteError) throw new RecordingBuildError(err.message);
+    throw err;
+  }
 }
 
-function specMap(templates: readonly EvaluatorSpec[]): Map<string, Spec> {
-  const out = new Map<string, Spec>();
-  for (const doc of templates) {
-    const spec = parseSpec(doc);
-    out.set(specRef(spec), spec);
-  }
-  return out;
+/** The mock fast check: each asked question gets the scenario's scripted answer. */
+function scriptedCall(s: Scenario): JevCall {
+  return {
+    backend: 'mock',
+    model: MOCK_SNAPSHOT,
+    call: async (request) => {
+      const answers: Record<string, Scenario['mock_answers'][string]> = {};
+      for (const qid of Object.keys(request.body.questions)) {
+        const a = s.mock_answers[qid];
+        check(a !== undefined, `scenario ${s.id} has no mock answer for ${qid} (the mock backend would refuse it in strict mode)`);
+        answers[qid] = a;
+      }
+      return { answers, usage: { input_tokens: request.est_tokens, cost: null }, snapshot: MOCK_SNAPSHOT, latency_ms: 0 };
+    },
+  };
 }
 
 function tokensOf(text: string): number {
@@ -355,72 +304,28 @@ interface BuiltTrace {
   times: TraceTimes;
 }
 
-function buildTrace(s: Scenario, route: ResolvedRoute, specs: Map<string, Spec>, round: number, created: number): BuiltTrace {
+async function buildTrace(s: Scenario, route: ResolvedRoute, specs: ReadonlyMap<string, Spec>, round: number, created: number): Promise<BuiltTrace> {
   const seed = seedHex('trace', s.id, round);
   const auditSeed = seedHex('audit', s.id, round);
   const traceId = uuidv7(created, seed);
 
-  // Tier 0 and the fast check: extraction, detectors, compile, the scripted mock answers, decide().
-  const ex = extractEvidence('openai_chat', s.request, route.evidence);
-  const items = decisionItems(ex.items);
-  const detectors = detect({
+  // Tier 0 and the fast check through the browser gate pipeline (D135), with the scripted mock
+  // answers and no caps.
+  const gate = await runGate({
+    route,
+    specs,
+    request: s.request,
     response: s.response,
-    evidence: items,
-    userRequest: ex.user_request,
-    systemInstructions: ex.system_instructions,
-    rules: null,
-    preDedupItems: ex.pre_dedup_items,
-    maxMarker: ex.max_marker,
-    minInteger: route.detectors.min_integer,
+    apiFormat: 'openai_chat',
+    call: scriptedCall(s),
+    ledger: NOOP_LEDGER,
+    maxTokens: defaultBudget().tokens,
+    clock: () => created,
   });
-  const compileRoute: CompileRoute = {
-    evaluators: route.evaluators.map((e) => ({ ref: e.ref, stage: e.stage, enabled: e.enabled, params: e.params })),
-    on_no_evidence: route.onNoEvidence,
-    evidence_sources: route.evidence.sources,
-    client_rules: route.clientRules,
-    model: MOCK_SNAPSHOT,
-  };
-  const compiled = compile(compileRoute, specs, {
-    user_request: ex.user_request,
-    assistant_response: s.response,
-    system_instructions: ex.system_instructions,
-    evidence: items,
-    rules: {},
-  }, defaultBudget());
-  const asked = Object.keys(compiled.question_map);
-  const answers: Record<string, unknown> = {};
-  for (const qid of asked) {
-    const a = s.mock_answers[qid];
-    check(a !== undefined, `scenario ${s.id} has no mock answer for ${qid} (the mock backend would refuse it in strict mode)`);
-    answers[qid] = a;
-  }
-  const requestStatus = Object.fromEntries(compiled.requests.map((_, k) => [String(k), 'ok']));
-  const core = decide({
-    policy: {
-      configured_mode: route.mode,
-      fail: route.fail,
-      require_calibration: route.requireCalibration,
-      on_no_evidence: route.onNoEvidence,
-      detectors: { flag_on: route.detectors.flag_on, block_on: route.detectors.block_on },
-    },
-    evaluators: decideEvaluators(compiled, specs),
-    answers: compiled.requests.length === 0 ? null : (answers as never),
-    question_map: compiled.question_map,
-    excluded: compiled.excluded,
-    calibration: {},
-    meta: {
-      backend: 'mock',
-      stream: 'none',
-      evidence_present: items.length > 0,
-      evidence_truncated: compiled.truncated,
-      knowledge_only: false,
-      skip_reason: null,
-      request_status: requestStatus,
-      qid_request: compiled.qid_request,
-      question_errors: {},
-    },
-    detectors: detectorStates(detectors),
-  });
+  const ex = gate.extraction;
+  const detectors = gate.detectors;
+  const compiled = gate.compiled;
+  const core = gate.decision;
 
   // The recording must show what the scenario pack promises.
   const e = s.expect;
@@ -749,7 +654,7 @@ function roiWindow(spanMs: number): Recording['roi']['window'] {
  * after the previous one answered. Throws RecordingBuildError when a decision or audit differs
  * from its scenario's `expect`.
  */
-export function buildDemoRecording(inputs: BuildInputs, opts: BuildOptions): BuiltRecording {
+export async function buildDemoRecording(inputs: BuildInputs, opts: BuildOptions): Promise<BuiltRecording> {
   const scenarios = inputs.scenarios.scenarios.filter((s) => s.sets.includes(opts.set));
   if (scenarios.length === 0) throw new RecordingBuildError(`no scenario is in set ${JSON.stringify(opts.set)}`);
   if (!Number.isInteger(opts.rounds) || opts.rounds < 1) throw new RecordingBuildError('rounds must be a positive integer');
@@ -763,7 +668,7 @@ export function buildDemoRecording(inputs: BuildInputs, opts: BuildOptions): Bui
     for (const s of scenarios) {
       if (s.api_format !== 'openai_chat' || s.stream) throw new RecordingBuildError(`${s.id}: only non-streamed openai_chat scenarios are recorded`);
       const route = resolveRoute(inputs.policy, s.route);
-      const trace = buildTrace(s, route, specs, round, t);
+      const trace = await buildTrace(s, route, specs, round, t);
       built.push(trace);
       // trafficgen sends the next scenario once this one answered.
       t = trace.times.decided + pick(seedHex('gap', s.id, round), 0, 40, 120);

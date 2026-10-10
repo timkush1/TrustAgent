@@ -81,7 +81,7 @@ test-e2e-web: ## Run the dashboard e2e specs against a running stack (make demo 
 
 # ---------- Static site (GitHub Pages) and its demo recording (SPEC §3.3, §2.13, §7.5) ----------
 # The static build is the landing page at the site root plus the dashboard replaying
-# frontend-react/public/demo/recorded (no backend). VITE_BASE_PATH defaults to /TrustAgent/.
+# frontend-react/demo-data/simulated, served at demo/ (no backend; D110). VITE_BASE_PATH defaults to /TrustAgent/.
 
 build-static: ## Build the static site (landing page + replay) into frontend-react/dist
 	cd frontend-react && npm run build:static
@@ -94,7 +94,7 @@ recording: ## Rebuild the simulated demo recording from the s0 scenarios (commit
 
 recording-check: ## Fail when the demo recording is stale or check_recording.py refuses it
 	cd frontend-react && node scripts/build-demo-recording.ts --check
-	$(PYTHON) scripts/check_recording.py frontend-react/public/demo/recorded
+	$(PYTHON) scripts/check_recording.py frontend-react/demo-data/simulated
 
 test-e2e-static: ## Build the static site and run the Playwright static specs against vite preview
 	cd frontend-react && npm run build:static && PLAYWRIGHT_STATIC_PREVIEW=1 npx playwright test --project=static $(PLAYWRIGHT_ARGS)

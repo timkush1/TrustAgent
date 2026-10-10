@@ -2,14 +2,21 @@
  * Wires the live stream once per page: DataSource.subscribe → ring buffer → Flusher →
  * streamStore, plus TanStack Query side effects. Module scope, started from main.tsx outside React,
  * so StrictMode and remounts can never open a second socket.
+ *
+ * With `gateOnReadAccess` (the full dashboard; CO-10) the socket opens only once this browser may
+ * read: GET /api/status answers (public read, or a session or key that reads). Before sign-in (the
+ * setup page on a fresh stack) there is no ticket request and no WebSocket at all, and a stream the
+ * proxy refuses with 401 pauses instead of retrying, until the status or the session is read
+ * successfully again (signing in invalidates every query).
  */
-import type { QueryClient } from '@tanstack/react-query';
-import { applyControlSideEffects, qk } from './queries';
+import type { Query, QueryClient } from '@tanstack/react-query';
+import { isApiError } from './errors';
+import { applyControlSideEffects, qk, statusQuery } from './queries';
 import type { DataSource, LiveControl } from './source';
 import { Flusher, type FlushScheduler } from './stream/flush';
 import { RingBuffer } from './stream/ringBuffer';
 import { clearLegacyStorage, useStreamStore } from './stream/streamStore';
-import type { StreamEvent } from './stream/types';
+import type { ConnectionState, StreamEvent } from './stream/types';
 
 export const RING_CAPACITY = 5000;
 
@@ -64,12 +71,25 @@ export function applyQuerySideEffects(queryClient: QueryClient, batch: readonly 
   applyControlSideEffects(queryClient, batch);
 }
 
+export interface LiveStreamOptions {
+  scheduler?: FlushScheduler;
+  capacity?: number;
+  /** Open only once this browser may read, and pause on 401 until it may again (CO-10). */
+  gateOnReadAccess?: boolean;
+}
+
+/** What the Health pill shows while the stream waits for a sign-in. */
+export const WAITING_FOR_SIGN_IN: ConnectionState = { phase: 'unauthorized', attempt: 0, nextRetryAt: null, lastCloseCode: null };
+
+const sameKey = (query: Query, key: readonly unknown[]) => JSON.stringify(query.queryKey) === JSON.stringify(key);
+
+/** A read answered 401 or 403: nobody is signed in that may read. */
+function refusesReader(err: unknown): boolean {
+  return isApiError(err) && (err.status === 401 || err.status === 403);
+}
+
 /** Starts the page's live stream (idempotent) and returns its control. */
-export function startLiveStream(
-  ds: DataSource,
-  queryClient: QueryClient,
-  options: { scheduler?: FlushScheduler; capacity?: number } = {},
-): LiveControl {
+export function startLiveStream(ds: DataSource, queryClient: QueryClient, options: LiveStreamOptions = {}): LiveControl {
   if (running) return running;
   clearLegacyStorage();
   const ring = new RingBuffer<StreamEvent>(options.capacity ?? RING_CAPACITY);
@@ -81,19 +101,70 @@ export function startLiveStream(
       applyQuerySideEffects(queryClient, items);
     },
   });
-  const control = ds.subscribe({
-    onEvent(ev) {
-      ring.push(ev);
-      flusher.schedule();
-    },
-    onConnection(state) {
-      useStreamStore.getState().setConnection(state);
-    },
-  });
+  const gated = options.gateOnReadAccess === true;
+  let control: LiveControl | null = null;
+  let stopped = false;
+  let checking = false;
+
+  const open = () => {
+    if (control || stopped) return;
+    control = ds.subscribe({
+      onEvent(ev) {
+        ring.push(ev);
+        flusher.schedule();
+      },
+      onConnection(state) {
+        useStreamStore.getState().setConnection(state);
+        // Refused (a 4401 close or a refused ticket): stop retrying until a read succeeds again.
+        if (gated && state.phase === 'unauthorized') queueMicrotask(pause);
+      },
+    });
+  };
+
+  const pause = () => {
+    if (!control || stopped) return;
+    const current = control;
+    control = null;
+    current.stop();
+    useStreamStore.getState().setConnection(WAITING_FOR_SIGN_IN);
+  };
+
+  /** Opens when GET /api/status answers; waits on 401/403; any other failure opens (the stream retries). */
+  const check = () => {
+    if (control || stopped || checking) return;
+    checking = true;
+    queryClient.fetchQuery(statusQuery(ds)).then(
+      () => {
+        checking = false;
+        open();
+      },
+      (err: unknown) => {
+        checking = false;
+        if (refusesReader(err)) useStreamStore.getState().setConnection(WAITING_FOR_SIGN_IN);
+        else open();
+      },
+    );
+  };
+
+  // A successful status or session read (polling, or every query refetched after a sign-in)
+  // resumes a waiting stream.
+  const unwatch = gated
+    ? queryClient.getQueryCache().subscribe((event) => {
+        if (event.type !== 'updated' || event.action.type !== 'success') return;
+        if (sameKey(event.query, qk.status) || sameKey(event.query, qk.session)) open();
+      })
+    : () => {};
+
+  if (gated) check();
+  else open();
+
   const self: LiveControl = {
-    retryNow: () => control.retryNow(),
+    retryNow: () => (control ? control.retryNow() : gated ? check() : open()),
     stop: () => {
-      control.stop();
+      stopped = true;
+      unwatch();
+      control?.stop();
+      control = null;
       flusher.flush();
       flusher.stop();
       if (running === self) running = null;
