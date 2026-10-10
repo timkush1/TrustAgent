@@ -281,6 +281,9 @@ compose-check: ## Validate the compose files: every profile and the demo, e2e, o
 	$(RECORD_COMPOSE) config -q; echo "compose config ok: record override"; \
 	$(KNOWLEDGE_COMPOSE) config -q; echo "compose config ok: knowledge override"
 
+docs-links: ## Check the relative links and heading anchors of README.md, docs/*.md and docs/launch/*.md (scripts/check_links.py)
+	$(PYTHON) scripts/check_links.py
+
 test-scripts: ## Unit tests of the setup scripts (scripts/tests, standard library only)
 	$(PYTHON) -m unittest discover -s scripts/tests -v
 
@@ -309,5 +312,6 @@ dashboards: ## Open the Grafana dashboards (profile observability; WSL/macOS/Lin
 test: test-scripts
 lint: lint-scripts
 check: compose-check
+check: docs-links
 check: config-docs-check
 check: onboarding-check-config

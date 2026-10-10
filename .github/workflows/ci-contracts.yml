@@ -69,6 +69,10 @@ jobs:
       - name: VERSION and its mirrors agree (check_version)
         run: python3 scripts/check_version.py
 
+      # Relative links and heading anchors of the published Markdown (CO-21).
+      - name: Links in README and docs (check_links)
+        run: python3 scripts/check_links.py
+
       # contracts/schema/api.v1.schema.json is generated from frontend-react/src/types/api.ts
       # (contracts/tools/api-schema, pinned generator): fail when the two drift apart.
       - name: api.v1 schema matches src/types/api.ts (gen-api-schema-check)
