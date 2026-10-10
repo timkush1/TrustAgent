@@ -512,6 +512,24 @@ Details follow in the per-phase sections and under *Migration notes*.
   off; `POST /api/kb/documents` (admin) is the upload's v2 path.
 
 ### Fixed
+- **The landing's comparison credited one vendor's docs to a whole row**: the
+  observability row named Langfuse, Arize and Datadog while every cell cited
+  Langfuse, and silent docs read "Varies". Each cell now names the product whose
+  docs it cites ("Yes · Langfuse"), a silent doc reads "Not documented", a row names
+  only the products its cells cite, and `contracts/validate.mjs` enforces all three
+  (`compare.v1` gains `vendor` and `not_documented`). Every cell still awaits the
+  owner's review before launch.
+- **Code on a phone**: the landing's policies.yaml, SDK line and no-make command
+  wrapped into broken YAML and shell at 400 px; code now keeps its lines and
+  scrolls sideways inside a named, focusable region.
+- **A replay's hallucination rate drew a 0-of-30 meter** under the sentence saying
+  a replay cannot have one, and a mock fast-check time was the Overview's headline:
+  the meter is gone in a replay, and a simulated p50 / p95 shows a dash with the
+  mock's milliseconds in the note.
+- **The Overview's 24-hour axis** switched from whole hours to ":15" labels and cut
+  its last label at the edge; it now labels one round step of the clock.
+- **The Pages artifact shipped the build manifests** (`dist/.vite`): `make
+  pages-size` drops them after the size check, and `make pages-files` refuses them.
 - **Tier-0 on long documents**: the number and URL scans over the request's
   documents were quadratic per document (Go's regexp backtracker clears a visited
   set as long as the text on every call), so 32k tokens of evidence took about 9 ms.
