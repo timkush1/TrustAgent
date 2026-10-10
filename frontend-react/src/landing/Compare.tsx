@@ -72,7 +72,11 @@ function VendorCell({ cell }: { cell: CompareCell }) {
     <div data-compare-cell={cell.value}>
       <p data-compare-answer>
         <span className="font-medium text-fg">{VALUE_WORD[cell.value]}</span>
-        <span className="text-fg-muted"> · {cell.vendor}</span>
+        {/* A product name stays on one line ("Guardrails AI", not "Guardrails" and "AI"). */}
+        <span className="text-fg-muted">
+          {' · '}
+          <span className="whitespace-nowrap">{cell.vendor}</span>
+        </span>
       </p>
       <details className="group mt-0.5">
         <summary className="inline-flex min-h-6 cursor-pointer list-none items-center gap-1 text-xs text-fg-muted underline-offset-2 marker:hidden hover:text-fg hover:underline">
