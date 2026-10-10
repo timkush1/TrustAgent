@@ -80,7 +80,8 @@ function DraftFailure({ error, live }: { error: unknown; live: StudioLiveView | 
   const liveWords = live ? studioLiveFailure(error, live) : null;
   const words = liveWords?.text ?? (code !== null && !live ? studioDraftFailureText(code) : null);
   const providerRefused = !live && (code === 'no_credits' || code === 'judge_unauthorized');
-  const hint = liveWords ? liveWords.hint : words || providerRefused ? null : errorCodeHint(error);
+  // The gateway's hints name its Settings pages, which the online demo does not have.
+  const hint = live ? (liveWords?.hint ?? null) : words || providerRefused ? null : errorCodeHint(error);
   return (
     <div role="alert" className="space-y-1 rounded-md border border-border p-3 text-sm">
       <p className="flex items-start gap-1.5 text-fg">

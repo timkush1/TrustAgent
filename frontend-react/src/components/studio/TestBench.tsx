@@ -257,7 +257,8 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
             The test did not run: {liveFailure?.text ?? failure.message}
           </p>
           {liveFailure?.hint ? <p className="text-fg-muted">{liveFailure.hint}</p> : null}
-          {!liveFailure && errorCodeHint(test.error) ? <p className="text-fg-muted">{errorCodeHint(test.error)}</p> : null}
+          {/* The gateway's hints name its Settings pages, which the online demo does not have. */}
+          {!live && errorCodeHint(test.error) ? <p className="text-fg-muted">{errorCodeHint(test.error)}</p> : null}
           {failure.code ? <p className="font-mono text-2xs text-fg-subtle">{failure.code}</p> : null}
         </div>
       ) : null}

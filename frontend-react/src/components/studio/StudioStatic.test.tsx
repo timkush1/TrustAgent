@@ -259,6 +259,28 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     expect(within(results).queryByRole('button', { name: /how “Cost of sample 1” was produced/ })).toBeNull();
   });
 
+  it('a key gone by the time Draft or Run acts: the page’s own reason, never a gateway Settings hint', async () => {
+    // The tab showed a key when the page drew, but the plane finds none when the action runs (it expired or was forgotten).
+    view.current = liveView({ connected: true, key: KEY });
+    const user = userEvent.setup();
+    renderApp('/app/evaluators/studio', staticSource({}));
+    const describe = await screen.findByRole('region', { name: /Step 1: Describe a check in plain English/ });
+    await user.type(within(describe).getByRole('textbox', { name: 'What should TrustAgent check?' }), 'Flag answers that recommend a competitor.');
+    await user.click(within(describe).getByRole('button', { name: 'Draft with AI' }));
+    const draftAlert = await within(describe).findByRole('alert');
+    expect(draftAlert).toHaveTextContent("Couldn't draft: Draft with AI calls OpenRouter with your key from this tab. Connect or paste a key first.");
+    expect(draftAlert).not.toHaveTextContent(/Settings/);
+
+    await startFromTemplate(user);
+    const test = step(/Step 3: Test on samples/);
+    await user.click(within(test).getByRole('button', { name: 'Load samples' }));
+    await within(test).findByText(/^Added \d answers? to the samples above\.$/);
+    await user.click(within(test).getByRole('button', { name: 'Run test' }));
+    const testAlert = await within(test).findByRole('alert');
+    expect(testAlert).toHaveTextContent('The test did not run: Testing a check calls OpenRouter with your key from this tab. Connect or paste a key first.');
+    expect(testAlert).not.toHaveTextContent(/Settings/);
+  });
+
   it('exports a validated evaluator.v1 that round-trips through the Simple form, without the key', async () => {
     view.current = liveView({ connected: true, key: KEY });
     const user = userEvent.setup();
