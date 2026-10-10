@@ -1,7 +1,7 @@
 # Architecture
 
-How TrustAgent is put together, what each tier does, what happens when a part fails, and which
-ports it uses. The full design is [v2/SPEC.md](v2/SPEC.md); the gateway's client-facing behaviour
+How TrustAgent is put together, what each tier does, what happens when a part fails, which
+ports it uses, how the static demo site works and how a release becomes images. The full design is [v2/SPEC.md](v2/SPEC.md); the gateway's client-facing behaviour
 is in [GATEWAY.md](GATEWAY.md).
 
 ## System overview
@@ -10,7 +10,7 @@ is in [GATEWAY.md](GATEWAY.md).
 graph LR
     Client[Your app<br/>OpenAI or Anthropic SDK] -->|/v1/...| Proxy
     subgraph Go gateway :8080
-        Proxy[Gateway handler] --> T0[Tier-0 detectors<br/>Go, under 2 ms]
+        Proxy[Gateway handler] --> T0[Tier-0 detectors<br/>Go, 2 ms budget]
         T0 --> T1[Tier-1 fast check<br/>one Jev call]
         T1 --> Policy[Route policy<br/>observe / flag / block / fallback]
         Policy --> Pool[Deep-audit queue]
@@ -38,10 +38,10 @@ Every answer that passes through the gateway is checked in tiers, cheapest first
 
 | Tier | What | Where | Cost and time |
 |---|---|---|---|
-| **Tier-0 detectors** | Deterministic checks of the answer against the evidence the request carries: numbers, dates, URLs, quotes and citations not in the evidence, secret patterns, system-prompt leaks | Go, in process | $0, under 2 ms |
-| **Tier-1 fast check** | Every evaluator of the route asked as a question in **one** Jev call, behind a vendor-neutral `DecisionModel` (OpenRouter, TypeSafe, a compatible gateway, mock, off) | Go → vendor over HTTPS | about $0.0002 per answer, about 0.2 s **[estimate]** |
+| **Tier-0 detectors** | Deterministic checks of the answer against the evidence the request carries: numbers, dates, URLs, quotes and citations not in the evidence, secret patterns, system-prompt leaks | Go, in process | $0; budget under 2 ms ([GATEWAY.md](GATEWAY.md#tier-0-the-instant-checks)) |
+| **Tier-1 fast check** | Every evaluator of the route asked as a question in **one** Jev call, behind a vendor-neutral `DecisionModel` (OpenRouter, TypeSafe, a compatible gateway, mock, off) | Go → vendor over HTTPS | <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate]; <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. Latency depends on region and load; independent reports range from about 0.3 s to 0.9 s median. |
 | **Policy** | The route's mode turns detector findings and evaluator levels into an action: observe, pass, flag (headers), block, or fallback (a second upstream, re-checked) | Go | — |
-| **Tier-2 deep audit** | Claim-by-claim verification by an LLM judge, asynchronous, for flagged answers plus small pass and uniform samples | Python engine | about $0.035 per audited answer **[estimate]** |
+| **Tier-2 deep audit** | Claim-by-claim verification by an LLM judge, asynchronous, for flagged answers plus small pass and uniform samples | Python engine | <!-- claim:llm_full_audit_cost_per_1k --> ~$35 / 1,000 [estimate] audited answers |
 
 Groundedness is only asked when the request carries evidence (documents in the system prompt,
 user-message context, tool results, the `trustagent.context` extension). Without evidence it is
@@ -98,6 +98,68 @@ Every published port binds `BIND_ADDR` (127.0.0.1 by default).
 | 6379 | Redis (`redis` profile) | yes |
 | 8090 (`MOCK_UPSTREAM_HOST_PORT`, 18090) | mock-upstream (e2e, load; on the host only in the onboarding stack) | onboarding only |
 
+## The static site
+
+The public demo at <https://timkush1.github.io/TrustAgent/> is the dashboard and a landing page,
+built without a backend (`VITE_APP_MODE=static`) and served by GitHub Pages
+([DECISIONS.md ADR-008](DECISIONS.md#adr-008-the-public-demo-is-a-static-site-that-replays-a-recording-with-live-checks-on-the-visitors-own-key)).
+
+```mermaid
+graph LR
+    V["Visitor's browser"] -->|"static files"| Pages["GitHub Pages<br/>/TrustAgent/: landing,<br/>app/, demo/ tape"]
+    subgraph Browser["In the browser"]
+        R["ReplayDataSource<br/>plays demo/manifest.json"] --> UI["Dashboard pages"]
+        G["runGate: evidence, detectors,<br/>compile, decide in TypeScript"] --> UI
+    end
+    V --- Browser
+    G -->|"visitor's key, live mode only"| OR["openrouter.ai<br/>decisions, chat, PKCE key exchange"]
+```
+
+| Part | What it does |
+|---|---|
+| Landing (`/TrustAgent/`) | A separate small entry; every number comes from `contracts/claims/value-claims.v1.json` with its label chip |
+| App (`/TrustAgent/app/...`) | The dashboard with `ReplayDataSource`: it plays the tape in `demo/` through the same interface as the live API. Pages that need a gateway (Policies, Settings, Knowledge, the evaluator list, Setup) show what they do on a stack |
+| The tape (`demo/`) | Copied at build time from `frontend-react/demo-data/simulated/` or `recorded/` (`VITE_DEMO_DATASET`); its label travels with it |
+| The browser gate (`src/lib/gate/`) | The gateway's pipeline in TypeScript, held to the same golden vectors as Go: it built the simulated tape, runs live checks and the static Studio's test bench |
+| Live mode | The visitor's OpenRouter key, in that tab's `sessionStorage` only, sent to openrouter.ai and nowhere else |
+| `404.html` | A copy of the app, so a deep link boots it the way Pages serves missing paths |
+
+There is no TrustAgent server and no cookie. A meta Content Security Policy limits scripts to the
+site's own files and connections to the site and openrouter.ai. What that means for a visitor's
+key is in [SECURITY.md](SECURITY.md#the-static-demo).
+
+## Releases and images
+
+Three app images, each built for `linux/amd64` and `linux/arm64`, from base images pinned by their
+multi-arch index digest, running as a non-root user and labelled with the version and the git
+revision (`org.opencontainers.image.revision`):
+
+| Image | Contents | Ports |
+|---|---|---|
+| `ghcr.io/timkush1/truthtable-proxy` | Alpine with five static Go binaries: `proxy` (the default command), `trafficgen`, `mock-upstream`, `jevcheck`, `export-replay` | 8080, 8002 |
+| `ghcr.io/timkush1/truthtable-engine` | Python 3.11 slim with the engine and its locked dependencies. The `-knowledge` variant (`ENGINE_EXTRAS=knowledge`) adds the knowledge-base packages and is only built locally | 50051, 8001 |
+| `ghcr.io/timkush1/truthtable-dashboard` | Unprivileged nginx serving the built dashboard (and the landing page at `/welcome/`), proxying `/v1`, `/api`, `/ws` and `/health` to the gateway | 3000 |
+
+```mermaid
+graph LR
+    B["make version-bump V=X.Y.Z"] --> T["tag vX.Y.Z"]
+    T --> RI["release-images.yml<br/>amd64 + arm64, provenance, SBOM"]
+    RI -->|"push + attest each digest"| GHCR[("GHCR<br/>X.Y.Z, sha-short")]
+    T --> PW["pages.yml<br/>recorded tape required"]
+    PW -->|"deploy"| GP["GitHub Pages"]
+    M["push to main"] --> RI2["release-images.yml"] -->|"edge"| GHCR
+    GHCR -->|"make up / make demo on the tag"| U["Your machine"]
+```
+
+- **Tags:** `X.Y.Z` on a release tag, `edge` for `main`, and `sha-<short>` for every pushed build.
+- **Supply chain:** BuildKit provenance (`mode=max`) and an SBOM in every image, plus a GitHub
+  artifact attestation per pushed digest, checked with
+  `gh attestation verify oci://ghcr.io/timkush1/truthtable-proxy:<version> -R timkush1/TrustAgent`.
+- **Build or pull:** on a release tag `make up` and `make demo` pull these images; on any other
+  commit they build them from the checkout
+  ([GETTING-STARTED.md §7](GETTING-STARTED.md#7-images-built-or-pulled)).
+- The release runbook is in [CI-CD.md](CI-CD.md#releasing).
+
 ## Design decisions and trade-offs
 
 The ADRs live in [DECISIONS.md](DECISIONS.md); the headlines:
@@ -106,7 +168,7 @@ The ADRs live in [DECISIONS.md](DECISIONS.md); the headlines:
   wants Go's concurrency and small static binaries; the audit path (LangGraph, LLM providers)
   wants Python's ecosystem. A committed gRPC contract keeps the seam honest.
 - **A cheap classifier in the request path, an LLM judge off it.** One Jev call answers every
-  check of a route for about $0.21 per 1,000 answers **[estimate]**, fast enough to block; the
+  check of a route for <!-- claim:fast_check_cost_per_1k --> ~$0.21 / 1,000 answers [estimate], fast enough to block; the
   expensive claim-level audit runs asynchronously on the answers that need an explanation, plus a
   uniform sample that keeps the headline hallucination rate unbiased.
 - **Block only when calibrated and corroborated.** A block needs a calibration of the current Jev
@@ -127,7 +189,8 @@ The ADRs live in [DECISIONS.md](DECISIONS.md); the headlines:
 | `backend-go/internal/{proxy,llmapi,upstream,worker,websocket,store}` | Gateway handler, API formats, upstreams, the audit queue, WS v2, Postgres |
 | `backend-python/src/truthtable/graphs` | The LangGraph audit pipeline |
 | `backend-python/src/truthtable/{providers,scoring,runtime,studio,kb}` | Judge providers, scoring, pushed runtime config, the Studio drafter, the optional knowledge base |
-| `frontend-react/src` | The dashboard and the static site |
+| `frontend-react/src` | The dashboard, the landing page and the static site (`landing/`, `data/replay/`, `lib/gate/`, `lib/openrouter/`) |
+| `frontend-react/demo-data` | The replay tapes: `simulated/` (generated) and `recorded/` (from `make record-demo`) |
 | `contracts/` | Cross-language source of truth: schemas, templates, prices, vectors |
 | `proto/evaluator.proto` | The Go ↔ Python contract |
 

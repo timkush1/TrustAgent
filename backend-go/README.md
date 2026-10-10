@@ -36,9 +36,9 @@ response contract, §3.1 Go change list).
 | `internal/worker`, `internal/grpc` | Deep-audit lanes and the engine client (`Evaluate`, `GetEngineInfo`, knowledge RPCs) |
 | `internal/websocket` | WebSocket protocol v2: sequence numbers, replay ring, gaps, scoped event variants |
 | `internal/metrics` | Prometheus metrics, all `trustagent_gateway_*` |
-| `cmd/trafficgen` | Sends the demo scenarios and checks each outcome (`--once --expect`) |
-| `cmd/mock-upstream` | A fake of every vendor the gateway calls, with latency knobs and scenario-keyed faults (e2e and load stacks) |
-| `cmd/calibrate`, `cmd/gate-eval`, `cmd/jevcheck` | Fit a calibration, run the fast check over a JSONL file, check a Jev key and endpoint |
+| `cmd/trafficgen` | Sends the demo scenarios and checks each outcome (`--once --expect`); `--pack faults` runs the vendor-fault pack, `--record` (with `--trace-ids-out`) drives `make record-demo`, `--seed-knowledge` loads the handbook for the knowledge scenario |
+| `cmd/mock-upstream` | A fake of every vendor the gateway calls, with latency knobs and scenario-keyed faults: in test mode a `fault:<spec>` scenario makes it answer 429, 503, 402, 413, bad JSON or hang on a chosen attempt (e2e and load stacks) |
+| `cmd/calibrate`, `cmd/gate-eval`, `cmd/jevcheck` | Fit a calibration, run the fast check over a JSONL file, check a Jev key and endpoint (`make jev-check`; `--gateway` asks a running gateway instead) |
 | `cmd/export-replay`, `cmd/vectorgen` | Export a sanitized replay recording; maintain the golden vectors |
 | `api/audit/v1` | Generated gRPC stubs (gitignored: `make proto`) |
 
@@ -113,12 +113,23 @@ go test -race -p 2 ./...                         # what CI runs, with the race d
 go test ./internal/decision/... -run TestVectors # the golden vectors against the reference core
 TEST_DATABASE_URL=postgres://… go test -p 1 ./internal/store/...   # one schema per test (internal/storetest)
 go test ./cmd/proxy -run 'TestDemoScenariosEndToEnd|TestE2EScenariosAgainstMockUpstream'   # every scenario, in process
+go test -p 1 ./cmd/proxy -run 'Fault|Breaker|Budget|Knowledge'   # vendor faults, breaker, budgets, knowledge, in process
+go test -run TestTier0Budget ./internal/gate/...  # the Tier-0 detectors stay inside their time budget
 ```
+
+Benchmarks: `make bench-go` runs the Go benchmarks five times into `backend-go/bench/<git sha>.txt`
+(Tier-0 detectors by evidence and answer size, evidence extraction, the gate before Jev,
+`decide()`); `make bench-go-smoke` runs each once, as CI does. `FuzzDetect` checks that no input
+panics the detectors and that every span stays in bounds.
 
 `gofmt`, `go vet` and gosec (medium and above) must stay clean; `make lint-go` runs the first
 two. Against a running stack, `trafficgen --once --expect` checks every scenario over real HTTP
-(`make demo-scenarios`, `make e2e-scenarios`), and `make load-test-gate` measures the gateway's
-overhead with k6 against `mock-upstream` ([GATEWAY.md §13](../docs/GATEWAY.md#13-load-test)).
+(`make demo-scenarios`, `make e2e-scenarios`, `make e2e-faults`), and `make load-test-gate`
+measures the gateway's overhead with k6 against `mock-upstream`
+([GATEWAY.md §13](../docs/GATEWAY.md#13-load-test)). With `LOAD_PUBLISH=1` on a clean tree,
+`scripts/load/report.py` writes the run, with its machine and every scenario's percentiles, to
+`docs/benchmarks/load/<run_id>.json`; vendors there are simulated, so the figures are the
+gateway's own time.
 
 ## Conventions
 

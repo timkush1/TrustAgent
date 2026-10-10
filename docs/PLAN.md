@@ -1,23 +1,40 @@
-# TrustAgent Level-Up Master Plan
+# TrustAgent master plan
 
-> Roadmap to take TrustAgent from a working demo (v0.2.x) to a top-tier, production-credible
-> portfolio project (v1.0.0). Each phase lands as a reviewed change with tests, and gets a
-> progress log in [docs/archive/progress/](archive/progress/).
+> Phases 0–7 took TrustAgent from a working demo (v0.2.x) to a production-credible portfolio
+> project (v1.0.0); each has a progress log in [docs/archive/progress/](archive/progress/).
+> Phases 8–15 build **2.0, the hallucination gateway**, to the specification in
+> [docs/v2/SPEC.md](v2/SPEC.md) (its §4.2 names them P0–P7, the label used in branch names and
+> commit messages).
 
-**Status legend**: ⬜ not started · 🟨 in progress · ✅ done
+**Status**: Done · In progress · Planned
+
+### 1.x: level-up to v1.0.0
 
 | Phase | Goal | Est. hours | Status |
 |---|---|---|---|
-| [0](#phase-0--hygiene--doc-foundation) | Hygiene & doc foundation | 5 | ✅ |
-| [1](#phase-1--cicd) | CI/CD pipelines | 9 | ✅ |
-| [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | ✅ |
-| [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | ✅ |
-| [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | ✅ |
-| [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | ✅ |
-| [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | ✅ |
-| [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | ✅ |
+| [0](#phase-0--hygiene--doc-foundation) | Hygiene & doc foundation | 5 | Done |
+| [1](#phase-1--cicd) | CI/CD pipelines | 9 | Done |
+| [2](#phase-2--evaluation-framework) | Evaluation framework (benchmarks + CI gates) | 18 | Done |
+| [3](#phase-3--security-hardening) | Security hardening (OWASP LLM Top 10) | 14 | Done |
+| [4](#phase-4--persistence) | Postgres + Redis persistence | 9 | Done |
+| [5](#phase-5--multi-provider--dashboard-history) | OpenAI/Anthropic providers + history UI | 10 | Done |
+| [6](#phase-6--veritas-lite-verified-knowledge-base) | VERITAS-lite verified knowledge base | 20 | Done |
+| [7](#phase-7--portfolio-polish--v100) | Polish, ARCHITECTURE.md, v1.0.0 | 8 | Done |
 
 Total: ~93 hours over ~10 weeks part-time.
+
+### 2.0: the Jev gateway
+
+| Phase | SPEC | Goal | Status |
+|---|---|---|---|
+| [8](#phase-8--baseline-and-toolchain) | P0, P0.5 | Baseline, environment, OpenRouter key; CI and Makefile split per stream; toolchain upgrade | Done (2026-09-27) |
+| [9](#phase-9--contracts-and-walking-skeleton) | P1-core, S0, P1b | `contracts/`, proto v2, live vendor spikes; the zero-key walking skeleton | Done (2026-09-28) |
+| [10](#phase-10--cores) | P2 | Gateway, engine, dashboard and DX cores, four streams in parallel | Done (2026-09-28) |
+| [11](#phase-11--integration-and-the-m-demo-gate) | P3 | Enforcing pipeline, streaming, policies, the redesigned pages; M-Demo gate | Done (2026-10-01) |
+| [12](#phase-12--security-credentials-studio-roi) | P4 | Security, credentials and Connect OpenRouter, Studio, labels and calibration, Savings | Done (2026-10-09) |
+| [13](#phase-13--static-site-landing-release-tooling) | P5 | Static site with live checks, landing page, release images and tooling, launch drafts | In progress |
+| [14](#phase-14--measurement-and-launch) | P6 | Measured benchmarks, a recorded demo, the 2.0.0 release and Pages | Planned |
+| [15](#phase-15--v21) | P7 | v2.1: per-claim Jev cascade, knowledge gates, key rotation | Planned |
 
 ## Why this ordering
 
@@ -191,9 +208,154 @@ retrieval, crypto-shredding.
 
 ---
 
+## 2.0: the Jev gateway
+
+Each phase below is one SPEC phase. Streams work in parallel worktrees; the lead merges them on an
+integration branch (`feat/v2-int*`) after each stream's gate, runs the phase gate there, then
+merges into `feat/v2-jev-gateway`. P3, P4 and P5 have their own binding plans in
+[docs/v2/](v2/) (`P3-PLAN.md`, `P4-PLAN.md`, `P5-PLAN.md`).
+
+## Phase 8 — Baseline and toolchain
+
+**SPEC**: P0 (owner) and P0.5 · **Status**: Done (2026-09-27)
+
+- [x] Baseline commit of the post-1.0 hardening tree; `feat/v2-jev-gateway` and the stream
+      worktrees
+- [x] The owner's OpenRouter key (kept only in the local `.env`); Docker Compose ≥ 2.24 in WSL
+- [x] CI split into `ci-{go,python,web,contracts,docker,e2e}.yml`; the Makefile split into
+      `mk/*.mk`; no `container_name`
+- [x] Frontend toolchain: Vite 8, TypeScript 6, React 19.3; `toolchain go1.25.11`
+- [x] The superseded-identifier check (`scripts/check-forbidden.mjs`)
+
+**Gate**: the web build and tests pass; `docker compose config -q`.
+
+## Phase 9 — Contracts and walking skeleton
+
+**SPEC**: P1-core, S0 and P1b · **Status**: Done (2026-09-28)
+
+- [x] `contracts/`: JSON Schemas, the configuration-key registry, prices and cost assumptions,
+      labelled value claims, evaluator templates, question sets, rules, UI copy, draft golden
+      vectors
+- [x] `proto/evaluator.proto` v2 (additive); migration 0002 and the runner fix
+- [x] Live vendor spikes (capped at $1), sanitized into `contracts/fixtures/vendor/`;
+      [JEV-ACCESS.md](JEV-ACCESS.md) v1
+- [x] **Walking skeleton**: `make demo` with zero keys shows gated traces (grounded pass,
+      contradiction flag, no-evidence `not_assessed`) and one completed audit, end to end
+
+**Gate**: `make demo`, `doctor --expect demo`, `trafficgen --once --expect`, the Go golden
+vectors and the skeleton Playwright spec.
+
+## Phase 10 — Cores
+
+**SPEC**: P2 · **Status**: Done (2026-09-28)
+
+- [x] **Gateway**: config registry and strict mode; scopes, ingest auth, sessions, CSRF and the
+      setup token; every Jev backend with retries, hedging and the breaker; the full `decision`
+      package; WebSocket hub v2; worker lanes; the ordered trace writer; `mock-upstream`
+- [x] **Engine**: providers with retries and structured outputs; scoring v2 (CONTRADICTED stays
+      distinct from UNSUPPORTED); decomposer v2 with UTF-16 spans; internal token and RPC caps
+- [x] **Dashboard**: tokens and `DESIGN.md`, the 6-item shell, the Health pill, DataSource and
+      StreamClient v2, the TypeScript decision conformer, the landing skeleton
+- [x] **DX**: the compose rewrite (profiles, `127.0.0.1` binds, GHCR image names),
+      root-context Dockerfiles, `configure.py --ensure`, `doctor.py`, `gen_config_docs.py`
+
+**Gate**: Go vet, race tests and vectors; ruff, black, mypy, unit tests and the golden_v2
+baseline; the web lint, types, tests, build and size budget; every compose profile validates.
+
+## Phase 11 — Integration and the M-Demo gate
+
+**SPEC**: P3 · **Status**: Done (2026-10-01)
+
+- [x] The enforcing pipeline: observe, flag, block and fallback (gated again), fail semantics,
+      late decisions, test mode off by default
+- [x] Streaming: passthrough hold-back with trailers, buffered mode, the decisions long-poll
+- [x] Policies in full: validation and block readiness, versions, divergence, dry-run
+- [x] Overview, Traffic, Trace detail, Policies, Playground and Knowledge; the static build
+      replaying the simulated recording
+- [x] Metric renames (`trustagent_gateway_*`, `trustagent_engine_*`); eval harness v2
+
+**Gate**: M-Demo — `make check`; on `make demo` (zero keys) every scenario passes
+`trafficgen --once --expect`, fallback included; the stack Playwright specs (trace detail, inline
+claims, policy edit and rollback, fallback) and the static replay and landing specs pass. WebSocket
+v1 and the 1.0 `/api/audits` shape are deleted.
+
+## Phase 12 — Security, credentials, Studio, ROI
+
+**SPEC**: P4 · **Status**: Done (2026-10-09)
+
+- [x] The encrypted credential store, host binding and redaction
+      ([ADR-009](DECISIONS.md#adr-009-an-encrypted-credential-store-replaces-env-only-secrets));
+      Connect OpenRouter (self-hosted PKCE) and Paste a key
+- [x] Costs and Savings: the spend ledger, daily caps, two labelled counterfactuals, an unbiased
+      uniform sample
+- [x] Evaluators: the library, labels, calibration fit and adoption; Evaluator Studio (draft,
+      test, dry-run, shadow, activate)
+- [x] The setup wizard and the onboarding Playwright spec on a fresh stack
+
+**Gate**: P4-PLAN §18, including Docker proofs A (demo-shaped) and B (first run).
+
+## Phase 13 — Static site, landing, release tooling
+
+**SPEC**: P5 · **Status**: In progress (plan: [docs/v2/P5-PLAN.md](v2/P5-PLAN.md))
+
+- [ ] **Live checks in the browser** on the static site: Connect or paste an OpenRouter key, kept
+      in the tab for at most 2 hours, courtesy caps, the 402 screen, the static PKCE callback
+- [ ] **Static Studio**: templates, editor, test bench, threshold what-if, local calibration,
+      Draft with AI, Copy and Download
+- [ ] **Landing page**: cost calculator pinned by the `cost` vectors, the dated comparison
+      table, Try it, Write your own checks, the "What Jev was asked" panel, self-host
+- [ ] **Replay**: simulated and recorded datasets, the glass box rebuilt in the browser, honest
+      static states, the first-visit guide, the `/og` card
+- [ ] **Gateway tools**: the vendor-fault scenarios, `trafficgen --record`, the knowledge
+      scenario in process, published k6 overhead runs, Tier-0 benchmarks, `jevcheck`
+- [ ] **Release**: version tooling, multi-arch GHCR images with attestations, the pull-based
+      quickstart, `pages.yml` (deploys only once the owner turns Pages on), `record-demo`,
+      the complete doctor, `first-run` and golden-path tests
+- [ ] **Docs and launch**: `check-claims`, the README hero, ADR-005 to ADR-010, the launch
+      drafts in [docs/launch/](launch/), capture tooling
+
+**Gate**: P5-PLAN §18 — the static build passes its Playwright projects (labels visible, no
+network except the site and openrouter.ai, CSP meta present) and the size budgets;
+`make load-test-gate` publishes the overhead run; `make check` includes `check-claims` and
+`check-version`.
+
+## Phase 14 — Measurement and launch
+
+**SPEC**: P6 (the owner's key; bench-lite capped at $5) · **Status**: Planned
+
+- [ ] `make bench-lite` (RAGTruth-QA: the fast check, the same checks asked of an LLM, a full
+      audit) and `make calibrate WRITE=1` on the pinned snapshot
+- [ ] `make record-demo` on a calibrated showcase route; OG card and hero GIF from that recording
+- [ ] `make bench-publish` (refuses mock output) fills `contracts/claims/measured.json`
+- [ ] Re-verify the comparison table and the market claims; the owner reviews every cell
+- [ ] TypeSafe and OpenRouter terms checked for publishing benchmarks
+- [ ] CHANGELOG, `scripts/bump_version.py 2.0.0`, the PR to `main`, tag `v2.0.0`, GHCR release,
+      Pages turned on (owner)
+
+**Gate**: `make check`, `scripts/check_version.py`, `node scripts/check-claims.mjs --launch` and
+`scripts/check_recording.py --require-recorded frontend-react/demo-data/recorded`.
+
+## Phase 15 — v2.1
+
+**SPEC**: P7 · **Status**: Planned
+
+- [ ] A Go-hosted `DecisionService.Decide`, and the per-claim Jev cascade in the deep audit
+- [ ] Knowledge-base Jev gates, an injection screen, a conflict prefilter
+- [ ] The `by_evidence` calibration partition as an A/B
+- [ ] Master-key rotation (`SECRET_KEY_PREVIOUS`); shared PKCE nonces and caps across replicas,
+      and a credential-verify limit keyed across replicas (today it is per replica)
+- [ ] Route-filtered calibration fits that keep their labels under short retention (labels carry
+      no route today)
+- [ ] cosign image signatures, on top of the provenance and attestations
+- [ ] Live verification of TypeSafe-direct; the full `eval-live` run
+
+---
+
 ## Verification strategy
 
 - Every phase lands with green CI (from Phase 1 onward).
+- From Phase 8 on, every phase also passes its gate on the integration branch before it merges,
+  and the golden vectors keep Go and TypeScript decisions identical.
 - Each `docs/archive/progress/PHASE-N.md` records verification evidence (test output, screenshots).
 - Full-system checks after Phases 4 and 6: `docker compose up`, `make test-e2e`, manual
   dashboard walkthrough (live audit, history page, KB upload with conflicting documents).
