@@ -482,10 +482,14 @@ describe('hero answer card', () => {
     try {
       const { container, unmount } = render(<HeroCard />);
       const mark = () => container.querySelector('mark.hero-mark');
+      const chipsHidden = () => [...container.querySelectorAll('[data-value-label]')].map((c) => c.closest('[inert]') !== null);
       expect(mark()).toBeNull();
+      // A beat not shown yet is hidden from the keyboard too: its chips cannot take focus unseen.
+      expect(chipsHidden()).toEqual([true, true]);
       await act(async () => {
         vi.advanceTimersByTime(10_000);
       });
+      expect(chipsHidden()).toEqual([false, false]);
       expect(mark()).toHaveTextContent('60 days');
       expect(mark()).toHaveAttribute('data-on');
       expect(screen.getByRole('button', { name: /play again/i })).toBeEnabled();

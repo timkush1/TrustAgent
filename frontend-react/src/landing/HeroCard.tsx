@@ -127,7 +127,7 @@ export function HeroCard() {
           </div>
         </div>
 
-        <div className="beat border-t border-border px-5 py-4 max-sm:px-4" data-on={on(2)} aria-hidden={beat < 2}>
+        <div className="beat border-t border-border px-5 py-4 max-sm:px-4" data-on={on(2)} aria-hidden={beat < 2} inert={beat < 2}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color-mix(in_oklab,var(--tone-warning)_40%,transparent)] bg-[color-mix(in_oklab,var(--tone-warning)_var(--tint),transparent)] px-2.5 text-sm font-medium text-tone-warning">
               <Flag aria-hidden="true" className="size-3.5" />
@@ -153,7 +153,7 @@ export function HeroCard() {
           </p>
         </div>
 
-        <div className="beat border-t border-border bg-surface-sunken px-5 py-4 max-sm:px-4" data-on={on(3)} aria-hidden={beat < 3}>
+        <div className="beat border-t border-border bg-surface-sunken px-5 py-4 max-sm:px-4" data-on={on(3)} aria-hidden={beat < 3} inert={beat < 3}>
           <p className="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
             <OctagonX aria-hidden="true" className="size-3.5 text-v-contradicted" />
             <span className="text-v-contradicted">Contradicted</span>
