@@ -86,18 +86,18 @@ block on, so the expensive tier runs only where an explanation is worth paying f
 
 ```mermaid
 graph LR
-    App[Your app] -->|/v1/...| GW
-    subgraph GW[Go gateway :8080]
-        H[/v1 handler/] --> G[gate: Tier 0 + Tier 1 + decide]
-        G --> W[audit worker pool]
-        API[REST /api and WS /ws]
+    App["Your app"] -->|"/v1/..."| H
+    subgraph GW["Go gateway :8080"]
+        H["/v1 handler"] --> G["gate: Tier 0 + Tier 1 + decide"]
+        G --> W["audit worker pool"]
+        API["REST /api and WS /ws"]
     end
-    H -->|forward| LLM[LLM API]
-    G -->|HTTPS, one call| Jev[Jev via OpenRouter, TypeSafe or a gateway]
-    W -->|gRPC Evaluate| E[Python engine: LangGraph audit]
-    E -->|judge calls| Judge[Claude Haiku via OpenRouter, ...]
-    GW --> PG[(Postgres)]
-    API -->|WS v2| D[Dashboard :3000]
+    H -->|"forward"| LLM["LLM API"]
+    G -->|"HTTPS, one call"| Jev["Jev via OpenRouter, TypeSafe or a gateway"]
+    W -->|"gRPC Evaluate"| E["Python engine: LangGraph audit"]
+    E -->|"judge calls"| Judge["Claude Haiku via OpenRouter, ..."]
+    GW --> PG[("Postgres")]
+    API -->|"WS v2"| D["Dashboard :3000"]
 ```
 
 | Service | Language | Job |

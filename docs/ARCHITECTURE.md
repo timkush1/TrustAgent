@@ -106,13 +106,13 @@ built without a backend (`VITE_APP_MODE=static`) and served by GitHub Pages
 
 ```mermaid
 graph LR
-    V[Visitor's browser] -->|static files| Pages[GitHub Pages<br/>/TrustAgent/: landing,<br/>app/, demo/ tape]
-    subgraph Browser[In the browser]
-        R[ReplayDataSource<br/>plays demo/manifest.json] --> UI[Dashboard pages]
-        G[runGate: evidence, detectors,<br/>compile, decide in TypeScript] --> UI
+    V["Visitor's browser"] -->|"static files"| Pages["GitHub Pages<br/>/TrustAgent/: landing,<br/>app/, demo/ tape"]
+    subgraph Browser["In the browser"]
+        R["ReplayDataSource<br/>plays demo/manifest.json"] --> UI["Dashboard pages"]
+        G["runGate: evidence, detectors,<br/>compile, decide in TypeScript"] --> UI
     end
     V --- Browser
-    G -->|visitor's key, live mode only| OR[openrouter.ai<br/>decisions, chat, PKCE key exchange]
+    G -->|"visitor's key, live mode only"| OR["openrouter.ai<br/>decisions, chat, PKCE key exchange"]
 ```
 
 | Part | What it does |
@@ -142,13 +142,13 @@ revision (`org.opencontainers.image.revision`):
 
 ```mermaid
 graph LR
-    B[make version-bump V=X.Y.Z] --> T[tag vX.Y.Z]
-    T --> RI[release-images.yml<br/>amd64 + arm64, provenance, SBOM]
-    RI -->|push + attest each digest| GHCR[(GHCR<br/>:X.Y.Z, sha-short)]
-    T --> PW[pages.yml<br/>recorded tape required]
-    PW -->|deploy| GP[GitHub Pages]
-    M[push to main] --> RI2[release-images.yml] -->|:edge| GHCR
-    GHCR -->|make up / make demo on the tag| U[Your machine]
+    B["make version-bump V=X.Y.Z"] --> T["tag vX.Y.Z"]
+    T --> RI["release-images.yml<br/>amd64 + arm64, provenance, SBOM"]
+    RI -->|"push + attest each digest"| GHCR[("GHCR<br/>X.Y.Z, sha-short")]
+    T --> PW["pages.yml<br/>recorded tape required"]
+    PW -->|"deploy"| GP["GitHub Pages"]
+    M["push to main"] --> RI2["release-images.yml"] -->|"edge"| GHCR
+    GHCR -->|"make up / make demo on the tag"| U["Your machine"]
 ```
 
 - **Tags:** `X.Y.Z` on a release tag, `edge` for `main`, and `sha-<short>` for every pushed build.
