@@ -8,11 +8,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/truthtable/contracts"
 
 	"github.com/truthtable/backend-go/internal/decision"
 )
@@ -38,11 +42,16 @@ type stubProxy struct {
 	verdict map[string]string
 	action  map[string]string
 	would   map[string]string
+	// status is the GET /api/status body; nil answers 404. neverSettle keeps a scenario's audit
+	// queued.
+	status      map[string]any
+	neverSettle map[string]bool
 
-	mu       sync.Mutex
-	polls    map[string]int
-	requests []*http.Request
-	bodies   [][]byte
+	mu          sync.Mutex
+	statusReads int
+	polls       map[string]int
+	requests    []*http.Request
+	bodies      [][]byte
 }
 
 func newStub(t *testing.T) (*stubProxy, *httptest.Server) {
@@ -52,7 +61,7 @@ func newStub(t *testing.T) (*stubProxy, *httptest.Server) {
 	}
 	s := &stubProxy{t: t, scenarios: map[string]*scenario{}, polls: map[string]int{}, verdict: map[string]string{},
 		action: map[string]string{}, would: map[string]string{}, text: map[string]string{}, noComment: map[string]bool{},
-		noTrailers: map[string]bool{}}
+		noTrailers: map[string]bool{}, neverSettle: map[string]bool{}}
 	for i := range all {
 		s.scenarios[all[i].ID] = &all[i]
 	}
@@ -87,6 +96,20 @@ func (s *stubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.answer(w, sc)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/status":
+		if r.Header.Get("X-TrustAgent-Key") != testKey {
+			http.Error(w, `{"error":{"code":"unauthorized","message":"no"}}`, http.StatusUnauthorized)
+			return
+		}
+		s.mu.Lock()
+		s.statusReads++
+		st := s.status
+		s.mu.Unlock()
+		if st == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(st)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/traces/"):
 		if r.Header.Get("X-TrustAgent-Key") != testKey {
 			http.Error(w, `{"error":{"code":"unauthorized","message":"no"}}`, http.StatusUnauthorized)
@@ -224,7 +247,7 @@ func (s *stubProxy) trace(sc *scenario, n int) map[string]any {
 	audit := map[string]any{"status": e.str("audit"), "verdict": nil}
 	var detail any
 	switch {
-	case e.str("audit") == "queued" && n < 3:
+	case e.str("audit") == "queued" && (n < 3 || s.neverSettle[sc.ID]):
 	case e.str("audit") == "queued":
 		verdict := e.str("audit_verdict")
 		if v, ok := s.verdict[sc.ID]; ok {
@@ -493,7 +516,10 @@ func TestExpectFailsOnAPhaseSkip(t *testing.T) {
 }
 
 // TestUpstreamAnswers: --upstream generated leaves test_response out of generated scenarios only,
-// --upstream all out of every scenario; a generated answer from the upstream is not checked.
+// --upstream all out of every scenario. A generated answer from a real upstream (--upstream
+// generated) is not checked, but its trace is awaited until it settles (D121); under --upstream
+// all mock-upstream answers with the stand-in response, so the generated scenarios are checked
+// like the others.
 func TestUpstreamAnswers(t *testing.T) {
 	for mode, wantScripted := range map[string]bool{upstreamNone: true, upstreamGenerated: true, upstreamAll: false} {
 		stub, srv := newStub(t)
@@ -501,7 +527,10 @@ func TestUpstreamAnswers(t *testing.T) {
 		if code != exitOK {
 			t.Fatalf("%s: exit %d:\n%s", mode, code, out)
 		}
-		requests, bodies, _ := stub.snapshot()
+		requests, bodies, polls := stub.snapshot()
+		if len(requests) != 3 {
+			t.Fatalf("%s: %d requests, want grounded-pass and the generated pair", mode, len(requests))
+		}
 		for i, r := range requests {
 			sc := stub.scenarios[r.Header.Get("X-TrustAgent-Scenario")]
 			var sent map[string]json.RawMessage
@@ -510,10 +539,201 @@ func TestUpstreamAnswers(t *testing.T) {
 			if (sent["test_response"] != nil) != scripted {
 				t.Errorf("--upstream %s, %s: test_response sent %v", mode, sc.ID, sent["test_response"] != nil)
 			}
-			unchecked := strings.Contains(out, "sent "+sc.ID+" (")
-			if unchecked != (!scripted && sc.AnswerSource == answerGenerated) {
-				t.Errorf("--upstream %s, %s: unchecked %v:\n%s", mode, sc.ID, unchecked, out)
+			wantUnchecked := mode == upstreamGenerated && sc.AnswerSource == answerGenerated
+			unchecked := strings.Contains(out, "sent "+sc.ID+" (trace trace-"+sc.ID)
+			checked := strings.Contains(out, "ok   "+sc.ID+" (trace trace-"+sc.ID)
+			if unchecked != wantUnchecked || checked == wantUnchecked {
+				t.Errorf("--upstream %s, %s: unchecked %v, checked %v:\n%s", mode, sc.ID, unchecked, checked, out)
 			}
+			// Every trace is awaited until its audit settles (the stub settles at the third poll).
+			if polls[sc.ID] < 3 {
+				t.Errorf("--upstream %s, %s: %d trace polls, want it awaited until settled", mode, sc.ID, polls[sc.ID])
+			}
+		}
+	}
+}
+
+// TestUncheckedTraceMustSettle: a generated upstream answer is not checked, but a trace that does
+// not settle within --audit-timeout still fails the run.
+func TestUncheckedTraceMustSettle(t *testing.T) {
+	stub, srv := newStub(t)
+	stub.neverSettle["generated-weekend-shipping"] = true
+	code, out := runTG(t, "--once", "--expect", "--scenarios", "generated", "--upstream", upstreamGenerated, "--base-url", srv.URL,
+		"--audit-timeout", "1s")
+	if code != exitMismatch || !strings.Contains(out, "FAIL generated-weekend-shipping: trace trace-generated-weekend-shipping did not settle") ||
+		!strings.Contains(out, "sent generated-monthly-refund (trace trace-generated-monthly-refund") {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+}
+
+// TestTraceIDsOut: --trace-ids-out writes the trace id of every answered request, one per line in
+// send order, also when some scenarios fail; a request that got no answer has no line. A file that
+// cannot be written fails the run.
+func TestTraceIDsOut(t *testing.T) {
+	stub, srv := newStub(t)
+	stub.mutate = func(id string, h http.Header) {
+		if id == "refund-contradiction-flag" {
+			h.Set(headerAction, "pass")
+		}
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ids.txt")
+	if err := os.WriteFile(path, []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out := runTG(t, "--once", "--expect", "--scenarios", "s0", "--base-url", srv.URL, "--audit-timeout", "10s", "--trace-ids-out", path)
+	if code != exitMismatch {
+		t.Fatalf("a mismatch still fails the run: exit %d:\n%s", code, out)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "trace-grounded-pass\ntrace-refund-contradiction-flag\ntrace-no-evidence-not-assessed\n"
+	if string(b) != want {
+		t.Errorf("ids file %q, want %q", b, want)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("a temporary file was left behind: %v", entries)
+	}
+
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer failing.Close()
+	if code, out := runTG(t, "--once", "--scenarios", "s0", "--base-url", failing.URL, "--trace-ids-out", path); code != exitMismatch {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	if b, _ := os.ReadFile(path); len(b) != 0 {
+		t.Errorf("no request was answered with a trace, so the file is empty: %q", b)
+	}
+	if code, out := runTG(t, "--once", "--scenarios", "s0", "--base-url", srv.URL, "--trace-ids-out", filepath.Join(dir, "missing", "ids.txt")); code != exitMismatch ||
+		!strings.Contains(out, "--trace-ids-out") {
+		t.Errorf("an unwritable file fails the run: exit %d:\n%s", code, out)
+	}
+}
+
+// recordableStatus is a GET /api/status body a recording run accepts: test mode, a real decision
+// backend that is ready, and a judge that is up on its configured provider.
+func recordableStatus() map[string]any {
+	return map[string]any{
+		"test_mode":      true,
+		"decision_model": map[string]any{"backend": "openrouter-decisions", "state": "ready", "endpoint_host": "openrouter.ai"},
+		"judge":          map[string]any{"state": "up", "provider": "openrouter", "fallback_active": false, "fallback_reason": nil},
+	}
+}
+
+// TestRecord: --record checks the gateway first, then runs like --expect with every trace awaited,
+// reporting a mismatch as drift without failing; a failed request still fails the run.
+func TestRecord(t *testing.T) {
+	stub, srv := newStub(t)
+	stub.status = recordableStatus()
+	stub.verdict["generated-monthly-refund"] = "HALLUCINATED" // the stand-in expects GROUNDED
+	stub.mutate = func(id string, h http.Header) {
+		if id == "grounded-pass" {
+			h.Set(headerAction, "flag")
+		}
+	}
+	path := filepath.Join(t.TempDir(), "ids.txt")
+	code, out := runTG(t, "--record", "--scenarios", "s0,generated", "--upstream", upstreamNone, "--base-url", srv.URL,
+		"--audit-timeout", "10s", "--trace-ids-out", path)
+	if code != exitOK {
+		t.Fatalf("drift does not fail a recording: exit %d:\n%s", code, out)
+	}
+	for _, want := range []string{
+		"drift grounded-pass (trace trace-grounded-pass",
+		`X-TrustAgent-Action: want "pass", got "flag"`,
+		"drift generated-monthly-refund (trace trace-generated-monthly-refund",
+		"audit verdict: want GROUNDED, got HALLUCINATED",
+		"ok   refund-contradiction-flag (trace",
+		"trafficgen: 5 scenario(s) recorded: every trace settled; 2 drift from their expectations (reported, not failing)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if b, _ := os.ReadFile(path); strings.Count(string(b), "\n") != 5 {
+		t.Errorf("ids file %q", b)
+	}
+	if stub.statusReads != 1 {
+		t.Errorf("%d status reads, want the one preflight", stub.statusReads)
+	}
+
+	// Under --upstream generated the generated answers are a real model's: awaited, not checked.
+	code, out = runTG(t, "--record", "--scenarios", "generated", "--upstream", upstreamGenerated, "--base-url", srv.URL, "--audit-timeout", "10s")
+	if code != exitOK || strings.Contains(out, "drift generated") || !strings.Contains(out, "sent generated-monthly-refund (trace") ||
+		!strings.Contains(out, "0 drift from their expectations") {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+
+	stub.neverSettle["refund-contradiction-flag"] = true
+	code, out = runTG(t, "--record", "--scenarios", "s0", "--base-url", srv.URL, "--audit-timeout", "1s")
+	if code != exitMismatch || !strings.Contains(out, "FAIL refund-contradiction-flag: trace trace-refund-contradiction-flag did not settle") ||
+		!strings.Contains(out, "some requests failed or did not settle") {
+		t.Fatalf("a trace that does not settle fails a recording: exit %d:\n%s", code, out)
+	}
+}
+
+// TestRecordRefusesASimulatedGateway: --record refuses, before sending anything, a gateway whose
+// traffic could only be labelled simulated or would not be exportable as recorded.
+func TestRecordRefusesASimulatedGateway(t *testing.T) {
+	for name, c := range map[string]struct {
+		edit func(st map[string]any)
+		want string
+	}{
+		"not test mode":       {func(st map[string]any) { st["test_mode"] = false }, "not in test mode"},
+		"mock decision model": {func(st map[string]any) { st["decision_model"] = map[string]any{"backend": "mock", "state": "mock"} }, "the decision model is mock"},
+		"decision model off":  {func(st map[string]any) { st["decision_model"] = map[string]any{"backend": "off", "state": "off"} }, "the decision model is off"},
+		"mock-upstream": {func(st map[string]any) {
+			st["decision_model"] = map[string]any{"backend": "compatible", "state": "ready", "endpoint_host": "mock-upstream"}
+		}, "answers from the local endpoint mock-upstream, which gets each scenario id in test mode"},
+		"localhost": {func(st map[string]any) {
+			st["decision_model"] = map[string]any{"backend": "compatible", "state": "ready", "endpoint_host": "localhost"}
+		}, "answers from the local endpoint localhost"},
+		"loopback": {func(st map[string]any) {
+			st["decision_model"] = map[string]any{"backend": "typesafe", "state": "ready", "endpoint_host": "127.0.0.1"}
+		}, "answers from the local endpoint 127.0.0.1"},
+		"rejected key": {func(st map[string]any) { st["decision_model"].(map[string]any)["state"] = "unauthorized" }, "the decision model is unauthorized, so it cannot answer"},
+		"breaker open": {func(st map[string]any) { st["decision_model"].(map[string]any)["state"] = "breaker_open" }, "the decision model is breaker_open"},
+		"no credits":   {func(st map[string]any) { st["decision_model"].(map[string]any)["state"] = "no_credits" }, "the decision model is no_credits"},
+		"mock judge":   {func(st map[string]any) { st["judge"].(map[string]any)["provider"] = "mock" }, "the judge is the mock"},
+		"no judge":     {func(st map[string]any) { st["judge"].(map[string]any)["provider"] = nil }, "the deep audit has no judge"},
+		"fallback judge": {func(st map[string]any) {
+			j := st["judge"].(map[string]any)
+			j["state"], j["fallback_active"], j["fallback_reason"] = "degraded", true, "key refused"
+		}, "the judge runs on its fallback provider (key refused)"},
+		"judge down":    {func(st map[string]any) { st["judge"].(map[string]any)["state"] = "down" }, "the judge is down, not up"},
+		"not a status":  {func(st map[string]any) { delete(st, "test_mode") }, "did not answer a gateway status"},
+		"no state":      {func(st map[string]any) { delete(st["decision_model"].(map[string]any), "state") }, "did not answer a gateway status"},
+		"several kinds": {func(st map[string]any) { st["test_mode"] = false; st["judge"].(map[string]any)["provider"] = "mock" }, "not in test mode (TRUTHTABLE_TEST_MODE=true sends scripted answers as test_response); the judge is the mock"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub, srv := newStub(t)
+			stub.status = recordableStatus()
+			c.edit(stub.status)
+			code, out := runTG(t, "--record", "--scenarios", "s0", "--base-url", srv.URL)
+			if requests, _, _ := stub.snapshot(); code != exitUsage || len(requests) != 0 || !strings.Contains(out, "--record refused: ") || !strings.Contains(out, c.want) {
+				t.Fatalf("exit %d, %d requests sent:\n%s", code, len(requests), out)
+			}
+		})
+	}
+	stub, srv := newStub(t)
+	if code, out := runTG(t, "--record", "--scenarios", "s0", "--base-url", srv.URL); code != exitUsage || !strings.Contains(out, "GET /api/status: HTTP 404") {
+		t.Errorf("a gateway without a status: exit %d:\n%s", code, out)
+	}
+	if requests, _, _ := stub.snapshot(); len(requests) != 0 {
+		t.Errorf("%d requests sent after a refusal", len(requests))
+	}
+
+	// A degraded decision model still answers, and one whose first check is running will: both
+	// record.
+	for _, state := range []string{"degraded", "checking"} {
+		stub, srv := newStub(t)
+		stub.status = recordableStatus()
+		stub.status["decision_model"].(map[string]any)["state"] = state
+		if code, out := runTG(t, "--record", "--scenarios", "grounded-pass", "--base-url", srv.URL, "--audit-timeout", "10s"); code != exitOK ||
+			!strings.Contains(out, "ok   grounded-pass (trace") {
+			t.Errorf("decision model %s: exit %d:\n%s", state, code, out)
 		}
 	}
 }
@@ -556,6 +776,11 @@ func TestUsageErrors(t *testing.T) {
 		{"--interval", "0s", "--loop"},
 		{"extra"},
 		{"--file", "/does/not/exist.json"},
+		{"--pack", "bogus"},
+		{"--pack", "faults", "--file", "pack.json"}, // a file replaces the embedded pack
+		{"--record", "--loop"},
+		{"--record", "--upstream", "all"}, // mock-upstream's stand-ins are no recording
+		{"--loop", "--trace-ids-out", "ids.txt"},
 	} {
 		if code, out := runTG(t, args...); code != exitUsage {
 			t.Errorf("%v: exit %d:\n%s", args, code, out)
@@ -602,6 +827,54 @@ func TestSelectScenarios(t *testing.T) {
 	}
 	if count(in("generated")) < 2 || count(in("p3")) < 7 || len(all) < 14+3 {
 		t.Errorf("the pack shrank: %d scenarios", len(all))
+	}
+}
+
+// TestPacks: --pack faults reads the embedded vendor-fault pack (D119), the main pack stays the
+// default, and the two never share a scenario: the main pack's sets never select a fault
+// scenario, and every faults-pack scenario is in set faults with a mock_faults to send.
+func TestPacks(t *testing.T) {
+	main, err := loadPack(packMain, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def, err := loadScenarios(""); err != nil || len(def) != len(main) {
+		t.Fatalf("the default pack is the main pack: %d scenarios, %v", len(def), err)
+	}
+	faults, err := loadPack(packFaults, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := contracts.FS.ReadFile("demo/faults.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		Scenarios []struct {
+			ID         string          `json:"id"`
+			MockFaults json.RawMessage `json:"mock_faults"`
+		} `json:"scenarios"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(faults) != len(raw.Scenarios) {
+		t.Fatalf("--pack faults read %d scenarios, the file holds %d", len(faults), len(raw.Scenarios))
+	}
+	ids := map[string]bool{}
+	for _, s := range main {
+		ids[s.ID] = true
+		if slices.Contains(s.Sets, "faults") {
+			t.Errorf("%s: the main pack never holds a fault scenario", s.ID)
+		}
+	}
+	for i, s := range faults {
+		if ids[s.ID] || !slices.Contains(s.Sets, "faults") || len(raw.Scenarios[i].MockFaults) == 0 {
+			t.Errorf("%s: a faults-pack scenario has an id of its own, set faults and mock_faults", s.ID)
+		}
+	}
+	if _, err := loadPack("bogus", ""); err == nil {
+		t.Error("an unknown pack is refused")
 	}
 }
 
