@@ -8,7 +8,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import { copy } from '@contracts/ui/copy.v1.json';
 import scenarioPack from '@contracts/demo/scenarios.v1.json';
 import { axeViolations, formatViolations } from '@/test/axe';
-import { recordingFetch } from '@/test/recording';
+import { committedManifest, recordingFetch } from '@/test/recording';
 import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
 import { COST_FIGURES, monthlyCost, perAnswer, statedPer1k } from './costModel';
 import { copy as landingCopy, REFUND } from './content';
@@ -90,7 +90,7 @@ describe('landing page', () => {
     await renderLanding();
     const replay = screen.getByRole('heading', { name: 'The replay' }).closest('div[class*="flex-col"]') as HTMLElement;
     expect(within(replay).getByText(MOCK_LABEL)).toBeInTheDocument();
-    expect(within(replay).getByText(/18 requests/)).toBeInTheDocument();
+    expect(within(replay).getByText(new RegExp(`${committedManifest().traces.length} requests`))).toBeInTheDocument();
     // A simulated tape is generated from the scenarios; it never claims a stack recorded it.
     expect(within(replay).getByText(/Generated from the zero-key demo’s scripted scenarios, dated 28 Sept? 2026/)).toBeInTheDocument();
     expect(within(replay).queryByText(/Recorded/)).toBeNull();

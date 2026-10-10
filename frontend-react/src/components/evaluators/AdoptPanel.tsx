@@ -37,7 +37,7 @@ import { isApiError } from '@/data/errors';
 import { policiesQuery, qkc } from '@/data/queries';
 import { qkcEvaluators } from '@/data/queries/evaluators';
 import { formatRisk } from '@/domain/format';
-import { copy } from '@/domain/presentation';
+import { copy, fillTemplate } from '@/domain/presentation';
 import { EVAL_CRITICAL_NULL_TEXT, evalQualityView } from '@/domain/words/evaluators';
 import type { CalibrationRecommended, CalibrationRecordMeta, PolicyState, TimeWindow } from '@/types/api';
 
@@ -68,6 +68,23 @@ export interface AdoptPanelProps {
 function thresholdText(value: number | null | undefined, space: 'raw' | 'calibrated' | null): string {
   if (value === null || value === undefined) return 'Never';
   return `${formatRisk(value)}${space ? ` (${space === 'calibrated' ? 'calibrated' : 'raw score'})` : ''}`;
+}
+
+/**
+ * Why the policy check refused the adopted thresholds (CO-18): a calibrated flag threshold at or
+ * below the route's deep-audit threshold. The refusal carries the code escalate_not_below_warn and
+ * {route, warn_at, escalate_from}; the words say what to change. Null for any other failure.
+ */
+function thresholdRefusal(err: unknown): string | null {
+  if (!isApiError(err)) return null;
+  const refusal = err.fieldErrors.find((f) => f.code === 'escalate_not_below_warn');
+  const d = refusal?.details ?? {};
+  const risk = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? formatRisk(v) : null);
+  const warnAt = risk(d.warn_at);
+  const escalateFrom = risk(d.escalate_from);
+  const route = typeof d.route === 'string' && d.route !== '' ? routeTitle(d.route) : null;
+  if (!refusal || !warnAt || !escalateFrom || !route) return null;
+  return fillTemplate(copy.evaluators.adopt_reasons.escalate_not_below_warn, { warn_at: warnAt, route, escalate_from: escalateFrom });
 }
 
 export function AdoptPanel({ evaluatorRef, name, routes, initialRoute, record, recommended, simulated, onDone, onBack, backLabel = 'Back' }: AdoptPanelProps) {
@@ -135,13 +152,15 @@ export function AdoptPanel({ evaluatorRef, name, routes, initialRoute, record, r
 
   const writeReason = policyWriteReason(state, instanceReason);
   const quality = evalQualityView(record.quality);
+  const reasons = copy.evaluators.adopt_reasons;
+  const refusal = preview.isError ? thresholdRefusal(preview.error) : null;
   let reason: Reason | null = writeReason;
-  if (!reason && routes.length === 0) reason = { text: 'Attach this check to a route in Policies first.' };
-  if (!reason && !recommended?.warn_at) reason = { text: 'This calibration recommends no flag threshold, so there is nothing to adopt.' };
+  if (!reason && routes.length === 0) reason = { text: reasons.attach_first };
+  if (!reason && !recommended?.warn_at) reason = { text: reasons.no_warn_at };
   if (!reason && draft?.error) reason = { text: draft.error };
-  if (!reason && (preview.isPending || preview.isFetching)) reason = { text: 'Wait for Preview impact to finish: Adopt runs it first.' };
-  if (!reason && preview.isError) reason = { text: 'Preview impact failed. Try it again before adopting.' };
-  if (!reason && message.trim() === '') reason = { text: 'Say what changed and why first.' };
+  if (!reason && (preview.isPending || preview.isFetching)) reason = { text: reasons.wait_preview };
+  if (!reason && preview.isError) reason = { text: refusal ?? reasons.preview_failed };
+  if (!reason && message.trim() === '') reason = { text: reasons.say_why };
 
   const failure = adopt.error ? describeError(adopt.error) : null;
   const stale = isApiError(adopt.error) && (adopt.error.status === 412 || adopt.error.code === 'stale_version');
@@ -222,7 +241,7 @@ export function AdoptPanel({ evaluatorRef, name, routes, initialRoute, record, r
           </div>
         ) : preview.isError ? (
           <div className="space-y-2">
-            <p className="text-sm text-fg">The preview failed: {preview.error.message}</p>
+            <p className="text-sm text-fg">{refusal ?? `The preview failed: ${preview.error.message}`}</p>
             <Button size="sm" onClick={() => void preview.refetch()}>
               <RotateCw aria-hidden="true" />
               Try the preview again

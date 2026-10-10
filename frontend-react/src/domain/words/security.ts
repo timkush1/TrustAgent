@@ -2,8 +2,9 @@
  * Words, icons and tones for the security server values (provider, verify status, used_by, backend cards, store states and skip reasons).
  * Owned by WEB-ON after Step 0b. presentation.ts re-exports this module with `export *`, so every
  * export here starts with `sec` (D86) and can never collide with another plane's words.
- * Sentences come from contracts/ui (copy.v1.json); the words for enum values live here, so a
- * component never renders a raw server value.
+ * Every sentence comes from contracts/ui (copy.security, copy.settings, copy.setup; D86, CO-6;
+ * src/test/lint/wordsFromCopy.test.ts keeps it that way), so a component never renders a raw
+ * server value.
  *
  * `copy` is imported from ../contracts, not ../presentation: presentation.ts re-exports this module,
  * so its constants are not initialised yet while this one loads. Functions (fillTemplate,
@@ -61,9 +62,9 @@ const CREDENTIAL_NAMES: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   compatible: 'Other gateway',
-  'upstream-default': 'Upstream key (your model)',
-  'upstream-anthropic': 'Upstream key (Anthropic route)',
-  'upstream-fallback': 'Upstream key (fallback)',
+  'upstream-default': copy.security.credential_labels.upstream_default,
+  'upstream-anthropic': copy.security.credential_labels.upstream_anthropic,
+  'upstream-fallback': copy.security.credential_labels.upstream_fallback,
 };
 
 /** Words for a credential's name (`openrouter`, `upstream-default`, …). */
@@ -87,15 +88,16 @@ export interface SecVerifyView {
   hint: string | null;
 }
 
+const VERIFY_WORDS = copy.security.verify;
 const VERIFY: Record<CredentialVerifyStatus, SecVerifyView> = {
-  ok: { label: 'Working', tone: 'success', icon: CircleCheck, hint: null },
-  unauthorized: { label: 'Key rejected', tone: 'danger', icon: ShieldAlert, hint: 'The provider refused this key. Paste a new one, or connect again.' },
-  no_credits: { label: 'No credits', tone: 'warning', icon: CircleAlert, hint: copy.setup.step_connect.no_credits },
-  unreachable: { label: "Couldn't reach the provider", tone: 'warning', icon: WifiOff, hint: 'The provider did not answer. Try the test again in a minute.' },
-  unknown: { label: 'Not checked', tone: 'neutral', icon: CircleHelp, hint: 'This kind of key is not checked with its provider; it is used as is.' },
+  ok: { label: VERIFY_WORDS.ok, tone: 'success', icon: CircleCheck, hint: null },
+  unauthorized: { ...VERIFY_WORDS.unauthorized, tone: 'danger', icon: ShieldAlert },
+  no_credits: { label: VERIFY_WORDS.no_credits, tone: 'warning', icon: CircleAlert, hint: copy.setup.step_connect.no_credits },
+  unreachable: { ...VERIFY_WORDS.unreachable, tone: 'warning', icon: WifiOff },
+  unknown: { ...VERIFY_WORDS.unknown, tone: 'neutral', icon: CircleHelp },
 };
 
-const NEVER_TESTED: SecVerifyView = { label: 'Not tested yet', tone: 'neutral', icon: CircleDashed, hint: null };
+const NEVER_TESTED: SecVerifyView = { label: VERIFY_WORDS.never_tested, tone: 'neutral', icon: CircleDashed, hint: null };
 
 /** Words for a key check's result (CredentialVerification.status, CredentialView.last_verify_status). */
 export function secVerifyView(status: CredentialVerifyStatus | null | undefined): SecVerifyView {
@@ -120,10 +122,11 @@ type UsedBy = CredentialView['used_by'][number];
 
 const USED_BY: Record<UsedBy, string> = {
   decision_model: copy.tiers.fast_check,
-  judge: `${copy.tiers.deep_audit} judge`,
-  upstream_default: 'Your model (upstream)',
-  upstream_anthropic: 'Anthropic route (upstream)',
-  upstream_fallback: 'Fallback answers (upstream)',
+  // Module scope: a plain replace, since presentation.ts (fillTemplate) is still loading here.
+  judge: copy.security.used_by.judge.replace('{deep_audit}', copy.tiers.deep_audit),
+  upstream_default: copy.security.used_by.upstream_default,
+  upstream_anthropic: copy.security.used_by.upstream_anthropic,
+  upstream_fallback: copy.security.used_by.upstream_fallback,
 };
 
 /** Words for a "Used for" chip (CredentialView.used_by). */
@@ -144,17 +147,17 @@ export function secJoinWords(words: readonly string[]): string {
 
 /** Why a binding was not applied (CredentialWriteResult.bindings.skipped[].reason, D75). */
 export function secSkipReasonText(reason: BindingSkipReason, target: BindingTarget): string {
+  const words = copy.security.skip_reasons;
+  const vars = { target: secBindingLabel(target) };
   switch (reason) {
     case 'env_managed':
-      return target === 'judge'
-        ? copy.setup.step_connect.judge_env_managed
-        : `The ${secBindingLabel(target)} is set by the environment, so it was left as it is.`;
+      return target === 'judge' ? copy.setup.step_connect.judge_env_managed : fillTemplate(words.env_managed, vars);
     case 'backend_pinned':
-      return `The ${secBindingLabel(target)} backend is pinned in .env to one that does not use this key, so it was left as it is.`;
+      return fillTemplate(words.backend_pinned, vars);
     case 'verification_failed':
-      return `Not used for the ${secBindingLabel(target)} yet: the key check did not pass.`;
+      return fillTemplate(words.verification_failed, vars);
     default:
-      return `The ${secBindingLabel(target)} was left as it is.`;
+      return fillTemplate(words.other, vars);
   }
 }
 
@@ -171,9 +174,9 @@ export interface SecStoreView {
 }
 
 const STORE: Record<StoreState, SecStoreView> = {
-  ready: { writable: true, title: 'Saved keys are encrypted', body: null },
-  unavailable: { writable: false, title: "Keys can't be saved yet", body: copy.settings.store_unavailable },
-  no_database: { writable: false, title: "Keys can't be saved without a database", body: copy.settings.no_database },
+  ready: { writable: true, title: copy.security.store.ready, body: null },
+  unavailable: { writable: false, title: copy.security.store.unavailable, body: copy.settings.store_unavailable },
+  no_database: { writable: false, title: copy.security.store.no_database, body: copy.settings.no_database },
 };
 
 /** Words for SystemStatus.credentials.store (D32). */
@@ -198,24 +201,21 @@ export interface SecBackendCard {
 export const SEC_BACKEND_CARDS: readonly SecBackendCard[] = [
   {
     id: 'openrouter',
-    title: 'OpenRouter',
-    description: 'One OpenRouter key runs the fast check and the deep-audit judge. No TypeSafe account needed.',
+    ...copy.security.backend_cards.openrouter,
     backend: 'openrouter-decisions',
     credential: 'openrouter',
     recommended: true,
   },
   {
     id: 'typesafe',
-    title: 'TypeSafe direct',
-    description: 'Calls TypeSafe AI with a console.typesafe.ai key.',
+    ...copy.security.backend_cards.typesafe,
     backend: 'typesafe',
     credential: 'typesafe',
     recommended: false,
   },
   {
     id: 'compatible',
-    title: 'Other gateway',
-    description: 'Any OpenAI-compatible gateway that serves the model, with its own base URL and key.',
+    ...copy.security.backend_cards.compatible,
     backend: 'compatible',
     credential: 'compatible',
     recommended: false,
@@ -228,14 +228,15 @@ export function secBackendCardOf(backend: RuntimeSettings['decision_model']['bac
   return SEC_BACKEND_CARDS.find((c) => c.backend === backend) ?? null;
 }
 
+const BACKEND_WORDS = copy.security.backend_settings;
 const SETTING_BACKENDS: Record<RuntimeSettings['decision_model']['backend'], string> = {
-  auto: 'Automatic (from the connected key)',
-  'openrouter-decisions': 'OpenRouter',
-  'openrouter-systemone': 'OpenRouter (alternate decisions route)',
-  typesafe: 'TypeSafe direct',
-  compatible: 'Other gateway',
-  mock: 'Simulated (mock)',
-  off: 'Off',
+  auto: BACKEND_WORDS.auto,
+  'openrouter-decisions': BACKEND_WORDS.openrouter,
+  'openrouter-systemone': BACKEND_WORDS.openrouter_alternate,
+  typesafe: BACKEND_WORDS.typesafe,
+  compatible: BACKEND_WORDS.compatible,
+  mock: BACKEND_WORDS.mock,
+  off: BACKEND_WORDS.off,
 };
 
 /** Words for RuntimeSettings.decision_model.backend, `auto` included. */
@@ -243,15 +244,8 @@ export function secBackendSettingLabel(backend: RuntimeSettings['decision_model'
   return SETTING_BACKENDS[backend] ?? humanizeId(backend);
 }
 
-const JUDGE_PROVIDERS: Record<RuntimeSettings['judge']['provider'], string> = {
-  auto: 'Automatic (from the connected key)',
-  openrouter: 'OpenRouter',
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  ollama: 'Ollama (local)',
-  mock: 'Simulated (mock)',
-  none: 'No judge',
-};
+/** In the order Settings → Models offers them (the copy contract keeps that order). */
+const JUDGE_PROVIDERS: Record<RuntimeSettings['judge']['provider'], string> = copy.security.judge_providers;
 
 /** The judge providers Settings → Models offers, in order. */
 export const SEC_JUDGE_PROVIDERS = Object.keys(JUDGE_PROVIDERS) as RuntimeSettings['judge']['provider'][];
@@ -266,18 +260,19 @@ export function secJudgeCredential(provider: RuntimeSettings['judge']['provider'
   return provider === 'openrouter' || provider === 'anthropic' || provider === 'openai' ? provider : null;
 }
 
+const STATE_WORDS = copy.security.decision_states;
 const DECISION_STATES: Record<DecisionModelStatus['state'], { label: string; tone: Tone }> = {
-  ready: { label: 'Ready', tone: 'success' },
-  mock: { label: 'Simulated checks', tone: 'info' },
-  checking: { label: 'Checking the connection…', tone: 'neutral' },
-  off: { label: 'Off: answers pass unchecked', tone: 'warning' },
-  degraded: { label: 'Degraded', tone: 'warning' },
-  breaker_open: { label: 'Paused after repeated errors', tone: 'warning' },
-  unauthorized: { label: 'Key rejected', tone: 'danger' },
-  no_credits: { label: 'No OpenRouter credits', tone: 'danger' },
-  budget_exhausted: { label: "Today's budget is used up", tone: 'warning' },
-  misconfigured: { label: 'Misconfigured', tone: 'danger' },
-  unreachable: { label: 'Unreachable', tone: 'warning' },
+  ready: { label: STATE_WORDS.ready, tone: 'success' },
+  mock: { label: STATE_WORDS.mock, tone: 'info' },
+  checking: { label: STATE_WORDS.checking, tone: 'neutral' },
+  off: { label: STATE_WORDS.off, tone: 'warning' },
+  degraded: { label: STATE_WORDS.degraded, tone: 'warning' },
+  breaker_open: { label: STATE_WORDS.breaker_open, tone: 'warning' },
+  unauthorized: { label: STATE_WORDS.unauthorized, tone: 'danger' },
+  no_credits: { label: STATE_WORDS.no_credits, tone: 'danger' },
+  budget_exhausted: { label: STATE_WORDS.budget_exhausted, tone: 'warning' },
+  misconfigured: { label: STATE_WORDS.misconfigured, tone: 'danger' },
+  unreachable: { label: STATE_WORDS.unreachable, tone: 'warning' },
 };
 
 /** Words and tone for the fast check's live state (SystemStatus.decision_model.state). */
@@ -285,12 +280,13 @@ export function secDecisionStateView(state: DecisionModelStatus['state']): { lab
   return DECISION_STATES[state] ?? { label: humanizeId(state), tone: 'neutral' };
 }
 
+const COMPONENT_WORDS = copy.security.component_states;
 const COMPONENT_STATES: Record<ComponentStateName, { label: string; tone: Tone }> = {
-  up: { label: 'Ready', tone: 'success' },
-  degraded: { label: 'Degraded', tone: 'warning' },
-  down: { label: 'Down', tone: 'danger' },
-  disabled: { label: 'Off', tone: 'neutral' },
-  unknown: { label: 'Unknown', tone: 'neutral' },
+  up: { label: COMPONENT_WORDS.up, tone: 'success' },
+  degraded: { label: COMPONENT_WORDS.degraded, tone: 'warning' },
+  down: { label: COMPONENT_WORDS.down, tone: 'danger' },
+  disabled: { label: COMPONENT_WORDS.disabled, tone: 'neutral' },
+  unknown: { label: COMPONENT_WORDS.unknown, tone: 'neutral' },
 };
 
 /** Words and tone for a component state (the judge, the engine). */
@@ -322,12 +318,7 @@ export function secEnvKeyOfPath(path: string): string | null {
 
 // ------------------------------------------------------------------------------ API keys
 
-const SCOPES: Record<Scope, { label: string; description: string }> = {
-  ingest: { label: 'Send requests', description: 'Apps send their traffic through the gateway with it.' },
-  read: { label: 'Read the dashboard', description: 'Sees traces, statuses and settings, without prompts and answers.' },
-  content: { label: 'See prompts and answers', description: 'Can see prompts and answers in traces and exports.' },
-  admin: { label: 'Admin', description: 'Changes settings, keys and policies.' },
-};
+const SCOPES: Record<Scope, { label: string; description: string }> = copy.security.scopes;
 
 /** Scopes in the order the Access page lists them. */
 export const SEC_SCOPES: readonly Scope[] = ['ingest', 'read', 'content', 'admin'];
@@ -337,30 +328,33 @@ export function secScopeView(scope: Scope): { label: string; description: string
   return SCOPES[scope] ?? { label: humanizeId(scope), description: '' };
 }
 
-const AUDIT_ACTIONS: Record<string, string> = {
-  'setup.claim': 'Claimed the setup link',
-  'setup_token.mint': 'Printed a new setup link',
-  'session.sign_in': 'Signed in',
-  'session.revoke_all': 'Signed out everywhere',
-  'api_key.create': 'Created an API key',
-  'api_key.revoke': 'Revoked an API key',
-  'settings.update': 'Changed settings',
-  'credential.put': 'Saved a key',
-  'credential.rotate': 'Replaced a key',
-  'credential.delete': 'Removed a key',
-  'credential.verify': 'Tested a key',
-  'credential.connect_openrouter': 'Connected OpenRouter',
-  'evaluator.create': 'Created an evaluator',
-  'evaluator.version': 'Saved an evaluator version',
-  'evaluator.archive': 'Archived an evaluator',
-  'calibration.import': 'Imported a calibration',
-  'calibration.fit': 'Fitted a calibration',
-  'calibration.activate': 'Adopted a calibration',
-  'calibration.deactivate': 'Turned a calibration off',
-  'studio.dry_run': 'Ran a Studio dry run',
-  'kb.upload': 'Uploaded knowledge documents',
-  'export.replay': 'Exported a replay recording',
-};
+/** Every admin-audit action of D44; its words are copy.security.audit_actions.<action with "_" for "."> (D86). */
+const ACTION_NAMES = [
+  'setup.claim',
+  'setup_token.mint',
+  'session.sign_in',
+  'session.revoke_all',
+  'api_key.create',
+  'api_key.revoke',
+  'settings.update',
+  'credential.put',
+  'credential.rotate',
+  'credential.delete',
+  'credential.verify',
+  'credential.connect_openrouter',
+  'evaluator.create',
+  'evaluator.version',
+  'evaluator.archive',
+  'calibration.import',
+  'calibration.fit',
+  'calibration.activate',
+  'calibration.deactivate',
+  'studio.dry_run',
+  'kb.upload',
+  'export.replay',
+] as const;
+const ACTION_WORDS: Record<string, string> = copy.security.audit_actions;
+const AUDIT_ACTIONS: Record<string, string> = Object.fromEntries(ACTION_NAMES.map((action) => [action, ACTION_WORDS[action.replace('.', '_')]]));
 
 /** Every admin-audit action of D44, for tests and filters. */
 export const SEC_AUDIT_ACTIONS = Object.keys(AUDIT_ACTIONS);
@@ -371,13 +365,14 @@ export function secAuditActionLabel(action: string): string {
 }
 
 /** Words for a settings group an admin changed (the first segment of a RuntimeSettings path). */
+const GROUP_WORDS = copy.security.settings_groups;
 const SETTINGS_GROUPS: Record<string, string> = {
   decision_model: copy.tiers.fast_check,
-  judge: `${copy.tiers.deep_audit} judge`,
-  upstream: 'Upstreams',
-  bindings: 'Which key runs which check',
-  budgets: 'Daily budgets',
-  pricing_overrides: 'Prices',
+  judge: GROUP_WORDS.judge.replace('{deep_audit}', copy.tiers.deep_audit),
+  upstream: GROUP_WORDS.upstream,
+  bindings: GROUP_WORDS.bindings,
+  budgets: GROUP_WORDS.budgets,
+  pricing_overrides: GROUP_WORDS.pricing_overrides,
 };
 
 /** The diff fields of a settings.update entry that describe it rather than name a setting. */
@@ -427,7 +422,8 @@ export function secAuditTargetView(action: string, target: string | null | undef
  */
 export function secAuditChangeSummary(action: string, diff: unknown): string {
   const d = diffRecord(diff);
-  if (!d || Object.keys(d).length === 0) return action === 'session.revoke_all' ? 'Every dashboard session ended' : '—';
+  const words = copy.security.audit_summary;
+  if (!d || Object.keys(d).length === 0) return action === 'session.revoke_all' ? words.sessions_ended : '—';
   const parts: string[] = [];
   const label = diffString(d, 'label');
   const scopes = diffStrings(d, 'scopes').map((sc) => secScopeView(sc as Scope).label);
@@ -440,10 +436,10 @@ export function secAuditChangeSummary(action: string, diff: unknown): string {
       if (scopes.length > 0) parts.push(secJoinWords(scopes));
       break;
     case 'session.revoke_all':
-      parts.push('Every dashboard session ended');
+      parts.push(words.sessions_ended);
       break;
     case 'setup_token.mint':
-      parts.push(d.forced === true ? 'Recovery link (an admin already existed)' : 'First-run link');
+      parts.push(d.forced === true ? words.recovery_link : words.first_run_link);
       break;
     case 'credential.put':
     case 'credential.rotate':
@@ -455,19 +451,19 @@ export function secAuditChangeSummary(action: string, diff: unknown): string {
       const asked = diffStrings(d, 'bind');
       if (masked) parts.push(masked);
       if (status) parts.push(secVerifyView(status as CredentialVerifyStatus).label);
-      if (bound.length > 0) parts.push(`now used for ${usedByWords(bound)}`);
-      else if (asked.length > 0 && !status) parts.push(`for ${usedByWords(asked)}`);
+      if (bound.length > 0) parts.push(fillTemplate(words.now_used_for, { targets: usedByWords(bound) }));
+      else if (asked.length > 0 && !status) parts.push(fillTemplate(words.for_targets, { targets: usedByWords(asked) }));
       break;
     }
     case 'credential.delete': {
       const unbound = diffStrings(d, 'unbound');
-      parts.push(unbound.length > 0 ? `was used for ${usedByWords(unbound)}` : 'was not in use');
+      parts.push(unbound.length > 0 ? fillTemplate(words.was_used_for, { targets: usedByWords(unbound) }) : words.not_in_use);
       break;
     }
     case 'settings.update': {
       const groups = settingsGroups(d);
       if (groups.length > 0) parts.push(secJoinWords(groups));
-      if (diffString(d, 'reason') === 'credential.delete') parts.push('after a key was removed');
+      if (diffString(d, 'reason') === 'credential.delete') parts.push(words.after_key_removed);
       break;
     }
     default: {
@@ -530,11 +526,11 @@ export function secWarningText(code: string | undefined, details: WarningDetails
   const routes = details?.routes ?? [];
   switch (code) {
     case 'master_key_changed':
-      return fillTemplate(copy.settings.master_key_changed, { names: secJoinWords(names) || 'some saved keys' });
+      return fillTemplate(copy.settings.master_key_changed, { names: secJoinWords(names) || copy.security.warnings.some_saved_keys });
     case 'fail_closed_unprotected':
       return routes.length > 0
-        ? `These routes fail closed and have no working fast check, so they block every answer: ${routes.join(', ')}.`
-        : 'Some routes fail closed and have no working fast check, so they block every answer.';
+        ? fillTemplate(copy.security.warnings.fail_closed_routes, { routes: routes.join(', ') })
+        : copy.security.warnings.fail_closed_some;
     default:
       return null;
   }
@@ -548,8 +544,9 @@ export function secWarningText(code: string | undefined, details: WarningDetails
 export function secProbeReadyText(latencyMs: number | null | undefined, cost: string | null): string {
   const ms = latencyMs === null || latencyMs === undefined ? null : formatCount(latencyMs);
   if (ms !== null && cost) return fillTemplate(copy.setup.step_connect.probe_ready, { latency_ms: ms, cost });
-  if (ms !== null) return `Ready: the test call took ${ms} ms`;
-  return cost ? `Ready: the test call cost ${cost}` : 'Ready';
+  const words = copy.security.probe_ready;
+  if (ms !== null) return fillTemplate(words.took, { latency_ms: ms });
+  return cost ? fillTemplate(words.cost, { cost }) : words.ready;
 }
 
 /**

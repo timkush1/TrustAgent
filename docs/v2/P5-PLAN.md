@@ -1694,14 +1694,14 @@ $L make check && $L make vectors-ts && $L make recording-check     # pkce and co
 |---|---|
 | CO-1 | **Done** (`8c68cda`): +6, not +4, because Appendix F also defines D97 and D98; the mapping table follows. |
 | CO-2 | **Done:** the §2.3 `version.go` bullet and GO-7 are dropped; `version.go` is unchanged. |
-| CO-3 | Open, Step 0b (`words/studio.ts` still exists at `a03ecb3`). |
-| CO-4 | Open, Step 0b. |
-| CO-5 | **Step 0a part done** (`6615192`, `12486e8`): Go `WarningCodes` with details, `PolicyState.warning_details`, `ValidateResult` warnings with codes (both now in `api.v1`), fixtures `PolicyState.coded-warnings.json` and `ValidateResult.coded-warnings.json`, copy `policies.warnings.<code>`. Step 0b part open. |
-| CO-6 | **Step 0a seeds done** (`12486e8`): `copy.costs.*` (the cost words; **not** `copy.savings.*`, which the landing bundles), `copy.settings.budgets.*`, `copy.evaluators.*` (with `adopt_reasons`), `copy.security.*`, `copy.studio.*`. Step 0b and SS-6 rewires open. |
+| CO-3 | **Step 0b done** (`84c4724`): only `words/live.ts` and `words/replay.ts` are new; `studio.ts` is untouched (`git log --follow` unchanged), the D86 prefix test covers all six modules, and the landing budget holds (104.9 of 110 kB). WEB-STUDIO SS-1/SS-3 open. |
+| CO-4 | **Step 0b decided** (`84c4724`): D111 holds, Benchmarks stays hidden in the static build (the six-item nav); `benchmarkRuns.ts` reads `@bench/results/*.json`; SPEC Appendix G starts with that erratum. WEB-REPLAY RP-4 (`staticPages.ts`, `staticBuild.test.tsx`) open. |
+| CO-5 | **Step 0a part done** (`6615192`, `12486e8`): Go `WarningCodes` with details, `PolicyState.warning_details`, `ValidateResult` warnings with codes (both now in `api.v1`), fixtures `PolicyState.coded-warnings.json` and `ValidateResult.coded-warnings.json`, copy `policies.warnings.<code>`. Step 0b part open. **Step 0b done** (`17f926f`): `policyWarnings.ts` words by code (fallback: the text, same templates); the coded fixtures with reworded messages give identical words. |
+| CO-6 | **Step 0a seeds done** (`12486e8`): `copy.costs.*` (the cost words; **not** `copy.savings.*`, which the landing bundles), `copy.settings.budgets.*`, `copy.evaluators.*` (with `adopt_reasons`), `copy.security.*`, `copy.studio.*`. Step 0b and SS-6 rewires open. **Step 0b done** (`48d04b6`): `words/{costs,evaluators,security}.ts` read copy; `src/test/lint/wordsFromCopy.test.ts` guards `words/**` and `studioWords.ts`, with `studio.ts` and `studioWords.ts` pending SS-6 (the lead drops both entries at I-3). |
 | CO-7 | **Step 0a part done** (`6615192`): `path` and `details{ratio, contracts_per_mtok, index}`, fixture `SettingsView.price-far-above.json`. WEB-REPLAY part open. |
-| CO-8 | **Step 0a part done** (`6615192`): engine `RESOURCE_EXHAUSTED no_credits` / `PERMISSION_DENIED judge_unauthorized`, gateway 503 `no_credits` / `judge_unauthorized` with the reservation released, copy `studio.draft_no_credits` and `studio.draft_key_refused`. Step 0b hints and SS-3 open. |
+| CO-8 | **Step 0a part done** (`6615192`): engine `RESOURCE_EXHAUSTED no_credits` / `PERMISSION_DENIED judge_unauthorized`, gateway 503 `no_credits` / `judge_unauthorized` with the reservation released, copy `studio.draft_no_credits` and `studio.draft_key_refused`. Step 0b hints and SS-3 open. **Step 0b done** (`17f926f`): `data/errors.ts` hints for `no_credits` and `judge_unauthorized`. |
 | CO-9 | Open (GO GO-6, DX-RELEASE DR-10). |
-| CO-10 | Open, Step 0b. |
+| CO-10 | **Step 0b done** (`84c4724`): `startLiveStream(…, {gateOnReadAccess})`, on in the full build, opens the socket only once `GET /api/status` answers and pauses on 401 until a status or session read succeeds; vitest covers it. The proof B Playwright check runs at I-7. |
 | CO-11 | **Done** (`6615192`): `store.CapCrossedAt`, used by `Ledger.Seed` only when the seeded spend reaches the cap with no hit recorded. |
 | CO-12 | **Step 0a part done** (`6615192`). DR-7 (doctor WARN) open. |
 | CO-13 | **Lead part dropped: fixed in P4.** `4c24274` makes free mock audits fall through to `static_assumptions` instead of scaling $0, and Appendix F D97 keeps that published figure an Estimate (`roi_api_test` and `stats_test` cover it). WEB-REPLAY RP-2 (the replay `roiSummary` figure) stays open. |
@@ -1709,7 +1709,7 @@ $L make check && $L make vectors-ts && $L make recording-check     # pkce and co
 | CO-15 | Open (WEB-REPLAY). |
 | CO-16 | **Done:** §19 P7 row. DD-4 open. |
 | CO-17 | **Done:** §19 P7 row. DD-4 open. |
-| CO-18 | **Step 0a part done** (`6615192`): the policy check refuses such thresholds with the code `escalate_not_below_warn` and `{route, ref, warn_at, escalate_from}` ("adopt answers with a code"; `internal/decision` and the frozen `calibrate_fit` vectors stay unchanged); copy `evaluators.adopt_reasons.escalate_not_below_warn`. Step 0b AdoptPanel open. |
+| CO-18 | **Step 0a part done** (`6615192`): the policy check refuses such thresholds with the code `escalate_not_below_warn` and `{route, ref, warn_at, escalate_from}` ("adopt answers with a code"; `internal/decision` and the frozen `calibrate_fit` vectors stay unchanged); copy `evaluators.adopt_reasons.escalate_not_below_warn`. Step 0b AdoptPanel open. **Step 0b done** (`17f926f`): AdoptPanel words `escalate_not_below_warn` with the route and both thresholds, never "Preview impact failed". |
 | CO-19 | **Step 0a part done:** `validate.mjs` requires an explicit `judge` on every scenario of either pack (the D139 twin included), with a self-test. GO and DX-RELEASE parts open. |
 | CO-20 to CO-23 | Open (owners as listed). |
 

@@ -244,7 +244,8 @@ func (h *Handler) Playground(ctx context.Context, c *gin.Context, in PlaygroundI
 	// answer to the dashboard as it arrives.
 	t.Stream = false
 	x.Advisory = true
-	t.Scenario = ""
+	// The run names its scenario in the body; a Playground run carries no fault value (D119).
+	t.Scenario, x.FaultScenario = "", ""
 	if h.testMode && scenarioID.MatchString(in.Scenario) {
 		t.Scenario = in.Scenario
 	}

@@ -1,0 +1,497 @@
+{
+  "trace_id": "01a0e73e-2588-72c0-9b58-500b37c6ca68",
+  "client_request_id": null,
+  "created_at": "2026-09-28T09:00:04.872Z",
+  "updated_at": "2026-09-28T09:00:06.266Z",
+  "source": "trafficgen",
+  "api_format": "openai_chat",
+  "route": "help-center",
+  "policy_version": 1,
+  "mode": "block",
+  "effective_mode": "block",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "scripted",
+  "action": "block",
+  "would_action": "block",
+  "gate_status": "ok",
+  "skip_reason": null,
+  "verdict": "unsupported",
+  "max_risk": 0.84,
+  "reasons": [
+    "groundedness:warn",
+    "det:urls_not_in_evidence"
+  ],
+  "checked_against": {
+    "configured": [
+      "request_system",
+      "tool_results",
+      "extension"
+    ],
+    "used": [
+      {
+        "source": "request_system",
+        "items": 1,
+        "labels": [
+          "password-reset.md"
+        ],
+        "tokens": 33
+      }
+    ],
+    "empty": [
+      "tool_results",
+      "extension"
+    ],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 33
+  },
+  "timings": {
+    "upstream_ms": 155,
+    "ttft_ms": null,
+    "gate_ms": 4,
+    "overhead_ms": 6,
+    "total_ms": 161
+  },
+  "decision_model": {
+    "backend": "mock",
+    "snapshot": "mock/jev-heuristic-v1",
+    "cost_usd": 0.000024696000000000002
+  },
+  "audit": {
+    "audit_id": "01a0e73e-2629-78bf-9140-d7df1e14662a",
+    "status": "completed",
+    "lane": "high",
+    "selection": "high",
+    "verdict": "HALLUCINATED",
+    "trust_score": 0.5,
+    "grade": null,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    }
+  },
+  "question_preview": "Where do I reset my password?",
+  "response_preview": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
+  "redacted": false,
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme help-center assistant. Answer only from the articles below, and link only to pages they mention.\n\n<document id=\"password-reset.md\">To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.</document>"
+      },
+      {
+        "role": "user",
+        "content": "Where do I reset my password?"
+      }
+    ],
+    "user_request": "Where do I reset my password?",
+    "system_instructions": "You are the Acme help-center assistant. Answer only from the articles below, and link only to pages they mention.",
+    "response_text": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
+    "final_response_text": "I can't verify that answer against our help articles, so I've held it back.",
+    "evidence": [
+      {
+        "id": "password-reset.md",
+        "source": "request_system",
+        "label": "password-reset.md",
+        "text": "To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.",
+        "truncated": false
+      }
+    ],
+    "rules": {},
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e73e-2588-72c0-9b58-500b37c6ca68",
+      "attempt": 0,
+      "created_at": "2026-09-28T09:00:05.031Z",
+      "route": "help-center",
+      "policy_version": 1,
+      "mode": "block",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "effective_mode": "block",
+      "action": "block",
+      "would_action": "block",
+      "enforced": true,
+      "verdict": "unsupported",
+      "max_risk": 0.84,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "high",
+      "reasons": [
+        "groundedness:warn",
+        "det:urls_not_in_evidence"
+      ],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.84
+          },
+          "probabilities": null,
+          "risk_raw": 0.84,
+          "risk": 0.84,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "warn",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.8,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.1
+          },
+          "probabilities": null,
+          "risk_raw": 0.1,
+          "risk": 0.1,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "ok",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.7,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "dates_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "urls_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [
+            {
+              "text": "https://acme.example/reset-password",
+              "start": 5,
+              "end": 40
+            }
+          ]
+        },
+        {
+          "id": "quotes_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "citation_out_of_range",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "secret_pattern",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "system_prompt_leak",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        }
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "mock",
+        "model_requested": "mock/jev-heuristic-v1",
+        "snapshot": "mock/jev-heuristic-v1",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 3,
+        "connect_ms": null,
+        "input_tokens": 588,
+        "cost_usd": 0.000024696000000000002,
+        "cost_source": "simulated"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+        "request_sha256": [
+          "c1d4f8f9ce91a1dc1d531b1e09f0832e56952e0d8a384a8e9f709fe1c8827730"
+        ],
+        "packed_evidence_ids": [
+          "password-reset.md"
+        ],
+        "truncated_ids": [],
+        "est_tokens": [
+          588
+        ]
+      },
+      "evidence_summary": {
+        "configured": [
+          "request_system",
+          "tool_results",
+          "extension"
+        ],
+        "used": [
+          {
+            "source": "request_system",
+            "items": 1,
+            "labels": [
+              "password-reset.md"
+            ],
+            "tokens": 33
+          }
+        ],
+        "empty": [
+          "tool_results",
+          "extension"
+        ],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 33
+      },
+      "late": false,
+      "gate_ms": 4
+    }
+  ],
+  "audit_detail": {
+    "audit_id": "01a0e73e-2629-78bf-9140-d7df1e14662a",
+    "trace_id": "01a0e73e-2588-72c0-9b58-500b37c6ca68",
+    "created_at": "2026-09-28T09:00:05.033Z",
+    "route": "help-center",
+    "source": "trafficgen",
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "grade": null,
+    "processing_ms": 1233,
+    "judge": {
+      "configured_provider": "mock",
+      "effective_provider": "mock",
+      "model": "mock",
+      "fallback_active": false,
+      "fallback_reason": null,
+      "structured_outputs": true,
+      "healthy": true,
+      "credential_source": "none"
+    },
+    "gate_action": "block",
+    "selection": "high",
+    "inclusion_prob": 1,
+    "query_preview": "Where do I reset my password?",
+    "redacted": false,
+    "user_query": "Where do I reset my password?",
+    "llm_response": "Open https://acme.example/reset-password and follow the steps. The reset link expires after 1 hour.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "block",
+      "would_action": "block",
+      "verdict": "unsupported",
+      "max_risk": 0.84,
+      "delivered": "blocked"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "request_system",
+          "items": 1,
+          "labels": [
+            "password-reset.md"
+          ],
+          "tokens": 33
+        }
+      ],
+      "empty": [
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 33
+    },
+    "context_used": [
+      {
+        "id": "password-reset.md",
+        "source": "request_system",
+        "label": "password-reset.md",
+        "text": "To reset your password, open https://acme.example/account/security and choose Reset password. The reset link expires after 1 hour.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0.5,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "The password can be reset at https://acme.example/reset-password.",
+        "status": "UNSUPPORTED",
+        "confidence": 0.9,
+        "evidence": [],
+        "reasoning": "The article links to https://acme.example/account/security, not to this page.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 0,
+          "end": 61,
+          "method": "exact"
+        },
+        "quote": "Open https://acme.example/reset-password and follow the steps",
+        "evidence_spans": []
+      },
+      {
+        "index": 1,
+        "claim": "The reset link expires after 1 hour.",
+        "status": "SUPPORTED",
+        "confidence": 0.97,
+        "evidence": [
+          "The reset link expires after 1 hour."
+        ],
+        "reasoning": "The article gives the same expiry.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 63,
+          "end": 98,
+          "method": "exact"
+        },
+        "quote": "The reset link expires after 1 hour",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "password-reset.md",
+            "start": 94,
+            "end": 130,
+            "text": "The reset link expires after 1 hour.",
+            "kind": "quote_verified"
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "trust_score": 0.5,
+      "faithfulness": 0.5,
+      "contradiction_rate": 0,
+      "unverified_rate": 0.5,
+      "coverage": 0.5,
+      "accuracy_addressed": 1,
+      "max_contradiction": 0,
+      "p_hallucinated": null,
+      "claims_total": 2,
+      "claims_decided": 2,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 471,
+      "verify_ms": 742,
+      "score_ms": 20,
+      "total_ms": 1233
+    },
+    "unsupported_policy": "hallucination",
+    "costs": [
+      {
+        "component": "decompose",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 471,
+        "status": "ok",
+        "questions": 0
+      },
+      {
+        "component": "verify",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 742,
+        "status": "ok",
+        "questions": 0
+      }
+    ]
+  },
+  "labels": []
+}

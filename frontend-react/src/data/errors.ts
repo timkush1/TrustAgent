@@ -169,6 +169,9 @@ export const CONTROL_ERROR_CODES = {
   engine_unavailable: { status: 503, hint: 'The audit engine is not reachable. Check that it is running.' },
   persistence_disabled: { status: 503, hint: 'This needs a database. Start the stack with Postgres to save changes.' },
   no_judge: { status: 503, hint: 'No deep-audit judge is set. Choose one in Settings → Models.' },
+  // The judge's provider refused a Studio draft (CO-8): never "engine unavailable".
+  no_credits: { status: 503, hint: "The judge's provider says the account is out of credits. Add credits, then try again; Settings → Connections shows the key." },
+  judge_unauthorized: { status: 503, hint: "The judge's provider refused its key. Replace the key in Settings → Connections, then try again." },
   not_implemented: { status: 404, hint: 'This dashboard build cannot do this yet.' },
 } as const satisfies Record<string, { status: number; hint: string }>;
 

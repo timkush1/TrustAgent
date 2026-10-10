@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
-import { copyModules, scenarioModules, secretEnvNames, sitePages, type AppMode } from './vite.site.ts'
+import { copyModules, moduleMap, scenarioModules, secretEnvNames, sitePages, type AppMode } from './vite.site.ts'
 import { datasetPlugin } from './vite/plugins/dataset.ts'
 import { digestPlugin } from './vite/plugins/digest.ts'
 import { landingDataPlugin } from './vite/plugins/landingData.ts'
@@ -64,6 +64,7 @@ export default defineConfig(({ mode, isPreview }) => {
       digestPlugin(),
       landingDataPlugin(contractsDir),
       ogMetaPlugin(),
+      moduleMap(),
       ...sitePages(appMode),
     ],
     build: {

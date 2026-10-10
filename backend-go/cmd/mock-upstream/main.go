@@ -43,7 +43,7 @@ func parseFlags(args []string, stderr io.Writer) (*options, error) {
 	fs := flag.NewFlagSet("mock-upstream", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.addr, "addr", envOr("MOCK_UPSTREAM_ADDR", ":8090"), "listen address")
-	fs.StringVar(&o.cfg.ScenariosPath, "scenarios", "", "scenario pack (default: the embedded contracts/demo/scenarios.v1.json)")
+	fs.StringVar(&o.cfg.ScenariosPath, "scenarios", "", "scenario pack (default: the embedded contracts/demo/scenarios.v1.json); the embedded faults pack is always served too")
 	fs.DurationVar(&o.cfg.Latency, "latency", 0, "delay before every LLM response")
 	fs.DurationVar(&o.cfg.JevLatency, "jev-latency", 0, "delay before every decision response")
 	fs.DurationVar(&o.cfg.ChunkDelay, "chunk-delay", 20*time.Millisecond, "delay between SSE events")

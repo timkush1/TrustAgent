@@ -142,7 +142,7 @@ export function PasteKeyDialog({ card, settings, writeReason, label, onResult, t
                 keyPage ? (
                   <>
                     Create one at{' '}
-                    <a href={keyPage.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-medium text-fg underline underline-offset-2">
+                    <a href={keyPage.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 font-medium text-fg underline underline-offset-2">
                       {keyPage.label}
                       <ExternalLink aria-hidden="true" className="size-3" />
                     </a>

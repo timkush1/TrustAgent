@@ -3,12 +3,14 @@
  * trace over time, the compressed-time player, and the DataSource contract the pages rely on
  * (reads at the tape position, a read-only hello, labelled numbers, the unavailable control plane).
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import scenarioPack from '@contracts/demo/scenarios.v1.json';
 import { ApiError } from '../errors';
 import type { StreamSink } from '../source';
 import type { StreamEvent } from '../stream/types';
-import { committedManifest, ManualClock, recordingFetch } from '@/test/recording';
+import { committedDetail, committedManifest, ManualClock, recordingFetch, scenarioTrace, scenarioTraces } from '@/test/recording';
 import type { Recording } from '@/types/api';
+import { selectScenarios, type Scenario } from './recorder';
 import { ReplayPlayer } from './player';
 import { checkManifest, MOCK_LABEL, parseDataset } from './recording';
 import { createReplayDataSource, featuredTrace, STATIC_UNAVAILABLE } from './replayDataSource';
@@ -17,7 +19,13 @@ import { percentile, roiBucketOf } from './stats';
 import { ReplayTape } from './tape';
 
 const manifest = committedManifest();
-const refundId = manifest.traces.find((t) => t.action === 'flag')?.trace_id as string;
+const refundId = scenarioTrace('refund-contradiction-flag').trace_id;
+const total = manifest.traces.length;
+/** The tape opens with this many traces on screen (preroll 0.5). */
+const half = Math.floor(total / 2);
+/** The scenarios on the tape (the recorder's own selection), and how many traces each scenario expectation covers. */
+const onTape = selectScenarios(scenarioPack.scenarios as unknown as Scenario[], 'demo').recorded;
+const tracesWhere = (pred: (s: Scenario) => boolean) => onTape.filter(pred).reduce((n, s) => n + scenarioTraces(s.id).length, 0);
 
 function recorded(): Recording {
   return {
@@ -87,7 +95,8 @@ describe('ReplayTape', () => {
   const auditedAt = events.find((e) => e.type === 'audit_completed')?.t_ms as number;
 
   it('knows every trace and the recording length', () => {
-    expect(tape.ids()).toHaveLength(18);
+    expect(tape.ids()).toHaveLength(total);
+    expect(total).toBe(tracesWhere(() => true));
     expect(tape.duration).toBe(Math.max(...manifest.events.map((e) => e.t_ms)));
     expect(tape.timeAt(0)).toBe(manifest.recorded_at);
   });
@@ -110,10 +119,10 @@ describe('ReplayTape', () => {
 
   it('lists the started traces newest first', () => {
     const early = tape.summariesAt(started);
-    expect(early.length).toBeLessThan(18);
+    expect(early.length).toBeLessThan(total);
     expect(early[0].trace_id).toBe(refundId);
     const all = tape.summariesAt(tape.duration);
-    expect(all).toHaveLength(18);
+    expect(all).toHaveLength(total);
     const times = all.map((t) => Date.parse(t.created_at));
     expect(times).toEqual([...times].sort((a, b) => b - a));
   });
@@ -125,7 +134,7 @@ describe('ReplayTape', () => {
   });
 
   it('features the flagged refund answer', () => {
-    expect(featuredTrace(tape)).toBe(manifest.traces.find((t) => t.action === 'flag' && t.audit.verdict === 'HALLUCINATED')?.trace_id);
+    expect(featuredTrace(tape)).toBe(refundId);
   });
 });
 
@@ -142,8 +151,8 @@ describe('ReplayPlayer', () => {
     expect(ended).toBe(true);
     expect(seen).toEqual(manifest.events.map((e) => e.t_ms));
     expect(Math.max(...clock.delays)).toBe(1500);
-    // The recording spans minutes; the replay takes seconds.
-    expect(clock.now).toBeLessThan(tape.duration / 10);
+    // The recording spans hours; the replay takes seconds.
+    expect(clock.now).toBeLessThan(tape.duration / 100);
     expect(player.position).toBe(tape.duration);
   });
 
@@ -198,15 +207,15 @@ describe('ReplayDataSource', () => {
     expect(info.status).toBe('ready');
     expect(info.kind).toBe('mock');
     expect(info.label).toBe(MOCK_LABEL);
-    expect(info.traces).toBe(18);
+    expect(info.traces).toBe(total);
     expect(info.featuredTraceId).toBe(refundId);
-    expect(info.shown).toBe(9);
+    expect(info.shown).toBe(half);
   });
 
   it('opens with half the traffic on screen and plays the rest as live events', async () => {
     const { ds, clock } = setup();
     await ds.ready;
-    expect((await ds.listTraces({})).items).toHaveLength(9);
+    expect((await ds.listTraces({ limit: 200 })).items).toHaveLength(half);
 
     const { s, events, phases } = sink();
     const live = ds.subscribe(s);
@@ -229,7 +238,7 @@ describe('ReplayDataSource', () => {
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
     expect(new Set(seqs).size).toBe(seqs.length);
     expect(useReplayStore.getState().finished).toBe(true);
-    expect((await ds.listTraces({})).items).toHaveLength(18);
+    expect((await ds.listTraces({ limit: 200 })).items).toHaveLength(total);
     live.stop();
   });
 
@@ -243,7 +252,7 @@ describe('ReplayDataSource', () => {
     const first = events.length;
     ds.restart();
     expect(useReplayStore.getState().finished).toBe(false);
-    expect((await ds.listTraces({})).items).toHaveLength(9);
+    expect((await ds.listTraces({ limit: 200 })).items).toHaveLength(half);
     clock.runAll();
     expect(events.length).toBe(first * 2);
   });
@@ -254,15 +263,18 @@ describe('ReplayDataSource', () => {
     ds.subscribe(sink().s);
     await Promise.resolve();
     clock.runAll();
-    expect((await ds.listTraces({ outcome: 'flagged' })).items).toHaveLength(6);
-    expect((await ds.listTraces({ gate_status: 'not_assessed' })).items).toHaveLength(6);
-    expect((await ds.listTraces({ q: '60 days' })).items).toHaveLength(6);
+    expect((await ds.listTraces({ outcome: 'flagged', limit: 200 })).items).toHaveLength(tracesWhere((s) => s.expect.outcome === 'flagged'));
+    expect((await ds.listTraces({ outcome: 'blocked', limit: 200 })).items).toHaveLength(tracesWhere((s) => s.expect.outcome === 'blocked'));
+    expect((await ds.listTraces({ gate_status: 'not_assessed', limit: 200 })).items).toHaveLength(tracesWhere((s) => s.expect.status === 'not_assessed'));
+    const sixty = (await ds.listTraces({ q: '60 days', limit: 200 })).items;
+    expect(sixty.map((t) => t.trace_id)).toEqual(expect.arrayContaining(scenarioTraces('refund-contradiction-flag').map((t) => t.trace_id)));
+    for (const t of sixty) expect(`${t.question_preview} ${t.response_preview}`.toLowerCase()).toContain('60 days');
     const first = await ds.listTraces({ limit: 5 });
     expect(first.items).toHaveLength(5);
     const second = await ds.listTraces({ limit: 5, cursor: first.next_cursor ?? undefined });
     expect(second.items[0].trace_id).not.toBe(first.items[0].trace_id);
     expect((await ds.listDecisions({ action: 'flag' })).items.every((d) => d.action === 'flag')).toBe(true);
-    expect((await ds.listAudits({ verdict: 'HALLUCINATED' })).items).toHaveLength(6);
+    expect((await ds.listAudits({ verdict: 'HALLUCINATED', limit: 200 })).items).toHaveLength(tracesWhere((s) => s.expect.audit_verdict === 'HALLUCINATED'));
   });
 
   it('serves a trace file, and 404 for an id the recording lacks', async () => {
@@ -286,18 +298,27 @@ describe('ReplayDataSource', () => {
     clock.runAll();
     const o = await ds.getOverview({ window: '24h' });
     expect(o.include_mock).toBe(true);
-    expect(o.totals.requests).toBe(18);
-    expect(o.totals.flagged).toBe(6);
+    expect(o.totals.requests).toBe(total);
+    expect(o.totals.flagged).toBe(tracesWhere((s) => s.expect.action === 'flag'));
+    expect(o.totals.blocked).toBe(tracesWhere((s) => s.expect.action === 'block'));
     expect(o.hallucination_rate.label).toBe('simulated');
-    // Fewer than 30 samples: the rate stays hidden.
+    // No uniform-sample audit on the tape: the rate stays hidden.
     expect(o.hallucination_rate.value).toBeNull();
-    expect(o.audited_hallucination_share.value).toBeNull();
-    expect(o.evidence_coverage.groundedness_assessed).toBe(12);
+    expect(o.audited_hallucination_share.label).toBe('simulated');
+    // The audited share counts audits with a verdict about the answer, as the gateway does: an
+    // audit with nothing to check against (NOT_ASSESSED) is on the tape but not in the share.
+    const auditVerdicts = manifest.traces.map((t) => committedDetail(t.trace_id).audit_detail?.verdict ?? null).filter((v) => v !== null);
+    expect(auditVerdicts).toContain('NOT_ASSESSED');
+    const withVerdict = auditVerdicts.filter((v) => v !== 'NOT_ASSESSED');
+    expect(o.audited_hallucination_share.n).toBe(withVerdict.length);
+    expect(o.audited_hallucination_share.value).toBeCloseTo(withVerdict.filter((v) => v === 'HALLUCINATED').length / withVerdict.length, 12);
+    const assessed =manifest.traces.filter((t) => committedDetail(t.trace_id).decisions[0]?.evaluators['groundedness@1']?.status === 'assessed').length;
+    expect(o.evidence_coverage.groundedness_assessed).toBe(assessed);
     expect(o.what_was_caught.map((c) => c.reason)).toContain('contradiction:critical');
 
     const roi = await ds.getRoiSummary('24h');
     expect(roi.simulated).toBe(true);
-    expect(roi.gated_responses).toBe(18);
+    expect(roi.gated_responses).toBe(total);
     for (const v of [roi.decision_cost, roi.llm_cost, roi.total_per_1k, roi.savings_vs_same_checks, roi.outcomes, roi.latency_ms]) expect(v.label).toBe('simulated');
     // The same checks are priced from the simulated fast-check tokens; the full audit is the
     // published assumption the gateway also falls back to (an estimate, never measured).
@@ -307,13 +328,14 @@ describe('ReplayDataSource', () => {
     ]);
     const full = roi.counterfactuals[1];
     expect(full.per_1k).toBe(35.5);
-    expect(full.usd).toBeCloseTo((35.5 * 18) / 1000, 12);
+    expect(full.usd).toBeCloseTo((35.5 * total) / 1000, 12);
     expect(full.basis).toMatch(/^not measured: /);
     expect(roi.llm_cost.usd).toBe(0);
 
     const coverage = await ds.getEvidenceCoverage({ window: '24h' });
-    expect(coverage.requests).toBe(18);
-    expect(coverage.top_reasons).toEqual([{ reason: 'no_evidence', count: 6 }]);
+    expect(coverage.requests).toBe(total);
+    expect(coverage.groundedness_assessed).toBe(assessed);
+    expect(coverage.top_reasons).toEqual([{ reason: 'no_evidence', count: total - assessed }]);
   });
 
   it('serves spend per bucket that adds up to the ROI summary, and the built-in prices', async () => {
@@ -323,12 +345,13 @@ describe('ReplayDataSource', () => {
     await Promise.resolve();
     clock.runAll();
     const roi = await ds.getRoiSummary('24h');
-    // The recording spans under four minutes: per-minute buckets, whatever the window asks for.
-    const series = await ds.getRoiTimeseries({ window: '24h', bucket: '1h' });
-    expect(series).toMatchObject({ window: '24h', bucket: '1m' });
-    expect(series.points).toHaveLength(4);
-    // Zero-filled UTC minutes, in order.
-    for (const p of series.points) expect(Date.parse(p.t) % 60_000).toBe(0);
+    // The recording spans two hours: hourly buckets, whatever the window asks for.
+    const series = await ds.getRoiTimeseries({ window: '24h', bucket: '1d' });
+    expect(series).toMatchObject({ window: '24h', bucket: '1h' });
+    expect(series.points).toHaveLength(3);
+    for (const p of series.points) expect(p.gated).toBeGreaterThan(0);
+    // Zero-filled UTC hours, in order.
+    for (const p of series.points) expect(Date.parse(p.t) % 3_600_000).toBe(0);
     expect(series.points.map((p) => p.t)).toEqual([...series.points.map((p) => p.t)].sort());
     const sum = (f: (p: (typeof series.points)[number]) => number) => series.points.reduce((s, p) => s + f(p), 0);
     expect(sum((p) => p.gated)).toBe(roi.gated_responses);
@@ -338,7 +361,7 @@ describe('ReplayDataSource', () => {
     expect(sum((p) => p.same_checks_usd ?? 0)).toBeCloseTo(same?.usd ?? 0, 12);
 
     const week = await ds.getRoiTimeseries({ window: '7d', bucket: '1d' });
-    expect(week.bucket).toBe('1m');
+    expect(week.bucket).toBe('1h');
     expect(week.points.reduce((s, p) => s + p.gated, 0)).toBe(roi.gated_responses);
 
     const prices = await ds.getPricing();
@@ -381,5 +404,91 @@ describe('roiBucketOf', () => {
   it('draws minutes up to an hour, hours up to two days, days beyond', () => {
     const h = 3_600_000;
     expect([0, 226_457, h, h + 1, 48 * h, 48 * h + 1, Number.NaN].map(roiBucketOf)).toEqual(['1m', '1m', '1m', '1h', '1h', '1d', '1m']);
+  });
+});
+
+// ------------------------------------------------------------------------------------ dataset plugin
+
+// vite/plugins/dataset.ts runs in Node at build time; the app's tsconfig has no Node types, so it
+// and the fs helpers load through variable specifiers (see recorder/demoRecording.test.ts).
+interface DatasetPluginModule {
+  chooseDataset: (dataDir: string, value: string | undefined) => { dir: string; expected: 'mock' | 'recorded' };
+  datasetPlugin: (webDir: string, value?: string) => { resolveId: (id: string) => string | undefined; load: (id: string) => string | undefined };
+  DATASET_MODULE: string;
+}
+const nodeSpecifiers = ['node:fs', 'node:os', 'node:path', 'node:url'];
+const [fsMod, osMod, pathMod, urlMod] = (await Promise.all(nodeSpecifiers.map((m) => import(/* @vite-ignore */ m)))) as [
+  { mkdtempSync: (prefix: string) => string; mkdirSync: (p: string, o: { recursive: boolean }) => void; writeFileSync: (p: string, t: string) => void; rmSync: (p: string, o: { recursive: boolean; force: boolean }) => void },
+  { tmpdir: () => string },
+  { join: (...parts: string[]) => string },
+  { fileURLToPath: (url: string) => string },
+];
+const pluginHere = import.meta.url;
+const webDir = urlMod.fileURLToPath(new URL('../../../', pluginHere).href);
+const { chooseDataset, datasetPlugin, DATASET_MODULE } = (await import(/* @vite-ignore */ new URL('../../../vite/plugins/dataset.ts', pluginHere).href)) as DatasetPluginModule;
+
+describe('dataset plugin (D110)', () => {
+  const made: string[] = [];
+  afterAll(() => {
+    for (const dir of made) fsMod.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A web dir whose demo-data holds the given manifests (undefined: no such directory). */
+  function webWith(manifests: { simulated?: unknown; recorded?: unknown }): string {
+    const web = fsMod.mkdtempSync(pathMod.join(osMod.tmpdir(), 'ta-dataset-'));
+    made.push(web);
+    for (const [name, doc] of Object.entries(manifests)) {
+      if (doc === undefined) continue;
+      const dir = pathMod.join(web, 'demo-data', name);
+      fsMod.mkdirSync(pathMod.join(dir, 'traces'), { recursive: true });
+      fsMod.writeFileSync(pathMod.join(dir, 'manifest.json'), typeof doc === 'string' ? doc : JSON.stringify(doc));
+    }
+    return web;
+  }
+  const data = (web: string) => pathMod.join(web, 'demo-data');
+  const both = () => webWith({ simulated: { kind: 'mock' }, recorded: { kind: 'recorded' } });
+
+  it('mock takes the simulated tape, even when a recording exists', () => {
+    const web = both();
+    expect(chooseDataset(data(web), 'mock')).toEqual({ dir: pathMod.join(data(web), 'simulated'), expected: 'mock' });
+  });
+
+  it('recorded takes the recording, and fails the build without one', () => {
+    const web = both();
+    expect(chooseDataset(data(web), 'recorded')).toEqual({ dir: pathMod.join(data(web), 'recorded'), expected: 'recorded' });
+    expect(() => chooseDataset(data(webWith({ simulated: { kind: 'mock' } })), 'recorded')).toThrow(/VITE_DEMO_DATASET=recorded, but .*manifest\.json does not exist/);
+  });
+
+  it('auto (and any other value) takes the recording when there is one, else the simulated tape', () => {
+    const web = both();
+    for (const value of ['auto', undefined, 'surprise']) expect(chooseDataset(data(web), value).expected).toBe('recorded');
+    const simulatedOnly = webWith({ simulated: { kind: 'mock' } });
+    for (const value of ['auto', undefined]) expect(chooseDataset(data(simulatedOnly), value)).toEqual({ dir: pathMod.join(data(simulatedOnly), 'simulated'), expected: 'mock' });
+  });
+
+  it('fails every build on a mislabelled recorded/ manifest', () => {
+    const web = webWith({ simulated: { kind: 'mock' }, recorded: { kind: 'mock', label: 'Simulated (mock checks + mock judge): not model output' } });
+    for (const value of ['mock', 'recorded', 'auto']) expect(() => chooseDataset(data(web), value)).toThrow(/recorded\/manifest\.json is kind "mock", not "recorded"/);
+    expect(() => chooseDataset(data(webWith({ simulated: { kind: 'mock' }, recorded: 'not json' })), 'auto')).toThrow(/is not a readable JSON manifest/);
+  });
+
+  it('fails the build when the simulated tape is missing or is not kind mock', () => {
+    expect(() => chooseDataset(data(webWith({})), 'mock')).toThrow(/simulated\/manifest\.json does not exist/);
+    expect(() => chooseDataset(data(webWith({ simulated: { kind: 'recorded' } })), 'auto')).toThrow(/simulated\/manifest\.json is kind "recorded", not "mock"/);
+  });
+
+  it('tells the replay which kind to expect, and fails the build through the plugin', () => {
+    const plugin = datasetPlugin(both(), 'recorded');
+    const id = plugin.resolveId(DATASET_MODULE) as string;
+    expect(id).toBe(`\0${DATASET_MODULE}`);
+    expect(plugin.load(id)).toBe('export const expected = "recorded";\n');
+    expect(plugin.resolveId('virtual:trustagent/other')).toBeUndefined();
+    const bad = datasetPlugin(webWith({ simulated: { kind: 'mock' }, recorded: { kind: 'mock' } }), 'mock');
+    expect(() => bad.load(bad.resolveId(DATASET_MODULE) as string)).toThrow(/not "recorded"/);
+  });
+
+  it('resolves the committed demo-data to the simulated tape', () => {
+    expect(chooseDataset(pathMod.join(webDir, 'demo-data'), 'mock').expected).toBe('mock');
+    expect(chooseDataset(pathMod.join(webDir, 'demo-data'), 'auto').expected).toBe(manifest.kind);
   });
 });

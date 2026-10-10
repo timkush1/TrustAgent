@@ -4,7 +4,12 @@
  * this input. Owners implement the bodies (WEB-LIVE: runner, route, playgroundResult); the shapes
  * change only through the lead.
  */
-import type { DecideInput, DetectorResult, EvidenceSettings } from '@/lib/contracts/types.gen';
+import type {
+  DecideInput,
+  DetectorResult,
+  EvidenceSettings,
+  RouteEvaluatorRef as PolicyRouteEvaluatorRef,
+} from '@/lib/contracts/types.gen';
 import type { Compiled, DecisionEvidenceItem, OnNoEvidence } from '@/lib/decision/compile';
 import type { DecisionCore } from '@/lib/decision/decide';
 import type { ExtractFormat, Extraction } from '@/lib/decision/evidence';
@@ -19,6 +24,8 @@ export interface RouteEvaluatorRef {
   stage?: 'active' | 'shadow';
   enabled?: boolean;
   params?: Record<string, string>;
+  /** Route threshold overrides, as policy.v1 writes them (raw space when unset; D151). */
+  thresholds?: PolicyRouteEvaluatorRef['thresholds'];
 }
 
 /** The parts of a policy.v1 document the browser reads (defaults, overrides and routes). */
@@ -78,12 +85,12 @@ export interface BrowserGateResult {
   compiled: Compiled;
   /** Asked question id → raw answer. */
   answers: Record<string, RawAnswerInput>;
-  /** Request index → `ok` or an OpenRouterErrorKind. */
+  /** Request index → `ok`, `timeout` or `error:<kind>` (gstudio's request status, what decide() reads). */
   request_status: Record<string, string>;
   /** Each answered request's result, by request index (absent for a failed one). */
   calls: (JevCallResult | null)[];
   decision: DecisionCore;
-  /** Sum over the answered requests; cost null when no response reported one. */
+  /** Sum over the answered requests; cost null when any answered request lacks a reported cost (never a partial sum). */
   usage: { input_tokens: number; cost: number | null };
   /** The snapshot that answered (the first answered request's), null without a call. */
   snapshot: string | null;
