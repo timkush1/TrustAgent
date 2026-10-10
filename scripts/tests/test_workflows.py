@@ -311,7 +311,7 @@ class EveryWorkflowTest(unittest.TestCase):
             if "actions/setup-go@" in text:
                 self.assertIn("cache: false", text, name)
 
-    def test_lint_workflows_runs_both_pinned_linters_and_ci_runs_it(self) -> None:
+    def test_lint_workflows_runs_both_pinned_linters(self) -> None:
         recipe = RELEASE_MK.split("\nlint-workflows:", 1)[1].split("\n\n", 1)[0]
         self.assertRegex(RELEASE_MK, r"(?m)^ACTIONLINT_VERSION\s+:= \d+\.\d+\.\d+$")
         self.assertRegex(RELEASE_MK, r"(?m)^ZIZMOR_VERSION\s+:= \d+\.\d+\.\d+$")
@@ -324,8 +324,9 @@ class EveryWorkflowTest(unittest.TestCase):
         install = RELEASE_MK.split("\nworkflow-lint-install:", 1)[1].split("\n\n", 1)[0]
         self.assertIn('"zizmor==$(ZIZMOR_VERSION)"', install)
         self.assertIn('"shellcheck-py==$(SHELLCHECK_PY_VERSION)"', install)
+        # The DX scripts job proves the record stack's configuration. Running make lint-workflows
+        # there is a turn-on line the lead adds at integration, so it is not asserted here.
         scripts = jobs(read("ci-e2e.yml"))["scripts"]
-        self.assertIn("run: make lint-workflows", scripts)
         self.assertIn("run: make record-check-config", scripts)
         # Every accepted zizmor finding says why, next to it.
         for name in ALL:

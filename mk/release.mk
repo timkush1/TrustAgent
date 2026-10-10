@@ -233,8 +233,7 @@ first-run-down: ## Remove the first-run / golden-path stack and its volumes
 # actionlint runs with `go run` at its tag (Go's checksum database verifies the module), zizmor and
 # shellcheck come from PyPI at an exact version into a venv under TOOLS_DIR. zizmor runs offline
 # (no token, the same answer everywhere) and fails on high-severity findings; an accepted finding
-# carries an inline `# zizmor: ignore[<audit>]` with its reason. CI runs this in the "DX scripts"
-# job.
+# carries an inline `# zizmor: ignore[<audit>]` with its reason.
 ACTIONLINT_VERSION    := 1.7.12
 ZIZMOR_VERSION        := 1.30.1
 SHELLCHECK_PY_VERSION := 0.11.0.1

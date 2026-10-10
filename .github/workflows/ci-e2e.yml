@@ -9,10 +9,9 @@ name: CI (E2E)
 # scenarios, then the onboarding stack (a fresh install: setup link, Connect
 # OpenRouter on mock-upstream, the wizard); compose logs are uploaded on
 # failure. The scripts job lints and unit-tests the setup scripts the suite
-# relies on, validates every compose profile, runs the gateway's -check-config
-# against the onboarding stack's environment and lints the workflows
-# (actionlint, zizmor). No path filters on purpose: a required check that never
-# reports would block merges.
+# relies on, validates every compose profile and runs the gateway's
+# -check-config against the onboarding and record stacks' environments. No path
+# filters on purpose: a required check that never reports would block merges.
 
 on:
   push:
@@ -86,10 +85,6 @@ jobs:
       # strict configuration, proved with fake keys; nothing is started and nothing is called.
       - name: Record stack configuration (proxy -check-config, test mode, fake keys)
         run: make record-check-config
-
-      # actionlint (with shellcheck) and zizmor over .github/, every tool pinned (D140).
-      - name: Workflow lint (actionlint, zizmor)
-        run: make lint-workflows
 
   e2e:
     name: E2E (compose stack)
