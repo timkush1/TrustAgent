@@ -546,9 +546,34 @@ class DemoDoctorTest(unittest.TestCase):
     def test_engine_unreachable_from_proxy_warns(self) -> None:
         routes = demo_routes(traces())
         routes[f"{PROXY}/health"] = ok_json({"status": "ok", "demo": True, "audit_engine": False})
-        d = make_doctor(FakeDocker(demo_containers()), FakeHttp(routes), FakeClock())
+        clock = FakeClock()
+        d = make_doctor(FakeDocker(demo_containers()), FakeHttp(routes), clock)
+        d.check_proxy()
+        check = d.check_engine()
+        self.assertEqual(check.status, "WARN")
+        self.assertIn("after 25s", check.summary)
+        self.assertLessEqual(clock.now, doctor.ENGINE_LINK_WAIT_S + doctor.POLL_INTERVAL_S)
+        # Without --wait it does not wait.
+        clock = FakeClock()
+        d = make_doctor(FakeDocker(demo_containers()), FakeHttp(routes), clock, wait_s=0.0)
         d.check_proxy()
         self.assertEqual(d.check_engine().status, "WARN")
+        self.assertEqual(clock.sleeps, [])
+
+    def test_a_proxy_that_reaches_the_engine_on_its_next_ping_passes(self) -> None:
+        # Right after `up --wait`: the proxy is healthy before its first ping of the healthy engine.
+        routes = demo_routes(traces())
+        unlinked = ok_json({"status": "ok", "demo": True, "audit_engine": False})
+        linked = ok_json({"status": "ok", "demo": True, "audit_engine": True})
+        routes[f"{PROXY}/health"] = [unlinked, unlinked, linked]
+        clock = FakeClock()
+        d = make_doctor(FakeDocker(demo_containers()), FakeHttp(routes), clock)
+        d.check_proxy()
+        check = d.check_engine()
+        self.assertEqual(check.status, "PASS")
+        self.assertIn("next engine ping", check.detail)
+        self.assertEqual(clock.sleeps, [doctor.POLL_INTERVAL_S] * 2)
+        self.assertIs(d.health.get("audit_engine"), True)
 
     def test_dashboard_that_cannot_reach_the_proxy_fails(self) -> None:
         routes = demo_routes(traces())

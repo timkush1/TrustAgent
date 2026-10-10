@@ -208,6 +208,9 @@ PROBE_ERRORS: Dict[str, Tuple[str, str, str]] = {
 }
 HTTP_TIMEOUT_S = 5.0
 POLL_INTERVAL_S = 3.0
+# The longest engine.health waits for the proxy to reach a healthy engine: two of its default
+# 10 s pings, plus slack.
+ENGINE_LINK_WAIT_S = 25.0
 # The demo's mock calibration covers the evaluators its block and fallback scenarios need
 # (config/calibration); fewer targets means it did not load.
 MIN_DEMO_CALIBRATED_TARGETS = 2
@@ -555,14 +558,47 @@ class Doctor:
                 detail=output[-1] if output else "",
                 fix=self.logs_hint("engine"),
             )
+        if linked is False and self.wait_for_engine_link():
+            return Check(
+                "engine.health",
+                "PASS",
+                "engine answers its gRPC health check",
+                detail="the proxy reached it after its next engine ping",
+            )
         if linked is False:
+            waited = f" after {self.engine_link_wait_s():.0f}s" if self.engine_link_wait_s() else ""
             return Check(
                 "engine.health",
                 "WARN",
-                "the engine is healthy but the proxy cannot reach it (/health audit_engine=false)",
+                "the engine is healthy but the proxy cannot reach it (/health audit_engine=false"
+                + waited
+                + ")",
                 fix=self.logs_hint("proxy"),
             )
         return Check("engine.health", "PASS", "engine answers its gRPC health check")
+
+    def engine_link_wait_s(self) -> float:
+        """How long --wait lets the proxy take to reach a healthy engine (0: no waiting)."""
+        return min(self.wait_s, ENGINE_LINK_WAIT_S)
+
+    def wait_for_engine_link(self) -> bool:
+        """Right after `up --wait` the proxy may not have pinged the engine since it became
+        healthy: the proxy pings it every TRUTHTABLE_ENGINE_HEALTH_INTERVAL (10 s by default) and
+        is itself healthy before the engine is. Re-read /health until audit_engine is true,
+        within the wait; the later checks then read a linked stack."""
+        deadline = self.clock() + self.engine_link_wait_s()
+        while self.clock() < deadline:
+            self.sleep(POLL_INTERVAL_S)
+            result = self.fetch(f"{self.proxy_url}/health", {})
+            try:
+                body = result.json() if result.status == 200 else None
+            except ValueError:
+                body = None
+            if isinstance(body, dict):
+                self.health = body
+                if body.get("audit_engine") is True:
+                    return True
+        return False
 
     def check_dashboard(self) -> Check:
         if self.target != "docker":
