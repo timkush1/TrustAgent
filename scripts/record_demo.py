@@ -3,7 +3,7 @@
 
     python3 scripts/record_demo.py --dry-run      # the plan, its estimate and which keys are set
     make record-demo                              # the same: a dry run unless CONFIRM=1
-    make record-demo CONFIRM=1                    # record it (the owner's key, about $1; P6)
+    make record-demo CONFIRM=1                    # record it (your OpenRouter key, about $1)
 
 The static site replays a recording (SPEC §2.13). The committed one is simulated (mock checks and a
 mock judge, labelled as such); this script makes the real one, kind ``recorded``, in

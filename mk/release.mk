@@ -112,7 +112,7 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 
 # ---------- Demo recording (D123) ----------
 # scripts/record_demo.py records the public demo with the real fast check and judge into
-# frontend-react/demo-data/recorded/ (P6, the owner's key, about $1). Without CONFIRM=1 it is a dry
+# frontend-react/demo-data/recorded/ (the owner's key, about $1). Without CONFIRM=1 it is a dry
 # run: the plan, its estimate and which keys it found. The stack is docker-compose.record.yml's,
 # project truthtable-record, removed with its volumes when the run ends. RECORD_BUILD follows make
 # up: the images are built from this checkout, or pulled on a release tag (D126).
@@ -130,9 +130,9 @@ RECORD_EXPECT = $(foreach kv,TRUTHTABLE_TEST_MODE=true TRUTHTABLE_STRICT_CONFIG=
 		TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY=0.50 TRUTHTABLE_SPEND_CAP_LLM_USD_DAY=3,--expect $(kv)) \
 	--expect-default TRUTHTABLE_JEV_BACKEND
 
-##@ Demo recording (real checks; P6)
+##@ Demo recording (the real fast check and judge; your OpenRouter key)
 
-record-demo: ## Record the public demo with the real fast check and judge into demo-data/recorded (a dry run unless CONFIRM=1; about $1 of the owner's key)
+record-demo: ## Record the public demo with the real fast check and judge into demo-data/recorded (a dry run unless CONFIRM=1; about $1 on your OpenRouter key)
 	CONFIRM="$(CONFIRM)" $(PYTHON) scripts/record_demo.py $(if $(RECORD_BUILD),--build) $(RECORD_ARGS)
 
 record-check-config: ## Prove, without a container, that the gateway accepts the record stack's environment (test mode, real backends, strict config) with fake keys: proxy -check-config
@@ -199,7 +199,8 @@ url="$$($(FIRST_RUN_ENV) $(PYTHON) scripts/setup_url.py --url-only --project $(F
 endef
 
 # The environment of the Playwright run against that stack: CI=1, because with make every
-# variable is set, so a spec that would skip has found a real problem.
+# variable is set, so a spec that would skip has found a real problem. The run goes in a subshell,
+# so the removal on exit runs from the repository root, where the compose files are.
 FIRST_RUN_PLAYWRIGHT_ENV = env -u TRUSTAGENT_ADMIN_KEY CI=1 TRUSTAGENT_SETUP_URL="$$url" \
 	DASHBOARD_HOST_PORT=$(FIRST_RUN_DASHBOARD_PORT) MOCK_UPSTREAM_HOST_PORT=$(FIRST_RUN_MOCK_PORT)
 
@@ -210,14 +211,14 @@ first-run: ## A fresh stack to its first flagged answer, timed (under 5 min): FI
 	$(FIRST_RUN_ENV) $(PYTHON) scripts/doctor.py --target docker --expect fresh --project $(FIRST_RUN_PROJECT) --no-probe \
 		--proxy-url http://127.0.0.1:$(FIRST_RUN_PROXY_PORT) --dashboard-url http://127.0.0.1:$(FIRST_RUN_DASHBOARD_PORT); \
 	ready=$$(( $$($(NOW_MS)) - t0 )); \
-	cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) FIRST_RUN_T0=$$t0 FIRST_RUN_PULL_MS=$$pull \
+	(cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) FIRST_RUN_T0=$$t0 FIRST_RUN_PULL_MS=$$pull \
 		FIRST_RUN_HEALTHY_MS=$$healthy FIRST_RUN_READY_MS=$$ready FIRST_RUN_MODE=$(FIRST_RUN_MODE) \
 		FIRST_RUN_IMAGES="ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}:$(FIRST_RUN_IMAGE_TAG)" \
-		FIRST_RUN_OUT="$(abspath $(FIRST_RUN_OUT))" npx playwright test --project=stack --workers=1 -g first-run
+		FIRST_RUN_OUT="$(abspath $(FIRST_RUN_OUT))" npx playwright test --project=stack --workers=1 -g first-run)
 
 golden-path: ## A fresh stack from its setup link to the flagged trace's detail in at most 8 actions (D130): FIRST_RUN_LOCAL=1 or FIRST_RUN_TAG=<tag>
 	@set -e; $(FIRST_RUN_UP); \
-	cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) npx playwright test --project=stack --workers=1 -g golden-path
+	(cd frontend-react && $(FIRST_RUN_PLAYWRIGHT_ENV) npx playwright test --project=stack --workers=1 -g golden-path)
 
 first-run-logs: ## Print the first-run / golden-path stack's logs, setup tokens masked (FIRST_RUN_KEEP=1 runs)
 	@$(FIRST_RUN_COMPOSE) logs --no-color --timestamps 2>&1 | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[masked]/g'

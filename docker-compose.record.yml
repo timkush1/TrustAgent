@@ -7,7 +7,7 @@
 # CONFIRM=1; the plan and its estimate come first:
 #
 #   make record-demo              # the plan, the estimate, which keys it found
-#   make record-demo CONFIRM=1    # record (about $1, the owner's key, P6)
+#   make record-demo CONFIRM=1    # record (about $1 on your OpenRouter key)
 #
 # What this overlay changes on top of docker-compose.yml:
 # - the backends come from .env, as in `make up` (one OpenRouter key covers Jev

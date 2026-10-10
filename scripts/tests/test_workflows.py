@@ -611,6 +611,12 @@ class FirstRunTargetsTest(unittest.TestCase):
         self.assertIn("measured locally, images prebuilt", spec)
         self.assertIn("measured in CI, images pulled", spec)
 
+    def test_the_specs_run_in_a_subshell_so_the_removal_finds_the_compose_files(self) -> None:
+        for target in ("first-run", "golden-path"):
+            recipe = self.recipe(target)
+            self.assertIn("(cd frontend-react && ", recipe, target)
+            self.assertNotRegex(recipe, r"(?m)^\tcd frontend-react", target)
+
     def test_golden_path_runs_its_spec_on_a_fresh_stack(self) -> None:
         recipe = self.recipe("golden-path")
         self.assertIn("$(FIRST_RUN_UP)", recipe)

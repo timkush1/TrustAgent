@@ -1,5 +1,5 @@
 /**
- * First run (SPEC §4.2 P5, D130): a fresh stack, from `docker compose up` to the first flagged
+ * First run (SPEC §4.2, D130): a fresh stack, from `docker compose up` to the first flagged
  * answer on screen, in under 5 minutes.
  *
  * `make first-run` starts the stack itself and passes what it measured (FIRST_RUN_* below): the

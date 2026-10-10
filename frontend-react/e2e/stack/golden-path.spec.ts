@@ -1,5 +1,5 @@
 /**
- * The golden path (SPEC §4.2 P5, D130): from the setup link `make up` opens to the detail of the
+ * The golden path (SPEC §4.2, D130): from the setup link `make up` opens to the detail of the
  * first flagged trace in at most 8 user actions, with no key ($0, simulated checks, labelled), no
  * shell command and no log.
  *
