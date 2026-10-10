@@ -10,6 +10,8 @@ nul
 *~
 *.tmp
 *.bak
+# Scratch space at the repo root: downloaded tools (tmp/tools), load output (tmp/load)
+/tmp/
 
 # ========== Environment & Secrets ==========
 .env

@@ -10,9 +10,16 @@
 // Faults are keyed per request (SPEC §3.1): hang, html200, 402_inflight, 402_credits, 429, 529,
 // 413 and more (see Faults). A fault comes from, in order: the X-Mock-Fault header, the fault
 // query parameter, a /fault/<spec>/ path prefix, a scenario id of the form fault:<spec> (or a bare
-// fault name), or Config.Fault. A spec "<name>@<n>" applies to the first n matching requests of
-// one call (keyed by X-Mock-Key, else the decision session_id, else globally) and then clears, so
-// retries and hedges can be exercised.
+// fault name), the mock_faults of the request's scenario, or Config.Fault. A spec "<name>@<n>"
+// applies to the first n matching requests of one call (keyed by X-Mock-Key, which the gateway
+// sets to the trace id, else the decision session_id, else globally) and then clears, so retries
+// and hedges can be exercised.
+//
+// The scenarios are the demo pack and the faults pack (contracts/demo/faults.v1.json, D119). A
+// faults-pack scenario's mock_faults.decision faults the decision requests that name it (the
+// gateway forwards X-TrustAgent-Scenario to a local decision backend in test mode), and its
+// mock_faults.upstream faults the LLM request of its conversation, counted per scenario (an LLM
+// request carries no X-Mock-Key); the gateway's fallback request is never faulted.
 //
 // Scenario ids come from X-Mock-Scenario, X-TrustAgent-Scenario or the scenario query parameter.
 // The gateway strips X-TrustAgent-* before it calls the LLM upstream, so LLM requests are matched
@@ -46,6 +53,7 @@ import (
 // Config configures a Server.
 type Config struct {
 	// ScenariosPath is a trustagent.scenarios/v1 file; empty uses contracts/demo/scenarios.v1.json.
+	// The embedded faults pack (contracts/demo/faults.v1.json) is always served as well.
 	ScenariosPath string
 	// Latency delays the first byte of every LLM response; JevLatency every decision response.
 	Latency, JevLatency time.Duration
@@ -134,7 +142,11 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mock-upstream: scenarios: %w", err)
 	}
-	scenarios, err := parseScenarios(b)
+	faults, err := contracts.FS.ReadFile("demo/faults.v1.json")
+	if err != nil {
+		return nil, fmt.Errorf("mock-upstream: faults pack: %w", err)
+	}
+	scenarios, err := parseScenarios(b, faults)
 	if err != nil {
 		return nil, fmt.Errorf("mock-upstream: scenarios: %w", err)
 	}
@@ -252,9 +264,10 @@ func scenarioID(r *http.Request) string {
 	return ""
 }
 
-// fault resolves the fault spec of a request and consumes one use of a counted spec. countKey
-// scopes counted specs to one call.
-func (s *Server) fault(r *http.Request, countKey string) string {
+// fault resolves the fault spec of a request and consumes one use of a counted spec. packSpec is
+// the mock_faults spec of the request's scenario ("" for none). countKey scopes counted specs to
+// one call; X-Mock-Key overrides it.
+func (s *Server) fault(r *http.Request, countKey, packSpec string) string {
 	spec := ""
 	for _, v := range []string{r.Header.Get("X-Mock-Fault"), r.URL.Query().Get("fault"), r.Header.Get("X-Mock-Path-Fault")} {
 		if v != "" {
@@ -269,6 +282,9 @@ func (s *Server) fault(r *http.Request, countKey string) string {
 		} else if name, _, err := parseFault(sc); err == nil && name != "" {
 			spec = sc
 		}
+	}
+	if spec == "" {
+		spec = packSpec
 	}
 	if spec == "" {
 		spec = s.cfg.Fault

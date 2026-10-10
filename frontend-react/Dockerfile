@@ -14,12 +14,15 @@
 # /api, /ws and /health to the proxy (DASHBOARD_PROXY_UPSTREAM), so no API URL
 # or key is compiled into the bundle. Runtime settings reach the app through
 # /config.json, written at container start (nginx/entrypoint.d).
-
-ARG NODE_VERSION=22
-ARG NGINX_VERSION=1.31
+#
+# Base images are pinned by their multi-arch INDEX digest (D125), so every
+# platform of a release builds from the same bytes; the tag stays next to the
+# digest for readers and for Dependabot's docker ecosystem, which moves both
+# together. Resolved 2026-10-09: node 22.23.3 (alpine), nginx 1.31.6
+# (unprivileged, alpine).
 
 # --- Stage 1: build -----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS build
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
 
 WORKDIR /src/frontend-react
 COPY frontend-react/package.json frontend-react/package-lock.json ./
@@ -43,7 +46,7 @@ RUN npm run build
 # --- Stage 2: serve -----------------------------------------------------------
 # nginx-unprivileged runs as uid 101, keeps its pid and temp files in /tmp, and
 # lets that user render templates into /etc/nginx/conf.d.
-FROM nginxinc/nginx-unprivileged:${NGINX_VERSION}-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="truthtable-dashboard" \

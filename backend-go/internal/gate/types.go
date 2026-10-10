@@ -18,10 +18,13 @@ const (
 	SourceTrafficgen = "trafficgen"
 )
 
-// Answer sources (TraceSummary.answer_source).
+// Answer sources (TraceSummary.answer_source): scripted is the test_response a client sent,
+// generated an upstream answer to a pack scenario whose answer_source is generated (a recording
+// run in test mode, D121), live any other upstream answer.
 const (
-	AnswerScripted = "scripted"
-	AnswerLive     = "live"
+	AnswerScripted  = "scripted"
+	AnswerGenerated = "generated"
+	AnswerLive      = "live"
 )
 
 // Trace flags (traces.flags, SPEC §2.3) the gateway sets.
