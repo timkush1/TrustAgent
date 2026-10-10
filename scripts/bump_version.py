@@ -33,6 +33,7 @@ import argparse
 import datetime as _dt
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -141,9 +142,12 @@ Runner = Callable[[Sequence[str], Path], int]
 
 
 def run_recording(cmd: Sequence[str], cwd: Path) -> int:
+    # Resolve the program on PATH first: on Windows npm is npm.cmd, which a bare "npm" without a
+    # shell does not find.
+    argv = [shutil.which(cmd[0]) or cmd[0], *cmd[1:]]
     try:
         # A fixed argument list (no shell): `npm run recording` in frontend-react.
-        return subprocess.run(list(cmd), cwd=str(cwd), check=False).returncode  # nosec B603
+        return subprocess.run(argv, cwd=str(cwd), check=False).returncode  # nosec B603
     except FileNotFoundError:
         return 127
 

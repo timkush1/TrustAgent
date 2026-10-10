@@ -214,6 +214,21 @@ class BumpTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.root.glob(".VERSION.*")), [])
 
 
+class RunRecordingTest(unittest.TestCase):
+    """The real runner (the other tests inject a Recorder): exit codes and a missing program."""
+
+    def test_the_exit_code_and_the_working_directory_reach_the_caller(self) -> None:
+        cwd = make_root()
+        try:
+            probe = "import os, sys; sys.exit(3 if os.path.isfile('VERSION') else 4)"
+            self.assertEqual(bv.run_recording([sys.executable, "-c", probe], cwd), 3)
+        finally:
+            shutil.rmtree(cwd, ignore_errors=True)
+
+    def test_a_program_that_is_not_installed_is_127(self) -> None:
+        self.assertEqual(bv.run_recording(["trustagent-no-such-program-x9"], ROOT), 127)
+
+
 class RepositoryDryRunTest(unittest.TestCase):
     def test_the_committed_tree_plans_a_patch_bump(self) -> None:
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()

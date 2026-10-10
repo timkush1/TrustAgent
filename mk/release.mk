@@ -38,7 +38,8 @@ PAGES_RECORDING_DIR ?= $(if $(filter recorded,$(PAGES_DATASET)),$(DEMO_DATA)/rec
 	$(filter mock,$(PAGES_DATASET)),$(DEMO_DATA)/simulated,$(if \
 	$(wildcard $(DEMO_DATA)/recorded/manifest.json),$(DEMO_DATA)/recorded,$(DEMO_DATA)/simulated)))
 
-# Downloaded tools live in tmp/tools (a tmp/.gitignore of "*" keeps them out of git).
+# Downloaded tools live in tmp/tools (a tmp/.gitignore of "*" keeps them out of git); TOOLS_DIR may
+# point elsewhere, and then no .gitignore is written.
 TOOLS_DIR ?= tmp/tools
 # gitleaks: the release security.yml pins, checked against its published SHA-256 (D137).
 GITLEAKS_VERSION := 8.28.0
@@ -100,7 +101,7 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 		darwin-x64) sum=$(GITLEAKS_SHA256_darwin_x64);; darwin-arm64) sum=$(GITLEAKS_SHA256_darwin_arm64);; \
 		*) echo "gitleaks-install: no pinned checksum for $$os-$$arch; install gitleaks $(GITLEAKS_VERSION) and copy it to $(GITLEAKS)"; exit 2;; \
 	esac; \
-	mkdir -p "$(TOOLS_DIR)"; test -f tmp/.gitignore || printf '*\n' > tmp/.gitignore; \
+	mkdir -p "$(TOOLS_DIR)"; case "$(TOOLS_DIR)" in tmp/*) test -f tmp/.gitignore || printf '*\n' > tmp/.gitignore;; esac; \
 	work="$$(mktemp -d)"; trap 'rm -rf "$$work"' EXIT; \
 	curl -fsSLo "$$work/gitleaks.tgz" "https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSION)/gitleaks_$(GITLEAKS_VERSION)_$${os}_$${arch}.tar.gz"; \
 	got="$$($(PYTHON) -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$$work/gitleaks.tgz")"; \
