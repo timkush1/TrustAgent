@@ -134,9 +134,14 @@ func (h *Handler) newExchange(c *gin.Context, format, path string, req *llmapi.C
 			faultSpec = s
 		}
 	}
-	if req != nil && req.TestResponse != nil {
+	switch {
+	case req != nil && req.TestResponse != nil:
 		t.Source, t.AnswerSource = gate.SourceTest, gate.AnswerScripted
 		t.Flags = append(t.Flags, gate.FlagTestMode)
+	case h.testMode && generatedScenarios()[t.Scenario]:
+		// A recording run sends a generated scenario without test_response, so the upstream
+		// writes the answer (D121); the recording's label then says "generated answers".
+		t.AnswerSource = gate.AnswerGenerated
 	}
 	if keyLabel == TrafficgenKeyLabel || t.Scenario != "" {
 		t.Source = gate.SourceTrafficgen

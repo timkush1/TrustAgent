@@ -165,3 +165,41 @@ func jsonStrings(b []byte) []string {
 	walk(v)
 	return out
 }
+
+// TestGeneratedAnswerStamp: in test mode an upstream answer to a pack scenario whose answer_source
+// is generated is stamped generated (D121), so a recording of it says "generated answers"; the
+// same scenario sent with test_response is scripted, and every other upstream answer, outside test
+// mode too, is live.
+func TestGeneratedAnswerStamp(t *testing.T) {
+	if _, source, _ := packScenario(t, "generated-monthly-refund"); source != gate.AnswerGenerated {
+		t.Fatalf("generated-monthly-refund has answer_source %q", source)
+	}
+	for _, c := range []struct {
+		name, id, header string
+		testMode         bool
+		scripted         bool
+		want             string
+	}{
+		{"generated from the upstream", "generated-monthly-refund", "generated-monthly-refund", true, false, gate.AnswerGenerated},
+		{"generated stand-in sent as test_response", "generated-monthly-refund", "generated-monthly-refund", true, true, gate.AnswerScripted},
+		{"outside test mode", "generated-monthly-refund", "generated-monthly-refund", false, false, gate.AnswerLive},
+		{"a scripted scenario from the upstream", "grounded-pass", "grounded-pass", true, false, gate.AnswerLive},
+		{"no scenario header", "generated-monthly-refund", "", true, false, gate.AnswerLive},
+		{"an unknown scenario", "generated-monthly-refund", "no-such-scenario", true, false, gate.AnswerLive},
+		{"a fault value", "generated-monthly-refund", "fault:429@1", true, false, gate.AnswerLive},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := newEnv(t, envOpts{testMode: c.testMode, jev: newScenarioSpy(t)})
+			tr := sendScenario(t, e, c.id, c.header, c.scripted)
+			if tr.AnswerSource != c.want {
+				t.Errorf("answer_source %q, want %q", tr.AnswerSource, c.want)
+			}
+			if upstreamCalls := e.up.calls(); (upstreamCalls == 0) != c.scripted {
+				t.Errorf("%d upstream calls with scripted=%v", upstreamCalls, c.scripted)
+			}
+			if c.want == gate.AnswerGenerated && slices.Contains(tr.Flags, gate.FlagTestMode) {
+				t.Errorf("a generated answer is no test_response: flags %v", tr.Flags)
+			}
+		})
+	}
+}
