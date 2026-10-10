@@ -42,6 +42,13 @@
 //	trafficgen --once --expect --scenarios e2e --upstream all
 //	trafficgen --once --expect --pack faults --scenarios faults --upstream all
 //	trafficgen --record --scenarios demo --exclude knowledge --upstream generated --trace-ids-out ids.txt
+//	trafficgen --seed-knowledge --admin-key-file admin.key
+//
+// --seed-knowledge sends no traffic: it uploads the knowledge documents of the selected scenarios
+// (default: set knowledge) to the gateway's knowledge base (POST /api/kb/documents, with the admin
+// key read from --admin-key-file), the documents a knowledge stack must hold before its scenarios
+// run (D131).
+//
 //	trafficgen --loop --scenarios demo --base-url http://proxy:8080 --interval 20s
 package main
 
@@ -82,22 +89,24 @@ func main() {
 }
 
 type options struct {
-	baseURL      string
-	sets         string
-	exclude      string
-	phase        string
-	upstream     string
-	pack         string
-	file         string
-	once, loop   bool
-	expect       bool
-	allowSkip    bool
-	record       bool
-	traceIDsOut  string
-	interval     time.Duration
-	auditTimeout time.Duration
-	timeout      time.Duration
-	key          string
+	baseURL       string
+	sets          string
+	exclude       string
+	phase         string
+	upstream      string
+	pack          string
+	file          string
+	once, loop    bool
+	expect        bool
+	allowSkip     bool
+	record        bool
+	traceIDsOut   string
+	seedKnowledge bool
+	adminKeyFile  string
+	interval      time.Duration
+	auditTimeout  time.Duration
+	timeout       time.Duration
+	key           string
 }
 
 // --upstream values: which scenarios get their answer from the gateway's upstream instead of
@@ -130,11 +139,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.BoolVar(&o.allowSkip, "allow-skip", false, "with --expect, pass although selected scenarios are skipped because they need a later gateway phase than --phase")
 	fl.BoolVar(&o.record, "record", false, "a recording run: refuse a gateway whose decision model or judge is the mock or a fallback (GET /api/status), wait for every trace to settle and report expectation drift without failing")
 	fl.StringVar(&o.traceIDsOut, "trace-ids-out", "", "write the trace id of every answered request to this file, one per line in send order")
+	fl.BoolVar(&o.seedKnowledge, "seed-knowledge", false, "send no traffic: upload the knowledge documents of the selected scenarios (default set knowledge) to the knowledge base, with the admin key of --admin-key-file")
+	fl.StringVar(&o.adminKeyFile, "admin-key-file", "", "file holding the admin key --seed-knowledge uploads with")
 	fl.DurationVar(&o.interval, "interval", 20*time.Second, "pause between rounds with --loop")
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
 	fl.Usage = func() {
 		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip] | --record] [--trace-ids-out FILE] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--pack main | --file pack.json]")
+		fmt.Fprintln(stderr, "       trafficgen --seed-knowledge --admin-key-file FILE [--scenarios knowledge] [--base-url URL]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
 	}
@@ -147,7 +159,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		!knownPack || (o.file != "" && o.pack != packMain) ||
 		// A recording run sends each scenario once, through a real upstream at most for its
 		// generated answers; a loop never finishes its list of trace ids.
-		(o.record && (o.loop || o.upstream == upstreamAll)) || (o.traceIDsOut != "" && o.loop) {
+		(o.record && (o.loop || o.upstream == upstreamAll)) || (o.traceIDsOut != "" && o.loop) ||
+		// A seeding run sends no traffic, so nothing about traffic applies to it.
+		(o.seedKnowledge && (o.adminKeyFile == "" || o.loop || o.expect || o.record || o.traceIDsOut != "")) ||
+		(!o.seedKnowledge && o.adminKeyFile != "") {
 		fl.Usage()
 		return exitUsage
 	}
@@ -166,6 +181,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	if err != nil {
 		fmt.Fprintln(stderr, "trafficgen:", err)
 		return exitUsage
+	}
+	if o.seedKnowledge {
+		sets := knowledgeSet
+		fl.Visit(func(f *flag.Flag) {
+			if f.Name == "scenarios" {
+				sets = o.sets
+			}
+		})
+		return seedRun(ctx, o, all, sets, stdout, stderr)
 	}
 	selected, err := selectScenarios(all, o.sets, o.exclude)
 	if err != nil {
@@ -219,6 +243,43 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		case <-time.After(o.interval):
 		}
 	}
+}
+
+// seedRun is a --seed-knowledge run: the knowledge documents of the scenarios sets selects (phase
+// tags do not matter: nothing is sent to /v1), uploaded once.
+func seedRun(ctx context.Context, o options, all []scenario, sets string, stdout, stderr io.Writer) int {
+	selected, err := selectScenarios(all, sets, o.exclude)
+	if err != nil {
+		fmt.Fprintln(stderr, "trafficgen:", err)
+		return exitUsage
+	}
+	docs, err := knowledgeDocs(selected)
+	if err != nil {
+		fmt.Fprintln(stderr, "trafficgen: --seed-knowledge:", err)
+		return exitUsage
+	}
+	key, err := readAdminKey(o.adminKeyFile)
+	if err != nil {
+		fmt.Fprintln(stderr, "trafficgen: --admin-key-file:", err)
+		return exitUsage
+	}
+	g := &generator{opts: o, client: &http.Client{Timeout: o.timeout}, out: stdout}
+	res, err := g.seedKnowledge(ctx, docs, key)
+	if err != nil {
+		fmt.Fprintln(stderr, "trafficgen: --seed-knowledge:", err)
+		return exitMismatch
+	}
+	ids := make([]string, len(docs))
+	for i, d := range docs {
+		ids[i] = d.ID
+	}
+	fmt.Fprintf(stdout, "trafficgen: seeded %d knowledge document(s) (%s): %d ingested, %d claims accepted, %d quarantined, %d conflicts\n",
+		len(docs), strings.Join(ids, ", "), res.DocumentsIngested, res.ClaimsAccepted, res.ClaimsQuarantined, res.ConflictsDetected)
+	if res.DocumentsIngested != len(docs) {
+		fmt.Fprintf(stderr, "trafficgen: --seed-knowledge: the engine ingested %d of %d documents\n", res.DocumentsIngested, len(docs))
+		return exitMismatch
+	}
+	return exitOK
 }
 
 // generator sends scenarios and checks their outcomes.

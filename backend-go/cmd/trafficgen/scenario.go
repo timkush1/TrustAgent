@@ -34,6 +34,9 @@ type scenario struct {
 	Request      json.RawMessage   `json:"request"`
 	Response     *string           `json:"response"`
 	Judge        *judgeFixture     `json:"judge"`
+	// Knowledge are the documents a knowledge-base route retrieves for the scenario
+	// (--seed-knowledge uploads them).
+	Knowledge []knowledgeDoc `json:"knowledge"`
 	// Expect keeps its raw members: an absent member is not checked, a null one is.
 	Expect map[string]json.RawMessage `json:"expect"`
 }

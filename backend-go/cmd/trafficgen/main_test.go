@@ -781,6 +781,13 @@ func TestUsageErrors(t *testing.T) {
 		{"--record", "--loop"},
 		{"--record", "--upstream", "all"}, // mock-upstream's stand-ins are no recording
 		{"--loop", "--trace-ids-out", "ids.txt"},
+		{"--seed-knowledge"}, // the upload needs the admin key
+		{"--seed-knowledge", "--admin-key-file", "k", "--expect"},
+		{"--seed-knowledge", "--admin-key-file", "k", "--loop"},
+		{"--seed-knowledge", "--admin-key-file", "k", "--trace-ids-out", "ids.txt"},
+		{"--admin-key-file", "k"},                                          // only a seeding run reads it
+		{"--seed-knowledge", "--admin-key-file", "/does/not/exist"},        // unreadable key file
+		{"--seed-knowledge", "--admin-key-file", "k", "--scenarios", "s0"}, // no knowledge documents
 	} {
 		if code, out := runTG(t, args...); code != exitUsage {
 			t.Errorf("%v: exit %d:\n%s", args, code, out)

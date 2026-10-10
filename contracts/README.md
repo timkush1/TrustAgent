@@ -244,8 +244,13 @@ settled trace and its audit.
 enforcing demo routes `payments-faq` (fallback) and `help-center` (block) included, and in
 `config/policies.pending.yaml`, which holds `handbook`: it reads the knowledge add-on, which the demo and
 e2e stacks run without. Its routes merge over the defaults of `config/policies.yaml`; the gateway never
-reads it. Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`), draws no uniform
-sample and stores every body, so runs are deterministic.
+reads it. A stack with the add-on loads `config/policies.knowledge.yaml`, which is generated: the whole of
+`config/policies.yaml` with the `handbook` route appended (`TestKnowledgePolicyInSync` keeps it in step;
+`go -C backend-go test ./cmd/proxy -run TestKnowledgePolicyInSync -update-knowledge-policy` rewrites it),
+and `trafficgen --seed-knowledge --admin-key-file FILE` uploads the `knowledge` documents its scenarios
+need. Every demo route audits each answer it may audit (`pass_sample_rate: 1.0`, and `error_sample_rate:
+1.0` for an answer whose check failed), draws no uniform sample and stores every body, so runs are
+deterministic.
 
 **Phases.** A scenario that needs a later gateway phase than the walking skeleton carries that phase as a
 set tag: `p3` for streaming gating, `/v1/messages`, `/v1/completions`, block and fallback bodies, and routes
