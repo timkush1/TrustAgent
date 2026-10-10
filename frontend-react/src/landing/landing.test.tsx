@@ -353,13 +353,31 @@ describe('comparison', () => {
   it('renders each cell from the contract, in the table and in the phone cards', async () => {
     await renderLanding();
     const cards = screen.getByRole('list', { name: 'Comparison' });
+    // The cell's paragraph, matched on its whole text: its dates sit in their own spans.
+    const cellText = (text: string) => (_: string, el: Element | null) => el?.tagName === 'P' && (el.textContent ?? '').includes(text);
     for (const row of compareRows) {
       for (const [col, cell] of Object.entries(row.cells)) {
         if (cell.value === 'unverified') continue;
         // Once in the table, once in the cards.
-        expect(screen.getAllByText(cell.text, { exact: false }), `${row.id}.${col}`).toHaveLength(2);
-        expect(within(cards).getAllByText(cell.text, { exact: false })).toHaveLength(1);
+        expect(screen.getAllByText(cellText(cell.text)), `${row.id}.${col}`).toHaveLength(2);
+        expect(within(cards).getAllByText(cellText(cell.text))).toHaveLength(1);
       }
+    }
+  });
+
+  it('keeps every date on one line, in the cells and their sources', async () => {
+    await renderLanding();
+    const compare = document.getElementById('compare');
+    if (!compare) throw new Error('no #compare section');
+    const dates = [...compare.querySelectorAll<HTMLElement>('[data-compare-cell] *')].filter(
+      (el) => el.children.length === 0 && /\d{4}-\d{2}-\d{2}/.test(el.textContent ?? ''),
+    );
+    const dated = compareRows.flatMap((r) => Object.values(r.cells)).filter((c) => c.value !== 'unverified' && c.as_of);
+    // At least each verified cell's source date, in the table and in the cards.
+    expect(dates.length).toBeGreaterThanOrEqual(2 * dated.length);
+    for (const el of dates) {
+      expect(el.textContent).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(el).toHaveClass('whitespace-nowrap');
     }
   });
 });

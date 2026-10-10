@@ -23,6 +23,28 @@ function kindsOfTools(n: number): string {
   return `${COUNT_WORDS[n] ?? String(n)} ${n === 1 ? 'kind' : 'kinds'} of tools`;
 }
 
+const ISO_DATE = /(\d{4}-\d{2}-\d{2})/;
+
+/**
+ * A cell's text with each date (2026-10-10) kept on one line: browsers break after a hyphen, and a
+ * narrow table column otherwise shows "2026-" and "10-10" on two lines.
+ */
+function KeepDates({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(ISO_DATE).map((part, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className="whitespace-nowrap">
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
 function VendorCell({ cell }: { cell: CompareCell }) {
   if (cell.value === 'unverified' || !cell.source_url || !cell.as_of) {
     return (
@@ -37,7 +59,7 @@ function VendorCell({ cell }: { cell: CompareCell }) {
     <div data-compare-cell={cell.value}>
       <p className="text-fg-muted">
         {word ? <span className="font-medium text-fg">{word}. </span> : null}
-        {cell.text}
+        <KeepDates text={cell.text} />
       </p>
       <p className="mt-1.5 text-xs text-fg-subtle">
         <a
@@ -49,7 +71,10 @@ function VendorCell({ cell }: { cell: CompareCell }) {
           {host}
           <ArrowUpRight aria-hidden="true" className="size-3" />
         </a>{' '}
-        · <time dateTime={cell.as_of}>{cell.as_of}</time>
+        ·{' '}
+        <time dateTime={cell.as_of} className="whitespace-nowrap">
+          {cell.as_of}
+        </time>
       </p>
     </div>
   );
