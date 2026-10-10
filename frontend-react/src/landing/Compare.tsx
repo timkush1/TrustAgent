@@ -15,8 +15,13 @@ import { COMMON_READ_DATE, compareColumns, compareRows, sourceHost, type Compare
 import { sectionCopy } from './sectionCopy';
 import { ClaimValue, Section } from './ui';
 
-const VALUE_WORD: Partial<Record<CompareCell['value'], string>> = { yes: 'Yes', no: 'No', partial: 'Partly', varies: 'Varies' };
-
+const VALUE_WORD: Record<Exclude<CompareCell['value'], 'unverified'>, string> = {
+  yes: 'Yes',
+  no: 'No',
+  partial: 'Partly',
+  varies: 'Varies',
+  not_documented: 'Not documented',
+};
 
 const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 /** "four kinds of tools": the number of rows the contract has, never a fixed word. */
@@ -47,48 +52,62 @@ function KeepDates({ text }: { text: string }) {
 }
 
 /**
- * A vendor cell: the scannable answer (Yes, No, Partly, Varies) first, what the vendor's docs say
- * behind a disclosure, and the source link. The date the docs were read shows here only when the
- * cells were read on different days; otherwise the note under the table says it once.
+ * A vendor cell: the scannable answer (Yes, No, Partly, Varies, Not documented) and the product
+ * whose docs it cites ("Yes · Langfuse"), so a row of several products never credits one vendor's
+ * docs to another. One control, Source, opens what those docs say and the link. The date the docs
+ * were read shows here only when the cells were read on different days; otherwise the note under
+ * the table says it once.
  */
 function VendorCell({ cell }: { cell: CompareCell }) {
-  if (cell.value === 'unverified' || !cell.source_url || !cell.as_of) {
+  if (cell.value === 'unverified' || !cell.source_url || !cell.as_of || !cell.vendor) {
     return (
       <span data-compare-cell="unverified" className="text-fg-muted">
         {sectionCopy.compare.not_verified}
       </span>
     );
   }
-  const word = VALUE_WORD[cell.value];
   const host = sourceHost(cell.source_url);
   const ownDate = cell.as_of !== COMMON_READ_DATE;
   return (
     <div data-compare-cell={cell.value}>
-      {word ? <p className="font-medium text-fg">{word}</p> : null}
-      <details className="group mt-1">
+      <p data-compare-answer>
+        <span className="font-medium text-fg">{VALUE_WORD[cell.value]}</span>
+        <span className="text-fg-muted"> · {cell.vendor}</span>
+      </p>
+      <details className="group mt-0.5">
         <summary className="inline-flex min-h-6 cursor-pointer list-none items-center gap-1 text-xs text-fg-muted underline-offset-2 marker:hidden hover:text-fg hover:underline">
           <ChevronRight aria-hidden="true" className="size-3 transition-transform group-open:rotate-90" />
-          What its docs say
+          Source<span className="sr-only">: what the {cell.vendor} docs say</span>
         </summary>
         <p className="mt-1 text-fg-muted">
           <KeepDates text={cell.text} />
         </p>
+        <p className="mt-1 text-xs text-fg-subtle">
+          <a
+            href={cell.source_url}
+            rel="noreferrer"
+            aria-label={`${cell.vendor} docs on ${host}, read ${cell.as_of}`}
+            className="inline-flex min-h-6 items-center gap-0.5 text-fg-muted underline underline-offset-2 hover:text-fg"
+          >
+            {host}
+            <ArrowUpRight aria-hidden="true" className="size-3" />
+          </a>
+          {ownDate ? ' · ' : null}
+          <time dateTime={cell.as_of} className={ownDate ? 'whitespace-nowrap' : 'sr-only whitespace-nowrap'}>
+            {cell.as_of}
+          </time>
+        </p>
       </details>
-      <p className="mt-1 text-xs text-fg-subtle">
-        <a
-          href={cell.source_url}
-          rel="noreferrer"
-          aria-label={`Source: ${host}, read ${cell.as_of}`}
-          className="inline-flex min-h-6 items-center gap-0.5 text-fg-muted underline underline-offset-2 hover:text-fg"
-        >
-          {host}
-          <ArrowUpRight aria-hidden="true" className="size-3" />
-        </a>
-        {ownDate ? ' · ' : null}
-        <time dateTime={cell.as_of} className={ownDate ? 'whitespace-nowrap' : 'sr-only whitespace-nowrap'}>
-          {cell.as_of}
-        </time>
-      </p>
+    </div>
+  );
+}
+
+/** TrustAgent's own cells: the same answer first, then what stands behind it. */
+function OurCell({ answer, detail }: { answer: ReactNode; detail?: ReactNode }) {
+  return (
+    <div data-compare-ours>
+      <p className="font-medium text-fg">{answer}</p>
+      {detail ? <p className="mt-0.5 text-sm text-fg-muted">{detail}</p> : null}
     </div>
   );
 }
@@ -96,15 +115,11 @@ function VendorCell({ cell }: { cell: CompareCell }) {
 function useOurs(): Record<string, ReactNode> {
   const fastCheck = claim('fast_check_cost_per_1k');
   return {
-    inline: 'Yes: a proxy your SDK already speaks to',
-    self_hosted: 'Yes, MIT',
-    cost_class: (
-      <span className="inline-flex flex-wrap items-baseline gap-x-1" data-chip-scope>
-        fast check <ClaimValue claim={fastCheck} strong={false} />
-      </span>
-    ),
-    explanations: 'Claim by claim, from the deep audit',
-    calibration: 'Thresholds fitted to your own labels, per model version',
+    inline: <OurCell answer="Yes" detail="A proxy your SDK already speaks to" />,
+    self_hosted: <OurCell answer="Yes" detail="MIT license" />,
+    cost_class: <OurCell answer={<ClaimValue claim={fastCheck} />} detail="The fast check: every question in one call" />,
+    explanations: <OurCell answer="Yes" detail="Claim by claim, from the deep audit" />,
+    calibration: <OurCell answer="Yes" detail="Thresholds fitted to your own labels, per model version" />,
   };
 }
 
@@ -132,8 +147,9 @@ function CompareTable({ ours }: { ours: Record<string, ReactNode> }) {
           </tr>
         </thead>
         <tbody>
-          <tr className="border-b border-border bg-surface">
-            <th scope="row" className="px-4 py-3 align-top font-semibold text-fg">
+          {/* This site's own product: marked with a bar, never a verdict colour (DESIGN.md). */}
+          <tr className="border-b border-border bg-surface" data-compare-row="trustagent">
+            <th scope="row" className="border-l-4 border-l-fg px-4 py-3 align-top font-semibold text-fg">
               TrustAgent
             </th>
             {compareColumns.map((c) => (
@@ -161,28 +177,46 @@ function CompareTable({ ours }: { ours: Record<string, ReactNode> }) {
   );
 }
 
-/** Below 768 px: one card per row, the five columns as a list. */
+/**
+ * Below 768 px: TrustAgent's card, then the other kinds of tools behind one disclosure (a phone
+ * would otherwise scroll past four long cards), each a card with the five columns as a list.
+ */
 function CompareCards({ ours }: { ours: Record<string, ReactNode> }) {
-  const cards = [{ id: 'trustagent', name: 'TrustAgent', examples: null as string | null, render: (id: string) => ours[id] }].concat(
-    compareRows.map((r) => ({ id: r.id, name: r.name, examples: r.examples, render: (id: string) => <VendorCell cell={r.cells[id]} /> })),
+  const fields = (render: (id: string) => ReactNode) => (
+    <dl className="mt-3 space-y-3 text-sm">
+      {compareColumns.map((c) => (
+        <div key={c.id}>
+          <dt className="text-xs font-medium text-fg-subtle">{c.label}</dt>
+          <dd className="mt-0.5 text-fg">{render(c.id)}</dd>
+        </div>
+      ))}
+    </dl>
   );
   return (
-    <ul className="space-y-4 md:hidden" aria-label="Comparison">
-      {cards.map((card) => (
-        <li key={card.id} className={`rounded-lg border p-4 ${card.examples === null ? 'border-fg bg-surface' : 'border-border'}`}>
-          <p className="font-semibold text-fg">{card.name}</p>
-          {card.examples ? <p className="text-xs text-fg-muted">{card.examples}</p> : null}
-          <dl className="mt-3 space-y-3 text-sm">
-            {compareColumns.map((c) => (
-              <div key={c.id}>
-                <dt className="text-xs font-medium text-fg-subtle">{c.label}</dt>
-                <dd className="mt-0.5 text-fg">{card.render(c.id)}</dd>
-              </div>
-            ))}
-          </dl>
-        </li>
-      ))}
-    </ul>
+    <div className="md:hidden">
+      <div className="rounded-lg border border-l-4 border-fg bg-surface p-4" data-compare-row="trustagent">
+        <p className="font-semibold text-fg">TrustAgent</p>
+        {fields((id) => ours[id])}
+      </div>
+      <details className="group mt-4" data-compare-others>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-medium text-fg marker:hidden">
+          <span>
+            Compare with {kindsOfTools(compareRows.length)}
+            <span className="block text-xs font-normal text-fg-muted">{compareRows.map((r) => r.examples).join(', ')}</span>
+          </span>
+          <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-fg-muted transition-transform group-open:rotate-90" />
+        </summary>
+        <ul className="mt-4 space-y-4" aria-label="Comparison">
+          {compareRows.map((r) => (
+            <li key={r.id} className="rounded-lg border border-border p-4">
+              <p className="font-semibold text-fg">{r.name}</p>
+              <p className="text-xs text-fg-muted">{r.examples}</p>
+              {fields((id) => <VendorCell cell={r.cells[id]} />)}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
   );
 }
 
@@ -198,16 +232,16 @@ export function Compare() {
       <CompareTable ours={ours} />
       <CompareCards ours={ours} />
       <p className="mt-3 text-xs text-fg-muted" data-compare-note>
-        Each cell says what that vendor’s own public documentation said
+        Each cell names the product whose own public documentation it cites, as read
         {COMMON_READ_DATE ? (
           <>
             {' '}
-            when it was read on <time dateTime={COMMON_READ_DATE} className="whitespace-nowrap">{COMMON_READ_DATE}</time>
+            on <time dateTime={COMMON_READ_DATE} className="whitespace-nowrap">{COMMON_READ_DATE}</time>
           </>
         ) : (
           ' on the date shown'
         )}
-        , with a link; it is not a ranking. Where the docs are silent the cell says so.
+        ; Source opens what the docs say and the link. It is not a ranking. Where the docs are silent, the cell says Not documented.
       </p>
 
       <div className="mt-16 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">

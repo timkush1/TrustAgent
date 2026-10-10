@@ -276,10 +276,10 @@ describe('validate.mjs', () => {
       c.claims.find((x) => x.id === 'llm_full_audit_cost_per_1k').tokens_x_price = { input_tokens: 10, price_claim: 'hero_card_latency_ms' };
     });
     sb.edit('claims/compare.v1.json', (c) => {
-      c.rows[0].cells.inline = { value: 'yes', text: 'Runs as a hosted service.', source_url: null, as_of: null, reviewed: false };
-      c.rows[1].cells.self_hosted = { value: 'partial', text: '', source_url: 'https://example.com/docs', as_of: '2026-10-09', reviewed: false };
+      c.rows[0].cells.inline = { value: 'yes', vendor: 'Langfuse', text: 'Runs as a hosted service.', source_url: null, as_of: null, reviewed: false };
+      c.rows[1].cells.self_hosted = { value: 'partial', vendor: 'Guardrails AI', text: '', source_url: 'https://example.com/docs', as_of: '2026-10-09', reviewed: false };
       delete c.rows[2].cells.explanations;
-      c.rows[3].cells.extra = { value: 'unverified', text: '', source_url: null, as_of: null, reviewed: false };
+      c.rows[3].cells.extra = { value: 'unverified', vendor: null, text: '', source_url: null, as_of: null, reviewed: false };
     });
     const r = run(sb.root);
     assert.equal(r.code, 1, r.out);
@@ -292,10 +292,29 @@ describe('validate.mjs', () => {
     assert.match(r.out, /guardrails\.self_hosted: a partial cell says what the vendor documents \(text\)/);
     assert.match(r.out, /cloud_groundedness: no cell for column explanations/);
     assert.match(r.out, /small_model_evaluators: cell extra is not a column/);
+    // A row's examples name only the products its cells cite, and each cell names its vendor (D113).
+    const vend = sandbox();
+    vend.edit('claims/compare.v1.json', (c) => {
+      c.rows[0].examples = `${c.rows[0].examples}, Datadog`;
+      c.rows[1].cells.inline.vendor = 'Someone Else';
+      c.rows[2].cells.cost_class.vendor = null;
+      c.rows[3].cells.explanations.text = 'Not documented (as of 2026-10-10): scores only.';
+    });
+    const v = run(vend.root);
+    assert.equal(v.code, 1, v.out);
+    assert.match(v.out, /observability_judge: example Datadog is cited by no cell/);
+    assert.match(v.out, /guardrails\.inline: vendor Someone Else is not in the row's examples/);
+    assert.match(v.out, /cloud_groundedness\.cost_class: a varies cell names the vendor whose docs it cites \(vendor\)/);
+    assert.match(v.out, /small_model_evaluators\.explanations: the text says what the docs say; "Not documented" is the value not_documented/);
     // reviewed is a boolean (schema).
     const other = sandbox();
-    other.edit('claims/compare.v1.json', (c) => { c.rows[0].cells.cost_class.reviewed = 'no'; });
-    assert.match(run(other.root).out, /claims\/compare\.v1\.json: \/rows\/0\/cells\/cost_class\/reviewed must be boolean/);
+    other.edit('claims/compare.v1.json', (c) => {
+      c.rows[0].cells.cost_class.reviewed = 'no';
+      c.rows[3].cells.inline.value = 'maybe';
+    });
+    const o = run(other.root).out;
+    assert.match(o, /claims\/compare\.v1\.json: \/rows\/0\/cells\/cost_class\/reviewed must be boolean/);
+    assert.match(o, /\/rows\/3\/cells\/inline\/value must be equal to one of the allowed values/);
   });
 
   test('vendor, prompt and load fixtures keep their shapes (D108, D118, D122)', () => {

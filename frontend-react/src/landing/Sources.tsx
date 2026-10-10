@@ -107,7 +107,10 @@ export function Sources() {
         {compare.map((s) => (
           <li key={s.url} className="text-sm">
             <p className="text-fg">
-              <SourceLink url={s.url}>{sourceHost(s.url)}</SourceLink> <span className="text-fg-muted">· read {s.asOf}</span>
+              <SourceLink url={s.url}>{s.vendor} docs</SourceLink>{' '}
+              <span className="text-fg-muted">
+                · {sourceHost(s.url)} · read <span className="whitespace-nowrap">{s.asOf}</span>
+              </span>
             </p>
             <p className="mt-0.5 text-fg-muted">{s.cells.join('; ')}</p>
           </li>

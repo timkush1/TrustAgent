@@ -7,6 +7,7 @@
  */
 import { lazy } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import assumptions from '@contracts/pricing/assumptions.v1.json';
 import compareDoc from '@contracts/claims/compare.v1.json';
@@ -347,6 +348,26 @@ describe('write your own checks', () => {
     expect(COMMITMENTS.exampleAllowed.length).toBeGreaterThan(10);
     expect(COMMITMENTS.options.some((o) => o.risky)).toBe(true);
   });
+
+  it('shows policies.yaml as valid YAML whose lines never wrap and fit a 400 px phone', async () => {
+    await renderLanding();
+    const pre = document.querySelector('[data-route-snippet]') as HTMLElement;
+    // A wrapped YAML line reads as broken: the lines keep their breaks, inside a named, focusable
+    // region that scrolls sideways if a screen is narrower still.
+    expect(pre).toHaveClass('whitespace-pre');
+    expect(pre.className).not.toMatch(/pre-wrap|overflow-wrap/);
+    const region = pre.closest('[role="region"]');
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toHaveAccessibleName('policies.yaml (scrolls sideways)');
+    const text = pre.textContent ?? '';
+    // About 43 monospace characters at 12 px fit the card on a 400 px screen.
+    expect(Math.max(...text.split('\n').map((l) => l.length))).toBeLessThanOrEqual(42);
+    const doc = parseYaml(text) as { routes: { name: string; evaluators: { ref: string; params: { allowed_commitments: string } }[] }[] };
+    expect(doc.routes[0].name).toBe('support-bot');
+    expect(doc.routes[0].evaluators[0].ref).toBe(COMMITMENTS.ref);
+    // The folded lines join back into the example policy's own sentence.
+    expect(doc.routes[0].evaluators[0].params.allowed_commitments).toBe(COMMITMENTS.exampleAllowed.replace(/\s+/g, ' ').trim());
+  });
 });
 
 describe('what Jev was asked', () => {
@@ -422,16 +443,22 @@ describe('comparison', () => {
         expect(cell).toHaveTextContent(copy.compare.not_verified);
         continue;
       }
-      const link = within(cell).getByRole('link');
-      expect(link.getAttribute('href')).toMatch(/^https:\/\//);
-      expect(cell.querySelector('time')?.getAttribute('dateTime')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // The link and the date sit behind the cell's one control, Source.
+      const link = cell.querySelector('details a[href]');
+      expect(link?.getAttribute('href')).toMatch(/^https:\/\//);
+      expect(cell.querySelector('details time')?.getAttribute('dateTime')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
     for (const limit of copy.limits) expect(screen.getByText(limit)).toBeInTheDocument();
   });
 
   it('renders each cell from the contract, in the table and in the phone cards', async () => {
     await renderLanding();
-    const cards = screen.getByRole('list', { name: 'Comparison' });
+    // On a phone, TrustAgent's card comes first and the other kinds of tools sit behind one disclosure.
+    const others = document.querySelector('[data-compare-others]') as HTMLDetailsElement;
+    expect(others.tagName).toBe('DETAILS');
+    expect(others.open).toBe(false);
+    expect(others.querySelector('summary')).toHaveTextContent(`Compare with ${['no', 'one', 'two', 'three', 'four', 'five', 'six'][compareRows.length]} kinds of tools`);
+    const cards = others.querySelector('ul[aria-label="Comparison"]') as HTMLElement;
     // The cell's paragraph, matched on its whole text: its dates sit in their own spans.
     const cellText = (text: string) => (_: string, el: Element | null) => el?.tagName === 'P' && (el.textContent ?? '').includes(text);
     for (const row of compareRows) {
@@ -444,24 +471,56 @@ describe('comparison', () => {
     }
   });
 
-  it('leads each cell with Yes, No or Partly, keeps the docs’ words a click away, and says the read date once', async () => {
+  it('leads each cell with its answer and the product it cites, keeps the docs’ words a click away, and says the read date once', async () => {
     await renderLanding();
     const table = screen.getByRole('table');
-    for (const cell of table.querySelectorAll<HTMLElement>('[data-compare-cell]')) {
-      if (cell.dataset.compareCell === 'unverified') continue;
-      expect(cell.firstElementChild?.textContent).toMatch(/^(Yes|No|Partly|Varies)$/);
-      expect(cell.querySelector('details > summary')).toHaveTextContent('What its docs say');
+    const words = { yes: 'Yes', no: 'No', partial: 'Partly', varies: 'Varies', not_documented: 'Not documented' } as const;
+    const rows = within(table).getAllByRole('row').slice(2);
+    expect(rows).toHaveLength(compareRows.length);
+    rows.forEach((tr, i) => {
+      const row = compareRows[i];
+      for (const [col, data] of Object.entries(row.cells)) {
+        if (data.value === 'unverified') continue;
+        const cell = tr.querySelectorAll<HTMLElement>('[data-compare-cell]')[compareDoc.columns.findIndex((c) => c.id === col)];
+        // "Yes · Langfuse": the answer and whose docs say so, both visible, so one vendor's docs never
+        // speak for the others in its row.
+        expect(cell.querySelector('[data-compare-answer]')?.textContent, `${row.id}.${col}`).toBe(`${words[data.value]} · ${data.vendor}`);
+        expect(row.examples).toContain(data.vendor);
+        // One control per cell: Source opens the docs' words and the link.
+        expect(cell.querySelectorAll('summary')).toHaveLength(1);
+        expect(cell.querySelector('summary')).toHaveTextContent(`Source: what the ${data.vendor} docs say`);
+        expect(cell.querySelectorAll('a')).toHaveLength(1);
+      }
+    });
+    // A silent doc reads "Not documented", never "Varies".
+    const silent = compareRows.flatMap((r) => Object.values(r.cells)).filter((c) => c.value === 'not_documented');
+    expect(silent.length).toBeGreaterThan(0);
+    expect(table.querySelectorAll('[data-compare-cell="not_documented"]')).toHaveLength(silent.length);
+    for (const cell of table.querySelectorAll<HTMLElement>('[data-compare-cell="not_documented"]')) {
+      expect(cell.querySelector('[data-compare-answer]')?.textContent).toMatch(/^Not documented · /);
     }
+    // Every product a row names is cited by one of its cells.
+    for (const row of compareRows) {
+      const vendors = Object.values(row.cells).flatMap((c) => (c.vendor ? [c.vendor] : []));
+      for (const product of row.examples.split(',').map((x) => x.trim())) expect(vendors.some((v) => product.includes(v)), product).toBe(true);
+    }
+    // TrustAgent's row answers the same way first, and stands out by a bar, not a colour.
+    const ours = table.querySelector('[data-compare-row="trustagent"]') as HTMLElement;
+    const answers = [...ours.querySelectorAll('[data-compare-ours] > p:first-child')].map((p) => p.textContent);
+    expect(answers.filter((a) => a === 'Yes')).toHaveLength(4);
+    expect(ours.querySelector('th')).toHaveClass('border-l-4');
     const common = commonReadDate();
     const note = document.querySelector('[data-compare-note]') as HTMLElement;
+    // The note keeps its promise: a silent doc's cell says Not documented.
+    expect(note).toHaveTextContent('Where the docs are silent, the cell says Not documented.');
     if (common) {
-      expect(note).toHaveTextContent(`when it was read on ${common}`);
+      expect(note).toHaveTextContent(`as read on ${common}`);
       // No cell repeats it on screen (it stays in the link's name and for screen readers).
       for (const time of table.querySelectorAll('[data-compare-cell] time')) expect(time).toHaveClass('sr-only');
     }
     // Two read dates: each cell shows its own.
-    const rows = compareRows.map((r, i) => (i === 0 ? { ...r, cells: Object.fromEntries(Object.entries(r.cells).map(([k, c]) => [k, { ...c, as_of: '2026-01-02' }])) } : r));
-    expect(commonReadDate(rows)).toBeNull();
+    const redated = compareRows.map((r, i) => (i === 0 ? { ...r, cells: Object.fromEntries(Object.entries(r.cells).map(([k, c]) => [k, { ...c, as_of: '2026-01-02' }])) } : r));
+    expect(commonReadDate(redated)).toBeNull();
   });
 
   it('keeps every date on one line, in the cells and their sources', async () => {
@@ -593,15 +652,22 @@ describe('run it yourself', () => {
   it('shows compose_up, encrypted keys, build-or-pull and the one SDK line', async () => {
     await renderLanding();
     const section = document.getElementById('self-host') as HTMLElement;
-    // make up leads; the long no-make command wraps instead of being cut off.
     expect(within(section).getByText('make up')).toBeInTheDocument();
+    // make up leads; the long no-make command keeps its one line and scrolls sideways in a named,
+    // focusable region instead of breaking mid-flag or being cut off.
     const long = within(section).getByText('python3 scripts/configure.py --ensure && docker compose up -d --wait');
-    expect(long.closest('code')).toHaveAttribute('data-command-wrap');
-    expect(long.closest('code')).not.toHaveClass('truncate');
+    const code = long.closest('code') as HTMLElement;
+    expect(code).toHaveClass('whitespace-pre');
+    expect(code).not.toHaveClass('truncate');
+    expect(code.closest('[role="region"]')).toHaveAccessibleName('Command (scrolls sideways)');
+    expect(code.closest('[role="region"]')).toHaveAttribute('tabindex', '0');
     expect(section).toHaveTextContent('keys are encrypted at rest');
     expect(section).toHaveTextContent('Pulls the prebuilt images of a published release, otherwise builds them locally.');
     expect(oneLineSnippet()).toBe('client = OpenAI(base_url="http://localhost:8080/v1")');
-    expect(section.querySelector('[data-snippet]')).toHaveTextContent(oneLineSnippet());
+    const sdk = section.querySelector('[data-snippet]') as HTMLElement;
+    expect(sdk).toHaveTextContent(oneLineSnippet());
+    expect(sdk).toHaveClass('whitespace-pre');
+    expect(sdk.closest('[role="region"]')).toHaveAccessibleName('The line that changes (scrolls sideways)');
   });
 });
 

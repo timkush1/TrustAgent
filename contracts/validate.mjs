@@ -711,11 +711,25 @@ if (compare) {
   checkUnique(REL, compare.rows, 'id', 'row id');
   for (const r of compare.rows) {
     for (const c of cols) if (!(c in r.cells)) error(REL, `${r.id}: no cell for column ${c}`);
+    const vendors = new Set();
     for (const [c, cell] of Object.entries(r.cells)) {
       if (!cols.has(c)) error(REL, `${r.id}: cell ${c} is not a column`);
       if (cell.value === 'unverified') continue;
       if (!cell.source_url || !cell.as_of) error(REL, `${r.id}.${c}: a ${cell.value} cell needs the source_url it was read from and as_of, the date it was read`);
       if (!cell.text) error(REL, `${r.id}.${c}: a ${cell.value} cell says what the vendor documents (text)`);
+      if (!cell.vendor) error(REL, `${r.id}.${c}: a ${cell.value} cell names the vendor whose docs it cites (vendor)`);
+      else {
+        vendors.add(cell.vendor);
+        if (!r.examples.includes(cell.vendor)) error(REL, `${r.id}.${c}: vendor ${cell.vendor} is not in the row's examples (${r.examples})`);
+      }
+      if (/not documented \(as of|^(Not documented|As of)\b/i.test(cell.text)) {
+        error(REL, `${r.id}.${c}: the text says what the docs say; "Not documented" is the value not_documented, and the date is as_of`);
+      }
+    }
+    // A row names only the products its cells cite: one vendor's docs never speak for another.
+    const verified = Object.values(r.cells).some((cell) => cell.value !== 'unverified');
+    for (const product of verified ? r.examples.split(',').map((x) => x.trim()).filter(Boolean) : []) {
+      if (![...vendors].some((v) => product.includes(v))) error(REL, `${r.id}: example ${product} is cited by no cell (name only the products the cells cite)`);
     }
   }
 }

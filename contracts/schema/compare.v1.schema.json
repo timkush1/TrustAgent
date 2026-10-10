@@ -31,7 +31,7 @@
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
           "name": {"type": "string", "minLength": 1, "maxLength": 80},
-          "examples": {"type": "string", "minLength": 1, "maxLength": 160, "description": "The products this kind of tool is known by, as the vendors name them."},
+          "examples": {"type": "string", "minLength": 1, "maxLength": 160, "description": "The products the row's cells cite, comma-separated, as the vendors name them: never a product no cell cites."},
           "cells": {
             "type": "object",
             "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,47}$"},
@@ -46,13 +46,17 @@
     "Cell": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["value", "text", "source_url", "as_of", "reviewed"],
+      "required": ["value", "vendor", "text", "source_url", "as_of", "reviewed"],
       "properties": {
         "value": {
-          "enum": ["yes", "no", "partial", "varies", "unverified"],
-          "description": "no only where the vendor's documentation says so; otherwise varies with \"Not documented (as of …)\"."
+          "enum": ["yes", "no", "partial", "varies", "not_documented", "unverified"],
+          "description": "no only where the vendor's documentation says so (a fully managed service is not self-hosted); not_documented where it is silent on the question, shown as \"Not documented\"; varies only where the docs say it depends (on the judge model, the input size)."
         },
-        "text": {"type": "string", "maxLength": 300, "description": "What the vendor documents, in one plain sentence (empty while unverified)."},
+        "vendor": {
+          "anyOf": [{"type": "string", "minLength": 1, "maxLength": 40}, {"type": "null"}],
+          "description": "The product whose documentation the cell cites, shown next to its value (\"Yes · Langfuse\"), so a row of several products never credits one vendor's docs to the others. It appears in the row's examples, and every product the examples name is cited by a cell (validate.mjs). Null only while unverified."
+        },
+        "text": {"type": "string", "maxLength": 300, "description": "What the vendor documents, in one plain sentence without the vendor's name or the read date (both are shown beside it); empty while unverified."},
         "source_url": {"anyOf": [{"type": "string", "format": "uri", "pattern": "^https://"}, {"type": "null"}]},
         "as_of": {"anyOf": [{"type": "string", "format": "date"}, {"type": "null"}]},
         "reviewed": {"type": "boolean", "description": "The owner reviewed this cell (false until then)."}

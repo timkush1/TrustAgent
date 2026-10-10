@@ -5,7 +5,9 @@
 import compareDoc from '@contracts/claims/compare.v1.json';
 
 export interface CompareCell {
-  value: 'yes' | 'no' | 'partial' | 'varies' | 'unverified';
+  value: 'yes' | 'no' | 'partial' | 'varies' | 'not_documented' | 'unverified';
+  /** The product whose documentation the cell cites (null only while unverified). */
+  vendor: string | null;
   text: string;
   source_url: string | null;
   as_of: string | null;
@@ -39,14 +41,14 @@ export function sourceHost(url: string): string {
   }
 }
 
-/** Every source the comparison cites, once, with the cells it supports (the footer's group). */
-export function compareSources(): { url: string; asOf: string; cells: string[] }[] {
-  const byUrl = new Map<string, { url: string; asOf: string; cells: string[] }>();
+/** Every source the comparison cites, once, with the product whose docs it is and the cells it supports (the footer's group). */
+export function compareSources(): { url: string; vendor: string; asOf: string; cells: string[] }[] {
+  const byUrl = new Map<string, { url: string; vendor: string; asOf: string; cells: string[] }>();
   const label = new Map(compareColumns.map((c) => [c.id, c.label]));
   for (const r of compareRows) {
     for (const [col, cell] of Object.entries(r.cells)) {
-      if (cell.value === 'unverified' || !cell.source_url || !cell.as_of) continue;
-      const entry = byUrl.get(cell.source_url) ?? { url: cell.source_url, asOf: cell.as_of, cells: [] };
+      if (cell.value === 'unverified' || !cell.source_url || !cell.as_of || !cell.vendor) continue;
+      const entry = byUrl.get(cell.source_url) ?? { url: cell.source_url, vendor: cell.vendor, asOf: cell.as_of, cells: [] };
       if (cell.as_of > entry.asOf) entry.asOf = cell.as_of;
       entry.cells.push(`${r.name}: ${label.get(col) ?? col}`);
       byUrl.set(cell.source_url, entry);
