@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { seriousViolations } from '../stack/stack';
-import { MOCK_LABEL, requireStaticSite, useExternalGuard } from './site';
+import { MOCK_LABEL, recorded, requireStaticSite, useExternalGuard } from './site';
 
 const pack = JSON.parse(readFileSync(fileURLToPath(new URL('../../../contracts/demo/scenarios.v1.json', import.meta.url)), 'utf8')) as {
   scenarios: { id: string; title: string }[];
@@ -87,6 +87,17 @@ test.describe('landing', () => {
     await expect(panel.getByRole('radio', { name: scenarioTitle('refund-contradiction-flag') })).toBeChecked();
   });
 
+  test('"What Jev was asked" opens the same refund request on the replay', async ({ page }) => {
+    const { refundTraceId } = await recorded(page);
+    await page.goto('');
+    await settled(page);
+    const link = page.locator('[data-glassbox-link]');
+    await expect(link).toHaveText('See this request on the replay');
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/TrustAgent/app/traffic/${refundTraceId}$`));
+    await expect(page.getByRole('region', { name: 'Answer' }).locator('mark[data-v="contradicted"]')).toHaveText('60 days', { timeout: 30_000 });
+  });
+
   test('the Studio link answers 200 and opens the Studio', async ({ page }) => {
     await page.goto('');
     await settled(page);
@@ -163,6 +174,25 @@ test.describe('landing', () => {
     ] as const) {
       expect(await inFirstViewport(page, locator), `${name} is in the first viewport`).toBe(true);
     }
+  });
+
+  test('a link into a lower section lands on it once every lazy part is in', async ({ page }) => {
+    // The replay's "Run it yourself" opens #self-host; the calculator and the sections above it load
+    // after the first paint, so the scroll has to wait for them (on a phone they are tallest).
+    await page.setViewportSize({ width: 400, height: 860 });
+    await page.goto('#self-host');
+    await settled(page);
+    const heading = page.getByRole('heading', { name: 'On your laptop in one command.' });
+    // Below the sticky header, near the top: not left above the viewport or pushed below it.
+    await expect
+      .poll(
+        async () => {
+          const y = (await heading.boundingBox())?.y ?? -1;
+          return y >= 0 && y < 300;
+        },
+        { message: 'the #self-host heading is at the top of the viewport' },
+      )
+      .toBe(true);
   });
 
   test('shows the promise and "Try the demo" in the first phone viewport', async ({ page }) => {
