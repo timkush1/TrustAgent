@@ -7,6 +7,7 @@
 //	calibrate --evaluator groundedness@1 --in gate.jsonl --label-source public_dataset --dataset ragtruth:qa@<rev>
 //	calibrate --evaluator groundedness@1 --in labels.jsonl --snapshot typesafe/jev-1.13-20260917 --backend openrouter-decisions --label-source human --write
 //	calibrate --source api --api http://127.0.0.1:8080 --api-key-file admin.key --evaluator groundedness@1 --write
+//	calibrate --evaluator groundedness@1 --holdout holdout.jsonl --calibration config/calibration/<snapshot>.json --holdout-out holdout.json
 //
 // A file line is either a labelled risk {risk_raw, label, label_source?, snapshot?, backend?,
 // target?, dataset?} or a cmd/gate-eval output line, whose risk_raw, snapshot and fit context are
@@ -72,6 +73,7 @@ type options struct {
 	questionSet, out, api, apiKeyFile, route                                string
 	write, activate                                                         bool
 	timeout                                                                 time.Duration
+	holdout, calibration, holdoutOut                                        string
 }
 
 type multiFlag []string
@@ -111,6 +113,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fl.Var(&o.sources, "sources", "--source api: label sources, labels or labels,uniform_audit (default labels)")
 	fl.BoolVar(&o.activate, "activate", false, "--source api: also activate the fitted calibration on the gateway")
 	fl.DurationVar(&o.timeout, "timeout", 2*time.Minute, "--source api: request timeout")
+	fl.StringVar(&o.holdout, "holdout", "", "held-out labelled JSONL (- = stdin): measure --calibration on it instead of fitting (D206)")
+	fl.StringVar(&o.calibration, "calibration", "", "--holdout: the calibration file to check (config/calibration/<snapshot>.json)")
+	fl.StringVar(&o.holdoutOut, "holdout-out", "", "--holdout: write the report (trustagent.calibration-holdout/v1) to this file")
 	fl.Usage = func() {
 		fmt.Fprintln(stderr, "usage: calibrate --evaluator <id>@<v> [--in labels.jsonl | --source api] [--label-source s] [--snapshot s] [--write]")
 		fl.PrintDefaults()
@@ -122,6 +127,20 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		fl.Usage()
 		return exitUsage
 	}
+	if o.holdout != "" || o.calibration != "" || o.holdoutOut != "" {
+		if o.holdout == "" || o.calibration == "" || o.write || o.activate || o.source != "file" {
+			fmt.Fprintln(stderr, "calibrate: --holdout needs --calibration, and fits and writes nothing (no --write, --activate or --source api)")
+			return exitUsage
+		}
+		if err := holdout(&o, stdin, stdout); err != nil {
+			fmt.Fprintf(stderr, "calibrate: %v\n", err)
+			if errors.Is(err, errUsage) {
+				return exitUsage
+			}
+			return exitFailed
+		}
+		return exitOK
+	}
 
 	res, err := calibrate(ctx, &o, stdin, e)
 	if err != nil {
@@ -132,6 +151,15 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return exitFailed
 	}
 	fmt.Fprint(stdout, res.summary())
+	if len(res.nonVendor) > 0 {
+		if o.write {
+			fmt.Fprintf(stderr, "calibrate: refusing to write %s: the risks came from %s, not a vendor host (%s), so they are simulated, never model output (D203)\n",
+				res.path, strings.Join(res.nonVendor, ", "), strings.Join(vendorHosts(), ", "))
+			return exitFailed
+		}
+		fmt.Fprintf(stdout, "Dry run: nothing written. These risks came from %s, not a vendor host: --write refuses them (D203).\n", strings.Join(res.nonVendor, ", "))
+		return exitOK
+	}
 	if !o.write {
 		fmt.Fprintf(stdout, "Dry run: nothing written. Pass --write to write %s.\n", res.path)
 		return exitOK
@@ -162,6 +190,8 @@ type outcome struct {
 	warnings []string
 	path     string
 	replaced bool
+	// nonVendor are the decision hosts of the lines that are not vendor hosts (D203).
+	nonVendor []string
 }
 
 func calibrate(ctx context.Context, o *options, stdin io.Reader, e env) (*outcome, error) {
@@ -332,9 +362,14 @@ func fromFile(o *options, stdin io.Reader, spec *decision.Spec, e env, generated
 		return nil, err
 	}
 	warnings = append(warnings, fit.Warnings...)
+	nonVendor := nonVendorHosts(in.hosts, backend)
+	if len(nonVendor) > 0 {
+		warnings = append(warnings, fmt.Sprintf("the risks came from %s, not a vendor host (%s): a stand-in answered, so this fit is simulated and cannot be written (D203)",
+			strings.Join(nonVendor, ", "), strings.Join(vendorHosts(), ", ")))
+	}
 	return &outcome{
 		file:  decision.NewCalibrationFile(backend, snapshot, generatedBy, e.now()),
-		entry: entry, fit: fit, samples: in.samples, skipped: in.skipped, warnings: warnings,
+		entry: entry, fit: fit, samples: in.samples, skipped: in.skipped, warnings: warnings, nonVendor: nonVendor,
 	}, nil
 }
 
