@@ -361,41 +361,50 @@ SPEC §3.3 is the page list; these notes record how each page applies the rules 
   enabled; with it off (or a 409 `knowledge_disabled`) the page explains the add-on and shows the
   one command that turns it on.
 
-## 12b. Landing page and static build (P5 skeleton)
+## 12b. Landing page, static site and live checks
 
-SPEC §3.3 ("Static build"), §7.5 ("Static GitHub Pages demo") and §8.1 are normative.
+SPEC §3.3 ("Static build"), §7.5 ("Static GitHub Pages demo") and §8.1 are normative, with the
+lead decisions in `docs/v2/P5-PLAN.md` §1 (cited below as D-numbers).
 
 **Two entries.** `index.html` is the dashboard; `landing.html` (`src/landing/`) is the landing
 page. The landing entry imports no router, TanStack Query, Recharts, Base UI, `motion`, zustand
-or `components/ui/`: its pieces are plain elements over the shared tokens (`src/landing/ui.tsx`).
-`landing.test.tsx` walks its import graph to hold that line, and `npm run size` fails when its
-first load (HTML, JS, CSS; woff2 fonts listed, not counted) is over 110 KB gzip. Keep headroom:
-the cost calculator is lazy, and the refund example comes from a virtual module
-(`virtual:trustagent/scenario/<id>`, `vite.site.ts`) instead of the whole scenario pack.
+or `components/ui/`, and never `lib/openrouter`, `lib/gate` or `components/replay/live`: its
+pieces are plain elements over the shared tokens (`src/landing/ui.tsx`). `landing.test.tsx` walks
+its import graph to hold that line, and `npm run size` fails when its first load (HTML, JS, CSS;
+woff2 fonts listed, not counted) is over 110 KB gzip. New landing sections are lazy or paid for by
+trims; the refund example and the "What Jev was asked" panel come from virtual modules and a
+committed generated file, never from the whole scenario pack.
 
 | Build | `/` | Dashboard | Landing |
 |---|---|---|---|
 | Full (`npm run build`) | the dashboard | `/app/…` | `/welcome/` |
-| Static (`npm run build:static`, `VITE_APP_MODE=static`, `VITE_BASE_PATH` default `/TrustAgent/`) | the landing page | `/app/…` replaying `public/demo/recorded`, with `app/{overview,traffic,playground,evaluators/studio}/index.html` copies and `404.html` for other deep links | `/` |
+| Static (`npm run build:static`, `VITE_APP_MODE=static`, `VITE_BASE_PATH` default `/TrustAgent/`) | the landing page | `/app/…` replaying `demo/` (copied from `demo-data/`, see *Datasets*), with prerendered copies of the static pages, the `connect/callback/` page and `404.html` for other deep links | `/` |
 
 **Landing page rules.**
 
 - At most seven sections (`main > section`), one h1 (the contract tagline). Section eyebrows are
   sentence case, not caps.
-- Display type is the landing's only addition to §5: hero 72 px (52 below 1024 px, 40 below 640 px), section
-  titles 40 px (32 below 640 px), a 19 px lead. Body text stays 16/26. Weights stay 400/500/600.
+- Display type is the landing's only addition to §5: hero 72 px (52 below 1024 px, 40 below
+  640 px), section titles 40 px (32 below 640 px), a 19 px lead. Body text stays 16/26. Weights
+  stay 400/500/600.
 - **Every number** is a claim from `contracts/claims/value-claims.v1.json`, rendered by
   `ClaimValue` with its `LabelChip` (Measured, Estimate, Third-party, Vendor, Simulated; dashed
   border for Simulated). The chip links to the claim's entry in the footer's "Where every number on
-  this page comes from". A `measured` claim reads `contracts/claims/measured.json` and says "not
-  yet measured" until a benchmark run publishes it; it never borrows an estimate. Contract copy
-  with `{claim:id}` placeholders goes through `splitClaims`.
-- **Coming soon** is a dashed pill with an hourglass and words, never a control that does
-  nothing: the live in-browser playground (P5) and the static build's Studio (P5) are described, with
-  `make demo` as the real thing to do meanwhile.
-- The comparison table's other-product cells are dated `TODO: verify · 2026-09` placeholders
-  (`data-compare-todo`) until each is verified against the vendor's docs with a link (P6). No
-  guessed cells.
+  this page comes from". A claim with a caveat shows the caveat next to its chip. A `measured`
+  claim reads `contracts/claims/measured.json` and says "not yet measured" until a benchmark run
+  publishes it; it never borrows an estimate. Contract copy with `{claim:id}` placeholders goes
+  through `splitClaims`. Proxy overhead is never placed next to the fast check's latency.
+- **Live links only when they work.** "Try it live" links (`liveHref`) appear only when
+  `LIVE_CHECKS` is true; otherwise the same spot says "Run it yourself: `make demo`". No control
+  promises something the build cannot do.
+- **No invented results.** The Studio strip shows the steps (describe, draft, test on samples,
+  watch in shadow) with their cost labels, not results nobody produced. The "What Jev was asked"
+  panel reads the committed `glassbox.gen.json` (rebuilt by `compile()` from the refund example);
+  its latency and cost are the Simulated hero-card claims.
+- **The comparison table** reads `contracts/claims/compare.v1.json`. A cell says what the vendor
+  documents, with its link and date, never a ranking; an unverified cell reads "Not yet verified"
+  (`copy.compare.not_verified`), never "TODO". At 400 px the table becomes stacked cards, or stays
+  a named, focusable scroll region.
 - The hero card is an illustration of the scenario pack's refund example, labelled as such; its
   three beats ease in over 200 ms, and with reduced motion it shows the last beat at once and
   offers no "Play again" (nothing would move).
@@ -404,30 +413,77 @@ the cost calculator is lazy, and the refund example comes from a virtual module
 - 16 px side gutter below 640 px; nothing may scroll the page sideways at 400 px (wide tables
   scroll inside a named, focusable region).
 
-**Static build rules.**
+**Static site rules.**
 
+- **Datasets** (D110). `demo-data/simulated/` is the deterministic tape generated from the
+  zero-key demo's scripted scenarios; `demo-data/recorded/` holds only a `kind: recorded` export
+  from `make record-demo`. `VITE_DEMO_DATASET` picks one (`mock`, `recorded`, or `auto`: recorded
+  when it exists), and the build copies only that one to `demo/`. Every reader uses
+  `demo/manifest.json` and `demo/traces/…`.
+- **Say where a tape came from, and nothing more.** The simulated tape's copy says "generated from
+  the zero-key demo's scripted scenarios", never "recorded"; only a `recorded` manifest is
+  "Recorded {date} with {snapshot} and {judge}". The one banner says "simulated" once
+  (`copy.recording.*`). A mock recording is Simulated everywhere; `check_recording.py` and
+  `recording.ts` refuse a label that could pass it off as model output.
 - Data comes from `ReplayDataSource` (`src/data/replay/`): REST reads answer from the tape
   position, and the rest of the tape plays as WS v2 events in compressed time. Everything a
   recording cannot answer comes from `unavailableControlPlane`.
 - "Now" is the tape's clock while a recording replays (`useNow`, `replayClock`): relative times
   read "just now" and "1 min. ago" as rows arrive, like the Overview's counts, instead of the days
   since the recording was made. The exact time stays in the title.
-- Nav: Overview (recorded), Traffic (replay), Trace (the featured flagged answer), Playground,
-  Studio, and "Run it yourself" (the landing's `#self-host`). Policies, Settings, Knowledge, the
-  evaluator library and setup are hidden; a deep link to them shows why (`StaticRouteGuard`), not
-  an error whose Retry cannot work.
+- **Rates from a showcase are not traffic.** The Overview carries "Scripted showcase mix: rates are
+  not representative of real traffic" next to the counts, which keep the dataset label.
+- **The glass box on a replayed trace** is rebuilt in the browser by `compile()`. On a simulated
+  tape it says "Rebuilt in your browser · simulated recording" (a match would prove nothing,
+  because the tape was built the same way); on a recorded one it says whether the rebuild matches
+  the recorded request, and why not.
+- **First visit.** A dismissible four-step `ReplayGuide` (the caught answer, "60 days" against
+  "30 days", Show exact Jev request, Savings) starts from a link to the featured row and never
+  covers that row at 400 px. Its dismissal is the only thing the replay stores
+  (`localStorage` `ta.replay.guide`).
+- Nav: six items: Overview (recorded), Traffic (replay), Trace (the featured flagged answer),
+  Playground, Studio, and "Run it yourself" (the landing's `#self-host`). Policies, Settings,
+  Knowledge, Benchmarks, the evaluator library and setup are hidden; a deep link to them shows why
+  (`StaticRouteGuard`), not an error whose Retry cannot work.
 - The top bar shows the replay's status ("Replaying · 12 of 18 requests", "Replay again") in place
-  of the Health pill and demo badge; the one banner carries the recording's own label: "Replay of
-  simulated traffic." for a mock recording, "Replay of recorded traffic." for a real one. A mock
-  recording is Simulated everywhere; `check_recording.py` and `recording.ts` refuse a label that
-  could pass it off as model output.
-- Say where a tape came from, and nothing more. The committed mock tape is generated from the
-  scenario pack (`scripts/build-demo-recording.ts`), so its copy says "generated from the zero-key
-  demo's scripted scenarios", never "recorded on the demo stack" or "checked by the demo stack";
-  only a `recorded` manifest (Go `export-replay`, P5) is "recorded".
+  of the Health pill and demo badge.
+- **The static Studio** has templates, the editor, the test bench (a one-evaluator route through
+  `runGate`), the free threshold what-if, quick calibration on labels made in the page, and Draft
+  with AI through the browser key. Save becomes **Copy JSON** and **Download .json**. Watching,
+  dry-runs and activation are one "On your own stack" card with `make demo`, not disabled buttons.
 - Both pages carry the §7.5 CSP meta and `referrer: no-referrer`; no inline script (the theme
-  script is a file), no third-party request, fonts self-hosted. P5's browser keys live in
-  `sessionStorage` only.
+  script is a file), no third-party request, no `preconnect` or `dns-prefetch` to openrouter.ai
+  (it would contact it before consent), fonts self-hosted.
+
+**Live checks** (the static Playground's `#live` section, below the replayed examples; D99–D106).
+
+Live checks are the one place the static site calls a vendor, with the visitor's own key. Every
+state below is a designed state with words from `copy.playground_live.*`; none is a dead end.
+
+| State | What the visitor sees |
+|---|---|
+| No key | The consent text (where the key goes, what it costs [estimate], what is sent and to whom, how to delete the key) and the worst case "At most ≈ {max_spend} with these caps [estimate]"; **Connect OpenRouter** and **Paste a key instead** |
+| Connecting | The `connect/callback/` page: "Connecting your OpenRouter key…", then it returns to where the visitor started (Back never lands on the spent callback). Refused, expired (10 minutes), started in another tab, or a network failure each have their own sentence and lead back to Connect or Paste |
+| Connected | The chip "Live · {snapshot} · uncalibrated · your key", the counter "{n} of {max} calls to OpenRouter (checks and AI drafts)" and the running cost: Vendor when OpenRouter reports `usage.cost`, Estimate otherwise. **Forget key** is always one click away |
+| Result | The decision with the same outcome words as everywhere else, calibrated nowhere (raw scores); the deep audit is a note pointing to `make demo`, because it does not run in the browser. A live result is never compared with a scenario's expected outcome |
+| Retryable error | The error's own sentence (`errors.*`) and **Retry**. Nothing retries on its own |
+| Key refused (401) | The key is forgotten at once; "Paste a new key" |
+| No credits (402) | Its own screen with **Add credits**; it does not count against the cap |
+| Paused | After 10 refusals in a row: "OpenRouter keeps refusing these requests…", with Retry and Forget key |
+| Cap reached | The counter at its maximum and why; a check too large for the token cap says so before anything is sent |
+| Storage blocked | The key lives only until the visitor leaves; Connect is disabled with that reason, Paste still works |
+| Framed | Only "Open in its own tab": no key field, no exchange |
+| Not available in this build | "Live checks from the browser aren't available here. Run it yourself: `make demo`" |
+
+- The key lives in `sessionStorage` only, for at most 2 hours, and a restored tab (back-forward
+  cache) re-checks that before showing it. Live mode writes nothing to `localStorage`, cookies or
+  IndexedDB. Forget key also aborts requests in flight and says where to delete the key for good.
+- The courtesy caps are a courtesy, not a security boundary; the key's own credit limit is the
+  real one, and the copy says so.
+- Every link that leaves the app (other `github.io` paths included) opens with
+  `target=_blank rel="noopener noreferrer"`, so a new tab gets no copy of the session's storage.
+- Errors use the gateway's error taxonomy mapped to the live words, never the dashboard's server
+  banners. A request the browser blocked says that nothing was billed.
 
 ## 13. Accessibility
 
