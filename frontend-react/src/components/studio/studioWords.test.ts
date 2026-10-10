@@ -33,6 +33,7 @@ describe('studioJudgeText', () => {
     expect(studioJudgeText({ provider: 'openrouter', model: 'anthropic/claude-haiku-4.5' })).toBe('Uses anthropic/claude-haiku-4.5 (OpenRouter)');
     expect(studioJudgeText({ provider: 'openrouter', model: null })).toBe('Uses the AI judge (OpenRouter)');
     expect(studioJudgeText(null)).toBe('Uses the AI judge');
+    expect(studioJudgeText({ provider: null, model: 'anthropic/claude-haiku-4.5' })).toBe('Uses anthropic/claude-haiku-4.5');
   });
 
   it('calls the demo judge the mock model once, never "mock (Mock (simulated))"', () => {

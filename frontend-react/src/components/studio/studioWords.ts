@@ -222,17 +222,18 @@ export function studioSaveAndWatchLabel(route: string): string {
 }
 
 /**
- * Which model drafts, next to Draft with AI: "Uses <model> (<provider>)". The demo's mock judge
- * has no model of its own (its model id is its provider, "mock"), so it reads as the mock model the
- * draft then says it came from, never "Uses mock (Mock (simulated))".
+ * Which model drafts, next to Draft with AI: copy.studio.judge_line, "Uses <model> (<provider>)".
+ * The demo's mock judge has no model of its own (its model id is its provider, "mock"), so it reads
+ * as the mock model the draft then says it came from, never "Uses mock (Mock (simulated))".
+ * fillTemplate drops " (<provider>)" when the provider is unknown.
  */
 export function studioJudgeText(judge: { provider?: string | null; model?: string | null } | null): string {
+  const words = copy.studio.judge_line;
   const provider = judge?.provider || null;
-  if (provider === 'mock') return 'Uses the mock model (simulated)';
+  if (provider === 'mock') return words.mock;
   const model = judge?.model && judge.model !== provider ? judge.model : null;
   const by = provider ? judgeProviderLabel(provider) : null;
-  if (!model) return by ? `Uses the AI judge (${by})` : 'Uses the AI judge';
-  return by ? `Uses ${model} (${by})` : `Uses ${model}`;
+  return model ? fillTemplate(words.model, { model, provider: by }) : fillTemplate(words.unnamed, { provider: by });
 }
 
 /** The value label of a cost the server reported with its source (D82: a mock's cost is Simulated); null when unknown. */
