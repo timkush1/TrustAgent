@@ -22,6 +22,8 @@ IMAGE_CONTRACTS_DIR = Path("/app/contracts")
 
 # The S0 demo and e2e scenario pack (schema trustagent.scenarios/v1).
 DEMO_SCENARIOS = "demo/scenarios.v1.json"
+# The vendor-faults pack (D119): same schema, scenario ids unique across both packs.
+DEMO_FAULTS = "demo/faults.v1.json"
 
 # A contracts/ directory always carries its JSON schemas; checking for them keeps
 # the upward walk from stopping at an unrelated directory that happens to be

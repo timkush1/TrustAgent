@@ -110,7 +110,7 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
           <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
           <span>
             {copy.setup.step_connect.no_limit}{' '}
-            <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">
+            <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
               Open openrouter.ai/settings/keys
             </a>
           </span>
@@ -118,7 +118,7 @@ export function CredentialResult({ result, wasSimulated = false, onCheckAgain, c
       ) : null}
       {v?.status === 'no_credits' && onCheckAgain ? (
         <div className="flex flex-wrap items-center gap-2 pl-5.5">
-          <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noreferrer" className="text-sm font-medium text-fg underline underline-offset-2">
+          <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-fg underline underline-offset-2">
             {copy.setup.step_connect.prerequisite_link}
           </a>
           <Button size="sm" onClick={onCheckAgain} pending={checkingAgain}>

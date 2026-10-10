@@ -283,3 +283,46 @@ async def test_mock_fixtures_path_accepts_match_fixtures(tmp_path: Path) -> None
 async def test_mock_fixtures_path_must_exist(tmp_path: Path) -> None:
     with pytest.raises(OSError):
         await resolve(settings(llm_provider="mock", mock_fixtures_path=str(tmp_path / "missing")))
+
+
+def _contracts_with_faults(tmp_path: Path, faults: list) -> Path:
+    """A contracts directory holding the real main pack and a synthetic faults pack."""
+    repo_demo = Path(__file__).resolve().parents[3] / "contracts" / "demo"
+    demo = tmp_path / "contracts" / "demo"
+    demo.mkdir(parents=True)
+    main = (repo_demo / "scenarios.v1.json").read_text(encoding="utf-8")
+    (demo / "scenarios.v1.json").write_text(main, encoding="utf-8")
+    pack = {"schema": "trustagent.scenarios/v1", "scenarios": faults}
+    (demo / "faults.v1.json").write_text(json.dumps(pack), encoding="utf-8")
+    return demo.parent
+
+
+def _scripted_main_scenario() -> Dict[str, Any]:
+    repo_demo = Path(__file__).resolve().parents[3] / "contracts" / "demo"
+    pack = json.loads((repo_demo / "scenarios.v1.json").read_text(encoding="utf-8"))
+    return next(s for s in pack["scenarios"] if s.get("judge"))
+
+
+async def test_mock_also_loads_the_faults_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D146: a faults-pack scenario id reaches the engine as mock_scenario (D119), so the default
+    # mock judge knows both packs and never fails such an audit with mock_fixture_missing.
+    fault = dict(_scripted_main_scenario(), id="fault-under-test")
+    monkeypatch.setenv("TRUTHTABLE_CONTRACTS_DIR", str(_contracts_with_faults(tmp_path, [fault])))
+
+    selection = await resolve(settings(llm_provider="mock"))
+
+    scenarios = selection.provider.scenarios
+    assert "fault-under-test" in scenarios and scenarios["fault-under-test"].claims
+    assert "grounded-pass" in scenarios
+
+
+async def test_mock_refuses_a_scenario_id_in_both_packs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clash = _scripted_main_scenario()
+    monkeypatch.setenv("TRUTHTABLE_CONTRACTS_DIR", str(_contracts_with_faults(tmp_path, [clash])))
+
+    with pytest.raises(ValueError, match="in both"):
+        await resolve(settings(llm_provider="mock"))

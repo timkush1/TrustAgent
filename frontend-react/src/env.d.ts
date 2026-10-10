@@ -5,7 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_APP_MODE?: 'full' | 'static';
   readonly VITE_BASE_PATH?: string;
   readonly VITE_REPO_URL?: string;
-  /** Static build: which recording kind it may present (recorded | mock | auto). */
+  /** Static build: which dataset vite/plugins/dataset.ts copies (recorded | mock | auto; D110). The app reads `virtual:trustagent/dataset`. */
   readonly VITE_DEMO_DATASET?: string;
   /** Static build: recording time per real time of the replay (default 20). */
   readonly VITE_REPLAY_SPEED?: string;

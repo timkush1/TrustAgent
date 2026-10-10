@@ -126,7 +126,7 @@
             "type": "object",
             "additionalProperties": false,
             "minProperties": 1,
-            "description": "Vendor faults mock-upstream injects for this scenario (D119; faults pack only): decision for the decision-model endpoints, upstream for the LLM upstream. A value is a mock-upstream fault name (cmd/mock-upstream Faults), optionally counted: <name>@<n> faults the first n calls of one request (attempt and hedge share the count through X-Mock-Key) and answers normally after. trafficgen sends the decision fault as X-TrustAgent-Scenario fault:<value>, a forward-only value of the test-header seam (internal/jev/testheaders.go).",
+            "description": "Vendor faults mock-upstream injects for this scenario (D119; faults pack only): decision for the decision-model endpoints, upstream for the LLM upstream. A value is a mock-upstream fault name (cmd/mock-upstream Faults), optionally counted: <name>@<n> faults the first n calls of one request (attempt and hedge share the count through X-Mock-Key) and answers normally after. trafficgen sends the scenario id as X-TrustAgent-Scenario; in test mode the gateway forwards it to a local decision backend (internal/jev/testheaders.go), and mock-upstream answers the decision requests that name it with decision (counted per X-Mock-Key, the trace id) and the LLM request of its conversation with upstream (counted per scenario until _mock/reset). A test-mode client may instead send X-TrustAgent-Scenario fault:<spec> directly: a forward-only value, never stored.",
             "properties": {
               "decision": {"type": "string", "pattern": "^[a-z0-9_]+(@[0-9]+)?$"},
               "upstream": {"type": "string", "pattern": "^[a-z0-9_]+(@[0-9]+)?$"}

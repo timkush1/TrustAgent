@@ -192,7 +192,12 @@ export function PoliciesPage({ search = {} }: { search?: PoliciesSearch }) {
   const warnings = useMemo(() => {
     if (!state) return [];
     const ctx = { routes: draftRouteNames(state.yaml).slice(1), names };
-    return state.warnings.filter((w) => !(state.file.status === 'diverged' && isDivergedWarning(w))).map((w) => policyWarningView(w, ctx));
+    // warning_details lists the same warnings in the same order, each with its code (CO-5).
+    const coded = state.warning_details?.length === state.warnings.length ? state.warning_details : [];
+    return state.warnings
+      .map((raw, i) => ({ raw, coded: coded[i] }))
+      .filter(({ raw, coded: c }) => !(state.file.status === 'diverged' && isDivergedWarning(raw, c)))
+      .map(({ raw, coded: c }) => policyWarningView(raw, ctx, c));
   }, [state, names]);
 
   const draftModes = useMemo(() => (draft ? modesIn(draft.yaml) : new Map<string, PolicyMode>()), [draft]);

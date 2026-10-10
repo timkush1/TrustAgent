@@ -31,10 +31,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .config import Settings
-from .contracts import DEMO_SCENARIOS, contract_path
+from .contracts import DEMO_FAULTS, DEMO_SCENARIOS, contract_path
 from .providers.anthropic import DEFAULT_ANTHROPIC_MODEL
 from .providers.base import LLMProvider
-from .providers.mock import MockLLMProvider
+from .providers.mock import MockLLMProvider, load_scenario_pack
 from .providers.ollama import OllamaProvider
 from .providers.openai import DEFAULT_OPENAI_MODEL
 from .providers.registry import get_provider
@@ -130,15 +130,25 @@ def provider_key(settings: Settings, provider: str) -> str:
 
 def build_mock_judge(settings: Settings, model: str) -> MockLLMProvider:
     """
-    The mock judge: the contracts demo scenarios, or MOCK_FIXTURES_PATH when set
+    The mock judge: the contracts scenario packs, or MOCK_FIXTURES_PATH when set
     (a trustagent.scenarios/v1 pack, or a list of match fixtures).
 
+    The default loads both packs (D146): a faults-pack scenario id reaches the
+    engine as mock_scenario just like a main-pack one (D119), so its judge
+    fixtures must be known or the audit fails with mock_fixture_missing.
+
     Raises:
-        ContractsNotFoundError, OSError, ValueError: If the fixtures cannot be loaded.
+        ContractsNotFoundError, OSError, ValueError: If the fixtures cannot be loaded,
+            or a scenario id appears in both packs.
     """
     configured = settings.mock_fixtures_path.strip()
     if not configured:
-        return MockLLMProvider(model=model, scenarios_path=contract_path(DEMO_SCENARIOS))
+        scenarios = load_scenario_pack(contract_path(DEMO_SCENARIOS))
+        faults = load_scenario_pack(contract_path(DEMO_FAULTS))
+        shared = sorted(scenarios.keys() & faults.keys())
+        if shared:
+            raise ValueError(f"scenario ids in both {DEMO_SCENARIOS} and {DEMO_FAULTS}: {shared}")
+        return MockLLMProvider(model=model, scenarios={**scenarios, **faults})
     path = Path(configured).expanduser()
     with open(path, encoding="utf-8") as f:
         document = json.load(f)
@@ -209,7 +219,9 @@ async def resolve_judge(
     if configured == MOCK or (configured == AUTO and settings.demo_mode):
         model = judge_model(settings, MOCK)
         mock = build_mock_judge(settings, model)
-        source = settings.mock_fixtures_path.strip() or f"contracts {DEMO_SCENARIOS}"
+        source = (
+            settings.mock_fixtures_path.strip() or f"contracts {DEMO_SCENARIOS} and {DEMO_FAULTS}"
+        )
         log.info(f"Judge: mock (fixtures from {source}); audit verdicts are simulated")
         return JudgeSelection(mock, configured, MOCK, model, healthy=True)
 

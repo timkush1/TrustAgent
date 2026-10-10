@@ -135,6 +135,36 @@ export function pickCopy(all: Record<string, unknown>, paths: string[], missing:
   return out;
 }
 
+/** Written next to the manifest: every output chunk with the source modules it holds. */
+export const MODULE_MAP_FILE = '.vite/modules.json';
+
+/**
+ * Writes `.vite/modules.json` ({"<chunk file>": ["src/…", …]}), the module list the manifest lacks,
+ * so scripts/check-size.ts can prove that no live-mode module (lib/openrouter, lib/gate,
+ * components/replay/live) reaches the landing's first load or the app entry (D112).
+ */
+export function moduleMap(): Plugin {
+  let root = '';
+  return {
+    name: 'trustagent:module-map',
+    apply: 'build',
+    configResolved(resolved) {
+      root = resolved.root;
+    },
+    generateBundle(_options, bundle) {
+      const map: Record<string, string[]> = {};
+      for (const out of Object.values(bundle)) {
+        if (out.type !== 'chunk') continue;
+        map[out.fileName] = out.moduleIds
+          .filter((id) => !id.startsWith('\0'))
+          .map((id) => (id.startsWith(root) ? id.slice(root.length + 1) : id).split(sep).join('/'))
+          .sort();
+      }
+      this.emitFile({ type: 'asset', fileName: MODULE_MAP_FILE, source: `${JSON.stringify(map, null, 1)}\n` });
+    },
+  };
+}
+
 export function sitePages(mode: AppMode): Plugin[] {
   let config: ResolvedConfig;
   const paths = pagePaths(mode);
