@@ -53,6 +53,9 @@ gen-evaluator-validator: ## Regenerate src/lib/evaluator/evaluatorValidator.gen.
 gen-evaluator-validator-check: ## Fail when src/lib/evaluator/evaluatorValidator.gen.ts is stale
 	cd frontend-react && node scripts/gen-evaluator-validator.ts --check
 
+gen-landing-glassbox-check: ## Fail when src/landing/glassbox.gen.json is stale (D116)
+	cd frontend-react && node --import ./scripts/lib/aliasHooks.ts scripts/gen-landing-glassbox.ts --check
+
 gen-api-schema: ## Regenerate contracts/schema/api.v1.schema.json from src/types/api.ts (commit the result)
 	cd contracts/tools/api-schema && (test -d node_modules || npm ci --no-audit --no-fund) && node gen-api-schema.mjs
 
@@ -103,10 +106,11 @@ test-e2e-static: ## Build the static site and run the Playwright static specs ag
 # `make check` runs eslint (lint) and vitest (test) already; this runs everything else CI does, one
 # step after another even under `make -j`: `npm run build` and `build:static` both write dist/, the
 # size budget reads the static build, and one build at a time suits a small machine.
-check-web-ci: ## CI's other web gates in order: generated types, policy and evaluator validators, api.v1 schema, tsc -b, build, build-static, size, recording
+check-web-ci: ## CI's other web gates in order: generated types, policy and evaluator validators, landing glass box, api.v1 schema, tsc -b, build, build-static, size, recording
 	@$(MAKE) --no-print-directory gen-types-check
 	@$(MAKE) --no-print-directory gen-policy-validator-check
 	@$(MAKE) --no-print-directory gen-evaluator-validator-check
+	@$(MAKE) --no-print-directory gen-landing-glassbox-check
 	@$(MAKE) --no-print-directory gen-api-schema-check
 	cd frontend-react && npx tsc -b
 	cd frontend-react && npm run build

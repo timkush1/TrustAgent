@@ -86,6 +86,9 @@ jobs:
       - name: Record stack configuration (proxy -check-config, test mode, fake keys)
         run: make record-check-config
 
+      - name: Workflow lint (actionlint, zizmor)
+        run: make lint-workflows
+
   e2e:
     name: E2E (compose stack)
     runs-on: ubuntu-latest
@@ -222,8 +225,10 @@ jobs:
 
       # Real HTTP paths: the compatible fast-check backend and both LLM upstreams
       # on mock-upstream, traces written synchronously (docker-compose.e2e.yml).
-      - name: E2E stack and its p3 scenarios
-        run: make e2e-up E2E_BUILD= && make e2e-scenarios E2E_PHASE=p3 && make e2e-down
+      # The scenarios run at trafficgen's default phase (p5); the vendor-fault pack follows them,
+      # since its last scenario (F8, credits) leaves the decision model in its auth cooldown.
+      - name: E2E stack, its scenarios and the vendor faults
+        run: make e2e-up E2E_BUILD= && make e2e-scenarios && make e2e-faults && make e2e-down
 
       # A fresh install (docker-compose.onboarding.yml): no admin key and no
       # fast-check key. The onboarding spec claims the one-time setup link,

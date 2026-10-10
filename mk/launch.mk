@@ -42,3 +42,6 @@ screenshots: ## Capture the dashboard pages in both themes into docs/images/v2/{
 test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py) and the list of launch specs (no browser, no build)
 	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_make_hero_gif.py
 	cd "$(LAUNCH_WEB)" && npx playwright test --list --project=launch
+
+# ---------- Aggregate hook (see the root Makefile; P5 I-2) ----------
+check: check-claims

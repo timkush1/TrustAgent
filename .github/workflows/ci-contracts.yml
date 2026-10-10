@@ -62,6 +62,13 @@ jobs:
       - name: Configuration docs match the key registry (gen_config_docs --check)
         run: python3 scripts/gen_config_docs.py --check
 
+      # Every figure in README.md and docs/ sits behind a claim marker with its label (D128).
+      - name: Claims in README and docs (check-claims)
+        run: node scripts/check-claims.mjs
+
+      - name: VERSION and its mirrors agree (check_version)
+        run: python3 scripts/check_version.py
+
       # contracts/schema/api.v1.schema.json is generated from frontend-react/src/types/api.ts
       # (contracts/tools/api-schema, pinned generator): fail when the two drift apart.
       - name: api.v1 schema matches src/types/api.ts (gen-api-schema-check)

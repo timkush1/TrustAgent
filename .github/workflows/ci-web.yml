@@ -55,6 +55,9 @@ jobs:
       - name: Evaluator validator is current (gen-evaluator-validator-check)
         run: node scripts/gen-evaluator-validator.ts --check
 
+      - name: Landing glass box is current (gen-landing-glassbox-check, D116)
+        run: node --import ./scripts/lib/aliasHooks.ts scripts/gen-landing-glassbox.ts --check
+
       - name: eslint
         run: npm run lint
 
@@ -69,7 +72,10 @@ jobs:
 
       # The static GitHub Pages site (SPEC §3.3, §7.5): the landing page is its own entry with a
       # blocking 110 KB gzip budget. The vitest run above already fails on a stale demo recording.
+      # The simulated tape, named: the Pages build picks its dataset explicitly (D110).
       - name: Static site build
+        env:
+          VITE_DEMO_DATASET: mock
         run: npm run build:static
 
       - name: Landing page size budget

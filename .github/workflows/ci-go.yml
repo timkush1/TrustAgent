@@ -89,6 +89,18 @@ jobs:
         working-directory: backend-go
         run: go tool cover -func=coverage.out | tail -n 1
 
+      # Every Go benchmark once (-benchtime 1x): they compile and run (P5 I-2).
+      - name: Go benchmarks (smoke)
+        run: make bench-go-smoke
+
+      # The Tier-0 budget guard (D120): timings mean nothing under -race, so it runs on its own,
+      # with the shared-runner budget that CI=true selects.
+      - name: Tier-0 budget (TestTier0Budget, no -race)
+        working-directory: backend-go
+        env:
+          CI: 'true'
+        run: go test -count=1 -run '^TestTier0Budget$' -v ./internal/gate/
+
       # Informational until the findings are triaged (SPEC §3.4): reported in
       # the log, never fails the job. Version-pinned like gosec.
       - name: govulncheck (informational)

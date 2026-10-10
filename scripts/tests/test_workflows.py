@@ -324,10 +324,11 @@ class EveryWorkflowTest(unittest.TestCase):
         install = RELEASE_MK.split("\nworkflow-lint-install:", 1)[1].split("\n\n", 1)[0]
         self.assertIn('"zizmor==$(ZIZMOR_VERSION)"', install)
         self.assertIn('"shellcheck-py==$(SHELLCHECK_PY_VERSION)"', install)
-        # The DX scripts job proves the record stack's configuration. Running make lint-workflows
-        # there is a turn-on line the lead adds at integration, so it is not asserted here.
+        # The DX scripts job proves the record stack's configuration and lints every workflow
+        # (the lead's I-2 turn-on line).
         scripts = jobs(read("ci-e2e.yml"))["scripts"]
         self.assertIn("run: make record-check-config", scripts)
+        self.assertIn("run: make lint-workflows", scripts)
         # Every accepted zizmor finding says why, next to it.
         for name in ALL:
             for line in read(name).splitlines():
