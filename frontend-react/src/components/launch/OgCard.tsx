@@ -138,7 +138,7 @@ export default function OgCard() {
           {copy.product.name}
         </p>
         <div className="space-y-6">
-          <h1 className="text-[3.5rem] leading-[1.05] font-semibold tracking-[-0.04em] text-fg">{copy.product.tagline}</h1>
+          <h1 className="text-[3.5rem] leading-[1.05] font-semibold tracking-[-0.04em] text-balance text-fg">{copy.product.tagline}</h1>
           <p className="text-xl text-fg-muted">Open-source hallucination gateway for LLM apps</p>
         </div>
         {kind === 'mock' ? (
