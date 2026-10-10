@@ -110,7 +110,26 @@ bench-go: ## Run the Go benchmarks (-count 5) into backend-go/bench/<git sha>.tx
 bench-go-smoke: ## Run every Go benchmark once (-benchtime 1x): they compile and run
 	cd backend-go && go test -run '^$$' -bench . -benchtime 1x $(BENCH_PKGS)
 
+# Tier-0 figures for GATEWAY.md (D120, D167): five counts of the Tier-0 benchmarks at a clean
+# commit, kept with that commit, the date, the Go version and the CPU in
+# docs/benchmarks/tier0/<sha>.txt; scripts/tier0_report.py then writes the GATEWAY.md block.
+TIER0_BENCH ?= BenchmarkDetect$$|BenchmarkGatePreJev$$
+
+bench-tier0-publish: ## Run the Tier-0 benchmarks (-count 5) at a clean commit and publish them in docs/GATEWAY.md
+	@test -z "$$(git status --porcelain -- backend-go contracts)" || { \
+		echo "bench-tier0-publish: commit backend-go/ and contracts/ first: the figures name the commit"; exit 2; }
+	@mkdir -p docs/benchmarks/tier0
+	@sha=$$(git rev-parse --short HEAD); out=docs/benchmarks/tier0/$$sha.txt; \
+	{ echo "commit: $$sha"; echo "date: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "go: $$(go version | cut -d' ' -f3)"; \
+	  go -C backend-go test -run '^$$' -bench '$(TIER0_BENCH)' -benchmem -count 5 ./internal/gate/; } > $$out.tmp \
+	  && mv $$out.tmp $$out && echo "bench-tier0-publish: wrote $$out" || { rm -f $$out.tmp; exit 1; }
+	$(PYTHON) scripts/tier0_report.py --gateway-md
+
+bench-tier0-report: ## Check the GATEWAY.md Tier-0 block against the newest published run (scripts/tier0_report.py)
+	$(PYTHON) scripts/tier0_report.py --gateway-md --check
+
 # ---------- Aggregate hooks (see the root Makefile) ----------
+check: bench-tier0-report
 install: install-go
 proto: proto-go
 test: GO_TEST_FLAGS :=

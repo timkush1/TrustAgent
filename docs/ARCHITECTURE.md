@@ -38,7 +38,7 @@ Every answer that passes through the gateway is checked in tiers, cheapest first
 
 | Tier | What | Where | Cost and time |
 |---|---|---|---|
-| **Tier-0 detectors** | Deterministic checks of the answer against the evidence the request carries: numbers, dates, URLs, quotes and citations not in the evidence, secret patterns, system-prompt leaks | Go, in process | $0; budget under 2 ms ([GATEWAY.md](GATEWAY.md#tier-0-the-instant-checks)) |
+| **Tier-0 detectors** | Deterministic checks of the answer against the evidence the request carries: numbers, dates, URLs, quotes and citations not in the evidence, secret patterns, system-prompt leaks | Go, in process | $0; budget under 2 ms for up to 32k tokens of documents, measured in [GATEWAY.md](GATEWAY.md#tier-0-the-instant-checks) |
 | **Tier-1 fast check** | Every evaluator of the route asked as a question in **one** Jev call, behind a vendor-neutral `DecisionModel` (OpenRouter, TypeSafe, a compatible gateway, mock, off) | Go → vendor over HTTPS | <!-- claim:fast_check_cost_per_check --> ~$0.0002 per check [estimate]; <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. Latency depends on region and load; independent reports range from about 0.3 s to 0.9 s median. |
 | **Policy** | The route's mode turns detector findings and evaluator levels into an action: observe, pass, flag (headers), block, or fallback (a second upstream, re-checked) | Go | — |
 | **Tier-2 deep audit** | Claim-by-claim verification by an LLM judge, asynchronous, for flagged answers plus small pass and uniform samples | Python engine | <!-- claim:llm_full_audit_cost_per_1k --> ~$35 / 1,000 [estimate] audited answers |

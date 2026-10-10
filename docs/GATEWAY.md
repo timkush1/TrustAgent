@@ -586,13 +586,18 @@ golden vectors in `contracts/vectors/detectors/`.
   answer, so the dashboard marks it inline.
 - **They run on every gated answer**, sampled or not, and cost nothing.
 
-**The budget.** Tier-0 p50 < 2 ms for ≤ 32k-token evidence and ≤ 1k-token
-answers, on the stated machine. `TestTier0Budget` (in `internal/gate`) guards it
-with headroom on 8k-token evidence and a 1k-token answer; `FuzzDetect` checks
-that no input makes a detector panic or return a span outside the answer.
-`make bench-go` runs the benchmarks five times into `backend-go/bench/<sha>.txt`
-(compare two revisions with `benchstat`), and `make bench-go-smoke` runs each
-once.
+**The budget.** Tier-0 p50 < 2 ms for ≤ 32k-token evidence and a ≤ 1k-token
+answer, on the stated machine; an answer dense with dates, links and quotations
+takes longer and is reported, not guarded. The detectors read the evidence only
+when the answer holds something to check against it, and scan it in short runs
+(D161, D167). `TestTier0Budget` (in `internal/gate`) guards 8k- and 32k-token
+evidence with a 1k-token answer at < 4 ms (< 12 ms on a shared CI runner);
+`FuzzDetect` checks that no input makes a detector panic or return a span
+outside the answer. `make bench-go` runs every benchmark five times into
+`backend-go/bench/<sha>.txt` (compare two revisions with `benchstat`),
+`make bench-go-smoke` runs each once, and `make bench-tier0-publish` runs the
+Tier-0 benchmarks at a clean commit, keeps the run in `docs/benchmarks/tier0/`
+and writes the figures below.
 
 <!-- tier0:start -->
 No Tier-0 benchmark figures are published yet. Published figures are labelled
