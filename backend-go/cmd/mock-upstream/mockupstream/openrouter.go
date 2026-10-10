@@ -46,7 +46,8 @@ func (s *Server) decisions(env envelope, openRouter bool) http.HandlerFunc {
 		body, _ := io.ReadAll(r.Body)
 		var req decisionRequest
 		decodeErr := json.Unmarshal(body, &req)
-		if s.writeFault(w, r, s.fault(r, req.SessionID), env) {
+		sc := s.scenarios[scenarioID(r)]
+		if s.writeFault(w, r, s.fault(r, req.SessionID, sc.decisionFault()), env) {
 			return
 		}
 		if msg := keyProblem(bearer(r)); msg.status != 0 {
@@ -69,7 +70,7 @@ func (s *Server) decisions(env envelope, openRouter bool) http.HandlerFunc {
 		if !delay(r, s.cfg.JevLatency) {
 			return
 		}
-		scripted := scenarioAnswers(s.scenarios[scenarioID(r)], req.State)
+		scripted := scenarioAnswers(sc, req.State)
 		answers := make(map[string]json.RawMessage, len(req.Questions))
 		for qid, q := range req.Questions {
 			if a := scripted[qid]; len(a) > 0 && string(a) != "null" {
@@ -277,7 +278,7 @@ func round2(x float64) float64 { return math.Round(x*100) / 100 }
 
 // handleKey serves GET /api/v1/key.
 func (s *Server) handleKey(w http.ResponseWriter, r *http.Request) {
-	if s.writeFault(w, r, s.fault(r, ""), envOpenRouter) {
+	if s.writeFault(w, r, s.fault(r, "", ""), envOpenRouter) {
 		return
 	}
 	key := bearer(r)
@@ -353,7 +354,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 // handleAuthKeys serves POST /api/v1/auth/keys: it exchanges a code issued by /auth for a key
 // when the code_verifier matches the challenge. Codes are single-use.
 func (s *Server) handleAuthKeys(w http.ResponseWriter, r *http.Request) {
-	if s.writeFault(w, r, s.fault(r, ""), envOpenRouter) {
+	if s.writeFault(w, r, s.fault(r, "", ""), envOpenRouter) {
 		return
 	}
 	var req struct {

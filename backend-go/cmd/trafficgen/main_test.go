@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/truthtable/contracts"
+
 	"github.com/truthtable/backend-go/internal/decision"
 )
 
@@ -556,6 +558,8 @@ func TestUsageErrors(t *testing.T) {
 		{"--interval", "0s", "--loop"},
 		{"extra"},
 		{"--file", "/does/not/exist.json"},
+		{"--pack", "bogus"},
+		{"--pack", "faults", "--file", "pack.json"}, // a file replaces the embedded pack
 	} {
 		if code, out := runTG(t, args...); code != exitUsage {
 			t.Errorf("%v: exit %d:\n%s", args, code, out)
@@ -602,6 +606,54 @@ func TestSelectScenarios(t *testing.T) {
 	}
 	if count(in("generated")) < 2 || count(in("p3")) < 7 || len(all) < 14+3 {
 		t.Errorf("the pack shrank: %d scenarios", len(all))
+	}
+}
+
+// TestPacks: --pack faults reads the embedded vendor-fault pack (D119), the main pack stays the
+// default, and the two never share a scenario: the main pack's sets never select a fault
+// scenario, and every faults-pack scenario is in set faults with a mock_faults to send.
+func TestPacks(t *testing.T) {
+	main, err := loadPack(packMain, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def, err := loadScenarios(""); err != nil || len(def) != len(main) {
+		t.Fatalf("the default pack is the main pack: %d scenarios, %v", len(def), err)
+	}
+	faults, err := loadPack(packFaults, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := contracts.FS.ReadFile("demo/faults.v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		Scenarios []struct {
+			ID         string          `json:"id"`
+			MockFaults json.RawMessage `json:"mock_faults"`
+		} `json:"scenarios"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(faults) != len(raw.Scenarios) {
+		t.Fatalf("--pack faults read %d scenarios, the file holds %d", len(faults), len(raw.Scenarios))
+	}
+	ids := map[string]bool{}
+	for _, s := range main {
+		ids[s.ID] = true
+		if slices.Contains(s.Sets, "faults") {
+			t.Errorf("%s: the main pack never holds a fault scenario", s.ID)
+		}
+	}
+	for i, s := range faults {
+		if ids[s.ID] || !slices.Contains(s.Sets, "faults") || len(raw.Scenarios[i].MockFaults) == 0 {
+			t.Errorf("%s: a faults-pack scenario has an id of its own, set faults and mock_faults", s.ID)
+		}
+	}
+	if _, err := loadPack("bogus", ""); err == nil {
+		t.Error("an unknown pack is refused")
 	}
 }
 

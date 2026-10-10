@@ -176,6 +176,16 @@ fault scenario, so the demo, the Playground examples and the recording never see
 across both packs, and at most 4 scenarios in a row fault the decision model, so a pack run never opens
 the breaker. It starts empty; the GO stream fills it.
 
+How a fault reaches its endpoint: `trafficgen --pack faults` sends each scenario id as
+`X-TrustAgent-Scenario`, and the gateway in test mode forwards it to a local decision backend
+(`internal/jev/testheaders.go`), so mock-upstream answers the decision requests that name the scenario
+with `mock_faults.decision`, counted per call through `X-Mock-Key` (the trace id). The gateway strips
+`X-TrustAgent-*` before the LLM upstream, so mock-upstream finds the LLM request by its conversation and
+answers it with `mock_faults.upstream`, counted per scenario until `_mock/reset`; a scenario that faults
+its upstream therefore has a conversation of its own, and the gateway's fallback request is never faulted.
+Outside the packs, a test-mode client may send `X-TrustAgent-Scenario: fault:<spec>` (the load test's
+`fault:hang@1`): the gateway forwards that value to the decision backend but never stores it.
+
 | Field | Meaning and consumer |
 |---|---|
 | `id` | Sent by `trafficgen` as `X-TrustAgent-Scenario` (honoured only with `TRUTHTABLE_TEST_MODE`). The mock decision backend (and mock-upstream's decision endpoints) look up `mock_answers` by it, and Go passes it on as `AuditOptions.mock_scenario` for the mock judge. |

@@ -123,9 +123,15 @@ func (h *Handler) newExchange(c *gin.Context, format, path string, req *llmapi.C
 	if id := c.GetString(clientRequestIDKey); id != "" {
 		t.ClientRequestID = &id
 	}
+	// In test mode X-TrustAgent-Scenario names a pack scenario, which the trace keeps, or carries a
+	// forward-only fault:<spec> for the decision model, which it never keeps (D119).
+	var faultSpec string
 	if h.testMode {
-		if s := c.GetHeader(HeaderScenario); scenarioID.MatchString(s) {
+		switch s := c.GetHeader(HeaderScenario); {
+		case scenarioID.MatchString(s):
 			t.Scenario = s
+		case faultScenario.MatchString(s):
+			faultSpec = s
 		}
 	}
 	if req != nil && req.TestResponse != nil {
@@ -136,7 +142,7 @@ func (h *Handler) newExchange(c *gin.Context, format, path string, req *llmapi.C
 		t.Source = gate.SourceTrafficgen
 	}
 
-	x := &gate.Exchange{Trace: t, Policy: pol, Route: route, Request: req}
+	x := &gate.Exchange{Trace: t, Policy: pol, Route: route, Request: req, FaultScenario: faultSpec}
 	if req != nil {
 		settings := route.Evidence.Extraction()
 		ev, err := evidence.Extract(req, &settings)

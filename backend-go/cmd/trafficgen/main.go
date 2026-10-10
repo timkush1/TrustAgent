@@ -20,8 +20,13 @@
 // checks the outcome, the audit verdict, the claim verdicts and, for observe routes (Status:
 // deferred), the stored decision. Any mismatch is printed and the exit status is 1.
 //
+// --pack faults sends the vendor-fault scenarios of contracts/demo/faults.v1.json (D119) instead:
+// mock-upstream, the e2e stack's decision backend and LLM upstream, answers each with the fault its
+// mock_faults names.
+//
 //	trafficgen --once --expect --scenarios s0
-//	trafficgen --once --expect --scenarios e2e --exclude generated --upstream all
+//	trafficgen --once --expect --scenarios e2e --upstream all
+//	trafficgen --once --expect --pack faults --scenarios faults --upstream all
 //	trafficgen --loop --scenarios demo --base-url http://proxy:8080 --interval 20s
 package main
 
@@ -66,6 +71,7 @@ type options struct {
 	exclude      string
 	phase        string
 	upstream     string
+	pack         string
 	file         string
 	once, loop   bool
 	expect       bool
@@ -98,7 +104,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.StringVar(&o.exclude, "exclude", "", "comma-separated scenario sets or ids to leave out")
 	fl.StringVar(&o.phase, "phase", defaultPhase, "gateway phase the target implements ("+strings.Join(phases, ", ")+"); scenarios tagged with a later phase are skipped")
 	fl.StringVar(&o.upstream, "upstream", upstreamNone, "scenarios whose answer comes from the gateway's upstream instead of test_response: none, generated (recording) or all (e2e with mock-upstream)")
-	fl.StringVar(&o.file, "file", "", "scenario pack to read (default: the embedded contracts/demo/scenarios.v1.json)")
+	fl.StringVar(&o.pack, "pack", packMain, "embedded scenario pack: main (contracts/demo/scenarios.v1.json) or faults (contracts/demo/faults.v1.json, vendor faults on mock-upstream)")
+	fl.StringVar(&o.file, "file", "", "scenario pack file to read instead of an embedded --pack")
 	fl.BoolVar(&o.once, "once", false, "send the scenarios once and exit (the default)")
 	fl.BoolVar(&o.loop, "loop", false, "send the scenarios every --interval until stopped")
 	fl.BoolVar(&o.expect, "expect", false, "check the gate headers and the deep audit against each scenario's expect")
@@ -107,15 +114,17 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
 	fl.Usage = func() {
-		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--file pack.json]")
+		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip]] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--pack main | --file pack.json]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
 	}
 	if err := fl.Parse(args); err != nil {
 		return exitUsage
 	}
+	_, knownPack := packFiles[o.pack]
 	if fl.NArg() > 0 || (o.once && o.loop) || o.interval <= 0 || o.auditTimeout <= 0 || o.timeout <= 0 ||
-		!slices.Contains(phases, o.phase) || !slices.Contains([]string{upstreamNone, upstreamGenerated, upstreamAll}, o.upstream) {
+		!slices.Contains(phases, o.phase) || !slices.Contains([]string{upstreamNone, upstreamGenerated, upstreamAll}, o.upstream) ||
+		!knownPack || (o.file != "" && o.pack != packMain) {
 		fl.Usage()
 		return exitUsage
 	}
@@ -127,7 +136,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	o.baseURL = strings.TrimRight(o.baseURL, "/")
 	o.key = strings.TrimSpace(getenv(keyEnv))
 
-	all, err := loadScenarios(o.file)
+	all, err := loadPack(o.pack, o.file)
 	if err != nil {
 		fmt.Fprintln(stderr, "trafficgen:", err)
 		return exitUsage
