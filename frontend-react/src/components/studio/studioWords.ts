@@ -8,7 +8,7 @@ import { CircleCheck, CircleDashed, CircleX, Flag, MinusCircle, type LucideIcon 
 import type { Tone } from '@/domain/contracts';
 import { formatCount, formatRisk, formatUsd } from '@/domain/format';
 import { isApiError } from '@/data/errors';
-import { copy, fillTemplate, humanizeId, levelWord, statusReason } from '@/domain/presentation';
+import { copy, fillTemplate, humanizeId, judgeProviderLabel, levelWord, statusReason } from '@/domain/presentation';
 import { liveErrorView, openRouterError } from '@/lib/openrouter/errors';
 import { OPENROUTER_ERROR_KINDS, type OpenRouterErrorKind } from '@/lib/openrouter/types';
 import type { CostRecord, DryRunResult, EvaluatorResultStatus, StudioSamplesRequest, ValueLabel } from '@/types/api';
@@ -219,6 +219,20 @@ export function studioDryRunCancelledText(spentUsd: number): string {
 /** copy.studio.save_and_watch for a route. */
 export function studioSaveAndWatchLabel(route: string): string {
   return fillTemplate(copy.studio.save_and_watch, { route });
+}
+
+/**
+ * Which model drafts, next to Draft with AI: "Uses <model> (<provider>)". The demo's mock judge
+ * has no model of its own (its model id is its provider, "mock"), so it reads as the mock model the
+ * draft then says it came from, never "Uses mock (Mock (simulated))".
+ */
+export function studioJudgeText(judge: { provider?: string | null; model?: string | null } | null): string {
+  const provider = judge?.provider || null;
+  if (provider === 'mock') return 'Uses the mock model (simulated)';
+  const model = judge?.model && judge.model !== provider ? judge.model : null;
+  const by = provider ? judgeProviderLabel(provider) : null;
+  if (!model) return by ? `Uses the AI judge (${by})` : 'Uses the AI judge';
+  return by ? `Uses ${model} (${by})` : `Uses ${model}`;
 }
 
 /** The value label of a cost the server reported with its source (D82: a mock's cost is Simulated); null when unknown. */

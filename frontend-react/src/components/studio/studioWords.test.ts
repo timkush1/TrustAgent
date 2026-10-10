@@ -20,12 +20,25 @@ import {
   studioDryRunExtrapolated,
   studioDryRunResultText,
   studioGroupExamples,
+  studioJudgeText,
   studioLiveFailure,
   studioQuestionParts,
   studioRowReasonText,
 } from './studioWords';
 
 const done = dryRunFixture as DryRunResult;
+
+describe('studioJudgeText', () => {
+  it('names the model and its provider', () => {
+    expect(studioJudgeText({ provider: 'openrouter', model: 'anthropic/claude-haiku-4.5' })).toBe('Uses anthropic/claude-haiku-4.5 (OpenRouter)');
+    expect(studioJudgeText({ provider: 'openrouter', model: null })).toBe('Uses the AI judge (OpenRouter)');
+    expect(studioJudgeText(null)).toBe('Uses the AI judge');
+  });
+
+  it('calls the demo judge the mock model once, never "mock (Mock (simulated))"', () => {
+    expect(studioJudgeText({ provider: 'mock', model: 'mock' })).toBe('Uses the mock model (simulated)');
+  });
+});
 
 describe('studioDryRunResultText', () => {
   it('gives the extrapolated count for the window when only a sample of it was tested', () => {
