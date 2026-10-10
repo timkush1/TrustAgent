@@ -245,7 +245,9 @@ docker compose up -d --wait
 ```
 
 On a release tag you can leave out `docker compose build`: Compose pulls the images of that
-version. Then print the setup link with `python3 scripts/setup_url.py`.
+version. On any other commit, leaving it out still works: Compose asks the registry for a tag that
+was never published, warns `error from registry: denied`, and builds the image itself (checked
+with Docker Compose 2.39). Then print the setup link with `python3 scripts/setup_url.py`.
 
 ## 6. How much memory it needs
 
