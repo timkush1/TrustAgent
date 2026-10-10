@@ -501,12 +501,12 @@ func TestBreakerOpensSkipsAndRecovers(t *testing.T) {
 	}
 }
 
-// TestAuthCreditsAndHTMLCooldowns (S2): a vendor that refuses the key (401) or finds no credits
+// TestFaultCooldownsAuthCreditsAndHTML (S2): a vendor that refuses the key (401) or finds no credits
 // (402) opens the breaker for the auth cooldown, and the status names the cause; an admin's
 // Settings → Test lifts that pause at once, and its probe closes the breaker. A 200 text/html
 // page (a wrong base URL) trips the breaker for the fault cooldown, which the test does not lift
 // (a misconfigured endpoint stays paused) until the cooldown lets a trial through.
-func TestAuthCreditsAndHTMLCooldowns(t *testing.T) {
+func TestFaultCooldownsAuthCreditsAndHTML(t *testing.T) {
 	const admin = "admin-faults-secret"
 	for _, c := range []struct {
 		fault, status, state string
@@ -638,9 +638,9 @@ func TestBudgetSkipsAndBlocks(t *testing.T) {
 	}
 }
 
-// TestLLMCapPausesAudits (S3): once the day's LLM cap is spent, deep audits are dropped
+// TestBudgetLLMCapPausesAudits (S3): once the day's LLM cap is spent, deep audits are dropped
 // (llm_budget) instead of queued, while the fast check goes on; the status says so.
-func TestLLMCapPausesAudits(t *testing.T) {
+func TestBudgetLLMCapPausesAudits(t *testing.T) {
 	env, _ := newFaultEnv(t, func(cfg *config.Config) { cfg.SpendCapLLMUSDDay = 0.5 })
 	s := groundedSupport(t)
 	g := gateOf(t, env, s, s.ID)
@@ -751,12 +751,12 @@ func TestEngineDownLeavesTheDecision(t *testing.T) {
 	}
 }
 
-// TestOffAndMissingCredentials (S6): with the decision model off, or configured with no
+// TestFaultOffAndMissingCredentials (S6): with the decision model off, or configured with no
 // credential (which turns it off as misconfigured, naming the missing key), nothing is asked: a
 // flag route passes unchecked and a fail-closed route blocks, and the status says which. (A
 // dashboard-bound credential that cannot be read at call time skips as credentials_unavailable,
 // the same degradation; internal/gate and the decision client tests cover that path.)
-func TestOffAndMissingCredentials(t *testing.T) {
+func TestFaultOffAndMissingCredentials(t *testing.T) {
 	for _, c := range []struct {
 		name, status, degraded, state, reason string
 		tune                                  func(*config.Config)
