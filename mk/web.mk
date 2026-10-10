@@ -89,7 +89,7 @@ build-static: ## Build the static site (landing page + replay) into frontend-rea
 size-landing: ## Fail when the landing page's first load is over 110 KB gzip (run after build-static)
 	cd frontend-react && npm run size
 
-recording: ## Rebuild the simulated demo recording from the s0 scenarios (commit the result)
+recording: ## Rebuild the simulated demo recording from the demo scenarios (commit the result)
 	cd frontend-react && npm run recording
 
 recording-check: ## Fail when the demo recording is stale or check_recording.py refuses it
