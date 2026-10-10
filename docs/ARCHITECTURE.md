@@ -10,7 +10,7 @@ is in [GATEWAY.md](GATEWAY.md).
 graph LR
     Client[Your app<br/>OpenAI or Anthropic SDK] -->|/v1/...| Proxy
     subgraph Go gateway :8080
-        Proxy[Gateway handler] --> T0[Tier-0 detectors<br/>Go, under 2 ms]
+        Proxy[Gateway handler] --> T0[Tier-0 detectors<br/>Go, 2 ms budget]
         T0 --> T1[Tier-1 fast check<br/>one Jev call]
         T1 --> Policy[Route policy<br/>observe / flag / block / fallback]
         Policy --> Pool[Deep-audit queue]

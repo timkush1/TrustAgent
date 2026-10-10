@@ -445,8 +445,9 @@ committed generated file, never from the whole scenario pack.
   Playground, Studio, and "Run it yourself" (the landing's `#self-host`). Policies, Settings,
   Knowledge, Benchmarks, the evaluator library and setup are hidden; a deep link to them shows why
   (`StaticRouteGuard`), not an error whose Retry cannot work.
-- The top bar shows the replay's status ("Replaying · 12 of 18 requests", "Replay again") in place
-  of the Health pill and demo badge.
+- The top bar shows the replay's status in place of the Health pill and demo badge: "Replaying ·
+  {n} of {total} requests", then "Replay finished · {total} requests" with "Replay again". {total}
+  is the tape's own request count, never a number written into the copy or a test.
 - **The static Studio** has templates, the editor, the test bench (a one-evaluator route through
   `runGate`), the free threshold what-if, quick calibration on labels made in the page, and Draft
   with AI through the browser key. Save becomes **Copy JSON** and **Download .json**. Watching,

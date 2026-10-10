@@ -6,7 +6,7 @@ Guidance for AI-assisted development in this repository.
 
 TrustAgent (internal package name: `truthtable`) is an open-source **hallucination gateway** for
 LLM apps. Clients point their OpenAI/Anthropic SDK at a Go proxy. Each answer is checked in tiers:
-Tier-0 deterministic detectors (Go, <2 ms), Tier-1 **Fast check (Jev)** — TypeSafe AI's decision
+Tier-0 deterministic detectors (Go, 2 ms budget), Tier-1 **Fast check (Jev)** — TypeSafe AI's decision
 model, all route evaluators as questions in ONE call behind a vendor-neutral `DecisionModel` — then
 a per-route policy (observe / flag / block / fallback). Tier-2 **Deep audit** runs asynchronously in
 a Python LangGraph engine (decompose → optional knowledge retrieve → verify claims → score) and

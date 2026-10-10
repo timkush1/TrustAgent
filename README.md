@@ -51,7 +51,7 @@ flowchart LR
 ```
 
 Your app keeps its SDK and changes one line, the base URL. For each answer TrustAgent runs the
-**instant checks** (deterministic Go detectors, under 2 ms), then asks **Jev**, TypeSafe AI's fast
+**instant checks** (deterministic Go detectors with a 2 ms budget), then asks **Jev**, TypeSafe AI's fast
 decision model, every check of the route as a question in **one** call, and applies the route's
 policy: **observe** (measure only), **flag** (headers tell your app the risk), **block** (a safe
 message instead) or **fallback** (a second answer written only from your documents, checked again).
