@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import doctor  # noqa: E402
 from doctor import Container, Doctor, HttpResult, describe_state, selected  # noqa: E402
 
+ROOT = Path(__file__).resolve().parents[2]
 PROXY = "http://127.0.0.1:8080"
 DASH = "http://127.0.0.1:3000"
 DEMO_PROXY_ENV = ["TRUTHTABLE_DEMO_MODE=true", "TRUTHTABLE_JEV_BACKEND=mock", "PATH=/bin"]
@@ -1407,6 +1408,8 @@ class FastCheckRateAndProbeTest(unittest.TestCase):
             "bad_content_type": ("FAIL", "got a web page", "TRUTHTABLE_JEV_BASE_URL"),
             "retryable": ("WARN", "provider busy", "nothing to do"),
             "timeout": ("WARN", "timed out", "fails open"),
+            "overload": ("WARN", "in flight", "nothing to do"),
+            "credentials_unavailable": ("FAIL", "cannot be read", "Settings > Connections"),
             "something_new": ("FAIL", "the probe failed (something_new)", "a hint"),
         }
         for kind, (status, meaning, fix) in cases.items():
@@ -1425,6 +1428,18 @@ class FastCheckRateAndProbeTest(unittest.TestCase):
                 self.assertIn(fix, check.fix)
                 self.assertEqual(check.data["error_kind"], kind)
 
+    def test_every_gateway_error_kind_has_a_row_or_the_gateways_hint(self) -> None:
+        # internal/jev's error kinds (the probe's error.kind). A kind without a row is a FAIL that
+        # shows the gateway's own hint; those are listed here, so a new kind is classified on
+        # purpose (a transient one must not fail doctor).
+        source = (ROOT / "backend-go" / "internal" / "jev" / "jev.go").read_text(encoding="utf-8")
+        block = source.split("// Error kinds", 1)[1].split("\n)", 1)[0]
+        kinds = set(re.findall(r'(?m)^\s+Kind\w+\s+= "([a-z_]+)"$', block))
+        self.assertIn("auth", kinds)
+        gateway_hint = {"too_large", "bad_request", "bad_response", "mock_fixture_missing"}
+        self.assertEqual(kinds - set(doctor.PROBE_ERRORS) - gateway_hint, set())
+        self.assertEqual(gateway_hint - kinds, set(), "a listed kind no longer exists")
+
     def test_a_refused_admin_key(self) -> None:
         post = FakePost(HttpResult(status=403, error="forbidden"))
         check = self.doctor(real_status(), post, probe=True, admin_key=ADMIN_KEY).check_probe()
@@ -1432,35 +1447,45 @@ class FastCheckRateAndProbeTest(unittest.TestCase):
         self.assertIn("no admin key", check.fix)
 
     def test_the_admin_key_is_never_printed(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            key_file = Path(tmp) / "admin.key"
-            key_file.write_text(ADMIN_KEY + "\n", encoding="utf-8")
-            # A component that echoes the key back in its error message.
-            body = {
-                "ok": False,
-                "backend": "openrouter-decisions",
-                "error": {"kind": "auth", "message": f"key {ADMIN_KEY} rejected", "hint": ""},
-            }
-            for fmt in (["--json"], []):
-                out = io.StringIO()
-                with contextlib.redirect_stdout(out):
-                    code = doctor.main(
-                        ["--target", "docker", "--probe", "--admin-key-file", str(key_file), *fmt],
-                        run=FakeDocker(demo_containers()),
-                        fetch=FakeHttp(
-                            {
-                                **demo_routes(traces("completed")),
-                                f"{PROXY}/api/status": real_status(),
-                            }
-                        ),
-                        environ={"NO_COLOR": "1"},
-                        post=FakePost(ok_json(body)),
-                        probe_port=lambda host, port: True,
-                        env_file=NO_ENV_FILE,
-                    )
-                self.assertEqual(code, 1, "a rejected key fails the probe")
-                self.assertNotIn(ADMIN_KEY, out.getvalue())
-                self.assertIn("[redacted]", out.getvalue())
+        # A key with a known shape and one no pattern matches: redaction is by value.
+        for key in (ADMIN_KEY, LEAK_KEY):
+            with tempfile.TemporaryDirectory() as tmp:
+                key_file = Path(tmp) / "admin.key"
+                key_file.write_text(key + "\n", encoding="utf-8")
+                # A component that echoes the key back in its error message.
+                body = {
+                    "ok": False,
+                    "backend": "openrouter-decisions",
+                    "error": {"kind": "auth", "message": f"key {key} rejected", "hint": ""},
+                }
+                for fmt in (["--json"], []):
+                    with self.subTest(key=key[:7], fmt=fmt):
+                        out = io.StringIO()
+                        with contextlib.redirect_stdout(out):
+                            code = doctor.main(
+                                [
+                                    "--target",
+                                    "docker",
+                                    "--probe",
+                                    "--admin-key-file",
+                                    str(key_file),
+                                    *fmt,
+                                ],
+                                run=FakeDocker(demo_containers()),
+                                fetch=FakeHttp(
+                                    {
+                                        **demo_routes(traces("completed")),
+                                        f"{PROXY}/api/status": real_status(),
+                                    }
+                                ),
+                                environ={"NO_COLOR": "1"},
+                                post=FakePost(ok_json(body)),
+                                probe_port=lambda host, port: True,
+                                env_file=NO_ENV_FILE,
+                            )
+                        self.assertEqual(code, 1, "a rejected key fails the probe")
+                        self.assertNotIn(key, out.getvalue())
+                        self.assertIn("[redacted]", out.getvalue())
 
     def test_probe_usage(self) -> None:
         err = io.StringIO()

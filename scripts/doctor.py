@@ -189,6 +189,16 @@ PROBE_ERRORS: Dict[str, Tuple[str, str, str]] = {
         "paused after repeated vendor errors (breaker open)",
         "nothing to do: it retries by itself",
     ),
+    "overload": (
+        "WARN",
+        "too many fast-check calls in flight in the gateway (TRUTHTABLE_GATE_JEV_MAX_INFLIGHT)",
+        "nothing to do: calls go through again as the ones in flight finish",
+    ),
+    "credentials_unavailable": (
+        "FAIL",
+        "the stored decision-model key cannot be read",
+        "re-enter it in Settings > Connections (see credentials.store)",
+    ),
     "budget": (
         "WARN",
         "today's fast-check budget is used up",
