@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import re
 import shutil
 import subprocess  # nosec B404 - node with a fixed argv, in tests
@@ -245,10 +246,8 @@ class LoadK6Test(unittest.TestCase):
         k6_run = LOAD_MK.split("k6_run =", 1)[1].split("\n\n", 1)[0]
         self.assertIn('-v "$(CURDIR)/scripts/load:/scripts/load:ro"', k6_run)
         self.assertIn("run /scripts/load/gateway-overhead.js", k6_run)
-        self.assertIn(
-            "import { buckets, decisionRequests, histogramStats, sumOf, target } from './overhead-lib.js';",
-            K6,
-        )
+        # (K6ScriptRunTest runs the script itself, so a helper it uses but does not import fails.)
+        self.assertRegex(K6, r"(?m)^import \{[^}]*\} from './overhead-lib\.js';$")
 
 
 class K6ResultLineTest(unittest.TestCase):
@@ -366,6 +365,200 @@ class K6HelpersTest(unittest.TestCase):
             "GET /api/v1/key": 1,
         }
         self.assertEqual(node_eval(f"lib.decisionRequests({json.dumps(totals)})"), 7)
+
+
+# The k6 modules the script imports, as node stubs: http answers from the test's canned readings
+# and records the posts, metrics record what is added, execution names the running scenario.
+K6_STUBS = {
+    "k6-http.mjs": """
+export default {
+  get(url) { return globalThis.__k6.get(url); },
+  post(url, body, params) {
+    globalThis.__k6.posts.push({ url, body: JSON.parse(body), headers: params.headers });
+    return globalThis.__k6.post();
+  },
+};
+""",
+    "k6.mjs": "export function check(res, checks) { for (const f of Object.values(checks)) f(res); return true; }\n",
+    "k6-execution.mjs": "export default { get scenario() { return { name: globalThis.__k6.scenario }; } };\n",
+    "k6-metrics.mjs": """
+class Metric {
+  constructor(name) { this.name = name; globalThis.__k6.metrics[name] = globalThis.__k6.metrics[name] || []; }
+  add(value) { globalThis.__k6.metrics[this.name].push(value); }
+}
+export class Counter extends Metric {}
+export class Gauge extends Metric {}
+export class Rate extends Metric {}
+export class Trend extends Metric {}
+""",
+}
+
+# The script's run harness: setup() reads the "before" readings, one answer goes through gate(),
+# teardown() reads the "after" readings, and handleSummary() gets k6's summary of the answers
+# (canned, per scenario) plus the gauges teardown set.
+K6_DRIVER = """
+const cfg = JSON.parse(process.env.K6_TEST_CONFIG);
+let phase = 'before';
+globalThis.__ENV = cfg.env;
+globalThis.__k6 = {
+  metrics: {}, posts: [], scenario: cfg.env.SCENARIOS,
+  get(url) {
+    if (url.endsWith('/metrics')) return { status: 200, body: cfg.metrics[phase] };
+    if (url.endsWith('/_mock/requests')) return { status: 200, body: JSON.stringify({ requests: [], totals: cfg.mock[phase] }) };
+    return { status: 404, body: '' };
+  },
+  post() { return { status: 200, headers: cfg.response_headers, timings: { duration: 7.5 } }; },
+};
+const k6 = await import('./gateway-overhead.mjs');
+const before = k6.setup();
+k6.gate();
+phase = 'after';
+k6.teardown(before);
+const metrics = { ...cfg.summary };
+for (const [name, values] of Object.entries(globalThis.__k6.metrics)) {
+  if (name.startsWith('load_') && values.length) metrics[name] = { values: { value: values[values.length - 1] } };
+}
+const out = k6.handleSummary({ metrics });
+process.stdout.write(JSON.stringify({ stdout: out.stdout, posts: globalThis.__k6.posts }));
+"""
+
+
+def run_k6_script(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Runs scripts/load/gateway-overhead.js's lifecycle under node with the k6 stubs."""
+    node = shutil.which("node")
+    if node is None:
+        raise AssertionError("the k6 script test needs node (Node 22 in development and CI)")
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        script = K6
+        for module, stub in (
+            ("k6/http", "k6-http.mjs"),
+            ("k6/execution", "k6-execution.mjs"),
+            ("k6/metrics", "k6-metrics.mjs"),
+            ("k6", "k6.mjs"),
+        ):
+            script = script.replace(f"from '{module}';", f"from './{stub}';")
+        (d / "gateway-overhead.mjs").write_text(script, encoding="utf-8")
+        shutil.copy(K6_LIB, d / "overhead-lib.js")
+        (d / "package.json").write_text('{"type": "module"}', encoding="utf-8")
+        for name, text in K6_STUBS.items():
+            (d / name).write_text(text, encoding="utf-8")
+        (d / "driver.mjs").write_text(K6_DRIVER, encoding="utf-8")
+        out = subprocess.run(  # nosec B603 - node with a fixed argv, in tests
+            [node, str(d / "driver.mjs")],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=d,
+            env={**os.environ, "K6_TEST_CONFIG": json.dumps(config)},
+        )
+    if out.returncode != 0:
+        raise AssertionError(f"the k6 script failed under node:\n{out.stderr}")
+    result: Dict[str, Any] = json.loads(out.stdout)
+    return result
+
+
+def metrics_text(overhead_b: Sequence[int], jev_ok: int, hedge_lost: int, detectors: int) -> str:
+    """A /metrics reading: load-b's overhead buckets (le 1, 2.5, 5 ms, +Inf), the fast-check
+    attempts and Tier 0's histogram."""
+    les = ("0.001", "0.0025", "0.005", "+Inf")
+    lines = [
+        "# HELP trustagent_gateway_overhead_seconds Gateway overhead.",
+        f'trustagent_gateway_jev_requests_total{{backend="compatible",outcome="ok"}} {jev_ok}',
+        f'trustagent_gateway_jev_requests_total{{backend="compatible",outcome="hedge_lost"}} {hedge_lost}',
+    ]
+    lines += [
+        f'trustagent_gateway_overhead_seconds_bucket{{mode="observe",route="load-b",le="{le}"}} {n}'
+        for le, n in zip(les, overhead_b)
+    ]
+    lines += [
+        f'trustagent_gateway_gate_seconds_bucket{{stage="detectors",le="{le}"}} {detectors}'
+        for le in ("0.0005", "0.001", "+Inf")
+    ]
+    return "\n".join(lines) + "\n"
+
+
+class K6ScriptRunTest(unittest.TestCase):
+    """The k6 script's own code path (setup, gate, teardown, handleSummary) under node, with the k6
+    modules stubbed: every name it uses resolves, and its result line is one report.py accepts."""
+
+    def config(
+        self, scenario: str, headers: Dict[str, str], summary: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return {
+            "env": {
+                "SCENARIOS": scenario,
+                "API_KEY": "sk-test-load",
+                "RATE": "20",
+                "DURATION": "30s",
+            },
+            "metrics": {
+                "before": metrics_text((10, 10, 10, 10), jev_ok=100, hedge_lost=5, detectors=10),
+                "after": metrics_text(
+                    (310, 550, 610, 610), jev_ok=700, hedge_lost=5, detectors=610
+                ),
+            },
+            "mock": {
+                "before": {"POST /v1/systemone": 100, "POST /v1/chat/completions": 100},
+                "after": {"POST /v1/systemone": 700, "POST /v1/chat/completions": 700},
+            },
+            "response_headers": headers,
+            "summary": summary,
+        }
+
+    def test_observe_reads_the_gateway_histogram(self) -> None:
+        summary = {
+            "gateway_overhead_ms{scenario:b}": {
+                "values": {"count": 600, "med": 9.0, "p(95)": 12.0, "p(99)": 14.0, "max": 20.0}
+            },
+            "gateway_overhead_without_header{scenario:b}": {"values": {"count": 600}},
+            "gateway_requests{scenario:b}": {"values": {"count": 600}},
+            "gateway_non_200{scenario:b}": {"values": {"count": 0}},
+            "gateway_5xx{scenario:b}": {"values": {"rate": 0}},
+        }
+        got = run_k6_script(self.config("b", {"X-Trustagent-Route": "load-b@1"}, summary))
+        post = got["posts"][0]
+        self.assertTrue(post["url"].endswith("/v1/chat/completions"))
+        self.assertEqual(post["headers"]["X-TrustAgent-Route"], "load-b")
+        self.assertEqual(post["headers"]["X-TrustAgent-Key"], "sk-test-load")
+        self.assertIs(post["body"]["stream"], False)
+
+        results = report.parse_result_lines(got["stdout"])
+        self.assertEqual(len(results), 1)
+        line = results[0]
+        self.assertTrue(line["metrics_read"])
+        # Deltas between the two readings: 600 attempts, no hedge, 600 decision requests.
+        self.assertEqual(line["jev"], {"attempts": 600, "hedged": 0, "mock_requests": 600})
+        self.assertEqual(line["detectors"]["n"], 600)
+        self.assertAlmostEqual(line["detectors"]["p50_ms"], 0.25)
+        b = line["scenarios"][0]
+        # Observe answers carry no overhead header: the figures are the gateway's histogram of the
+        # route (n 600; p50 1 ms, p95 3.75 ms, p99 4.75 ms interpolated; max the 5 ms bucket).
+        self.assertEqual((b["id"], b["source"], b["n"]), ("b", "metrics", 600))
+        self.assertAlmostEqual(b["p50_ms"], 1.0)
+        self.assertAlmostEqual(b["p95_ms"], 3.75)
+        self.assertAlmostEqual(b["p99_ms"], 4.75)
+        self.assertAlmostEqual(b["max_ms"], 5.0)
+        self.assertTrue(b["ok"])
+        scenarios, _ = report.merge_results(results, report_only=False)
+        self.assertEqual(scenarios[0]["jev"], {"attempts": 600, "hedged": 0, "mock_requests": 600})
+
+    def test_a_flag_answer_reports_its_overhead_header(self) -> None:
+        summary = {
+            "gateway_overhead_ms{scenario:c}": {
+                "values": {"count": 600, "med": 1.0, "p(95)": 2.0, "p(99)": 3.0, "max": 6.0}
+            },
+            "gateway_overhead_without_header{scenario:c}": {"values": {"count": 0}},
+            "gateway_requests{scenario:c}": {"values": {"count": 600}},
+        }
+        headers = {"X-Trustagent-Route": "load-c@1", "X-Trustagent-Overhead-Ms": "2"}
+        got = run_k6_script(self.config("c", headers, summary))
+        c = report.parse_result_lines(got["stdout"])[0]["scenarios"][0]
+        self.assertEqual((c["source"], c["n"], c["p95_ms"]), ("header", 600, 2.0))
+        self.assertEqual(c["target"], {"stat": "p95_ms", "max_ms": 10})
+        self.assertTrue(c["ok"])
+        self.assertIn("(c) flag, mock Jev 0 ms", got["stdout"])
 
 
 # ------------------------------------------------------------------------------------- report.py

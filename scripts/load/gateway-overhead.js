@@ -43,7 +43,7 @@ import { check } from 'k6';
 import exec from 'k6/execution';
 import { Counter, Gauge, Rate, Trend } from 'k6/metrics';
 
-import { buckets, decisionRequests, histogramStats, sumOf, target } from './overhead-lib.js';
+import { buckets, decisionRequests, histogramStats, parseMetrics, sumOf, target } from './overhead-lib.js';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:8080').replace(/\/+$/, '');
 const API_KEY = __ENV.API_KEY || '';
