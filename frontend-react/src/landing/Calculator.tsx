@@ -9,7 +9,7 @@ import { useId, useMemo, useState, type ReactNode } from 'react';
 import { claim, LABEL_TEXT } from './claims';
 import { REPO_URL } from './content';
 import { sectionCopy } from './sectionCopy';
-import { defaultCalculatorInputs, defaultInput, formatMultiple, judgeOptions, monthlyCost, referenceJudge, type JudgeChoice, type JudgeOption } from './costModel';
+import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, monthlyCost, referenceJudge, type JudgeChoice, type JudgeOption } from './costModel';
 import { priceAnchorId } from './priceSources';
 import { LabelChip } from './ui';
 
@@ -32,6 +32,7 @@ function money(x: number): string {
 
 const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
 const CUSTOM = 'custom';
+
 /** A typed price; an empty field is no price (NaN), never $0. */
 const priceOf = (text: string): number => (text.trim() === '' ? Number.NaN : Number(text));
 
@@ -231,7 +232,7 @@ export function Calculator() {
               <Row
                 testId="deep_audit"
                 label="Deep audits"
-                note={`${pct(result.cost.auditedShare)} of answers, including a ${pct(defaultInput('uniform_sample_rate'))} uniform sample · ${judgeName}`}
+                note={`${auditShareWords(flagRate, passRate, result.cost.auditedShare)} · ${judgeName}`}
                 value={money(result.cost.deepAudit)}
               />
               <Row testId="total" label="Your total" value={money(result.cost.total)} strong />

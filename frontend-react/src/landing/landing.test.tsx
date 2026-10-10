@@ -23,7 +23,7 @@ import { priceCall } from '@/lib/decision/cost';
 import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
 import { compareRows } from './compareData';
 import { copy as landingCopy, DEMO_HREF, REFUND } from './content';
-import { defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
+import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
 import glassbox from './glassbox.gen.json';
 import { HeroCard } from './HeroCard';
 import { Landing } from './Landing';
@@ -507,6 +507,11 @@ describe('calculator', () => {
     const row = (id: string) => document.querySelector(`[data-cost-row="${id}"]`)?.lastElementChild?.textContent;
     const before = Object.fromEntries(['fast_check', 'deep_audit', 'total', 'same_checks', 'full_audit'].map((id) => [id, row(id)]));
     expect(before.total).toBe('$301');
+    // The audited share reads as the sum it is, next to the sliders it comes from.
+    expect(document.querySelector('[data-cost-row="deep_audit"]')).toHaveTextContent(
+      `${auditShareWords(defaultCalculatorInputs().flagRate, defaultCalculatorInputs().passSampleRate, 0.079)}`,
+    );
+    expect(auditShareWords(0.05, 0.02, 0.079)).toBe('5% flagged + 1.9% sampled + 1% uniform = 7.9% of answers');
     const select = screen.getByLabelText('Deep-audit judge');
     fireEvent.change(select, { target: { value: judgeOptions().find((o) => o.local)?.id } });
     expect(row('deep_audit')).toBe('$0.00');

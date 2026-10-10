@@ -234,6 +234,16 @@ export function defaultCalculatorInputs(answersPerMonth = 100_000): CalculatorIn
   };
 }
 
+/**
+ * The deep-audit share as the sum it is (costPer1k): every flagged answer, the sample of the
+ * others, and the uniform sample, e.g. "5% flagged + 1.9% sampled + 1% uniform = 7.9% of answers".
+ */
+export function auditShareWords(flagRate: number, passRate: number, share: number): string {
+  const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
+  const sampled = (1 - flagRate) * passRate;
+  return `${pct(flagRate)} flagged + ${pct(sampled)} sampled + ${pct(defaultInput('uniform_sample_rate'))} uniform = ${pct(share)} of answers`;
+}
+
 /** "≈ 27×": whole numbers from 10 up, one decimal below. */
 export function formatMultiple(x: number): string {
   if (!Number.isFinite(x)) return 'many times';
