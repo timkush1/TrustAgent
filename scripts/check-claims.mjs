@@ -323,10 +323,19 @@ export function expectedDisplay(claim, measured) {
   return { text: claim.display.replace('{value}', formatValue(value, claim.unit)), problem: null };
 }
 
-/** The run machine for a caveat's {machine}, from the load run that measured the claim. */
-function machineText(claim, measured, read) {
+/** Says where the latest load run is when a load run is published but no measured run adopts it. */
+export const LOAD_RUN_NOT_ADOPTED = 'not adopted yet: the latest laptop load run is in GATEWAY.md (Load test)';
+
+/**
+ * The run machine for a caveat's {machine}, from the load run that measured the claim. Before a
+ * measured run adopts one, it says where a published load run is (loadRuns, the files of
+ * docs/benchmarks/load), or that none is published.
+ */
+function machineText(claim, measured, read, loadRuns = []) {
   const runId = measured?.values?.[claim.measured_ref]?.run_id;
-  if (!isMeasuredRun(measured) || !runId) return { text: 'no run published yet', problem: null };
+  if (!isMeasuredRun(measured) || !runId) {
+    return { text: loadRuns.length > 0 ? LOAD_RUN_NOT_ADOPTED : 'no run published yet', problem: null };
+  }
   const path = `${LOAD_RUNS_DIR}/${runId}.json`;
   const raw = read(path);
   if (raw === null) return { text: 'machine unknown', problem: `${path} (the run behind ${claim.id}) is missing` };
@@ -354,14 +363,14 @@ export const OVERHEAD_INTRO = "The gateway's own overhead, measured separately b
  * Proxy overhead gets a table of its own after the fast-check results, so it never sits next to
  * the fast check's latency (D118).
  */
-export function renderMeasuredBlock(claims, measured, read) {
+export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
   const problems = [];
   const cell = (s) => s.replace(/\|/g, '\\|');
   const row = (c) => {
     const shown = expectedDisplay(c, measured);
     let note = c.caveat ?? '';
     if (note.includes('{machine}')) {
-      const machine = machineText(c, measured, read);
+      const machine = machineText(c, measured, read, loadRuns);
       if (machine.problem) problems.push(machine.problem);
       note = note.replace('{machine}', machine.text);
     }
@@ -570,11 +579,11 @@ function checkCaveat(claim, mk, file, lines, visible, prose, files, read) {
  * Returns { problems, markers, blocks, files, rewrites } where rewrites maps each file whose measured
  * blocks are stale to its regenerated text.
  */
-export function checkClaims({ files, claims, measured, compare = null, specText = null, read = () => null, today, launch = false }) {
+export function checkClaims({ files, claims, measured, compare = null, specText = null, read = () => null, loadRuns = [], today, launch = false }) {
   const problems = [];
   const report = (level, rule, file, line, message) => problems.push({ level, rule, file, line, message });
   const byId = new Map(claims.claims.map((c) => [c.id, c]));
-  const block = renderMeasuredBlock(claims, measured, read);
+  const block = renderMeasuredBlock(claims, measured, read, loadRuns);
   for (const p of block.problems) report('error', 'load-run-missing', MEASURED_PATH, null, p);
   const pkce = pkceStatus(specText);
   const rewrites = new Map();
@@ -858,7 +867,9 @@ export function run({ root, write = false, launch = false, today, log = console.
     }
   };
   const load = () => new Map(scanList(root).map((p) => [p, readFileSync(join(root, p), 'utf8')]));
-  const check = () => checkClaims({ files: load(), claims, measured, compare, specText, read, today, launch });
+  const loadDir = join(root, LOAD_RUNS_DIR);
+  const loadRuns = existsSync(loadDir) ? readdirSync(loadDir).filter((f) => f.endsWith('.json')).sort() : [];
+  const check = () => checkClaims({ files: load(), claims, measured, compare, specText, read, loadRuns, today, launch });
 
   let result = check();
   if (write && result.rewrites.size) {
@@ -1333,6 +1344,14 @@ function selfTestRun(check) {
         text.includes("<!-- claim:meas_overhead --> not yet measured [measured] | Gateway's own time with simulated vendors; no run published yet |"));
     const again = scan({ write: true });
     check('run: a second --write changes nothing', again.code === 0 && !again.out.some((l) => l.includes('regenerated')), JSON.stringify(again.out));
+
+    // A load run published before a measured run adopts it: the note says where it is.
+    write(`${LOAD_RUNS_DIR}/load-1.json`, JSON.stringify(LOAD_RUN));
+    const published = scan();
+    check('run: a published load run makes the block stale', published.code === 1 && published.out.some((l) => l.includes('[block-stale]')), JSON.stringify(published.out));
+    scan({ write: true });
+    check('run: the block says where the published load run is',
+      readFileSync(join(dir, 'README.md'), 'utf8').includes(`not yet measured [measured] | Gateway's own time with simulated vendors; ${LOAD_RUN_NOT_ADOPTED} |`));
 
     write(MEASURED_PATH, JSON.stringify(MEASURED));
     write(`${LOAD_RUNS_DIR}/load-1.json`, JSON.stringify(LOAD_RUN));

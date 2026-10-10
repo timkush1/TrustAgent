@@ -32,7 +32,7 @@ var Kinds = map[string]Kind{
 	"decide":            {run: runDecide},
 	"calibrate_fit":     {Mechanical: true, run: runCalibrateFit},
 	"detectors":         {run: runDetectors},
-	"evidence":          {Skip: "run by internal/evidence (TestEvidenceVectors) until the anthropic_messages and openai_completions formats land (P2)"},
+	"evidence":          {Skip: "run by internal/evidence (TestEvidenceVectors), next to the extractor, for every api_format"},
 	"lint":              lintKind, // vectors/lint.go (GEVAL, D54)
 	"cost":              costKind, // vectors/cost.go (GCOST, D85)
 	"pkce":              pkceKind, // vectors/pkce.go (D103: a stdlib reference for the browser's PKCE)

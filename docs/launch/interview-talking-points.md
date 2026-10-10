@@ -29,8 +29,8 @@ The gateway's own overhead, measured separately by a load test against simulated
 
 | What we measure | Our result | Note |
 |---|---|---|
-| Proxy overhead, p50 | <!-- claim:proxy_overhead_p50_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); no run published yet |
-| Proxy overhead, p95 | <!-- claim:proxy_overhead_p95_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); no run published yet |
+| Proxy overhead, p50 | <!-- claim:proxy_overhead_p50_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); not adopted yet: the latest laptop load run is in GATEWAY.md (Load test) |
+| Proxy overhead, p95 | <!-- claim:proxy_overhead_p95_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); not adopted yet: the latest laptop load run is in GATEWAY.md (Load test) |
 
 No benchmark run is published yet, so every row says "not yet measured". The other figures here are labelled estimates, vendor prices or third-party results, not our measurements.
 <!-- measured:end -->
