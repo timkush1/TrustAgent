@@ -144,11 +144,22 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
   const running = phase.kind === 'running';
   const showSpinner = useDelayedLoading(running);
 
+  // What is shown below always belongs to what is picked: another pick or an edit drops the last
+  // result or failure (a running check keeps running and shows its own outcome).
+  function choose(next: Choice) {
+    setChoice(next);
+    clear();
+  }
+  function edit(next: CustomText) {
+    setCustom(next);
+    clear();
+  }
+
   // `?scenario=` changed while the page stayed (a landing link, Back): follow it.
   const [seenScenario, setSeenScenario] = useState(scenario);
   if (scenario !== seenScenario) {
     setSeenScenario(scenario);
-    if (scenario) setChoice(scenario);
+    if (scenario && scenario !== choice) choose(scenario);
   }
 
   const problems = useMemo(() => (choice === 'custom' ? customProblems(custom) : []), [choice, custom]);
@@ -201,9 +212,9 @@ function LivePanelBody({ scenario, openConsent, usageStore, maxTokens }: { scena
 
   return (
     <div className="space-y-5" data-testid="live-panel" data-key-state={keyState}>
-      <RadioGroup<Choice> label={liveText.pick_label} options={options} value={choice} onValueChange={setChoice} name="live-scenario" disabled={running} />
+      <RadioGroup<Choice> label={liveText.pick_label} options={options} value={choice} onValueChange={choose} name="live-scenario" disabled={running} />
 
-      {choice === 'custom' ? <CustomForm value={custom} onChange={setCustom} problems={problems} /> : <ScenarioPreview id={choice} />}
+      {choice === 'custom' ? <CustomForm value={custom} onChange={edit} problems={problems} /> : <ScenarioPreview id={choice} />}
 
       {storageBlocked || keyState === 'memory' ? <Notice testId="live-storage-blocked">{copy.playground_live.storage_blocked}</Notice> : null}
       {keyInfo && hasNoLimit(keyInfo) ? <Notice testId="live-no-limit">{copy.playground_live.key_no_limit}</Notice> : null}

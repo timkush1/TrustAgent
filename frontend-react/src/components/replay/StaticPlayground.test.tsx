@@ -351,6 +351,14 @@ describe('LivePanel', () => {
     await screen.findByTestId('live-result');
     const sent = JSON.parse(String(decisionCalls()[0][1].body)) as { state: { evidence: string[] } };
     expect(JSON.stringify(sent.state.evidence)).toContain('Support is open from 9 am to 5 pm');
+    // The result belongs to the text it checked: an edit drops it, and so does another pick.
+    await user.type(screen.getByLabelText(liveText.answer_label), '!');
+    expect(screen.queryByTestId('live-result')).toBeNull();
+    await user.click(run);
+    await screen.findByTestId('live-result');
+    await user.click(screen.getByRole('radio', { name: /Refund window/ }));
+    expect(screen.queryByTestId('live-result')).toBeNull();
+    expect(decisionCalls()).toHaveLength(2);
   });
 
   it('Forget key aborts the running check, clears the key and keeps the counter', async () => {
