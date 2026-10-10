@@ -246,10 +246,11 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
       knowledge: { p50: null, p95: null },
       decision: p50p95(decisions.map((d) => d.decision_model?.latency_ms ?? null)),
       queue_wait: { p50: null, p95: null },
-      decompose: p50p95(stepTimings('decompose')),
-      retrieve: { p50: null, p95: null },
-      verify: p50p95(stepTimings('verify')),
-      score: p50p95(stepTimings('score')),
+      // The engine's step_timings keys (backend-python audit nodes; the gateway's stats read the same).
+      decompose: p50p95(stepTimings('decompose_ms')),
+      retrieve: p50p95(stepTimings('retrieve_ms')),
+      verify: p50p95(stepTimings('verify_ms')),
+      score: p50p95(stepTimings('score_ms')),
     },
     backend_mix: hasDecision.length > 0 ? countBy(hasDecision.map((t) => t.decision_model?.backend ?? 'off')) : {},
   };

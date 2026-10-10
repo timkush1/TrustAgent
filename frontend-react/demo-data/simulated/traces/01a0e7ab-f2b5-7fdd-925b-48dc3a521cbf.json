@@ -1,0 +1,507 @@
+{
+  "trace_id": "01a0e7ab-f2b5-7fdd-925b-48dc3a521cbf",
+  "client_request_id": null,
+  "created_at": "2026-09-28T11:00:00.821Z",
+  "updated_at": "2026-09-28T11:00:02.014Z",
+  "source": "trafficgen",
+  "api_format": "openai_chat",
+  "route": "support-bot",
+  "policy_version": 1,
+  "mode": "flag",
+  "effective_mode": "flag",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "scripted",
+  "action": "flag",
+  "would_action": "block",
+  "gate_status": "ok",
+  "skip_reason": null,
+  "verdict": "unsupported",
+  "max_risk": 0.97,
+  "reasons": [
+    "groundedness:critical",
+    "det:dates_not_in_evidence",
+    "det:numbers_not_in_evidence"
+  ],
+  "checked_against": {
+    "configured": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "used": [
+      {
+        "source": "request_system",
+        "items": 1,
+        "labels": [
+          "shipping-policy.md"
+        ],
+        "tokens": 29
+      }
+    ],
+    "empty": [
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 29
+  },
+  "timings": {
+    "upstream_ms": 217,
+    "ttft_ms": null,
+    "gate_ms": 8,
+    "overhead_ms": 12,
+    "total_ms": 229
+  },
+  "decision_model": {
+    "backend": "mock",
+    "snapshot": "mock/jev-heuristic-v1",
+    "cost_usd": 0.000024192
+  },
+  "audit": {
+    "audit_id": "01a0e7ab-f39a-764a-909d-95910ae64f25",
+    "status": "completed",
+    "lane": "high",
+    "selection": "high",
+    "verdict": "HALLUCINATED",
+    "trust_score": 0.5,
+    "grade": null,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    }
+  },
+  "question_preview": "I ordered a desk this morning. When will it arrive?",
+  "response_preview": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
+  "redacted": false,
+  "flags": [],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"shipping-policy.md\">Orders placed before 2 pm ship the same business day. Standard delivery takes 3 to 5 business days after shipping.</document>"
+      },
+      {
+        "role": "user",
+        "content": "I ordered a desk this morning. When will it arrive?"
+      }
+    ],
+    "user_request": "I ordered a desk this morning. When will it arrive?",
+    "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+    "response_text": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
+    "final_response_text": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
+    "evidence": [
+      {
+        "id": "shipping-policy.md",
+        "source": "request_system",
+        "label": "shipping-policy.md",
+        "text": "Orders placed before 2 pm ship the same business day. Standard delivery takes 3 to 5 business days after shipping.",
+        "truncated": false
+      }
+    ],
+    "rules": {},
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e7ab-f2b5-7fdd-925b-48dc3a521cbf",
+      "attempt": 0,
+      "created_at": "2026-09-28T11:00:01.046Z",
+      "route": "support-bot",
+      "policy_version": 1,
+      "mode": "flag",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "effective_mode": "flag",
+      "action": "flag",
+      "would_action": "block",
+      "enforced": true,
+      "verdict": "unsupported",
+      "max_risk": 0.97,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "high",
+      "reasons": [
+        "groundedness:critical",
+        "det:dates_not_in_evidence",
+        "det:numbers_not_in_evidence"
+      ],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.97
+          },
+          "probabilities": null,
+          "risk_raw": 0.97,
+          "risk": 0.97,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "critical",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": true,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.8,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.18
+          },
+          "probabilities": null,
+          "risk_raw": 0.18,
+          "risk": 0.18,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "ok",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.7,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [
+            {
+              "text": "2026",
+              "start": 41,
+              "end": 45
+            }
+          ]
+        },
+        {
+          "id": "dates_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [
+            {
+              "text": "2026-10-02",
+              "start": 41,
+              "end": 51
+            }
+          ]
+        },
+        {
+          "id": "urls_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "quotes_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "citation_out_of_range",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "secret_pattern",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "system_prompt_leak",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        }
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "mock",
+        "model_requested": "mock/jev-heuristic-v1",
+        "snapshot": "mock/jev-heuristic-v1",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 6,
+        "connect_ms": null,
+        "input_tokens": 576,
+        "cost_usd": 0.000024192,
+        "cost_source": "simulated"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+        "request_sha256": [
+          "6301809e8db4a6ecba1e2c5acc79d9a93f726c54e107d4d4317e82f1f470b478"
+        ],
+        "packed_evidence_ids": [
+          "shipping-policy.md"
+        ],
+        "truncated_ids": [],
+        "est_tokens": [
+          576
+        ]
+      },
+      "evidence_summary": {
+        "configured": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "used": [
+          {
+            "source": "request_system",
+            "items": 1,
+            "labels": [
+              "shipping-policy.md"
+            ],
+            "tokens": 29
+          }
+        ],
+        "empty": [
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 29
+      },
+      "late": false,
+      "gate_ms": 8
+    }
+  ],
+  "audit_detail": {
+    "audit_id": "01a0e7ab-f39a-764a-909d-95910ae64f25",
+    "trace_id": "01a0e7ab-f2b5-7fdd-925b-48dc3a521cbf",
+    "created_at": "2026-09-28T11:00:01.050Z",
+    "route": "support-bot",
+    "source": "trafficgen",
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "grade": null,
+    "processing_ms": 964,
+    "judge": {
+      "configured_provider": "mock",
+      "effective_provider": "mock",
+      "model": "mock",
+      "fallback_active": false,
+      "fallback_reason": null,
+      "structured_outputs": true,
+      "healthy": true,
+      "credential_source": "none"
+    },
+    "gate_action": "flag",
+    "selection": "high",
+    "inclusion_prob": 1,
+    "query_preview": "I ordered a desk this morning. When will it arrive?",
+    "redacted": false,
+    "user_query": "I ordered a desk this morning. When will it arrive?",
+    "llm_response": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "flag",
+      "would_action": "block",
+      "verdict": "unsupported",
+      "max_risk": 0.97,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "request_system",
+          "items": 1,
+          "labels": [
+            "shipping-policy.md"
+          ],
+          "tokens": 29
+        }
+      ],
+      "empty": [
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 29
+    },
+    "context_used": [
+      {
+        "id": "shipping-policy.md",
+        "source": "request_system",
+        "label": "shipping-policy.md",
+        "text": "Orders placed before 2 pm ship the same business day. Standard delivery takes 3 to 5 business days after shipping.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0.5,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "The desk ships today.",
+        "status": "SUPPORTED",
+        "confidence": 0.86,
+        "evidence": [
+          "Orders placed before 2 pm ship the same business day."
+        ],
+        "reasoning": "The order was placed in the morning, and orders placed before 2 pm ship the same business day.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 0,
+          "end": 21,
+          "method": "exact"
+        },
+        "quote": "Your desk ships today",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "shipping-policy.md",
+            "start": 0,
+            "end": 53,
+            "text": "Orders placed before 2 pm ship the same business day.",
+            "kind": "quote_verified"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "claim": "The desk will arrive by 2026-10-02 at the latest.",
+        "status": "UNSUPPORTED",
+        "confidence": 0.9,
+        "evidence": [],
+        "reasoning": "The shipping policy gives delivery times in business days but no delivery date.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 26,
+          "end": 65,
+          "method": "exact"
+        },
+        "quote": "will arrive by 2026-10-02 at the latest",
+        "evidence_spans": []
+      }
+    ],
+    "scores": {
+      "trust_score": 0.5,
+      "faithfulness": 0.5,
+      "contradiction_rate": 0,
+      "unverified_rate": 0.5,
+      "coverage": 0.5,
+      "accuracy_addressed": 1,
+      "max_contradiction": 0,
+      "p_hallucinated": null,
+      "claims_total": 2,
+      "claims_decided": 2,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 497,
+      "verify_ms": 447,
+      "score_ms": 20,
+      "total_ms": 964
+    },
+    "unsupported_policy": "hallucination",
+    "costs": [
+      {
+        "component": "decompose",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 497,
+        "status": "ok",
+        "questions": 0
+      },
+      {
+        "component": "verify",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 447,
+        "status": "ok",
+        "questions": 0
+      }
+    ]
+  },
+  "labels": []
+}

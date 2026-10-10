@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e73f-74dc-74f7-baae-11701d9fae74",
+  "trace_id": "01a0e762-bd92-752a-9608-b04210248ebe",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:01:30.716Z",
-  "updated_at": "2026-09-28T09:01:30.863Z",
+  "created_at": "2026-09-28T09:40:03.090Z",
+  "updated_at": "2026-09-28T09:40:03.280Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -39,11 +39,11 @@
     "tokens": 0
   },
   "timings": {
-    "upstream_ms": 144,
+    "upstream_ms": 184,
     "ttft_ms": null,
-    "gate_ms": 1,
-    "overhead_ms": 2,
-    "total_ms": 147
+    "gate_ms": 2,
+    "overhead_ms": 6,
+    "total_ms": 190
   },
   "decision_model": null,
   "audit": {
@@ -56,8 +56,8 @@
     "grade": null,
     "verdict_counts": null
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+  "question_preview": "Here is the clause from my contract: \"Either party may cancel this agreement with 60 days of written notice.\" How much notice do I need to give to cancel?",
+  "response_preview": "You need to give 60 days of written notice to cancel.",
   "redacted": false,
   "flags": [],
   "body": {
@@ -66,17 +66,17 @@
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer billing questions briefly and politely."
+        "content": "You are the Acme support assistant. Answer questions about the text the customer pastes."
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "Here is the clause from my contract: \"Either party may cancel this agreement with 60 days of written notice.\" How much notice do I need to give to cancel?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "system_instructions": "You are the Acme support assistant. Answer billing questions briefly and politely.",
-    "response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
-    "final_response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+    "user_request": "Here is the clause from my contract: \"Either party may cancel this agreement with 60 days of written notice.\" How much notice do I need to give to cancel?",
+    "system_instructions": "You are the Acme support assistant. Answer questions about the text the customer pastes.",
+    "response_text": "You need to give 60 days of written notice to cancel.",
+    "final_response_text": "You need to give 60 days of written notice to cancel.",
     "evidence": [],
     "rules": {},
     "truncated": false
@@ -84,9 +84,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73f-74dc-74f7-baae-11701d9fae74",
+      "trace_id": "01a0e762-bd92-752a-9608-b04210248ebe",
       "attempt": 0,
-      "created_at": "2026-09-28T09:01:30.863Z",
+      "created_at": "2026-09-28T09:40:03.276Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -118,7 +118,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -147,7 +147,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -247,7 +247,7 @@
         "tokens": 0
       },
       "late": false,
-      "gate_ms": 1
+      "gate_ms": 2
     }
   ],
   "audit_detail": null,

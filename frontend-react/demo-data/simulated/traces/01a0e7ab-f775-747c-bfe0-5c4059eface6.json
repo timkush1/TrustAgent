@@ -1,0 +1,483 @@
+{
+  "trace_id": "01a0e7ab-f775-747c-bfe0-5c4059eface6",
+  "client_request_id": null,
+  "created_at": "2026-09-28T11:00:02.037Z",
+  "updated_at": "2026-09-28T11:00:03.474Z",
+  "source": "trafficgen",
+  "api_format": "openai_chat",
+  "route": "support-bot",
+  "policy_version": 1,
+  "mode": "flag",
+  "effective_mode": "flag",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "scripted",
+  "action": "flag",
+  "would_action": "flag",
+  "gate_status": "ok",
+  "skip_reason": null,
+  "verdict": "contradicted",
+  "max_risk": 0.93,
+  "reasons": [
+    "contradiction:warn",
+    "groundedness:warn",
+    "det:quotes_not_in_evidence"
+  ],
+  "checked_against": {
+    "configured": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "used": [
+      {
+        "source": "extension",
+        "items": 1,
+        "labels": [
+          "crm"
+        ],
+        "tokens": 40
+      }
+    ],
+    "empty": [
+      "request_system",
+      "request_context",
+      "tool_results"
+    ],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 40
+  },
+  "timings": {
+    "upstream_ms": 143,
+    "ttft_ms": null,
+    "gate_ms": 11,
+    "overhead_ms": 15,
+    "total_ms": 158
+  },
+  "decision_model": {
+    "backend": "mock",
+    "snapshot": "mock/jev-heuristic-v1",
+    "cost_usd": 0.000025074
+  },
+  "audit": {
+    "audit_id": "01a0e7ab-f813-7558-8ae7-5e3a9a6a3bda",
+    "status": "completed",
+    "lane": "high",
+    "selection": "high",
+    "verdict": "HALLUCINATED",
+    "trust_score": 0,
+    "grade": null,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    }
+  },
+  "question_preview": "Does my blender's warranty cover a cracked jar?",
+  "response_preview": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
+  "redacted": false,
+  "flags": [],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme support assistant. Answer warranty questions from the product records you are given."
+      },
+      {
+        "role": "user",
+        "content": "Does my blender's warranty cover a cracked jar?"
+      }
+    ],
+    "user_request": "Does my blender's warranty cover a cracked jar?",
+    "system_instructions": "You are the Acme support assistant. Answer warranty questions from the product records you are given.",
+    "response_text": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
+    "final_response_text": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
+    "evidence": [
+      {
+        "id": "warranty-blender-x2",
+        "source": "extension",
+        "label": "crm",
+        "text": "The Blender X2 warranty covers manufacturing defects in the motor base for two years. Accidental damage, including cracked or dropped jars, is not covered.",
+        "truncated": false
+      }
+    ],
+    "rules": {},
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e7ab-f775-747c-bfe0-5c4059eface6",
+      "attempt": 0,
+      "created_at": "2026-09-28T11:00:02.191Z",
+      "route": "support-bot",
+      "policy_version": 1,
+      "mode": "flag",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "effective_mode": "flag",
+      "action": "flag",
+      "would_action": "flag",
+      "enforced": true,
+      "verdict": "contradicted",
+      "max_risk": 0.93,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "high",
+      "reasons": [
+        "contradiction:warn",
+        "groundedness:warn",
+        "det:quotes_not_in_evidence"
+      ],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.91
+          },
+          "probabilities": null,
+          "risk_raw": 0.91,
+          "risk": 0.91,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "warn",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.8,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.93
+          },
+          "probabilities": null,
+          "risk_raw": 0.93,
+          "risk": 0.93,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "warn",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.7,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "dates_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "urls_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "quotes_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [
+            {
+              "text": "covers accidental damage to the jar for two years",
+              "start": 28,
+              "end": 77
+            }
+          ]
+        },
+        {
+          "id": "citation_out_of_range",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "secret_pattern",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "system_prompt_leak",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        }
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "mock",
+        "model_requested": "mock/jev-heuristic-v1",
+        "snapshot": "mock/jev-heuristic-v1",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 9,
+        "connect_ms": null,
+        "input_tokens": 597,
+        "cost_usd": 0.000025074,
+        "cost_source": "simulated"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+        "request_sha256": [
+          "a74d30214faacedcc09b34d0e4e0567e4bd02e4b7402ab114a145c746cadf9f6"
+        ],
+        "packed_evidence_ids": [
+          "warranty-blender-x2"
+        ],
+        "truncated_ids": [],
+        "est_tokens": [
+          597
+        ]
+      },
+      "evidence_summary": {
+        "configured": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "used": [
+          {
+            "source": "extension",
+            "items": 1,
+            "labels": [
+              "crm"
+            ],
+            "tokens": 40
+          }
+        ],
+        "empty": [
+          "request_system",
+          "request_context",
+          "tool_results"
+        ],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 40
+      },
+      "late": false,
+      "gate_ms": 11
+    }
+  ],
+  "audit_detail": {
+    "audit_id": "01a0e7ab-f813-7558-8ae7-5e3a9a6a3bda",
+    "trace_id": "01a0e7ab-f775-747c-bfe0-5c4059eface6",
+    "created_at": "2026-09-28T11:00:02.195Z",
+    "route": "support-bot",
+    "source": "trafficgen",
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "grade": null,
+    "processing_ms": 1279,
+    "judge": {
+      "configured_provider": "mock",
+      "effective_provider": "mock",
+      "model": "mock",
+      "fallback_active": false,
+      "fallback_reason": null,
+      "structured_outputs": true,
+      "healthy": true,
+      "credential_source": "none"
+    },
+    "gate_action": "flag",
+    "selection": "high",
+    "inclusion_prob": 1,
+    "query_preview": "Does my blender's warranty cover a cracked jar?",
+    "redacted": false,
+    "user_query": "Does my blender's warranty cover a cracked jar?",
+    "llm_response": "Yes. Your warranty says it \"covers accidental damage to the jar for two years\", so a cracked jar is included.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "flag",
+      "would_action": "flag",
+      "verdict": "contradicted",
+      "max_risk": 0.93,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "extension",
+          "items": 1,
+          "labels": [
+            "crm"
+          ],
+          "tokens": 40
+        }
+      ],
+      "empty": [
+        "request_system",
+        "request_context",
+        "tool_results"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 40
+    },
+    "context_used": [
+      {
+        "id": "warranty-blender-x2",
+        "source": "extension",
+        "label": "crm",
+        "text": "The Blender X2 warranty covers manufacturing defects in the motor base for two years. Accidental damage, including cracked or dropped jars, is not covered.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 1,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "The warranty covers accidental damage to the jar for two years.",
+        "status": "CONTRADICTED",
+        "confidence": 0.95,
+        "evidence": [
+          "Accidental damage, including cracked or dropped jars, is not covered."
+        ],
+        "reasoning": "The warranty record excludes accidental damage, including cracked jars; it covers only manufacturing defects in the motor base.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 28,
+          "end": 77,
+          "method": "exact"
+        },
+        "quote": "covers accidental damage to the jar for two years",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "warranty-blender-x2",
+            "start": 86,
+            "end": 155,
+            "text": "Accidental damage, including cracked or dropped jars, is not covered.",
+            "kind": "quote_verified"
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "trust_score": 0,
+      "faithfulness": 0,
+      "contradiction_rate": 1,
+      "unverified_rate": 0,
+      "coverage": 1,
+      "accuracy_addressed": 0,
+      "max_contradiction": 1,
+      "p_hallucinated": null,
+      "claims_total": 1,
+      "claims_decided": 1,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 499,
+      "verify_ms": 760,
+      "score_ms": 20,
+      "total_ms": 1279
+    },
+    "unsupported_policy": "hallucination",
+    "costs": [
+      {
+        "component": "decompose",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 499,
+        "status": "ok",
+        "questions": 0
+      },
+      {
+        "component": "verify",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 760,
+        "status": "ok",
+        "questions": 0
+      }
+    ]
+  },
+  "labels": []
+}

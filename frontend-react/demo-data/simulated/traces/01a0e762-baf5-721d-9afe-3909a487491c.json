@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e740-d414-77f3-b9ec-8b9b404471f4",
+  "trace_id": "01a0e762-baf5-721d-9afe-3909a487491c",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:03:00.628Z",
-  "updated_at": "2026-09-28T09:03:00.779Z",
+  "created_at": "2026-09-28T09:40:02.421Z",
+  "updated_at": "2026-09-28T09:40:02.625Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -39,11 +39,11 @@
     "tokens": 0
   },
   "timings": {
-    "upstream_ms": 145,
+    "upstream_ms": 200,
     "ttft_ms": null,
-    "gate_ms": 2,
+    "gate_ms": 1,
     "overhead_ms": 4,
-    "total_ms": 151
+    "total_ms": 204
   },
   "decision_model": null,
   "audit": {
@@ -56,8 +56,8 @@
     "grade": null,
     "verdict_counts": null
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+  "question_preview": "Is my monthly plan refundable?",
+  "response_preview": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
   "redacted": false,
   "flags": [],
   "body": {
@@ -66,17 +66,17 @@
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer billing questions briefly and politely."
+        "content": "You are the Acme support assistant. Answer only from the policy below.\n\nRefund policy (updated August 2026): annual plans can be refunded within 30 days of purchase; monthly plans are non-refundable."
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "Is my monthly plan refundable?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "system_instructions": "You are the Acme support assistant. Answer billing questions briefly and politely.",
-    "response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
-    "final_response_text": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+    "user_request": "Is my monthly plan refundable?",
+    "system_instructions": "You are the Acme support assistant. Answer only from the policy below.\n\nRefund policy (updated August 2026): annual plans can be refunded within 30 days of purchase; monthly plans are non-refundable.",
+    "response_text": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
+    "final_response_text": "No. Monthly plans are non-refundable; only annual plans can be refunded, within 30 days of purchase.",
     "evidence": [],
     "rules": {},
     "truncated": false
@@ -84,9 +84,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e740-d414-77f3-b9ec-8b9b404471f4",
+      "trace_id": "01a0e762-baf5-721d-9afe-3909a487491c",
       "attempt": 0,
-      "created_at": "2026-09-28T09:03:00.779Z",
+      "created_at": "2026-09-28T09:40:02.622Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -118,7 +118,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -147,7 +147,7 @@
           "risk": null,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": null,
           "capped": null,
@@ -247,7 +247,7 @@
         "tokens": 0
       },
       "late": false,
-      "gate_ms": 2
+      "gate_ms": 1
     }
   ],
   "audit_detail": null,

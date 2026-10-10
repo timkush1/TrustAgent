@@ -50,7 +50,7 @@
     "upstream_ms": 260,
     "ttft_ms": null,
     "gate_ms": 9,
-    "overhead_ms": 2,
+    "overhead_ms": 11,
     "total_ms": 271
   },
   "decision_model": {
@@ -113,7 +113,7 @@
       "spec": "decision/v1",
       "trace_id": "01a0e73e-1280-7586-8efe-d1d6adb7ac20",
       "attempt": 0,
-      "created_at": "2026-09-28T09:00:00.271Z",
+      "created_at": "2026-09-28T09:00:00.269Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -148,7 +148,7 @@
           "risk": 0.06,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "ok",
           "capped": null,
@@ -180,7 +180,7 @@
           "risk": 0.03,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "ok",
           "capped": null,
@@ -308,19 +308,7 @@
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "GROUNDED",
-    "not_assessed_reason": null,
-    "trust_score": 1,
     "grade": null,
-    "hallucination_detected": false,
-    "verdict_counts": {
-      "SUPPORTED": 2,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 0,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
     "processing_ms": 1444,
     "judge": {
       "configured_provider": "mock",
@@ -339,6 +327,63 @@
     "redacted": false,
     "user_query": "How long do I have to get a refund on an annual plan?",
     "llm_response": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "pass",
+      "would_action": "pass",
+      "verdict": "supported",
+      "max_risk": 0.06,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "request_system",
+          "items": 1,
+          "labels": [
+            "refund-policy.md"
+          ],
+          "tokens": 23
+        }
+      ],
+      "empty": [
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 23
+    },
+    "context_used": [
+      {
+        "id": "refund-policy.md",
+        "source": "request_system",
+        "label": "refund-policy.md",
+        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "GROUNDED",
+    "not_assessed_reason": null,
+    "trust_score": 1,
+    "hallucination_detected": false,
+    "verdict_counts": {
+      "SUPPORTED": 2,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
     "claims": [
       {
         "index": 0,
@@ -412,58 +457,14 @@
       "claims_decided": 2,
       "claims_unknown": 0
     },
-    "degraded_reasons": [],
-    "error": null,
     "reasoning_trace": "",
     "step_timings": {
-      "decompose": 450,
-      "verify": 974,
-      "score": 20
+      "decompose_ms": 450,
+      "verify_ms": 974,
+      "score_ms": 20,
+      "total_ms": 1444
     },
-    "gate": {
-      "action": "pass",
-      "would_action": "pass",
-      "verdict": "supported",
-      "max_risk": 0.06,
-      "delivered": "original"
-    },
-    "evidence_summary": {
-      "configured": [
-        "request_system",
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "used": [
-        {
-          "source": "request_system",
-          "items": 1,
-          "labels": [
-            "refund-policy.md"
-          ],
-          "tokens": 23
-        }
-      ],
-      "empty": [
-        "request_context",
-        "tool_results",
-        "extension"
-      ],
-      "knowledge": "not_requested",
-      "truncated": false,
-      "tokens": 23
-    },
-    "context_used": [
-      {
-        "id": "refund-policy.md",
-        "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
-        "truncated": false
-      }
-    ],
     "unsupported_policy": "hallucination",
-    "scoring_version": "v2",
     "costs": [
       {
         "component": "decompose",

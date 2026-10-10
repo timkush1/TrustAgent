@@ -1,8 +1,8 @@
 {
-  "trace_id": "01a0e73e-c346-79e0-b6ee-b040d41f4c91",
+  "trace_id": "01a0e787-5431-7163-8fc4-dbf4212f551c",
   "client_request_id": null,
-  "created_at": "2026-09-28T09:00:45.254Z",
-  "updated_at": "2026-09-28T09:00:46.768Z",
+  "created_at": "2026-09-28T10:20:00.945Z",
+  "updated_at": "2026-09-28T10:20:02.568Z",
   "source": "trafficgen",
   "api_format": "openai_chat",
   "route": "support-bot",
@@ -17,11 +17,11 @@
   "would_action": "block",
   "gate_status": "ok",
   "skip_reason": null,
-  "verdict": "contradicted",
-  "max_risk": 0.98,
+  "verdict": "unsupported",
+  "max_risk": 0.97,
   "reasons": [
-    "contradiction:critical",
     "groundedness:critical",
+    "det:dates_not_in_evidence",
     "det:numbers_not_in_evidence"
   ],
   "checked_against": {
@@ -36,9 +36,9 @@
         "source": "request_system",
         "items": 1,
         "labels": [
-          "refund-policy.md"
+          "shipping-policy.md"
         ],
-        "tokens": 23
+        "tokens": 29
       }
     ],
     "empty": [
@@ -48,39 +48,39 @@
     ],
     "knowledge": "not_requested",
     "truncated": false,
-    "tokens": 23
+    "tokens": 29
   },
   "timings": {
-    "upstream_ms": 219,
+    "upstream_ms": 251,
     "ttft_ms": null,
-    "gate_ms": 9,
-    "overhead_ms": 2,
-    "total_ms": 230
+    "gate_ms": 5,
+    "overhead_ms": 7,
+    "total_ms": 258
   },
   "decision_model": {
     "backend": "mock",
     "snapshot": "mock/jev-heuristic-v1",
-    "cost_usd": 0.000023772000000000002
+    "cost_usd": 0.000024192
   },
   "audit": {
-    "audit_id": "01a0e73e-c42c-77fe-8d4d-131d367e06b3",
+    "audit_id": "01a0e787-5533-706a-936f-a750ed1a9ba6",
     "status": "completed",
     "lane": "high",
     "selection": "high",
     "verdict": "HALLUCINATED",
-    "trust_score": 0,
+    "trust_score": 0.5,
     "grade": null,
     "verdict_counts": {
-      "SUPPORTED": 0,
+      "SUPPORTED": 1,
       "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
       "UNKNOWN": 0,
       "NOT_CHECKED": 0
     }
   },
-  "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-  "response_preview": "You can get a full refund within 60 days of purchase.",
+  "question_preview": "I ordered a desk this morning. When will it arrive?",
+  "response_preview": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
   "redacted": false,
   "flags": [],
   "body": {
@@ -89,23 +89,23 @@
     "messages": [
       {
         "role": "system",
-        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"refund-policy.md\">Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.</document>"
+        "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"shipping-policy.md\">Orders placed before 2 pm ship the same business day. Standard delivery takes 3 to 5 business days after shipping.</document>"
       },
       {
         "role": "user",
-        "content": "Can I still get a refund on my annual plan? I bought it 45 days ago."
+        "content": "I ordered a desk this morning. When will it arrive?"
       }
     ],
-    "user_request": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "user_request": "I ordered a desk this morning. When will it arrive?",
     "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
-    "response_text": "You can get a full refund within 60 days of purchase.",
-    "final_response_text": "You can get a full refund within 60 days of purchase.",
+    "response_text": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
+    "final_response_text": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
     "evidence": [
       {
-        "id": "refund-policy.md",
+        "id": "shipping-policy.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "shipping-policy.md",
+        "text": "Orders placed before 2 pm ship the same business day. Standard delivery takes 3 to 5 business days after shipping.",
         "truncated": false
       }
     ],
@@ -115,9 +115,9 @@
   "decisions": [
     {
       "spec": "decision/v1",
-      "trace_id": "01a0e73e-c346-79e0-b6ee-b040d41f4c91",
+      "trace_id": "01a0e787-5431-7163-8fc4-dbf4212f551c",
       "attempt": 0,
-      "created_at": "2026-09-28T09:00:45.484Z",
+      "created_at": "2026-09-28T10:20:01.201Z",
       "route": "support-bot",
       "policy_version": 1,
       "mode": "flag",
@@ -128,15 +128,15 @@
       "action": "flag",
       "would_action": "block",
       "enforced": true,
-      "verdict": "contradicted",
-      "max_risk": 0.98,
+      "verdict": "unsupported",
+      "max_risk": 0.97,
       "calibration": "none",
       "degraded": null,
       "disagreement": false,
       "deep_audit": "high",
       "reasons": [
-        "contradiction:critical",
         "groundedness:critical",
+        "det:dates_not_in_evidence",
         "det:numbers_not_in_evidence"
       ],
       "evaluators": {
@@ -149,14 +149,14 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.96
+            "noul": 0.97
           },
           "probabilities": null,
-          "risk_raw": 0.96,
-          "risk": 0.96,
+          "risk_raw": 0.97,
+          "risk": 0.97,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
           "level": "critical",
           "capped": null,
@@ -181,22 +181,22 @@
           "type": "noul",
           "answer": {
             "type": "noul",
-            "noul": 0.98
+            "noul": 0.18
           },
           "probabilities": null,
-          "risk_raw": 0.98,
-          "risk": 0.98,
+          "risk_raw": 0.18,
+          "risk": 0.18,
           "threshold_space": "raw",
           "calibrated": false,
-          "calibration_state": "none",
+          "calibration_state": "mock",
           "calibration_warning": null,
-          "level": "critical",
+          "level": "ok",
           "capped": null,
           "top": null,
           "vendor_confidence": null,
           "confidence_source": null,
           "escalate": "numeric_or_date_unverified",
-          "corroborated": true,
+          "corroborated": null,
           "block_eligible": true,
           "thresholds": {
             "warn_at": 0.7,
@@ -212,17 +212,23 @@
           "fired": true,
           "findings": [
             {
-              "text": "60",
-              "start": 33,
-              "end": 35
+              "text": "2026",
+              "start": 41,
+              "end": 45
             }
           ]
         },
         {
           "id": "dates_not_in_evidence",
           "ran": true,
-          "fired": false,
-          "findings": []
+          "fired": true,
+          "findings": [
+            {
+              "text": "2026-10-02",
+              "start": 41,
+              "end": 51
+            }
+          ]
         },
         {
           "id": "urls_not_in_evidence",
@@ -263,10 +269,10 @@
         "calls": 1,
         "attempts": 1,
         "hedged": false,
-        "latency_ms": 7,
+        "latency_ms": 3,
         "connect_ms": null,
-        "input_tokens": 566,
-        "cost_usd": 0.000023772000000000002,
+        "input_tokens": 576,
+        "cost_usd": 0.000024192,
         "cost_source": "simulated"
       },
       "compile": {
@@ -274,14 +280,14 @@
         "requests": 1,
         "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
         "request_sha256": [
-          "c8297b97c2c5848435ad8812b03149f3e9716773bb44613e511b73ea54abe8a5"
+          "6301809e8db4a6ecba1e2c5acc79d9a93f726c54e107d4d4317e82f1f470b478"
         ],
         "packed_evidence_ids": [
-          "refund-policy.md"
+          "shipping-policy.md"
         ],
         "truncated_ids": [],
         "est_tokens": [
-          566
+          576
         ]
       },
       "evidence_summary": {
@@ -296,9 +302,9 @@
             "source": "request_system",
             "items": 1,
             "labels": [
-              "refund-policy.md"
+              "shipping-policy.md"
             ],
-            "tokens": 23
+            "tokens": 29
           }
         ],
         "empty": [
@@ -308,34 +314,22 @@
         ],
         "knowledge": "not_requested",
         "truncated": false,
-        "tokens": 23
+        "tokens": 29
       },
       "late": false,
-      "gate_ms": 9
+      "gate_ms": 5
     }
   ],
   "audit_detail": {
-    "audit_id": "01a0e73e-c42c-77fe-8d4d-131d367e06b3",
-    "trace_id": "01a0e73e-c346-79e0-b6ee-b040d41f4c91",
-    "created_at": "2026-09-28T09:00:45.484Z",
+    "audit_id": "01a0e787-5533-706a-936f-a750ed1a9ba6",
+    "trace_id": "01a0e787-5431-7163-8fc4-dbf4212f551c",
+    "created_at": "2026-09-28T10:20:01.203Z",
     "route": "support-bot",
     "source": "trafficgen",
     "model": "gpt-4o-mini",
     "status": "completed",
-    "verdict": "HALLUCINATED",
-    "not_assessed_reason": null,
-    "trust_score": 0,
     "grade": null,
-    "hallucination_detected": true,
-    "verdict_counts": {
-      "SUPPORTED": 0,
-      "PARTIALLY_SUPPORTED": 0,
-      "CONTRADICTED": 1,
-      "UNSUPPORTED": 0,
-      "UNKNOWN": 0,
-      "NOT_CHECKED": 0
-    },
-    "processing_ms": 1284,
+    "processing_ms": 1365,
     "judge": {
       "configured_provider": "mock",
       "effective_provider": "mock",
@@ -349,67 +343,17 @@
     "gate_action": "flag",
     "selection": "high",
     "inclusion_prob": 1,
-    "query_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+    "query_preview": "I ordered a desk this morning. When will it arrive?",
     "redacted": false,
-    "user_query": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
-    "llm_response": "You can get a full refund within 60 days of purchase.",
-    "claims": [
-      {
-        "index": 0,
-        "claim": "A full refund is available within 60 days of purchase.",
-        "status": "CONTRADICTED",
-        "confidence": 0.96,
-        "evidence": [
-          "Annual plans can be refunded within 30 days of purchase."
-        ],
-        "reasoning": "The refund policy allows refunds within 30 days of purchase, not 60 days.",
-        "decided_by": "llm",
-        "verdict_probabilities": {},
-        "probability_source": "llm_confidence",
-        "span": {
-          "start": 33,
-          "end": 40,
-          "method": "exact"
-        },
-        "quote": "60 days",
-        "evidence_spans": [
-          {
-            "doc_index": 0,
-            "doc_id": "refund-policy.md",
-            "start": 0,
-            "end": 56,
-            "text": "Annual plans can be refunded within 30 days of purchase.",
-            "kind": "quote_verified"
-          }
-        ]
-      }
-    ],
-    "scores": {
-      "trust_score": 0,
-      "faithfulness": 0,
-      "contradiction_rate": 1,
-      "unverified_rate": 0,
-      "coverage": 1,
-      "accuracy_addressed": 0,
-      "max_contradiction": 1,
-      "p_hallucinated": null,
-      "claims_total": 1,
-      "claims_decided": 1,
-      "claims_unknown": 0
-    },
+    "user_query": "I ordered a desk this morning. When will it arrive?",
+    "llm_response": "Your desk ships today and will arrive by 2026-10-02 at the latest.",
     "degraded_reasons": [],
     "error": null,
-    "reasoning_trace": "",
-    "step_timings": {
-      "decompose": 364,
-      "verify": 900,
-      "score": 20
-    },
     "gate": {
       "action": "flag",
       "would_action": "block",
-      "verdict": "contradicted",
-      "max_risk": 0.98,
+      "verdict": "unsupported",
+      "max_risk": 0.97,
       "delivered": "original"
     },
     "evidence_summary": {
@@ -424,9 +368,9 @@
           "source": "request_system",
           "items": 1,
           "labels": [
-            "refund-policy.md"
+            "shipping-policy.md"
           ],
-          "tokens": 23
+          "tokens": 29
         }
       ],
       "empty": [
@@ -436,19 +380,100 @@
       ],
       "knowledge": "not_requested",
       "truncated": false,
-      "tokens": 23
+      "tokens": 29
     },
     "context_used": [
       {
-        "id": "refund-policy.md",
+        "id": "shipping-policy.md",
         "source": "request_system",
-        "label": "refund-policy.md",
-        "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable.",
+        "label": "shipping-policy.md",
+        "text": "Orders placed before 2 pm ship the same business day. Standard delivery takes 3 to 5 business days after shipping.",
         "truncated": false
       }
     ],
-    "unsupported_policy": "hallucination",
     "scoring_version": "v2",
+    "verdict": "HALLUCINATED",
+    "not_assessed_reason": null,
+    "trust_score": 0.5,
+    "hallucination_detected": true,
+    "verdict_counts": {
+      "SUPPORTED": 1,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 1,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "The desk ships today.",
+        "status": "SUPPORTED",
+        "confidence": 0.86,
+        "evidence": [
+          "Orders placed before 2 pm ship the same business day."
+        ],
+        "reasoning": "The order was placed in the morning, and orders placed before 2 pm ship the same business day.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 0,
+          "end": 21,
+          "method": "exact"
+        },
+        "quote": "Your desk ships today",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "shipping-policy.md",
+            "start": 0,
+            "end": 53,
+            "text": "Orders placed before 2 pm ship the same business day.",
+            "kind": "quote_verified"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "claim": "The desk will arrive by 2026-10-02 at the latest.",
+        "status": "UNSUPPORTED",
+        "confidence": 0.9,
+        "evidence": [],
+        "reasoning": "The shipping policy gives delivery times in business days but no delivery date.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 26,
+          "end": 65,
+          "method": "exact"
+        },
+        "quote": "will arrive by 2026-10-02 at the latest",
+        "evidence_spans": []
+      }
+    ],
+    "scores": {
+      "trust_score": 0.5,
+      "faithfulness": 0.5,
+      "contradiction_rate": 0,
+      "unverified_rate": 0.5,
+      "coverage": 0.5,
+      "accuracy_addressed": 1,
+      "max_contradiction": 0,
+      "p_hallucinated": null,
+      "claims_total": 2,
+      "claims_decided": 2,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 470,
+      "verify_ms": 875,
+      "score_ms": 20,
+      "total_ms": 1365
+    },
+    "unsupported_policy": "hallucination",
     "costs": [
       {
         "component": "decompose",
@@ -459,7 +484,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 364,
+        "latency_ms": 470,
         "status": "ok",
         "questions": 0
       },
@@ -472,7 +497,7 @@
         "output_tokens": 0,
         "cost_usd": 0,
         "cost_source": "simulated",
-        "latency_ms": 900,
+        "latency_ms": 875,
         "status": "ok",
         "questions": 0
       }

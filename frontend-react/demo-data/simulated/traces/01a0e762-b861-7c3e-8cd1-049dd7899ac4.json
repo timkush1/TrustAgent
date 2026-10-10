@@ -1,0 +1,498 @@
+{
+  "trace_id": "01a0e762-b861-7c3e-8cd1-049dd7899ac4",
+  "client_request_id": null,
+  "created_at": "2026-09-28T09:40:01.761Z",
+  "updated_at": "2026-09-28T09:40:03.581Z",
+  "source": "trafficgen",
+  "api_format": "openai_chat",
+  "route": "support-bot",
+  "policy_version": 1,
+  "mode": "flag",
+  "effective_mode": "flag",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "scripted",
+  "action": "pass",
+  "would_action": "pass",
+  "gate_status": "ok",
+  "skip_reason": null,
+  "verdict": "supported",
+  "max_risk": 0.05,
+  "reasons": [],
+  "checked_against": {
+    "configured": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "used": [
+      {
+        "source": "request_context",
+        "items": 1,
+        "labels": [
+          "Context"
+        ],
+        "tokens": 24
+      }
+    ],
+    "empty": [
+      "request_system",
+      "tool_results",
+      "extension"
+    ],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 24
+  },
+  "timings": {
+    "upstream_ms": 259,
+    "ttft_ms": null,
+    "gate_ms": 7,
+    "overhead_ms": 10,
+    "total_ms": 269
+  },
+  "decision_model": {
+    "backend": "mock",
+    "snapshot": "mock/jev-heuristic-v1",
+    "cost_usd": 0.000024192
+  },
+  "audit": {
+    "audit_id": "01a0e762-b96e-7335-8c52-bcc8baa4ad8c",
+    "status": "completed",
+    "lane": "low",
+    "selection": "sample",
+    "verdict": "GROUNDED",
+    "trust_score": 1,
+    "grade": null,
+    "verdict_counts": {
+      "SUPPORTED": 2,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    }
+  },
+  "question_preview": "Question: Can I get cash back for an unused gift card?",
+  "response_preview": "No. Gift cards cannot be exchanged for cash, but they never expire and can be used on any Acme order.",
+  "redacted": false,
+  "flags": [],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme support assistant. Answer only from the context the customer provides."
+      },
+      {
+        "role": "user",
+        "content": "Context:\nGift cards never expire and can be used on any Acme order. They cannot be exchanged for cash.\n\nQuestion: Can I get cash back for an unused gift card?"
+      }
+    ],
+    "user_request": "Question: Can I get cash back for an unused gift card?",
+    "system_instructions": "You are the Acme support assistant. Answer only from the context the customer provides.",
+    "response_text": "No. Gift cards cannot be exchanged for cash, but they never expire and can be used on any Acme order.",
+    "final_response_text": "No. Gift cards cannot be exchanged for cash, but they never expire and can be used on any Acme order.",
+    "evidence": [
+      {
+        "id": "ctx1",
+        "source": "request_context",
+        "label": "Context",
+        "text": "Gift cards never expire and can be used on any Acme order. They cannot be exchanged for cash.",
+        "truncated": false
+      }
+    ],
+    "rules": {},
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e762-b861-7c3e-8cd1-049dd7899ac4",
+      "attempt": 0,
+      "created_at": "2026-09-28T09:40:02.027Z",
+      "route": "support-bot",
+      "policy_version": 1,
+      "mode": "flag",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "effective_mode": "flag",
+      "action": "pass",
+      "would_action": "pass",
+      "enforced": true,
+      "verdict": "supported",
+      "max_risk": 0.05,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "sample",
+      "reasons": [],
+      "evaluators": {
+        "groundedness@1": {
+          "ref": "groundedness@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.05
+          },
+          "probabilities": null,
+          "risk_raw": 0.05,
+          "risk": 0.05,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "ok",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.8,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        },
+        "contradiction@1": {
+          "ref": "contradiction@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "noul",
+          "answer": {
+            "type": "noul",
+            "noul": 0.03
+          },
+          "probabilities": null,
+          "risk_raw": 0.03,
+          "risk": 0.03,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "mock",
+          "calibration_warning": null,
+          "level": "ok",
+          "capped": null,
+          "top": null,
+          "vendor_confidence": null,
+          "confidence_source": null,
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.7,
+            "critical_at": 0.95,
+            "escalate_from": 0.4
+          }
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "dates_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "urls_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "quotes_not_in_evidence",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "citation_out_of_range",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "secret_pattern",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "system_prompt_leak",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        }
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "mock",
+        "model_requested": "mock/jev-heuristic-v1",
+        "snapshot": "mock/jev-heuristic-v1",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 4,
+        "connect_ms": null,
+        "input_tokens": 576,
+        "cost_usd": 0.000024192,
+        "cost_source": "simulated"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "3edffcd1a5242a97e4cd4cab676e05fdcf1ebf74db6703f16b670f5a74fc0155",
+        "request_sha256": [
+          "a0180107cebf99951f1fa7319b1dca9db8f81773494bcb9f87ffc4ac68c579f6"
+        ],
+        "packed_evidence_ids": [
+          "ctx1"
+        ],
+        "truncated_ids": [],
+        "est_tokens": [
+          576
+        ]
+      },
+      "evidence_summary": {
+        "configured": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "used": [
+          {
+            "source": "request_context",
+            "items": 1,
+            "labels": [
+              "Context"
+            ],
+            "tokens": 24
+          }
+        ],
+        "empty": [
+          "request_system",
+          "tool_results",
+          "extension"
+        ],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 24
+      },
+      "late": false,
+      "gate_ms": 7
+    }
+  ],
+  "audit_detail": {
+    "audit_id": "01a0e762-b96e-7335-8c52-bcc8baa4ad8c",
+    "trace_id": "01a0e762-b861-7c3e-8cd1-049dd7899ac4",
+    "created_at": "2026-09-28T09:40:02.030Z",
+    "route": "support-bot",
+    "source": "trafficgen",
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "grade": null,
+    "processing_ms": 1551,
+    "judge": {
+      "configured_provider": "mock",
+      "effective_provider": "mock",
+      "model": "mock",
+      "fallback_active": false,
+      "fallback_reason": null,
+      "structured_outputs": true,
+      "healthy": true,
+      "credential_source": "none"
+    },
+    "gate_action": "pass",
+    "selection": "sample",
+    "inclusion_prob": 1,
+    "query_preview": "Question: Can I get cash back for an unused gift card?",
+    "redacted": false,
+    "user_query": "Question: Can I get cash back for an unused gift card?",
+    "llm_response": "No. Gift cards cannot be exchanged for cash, but they never expire and can be used on any Acme order.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "pass",
+      "would_action": "pass",
+      "verdict": "supported",
+      "max_risk": 0.05,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [
+        {
+          "source": "request_context",
+          "items": 1,
+          "labels": [
+            "Context"
+          ],
+          "tokens": 24
+        }
+      ],
+      "empty": [
+        "request_system",
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 24
+    },
+    "context_used": [
+      {
+        "id": "ctx1",
+        "source": "request_context",
+        "label": "Context",
+        "text": "Gift cards never expire and can be used on any Acme order. They cannot be exchanged for cash.",
+        "truncated": false
+      }
+    ],
+    "scoring_version": "v2",
+    "verdict": "GROUNDED",
+    "not_assessed_reason": null,
+    "trust_score": 1,
+    "hallucination_detected": false,
+    "verdict_counts": {
+      "SUPPORTED": 2,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [
+      {
+        "index": 0,
+        "claim": "Gift cards cannot be exchanged for cash.",
+        "status": "SUPPORTED",
+        "confidence": 0.97,
+        "evidence": [
+          "They cannot be exchanged for cash."
+        ],
+        "reasoning": "The context says gift cards cannot be exchanged for cash.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 4,
+          "end": 43,
+          "method": "exact"
+        },
+        "quote": "Gift cards cannot be exchanged for cash",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "ctx1",
+            "start": 59,
+            "end": 93,
+            "text": "They cannot be exchanged for cash.",
+            "kind": "quote_verified"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "claim": "Gift cards never expire and can be used on any Acme order.",
+        "status": "SUPPORTED",
+        "confidence": 0.96,
+        "evidence": [
+          "Gift cards never expire and can be used on any Acme order."
+        ],
+        "reasoning": "The context says the same.",
+        "decided_by": "llm",
+        "verdict_probabilities": {},
+        "probability_source": "llm_confidence",
+        "span": {
+          "start": 49,
+          "end": 100,
+          "method": "exact"
+        },
+        "quote": "they never expire and can be used on any Acme order",
+        "evidence_spans": [
+          {
+            "doc_index": 0,
+            "doc_id": "ctx1",
+            "start": 0,
+            "end": 58,
+            "text": "Gift cards never expire and can be used on any Acme order.",
+            "kind": "quote_verified"
+          }
+        ]
+      }
+    ],
+    "scores": {
+      "trust_score": 1,
+      "faithfulness": 1,
+      "contradiction_rate": 0,
+      "unverified_rate": 0,
+      "coverage": 1,
+      "accuracy_addressed": 1,
+      "max_contradiction": 0,
+      "p_hallucinated": null,
+      "claims_total": 2,
+      "claims_decided": 2,
+      "claims_unknown": 0
+    },
+    "reasoning_trace": "",
+    "step_timings": {
+      "decompose_ms": 468,
+      "verify_ms": 1063,
+      "score_ms": 20,
+      "total_ms": 1551
+    },
+    "unsupported_policy": "hallucination",
+    "costs": [
+      {
+        "component": "decompose",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 468,
+        "status": "ok",
+        "questions": 0
+      },
+      {
+        "component": "verify",
+        "kind": "llm",
+        "provider": "mock",
+        "model": "mock",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0,
+        "cost_source": "simulated",
+        "latency_ms": 1063,
+        "status": "ok",
+        "questions": 0
+      }
+    ]
+  },
+  "labels": []
+}
