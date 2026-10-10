@@ -210,7 +210,7 @@ export function LiveCard({ live = LIVE_ON_THIS_SITE }: { live?: boolean }) {
  */
 function ReplayPreview() {
   const link = refundTraceHref();
-  const alt = 'The replay’s trace page: the refund answer flagged, “60 days” marked as contradicted by refund-policy.md, and the exact request the fast check was sent';
+  const alt = 'The replay’s trace page: the refund answer flagged, “60 days” marked as contradicted by refund-policy.md, with the fast-check scores and the deep audit’s claim';
   const img = 'block h-auto w-full';
   return (
     <figure className="mb-8" data-replay-preview>
@@ -219,8 +219,8 @@ function ReplayPreview() {
         <img src={`${BASE}landing/trace-dark.jpg`} alt={alt} width={1440} height={900} loading="lazy" decoding="async" className={`${img} hidden dark:block`} />
       </a>
       <figcaption className="mt-2 text-xs text-fg-muted">
-        The trace page in the replay: what the gateway caught, the words that contradict the document, and what Jev was asked. Simulated: the
-        demo’s mock checks and mock judge, not model output.
+        The trace page in the replay: what the gateway caught, the words that contradict the document, and the scores behind it. Simulated:
+        the demo’s mock checks and mock judge, not model output.
       </figcaption>
     </figure>
   );
