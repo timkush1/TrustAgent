@@ -208,6 +208,7 @@
       "what_was_caught": "What was caught",
       "evidence_coverage": "Groundedness checked on {rate} of requests",
       "why_not": "Why not?",
+      "mock_latency_note": "Mock checks answer at once: this is not a real fast check's time.",
       "hallucination_rate_needs_samples": "Needs {min_n} unbiased samples (have {n})",
       "audited_share_basis": "among audited answers (selected by risk; not a traffic rate)",
       "performance": "Performance"

@@ -371,5 +371,7 @@ describe('static build', () => {
     // Its audits were picked by risk: the hallucination rate says why there is none, not just a count.
     const glance = document.querySelector('[aria-label="At a glance"]') as HTMLElement;
     expect(within(glance).getByText(fillTemplate(copy.recording.no_uniform_sample, { min_n: 30 }))).toBeInTheDocument();
+    // The mock checks' milliseconds are not presented as a real fast check's time.
+    expect(within(glance).getByText(copy.overview.mock_latency_note)).toBeInTheDocument();
   });
 });

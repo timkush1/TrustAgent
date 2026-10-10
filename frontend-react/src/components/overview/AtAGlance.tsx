@@ -72,7 +72,8 @@ export function AtAGlance({ stats, label, replay = false }: { stats: OverviewSta
         label={`${copy.tiers.fast_check} p50 / p95`}
         note={
           <>
-            Time the fast check added before the answer was released{' '}
+            {/* Mock checks answer in milliseconds: say so, so nobody quotes it as the real time. */}
+            {label === 'simulated' ? copy.overview.mock_latency_note : 'Time the fast check added before the answer was released'}{' '}
             <EvidenceBadge label={label} subject={`${copy.tiers.fast_check} latency`} />
           </>
         }
