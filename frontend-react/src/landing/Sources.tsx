@@ -38,7 +38,7 @@ function SourceLink({ url, children }: { url: string | null | undefined; childre
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="mt-8">
-      <h3 className="text-xs font-semibold tracking-wide text-fg-subtle uppercase">{title}</h3>
+      <h3 className="text-xs font-semibold tracking-wide text-fg-muted uppercase">{title}</h3>
       <ul className="mt-4 grid grid-cols-1 gap-x-10 gap-y-5 md:grid-cols-2" aria-label={title}>
         {children}
       </ul>

@@ -66,7 +66,7 @@ function Row({ label, value, strong = false, note, testId }: { label: ReactNode;
     <div className="flex items-baseline justify-between gap-4 py-2.5" data-cost-row={testId}>
       <span className={strong ? 'font-semibold text-fg' : 'text-fg-muted'}>
         {label}
-        {note ? <span className="block text-xs text-fg-subtle">{note}</span> : null}
+        {note ? <span className="block text-xs text-fg-muted">{note}</span> : null}
       </span>
       <span className={`tabular text-right ${strong ? 'text-xl font-semibold text-fg' : 'font-medium text-fg'}`}>{value}</span>
     </div>
