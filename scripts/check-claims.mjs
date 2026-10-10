@@ -28,6 +28,7 @@
  *   [pkce-wording]        prose says PKCE is verified while SPEC Appendix D says it is not
  *   [block-stale]         a <!-- measured:start --> ... <!-- measured:end --> block differs from what
  *                         --write generates; [block-unpaired] when the markers do not pair up
+ *   [load-run-missing]    a measured overhead value names a run with no docs/benchmarks/load file
  *   [third-party-stale]   (warning) a third-party claim's as_of is more than 120 days old
  *   [launch-*]            with --launch: the recorded dataset, a measured run, a reviewed
  *                         comparison table and the og.png card (see launchChecks)
@@ -537,7 +538,7 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
             (claim.label === 'measured' ? ` (from ${MEASURED_PATH}; measured blocks: ${WRITE_HINT})` : ''));
       } else {
         const want = LABEL_CHIPS[claim.label];
-        const after = said.slice(at + normalize(expected.text).length);
+        const after = said.slice(at + mk.expected.length);
         const chip = [...after.matchAll(CHIP_RE)][0];
         if (!chip) {
           report('error', 'chip-missing', file, line, `claim ${claim.id}: "${expected.text}" needs its label chip [${want}] after it`);
@@ -1005,6 +1006,12 @@ const CASES = [
     read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
     files: { 'README.md': 'Ours: <!-- claim:meas_cost --> not yet measured [measured]' },
     expect: ['measured-mock'],
+  },
+  {
+    name: 'a measured overhead value needs its load run file',
+    measured: MEASURED,
+    files: {},
+    expect: ['load-run-missing'],
   },
   {
     name: 'a [measured] chip without a measured claim',
