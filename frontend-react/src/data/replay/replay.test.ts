@@ -305,7 +305,14 @@ describe('ReplayDataSource', () => {
     // No uniform-sample audit on the tape: the rate stays hidden.
     expect(o.hallucination_rate.value).toBeNull();
     expect(o.audited_hallucination_share.label).toBe('simulated');
-    const assessed = manifest.traces.filter((t) => committedDetail(t.trace_id).decisions[0]?.evaluators['groundedness@1']?.status === 'assessed').length;
+    // The audited share counts audits with a verdict about the answer, as the gateway does: an
+    // audit with nothing to check against (NOT_ASSESSED) is on the tape but not in the share.
+    const auditVerdicts = manifest.traces.map((t) => committedDetail(t.trace_id).audit_detail?.verdict ?? null).filter((v) => v !== null);
+    expect(auditVerdicts).toContain('NOT_ASSESSED');
+    const withVerdict = auditVerdicts.filter((v) => v !== 'NOT_ASSESSED' && v !== 'UNKNOWN');
+    expect(o.audited_hallucination_share.n).toBe(withVerdict.length);
+    expect(o.audited_hallucination_share.value).toBeCloseTo(withVerdict.filter((v) => v === 'HALLUCINATED').length / withVerdict.length, 12);
+    const assessed =manifest.traces.filter((t) => committedDetail(t.trace_id).decisions[0]?.evaluators['groundedness@1']?.status === 'assessed').length;
     expect(o.evidence_coverage.groundedness_assessed).toBe(assessed);
     expect(o.what_was_caught.map((c) => c.reason)).toContain('contradiction:critical');
 
