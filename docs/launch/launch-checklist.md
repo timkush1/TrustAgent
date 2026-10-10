@@ -26,9 +26,13 @@ post invites people to judge real model output.
       `contracts/claims/measured.json` with `"status": "measured"` and `"mock": false`.
 - [ ] **Refresh every measured table.** `make claims-write`, then commit the regenerated
       `<!-- measured:start/end -->` blocks (README, these launch drafts).
-- [ ] **Capture from the recording.** `make og`, `make hero-gif` and `make screenshots`, each
-      against the recorded dataset (they refuse a simulated one). `docs/launch/og.png` is
-      1280×640 and under 1 MB; the GIF fits the README limits in [og-spec.md](og-spec.md).
+- [ ] **Capture from the recording.** Build with the recorded dataset, then:
+      `make og` (the card, refused on a simulated tape: `docs/launch/og.png` and
+      `frontend-react/public/og.png`, 1280×640, under 1 MB); `make hero-gif` (refused on a
+      simulated tape: `docs/images/v2/hero.gif`, 1200 px, 12 fps, at most 8 MB, for the README's
+      hero slot, and `tmp/launch/hero.mp4` for the release); `make screenshots`
+      (`docs/images/v2/{page}-{light,dark}.png` for the README's screenshot block, captioned with
+      the tape's label). Build the site once more afterwards, so the landing page links `og.png`.
 
 ## 2. Every claim checked
 

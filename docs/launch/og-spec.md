@@ -59,8 +59,10 @@ landing page and the LinkedIn post.
   screenshots the card at exactly 1280×640 and writes `frontend-react/public/og.png` and
   `docs/launch/og.png`.
 - **Only from a recording.** The capture refuses a `kind: mock` dataset. `OG_ALLOW_MOCK=1` is for
-  trying the layout: it stamps a "Simulated" chip on the card (`copy.launch.og.simulated`) and
-  writes only to `test-results/launch/`, never to the two published paths.
+  trying the layout: the card then carries the recording's Simulated label (the spec asserts it)
+  and the capture goes only to `frontend-react/test-results/launch/og.png`, never to the two
+  published paths. Playwright clears that directory on its next run, so a scratch copy never
+  lingers.
 - **Meta tags:** the landing page adds `og:image` (an absolute URL built from `VITE_SITE_URL`)
   only when `public/og.png` exists at build time. Until the recorded capture is committed, shared
   links show no image rather than a simulated one.
