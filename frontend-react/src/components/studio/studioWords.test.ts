@@ -101,7 +101,7 @@ describe('riskLevelsLine', () => {
   });
 });
 
-describe('the static Studio’s failure words (D101, CO-8)', () => {
+describe('the static Studio’s failure words (D101)', () => {
   const limits = { maxCalls: 100, maxTokens: 8000 };
   /** A refusal by the tab's caps, as the static plane reports it (staticPlane refusedError). */
   const refusedError = (reason: string) => new ApiError({ kind: 'http', status: 429, code: reason, message: 'refused' });
@@ -141,7 +141,7 @@ describe('the static Studio’s failure words (D101, CO-8)', () => {
     expect(studioLiveFailure(new Error('boom'), limits)).toBeNull();
   });
 
-  it('says out of credits or key refused for a gateway draft, never "engine unavailable" (CO-8)', () => {
+  it('says out of credits or key refused for a gateway draft, never "engine unavailable"', () => {
     expect(studioDraftFailureText('no_credits')).toBe(copy.studio.draft_no_credits);
     expect(studioDraftFailureText('judge_unauthorized')).toBe(copy.studio.draft_key_refused);
     expect(studioDraftFailureText('engine_unavailable')).toBeNull();

@@ -73,7 +73,7 @@ function staticDraftReason(live: StudioLiveView): Reason | null {
   return null;
 }
 
-/** What went wrong with a draft, in words: the browser call's own words, or the judge's provider (CO-8). */
+/** What went wrong with a draft, in words: the browser call's own words, or the judge's provider. */
 function DraftFailure({ error, live }: { error: unknown; live: StudioLiveView | null }) {
   const failure = describeError(error);
   const code = isApiError(error) ? error.code : null;

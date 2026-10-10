@@ -138,7 +138,7 @@ describe('Studio', { timeout: 30_000 }, () => {
   it.each([
     ['no_credits', "The judge's provider says the account is out of credits, so nothing was drafted."],
     ['judge_unauthorized', "The judge's provider refused its key, so nothing was drafted."],
-  ])('words a draft the judge provider refused (%s) and links to Connections (CO-8)', async (code, start) => {
+  ])('words a draft the judge provider refused (%s) and links to Connections', async (code, start) => {
     const user = userEvent.setup();
     const control = createControlApi({ studioDraft: errorReply(503, code, 'The audit engine could not draft.') });
     renderPage('/app/evaluators/studio', { control });

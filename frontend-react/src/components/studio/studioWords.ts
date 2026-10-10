@@ -311,7 +311,7 @@ export function studioLiveFailure(error: unknown, limits: { maxCalls: number; ma
   return { text, hint: view.hint === null ? null : liveSentence(view.hint) };
 }
 
-/** The words for a gateway draft the judge's provider refused (CO-8): out of credits, or the key refused. */
+/** The words for a gateway draft the judge's provider refused: out of credits, or the key refused. */
 export function studioDraftFailureText(code: string): string | null {
   if (code === 'no_credits') return copy.studio.draft_no_credits;
   if (code === 'judge_unauthorized') return copy.studio.draft_key_refused;
