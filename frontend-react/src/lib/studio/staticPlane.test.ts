@@ -183,6 +183,31 @@ describe('testEvaluator', () => {
     expect(out.results[1].fires).toBeNull();
   });
 
+  it('gives the gate a sample’s own rules, and the template default without them (D151)', async () => {
+    const commitments = structuredClone(BUILTIN_TEMPLATES['commitments@1']);
+    const fallback = (commitments.params as Record<string, { default: string }>).allowed_commitments.default;
+    const jev = fakeJev(() => ({
+      type: 'choice',
+      choice: 'permitted_commitment',
+      probabilities: { no_commitment: 0.05, describes_policy_only: 0.05, permitted_commitment: 0.85, unapproved_commitment: 0.05 },
+    }));
+    const plane = createStaticStudioPlane(deps, { live: fakeStudioLive({ jev }), registry });
+    const own = 'Annual plans: refund within 30 days of purchase.';
+    const out = await plane.testEvaluator({
+      spec: commitments,
+      samples: [
+        { id: 'own', assistant_response: 'You can get a refund within 30 days.', rules: { allowed_commitments: own } },
+        { id: 'default', assistant_response: 'You can get a refund within 30 days.' },
+      ],
+    });
+    expect(out.results.map((r) => r.status)).toEqual(['assessed', 'assessed']);
+    const states = jev.requests.map((r) => JSON.stringify(r.body.state));
+    expect(states).toHaveLength(2);
+    expect(states[0]).toContain(own);
+    expect(states[0]).not.toContain(fallback);
+    expect(states[1]).toContain(fallback);
+  });
+
   it('marks a sample whose call failed and goes on; a refused key ends the whole test', async () => {
     const timeout = new ApiError({ kind: 'timeout', status: 0, code: 'timeout', message: 'slow' });
     const flaky = fakeJev((state) => (String(state.assistant_response).includes('fine') ? timeout : { type: 'noul', noul: 0.1 }));
