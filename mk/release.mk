@@ -73,8 +73,8 @@ pages-size: ## Pages step 3: the landing page's size budget over the built site
 
 # The site's shape: the landing page at the root, the app under app/, 404.html a copy of the app
 # (GitHub Pages serves it for every path with no file, and it boots the router); every page loads
-# its assets under the base path; the dataset in demo/ is byte for byte the one that was checked;
-# no source maps.
+# its assets under the base path; the dataset in demo/ is byte for byte the one that was checked
+# (.gitkeep placeholders aside: vite/plugins/dataset.ts does not copy them); no source maps.
 pages-files: ## Pages step 4: file checks over the built site (pages, 404 fallback, base path, shipped dataset, no source maps)
 	@set -e; d="$(PAGES_DIST)"; fail() { echo "pages-files: $$1"; exit 1; }; \
 	for f in index.html app/index.html 404.html demo/manifest.json; do \
@@ -84,8 +84,8 @@ pages-files: ## Pages step 4: file checks over the built site (pages, 404 fallba
 		grep -q '="$(PAGES_BASE_PATH)assets/' "$$d/$$f" || fail "$$f loads no asset under $(PAGES_BASE_PATH)"; \
 		if grep -Eq '(src|href)="/(assets|app|demo)/' "$$d/$$f"; then fail "$$f loads an asset outside $(PAGES_BASE_PATH)"; fi; \
 	done; \
-	diff -r -q "$(PAGES_RECORDING_DIR)" "$$d/demo" >/dev/null \
-		|| fail "$$d/demo is not the checked dataset $(PAGES_RECORDING_DIR): $$(diff -r -q '$(PAGES_RECORDING_DIR)' "$$d/demo" | head -3)"; \
+	diff -r -q -x .gitkeep "$(PAGES_RECORDING_DIR)" "$$d/demo" >/dev/null \
+		|| fail "$$d/demo is not the checked dataset $(PAGES_RECORDING_DIR): $$(diff -r -q -x .gitkeep '$(PAGES_RECORDING_DIR)' "$$d/demo" | head -3)"; \
 	maps="$$(find "$$d" -name '*.map' | head -3)"; test -z "$$maps" || fail "source maps in the site: $$maps"; \
 	echo "✅ Pages files: landing, app, 404 fallback, base path $(PAGES_BASE_PATH), dataset $(PAGES_RECORDING_DIR), no source maps"
 
