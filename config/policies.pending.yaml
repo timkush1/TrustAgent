@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../contracts/schema/policy.v1.schema.json
+#
+# Demo routes the demo and e2e stacks cannot load (schema policy/v1, SPEC §2.7). They are appended to
+# the routes of config/policies.yaml, merged over its defaults and overrides, so this file holds only
+# `version` and `routes` (make contracts-check refuses anything else and route names that clash).
+# The gateway never reads this file.
+#
+# - handbook (knowledge): reads the knowledge add-on (SPEC §7.1), which a policy may name only when
+#   TRUTHTABLE_KNOWLEDGE_ENABLED is set. It stays out of config/policies.yaml, whose stacks run
+#   without the add-on; a knowledge stack loads a policy that includes it.
+#
+# P3 moved the block and fallback routes (payments-faq, help-center) into config/policies.yaml once
+# the /v1 handler enforced them. The scenarios on the routes here carry the tags p3 and knowledge, so
+# the demo and e2e sets never send them. cmd/trafficgen tests check that the tags match.
+version: 1
+routes:
+  - name: handbook
+    description: >-
+      Demo HR assistant whose documents come from the knowledge base (knowledge add-on) when the
+      request carries none. Knowledge-only evidence caps the evidence checks at warn, so answers are
+      flagged, never blocked.
+    match: {headers: {X-TrustAgent-Route: handbook}}
+    mode: flag
+    evidence:
+      sources: [request_system, knowledge]
+      knowledge: {when: fallback, top_k: 5, deadline_ms: 150, min_score: 0.3}
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+    deep_audit: {pass_sample_rate: 1.0, error_sample_rate: 1.0, uniform_sample_rate: 0}
+    store_bodies: all

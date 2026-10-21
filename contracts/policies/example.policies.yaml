@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=../schema/policy.v1.schema.json
+#
+# Example policy (SPEC §2.7), verbatim apart from this header. config/policies.yaml, the policy the gateway
+# loads, keeps these defaults with a demo support-bot route; copy routes from here. make contracts-check
+# validates this file and, when present, config/policies.yaml against policy.v1.
+version: 1
+defaults:
+  deadline_ms: 600
+  sample_rate: 1.0
+  require_calibration: true
+  on_no_evidence: ignore
+  streaming: passthrough
+  headers: full
+  evidence:
+    sources: [request_system, request_context, tool_results, extension]
+    system_mode: documents_only
+    line_headers: true
+    max_tokens: 8000
+  evaluators:
+    - ref: groundedness@1
+    - ref: contradiction@1
+    - ref: refusal@1
+    - ref: pii_secret_leak@1
+  deep_audit: {enabled: true, pass_sample_rate: 0.02, uniform_sample_rate: 0.01, error_sample_rate: 0.1, verifier: auto}
+  store_bodies: sampled
+  block: {style: message, message: "I can't provide a verified answer to that right now."}
+overrides: {client_mode: none, client_rules: false}
+routes:
+  - name: support-bot
+    match: {headers: {X-TrustAgent-Route: support-bot}}
+    mode: flag
+    evaluators:
+      - ref: groundedness@1
+      - ref: contradiction@1
+      - ref: commitments@1
+        params: {allowed_commitments: "Annual plans: refund within 30 days of purchase. No other refunds, credits or discounts."}
+      - ref: off_brand_tone@1
+        stage: shadow
+        params: {brand_voice: "Friendly, clear, and professional. No slang, no sarcasm, no blaming the user."}
+  - name: payments-faq
+    match: {headers: {X-TrustAgent-Route: payments-faq}, paths: ["/v1/chat/completions"]}
+    mode: fallback
+    fail: closed
+    streaming: buffer
+    deadline_ms: 1500
+    hedge_after_ms: 400
+    evidence: {sources: [request_system, tool_results, extension]}   # end users cannot inject "documents"
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+    fallback:
+      upstream: same
+      model: gpt-4o
+      system_prompt: "Answer using only the information in CONTEXT. If CONTEXT does not contain the answer, say you don't have that information. Do not add facts, numbers, dates, names or links that are not in CONTEXT."
+      on_fail: block
+    block: {style: message, message: "I can't confirm that from our policy documents. A person will follow up."}

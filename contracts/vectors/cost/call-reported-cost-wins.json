@@ -1,0 +1,28 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-reported-cost-wins",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "OpenRouter reported usage.cost for a Haiku verify call, so the reported $0.0041 is the cost (cost_source reported), not tokens x the table ($0.004125).",
+  "input": {
+    "fn": "call_cost",
+    "provider": "openrouter",
+    "model": "anthropic/claude-haiku-4.5",
+    "input_tokens": 3525,
+    "output_tokens": 120,
+    "reported_cost_usd": 0.0041,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "jev-*", "provider": "typesafe", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "claude-haiku-4-5*", "provider": "anthropic", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"cost_source": "reported", "cost_usd": 0.0041, "price_table_version": "2026-09-27"}
+}

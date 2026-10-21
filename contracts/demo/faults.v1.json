@@ -1,0 +1,716 @@
+{
+  "schema": "trustagent.scenarios/v1",
+  "scenarios": [
+    {
+      "id": "fault-429-no-time-to-retry",
+      "title": "Fast check rate limited, no time to retry (fail open)",
+      "description": "F1. support-bot (flag, deadline 600 ms, no hedge). mock-upstream answers the decision request 429 with Retry-After 1 s (429@1). The wait does not fit the 600 ms deadline, so the client gives up: status error:retryable, degraded error, one attempt. A flag route fails open: the answer passes unchanged, verdict unknown, no risk. The deep audit samples every failed check on the demo routes (error_sample_rate 1.0): two SUPPORTED claims, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"support-hours.md\">Support is open Monday to Friday, 9:00 to 17:00 Central European Time.</document>"
+          },
+          {"role": "user", "content": "When can I reach support?"}
+        ]
+      },
+      "response": "Support is open Monday to Friday, 9:00 to 17:00 Central European Time.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "429@1"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Support is open Monday to Friday.",
+            "quote": "Support is open Monday to Friday",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": [
+              "Support is open Monday to Friday, 9:00 to 17:00 Central European Time."
+            ],
+            "reasoning": "The support-hours document gives the same days."
+          },
+          {
+            "claim": "Support hours are 9:00 to 17:00 Central European Time.",
+            "quote": "9:00 to 17:00 Central European Time",
+            "verdict": "SUPPORTED",
+            "confidence": 0.96,
+            "evidence": [
+              "Support is open Monday to Friday, 9:00 to 17:00 Central European Time."
+            ],
+            "reasoning": "The support-hours document gives the same hours and time zone."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "error:retryable",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "error",
+        "degraded": true,
+        "decision_model": {"attempts": 1, "hedged": false}
+      }
+    },
+    {
+      "id": "fault-429-retried",
+      "title": "Fast check rate limited once, retried in time",
+      "description": "F2. payments-faq (fallback, fail closed, deadline 1500 ms, hedge at 400 ms). The first decision request gets 429 with Retry-After 1 s (429@1); the wait fits the 1500 ms deadline, so the client retries once and the retry answers from mock_answers (groundedness 0.05, contradiction 0.03). Status ok after 2 attempts, nothing degraded: the grounded answer passes, verdict supported. Audited as a pass (pass_sample_rate 1.0): two SUPPORTED claims, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "payments-faq",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "payments-faq"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme payments assistant. Answer only from the documents below.\n\n<document id=\"card-payments.md\">Acme accepts Visa, Mastercard and American Express. Card payments are charged in euros.</document>"
+          },
+          {"role": "user", "content": "Which cards can I pay with?"}
+        ]
+      },
+      "response": "You can pay with Visa, Mastercard or American Express. Card payments are charged in euros.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "429@1"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Acme accepts Visa, Mastercard and American Express.",
+            "quote": "You can pay with Visa, Mastercard or American Express",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": ["Acme accepts Visa, Mastercard and American Express."],
+            "reasoning": "The card-payments document lists the same three cards."
+          },
+          {
+            "claim": "Card payments are charged in euros.",
+            "quote": "Card payments are charged in euros",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": ["Card payments are charged in euros."],
+            "reasoning": "The card-payments document says the same."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "fallback",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "ok",
+        "verdict": "supported",
+        "max_risk": 0.05,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "passed",
+        "degraded": false,
+        "decision_model": {"attempts": 2, "hedged": false}
+      }
+    },
+    {
+      "id": "fault-503-retried",
+      "title": "Fast check unavailable once, retried",
+      "description": "F3. support-bot (flag). The first decision request gets 503 with no Retry-After (503@1), a retryable fault; the client retries after a short backoff and the retry answers from mock_answers. Status ok after 2 attempts, nothing degraded: pass, verdict supported. Audited as a pass: two SUPPORTED claims, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"password-reset.md\">To reset your password, choose Forgot password on the sign-in page. The reset link expires after 24 hours.</document>"
+          },
+          {"role": "user", "content": "How do I reset my password?"}
+        ]
+      },
+      "response": "Choose Forgot password on the sign-in page. The reset link expires after 24 hours.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "503@1"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "To reset the password, choose Forgot password on the sign-in page.",
+            "quote": "Choose Forgot password on the sign-in page",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": [
+              "To reset your password, choose Forgot password on the sign-in page."
+            ],
+            "reasoning": "The password-reset document gives the same step."
+          },
+          {
+            "claim": "The reset link expires after 24 hours.",
+            "quote": "The reset link expires after 24 hours",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": ["The reset link expires after 24 hours."],
+            "reasoning": "The password-reset document gives the same expiry."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "ok",
+        "verdict": "supported",
+        "max_risk": 0.05,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "passed",
+        "degraded": false,
+        "decision_model": {"attempts": 2, "hedged": false}
+      }
+    },
+    {
+      "id": "fault-hang-hedged",
+      "title": "Fast check hangs once, the hedge answers",
+      "description": "F4. payments-faq (hedge at 400 ms). The first decision request hangs (hang@1); at 400 ms the client sends the hedge, which shares the call's X-Mock-Key, so the counted fault is used up and the hedge answers from mock_answers. Status ok, hedged, 2 attempts, nothing degraded: pass, verdict supported. Audited as a pass: two SUPPORTED claims, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "payments-faq",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "payments-faq"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme payments assistant. Answer only from the documents below.\n\n<document id=\"invoices.md\">Invoices are emailed to the account owner on the first day of each month. They are also listed under Billing, Invoices.</document>"
+          },
+          {"role": "user", "content": "Where do I find my invoices?"}
+        ]
+      },
+      "response": "Invoices are emailed to the account owner on the first day of each month, and they are also listed under Billing, Invoices.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "hang@1"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Invoices are emailed to the account owner on the first day of each month.",
+            "quote": "Invoices are emailed to the account owner on the first day of each month",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": [
+              "Invoices are emailed to the account owner on the first day of each month."
+            ],
+            "reasoning": "The invoices document says the same."
+          },
+          {
+            "claim": "Invoices are also listed under Billing, Invoices.",
+            "quote": "they are also listed under Billing, Invoices",
+            "verdict": "SUPPORTED",
+            "confidence": 0.96,
+            "evidence": ["They are also listed under Billing, Invoices."],
+            "reasoning": "The invoices document names the same place."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "fallback",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "ok",
+        "verdict": "supported",
+        "max_risk": 0.05,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "passed",
+        "degraded": false,
+        "decision_model": {"attempts": 2, "hedged": true}
+      }
+    },
+    {
+      "id": "upstream-503-relayed",
+      "title": "The model's own 503 is relayed, not gated",
+      "description": "U1. support-bot. The LLM upstream answers 503 (mock_faults.upstream 503): the gateway relays the upstream's status and body unchanged (HTTP 503) and gates nothing (SPEC §2.12, GATEWAY.md §6): status skipped:upstream_error, verdict unknown, never enforced, no fast check; with no answer the deep audit is NOT_ASSESSED without an LLM call. It also breaks the run of decision-model faults (validate.mjs allows 4 in a row).",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"data-export.md\">Workspace admins can export all project data as a ZIP file from Settings, Export.</document>"
+          },
+          {"role": "user", "content": "How do I export my project data?"}
+        ]
+      },
+      "response": "Workspace admins can export all project data as a ZIP file from Settings, Export.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"upstream": "503"},
+      "judge": null,
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "skipped:upstream_error",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "not_assessed",
+        "audit_verdict": "NOT_ASSESSED",
+        "outcome": "not_checked",
+        "http_status": 503,
+        "degraded": true
+      }
+    },
+    {
+      "id": "fault-hang-fail-open",
+      "title": "Fast check hangs past the deadline (fail open)",
+      "description": "F5. support-bot (flag, deadline 600 ms, no hedge). Every decision request hangs (hang): no answer before the deadline, status timeout, degraded timeout, verdict unknown. A flag route fails open: the answer passes unchanged. The hanging request ends at the attempt timeout with no answer, so no late decision is recorded. Audited as a failed check: two SUPPORTED claims, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"two-factor.md\">Two-factor authentication works with authenticator apps and hardware security keys. Text-message codes are not supported.</document>"
+          },
+          {"role": "user", "content": "Which second factors can I use?"}
+        ]
+      },
+      "response": "You can use an authenticator app or a hardware security key. Text-message codes are not supported.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "hang"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Authenticator apps and hardware security keys can be used as a second factor.",
+            "quote": "You can use an authenticator app or a hardware security key",
+            "verdict": "SUPPORTED",
+            "confidence": 0.96,
+            "evidence": [
+              "Two-factor authentication works with authenticator apps and hardware security keys."
+            ],
+            "reasoning": "The two-factor document lists the same two methods."
+          },
+          {
+            "claim": "Text-message codes are not supported.",
+            "quote": "Text-message codes are not supported",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": ["Text-message codes are not supported."],
+            "reasoning": "The two-factor document says the same."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "timeout",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "error",
+        "degraded": true,
+        "decision_model": {"attempts": 1, "hedged": false, "late": false}
+      }
+    },
+    {
+      "id": "fault-slow-late-decision",
+      "title": "Fast check answers after the deadline (late decision)",
+      "description": "F6. support-bot (deadline 600 ms). The decision backend answers after 2 s (slow): the gate stops waiting at the deadline (status timeout, the answer passes, fail open) and the request goes on; its answer is recorded as the late decision of the same attempt, late and never enforced (SPEC §2.9). Audited as a failed check: two SUPPORTED claims, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"seats.md\">Each plan includes 5 seats. Extra seats can be added at any time from Settings, Members.</document>"
+          },
+          {"role": "user", "content": "How many seats does my plan include?"}
+        ]
+      },
+      "response": "Each plan includes 5 seats, and you can add extra seats at any time from Settings, Members.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "slow"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Each plan includes 5 seats.",
+            "quote": "Each plan includes 5 seats",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": ["Each plan includes 5 seats."],
+            "reasoning": "The seats document gives the same number."
+          },
+          {
+            "claim": "Extra seats can be added at any time from Settings, Members.",
+            "quote": "you can add extra seats at any time from Settings, Members",
+            "verdict": "SUPPORTED",
+            "confidence": 0.96,
+            "evidence": ["Extra seats can be added at any time from Settings, Members."],
+            "reasoning": "The seats document names the same place."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "timeout",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "error",
+        "degraded": true,
+        "decision_model": {"late": true}
+      }
+    },
+    {
+      "id": "fault-hang-fail-closed",
+      "title": "Fast check hangs on a fail-closed route (blocked)",
+      "description": "F7. payments-faq (fallback, fail closed, deadline 1500 ms, hedge at 400 ms). Every decision request hangs (hang), the hedge too (2 attempts, hedged): status timeout, degraded timeout. fail: closed blocks a block or fallback route whose check failed (reason fail_closed; GATEWAY.md §6), so the client gets the route's block message. Audited as a failed check: one SUPPORTED claim, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "payments-faq",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "payments-faq"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme payments assistant. Answer only from the documents below.\n\n<document id=\"chargebacks.md\">If a customer disputes a charge, Acme pauses the related payout until the dispute is resolved.</document>"
+          },
+          {
+            "role": "user",
+            "content": "What happens to my payout when a customer disputes a charge?"
+          }
+        ]
+      },
+      "response": "When a customer disputes a charge, Acme pauses the related payout until the dispute is resolved.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "hang"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Acme pauses the related payout until a disputed charge is resolved.",
+            "quote": "Acme pauses the related payout until the dispute is resolved",
+            "verdict": "SUPPORTED",
+            "confidence": 0.97,
+            "evidence": [
+              "If a customer disputes a charge, Acme pauses the related payout until the dispute is resolved."
+            ],
+            "reasoning": "The chargebacks document says the same."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "fallback",
+        "action": "block",
+        "would_action": "pass",
+        "status": "timeout",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": ["fail_closed"],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "blocked",
+        "degraded": true,
+        "decision_model": {"attempts": 2, "hedged": true},
+        "delivered_text": "I can't confirm that from our policy documents. A person will follow up."
+      }
+    },
+    {
+      "id": "fault-413-evidence-halved",
+      "title": "Fast check request too large, sent again with half the evidence",
+      "description": "F10. support-bot. The system prompt carries data-retention.md and release-notes.md, about 5,000 tokens of evidence together, under the 8,000-token cap. The first decision request gets 413 (413@1, too_large): the gate compiles again with half the evidence cap, which truncates the release notes, and the smaller request answers from mock_answers. Status ok after 2 attempts, nothing degraded: pass, verdict supported, Checked-Against request_system:2 (both documents, the second truncated). Audited as a pass: one SUPPORTED claim, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"data-retention.md\">Deleted projects stay in the trash for 30 days and are then removed permanently.</document>\n<document id=\"release-notes.md\">Version 1.0: search loads faster on large workspaces and keeps the last filter you used, and the mobile app supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 1.1: billing shows clearer error messages and links each one to the matching help article, and notifications keeps your place when you switch between projects and come back later. Version 1.2: exports supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the API handles long names without truncating them in lists and tables. Version 1.3: the mobile app keeps your place when you switch between projects and come back later, and single sign-on respects the workspace language for dates, numbers and currencies. Version 1.4: notifications handles long names without truncating them in lists and tables, and audit logs loads faster on large workspaces and keeps the last filter you used. Version 1.5: the API respects the workspace language for dates, numbers and currencies, and the editor shows clearer error messages and links each one to the matching help article. Version 1.6: single sign-on loads faster on large workspaces and keeps the last filter you used, and dashboards supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 1.7: audit logs shows clearer error messages and links each one to the matching help article, and search keeps your place when you switch between projects and come back later. Version 1.8: the editor supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and billing handles long names without truncating them in lists and tables. Version 1.9: dashboards keeps your place when you switch between projects and come back later, and exports respects the workspace language for dates, numbers and currencies. Version 1.10: search handles long names without truncating them in lists and tables, and the mobile app loads faster on large workspaces and keeps the last filter you used. Version 1.11: billing respects the workspace language for dates, numbers and currencies, and notifications shows clearer error messages and links each one to the matching help article. Version 2.0: exports loads faster on large workspaces and keeps the last filter you used, and the API supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 2.1: the mobile app shows clearer error messages and links each one to the matching help article, and single sign-on keeps your place when you switch between projects and come back later. Version 2.2: notifications supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and audit logs handles long names without truncating them in lists and tables. Version 2.3: the API keeps your place when you switch between projects and come back later, and the editor respects the workspace language for dates, numbers and currencies. Version 2.4: single sign-on handles long names without truncating them in lists and tables, and dashboards loads faster on large workspaces and keeps the last filter you used. Version 2.5: audit logs respects the workspace language for dates, numbers and currencies, and search shows clearer error messages and links each one to the matching help article. Version 2.6: the editor loads faster on large workspaces and keeps the last filter you used, and billing supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 2.7: dashboards shows clearer error messages and links each one to the matching help article, and exports keeps your place when you switch between projects and come back later. Version 2.8: search supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the mobile app handles long names without truncating them in lists and tables. Version 2.9: billing keeps your place when you switch between projects and come back later, and notifications respects the workspace language for dates, numbers and currencies. Version 2.10: exports handles long names without truncating them in lists and tables, and the API loads faster on large workspaces and keeps the last filter you used. Version 2.11: the mobile app respects the workspace language for dates, numbers and currencies, and single sign-on shows clearer error messages and links each one to the matching help article. Version 3.0: notifications loads faster on large workspaces and keeps the last filter you used, and audit logs supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 3.1: the API shows clearer error messages and links each one to the matching help article, and the editor keeps your place when you switch between projects and come back later. Version 3.2: single sign-on supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and dashboards handles long names without truncating them in lists and tables. Version 3.3: audit logs keeps your place when you switch between projects and come back later, and search respects the workspace language for dates, numbers and currencies. Version 3.4: the editor handles long names without truncating them in lists and tables, and billing loads faster on large workspaces and keeps the last filter you used. Version 3.5: dashboards respects the workspace language for dates, numbers and currencies, and exports shows clearer error messages and links each one to the matching help article. Version 3.6: search loads faster on large workspaces and keeps the last filter you used, and the mobile app supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 3.7: billing shows clearer error messages and links each one to the matching help article, and notifications keeps your place when you switch between projects and come back later. Version 3.8: exports supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the API handles long names without truncating them in lists and tables. Version 3.9: the mobile app keeps your place when you switch between projects and come back later, and single sign-on respects the workspace language for dates, numbers and currencies. Version 3.10: notifications handles long names without truncating them in lists and tables, and audit logs loads faster on large workspaces and keeps the last filter you used. Version 3.11: the API respects the workspace language for dates, numbers and currencies, and the editor shows clearer error messages and links each one to the matching help article. Version 4.0: single sign-on loads faster on large workspaces and keeps the last filter you used, and dashboards supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 4.1: audit logs shows clearer error messages and links each one to the matching help article, and search keeps your place when you switch between projects and come back later. Version 4.2: the editor supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and billing handles long names without truncating them in lists and tables. Version 4.3: dashboards keeps your place when you switch between projects and come back later, and exports respects the workspace language for dates, numbers and currencies. Version 4.4: search handles long names without truncating them in lists and tables, and the mobile app loads faster on large workspaces and keeps the last filter you used. Version 4.5: billing respects the workspace language for dates, numbers and currencies, and notifications shows clearer error messages and links each one to the matching help article. Version 4.6: exports loads faster on large workspaces and keeps the last filter you used, and the API supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 4.7: the mobile app shows clearer error messages and links each one to the matching help article, and single sign-on keeps your place when you switch between projects and come back later. Version 4.8: notifications supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and audit logs handles long names without truncating them in lists and tables. Version 4.9: the API keeps your place when you switch between projects and come back later, and the editor respects the workspace language for dates, numbers and currencies. Version 4.10: single sign-on handles long names without truncating them in lists and tables, and dashboards loads faster on large workspaces and keeps the last filter you used. Version 4.11: audit logs respects the workspace language for dates, numbers and currencies, and search shows clearer error messages and links each one to the matching help article. Version 5.0: the editor loads faster on large workspaces and keeps the last filter you used, and billing supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 5.1: dashboards shows clearer error messages and links each one to the matching help article, and exports keeps your place when you switch between projects and come back later. Version 5.2: search supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the mobile app handles long names without truncating them in lists and tables. Version 5.3: billing keeps your place when you switch between projects and come back later, and notifications respects the workspace language for dates, numbers and currencies. Version 5.4: exports handles long names without truncating them in lists and tables, and the API loads faster on large workspaces and keeps the last filter you used. Version 5.5: the mobile app respects the workspace language for dates, numbers and currencies, and single sign-on shows clearer error messages and links each one to the matching help article. Version 5.6: notifications loads faster on large workspaces and keeps the last filter you used, and audit logs supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 5.7: the API shows clearer error messages and links each one to the matching help article, and the editor keeps your place when you switch between projects and come back later. Version 5.8: single sign-on supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and dashboards handles long names without truncating them in lists and tables. Version 5.9: audit logs keeps your place when you switch between projects and come back later, and search respects the workspace language for dates, numbers and currencies. Version 5.10: the editor handles long names without truncating them in lists and tables, and billing loads faster on large workspaces and keeps the last filter you used. Version 5.11: dashboards respects the workspace language for dates, numbers and currencies, and exports shows clearer error messages and links each one to the matching help article. Version 6.0: search loads faster on large workspaces and keeps the last filter you used, and the mobile app supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 6.1: billing shows clearer error messages and links each one to the matching help article, and notifications keeps your place when you switch between projects and come back later. Version 6.2: exports supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the API handles long names without truncating them in lists and tables. Version 6.3: the mobile app keeps your place when you switch between projects and come back later, and single sign-on respects the workspace language for dates, numbers and currencies. Version 6.4: notifications handles long names without truncating them in lists and tables, and audit logs loads faster on large workspaces and keeps the last filter you used. Version 6.5: the API respects the workspace language for dates, numbers and currencies, and the editor shows clearer error messages and links each one to the matching help article. Version 6.6: single sign-on loads faster on large workspaces and keeps the last filter you used, and dashboards supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 6.7: audit logs shows clearer error messages and links each one to the matching help article, and search keeps your place when you switch between projects and come back later. Version 6.8: the editor supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and billing handles long names without truncating them in lists and tables. Version 6.9: dashboards keeps your place when you switch between projects and come back later, and exports respects the workspace language for dates, numbers and currencies. Version 6.10: search handles long names without truncating them in lists and tables, and the mobile app loads faster on large workspaces and keeps the last filter you used. Version 6.11: billing respects the workspace language for dates, numbers and currencies, and notifications shows clearer error messages and links each one to the matching help article. Version 7.0: exports loads faster on large workspaces and keeps the last filter you used, and the API supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 7.1: the mobile app shows clearer error messages and links each one to the matching help article, and single sign-on keeps your place when you switch between projects and come back later. Version 7.2: notifications supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and audit logs handles long names without truncating them in lists and tables. Version 7.3: the API keeps your place when you switch between projects and come back later, and the editor respects the workspace language for dates, numbers and currencies. Version 7.4: single sign-on handles long names without truncating them in lists and tables, and dashboards loads faster on large workspaces and keeps the last filter you used. Version 7.5: audit logs respects the workspace language for dates, numbers and currencies, and search shows clearer error messages and links each one to the matching help article. Version 7.6: the editor loads faster on large workspaces and keeps the last filter you used, and billing supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 7.7: dashboards shows clearer error messages and links each one to the matching help article, and exports keeps your place when you switch between projects and come back later. Version 7.8: search supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the mobile app handles long names without truncating them in lists and tables. Version 7.9: billing keeps your place when you switch between projects and come back later, and notifications respects the workspace language for dates, numbers and currencies. Version 7.10: exports handles long names without truncating them in lists and tables, and the API loads faster on large workspaces and keeps the last filter you used. Version 7.11: the mobile app respects the workspace language for dates, numbers and currencies, and single sign-on shows clearer error messages and links each one to the matching help article. Version 8.0: notifications loads faster on large workspaces and keeps the last filter you used, and audit logs supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 8.1: the API shows clearer error messages and links each one to the matching help article, and the editor keeps your place when you switch between projects and come back later. Version 8.2: single sign-on supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and dashboards handles long names without truncating them in lists and tables. Version 8.3: audit logs keeps your place when you switch between projects and come back later, and search respects the workspace language for dates, numbers and currencies. Version 8.4: the editor handles long names without truncating them in lists and tables, and billing loads faster on large workspaces and keeps the last filter you used. Version 8.5: dashboards respects the workspace language for dates, numbers and currencies, and exports shows clearer error messages and links each one to the matching help article. Version 8.6: search loads faster on large workspaces and keeps the last filter you used, and the mobile app supports keyboard shortcuts for every common action, listed under Help -> Shortcuts. Version 8.7: billing shows clearer error messages and links each one to the matching help article, and notifications keeps your place when you switch between projects and come back later. Version 8.8: exports supports keyboard shortcuts for every common action, listed under Help -> Shortcuts, and the API handles long names without truncating them in lists and tables. Version 8.9: the mobile app keeps your place when you switch between projects and come back later, and single sign-on respects the workspace language for dates, numbers and currencies. Version 8.10: notifications handles long names without truncating them in lists and tables, and audit logs loads faster on large workspaces and keeps the last filter you used. Version 8.11: the API respects the workspace language for dates, numbers and currencies, and the editor shows clearer error messages and links each one to the matching help article.</document>"
+          },
+          {
+            "role": "user",
+            "content": "How long do deleted projects stay in the trash?"
+          }
+        ]
+      },
+      "response": "Deleted projects stay in the trash for 30 days and are then removed permanently.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "413@1"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "Deleted projects stay in the trash for 30 days before permanent removal.",
+            "quote": "Deleted projects stay in the trash for 30 days and are then removed permanently",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": [
+              "Deleted projects stay in the trash for 30 days and are then removed permanently."
+            ],
+            "reasoning": "The data-retention document gives the same 30 days."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "ok",
+        "verdict": "supported",
+        "max_risk": 0.05,
+        "reasons": [],
+        "checked_against": "request_system:2",
+        "deep_audit": "sample",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "passed",
+        "degraded": false,
+        "decision_model": {"attempts": 2, "hedged": false}
+      }
+    },
+    {
+      "id": "upstream-html-fail-closed",
+      "title": "The model answers a web page on a fail-closed route (blocked)",
+      "description": "U2. payments-faq (fallback, fail closed). The LLM upstream answers 200 with an HTML page (mock_faults.upstream html200): a 2xx that is not JSON is gated as a skip (skipped:upstream_error), so the fast check is never asked (SPEC §2.12, GATEWAY.md §6). fail: closed blocks a block or fallback route whose check did not run (reason fail_closed), so the client gets the route's block message. No answer text: the deep audit is NOT_ASSESSED without an LLM call.",
+      "sets": ["faults", "p5"],
+      "route": "payments-faq",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "payments-faq"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme payments assistant. Answer only from the documents below.\n\n<document id=\"card-refunds.md\">Refunds for card payments go back to the original card.</document>"
+          },
+          {"role": "user", "content": "Where does my refund go?"}
+        ]
+      },
+      "response": "Refunds for card payments go back to the original card.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"upstream": "html200"},
+      "judge": null,
+      "expect": {
+        "mode": "fallback",
+        "action": "block",
+        "would_action": "pass",
+        "status": "skipped:upstream_error",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": ["fail_closed"],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "not_assessed",
+        "audit_verdict": "NOT_ASSESSED",
+        "outcome": "blocked",
+        "delivered_text": "I can't confirm that from our policy documents. A person will follow up.",
+        "degraded": true
+      }
+    },
+    {
+      "id": "fault-bad-json",
+      "title": "Fast check answers with broken JSON",
+      "description": "F9. support-bot (flag). The decision backend answers 200 with a JSON body cut off mid-object (bad_json): status error:bad_response, degraded error. A flag route fails open: the answer passes. Audited as a failed check: one SUPPORTED claim, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"api-limits.md\">The public API allows 600 requests per minute for each workspace.</document>"
+          },
+          {"role": "user", "content": "What is the API rate limit?"}
+        ]
+      },
+      "response": "The public API allows 600 requests per minute for each workspace.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "bad_json"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "The public API allows 600 requests per minute per workspace.",
+            "quote": "The public API allows 600 requests per minute for each workspace",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": [
+              "The public API allows 600 requests per minute for each workspace."
+            ],
+            "reasoning": "The API-limits document gives the same limit."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "error:bad_response",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "error",
+        "degraded": true,
+        "decision_model": {"attempts": 1, "hedged": false}
+      }
+    },
+    {
+      "id": "fault-402-credits",
+      "title": "Fast check out of credits (fail open)",
+      "description": "F8. support-bot (flag). The decision backend answers 402 (402_inflight@1). Without OpenRouter's limit_source the 402 reads as an account out of credits: status error:credits, degraded error, and the breaker opens for the auth cooldown, so this is the last scenario of the pack and nothing after it meets the open breaker. A flag route fails open: the answer passes. Audited as a failed check: one SUPPORTED claim, GROUNDED.",
+      "sets": ["faults", "p5"],
+      "route": "support-bot",
+      "api_format": "openai_chat",
+      "stream": false,
+      "answer_source": "scripted",
+      "headers": {"X-TrustAgent-Route": "support-bot"},
+      "request": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.\n\n<document id=\"single-sign-on.md\">Single sign-on with SAML is available on the Business and Enterprise plans.</document>"
+          },
+          {"role": "user", "content": "Which plans include single sign-on?"}
+        ]
+      },
+      "response": "Single sign-on with SAML is available on the Business and Enterprise plans.",
+      "mock_answers": {
+        "groundedness__v1": {"type": "noul", "noul": 0.05},
+        "contradiction__v1": {"type": "noul", "noul": 0.03}
+      },
+      "mock_faults": {"decision": "402_inflight@1"},
+      "judge": {
+        "claims": [
+          {
+            "claim": "SAML single sign-on is available on the Business and Enterprise plans.",
+            "quote": "Single sign-on with SAML is available on the Business and Enterprise plans",
+            "verdict": "SUPPORTED",
+            "confidence": 0.98,
+            "evidence": [
+              "Single sign-on with SAML is available on the Business and Enterprise plans."
+            ],
+            "reasoning": "The single-sign-on document names the same plans."
+          }
+        ]
+      },
+      "expect": {
+        "mode": "flag",
+        "action": "pass",
+        "would_action": "pass",
+        "status": "error:credits",
+        "verdict": "unknown",
+        "max_risk": null,
+        "reasons": [],
+        "checked_against": "request_system:1",
+        "deep_audit": "sample_error",
+        "audit": "queued",
+        "audit_verdict": "GROUNDED",
+        "outcome": "error",
+        "degraded": true,
+        "decision_model": {"attempts": 1, "hedged": false}
+      }
+    }
+  ]
+}

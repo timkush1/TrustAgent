@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-normalized-and-unknown",
+  "status": "frozen",
+  "description": "The first URL loses its trailing \".\" and \"/\" and its host is lowercased: https://docs.example.com/refunds, which the evidence contains. The second becomes https://example.com/terms (trailing \".\" stripped), which no reference text contains: fires on it, with the finding covering the stripped URL.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "See https://Docs.Example.com/refunds/. Terms: https://example.com/terms.",
+    "evidence": [
+      {
+        "id": "refund-policy",
+        "source": "request_system",
+        "text": "Full policy: https://docs.example.com/refunds"
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "https://example.com/terms", "start": 46, "end": 71}]
+  },
+  "tolerance": 1e-9
+}

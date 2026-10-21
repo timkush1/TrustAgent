@@ -1,7 +1,7 @@
 name: Security
 
-# gosec (medium+), bandit, and npm audit (high+) are BLOCKING — the codebase
-# was triaged clean in Phase 3 (see docs/SECURITY.md). Trivy remains
+# gosec (medium+), bandit, npm audit (high+) and gitleaks are BLOCKING — the
+# codebase was triaged clean in Phase 3 (see docs/SECURITY.md). Trivy remains
 # informational until a full scheduled run has been reviewed.
 
 on:
@@ -15,24 +15,27 @@ concurrency:
   group: security-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   gosec:
     name: gosec (Go SAST)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: backend-go/go.mod
           cache-dependency-path: backend-go/go.sum
 
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -59,10 +62,14 @@ jobs:
     name: bandit (Python SAST)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
 
@@ -71,23 +78,59 @@ jobs:
           pip install bandit==1.9.4
           bandit -r backend-python/src -x backend-python/src/truthtable/grpc/pb
 
+      # The setup scripts (configure, doctor, setup_url, ...) run docker and git by design: their
+      # low-severity subprocess notes are accepted, anything medium or above fails.
+      - name: Run bandit (setup scripts, medium and above)
+        run: bandit -r scripts -x scripts/tests -ll
+
+  gitleaks:
+    name: gitleaks (secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the whole history: a key removed in a later commit is still leaked
+
+      # A pinned release, checked against its published SHA-256 (no third-party action, so no
+      # license key and nothing that can change under us).
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.28.0
+          GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          curl -fsSLo gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks && rm gitleaks.tgz
+
+      # .gitleaks.toml keeps the default rules and allows only fake keys in tests (*_test.go,
+      # tests/unit/, e2e/), the detector vectors, the fake-key conventions and SHA-256 calibration
+      # keys. --redact: a finding never prints the secret it found.
+      - name: Scan the git history
+        run: ./gitleaks git --config .gitleaks.toml --redact --no-banner --verbose .
+
   npm-audit:
     name: npm audit (frontend deps)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: '22'
 
-      # Audit PRODUCTION dependencies only (--omit=dev). The shipped bundle is
-      # react/react-dom/zustand; the build toolchain (Vite/esbuild) is dev-only
-      # and its remaining HIGH advisories are dev-server issues that never ship
-      # and are only fixable by a breaking Vite major (deliberately deferred —
-      # see .github/dependabot.yml and docs/CI-CD.md). Real HIGH advisories in
-      # shipped code still fail this gate.
+      # Audit PRODUCTION dependencies only (--omit=dev): real HIGH advisories in
+      # shipped code fail this gate. Since the v2 toolchain upgrade (Vite 8) the
+      # full tree, dev deps included, is also clean; dev-only advisories are
+      # tracked by Dependabot rather than blocking every PR.
       - name: Run npm audit (production deps)
         working-directory: frontend-react
         run: npm audit --omit=dev --audit-level=high
@@ -96,12 +139,16 @@ jobs:
     name: Trivy (filesystem scan)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     continue-on-error: true # informational until a full scheduled run is reviewed
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Run Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .

@@ -16,6 +16,7 @@ from truthtable.graphs.nodes.verifier import verify_claim
 from truthtable.graphs.state import VerificationStatus
 from truthtable.providers.base import CompletionRequest, CompletionResponse, LLMProvider
 from truthtable.security import (
+    MAX_REASONING_CHARS,
     parse_json_strict,
     sanitize_text,
     validate_claims,
@@ -114,6 +115,21 @@ def test_validate_verdict_clamps_confidence():
     assert verdict["confidence"] == 1.0
 
 
+def test_validate_verdict_keeps_reasoning_optional_and_bounded():
+    allowed = {"SUPPORTED", "UNSUPPORTED", "PARTIALLY_SUPPORTED"}
+
+    given = validate_verdict(
+        {"status": "SUPPORTED", "reasoning": "  The policy says so.  "}, allowed
+    )
+    missing = validate_verdict({"status": "SUPPORTED"}, allowed)
+    not_text = validate_verdict({"status": "SUPPORTED", "reasoning": {"x": 1}}, allowed)
+    too_long = validate_verdict({"status": "SUPPORTED", "reasoning": "r" * 5000}, allowed)
+
+    assert given["reasoning"] == "The policy says so."
+    assert missing["reasoning"] == "" and not_text["reasoning"] == ""
+    assert too_long["reasoning"] == "r" * MAX_REASONING_CHARS
+
+
 # ---------------------------------------------------------------------------
 # decomposer under attack
 # ---------------------------------------------------------------------------
@@ -153,7 +169,7 @@ async def test_decomposer_caps_claim_flooding():
 
     claims = await decompose_claims("text", provider)
 
-    assert len(claims) <= 20
+    assert len(claims) <= 25  # TRUTHTABLE_MAX_CLAIMS
 
 
 # ---------------------------------------------------------------------------

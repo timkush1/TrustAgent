@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "platt-anticorrelated-slope-clamped",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "Labels fall as risk rises, so the unconstrained slope is negative. A decreasing map cannot be a calibration table: A is clamped to 0 and B = logit(mean smoothed target) = logit((10·11/12 + 10·1/12)/20) = logit(0.5) = 0, with a warning.",
+  "input": {
+    "op": "platt",
+    "groups": [{"risk_raw": 0.1, "pos": 8, "neg": 2}, {"risk_raw": 0.9, "pos": 2, "neg": 8}]
+  },
+  "expected": {
+    "platt": {"a": 0, "b": 0},
+    "table": [
+      0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+      0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+      0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+      0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+      0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+      0.5, 0.5, 0.5, 0.5, 0.5, 0.5
+    ],
+    "warnings": [
+      "risk falls as the labels rise, so the Platt slope is clamped to 0 and the mapping is flat"
+    ]
+  },
+  "tolerance": 1e-06
+}

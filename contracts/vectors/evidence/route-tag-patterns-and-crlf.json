@@ -1,0 +1,49 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "route-tag-patterns-and-crlf",
+  "status": "frozen",
+  "description": "CRLF becomes LF before any pattern runs. Two route tag_patterns: <<<(.*?)>>> (flag s) yields its capture group, trimmed; ^FACT: [^\\n]+ (flag m) has no group, so the whole match is the block text. Neither block has an id: sys1, sys2. Removing both spans leaves \"Answer from the article.\" and four newlines, which collapse and are trimmed.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [
+        {"pattern": "<<<(.*?)>>>", "flags": "s"},
+        {"pattern": "^FACT: [^\\n]+", "flags": "m"}
+      ],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer from the article.\r\n\r\n<<<\r\nPassword reset links expire after 15 minutes.\r\n>>>\r\nFACT: Accounts lock after 5 failed attempts.\r\n"
+        },
+        {"role": "user", "content": "How long is a reset link valid?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "sys1",
+        "source": "request_system",
+        "text": "Password reset links expire after 15 minutes."
+      },
+      {
+        "id": "sys2",
+        "source": "request_system",
+        "text": "FACT: Accounts lock after 5 failed attempts."
+      }
+    ],
+    "system_instructions": "Answer from the article.",
+    "user_request": "How long is a reset link valid?",
+    "pre_dedup_items": 2,
+    "max_marker": 0
+  },
+  "tolerance": 1e-9
+}

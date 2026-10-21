@@ -1,0 +1,33 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "urls-untrusted-evidence-is-not-a-reference",
+  "status": "frozen",
+  "description": "Trusted evidence is present, so the detector runs. The docs URL is in the trusted item. The partner URL appears only in an untrusted tool result (untrusted_tools), which is never a reference: fires on it.",
+  "input": {
+    "detector": "urls_not_in_evidence",
+    "response": "See https://docs.example.com/limits and https://partner.example.net/deals.",
+    "evidence": [
+      {
+        "id": "limits",
+        "source": "request_system",
+        "text": "Rate limits: https://docs.example.com/limits"
+      },
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "Top result: https://partner.example.net/deals",
+        "untrusted": true
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "https://partner.example.net/deals", "start": 40, "end": 73}]
+  },
+  "tolerance": 1e-9
+}

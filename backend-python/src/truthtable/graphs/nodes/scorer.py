@@ -1,194 +1,161 @@
 """
 Score Calculator Node
 
-This node aggregates claim verification results into a final faithfulness score.
+This node turns the claim verifications into the audit's result: scores,
+verdict, status and a human-readable reasoning trace. The arithmetic is
+scoring v2 (scoring/aggregate.py; SPEC section 3.2): each decided claim is a
+distribution over the four verdicts, CONTRADICTED counts as wrong and
+UNSUPPORTED as unverified or baseless depending on the unsupported policy,
+UNKNOWN and NOT_CHECKED claims are left out, and a score that cannot be
+computed is absent rather than invented.
 
-The faithfulness score indicates how much of the LLM's response is supported
-by the provided context. A score of 1.0 means fully faithful, 0.0 means
-completely unsupported (hallucination).
+The status follows SPEC section 2.2: FAILED (judge_unavailable, no scores)
+when UNKNOWN claims reach half of the checked claims; DEGRADED when some claim
+is UNKNOWN or an earlier step recorded a degraded reason (decomposer_fallback,
+context_trimmed, judge_retry_exhausted); COMPLETED otherwise.
+
+The legacy `faithfulness_score` carries the trust score (0.0 when absent), and
+`hallucination_detected` is whether the verdict is HALLUCINATED.
 """
 
 import logging
-from typing import List
+import time
+from typing import List, Mapping, Optional, Sequence
 
-from ..state import AuditState, ClaimVerification, VerificationStatus
+from ...scoring.aggregate import (
+    DEFAULT_SCORING,
+    SCORING_VERSION,
+    AuditSummary,
+    ClaimScoreInput,
+    ScoringConfig,
+    aggregate,
+    resolve_unsupported_policy,
+)
+from ..state import (
+    AuditState,
+    AuditVerdict,
+    ClaimVerification,
+    NotAssessedReason,
+    UnsupportedPolicy,
+    VerificationStatus,
+    coerce_status,
+)
 
 logger = logging.getLogger(__name__)
 
+NO_CLAIMS_TRACE = "No verifiable claims were found in the response."
 
-def calculate_faithfulness_score(verifications: List[ClaimVerification]) -> float:
+# Claims listed under "Problematic claims" in the reasoning trace.
+MAX_TRACE_CLAIMS = 5
+
+_STATUS_LINES = (
+    (VerificationStatus.SUPPORTED, "✓ Supported"),
+    (VerificationStatus.PARTIALLY_SUPPORTED, "⚠ Partially supported"),
+    (VerificationStatus.CONTRADICTED, "✕ Contradicted"),
+    (VerificationStatus.UNSUPPORTED, "✗ Unsupported"),
+    (VerificationStatus.UNKNOWN, "? Unknown"),
+    (VerificationStatus.NOT_CHECKED, "- Not checked"),
+)
+
+
+def effective_policy(state: Mapping[str, object]) -> UnsupportedPolicy:
     """
-    Calculate faithfulness score from claim verifications.
-
-    Scoring logic:
-    - SUPPORTED claim: 1.0 points
-    - PARTIALLY_SUPPORTED: 0.5 points
-    - CONTRADICTED: 0.0 points (context disproves the claim)
-    - UNSUPPORTED: 0.0 points (no evidence either way)
-    - UNKNOWN: 0.3 points (conservative estimate)
-
-    Final score is the weighted average, taking into account confidence levels.
-
-    Args:
-        verifications: List of claim verifications
-
-    Returns:
-        Faithfulness score between 0.0 and 1.0
+    The unsupported policy to score with: the resolved request policy
+    (preflight resolves "" and auto; a state that skipped preflight is resolved
+    here from its evidence sources), switched to `unverifiable` when the
+    verifier capped the evidence (context_trimmed), because the support of an
+    UNSUPPORTED claim may be in the part the judge did not see.
     """
-    if not verifications:
-        logger.warning("No verifications to score")
-        return 0.0
-
-    # Assign base scores
-    score_map = {
-        VerificationStatus.SUPPORTED: 1.0,
-        VerificationStatus.PARTIALLY_SUPPORTED: 0.5,
-        VerificationStatus.CONTRADICTED: 0.0,
-        VerificationStatus.UNSUPPORTED: 0.0,
-        VerificationStatus.UNKNOWN: 0.3,
-    }
-
-    # Calculate weighted score
-    total_weight = 0.0
-    weighted_sum = 0.0
-
-    for verification in verifications:
-        status = verification["status"]
-        confidence = verification["confidence"]
-
-        # Weight by confidence (claims we're more confident about count more)
-        weight = max(confidence, 0.1)  # Minimum weight of 0.1
-        base_score = score_map.get(status, 0.0)
-
-        weighted_sum += base_score * weight
-        total_weight += weight
-
-    # Compute average
-    if total_weight == 0:
-        return 0.0
-
-    final_score = weighted_sum / total_weight
-
-    logger.debug(
-        f"Calculated faithfulness score: {final_score:.3f} " f"from {len(verifications)} claims"
+    requested = state.get("unsupported_policy")
+    sources_raw = state.get("context_sources")
+    sources: Sequence[str] = (
+        [str(source) for source in sources_raw] if isinstance(sources_raw, list) else []
     )
+    documents = state.get("context_docs")
+    count = len(documents) if isinstance(documents, list) else 0
+    padded = [sources[i] if i < len(sources) else "" for i in range(count)]
+    policy = resolve_unsupported_policy(str(requested or ""), padded)
+    if state.get("context_trimmed"):
+        return UnsupportedPolicy.UNVERIFIABLE
+    return policy
 
-    return final_score
+
+def _fmt(value: Optional[float]) -> str:
+    return "n/a" if value is None else f"{value:.2f}"
 
 
-def detect_hallucination(verifications: List[ClaimVerification]) -> bool:
+def generate_reasoning_trace(
+    verifications: Sequence[ClaimVerification], summary: Optional[AuditSummary] = None
+) -> str:
     """
-    Determine if hallucination is detected.
-
-    We consider it a hallucination if:
-    - Any claim is CONTRADICTED or UNSUPPORTED with high confidence (>0.7), OR
-    - More than 30% of claims are CONTRADICTED, UNSUPPORTED or PARTIALLY_SUPPORTED
-
-    Args:
-        verifications: List of claim verifications
-
-    Returns:
-        True if hallucination detected
+    Explain the audit: verdict and scores, claim counts, and the problematic
+    claims (contradicted first). Safe without claims (D1).
     """
-    if not verifications:
-        return False
-
-    # A confident CONTRADICTED or UNSUPPORTED claim is a hallucination. (A
-    # CONTRADICTED claim is the strongest signal: the context disproves it.)
-    for verification in verifications:
-        if (
-            verification["status"]
-            in (VerificationStatus.CONTRADICTED, VerificationStatus.UNSUPPORTED)
-            and verification["confidence"] > 0.7
-        ):
-            logger.info(
-                f"Hallucination detected: high-confidence {verification['status'].value} claim: "
-                f"{verification['claim'][:50]}..."
-            )
-            return True
-
-    # Check percentage of problematic claims
-    problematic = sum(
-        1
-        for v in verifications
-        if v["status"]
-        in [
-            VerificationStatus.CONTRADICTED,
-            VerificationStatus.UNSUPPORTED,
-            VerificationStatus.PARTIALLY_SUPPORTED,
-        ]
-    )
-
-    problematic_ratio = problematic / len(verifications)
-
-    if problematic_ratio > 0.3:
-        logger.info(
-            f"Hallucination detected: {problematic_ratio:.1%} of claims "
-            f"are unsupported or partially supported"
-        )
-        return True
-
-    return False
-
-
-def generate_reasoning_trace(verifications: List[ClaimVerification], score: float) -> str:
-    """
-    Generate human-readable explanation of the audit results.
-
-    Args:
-        verifications: List of claim verifications
-        score: Calculated faithfulness score
-
-    Returns:
-        Reasoning trace as formatted string
-    """
-    # Count by status (every VerificationStatus must be a key here, or the
-    # increment below raises KeyError for that status).
-    status_counts = {
-        VerificationStatus.SUPPORTED: 0,
-        VerificationStatus.PARTIALLY_SUPPORTED: 0,
-        VerificationStatus.CONTRADICTED: 0,
-        VerificationStatus.UNSUPPORTED: 0,
-        VerificationStatus.UNKNOWN: 0,
-    }
-
-    for v in verifications:
-        status_counts[v["status"]] += 1
-
     total = len(verifications)
+    if total == 0:
+        return NO_CLAIMS_TRACE
 
-    # Build trace
-    trace_lines = [
-        f"Faithfulness Score: {score:.2f}/1.00",
-        "",
-        f"Total Claims Analyzed: {total}",
-        f"  ✓ Supported: {status_counts[VerificationStatus.SUPPORTED]} ({status_counts[VerificationStatus.SUPPORTED]/total*100:.1f}%)",
-        f"  ⚠ Partially Supported: {status_counts[VerificationStatus.PARTIALLY_SUPPORTED]} ({status_counts[VerificationStatus.PARTIALLY_SUPPORTED]/total*100:.1f}%)",
-        f"  ✕ Contradicted: {status_counts[VerificationStatus.CONTRADICTED]} ({status_counts[VerificationStatus.CONTRADICTED]/total*100:.1f}%)",
-        f"  ✗ Unsupported: {status_counts[VerificationStatus.UNSUPPORTED]} ({status_counts[VerificationStatus.UNSUPPORTED]/total*100:.1f}%)",
-        f"  ? Unknown: {status_counts[VerificationStatus.UNKNOWN]} ({status_counts[VerificationStatus.UNKNOWN]/total*100:.1f}%)",
-        "",
-    ]
+    counts = {status: 0 for status in VerificationStatus}
+    for verification in verifications:
+        counts[coerce_status(verification["status"])] += 1
 
-    # Add details for problematic claims (contradicted first — strongest signal)
-    problem_claims = [
-        v
-        for v in verifications
-        if v["status"] in (VerificationStatus.CONTRADICTED, VerificationStatus.UNSUPPORTED)
-    ]
-    if problem_claims:
-        trace_lines.append("Problematic Claims:")
-        for i, v in enumerate(problem_claims[:5], 1):  # Show max 5
-            label = (
-                "contradicted" if v["status"] == VerificationStatus.CONTRADICTED else "unsupported"
+    lines: List[str] = []
+    if summary is not None:
+        if summary.verdict is None:
+            lines.append(
+                f"Audit failed ({summary.error_kind}): the judge could not decide "
+                f"{counts[VerificationStatus.UNKNOWN]} of {total} claims."
             )
-            trace_lines.append(f"  {i}. [{label}] {v['claim'][:100]}...")
+        else:
+            lines.append(f"Verdict: {summary.verdict.value} ({summary.policy.value} policy)")
+        scores = summary.scores
+        if scores is not None and scores.faithfulness is not None:
+            lines.append(
+                f"Trust score: {_fmt(scores.trust_score)}  "
+                f"(faithfulness {_fmt(scores.faithfulness)}, "
+                f"contradiction {_fmt(scores.contradiction_rate)}, "
+                f"coverage {_fmt(scores.coverage)})"
+            )
+        if summary.degraded_reasons:
+            lines.append(f"Degraded: {', '.join(summary.degraded_reasons)}")
+        lines.append("")
 
-        if len(problem_claims) > 5:
-            trace_lines.append(f"  ... and {len(problem_claims) - 5} more")
-        trace_lines.append("")
+    lines.append(f"Total Claims Analyzed: {total}")
+    for status, label in _STATUS_LINES:
+        count = counts[status]
+        if count or status is not VerificationStatus.NOT_CHECKED:
+            lines.append(f"  {label}: {count} ({count / total * 100:.1f}%)")
+    lines.append("")
 
-    return "\n".join(trace_lines)
+    # Contradicted claims first: the strongest signal.
+    problems = [
+        v for v in verifications if coerce_status(v["status"]) is VerificationStatus.CONTRADICTED
+    ] + [v for v in verifications if coerce_status(v["status"]) is VerificationStatus.UNSUPPORTED]
+    if problems:
+        lines.append("Problematic Claims:")
+        for i, verification in enumerate(problems[:MAX_TRACE_CLAIMS], 1):
+            label = coerce_status(verification["status"]).value
+            lines.append(f"  {i}. [{label}] {verification['claim'][:100]}")
+        if len(problems) > MAX_TRACE_CLAIMS:
+            lines.append(f"  ... and {len(problems) - MAX_TRACE_CLAIMS} more")
+        lines.append("")
+
+    return "\n".join(lines).rstrip()
+
+
+def score_audit(
+    verifications: Sequence[ClaimVerification],
+    policy: UnsupportedPolicy,
+    config: ScoringConfig = DEFAULT_SCORING,
+    degraded_reasons: Sequence[str] = (),
+) -> AuditSummary:
+    """Scoring v2 over claim verification records (scoring.aggregate)."""
+    return aggregate(
+        [ClaimScoreInput.from_verification(verification) for verification in verifications],
+        policy,
+        config,
+        degraded_reasons,
+    )
 
 
 class ScorerNode:
@@ -197,15 +164,22 @@ class ScorerNode:
 
     This node:
     1. Takes claim_verifications from state
-    2. Calculates faithfulness score
-    3. Detects hallucinations
-    4. Generates reasoning trace
-    5. Updates state with final results
+    2. Scores them (scoring v2)
+    3. Sets the verdict, status and degraded reasons
+    4. Generates the reasoning trace
 
     Usage in graph:
         node = ScorerNode()
         graph.add_node("score", node.run)
     """
+
+    def __init__(self, config: ScoringConfig = DEFAULT_SCORING):
+        """
+        Args:
+            config: Scoring thresholds (ScoringConfig.from_settings for the
+                TRUTHTABLE_SCORING_* keys; the registry defaults otherwise)
+        """
+        self.config = config
 
     async def run(self, state: AuditState) -> AuditState:
         """
@@ -217,33 +191,38 @@ class ScorerNode:
         Returns:
             Updated state with final scores and reasoning
         """
-        import time
-
         start = time.time()
         logger.info(f"Calculating scores for request {state['request_id']}")
 
-        verifications = state["claim_verifications"]
+        verifications = state.get("claim_verifications") or []
+        policy = effective_policy(state)
+        summary = score_audit(
+            verifications, policy, self.config, state.get("degraded_reasons") or []
+        )
 
-        # Calculate faithfulness score
-        score = calculate_faithfulness_score(verifications)
-
-        # Detect hallucinations
-        hallucination = detect_hallucination(verifications)
-
-        # Generate reasoning trace
-        reasoning = generate_reasoning_trace(verifications, score)
-
-        # Update state
-        state["faithfulness_score"] = score
-        state["hallucination_detected"] = hallucination
-        state["reasoning_trace"] = reasoning
+        state["unsupported_policy"] = summary.policy.value
+        state["scores"] = summary.scores.to_dict() if summary.scores is not None else None
+        state["grade"] = summary.grade
+        state["scoring_version"] = SCORING_VERSION
+        state["faithfulness_score"] = summary.legacy_score
+        state["hallucination_detected"] = summary.hallucination_detected
+        state["reasoning_trace"] = generate_reasoning_trace(verifications, summary)
+        state["audit_status"] = summary.status.value
+        state["verdict"] = summary.verdict.value if summary.verdict is not None else None
+        state["degraded_reasons"] = list(summary.degraded_reasons)
+        state["error_kind"] = summary.error_kind
+        if summary.verdict is AuditVerdict.NOT_ASSESSED:
+            state["not_assessed_reason"] = NotAssessedReason.NO_EVIDENCE.value
 
         elapsed_ms = int((time.time() - start) * 1000)
         state.setdefault("step_timings", {})
-        state["step_timings"]["score_ms"] = elapsed_ms
+        timings = state["step_timings"]
+        if timings is not None:
+            timings["score_ms"] = elapsed_ms
 
         logger.info(
-            f"Audit complete: score={score:.3f}, hallucination={hallucination} ({elapsed_ms}ms)"
+            f"Audit scored: verdict={state['verdict']}, status={summary.status.value}, "
+            f"trust={_fmt(summary.trust_score)}, policy={summary.policy.value} ({elapsed_ms}ms)"
         )
 
         return state

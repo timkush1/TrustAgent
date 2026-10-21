@@ -1,3 +1,5 @@
+// Package grpc is the proxy's client of the audit engine (proto/evaluator.proto): Evaluate for
+// deep audits, the engine health pinger, and the knowledge-base RPCs.
 package grpc
 
 import (
@@ -6,121 +8,110 @@ import (
 	"math"
 	"time"
 
-	pb "github.com/truthtable/backend-go/api/audit/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+
+	pb "github.com/truthtable/backend-go/api/audit/v1"
 )
 
+// InternalTokenHeader is the metadata key of the internal token every RPC carries when one is
+// configured (SPEC §2.2, TRUTHTABLE_INTERNAL_TOKEN).
+const InternalTokenHeader = "x-trustagent-internal"
+
+// healthTimeout bounds one engine health check; engineInfoTimeout one GetEngineInfo (the engine
+// runs a bounded judge probe and Qdrant probes for it).
+const (
+	healthTimeout     = 2 * time.Second
+	engineInfoTimeout = 4 * time.Second
+	// applyRuntimeConfigTimeout bounds one ApplyRuntimeConfig: the engine makes no LLM call on
+	// apply (D34).
+	applyRuntimeConfigTimeout = 4 * time.Second
+	// draftEvaluatorTimeout bounds one DraftEvaluator: the judge drafts the spec and may repair it.
+	draftEvaluatorTimeout = 60 * time.Second
+)
+
+// AuditClient talks to the audit engine (AuditService).
 type AuditClient struct {
 	conn    *grpc.ClientConn
 	client  pb.AuditServiceClient
 	timeout time.Duration
 }
 
-type ClaimResult struct {
-	Text       string
-	Verdict    string
-	Confidence float64
-	Evidence   []string
-}
-
-type AuditResult struct {
-	TrustScore            float64
-	Claims                []*ClaimResult
-	ReasoningTrace        string
-	HallucinationDetected bool
-	ProcessingTimeMs      int64
-	StepTimings           map[string]int64
-}
-
-func NewAuditClient(address string, timeout time.Duration) (*AuditClient, error) {
-	// grpc.NewClient creates the client lazily; the connection is established on
-	// the first RPC (replaces the deprecated grpc.Dial).
-	conn, err := grpc.NewClient(address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+// NewAuditClient creates a client for the engine at address. The connection is established
+// lazily on the first RPC, so a missing engine is not an error here. timeout bounds one Evaluate
+// call (TRUTHTABLE_GRPC_TIMEOUT); a non-empty token is sent as x-trustagent-internal metadata on
+// every RPC. opts are appended to the defaults (tests dial an in-memory listener).
+func NewAuditClient(address string, timeout time.Duration, token string, opts ...grpc.DialOption) (*AuditClient, error) {
+	dial := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	if token != "" {
+		dial = append(dial, grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any,
+			cc *grpc.ClientConn, invoker grpc.UnaryInvoker, callOpts ...grpc.CallOption) error {
+			return invoker(metadata.AppendToOutgoingContext(ctx, InternalTokenHeader, token), method, req, reply, cc, callOpts...)
+		}))
+	}
+	conn, err := grpc.NewClient(address, append(dial, opts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC client for %s: %w", address, err)
 	}
-
-	return &AuditClient{
-		conn:    conn,
-		client:  pb.NewAuditServiceClient(conn),
-		timeout: timeout,
-	}, nil
+	return &AuditClient{conn: conn, client: pb.NewAuditServiceClient(conn), timeout: timeout}, nil
 }
 
-func (c *AuditClient) Evaluate(ctx context.Context, requestID, prompt, response string) (*AuditResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+// Evaluate runs one deep audit to completion (SPEC §2.2: Go's only audit call; M5 replaced the
+// SubmitAudit + GetAuditResult polling). A failed audit is a result with status FAILED, not an
+// error; an error means the engine could not be asked or did not answer in time.
+func (c *AuditClient) Evaluate(ctx context.Context, req *pb.AuditRequest) (*pb.AuditResult, error) {
+	if c.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+	}
+	return c.client.Evaluate(ctx, req)
+}
+
+// Health asks the engine for its health (M4: the real engine state, not merely "a client
+// exists").
+func (c *AuditClient) Health(ctx context.Context) (*pb.HealthResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, healthTimeout)
 	defer cancel()
+	return c.client.HealthCheck(ctx, &pb.HealthRequest{})
+}
 
-	req := &pb.AuditRequest{
-		RequestId: requestID,
-		Query:     prompt,
-		Response:  response,
+// EngineInfo asks the engine what it runs with (SPEC §2.2 GetEngineInfo): version, the judge and
+// how it was chosen, knowledge, verifier, scoring settings, configuration warnings and its limits.
+// The engine probes its judge for the answer, so it is bounded like a health check.
+func (c *AuditClient) EngineInfo(ctx context.Context) (*pb.EngineInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, engineInfoTimeout)
+	defer cancel()
+	return c.client.GetEngineInfo(ctx, &pb.EngineInfoRequest{})
+}
+
+// ApplyRuntimeConfig pushes the dashboard's runtime configuration to the engine (SPEC §2.2,
+// D34): the judge, its bound credential and the effective price table. An older engine
+// answers UNIMPLEMENTED.
+func (c *AuditClient) ApplyRuntimeConfig(ctx context.Context, cfg *pb.RuntimeConfig) (*pb.ApplyRuntimeConfigResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, applyRuntimeConfigTimeout)
+	defer cancel()
+	return c.client.ApplyRuntimeConfig(ctx, cfg)
+}
+
+// DraftEvaluator asks the engine's judge to draft an evaluator spec from a description (Studio,
+// SPEC §2.4 row 34), bounded by 60 s. FAILED_PRECONDITION "no_judge" means no judge is configured.
+func (c *AuditClient) DraftEvaluator(ctx context.Context, req *pb.DraftEvaluatorRequest) (*pb.DraftEvaluatorResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, draftEvaluatorTimeout)
+	defer cancel()
+	return c.client.DraftEvaluator(ctx, req)
+}
+
+// RetrieveContext fetches knowledge-base documents for an answer (D65). deadline is the
+// knowledge deadline (TRUTHTABLE_KNOWLEDGE_DEADLINE); 0 or less leaves ctx's own deadline.
+func (c *AuditClient) RetrieveContext(ctx context.Context, req *pb.RetrieveContextRequest, deadline time.Duration) (*pb.RetrieveContextResponse, error) {
+	if deadline > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, deadline)
+		defer cancel()
 	}
-
-	submission, err := c.client.SubmitAudit(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("audit submission failed: %w", err)
-	}
-
-	resultReq := &pb.AuditResultRequest{
-		AuditId: submission.AuditId,
-	}
-
-	var auditResult *pb.AuditResult
-	for i := 0; i < 30; i++ {
-		auditResult, err = c.client.GetAuditResult(ctx, resultReq)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get audit result: %w", err)
-		}
-		if auditResult.Status == pb.AuditStatus_AUDIT_STATUS_COMPLETED {
-			break
-		}
-		if auditResult.Status == pb.AuditStatus_AUDIT_STATUS_FAILED {
-			return nil, fmt.Errorf("audit failed")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if auditResult == nil || auditResult.Status != pb.AuditStatus_AUDIT_STATUS_COMPLETED {
-		return nil, fmt.Errorf("audit timed out")
-	}
-
-	// Map protobuf VerificationStatus enum to lowercase verdict strings.
-	// CONTRADICTED (context disproves the claim) is kept distinct from
-	// UNSUPPORTED (no evidence either way) end-to-end.
-	verdictMap := map[pb.VerificationStatus]string{
-		pb.VerificationStatus_VERIFICATION_STATUS_SUPPORTED:           "supported",
-		pb.VerificationStatus_VERIFICATION_STATUS_CONTRADICTED:        "contradicted",
-		pb.VerificationStatus_VERIFICATION_STATUS_UNSUPPORTED:         "unsupported",
-		pb.VerificationStatus_VERIFICATION_STATUS_PARTIALLY_SUPPORTED: "partially_supported",
-		pb.VerificationStatus_VERIFICATION_STATUS_UNSPECIFIED:         "unknown",
-	}
-
-	claims := make([]*ClaimResult, len(auditResult.Claims))
-	for i, claim := range auditResult.Claims {
-		verdict := "unknown"
-		if v, ok := verdictMap[claim.Status]; ok {
-			verdict = v
-		}
-		claims[i] = &ClaimResult{
-			Text:       claim.Claim,
-			Verdict:    verdict,
-			Confidence: float64(claim.Confidence),
-			Evidence:   claim.Evidence,
-		}
-	}
-
-	return &AuditResult{
-		TrustScore:            float64(auditResult.FaithfulnessScore),
-		Claims:                claims,
-		ReasoningTrace:        auditResult.ReasoningTrace,
-		HallucinationDetected: auditResult.HallucinationDetected,
-		ProcessingTimeMs:      auditResult.ProcessingTimeMs,
-		StepTimings:           auditResult.StepTimings,
-	}, nil
+	return c.client.RetrieveContext(ctx, req)
 }
 
 // IngestDocument represents a document to ingest into the knowledge base.
@@ -147,7 +138,13 @@ type IngestResult struct {
 	ClaimsQuarantined int32         `json:"claims_quarantined"`
 	ConflictsDetected int32         `json:"conflicts_detected"`
 	ClaimResults      []ClaimIngest `json:"claim_results"`
+	// Costs are the engine's LLM cost records of the ingest (IngestResponse.costs): the upload
+	// books them on the cost ledger and never sends them to the client.
+	Costs []*pb.CostRecord `json:"-"`
 }
+
+// CostRecords are the ingest's LLM cost records.
+func (r *IngestResult) CostRecords() []*pb.CostRecord { return r.Costs }
 
 var kbStatusNames = map[pb.KBClaimStatus]string{
 	pb.KBClaimStatus_KB_CLAIM_STATUS_ACCEPTED:    "accepted",
@@ -166,11 +163,13 @@ func clampInt32(v int) int32 {
 	return int32(v)
 }
 
+// IngestTimeout bounds one IngestDocuments call: claim-level ingestion makes several LLM calls per
+// document, so it gets four times the audit timeout.
+func (c *AuditClient) IngestTimeout() time.Duration { return 4 * c.timeout }
+
 // IngestDocuments sends documents to the Python engine for claim-level ingestion.
 func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDocument) (*IngestResult, error) {
-	// Claim-level ingestion makes multiple LLM calls per document, so allow
-	// a longer window than the standard audit timeout.
-	ctx, cancel := context.WithTimeout(ctx, 4*c.timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.IngestTimeout())
 	defer cancel()
 
 	pbDocs := make([]*pb.ContextDocument, len(documents))
@@ -195,6 +194,7 @@ func (c *AuditClient) IngestDocuments(ctx context.Context, documents []IngestDoc
 		ClaimsQuarantined: resp.ClaimsQuarantined,
 		ConflictsDetected: resp.ConflictsDetected,
 		ClaimResults:      make([]ClaimIngest, len(resp.ClaimResults)),
+		Costs:             resp.GetCosts(),
 	}
 	for i, claim := range resp.ClaimResults {
 		result.ClaimResults[i] = claimIngestFromProto(claim)
@@ -329,17 +329,6 @@ func (c *AuditClient) GetKBStats(ctx context.Context) (*KBStats, error) {
 func (c *AuditClient) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
-	}
-	return nil
-}
-
-func (c *AuditClient) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	_, err := c.client.HealthCheck(ctx, &pb.HealthRequest{})
-	if err != nil {
-		return fmt.Errorf("ping failed: %w", err)
 	}
 	return nil
 }

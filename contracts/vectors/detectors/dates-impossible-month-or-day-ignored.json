@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-impossible-month-or-day-ignored",
+  "status": "frozen",
+  "description": "ISO matches with month 13 or day 00 are not dates and are ignored. 2026-02-10 is a valid ISO date that the evidence states: known. Nothing unknown: does not fire.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "Tickets 2026-13-01 and 2026-02-00 were merged on 2026-02-10.",
+    "evidence": [
+      {
+        "id": "changelog",
+        "source": "request_system",
+        "text": "Duplicate tickets were merged on 2026-02-10."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

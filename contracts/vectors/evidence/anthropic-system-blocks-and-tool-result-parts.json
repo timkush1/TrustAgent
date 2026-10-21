@@ -1,0 +1,82 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "anthropic-system-blocks-and-tool-result-parts",
+  "status": "draft",
+  "description": "Anthropic Messages: the top-level system is two text blocks, joined with a newline, and has no document block. Each tool_result block in the last user message is a tool item, named through tool_use_id: get_invoice (string content) and web_fetch (text-part content), which matches untrusted_tools web_* and is marked untrusted. The only text part of that message is user_request.",
+  "input": {
+    "api_format": "anthropic_messages",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": ["web_*"]
+    },
+    "body": {
+      "model": "claude-haiku-4-5",
+      "max_tokens": 512,
+      "system": [
+        {"type": "text", "text": "You are a billing assistant."},
+        {"type": "text", "text": "Answer from the tool results."}
+      ],
+      "messages": [
+        {"role": "user", "content": "Why was I charged twice?"},
+        {
+          "role": "assistant",
+          "content": [
+            {"type": "text", "text": "Let me check."},
+            {
+              "type": "tool_use",
+              "id": "toolu_01",
+              "name": "get_invoice",
+              "input": {"invoice": "INV-2207"}
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_02",
+              "name": "web_fetch",
+              "input": {"url": "https://example.com/forum"}
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_01",
+              "content": "Invoice INV-2207: charged $40 on 2026-03-01, refunded $40 on 2026-03-03."
+            },
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_02",
+              "content": [{"type": "text", "text": "Forum post: double charges are a known bug."}]
+            },
+            {"type": "text", "text": "So was I refunded?"}
+          ]
+        }
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "tool1",
+        "source": "tool_results",
+        "text": "Invoice INV-2207: charged $40 on 2026-03-01, refunded $40 on 2026-03-03."
+      },
+      {
+        "id": "tool2",
+        "source": "tool_results",
+        "text": "Forum post: double charges are a known bug.",
+        "untrusted": true
+      }
+    ],
+    "system_instructions": "You are a billing assistant.\nAnswer from the tool results.",
+    "user_request": "So was I refunded?",
+    "pre_dedup_items": 2,
+    "max_marker": 0
+  },
+  "tolerance": 1e-9
+}

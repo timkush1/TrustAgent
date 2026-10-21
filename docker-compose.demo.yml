@@ -1,0 +1,70 @@
+# ============================================================================
+# TrustAgent - zero-key demo stack (SPEC §3.4, §4.2 S0)
+# ============================================================================
+# `make demo` runs, in effect:
+#
+#   python3 scripts/configure.py --ensure
+#   docker compose -p truthtable-demo -f docker-compose.yml -f docker-compose.demo.yml \
+#     --profile demo up -d --build --wait
+#
+# Everything is simulated and costs $0:
+# - every vendor key is removed from the proxy and the engine, whatever .env or
+#   the shell holds;
+# - the fast check is the mock decision model (TRUTHTABLE_JEV_BACKEND=mock; its
+#   answers come from the scenarios in contracts/demo/scenarios.v1.json);
+# - the deep-audit judge is the mock provider (LLM_PROVIDER=mock, same scenarios);
+# - test mode lets trafficgen send scripted answers (test_response) and scenario
+#   ids (X-TrustAgent-Scenario), so no upstream LLM is ever called;
+# - strict config (TRUTHTABLE_STRICT_CONFIG): once the P2 config registry
+#   loader lands, any configuration warning stops the proxy or the engine.
+#
+# The project name gives the demo its own containers and volumes, so scripted
+# traces never mix with real history. It publishes the same host ports as
+# `make up` (PROXY_HOST_PORT, DASHBOARD_HOST_PORT): stop one stack before
+# starting the other (make down / make demo-down).
+
+name: truthtable-demo
+
+x-demo-env: &demo-env
+  TRUTHTABLE_DEMO_MODE: "true"
+  TRUTHTABLE_TEST_MODE: "true"
+  TRUTHTABLE_STRICT_CONFIG: "true"
+
+services:
+  proxy:
+    environment:
+      <<: *demo-env
+      TRUTHTABLE_JEV_BACKEND: mock
+      # config/calibration (mounted with ./config): a calibration of quality
+      # mock only counts with the mock backend in demo mode (SPEC §2.11).
+      TRUTHTABLE_CALIBRATION_DIR: /etc/trustagent/calibration
+      # The dashboard reads traces without signing in: there is no setup wizard
+      # before P2, and the demo holds scripted data only (bound to BIND_ADDR).
+      TRUTHTABLE_PUBLIC_READ: "true"
+      # Lets `docker compose -p truthtable-demo exec proxy /trafficgen ...`
+      # authenticate with the key configure.py put in TRUTHTABLE_API_KEYS.
+      TRAFFICGEN_API_KEY:
+      # No vendor credential reaches the demo proxy.
+      OPENROUTER_API_KEY: !reset null
+      TYPESAFE_API_KEY: !reset null
+      TRUTHTABLE_JEV_API_KEY: !reset null
+      TRUTHTABLE_UPSTREAM_API_KEY: !reset null
+      TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY: !reset null
+      TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY: !reset null
+
+  engine:
+    environment:
+      <<: *demo-env
+      LLM_PROVIDER: mock
+      LLM_FALLBACK: none
+      # No vendor credential reaches the demo engine, and nothing is traced out.
+      OPENROUTER_API_KEY: !reset null
+      ANTHROPIC_API_KEY: !reset null
+      OPENAI_API_KEY: !reset null
+      LANGSMITH_API_KEY: !reset null
+      LANGSMITH_TRACING: "false"
+
+  # Nothing on the host needs the demo database; not publishing it avoids a
+  # clash with a local Postgres or the `make up` stack.
+  postgres:
+    ports: !reset []

@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "tokens",
+  "name": "evidence-item",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A compiled evidence item as packing estimates it: est({id, source, text}).",
+  "input": {
+    "value": {
+      "id": "refund-policy.md",
+      "source": "request_system",
+      "text": "Annual plans can be refunded within 30 days of purchase. Monthly plans are non-refundable."
+    },
+    "cpt": 4
+  },
+  "expected": {"est": 38, "narrow": 151, "wide": 0}
+}

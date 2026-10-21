@@ -1,0 +1,188 @@
+{
+  "audit_id": "01a0e787-7dfb-70f9-a7d2-c4b6a18e3c57",
+  "trace_id": "01a0e787-7df8-72c6-a8f1-3e7d04b59a18",
+  "created_at": "2026-09-28T10:20:11.643125Z",
+  "route": null,
+  "source": "direct",
+  "model": "gpt-4o-mini",
+  "status": "completed",
+  "verdict": "HALLUCINATED",
+  "not_assessed_reason": null,
+  "trust_score": 0.648333,
+  "grade": "C",
+  "hallucination_detected": true,
+  "verdict_counts": {
+    "SUPPORTED": 2,
+    "PARTIALLY_SUPPORTED": 0,
+    "CONTRADICTED": 0,
+    "UNSUPPORTED": 1,
+    "UNKNOWN": 0,
+    "NOT_CHECKED": 0
+  },
+  "processing_ms": 3312,
+  "judge": {
+    "configured_provider": "anthropic",
+    "effective_provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "fallback_active": false,
+    "fallback_reason": null,
+    "structured_outputs": true,
+    "healthy": true,
+    "credential_source": "env"
+  },
+  "gate_action": null,
+  "selection": "direct",
+  "inclusion_prob": null,
+  "query_preview": "Do you ship to Canada, and how fast?",
+  "redacted": false,
+  "user_query": "Do you ship to Canada, and how fast?",
+  "llm_response": "🚚 Yes! We ship to Canada 🇨🇦 within 5 business days. Express delivery takes 2 days.",
+  "claims": [
+    {
+      "index": 0,
+      "claim": "The store ships to Canada.",
+      "status": "SUPPORTED",
+      "confidence": 0.96,
+      "evidence": ["We ship to the US and Canada."],
+      "reasoning": "The shipping page lists Canada as a destination.",
+      "decided_by": "llm",
+      "verdict_probabilities": {
+        "supported": 0.96,
+        "partially_supported": 0.02,
+        "contradicted": 0.01,
+        "unsupported": 0.01
+      },
+      "probability_source": "llm_confidence",
+      "span": {"start": 8, "end": 25, "method": "exact"},
+      "quote": "We ship to Canada",
+      "evidence_spans": [
+        {
+          "doc_index": 0,
+          "doc_id": "shipping.md",
+          "start": 0,
+          "end": 29,
+          "text": "We ship to the US and Canada.",
+          "kind": "quote_verified"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "claim": "Shipping to Canada takes 5 business days.",
+      "status": "SUPPORTED",
+      "confidence": 0.94,
+      "evidence": ["Standard shipping takes 5 business days."],
+      "reasoning": "Standard shipping takes 5 business days per the shipping page.",
+      "decided_by": "llm",
+      "verdict_probabilities": {
+        "supported": 0.94,
+        "partially_supported": 0.03,
+        "contradicted": 0.01,
+        "unsupported": 0.02
+      },
+      "probability_source": "llm_confidence",
+      "span": {"start": 31, "end": 53, "method": "exact"},
+      "quote": "within 5 business days",
+      "evidence_spans": [
+        {
+          "doc_index": 0,
+          "doc_id": "shipping.md",
+          "start": 30,
+          "end": 70,
+          "text": "Standard shipping takes 5 business days.",
+          "kind": "quote_verified"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "claim": "Express delivery takes 2 days.",
+      "status": "UNSUPPORTED",
+      "confidence": 0.88,
+      "evidence": [],
+      "reasoning": "The shipping page does not mention express delivery, so nothing supports or contradicts this.",
+      "decided_by": "llm",
+      "verdict_probabilities": {
+        "supported": 0.05,
+        "partially_supported": 0.04,
+        "contradicted": 0.03,
+        "unsupported": 0.88
+      },
+      "probability_source": "llm_confidence",
+      "span": {"start": 55, "end": 84, "method": "exact"},
+      "quote": "Express delivery takes 2 days",
+      "evidence_spans": []
+    }
+  ],
+  "scores": {
+    "trust_score": 0.648333,
+    "faithfulness": 0.665,
+    "contradiction_rate": 0.016667,
+    "unverified_rate": 0.318333,
+    "coverage": 0.681667,
+    "accuracy_addressed": 0.97555,
+    "max_contradiction": 0.03,
+    "p_hallucinated": 0.049303,
+    "claims_total": 3,
+    "claims_decided": 3,
+    "claims_unknown": 0
+  },
+  "degraded_reasons": [],
+  "error": null,
+  "reasoning_trace": "decompose: 3 claims; retrieve: 1 document (extension); verify: 2 SUPPORTED, 1 UNSUPPORTED; score: v2, unsupported_policy hallucination.",
+  "step_timings": {
+    "decompose_ms": 1288,
+    "retrieve_ms": 2,
+    "verify_ms": 2020,
+    "score_ms": 1,
+    "total_ms": 3312
+  },
+  "gate": null,
+  "evidence_summary": {
+    "configured": ["extension"],
+    "used": [{"source": "extension", "items": 1, "labels": ["shipping.md"], "tokens": 18}],
+    "empty": [],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 18
+  },
+  "context_used": [
+    {
+      "id": "shipping.md",
+      "source": "extension",
+      "label": "shipping.md",
+      "text": "We ship to the US and Canada. Standard shipping takes 5 business days.",
+      "truncated": false
+    }
+  ],
+  "unsupported_policy": "hallucination",
+  "scoring_version": "v2",
+  "costs": [
+    {
+      "component": "deep_audit_decompose",
+      "kind": "llm",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "input_tokens": 523,
+      "output_tokens": 142,
+      "cost_usd": 0.001233,
+      "cost_source": "computed",
+      "latency_ms": 1281,
+      "status": "ok",
+      "questions": 0
+    },
+    {
+      "component": "deep_audit_verify",
+      "kind": "llm",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "input_tokens": 1874,
+      "output_tokens": 336,
+      "cost_usd": 0.003554,
+      "cost_source": "computed",
+      "latency_ms": 2014,
+      "status": "ok",
+      "questions": 0
+    }
+  ]
+}

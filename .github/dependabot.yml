@@ -1,9 +1,15 @@
+# Every ecosystem waits 7 days after a release before proposing it (cooldown): a compromised
+# release is usually pulled within days, before it reaches a pull request here. The workflows'
+# actions are pinned to commit SHAs (D140) and the Dockerfiles' base images to index digests
+# (D125); the github-actions and docker ecosystems move those pins together with their comments.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: /backend-go
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       go-deps:
         patterns: ['*']
@@ -12,6 +18,8 @@ updates:
     directory: /backend-python
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       python-deps:
         patterns: ['*']
@@ -20,6 +28,8 @@ updates:
     directory: /frontend-react
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       npm-deps:
         patterns: ['*']
@@ -34,6 +44,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: docker
     directories:
@@ -42,10 +54,29 @@ updates:
       - /frontend-react
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     ignore:
       # torch / sentence-transformers publish no wheels for a brand-new Python
-      # major for months, so a python:3.x-slim major bump makes the audit-engine
-      # image fall back to a source build that fails. Bump the Python base image
-      # deliberately once the ML wheels catch up.
+      # release for months, so moving python:3.11-slim to 3.12+ (a semver
+      # *minor* bump to Dependabot) makes the engine image fall back to a source
+      # build that fails. Bump the Python base image deliberately once the ML
+      # wheels catch up; digest refreshes of the same tag still come through.
+      # The FROM lines are pinned by tag and index digest (D125), which is what
+      # lets Dependabot follow them at all.
       - dependency-name: 'python'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+
+  # Image pins in docker-compose.yml (SPEC §3.4). Keep ollama in step with the
+  # service image pinned in .github/workflows/eval.yml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      # The schema targets Postgres 16 (SPEC §2.3: ≥14, compose pins 16);
+      # a major bump needs a deliberate data-directory upgrade.
+      - dependency-name: 'postgres'
         update-types: ['version-update:semver-major']

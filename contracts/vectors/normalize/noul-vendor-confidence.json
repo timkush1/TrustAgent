@@ -1,0 +1,21 @@
+{
+  "vector": "1",
+  "kind": "normalize",
+  "name": "noul-vendor-confidence",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "A noul answer with a confidence: vendor_confidence is echoed (display only) with confidence_source vendor; the risk is the noul.",
+  "input": {
+    "template": "groundedness@1",
+    "answer": {"type": "noul", "noul": 0.3, "confidence": 0.8}
+  },
+  "expected": {
+    "anomalies": [],
+    "confidence_source": "vendor",
+    "error": null,
+    "probabilities": null,
+    "risk_raw": 0.3,
+    "top": null,
+    "vendor_confidence": 0.8
+  }
+}

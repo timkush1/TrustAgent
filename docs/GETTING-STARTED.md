@@ -1,408 +1,438 @@
-# Getting Started with TruthTable
+# Getting started
 
-> **Audience**: New developers joining the project  
-> **Time to complete**: 15-30 minutes  
-> **Prerequisites**: Docker, Go 1.21+, Python 3.11+, Node.js 18+
+This guide takes you from a fresh Windows laptop to TrustAgent running on it. You start with the
+**demo**, which needs no keys and costs nothing, and then switch to **real mode** with your own
+OpenRouter key. Everything runs in Docker on your own machine; there is nothing to deploy.
 
----
+**Just want to look first?** The [live demo](https://timkush1.github.io/TrustAgent/) runs in your
+browser with nothing to install: it replays recorded demo traffic through the real dashboard, and
+its Playground can run real checks with your own OpenRouter key
+([DEMO.md](DEMO.md#the-live-demo-in-your-browser)).
 
-## Table of Contents
+**Contents:** [1. What you need](#1-what-you-need) ·
+[2. Start the demo](#2-start-the-demo-no-keys-0) ·
+[3. What you will see](#3-what-you-will-see) ·
+[4. Stop the demo](#4-stop-the-demo) ·
+[5. Real mode](#5-real-mode-your-own-openrouter-key) ·
+[6. Memory](#6-how-much-memory-it-needs) ·
+[7. Images: built or pulled](#7-images-built-or-pulled) ·
+[8. Troubleshooting](#8-troubleshooting) ·
+[9. For maintainers](#9-for-maintainers-the-static-site-the-recording-and-the-first-run-check)
 
-1. [What is TruthTable?](#1-what-is-truthtable)
-2. [Prerequisites](#2-prerequisites)
-3. [Clone and Setup](#3-clone-and-setup)
-4. [Start All Services](#4-start-all-services)
-5. [Verify Everything Works](#5-verify-everything-works)
-6. [Send Your First Audit](#6-send-your-first-audit)
-7. [Understanding the Output](#7-understanding-the-output)
-8. [Stopping Services](#8-stopping-services)
-9. [Troubleshooting](#9-troubleshooting)
+## 1. What you need
 
----
+| What | Why | Check it with |
+|---|---|---|
+| Windows 10 or 11 with **WSL 2** and a Linux distribution (Ubuntu is fine) | TrustAgent's commands run in a Linux terminal | `wsl -l -v` in PowerShell shows your distribution with VERSION 2 |
+| **Docker Desktop**, with WSL integration turned on: Docker Engine 25 or newer with Compose 2.24 or newer | Builds or pulls, and runs, every part of TrustAgent | In the WSL terminal, `docker version --format '{{.Server.Version}}'` prints 25 or newer and `docker compose version` prints 2.24 or newer |
+| `git`, `make` and `python3` (3.9 or newer) in WSL | The `make` commands and the small setup scripts | `git --version && make --version && python3 --version` |
+| About 8 GB of RAM and 10 GB of free disk | See [section 6](#6-how-much-memory-it-needs) | |
 
-## 1. What is TruthTable?
+You do **not** need Go, Node.js or a Python virtual environment: Docker builds everything. (Those
+are only for working on the code; see the component READMEs.) **On Linux or macOS** you need the
+same Docker Engine 25+ and Compose 2.24+ (Docker Desktop, or Docker Engine with the Compose plugin),
+`git`, `make` and `python3`; skip the WSL steps below.
 
-TruthTable is an **AI hallucination detection system**. It acts as a proxy between your application and LLM APIs (like OpenAI), intercepting responses and checking them for factual accuracy.
+**Set up Docker Desktop for WSL, once:**
 
-### The Problem It Solves
+1. Install Docker Desktop from [docker.com](https://www.docker.com/products/docker-desktop/) and
+   start it. Wait until it says **Engine running**.
+2. Open Docker Desktop → **Settings** → **Resources** → **WSL integration**. Turn on the switch
+   next to your Linux distribution, then click **Apply & restart**.
+3. Close your WSL terminal and open a new one, then check:
 
-When you ask an LLM "What is 2+2?", it might respond:
-> "2+2 equals 4. This was first discovered by Albert Einstein in 1905."
+   ```bash
+   docker version --format '{{.Server.Version}}'   # 25 or newer
+   docker compose version                          # 2.24 or newer
+   docker run --rm hello-world                     # prints "Hello from Docker!"
+   ```
 
-The first part is correct, but the second part is a **hallucination** - Einstein didn't discover basic arithmetic!
+4. If `make` or `python3` is missing, install them:
 
-TruthTable catches these errors automatically.
+   ```bash
+   sudo apt update && sudo apt install -y make python3 git
+   ```
 
-### How It Works (30-second version)
-
-```
-Your App → Go Proxy → LLM (OpenAI/Ollama)
-              ↓ (async)
-         Python Engine
-              ↓
-         Dashboard shows: "50% accuracy - 1 hallucination detected"
-```
-
----
-
-## 2. Prerequisites
-
-### Required Software
-
-| Software | Version | Check Command | Install |
-|----------|---------|---------------|---------|
-| Docker | 20.10+ | `docker --version` | [docker.com](https://docker.com) |
-| Go | 1.21+ | `go version` | [go.dev](https://go.dev) |
-| Python | 3.11+ | `python3 --version` | [python.org](https://python.org) |
-| Node.js | 18+ | `node --version` | [nodejs.org](https://nodejs.org) |
-
-### Verify Prerequisites
+**Get the code.** Keep it inside the Linux file system (your home folder), not under `/mnt/c/...`:
+Docker builds are much slower on the Windows drive.
 
 ```bash
-# Run these commands - all should succeed
-docker --version          # Docker version 24.0.0 or higher
-go version               # go version go1.21 or higher
-python3 --version        # Python 3.11 or higher
-node --version           # v18.0.0 or higher
+mkdir -p ~/projects && cd ~/projects
+git clone https://github.com/timkush1/TrustAgent.git
+cd TrustAgent
 ```
 
----
+## 2. Start the demo (no keys, $0)
 
-## 3. Clone and Setup
-
-### Step 3.1: Clone the Repository
+From the repository folder, run:
 
 ```bash
-git clone <repository-url> trustAgent
-cd trustAgent
+make demo
 ```
 
-### Step 3.2: Start Infrastructure (Docker)
+This one command:
+
+1. Creates `.env` from [`.env.example`](../.env.example) if you don't have one yet, and fills in
+   the passwords the stack needs (they are random and never printed).
+2. Gets the images. On a release tag (for example after `git checkout v2.0.0`) it **pulls** the
+   published ones; on any other commit it **builds** them from your checkout, so they always match
+   the code ([section 7](#7-images-built-or-pulled)). **A first build takes a while** (about 5–15
+   minutes [estimate], depending on your laptop and connection); later runs reuse the build cache
+   and are ready in a minute or two.
+3. Starts the demo stack: the proxy, the audit engine, a database, the dashboard and a small
+   traffic generator. They run as their own Docker project, `truthtable-demo`, so demo data never
+   mixes with real data.
+4. Waits until every part reports healthy, then opens a **one-time setup link** such as
+   `http://localhost:3000/app/setup#token=…`. Click **Create the admin key**: the dashboard shows
+   your admin key once (keep it) and signs this browser in, so you can also edit policies and use
+   the Playground. When an admin already exists it opens the dashboard at
+   **<http://localhost:3000>** instead. If no browser opens, open the printed link yourself;
+   `make demo-setup-url` prints a new one.
+
+Everything in the demo is simulated: the fast check and the deep-audit judge are mocks, and no
+vendor key reaches the demo containers, even if your `.env` holds one. It costs $0.
+
+## 3. What you will see
+
+- A **Demo stack** banner at the top: *"Mock checks and a mock judge: every number here is
+  simulated, except the published estimates, which say so."* (The Savings tab sets the demo's
+  simulated costs beside the published per-1,000-answer estimates, each labelled Estimate.)
+- **Traffic** (in the left navigation): the traffic generator sends a round of the 27 scripted
+  requests about once a minute, so new rows keep appearing. Each row has an outcome pill; a round
+  starts with these three:
+
+  | Scenario | Outcome | Why |
+  |---|---|---|
+  | A support answer that matches the refund policy | **Passed** | Everything in the answer is in the documents sent with the request |
+  | *Refund window: 60 days vs 30 days* | **Flagged** | The answer contradicts the document. The app got the answer with a risk warning (`X-TrustAgent-Action: flag`) |
+  | *No documents: not checked* | **Not checked** | There was nothing to check against, so TrustAgent says so instead of guessing |
+
+  The rest of the round shows other checks: a leaked personal email or token, a needless refusal,
+  a promise the billing rules do not allow, an off-topic answer, documents in tool results or a
+  `Context:` block, prompts whose documents TrustAgent cannot find (*Not checked*), and an observe
+  route that only records what it *would* have blocked, an answer **Blocked** for an invented
+  link, a payments answer **Replaced** by a grounded fallback, streamed answers and the Anthropic
+  API. [DEMO.md](DEMO.md) has a five-minute tour, and
+  [contracts/README.md](../contracts/README.md#demo-scenarios) lists every scenario.
+- **Click a row** to open the trace: the answer, the reasons for its outcome, what it was
+  **checked against** (for example the system-prompt document), and the **deep audit**, which
+  arrives a few seconds later and explains the verdict claim by claim.
+- There are no dead buttons: an action that cannot run here is shown disabled, with the reason.
+
+**Check it from the terminal** (optional):
 
 ```bash
-# Start Redis, Qdrant, and Ollama
-docker-compose up -d
-
-# Verify containers are running
-docker-compose ps
+python3 scripts/doctor.py --expect demo
 ```
 
-Expected output:
-```
-NAME                STATUS
-trustagent-redis    running (healthy)
-trustagent-qdrant   running (healthy)
-trustagent-ollama   running
-```
+Every check should say `PASS` (a `SKIP` is fine). A `WARN` such as "still starting" usually
+clears when you run it again a minute later, and "no admin yet" clears once you claim the setup
+link. One `WARN` stays on purpose: `policy.state` lists a downgrade on the demo's `help-center`
+route, which is left uncalibrated to show what that does. A `FAIL` comes with a command that
+fixes it.
 
-### Step 3.3: Pull Ollama Model
+## 4. Stop the demo
 
 ```bash
-# This downloads the LLM model (~2GB, takes a few minutes)
-docker exec -it trustagent-ollama ollama pull llama3.2
+make demo-down      # stop the demo; its data is kept for next time
+make demo-clean     # stop it and delete the demo data
 ```
 
-### Step 3.4: Setup Python Environment
+Other handy commands: `make demo-logs SERVICE=engine` follows one part's log (leave out
+`SERVICE=` for all of them), and `make help` lists every command.
+
+## 5. Real mode: your own OpenRouter key
+
+In real mode TrustAgent checks your own app's answers. One OpenRouter key runs both the fast
+check (Jev) and the deep-audit judge.
+
+> **Without a key** `make up` still runs, but the fast check is off: answers pass through
+> unchecked and show as **Not checked** (`X-TrustAgent-Status: skipped:decision_model_off`).
+> The setup wizard also offers **Try it without a key (simulated checks, $0)**, which runs both
+> checks on mocks and labels every number Simulated.
+
+1. **Get an OpenRouter account with credit.** Sign in at [openrouter.ai](https://openrouter.ai)
+   and add $5 at [openrouter.ai/settings/credits](https://openrouter.ai/settings/credits). That
+   covers about 1,600 answers at the default settings **[estimate]**.
+2. **Stop the demo.** Both stacks use the same ports:
+
+   ```bash
+   make demo-down
+   ```
+
+3. **Keep the master key safe (once).** Keys you save in the dashboard are encrypted with a master
+   key that lives in the `trustagent-secrets` Docker volume. Either back that volume up, or put
+   the master key in `.env` yourself before the first start:
+
+   ```bash
+   echo "TRUTHTABLE_SECRET_KEY=$(python3 -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')" >> .env
+   ```
+
+   Without either, losing the volume means entering your keys again
+   ([SECURITY.md](SECURITY.md#master-key)).
+4. **Start TrustAgent:**
+
+   ```bash
+   make up
+   ```
+
+   This starts the proxy, the engine, the database and the dashboard (no traffic generator), and
+   opens a one-time setup link (`http://localhost:3000/app/setup#token=…`). If you missed it,
+   `make setup-url` prints a new one (each replaces the last).
+5. **Walk the setup wizard.**
+   - **Step 1, admin key.** Click **Create the admin key**. The dashboard shows it once: keep it in
+     your password manager. Later you sign in at `/app/setup` with it.
+   - **Step 2, connect.** Click **Connect OpenRouter**, sign in on openrouter.ai and approve. You
+     come back to TrustAgent with a new key, stored encrypted and already checked. Then open
+     [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) and give that key a
+     **credit limit** (for example $2): keys created this way have none. **Paste a key** is on the
+     same screen if you prefer an existing key.
+   - **Step 3, connect your app.** The wizard shows the base URL and a code snippet, and mints an
+     ingest key for your app when none exists yet (shown once). Otherwise create one on
+     **Settings → Access**, or use the traffic generator's key from `.env`
+     (`python3 scripts/envfile.py get TRAFFICGEN_API_KEY`) for a first test.
+6. **Check the connection:** `make doctor` shows which fast-check backend is active and why, its
+   snapshot, state, latency and the last 24 hours' calls and cost, whether every saved key
+   decrypts, where the judge's key comes from, and today's spend against the budgets.
+
+**Prefer `.env`?** Put `OPENROUTER_API_KEY=sk-or-v1-...` in `.env` before `make up` (find the
+line `# OPENROUTER_API_KEY=` and remove the `# `), or run `make configure WITH_SECRETS=1`, which
+asks for the key at a hidden prompt. A key in `.env` always wins over the dashboard, which then
+shows it as read-only. Never paste a key into a chat, an issue, a commit or a screenshot.
+
+**Optional: let the dashboard read traffic without signing in.** Add
+`TRUTHTABLE_PUBLIC_READ=true` to `.env`. This is safe on your laptop because TrustAgent only
+listens on 127.0.0.1 (`BIND_ADDR`); remove the line before you ever set `BIND_ADDR=0.0.0.0`.
+Without signing in, the dashboard shows outcomes and reasons but hides the prompts and answers.
+
+**Send a first request.** Point your app at the proxy instead of the LLM provider:
+base URL `http://localhost:8080/v1`. Two things change for your app: it sends its TrustAgent key
+(an ingest key, see step 5) in an `X-TrustAgent-Key` header, and it sends the documents the answer
+must stick to, so there is something to check against. A quick test from the terminal, with
+OpenRouter as the LLM too:
 
 ```bash
-cd backend-python
+# once: send LLM calls through OpenRouter as well (then run `make up` again)
+echo 'TRUTHTABLE_UPSTREAM_URL=openrouter' >> .env
 
-# Create virtual environment
-python3 -m venv .venv
-
-# Activate it
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -e .
-
-# Verify installation
-python -c "import truthtable; print('✅ Python package installed')"
-```
-
-### Step 3.5: Setup Go Proxy
-
-```bash
-cd ../backend-go
-
-# Download dependencies
-go mod download
-
-# Verify build
-go build ./...
-echo "✅ Go proxy builds successfully"
-```
-
-### Step 3.6: Setup React Dashboard
-
-```bash
-cd ../frontend-react
-
-# Install dependencies
-npm install
-
-# Verify installation
-npm run build
-echo "✅ React dashboard builds successfully"
-```
-
----
-
-## 4. Start All Services
-
-You need **4 terminal windows**. Here's exactly what to run in each:
-
-### Terminal 1: Docker Services (already running)
-
-```bash
-# If not already running:
-cd trustAgent
-docker-compose up -d
-```
-
-### Terminal 2: Python Audit Engine
-
-```bash
-cd trustAgent/backend-python
-source .venv/bin/activate
-python -m truthtable.main
-```
-
-Expected output:
-```
-INFO: Starting TruthTable Audit Engine
-INFO: Connecting to Ollama at http://localhost:11434
-INFO: gRPC server listening on port 50051
-```
-
-### Terminal 3: Go Proxy
-
-```bash
-cd trustAgent/backend-go
-go run ./cmd/proxy
-```
-
-Expected output:
-```
-🚀 Starting TruthTable Proxy
-   Server Port: 8080
-   WebSocket: shares 8080 (path /ws)
-✓ Connected to audit engine at localhost:50051
-✅ TruthTable Proxy is ready!
-```
-
-### Terminal 4: React Dashboard
-
-```bash
-cd trustAgent/frontend-react
-npm run dev
-```
-
-Expected output:
-```
-VITE v7.3.1  ready in 274 ms
-➜  Local:   http://localhost:5173/
-```
-
----
-
-## 5. Verify Everything Works
-
-### Check 1: Go Proxy Health
-
-```bash
-curl http://localhost:8080/health
-```
-
-Expected: `{"status":"ok"}`
-
-### Check 2: Python Engine
-
-The Go proxy logs should show:
-```
-✓ Connected to audit engine at localhost:50051
-```
-
-### Check 3: Dashboard
-
-Open http://localhost:5173 in your browser. You should see:
-- A dark-themed dashboard
-- A green "Connected" indicator
-- "Waiting for audit events..." message
-
-### Check 4: WebSocket Connection
-
-In the dashboard, the connection status (top right) should show green.
-
----
-
-## 6. Send Your First Audit
-
-### Option A: Using curl (recommended for learning)
-
-```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+read -rsp 'OpenRouter key (for the LLM call): ' LLM_KEY; echo          # hidden, not in history
+read -rsp 'TrustAgent ingest key: ' TA_KEY; echo
+curl -sS -D - http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LLM_KEY" \
+  -H "X-TrustAgent-Key: $TA_KEY" \
   -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "What is the capital of France?"}],
-    "test_response": "Paris is the capital of France. It was founded in 508 AD by Clovis I."
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "How long do I have to ask for a refund on an annual plan?"}],
+    "trustagent": {"context": [{"id": "refund-policy.md", "text": "Annual plans: refund within 30 days of purchase."}]}
   }'
 ```
 
-### Option B: Using the test script
+The response is the normal LLM answer, plus `X-TrustAgent-*` headers that say what TrustAgent
+did; the same request then appears in Traffic, and the wizard's step 3 turns from waiting to
+received. More keys for more apps: **Settings → Access** (or a `label=key` entry in
+`TRUTHTABLE_API_KEYS` in `.env`). The LLM call itself is billed by OpenRouter as usual; TrustAgent's own costs are in
+[JEV-ACCESS.md](JEV-ACCESS.md#costs-estimate).
+
+**Stop:** `make down` (keeps your data). `make clean-data` deletes all of it.
+
+**Without make.** `make up` is a thin wrapper; the same stack starts with plain Docker Compose:
 
 ```bash
-./test_full_flow.sh
+python3 scripts/configure.py --ensure      # create or complete .env (generated passwords, never printed)
+docker compose build                       # only on a commit that is not a release tag
+docker compose up -d --wait
 ```
 
-### What Happens Behind the Scenes
+On a release tag you can leave out `docker compose build`: Compose pulls the images of that
+version. On any other commit, leaving it out still works: Compose asks the registry for a tag that
+was never published, warns `error from registry: denied`, and builds the image itself (checked
+with Docker Compose 2.39). Then print the setup link with `python3 scripts/setup_url.py`.
 
-1. **Go Proxy** receives your request
-2. **Go Proxy** uses the `test_response` instead of calling OpenAI
-3. **Go Proxy** sends the prompt + response to **Python Engine** via gRPC
-4. **Python Engine** extracts claims:
-   - "Paris is the capital of France"
-   - "It was founded in 508 AD by Clovis I"
-5. **Python Engine** verifies each claim:
-   - Claim 1: ✅ SUPPORTED (true fact)
-   - Claim 2: ❌ UNSUPPORTED (Paris wasn't "founded" in 508 AD!)
-6. **Python Engine** calculates score: 50% (1/2 claims true)
-7. **Go Proxy** broadcasts result via WebSocket
-8. **Dashboard** displays the audit result
+## 6. How much memory it needs
 
----
+The default stack is small enough for an 8 GB laptop. These are estimates; see real numbers any
+time with `docker stats --no-stream`.
 
-## 7. Understanding the Output
+| Part | Memory while running [estimate] | Hard cap in `docker-compose.yml` |
+|---|---|---|
+| Proxy | 30–60 MB | 512 MB |
+| Audit engine | 200–400 MB | 4 GB |
+| Database (Postgres) | 50–100 MB | none |
+| Dashboard | 10–20 MB | 256 MB |
+| Traffic generator (demo only) | about 10 MB | 64 MB |
+| **Total** | **well under 1 GB** | |
 
-### In the Terminal (Go Proxy)
+- **Docker Desktop itself** needs about 1–2 GB on top of that.
+- **The first build is the peak**: about 2–3 GB [estimate] for a few minutes while the three
+  images compile. Close heavy apps during the first `make demo`.
+- **Add-ons cost more.** They are off by default and switched on with `COMPOSE_PROFILES` in
+  `.env`:
 
+  | Add-on | Extra memory [estimate] | On an 8 GB laptop |
+  |---|---|---|
+  | `redis` | about 20 MB | Fine |
+  | `observability` (Prometheus and Grafana) | 300–500 MB | Fine |
+  | `knowledge` (document store and embedding model) | 1.5–2.5 GB | One add-on at a time |
+  | `local-llm` (Ollama judge) | 2–3 GB, plus a 1.3 GB download | Not recommended; use the OpenRouter judge |
+
+**How much can Docker use?** In WSL, `free -h` shows the memory Linux and Docker share. By default
+WSL 2 takes up to half of the laptop's RAM: about 4 GB on an 8 GB laptop, which is enough for
+the demo and the default stack. If builds get killed (exit code 137) or you turn on the
+`knowledge` add-on, raise the limit a little, keeping at least 3 GB for Windows. On an 8 GB
+laptop, create `C:\Users\<you>\.wslconfig` with:
+
+```ini
+[wsl2]
+memory=5GB
 ```
-[abc123] Intercepted chat completion request (model: gpt-4)
-[abc123] TEST MODE: Using provided test_response
-[abc123] Worker 1 processing job
-[abc123] Audit complete in 15.2s (score: 0.50, claims: 2)
-Broadcast audit result abc123 to 1 clients (score: 0.50)
-```
 
-### In the Dashboard
+then run `wsl --shutdown` in PowerShell and start Docker Desktop again. Close heavy Windows
+apps (extra browser windows, for example) while TrustAgent builds.
 
-You'll see a new audit entry with:
-- **Trust Score**: 50% (yellow/orange gauge)
-- **Hallucination Badge**: Red "Hallucination Detected"
-- **Claims**: 
-  - ✅ "Paris is the capital of France" - SUPPORTED
-  - ❌ "It was founded in 508 AD..." - UNSUPPORTED
+## 7. Images: built or pulled
 
-### Score Interpretation
+TrustAgent's three app images are `ghcr.io/timkush1/truthtable-proxy`, `-engine` and
+`-dashboard`, tagged with the version in the `VERSION` file (for example `:1.0.0`). Postgres and the
+add-ons use their own public images.
 
-| Score | Color | Meaning |
-|-------|-------|---------|
-| 90-100% | 🟢 Green | Highly trustworthy |
-| 70-89% | 🟡 Yellow | Minor issues |
-| 50-69% | 🟠 Orange | Significant concerns |
-| <50% | 🔴 Red | Major hallucinations |
+| You are on | `make demo` / `make up` | Why |
+|---|---|---|
+| A release tag (`git checkout v2.0.0`) | Pull the published images of that version | They are exactly what was released, built for amd64 and arm64 |
+| Any other commit (a branch, `main`) | Build the images from your checkout (`--build`) | So the images never run older code than you have |
 
----
+Override the guess when you need to:
 
-## 8. Stopping Services
+- `make demo RELEASE_CHECKOUT=1` (or `make up RELEASE_CHECKOUT=1`) pulls; `RELEASE_CHECKOUT=0`
+  builds.
+- `make demo DEMO_BUILD=` and `make up UP_BUILD=` use the images already on your machine (or pull
+  missing ones) without building.
+- `TRUSTAGENT_VERSION=<tag> make up` runs another tag, for example `edge` (the latest `main`).
 
-### Stop in Reverse Order
+**The knowledge add-on builds its own engine.** With `COMPOSE_PROFILES=knowledge` the engine needs
+extra Python packages, so its image is tagged `<version>-knowledge` (for example
+`truthtable-engine:1.0.0-knowledge`). That variant is **never published**: it is always built
+locally from your checkout, and the first start also downloads the embedding model.
+`make knowledge-up` starts that stack, `make knowledge-seed` loads the example documents and
+`make knowledge-down` removes it ([KB-DESIGN.md](KB-DESIGN.md)).
+
+`make doctor` lists the images the stack runs, whether each was pulled or built, and warns when
+they come from different versions.
+
+## 8. Troubleshooting
+
+**`docker: command not found` in the WSL terminal.** Docker Desktop is not running, or WSL
+integration is off for this distribution.
+
+1. Start Docker Desktop and wait for **Engine running**.
+2. Docker Desktop → Settings → Resources → **WSL integration** → turn on your distribution →
+   **Apply & restart**.
+3. Close the WSL terminal, open a new one and run `docker compose version`.
+
+If it still fails, run `wsl --shutdown` in PowerShell, start Docker Desktop again and reopen the
+terminal. Don't install a second Docker inside WSL (`apt install docker.io`): it conflicts with
+Docker Desktop.
+
+**`Cannot connect to the Docker daemon`.** Docker Desktop is installed but not started, or still
+starting. Start it and wait for **Engine running**.
+
+**`docker compose version` is older than 2.24, `docker version` shows an Engine older than 25, or
+you see an error about `!reset`.** Update Docker Desktop (or Docker Engine and its Compose plugin):
+the compose files need Compose 2.24 or newer and Docker Engine 25 or newer. `make doctor` warns
+about both.
+
+**A port is already in use** (`port is already allocated`, `address already in use` or `ports are
+not available`). The stacks publish these ports on your machine:
+
+| Port | Used by | Move it with (in `.env`) |
+|---|---|---|
+| 3000 | Dashboard | `DASHBOARD_HOST_PORT=3100` |
+| 8080 | Proxy | `PROXY_HOST_PORT=8180` |
+| 5432 | Database (`make up` only) | `POSTGRES_HOST_PORT=5433` |
+
+1. Is it the other TrustAgent stack? Only one of them can run at a time: `make down` or
+   `make demo-down`, then start the one you want.
+2. Otherwise, find what holds the port: `ss -ltnp | grep ':3000'` in WSL, or
+   `netstat -ano | findstr :3000` in PowerShell (the last column is the process id).
+3. Or simply move TrustAgent: add the line from the table to `.env` and run `make demo` (or
+   `make up`) again. The dashboard address follows the new port, for example
+   <http://localhost:3100>.
+
+If nothing uses the port, Windows may have reserved it. `netsh interface ipv4 show
+excludedportrange protocol=tcp` in PowerShell lists the reserved ranges; pick a port outside them.
+
+**`make demo` stops with "unhealthy" or times out.** See which part failed and why:
 
 ```bash
-# Terminal 4: Stop React (Ctrl+C)
-# Terminal 3: Stop Go Proxy (Ctrl+C)
-# Terminal 2: Stop Python Engine (Ctrl+C)
-
-# Terminal 1: Stop Docker
-docker-compose down
+python3 scripts/doctor.py --expect demo
+make demo-logs SERVICE=engine      # or proxy, dashboard, postgres
 ```
 
-### Stop Everything at Once
+On a slow first start, give it more time: `make demo WAIT_TIMEOUT=900`.
 
-```bash
-# Kill all TruthTable processes
-pkill -f "python -m truthtable"
-pkill -f "go run ./cmd/proxy"
-pkill -f "npm run dev"
-docker-compose down
-```
+**The build stops with `killed` or exit code 137.** Docker ran out of memory. Close other apps,
+give WSL more memory (see [section 6](#6-how-much-memory-it-needs)) and run `make demo` again;
+it continues from where it stopped.
 
----
+**A warning about `POSTGRES_PASSWORD` and an existing volume.** The database keeps the password
+it was first created with, and your `.env` now has a different one (for example because `.env`
+was deleted). Put the old password back in `.env`, or delete the old data: `make demo-clean` for
+the demo, `make clean-data` for the real stack (**this deletes all TrustAgent data**).
 
-## 9. Troubleshooting
+**No browser opens.** Open the printed setup link, or <http://localhost:3000> (or your
+`DASHBOARD_HOST_PORT`), yourself. Use `make demo OPEN=0` to only print the address.
 
-### Problem: "Connection refused" on port 50051
+**Traffic stays empty in the demo.** The first round arrives within a few seconds of the stack
+becoming healthy. If nothing shows after a minute, check the generator:
+`make demo-logs SERVICE=trafficgen`.
 
-**Cause**: Python engine not running
+**Everything is slow.** Check that the repository is under your Linux home folder (`pwd` prints
+`/home/...`, not `/mnt/c/...`), and see [section 6](#6-how-much-memory-it-needs).
 
-**Solution**:
-```bash
-cd backend-python
-source .venv/bin/activate
-python -m truthtable.main
-```
+**`manifest unknown` or `pull access denied` for a `truthtable-*` image.** That version is not
+published (yet), or you are on a commit that is not a release tag with `UP_BUILD=` or
+`DEMO_BUILD=`. Build it instead: `make up RELEASE_CHECKOUT=0`, or `docker compose build` before
+`docker compose up`.
 
-### Problem: "Could not connect to audit engine"
+## 9. For maintainers: the static site, the recording and the first-run check
 
-**Cause**: Python engine started after Go proxy
+None of these is needed to use TrustAgent.
 
-**Solution**: Restart Go proxy after Python is running
+**Build the static site exactly as GitHub Pages will.** `make pages-build` runs the same steps as
+the `pages.yml` workflow: it checks the recording the site will ship, builds the landing page and
+the replay with the `/TrustAgent/` base path, checks the size budget and the built files, and runs
+gitleaks over the output, so the public site can never carry a key. `PAGES_DATASET` picks the tape:
 
-### Problem: Dashboard shows "Disconnected"
+| `PAGES_DATASET` | Ships | Label on the site |
+|---|---|---|
+| `auto` (the default) | `demo-data/recorded/` when it exists, otherwise `demo-data/simulated/` | Whatever the tape is |
+| `mock` | `demo-data/simulated/`: every demo scenario run through the browser's gate with the mock checks and judge | **Simulated** on every page |
+| `recorded` | `demo-data/recorded/` only, and fails when it is missing or not a real recording | Recorded with the real fast check and judge |
 
-**Cause**: Go proxy not running or WebSocket port blocked
+`make test-e2e-static` builds the site and runs its Playwright specs against a local preview.
 
-**Solution**:
-```bash
-# Check if Go proxy is running
-lsof -i:8080
+**Record the public demo.** `make record-demo` records the demo scenarios with the **real** fast
+check and judge, on your OpenRouter key from `.env`, into `frontend-react/demo-data/recorded/`. It
+is a dry run until you add `CONFIRM=1`: first it prints the plan, the estimated cost (about $1
+**[estimate]**) and which keys it found. The real run uses its own stack (project
+`truthtable-record`) with daily caps of $0.50 for fast checks and $3 for the LLM, refuses a mock or
+fallback backend, checks the result, swaps it in atomically, prints its label and spend, and removes
+the stack with its volumes.
 
-# Restart if needed
-cd backend-go && go run ./cmd/proxy
-```
+**Time a fresh install.** `make first-run` starts a brand-new stack (its own project and ports, every
+vendor on a local mock, so it costs $0), times it from before `docker compose up` to the first
+flagged answer, and fails past 5 minutes; the timings go to `tmp/first-run.json`. It needs one
+image source: `FIRST_RUN_TAG=<tag>` pulls published images, and `FIRST_RUN_LOCAL=1` uses images
+built locally under the tag `FIRST_RUN_LOCAL_TAG` (`FIRST_RUN_BUILD=1` builds them first).
+`make golden-path` walks the same kind of fresh stack from its setup link to the flagged answer's
+detail in at most 8 clicks (Copy included; the setup link it starts from is not one), and `make first-run-onboarding` runs the onboarding check (the setup
+wizard, Connect OpenRouter on the mock, a checked answer) the same way. A setup link works once, so
+each starts its own fresh stack; `make first-run-proof` runs the three one after another. Each
+removes its stack when it finishes (`FIRST_RUN_KEEP=1` keeps it; `make first-run-down` removes it).
 
-### Problem: "Port 5173 is in use"
+## Next steps
 
-**Cause**: Another process using that port
-
-**Solution**: Vite will automatically try 5174, 5175, etc. Check the terminal output for the actual URL.
-
-### Problem: Audit takes forever / times out
-
-**Cause**: Ollama model not downloaded or slow hardware
-
-**Solution**:
-```bash
-# Verify Ollama has the model
-docker exec -it trustagent-ollama ollama list
-
-# If not, pull it
-docker exec -it trustagent-ollama ollama pull llama3.2
-```
-
-### Problem: "No module named truthtable"
-
-**Cause**: Virtual environment not activated or package not installed
-
-**Solution**:
-```bash
-cd backend-python
-source .venv/bin/activate
-pip install -e .
-```
-
----
-
-## Next Steps
-
-Now that you have TruthTable running:
-
-1. **Read the architecture docs**: Start with [INDEX.md](INDEX.md)
-2. **Understand the Python Engine**: [PHASE-1-PYTHON-ENGINE.md](PHASE-1-PYTHON-ENGINE.md)
-3. **Understand the Go Proxy**: [PHASE-2-GO-PROXY.md](PHASE-2-GO-PROXY.md)
-4. **Customize the Dashboard**: [PHASE-3-REACT-DASHBOARD.md](PHASE-3-REACT-DASHBOARD.md)
-
----
-
-*Document version: 1.0 | Last updated: January 31, 2026*
+- [JEV-ACCESS.md](JEV-ACCESS.md): the fast check, its costs, backends, errors and fixes.
+- [GATEWAY.md](GATEWAY.md): what your app gets back: modes, headers, streaming, block and fallback.
+- [CONFIGURATION.md](CONFIGURATION.md): every setting, its default and what it does.
+- [ARCHITECTURE.md](ARCHITECTURE.md): how the parts fit together.

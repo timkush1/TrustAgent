@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "pkce",
+  "name": "auth-url-pages-callback",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@8c68cdad853d",
+  "description": "The openrouter.ai/auth URL for the Pages callback: callback_url, code_challenge, code_challenge_method S256 and key_label (documented by OpenRouter's PKCE guide), in that order; every value is percent-encoded except the RFC 3986 unreserved characters (encodeURIComponent agrees here; a space is %20).",
+  "input": {
+    "op": "auth_url",
+    "callback_url": "https://timkush1.github.io/TrustAgent/connect/callback/",
+    "challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    "key_label": "TrustAgent demo"
+  },
+  "expected": {
+    "url": "https://openrouter.ai/auth?callback_url=https%3A%2F%2Ftimkush1.github.io%2FTrustAgent%2Fconnect%2Fcallback%2F&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&key_label=TrustAgent%20demo"
+  }
+}

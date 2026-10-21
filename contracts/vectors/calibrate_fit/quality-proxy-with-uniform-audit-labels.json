@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quality-proxy-with-uniform-audit-labels",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "Uniform-sample deep-audit labels are proxy labels (§0 row 13: measured only from human or public labels), whatever the counts.",
+  "input": {
+    "op": "quality",
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "label_source": {"human": 250, "public_dataset": 0, "uniform_audit": 50},
+    "n_pos": 150,
+    "n_neg": 150
+  },
+  "expected": {"quality": "proxy"}
+}

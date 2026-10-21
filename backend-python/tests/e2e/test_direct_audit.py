@@ -14,13 +14,18 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 
-def _run_audit(stub, query: str, response: str):
+def _run_audit(stub, query: str, response: str, evidence: str):
     from truthtable.grpc.pb import evaluator_pb2
 
+    # Evidence is required: without it (and without a knowledge base) the
+    # preflight answers NOT_ASSESSED with no claims (SPEC 2.2 legacy mapping).
     request = evaluator_pb2.AuditRequest(
         request_id=f"e2e-{int(time.time() * 1000)}",
         query=query,
         response=response,
+        context=[
+            evaluator_pb2.ContextDocument(id="e2e-doc", content=evidence, source="request_context")
+        ],
     )
     submission = stub.SubmitAudit(request, timeout=180)
     assert submission.audit_id, "SubmitAudit returned no audit_id"
@@ -34,6 +39,7 @@ def test_audit_returns_wellformed_result(grpc_stub):
         grpc_stub,
         query="Tell me about physics",
         response="The speed of light in a vacuum is 299,792,458 meters per second.",
+        evidence="Light travels through a vacuum at exactly 299,792,458 metres per second.",
     )
 
     from truthtable.grpc.pb import evaluator_pb2
@@ -51,6 +57,7 @@ def test_audit_grade_is_valid(grpc_stub):
         grpc_stub,
         query="What is the capital of France?",
         response="Paris is the capital of France.",
+        evidence="Paris is the capital and largest city of France.",
     )
     from truthtable.grpc.pb import evaluator_pb2
 

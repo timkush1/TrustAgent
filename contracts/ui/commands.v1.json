@@ -1,0 +1,92 @@
+{
+  "version": "1",
+  "commands": [
+    {
+      "id": "demo",
+      "command": "make demo",
+      "description": "Start the zero-key demo stack: mock checks, mock judge and scripted traffic."
+    },
+    {
+      "id": "demo_down",
+      "command": "make demo-down",
+      "description": "Stop the demo stack."
+    },
+    {
+      "id": "demo_to_own_keys",
+      "command": "make demo-down && make up",
+      "description": "Leave the demo stack and start the stack with your own keys."
+    },
+    {
+      "id": "up",
+      "command": "make up",
+      "description": "Start the default stack (proxy, engine, postgres, dashboard) and open the setup URL."
+    },
+    {
+      "id": "down",
+      "command": "make down",
+      "description": "Stop the stack."
+    },
+    {
+      "id": "setup_url",
+      "command": "make setup-url",
+      "description": "Print the one-time dashboard setup URL."
+    },
+    {
+      "id": "setup_token_from_logs",
+      "command": "docker compose logs proxy | grep -m1 SETUP",
+      "description": "Find the one-time setup token in the proxy logs.",
+      "services": ["proxy"]
+    },
+    {
+      "id": "knowledge_up",
+      "command": "COMPOSE_PROFILES=knowledge make up",
+      "description": "Start with the optional knowledge-base add-on."
+    },
+    {
+      "id": "local_llm_up",
+      "command": "COMPOSE_PROFILES=local-llm make up",
+      "description": "Start with a local LLM for the deep audit."
+    },
+    {
+      "id": "observability_up",
+      "command": "COMPOSE_PROFILES=observability make up",
+      "description": "Start with Prometheus and Grafana."
+    },
+    {
+      "id": "configure",
+      "command": "make configure",
+      "description": "Write non-secret settings to .env interactively."
+    },
+    {
+      "id": "doctor",
+      "command": "make doctor",
+      "description": "Check configuration, connectivity and credentials."
+    },
+    {
+      "id": "trafficgen_once",
+      "command": "docker compose -p truthtable-demo exec -T proxy /trafficgen --once",
+      "description": "Send every demo scenario once through the demo stack's proxy (make demo).",
+      "services": ["proxy"]
+    },
+    {
+      "id": "calibrate",
+      "command": "make calibrate",
+      "description": "Fit calibrations from labelled data."
+    },
+    {
+      "id": "bench_lite",
+      "command": "make bench-lite",
+      "description": "Run the small launch benchmark and record measured results."
+    },
+    {
+      "id": "compose_up",
+      "command": "python3 scripts/configure.py --ensure && docker compose up -d --wait",
+      "description": "Start the stack without make: write a .env with fresh secrets if there is none, then start every default service and wait until it is healthy."
+    },
+    {
+      "id": "contracts_check",
+      "command": "make contracts-check",
+      "description": "Validate every contract file against its schema."
+    }
+  ]
+}

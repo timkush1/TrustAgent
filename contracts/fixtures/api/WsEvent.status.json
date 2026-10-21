@@ -1,0 +1,12 @@
+{
+  "v": 2,
+  "seq": 852,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "status",
+  "ts": "2026-09-28T10:17:31.004Z",
+  "data": {
+    "component": "judge",
+    "state": "degraded",
+    "detail": "the configured judge is unavailable; the engine uses its fallback judge"
+  }
+}

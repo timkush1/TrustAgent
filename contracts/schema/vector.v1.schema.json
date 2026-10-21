@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/vector.v1.schema.json",
+  "title": "GoldenVector",
+  "description": "contracts/vectors/<kind>/<name>.json (SPEC §7.6). expected may be a subset of the output; numbers are compared as parsed values within tolerance, never as bytes; strings and arrays compare exactly. An unknown kind fails every runner. Lifecycle: hand-authored vectors start as draft; Go cmd/vectorgen produces mechanical expected values, which are reviewed and then frozen. A frozen vector never changes; a behaviour change adds a new vector.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["vector", "kind", "name", "status", "input", "expected"],
+  "properties": {
+    "vector": {"const": "1"},
+    "kind": {
+      "enum": [
+        "canonical",
+        "tokens",
+        "question_hash",
+        "normalize",
+        "compile",
+        "decide",
+        "calibration_apply",
+        "calibrate_fit",
+        "detectors",
+        "evidence",
+        "lint",
+        "cost",
+        "pkce"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,95}$",
+      "description": "Equals the file name without .json."
+    },
+    "status": {"enum": ["draft", "frozen"]},
+    "description": {"type": "string", "maxLength": 600},
+    "input": true,
+    "expected": true,
+    "tolerance": {"type": "number", "minimum": 0, "default": 1e-9},
+    "generated_by": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "e.g. \"cmd/vectorgen@<git_sha>\" for mechanical expected values."
+    }
+  }
+}

@@ -1,0 +1,78 @@
+name: Eval (live, bench-lite)
+
+# The paid benchmark (SPEC §4.2 P6 step 1): make gate-eval, then make bench-lite: RAGTruth-QA with
+# the fast check (Jev through gate-eval), the same checks asked of an LLM judge and a full LLM
+# audit, plus latency and cost, under bench-lite's hard cap of USD 5. One OpenRouter key covers Jev
+# and the judge.
+#
+# It only runs by hand (workflow_dispatch) and only in the environment eval-live, which holds the
+# secret OPENROUTER_API_KEY; the owner protects that environment with a required reviewer, so
+# every run is approved before it spends anything. It uploads the run (evals/results/) as an
+# artifact and never runs bench-publish: publishing a measured result to docs/benchmarks and
+# contracts/claims/measured.json stays a reviewed, local step (make bench-publish RUN=...).
+#
+# The free tier stays in eval.yml (a local Ollama judge, weekly).
+#
+# Hardening (D140): actions pinned to commit SHAs, no persisted git credentials, permissions per
+# job (none at the top), no pull_request_target, no expressions inside run: (the key reaches the
+# run through env:), no dependency cache (the run reads a secret).
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: eval-live
+  cancel-in-progress: false
+
+jobs:
+  bench-lite:
+    name: bench-lite (paid, capped at USD 5)
+    if: github.repository == 'timkush1/TrustAgent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: eval-live
+    permissions:
+      contents: read
+    env:
+      NO_COLOR: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Reads the `toolchain` directive in go.mod.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: backend-go/go.mod
+          cache: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+
+      - name: make gate-eval
+        run: make gate-eval
+
+      # The evals import the engine package. The locked versions come from poetry.lock through
+      # the Poetry release that wrote it; mk/py.mk then runs them with `poetry run`.
+      - name: Install the engine and its evals
+        working-directory: backend-python
+        run: |
+          python -m pip install poetry==2.4.1
+          poetry install --no-interaction
+
+      - name: make bench-lite
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: make bench-lite
+
+      - name: Upload the run
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-lite-${{ github.run_id }}-${{ github.run_attempt }}
+          path: backend-python/evals/results/
+          if-no-files-found: warn
+          retention-days: 90

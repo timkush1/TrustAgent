@@ -1,0 +1,155 @@
+{
+  "version": "1",
+  "outcomes": [
+    {
+      "id": "checking",
+      "label": "Checking",
+      "tone": "neutral",
+      "headline": "Checking this answer…",
+      "next_step": null
+    },
+    {
+      "id": "blocked",
+      "label": "Blocked",
+      "tone": "danger",
+      "headline": "Blocked before your user saw it",
+      "next_step": "Review the reasons and what the answer was checked against. Mark a false alarm to improve calibration."
+    },
+    {
+      "id": "replaced",
+      "label": "Replaced",
+      "tone": "warning",
+      "headline": "Replaced with an answer that sticks to your documents",
+      "next_step": "Compare your model's answer with the fallback answer the user received."
+    },
+    {
+      "id": "flagged",
+      "label": "Flagged",
+      "tone": "warning",
+      "headline": "Delivered with a risk warning to your app",
+      "next_step": "Your app received `X-TrustAgent-Action: flag`. Review the reasons below."
+    },
+    {
+      "id": "would_block",
+      "label": "Would block",
+      "tone": "info",
+      "headline": "Would have been blocked (this route only observes)",
+      "next_step": "Switch the route to Block when you are ready to enforce."
+    },
+    {
+      "id": "would_flag",
+      "label": "Would flag",
+      "tone": "info",
+      "headline": "Would have been flagged (this route only observes)",
+      "next_step": "Switch the route to Flag to send warnings to your app."
+    },
+    {
+      "id": "error",
+      "label": "Check failed",
+      "tone": "danger",
+      "headline": "Passed unchecked: {reason}",
+      "next_step": "Check the fast-check connection and budgets in Settings."
+    },
+    {
+      "id": "not_checked",
+      "label": "Not checked",
+      "tone": "neutral",
+      "headline": "Not checked: {reason}",
+      "next_step": "Send your documents with the request so answers can be checked against them."
+    },
+    {"id": "passed", "label": "Passed", "tone": "success", "headline": "No problems found", "next_step": null}
+  ],
+  "rules": [
+    {"when": {"gate_status": ["pending"]}, "outcome": "checking"},
+    {"when": {"action": ["block"]}, "outcome": "blocked"},
+    {"when": {"action": ["fallback"]}, "outcome": "replaced"},
+    {"when": {"action": ["flag"]}, "outcome": "flagged"},
+    {"when": {"action": ["observe"], "would_action": ["block"]}, "outcome": "would_block"},
+    {"when": {"action": ["observe"], "would_action": ["flag"]}, "outcome": "would_flag"},
+    {"when": {"gate_status": ["timeout", "error"]}, "outcome": "error"},
+    {"when": {"gate_status": ["skipped", "not_assessed"]}, "outcome": "not_checked"},
+    {"when": {}, "outcome": "passed"}
+  ],
+  "levels": {
+    "ok": {"label": "Low risk", "tone": "success"},
+    "warn": {"label": "Elevated risk", "tone": "warning"},
+    "critical": {"label": "High risk", "tone": "danger"}
+  },
+  "reasons": [
+    {"match": "groundedness:*", "copy": "States facts your documents don't contain"},
+    {"match": "contradiction:*", "copy": "Contradicts your documents"},
+    {"match": "refusal:*", "copy": "Declines or deflects a real request"},
+    {"match": "off_topic:*", "copy": "Goes outside your product's scope"},
+    {"match": "unsafe_policy:*", "copy": "May break your rules or contain harmful content"},
+    {"match": "pii_secret_leak:*", "copy": "May reveal personal data or a secret"},
+    {"match": "regulated_advice:*", "copy": "Gives personal medical, legal or financial advice"},
+    {"match": "commitments:*", "copy": "Promises something your rules don't allow"},
+    {"match": "injection_success:*", "copy": "May follow instructions hidden in documents or pasted text"},
+    {"match": "off_brand_tone:*", "copy": "Doesn't match your brand voice"},
+    {
+      "match": "factual_claims:*",
+      "copy": "States checkable facts, but there were no documents to check them against"
+    },
+    {"match": "det:numbers_not_in_evidence", "copy": "Mentions a number not in your documents: {finding}"},
+    {"match": "det:dates_not_in_evidence", "copy": "Mentions a date not in your documents: {finding}"},
+    {"match": "det:urls_not_in_evidence", "copy": "Links to a URL not in your documents: {finding}"},
+    {"match": "det:quotes_not_in_evidence", "copy": "Quotes text that isn't in your documents: {finding}"},
+    {"match": "det:citation_out_of_range", "copy": "Cites a source that doesn't exist: {finding}"},
+    {"match": "det:secret_pattern", "copy": "Contains something that looks like a secret key"},
+    {"match": "det:system_prompt_leak", "copy": "Repeats part of your system prompt"},
+    {"match": "disagreement", "copy": "Two checks disagree — sent to deep audit"},
+    {"match": "needs_second_signal", "copy": "Would block, but blocking needs a second check to agree"},
+    {"match": "no_evidence", "copy": "No documents found in this request to check against"},
+    {
+      "match": "stream_not_buffered",
+      "copy": "Streamed straight through, so this route can only flag — buffer streams to block"
+    },
+    {
+      "match": "fail_closed",
+      "copy": "Blocked because the check couldn't finish ({degraded}) and this route fails closed"
+    },
+    {
+      "match": "uncalibrated_snapshot",
+      "copy": "Would have blocked — the decision model changed since this check was calibrated, so it can only flag until you recalibrate"
+    },
+    {
+      "match": "calibration_missing",
+      "copy": "Would have blocked — this check isn't calibrated for blocking yet, so it can only flag (label answers, calibrate, then adopt)"
+    },
+    {"match": "fallback_failed", "copy": "Couldn't get a usable fallback answer from your model"},
+    {
+      "match": "fallback_format_mismatch",
+      "copy": "No fallback was tried: the fallback model uses a different API format than this request"
+    },
+    {"match": "*:*", "copy": "{evaluator}: {level}"}
+  ],
+  "status_reasons": {
+    "timeout": "the check timed out",
+    "error": "the check failed",
+    "partial": "some checks failed",
+    "not_assessed": "nothing could be checked",
+    "unparseable_request": "the request could not be read",
+    "upstream_error": "the model returned an error",
+    "no_text": "the answer had no text",
+    "too_long": "the answer is too long to check",
+    "sampled_out": "this route checks a sample of requests",
+    "overload": "too many checks were running",
+    "budget": "today's fast-check budget is used up",
+    "decision_model_off": "the fast check is turned off",
+    "breaker_open": "the fast check is paused after repeated errors",
+    "breaker": "the fast check is paused after repeated errors",
+    "rate_limited": "the fast check hit its rate limit",
+    "client_disconnected": "the client disconnected before the answer finished",
+    "undecodable": "the answer could not be decoded",
+    "unsupported_api": "this API is passed through without checks",
+    "multi_choice": "only the first of several answers is checked",
+    "credentials_unavailable": "no fast-check credentials are available",
+    "off": "the fast check is turned off",
+    "legacy": "recorded before checks existed",
+    "uncalibrated": "this check is not calibrated yet",
+    "calibration_warning": "it was calibrated with different state fields (the calibration still applies)",
+    "no_evidence": "no documents in this request",
+    "evidence_too_short": "the documents are too short to check against",
+    "evidence_packed_away": "the documents did not fit in the check"
+  }
+}

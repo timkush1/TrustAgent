@@ -5,7 +5,7 @@ Tests the full flow: embed -> store -> search -> retrieve.
 
 Prerequisites:
     - Qdrant must be running on localhost:6333
-    - Run: docker start truthtable-qdrant
+    - Run: docker compose up -d qdrant
 
 Usage:
     cd backend-python

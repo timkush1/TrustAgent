@@ -2,9 +2,12 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -94,24 +97,66 @@ func (l *MemoryLimiter) Allow(_ context.Context, key string, limit int, window t
 // Gin middleware
 // ---------------------------------------------------------------------------
 
-// RateLimit enforces a per-client fixed-window limit. Clients are identified
-// by API key when present (so NAT'd users don't share a bucket), falling back
-// to client IP.
-func RateLimit(limiter Limiter, limit int, window time.Duration) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		clientKey := extractKey(c.Request)
-		if clientKey == "" {
-			clientKey = c.ClientIP()
-		}
-		key := fmt.Sprintf("%s:%s", c.FullPath(), clientKey)
+// CodeRateLimited is the error code of a rate-limited request (SPEC §2.4: 429 rate_limited).
+const CodeRateLimited = "rate_limited"
 
-		if !limiter.Allow(c.Request.Context(), key, limit, window) {
-			c.Header("Retry-After", fmt.Sprintf("%d", int(window.Seconds())))
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error": "rate limit exceeded",
-			})
+// Deny writes a refused request in the error shape of the route family (ApiErrorBody on /api, the
+// upstream API's shape on /v1). The middleware aborts the chain after it.
+type Deny func(c *gin.Context, status int, code, message string)
+
+// KeyFunc names the rate-limit bucket of an authenticated caller (SPEC §2.4: per key id, per
+// session id for cookie auth). "" means the caller is not authenticated by an identity the
+// function knows, and the bucket falls back to the presented key or the client IP.
+type KeyFunc func(c *gin.Context) string
+
+// RateLimit enforces a per-client fixed-window limit. A caller that presents a key gets its own
+// bucket (so NAT'd users don't share one); anyone else is limited per client IP. A refused request
+// gets 429 rate_limited with Retry-After, written by deny (nil writes an ApiErrorBody).
+func RateLimit(limiter Limiter, limit int, window time.Duration, deny Deny) gin.HandlerFunc {
+	return RateLimitBy(limiter, limit, window, deny, nil)
+}
+
+// RateLimitBy is RateLimit with the caller's identity: when key names one (it runs after the
+// authentication middleware), the bucket is that identity's, so cookie sessions behind one IP get
+// one bucket each (M8). A nil key behaves as RateLimit.
+func RateLimitBy(limiter Limiter, limit int, window time.Duration, deny Deny, key KeyFunc) gin.HandlerFunc {
+	if deny == nil {
+		deny = func(c *gin.Context, status int, code, message string) {
+			c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
+		}
+	}
+	retryAfter := strconv.Itoa(max(int(window.Seconds()), 1))
+	return func(c *gin.Context) {
+		bucket := c.FullPath() + ":" + clientKey(c, key)
+		if !limiter.Allow(c.Request.Context(), bucket, limit, window) {
+			c.Header("Retry-After", retryAfter)
+			deny(c, http.StatusTooManyRequests, CodeRateLimited,
+				fmt.Sprintf("Rate limit exceeded (%d requests per %s); retry after %s s.", limit, window, retryAfter))
+			c.Abort()
 			return
 		}
 		c.Next()
 	}
+}
+
+// clientKey names a caller's bucket: a digest of its identity (key, when it names one), else a
+// digest of the key it presents (X-TrustAgent-Key, else Authorization: Bearer or X-API-Key), else
+// its IP. The raw value never becomes a bucket name: buckets are Redis keys, and on /v1 in
+// passthrough mode Authorization is the caller's upstream credential.
+func clientKey(c *gin.Context, key KeyFunc) string {
+	if key != nil {
+		if id := key(c); id != "" {
+			sum := sha256.Sum256([]byte(id))
+			return "id:" + hex.EncodeToString(sum[:16])
+		}
+	}
+	k := c.GetHeader("X-TrustAgent-Key")
+	if k == "" {
+		k = extractKey(c.Request)
+	}
+	if k == "" {
+		return "ip:" + c.ClientIP()
+	}
+	sum := sha256.Sum256([]byte(k))
+	return "key:" + hex.EncodeToString(sum[:16])
 }

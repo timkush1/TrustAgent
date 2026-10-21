@@ -1,0 +1,17 @@
+{
+  "ok": false,
+  "backend": "openrouter-decisions",
+  "endpoint_host": "openrouter.ai",
+  "model_requested": "typesafe/jev",
+  "snapshot": null,
+  "latency_ms": 176,
+  "input_tokens": null,
+  "cost_usd": null,
+  "cost_source": null,
+  "error": {
+    "kind": "credits",
+    "status": 402,
+    "message": "OpenRouter answered 402: the key has no credits left.",
+    "hint": "Add credits at openrouter.ai/settings/credits, then test again."
+  }
+}

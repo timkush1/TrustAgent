@@ -1,0 +1,27 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-misquoted-policy",
+  "status": "frozen",
+  "description": "A curly-quoted passage of 8 words. Normalized (lowercase, trailing \".\" stripped) it is \"refunds are available within 60 days of purchase\", which is not a substring of the normalized evidence (it says 30 days): fires; the finding covers the text between the quote marks.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "Our policy says “Refunds are available within 60 days of purchase.”",
+    "evidence": [
+      {
+        "id": "refund-policy",
+        "source": "request_system",
+        "text": "Refunds are available within 30 days of purchase."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "Refunds are available within 60 days of purchase.", "start": 17, "end": 66}]
+  },
+  "tolerance": 1e-9
+}

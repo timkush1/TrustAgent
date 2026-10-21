@@ -1,170 +1,76 @@
-.PHONY: help install proto up down clean test test-e2e
+# ============================================================================
+# TrustAgent - root Makefile
+# ============================================================================
+# Thin root: shared settings, `help`, and the cross-stream aggregate targets.
+# Everything else lives in mk/*.mk, one fragment per stream (go, py, web, dx,
+# contracts); a new mk/*.mk is picked up automatically by the include below.
+#
+# Aggregates (install, proto, test, lint, fmt, clean, check) are declared here
+# with only a closing message as their recipe. Each fragment attaches its own
+# per-stream targets as prerequisites, without a recipe and without a `##`
+# help comment, e.g.
+#
+#     test: test-go
+#
+# so `make test` runs every stream without this file having to know about it.
+# Every target is declared .PHONY automatically (see the end of this file).
+# ============================================================================
 
-help: ## Show this help message
-	@echo "TruthTable - Available Commands:"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+.DEFAULT_GOAL := help
 
-# ========== Setup ==========
+# ---------- Shared settings (override per call, e.g. `make up COMPOSE=docker-compose`) ----------
 
-install: proto-tools ## Install all dependencies (incl. protoc Go plugins)
-	@echo "Installing Go dependencies..."
-	cd backend-go && go mod download
-	@echo "Installing Python dependencies..."
-	cd backend-python && poetry install
-	@echo "Installing Node dependencies..."
-	cd frontend-react && npm install
+# Compose v2 plugin when available, else the standalone binary. Recursively
+# expanded, so docker is only probed by targets that actually use it.
+COMPOSE ?= $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+
+ifeq ($(OS),Windows_NT)
+PYTHON ?= py -3
+else
+PYTHON ?= python3
+endif
+
+# One model name for the local Ollama judge: pulled by `ollama-pull`, used by the evals.
+OLLAMA_MODEL ?= llama3.2:1b
+EVAL_MODEL   ?= $(OLLAMA_MODEL)
+
+##@ General
+
+help: ## Show this help (targets from Makefile and mk/*.mk)
+	@echo "TrustAgent - Available Commands:"
+	@awk 'BEGIN {FS = ":.*?## "} \
+		/^##@ / { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next } \
+		/^[a-zA-Z0-9_.-]+:.*?## / { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+##@ Aggregates (each mk/*.mk attaches its per-stream targets)
+
+install: ## Install all dependencies (incl. protoc Go plugins)
 	@echo "✅ All dependencies installed"
 
-proto-tools: ## Install the protoc Go plugins (protoc-gen-go, protoc-gen-go-grpc)
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-
-proto: ## Generate code from protobuf definitions (mirrors CI; run `make proto-tools` first on a fresh clone)
-	@echo "Generating Go protobuf code..."
-	PATH="$$(go env GOPATH)/bin:$$PATH" protoc --proto_path=proto \
-		--go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
-		--go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
-		proto/evaluator.proto
-	@echo "Generating Python protobuf code..."
-	cd backend-python && poetry run python -m grpc_tools.protoc -I../proto \
-		--python_out=src/truthtable/grpc/pb \
-		--grpc_python_out=src/truthtable/grpc/pb \
-		../proto/evaluator.proto
+proto: ## Generate Go + Python gRPC stubs (mirrors CI; run `make proto-tools` first on a fresh clone)
 	@echo "✅ Protobuf code generated"
 
-# ========== Docker ==========
-
-up: ## Start all infrastructure services
-	docker-compose up -d redis qdrant ollama prometheus grafana
-	@echo "⏳ Waiting for services to be healthy..."
-	@sleep 5
-	@echo "✅ Infrastructure services running"
-	@echo "Redis:      http://localhost:6379"
-	@echo "Qdrant:     http://localhost:6333"
-	@echo "Ollama:     http://localhost:11434"
-	@echo "Prometheus: http://localhost:9090"
-	@echo "Grafana:    http://localhost:3001 (admin/admin)"
-
-up-all: ## Start all services (infrastructure + application)
-	docker-compose up -d
-	@echo "✅ All services running"
-
-down: ## Stop all services
-	docker-compose down
-	@echo "✅ All services stopped"
-
-logs: ## View logs from all services
-	docker-compose logs -f
-
-# ========== Development ==========
-
-dev-python: ## Run Python audit engine in development mode
-	cd backend-python && poetry run python -m truthtable.main
-
-dev-go: ## Run Go proxy in development mode
-	cd backend-go && go run ./cmd/proxy
-
-dev-react: ## Run React dashboard in development mode
-	cd frontend-react && npm run dev
-
-# ========== Testing ==========
-
 test: ## Run all unit tests (excludes opt-in e2e/integration; safe on a bare box)
-	@echo "Running Python tests..."
-	cd backend-python && poetry run pytest -m "not e2e and not integration"
-	@echo "Running Go tests..."
-	cd backend-go && go test ./...
-	@echo "Running React tests..."
-	cd frontend-react && npm test
 	@echo "✅ All tests passed"
 
-test-python: ## Run Python unit tests only
-	cd backend-python && poetry run pytest -m "not e2e and not integration" -v
-
-test-go: ## Run Go tests only
-	cd backend-go && go test -v ./...
-
-test-react: ## Run React tests only
-	cd frontend-react && npm test
-
-test-e2e: ## Run end-to-end tests (requires full stack running: make up-all)
-	cd backend-python && poetry run pytest -m e2e -v
-
-# ========== Evaluation ==========
-
-eval-golden: ## Deterministic golden-set eval (the CI regression gate, no model needed)
-	cd backend-python && poetry run python -m evals.run_eval --dataset golden --provider mock --check-baseline
-
-eval-benchmark: ## HaluEval benchmark against local Ollama (requires make up + ollama-pull)
-	cd backend-python && poetry run python -m evals.datasets.download halueval --samples 200
-	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider ollama --model llama3.2 --output eval-report.json
-
-eval-compare: ## Judge-model comparison on HaluEval (needs OPENAI_API_KEY + ANTHROPIC_API_KEY; ~$$1-5 of usage)
-	cd backend-python && poetry run python -m evals.datasets.download halueval --samples 100
-	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider ollama --model llama3.2 --output eval-ollama.json
-	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider openai --model gpt-4o-mini --output eval-openai.json
-	cd backend-python && poetry run python -m evals.run_eval --dataset halueval --provider anthropic --model claude-haiku-4-5-20251001 --output eval-anthropic.json
-	@echo "Reports written: backend-python/eval-{ollama,openai,anthropic}.json"
-
-# ========== Load testing ==========
-
-load-test: ## Measure proxy overhead under load (requires stack: make up-all; uses dockerized k6)
-	docker run --rm -i --network host grafana/k6 run - < scripts/load/proxy-overhead.js
-
-# ========== Linting ==========
-
 lint: ## Run linters for all projects
-	@echo "Linting Python..."
-	cd backend-python && poetry run ruff check .
-	cd backend-python && poetry run black --check .
-	@echo "Linting Go..."
-	cd backend-go && go fmt ./...
-	cd backend-go && go vet ./...
-	@echo "Linting React..."
-	cd frontend-react && npm run lint
 	@echo "✅ All linting passed"
 
 fmt: ## Format all code
-	cd backend-python && poetry run black .
-	cd backend-go && go fmt ./...
-	cd frontend-react && npm run lint -- --fix
-
-# ========== Ollama ==========
-
-ollama-pull: ## Pull the default Ollama fallback model (1B; fits ~2GB RAM)
-	docker exec -it truthtable-ollama ollama pull llama3.2:1b
-	@echo "✅ llama3.2:1b model downloaded"
-
-ollama-list: ## List available Ollama models
-	docker exec -it truthtable-ollama ollama list
-
-# ========== Cleanup ==========
+	@echo "✅ All code formatted"
 
 clean: ## Clean all build artifacts and caches
-	@echo "Cleaning Go cache..."
-	cd backend-go && go clean -cache
-	@echo "Cleaning Python cache..."
-	find backend-python -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find backend-python -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	@echo "Cleaning Node cache..."
-	cd frontend-react && rm -rf node_modules dist .vite
 	@echo "✅ All caches cleaned"
 
-clean-data: ## Clean all Docker volumes (WARNING: deletes all data)
-	docker-compose down -v
-	@echo "✅ All data volumes removed"
+# The local gate mirrors CI. Fragments attach their gates as prerequisites: contracts.mk (schemas,
+# validator tests, the Go embed module, superseded identifiers), dx.mk (compose files, generated
+# config docs) and web.mk (check-web-ci: generated types, api.v1 schema, tsc, both builds, the size
+# budget and the recording). Without -j they run in the order listed, one after another.
+check: lint test ## Run every local quality gate CI runs (lint, unit tests, contracts, compose, builds)
+	@echo "✅ make check passed"
 
-# ========== Monitoring ==========
+include $(sort $(wildcard mk/*.mk))
 
-metrics: ## Open Prometheus metrics interface
-	open http://localhost:9090
-
-dashboards: ## Open Grafana dashboards
-	open http://localhost:3001
-
-# ========== Status ==========
-
-status: ## Show status of all services
-	@echo "Service Status:"
-	@docker-compose ps
+# Every target defined above or in mk/*.mk is phony (none of them produce a
+# file of the same name), so declare them all instead of hand-kept lists.
+.PHONY: $(shell sed -nE 's/^([A-Za-z0-9_][A-Za-z0-9_.-]*)[[:space:]]*:([^=]|$$).*/\1/p' $(MAKEFILE_LIST) | sort -u)

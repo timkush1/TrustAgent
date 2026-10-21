@@ -1,0 +1,25 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "citation-zero-and-three-digit-out-of-range",
+  "status": "frozen",
+  "description": "Two evidence items before dedup and no markers: the range is 1..2. [0] is always out of range, [2] is in range, [100] (three digits, the most the pattern takes) is above 2: fires on [0] and [100], with offsets after the check-mark emoji (one UTF-16 code unit, U+2705).",
+  "input": {
+    "detector": "citation_out_of_range",
+    "response": "✅ See [0], [2] and [100].",
+    "evidence": [
+      {"id": "sys1", "source": "request_system", "text": "Refunds take 5 days."},
+      {"id": "sys2", "source": "request_system", "text": "Exchanges take 10 days."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {},
+    "evidence_meta": {"pre_dedup_items": 2, "max_marker": 0}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "[0]", "start": 6, "end": 9}, {"text": "[100]", "start": 19, "end": 24}]
+  },
+  "tolerance": 1e-9
+}

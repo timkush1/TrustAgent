@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=../../contracts/schema/policy.v1.schema.json
+#
+# The policy of the load-test stack (docker-compose.load.yml mounts this file and points
+# TRUTHTABLE_POLICY_FILE at it). One route per scenario (a-g) of scripts/load/gateway-overhead.js
+# (docs/v2/design-notes/design-gateway.md §14, docs/GATEWAY.md §13); the k6 script selects a route
+# with X-TrustAgent-Route and checks that X-TrustAgent-Route names it back.
+#
+# The load test measures the gateway, not the engine: deep audits are off and no body is stored.
+# Every vendor is mock-upstream, so nothing is spent. require_calibration is off so the block route
+# can block without a calibration of the mock snapshot.
+version: 1
+defaults:
+  mode: flag
+  deadline_ms: 600
+  sample_rate: 1.0
+  require_calibration: false
+  on_no_evidence: ignore
+  streaming: passthrough
+  headers: full
+  evidence:
+    sources: [request_system, request_context, tool_results, extension]
+    system_mode: documents_only
+    line_headers: true
+    max_tokens: 8000
+  evaluators:
+    - ref: groundedness@1
+    - ref: contradiction@1
+    - ref: refusal@1
+    - ref: pii_secret_leak@1
+  deep_audit: {enabled: false}
+  store_bodies: none
+overrides: {client_mode: none, client_rules: false}
+routes:
+  # (a) Gate disabled: nothing to ask and no detector to act on, so the gate makes no decision
+  #     call. What remains is the gateway's fixed cost: parse, forward, headers, the trace row.
+  - name: load-a
+    match: {headers: {X-TrustAgent-Route: load-a}}
+    mode: flag
+    evaluators: []
+    detectors: {flag_on: [], block_on: []}
+
+  # (b) Observe: the answer goes out at once; Tier 0 and the mock fast check run after it.
+  - name: load-b
+    match: {headers: {X-TrustAgent-Route: load-b}}
+    mode: observe
+
+  # (c) Flag with the mock fast check answering at once (mock-upstream -jev-latency 0).
+  - name: load-c
+    match: {headers: {X-TrustAgent-Route: load-c}}
+    mode: flag
+
+  # (d) Flag with a 150 ms fast check: the same route settings as (c), run in the second pass,
+  #     when docker-compose.load-slow-jev.yml points the gateway at mock-jev-slow.
+  - name: load-d
+    match: {headers: {X-TrustAgent-Route: load-d}}
+    mode: flag
+
+  # (e) Block with buffered streams (reported only): the whole stream is read, decided, then sent.
+  - name: load-e
+    match: {headers: {X-TrustAgent-Route: load-e}}
+    mode: block
+    streaming: buffer
+    evidence: {sources: [request_system, tool_results, extension]}
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}
+
+  # (f) 15% of fast-check calls hang (the k6 script asks mock-upstream for fault:hang@1 on them);
+  #     the hedge after 400 ms answers instead. Target: p99 within the deadline, no 5xx.
+  - name: load-f
+    match: {headers: {X-TrustAgent-Route: load-f}}
+    mode: flag
+    deadline_ms: 1500
+    hedge_after_ms: 400
+
+  # (g) Block with JSON answers (not streamed): the gate decides before the answer is sent, as on
+  #     an enforcing route without a stream. Target: p95 < 10 ms, like (c).
+  - name: load-g
+    match: {headers: {X-TrustAgent-Route: load-g}}
+    mode: block
+    evidence: {sources: [request_system, tool_results, extension]}
+    detectors: {block_on: [urls_not_in_evidence, citation_out_of_range]}

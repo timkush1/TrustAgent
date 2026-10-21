@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/question-set.v1.schema.json",
+  "title": "QuestionSet",
+  "description": "contracts/question-sets/<id>.v<version>.json: a named list of evaluator refs (SPEC §2.8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "evaluators"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$"},
+    "version": {"type": "integer", "minimum": 1},
+    "description": {"type": "string", "maxLength": 600},
+    "evaluators": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"}
+    }
+  }
+}

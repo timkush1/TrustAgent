@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/measured.v1.schema.json",
+  "title": "MeasuredValues",
+  "description": "contracts/claims/measured.json: values derived from docs/benchmarks/results/*.json (accuracy and cost runs) and docs/benchmarks/load/*.json (load-run.v1, D118: the proxy overhead of scenario c folds in with system proxy and its run_id). Written only by make bench-publish, which refuses mock runs; until then every value is an explicit null and the UI shows \"not yet measured\".",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "tier", "mock", "generated_by", "generated_at", "runs", "values"],
+  "properties": {
+    "schema": {"const": "trustagent.measured/v1"},
+    "status": {"enum": ["not_measured", "measured"]},
+    "tier": {"anyOf": [{"enum": ["lite", "full"]}, {"type": "null"}]},
+    "mock": {"const": false},
+    "generated_by": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+    "generated_at": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/ISODateTime"}, {"type": "null"}]},
+    "runs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"}
+    },
+    "values": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,63}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "unit", "description", "run_id", "system"],
+        "properties": {
+          "value": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+          "unit": {"enum": ["usd_per_1k", "ms", "fraction", "multiplier"]},
+          "description": {"type": "string", "minLength": 1},
+          "run_id": {"anyOf": [{"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"}, {"type": "null"}]},
+          "system": {
+            "anyOf": [
+              {"enum": ["gate", "llm_same_checks", "llm_full_audit", "cascade_response", "proxy"]},
+              {"type": "null"}
+            ]
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "measured"}}},
+      "then": {
+        "properties": {
+          "tier": {"enum": ["lite", "full"]},
+          "generated_by": {"type": "string", "minLength": 1},
+          "generated_at": {"$ref": "common.v1.schema.json#/$defs/ISODateTime"},
+          "runs": {"minItems": 1}
+        }
+      }
+    }
+  ]
+}

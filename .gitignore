@@ -10,11 +10,15 @@ nul
 *~
 *.tmp
 *.bak
+# Scratch space at the repo root: downloaded tools (tmp/tools), load output (tmp/load)
+/tmp/
 
 # ========== Environment & Secrets ==========
 .env
 .env.*
 !.env.example
+# Proxy data directory on host runs (TRUTHTABLE_DATA_DIR): holds secret.key
+.trustagent/
 
 # ========== Virtual Environments ==========
 .venv/
@@ -42,6 +46,8 @@ backend-go/*.exe
 backend-go/*.test
 backend-go/*.out
 backend-go/vendor/
+# Go benchmark output (make bench-go writes backend-go/bench/<sha>.txt)
+backend-go/bench/
 
 # ========== Node / React ==========
 node_modules/

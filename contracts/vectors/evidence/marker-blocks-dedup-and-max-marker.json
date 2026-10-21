@@ -1,0 +1,37 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "marker-blocks-dedup-and-max-marker",
+  "status": "frozen",
+  "description": "Three [Document N] markers, each block running to the next marker or the end. Documents 1 and 3 have the same text, so dedup keeps the first; the pre-dedup count (3) and the highest marker number (3) are what citation_out_of_range uses. Ids are positional before dedup (sys1, sys2).",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Use the numbered documents.\n[Document 1]\nThe Basic plan costs $10 per month.\n[Document 2]\nThe Pro plan costs $25 per month.\n[Document 3]\nThe Basic plan costs $10 per month."
+        },
+        {"role": "user", "content": "How much is Pro?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "sys1", "source": "request_system", "text": "The Basic plan costs $10 per month."},
+      {"id": "sys2", "source": "request_system", "text": "The Pro plan costs $25 per month."}
+    ],
+    "system_instructions": "Use the numbered documents.",
+    "pre_dedup_items": 3,
+    "max_marker": 3
+  },
+  "tolerance": 1e-9
+}

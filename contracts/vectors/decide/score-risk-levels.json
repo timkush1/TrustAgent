@@ -1,0 +1,96 @@
+{
+  "vector": "1",
+  "kind": "decide",
+  "name": "score-risk-levels",
+  "status": "frozen",
+  "description": "Flag route with a custom score evaluator (4 levels, risk_levels [0, 1], warn_at 0.30). Probabilities keyed \"0\"..\"3\" sum to 1; risk = P(0) + P(1) = 0.10 + 0.25 = 0.35: warn. The fractional score 2.9 is never used. top is level \"2\". No verdict-role evaluator: verdict null.",
+  "input": {
+    "policy": {
+      "configured_mode": "flag",
+      "fail": "open",
+      "require_calibration": true,
+      "on_no_evidence": "ignore",
+      "detectors": {
+        "flag_on": [
+          "urls_not_in_evidence", "quotes_not_in_evidence", "citation_out_of_range", "secret_pattern",
+          "system_prompt_leak"
+        ],
+        "block_on": []
+      }
+    },
+    "evaluators": [
+      {
+        "ref": "answer_completeness@1",
+        "spec": {
+          "spec_version": "evaluator/v1",
+          "id": "answer_completeness",
+          "version": 1,
+          "builtin": false,
+          "name": "Answer completeness",
+          "category": "quality",
+          "state_fields": ["user_request", "assistant_response"],
+          "question": {
+            "type": "score",
+            "instructions": "How much of what `user_request` asks does `assistant_response` answer?",
+            "criteria": [
+              "Answers none of what `user_request` asks", "Answers a small part of what `user_request` asks",
+              "Answers most of what `user_request` asks", "Answers everything `user_request` asks"
+            ]
+          },
+          "evidence": {"requires": "none"},
+          "signal": {"risk_levels": [0, 1]},
+          "outcomes": {
+            "warn_at": 0.3,
+            "critical_at": null,
+            "block_eligible": false,
+            "requires_corroboration": [],
+            "implies": []
+          },
+          "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+        },
+        "stage": "active",
+        "internal": false,
+        "thresholds": {"space": "raw"}
+      }
+    ],
+    "answers": {
+      "answer_completeness__v1": {
+        "type": "score",
+        "score": 2.9,
+        "probabilities": {"0": 0.1, "1": 0.25, "2": 0.4, "3": 0.25}
+      }
+    },
+    "question_map": {"answer_completeness__v1": "answer_completeness@1"},
+    "excluded": [],
+    "calibration": {},
+    "meta": {
+      "backend": "openrouter-decisions",
+      "stream": "none",
+      "evidence_present": true,
+      "evidence_truncated": false,
+      "knowledge_only": false,
+      "skip_reason": null,
+      "request_status": {"0": "ok"},
+      "qid_request": {"answer_completeness__v1": 0},
+      "question_errors": {}
+    },
+    "detectors": {
+      "numbers_not_in_evidence": {"ran": true, "fired": false},
+      "dates_not_in_evidence": {"ran": true, "fired": false},
+      "urls_not_in_evidence": {"ran": true, "fired": false},
+      "quotes_not_in_evidence": {"ran": true, "fired": false},
+      "citation_out_of_range": {"ran": true, "fired": false},
+      "secret_pattern": {"ran": true, "fired": false},
+      "system_prompt_leak": {"ran": false, "fired": false}
+    }
+  },
+  "expected": {
+    "status": "ok",
+    "action": "flag",
+    "verdict": null,
+    "max_risk": 0.35,
+    "reasons": ["answer_completeness:warn"],
+    "evaluators": {"answer_completeness@1": {"status": "assessed", "level": "warn", "risk": 0.35, "top": "2"}}
+  },
+  "tolerance": 1e-9
+}

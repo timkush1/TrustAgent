@@ -1,79 +1,523 @@
+# ============================================================================
+# TrustAgent - docker compose (SPEC §3.4)
+# ============================================================================
+# Default set: proxy, engine, postgres, dashboard.
+#   make up                  configure --ensure, then `up -d --wait`; opens the dashboard
+#   make demo                the zero-key demo stack (adds docker-compose.demo.yml)
+#
+# Add-ons are compose profiles (COMPOSE_PROFILES in .env, or --profile):
+#   knowledge      qdrant (also set TRUTHTABLE_KNOWLEDGE_ENABLED=true and
+#                  ENGINE_EXTRAS=knowledge: the engine image becomes
+#                  …-engine:<version>-knowledge, which is never published, so it
+#                  is built from this checkout)
+#   local-llm      ollama + ollama-init (pulls OLLAMA_FALLBACK_MODEL once)
+#   observability  prometheus + grafana
+#   redis          redis (also set REDIS_URL=redis://redis:6379)
+#   demo           trafficgen (used by docker-compose.demo.yml / make demo)
+#   e2e, load      mock-upstream, a fake of every vendor API (used by
+#                  docker-compose.e2e.yml / make e2e-up, and by load tests)
+#
+# Conventions:
+# - Every published port binds ${BIND_ADDR:-127.0.0.1}; set BIND_ADDR=0.0.0.0
+#   only behind a firewall. Host ports: PROXY_HOST_PORT, DASHBOARD_HOST_PORT,
+#   POSTGRES_HOST_PORT (per-worktree offsets go in that worktree's .env, next to
+#   COMPOSE_PROJECT_NAME).
+# - App images are ghcr.io/timkush1/truthtable-<svc>:${TRUSTAGENT_VERSION}
+#   (D126). make exports the contents of VERSION; without make the default is
+#   the same version, written here and kept in step by scripts/bump_version.py
+#   (scripts/check_version.py fails when it is not). The engine tag gains
+#   -${ENGINE_EXTRAS} when extras are set. pull_policy missing uses a local
+#   image, else pulls the published one, else builds it from this checkout
+#   (build context: the repository root). make up / make demo build from the
+#   checkout unless it is a release tag (RELEASE_CHECKOUT, mk/dx.mk).
+# - Every key in contracts/config/keys.v1.json that the proxy or the engine
+#   reads is passed through from .env / the shell (x-proxy-env, x-engine-env
+#   below); unset keys stay unset in the container. A bare `KEY:` that is unset
+#   also clears an image ENV default, so the images set none of these keys.
+#   Container wiring (ports, paths, service addresses) is fixed here instead,
+#   so a host-oriented .env (make dev-go / dev-python) cannot break the stack.
+# - No fixed container names: the project name (-p, COMPOSE_PROJECT_NAME or
+#   `name`) isolates stacks, e.g. truthtable and truthtable-demo.
+
+name: truthtable
+
+# ---------- Environment passthrough ----------
+# One entry per registry key (and alias) of the service, in registry order;
+# scripts/tests/test_compose.py fails when a key is added to or removed from
+# contracts/config/keys.v1.json without updating these lists. Keys of kind
+# "path" and the wiring keys set per service below are left out on purpose.
+
+x-proxy-env: &proxy-env
+  # Core
+  TRUTHTABLE_READ_TIMEOUT:
+  TRUTHTABLE_READ_HEADER_TIMEOUT:
+  TRUTHTABLE_WRITE_TIMEOUT:
+  TRUTHTABLE_SHUTDOWN_TIMEOUT:
+  TRUTHTABLE_SHUTDOWN_DRAIN_TIMEOUT:
+  TRUTHTABLE_LOG_LEVEL:
+  TRUTHTABLE_STRICT_CONFIG:
+  TRUTHTABLE_DEMO_MODE:
+  TRUTHTABLE_READONLY:
+  TRUTHTABLE_PUBLIC_READ:
+  TRUTHTABLE_TEST_MODE:
+  # Auth
+  TRUTHTABLE_INGEST_AUTH:
+  TRUTHTABLE_API_KEYS:
+  TRUTHTABLE_READ_KEYS:
+  TRUTHTABLE_ADMIN_KEYS:
+  TRUTHTABLE_ADMIN_KEY:
+  TRUTHTABLE_SECRET_KEY:
+  TRUTHTABLE_SESSION_TTL:
+  TRUTHTABLE_SETUP_TOKEN_TTL:
+  TRUTHTABLE_SETUP_TOKEN:
+  TRUTHTABLE_COOKIE_SECURE:
+  TRUTHTABLE_INTERNAL_TOKEN:
+  TRUTHTABLE_KEY_DECISION_USD_DAY:
+  # Upstream
+  TRUTHTABLE_UPSTREAM_URL:
+  UPSTREAM_LLM_URL:
+  TRUTHTABLE_UPSTREAM_API_KEY:
+  TRUTHTABLE_UPSTREAM_AUTH_HEADER:
+  TRUTHTABLE_ANTHROPIC_UPSTREAM_URL:
+  TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY:
+  TRUTHTABLE_FALLBACK_UPSTREAM_URL:
+  TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY:
+  TRUTHTABLE_FALLBACK_UPSTREAM_FORMAT:
+  TRUTHTABLE_UPSTREAM_HEADER_TIMEOUT:
+  TRUTHTABLE_UPSTREAM_TIMEOUT:
+  TRUTHTABLE_STREAM_IDLE_TIMEOUT:
+  TRUTHTABLE_MAX_UPSTREAM_RESPONSE_BYTES:
+  # Limits
+  TRUTHTABLE_RATE_LIMIT_PER_MINUTE:
+  TRUTHTABLE_UPLOAD_LIMIT_PER_MINUTE:
+  TRUTHTABLE_MAX_BODY_BYTES:
+  TRUTHTABLE_MAX_UPLOAD_BYTES:
+  TRUTHTABLE_MAX_TEXT_CHARS:
+  REDIS_URL:
+  TRUTHTABLE_REDIS_URL:
+  # Persistence
+  TRUTHTABLE_RETENTION_DAYS:
+  TRUTHTABLE_COST_RETENTION_DAYS:
+  TRUTHTABLE_BODY_RETENTION:
+  TRUTHTABLE_BODY_MAX_BYTES:
+  TRUTHTABLE_LABEL_SAMPLE_RETENTION:
+  TRUTHTABLE_TRACE_FLUSH:
+  # Engine link, worker, sampling
+  TRUTHTABLE_GRPC_TIMEOUT:
+  TRUTHTABLE_INGEST_TIMEOUT:
+  TRUTHTABLE_WORKER_COUNT:
+  TRUTHTABLE_QUEUE_SIZE:
+  TRUTHTABLE_AUDIT_QUEUE_HIGH:
+  TRUTHTABLE_AUDIT_HIGH_PER_MIN:
+  TRUTHTABLE_UNIFORM_AUDITS_PER_DAY:
+  TRUTHTABLE_ENGINE_HEALTH_INTERVAL:
+  # WebSocket
+  TRUTHTABLE_WS_MAX_CLIENTS:
+  TRUTHTABLE_WS_MAX_PER_IP:
+  TRUTHTABLE_WS_REPLAY_BUFFER:
+  TRUTHTABLE_WS_REPLAY_MAX_BYTES:
+  TRUTHTABLE_WS_HEARTBEAT:
+  # Policy and gate
+  TRUTHTABLE_POLICY_RELOAD_INTERVAL:
+  TRUTHTABLE_CONFIG_LOCK:
+  TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK:
+  TRUTHTABLE_GATE_DEFAULT_MODE:
+  TRUTHTABLE_GATE_FAIL_MODE:
+  TRUTHTABLE_GATE_MAX_CONCURRENCY:
+  TRUTHTABLE_KNOWLEDGE_ENABLED:
+  KNOWLEDGE_ENABLED:
+  RAG_ENABLED:
+  TRUTHTABLE_KNOWLEDGE_DEADLINE:
+  # Decision model
+  TRUTHTABLE_DECISION_PROVIDER:
+  TRUTHTABLE_JEV_BACKEND:
+  OPENROUTER_API_KEY:
+  TYPESAFE_API_KEY:
+  TRUTHTABLE_JEV_API_KEY:
+  TRUTHTABLE_JEV_MODEL:
+  TRUTHTABLE_JEV_BASE_URL:
+  TRUTHTABLE_JEV_PATH:
+  TRUTHTABLE_OPENROUTER_BASE_URL:
+  TRUTHTABLE_JEV_ATTEMPT_TIMEOUT:
+  TRUTHTABLE_JEV_ASYNC_DEADLINE:
+  TRUTHTABLE_JEV_MAX_RETRIES:
+  TRUTHTABLE_JEV_MAX_RETRIES_ASYNC:
+  TRUTHTABLE_JEV_RETRY_AFTER_CAP:
+  TRUTHTABLE_GATE_JEV_RPM:
+  TRUTHTABLE_GATE_JEV_SYNC_RESERVE:
+  TRUTHTABLE_GATE_JEV_MAX_INFLIGHT:
+  TRUTHTABLE_JEV_TOKEN_BUDGET:
+  TRUTHTABLE_JEV_CHARS_PER_TOKEN:
+  TRUTHTABLE_JEV_MAX_QUESTIONS_PER_CALL:
+  TRUTHTABLE_JEV_MAX_RESPONSE_TOKENS:
+  TRUTHTABLE_JEV_BREAKER_FAILURES:
+  TRUTHTABLE_JEV_BREAKER_COOLDOWN:
+  TRUTHTABLE_JEV_AUTH_COOLDOWN:
+  TRUTHTABLE_JEV_PRICE_PER_MTOK:
+  TRUTHTABLE_JEV_APP_URL:
+  TRUTHTABLE_JEV_APP_TITLE:
+  TRUTHTABLE_JEV_ZDR:
+  TRUTHTABLE_JEV_SEND_SESSION_ID:
+  TRUTHTABLE_JEV_STARTUP_PROBE:
+  TRUTHTABLE_JEV_KEEPALIVE:
+  TRUTHTABLE_JEV_LOG_PAYLOADS:
+  TRUTHTABLE_JEV_MOCK_MODE:
+  TRUTHTABLE_JEV_MOCK_STRICT:
+  TRUTHTABLE_JEV_MOCK_SEED:
+  TRUTHTABLE_JEV_MOCK_LATENCY:
+  # Budgets, Studio
+  TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY:
+  TRUTHTABLE_SPEND_CAP_LLM_USD_DAY:
+  TRUTHTABLE_SPEND_ENFORCING_RESERVE:
+  TRUTHTABLE_STUDIO_CONFIRM_ABOVE_USD:
+  TRUTHTABLE_DRYRUN_MAX_SAMPLES:
+
+x-engine-env: &engine-env
+  # Core
+  TRUTHTABLE_LOG_LEVEL:
+  TRUTHTABLE_STRICT_CONFIG:
+  TRUTHTABLE_DEMO_MODE:
+  TRUTHTABLE_READONLY:
+  TRUTHTABLE_PUBLIC_READ:
+  TRUTHTABLE_TEST_MODE:
+  # Auth
+  TRUTHTABLE_INTERNAL_TOKEN:
+  # Policy and gate
+  TRUTHTABLE_KNOWLEDGE_ENABLED:
+  KNOWLEDGE_ENABLED:
+  RAG_ENABLED:
+  TRUTHTABLE_KNOWLEDGE_DEADLINE:
+  # Decision model
+  OPENROUTER_API_KEY:
+  TRUTHTABLE_OPENROUTER_BASE_URL:
+  TRUTHTABLE_JEV_APP_URL:
+  TRUTHTABLE_JEV_APP_TITLE:
+  # Engine: judge
+  LLM_PROVIDER:
+  LLM_MODEL:
+  LLM_FALLBACK:
+  ANTHROPIC_API_KEY:
+  OPENAI_API_KEY:
+  OPENROUTER_JUDGE_MODEL:
+  OLLAMA_FALLBACK_MODEL:
+  TRUTHTABLE_JUDGE_MAX_INFLIGHT:
+  VERIFIER_CONCURRENCY:
+  TRUTHTABLE_ANTHROPIC_STRUCTURED_OUTPUTS:
+  # Engine: pipeline and server
+  TRUTHTABLE_VERIFIER:
+  VERIFIER_MODE:
+  TRUTHTABLE_VERIFY_CONTEXT_SCOPE:
+  TRUTHTABLE_AUDIT_EXTRACT_CLAIMS_WITHOUT_EVIDENCE:
+  TRUTHTABLE_SCORING_PARTIAL_WEIGHT:
+  TRUTHTABLE_SCORING_CONTRADICTION_FLAG:
+  TRUTHTABLE_SCORING_UNSUPPORTED_FLAG:
+  TRUTHTABLE_SCORING_UNSUPPORTED_FRACTION_FLAG:
+  TRUTHTABLE_SCORING_MIN_COVERAGE:
+  TRUTHTABLE_SCORING_MAX_UNKNOWN_FRACTION:
+  TRUTHTABLE_SCORING_GRADE_CUTOFFS:
+  TRUTHTABLE_UNSUPPORTED_POLICY:
+  TRUTHTABLE_MAX_CLAIMS:
+  TRUTHTABLE_RETRIEVER_TOP_K:
+  TRUTHTABLE_RETRIEVER_SCORE_THRESHOLD:
+  TRUTHTABLE_EMBEDDING_MODEL:
+  TRUTHTABLE_ENGINE_MAX_RPCS:
+  TRUTHTABLE_ENGINE_MAX_AUDITS:
+  LOG_LEVEL:
+  LANGSMITH_API_KEY:
+  LANGSMITH_PROJECT:
+  LANGSMITH_TRACING:
+
 services:
-  # ========== Infrastructure Services ==========
-  
-  redis:
-    image: redis:7-alpine
-    container_name: truthtable-redis
+  # ========== Default set ==========
+
+  proxy:
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
+    pull_policy: missing
+    build:
+      context: .
+      dockerfile: backend-go/Dockerfile
+      args:
+        VERSION: ${TRUSTAGENT_VERSION:-1.0.0}
+        # The git revision (make sets it): the images' org.opencontainers.image.revision label, and
+        # the revision GET /api/export/replay names once the proxy reads internal/version.GitSHA.
+        GIT_SHA: ${GIT_SHA:-}
     ports:
-      - "6379:6379"
+      - "${BIND_ADDR:-127.0.0.1}:${PROXY_HOST_PORT:-8080}:8080"
+    # Metrics (:8002) stay on the compose network (prometheus scrapes proxy:8002).
+    expose:
+      - "8002"
+    environment:
+      <<: *proxy-env
+      TRUTHTABLE_PORT: "8080"
+      TRUTHTABLE_METRICS_PORT: "8002"
+      TRUTHTABLE_DATA_DIR: /var/lib/trustagent
+      TRUTHTABLE_INTERNAL_TOKEN_FILE: /var/lib/trustagent-internal/internal.token
+      TRUTHTABLE_DATABASE_URL: postgres://truthtable:${POSTGRES_PASSWORD:-}@postgres:5432/truthtable?sslmode=disable
+      TRUTHTABLE_GRPC_ADDRESS: engine:50051
+      TRUTHTABLE_POLICY_FILE: /etc/trustagent/policies.yaml
+      TRUTHTABLE_EVALUATORS_DIR: /etc/trustagent/evaluators
+      TRUTHTABLE_CALIBRATION_DIR: /etc/trustagent/calibration
+      OLLAMA_BASE_URL: http://ollama:11434
+      # X-Forwarded-For is trusted only from the compose network (the dashboard's
+      # nginx). Docker allocates compose networks from 172.16.0.0/12; set the
+      # exact subnet (docker network inspect <project>_default) to narrow it.
+      TRUTHTABLE_TRUSTED_PROXIES: ${TRUTHTABLE_TRUSTED_PROXIES:-172.16.0.0/12}
+      # The dashboard origin follows DASHBOARD_HOST_PORT unless set explicitly.
+      TRUTHTABLE_PUBLIC_URL: ${TRUTHTABLE_PUBLIC_URL:-http://localhost:${DASHBOARD_HOST_PORT:-3000}}
+      TRUTHTABLE_ALLOWED_ORIGINS: ${TRUTHTABLE_ALLOWED_ORIGINS:-http://localhost:${DASHBOARD_HOST_PORT:-3000},http://127.0.0.1:${DASHBOARD_HOST_PORT:-3000},http://localhost:5173}
     volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
+      - ./config:/etc/trustagent:ro
+      - trustagent-secrets:/var/lib/trustagent
+      - trustagent-internal:/var/lib/trustagent-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Started, not healthy: the proxy generates the internal token the engine
+      # waits for, and it reports a missing engine itself (/health audit_engine).
+      engine:
+        condition: service_started
+      redis:
+        condition: service_healthy
+        required: false
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - truthtable-net
+      start_period: 30s
+      start_interval: 2s
+    # Longer than TRUTHTABLE_SHUTDOWN_TIMEOUT (30s) so in-flight requests drain.
+    stop_grace_period: 35s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+    restart: unless-stopped
+
+  engine:
+    image: ghcr.io/timkush1/truthtable-engine:${TRUSTAGENT_VERSION:-1.0.0}${ENGINE_EXTRAS:+-${ENGINE_EXTRAS:-}}
+    pull_policy: missing
+    build:
+      context: .
+      dockerfile: backend-python/Dockerfile
+      args:
+        VERSION: ${TRUSTAGENT_VERSION:-1.0.0}
+        GIT_SHA: ${GIT_SHA:-}
+        EXTRAS: ${ENGINE_EXTRAS:-}
+    # gRPC (:50051) and metrics (:8001) stay on the compose network.
+    expose:
+      - "50051"
+      - "8001"
+    environment:
+      <<: *engine-env
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: "50051"
+      METRICS_PORT: "8001"
+      TRUTHTABLE_INTERNAL_TOKEN_FILE: /var/lib/trustagent-internal/internal.token
+      TRUTHTABLE_CONTRACTS_DIR: /app/contracts
+      OLLAMA_BASE_URL: http://ollama:11434
+      # The qdrant service (profile knowledge), only when
+      # TRUTHTABLE_KNOWLEDGE_ENABLED is set; empty otherwise. The engine starts
+      # its retrieval stack (embedding model download, Qdrant connection)
+      # whenever QDRANT_URL is set, which the default and demo stacks must not do.
+      QDRANT_URL: ${TRUTHTABLE_KNOWLEDGE_ENABLED:+http://qdrant:6333}
+    volumes:
+      - trustagent-internal:/var/lib/trustagent-internal:ro
+    depends_on:
+      qdrant:
+        condition: service_healthy
+        required: false
+      ollama:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "python", "-m", "truthtable.healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+      start_interval: 2s
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "2.0"
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
-    container_name: truthtable-postgres
     ports:
-      - "5432:5432"  # published for hybrid local dev (proxy on host)
+      - "${BIND_ADDR:-127.0.0.1}:${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: truthtable
+      POSTGRES_DB: truthtable
+      # Generated into .env by `scripts/configure.py --ensure` (make up / demo).
+      # Postgres refuses to initialise an empty data volume without it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=truthtable
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-truthtable-dev}
-      - POSTGRES_DB=truthtable
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U truthtable"]
+      # Over TCP on purpose: while the entrypoint initialises a new volume it
+      # runs a temporary server on the Unix socket only (listen_addresses=''),
+      # which a socket check would report as ready just before it restarts.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U truthtable -d truthtable"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+      start_interval: 1s
+    restart: unless-stopped
+
+  dashboard:
+    image: ghcr.io/timkush1/truthtable-dashboard:${TRUSTAGENT_VERSION:-1.0.0}
+    pull_policy: missing
+    build:
+      context: .
+      dockerfile: frontend-react/Dockerfile
+      args:
+        VERSION: ${TRUSTAGENT_VERSION:-1.0.0}
+        GIT_SHA: ${GIT_SHA:-}
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${DASHBOARD_HOST_PORT:-3000}:3000"
+    # Written to /config.json and the nginx template at start (no secrets).
+    # Explicit defaults: a bare `KEY:` entry that is unset would also unset the
+    # image's own default.
+    environment:
+      DASHBOARD_API_BASE: ${DASHBOARD_API_BASE:-}
+      DASHBOARD_WS_URL: ${DASHBOARD_WS_URL:-}
+      DASHBOARD_PROXY_UPSTREAM: ${DASHBOARD_PROXY_UPSTREAM:-http://proxy:8080}
+      DASHBOARD_CONNECT_SRC: ${DASHBOARD_CONNECT_SRC:-}
+    depends_on:
+      proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/healthz || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - truthtable-net
+      start_period: 10s
+      start_interval: 1s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+    restart: unless-stopped
+
+  # ========== Profile: demo ==========
+
+  # Scripted traffic from contracts/demo/scenarios.v1.json. It needs the proxy in
+  # test mode (test_response), which docker-compose.demo.yml turns on; make demo
+  # enables this profile. Same image as the proxy, built by the proxy service
+  # (pull_policy never: never pulled on its own, so an unpublished tag works).
+  # A round is every demo scenario this build serves (about 20), so a round a
+  # minute keeps the demo database growing slowly on a small machine.
+  trafficgen:
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
+    pull_policy: never
+    profiles: [demo]
+    command: ["/trafficgen", "--loop", "--scenarios", "demo", "--base-url", "http://proxy:8080", "--interval", "60s"]
+    environment:
+      TRAFFICGEN_API_KEY:
+    # The image's HEALTHCHECK probes 127.0.0.1:8080, which this container does
+    # not serve, so `up --wait` (make demo) would fail on it; and a disabled
+    # check fails --wait too. Healthy here means the proxy it sends to answers.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://proxy:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+      start_interval: 1s
+    depends_on:
+      proxy:
+        condition: service_healthy
+      engine:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.25"
+    restart: unless-stopped
+
+  # ========== Profiles: e2e, load ==========
+
+  # A fake of every vendor the gateway calls (cmd/mock-upstream): OpenAI and
+  # Anthropic JSON and SSE answering with the demo scenarios' scripted answers,
+  # OpenRouter's decision, key and PKCE endpoints, and the TypeSafe-shaped
+  # /v1/systemone the e2e stack's compatible decision backend calls, with
+  # scenario-keyed faults. docker-compose.e2e.yml points the proxy at it. Same
+  # image as the proxy, built by the proxy service; reachable on the compose
+  # network only.
+  mock-upstream:
+    image: ghcr.io/timkush1/truthtable-proxy:${TRUSTAGENT_VERSION:-1.0.0}
+    pull_policy: never
+    profiles: [e2e, load]
+    command: ["/mock-upstream"]
+    environment:
+      MOCK_UPSTREAM_ADDR: ":8090"
+    expose:
+      - "8090"
+    # The image's HEALTHCHECK probes the proxy port; this service listens on 8090.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+      start_interval: 1s
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.25"
+    restart: unless-stopped
+
+  # ========== Profile: knowledge ==========
 
   qdrant:
     image: qdrant/qdrant:v1.16.3
-    container_name: truthtable-qdrant
+    profiles: [knowledge]
     ports:
-      - "6333:6333"  # HTTP API
-      - "6334:6334"  # gRPC API
+      - "${BIND_ADDR:-127.0.0.1}:6333:6333" # HTTP API
+      - "${BIND_ADDR:-127.0.0.1}:6334:6334" # gRPC API
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
     volumes:
       - qdrant-data:/qdrant/storage
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      # The qdrant image ships no wget/curl; bash's /dev/tcp gives a TCP
-      # connect check against the HTTP port instead.
+      # The qdrant image ships no wget/curl; bash's /dev/tcp is a TCP connect check.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - truthtable-net
+      start_period: 10s
+    restart: unless-stopped
+
+  # ========== Profile: local-llm ==========
 
   ollama:
     image: ollama/ollama:0.5.13
-    container_name: truthtable-ollama
+    profiles: [local-llm]
     ports:
-      - "11434:11434"
+      - "${BIND_ADDR:-127.0.0.1}:11434:11434"
+    environment:
+      OLLAMA_HOST: 0.0.0.0
     volumes:
       - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0
     healthcheck:
       # The ollama image ships no curl; the CLI hits the same HTTP API.
       test: ["CMD", "ollama", "ls"]
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - truthtable-net
-    # GPU support (uncomment for NVIDIA GPU systems):
+      start_period: 10s
+      start_interval: 2s
+    restart: unless-stopped
+    # GPU support (NVIDIA hosts):
     # deploy:
     #   resources:
     #     reservations:
@@ -82,181 +526,104 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
+  # One-shot: pulls the local judge model once (a no-op when it is present).
+  ollama-init:
+    image: ollama/ollama:0.5.13
+    profiles: [local-llm]
+    entrypoint: ["ollama", "pull", "${OLLAMA_FALLBACK_MODEL:-llama3.2:1b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # ========== Profile: observability ==========
+
   prometheus:
     image: prom/prometheus:v2.48.0
-    container_name: truthtable-prometheus
+    profiles: [observability]
     ports:
-      - "9090:9090"
+      - "${BIND_ADDR:-127.0.0.1}:9090:9090"
+    # Hybrid mode: scrape a proxy/engine running on the host (config/prometheus.yml).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - truthtable-net
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:10.2.0
-    container_name: truthtable-grafana
+    profiles: [observability]
     ports:
-      - "3001:3000"
+      - "${BIND_ADDR:-127.0.0.1}:3001:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Generated into .env by `scripts/configure.py --ensure`. Grafana would fall
+      # back to admin/admin without it, so the entrypoint below refuses to start.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        if [ -z "$${GF_SECURITY_ADMIN_PASSWORD}" ]; then
+        echo "grafana: GRAFANA_ADMIN_PASSWORD is not set; run 'make configure' (scripts/configure.py --ensure)" >&2;
+        exit 1; fi;
+        exec /run.sh "$$@"
+      - grafana
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources
-    environment:
-      # No default on purpose: copy .env.example to .env and set a password.
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env (see .env.example)}
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - truthtable-net
-
-  # ========== Application Services ==========
-  
-  audit-engine:
-    build:
-      context: ./backend-python
-      dockerfile: Dockerfile
-    container_name: truthtable-audit-engine
-    # No host-published ports: gRPC (:50051) and metrics (:8001) are reachable
-    # only on the internal network (proxy and prometheus respectively).
-    expose:
-      - "50051"
-      - "8001"
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-          cpus: "2.0"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - REDIS_URL=redis://redis:6379
-      - QDRANT_URL=http://qdrant:6333
-      - OLLAMA_BASE_URL=http://ollama:11434
-      # Audit-judge provider. Default anthropic (Claude Haiku); the engine
-      # auto-falls-back to local Ollama when ANTHROPIC_API_KEY is unset.
-      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
-      - LLM_MODEL=${LLM_MODEL:-claude-haiku-4-5}
-      - OLLAMA_FALLBACK_MODEL=${OLLAMA_FALLBACK_MODEL:-llama3.2:1b}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - GRPC_PORT=50051
-      - METRICS_PORT=8001
-      - LOG_LEVEL=INFO
-    depends_on:
-      - redis
-      - qdrant
-      - ollama
-    healthcheck:
-      test: ["CMD", "grpc-health-probe", "-addr=:50051"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    networks:
-      - truthtable-net
-    # volumes:
-    #   - ./backend-python:/app  # Commented out: volume mount overrides built-in venv
+      start_period: 20s
     restart: unless-stopped
 
-  proxy:
-    build:
-      context: ./backend-go
-      dockerfile: Dockerfile
-    container_name: truthtable-proxy
+  # ========== Profile: redis ==========
+
+  redis:
+    image: redis:7-alpine
+    profiles: [redis]
     ports:
-      - "8080:8080"  # HTTP/WebSocket
-    # Metrics (:8002) stays internal; Prometheus scrapes proxy:8002.
-    expose:
-      - "8002"
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-          cpus: "1.0"
-    environment:
-      - GIN_MODE=release
-      - REDIS_URL=redis://redis:6379
-      - TRUTHTABLE_GRPC_ADDRESS=audit-engine:50051
-      - TRUTHTABLE_PORT=8080
-      - TRUTHTABLE_LOG_LEVEL=info
-      - TRUTHTABLE_UPSTREAM_URL=${UPSTREAM_LLM_URL:-http://ollama:11434}
-      - TRUTHTABLE_API_KEYS=${TRUTHTABLE_API_KEYS:-}
-      - TRUTHTABLE_ALLOWED_ORIGINS=${TRUTHTABLE_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
-      - TRUTHTABLE_DATABASE_URL=postgres://truthtable:${POSTGRES_PASSWORD:-truthtable-dev}@postgres:5432/truthtable
-    depends_on:
-      - redis
-      - postgres
-      - audit-engine
+      - "${BIND_ADDR:-127.0.0.1}:6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8080/health"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
-    networks:
-      - truthtable-net
-    # volumes:
-    #   - ./backend-go:/app  # Commented out: use built binary from image
     restart: unless-stopped
-
-  dashboard:
-    build:
-      context: ./frontend-react
-      dockerfile: Dockerfile
-    container_name: truthtable-dashboard
-    ports:
-      - "3000:3000"
-    deploy:
-      resources:
-        limits:
-          memory: 256m
-          cpus: "0.5"
-    environment:
-      - VITE_API_URL=http://localhost:8080
-      - VITE_WS_URL=ws://localhost:8080/ws
-    depends_on:
-      - proxy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    networks:
-      - truthtable-net
-    restart: unless-stopped
-
-# ========== Networks ==========
-
-networks:
-  truthtable-net:
-    driver: bridge
-
-# ========== Volumes ==========
 
 volumes:
-  redis-data:
-    driver: local
+  # Proxy only: TRUTHTABLE_DATA_DIR (secret.key).
+  trustagent-secrets:
+  # Proxy read-write, engine read-only: the internal RPC token.
+  trustagent-internal:
   postgres-data:
-    driver: local
   qdrant-data:
-    driver: local
   ollama-data:
-    driver: local
   prometheus-data:
-    driver: local
   grafana-data:
-    driver: local
+  redis-data:

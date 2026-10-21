@@ -1,0 +1,37 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "dedup-across-sources-first-wins",
+  "status": "frozen",
+  "description": "The same policy text arrives in the system prompt and, with different whitespace, in trustagent.context. Dedup hashes whitespace-collapsed text, so the extension copy is dropped; request_system comes first in the route source order and wins. The pre-dedup count is 2.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "<doc id=\"refunds\">Annual plans can be refunded within 30 days.</doc>"
+        },
+        {"role": "user", "content": "Refund window?"}
+      ],
+      "trustagent": {
+        "context": [{"id": "refunds-copy", "text": "Annual plans can be refunded\n   within 30 days."}]
+      }
+    }
+  },
+  "expected": {
+    "items": [
+      {"id": "refunds", "source": "request_system", "text": "Annual plans can be refunded within 30 days."}
+    ],
+    "pre_dedup_items": 2
+  },
+  "tolerance": 1e-9
+}

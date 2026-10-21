@@ -1,0 +1,79 @@
+name: CI (Contracts)
+
+# Cross-stream contracts (SPEC §3.4, §7.6): the superseded-identifier check
+# (SPEC Appendix A, scripts/check-forbidden.mjs) and, once contracts/ exists,
+# `make contracts-check` (schemas, fixtures, template coverage, ...), which is
+# defined in mk/contracts.mk by the contracts stream. No path filters on
+# purpose: a required check that never reports would block merges.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+
+      - name: Forbidden-identifier checker (self-test)
+        run: node scripts/check-forbidden.mjs --self-test
+
+      # Passes with a note while contracts/superseded.v1.json does not exist yet.
+      - name: Forbidden identifiers (SPEC Appendix A)
+        run: node scripts/check-forbidden.mjs
+
+      # No code or comment names the delivery phase it shipped in (P4-PLAN §17 I-3).
+      - name: Phase references (scripts/phase-refs.allow)
+        run: make phase-refs-check
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        if: hashFiles('contracts/**') != ''
+        with:
+          go-version-file: contracts/go.mod
+          cache: false   # the contracts module has no dependencies (no go.sum)
+
+      # Schemas + cross-file checks, the validator's own tests, and the Go embed
+      # module (RE2 portability of every rule/schema regex).
+      - name: make contracts-check contracts-test contracts-go
+        if: hashFiles('contracts/**') != ''
+        run: make contracts-check contracts-test contracts-go
+
+      # docs/CONFIGURATION.md and .env.example are generated from the key registry
+      # (SPEC §3.4): fail with a diff when a key changed without `make config-docs`.
+      # The generator is standard-library Python; the runner's python3 is enough.
+      - name: Configuration docs match the key registry (gen_config_docs --check)
+        run: python3 scripts/gen_config_docs.py --check
+
+      # Every figure in README.md and docs/ sits behind a claim marker with its label (D128).
+      - name: Claims in README and docs (check-claims)
+        run: node scripts/check-claims.mjs
+
+      - name: VERSION and its mirrors agree (check_version)
+        run: python3 scripts/check_version.py
+
+      # Relative links and heading anchors of the published Markdown (CO-21).
+      - name: Links in README and docs (check_links)
+        run: python3 scripts/check_links.py
+
+      # contracts/schema/api.v1.schema.json is generated from frontend-react/src/types/api.ts
+      # (contracts/tools/api-schema, pinned generator): fail when the two drift apart.
+      - name: api.v1 schema matches src/types/api.ts (gen-api-schema-check)
+        run: make gen-api-schema-check

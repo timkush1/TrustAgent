@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quality-proxy-with-one-judge-label",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "One judge-derived label among 300 public-dataset labels makes the whole fit proxy: judge labels can never unlock blocking.",
+  "input": {
+    "op": "quality",
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "label_source": {"human": 0, "public_dataset": 300, "uniform_audit": 0, "judge": 1},
+    "n_pos": 150,
+    "n_neg": 151
+  },
+  "expected": {"quality": "proxy"}
+}

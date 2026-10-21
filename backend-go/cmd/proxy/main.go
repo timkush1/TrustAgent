@@ -1,366 +1,208 @@
+// Command proxy is the TrustAgent gateway: the /v1 LLM API proxy that gates answers, the REST API
+// and WebSocket stream of the dashboard, and the deep-audit workers that call the audit engine.
 package main
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"log"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/truthtable/backend-go/internal/config"
 	"github.com/truthtable/backend-go/internal/grpc"
-	_ "github.com/truthtable/backend-go/internal/metrics" // Register Prometheus metrics
+	_ "github.com/truthtable/backend-go/internal/metrics" // registers the Prometheus metrics
 	"github.com/truthtable/backend-go/internal/middleware"
-	"github.com/truthtable/backend-go/internal/proxy"
 	"github.com/truthtable/backend-go/internal/store"
 	"github.com/truthtable/backend-go/internal/version"
-	"github.com/truthtable/backend-go/internal/websocket"
-	"github.com/truthtable/backend-go/internal/worker"
 )
 
 func main() {
-	cfg := config.Load()
-	log.Printf("🚀 Starting TruthTable Proxy")
-	log.Printf("   Server Port: %d (HTTP + WebSocket)", cfg.ServerPort)
-	log.Printf("   Upstream URL: %s", cfg.UpstreamURL)
-	log.Printf("   gRPC Address: %s", cfg.GRPCAddress)
-
-	auditClient, err := grpc.NewAuditClient(cfg.GRPCAddress, cfg.GRPCTimeout)
-	if err != nil {
-		log.Printf("⚠️  Warning: Could not connect to audit engine: %v", err)
-		log.Printf("   Proxy will still work, but audits will be skipped")
-	} else {
-		log.Printf("✓ Connected to audit engine at %s", cfg.GRPCAddress)
+	// Command-line modes (-check-config, -dump-config-spec, -new-setup-token [-force]) and
+	// TRUTHTABLE_STRICT_CONFIG (exit 2 on any configuration warning) run first (cli.go).
+	cfg, code, exit := bootConfig(os.Args[1:], os.Stdout, os.Stderr)
+	if exit {
+		os.Exit(code)
 	}
-
-	wsHub := websocket.NewHub()
-	go wsHub.Run()
-	log.Printf("✓ WebSocket hub started")
-
-	// Audit persistence (optional: enabled when TRUTHTABLE_DATABASE_URL is set)
-	var auditStore store.Store
-	if cfg.DatabaseURL != "" {
-		pgStore, err := store.NewPostgresStore(context.Background(), cfg.DatabaseURL)
-		if err != nil {
-			log.Printf("⚠️  Audit persistence disabled: %v", err)
-		} else {
-			auditStore = pgStore
-			defer pgStore.Close()
-			log.Printf("✓ Audit persistence enabled (Postgres)")
-		}
-	} else {
-		log.Printf("⚠️  TRUTHTABLE_DATABASE_URL not set — audit history will not be persisted")
+	redactor := cfg.Redactor()
+	log := newLogger(cfg.LogLevel, redactor)
+	slog.SetDefault(log)
+	// gin's panic recovery dumps request headers (keys, the session cookie) in debug mode and on a
+	// broken pipe; it captures this writer when the router is built.
+	gin.DefaultErrorWriter = redactor.Writer(os.Stderr)
+	if err := run(cfg, log, redactor); err != nil {
+		log.Error("TrustAgent proxy stopped", "err", err)
+		os.Exit(1)
 	}
+}
 
-	workerPool := worker.NewPool(cfg.WorkerCount, cfg.QueueSize, auditClient, wsHub)
-	if auditStore != nil {
-		workerPool.AttachStore(auditStore)
+// newLogger logs text to stderr; redactor masks every loaded secret and credential pattern.
+func newLogger(level string, redactor *config.Redactor) *slog.Logger {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(level)); err != nil {
+		l = slog.LevelInfo
 	}
-	go workerPool.Start()
-	log.Printf("✓ Worker pool started (%d workers, queue size %d)", cfg.WorkerCount, cfg.QueueSize)
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l, ReplaceAttr: redactor.ReplaceAttr}))
+}
 
-	proxyHandler := proxy.NewHandler(cfg.UpstreamURL, workerPool)
-	log.Printf("✓ Proxy handler ready")
-
+// run starts the proxy and blocks until SIGINT or SIGTERM, then shuts down in order: stop
+// accepting requests, let observe-mode gates and queued audits drain, stop the stream. redactor
+// masks the secrets that only exist at run time (the generated internal token).
+func run(cfg *config.Config, log *slog.Logger, redactor *config.Redactor) error {
+	log.Info("starting the TrustAgent proxy", "version", version.Version, "port", cfg.ServerPort,
+		"upstream", redactURL(cfg.UpstreamURL), "engine", cfg.GRPCAddress)
 	if cfg.LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Security wiring
-	if len(cfg.APIKeys) == 0 {
-		log.Printf("⚠️  TRUTHTABLE_API_KEYS not set — API authentication is DISABLED (dev mode)")
+	d := serverDeps{cfg: cfg, log: log, redisState: stateDisabled, redactor: redactor}
+	// Admin audit diffs are scrubbed with the process Redactor, which learns every secret the
+	// runtime configuration loads or receives (D42, D44).
+	defer store.AddAuditRedactor(redactor)()
+	// REST error messages pass through the same Redactor (D42).
+	defer installRedaction(redactor)()
+
+	if cfg.DatabaseURL == "" {
+		log.Warn("TRUTHTABLE_DATABASE_URL is not set: traces and audits are not stored")
 	} else {
-		log.Printf("✓ API-key auth enabled (%d keys)", len(cfg.APIKeys))
-	}
-	websocket.ConfigureUpgrader(cfg.AllowedOrigins)
-
-	var limiter middleware.Limiter
-	if cfg.RedisURL != "" {
-		if redisLimiter, err := middleware.NewRedisLimiter(cfg.RedisURL); err == nil {
-			limiter = redisLimiter
-			log.Printf("✓ Rate limiting backed by Redis")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		pg, err := store.NewPostgresStore(ctx, cfg.DatabaseURL)
+		cancel()
+		if err != nil {
+			log.Error("persistence disabled: the database could not be opened", "err", err)
 		} else {
-			log.Printf("⚠️  Redis unavailable (%v) — using in-memory rate limiter", err)
+			defer pg.Close()
+			d.store, d.pg = pg, pg
+			log.Info("persistence enabled (Postgres)")
 		}
 	}
-	if limiter == nil {
-		limiter = middleware.NewMemoryLimiter()
+	d.master = loadMasterKey(cfg, log) // signs dashboard sessions (P2 authz core)
+	// The batched trace writer (TRUTHTABLE_TRACE_FLUSH=async, trace_writer.go) fronts the store;
+	// its flush runs at shutdown after the drain.
+	var flushTraces func(context.Context) error
+	d.store, flushTraces = wrapTraceWriter(cfg, d.store, log)
+
+	cfg.InternalToken = internalToken(cfg.InternalToken, cfg.InternalTokenFile, log)
+	redactor.Add(cfg.InternalToken) // a generated token was not in the loaded configuration
+	if cfg.GRPCAddress != "" {
+		client, err := grpc.NewAuditClient(cfg.GRPCAddress, cfg.GRPCTimeout, cfg.InternalToken)
+		if err != nil {
+			log.Error("deep audits disabled: the audit engine address is not usable", "address", cfg.GRPCAddress, "err", err)
+		} else {
+			defer func() { _ = client.Close() }()
+			d.engine = client
+		}
 	}
 
-	router := gin.New()
-	router.Use(gin.Recovery())
-	router.Use(loggingMiddleware())
-	router.Use(middleware.CORS(cfg.AllowedOrigins))
-
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":       "healthy",
-			"version":      version.Version,
-			"audit_engine": auditClient != nil,
-		})
-	})
-
-	// NOTE: /metrics is intentionally NOT on this router. Prometheus scrapes
-	// the internal metrics server on :8002, which is not published to the host.
-
-	auth := middleware.APIKeyAuth(cfg.APIKeys)
-	rateLimit := middleware.RateLimit(limiter, cfg.RateLimitPerMinute, time.Minute)
-	uploadRateLimit := middleware.RateLimit(limiter, cfg.UploadLimitPerMin, time.Minute)
-	bodyLimit := middleware.BodyLimit(cfg.MaxBodyBytes)
-
-	// Main LLM API endpoints (intercept and audit)
-	router.POST("/v1/chat/completions", auth, rateLimit, bodyLimit, proxyHandler.HandleChatCompletion)
-	router.POST("/v1/completions", auth, rateLimit, bodyLimit, proxyHandler.HandleCompletion)
-
-	// Direct audit endpoint (submit query + response for auditing from the dashboard)
-	router.POST("/api/audit", auth, rateLimit, bodyLimit, handleDirectAudit(workerPool, cfg.MaxTextChars))
-
-	// File upload endpoint (ingest documents into RAG knowledge base)
-	router.POST("/api/upload", auth, uploadRateLimit, middleware.BodyLimit(cfg.MaxUploadBytes),
-		handleFileUpload(auditClient, cfg.MaxUploadBytes))
-
-	// Audit history (requires persistence; 503 when disabled)
-	router.GET("/api/audits", auth, rateLimit, handleListAudits(auditStore))
-	router.GET("/api/audits/:id", auth, rateLimit, handleGetAudit(auditStore))
-
-	// Knowledge base (VERITAS-lite): claims, conflicts, stats
-	router.GET("/api/kb/claims", auth, rateLimit, handleListKBClaims(auditClient))
-	router.GET("/api/kb/conflicts", auth, rateLimit, handleListConflicts(auditClient))
-	router.GET("/api/kb/stats", auth, rateLimit, handleKBStats(auditClient))
-
-	// Other v1 endpoints - forward as-is without auditing
-	router.Any("/v1/models", auth, rateLimit, proxyHandler.HandleGeneric)
-	router.Any("/v1/models/*model", auth, rateLimit, proxyHandler.HandleGeneric)
-	router.Any("/v1/embeddings", auth, rateLimit, bodyLimit, proxyHandler.HandleGeneric)
-
-	// WebSocket endpoint. Browsers cannot set headers on the WS handshake,
-	// so when auth is enabled the key is accepted via ?api_key= instead.
-	router.GET("/ws", func(c *gin.Context) {
-		if len(cfg.APIKeys) > 0 && !middleware.KeyAllowed(cfg.APIKeys, c.Query("api_key")) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid API key"})
-			return
+	if cfg.RedisURL != "" {
+		if redis, err := middleware.NewRedisLimiter(cfg.RedisURL); err == nil {
+			d.limiter, d.redisState = redis, stateUp
+			log.Info("rate limiting backed by Redis")
+		} else {
+			d.redisState = stateDown
+			log.Warn("Redis unavailable: rate limiting in memory", "err", err)
 		}
-		websocket.ServeWS(wsHub, c.Writer, c.Request)
-	})
+	}
+
+	srv, err := newServer(d)
+	if err != nil {
+		return fmt.Errorf("gateway: %w", err)
+	}
+	logAuth(log, cfg)
+	srv.announceSetup(context.Background(), os.Stdout) // "SETUP: open …" while no admin exists
+	srv.start()
 
 	httpServer := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.ServerPort),
-		Handler:      router,
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
+		Addr: fmt.Sprintf(":%d", cfg.ServerPort), Handler: srv.router,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout,
 	}
-
-	go func() {
-		log.Printf("🌐 HTTP/WebSocket server listening on :%d", cfg.ServerPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server error: %v", err)
-		}
-	}()
-
-	// Metrics server on port 8002 for Prometheus scraping
-	metricsPort := 8002
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.Handler())
+	// /metrics is not on the public router: Prometheus scrapes this port on the internal network.
 	metricsServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", metricsPort),
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 5 * time.Second, // Slowloris defense (gosec G112)
+		Addr: fmt.Sprintf(":%d", cfg.MetricsPort), Handler: metricsMux, ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 	}
+
+	errc := make(chan error, 2)
+	go func() { errc <- serve(httpServer) }()
 	go func() {
-		log.Printf("📊 Metrics server listening on :%d", metricsPort)
-		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Metrics server error: %v", err)
+		if err := serve(metricsServer); err != nil {
+			log.Error("metrics server stopped", "err", err)
 		}
 	}()
-
-	log.Printf("✅ TruthTable Proxy is ready!")
-	log.Printf("   Send requests to: http://localhost:%d/v1/chat/completions", cfg.ServerPort)
-	log.Printf("   Dashboard WebSocket: ws://localhost:%d/ws", cfg.ServerPort)
+	log.Info("TrustAgent proxy ready", "http", httpServer.Addr, "metrics", metricsServer.Addr)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	log.Println("🛑 Shutting down servers...")
+	var runErr error
+	select {
+	case sig := <-quit:
+		log.Info("shutting down", "signal", sig.String())
+	case runErr = <-errc:
+		log.Error("HTTP server failed", "err", runErr)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Printf("HTTP server shutdown error: %v", err)
+		log.Warn("HTTP server shutdown", "err", err)
+	}
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), cfg.ShutdownDrainTimeout)
+	defer drainCancel()
+	if err := srv.shutdown(drainCtx); err != nil {
+		log.Warn("work was still running at shutdown", "err", err)
+	}
+	if err := flushTraces(drainCtx); err != nil {
+		log.Warn("trace writes were still pending at shutdown", "err", err)
 	}
 	if err := metricsServer.Shutdown(ctx); err != nil {
-		log.Printf("Metrics server shutdown error: %v", err)
+		log.Warn("metrics server shutdown", "err", err)
 	}
-
-	workerPool.Stop()
-	if auditClient != nil {
-		auditClient.Close()
-	}
-
-	log.Println("✅ Servers stopped gracefully")
+	log.Info("TrustAgent proxy stopped")
+	return runErr
 }
 
-func loggingMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		path := c.Request.URL.Path
-		c.Next()
-		latency := time.Since(start)
-		status := c.Writer.Status()
-		log.Printf("%s %s %d %v", c.Request.Method, path, status, latency)
+// redactURL is a URL safe to log and to show (D79): a password becomes xxxxx, so does a user name
+// that stands alone (it is often a token), and the query is dropped (a base URL may carry an
+// api-key parameter).
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(unparseable URL)"
 	}
+	u.RawQuery, u.ForceQuery, u.Fragment = "", false, ""
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); !hasPassword {
+			u.User = url.User("xxxxx")
+		}
+	}
+	return u.Redacted()
 }
 
-// handleDirectAudit returns a handler that accepts a query + response for auditing.
-func handleDirectAudit(pool *worker.Pool, maxTextChars int) gin.HandlerFunc {
-	type directAuditRequest struct {
-		Query    string `json:"query" binding:"required"`
-		Response string `json:"response" binding:"required"`
-		Model    string `json:"model"`
+// serve runs an HTTP server; a graceful shutdown is not an error.
+func serve(s *http.Server) error {
+	if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
 	}
-
-	return func(c *gin.Context) {
-		var req directAuditRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Both 'query' and 'response' fields are required"})
-			return
-		}
-
-		if len(req.Query) > maxTextChars || len(req.Response) > maxTextChars {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-				"error": fmt.Sprintf("'query' and 'response' must each be at most %d characters", maxTextChars),
-			})
-			return
-		}
-		if len(req.Model) > 200 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "'model' name too long"})
-			return
-		}
-
-		requestID := uuid.New().String()
-
-		if pool != nil {
-			pool.Submit(&worker.AuditJob{
-				RequestID:   requestID,
-				Prompt:      req.Query,
-				Response:    req.Response,
-				Model:       req.Model,
-				Timestamp:   time.Now(),
-				RequestPath: "/api/audit",
-			})
-		}
-
-		c.JSON(http.StatusAccepted, gin.H{
-			"request_id": requestID,
-			"status":     "submitted",
-		})
-	}
+	return nil
 }
 
-// handleFileUpload returns a handler that accepts JSON document uploads for RAG ingestion.
-func handleFileUpload(auditClient *grpc.AuditClient, maxUploadBytes int64) gin.HandlerFunc {
-	type uploadDocument struct {
-		Content  string            `json:"content"`
-		Metadata map[string]string `json:"metadata"`
-	}
-	const maxDocuments = 1000
-	const maxDocumentChars = 50000
-
-	return func(c *gin.Context) {
-		if auditClient == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Audit engine not connected"})
-			return
-		}
-
-		file, header, err := c.Request.FormFile("file")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided. Use multipart form field 'file'"})
-			return
-		}
-		defer file.Close()
-
-		if header.Size > maxUploadBytes {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-				"error": fmt.Sprintf("File too large (max %d bytes)", maxUploadBytes),
-			})
-			return
-		}
-
-		data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read file"})
-			return
-		}
-		if int64(len(data)) > maxUploadBytes {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-				"error": fmt.Sprintf("File too large (max %d bytes)", maxUploadBytes),
-			})
-			return
-		}
-
-		var docs []uploadDocument
-		if err := json.Unmarshal(data, &docs); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON. Expected array of {\"content\": \"...\", \"metadata\": {...}}"})
-			return
-		}
-
-		if len(docs) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No documents in file"})
-			return
-		}
-		if len(docs) > maxDocuments {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-				"error": fmt.Sprintf("Too many documents (max %d per upload)", maxDocuments),
-			})
-			return
-		}
-		for i, doc := range docs {
-			if len(doc.Content) == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf("Document %d has empty 'content'", i),
-				})
-				return
-			}
-			if len(doc.Content) > maxDocumentChars {
-				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-					"error": fmt.Sprintf("Document %d exceeds %d characters", i, maxDocumentChars),
-				})
-				return
-			}
-		}
-
-		// Convert to gRPC IngestDocument format
-		ingestDocs := make([]grpc.IngestDocument, len(docs))
-		for i, doc := range docs {
-			ingestDocs[i] = grpc.IngestDocument{
-				Content:  doc.Content,
-				Metadata: doc.Metadata,
-			}
-		}
-
-		result, err := auditClient.IngestDocuments(c.Request.Context(), ingestDocs)
-		if err != nil {
-			log.Printf("Document ingestion failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to ingest documents"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"documents_ingested": result.DocumentsIngested,
-			"claims_accepted":    result.ClaimsAccepted,
-			"claims_quarantined": result.ClaimsQuarantined,
-			"conflicts_detected": result.ConflictsDetected,
-			"claim_results":      result.ClaimResults,
-			"status":             "success",
-		})
+// logAuth reports how /api and /ws callers authenticate.
+func logAuth(log *slog.Logger, cfg *config.Config) {
+	switch {
+	case cfg.PublicRead && cfg.DemoMode:
+		log.Warn("TRUTHTABLE_PUBLIC_READ: /api reads and /ws need no key; demo mode shows keyless readers prompts and answers")
+	case cfg.PublicRead:
+		log.Warn("TRUTHTABLE_PUBLIC_READ: /api reads and /ws need no key (texts stay hidden without a key)")
+	case len(cfg.APIKeys)+len(cfg.Auth.ReadKeys)+len(cfg.Auth.AdminKeys) == 0 && cfg.DatabaseURL == "":
+		log.Warn("no env keys and no database: /api and /ws refuse every caller; set TRUTHTABLE_API_KEYS / _ADMIN_KEYS or TRUTHTABLE_PUBLIC_READ=true")
 	}
 }

@@ -1,0 +1,23 @@
+{
+  "errors": [
+    {
+      "path": "id",
+      "message": "Use lower-case letters, digits and underscores, starting with a letter (at most 48 characters)."
+    },
+    {
+      "path": "outcomes.warn_at",
+      "message": "warn_at must be between 0 and 1."
+    }
+  ],
+  "lints": [
+    {
+      "code": "unknown_state_field",
+      "severity": "error",
+      "path": "question.instructions",
+      "message": "The instructions name `policy_text`, which is not in state_fields."
+    }
+  ],
+  "question_sha256": null,
+  "calibration_key": null,
+  "question_tokens": null
+}

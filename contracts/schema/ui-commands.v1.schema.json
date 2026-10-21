@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/ui-commands.v1.schema.json",
+  "title": "UiCommands",
+  "description": "contracts/ui/commands.v1.json: every copyable command shown in the UI and docs (SPEC §7.6). services lists the compose services a command names; CI checks them against `docker compose config --services`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "commands"],
+  "properties": {
+    "version": {"const": "1"},
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "command", "description"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+          "command": {"type": "string", "minLength": 1, "maxLength": 300},
+          "description": {"type": "string", "minLength": 1, "maxLength": 600},
+          "services": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "proxy",
+                "engine",
+                "postgres",
+                "dashboard",
+                "qdrant",
+                "ollama",
+                "ollama-init",
+                "prometheus",
+                "grafana",
+                "redis",
+                "trafficgen",
+                "mock-upstream"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

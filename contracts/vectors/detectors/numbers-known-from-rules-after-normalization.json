@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-known-from-rules-after-normalization",
+  "status": "frozen",
+  "description": "The response price 1,299.00 normalizes to 1299 (commas removed, trailing .00 stripped), which the rules value states as $1299: known. 3 is an integer <= min_integer 10 with no unit in the next two tokens (\"seats\", end) and no currency sign: skipped. Nothing unknown: does not fire.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "The annual plan costs $1,299.00 and includes 3 seats.",
+    "evidence": [
+      {"id": "billing", "source": "request_system", "text": "Seats are billed per user on every plan."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {"allowed_commitments": "Annual plan price: $1299. Refunds within 30 days of purchase."}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

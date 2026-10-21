@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-unit-window-is-two-tokens",
+  "status": "frozen",
+  "description": "The unit exception looks at the next two word or number tokens only. After 7 they are \"business\" and \"working\", so \"days\" is out of reach and 7 is skipped although unknown. After 4 they are \"more\" and \"weeks\": checked, and unknown (the reference has 6). After 3 the first token is \"percent\": checked and known. Fires on 4 only.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "Processing takes 7 business working days, 4 more weeks for export, and 3 percent goes to fees.",
+    "evidence": [
+      {
+        "id": "export",
+        "source": "request_system",
+        "text": "Exports take 6 weeks. Payment fees are 3 percent."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "4", "start": 42, "end": 43}]},
+  "tolerance": 1e-9
+}

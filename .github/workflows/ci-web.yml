@@ -1,0 +1,94 @@
+name: CI (Web)
+
+# Dashboard (frontend-react/): eslint, TypeScript, vitest, a production
+# build, the static GitHub Pages build with the landing page's size budget, and
+# check_recording.py on the committed demo recording. Split out of the former
+# ci.yml (SPEC §3.4, P0.5); the job id and name are unchanged so branch
+# protection keeps matching "Frontend (dashboard)".
+# No path filters on purpose: a required check that never reports would block
+# merges.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  frontend:
+    name: Frontend (dashboard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend-react
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend-react/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Generated from contracts/schema and committed: fail when a schema changed without
+      # `make gen-types` / `make gen-policy-validator` / `make gen-evaluator-validator` (the vitest
+      # drift tests cover the same).
+      - name: Contract types are current (gen-types-check)
+        run: node scripts/gen-types.ts --check
+
+      - name: Policy validator is current (gen-policy-validator-check)
+        run: node scripts/gen-policy-validator.ts --check
+
+      - name: Evaluator validator is current (gen-evaluator-validator-check)
+        run: node scripts/gen-evaluator-validator.ts --check
+
+      - name: Landing glass box is current (gen-landing-glassbox-check, D116)
+        run: node --import ./scripts/lib/aliasHooks.ts scripts/gen-landing-glassbox.ts --check
+
+      - name: eslint
+        run: npm run lint
+
+      - name: TypeScript
+        run: npx tsc -b
+
+      - name: vitest
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      # The static GitHub Pages site (SPEC §3.3, §7.5): the landing page is its own entry with a
+      # blocking 110 KB gzip budget. The vitest run above already fails on a stale demo recording.
+      # The simulated tape, named: the Pages build picks its dataset explicitly (D110).
+      - name: Static site build
+        env:
+          VITE_DEMO_DATASET: mock
+        run: npm run build:static
+
+      - name: Landing page size budget
+        run: npm run size
+
+      # SPEC §2.13, risk 19: the published recording never passes for real model output.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+
+      - name: Demo recording check (check_recording.py)
+        working-directory: .
+        run: |
+          python -m pip install jsonschema==4.26.0
+          python scripts/check_recording.py frontend-react/demo-data/simulated
+          python -m unittest scripts/tests/test_check_recording.py -v

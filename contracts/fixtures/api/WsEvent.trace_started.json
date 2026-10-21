@@ -1,0 +1,56 @@
+{
+  "v": 2,
+  "seq": 815,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "trace_started",
+  "ts": "2026-09-28T10:13:05.772Z",
+  "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+  "data": {
+    "trace": {
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "client_request_id": "req_9Kd4sT2w",
+      "created_at": "2026-09-28T10:13:05.771058Z",
+      "updated_at": "2026-09-28T10:13:05.771058Z",
+      "source": "proxy",
+      "api_format": "openai_chat",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": null,
+      "model": "gpt-4o-mini",
+      "stream": false,
+      "upstream_status": null,
+      "answer_source": "live",
+      "action": null,
+      "would_action": null,
+      "gate_status": "pending",
+      "skip_reason": null,
+      "verdict": null,
+      "max_risk": null,
+      "reasons": [],
+      "checked_against": null,
+      "timings": {
+        "upstream_ms": null,
+        "ttft_ms": null,
+        "gate_ms": null,
+        "overhead_ms": null,
+        "total_ms": null
+      },
+      "decision_model": null,
+      "audit": {
+        "audit_id": null,
+        "status": "none",
+        "lane": null,
+        "selection": null,
+        "verdict": null,
+        "trust_score": null,
+        "grade": null,
+        "verdict_counts": null
+      },
+      "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "response_preview": null,
+      "redacted": false,
+      "flags": []
+    }
+  }
+}

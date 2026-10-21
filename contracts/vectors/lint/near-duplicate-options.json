@@ -1,0 +1,42 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "near-duplicate-options",
+  "status": "frozen",
+  "description": "promises_refund and promises_partial_refund have nearly the same description (lowercase [a-z0-9]+ token Jaccard 8/9 > 0.5) and neither has a not_for to separate them: near_duplicate_options. no_refund_promise is the escape option.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "choice",
+        "instructions": "What does `assistant_response` promise the user about a refund?",
+        "criteria": {
+          "promises_refund": {"what": "Promises the user a refund for this order"},
+          "promises_partial_refund": {"what": "Promises the user a partial refund for this order"},
+          "no_refund_promise": {
+            "what": "Makes no promise about a refund",
+            "not_for": "Any promise of money back"
+          }
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"risk_weights": {"promises_refund": 1}},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": [], "lints": ["near_duplicate_options"]},
+  "tolerance": 1e-9
+}

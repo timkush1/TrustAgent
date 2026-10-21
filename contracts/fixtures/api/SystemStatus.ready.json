@@ -1,0 +1,82 @@
+{
+  "version": "1.0.0",
+  "build_sha": "5098d64c1e2a",
+  "demo": false,
+  "readonly": false,
+  "test_mode": false,
+  "auth": {
+    "ingest": "keys",
+    "read": "keys",
+    "setup_required": false,
+    "caller_scopes": ["read", "content", "admin"]
+  },
+  "internal_rpc": "token",
+  "limits": {"max_text_chars": 20000, "max_upload_bytes": 10485760, "max_body_bytes": 1048576},
+  "persistence": {
+    "state": "up",
+    "checked_at": "2026-09-28T10:14:30.118Z",
+    "latency_ms": 2,
+    "configured": true,
+    "migration": "0002_traces.up.sql"
+  },
+  "engine": {
+    "state": "up",
+    "checked_at": "2026-09-28T10:14:21.904Z",
+    "latency_ms": 6,
+    "version": "1.0.0",
+    "runtime_config_version": 4,
+    "max_audits": 8
+  },
+  "judge": {
+    "state": "up",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "credential_source": "env",
+    "fallback_active": false,
+    "fallback_reason": null,
+    "warnings": []
+  },
+  "verifier": {"configured": "auto", "effective": "llm", "reason": "the Anthropic judge is healthy"},
+  "decision_model": {
+    "provider": "jev",
+    "backend": "openrouter-decisions",
+    "backend_reason": "auto: an OpenRouter key is configured (OPENROUTER_API_KEY)",
+    "endpoint_host": "openrouter.ai",
+    "model_requested": "typesafe/jev-1.13",
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "credential": {"source": "env", "name": "OPENROUTER_API_KEY", "masked": "sk-or-v1-…9f3c"},
+    "state": "ready",
+    "breaker": "closed",
+    "last_error": null,
+    "calibration_state": "none",
+    "calibrated_targets": 0,
+    "p50_ms": 389,
+    "p95_ms": 702,
+    "calls_24h": 1843,
+    "cost_24h_usd": 0.046289,
+    "rpm_limit": 600,
+    "rpm_used": 14
+  },
+  "knowledge": {"enabled": false, "state": "disabled"},
+  "policy": {
+    "version": 3,
+    "source": "file",
+    "locked": false,
+    "persisted": true,
+    "editable": true,
+    "file_status": "ok",
+    "file_error": null
+  },
+  "budgets": {
+    "decision_usd_day": 2,
+    "decision_spent_today_usd": 0.031204,
+    "llm_usd_day": 5,
+    "llm_spent_today_usd": 0.412857,
+    "decision_exhausted": false,
+    "decision_reserve_only": false,
+    "llm_exhausted": false
+  },
+  "credentials": {"store": "ready", "undecryptable": []},
+  "redis": {"state": "disabled", "configured": false},
+  "warnings": []
+}

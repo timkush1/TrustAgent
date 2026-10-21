@@ -69,9 +69,9 @@ class ClaimIngestor:
 
     Args:
         provider: LLM used for decomposition, entailment, and NLI checks.
-        embedding_service: For claim embeddings.
-        qdrant_store: Vector store (needs the KB operations: upsert_points,
-                      search_filtered, set_payload).
+        embedding_service: For claim embeddings (aembed).
+        qdrant_store: Vector store (needs the async KB operations:
+                      aupsert_points, asearch_filtered, aset_payload).
         entailment_threshold: Minimum SUPPORTED-confidence for acceptance.
         detector: Contradiction detector (None disables conflict checks).
         on_change: Optional callback invoked after a successful ingest
@@ -161,7 +161,9 @@ class ClaimIngestor:
         kb_status = "accepted" if accepted else "quarantined"
         claim_id = str(uuid.uuid4())
 
-        vector = self.embedding_service.embed([claim])[0]
+        # Embedding and Qdrant calls are synchronous; their async forms run them
+        # off the event loop (D8).
+        vector = (await self.embedding_service.aembed([claim]))[0]
 
         # Contradiction check before persisting, so the new claim's payload
         # carries its conflicts from the start. Accepted claims only:
@@ -187,11 +189,13 @@ class ClaimIngestor:
             "ingested_at_ms": now_ms,
             **{k: v for k, v in metadata.items() if k not in ("doc_id",)},
         }
-        self.qdrant_store.upsert_points(ids=[claim_id], vectors=[list(vector)], payloads=[payload])
+        await self.qdrant_store.aupsert_points(
+            ids=[claim_id], vectors=[list(vector)], payloads=[payload]
+        )
 
         # Record the conflict on the other side of each pair as well.
         for conflict in conflicts:
-            self.qdrant_store.set_payload(
+            await self.qdrant_store.aset_payload(
                 conflict["claim_id"],
                 {"conflicts_with": merge_conflicts(conflict.get("existing_conflicts"), [claim_id])},
             )

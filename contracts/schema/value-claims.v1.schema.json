@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/value-claims.v1.schema.json",
+  "title": "ValueClaims",
+  "description": "contracts/claims/value-claims.v1.json: every number shown on the landing page, README and Savings panel, with its label (SPEC §8.1). The landing page, README and dashboard render from it; scripts/check-claims.mjs fails CI when README text between <!-- claim:ID --> markers drifts. Measured claims carry no value here: it is read from claims/measured.json at render time, and empty_display is shown until a measured run exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "as_of", "claims"],
+  "properties": {
+    "version": {"const": "1"},
+    "as_of": {"$ref": "common.v1.schema.json#/$defs/Date"},
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "title": "ValueClaim",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "text",
+          "value",
+          "unit",
+          "display",
+          "label",
+          "basis",
+          "source_url",
+          "as_of",
+          "caveat",
+          "surfaces"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "description": "The sentence the number appears in."
+          },
+          "value": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+          "unit": {
+            "enum": ["usd_per_1k", "usd", "usd_per_mtok", "ms", "s", "fraction", "multiplier", "threshold"]
+          },
+          "display": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "How the value is rendered, e.g. \"~$0.21 / 1,000\"."
+          },
+          "empty_display": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Rendered while a measured value is null."
+          },
+          "label": {"$ref": "common.v1.schema.json#/$defs/ValueLabel"},
+          "basis": {"type": "string", "minLength": 1, "maxLength": 600},
+          "source_url": {
+            "anyOf": [{"type": "string", "format": "uri", "pattern": "^https://"}, {"type": "null"}]
+          },
+          "as_of": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Date"}, {"type": "null"}]},
+          "caveat": {"anyOf": [{"type": "string", "minLength": 1, "maxLength": 400}, {"type": "null"}]},
+          "assumption_ref": {"type": "string", "description": "A figure id in pricing/assumptions.v1.json."},
+          "per_unit_of": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "description": "A usd claim for one unit of a per-1,000 figure: the id of a usd_per_1k claim or of a pricing/assumptions.v1.json figure; validate.mjs checks value = that figure / 1000 (D114)."
+          },
+          "measured_ref": {"type": "string", "description": "A key of values in claims/measured.json."},
+          "price_ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provider", "match", "field"],
+            "properties": {
+              "provider": {"type": "string", "minLength": 1},
+              "match": {"type": "string", "minLength": 1},
+              "field": {"enum": ["input_per_mtok", "output_per_mtok"]}
+            }
+          },
+          "tokens_x_price": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input_tokens", "price_claim"],
+            "description": "The claim is the cost of one call: input_tokens at the usd_per_mtok claim price_claim (output free), rounded to two significant digits. validate.mjs checks the arithmetic; the web tests tie input_tokens to the request it prices.",
+            "properties": {
+              "input_tokens": {"type": "integer", "minimum": 1},
+              "price_claim": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"}
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"enum": ["landing", "readme", "dashboard", "docs"]}
+          },
+          "reverify": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "What must be re-checked, and when, before publishing."
+          }
+        },
+        "$comment": "Per-label rules are checked by validate.mjs: third_party and vendor need source_url and as_of; measured needs measured_ref and empty_display and has value null; estimate has a number value."
+      }
+    }
+  }
+}

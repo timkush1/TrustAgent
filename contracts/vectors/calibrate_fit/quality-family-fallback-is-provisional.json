@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quality-family-fallback-is-provisional",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "A calibration used through the family fallback (TRUTHTABLE_CALIBRATION_FAMILY_FALLBACK) is forced to provisional even when its labels would be measured.",
+  "input": {
+    "op": "quality",
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "label_source": {"human": 0, "public_dataset": 400, "uniform_audit": 0},
+    "n_pos": 200,
+    "n_neg": 200,
+    "family": true
+  },
+  "expected": {"quality": "provisional"}
+}

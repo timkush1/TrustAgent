@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "critical-at-null-with-too-few-predicted-positives",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "Only 40 positives reach 0.9, below the 50 predicted positives needed to judge; at 0.1 the 10 negatives drop LB(40/50) far below 0.95. No critical_at: \"insufficient evidence to block\".",
+  "input": {
+    "op": "critical_at",
+    "groups": [{"risk_raw": 0.1, "pos": 0, "neg": 10}, {"risk_raw": 0.9, "pos": 40, "neg": 0}]
+  },
+  "expected": {"critical_at": null, "critical_null_reason": "insufficient evidence to block"}
+}

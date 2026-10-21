@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/scenarios.v1.schema.json",
+  "title": "ScenarioPack",
+  "description": "contracts/demo/scenarios.v1.json (the main pack) and contracts/demo/faults.v1.json (the faults pack, D119): the single source of demo, e2e and fault traffic (SPEC §7.6, §2.13). Go cmd/trafficgen sends each request with X-TrustAgent-Scenario (test mode); the mock decision backend answers from mock_answers (fallback.mock_answers for the re-gated fallback answer), mock-upstream serves response (and fallback.response) as the upstream answer, and the mock judge answers from judge. --expect asserts expect against the response (headers, trailers, the SSE decision comment and the delivered text) and the stored trace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "scenarios"],
+  "properties": {
+    "schema": {"const": "trustagent.scenarios/v1"},
+    "scenarios": {
+      "type": "array",
+      "description": "The scenarios in send order. The main pack is never empty; the faults pack starts empty and GO fills it (validate.mjs).",
+      "items": {
+        "title": "Scenario",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "sets",
+          "route",
+          "stream",
+          "answer_source",
+          "request",
+          "mock_answers",
+          "expect"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+            "description": "Sent as X-TrustAgent-Scenario."
+          },
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "description": {"type": "string", "maxLength": 1000},
+          "sets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"},
+            "description": "Selection tags for trafficgen --scenarios: s0 (the walking skeleton), demo, e2e, generated (answer_source generated), untagged (documents in shapes evidence extraction does not read, so the gate is not_assessed), knowledge (needs the knowledge add-on), faults (vendor-fault scenarios: only in contracts/demo/faults.v1.json, where every scenario carries it, D119). A phase tag (p3, p4, p5) marks a scenario that needs that gateway phase (streaming gating, block and fallback bodies, /v1/messages, /v1/completions, routes in config/policies.pending.yaml); trafficgen skips it unless --phase reaches that phase."
+          },
+          "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
+          "api_format": {
+            "enum": ["openai_chat", "openai_completions", "anthropic_messages"],
+            "default": "openai_chat"
+          },
+          "stream": {"type": "boolean"},
+          "answer_source": {
+            "enum": ["scripted", "generated"],
+            "description": "scripted: the upstream answer is response (test_response). generated: the answer is produced by the real upstream when recording (record-demo); response is then only the mock-mode stand-in."
+          },
+          "request": {
+            "type": "object",
+            "description": "The request body sent by trafficgen (minus test_response). Unknown fields pass through to the upstream.",
+            "properties": {
+              "model": {"type": "string"},
+              "messages": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["role", "content"],
+                  "description": "An OpenAI-style message. content may be a string or content parts (to exercise tolerant parsing, B3). Other fields (tool_call_id, tool_calls, name) pass through to the upstream request.",
+                  "properties": {
+                    "role": {"enum": ["system", "developer", "user", "assistant", "tool", "function"]},
+                    "content": {
+                      "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "object"}},
+                        {"type": "null"}
+                      ]
+                    },
+                    "name": {"type": "string"},
+                    "tool_call_id": {"type": "string"},
+                    "tool_calls": {"type": "array", "items": {"type": "object"}}
+                  }
+                }
+              },
+              "system": {
+                "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "object"}}],
+                "description": "Anthropic top-level system."
+              },
+              "prompt": {"type": "string", "description": "/v1/completions only."},
+              "trustagent": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
+                  "context": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["text"],
+                      "properties": {
+                        "id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+                        "text": {"type": "string", "minLength": 1},
+                        "source": {"type": "string"}
+                      }
+                    }
+                  },
+                  "rules": {"type": "object", "additionalProperties": {"type": "string"}}
+                }
+              }
+            }
+          },
+          "headers": {
+            "type": "object",
+            "propertyNames": {"pattern": "^[A-Za-z0-9-]{1,64}$"},
+            "additionalProperties": {"type": "string"},
+            "description": "Extra request headers, e.g. X-TrustAgent-Route."
+          },
+          "response": {
+            "type": "string",
+            "description": "Scripted assistant text returned by the upstream in test mode."
+          },
+          "mock_answers": {
+            "type": "object",
+            "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+            "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
+            "description": "Answers the mock decision backend returns for this scenario, keyed by question id: \"<id>__v<version>\" of each evaluator attached to the route that compile() sends (SPEC §2.9 step 5). Evaluators that compile excludes (for example no_evidence) are not asked and have no answer; evaluators that need no evidence are always asked (validate.mjs checks both against config/policies.yaml)."
+          },
+          "mock_faults": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "description": "Vendor faults mock-upstream injects for this scenario (D119; faults pack only): decision for the decision-model endpoints, upstream for the LLM upstream. A value is a mock-upstream fault name (cmd/mock-upstream Faults), optionally counted: <name>@<n> faults the first n calls of one request (attempt and hedge share the count through X-Mock-Key) and answers normally after. trafficgen sends the scenario id as X-TrustAgent-Scenario; in test mode the gateway forwards it to a local decision backend (internal/jev/testheaders.go), and mock-upstream answers the decision requests that name it with decision (counted per X-Mock-Key, the trace id) and the LLM request of its conversation with upstream (counted per scenario until _mock/reset). A test-mode client may instead send X-TrustAgent-Scenario fault:<spec> directly: a forward-only value, never stored.",
+            "properties": {
+              "decision": {"type": "string", "pattern": "^[a-z0-9_]+(@[0-9]+)?$"},
+              "upstream": {"type": "string", "pattern": "^[a-z0-9_]+(@[0-9]+)?$"}
+            }
+          },
+          "knowledge": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "text"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+                "text": {"type": "string", "minLength": 1}
+              }
+            },
+            "description": "Knowledge-base documents the scenario relies on (knowledge add-on, SPEC §7.1): the knowledge profile must hold them, and RetrieveContext returns them for this request, in order. Only on a route whose evidence.sources include knowledge."
+          },
+          "fallback": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["response", "mock_answers", "expect"],
+            "description": "The fallback answer of a scenario whose gate replaces the answer (route mode fallback, SPEC §2.12 Fallback). In test mode the gateway answers the fallback call with response (the scripted counterpart of test_response); mock-upstream serves it to a fallback request (its prompt carries the CONTEXT block); the mock decision backend answers the re-gate (attempt 1) with mock_answers when the state's assistant_response is response. The deep audit still audits the original answer.",
+            "properties": {
+              "response": {"type": "string", "minLength": 1},
+              "mock_answers": {
+                "type": "object",
+                "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+                "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"},
+                "description": "Raw answers to the re-gate of the fallback answer, keyed like mock_answers."
+              },
+              "expect": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["would_action"],
+                "description": "The re-gate decision (attempt 1). would_action pass or flag delivers the fallback; block applies fallback.on_fail.",
+                "properties": {
+                  "would_action": {"$ref": "common.v1.schema.json#/$defs/WouldAction"},
+                  "verdict": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}]},
+                  "max_risk": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]},
+                  "reasons": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            }
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["claims"],
+                "description": "Mock judge fixture (LLM_PROVIDER=mock, AuditOptions.mock_scenario). claims[] in response order is the decomposer output ({claim, quote}); each entry's verdict, confidence, evidence and reasoning are the verifier output for that claim (verdict is the verifier's status), which the deep audit reports unchanged.",
+                "properties": {
+                  "claims": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["claim", "verdict", "confidence"],
+                      "properties": {
+                        "claim": {"type": "string", "minLength": 1},
+                        "verdict": {"$ref": "common.v1.schema.json#/$defs/ClaimVerdict"},
+                        "confidence": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+                        "reasoning": {"type": "string"},
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Decomposer quote: a verbatim substring of response (validate.mjs checks it); the claim span is located from it."
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {"type": "string", "minLength": 1},
+                          "description": "Verifier evidence quotes, each verbatim from the request's evidence or the scenario's knowledge documents (validate.mjs checks they occur there)."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null",
+                "description": "No LLM call is expected: the deep audit is not run or is NOT_ASSESSED at preflight. A mock judge call for this scenario is a fixture miss."
+              }
+            ]
+          },
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action"],
+            "description": "The expected outcome, derived by hand from SPEC §2.9 under the policy the gateway loads (config/policies.yaml, plus config/policies.pending.yaml for phase-tagged scenarios), and cross-checked against the Go reference decide() by cmd/trafficgen tests. trafficgen --expect asserts the decision fields against what the response carries (headers; for streams also the trailers and the SSE decision comment; for observe routes, whose headers say deferred, the stored trace), the delivered text, and the settled trace. reasons must all be present (subset match).",
+            "properties": {
+              "mode": {
+                "$ref": "common.v1.schema.json#/$defs/PolicyMode",
+                "description": "X-TrustAgent-Mode: the effective mode (the route mode, or flag when block or fallback meets a passthrough stream)."
+              },
+              "action": {"$ref": "common.v1.schema.json#/$defs/GateAction"},
+              "would_action": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/WouldAction"}, {"type": "null"}],
+                "description": "The decision's would_action. X-TrustAgent-Would-Action is sent only when it differs from action, so an absent header means would_action equals action."
+              },
+              "status": {
+                "type": "string",
+                "pattern": "^(ok|partial|not_assessed|skipped:[a-z_]+|timeout|error:[a-z0-9_]+|deferred)$",
+                "description": "X-TrustAgent-Status value."
+              },
+              "verdict": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}],
+                "description": "X-TrustAgent-Verdict value."
+              },
+              "max_risk": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}],
+                "description": "The decision's max_risk. X-TrustAgent-Risk carries it with 2 decimals and is absent when null."
+              },
+              "reasons": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "X-TrustAgent-Reasons entries (comma-separated in the header, absent when empty)."
+              },
+              "checked_against": {
+                "type": "string",
+                "pattern": "^(none|(request_system|request_context|tool_results|extension|knowledge):[0-9]+(,(request_system|request_context|tool_results|extension|knowledge):[0-9]+)*)$",
+                "description": "X-TrustAgent-Checked-Against value: evidence items per source, or none."
+              },
+              "deep_audit": {
+                "$ref": "common.v1.schema.json#/$defs/DeepAuditClass",
+                "description": "The decision's deep_audit class (SPEC §2.9); not a header."
+              },
+              "audit": {
+                "enum": ["queued", "sampled_out", "dropped", "disabled", "not_assessed"],
+                "description": "X-TrustAgent-Audit value."
+              },
+              "audit_verdict": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/AuditVerdict"}, {"type": "null"}],
+                "description": "The deep-audit verdict the trace ends with. null when the answer is not audited (sampled_out, dropped, disabled). NOT_ASSESSED when there was nothing to check it against (X-TrustAgent-Audit: not_assessed, whether Go skipped the audit or the engine preflight answered), with no LLM call, so validate.mjs requires judge: null."
+              },
+              "outcome": {
+                "$ref": "ui-outcomes.v1.schema.json#/properties/outcomes/items/properties/id",
+                "description": "The single outcome the dashboard shows once the gate has decided (contracts/ui/outcomes.v1.json); validate.mjs derives it from status, action and would_action."
+              },
+              "delivered_text": {
+                "type": "string",
+                "description": "The assistant text the client receives (choice 0, the Anthropic text blocks, or the concatenated stream deltas) when it is not response: the route's block message for action block (style message), fallback.response for action fallback."
+              },
+              "http_status": {
+                "type": "integer",
+                "minimum": 200,
+                "maximum": 599,
+                "default": 200,
+                "description": "The HTTP status of the gateway response (a block with style error answers block.status)."
+              },
+              "degraded": {
+                "type": "boolean",
+                "description": "Whether the decision is degraded (D119): a vendor fault left the gate without a full answer (status error:<kind>, timeout or partial), and the trace says the check did not complete. Absent: not asserted."
+              },
+              "decision_model": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "description": "What the decision-model client did for this request (D119), read from the stored trace: attempts counts vendor requests (retries and the hedge included), hedged whether a hedge was sent, late whether an answer arrived after the deadline and was recorded late. Absent fields are not asserted.",
+                "properties": {
+                  "attempts": {"type": "integer", "minimum": 0, "maximum": 10},
+                  "hedged": {"type": "boolean"},
+                  "late": {"type": "boolean"}
+                }
+              },
+              "stream_decision": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["comment", "trailers"],
+                "description": "How a streamed response carries the decision (SPEC §2.12): comment is whether the stream holds the `: trustagent {...}` comment before its terminal event (stream_annotations: comment); trailers lists the X-TrustAgent-* headers that must arrive as HTTP trailers (Mode and Action on passthrough streams).",
+                "properties": {
+                  "comment": {"type": "boolean"},
+                  "trailers": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {"type": "string", "pattern": "^X-TrustAgent-[A-Za-z-]{1,40}$"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "$comment": "A scripted scenario needs response; fallback needs a fallback-mode route, knowledge a route with the knowledge source; mock_faults appears only in the faults pack, whose scenarios all carry the faults set and an explicit judge, fixtures or null (checked by validate.mjs)."
+      }
+    }
+  }
+}

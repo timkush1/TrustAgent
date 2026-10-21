@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/prompt.v1.schema.json",
+  "title": "PromptTemplate",
+  "description": "contracts/prompts/<id>.v<version>.json: an LLM prompt that every sender shares, e.g. the Studio evaluator drafter used by the engine's DraftEvaluator and by the static site (SPEC §7.3). system, user and repair are lists of lines joined with \"\\n\"; {{name}} placeholders are replaced by the value of variables.name (its empty text when the value is blank). Messages are sent in this order: system; then, for each example, a user turn (user rendered with example.input) and an assistant turn (example.output as compact JSON); then the user turn for the real input. When the reply fails validation against output.schema, the reply is appended as an assistant turn followed by repair rendered with {{errors}}, at most call.max_repairs times.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "description", "call", "output", "variables", "system", "user", "examples"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$"},
+    "version": {"type": "integer", "minimum": 1},
+    "description": {"type": "string", "minLength": 1, "maxLength": 600},
+    "call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temperature", "max_tokens", "max_repairs"],
+      "properties": {
+        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+        "max_tokens": {"type": "integer", "minimum": 1, "maximum": 32000, "description": "Output token cap for every call, repairs included."},
+        "max_repairs": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Repair turns after the first reply fails validation."}
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "schema"],
+      "properties": {
+        "format": {"const": "json_object", "description": "The reply is exactly one JSON object; parse the first {...} block."},
+        "schema": {"type": "string", "pattern": "^[a-z0-9-]+\\.v[0-9]+$", "description": "The contracts/schema document the reply must validate against, e.g. evaluator-draft.v1."}
+      }
+    },
+    "variables": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,31}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description"],
+        "properties": {
+          "description": {"type": "string", "minLength": 1, "maxLength": 400, "description": "What the sender fills in, and how."},
+          "max_chars": {"type": "integer", "minimum": 1, "description": "Longest value the sender passes; longer values are rejected before the call."},
+          "empty": {"type": "string", "minLength": 1, "maxLength": 80, "description": "Rendered in place of a blank value."}
+        }
+      }
+    },
+    "system": {"$ref": "#/$defs/lines"},
+    "user": {"$ref": "#/$defs/lines"},
+    "repair": {"$ref": "#/$defs/lines"},
+    "examples": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Few-shot turns, sent before the real input. Each output must pass output.schema (validate.mjs also runs the SPEC §2.8 hard rules and lints on evaluator drafts).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["input", "output"],
+        "properties": {
+          "input": {"type": "object", "additionalProperties": {"type": "string"}},
+          "output": {"type": "object"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "lines": {"type": "array", "minItems": 1, "items": {"type": "string", "maxLength": 2000}}
+  }
+}

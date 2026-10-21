@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/decision.v1.schema.json",
+  "title": "GateDecisionView",
+  "description": "decision/v1: one gate decision as stored and served (SPEC §2.6 GateDecisionView, produced by decide() in SPEC §2.9). Go structs and TS types use identical JSON keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec",
+    "trace_id",
+    "attempt",
+    "created_at",
+    "route",
+    "policy_version",
+    "mode",
+    "effective_mode",
+    "fail",
+    "status",
+    "skip_reason",
+    "action",
+    "would_action",
+    "enforced",
+    "verdict",
+    "max_risk",
+    "calibration",
+    "degraded",
+    "disagreement",
+    "deep_audit",
+    "reasons",
+    "evaluators",
+    "detectors",
+    "excluded",
+    "decision_model",
+    "compile",
+    "evidence_summary",
+    "late",
+    "gate_ms"
+  ],
+  "properties": {
+    "spec": {"const": "decision/v1"},
+    "trace_id": {"$ref": "common.v1.schema.json#/$defs/Uuid"},
+    "attempt": {"enum": [0, 1], "description": "1 = the re-gate of a fallback answer."},
+    "created_at": {"$ref": "common.v1.schema.json#/$defs/ISODateTime"},
+    "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
+    "policy_version": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+    "mode": {"$ref": "common.v1.schema.json#/$defs/PolicyMode"},
+    "effective_mode": {"$ref": "common.v1.schema.json#/$defs/PolicyMode"},
+    "fail": {"$ref": "common.v1.schema.json#/$defs/FailMode"},
+    "status": {"$ref": "common.v1.schema.json#/$defs/GateStatus"},
+    "skip_reason": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/SkipReason"}, {"type": "null"}]},
+    "action": {"$ref": "common.v1.schema.json#/$defs/GateAction"},
+    "would_action": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/WouldAction"}, {"type": "null"}]},
+    "enforced": {"type": "boolean"},
+    "verdict": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateVerdict"}, {"type": "null"}]},
+    "max_risk": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]},
+    "calibration": {"enum": ["all", "partial", "none"]},
+    "degraded": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Degraded"}, {"type": "null"}]},
+    "disagreement": {"type": "boolean"},
+    "deep_audit": {"$ref": "common.v1.schema.json#/$defs/DeepAuditClass"},
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^([a-z][a-z0-9_]{1,47}:(warn|critical)|det:(numbers_not_in_evidence|dates_not_in_evidence|urls_not_in_evidence|quotes_not_in_evidence|citation_out_of_range|secret_pattern|system_prompt_leak)|disagreement|needs_second_signal|no_evidence|stream_not_buffered|fail_closed|uncalibrated_snapshot|calibration_missing)$"
+      }
+    },
+    "evaluators": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+      "additionalProperties": {"$ref": "#/$defs/EvaluatorResult"},
+      "description": "Keyed by evaluator ref, in route order; includes shadow and internal evaluators."
+    },
+    "detectors": {"type": "array", "items": {"$ref": "#/$defs/DetectorResult"}},
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "reason"],
+        "properties": {
+          "ref": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+          "reason": {"$ref": "common.v1.schema.json#/$defs/ExclusionReason"}
+        }
+      }
+    },
+    "decision_model": {"anyOf": [{"$ref": "#/$defs/DecisionModelUsage"}, {"type": "null"}]},
+    "compile": {"anyOf": [{"$ref": "#/$defs/CompileInfo"}, {"type": "null"}]},
+    "evidence_summary": {"anyOf": [{"$ref": "evidence-summary.v1.schema.json"}, {"type": "null"}]},
+    "late": {"type": "boolean", "description": "Arrived after the deadline; recorded, never enforced."},
+    "gate_ms": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Ms"}, {"type": "null"}]}
+  },
+  "$defs": {
+    "EvaluatorResult": {
+      "title": "EvaluatorResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "stage",
+        "internal",
+        "status",
+        "reason",
+        "type",
+        "answer",
+        "probabilities",
+        "risk_raw",
+        "risk",
+        "threshold_space",
+        "calibrated",
+        "calibration_state",
+        "calibration_warning",
+        "level",
+        "capped",
+        "top",
+        "vendor_confidence",
+        "confidence_source",
+        "escalate",
+        "corroborated",
+        "block_eligible",
+        "thresholds"
+      ],
+      "properties": {
+        "ref": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+        "stage": {"$ref": "common.v1.schema.json#/$defs/EvaluatorStage"},
+        "internal": {
+          "type": "boolean",
+          "description": "true for the implicit factual_claims@1 (SPEC §2.9 compile step 3)."
+        },
+        "status": {"$ref": "common.v1.schema.json#/$defs/EvaluatorResultStatus"},
+        "reason": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "type": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/QuestionType"}, {"type": "null"}]},
+        "answer": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/RawAnswer"}, {"type": "null"}]},
+        "probabilities": {
+          "anyOf": [
+            {"type": "object", "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/Probability"}},
+            {"type": "null"}
+          ]
+        },
+        "risk_raw": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]},
+        "risk": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]},
+        "threshold_space": {"$ref": "common.v1.schema.json#/$defs/ThresholdSpace"},
+        "calibrated": {"type": "boolean"},
+        "calibration_state": {"$ref": "common.v1.schema.json#/$defs/CalibrationState"},
+        "calibration_warning": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "level": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/EvaluatorLevel"}, {"type": "null"}]},
+        "capped": {"anyOf": [{"enum": ["evidence_truncated", "knowledge_only"]}, {"type": "null"}]},
+        "top": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "vendor_confidence": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+        "confidence_source": {
+          "anyOf": [{"enum": ["vendor", "fallback_top_prob", "choice_only"]}, {"type": "null"}]
+        },
+        "escalate": {
+          "anyOf": [{"enum": ["uncertain", "numeric_or_date_unverified", "error"]}, {"type": "null"}]
+        },
+        "corroborated": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+        "block_eligible": {"type": "boolean"},
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["warn_at", "critical_at", "escalate_from"],
+          "properties": {
+            "warn_at": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+            "critical_at": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]},
+            "escalate_from": {
+              "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]
+            }
+          }
+        }
+      }
+    },
+    "DetectorResult": {
+      "title": "DetectorResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ran", "fired", "findings"],
+      "properties": {
+        "id": {"$ref": "common.v1.schema.json#/$defs/DetectorId"},
+        "ran": {"type": "boolean"},
+        "fired": {"type": "boolean"},
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "start", "end"],
+            "properties": {
+              "text": {"type": "string"},
+              "start": {
+                "type": "integer",
+                "minimum": -1,
+                "description": "UTF-16 code units, half-open; -1 = unaligned."
+              },
+              "end": {"type": "integer", "minimum": -1}
+            }
+          }
+        }
+      }
+    },
+    "DecisionModelUsage": {
+      "title": "DecisionModelUsage",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "model_requested",
+        "snapshot",
+        "calls",
+        "attempts",
+        "hedged",
+        "latency_ms",
+        "connect_ms",
+        "input_tokens",
+        "cost_usd",
+        "cost_source"
+      ],
+      "properties": {
+        "backend": {"$ref": "common.v1.schema.json#/$defs/DecisionBackend"},
+        "model_requested": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "snapshot": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "calls": {"type": "integer", "minimum": 0},
+        "attempts": {"type": "integer", "minimum": 0},
+        "hedged": {"type": "boolean"},
+        "latency_ms": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Ms"}, {"type": "null"}]},
+        "connect_ms": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Ms"}, {"type": "null"}]},
+        "input_tokens": {"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+        "cost_usd": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/Usd"}, {"type": "null"}]},
+        "cost_source": {"$ref": "common.v1.schema.json#/$defs/CostSource"}
+      }
+    },
+    "CompileInfo": {
+      "title": "CompileInfo",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpt",
+        "requests",
+        "question_set_sha256",
+        "request_sha256",
+        "packed_evidence_ids",
+        "truncated_ids",
+        "est_tokens"
+      ],
+      "properties": {
+        "cpt": {
+          "type": "number",
+          "minimum": 2.5,
+          "maximum": 6,
+          "description": "Characters per token used by est() (SPEC §2.9 Tokens)."
+        },
+        "requests": {"type": "integer", "minimum": 0},
+        "question_set_sha256": {"$ref": "common.v1.schema.json#/$defs/Sha256Hex"},
+        "request_sha256": {"type": "array", "items": {"$ref": "common.v1.schema.json#/$defs/Sha256Hex"}},
+        "packed_evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "truncated_ids": {"type": "array", "items": {"type": "string"}},
+        "est_tokens": {"type": "array", "items": {"type": "integer", "minimum": 0}}
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "vector": "1",
+  "kind": "compile",
+  "name": "long-user-request-head-and-tail",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@dd3b61dd79ea",
+  "description": "At cpt 2.5 a user_request above 1,000 tokens (here ceil(2773/2.5) = 1,110) keeps its first 600*cpt = 1500 code points and its last 400*cpt = 1000, joined by \" … \" (space, U+2026, space).",
+  "input": {
+    "route": {
+      "evaluators": [{"ref": "refusal@1"}],
+      "on_no_evidence": "ignore",
+      "evidence_sources": ["request_system", "request_context", "tool_results", "extension"],
+      "client_rules": false,
+      "model": "typesafe/jev-1.13"
+    },
+    "inputs": {
+      "user_request": "Line 001: my order arrived damaged and I would like to know what to do next. Line 002: my order arrived damaged and I would like to know what to do next. Line 003: my order arrived damaged and I would like to know what to do next. Line 004: my order arrived damaged and I would like to know what to do next. Line 005: my order arrived damaged and I would like to know what to do next. Line 006: my order arrived damaged and I would like to know what to do next. Line 007: my order arrived damaged and I would like to know what to do next. Line 008: my order arrived damaged and I would like to know what to do next. Line 009: my order arrived damaged and I would like to know what to do next. Line 010: my order arrived damaged and I would like to know what to do next. Line 011: my order arrived damaged and I would like to know what to do next. Line 012: my order arrived damaged and I would like to know what to do next. Line 013: my order arrived damaged and I would like to know what to do next. Line 014: my order arrived damaged and I would like to know what to do next. Line 015: my order arrived damaged and I would like to know what to do next. Line 016: my order arrived damaged and I would like to know what to do next. Line 017: my order arrived damaged and I would like to know what to do next. Line 018: my order arrived damaged and I would like to know what to do next. Line 019: my order arrived damaged and I would like to know what to do next. Line 020: my order arrived damaged and I would like to know what to do next. Line 021: my order arrived damaged and I would like to know what to do next. Line 022: my order arrived damaged and I would like to know what to do next. Line 023: my order arrived damaged and I would like to know what to do next. Line 024: my order arrived damaged and I would like to know what to do next. Line 025: my order arrived damaged and I would like to know what to do next. Line 026: my order arrived damaged and I would like to know what to do next. Line 027: my order arrived damaged and I would like to know what to do next. Line 028: my order arrived damaged and I would like to know what to do next. Line 029: my order arrived damaged and I would like to know what to do next. Line 030: my order arrived damaged and I would like to know what to do next. Line 031: my order arrived damaged and I would like to know what to do next. Line 032: my order arrived damaged and I would like to know what to do next. Line 033: my order arrived damaged and I would like to know what to do next. Line 034: my order arrived damaged and I would like to know what to do next. Line 035: my order arrived damaged and I would like to know what to do next. Line 036: my order arrived damaged and I would like to know what to do next.",
+      "assistant_response": "You can get a full refund within 60 days of purchase.",
+      "system_instructions": "You are the Acme support assistant. Answer only from the documents below. If they do not cover the question, say so.",
+      "evidence": [],
+      "rules": {}
+    },
+    "budget": {
+      "tokens": 24000,
+      "cpt": 2.5,
+      "max_questions": 16,
+      "overhead": 275,
+      "max_response_tokens": 6000,
+      "evidence_max_tokens": 8000
+    }
+  },
+  "expected": {
+    "cpt": 2.5,
+    "est_tokens": [1625],
+    "evaluators": [{"internal": false, "ref": "refusal@1", "stage": "active"}],
+    "excluded": [],
+    "packed_ids": [],
+    "qid_request": {"refusal__v1": 0},
+    "question_map": {"refusal__v1": "refusal@1"},
+    "question_set_sha256": "f565c8b905e430bf45a9834dca29f669ddb6c7ed9d53c63c6437bfb9e2ff9664",
+    "request_sha256": ["fdd1876245b1231271ed388f384c37a437077a3da2ada75d94b209024c456fad"],
+    "requests": [
+      {
+        "model": "typesafe/jev-1.13",
+        "state": {
+          "assistant_response": "You can get a full refund within 60 days of purchase.",
+          "user_request": "Line 001: my order arrived damaged and I would like to know what to do next. Line 002: my order arrived damaged and I would like to know what to do next. Line 003: my order arrived damaged and I would like to know what to do next. Line 004: my order arrived damaged and I would like to know what to do next. Line 005: my order arrived damaged and I would like to know what to do next. Line 006: my order arrived damaged and I would like to know what to do next. Line 007: my order arrived damaged and I would like to know what to do next. Line 008: my order arrived damaged and I would like to know what to do next. Line 009: my order arrived damaged and I would like to know what to do next. Line 010: my order arrived damaged and I would like to know what to do next. Line 011: my order arrived damaged and I would like to know what to do next. Line 012: my order arrived damaged and I would like to know what to do next. Line 013: my order arrived damaged and I would like to know what to do next. Line 014: my order arrived damaged and I would like to know what to do next. Line 015: my order arrived damaged and I would like to know what to do next. Line 016: my order arrived damaged and I would like to know what to do next. Line 017: my order arrived damaged and I would like to know what to do next. Line 018: my order arrived damaged and I would like to know what to do next. Line 019: my order arrived damaged and I would like to know what to do next. Line 020: my order arrived damaged an … Line 024: my order arrived damaged and I would like to know what to do next. Line 025: my order arrived damaged and I would like to know what to do next. Line 026: my order arrived damaged and I would like to know what to do next. Line 027: my order arrived damaged and I would like to know what to do next. Line 028: my order arrived damaged and I would like to know what to do next. Line 029: my order arrived damaged and I would like to know what to do next. Line 030: my order arrived damaged and I would like to know what to do next. Line 031: my order arrived damaged and I would like to know what to do next. Line 032: my order arrived damaged and I would like to know what to do next. Line 033: my order arrived damaged and I would like to know what to do next. Line 034: my order arrived damaged and I would like to know what to do next. Line 035: my order arrived damaged and I would like to know what to do next. Line 036: my order arrived damaged and I would like to know what to do next."
+        }
+      }
+    ],
+    "truncated": false,
+    "truncated_ids": []
+  }
+}

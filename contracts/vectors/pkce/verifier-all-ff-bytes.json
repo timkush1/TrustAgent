@@ -1,0 +1,13 @@
+{
+  "vector": "1",
+  "kind": "pkce",
+  "name": "verifier-all-ff-bytes",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@8c68cdad853d",
+  "description": "32 bytes of 0xff use the base64url-only characters (- and _) and no padding.",
+  "input": {
+    "op": "verifier_from_bytes",
+    "bytes_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "expected": {"verifier": "__________________________________________8"}
+}

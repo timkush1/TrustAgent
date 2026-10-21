@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-list-markers-and-small-integers-skipped",
+  "status": "frozen",
+  "description": "The numbers 1, 2 and 3 start list items (they fall inside a list-marker match) and are skipped. \"2 buttons\" is an integer <= min_integer 10 without a unit or currency sign: skipped. Nothing is checked: does not fire.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "1. Open Settings\n2. Choose Billing\n3. Click Cancel plan\nYou will then see 2 buttons.",
+    "evidence": [
+      {
+        "id": "help",
+        "source": "request_system",
+        "text": "To cancel, open Settings, choose Billing and click Cancel plan."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

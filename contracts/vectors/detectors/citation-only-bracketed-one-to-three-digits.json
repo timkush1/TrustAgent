@@ -1,0 +1,18 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "citation-only-bracketed-one-to-three-digits",
+  "status": "frozen",
+  "description": "Only [n] and [^n] with 1 to 3 digits are citations: [1000], [a] and [ 2 ] are not. The range is max(marker 3, 1 item) = 3: [^1] is in range, [^4] is not: fires on [^4].",
+  "input": {
+    "detector": "citation_out_of_range",
+    "response": "Sections [1000], [a] and [ 2 ] are not citations; [^1] is fine and [^4] is not.",
+    "evidence": [{"id": "sys1", "source": "request_system", "text": "Section 3 covers exports."}],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {},
+    "evidence_meta": {"pre_dedup_items": 1, "max_marker": 3}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "[^4]", "start": 67, "end": 71}]},
+  "tolerance": 1e-9
+}

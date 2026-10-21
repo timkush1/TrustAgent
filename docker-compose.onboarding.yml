@@ -1,0 +1,68 @@
+# ============================================================================
+# TrustAgent - onboarding stack (P4 D70)
+# ============================================================================
+# A fresh install as a new user meets it: no admin key and no decision-model
+# key, so the dashboard opens on the setup wizard and the first thing to do is
+# claim the setup link and connect OpenRouter. It layers on the e2e stack, so
+# every vendor is still mock-upstream and nothing costs anything.
+# `make onboarding-up` runs, in effect:
+#
+#   python3 scripts/configure.py --ensure
+#   docker compose -p truthtable-onboarding -f docker-compose.yml \
+#     -f docker-compose.e2e.yml -f docker-compose.onboarding.yml \
+#     --profile e2e up -d --build --wait
+#
+# then `make -s onboarding-setup-url` prints the one-time setup link, and the
+# Playwright onboarding spec walks the wizard:
+#
+#   cd frontend-react && env -u TRUSTAGENT_ADMIN_KEY TRUSTAGENT_SETUP_URL="$url" \
+#     CI=1 npx playwright test --project=stack --workers=1 -g onboarding
+#
+# On top of docker-compose.e2e.yml this file:
+# - empties the decision-model settings (TRUTHTABLE_JEV_*), so the backend is
+#   `auto` with no key: checks wait for a key from the dashboard;
+# - empties the env admin keys, so the only way in is the setup link (the CI
+#   .env carries a one-run admin key for the demo stack);
+# - turns public read off (the dashboard asks for a sign-in) and logs at debug
+#   level, so the leak check over the logs sees everything the stack writes;
+# - keeps the OpenRouter base URL on mock-upstream, which fakes OpenRouter's
+#   sign-in (/auth), key exchange and key endpoints, and keeps the mock judge
+#   (LLM_PROVIDER=mock), so the judge is env-managed and Connect skips it;
+# - publishes mock-upstream on the host (MOCK_UPSTREAM_HOST_PORT), where the
+#   browser reaches its /auth page: Playwright reroutes
+#   http://mock-upstream:8090/** there.
+#
+# `make onboarding-down` deletes the volumes (`down -v`): every run starts
+# fresh. The stack publishes PROXY_HOST_PORT, DASHBOARD_HOST_PORT and
+# MOCK_UPSTREAM_HOST_PORT; give it free ones next to another stack, e.g.
+#   PROXY_HOST_PORT=28080 DASHBOARD_HOST_PORT=23000 MOCK_UPSTREAM_HOST_PORT=28090 make onboarding-up
+
+name: truthtable-onboarding
+
+services:
+  proxy:
+    environment:
+      TRUTHTABLE_JEV_BACKEND: ""
+      TRUTHTABLE_JEV_API_KEY: ""
+      TRUTHTABLE_JEV_BASE_URL: ""
+      TRUTHTABLE_JEV_PATH: ""
+      TRUTHTABLE_JEV_MODEL: ""
+      TRUTHTABLE_ADMIN_KEYS: ""
+      TRUTHTABLE_ADMIN_KEY: ""
+      TRUTHTABLE_PUBLIC_READ: "false"
+      TRUTHTABLE_LOG_LEVEL: debug
+      # Unchanged from docker-compose.e2e.yml; restated because Connect depends on it.
+      TRUTHTABLE_OPENROUTER_BASE_URL: http://mock-upstream:8090
+
+  engine:
+    environment:
+      TRUTHTABLE_LOG_LEVEL: debug
+      # The engine's own LOG_LEVEL wins over TRUTHTABLE_LOG_LEVEL: set it too, so a LOG_LEVEL
+      # in .env cannot hide debug output from the leak check over the logs.
+      LOG_LEVEL: DEBUG
+      # Unchanged from docker-compose.e2e.yml: an env-managed judge, which Connect leaves alone.
+      LLM_PROVIDER: mock
+
+  mock-upstream:
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${MOCK_UPSTREAM_HOST_PORT:-18090}:8090"

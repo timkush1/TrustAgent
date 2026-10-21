@@ -1,0 +1,19 @@
+# Command binaries that `go build` writes next to the sources: `go build ./cmd/<name>` run from
+# backend-go/ writes ./<name>, and `go build` run inside cmd/<name>/ writes cmd/<name>/<name>.
+# `make build-go` puts its binaries in bin/ (ignored at the repository root).
+/calibrate
+/export-replay
+/gate-eval
+/jevcheck
+/mock-upstream
+/proxy
+/trafficgen
+/vectorgen
+/cmd/calibrate/calibrate
+/cmd/export-replay/export-replay
+/cmd/gate-eval/gate-eval
+/cmd/jevcheck/jevcheck
+/cmd/mock-upstream/mock-upstream
+/cmd/proxy/proxy
+/cmd/trafficgen/trafficgen
+/cmd/vectorgen/vectorgen

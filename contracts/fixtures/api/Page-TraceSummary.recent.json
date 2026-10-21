@@ -1,0 +1,190 @@
+{
+  "items": [
+    {
+      "trace_id": "01a0e781-ca92-77d3-b60a-2b9e14c08e63",
+      "client_request_id": null,
+      "created_at": "2026-09-28T10:13:58.034902Z",
+      "updated_at": "2026-09-28T10:13:59.433005Z",
+      "source": "proxy",
+      "api_format": "openai_chat",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": "flag",
+      "model": "gpt-4o-mini",
+      "stream": false,
+      "upstream_status": 200,
+      "answer_source": "live",
+      "action": "pass",
+      "would_action": "pass",
+      "gate_status": "not_assessed",
+      "skip_reason": null,
+      "verdict": "not_assessed",
+      "max_risk": null,
+      "reasons": [],
+      "checked_against": {
+        "configured": ["request_system", "request_context", "tool_results", "extension"],
+        "used": [],
+        "empty": ["request_system", "request_context", "tool_results", "extension"],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 0
+      },
+      "timings": {
+        "upstream_ms": 1393,
+        "ttft_ms": null,
+        "gate_ms": 1,
+        "overhead_ms": 5,
+        "total_ms": 1398
+      },
+      "decision_model": null,
+      "audit": {
+        "audit_id": null,
+        "status": "not_assessed",
+        "lane": null,
+        "selection": null,
+        "verdict": "NOT_ASSESSED",
+        "trust_score": null,
+        "grade": null,
+        "verdict_counts": null
+      },
+      "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "response_preview": "Annual plans can be refunded within 30 days of purchase, so a plan bought 45 days ago is past the refund window.",
+      "redacted": false,
+      "flags": []
+    },
+    {
+      "trace_id": "01a0e780-fe6b-74b8-a21f-09c3d7a6e5f2",
+      "client_request_id": "req_9Kd4sT2w",
+      "created_at": "2026-09-28T10:13:05.771058Z",
+      "updated_at": "2026-09-28T10:13:10.261227Z",
+      "source": "proxy",
+      "api_format": "openai_chat",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": "flag",
+      "model": "gpt-4o-mini",
+      "stream": false,
+      "upstream_status": 200,
+      "answer_source": "live",
+      "action": "flag",
+      "would_action": "block",
+      "gate_status": "ok",
+      "skip_reason": null,
+      "verdict": "contradicted",
+      "max_risk": 0.98,
+      "reasons": ["contradiction:critical", "groundedness:critical", "det:numbers_not_in_evidence"],
+      "checked_against": {
+        "configured": ["request_system", "request_context", "tool_results", "extension"],
+        "used": [
+          {"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}
+        ],
+        "empty": ["request_context", "tool_results", "extension"],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 23
+      },
+      "timings": {
+        "upstream_ms": 1284,
+        "ttft_ms": null,
+        "gate_ms": 428,
+        "overhead_ms": 433,
+        "total_ms": 1717
+      },
+      "decision_model": {
+        "backend": "openrouter-decisions",
+        "snapshot": "typesafe/jev-1.13-20260917",
+        "cost_usd": 0.000025704
+      },
+      "audit": {
+        "audit_id": "01a0e781-0530-79a5-bd4e-1c8b2063f7d4",
+        "status": "completed",
+        "lane": "high",
+        "selection": "high",
+        "verdict": "HALLUCINATED",
+        "trust_score": 0,
+        "grade": "F",
+        "verdict_counts": {
+          "SUPPORTED": 0,
+          "PARTIALLY_SUPPORTED": 0,
+          "CONTRADICTED": 1,
+          "UNSUPPORTED": 0,
+          "UNKNOWN": 0,
+          "NOT_CHECKED": 0
+        }
+      },
+      "question_preview": "Can I still get a refund on my annual plan? I bought it 45 days ago.",
+      "response_preview": "You can get a full refund within 60 days of purchase.",
+      "redacted": false,
+      "flags": []
+    },
+    {
+      "trace_id": "01a0e780-9e78-71f2-8c8b-7d05e3a9c4d1",
+      "client_request_id": "req_7Hq2mV9x",
+      "created_at": "2026-09-28T10:12:41.208311Z",
+      "updated_at": "2026-09-28T10:12:45.099072Z",
+      "source": "proxy",
+      "api_format": "openai_chat",
+      "route": "support-bot",
+      "policy_version": 3,
+      "mode": "flag",
+      "effective_mode": "flag",
+      "model": "gpt-4o-mini",
+      "stream": false,
+      "upstream_status": 200,
+      "answer_source": "live",
+      "action": "pass",
+      "would_action": "pass",
+      "gate_status": "ok",
+      "skip_reason": null,
+      "verdict": "supported",
+      "max_risk": 0.06,
+      "reasons": [],
+      "checked_against": {
+        "configured": ["request_system", "request_context", "tool_results", "extension"],
+        "used": [
+          {"source": "request_system", "items": 1, "labels": ["refund-policy.md"], "tokens": 23}
+        ],
+        "empty": ["request_context", "tool_results", "extension"],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 23
+      },
+      "timings": {
+        "upstream_ms": 1106,
+        "ttft_ms": null,
+        "gate_ms": 391,
+        "overhead_ms": 396,
+        "total_ms": 1502
+      },
+      "decision_model": {
+        "backend": "openrouter-decisions",
+        "snapshot": "typesafe/jev-1.13-20260917",
+        "cost_usd": 0.000026208
+      },
+      "audit": {
+        "audit_id": "01a0e780-a457-76e0-b93c-2f1a74d8e2b5",
+        "status": "completed",
+        "lane": "low",
+        "selection": "sample",
+        "verdict": "GROUNDED",
+        "trust_score": 0.9725,
+        "grade": "A",
+        "verdict_counts": {
+          "SUPPORTED": 2,
+          "PARTIALLY_SUPPORTED": 0,
+          "CONTRADICTED": 0,
+          "UNSUPPORTED": 0,
+          "UNKNOWN": 0,
+          "NOT_CHECKED": 0
+        }
+      },
+      "question_preview": "How long do I have to get a refund on an annual plan?",
+      "response_preview": "You can get a refund on an annual plan within 30 days of purchase. Monthly plans are non-refundable.",
+      "redacted": false,
+      "flags": []
+    }
+  ],
+  "next_cursor": "MTc5MDU5MDM2MTIwODMxMXwwMWEwZTc4MC05ZTc4LTcxZjItOGM4Yi03ZDA1ZTNhOWM0ZDE"
+}

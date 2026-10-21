@@ -1,0 +1,58 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "fit-isotonic-below-500-warns",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "An explicit isotonic fit on 40 labels is allowed but warns that it tends to overfit below 500 labels (auto would use Platt).",
+  "input": {
+    "op": "fit",
+    "groups": [
+      {"risk_raw": 0.1, "pos": 1, "neg": 9}, {"risk_raw": 0.4, "pos": 2, "neg": 8},
+      {"risk_raw": 0.6, "pos": 4, "neg": 6}, {"risk_raw": 0.9, "pos": 6, "neg": 4}
+    ],
+    "method": "isotonic"
+  },
+  "expected": {
+    "cv_brier": null,
+    "method": "isotonic",
+    "metrics": {
+      "auroc": 0.7421652421652422,
+      "brier_after": 0.18250000000000008,
+      "brier_before": 0.2250000000000001,
+      "ece_after": 5.204170427930421e-17,
+      "ece_before": 0.175
+    },
+    "n": 40,
+    "n_neg": 27,
+    "n_pos": 13,
+    "platt": null,
+    "recommended": {
+      "critical_at": null,
+      "critical_null_reason": "insufficient evidence to block",
+      "space": "calibrated",
+      "warn_at": null
+    },
+    "reliability": [
+      {"frac_pos": 0.1, "hi": 0.2, "lo": 0.1, "mean_pred": 0.09999999999999999, "n": 10},
+      {"frac_pos": 0.2, "hi": 0.3, "lo": 0.2, "mean_pred": 0.19999999999999998, "n": 10},
+      {"frac_pos": 0.4, "hi": 0.5, "lo": 0.4, "mean_pred": 0.39999999999999997, "n": 10},
+      {"frac_pos": 0.6, "hi": 0.7, "lo": 0.6, "mean_pred": 0.5999999999999999, "n": 10}
+    ],
+    "table": [
+      0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.103333, 0.106667, 0.11, 0.113333,
+      0.116667, 0.12, 0.123333, 0.126667, 0.13, 0.133333, 0.136667, 0.14, 0.143333, 0.146667, 0.15,
+      0.153333, 0.156667, 0.16, 0.163333, 0.166667, 0.17, 0.173333, 0.176667, 0.18, 0.183333,
+      0.186667, 0.19, 0.193333, 0.196667, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29,
+      0.3, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.4, 0.406667, 0.413333, 0.42,
+      0.426667, 0.433333, 0.44, 0.446667, 0.453333, 0.46, 0.466667, 0.473333, 0.48, 0.486667,
+      0.493333, 0.5, 0.506667, 0.513333, 0.52, 0.526667, 0.533333, 0.54, 0.546667, 0.553333, 0.56,
+      0.566667, 0.573333, 0.58, 0.586667, 0.593333, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6,
+      0.6, 0.6
+    ],
+    "warnings": [
+      "isotonic regression with fewer than 500 labels tends to overfit; auto would use Platt scaling",
+      "no threshold reaches precision 0.8, so there is no recommended warn_at"
+    ]
+  }
+}

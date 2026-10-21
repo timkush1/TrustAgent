@@ -1,0 +1,54 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "extension-context-ids-and-strip",
+  "status": "frozen",
+  "description": "trustagent.context items become extension items: a valid id is kept, an invalid one (spaces) falls back to ext2. The trustagent extension is removed from the body forwarded upstream; every other field is unchanged.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [{"role": "user", "content": "What is the SLA?"}],
+      "temperature": 0.2,
+      "trustagent": {
+        "route": "support-bot",
+        "context": [
+          {"id": "sla-2026", "text": "Priority tickets get a first response within 4 hours."},
+          {
+            "id": "standard SLA (2026)",
+            "text": "Standard tickets get a first response within 1 business day.",
+            "source": "crm"
+          }
+        ]
+      }
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "sla-2026",
+        "source": "extension",
+        "text": "Priority tickets get a first response within 4 hours."
+      },
+      {
+        "id": "ext2",
+        "source": "extension",
+        "text": "Standard tickets get a first response within 1 business day."
+      }
+    ],
+    "user_request": "What is the SLA?",
+    "forwarded_body": {
+      "model": "gpt-4o-mini",
+      "messages": [{"role": "user", "content": "What is the SLA?"}],
+      "temperature": 0.2
+    }
+  },
+  "tolerance": 1e-9
+}

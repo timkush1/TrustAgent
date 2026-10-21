@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-utf16-offsets-after-emoji",
+  "status": "frozen",
+  "description": "The party emoji before the text is one code point but two UTF-16 code units, so offsets are shifted by 2. $45 is known from the evidence. 7 is <= min_integer but followed by \"days\": checked, and unknown (reference has 45, 5, 10). Fires on 7.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "🎉 Your refund of $45 arrives in 7 days.",
+    "evidence": [
+      {
+        "id": "refunds",
+        "source": "request_system",
+        "text": "Refunds of $45 are issued within 5 to 10 business days."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "7", "start": 33, "end": 34}]},
+  "tolerance": 1e-9
+}

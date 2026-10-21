@@ -1,0 +1,416 @@
+{
+  "trace_id": "01a0e73e-21dd-7c37-83dc-c11564316060",
+  "client_request_id": null,
+  "created_at": "2026-09-28T09:00:03.933Z",
+  "updated_at": "2026-09-28T09:00:04.103Z",
+  "source": "trafficgen",
+  "api_format": "openai_chat",
+  "route": "billing-bot",
+  "policy_version": 1,
+  "mode": "flag",
+  "effective_mode": "flag",
+  "model": "gpt-4o-mini",
+  "stream": false,
+  "upstream_status": 200,
+  "answer_source": "scripted",
+  "action": "flag",
+  "would_action": "block",
+  "gate_status": "ok",
+  "skip_reason": null,
+  "verdict": null,
+  "max_risk": 0.94,
+  "reasons": [
+    "commitments:critical",
+    "det:dates_not_in_evidence",
+    "det:numbers_not_in_evidence"
+  ],
+  "checked_against": {
+    "configured": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "used": [],
+    "empty": [
+      "request_system",
+      "request_context",
+      "tool_results",
+      "extension"
+    ],
+    "knowledge": "not_requested",
+    "truncated": false,
+    "tokens": 0
+  },
+  "timings": {
+    "upstream_ms": 151,
+    "ttft_ms": null,
+    "gate_ms": 10,
+    "overhead_ms": 12,
+    "total_ms": 163
+  },
+  "decision_model": {
+    "backend": "mock",
+    "snapshot": "mock/jev-heuristic-v1",
+    "cost_usd": 0.000034314
+  },
+  "audit": {
+    "audit_id": "01a0e73e-2280-700d-b444-4bb7d3ccd498",
+    "status": "not_assessed",
+    "lane": "low",
+    "selection": "sample",
+    "verdict": "NOT_ASSESSED",
+    "trust_score": null,
+    "grade": null,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    }
+  },
+  "question_preview": "My invoice was wrong last month and I am really annoyed. What can you do for me?",
+  "response_preview": "I'm sorry about that. I've added a $50 credit to your account, and your corrected invoice will arrive by March 15, 2027.",
+  "redacted": false,
+  "flags": [
+    "test_mode",
+    "mock_decision",
+    "mock_judge"
+  ],
+  "body": {
+    "available": true,
+    "unavailable_reason": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are the Acme billing assistant. Be helpful and polite."
+      },
+      {
+        "role": "user",
+        "content": "My invoice was wrong last month and I am really annoyed. What can you do for me?"
+      }
+    ],
+    "user_request": "My invoice was wrong last month and I am really annoyed. What can you do for me?",
+    "system_instructions": "You are the Acme billing assistant. Be helpful and polite.",
+    "response_text": "I'm sorry about that. I've added a $50 credit to your account, and your corrected invoice will arrive by March 15, 2027.",
+    "final_response_text": "I'm sorry about that. I've added a $50 credit to your account, and your corrected invoice will arrive by March 15, 2027.",
+    "evidence": [],
+    "rules": {
+      "allowed_commitments": "Annual plans: refund within 30 days of purchase. No other refunds, credits or discounts.",
+      "allowed_scope": "Acme billing: invoices, payments, plans, refunds and credits."
+    },
+    "truncated": false
+  },
+  "decisions": [
+    {
+      "spec": "decision/v1",
+      "trace_id": "01a0e73e-21dd-7c37-83dc-c11564316060",
+      "attempt": 0,
+      "created_at": "2026-09-28T09:00:04.094Z",
+      "route": "billing-bot",
+      "policy_version": 1,
+      "mode": "flag",
+      "fail": "open",
+      "status": "ok",
+      "skip_reason": null,
+      "effective_mode": "flag",
+      "action": "flag",
+      "would_action": "block",
+      "enforced": true,
+      "verdict": null,
+      "max_risk": 0.94,
+      "calibration": "none",
+      "degraded": null,
+      "disagreement": false,
+      "deep_audit": "sample",
+      "reasons": [
+        "commitments:critical",
+        "det:dates_not_in_evidence",
+        "det:numbers_not_in_evidence"
+      ],
+      "evaluators": {
+        "commitments@1": {
+          "ref": "commitments@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "choice",
+          "answer": {
+            "type": "choice",
+            "choice": "unapproved_commitment",
+            "confidence": 0.94,
+            "probabilities": {
+              "no_commitment": 0.01,
+              "describes_policy_only": 0.02,
+              "permitted_commitment": 0.03,
+              "unapproved_commitment": 0.94
+            }
+          },
+          "probabilities": {
+            "describes_policy_only": 0.02,
+            "no_commitment": 0.01,
+            "permitted_commitment": 0.03,
+            "unapproved_commitment": 0.94
+          },
+          "risk_raw": 0.94,
+          "risk": 0.94,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "none",
+          "calibration_warning": null,
+          "level": "critical",
+          "capped": null,
+          "top": "unapproved_commitment",
+          "vendor_confidence": 0.94,
+          "confidence_source": "vendor",
+          "escalate": "numeric_or_date_unverified",
+          "corroborated": true,
+          "block_eligible": true,
+          "thresholds": {
+            "warn_at": 0.6,
+            "critical_at": 0.9,
+            "escalate_from": 0.4
+          }
+        },
+        "off_topic@1": {
+          "ref": "off_topic@1",
+          "stage": "active",
+          "internal": false,
+          "status": "assessed",
+          "reason": null,
+          "type": "choice",
+          "answer": {
+            "type": "choice",
+            "choice": "on_topic_in_scope",
+            "confidence": 0.95,
+            "probabilities": {
+              "on_topic_in_scope": 0.95,
+              "answers_outside_scope": 0.02,
+              "drifts_to_other_subject": 0.01,
+              "no_subject_matter": 0.02
+            }
+          },
+          "probabilities": {
+            "answers_outside_scope": 0.02,
+            "drifts_to_other_subject": 0.01,
+            "no_subject_matter": 0.02,
+            "on_topic_in_scope": 0.95
+          },
+          "risk_raw": 0.03,
+          "risk": 0.03,
+          "threshold_space": "raw",
+          "calibrated": false,
+          "calibration_state": "none",
+          "calibration_warning": null,
+          "level": "ok",
+          "capped": null,
+          "top": "on_topic_in_scope",
+          "vendor_confidence": 0.95,
+          "confidence_source": "vendor",
+          "escalate": null,
+          "corroborated": null,
+          "block_eligible": false,
+          "thresholds": {
+            "warn_at": 0.7,
+            "critical_at": null,
+            "escalate_from": null
+          }
+        }
+      },
+      "detectors": [
+        {
+          "id": "numbers_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [
+            {
+              "text": "50",
+              "start": 36,
+              "end": 38
+            },
+            {
+              "text": "15,",
+              "start": 111,
+              "end": 114
+            },
+            {
+              "text": "2027",
+              "start": 115,
+              "end": 119
+            }
+          ]
+        },
+        {
+          "id": "dates_not_in_evidence",
+          "ran": true,
+          "fired": true,
+          "findings": [
+            {
+              "text": "March 15, 2027",
+              "start": 105,
+              "end": 119
+            }
+          ]
+        },
+        {
+          "id": "urls_not_in_evidence",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "quotes_not_in_evidence",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "citation_out_of_range",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "secret_pattern",
+          "ran": true,
+          "fired": false,
+          "findings": []
+        },
+        {
+          "id": "system_prompt_leak",
+          "ran": false,
+          "fired": false,
+          "findings": []
+        }
+      ],
+      "excluded": [],
+      "decision_model": {
+        "backend": "mock",
+        "model_requested": "mock/jev-heuristic-v1",
+        "snapshot": "mock/jev-heuristic-v1",
+        "calls": 1,
+        "attempts": 1,
+        "hedged": false,
+        "latency_ms": 7,
+        "connect_ms": null,
+        "input_tokens": 817,
+        "cost_usd": 0.000034314,
+        "cost_source": "simulated"
+      },
+      "compile": {
+        "cpt": 4,
+        "requests": 1,
+        "question_set_sha256": "46bf307944e36f80d894c77f340bf412b39176de8b1fe7754d178eab78babfce",
+        "request_sha256": [
+          "a6f576812ac9acb281ec7c3520bb3b4fd9041ed27759dd703f51666555eb8805"
+        ],
+        "packed_evidence_ids": [],
+        "truncated_ids": [],
+        "est_tokens": [
+          817
+        ]
+      },
+      "evidence_summary": {
+        "configured": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "used": [],
+        "empty": [
+          "request_system",
+          "request_context",
+          "tool_results",
+          "extension"
+        ],
+        "knowledge": "not_requested",
+        "truncated": false,
+        "tokens": 0
+      },
+      "late": false,
+      "gate_ms": 10
+    }
+  ],
+  "audit_detail": {
+    "audit_id": "01a0e73e-2280-700d-b444-4bb7d3ccd498",
+    "trace_id": "01a0e73e-21dd-7c37-83dc-c11564316060",
+    "created_at": "2026-09-28T09:00:04.096Z",
+    "route": "billing-bot",
+    "source": "trafficgen",
+    "model": "gpt-4o-mini",
+    "status": "completed",
+    "grade": null,
+    "processing_ms": 7,
+    "judge": {
+      "configured_provider": "mock",
+      "effective_provider": "mock",
+      "model": "mock",
+      "fallback_active": false,
+      "fallback_reason": null,
+      "structured_outputs": true,
+      "healthy": true,
+      "credential_source": "none"
+    },
+    "gate_action": "flag",
+    "selection": "sample",
+    "inclusion_prob": 1,
+    "query_preview": "My invoice was wrong last month and I am really annoyed. What can you do for me?",
+    "redacted": false,
+    "user_query": "My invoice was wrong last month and I am really annoyed. What can you do for me?",
+    "llm_response": "I'm sorry about that. I've added a $50 credit to your account, and your corrected invoice will arrive by March 15, 2027.",
+    "degraded_reasons": [],
+    "error": null,
+    "gate": {
+      "action": "flag",
+      "would_action": "block",
+      "verdict": null,
+      "max_risk": 0.94,
+      "delivered": "original"
+    },
+    "evidence_summary": {
+      "configured": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "used": [],
+      "empty": [
+        "request_system",
+        "request_context",
+        "tool_results",
+        "extension"
+      ],
+      "knowledge": "not_requested",
+      "truncated": false,
+      "tokens": 0
+    },
+    "context_used": [],
+    "scoring_version": "v2",
+    "verdict": "NOT_ASSESSED",
+    "not_assessed_reason": "no_evidence",
+    "trust_score": null,
+    "hallucination_detected": false,
+    "verdict_counts": {
+      "SUPPORTED": 0,
+      "PARTIALLY_SUPPORTED": 0,
+      "CONTRADICTED": 0,
+      "UNSUPPORTED": 0,
+      "UNKNOWN": 0,
+      "NOT_CHECKED": 0
+    },
+    "claims": [],
+    "scores": null,
+    "reasoning_trace": "Not assessed: the request carried no evidence documents to check the answer against.",
+    "step_timings": {
+      "total_ms": 7
+    },
+    "unsupported_policy": "unverifiable",
+    "costs": []
+  },
+  "labels": []
+}

@@ -1,0 +1,75 @@
+# gitleaks configuration for the "gitleaks (secrets)" job in .github/workflows/security.yml, which
+# scans the whole git history on every run. It keeps gitleaks' default rules and allows only what is
+# fake by design or not a secret at all. Each allow-list says why; anything else that looks like a
+# key fails the job. Run it locally the same way:
+#
+#     gitleaks git --config .gitleaks.toml --redact --no-banner .
+#
+# The project's fake-key conventions (docs/SECURITY.md): `sk-test-...`, `sk-or-v1-e2e-...`, and the
+# leak tests' unmatched secret cmp0e2eZq7Lw4Rt9Yx2Vb6Nm. Never put a real key anywhere, tests
+# included: the test paths below are allowed because their keys are fake, not because a key there
+# is harmless.
+
+title = "TrustAgent"
+
+[extend]
+useDefault = true
+
+# Tests carry fake keys on purpose: the redaction, credential-store and leak tests need key-shaped
+# strings to prove a key never reaches a log, an API response or the WebSocket.
+[[allowlists]]
+description = "Fake keys in tests: Go tests, Python unit tests and the Playwright specs"
+paths = [
+  '''_test\.go$''',
+  '''(^|/)tests/unit/''',
+  '''^frontend-react/e2e/''',
+]
+
+# The detector vectors are secret-shaped strings the Tier-0 secret detector must catch (SPEC §3.4).
+[[allowlists]]
+description = "Detector golden vectors: synthetic secrets the secret detector must flag"
+paths = ['''^contracts/vectors/detectors/''']
+
+# The fake-key conventions in the other test files (the dashboard's unit tests and the scripts'
+# tests), and the one-character placeholder key in the copy-button test. Both conditions must
+# hold: a convention-shaped key anywhere else still fails the job.
+[[allowlists]]
+description = "The project's fake-key conventions, in the dashboard's and the scripts' tests"
+condition = "AND"
+paths = [
+  '''^frontend-react/src/.+\.test\.tsx?$''',
+  '''^scripts/tests/''',
+]
+regexTarget = "secret"
+regexes = [
+  '''^sk-test-[A-Za-z0-9_-]*$''',
+  '''^sk-or-v1-e2e-[A-Za-z0-9_-]*$''',
+  '''^cmp0e2eZq7Lw4Rt9Yx2Vb6Nm$''',
+  '''^tk_live_x$''',
+]
+
+# A calibration key is the SHA-256 of a calibration's inputs (SPEC §2.11), not a credential; the
+# generic rule only sees the word "key" next to 64 hex characters.
+[[allowlists]]
+description = "calibration_key: a SHA-256 digest"
+regexTarget = "line"
+regexes = ['''calibration_key['"]?\s*[:=]\s*['"][0-9a-f]{64}['"]''']
+
+# Two false positives in old commits of documents: prose the generic rule read as a key, and a
+# curl example whose bearer token was a placeholder (the file was deleted since).
+[[allowlists]]
+description = "Reviewed false positives in historical docs commits"
+condition = "AND"
+commits = [
+  "1db2ef023c0057c8d9ee7008b9a644639ec4bbc0",
+  "e0c1e4ddfca180a99ef7b81b26d49a4e2b846ecb",
+]
+paths = ['''^docs/''']
+
+# The P5 contract PR's validator test wrote a non-fake key shape on purpose (the validator must
+# refuse a vendor fixture that carries one); the test now builds that string at run time.
+[[allowlists]]
+description = "Reviewed false positive: the vendor-fixture key test in the P5 contract PR"
+condition = "AND"
+commits = ["12486e800ee57917639dcff797c995539110c77b"]
+paths = ['''^contracts/validate\.test\.mjs$''']

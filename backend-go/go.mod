@@ -2,6 +2,8 @@ module github.com/truthtable/backend-go
 
 go 1.25.0
 
+toolchain go1.25.11
+
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.6.0
@@ -9,8 +11,11 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.20.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	github.com/truthtable/contracts v0.0.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -50,5 +55,9 @@ require (
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// contracts/ is the Go module github.com/truthtable/contracts (embedded schemas, templates,
+// golden vectors). It is read from the repository, so image builds need the repository root as
+// their context.
+replace github.com/truthtable/contracts => ../contracts

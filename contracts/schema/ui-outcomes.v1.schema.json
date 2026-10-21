@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/ui-outcomes.v1.schema.json",
+  "title": "UiOutcomes",
+  "description": "contracts/ui/outcomes.v1.json: the single outcome per trace and the presentation words applied by src/domain/presentation.ts (SPEC §2.9 \"Outcome for the UI\", §3.3). Rules are evaluated in order and the first match wins; every field given in when must match. Placeholders use {name}.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "outcomes", "rules", "levels", "reasons", "status_reasons"],
+  "properties": {
+    "version": {"const": "1"},
+    "outcomes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Exactly one entry per outcome id (checked by validate.mjs).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "tone", "headline", "next_step"],
+        "properties": {
+          "id": {
+            "enum": [
+              "checking",
+              "blocked",
+              "replaced",
+              "flagged",
+              "would_block",
+              "would_flag",
+              "error",
+              "not_checked",
+              "passed"
+            ]
+          },
+          "label": {"type": "string", "minLength": 1},
+          "tone": {"enum": ["neutral", "success", "info", "warning", "danger"]},
+          "headline": {"type": "string", "minLength": 1, "maxLength": 600},
+          "next_step": {"anyOf": [{"type": "string", "minLength": 1, "maxLength": 600}, {"type": "null"}]}
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["when", "outcome"],
+        "properties": {
+          "when": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "gate_status": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "anyOf": [{"$ref": "common.v1.schema.json#/$defs/GateStatus"}, {"const": "pending"}]
+                }
+              },
+              "action": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "common.v1.schema.json#/$defs/GateAction"}
+              },
+              "would_action": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "common.v1.schema.json#/$defs/WouldAction"}
+              }
+            }
+          },
+          "outcome": {
+            "enum": [
+              "checking",
+              "blocked",
+              "replaced",
+              "flagged",
+              "would_block",
+              "would_flag",
+              "error",
+              "not_checked",
+              "passed"
+            ]
+          }
+        }
+      }
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "warn", "critical"],
+      "properties": {
+        "ok": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "tone"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "tone": {"enum": ["neutral", "success", "info", "warning", "danger"]}
+          }
+        },
+        "warn": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "tone"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "tone": {"enum": ["neutral", "success", "info", "warning", "danger"]}
+          }
+        },
+        "critical": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "tone"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1},
+            "tone": {"enum": ["neutral", "success", "info", "warning", "danger"]}
+          }
+        }
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match", "copy"],
+        "properties": {
+          "match": {
+            "type": "string",
+            "pattern": "^([a-z_]+|[a-z_*]+:[a-z_*]+)$",
+            "description": "A reason string; \"*\" matches any segment, e.g. \"groundedness:*\" or \"*:*\"."
+          },
+          "copy": {"type": "string", "minLength": 1, "maxLength": 600}
+        }
+      },
+      "description": "Plain-language copy for decision reasons; first match wins. {finding} is the first detector finding."
+    },
+    "status_reasons": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 600},
+      "description": "Short phrases for {reason} in error and not_checked headlines, keyed by skip reason, gate status, degraded value or exclusion reason."
+    }
+  }
+}

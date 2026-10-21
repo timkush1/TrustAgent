@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-not-run-without-evidence-or-rules",
+  "status": "frozen",
+  "description": "No evidence and empty rules: the numbers detector does not run (it runs only when evidence or rules is non-empty), so it cannot fire.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "It costs 99 dollars a month.",
+    "evidence": [],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": false, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

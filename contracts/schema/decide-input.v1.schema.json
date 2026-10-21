@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/decide-input.v1.schema.json",
+  "title": "DecideInput",
+  "description": "The input of the pure decide() core (SPEC §2.9). Used by decide vectors and the policy dry-run replay. calibration entries are looked up by the caller for the current snapshot (SPEC §2.11).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "policy",
+    "evaluators",
+    "answers",
+    "question_map",
+    "excluded",
+    "calibration",
+    "meta",
+    "detectors"
+  ],
+  "properties": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configured_mode", "fail", "require_calibration", "on_no_evidence", "detectors"],
+      "properties": {
+        "configured_mode": {"$ref": "common.v1.schema.json#/$defs/PolicyMode"},
+        "fail": {"$ref": "common.v1.schema.json#/$defs/FailMode"},
+        "require_calibration": {"type": "boolean"},
+        "on_no_evidence": {"enum": ["ignore", "flag", "block"]},
+        "detectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["flag_on", "block_on"],
+          "properties": {
+            "flag_on": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "common.v1.schema.json#/$defs/DetectorId"}
+            },
+            "block_on": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "common.v1.schema.json#/$defs/DetectorId"}
+            }
+          }
+        }
+      }
+    },
+    "evaluators": {
+      "type": "array",
+      "description": "Route order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "spec", "stage", "internal", "thresholds"],
+        "properties": {
+          "ref": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+          "spec": {"$ref": "evaluator.v1.schema.json"},
+          "stage": {"$ref": "common.v1.schema.json#/$defs/EvaluatorStage"},
+          "internal": {"type": "boolean"},
+          "thresholds": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["space"],
+            "properties": {
+              "space": {"$ref": "common.v1.schema.json#/$defs/ThresholdSpace"},
+              "warn_at": {"$ref": "common.v1.schema.json#/$defs/Probability"},
+              "critical_at": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]
+              },
+              "escalate_from": {
+                "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Probability"}, {"type": "null"}]
+              }
+            },
+            "description": "Route overrides; an absent key falls back to the spec value (has() semantics: an explicit null overrides)."
+          }
+        }
+      }
+    },
+    "answers": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+          "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/RawAnswer"}
+        },
+        {"type": "null"}
+      ]
+    },
+    "question_map": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+      "additionalProperties": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"}
+    },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "reason"],
+        "properties": {
+          "ref": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+          "reason": {"$ref": "common.v1.schema.json#/$defs/ExclusionReason"}
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.v1.schema.json#/$defs/EvaluatorRef"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state"],
+        "properties": {
+          "table": {"$ref": "common.v1.schema.json#/$defs/CalibrationTable"},
+          "quality": {"$ref": "common.v1.schema.json#/$defs/CalibrationQuality"},
+          "state": {"$ref": "#/$defs/CalibrationEntryState"},
+          "fit_state_fields": {
+            "description": "The state fields the calibration was fitted with (D56). When they differ from the evaluator's own, decide() sets calibration_warning and still applies the calibration.",
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        },
+        "if": {"properties": {"state": {"const": "other_snapshot"}}, "required": ["state"]},
+        "then": {"not": {"anyOf": [{"required": ["table"]}, {"required": ["quality"]}]}},
+        "else": {"required": ["table", "quality"]}
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "stream",
+        "evidence_present",
+        "evidence_truncated",
+        "knowledge_only",
+        "skip_reason",
+        "request_status",
+        "qid_request",
+        "question_errors"
+      ],
+      "properties": {
+        "backend": {"$ref": "common.v1.schema.json#/$defs/DecisionBackend"},
+        "stream": {"enum": ["none", "passthrough", "buffer"]},
+        "evidence_present": {"type": "boolean"},
+        "evidence_truncated": {"type": "boolean"},
+        "knowledge_only": {"type": "boolean"},
+        "skip_reason": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/SkipReason"}, {"type": "null"}]},
+        "request_status": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[0-9]+$"},
+          "additionalProperties": {"type": "string", "pattern": "^(ok|timeout|error:[a-z0-9_]+)$"},
+          "description": "Per compiled request k: ok | timeout | error:<kind>."
+        },
+        "qid_request": {
+          "type": "object",
+          "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "question_errors": {
+          "type": "object",
+          "propertyNames": {"$ref": "common.v1.schema.json#/$defs/QuestionId"},
+          "additionalProperties": {"type": "string", "pattern": "^[a-z0-9_]+$"}
+        }
+      }
+    },
+    "detectors": {
+      "type": "object",
+      "propertyNames": {"$ref": "common.v1.schema.json#/$defs/DetectorId"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ran", "fired"],
+        "properties": {"ran": {"type": "boolean"}, "fired": {"type": "boolean"}}
+      }
+    }
+  },
+  "$defs": {
+    "CalibrationEntryState": {
+      "description": "common.v1 CalibrationState plus other_snapshot: the target is calibrated only on other snapshots, so the entry carries no table (D56). decision.v1 calibration_state never takes other_snapshot.",
+      "anyOf": [
+        {"$ref": "common.v1.schema.json#/$defs/CalibrationState"},
+        {"const": "other_snapshot"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+# Upstream request settings shared by every location proxied to the TrustAgent
+# proxy (included by default.conf).
+#
+# Connection is "upgrade" only when the client sent Upgrade (the WebSocket on
+# /ws) and empty otherwise; nginx omits empty headers, so ordinary requests keep
+# a reusable HTTP/1.1 upstream connection.
+#
+# nginx is the edge in front of the proxy, so X-Forwarded-For is replaced with
+# the connecting address instead of appended: a client cannot inject addresses
+# into the proxy's per-IP rate limiting.
+proxy_http_version 1.1;
+proxy_set_header Upgrade           $http_upgrade;
+proxy_set_header Connection        $trustagent_connection;
+proxy_set_header Host              $http_host;
+proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header X-Forwarded-For   $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host  $http_host;

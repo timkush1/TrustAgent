@@ -1,0 +1,12 @@
+{
+  "v": 2,
+  "seq": 1204,
+  "epoch": "01a0e707-2c45-73c1-a9d2-e0b7f4c55a91",
+  "type": "status",
+  "ts": "2026-09-28T16:42:09.311Z",
+  "data": {
+    "component": "budget",
+    "state": "exhausted",
+    "detail": "llm"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "ok": true,
+  "errors": [],
+  "warnings": [
+    {
+      "path": "defaults.fail",
+      "line": 4,
+      "col": 9,
+      "message": "fail: closed only matters in block and fallback modes (this route is observe)",
+      "code": "fail_closed_not_enforcing",
+      "details": {
+        "mode": "observe",
+        "route": "default"
+      }
+    },
+    {
+      "path": "routes[0].evidence.sources",
+      "line": 10,
+      "col": 25,
+      "message": "the block route trusts user-message context: an end user could paste text that makes a false answer look supported (drop request_context)",
+      "code": "trusts_user_context",
+      "details": {
+        "mode": "block",
+        "route": "pay"
+      }
+    },
+    {
+      "path": "routes[1].evaluators[0].ref",
+      "line": 16,
+      "col": 24,
+      "message": "contradiction@1 implies groundedness, which this route does not attach, so their disagreement is never checked",
+      "code": "implies_unattached",
+      "details": {
+        "implies": "groundedness",
+        "ref": "contradiction@1",
+        "route": "sampled"
+      }
+    },
+    {
+      "path": "defaults.fail",
+      "line": 4,
+      "col": 9,
+      "message": "fail: closed only matters in block and fallback modes (this route is flag) (in route \"sampled\")",
+      "code": "fail_closed_not_enforcing",
+      "details": {
+        "mode": "flag",
+        "route": "sampled"
+      }
+    },
+    {
+      "path": "routes[1].sample_rate",
+      "line": 15,
+      "col": 18,
+      "message": "sample_rate applies to observe routes only; this flag route checks every request",
+      "code": "sample_rate_not_observe",
+      "details": {
+        "mode": "flag",
+        "route": "sampled"
+      }
+    },
+    {
+      "path": "routes[2].evaluators[0].ref",
+      "line": 22,
+      "col": 24,
+      "message": "groundedness@1 blocks only when one of contradiction, det:numbers_not_in_evidence, det:dates_not_in_evidence, det:urls_not_in_evidence, det:quotes_not_in_evidence, det:citation_out_of_range agrees, and none of them can run on this route",
+      "code": "no_corroborator",
+      "details": {
+        "corroborators": [
+          "contradiction",
+          "det:numbers_not_in_evidence",
+          "det:dates_not_in_evidence",
+          "det:urls_not_in_evidence",
+          "det:quotes_not_in_evidence",
+          "det:citation_out_of_range"
+        ],
+        "ref": "groundedness@1",
+        "route": "nodocs"
+      }
+    },
+    {
+      "path": "overrides.client_rules",
+      "line": 2,
+      "col": 27,
+      "message": "client_rules lets end users rewrite rules on the enforcing route \"pay\"",
+      "code": "client_rules_enforcing",
+      "details": {
+        "route": "pay"
+      }
+    }
+  ],
+  "block_readiness": {},
+  "diff": ""
+}

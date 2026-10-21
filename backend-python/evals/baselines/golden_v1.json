@@ -2,323 +2,1310 @@
   "dataset": "golden_v1.jsonl",
   "provider": "mock",
   "model": "mock",
+  "scoring_version": "v2",
   "examples": 50,
+  "failed": 1,
   "metrics": {
-    "total": 50,
+    "total": 49,
     "positives": 26,
-    "negatives": 24,
-    "true_positives": 24,
-    "false_positives": 3,
+    "negatives": 23,
+    "true_positives": 23,
+    "false_positives": 2,
     "true_negatives": 21,
-    "false_negatives": 2,
-    "precision": 0.888889,
-    "recall": 0.923077,
-    "f1": 0.90566,
-    "accuracy": 0.9,
-    "balanced_accuracy": 0.899038,
-    "auroc": 0.907051,
-    "ece": 0.132536
+    "false_negatives": 3,
+    "precision": 0.92,
+    "recall": 0.884615,
+    "f1": 0.901961,
+    "accuracy": 0.897959,
+    "balanced_accuracy": 0.898829,
+    "auroc": 0.983278,
+    "ece": 0.084932
+  },
+  "summary": {
+    "statuses": {
+      "completed": 49,
+      "failed": 1
+    },
+    "verdicts": {
+      "GROUNDED": 24,
+      "HALLUCINATED": 25,
+      "none": 1
+    }
   },
   "per_example": [
     {
       "id": "geo-paris-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.813333,
+      "trust_score": 0.813333,
+      "p_hallucinated": 0.133333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.84,
+          "span": [
+            0,
+            31,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-paris-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.03,
+      "trust_score": 0.03,
+      "p_hallucinated": 0.91,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.82,
+          "span": [
+            0,
+            30,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-canberra-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.918333,
+      "trust_score": 0.918333,
+      "p_hallucinated": 0.058333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.93,
+          "span": [
+            0,
+            37,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-canberra-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.015,
+      "trust_score": 0.015,
+      "p_hallucinated": 0.955,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.91,
+          "span": [
+            0,
+            35,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-nile-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.871667,
+      "trust_score": 0.871667,
+      "p_hallucinated": 0.091667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.89,
+          "span": [
+            0,
+            55,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-nile-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.03,
+      "trust_score": 0.03,
+      "p_hallucinated": 0.91,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.82,
+          "span": [
+            0,
+            37,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-everest-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.883333,
+      "trust_score": 0.883333,
+      "p_hallucinated": 0.083333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            0,
+            42,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-everest-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.035,
+      "trust_score": 0.035,
+      "p_hallucinated": 0.895,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.79,
+          "span": [
+            0,
+            49,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-tokyo-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.965,
+      "trust_score": 0.965,
+      "p_hallucinated": 0.025,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.97,
+          "span": [
+            0,
+            30,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "geo-tokyo-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.025,
+      "trust_score": 0.025,
+      "p_hallucinated": 0.925,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.85,
+          "span": [
+            0,
+            38,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-water-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.801667,
+      "trust_score": 0.801667,
+      "p_hallucinated": 0.141667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.83,
+          "span": [
+            0,
+            56,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-water-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.025,
+      "trust_score": 0.025,
+      "p_hallucinated": 0.925,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.85,
+          "span": [
+            0,
+            56,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-light-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.906667,
+      "trust_score": 0.906667,
+      "p_hallucinated": 0.066667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.92,
+          "span": [
+            0,
+            70,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-light-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.018333,
+      "trust_score": 0.018333,
+      "p_hallucinated": 0.945,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.89,
+          "span": [
+            0,
+            70,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-dna-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.883333,
+      "trust_score": 0.883333,
+      "p_hallucinated": 0.083333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            0,
+            36,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-dna-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.011667,
+      "trust_score": 0.011667,
+      "p_hallucinated": 0.965,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.93,
+          "span": [
+            0,
+            50,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-photo-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.976667,
+      "trust_score": 0.976667,
+      "p_hallucinated": 0.016667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.98,
+          "span": [
+            0,
+            31,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-photo-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.015,
+      "trust_score": 0.015,
+      "p_hallucinated": 0.955,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.91,
+          "span": [
+            0,
+            59,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-moon-gravity-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.036667,
+      "trust_score": 0.036667,
+      "p_hallucinated": 0.89,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.78,
+          "span": [
+            0,
+            49,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "sci-moon-gravity-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.021667,
+      "trust_score": 0.021667,
+      "p_hallucinated": 0.935,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.87,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-apollo-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.965,
+      "trust_score": 0.965,
+      "p_hallucinated": 0.025,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.97,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-apollo-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.025,
+      "trust_score": 0.025,
+      "p_hallucinated": 0.925,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.85,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-ww2-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.941667,
+      "trust_score": 0.941667,
+      "p_hallucinated": 0.041667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.95,
+          "span": [
+            0,
+            27,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-ww2-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.021667,
+      "trust_score": 0.021667,
+      "p_hallucinated": 0.935,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.87,
+          "span": [
+            0,
+            27,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-press-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.871667,
+      "trust_score": 0.871667,
+      "p_hallucinated": 0.091667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.89,
+          "span": [
+            0,
+            63,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-press-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.028333,
+      "trust_score": 0.028333,
+      "p_hallucinated": 0.915,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.83,
+          "span": [
+            0,
+            41,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-rome-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.93,
+      "trust_score": 0.93,
+      "p_hallucinated": 0.05,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.94,
+          "span": [
+            0,
+            41,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "his-rome-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.475,
+      "trust_score": 0.475,
+      "p_hallucinated": 0.375,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.55,
+          "span": [
+            0,
+            28,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-python-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.883333,
+      "trust_score": 0.883333,
+      "p_hallucinated": 0.083333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            0,
+            34,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-python-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.03,
+      "trust_score": 0.03,
+      "p_hallucinated": 0.91,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.82,
+          "span": [
+            0,
+            37,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-www-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.848333,
+      "trust_score": 0.848333,
+      "p_hallucinated": 0.108333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.87,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-www-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.016667,
+      "trust_score": 0.016667,
+      "p_hallucinated": 0.95,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            0,
+            46,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-transistor-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.848333,
+      "trust_score": 0.848333,
+      "p_hallucinated": 0.108333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.87,
+          "span": [
+            0,
+            41,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-transistor-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.03,
+      "trust_score": 0.03,
+      "p_hallucinated": 0.91,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.82,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-linux-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.033333,
+      "trust_score": 0.033333,
+      "p_hallucinated": 0.9,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.8,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "tech-linux-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.021667,
+      "trust_score": 0.021667,
+      "p_hallucinated": 0.935,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.87,
+          "span": [
+            0,
+            50,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-heart-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.965,
+      "trust_score": 0.965,
+      "p_hallucinated": 0.025,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.97,
+          "span": [
+            0,
+            34,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-heart-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.023333,
+      "trust_score": 0.023333,
+      "p_hallucinated": 0.93,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.86,
+          "span": [
+            0,
+            33,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-penicillin-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.965,
+      "trust_score": 0.965,
+      "p_hallucinated": 0.025,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.97,
+          "span": [
+            0,
+            47,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-penicillin-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.006667,
+      "trust_score": 0.006667,
+      "p_hallucinated": 0.98,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.96,
+          "span": [
+            0,
+            41,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-insulin-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 0.3
+      "status": "failed",
+      "verdict": null,
+      "error_kind": "judge_unavailable",
+      "degraded_reasons": [
+        "unknown_claims"
+      ],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.0,
+      "trust_score": null,
+      "p_hallucinated": null,
+      "claims": [
+        {
+          "status": "UNKNOWN",
+          "confidence": 0.0,
+          "span": [
+            0,
+            36,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-insulin-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.01,
+      "trust_score": 0.01,
+      "p_hallucinated": 0.97,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.94,
+          "span": [
+            0,
+            33,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-bones-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.79,
+      "trust_score": 0.79,
+      "p_hallucinated": 0.15,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.82,
+          "span": [
+            0,
+            44,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "med-bones-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.533333,
+      "trust_score": 0.533333,
+      "p_hallucinated": 0.333333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.6,
+          "span": [
+            0,
+            46,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "special-eiffel-mixed",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.513514
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.479167,
+      "trust_score": 0.479167,
+      "p_hallucinated": 0.95,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.95,
+          "span": [
+            0,
+            37,
+            "exact"
+          ]
+        },
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            38,
+            77,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "special-shakespeare-mixed",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.513812
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.469167,
+      "trust_score": 0.469167,
+      "p_hallucinated": 0.94,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.93,
+          "span": [
+            0,
+            52,
+            "exact"
+          ]
+        },
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.88,
+          "span": [
+            53,
+            98,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "special-greatwall-partial",
       "label_hallucinated": true,
-      "predicted_hallucinated": true,
-      "faithfulness_score": 0.793103
+      "predicted_hallucinated": false,
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.5625,
+      "trust_score": 0.5625,
+      "p_hallucinated": 0.566667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.85,
+          "span": [
+            0,
+            75,
+            "exact"
+          ]
+        },
+        {
+          "status": "PARTIALLY_SUPPORTED",
+          "confidence": 0.6,
+          "span": [
+            76,
+            134,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "special-bees-boundary",
       "label_hallucinated": false,
-      "predicted_hallucinated": true,
-      "faithfulness_score": 0.893617
+      "predicted_hallucinated": false,
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.691667,
+      "trust_score": 0.691667,
+      "p_hallucinated": 0.583333,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.95,
+          "span": [
+            0,
+            28,
+            "exact"
+          ]
+        },
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            29,
+            66,
+            "exact"
+          ]
+        },
+        {
+          "status": "PARTIALLY_SUPPORTED",
+          "confidence": 0.5,
+          "span": [
+            67,
+            127,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "special-jupiter-faithful",
       "label_hallucinated": false,
       "predicted_hallucinated": false,
-      "faithfulness_score": 1.0
+      "status": "completed",
+      "verdict": "GROUNDED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.933889,
+      "trust_score": 0.933889,
+      "p_hallucinated": 0.066667,
+      "claims": [
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.97,
+          "span": [
+            0,
+            50,
+            "exact"
+          ]
+        },
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.94,
+          "span": [
+            51,
+            74,
+            "exact"
+          ]
+        },
+        {
+          "status": "SUPPORTED",
+          "confidence": 0.92,
+          "span": [
+            75,
+            121,
+            "exact"
+          ]
+        }
+      ]
     },
     {
       "id": "special-mars-hallucinated",
       "label_hallucinated": true,
       "predicted_hallucinated": true,
-      "faithfulness_score": 0.0
+      "status": "completed",
+      "verdict": "HALLUCINATED",
+      "error_kind": null,
+      "degraded_reasons": [],
+      "unsupported_policy": "hallucination",
+      "faithfulness_score": 0.014167,
+      "trust_score": 0.014167,
+      "p_hallucinated": 0.965,
+      "claims": [
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.9,
+          "span": [
+            0,
+            39,
+            "exact"
+          ]
+        },
+        {
+          "status": "UNSUPPORTED",
+          "confidence": 0.93,
+          "span": [
+            40,
+            63,
+            "exact"
+          ]
+        }
+      ]
     }
   ]
 }

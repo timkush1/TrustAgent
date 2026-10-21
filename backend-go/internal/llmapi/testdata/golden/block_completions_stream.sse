@@ -1,0 +1,8 @@
+data: {"id":"cmpl-trustagent-0192f3a07c1e7b2a9d115b6c0e7f8a90","object":"text_completion","created":1760000000,"model":"gpt-3.5-turbo-instruct","choices":[{"index":0,"text":"I can't confirm that.","logprobs":null,"finish_reason":null}]}
+
+data: {"id":"cmpl-trustagent-0192f3a07c1e7b2a9d115b6c0e7f8a90","object":"text_completion","created":1760000000,"model":"gpt-3.5-turbo-instruct","choices":[{"index":0,"text":"","logprobs":null,"finish_reason":"content_filter"}]}
+
+data: {"id":"cmpl-trustagent-0192f3a07c1e7b2a9d115b6c0e7f8a90","object":"text_completion","created":1760000000,"model":"gpt-3.5-turbo-instruct","choices":[],"usage":{"prompt_tokens":6,"completion_tokens":5,"total_tokens":11}}
+
+data: [DONE]
+

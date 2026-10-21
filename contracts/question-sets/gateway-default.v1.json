@@ -1,0 +1,6 @@
+{
+  "id": "gateway-default",
+  "version": 1,
+  "description": "The default route evaluators (SPEC §2.8): groundedness and contradiction against the request's own evidence, plus refusal and PII or secret leaks. All four are asked in one Jev call.",
+  "evaluators": ["groundedness@1", "contradiction@1", "refusal@1", "pii_secret_leak@1"]
+}

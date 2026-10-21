@@ -1,0 +1,83 @@
+# ============================================================================
+# TrustAgent - knowledge add-on stack (D131; `make knowledge-up`)
+# ============================================================================
+# The stack the handbook scenario needs (contracts/demo/scenarios.v1.json,
+# knowledge-only-capped): the knowledge base on (Qdrant and the engine with the
+# `knowledge` extra), with every vendor played by mock-upstream and the mock
+# judge, so nothing costs anything. `make knowledge-up` runs, in effect:
+#
+#   COMPOSE_PROFILES=knowledge ENGINE_EXTRAS=knowledge TRUTHTABLE_KNOWLEDGE_ENABLED=true \
+#   TRUTHTABLE_ADMIN_KEYS=knowledge-seed=<a random key> \
+#   docker compose -p truthtable-knowledge -f docker-compose.yml \
+#     -f docker-compose.knowledge.yml --profile knowledge up -d --build --wait proxy engine
+#
+# then `make knowledge-seed` uploads the scenario's documents (trafficgen
+# --seed-knowledge, inside the proxy container, with that admin key) and
+# `make knowledge-scenarios` checks the knowledge set (trafficgen --expect).
+# `make knowledge-down` removes the stack and its volumes.
+#
+# ENGINE_EXTRAS=knowledge tags the engine image <version>-knowledge and builds
+# it with torch (CPU) and sentence-transformers. That image is never published:
+# the knowledge stack always builds it locally (D126). The engine downloads its
+# embedding model on first start, so the first `up` takes several minutes and
+# about 3 GB of disk; ci-knowledge.yml runs it on a GitHub runner.
+#
+# What this overlay changes on top of docker-compose.yml:
+# - the gateway: knowledge on, the policy with the handbook route
+#   (config/policies.knowledge.yaml, generated from policies.yaml and the
+#   handbook route of policies.pending.yaml), test mode for the scripted
+#   answers, sync traces, strict configuration;
+# - the fast check: the `compatible` backend on mock-upstream, as in the e2e
+#   stack; the LLM upstreams on mock-upstream; no vendor key reaches anything;
+# - the engine: the mock judge, no fallback, Qdrant at qdrant:6333;
+# - mock-upstream runs without a profile, and the database publishes no port.
+
+name: truthtable-knowledge
+
+x-knowledge-env: &knowledge-env
+  TRUTHTABLE_TEST_MODE: "true"
+  TRUTHTABLE_STRICT_CONFIG: "true"
+  TRUTHTABLE_KNOWLEDGE_ENABLED: "true"
+
+services:
+  proxy:
+    environment:
+      <<: *knowledge-env
+      TRUTHTABLE_TRACE_FLUSH: sync
+      TRUTHTABLE_POLICY_FILE: /etc/trustagent/policies.knowledge.yaml
+      TRUTHTABLE_JEV_BACKEND: compatible
+      TRUTHTABLE_JEV_BASE_URL: http://mock-upstream:8090
+      TRUTHTABLE_JEV_PATH: /v1/systemone
+      TRUTHTABLE_JEV_MODEL: typesafe/jev-1.13
+      TRUTHTABLE_JEV_API_KEY: e2e-mock-upstream-key
+      TRUTHTABLE_OPENROUTER_BASE_URL: http://mock-upstream:8090
+      TRUTHTABLE_UPSTREAM_URL: http://mock-upstream:8090
+      TRUTHTABLE_ANTHROPIC_UPSTREAM_URL: http://mock-upstream:8090
+      TRUTHTABLE_FALLBACK_UPSTREAM_URL: http://mock-upstream:8090
+      TRAFFICGEN_API_KEY:
+      OPENROUTER_API_KEY: !reset null
+      TYPESAFE_API_KEY: !reset null
+      TRUTHTABLE_UPSTREAM_API_KEY: !reset null
+      TRUTHTABLE_ANTHROPIC_UPSTREAM_API_KEY: !reset null
+      TRUTHTABLE_FALLBACK_UPSTREAM_API_KEY: !reset null
+    depends_on:
+      mock-upstream:
+        condition: service_healthy
+
+  engine:
+    environment:
+      <<: *knowledge-env
+      QDRANT_URL: http://qdrant:6333
+      LLM_PROVIDER: mock
+      LLM_FALLBACK: none
+      OPENROUTER_API_KEY: !reset null
+      ANTHROPIC_API_KEY: !reset null
+      OPENAI_API_KEY: !reset null
+      LANGSMITH_API_KEY: !reset null
+      LANGSMITH_TRACING: "false"
+
+  postgres:
+    ports: !reset []
+
+  mock-upstream:
+    profiles: !reset []

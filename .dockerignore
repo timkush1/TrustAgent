@@ -1,0 +1,22 @@
+# Fallback for builds whose context is the repository root. The three service
+# images use their Dockerfile-specific allow-lists instead
+# (backend-go/Dockerfile.dockerignore, backend-python/..., frontend-react/...),
+# which BuildKit prefers over this file; this list only keeps secrets and bulk
+# out of any other root-context build (or a legacy, non-BuildKit builder).
+
+.git
+**/.env
+**/.env.*
+.trustagent/
+**/node_modules/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/dist/
+**/coverage/
+**/playwright-report/
+**/test-results/
+docs/archive/

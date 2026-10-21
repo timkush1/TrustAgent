@@ -1,0 +1,53 @@
+{
+  "version": "2026-09-27",
+  "currency": "USD",
+  "entries": [
+    {
+      "match": "typesafe/jev-1.13*",
+      "provider": "openrouter",
+      "input_per_mtok": 0.042,
+      "output_per_mtok": 0,
+      "source": "https://openrouter.ai/api/v1/models/typesafe/jev-1.13/endpoints",
+      "label": "vendor_price",
+      "as_of": "2026-09-27",
+      "note": "Jev bills input tokens only; output is free."
+    },
+    {
+      "match": "jev-*",
+      "provider": "typesafe",
+      "input_per_mtok": 0.042,
+      "output_per_mtok": 0,
+      "source": "https://docs.typesafe.ai/models",
+      "label": "vendor_price",
+      "as_of": "2026-09-27",
+      "note": "TypeSafe direct; same price as through OpenRouter."
+    },
+    {
+      "match": "claude-haiku-4-5*",
+      "provider": "anthropic",
+      "input_per_mtok": 1,
+      "output_per_mtok": 5,
+      "source": "https://docs.anthropic.com/en/docs/about-claude/pricing",
+      "label": "vendor_price",
+      "as_of": "2026-06-24",
+      "note": "[A] Anthropic list price as of 2026-06-24, not re-checked since."
+    },
+    {
+      "match": "anthropic/claude-haiku-4.5",
+      "provider": "openrouter",
+      "input_per_mtok": 1,
+      "output_per_mtok": 5,
+      "source": "https://openrouter.ai/anthropic/claude-haiku-4.5",
+      "label": "vendor_price",
+      "as_of": "2026-06-24",
+      "note": "[A] Taken to equal the Anthropic list price as of 2026-06-24, not re-checked on openrouter.ai since."
+    },
+    {
+      "match": "*",
+      "provider": "ollama",
+      "input_per_mtok": 0,
+      "output_per_mtok": 0,
+      "note": "Runs on your machine: no per-token price."
+    }
+  ]
+}

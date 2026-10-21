@@ -1,3 +1,8 @@
+// Package metrics holds the proxy's Prometheus metrics, namespace trustagent_gateway_* (SPEC
+// Appendix B). Audit outcomes (scores, verdicts, claims) are the engine's metrics
+// (trustagent_engine_*); the gateway counts only its own work: audit jobs, the stream and trace
+// writes, and (gateway.go) requests, gate decisions, fallbacks, retention and spend, which their
+// components record.
 package metrics
 
 import (
@@ -5,57 +10,50 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+const namespace = "trustagent_gateway"
+
 var (
-	AuditsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "trustagent_audits_total",
-			Help: "Total number of audits processed",
-		},
-		[]string{"status"},
-	)
+	// AuditJobs counts deep-audit jobs by lane, selection and outcome: completed, degraded,
+	// failed, not_assessed, dropped (not queued) or stopped (abandoned at shutdown).
+	AuditJobs = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace, Name: "audit_jobs_total",
+		Help: "Deep-audit jobs by lane, selection and outcome.",
+	}, []string{"lane", "selection", "outcome"})
 
-	HallucinationsDetected = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "trustagent_hallucinations_detected_total",
-			Help: "Total number of hallucinations detected",
-		},
-	)
+	// AuditQueueDepth is the number of queued deep-audit jobs per lane.
+	AuditQueueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace, Name: "audit_queue_depth",
+		Help: "Queued deep-audit jobs per lane.",
+	}, []string{"lane"})
 
-	AuditDuration = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "trustagent_audit_duration_seconds",
-			Help:    "Audit processing duration in seconds",
-			Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60},
-		},
-	)
+	// AuditRoundtrip is the time from queueing a deep audit to its persisted result.
+	AuditRoundtrip = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: namespace, Name: "audit_roundtrip_seconds",
+		Help:    "Time from queueing a deep audit to its persisted result.",
+		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120},
+	})
 
-	FaithfulnessScore = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "trustagent_faithfulness_score",
-			Help:    "Distribution of faithfulness scores",
-			Buckets: []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0},
-		},
-	)
+	// WSClients is the number of connected WebSocket clients.
+	WSClients = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: namespace, Name: "ws_clients",
+		Help: "Connected WebSocket clients.",
+	})
 
-	ActiveAudits = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "trustagent_active_audits",
-			Help: "Number of currently processing audits",
-		},
-	)
+	// WSDropped counts events a client missed: producer overflow and full client buffers.
+	WSDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace, Name: "ws_dropped_total",
+		Help: "WebSocket events dropped (hub overflow or a slow client).",
+	})
 
-	WebSocketClients = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "trustagent_websocket_clients",
-			Help: "Number of connected WebSocket clients",
-		},
-	)
+	// WSGaps counts gap events sent, by reason.
+	WSGaps = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace, Name: "ws_gaps_total",
+		Help: "WebSocket gap events sent, by reason.",
+	}, []string{"reason"})
 
-	ClaimsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "trustagent_claims_total",
-			Help: "Total claims by verification status",
-		},
-		[]string{"status"},
-	)
+	// TraceWriteDropped counts trace writes that did not reach the database.
+	TraceWriteDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace, Name: "trace_write_dropped_total",
+		Help: "Trace writes (start, decision, body, audit status) that were dropped.",
+	})
 )

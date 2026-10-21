@@ -1,0 +1,822 @@
+{
+  "version": "1",
+  "copy": {
+    "product": {
+      "name": "TrustAgent",
+      "tagline": "Catch hallucinations before your users do.",
+      "subhead": "An open-source gateway that checks every LLM answer against the documents your app already sent, for {claim:fast_check_cost_per_1k} [estimate], and sends only the risky ones to a full LLM audit."
+    },
+    "tiers": {
+      "instant_checks": "Instant checks",
+      "fast_check": "Fast check (Jev)",
+      "deep_audit": "Deep audit"
+    },
+    "value_labels": {
+      "measured": "Measured",
+      "estimate": "Estimate",
+      "third_party": "Third-party",
+      "vendor": "Vendor",
+      "simulated": "Simulated"
+    },
+    "evidence_sources": {
+      "request_system": "System prompt documents",
+      "request_context": "User message (not verified as app-supplied)",
+      "tool_results": "Tool results",
+      "extension": "Attached context (trustagent.context)",
+      "knowledge": "Knowledge base",
+      "none": "No documents"
+    },
+    "banners": {
+      "demo": {
+        "title": "Demo stack",
+        "body": "Mock checks and a mock judge: every number here is simulated, except the published estimates, which say so.",
+        "action": "To use your own keys: {command:demo_to_own_keys}"
+      },
+      "readonly": {
+        "title": "Read-only instance",
+        "body": "You can explore traces and settings, but nothing can be changed here."
+      },
+      "budget_exhausted": {
+        "title": "Today's fast-check budget is used up",
+        "body": "Observe and flag routes skip the fast check for the rest of the day; enforcing routes follow their fail mode.",
+        "action": "Raise the daily cap in Settings → Budgets."
+      },
+      "unauthorized": {
+        "title": "The fast-check key was rejected",
+        "body": "OpenRouter refused the key, so answers pass unchecked.",
+        "action": "Reconnect in Settings → Connections."
+      },
+      "no_credits": {
+        "title": "Your OpenRouter account has no credits",
+        "body": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits"
+      },
+      "breaker_open": {
+        "title": "Fast check paused after repeated errors",
+        "body": "Route {route} enforces decisions; until the fast check recovers it follows its fail mode ({fail}).",
+        "action": "See Settings → Models for the last error."
+      },
+      "llm_exhausted": {
+        "title": "Deep audits paused: today's deep-audit budget is used up",
+        "body": "Fast checks keep running. Deep audits start again tomorrow, or as soon as the budget is raised.",
+        "action": "Raise the deep-audit budget in Settings → Budgets."
+      }
+    },
+    "health": {
+      "pill_ok": "All systems ready",
+      "pill_issues": "{count} issues",
+      "checklist_title": "System health"
+    },
+    "states": {
+      "loading": "Loading…",
+      "retry": "Retry",
+      "error": "Couldn't load this: {message}",
+      "empty_traffic": "No requests yet. Send one with the curl snippet or try the Playground.",
+      "applies_until_restart": "Applies until restart (no database configured)"
+    },
+    "disabled_reasons": {
+      "readonly": "Not available on a read-only instance",
+      "demo": "Not available on the demo stack",
+      "needs_admin": "Needs an admin key",
+      "needs_database": "Needs a database to save",
+      "needs_connection": "Connect OpenRouter first",
+      "env_managed": "Set by an environment variable; change it there",
+      "static": "Not available on the online demo: run TrustAgent yourself to use it"
+    },
+    "setup": {
+      "step_secure": {
+        "title": "Secure this dashboard",
+        "no_token": "Find the setup token in the proxy logs, or print a fresh setup URL:",
+        "paste_token": "Paste the setup token",
+        "save_admin_key": "Copy your admin key now. It is shown only once.",
+        "saved_confirm": "I saved it"
+      },
+      "step_connect": {
+        "title": "Connect OpenRouter",
+        "primary": "Connect OpenRouter",
+        "paste_key": "Paste a key instead",
+        "simulated": "Try it without a key (simulated checks, $0)",
+        "privacy": "Prompts, answers and documents are sent to OpenRouter/TypeSafe for checking; routes can opt out.",
+        "probe_ready": "Ready: the test call took {latency_ms} ms and cost {cost}",
+        "no_credits": "Key works but your OpenRouter account has no credits — add about $5 at openrouter.ai/settings/credits",
+        "prerequisite": "You need an OpenRouter account with about $5 of credit, enough for about 1,600 answers at the default settings.",
+        "prerequisite_basis": "$5 of credit ÷ about $3 per 1,000 answers at the shipped defaults (a fast check on every answer and a deep audit of about 8 in 100), a published estimate.",
+        "prerequisite_link": "Add credits at openrouter.ai/settings/credits",
+        "simulated_note": "Simulated checks use a mock model: results are labelled Simulated and never block an answer. The mock judge knows only the built-in examples, so deep audits of your own answers wait for a real key.",
+        "simulated_on": "Simulated checks are on. Connect a key any time to check answers for real.",
+        "simulated_off": "Simulated checks are now off",
+        "check_again": "I added credits — check again",
+        "no_limit": "This key has no spending limit. Set one at openrouter.ai/settings/keys so a mistake can't run up costs.",
+        "connected": "Connected · fast check {used_for}",
+        "judge_env_managed": "Deep audits keep the judge set in .env (LLM_PROVIDER or a provider key). To run them on this key, remove that line from .env and restart.",
+        "callback_expired": "This sign-in link has expired or was already used. Start Connect OpenRouter again.",
+        "callback_missing": "No sign-in is waiting in this tab. Open the dashboard at {public_url} and connect again.",
+        "callback_working": "Finishing the OpenRouter sign-in…",
+        "exchange_failed": "OpenRouter didn't accept this sign-in. Start Connect OpenRouter again.",
+        "callback_refused": "OpenRouter did not finish the sign-in, so nothing was connected.",
+        "demo_ready": "Nothing to connect: the demo already runs simulated checks. Go on to step 3.",
+        "demo_note": "A mock model plays the fast check and the deep-audit judge, so every result is labelled Simulated and nothing is sent to a vendor. On your own stack, this step connects an OpenRouter key so answers are checked for real."
+      },
+      "step_see_it_work": {
+        "title": "See it work",
+        "body": "Try a refund question whose answer says 60 days while the policy says 30. Your own model is not called, so no model key is needed.",
+        "demo_more": "More examples, including an answer that is blocked and one replaced by a fallback, are in the Playground."
+      },
+      "step_try": {
+        "title": "See it work",
+        "disabled_reason": "Connect a key or turn on simulated checks first.",
+        "ingest_key": "Copy this app key now. Your app sends it as X-TrustAgent-Key. It is shown only once."
+      }
+    },
+    "connect_app": {
+      "title": "Connect your app",
+      "waiting": "Waiting for your first request…",
+      "received": "First request received",
+      "demo_stack": "This is the demo stack: mock checks, $0. To use your own keys: {command:demo_to_own_keys}."
+    },
+    "playground_static": {
+      "consent": [
+        "Your key stays in this browser tab and is sent only to openrouter.ai. It is cleared after 2 hours or when you press Forget key.",
+        "Requires credits on your OpenRouter account; a typical check (about 5,000 tokens of documents) costs about {cost_per_check} [estimate], a short example less; this demo stops after {max_calls} calls to OpenRouter (checks and AI drafts).",
+        "What you type and the example documents are sent to OpenRouter and the model's provider (TypeSafe for checks, Anthropic for drafts).",
+        "Delete the key any time at openrouter.ai/settings/keys."
+      ],
+      "forget_key": "Forget key",
+      "running_cost": "Spent so far: {cost}",
+      "cap_reached": "This demo stops after {max_calls} calls to OpenRouter (checks and AI drafts). Run it yourself for more."
+    },
+    "trace": {
+      "checked_against": "Checked against: {sources}",
+      "checked_against_none": "No documents to check against",
+      "was_this_right": "Was this right?",
+      "correct": "Correct",
+      "false_alarm": "False alarm",
+      "open_evaluator": "Open evaluator",
+      "adjust_threshold": "Adjust threshold",
+      "open_in_studio": "Try its threshold in Studio",
+      "studio_static_note": "Studio opens a copy of this check: test it and try thresholds there, free. Changing the route itself needs your own stack.",
+      "checks": "Checks",
+      "claims": "Claims",
+      "claims_pending": "Deep audit running… usually 5–20 s",
+      "not_checked_no_documents": "Not checked — no documents",
+      "watching": "Watching (not affecting responses)",
+      "claim_not_located": "not located in text",
+      "claims_summary": "{supported} of {total} claims supported · {contradicted} contradicted",
+      "answer_not_sent": "Your model's answer (not sent to the user)",
+      "received_instead": "What the user received instead",
+      "received_fallback": "A fallback answer written from your documents only, then checked again: {result}.",
+      "received_fallback_no_documents": "A fallback answer written without documents (this request carried none), then checked again: {result}.",
+      "received_blocked": "The route's block message, sent in place of your model's answer.",
+      "received_not_stored": "The text sent instead is not stored for this request.",
+      "see_received": "See what the user received instead",
+      "instant_marks": "Marked by the instant checks",
+      "timing_title": "Where the time went",
+      "timing_description": "From the request reaching the proxy to the answer leaving it. The deep audit runs afterwards.",
+      "headers_title": "Response headers",
+      "headers_description": "What your app received, rebuilt from the stored decision the way the gateway sends it.",
+      "headers_action_only": "This route sends only the action (headers: action_only).",
+      "headers_setting_unknown": "Shown with every header: this request's policy version could not be read to check the route's headers setting.",
+      "headers_stream": "A streamed answer carries the decision headers as trailers and a stream comment when the route passes streams straight through.",
+      "headers_late": "The fast check answered after the answer was sent, so these are the headers of the check that timed out, as the trace recorded them.",
+      "flags_title": "Flags",
+      "attempts_title": "Fast check by attempt",
+      "attempt_answer": "Your model's answer",
+      "attempt_fallback": "Fallback check",
+      "raw_decision": "Raw decision (decision/v1)",
+      "late": "Arrived late, not enforced",
+      "late_note": "The fast check answered after the deadline, so its result did not change what was sent.",
+      "flags": {
+        "fallback_used": "Fallback answer delivered",
+        "multi_choice": "Several answers in one response: only the first was checked",
+        "client_disconnected": "The client disconnected before the answer finished",
+        "late_decision": "The fast check answered late: recorded, not enforced",
+        "test_mode": "Test-mode request",
+        "mock_decision": "Simulated fast check (mock)",
+        "mock_judge": "Simulated deep audit (mock judge)",
+        "uniform_sample": "In the uniform deep-audit sample",
+        "body_expired": "Stored text has expired",
+        "text_redacted": "Text redacted before it was stored",
+        "llm_budget": "Deep audit skipped: today's deep-audit budget was used up"
+      },
+      "disagreement": "Fast check passed it; deep audit found {count} contradicted claim(s).",
+      "details": "Details",
+      "show_jev_request": "Show exact Jev request",
+      "jev_request_summary": "{calls} Jev call · {questions} questions · {latency_ms} ms · {cost} · {snapshot}",
+      "recompile_match": "Rebuilt from the stored request: identical",
+      "recompile_mismatch": "Rebuilt from the stored request: different"
+    },
+    "overview": {
+      "hero_chart": "Requests by outcome",
+      "what_was_caught": "What was caught",
+      "evidence_coverage": "Groundedness checked on {rate} of requests",
+      "why_not": "Why not?",
+      "mock_latency_note": "Mock checks answer at once: this is not a real fast check's time.",
+      "hallucination_rate_needs_samples": "Needs {min_n} unbiased samples (have {n})",
+      "audited_share_basis": "among audited answers (selected by risk; not a traffic rate)",
+      "performance": "Performance"
+    },
+    "savings": {
+      "headline": "Your cost: {total_per_1k} per 1,000 answers (fast check {fast_check} + deep audit {deep_audit})",
+      "early_data": "So far: {n} answers checked for {cost}. Asking an LLM the same questions would have cost ≈ {counterfactual}.",
+      "caption": "The fast check triages; deep audits add claim-level explanations.",
+      "calculator_footnote": "The fast check triages; it doesn't replace claim-level audit.",
+      "stopped": "Stopped before users saw them",
+      "flagged": "Flagged to your app",
+      "uniform_paused": "Uniform sampling paused at {time} (daily cap {cap})",
+      "llm_cap_hit": "Deep-audit budget reached at {time}",
+      "not_measured": "not measured"
+    },
+    "policies": {
+      "acting_as": "{mode} → currently acting as {effective_mode}",
+      "preview_impact": "Preview impact (free — replays past answers)",
+      "preset_block_note": "Starts as Flag until calibrated",
+      "buffer_streams": "Buffer streams",
+      "label_more": "Label {n} more responses",
+      "allow_uncalibrated": "Allow uncalibrated blocking",
+      "diverged_file": "policies.yaml changed at {file_time} and replaced your dashboard edit from {edit_time}",
+      "view_diff": "View diff",
+      "restore_edit": "Restore my edit",
+      "adopt_file": "Adopt file",
+      "warnings": {
+        "no_corroborator": "{check} blocks only when another signal agrees ({corroborators}), and none of them can run on this route, so it can flag answers but not block them.",
+        "no_corroborator_fix_documents": "Give the route documents to check against so the instant checks can run.",
+        "no_corroborator_fix_attach": "Attach {corroborators} to the route so it can confirm a block.",
+        "implies_unattached": "{check} is cross-checked against {implied} to catch the two disagreeing, but this route does not run {implied}, so that cross-check never happens.",
+        "fail_closed_not_enforcing": "Blocking an answer when a check cannot finish (fail closed) only matters on Block and Fallback routes; this route is set to {mode}.",
+        "sample_rate_not_observe": "The sample rate only applies to Observe routes; this {mode} route checks every request.",
+        "trusts_user_context": "This route treats text pasted by users as documents; a user could make a false answer look supported.",
+        "client_rules_enforcing": "Client rules are on, so each request can bring its own check rules, and {route} blocks answers: a caller could loosen the rules that decide what it blocks. Turn client rules off, or keep this route from blocking.",
+        "newest_version_invalid": "Policy version {bad_version} no longer passes validation, so version {active_version} stays in effect until a valid version is saved.",
+        "file_diverged": "{path} changed after the newest dashboard edit and is not applied: adopt the file or keep the dashboard version."
+      }
+    },
+    "downgrades": {
+      "stream_not_buffered": "Streams pass straight through, so this route can only flag. Buffer streams to block.",
+      "uncalibrated": "Blocking stays off until every blocking check is calibrated for the current snapshot.",
+      "snapshot_changed": "The fast-check version changed; blocking pauses until its checks are re-calibrated.",
+      "budget": "Today's fast-check budget is used up.",
+      "breaker_open": "The fast check is paused after repeated errors.",
+      "decision_model_off": "The fast check is turned off.",
+      "trusts_user_context": "This route treats text pasted by users as documents; a user could make a false answer look supported."
+    },
+    "evaluators": {
+      "builtin_descriptions": {
+        "commitments": "Flags answers that promise a refund, price, discount, credit or date your allowed commitments don't cover.",
+        "injection_success": "Flags answers that follow instructions hidden in documents or pasted text instead of your system prompt.",
+        "off_brand_tone": "Flags answers whose tone drifts from the brand voice you describe.",
+        "off_topic": "Flags answers that leave the user's subject or your product scope.",
+        "pii_secret_leak": "Flags answers that reveal personal data or secrets the user and your documents never gave.",
+        "regulated_advice": "Flags answers that give personal medical, legal or financial advice.",
+        "unsafe_policy": "Flags answers with harmful content, or that break a rule in your system prompt."
+      },
+      "calibration_progress": "Labels {n}/{needed} ({correct} with the problem, {false_alarms} fine)",
+      "label_queue": "Label queue",
+      "calibrate_now": "Calibrate now",
+      "reliability_caption": "agreement with labels, not ground truth",
+      "adopt_calibration": "Adopt calibration",
+      "benchmarks_empty": "No measured benchmark runs yet. Run {command:bench_lite} to create one.",
+      "calibration_origin": {
+        "file": "From a calibration file",
+        "import": "Imported",
+        "fit": "Fitted from your labels"
+      },
+      "calibration_import_rejected": {
+        "unknown_version": "Skipped: this gateway has no such evaluator version. Create or import that version first.",
+        "calibration_key_mismatch": "Skipped: it was fitted on a different question than this evaluator version asks. Calibrate it again from labels.",
+        "mock_snapshot": "Skipped: calibrations of the simulated decision model apply only to the zero-key demo and the test stacks.",
+        "invalid": "Skipped: this entry doesn't validate, or the file calibrates the same check twice."
+      },
+      "labeler": {
+        "api_key": "an API key",
+        "public": "someone without a key"
+      },
+      "saved_enough": "Saved. Thanks — this check has enough labels to calibrate.",
+      "quality": {
+        "measured": {
+          "label": "Measured",
+          "description": "Fitted on at least 200 human or public-dataset labels (30 of each kind): good enough to block on."
+        },
+        "provisional": {
+          "label": "Provisional",
+          "description": "Fitted on fewer labels than a measured calibration needs: it can flag, not block."
+        },
+        "proxy": {
+          "label": "Proxy",
+          "description": "Uses deep-audit (LLM judge) labels, a weaker signal than your own: it can flag, not block."
+        },
+        "mock": {
+          "label": "Simulated",
+          "description": "Mock thresholds for the demo and test stacks; never used with a real fast check."
+        },
+        "unknown": {
+          "label": "Unknown quality",
+          "description": "The server reported a quality this dashboard does not know."
+        }
+      },
+      "fit_honesty": [
+        "A calibration maps the fast check’s raw score to how often your own labels agreed: it measures agreement with labels, not ground truth.",
+        "Only your own labels (or a public dataset) can make it Measured: at least 200 labels, with 30 answers that have the problem and 30 that are fine. Deep-audit labels make it a Proxy, which can flag but never block.",
+        "Fitting is free and changes nothing on its own: answers keep their current thresholds until you adopt it."
+      ],
+      "critical_null": "There is not enough evidence yet that blocks would be right at least 95% of the time.",
+      "import_rejected_other": "Skipped: the gateway refused this entry.",
+      "calibration_note": "Calibration note: {words}.",
+      "calibration_warning_fallback": "its calibration was fitted under different conditions (it still applies)",
+      "not_enough_labels": "Not enough labels to fit yet: {n} so far ({pos} with the problem, {neg} fine). A fit needs at least {needed_n} labels with {per_class} of each kind. Label more answers in the label queue, then try again.",
+      "mismatch": {
+        "body_truncated": "The stored text was cut to the storage limit, so the recompile sees less than the fast check did.",
+        "policy_missing": "The policy version this request ran under is no longer stored, so the recompile uses another one.",
+        "evaluator_missing": "An evaluator version this request used is no longer in the library.",
+        "unknown": "The recompile differs for a reason this dashboard does not know.",
+        "differs": "The recompile differs from the request that was sent."
+      },
+      "adopt_reasons": {
+        "attach_first": "Attach this check to a route in Policies first.",
+        "no_warn_at": "This calibration recommends no flag threshold, so there is nothing to adopt.",
+        "wait_preview": "Wait for Preview impact to finish: Adopt runs it first.",
+        "preview_failed": "Preview impact failed. Try it again before adopting.",
+        "say_why": "Say what changed and why first.",
+        "escalate_not_below_warn": "This calibration's flag threshold ({warn_at}) is below the deep-audit threshold of route {route} ({escalate_from}), and a route flags only above the point where it starts deep audits. Lower that route's deep-audit threshold in Policies first, or keep the current thresholds."
+      }
+    },
+    "studio": {
+      "describe": "Describe a check in plain English",
+      "test_on_samples": "Test on samples",
+      "dry_run": "Test on past traffic (paid)",
+      "dry_run_result": "Would have fired {fired} times in the last {window} ({rate} of answers, likely between {lo} and {hi}).",
+      "save_and_watch": "Save and watch on route {route}",
+      "make_active": "Make active",
+      "dry_run_confirm": "This test costs about {estimate} ({samples} of {population} past answers). {budget_left} of today's fast-check budget is left.",
+      "dry_run_cancelled": "Test stopped. You're charged only for the checks that already ran ({cost}).",
+      "draft_simulated": "Drafted by the mock model (simulated). Connect a judge for a real draft.",
+      "judge_line": {
+        "mock": "Uses the mock model (simulated)",
+        "model": "Uses {model} ({provider})",
+        "unnamed": "Uses the AI judge ({provider})"
+      },
+      "lint": {
+        "invalid_spec": "Doesn't match the evaluator format",
+        "unresolved_state_reference": "Refers to a field the check doesn't read",
+        "no_id_reference": "Mentions an internal question id",
+        "unknown_risk_weight_option": "Risk weight for an option that doesn't exist",
+        "risk_level_out_of_range": "Risk level past the last answer level",
+        "threshold_order": "Thresholds are out of order",
+        "unknown_evaluator_reference": "Refers to an evaluator that doesn't exist",
+        "unknown_detector": "Refers to an instant check that doesn't exist",
+        "reference_not_attached": "Refers to an evaluator this route doesn't run",
+        "missing_escape_option": "No option for answers with nothing to judge",
+        "non_descriptive_key": "An option's name doesn't say what it means",
+        "double_negative": "Double negative in the instructions",
+        "counting_or_arithmetic": "Asks the model to count or do arithmetic",
+        "near_duplicate_options": "Two options read almost the same",
+        "numeric_only_score_levels": "Score levels described only by a number",
+        "long_instructions": "Instructions over 600 characters",
+        "score_used_for_policy": "A score question used for a policy decision"
+      },
+      "static_export_copy": "Copy JSON",
+      "static_export_download": "Download .json",
+      "static_needs_stack": "On your own stack you can watch it in shadow, test it on past traffic, make it active and calibrate it for blocking. Run it yourself: {command:demo}",
+      "static_draft_needs_key": "Draft with AI calls OpenRouter with your key from this tab. Connect or paste a key first.",
+      "static_samples_source": "Samples from the simulated recording, route {route}",
+      "draft_no_credits": "The judge's provider says the account is out of credits, so nothing was drafted. Add credits, then try again; Connections in Settings shows the key.",
+      "draft_key_refused": "The judge's provider refused its key, so nothing was drafted. Replace the key in Connections in Settings, then try again.",
+      "lint_schema": "Doesn't match the evaluator format",
+      "lint_syntax": "Not valid JSON",
+      "sample_filters": {
+        "flagged": {
+          "label": "Flagged answers",
+          "description": "Answers the fast check flagged or blocked"
+        },
+        "random": {
+          "label": "Random answers",
+          "description": "A random sample of recent answers"
+        },
+        "disagreement": {
+          "label": "Disagreements",
+          "description": "Answers where the fast check and the deep audit disagreed"
+        }
+      },
+      "agreement": {
+        "matches": "Matches your label",
+        "differs": "Doesn't match"
+      },
+      "expected": {
+        "fire": "Should fire",
+        "no_fire": "Shouldn't fire",
+        "none": "Not labelled"
+      },
+      "state_words": {
+        "assistant_response": "your model’s answer",
+        "user_request": "the user’s message",
+        "evidence": "your documents",
+        "system_instructions": "your system prompt",
+        "rules": "the check’s settings"
+      },
+      "no_budget_set": "No daily fast-check budget is set.",
+      "cost_basis": {
+        "reported": "As the provider reported it for this call.",
+        "computed": "Tokens × the price table's price for this model.",
+        "simulated": "A mock model answered; nothing was billed.",
+        "free_local": "A local model: no API fee (compute is not priced)."
+      },
+      "simulated_test": "Simulated: the demo's mock fast check knows only the drafted example's own samples. It answers your own samples and edited questions arbitrarily, so those matches say nothing about your check. Connect a key to test it for real.",
+      "simulated_dry_run": "Simulated: the demo's mock fast check answers questions about past traffic arbitrarily, except that a check about a list of names (such as competitors) fires only on answers that name one, so this count says little about your check. Connect a key to test it for real.",
+      "dry_run_simulated_title": "Test on past traffic (simulated)",
+      "risk_levels": {
+        "both": "Risk words follow this check’s own thresholds: {warn_level} from {warn_at}, {critical_level} from {critical_at}.",
+        "warn_only": "Risk words follow this check’s own thresholds: {warn_level} from {warn_at}; it has no {critical_level} level."
+      }
+    },
+    "recording": {
+      "recorded": "Recorded {date} · {snapshot} + {judge} · {answer_source} answers · replayed, not live",
+      "mock": "Simulated (mock checks + mock judge): not model output",
+      "banner_simulated": "Simulated: the replayed traffic and examples use mock checks and a mock judge. Not model output.",
+      "banner_recorded": "Recorded {date} with {snapshot} and {judge}, replayed in your browser: not live.",
+      "showcase_caveat": "Scripted showcase mix: rates are not representative of real traffic",
+      "nav_hint_caught": "Start here: the answer it caught",
+      "follow_replay": "Follow replay",
+      "no_uniform_sample": "Not in a replay: its audits were picked by risk, and a fair rate needs {min_n} random ones.",
+      "nav_hints": {
+        "recorded": "recorded",
+        "simulated": "simulated",
+        "replay": "replay",
+        "trace": "start here"
+      },
+      "guide": {
+        "title": "A two-minute tour",
+        "step1": "Open the answer it caught.",
+        "step2": "Compare \"60 days\" in the answer with \"30 days\" in the policy the bot was given.",
+        "step3": "Press Show exact Jev request to see what the fast check was asked.",
+        "step4": "Open Savings to see what checking every answer costs.",
+        "dismiss": "Hide the tour"
+      },
+      "glassbox": {
+        "rebuilt_simulated": "Rebuilt in your browser · simulated recording",
+        "matches": "Rebuilt in your browser · matches the recorded request",
+        "differs": "Rebuilt in your browser · differs from the recorded request",
+        "mismatch": {
+          "body_truncated": "The stored text was cut to the storage limit, so the rebuild sees less than the fast check did.",
+          "policy_missing": "The policy this request ran under is not in the recording, so the rebuild uses another one.",
+          "evaluator_missing": "An evaluator version this request used is not in the recording."
+        }
+      }
+    },
+    "limits": [
+      "Jev launched on 2026-09-15 on an alpha endpoint with no published calibration, so thresholds are calibrated locally per version.",
+      "Weak on numbers, dates and negation; instant checks and the deep audit cover them.",
+      "Needs documents for groundedness; otherwise the answer is marked not checked.",
+      "English-first.",
+      "Not a security boundary."
+    ],
+    "settings": {
+      "env_managed": "Set in .env ({keys}); change it there and restart.",
+      "engine_env_managed": "Set in the engine's .env. Check it with {command:doctor}.",
+      "credential_remove_impact": "Removing {name} also disconnects it from {used_for}.",
+      "credential_undecryptable": "This saved key can't be read with the current master key. Paste it again, or restore the old TRUTHTABLE_SECRET_KEY.",
+      "store_unavailable": "Keys can't be saved here yet. Set TRUTHTABLE_SECRET_KEY (or let TrustAgent generate one) and restart.",
+      "no_database": "Keys can't be saved without a database. Keys set in .env still work.",
+      "master_key_changed": "The master key changed, so {names} can't be read. Paste those keys again, or restore the previous TRUTHTABLE_SECRET_KEY.",
+      "fail_closed_confirm": "These routes fail closed and would block every answer without a fast check: {routes}. Continue anyway?",
+      "last_admin_key": "This is the last admin key. Create another admin key first, or you'll lose access to Settings.",
+      "current_session_key": "You're signed in with this key. Revoking it signs you out.",
+      "reenter_secret": "The address changed, so paste the {names} key again to send it there.",
+      "secret_once": "Copy this key now. It is shown only once.",
+      "sign_out_everywhere": "Sign out everywhere",
+      "sign_out_everywhere_confirm": "Every dashboard session, including this one, will need to sign in again.",
+      "stale_version": "Settings changed in another tab. Reload to see the latest, then try again.",
+      "prices_override_note": "Your prices override the built-in table for cost estimates only; providers bill what they bill.",
+      "price_invalid_entry": "Check this price: {message}",
+      "price_zero_not_local": "$0 is only allowed for local models. {provider} bills its calls.",
+      "price_duplicate_override": "Price {n} already covers this model, so this one would never apply.",
+      "price_far_above_contracts": "This is {ratio}× the built-in price of ${contracts_per_mtok} per million tokens. Check the units: USD per million tokens.",
+      "unknown_setting": "This isn't a setting that can be changed here.",
+      "invalid_type": "This value has the wrong type for this setting.",
+      "invalid_value": "This value isn't allowed here.",
+      "binding_mismatch": "The default upstream's key and its binding must name the same key. Set one of them, or set both to the same key.",
+      "unknown_credential": "There is no key with this name.",
+      "credential_kind": "The {names} key can't be used for this.",
+      "credential_missing": "No {names} key is saved. Add it under Connections first.",
+      "backend_pinned": "The fast-check backend is set in .env (TRUTHTABLE_JEV_BACKEND) and doesn't use the {names} key. Change it there and restart.",
+      "origin_not_allowed": "The {names} key can't be sent to this address.",
+      "fallback_key_required": "The fallback upstream at {host} is on another host, so it needs its own key. Save an upstream-fallback key first.",
+      "invalid_url": "Enter a full address that starts with https://.",
+      "url_credentials": "Take the user name and password out of the address. Save the key under Connections instead.",
+      "insecure_url": "Use an https:// address. Plain http:// is allowed only for localhost and single-word service names such as ollama.",
+      "forbidden_target": "This address points at a link-local or cloud-metadata target, which never receives a key.",
+      "verify_hint": {
+        "not_checked": "Not checked: nothing was sent to the provider. Upstream keys are saved without a check.",
+        "probe_skipped": "OpenRouter accepted the key, but TrustAgent's own budget or rate limit held the test request back, so the credits aren't confirmed yet. Check again later.",
+        "not_found": "The provider doesn't serve the configured model. Check the model in Settings → Models.",
+        "bad_request": "The provider refused the test request. Check the model and the address in Settings → Models.",
+        "data_policy": "Your OpenRouter privacy settings rule out every provider for this model. Allow one at openrouter.ai/settings/privacy, or unset TRUTHTABLE_JEV_ZDR.",
+        "too_large": "The test request was too large for this model.",
+        "timeout": "The provider didn't answer in time. Try again in a minute.",
+        "retryable": "The provider couldn't be reached or had a temporary error. Try again in a minute.",
+        "rate_limited": "TrustAgent's own rate limit held the test request back. Try again in a minute.",
+        "overload": "TrustAgent is busy with other checks, so the test request wasn't sent. Try again in a minute.",
+        "budget": "Today's fast-check budget is used up, so the test request wasn't sent. Raise it in Settings → Budgets.",
+        "breaker_open": "The fast check is paused after repeated errors, so the test request wasn't sent. Try again in a minute.",
+        "off": "The fast check is off, so the key wasn't tested.",
+        "credentials_unavailable": "This key may not be sent to the provider's address, so nothing was sent.",
+        "bad_content_type": "The address answered with a web page instead of the API. Check the address in Settings → Models.",
+        "bad_response": "The provider's answer couldn't be read. Try again, or check the model in Settings → Models."
+      },
+      "budgets": {
+        "decision": {
+          "title": "Fast-check budget",
+          "description": "Daily cap on Jev calls. Observe and flag routes stop being checked once their share is spent; routes that block or fall back keep the reserve, then follow their fail mode."
+        },
+        "llm": {
+          "title": "Deep-audit budget",
+          "description": "Daily cap on the LLM judge. Past it, deep audits pause until midnight UTC; fast checks keep running."
+        }
+      }
+    },
+    "labels": {
+      "title": "Label queue",
+      "intro": "Should the check flag each answer? Your answers calibrate it so it can block safely.",
+      "empty": "Nothing to label right now. New answers near the flag line show up here.",
+      "keys_hint": "Y yes · N no · S skip",
+      "yes_no_hint": "Yes: the answer has the problem this check looks for, so it should be flagged. No: it is fine, so it should not be.",
+      "correct": "Correct",
+      "false_alarm": "False alarm",
+      "yes": "Yes, it has the problem",
+      "no": "No, it is fine",
+      "skip": "Skip",
+      "was_this_right": "Was this right?",
+      "saved": "Saved. Thanks — {n} more and this check can be calibrated.",
+      "body_expired": "This answer's text has expired, so it can't be labelled."
+    },
+    "badges": {
+      "simulated_checks": "Simulated checks",
+      "simulated_checks_hint": "The fast check uses a mock model: results are labelled Simulated and never block."
+    },
+    "playground_live": {
+      "connect": "Connect OpenRouter",
+      "paste_key": "Paste a key instead",
+      "key_invalid": "That doesn't look like an OpenRouter key: keys start with sk-or-.",
+      "key_no_limit": "This key has no credit limit. For a demo, create a key with a small limit at openrouter.ai/settings/keys.",
+      "storage_blocked": "This browser blocks storage for this page, so the key lives only until you leave it, and Connect is off (it needs to remember the sign-in). Paste a key instead.",
+      "token_cap": "This check is larger than this demo's limit of {max_tokens} tokens per call. Shorten the documents or the answer.",
+      "frame_blocked": "For your key's safety, live checks work only when this page is open in its own tab.",
+      "open_in_tab": "Open in its own tab",
+      "live_label": "Live · {snapshot} · uncalibrated · your key",
+      "live_unavailable": "Live checks from the browser aren't available here. Run it yourself: {command:demo}",
+      "browser_blocked": "Your browser blocked the request to openrouter.ai (an extension, a privacy setting or the network). Nothing was billed.",
+      "run_check": "Run the check live",
+      "checks_used": "{n} of {max} calls to OpenRouter (checks and AI drafts)",
+      "retry_busy": "OpenRouter is busy right now. Wait a moment, then retry.",
+      "rejected_pause": "OpenRouter keeps refusing these requests, so live checks are paused. Retry, or forget the key.",
+      "forget_note": "This removes it from this tab; delete it at openrouter.ai/settings/keys",
+      "worst_case": "At most ≈ {max_spend} with these caps [estimate]",
+      "check_again": "Check again",
+      "deep_audit_not_in_browser": "The deep audit (claim by claim, by an LLM judge) does not run in the browser. Run it yourself to see it: {command:demo}",
+      "recording_is_simulated": "The examples above replay a simulated recording; a live check is a real call with your key.",
+      "callback": {
+        "working": "Connecting your OpenRouter key…",
+        "missing_verifier": "This sign-in did not start in this tab, so it cannot finish here. Start again with Connect, or paste a key instead.",
+        "expired": "The sign-in took longer than 10 minutes and expired. Start again with Connect, or paste a key instead.",
+        "refused": "OpenRouter did not hand over a key. Start again with Connect, or paste a key instead.",
+        "network": "Could not reach openrouter.ai to finish connecting. Check your connection and start again, or paste a key instead.",
+        "framed": "For your key's safety, connecting works only when this page is open in its own tab.",
+        "already_connected": "Your OpenRouter key is already connected in this tab."
+      },
+      "errors": {
+        "unauthorized": "OpenRouter refused this key, so it was forgotten. Paste a new key.",
+        "no_credits": "Your OpenRouter account is out of credits. Add credits at openrouter.ai/settings/credits, then retry.",
+        "credits_inflight": "This key has reached the credit it may spend at once. Wait a moment, then retry.",
+        "data_policy": "Your OpenRouter privacy settings exclude the only provider of this model. Allow it at openrouter.ai/settings/privacy, then retry.",
+        "rate_limited": "OpenRouter is limiting how fast this key can call. Wait a moment, then retry.",
+        "too_large": "This request is too large for the model. Shorten the documents or the answer.",
+        "moderation": "The provider's moderation flagged this text. Your key is fine; try different text.",
+        "bad_response": "OpenRouter sent an answer this page could not read. Retry.",
+        "bad_request": "OpenRouter refused this request, so the check did not run. Your key is fine; try different text.",
+        "not_found": "OpenRouter could not find the model or service this check uses, so the check did not run. Your key is fine.",
+        "network": "Could not reach openrouter.ai. Check your connection; if it keeps failing, your browser may be blocking the request.",
+        "timeout": "OpenRouter did not answer in time. Retry."
+      },
+      "actions": {
+        "paste_new_key": "Paste a new key",
+        "retry": "Retry",
+        "open_credits": "Add credits",
+        "open_privacy": "Open privacy settings",
+        "forget_key": "Forget key"
+      }
+    },
+    "launch": {
+      "og": {
+        "title": "TrustAgent",
+        "tagline": "Catch hallucinations before your users do.",
+        "caught": "Caught: {reason}",
+        "checked_against": "Checked against {sources}",
+        "footer": "Open source · self-hosted · github.com/timkush1/TrustAgent",
+        "simulated": "Simulated"
+      }
+    },
+    "compare": {
+      "not_verified": "Not yet verified"
+    },
+    "costs": {
+      "counterfactuals": {
+        "llm_same_checks": {
+          "label": "An LLM asking the same questions",
+          "description": "The fast check’s questions sent to an LLM judge instead of Jev."
+        },
+        "llm_full_claim_audit": {
+          "label": "An LLM auditing every answer claim by claim",
+          "description": "A deep audit of every answer, not only the risky ones."
+        }
+      },
+      "methods": {
+        "token_model": "Token model: your fast-check tokens priced at the judge’s rate",
+        "uniform_sample": "Mean cost of uniformly sampled deep audits × answers",
+        "fitted_from_audits": "Fitted from your deep audits by answer length",
+        "static_assumptions": "Published assumptions"
+      },
+      "selections": {
+        "high": "high risk",
+        "sample": "pass sample",
+        "error_sample": "sampled after a failed check",
+        "uniform": "uniform sample",
+        "direct": "sent directly",
+        "playground": "from the Playground",
+        "studio": "from Studio"
+      },
+      "price_sources": {
+        "override": "Your price",
+        "vendor_price": "Vendor list price",
+        "assumed": "Assumed price"
+      },
+      "price_providers": {
+        "openrouter": "OpenRouter",
+        "typesafe": "TypeSafe",
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "ollama": "Ollama (on your machine)",
+        "mock": "Mock (simulated)"
+      }
+    },
+    "security": {
+      "credential_labels": {
+        "upstream_default": "Upstream key (your model)",
+        "upstream_anthropic": "Upstream key (Anthropic route)",
+        "upstream_fallback": "Upstream key (fallback)",
+        "compatible": "Other gateway"
+      },
+      "verify": {
+        "ok": "Working",
+        "unauthorized": {
+          "label": "Key rejected",
+          "hint": "The provider refused this key. Paste a new one, or connect again."
+        },
+        "no_credits": "No credits",
+        "unreachable": {
+          "label": "Couldn't reach the provider",
+          "hint": "The provider did not answer. Try the test again in a minute."
+        },
+        "unknown": {
+          "label": "Not checked",
+          "hint": "This kind of key is not checked with its provider; it is used as is."
+        },
+        "never_tested": "Not tested yet"
+      },
+      "used_by": {
+        "judge": "{deep_audit} judge",
+        "upstream_default": "Your model (upstream)",
+        "upstream_anthropic": "Anthropic route (upstream)",
+        "upstream_fallback": "Fallback answers (upstream)"
+      },
+      "skip_reasons": {
+        "env_managed": "The {target} is set by the environment, so it was left as it is.",
+        "backend_pinned": "The {target} backend is pinned in .env to one that does not use this key, so it was left as it is.",
+        "verification_failed": "Not used for the {target} yet: the key check did not pass.",
+        "other": "The {target} was left as it is."
+      },
+      "store": {
+        "ready": "Saved keys are encrypted",
+        "unavailable": "Keys can't be saved yet",
+        "no_database": "Keys can't be saved without a database"
+      },
+      "backend_cards": {
+        "openrouter": {
+          "title": "OpenRouter",
+          "description": "One OpenRouter key runs the fast check and the deep-audit judge. No TypeSafe account needed."
+        },
+        "typesafe": {
+          "title": "TypeSafe direct",
+          "description": "Calls TypeSafe AI with a console.typesafe.ai key."
+        },
+        "compatible": {
+          "title": "Other gateway",
+          "description": "Any OpenAI-compatible gateway that serves the model, with its own base URL and key."
+        }
+      },
+      "backend_settings": {
+        "auto": "Automatic (from the connected key)",
+        "openrouter": "OpenRouter",
+        "openrouter_alternate": "OpenRouter (alternate decisions route)",
+        "typesafe": "TypeSafe direct",
+        "compatible": "Other gateway",
+        "mock": "Simulated (mock)",
+        "off": "Off"
+      },
+      "judge_providers": {
+        "auto": "Automatic (from the connected key)",
+        "openrouter": "OpenRouter",
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "ollama": "Ollama (local)",
+        "mock": "Simulated (mock)",
+        "none": "No judge"
+      },
+      "decision_states": {
+        "ready": "Ready",
+        "mock": "Simulated checks",
+        "checking": "Checking the connection…",
+        "off": "Off: answers pass unchecked",
+        "degraded": "Degraded",
+        "breaker_open": "Paused after repeated errors",
+        "unauthorized": "Key rejected",
+        "no_credits": "No OpenRouter credits",
+        "budget_exhausted": "Today's budget is used up",
+        "misconfigured": "Misconfigured",
+        "unreachable": "Unreachable"
+      },
+      "component_states": {
+        "up": "Ready",
+        "degraded": "Degraded",
+        "down": "Down",
+        "disabled": "Off",
+        "unknown": "Unknown"
+      },
+      "scopes": {
+        "ingest": {
+          "label": "Send requests",
+          "description": "Apps send their traffic through the gateway with it."
+        },
+        "read": {
+          "label": "Read the dashboard",
+          "description": "Sees traces, statuses and settings, without prompts and answers."
+        },
+        "content": {
+          "label": "See prompts and answers",
+          "description": "Can see prompts and answers in traces and exports."
+        },
+        "admin": {
+          "label": "Admin",
+          "description": "Changes settings, keys and policies."
+        }
+      },
+      "audit_actions": {
+        "setup_claim": "Claimed the setup link",
+        "setup_token_mint": "Printed a new setup link",
+        "session_sign_in": "Signed in",
+        "session_revoke_all": "Signed out everywhere",
+        "api_key_create": "Created an API key",
+        "api_key_revoke": "Revoked an API key",
+        "settings_update": "Changed settings",
+        "credential_put": "Saved a key",
+        "credential_rotate": "Replaced a key",
+        "credential_delete": "Removed a key",
+        "credential_verify": "Tested a key",
+        "credential_connect_openrouter": "Connected OpenRouter",
+        "evaluator_create": "Created an evaluator",
+        "evaluator_version": "Saved an evaluator version",
+        "evaluator_archive": "Archived an evaluator",
+        "calibration_import": "Imported a calibration",
+        "calibration_fit": "Fitted a calibration",
+        "calibration_activate": "Adopted a calibration",
+        "calibration_deactivate": "Turned a calibration off",
+        "studio_dry_run": "Ran a Studio dry run",
+        "kb_upload": "Uploaded knowledge documents",
+        "export_replay": "Exported a replay recording"
+      },
+      "settings_groups": {
+        "judge": "{deep_audit} judge",
+        "upstream": "Upstreams",
+        "bindings": "Which key runs which check",
+        "budgets": "Daily budgets",
+        "pricing_overrides": "Prices"
+      },
+      "audit_summary": {
+        "sessions_ended": "Every dashboard session ended",
+        "recovery_link": "Recovery link (an admin already existed)",
+        "first_run_link": "First-run link",
+        "now_used_for": "now used for {targets}",
+        "for_targets": "for {targets}",
+        "was_used_for": "was used for {targets}",
+        "not_in_use": "was not in use",
+        "after_key_removed": "after a key was removed"
+      },
+      "warnings": {
+        "some_saved_keys": "some saved keys",
+        "fail_closed_routes": "These routes fail closed and have no working fast check, so they block every answer: {routes}.",
+        "fail_closed_some": "Some routes fail closed and have no working fast check, so they block every answer."
+      },
+      "probe_ready": {
+        "took": "Ready: the test call took {latency_ms} ms",
+        "cost": "Ready: the test call cost {cost}",
+        "ready": "Ready"
+      }
+    }
+  }
+}

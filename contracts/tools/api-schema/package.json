@@ -1,0 +1,18 @@
+{
+  "name": "@trustagent/api-schema-tool",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Generates contracts/schema/api.v1.schema.json from frontend-react/src/types/api.ts (ts-json-schema-generator, pruned to the API roots, draft-07 to 2020-12).",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "generate": "node gen-api-schema.mjs",
+    "check": "node gen-api-schema.mjs --check"
+  },
+  "devDependencies": {
+    "ts-json-schema-generator": "2.9.0"
+  }
+}

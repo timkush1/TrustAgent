@@ -1,0 +1,19 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "numbers-decimal-trailing-zero-normalization",
+  "status": "frozen",
+  "description": "Normalization strips \",\" and \"%\" and then only an all-zero fraction: 12.0 becomes 12, which the evidence has, but 4.50 keeps its fraction and is not 4.5 (numbers compare as normalized text, not as values). 4.50 has a fraction, so the small-integer skip never applies to it: fires on 4.50.",
+  "input": {
+    "detector": "numbers_not_in_evidence",
+    "response": "Storage costs $4.50 per GB after the first 12.0 GB.",
+    "evidence": [
+      {"id": "storage", "source": "request_system", "text": "Storage is $4.5 per GB beyond 12 GB."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "4.50", "start": 15, "end": 19}]},
+  "tolerance": 1e-9
+}

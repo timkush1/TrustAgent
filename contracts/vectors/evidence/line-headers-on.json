@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "line-headers-on",
+  "status": "frozen",
+  "description": "Untagged prompt with evidence.line_headers true: the \"Context:\" line starts a block that ends before the \"Question:\" line. The block text (header line excluded) is a request_system item. The whole block span, header line included, is removed from system_instructions; the first line and the \"Question:\" line stay.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "request_context", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a travel assistant.\nContext:\nCheck-in opens 24 hours before departure.\nBags up to 23 kg are free.\nQuestion: answer the user using only the context above."
+        },
+        {"role": "user", "content": "Is my bag free?"}
+      ]
+    }
+  },
+  "expected": {
+    "items": [
+      {
+        "id": "sys1",
+        "source": "request_system",
+        "text": "Check-in opens 24 hours before departure.\nBags up to 23 kg are free."
+      }
+    ],
+    "system_instructions": "You are a travel assistant.\nQuestion: answer the user using only the context above."
+  },
+  "tolerance": 1e-9
+}

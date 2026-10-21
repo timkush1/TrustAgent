@@ -1,0 +1,329 @@
+name: Release images
+
+# The published images (D125): ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}, each for
+# linux/amd64 and linux/arm64 (QEMU; the Go and dashboard builds cross-compile on the runner's own
+# platform, only the engine image's install steps run emulated).
+#
+#   plan            reads VERSION, checks a release tag against it (check_version.py --tag) and
+#                   decides whether this run pushes: only from timkush1/TrustAgent, only from main
+#                   or a v*.*.* tag, and only on a push or a dispatch that asks for it (input push).
+#   images          one job per service. Tags: edge (main), the semver tags of a release
+#                   (X.Y.Z, X.Y, latest), sha-<short> (every pushed build). BuildKit provenance
+#                   (mode=max) and an SBOM; actions/attest-build-provenance on each pushed digest.
+#                   A tag build starts clean (no cache, base images pulled again).
+#   release-notes   on a release tag: each digest and the command that verifies its attestation,
+#                   for the GitHub release (job summary and an artifact).
+#   first-run       on every push: the pulled images, a fresh stack, the first flagged trace
+#                   (make first-run with FIRST_RUN_TAG=sha-<short>; tmp/first-run.json uploaded).
+#   anonymous-pull  once the owner made the packages public (repository variable GHCR_PUBLIC =
+#                   'true'): every image pulls without credentials, for both platforms.
+#
+# A pull request that touches a Dockerfile, its ignore file, this workflow or a lockfile builds
+# both platforms and pushes nothing; a dispatch builds and pushes only when asked (push: true).
+# The required check "Docker builds" stays in ci-docker.yml (amd64, every pull request).
+#
+# Timeouts: 60 minutes, 90 on a tag (no cache). If the emulated engine build alone ever needs more
+# than 30 minutes, it moves to a native arm64 runner, and that change is recorded here.
+#
+# Hardening (D140): actions pinned to commit SHAs, no persisted git credentials, permissions per
+# job (none at the top; attestations and id-token on the image job only), no pull_request_target,
+# no expressions inside run: (they go through env:), no secrets in build-args.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    paths:
+      - '**/Dockerfile'
+      - '**/Dockerfile.dockerignore'
+      - .github/workflows/release-images.yml
+      - backend-go/go.sum
+      - backend-python/poetry.lock
+      - frontend-react/package-lock.json
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push the images to GHCR (main or a v*.*.* tag only); false builds them without pushing
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    name: Release plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      push: ${{ steps.plan.outputs.push }}
+      version: ${{ steps.plan.outputs.version }}
+      git_sha: ${{ steps.plan.outputs.git_sha }}
+      sha_tag: ${{ steps.plan.outputs.sha_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # A release tag must name VERSION, and CHANGELOG.md must hold its released heading.
+      - name: Check the release tag (check_version.py --tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/check_version.py --tag "$RELEASE_TAG"
+
+      - name: Plan
+        id: plan
+        env:
+          PUSH: >-
+            ${{ github.repository == 'timkush1/TrustAgent'
+            && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push))
+            && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        run: |
+          version="$(cat VERSION)"
+          # sha-<first 7 characters>: the tag docker/metadata-action writes (type=sha, short).
+          sha_tag="sha-${GITHUB_SHA::7}"
+          {
+            echo "push=$PUSH"
+            echo "version=$version"
+            echo "git_sha=$(git rev-parse --short HEAD)"
+            echo "sha_tag=$sha_tag"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version $version, push $PUSH, commit tag $sha_tag" >> "$GITHUB_STEP_SUMMARY"
+
+  images:
+    name: Release image (${{ matrix.service }})
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ startsWith(github.ref, 'refs/tags/v') && 90 || 60 }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: proxy
+            dockerfile: backend-go/Dockerfile
+          - service: engine
+            dockerfile: backend-python/Dockerfile
+          - service: dashboard
+            dockerfile: frontend-react/Dockerfile
+    env:
+      IMAGE: ghcr.io/timkush1/truthtable-${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        if: needs.plan.outputs.push == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=auto
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+
+      # GIT_SHA labels the image (org.opencontainers.image.revision) and stamps the proxy's
+      # /api/status build_sha; doctor compares the two.
+      - name: Build (and push)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ needs.plan.outputs.version }}
+            GIT_SHA=${{ needs.plan.outputs.git_sha }}
+          push: ${{ needs.plan.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: mode=max
+          sbom: true
+          no-cache: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          pull: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          cache-from: ${{ !startsWith(github.ref, 'refs/tags/v') && format('type=gha,scope=release-{0}', matrix.service) || '' }}
+          cache-to: ${{ !startsWith(github.ref, 'refs/tags/v') && format('type=gha,scope=release-{0},mode=max', matrix.service) || '' }}
+
+      - name: Attest build provenance
+        if: needs.plan.outputs.push == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record the digest
+        if: needs.plan.outputs.push == 'true'
+        env:
+          SERVICE: ${{ matrix.service }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          SHA_TAG: ${{ needs.plan.outputs.sha_tag }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          mkdir -p release-notes
+          if [ "$REF_TYPE" = tag ]; then tag="$VERSION"; else tag="$SHA_TAG"; fi
+          line="| \`$SERVICE\` | \`$IMAGE:$tag\` | \`$DIGEST\` | \`gh attestation verify oci://$IMAGE:$tag -R timkush1/TrustAgent\` |"
+          printf '%s\n' "$line" > "release-notes/$SERVICE.md"
+          printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the digest
+        if: needs.plan.outputs.push == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes-${{ matrix.service }}
+          path: release-notes/${{ matrix.service }}.md
+          retention-days: 90
+
+  release-notes:
+    name: Release notes (image digests)
+    needs: [plan, images]
+    if: needs.plan.outputs.push == 'true' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-notes-*
+          path: release-notes
+          merge-multiple: true
+
+      - name: Compose the release notes
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          {
+            echo "## Images"
+            echo
+            echo "Each image is built for linux/amd64 and linux/arm64, with an SBOM and a build provenance attestation."
+            echo
+            echo "| Service | Image | Digest | Verify |"
+            echo "|---|---|---|---|"
+            for svc in proxy engine dashboard; do cat "release-notes/$svc.md"; done
+            echo
+            echo "Run the stack of this release: check out the tag \`v$VERSION\` and run \`make up\` (or \`make demo\`); a release checkout pulls these images instead of building them."
+          } > release-notes-images.md
+          cat release-notes-images.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes-images
+          path: release-notes-images.md
+          retention-days: 90
+
+  first-run:
+    name: First run (pulled images)
+    needs: [plan, images]
+    if: needs.plan.outputs.push == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      FIRST_RUN_TAG: ${{ needs.plan.outputs.sha_tag }}
+      # The stack stays up after the run so a failure's logs can be collected; the last step
+      # removes it.
+      FIRST_RUN_KEEP: '1'
+      NO_COLOR: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # The packages may still be private: pull them as this workflow.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install dashboard dependencies
+        working-directory: frontend-react
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: frontend-react
+        run: npx playwright install --with-deps chromium
+
+      # A fresh stack from the pulled sha-<short> images (no build), timed from before `up` to
+      # the first flagged trace; first-run.json holds the timings, labelled measured (CI runner,
+      # images pulled).
+      - name: make first-run (pulled images)
+        run: make first-run
+
+      # Setup tokens are masked in the logs (first-run-logs).
+      - name: Collect logs
+        if: failure()
+        run: |
+          mkdir -p first-run-artifacts
+          make -s first-run-logs > first-run-artifacts/compose.log 2>&1 || true
+
+      - name: Upload first-run.json and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: first-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/first-run.json
+            first-run-artifacts/
+            frontend-react/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Tear down
+        if: always()
+        run: make first-run-down
+
+  anonymous-pull:
+    name: Anonymous pull (public images)
+    needs: [plan, images]
+    if: needs.plan.outputs.push == 'true' && vars.GHCR_PUBLIC == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      TAG: ${{ needs.plan.outputs.sha_tag }}
+    steps:
+      - name: Pull every image without credentials (both platforms)
+        run: |
+          docker logout ghcr.io || true
+          for svc in proxy engine dashboard; do
+            for platform in linux/amd64 linux/arm64; do
+              docker pull --quiet --platform "$platform" "ghcr.io/timkush1/truthtable-$svc:$TAG"
+            done
+          done
+          echo "Every image pulls anonymously ($TAG, linux/amd64 and linux/arm64)" >> "$GITHUB_STEP_SUMMARY"

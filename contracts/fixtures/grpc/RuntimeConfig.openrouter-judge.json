@@ -1,0 +1,17 @@
+{
+  "version": "7",
+  "epoch": "0192f3a0-7c1e-7b2a-9d11-5b6c0e7f8a90",
+  "credentials": {
+    "openrouter": {
+      "provider": "openrouter",
+      "secret": "sk-or-v1-fixture-0000000000000000000000000000000000000000000000000000000000000000",
+      "fingerprint": "fp_3f2a9c1d0b7e",
+      "allowed_hosts": ["https://openrouter.ai"]
+    }
+  },
+  "judge": {
+    "provider": "openrouter",
+    "model": "anthropic/claude-haiku-4.5",
+    "credential": "openrouter"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-month-name-not-in-evidence",
+  "status": "frozen",
+  "description": "\"March 15, 2026\" (Month d, yyyy) normalizes to 2026-03-15. The evidence has the ISO dates 2026-03-10 and 2026-03-12 only: unknown, fires.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "Your order ships on March 15, 2026.",
+    "evidence": [
+      {
+        "id": "shipping",
+        "source": "request_system",
+        "text": "Orders placed before 2026-03-10 ship on 2026-03-12."
+      }
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {"ran": true, "fired": true, "findings": [{"text": "March 15, 2026", "start": 20, "end": 34}]},
+  "tolerance": 1e-9
+}

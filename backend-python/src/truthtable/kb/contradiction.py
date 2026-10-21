@@ -12,6 +12,7 @@ import logging
 from typing import Any, Dict, List
 
 from ..providers.base import CompletionRequest, LLMProvider
+from ..providers.costs import KB_INGEST, complete_recorded
 from ..security import parse_json_strict, sanitize_text
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ async def check_contradiction(claim_a: str, claim_b: str, provider: LLMProvider)
     )
 
     try:
-        response = await provider.complete(request)
+        response = await complete_recorded(provider, request, KB_INGEST)
     except Exception as e:
         logger.error(f"Contradiction check failed: {e}")
         return 0.0
@@ -108,13 +109,13 @@ class ContradictionDetector:
         Args:
             claim_text: The newly accepted claim.
             claim_vector: Its embedding (reused from ingestion).
-            qdrant_store: Store with `search_filtered`.
+            qdrant_store: Store with `asearch_filtered`.
             exclude_ids: Claim ids to skip (e.g. siblings from the same doc).
 
         Returns:
             List of {"claim_id", "claim", "confidence"} for detected conflicts.
         """
-        candidates = qdrant_store.search_filtered(
+        candidates = await qdrant_store.asearch_filtered(
             query_vector=claim_vector,
             top_k=self.top_k,
             score_threshold=self.similarity_threshold,

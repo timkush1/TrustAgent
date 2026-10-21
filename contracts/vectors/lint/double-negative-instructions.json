@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "double-negative-instructions",
+  "status": "frozen",
+  "description": "The instructions match \\bnot\\b.*\\b(no|not|never|without)\\b (\"not ... without\"): double_negative. Criteria text is not checked by this lint.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "noul",
+        "instructions": "Is it true that `assistant_response` does not answer without adding a warning?",
+        "criteria": {
+          "true": "`assistant_response` always adds a warning before it answers",
+          "false": "`assistant_response` answers directly"
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": [], "lints": ["double_negative"]},
+  "tolerance": 1e-9
+}

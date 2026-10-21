@@ -1,0 +1,17 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "dates-known-from-user-request-and-rules-only",
+  "status": "frozen",
+  "description": "No evidence, but rules are non-empty, so the date detector runs. 2026-05-02 is known from user_request (\"May 2, 2026\") and \"Dec. 31, 2026\" (abbreviated month with a dot) from the rules value: does not fire.",
+  "input": {
+    "detector": "dates_not_in_evidence",
+    "response": "Since you ordered on 2026-05-02, you can return it until Dec. 31, 2026.",
+    "evidence": [],
+    "user_request": "I ordered on May 2, 2026. Can I still return it?",
+    "system_instructions": "",
+    "rules": {"allowed_commitments": "Holiday returns are accepted until 2026-12-31."}
+  },
+  "expected": {"ran": true, "fired": false, "findings": []},
+  "tolerance": 1e-9
+}

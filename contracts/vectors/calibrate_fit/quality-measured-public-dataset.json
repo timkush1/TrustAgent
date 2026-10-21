@@ -1,0 +1,16 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "quality-measured-public-dataset",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@4838e42e858b",
+  "description": "Public-dataset labels only, n = 200 with 170 positives and 30 negatives: exactly at the measured minimums (n >= 200, >= 30 of each class).",
+  "input": {
+    "op": "quality",
+    "snapshot": "typesafe/jev-1.13-20260917",
+    "label_source": {"human": 0, "public_dataset": 200, "uniform_audit": 0},
+    "n_pos": 170,
+    "n_neg": 30
+  },
+  "expected": {"quality": "measured"}
+}

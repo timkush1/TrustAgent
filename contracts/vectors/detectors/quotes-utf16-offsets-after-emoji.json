@@ -1,0 +1,23 @@
+{
+  "vector": "1",
+  "kind": "detectors",
+  "name": "quotes-utf16-offsets-after-emoji",
+  "status": "frozen",
+  "description": "The quote normalizes to \"your refund was approved today\" (trailing \"!\" stripped), which the evidence does not contain: fires. The finding is the raw text between the quote marks, with offsets in UTF-16 code units after the two-unit emoji.",
+  "input": {
+    "detector": "quotes_not_in_evidence",
+    "response": "👉 She wrote “Your refund was approved today!” in the ticket.",
+    "evidence": [
+      {"id": "ticket", "source": "request_system", "text": "Status: your refund is being reviewed."}
+    ],
+    "user_request": "",
+    "system_instructions": "",
+    "rules": {}
+  },
+  "expected": {
+    "ran": true,
+    "fired": true,
+    "findings": [{"text": "Your refund was approved today!", "start": 14, "end": 45}]
+  },
+  "tolerance": 1e-9
+}

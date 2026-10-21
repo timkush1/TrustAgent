@@ -1,0 +1,109 @@
+name: CI (Go)
+
+# Go proxy (backend-go/): gofmt, go vet, race-enabled tests against a real
+# Postgres, plus an informational govulncheck. Split out of the former ci.yml
+# (SPEC §3.4, P0.5); the job id and name are unchanged so branch protection
+# keeps matching "Go (proxy)". No path filters on purpose: a required check
+# that never reports would block merges.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  go:
+    name: Go (proxy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: truthtable
+          POSTGRES_PASSWORD: ci-test
+          POSTGRES_DB: truthtable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U truthtable"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://truthtable:ci-test@localhost:5432/truthtable
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Reads the `toolchain` directive in go.mod (go1.25.11).
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: backend-go/go.mod
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install protoc Go plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+      # Generated stubs are gitignored; regenerate them for the build.
+      - name: Generate gRPC stubs
+        run: |
+          protoc --proto_path=proto \
+            --go_out=backend-go --go_opt=module=github.com/truthtable/backend-go \
+            --go-grpc_out=backend-go --go-grpc_opt=module=github.com/truthtable/backend-go \
+            proto/evaluator.proto
+
+      - name: gofmt
+        working-directory: backend-go
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files need gofmt:" && echo "$unformatted" && exit 1
+          fi
+
+      - name: go vet
+        working-directory: backend-go
+        run: go vet ./...
+
+      - name: go test
+        working-directory: backend-go
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        working-directory: backend-go
+        run: go tool cover -func=coverage.out | tail -n 1
+
+      # Every Go benchmark once (-benchtime 1x): they compile and run (P5 I-2).
+      - name: Go benchmarks (smoke)
+        run: make bench-go-smoke
+
+      # The Tier-0 budget guard (D120): timings mean nothing under -race, so it runs on its own,
+      # with the shared-runner budget that CI=true selects.
+      - name: Tier-0 budget (TestTier0Budget, no -race)
+        working-directory: backend-go
+        env:
+          CI: 'true'
+        run: go test -count=1 -run '^TestTier0Budget$' -v ./internal/gate/
+
+      # Informational until the findings are triaged (SPEC §3.4): reported in
+      # the log, never fails the job. Version-pinned like gosec.
+      - name: govulncheck (informational)
+        working-directory: backend-go
+        continue-on-error: true
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

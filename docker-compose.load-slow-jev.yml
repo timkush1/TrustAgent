@@ -1,0 +1,18 @@
+# ============================================================================
+# TrustAgent - load-test stack, second pass (scenario d: a 150 ms fast check)
+# ============================================================================
+# Applied on top of docker-compose.yml and docker-compose.load.yml by `make load-test-gate`, which
+# recreates only the proxy with it:
+#
+#   docker compose -p truthtable-load -f docker-compose.yml -f docker-compose.load.yml \
+#     -f docker-compose.load-slow-jev.yml --profile load up -d --wait --no-deps proxy
+#
+# The gateway's fast check then calls mock-jev-slow, whose decisions take 150 ms.
+
+services:
+  proxy:
+    environment:
+      TRUTHTABLE_JEV_BASE_URL: http://mock-jev-slow:8090
+    depends_on:
+      mock-jev-slow:
+        condition: service_healthy

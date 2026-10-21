@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/load-run.v1.schema.json",
+  "title": "LoadRun",
+  "description": "docs/benchmarks/load/<run_id>.json (D118): one published gateway load run, written only by make load-test-gate LOAD_PUBLISH=1 through scripts/load/report.py, which refuses a dirty tree, n < 500, a missing environment, a missed target (unless --report-only) and a missing overhead header outside observe. Every vendor is simulated (mock-upstream answers at once), so a figure measures the gateway's own time on the stated machine, never the vendors. Scenario c (flag, the fast check at 0 ms) is the headline proxy_overhead_ms_p50/p95 that bench-publish folds into contracts/claims/measured.json (system proxy, this run_id).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "run_id", "created_at", "git_sha", "dirty", "vendors", "environment", "scenarios", "errors"],
+  "properties": {
+    "schema": {"const": "trustagent.load-run/v1"},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"},
+    "created_at": {"$ref": "common.v1.schema.json#/$defs/ISODateTime"},
+    "git_sha": {"$ref": "common.v1.schema.json#/$defs/GitSha"},
+    "dirty": {"const": false, "description": "report.py refuses a tree with uncommitted tracked changes (git status --porcelain --untracked-files=no)."},
+    "vendors": {"const": "simulated (mock-upstream)"},
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu_model", "cores", "mem_gb", "os", "kernel", "docker", "proxy_limits", "trace_flush", "k6_image", "rate", "duration"],
+      "properties": {
+        "cpu_model": {"type": "string", "minLength": 1},
+        "cores": {"type": "integer", "minimum": 1},
+        "mem_gb": {"type": "number", "exclusiveMinimum": 0},
+        "os": {"type": "string", "minLength": 1},
+        "kernel": {"type": "string", "minLength": 1},
+        "docker": {"type": "string", "minLength": 1, "description": "docker version (server)."},
+        "proxy_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpus", "mem"],
+          "description": "The proxy container's limits (null: none set).",
+          "properties": {
+            "cpus": {"anyOf": [{"type": "number", "exclusiveMinimum": 0}, {"type": "null"}]},
+            "mem": {"anyOf": [{"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?[kKmMgG]?[bB]?$"}, {"type": "null"}]}
+          }
+        },
+        "trace_flush": {"enum": ["async", "sync"]},
+        "k6_image": {"type": "string", "pattern": "^[a-z0-9./-]+(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?$", "description": "The pinned K6_IMAGE (mk/load.mk)."},
+        "rate": {"type": "integer", "minimum": 1, "description": "Requests per second of each scenario (LOAD_RATE)."},
+        "duration": {"type": "string", "pattern": "^[0-9]+(ms|s|m|h)$", "description": "Duration of each scenario (LOAD_DURATION)."}
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "route", "mode", "streaming", "n", "p50_ms", "p95_ms", "p99_ms", "max_ms", "source", "target", "ok", "report_only", "jev"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$", "description": "The k6 scenario (a-g, docs/GATEWAY.md)."},
+          "route": {"$ref": "common.v1.schema.json#/$defs/RouteName"},
+          "mode": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/PolicyMode"}, {"const": "disabled"}]},
+          "streaming": {"type": "boolean"},
+          "n": {"type": "integer", "minimum": 500, "description": "Requests measured (report.py refuses fewer than 500)."},
+          "p50_ms": {"type": "number", "minimum": 0},
+          "p95_ms": {"type": "number", "minimum": 0},
+          "p99_ms": {"type": "number", "minimum": 0},
+          "max_ms": {"type": "number", "minimum": 0},
+          "source": {
+            "enum": ["header", "metrics", "total"],
+            "description": "Where the figure comes from: header (X-TrustAgent-Overhead-Ms, the gateway's own time), metrics (trustagent_gateway_* histograms) or total (the whole response time; only where no overhead header is sent, e.g. observe)."
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["stat", "max_ms"],
+                "properties": {
+                  "stat": {"enum": ["p50_ms", "p95_ms", "p99_ms"]},
+                  "max_ms": {"type": "number", "exclusiveMinimum": 0}
+                }
+              },
+              {"type": "null"}
+            ],
+            "description": "The scenario's target (e.g. p95_ms < 10 for c and g), null for a scenario without one."
+          },
+          "ok": {"type": "boolean", "description": "The target held (true when target is null)."},
+          "report_only": {"type": "boolean", "description": "Published without gating the run (scenario e, and any --report-only run)."},
+          "jev": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["attempts", "hedged", "mock_requests"],
+            "description": "The fast-check client's work during the scenario: vendor attempts, hedges sent, and the requests mock-upstream recorded.",
+            "properties": {
+              "attempts": {"type": "integer", "minimum": 0},
+              "hedged": {"type": "integer", "minimum": 0},
+              "mock_requests": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "errors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rate_5xx", "non_200"],
+      "properties": {
+        "rate_5xx": {"type": "number", "minimum": 0, "maximum": 1},
+        "non_200": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

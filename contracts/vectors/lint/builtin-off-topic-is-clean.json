@@ -1,0 +1,50 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "builtin-off-topic-is-clean",
+  "status": "frozen",
+  "description": "The shipped off_topic@1 template (SPEC §2.8) passes the hard rules and fires no lint; built-ins must stay lint-clean in CI.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "off_topic",
+      "version": 1,
+      "builtin": true,
+      "name": "Off-topic",
+      "category": "quality",
+      "params": {"allowed_scope": {"default": "Any subject", "label": "Product scope"}},
+      "state_fields": ["user_request", "assistant_response", "rules"],
+      "question": {
+        "type": "choice",
+        "instructions": "Which description best fits the subject of `assistant_response`, judged against `user_request` and the product scope in `rules.allowed_scope`?",
+        "criteria": {
+          "on_topic_in_scope": {
+            "what": "Addresses the subject of `user_request`, and that subject is inside `rules.allowed_scope`",
+            "not_for": "Replies mainly about another subject"
+          },
+          "answers_outside_scope": {
+            "what": "Addresses `user_request`, but the subject is outside `rules.allowed_scope`",
+            "not_for": "Subjects that `rules.allowed_scope` covers"
+          },
+          "drifts_to_other_subject": {
+            "what": "Talks mainly about a subject `user_request` did not ask about",
+            "not_for": "Brief related background before answering"
+          },
+          "no_subject_matter": {"what": "Greeting, refusal, or clarifying question with no subject matter"}
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"risk_weights": {"answers_outside_scope": 1, "drifts_to_other_subject": 1}},
+      "outcomes": {
+        "warn_at": 0.7,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": [], "lints": []},
+  "tolerance": 1e-9
+}

@@ -1,0 +1,26 @@
+{
+  "vector": "1",
+  "kind": "cost",
+  "name": "call-override-entry",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@bb8359b42bda",
+  "description": "An effective table with a dashboard override first (label override): the override prices the call (1,000 x $3/M + 100 x $15/M = $0.0045) and price_table_version is override.",
+  "input": {
+    "fn": "call_cost",
+    "provider": "openrouter",
+    "model": "anthropic/claude-sonnet-4.5",
+    "input_tokens": 1000,
+    "output_tokens": 100,
+    "table": {
+      "version": "2026-09-27",
+      "currency": "USD",
+      "entries": [
+        {"match": "anthropic/claude-sonnet-*", "provider": "openrouter", "input_per_mtok": 3, "output_per_mtok": 15, "label": "override"},
+        {"match": "typesafe/jev-1.13*", "provider": "openrouter", "input_per_mtok": 0.042, "output_per_mtok": 0},
+        {"match": "anthropic/claude-haiku-4.5", "provider": "openrouter", "input_per_mtok": 1, "output_per_mtok": 5},
+        {"match": "*", "provider": "ollama", "input_per_mtok": 0, "output_per_mtok": 0}
+      ]
+    }
+  },
+  "expected": {"cost_source": "computed", "cost_usd": 0.0045, "price_table_version": "override"}
+}

@@ -1,0 +1,67 @@
+{
+  "vector": "1",
+  "kind": "calibrate_fit",
+  "name": "fit-warn-at-capped-at-critical-at",
+  "status": "frozen",
+  "generated_by": "cmd/vectorgen@c73f0d0ee21e",
+  "description": "isotonic on 1311 labels: calibrated risks 0 (300 neg), 5/11 (5 pos, 6 neg), 1 (1000 pos). Max-F1 alone would pick 1 (F1 2000/2005 beats 2010/2016), but critical_at is 5/11: LB(1000/1000) and LB(1005/1011) both clear 0.95 and 0 fails. The SPEC §2.8 rule warn_at <= critical_at lowers warn_at to 5/11 (precision 1005/1011, recall 1) with a warning.",
+  "input": {
+    "op": "fit",
+    "groups": [
+      {"risk_raw": 0.1, "pos": 0, "neg": 300}, {"risk_raw": 0.5, "pos": 5, "neg": 6},
+      {"risk_raw": 0.9, "pos": 1000, "neg": 0}
+    ],
+    "method": "isotonic"
+  },
+  "expected": {
+    "cv_brier": null,
+    "method": "isotonic",
+    "metrics": {
+      "auroc": 0.9999512242708029,
+      "brier_after": 0.002080299563138825,
+      "brier_before": 0.012013729977116527,
+      "ece_after": 3.813882533416868e-9,
+      "ece_before": 0.09954233409612145
+    },
+    "n": 1311,
+    "n_neg": 306,
+    "n_pos": 1005,
+    "platt": null,
+    "recommended": {
+      "critical_at": {
+        "precision_lb95": 0.9871129020498715,
+        "predicted_pos": 1011,
+        "value": 0.454545
+      },
+      "critical_null_reason": null,
+      "space": "calibrated",
+      "warn_at": {"precision": 0.9940652818991098, "recall": 1, "value": 0.454545}
+    },
+    "reliability": [
+      {"frac_pos": 0, "hi": 0.1, "lo": 0, "mean_pred": 0, "n": 300},
+      {
+        "frac_pos": 0.45454545454545453,
+        "hi": 0.5,
+        "lo": 0.4,
+        "mean_pred": 0.45454499999999987,
+        "n": 11
+      },
+      {"frac_pos": 1, "hi": 1, "lo": 0.9, "mean_pred": 1, "n": 1000}
+    ],
+    "table": [
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.011364, 0.022727, 0.034091, 0.045455, 0.056818, 0.068182,
+      0.079545, 0.090909, 0.102273, 0.113636, 0.125, 0.136364, 0.147727, 0.159091, 0.170455,
+      0.181818, 0.193182, 0.204545, 0.215909, 0.227273, 0.238636, 0.25, 0.261364, 0.272727,
+      0.284091, 0.295455, 0.306818, 0.318182, 0.329545, 0.340909, 0.352273, 0.363636, 0.375,
+      0.386364, 0.397727, 0.409091, 0.420455, 0.431818, 0.443182, 0.454545, 0.468182, 0.481818,
+      0.495455, 0.509091, 0.522727, 0.536364, 0.55, 0.563636, 0.577273, 0.590909, 0.604545,
+      0.618182, 0.631818, 0.645455, 0.659091, 0.672727, 0.686364, 0.7, 0.713636, 0.727273, 0.740909,
+      0.754545, 0.768182, 0.781818, 0.795455, 0.809091, 0.822727, 0.836364, 0.85, 0.863636,
+      0.877273, 0.890909, 0.904545, 0.918182, 0.931818, 0.945455, 0.959091, 0.972727, 0.986364, 1,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+    ],
+    "warnings": [
+      "the max-F1 warn_at was above critical_at, so warn_at is lowered to critical_at (warn_at must not exceed critical_at)"
+    ]
+  }
+}

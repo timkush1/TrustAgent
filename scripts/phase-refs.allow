@@ -1,0 +1,4 @@
+backend-go/internal/store/migrations/0005_p4.up.sql:1:-- 0005: P4 additions to the cost ledger, traces, calibrations and the admin audit
+backend-go/internal/store/migrations/0005_p4.up.sql:2:-- log (P4-PLAN D44, D45, D55; SPEC §2.3 erratum).
+backend-go/internal/store/migrations/0005_p4.up.sql:17:-- traces written before P4).
+var phases = []string{phaseS0, "p2", "p3", "p4", "p5"}

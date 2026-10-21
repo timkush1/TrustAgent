@@ -1,0 +1,28 @@
+{
+  "vector": "1",
+  "kind": "evidence",
+  "name": "user-pasted-document-excluded-without-request-context",
+  "status": "frozen",
+  "description": "The same request on a route whose evidence.sources omit request_context (like the payments-faq example): the pasted block is not evidence at all. It is still removed from user_request.",
+  "input": {
+    "api_format": "openai_chat",
+    "settings": {
+      "sources": ["request_system", "tool_results", "extension"],
+      "system_mode": "documents_only",
+      "line_headers": true,
+      "tag_patterns": [],
+      "untrusted_tools": []
+    },
+    "body": {
+      "model": "gpt-4o-mini",
+      "messages": [
+        {
+          "role": "user",
+          "content": "<document>Refunds are available for 365 days.</document>\nCan I get a refund after 200 days?"
+        }
+      ]
+    }
+  },
+  "expected": {"items": [], "user_request": "Can I get a refund after 200 days?", "pre_dedup_items": 0},
+  "tolerance": 1e-9
+}

@@ -1,0 +1,38 @@
+{
+  "vector": "1",
+  "kind": "lint",
+  "name": "counting-or-arithmetic-instructions",
+  "status": "frozen",
+  "description": "The instructions ask the model to count (\"more than\"). Jev is weak at counting and arithmetic, so the lint suggests the deterministic numeric_or_date escalation instead: counting_or_arithmetic.",
+  "input": {
+    "spec": {
+      "spec_version": "evaluator/v1",
+      "id": "custom_check",
+      "version": 1,
+      "builtin": false,
+      "name": "Custom check",
+      "category": "custom",
+      "state_fields": ["user_request", "assistant_response"],
+      "question": {
+        "type": "noul",
+        "instructions": "Does `assistant_response` recommend more than two different products?",
+        "criteria": {
+          "true": "`assistant_response` recommends several different products",
+          "false": "`assistant_response` recommends one product or none"
+        }
+      },
+      "evidence": {"requires": "none"},
+      "signal": {"invert": false},
+      "outcomes": {
+        "warn_at": 0.6,
+        "critical_at": null,
+        "block_eligible": false,
+        "requires_corroboration": [],
+        "implies": []
+      },
+      "escalation": {"escalate_from": null, "numeric_or_date": false, "on_error": "ignore"}
+    }
+  },
+  "expected": {"errors": [], "lints": ["counting_or_arithmetic"]},
+  "tolerance": 1e-9
+}

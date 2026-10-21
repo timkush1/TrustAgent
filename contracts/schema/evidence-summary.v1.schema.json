@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/evidence-summary.v1.schema.json",
+  "title": "EvidenceSummary",
+  "description": "What a gate decision was checked against (SPEC §2.6 EvidenceSummary; JSON twin of proto EvidenceSummary). tokens are estimated fast-check tokens (SPEC §2.9 est()).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["configured", "used", "empty", "knowledge", "truncated", "tokens"],
+  "properties": {
+    "configured": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "common.v1.schema.json#/$defs/EvidenceSource"},
+      "description": "The route evidence.sources, in priority order."
+    },
+    "used": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "items", "labels", "tokens"],
+        "properties": {
+          "source": {"$ref": "common.v1.schema.json#/$defs/EvidenceSource"},
+          "items": {"type": "integer", "minimum": 0},
+          "labels": {"type": "array", "items": {"type": "string"}},
+          "tokens": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "empty": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "common.v1.schema.json#/$defs/EvidenceSource"},
+      "description": "Configured sources that yielded nothing."
+    },
+    "knowledge": {"enum": ["not_requested", "disabled", "used", "no_hits", "timeout", "error"]},
+    "truncated": {"type": "boolean"},
+    "tokens": {"type": "integer", "minimum": 0}
+  }
+}
