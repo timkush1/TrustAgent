@@ -260,7 +260,8 @@ Maintainers can try the whole public stack on a laptop, without a certificate or
 [`deploy/public-demo/local.yml`](../deploy/public-demo/local.yml): Caddy serves plain HTTP on
 `127.0.0.1:28443` only, and images that already exist locally are not pulled again. Build the
 images first (`make demo` builds them for this checkout's version, then `make demo-down`), and use
-a project of its own:
+a project of its own (a rehearsal refuses `truthtable-demo`, the `make demo` stack, whose data
+`make public-demo-clean` would delete):
 
 ```bash
 TRUTHTABLE_PUBLIC_URL=http://localhost:28443 make public-demo-up PUBLIC_DEMO_PROJECT=truthtable-pubtest

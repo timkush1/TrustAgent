@@ -142,6 +142,8 @@ demo-scenarios: ## Check the demo scenarios against the running demo stack (traf
 # these targets (make demo would publish 3000 and 8080 again).
 # TRUTHTABLE_PUBLIC_URL=http://localhost:28443 is the local rehearsal: deploy/public-demo/local.yml
 # moves Caddy to 127.0.0.1:28443 (plain HTTP), and images that exist locally are not pulled again.
+# A rehearsal refuses the demo's own project: on a laptop that is the make demo stack, which
+# public-demo-clean would delete.
 PUBLIC_DEMO_PROJECT ?= $(DEMO_PROJECT)
 PUBLIC_DEMO_COMPOSE  = $(COMPOSE) -p $(PUBLIC_DEMO_PROJECT) -f docker-compose.yml -f docker-compose.demo.yml \
 	-f docker-compose.public.yml --profile demo
@@ -153,6 +155,10 @@ PUBLIC_DEMO_VERIFY_TIMEOUT ?= 180
 public-demo-up: ## Start the public demo (VM): check TRUTHTABLE_PUBLIC_URL, pull the release images, up --no-build behind Caddy, then check the edge
 	$(PYTHON) scripts/configure.py --ensure
 	@mode="$$($(PYTHON) scripts/public_demo.py url)" || exit $$?; \
+	if [ "$$mode" = local ] && [ "$(PUBLIC_DEMO_PROJECT)" = "$(DEMO_PROJECT)" ]; then \
+		echo "public-demo-up: a local rehearsal needs a project of its own, not $(DEMO_PROJECT) (this machine's make demo stack): add PUBLIC_DEMO_PROJECT=truthtable-pubtest" >&2; \
+		exit 2; \
+	fi; \
 	if [ "$$mode" = local ]; then \
 		compose="$(PUBLIC_DEMO_LOCAL_COMPOSE)"; pull="--policy missing"; \
 	else \

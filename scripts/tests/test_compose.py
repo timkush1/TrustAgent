@@ -645,6 +645,16 @@ class PublicDemoTest(unittest.TestCase):
             self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
             self.assertNotIn("not implemented", recipe(target), target)
 
+    def test_a_local_rehearsal_never_takes_the_demo_project(self) -> None:
+        # On a laptop $(DEMO_PROJECT) is the make demo stack: a rehearsal would replace its
+        # containers, and public-demo-clean would delete its volumes.
+        up = recipe("public-demo-up")
+        guard = '[ "$$mode" = local ] && [ "$(PUBLIC_DEMO_PROJECT)" = "$(DEMO_PROJECT)" ]'
+        self.assertIn(guard, up)
+        after = up[up.index(guard) :]
+        self.assertLess(after.index("exit 2"), after.index("$$compose"))
+        self.assertLess(up.index("scripts/public_demo.py url"), up.index(guard))
+
 
 DOCKERFILES = ("backend-go", "backend-python", "frontend-react")
 # The overlays DX-RELEASE owns (§15). docker-compose.load*.yml belongs to the GO stream;

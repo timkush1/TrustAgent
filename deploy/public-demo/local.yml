@@ -5,7 +5,8 @@
 # TRUTHTABLE_PUBLIC_URL is http://localhost:28443 (scripts/public_demo.py url accepts no
 # other http address). Caddy then serves plain HTTP on 127.0.0.1:28443: nothing listens on
 # the machine's ports 80 or 443, nothing is reachable from the network, and no certificate
-# is requested. Give the rehearsal a project of its own, and images you built, e.g.
+# is requested. Give the rehearsal a project of its own (make public-demo-up refuses the demo's,
+# truthtable-demo: on a laptop that is the make demo stack), and images you built, e.g.
 #
 #   TRUTHTABLE_PUBLIC_URL=http://localhost:28443 make public-demo-up \
 #     PUBLIC_DEMO_PROJECT=truthtable-p6pub TRUSTAGENT_VERSION=<a local tag>
