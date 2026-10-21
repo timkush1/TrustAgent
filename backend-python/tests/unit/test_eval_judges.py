@@ -211,14 +211,15 @@ async def test_gate_failures_are_recorded(gate_eval: FakeGateEval, tmp_path: Pat
     gate_eval.set(exit=1, stderr='gate-eval: no route "bench" in config/policies.yaml')
     failed = await _gate(gate_eval).judge(example("f1"), CostBudget(1.0))
     assert failed.status == FAILED and failed.error_kind == "gate_eval_exit_1"
-    assert "no route" in failed.details["stderr"]
+    # Free text goes to the record's note (the run's diagnostics), never its details (D204).
+    assert "no route" in (failed.note or "") and "stderr" not in failed.details
 
     gate_eval.set(exit=0)
     gate_eval.default(**{**gate_line(), "error": "compile: too large", "decision": None})
     budget = CostBudget(1.0)
     in_band = await _gate(gate_eval).judge(example("f2"), budget)
     assert in_band.status == FAILED and in_band.error_kind == "gate_eval_error"
-    assert in_band.details["error"] == "compile: too large"
+    assert in_band.note == "compile: too large" and "error" not in in_band.details
     assert budget.reserved_usd == 0
 
     gate_eval.default(**gate_line(status="timeout", groundedness=None))

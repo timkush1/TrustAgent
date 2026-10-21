@@ -27,6 +27,7 @@ from truthtable.providers.base import (
 
 FAKE_GATE_EVAL = """#!{python}
 import json
+import os
 import sys
 import time
 
@@ -36,6 +37,9 @@ with open(config_path, encoding="utf-8") as f:
     config = json.load(f)
 with open(config["argv_log"], "a", encoding="utf-8") as f:
     f.write(json.dumps(args) + "\\n")
+with open(config["env_log"], "a", encoding="utf-8") as f:
+    seen = {{name: os.environ.get(name) for name in config.get("env_names", [])}}
+    f.write(json.dumps(seen) + "\\n")
 if config.get("sleep"):
     time.sleep(config["sleep"])
 if config.get("exit"):
@@ -88,9 +92,12 @@ class FakeGateEval:
         self.config_path = directory / "fake-gate-eval.json"
         self.argv_log = directory / "argv.jsonl"
         self.input_log = directory / "input.jsonl"
+        self.env_log = directory / "env.jsonl"
         self.config: Dict[str, Any] = {
             "argv_log": str(self.argv_log),
             "input_log": str(self.input_log),
+            "env_log": str(self.env_log),
+            "env_names": ["TRUTHTABLE_POLICY_FILE"],
             "answers": {},
             "default": None,
         }
@@ -120,6 +127,12 @@ class FakeGateEval:
             return []
         return [json.loads(line) for line in self.argv_log.read_text().splitlines()]
 
+    def envs(self) -> List[Dict[str, Optional[str]]]:
+        """The watched environment variables each invocation saw."""
+        if not self.env_log.exists():
+            return []
+        return [json.loads(line) for line in self.env_log.read_text().splitlines()]
+
     def inputs(self) -> List[Dict[str, Any]]:
         if not self.input_log.exists():
             return []
@@ -143,6 +156,9 @@ def gate_line(
     max_risk: Optional[float] = None,
     skip_reason: Optional[str] = None,
     decision_model: bool = True,
+    endpoint_host: Optional[str] = "openrouter.ai",
+    connection: str = "warm",
+    error_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     A gate-eval output line (backend-go/cmd/gate-eval result) with the fields
@@ -152,8 +168,8 @@ def gate_line(
 
     def evaluator(risk: Optional[float]) -> Dict[str, Any]:
         if risk is None:
-            return {"status": "error", "risk_raw": None, "risk": None}
-        return {"status": "assessed", "risk_raw": risk, "risk": risk}
+            return {"status": "error", "reason": error_reason, "risk_raw": None, "risk": None}
+        return {"status": "assessed", "reason": None, "risk_raw": risk, "risk": risk}
 
     evaluators = {}
     if groundedness is not None or status == "ok":
@@ -176,6 +192,8 @@ def gate_line(
         "error": None,
         "skipped": None,
         "simulated": backend == "mock",
+        "endpoint_host": None if backend == "mock" else endpoint_host,
+        "connection": "cold" if backend == "mock" else connection,
         "route": "default",
         "mode": "flag",
         "decision": {
@@ -212,6 +230,7 @@ class ScriptedJudge(LLMProvider):
     """
 
     provider_name = "openrouter"
+    base_url = "https://openrouter.ai"
 
     def __init__(
         self,
