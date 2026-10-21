@@ -81,6 +81,25 @@ func TestCaptureDryRunPlan(t *testing.T) {
 	}
 }
 
+// TestCaptureDryRunOnTheVendorIsAPlan: the dry run against openrouter.ai sends nothing (no transport
+// is called) and its result line says plan, never captured.
+func TestCaptureDryRunOnTheVendorIsAPlan(t *testing.T) {
+	refuse := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		t.Errorf("a dry run sent %s %s", r.Method, r.URL)
+		return nil, errors.New("no network in a dry run")
+	})
+	var out, errb strings.Builder
+	code := runCapture(context.Background(), captureOptions{dir: filepath.Join(t.TempDir(), "captured"), maxCostUSD: defaultCaptureCapUSD, dryRun: true},
+		func(string) string { return "" }, time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC), refuse, &out, &errb)
+	if code != exitOK {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	r := resultLine(t, out.String())
+	if !r.DryRun || r.Label != "plan" || r.Hosts.Decision != "openrouter.ai" || r.CostUSD != 0 {
+		t.Errorf("result line %+v", r)
+	}
+}
+
 // The plan's estimate: the 30k probe dominates and the whole run fits the default cap.
 func TestCaptureEstimate(t *testing.T) {
 	c := &capturer{model: jev.DefaultOpenRouterModel}
@@ -432,3 +451,8 @@ func contains1(list []string, s string) bool {
 }
 
 var _ = mockupstream.Config{}
+
+// roundTripFunc is an http.RoundTripper from a function.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

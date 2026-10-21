@@ -431,6 +431,9 @@ func runCapture(ctx context.Context, o captureOptions, getenv func(string) strin
 		}
 		fmt.Fprintf(stdout, "%s: nothing was sent and nothing was spent. To capture: make jev-capture CONFIRM=1\n", why)
 		res.DryRun = true
+		if res.Label == "captured" {
+			res.Label = "plan" // nothing was captured: the line names the plan, not a capture
+		}
 		res.Counts = p6Counts{N: len(steps)}
 		res.print(stdout)
 		return exitOK
