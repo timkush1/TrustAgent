@@ -68,7 +68,9 @@ import json
 import math
 import os
 import re
+import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -637,9 +639,20 @@ def verify_stack(config: Mapping[str, Any], caps: Optional[Caps] = None) -> List
     return problems
 
 
-def stack_override(caps: Caps, policy: Optional[Path]) -> str:
-    """tmp/record-demo/<attempt>/stack.yml: this attempt's caps, and the ALLOW_UNCALIBRATED
-    policy when there is one."""
+def free_port() -> int:
+    """A free TCP port on 127.0.0.1 for the video's dashboard (D210), chosen at the attempt's start
+    so the proxy can allow its origin from the first moment."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def stack_override(
+    caps: Caps, policy: Optional[Path], video_port: Optional[int] = None, admin_key: str = ""
+) -> str:
+    """tmp/record-demo/<attempt>/stack.yml: this attempt's caps, the ALLOW_UNCALIBRATED policy when
+    there is one, and what the video's stack beats need (D210): an admin key of this attempt only
+    and the origin of the dashboard port launch_video.py publishes on 127.0.0.1 for them."""
     lines = [
         "# Written by scripts/record_demo.py for one attempt (D208); removed with tmp/.",
         "services:",
@@ -648,6 +661,14 @@ def stack_override(caps: Caps, policy: Optional[Path]) -> str:
         f'      {CAP_KEYS[0]}: "{caps.decision:.2f}"',
         f'      {CAP_KEYS[1]}: "{caps.llm:.2f}"',
     ]
+    if admin_key:
+        lines.append(f'      TRUTHTABLE_ADMIN_KEYS: "video={admin_key}"')
+    if video_port is not None:
+        origins = f"http://localhost:{video_port},http://127.0.0.1:{video_port}"
+        lines += [
+            f'      TRUTHTABLE_ALLOWED_ORIGINS: "{origins}"',
+            f'      TRUTHTABLE_PUBLIC_URL: "http://localhost:{video_port}"',
+        ]
     if policy is not None:
         lines += [
             f"      TRUTHTABLE_POLICY_FILE: {RECORD_POLICY_PATH}",
@@ -721,6 +742,7 @@ class Recorder:
     now: Callable[[], datetime] = utc_datetime
     python: str = sys.executable or "python3"
     key_reader: Optional[KeyReader] = None
+    port_finder: Callable[[], int] = free_port
     keep: bool = False
     wait_timeout: int = 600
     since: Optional[str] = None
@@ -1335,7 +1357,14 @@ class Recorder:
             policy.write_text(
                 uncalibrated_policy(self.policy_file.read_text(encoding="utf-8")), encoding="utf-8"
             )
-        (folder / "stack.yml").write_text(stack_override(caps, policy), encoding="utf-8")
+        video_port = self.port_finder()
+        admin_key = secrets.token_hex(24)
+        key_file = folder / "admin.key"
+        key_file.touch(mode=0o600)
+        key_file.write_text(admin_key + "\n", encoding="utf-8")
+        (folder / "stack.yml").write_text(
+            stack_override(caps, policy, video_port, admin_key), encoding="utf-8"
+        )
         doc: Dict[str, Any] = {
             "attempt": attempt,
             "state": RUNNING,
@@ -1347,6 +1376,7 @@ class Recorder:
                 "llm_usd": caps.llm,
             },
             "allow_uncalibrated": self.allow_uncalibrated,
+            "video_port": video_port,
         }
         self.save_attempt(attempt, doc)
         try:

@@ -308,6 +308,7 @@ class RecordDemoTest(unittest.TestCase):
             now=now,
             python="python3",
             key_reader=self.key,
+            port_finder=lambda: 43210,
         )
 
     def main(self, argv: Sequence[str] = (), environ: Optional[Dict[str, str]] = None) -> int:
@@ -654,6 +655,17 @@ class RecordDemoTest(unittest.TestCase):
         ):
             self.assertEqual(export[export.index(flag) + 1], value)
         self.assertTrue((folder / "tape" / "manifest.json").is_file())
+        # What the video's stack beats need (D210): an admin key of this attempt only (never
+        # printed), and the dashboard origin it will publish on 127.0.0.1.
+        key = (folder / "admin.key").read_text(encoding="utf-8").strip()
+        self.assertRegex(key, r"^[0-9a-f]{48}$")
+        self.assertEqual((folder / "admin.key").stat().st_mode & 0o777, 0o600)
+        stack = (folder / "stack.yml").read_text(encoding="utf-8")
+        self.assertIn(f'TRUTHTABLE_ADMIN_KEYS: "video={key}"', stack)
+        self.assertIn(
+            'TRUTHTABLE_ALLOWED_ORIGINS: "http://localhost:43210,http://127.0.0.1:43210"', stack
+        )
+        self.assertNotIn(key, self.output())
         drift = json.loads((folder / "drift.json").read_text(encoding="utf-8"))
         self.assertEqual([p["pass"] for p in drift["passes"]], [1, 2])
         self.assertIn("grounded-pass: X-TrustAgent-Action", self.output())
@@ -662,6 +674,7 @@ class RecordDemoTest(unittest.TestCase):
         self.assertEqual(doc["hosts"], VENDOR_HOSTS)
         self.assertEqual(doc["featured"]["trace_id"], self.runner.candidate)
         self.assertEqual(doc["skipped"], [])
+        self.assertEqual(doc["video_port"], 43210)
         # Nothing reaches demo-data/recorded before ACCEPT.
         self.assertFalse(self.dest.exists())
         # The ledger: the usage before, and the reading after a 30 s settle.
