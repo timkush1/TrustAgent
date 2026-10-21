@@ -311,7 +311,7 @@ class RepositoryDryRunTest(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             code = bv.main(["--dry-run", "2.0.0"], runner=Recorder())
         self.assertEqual(code, 0, out.getvalue())
-        self.assertIn('CHANGELOG.md: heading -> ## v2.0.0 — ', out.getvalue())
+        self.assertIn("CHANGELOG.md: heading -> ## v2.0.0 — ", out.getvalue())
         self.assertIn('"Jev gateway"', out.getvalue())
         self.assertNotIn("recorded", out.getvalue())
         self.assertEqual(digest(ROOT / "backend-go" / "internal" / "version"), before)

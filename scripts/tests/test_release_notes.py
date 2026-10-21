@@ -48,7 +48,9 @@ The gateway release. See [the spec](docs/v2/SPEC.md) and [a site](https://exampl
 - The first release.
 """
 
-UNRELEASED = CHANGELOG.replace('## v2.0.0 — 2026-11-05 "Jev gateway"', '## Unreleased — 2.0.0 "Jev gateway" (in progress)')
+UNRELEASED = CHANGELOG.replace(
+    '## v2.0.0 — 2026-11-05 "Jev gateway"', '## Unreleased — 2.0.0 "Jev gateway" (in progress)'
+)
 
 MEASURED: Dict[str, Any] = {
     "schema": "trustagent.measured/v1",
@@ -60,32 +62,75 @@ MEASURED: Dict[str, Any] = {
     "runs": ["20261102T100000Z-abc1234"],
     "snapshot": SNAPSHOT,
     "values": {
-        "fast_check_usd_per_1k": {"value": 0.2134, "unit": "usd_per_1k", "description": "d",
-                                  "run_id": "20261102T100000Z-abc1234", "system": "gate"},
-        "ragtruth_qa_agreement": {"value": 0.8125, "unit": "fraction", "description": "d",
-                                  "run_id": "20261102T100000Z-abc1234", "system": "gate"},
-        "gate_latency_ms_p50": {"value": None, "unit": "ms", "description": "d", "run_id": None,
-                                "system": "gate"},
+        "fast_check_usd_per_1k": {
+            "value": 0.2134,
+            "unit": "usd_per_1k",
+            "description": "d",
+            "run_id": "20261102T100000Z-abc1234",
+            "system": "gate",
+        },
+        "ragtruth_qa_agreement": {
+            "value": 0.8125,
+            "unit": "fraction",
+            "description": "d",
+            "run_id": "20261102T100000Z-abc1234",
+            "system": "gate",
+        },
+        "gate_latency_ms_p50": {
+            "value": None,
+            "unit": "ms",
+            "description": "d",
+            "run_id": None,
+            "system": "gate",
+        },
     },
 }
 
 CLAIMS = {
     "version": "1",
     "claims": [
-        {"id": "fast_check_cost_per_1k_measured", "text": "Our measured fast-check cost", "unit": "usd_per_1k",
-         "display": "${value} / 1,000 answers", "label": "measured", "measured_ref": "fast_check_usd_per_1k"},
-        {"id": "ragtruth_qa_agreement_measured", "text": "Our RAGTruth-QA agreement", "unit": "fraction",
-         "display": "{value}", "label": "measured", "measured_ref": "ragtruth_qa_agreement"},
-        {"id": "gate_latency_p50_measured", "text": "Our p50 fast-check latency", "unit": "ms",
-         "display": "{value} ms p50", "label": "measured", "measured_ref": "gate_latency_ms_p50"},
-        {"id": "fast_check_cost_per_1k", "text": "Fast check", "unit": "usd_per_1k",
-         "display": "~$0.21 / 1,000 answers", "label": "estimate"},
+        {
+            "id": "fast_check_cost_per_1k_measured",
+            "text": "Our measured fast-check cost",
+            "unit": "usd_per_1k",
+            "display": "${value} / 1,000 answers",
+            "label": "measured",
+            "measured_ref": "fast_check_usd_per_1k",
+        },
+        {
+            "id": "ragtruth_qa_agreement_measured",
+            "text": "Our RAGTruth-QA agreement",
+            "unit": "fraction",
+            "display": "{value}",
+            "label": "measured",
+            "measured_ref": "ragtruth_qa_agreement",
+        },
+        {
+            "id": "gate_latency_p50_measured",
+            "text": "Our p50 fast-check latency",
+            "unit": "ms",
+            "display": "{value} ms p50",
+            "label": "measured",
+            "measured_ref": "gate_latency_ms_p50",
+        },
+        {
+            "id": "fast_check_cost_per_1k",
+            "text": "Fast check",
+            "unit": "usd_per_1k",
+            "display": "~$0.21 / 1,000 answers",
+            "label": "estimate",
+        },
     ],
 }
 
 
-def make_root(version: str = "2.0.0", changelog: str = CHANGELOG, licence: str = "Copyright (c) 2026 Jane Doe\n",
-              measured: Dict[str, Any] = MEASURED, tape: Dict[str, Any] | None = None) -> Path:
+def make_root(
+    version: str = "2.0.0",
+    changelog: str = CHANGELOG,
+    licence: str = "Copyright (c) 2026 Jane Doe\n",
+    measured: Dict[str, Any] = MEASURED,
+    tape: Dict[str, Any] | None = None,
+) -> Path:
     tmp = Path(tempfile.mkdtemp(prefix="release-notes-"))
     (tmp / "VERSION").write_text(version + "\n", encoding="utf-8")
     (tmp / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
@@ -141,13 +186,17 @@ class ReleaseNotesTest(unittest.TestCase):
         )
         self.assertNotIn("The first release", out)
         # Relative links point into the tagged tree; absolute ones stay.
-        self.assertIn("[the spec](https://github.com/timkush1/TrustAgent/blob/v2.0.0/docs/v2/SPEC.md)", out)
+        self.assertIn(
+            "[the spec](https://github.com/timkush1/TrustAgent/blob/v2.0.0/docs/v2/SPEC.md)", out
+        )
         self.assertIn("[a site](https://example.com/x)", out)
         # One row and one verify command per image, by digest.
         for service in rn.SERVICES:
             digest = self.fixture[service]["digest"]
             ref = f"ghcr.io/timkush1/truthtable-{service}"
-            self.assertIn(f"| {service} | `{ref}:2.0.0` | `{digest}` | linux/amd64, linux/arm64 |", out)
+            self.assertIn(
+                f"| {service} | `{ref}:2.0.0` | `{digest}` | linux/amd64, linux/arm64 |", out
+            )
             self.assertIn(f"gh attestation verify oci://{ref}@{digest} -R timkush1/TrustAgent", out)
             self.assertIn(f"docker buildx imagetools inspect {ref}:2.0.0", out)
         self.assertIn("check out `v2.0.0` and run `make up`", out)
@@ -155,8 +204,13 @@ class ReleaseNotesTest(unittest.TestCase):
 
     def test_measured_figures_carry_their_label_run_and_snapshot(self) -> None:
         _, out, _ = run(self.root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
-        self.assertIn("- Our measured fast-check cost: $0.213 / 1,000 answers [measured] (run 20261102T100000Z-abc1234)", out)
-        self.assertIn("- Our RAGTruth-QA agreement: 81.3% [measured] (run 20261102T100000Z-abc1234)", out)
+        self.assertIn(
+            "- Our measured fast-check cost: $0.213 / 1,000 answers [measured] (run 20261102T100000Z-abc1234)",
+            out,
+        )
+        self.assertIn(
+            "- Our RAGTruth-QA agreement: 81.3% [measured] (run 20261102T100000Z-abc1234)", out
+        )
         self.assertNotIn("p50 fast-check latency", out)  # no value in this run: not listed
         self.assertNotIn("~$0.21", out)  # an estimate is not a measured figure
         self.assertIn(f"decision-model snapshot {SNAPSHOT}", out)
@@ -172,8 +226,12 @@ class ReleaseNotesTest(unittest.TestCase):
             self.assertIn("No measured benchmark run is published in this release", out)
 
     def test_a_recorded_tape_is_named(self) -> None:
-        tape = {"kind": "recorded", "recorded_at": "2026-11-03T12:00:00Z", "trustagent_version": "2.0.0",
-                "decision_model": {"backend": "openrouter-decisions", "snapshot": SNAPSHOT}}
+        tape = {
+            "kind": "recorded",
+            "recorded_at": "2026-11-03T12:00:00Z",
+            "trustagent_version": "2.0.0",
+            "decision_model": {"backend": "openrouter-decisions", "snapshot": SNAPSHOT},
+        }
         root = make_root(tape=tape)
         self.addCleanup(shutil.rmtree, root, True)
         _, out, _ = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
@@ -189,14 +247,18 @@ class ReleaseNotesTest(unittest.TestCase):
 
     def test_refuses_a_malformed_digest_and_a_missing_image(self) -> None:
         proxy = dict(self.fixture["proxy"], digest="sha256:short")
-        code, _, err = run(self.root, "--tag", "v2.0.0", "--inspect", str(canned(proxy=proxy, dashboard=None)))
+        code, _, err = run(
+            self.root, "--tag", "v2.0.0", "--inspect", str(canned(proxy=proxy, dashboard=None))
+        )
         self.assertEqual(code, 1)
         self.assertIn("truthtable-proxy:2.0.0: no image digest", err)
         self.assertIn("truthtable-dashboard:2.0.0: not in inspect.json", err)
 
     def test_refuses_an_image_without_both_platforms(self) -> None:
         engine = copy.deepcopy(self.fixture["engine"])
-        engine["manifests"] = [m for m in engine["manifests"] if m["platform"]["architecture"] != "arm64"]
+        engine["manifests"] = [
+            m for m in engine["manifests"] if m["platform"]["architecture"] != "arm64"
+        ]
         code, _, err = run(self.root, "--tag", "v2.0.0", "--inspect", str(canned(engine=engine)))
         self.assertEqual(code, 1)
         self.assertIn("truthtable-engine:2.0.0: no linux/arm64 image (found linux/amd64)", err)
@@ -225,11 +287,17 @@ class ReleaseNotesTest(unittest.TestCase):
         self.assertIn("LICENSE still says {{OWNER_LEGAL_NAME}}", err)
 
     def test_a_rehearsal_takes_the_unreleased_section_and_says_so(self) -> None:
-        root = make_root(changelog=UNRELEASED, licence=f"Copyright (c) 2026 {rn.OWNER_PLACEHOLDER}\n")
+        root = make_root(
+            changelog=UNRELEASED, licence=f"Copyright (c) 2026 {rn.OWNER_PLACEHOLDER}\n"
+        )
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root, "--tag", "v0.0.0-rehearsal", "--inspect", str(FIXTURE))
         self.assertEqual(code, 0, err)
-        self.assertTrue(out.startswith("> **Rehearsal (v0.0.0-rehearsal): canned or test data, not for publishing.**"))
+        self.assertTrue(
+            out.startswith(
+                "> **Rehearsal (v0.0.0-rehearsal): canned or test data, not for publishing.**"
+            )
+        )
         self.assertIn("### Highlights", out)
         self.assertIn("truthtable-proxy:0.0.0-rehearsal", out)
         self.assertIn("warning: v0.0.0-rehearsal is a rehearsal", err)
@@ -242,7 +310,9 @@ class ReleaseNotesTest(unittest.TestCase):
 
     def test_out_writes_a_file(self) -> None:
         dest = self.root / "notes.md"
-        code, out, err = run(self.root, "--tag", "v2.0.0", "--inspect", str(FIXTURE), "--out", str(dest))
+        code, out, err = run(
+            self.root, "--tag", "v2.0.0", "--inspect", str(FIXTURE), "--out", str(dest)
+        )
         self.assertEqual(code, 0, err)
         self.assertEqual(out, "")
         self.assertIn("## Images", dest.read_text(encoding="utf-8"))
@@ -267,8 +337,18 @@ class LiveInspectTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(
             [c[0] for c in calls],
-            [["docker", "buildx", "imagetools", "inspect", "--format", "{{json .Manifest}}",
-              f"ghcr.io/timkush1/truthtable-{s}:2.0.0"] for s in rn.SERVICES],
+            [
+                [
+                    "docker",
+                    "buildx",
+                    "imagetools",
+                    "inspect",
+                    "--format",
+                    "{{json .Manifest}}",
+                    f"ghcr.io/timkush1/truthtable-{s}:2.0.0",
+                ]
+                for s in rn.SERVICES
+            ],
         )
         config = calls[0][1]
         self.assertTrue(config and all(c[1] == config for c in calls))
@@ -307,7 +387,9 @@ class RepositoryTest(unittest.TestCase):
         self.assertIsNotNone(holder)
         name = holder.group(1).strip()
         pkg = json.loads((ROOT / "frontend-react" / "package.json").read_text(encoding="utf-8"))
-        lock = json.loads((ROOT / "frontend-react" / "package-lock.json").read_text(encoding="utf-8"))
+        lock = json.loads(
+            (ROOT / "frontend-react" / "package-lock.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(pkg.get("license"), "MIT")
         self.assertEqual(lock["packages"][""].get("license"), "MIT")
         self.assertEqual(pkg.get("author"), name)
@@ -316,17 +398,23 @@ class RepositoryTest(unittest.TestCase):
         authors = re.search(r'(?m)^authors = \["([^"<]+?)(?: <[^>]+>)?"\]$', pyproject)
         self.assertIsNotNone(authors)
         self.assertEqual(authors.group(1), name)
-        self.assertNotIn("@", pyproject.split("[tool.poetry.dependencies]")[0], "no email in the metadata")
+        self.assertNotIn(
+            "@", pyproject.split("[tool.poetry.dependencies]")[0], "no email in the metadata"
+        )
 
     def test_the_real_changelog_has_a_section_for_version(self) -> None:
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        heading, body = rn.changelog_section(text, "2.0.0" if version == "1.0.0" else version, released_only=False)
+        heading, body = rn.changelog_section(
+            text, "2.0.0" if version == "1.0.0" else version, released_only=False
+        )
         self.assertIn("Jev gateway", heading)
         notes = rn.release_body(body, "v2.0.0")
         self.assertIn("### Highlights", notes)
         self.assertNotIn("#### ", notes, "the build log by phase stays in CHANGELOG.md")
-        self.assertLess(len(notes), 60_000, "a GitHub release body holds at most 125,000 characters")
+        self.assertLess(
+            len(notes), 60_000, "a GitHub release body holds at most 125,000 characters"
+        )
 
 
 if __name__ == "__main__":

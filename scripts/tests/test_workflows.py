@@ -396,7 +396,11 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
                 self.assertTrue(matched(path), f"{path} is outside the pull_request paths")
         tracked = [p.relative_to(ROOT).as_posix() for p in ROOT.glob("*/Dockerfile")]
         self.assertEqual(sorted(tracked), sorted(dockerfiles), "an image without a matrix entry")
-        for lock in ("backend-go/go.sum", "backend-python/poetry.lock", "frontend-react/package-lock.json"):
+        for lock in (
+            "backend-go/go.sum",
+            "backend-python/poetry.lock",
+            "frontend-react/package-lock.json",
+        ):
             self.assertTrue((ROOT / lock).is_file(), lock)
             self.assertTrue(matched(lock), lock)
         self.assertTrue(matched(".github/workflows/release-images.yml"))
@@ -560,7 +564,9 @@ class EvalWorkflowTest(unittest.TestCase):
         self.assertEqual(job_name(self.jobs["benchmark"]), "")
 
     def test_the_summary_labels_its_figures(self) -> None:
-        summary = [s for s in steps(self.jobs["benchmark"]) if s.startswith("name: Publish summary")]
+        summary = [
+            s for s in steps(self.jobs["benchmark"]) if s.startswith("name: Publish summary")
+        ]
         self.assertEqual(len(summary), 1)
         self.assertIn("Label: measured in this run only", summary[0])
         self.assertIn("not a published TrustAgent figure", summary[0])

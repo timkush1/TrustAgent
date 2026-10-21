@@ -44,14 +44,23 @@ test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py) and t
 	cd "$(LAUNCH_WEB)" && npx playwright test --list --project=launch
 
 # ---------- Launch post and video (D210, D213; seams the SHIP and VEND streams fill in) ----------
+# scripts/linkedin_post.py fills the template in docs/launch/linkedin-post.md and exits 1 on any
+# missing value; scripts/clip.py pipes through iconv -f UTF-8 -t UTF-16LE into clip.exe (plain
+# clip.exe garbles × and dashes) and prints to stdout where there is no clip.exe.
 CLIP ?=
 FILE ?=
+ROLES ?=
+RESTRICTED ?=
 
-linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it; P6 S-9)
-	@echo "linkedin-post: not implemented (P6 S-9)"; exit 2
+linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it, ROLES=1 adds the roles line, RESTRICTED=1 the mode-R post)
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/linkedin_post.py" $(if $(CLIP),--clip) $(if $(ROLES),--roles) $(if $(RESTRICTED),--restricted)
 
-clip: ## Copy a file to the Windows clipboard as UTF-16LE (make clip FILE=...; stdout without clip.exe; P6 S-9)
-	@echo "clip: not implemented (P6 S-9)"; exit 2
+clip: ## Copy a file to the Windows clipboard as UTF-16LE: make clip FILE=... (stdout where there is no clip.exe)
+	@if [ -z "$(FILE)" ]; then echo "clip: set FILE, e.g. make clip FILE=tmp/release-notes.md" >&2; exit 2; fi
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" "$(FILE)"
+
+test-linkedin-post: ## Unit tests of make linkedin-post and make clip (no clipboard, no network)
+	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_linkedin_post.py
 
 launch-video: ## The 60-second launch video: static beats from the recorded Pages build plus the stack beats, captions burned in (tmp/launch/*.mp4; P6 V-7)
 	@echo "launch-video: not implemented (P6 V-7)"; exit 2

@@ -42,7 +42,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_version as cv  # noqa: E402
@@ -142,7 +142,9 @@ def docker_inspect(ref: str, docker_config: str) -> Any:
         check=False,
     )
     if proc.returncode != 0:
-        raise Refused(f"{ref}: docker buildx imagetools inspect failed: {proc.stderr.strip()[:300]}")
+        raise Refused(
+            f"{ref}: docker buildx imagetools inspect failed: {proc.stderr.strip()[:300]}"
+        )
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
@@ -185,7 +187,9 @@ def read_image(service: str, ref: str, manifest: Any) -> Image:
             platforms.append(name)
     missing = [p for p in PLATFORMS if p not in platforms]
     if missing:
-        raise Refused(f"{ref}: no {' or '.join(missing)} image (found {', '.join(platforms) or 'none'})")
+        raise Refused(
+            f"{ref}: no {' or '.join(missing)} image (found {', '.join(platforms) or 'none'})"
+        )
     return Image(service=service, ref=ref, digest=digest, platforms=platforms)
 
 
@@ -218,7 +222,12 @@ def images_section(found: List[Image], tag: str) -> List[str]:
             f"| {img.service} | `{img.ref}` | `{img.digest}` | {', '.join(img.platforms)} |"
         )
     repo_image = lambda img: img.ref.rsplit(":", 1)[0]  # noqa: E731
-    lines += ["", "Verify what you pull (the GitHub CLI checks each build attestation):", "", "```bash"]
+    lines += [
+        "",
+        "Verify what you pull (the GitHub CLI checks each build attestation):",
+        "",
+        "```bash",
+    ]
     for img in found:
         lines.append(f"gh attestation verify oci://{repo_image(img)}@{img.digest} -R {REPO}")
     for img in found:
@@ -274,7 +283,9 @@ def numbers_section(root: Path) -> List[str]:
             value = entry.get("value")
             if not isinstance(value, (int, float)):
                 continue
-            display = claim["display"].replace("{value}", format_value(value, claim.get("unit", "")))
+            display = claim["display"].replace(
+                "{value}", format_value(value, claim.get("unit", ""))
+            )
             run = f" (run {entry['run_id']})" if entry.get("run_id") else ""
             shown.append(f"- {claim['text']}: {display} [measured]{run}")
     if shown:
@@ -335,7 +346,9 @@ def build_notes(root: Path, tag: str, inspect: Inspector) -> Tuple[str, List[str
     licence = (root / "LICENSE").read_text(encoding="utf-8") if (root / "LICENSE").is_file() else ""
     if OWNER_PLACEHOLDER in licence:
         if not rehearsal:
-            raise Refused(f"LICENSE still says {OWNER_PLACEHOLDER}: write the owner's legal name first")
+            raise Refused(
+                f"LICENSE still says {OWNER_PLACEHOLDER}: write the owner's legal name first"
+            )
         warnings.append(f"LICENSE still says {OWNER_PLACEHOLDER}")
     found = images(version, inspect)
     out: List[str] = []
@@ -350,7 +363,9 @@ def build_notes(root: Path, tag: str, inspect: Inspector) -> Tuple[str, List[str
 def main(argv: Optional[Sequence[str]] = None, root: Path = ROOT) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--tag", required=True, help="the release tag, e.g. v2.0.0")
-    parser.add_argument("--inspect", type=Path, help="canned inspect output (JSON) instead of docker")
+    parser.add_argument(
+        "--inspect", type=Path, help="canned inspect output (JSON) instead of docker"
+    )
     parser.add_argument("--out", type=Path, help="write the notes here instead of stdout")
     parser.add_argument("--root", type=Path, default=root, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
