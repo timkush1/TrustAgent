@@ -1394,6 +1394,10 @@ def benchmark_paths() -> Tuple[Path, Path]:
     return root / "docs" / "benchmarks" / "results", root / "docs" / "benchmarks" / "index.json"
 
 
+# Run refusals after which the derived measured.json is not checked (it would only echo them).
+_FATAL = frozenset({"mock", "non_vendor_host", "schema", "missing_fields"})
+
+
 @dataclass
 class Prepared:
     """A publish, checked and derived but not written."""
@@ -1470,7 +1474,9 @@ def prepare_publish(
         if isinstance(exc, BenchmarkSchemaError):
             raise
         problems.append(Problem("schema", f"measured.json cannot be derived from this run: {exc}"))
-    if derived:
+    # A run refused as simulated or unreadable folds nothing worth checking: its measured.json
+    # problems would only repeat the refusal.
+    if derived and not any(problem.code in _FATAL for problem in problems):
         errors = schema_errors(derived, MEASURED_SCHEMA)
         if errors:
             problems.append(Problem("measured_schema", "measured.v1: " + "; ".join(errors[:5])))

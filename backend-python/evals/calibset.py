@@ -499,7 +499,12 @@ def run_pass(args: argparse.Namespace) -> int:
         print(f"  {hint}", flush=True)
     if len(summary.snapshots) > 1:
         print("  more than one snapshot: a calibration covers one (D207)", flush=True)
-    if code == EXIT_OK and summary.snapshot:
+    if summary.simulated:
+        print(
+            "  simulated: make calibrate would refuse to write these risks (D203); nothing to fit",
+            flush=True,
+        )
+    elif code == EXIT_OK and summary.snapshot:
         gate_abs = gate_out.resolve()
         for ref in EVALUATORS:
             print(

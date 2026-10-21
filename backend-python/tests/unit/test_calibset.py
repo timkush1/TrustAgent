@@ -377,6 +377,7 @@ def test_calib_pass_through_a_stand_in_host_is_simulated(
     out = capsys.readouterr().out
     assert _result(out)["label"] == "simulated"
     assert "simulated risks (mock or a stand-in host): never a measured calibration" in out
+    assert "make calibrate would refuse to write" in out and "next (free)" not in out
 
 
 def test_calib_pass_dry_run_spends_nothing(

@@ -709,3 +709,17 @@ def test_index_is_newest_first() -> None:
     index = build_index([old, new], "2026-09-28T00:00:00Z")
 
     assert [entry["run_id"] for entry in index["runs"]] == ["new", "old"]
+
+
+def test_a_simulated_run_is_refused_without_echoes(
+    tmp_path: Path, bench_paths: Dict[str, Path]
+) -> None:
+    # The derived measured.json of a mock run would only repeat the refusal ("simulated" costs).
+    run_file = write_p6_run(tmp_path / "local", mock=True)
+
+    with pytest.raises(PublishRefused) as refused:
+        _publish(run_file, bench_paths)
+
+    codes = _codes(refused.value)
+    assert "mock" in codes
+    assert not {"measured_schema", "cost_source_unknown"} & set(codes), codes
