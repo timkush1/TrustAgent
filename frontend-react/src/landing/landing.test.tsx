@@ -861,7 +861,7 @@ describe('claims', () => {
     expect(() => claim('nope')).toThrow(/no claim nope/);
     // A figure that may be withdrawn is looked up as optional: gone means not shown.
     expect(optionalClaim('nope')).toBeNull();
-    expect(optionalClaim('openrouter_faithfulness_accuracy')?.display).toBe(claim('openrouter_faithfulness_accuracy').display);
+    expect(optionalClaim('jev_input_price_per_mtok')?.display).toBe(claim('jev_input_price_per_mtok').display);
   });
 });
 

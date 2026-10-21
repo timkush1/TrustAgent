@@ -308,8 +308,12 @@ endif
 
 ##@ Workflows
 
+# actionlint is built with the repository's own Go toolchain (backend-go/go.mod), so an older local
+# go does not fetch whichever release is newest just to build a linter.
+ACTIONLINT_GOTOOLCHAIN ?= $(shell sed -n 's/^toolchain //p' backend-go/go.mod)
+
 lint-workflows: workflow-lint-install ## Lint .github/: actionlint (with shellcheck) and zizmor (high-severity findings fail), all pinned
-	go run github.com/rhysd/actionlint/cmd/actionlint@v$(ACTIONLINT_VERSION) -shellcheck=$(WORKFLOW_LINT_BIN)/shellcheck
+	GOTOOLCHAIN=$(ACTIONLINT_GOTOOLCHAIN)+auto go run github.com/rhysd/actionlint/cmd/actionlint@v$(ACTIONLINT_VERSION) -shellcheck=$(WORKFLOW_LINT_BIN)/shellcheck
 	$(WORKFLOW_LINT_BIN)/zizmor --offline --min-severity high --format plain .
 	@echo "✅ Workflows: actionlint $(ACTIONLINT_VERSION) and zizmor $(ZIZMOR_VERSION) found nothing to fix"
 
