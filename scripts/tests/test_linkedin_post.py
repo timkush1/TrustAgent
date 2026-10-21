@@ -98,6 +98,20 @@ TRACE: Dict[str, Any] = {
 }
 
 
+RECORDED_MANIFEST: Dict[str, Any] = {
+    "kind": "recorded",
+    "featured": {"trace_id": TRACE_ID, "rule": "contradicted_with_span"},
+    "decision_model": {"backend": "openrouter-decisions", "snapshot": "s", "host": "openrouter.ai"},
+    "judge": {
+        "provider": "openrouter",
+        "model": "m",
+        "fallback_active": False,
+        "host": "openrouter.ai",
+    },
+    "answer_sources": {"scripted": 3, "generated": 1, "generated_host": "openrouter.ai"},
+}
+
+
 def make_root(
     measured: Optional[Dict[str, Any]] = None,
     manifest: Optional[Dict[str, Any]] = None,
@@ -105,21 +119,14 @@ def make_root(
     tape: bool = True,
 ) -> Path:
     root = Path(tempfile.mkdtemp(prefix="linkedin-post-"))
-    for rel in (lp.TEMPLATE_PATH, lp.CLAIMS_PATH):
+    for rel in (lp.TEMPLATE_PATH, lp.CLAIMS_PATH, "contracts/schema/common.v1.schema.json"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / rel, root / rel)
     (root / lp.MEASURED_PATH).write_text(json.dumps(measured or MEASURED), encoding="utf-8")
     if tape:
         rec = root / lp.RECORDED_DIR
         (rec / "traces").mkdir(parents=True)
-        man = (
-            manifest
-            if manifest is not None
-            else {
-                "kind": "recorded",
-                "featured": {"trace_id": TRACE_ID, "rule": "contradicted_with_span"},
-            }
-        )
+        man = manifest if manifest is not None else dict(RECORDED_MANIFEST)
         (rec / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
         if trace is not False:  # type: ignore[comparison-overlap]
             (rec / "traces" / f"{TRACE_ID}.json").write_text(
@@ -266,8 +273,21 @@ class MissingValueTest(unittest.TestCase):
             make_root(manifest=manifest), "kind 'mock', not recorded", "featured.claim"
         )
 
+    def test_a_tape_that_says_recorded_from_mock_upstream_does_not_count(self) -> None:
+        # D203: the hosts are the evidence, not the kind the recorder wrote.
+        manifest = dict(
+            RECORDED_MANIFEST,
+            decision_model=dict(RECORDED_MANIFEST["decision_model"], host="mock-upstream"),
+        )
+        self.assert_missing(
+            make_root(manifest=manifest),
+            "fast-check host mock-upstream, not a vendor host",
+            "featured.claim",
+        )
+
     def test_no_featured_trace(self) -> None:
-        self.assert_missing(make_root(manifest={"kind": "recorded"}), "names no featured trace")
+        manifest = {k: v for k, v in RECORDED_MANIFEST.items() if k != "featured"}
+        self.assert_missing(make_root(manifest=manifest), "names no featured trace")
 
     def test_the_featured_trace_file_is_missing(self) -> None:
         self.assert_missing(make_root(trace=False), f"the featured trace {TRACE_ID} is not in")  # type: ignore[arg-type]

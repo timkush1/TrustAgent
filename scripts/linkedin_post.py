@@ -27,8 +27,8 @@ Placeholders:
   {roles}              at the start of a line: the line is printed only with --roles
 
 The featured trace is the recorded tape's ``featured.trace_id``
-(frontend-react/demo-data/recorded/); only a tape with kind "recorded" counts, and only a measured
-run with mock:false. Every missing value is listed and the exit status is 1: the post is never
+(frontend-react/demo-data/recorded/); only a tape with kind "recorded" whose fast-check, judge and
+generated-answer hosts are vendor hosts counts (D203), and only a measured run with mock:false. Every missing value is listed and the exit status is 1: the post is never
 printed with a gap or a made-up figure.
 
 Exit status: 0 printed (or copied), 1 a value is missing, 2 usage error or a malformed template.
@@ -47,7 +47,7 @@ from typing import Any, Dict, List, Optional, Sequence, TextIO, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import clip as clipboard  # noqa: E402
-from release_notes import format_value  # noqa: E402
+from release_notes import Refused, format_value, tape_hosts_problem, vendor_hosts  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_PATH = "docs/launch/linkedin-post.md"
@@ -128,6 +128,14 @@ def read_sources(root: Path, need_tape: bool) -> Sources:
         src.problems.append(
             f"{RECORDED_DIR}/manifest.json is kind {manifest.get('kind')!r}, not recorded"
         )
+        return src
+    # D203: the hosts are the evidence; a tape from mock-upstream is simulated whatever it says.
+    try:
+        problem = tape_hosts_problem(manifest, vendor_hosts(root))
+    except Refused as exc:
+        problem = str(exc)
+    if problem:
+        src.problems.append(problem)
         return src
     src.manifest = manifest
     featured = manifest.get("featured") or {}
