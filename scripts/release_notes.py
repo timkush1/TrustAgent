@@ -21,7 +21,8 @@ The notes are Markdown on stdout, in this order:
 It refuses (exit 1) when an image has no digest or lacks linux/amd64 or linux/arm64, when the tag
 does not name VERSION, when CHANGELOG.md has no released heading for it, or when the licence still
 holds the owner placeholder. A rehearsal tag (a pre-release that says "rehearsal", such as
-v0.0.0-rehearsal) takes VERSION's section, released or not, and says it is a rehearsal at the top.
+v0.0.0-rehearsal) takes the upcoming "Unreleased" section (or VERSION's, after the bump) and says
+it is a rehearsal at the top.
 
 ``--inspect FILE`` reads canned output instead of calling docker: a JSON object whose keys are the
 service names (proxy, engine, dashboard) or the image references, and whose values are what the
@@ -331,17 +332,20 @@ def build_notes(root: Path, tag: str, inspect: Inspector) -> Tuple[str, List[str
     version, rehearsal = parse_tag(tag)
     warnings: List[str] = []
     current = cv.read_version(root)
-    if rehearsal:
-        section_version = current
-        warnings.append(f"{tag} is a rehearsal: the notes use VERSION {current}'s section")
-    else:
-        if version != current:
-            raise Refused(f"tag {tag} does not match VERSION {current}")
-        section_version = version
     try:
         changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     except OSError as exc:
         raise UsageError(f"CHANGELOG.md: {exc}") from None
+    if rehearsal:
+        # Before the bump the release being rehearsed is the upcoming "## Unreleased — X.Y.Z"
+        # section; after it, VERSION's own.
+        upcoming = re.search(r"(?m)^## Unreleased — (\S+)", changelog)
+        section_version = upcoming.group(1) if upcoming else current
+        warnings.append(f"{tag} is a rehearsal: the notes use the {section_version} section")
+    else:
+        if version != current:
+            raise Refused(f"tag {tag} does not match VERSION {current}")
+        section_version = version
     _, body = changelog_section(changelog, section_version, released_only=not rehearsal)
     licence = (root / "LICENSE").read_text(encoding="utf-8") if (root / "LICENSE").is_file() else ""
     if OWNER_PLACEHOLDER in licence:

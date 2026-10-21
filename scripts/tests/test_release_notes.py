@@ -300,8 +300,21 @@ class ReleaseNotesTest(unittest.TestCase):
         )
         self.assertIn("### Highlights", out)
         self.assertIn("truthtable-proxy:0.0.0-rehearsal", out)
-        self.assertIn("warning: v0.0.0-rehearsal is a rehearsal", err)
+        self.assertIn(
+            "warning: v0.0.0-rehearsal is a rehearsal: the notes use the 2.0.0 section", err
+        )
         self.assertIn("warning: LICENSE still says", err)
+
+    def test_a_rehearsal_before_the_bump_takes_the_upcoming_section(self) -> None:
+        # VERSION still names the last release; the Unreleased section is what will ship.
+        changelog = UNRELEASED + "\n## v1.0.0 — 2026-06-11\n\nThe old release.\n"
+        root = make_root(version="1.0.0", changelog=changelog)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v0.0.0-rehearsal", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn("### Highlights", out)
+        self.assertNotIn("The old release.", out)
+        self.assertIn("the notes use the 2.0.0 section", err)
 
     def test_usage_errors(self) -> None:
         self.assertEqual(run(self.root, "--tag", "2.0.0", "--inspect", str(FIXTURE))[0], 2)
