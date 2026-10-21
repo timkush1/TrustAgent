@@ -24,12 +24,12 @@
 # Base images are pinned by their multi-arch INDEX digest (D125), so every
 # platform of a release (linux/amd64, linux/arm64) builds from the same bytes;
 # the tag stays next to the digest for readers and for Dependabot's docker
-# ecosystem, which moves both together. Pinned 2026-10-09: the tag on each FROM
+# ecosystem, which moves both together. Pinned 2026-10-21: the tag on each FROM
 # line names the release line, and the index digest after it is the pin (a
 # Dependabot digest refresh may move the patch release behind the same tag).
 
 # --- Stage 1: gRPC stubs ------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.25.11-alpine@sha256:523c3effe300580ed375e43f43b1c9b091b68e935a7c3a92bfcc4e7ed55b18c2 AS proto
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS proto
 
 # protobuf-dev ships the well-known .proto includes. Alpine packages are not
 # version-pinned: the base image tag fixes the release branch.
@@ -53,7 +53,7 @@ RUN mkdir -p /out \
       proto/evaluator.proto
 
 # --- Stage 2: build -----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.25.11-alpine@sha256:523c3effe300580ed375e43f43b1c9b091b68e935a7c3a92bfcc4e7ed55b18c2 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
 
 WORKDIR /src/backend-go
 

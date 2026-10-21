@@ -1,8 +1,8 @@
 module github.com/truthtable/backend-go
 
-go 1.25.0
+go 1.27.0
 
-toolchain go1.25.11
+toolchain go1.27.3
 
 require (
 	github.com/gin-gonic/gin v1.9.1
