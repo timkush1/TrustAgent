@@ -47,6 +47,13 @@ async function hold(page: Page, ms: number): Promise<void> {
   await page.waitForTimeout(ms);
 }
 
+/**
+ * Lets the recording catch up before a beat's lead is marked: the screencast's frames trail the
+ * page under load, so a beat starts on a page that has been still for a moment. Take the clips
+ * with nothing else running (P6b, P6c).
+ */
+const SETTLE_MS = 1_200;
+
 function clipsDir(): string {
   const dir = process.env.VIDEO_CLIPS_DIR;
   if (!dir) throw new Error('VIDEO_CLIPS_DIR is not set: run the recorder through scripts/launch_video.py');
@@ -101,6 +108,7 @@ async function recordBeat(
 function writeSidecar(source: 'static' | 'stack', kind: string, label: string, featured: string | null, clips: ClipRecord[]): void {
   const dir = clipsDir();
   mkdirSync(dir, { recursive: true });
+  rmSync(resolve(dir, 'raw'), { recursive: true, force: true });
   const doc = { schema: CLIPS_SCHEMA, source, kind, label, featured, clips, captured_at: new Date().toISOString() };
   writeFileSync(resolve(dir, 'clips.json'), `${JSON.stringify(doc, null, 2)}\n`);
   console.log(`video: ${clips.length} ${source} clip(s) in ${dir} (${kind})`);
@@ -130,6 +138,7 @@ test.describe('static beats', () => {
         await presetPreferences(page, 'light');
         await page.goto('');
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await hold(page, SETTLE_MS);
         ready();
         await hold(page, 5_500);
       }),
@@ -140,6 +149,7 @@ test.describe('static beats', () => {
         await presetPreferences(page, 'light', { showGuide: true });
         await page.goto('app/traffic/');
         await expect(page.getByRole('table', { name: 'Requests' }).locator('[role="row"][data-trace-id]').first()).toBeVisible({ timeout: TIMEOUT });
+        await hold(page, SETTLE_MS);
         ready();
         await hold(page, 10_500);
       }),
@@ -148,11 +158,18 @@ test.describe('static beats', () => {
       await recordBeat(browser, 'trace', { baseURL: site }, async (page, { ready }) => {
         const t = await guard(page);
         await presetPreferences(page, 'light');
-        await page.goto('app/traffic/');
-        await replayFinished(page);
-        await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
+        if (t.featured !== null) {
+          // A recorded tape names its featured trace (D209): open it straight away, without
+          // replaying Traffic first (its deep audit is in the tape's opening half, shown on load).
+          await page.goto(`app/traffic/${t.featured}`);
+        } else {
+          await page.goto('app/traffic/');
+          await replayFinished(page);
+          await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
+        }
         await expectFeaturedTrace(page, t);
         await expect(page.getByRole('region', { name: 'Answer' }).locator('mark[data-v="contradicted"]').first()).toBeVisible({ timeout: TIMEOUT });
+        await hold(page, SETTLE_MS);
         ready();
         await hold(page, 6_000);
         await page.getByRole('heading', { name: 'Details' }).click();
@@ -168,6 +185,7 @@ test.describe('static beats', () => {
         await page.goto('app/savings/');
         await expect(page).toHaveURL(/\/app\/overview\/?\?tab=savings$/);
         await replayFinished(page);
+        await hold(page, SETTLE_MS);
         ready();
         await hold(page, 7_500);
       }),
@@ -223,6 +241,7 @@ test.describe('stack beats', () => {
           const describe = page.getByRole('region', { name: /^Step 1:/ });
           const box = describe.getByRole('textbox', { name: 'What should TrustAgent check?' });
           await expect(box).toBeVisible({ timeout: TIMEOUT });
+          await hold(page, SETTLE_MS);
           ready();
           let from = now();
           await box.pressSequentially(STUDIO_TEXT, { delay: 45 });
@@ -261,6 +280,7 @@ test.describe('stack beats', () => {
           const route = page.getByText('payments-faq', { exact: true }).first();
           await expect(route).toBeVisible({ timeout: TIMEOUT });
           await route.scrollIntoViewIfNeeded();
+          await hold(page, SETTLE_MS);
           ready();
           let from = now();
           await hold(page, 4_000);
@@ -285,6 +305,7 @@ test.describe('stack beats', () => {
           await presetPreferences(page, 'light');
           await page.goto('/app/overview?tab=savings');
           await expect(page.getByRole('tab', { name: /Savings/, selected: true })).toBeVisible({ timeout: TIMEOUT });
+          await hold(page, SETTLE_MS);
           ready();
           await hold(page, 5_500);
         }),

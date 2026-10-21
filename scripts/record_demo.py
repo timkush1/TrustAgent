@@ -31,8 +31,9 @@ spent (the key's usage is read when a key is set; that call is free). With CONFI
    (docker-compose.yml + docker-compose.record.yml + stack.yml, project truthtable-record): the
    caps, test mode, sync traces, no judge fallback, no host port anywhere, no mock-upstream, the
    generated answers' upstream on OpenRouter with the key, images tagged p6rec;
-3. records the key's usage in the ledger, starts the stack from a clean slate (down -v, then up
-   --build with TRUSTAGENT_VERSION=p6rec) and reads GET /api/status inside the proxy container
+3. records the key's usage in the ledger, starts the stack from a clean slate (down -v, then the
+   p6rec images built with --build-arg VERSION=<VERSION>, so the gateway reports the release) and
+   reads GET /health and GET /api/status inside the proxy container
    (the stack publishes no port, so doctor cannot reach it): the fast check ready with a snapshot
    and a vendor endpoint, the judge up, real and not on its fallback;
 4. checks the snapshot against config/calibration/<snapshot>.json (D207): its quality goes into
@@ -775,7 +776,20 @@ class Recorder:
 
     @property
     def compose_env(self) -> Dict[str, str]:
+        """The variables compose interpolates: the images are tagged p6rec (D208)."""
         return {"TRUSTAGENT_VERSION": IMAGE_TAG}
+
+    def build_args(self) -> List[str]:
+        """`docker compose build` arguments that stamp the release into the binaries: compose
+        passes TRUSTAGENT_VERSION (p6rec) as the VERSION build argument, and the tape names the
+        version the proxy reports, which must be VERSION's."""
+        sha = self.must(
+            ["git", "-C", str(ROOT), "rev-parse", "--short=12", "HEAD"],
+            "git rev-parse",
+            compose=False,
+        ).strip()
+        version = self.repo_version() or self.release_version
+        return ["--build-arg", f"VERSION={version}", "--build-arg", f"GIT_SHA={sha}"]
 
     def keys(self) -> Keys:
         return read_keys(self.environ, self.env_file)
@@ -1013,6 +1027,7 @@ class Recorder:
                 and judge.get("state") == "up"
             )
             if ready:
+                self.check_version(attempt)
                 self.say(
                     f"  preflight: fast check {backend} ({state}) on {host}, snapshot "
                     f"{dm.get('snapshot')}; judge {provider} up"
@@ -1026,6 +1041,25 @@ class Recorder:
                     f"{judge.get('state') or '?'})"
                 )
             self.sleep(PREFLIGHT_INTERVAL_S)
+
+    def check_version(self, attempt: str) -> None:
+        """The gateway reports VERSION's release (GET /health): the tape names that version."""
+        code, out, _ = self.run(
+            self.compose(attempt)
+            + ["exec", "-T", "proxy", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"],
+            False,
+            self.compose_env,
+        )
+        try:
+            reported = str(json.loads(out).get("version")) if code == 0 else ""
+        except (ValueError, AttributeError):
+            reported = ""
+        want = self.repo_version() or self.release_version
+        if reported != want:
+            raise Failed(
+                f"preflight: the gateway reports version {reported or 'unknown'}, not VERSION's "
+                f"{want}: the images were not built with --build-arg VERSION={want}"
+            )
 
     def calibration(self, snapshot: str) -> Dict[str, Any]:
         path = calibration_file(snapshot, self.calibration_dir)
@@ -1447,7 +1481,12 @@ class Recorder:
         self.must(
             self.compose(attempt) + ["down", "-v", "--remove-orphans"], "docker compose down -v"
         )
-        up = ["up", "-d", "--build", "--wait", "--wait-timeout", str(self.wait_timeout)]
+        self.must(
+            self.compose(attempt) + ["build"] + self.build_args() + ["proxy", "engine"],
+            "docker compose build",
+            stream=True,
+        )
+        up = ["up", "-d", "--wait", "--wait-timeout", str(self.wait_timeout)]
         self.must(
             self.compose(attempt) + up + ["proxy", "engine"], "docker compose up", stream=True
         )

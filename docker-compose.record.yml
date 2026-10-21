@@ -36,7 +36,9 @@
 # - no mock-upstream and no trafficgen loop: neither profile is enabled.
 #
 # Its own project, truthtable-record, with images tagged p6rec (record_demo.py
-# sets TRUSTAGENT_VERSION=p6rec and builds them from this checkout): an attempt's
+# sets TRUSTAGENT_VERSION=p6rec and builds them from this checkout with
+# --build-arg VERSION=<VERSION>, so the gateway and the tape name the release;
+# the preflight checks GET /health says so): an attempt's
 # stack stays up for the review and goes with its volumes (down -v) on ACCEPT or
 # DISCARD. Without Docker, `make record-check-config` proves that the gateway
 # accepts this environment under strict configuration with fake keys

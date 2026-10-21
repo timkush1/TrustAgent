@@ -580,9 +580,14 @@ class Video:
             f'      - "127.0.0.1:{port}:3000"\n',
             encoding="utf-8",
         )
-        compose = record_demo.Recorder(work=self.work).compose(attempt) + ["-f", str(override)]
-        env = {"TRUSTAGENT_VERSION": record_demo.IMAGE_TAG}
-        up = compose + ["up", "-d", "--build", "--wait", "--wait-timeout", "300", "dashboard"]
+        recorder = record_demo.Recorder(work=self.work)
+        compose = recorder.compose(attempt) + ["-f", str(override)]
+        env = recorder.compose_env
+        version = recorder.repo_version() or recorder.release_version
+        build = compose + ["build", "--build-arg", f"VERSION={version}", "dashboard"]
+        if self.run(build, env, ROOT) != 0:
+            raise Failed("the record stack's dashboard did not build (docker compose build)")
+        up = compose + ["up", "-d", "--wait", "--wait-timeout", "300", "dashboard"]
         if self.run(up, env, ROOT) != 0:
             raise Failed("the record stack's dashboard did not start (docker compose up dashboard)")
         target = self.clips_dir("stack", rehearsal)

@@ -372,14 +372,14 @@ class VideoTest(unittest.TestCase):
         folder = self.work / attempt
         override = (folder / "video.yml").read_text(encoding="utf-8")
         self.assertIn('- "127.0.0.1:43210:3000"', override)
-        up, playwright, stop = self.run.calls
+        build, up, playwright, stop = self.run.calls
+        version = launch_video.record_demo.Recorder().repo_version()
+        self.assertEqual(build[-4:], ["build", "--build-arg", f"VERSION={version}", "dashboard"])
         self.assertIn(str(folder / "stack.yml"), up)
         self.assertIn(str(folder / "video.yml"), up)
-        self.assertEqual(
-            up[-7:], ["up", "-d", "--build", "--wait", "--wait-timeout", "300", "dashboard"]
-        )
-        self.assertEqual(self.run.envs[0], {"TRUSTAGENT_VERSION": "p6rec"})
-        env = self.run.envs[1] or {}
+        self.assertEqual(up[-6:], ["up", "-d", "--wait", "--wait-timeout", "300", "dashboard"])
+        self.assertEqual(self.run.envs[1], {"TRUSTAGENT_VERSION": "p6rec"})
+        env = self.run.envs[2] or {}
         self.assertEqual(playwright[-1], "stack beats")
         self.assertEqual(env["VIDEO_STACK_URL"], "http://localhost:43210")
         self.assertEqual(env["VIDEO_ADMIN_KEY_FILE"], str(folder / "admin.key"))

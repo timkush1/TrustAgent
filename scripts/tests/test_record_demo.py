@@ -40,19 +40,22 @@ def caps_env(decision: str = "0.50", llm: str = "3.00") -> Dict[str, str]:
 def good_config(decision: str = "0.50", llm: str = "3.00") -> Dict[str, Any]:
     """What `docker compose config --format json` prints for the record stack."""
     tag = record_demo.IMAGE_TAG
+    build = {"args": {"VERSION": record_demo.RELEASE_VERSION, "GIT_SHA": ""}}
     return {
         "name": "truthtable-record",
         "services": {
             "proxy": {
                 "image": f"ghcr.io/timkush1/truthtable-proxy:{tag}",
+                "build": build,
                 "environment": {**record_demo.PROXY_ENV, **caps_env(decision, llm)},
             },
             "engine": {
                 "image": f"ghcr.io/timkush1/truthtable-engine:{tag}",
+                "build": build,
                 "environment": {**record_demo.ENGINE_ENV},
             },
             "postgres": {"image": "postgres:16-alpine", "environment": {}},
-            "dashboard": {"image": f"ghcr.io/timkush1/truthtable-dashboard:{tag}"},
+            "dashboard": {"image": f"ghcr.io/timkush1/truthtable-dashboard:{tag}", "build": build},
         },
     }
 
@@ -120,6 +123,7 @@ class FakeRunner:
         self.check_code = 0
         self.video_code = 0
         self.running = True
+        self.version = record_demo.RELEASE_VERSION  # what GET /health reports
         self.extra_id: Optional[str] = None
         # The export: the simulated tape, relabelled as a real recording through vendor hosts.
         self.export = tmp / "export-source"
@@ -196,6 +200,10 @@ class FakeRunner:
         if k in ("down", "up"):
             self.running = k == "up"
             return 0, "", ""
+        if k == "build":
+            return 0, "", ""
+        if k == "exec wget":
+            return 0, json.dumps({"status": "ok", "version": self.version}), ""
         if k == "ps":
             return 0, "proxy\nengine\n" if self.running else "", ""
         if k == "exec sh":
@@ -569,6 +577,8 @@ class RecordDemoTest(unittest.TestCase):
         self.assertIn("TRUTHTABLE_UPSTREAM_URL: https://openrouter.ai/api", proxy)
         self.assertIn("TRUTHTABLE_UPSTREAM_API_KEY: ${OPENROUTER_API_KEY:-}", proxy)
         self.assertIn("ports: !reset []", proxy)
+        # The images take their tag from TRUSTAGENT_VERSION (p6rec), as in every overlay.
+        self.assertNotIn("image:", overlay)
         self.assertIn('TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0.50"', proxy)
         self.assertIn('TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "3"', proxy)
         self.assertNotIn("127.0.0.1::8080", overlay)
@@ -590,6 +600,12 @@ class RecordDemoTest(unittest.TestCase):
             self.assertNotIn("exec /trafficgen", self.runner.kinds())
             self.assertEqual(self.runner.kinds()[-1], "down")
         self.assertTrue(all(e["outcome"] == "failed" for e in self.ledger() if e["event"] == "end"))
+
+    def test_the_gateway_must_report_the_release(self) -> None:
+        self.runner.version = "p6rec"
+        self.assertEqual(self.main(), 1)
+        self.assertIn("the gateway reports version p6rec, not VERSION's 2.0.0", self.output())
+        self.assertNotIn("exec /trafficgen", self.runner.kinds())
 
     def test_the_preflight_waits_for_the_first_check(self) -> None:
         self.runner.statuses = [
@@ -630,13 +646,28 @@ class RecordDemoTest(unittest.TestCase):
         self.assertIn("up", kinds)
         self.assertEqual(kinds.count("exec /trafficgen"), 2)
         self.assertNotEqual(kinds[-1], "down")  # the stack stays up for the review
-        # Every compose call names the attempt's stack.yml and runs with the p6rec tag.
+        # Every compose call names the attempt's stack.yml and tags the images p6rec; the build
+        # stamps VERSION's release into the binaries, which the gateway then reports.
         for argv, env in zip(self.runner.calls, self.runner.envs):
             if self.runner.kind(argv) not in ("version", "git", "check"):
                 self.assertIn(str(folder / "stack.yml"), argv)
                 self.assertEqual((env or {}).get("TRUSTAGENT_VERSION"), "p6rec")
         up = self.runner.argv_of("up")
-        self.assertIn("--build", up)
+        self.assertNotIn("--build", up)
+        build = self.runner.argv_of("build")
+        self.assertLess(self.runner.calls.index(build), self.runner.calls.index(up))
+        self.assertEqual(
+            FakeRunner.rest(build),
+            [
+                "build",
+                "--build-arg",
+                f"VERSION={record_demo.RELEASE_VERSION}",
+                "--build-arg",
+                "GIT_SHA=abcdef123456",
+                "proxy",
+                "engine",
+            ],
+        )
         tg = self.runner.argv_of("exec /trafficgen")
         for flag, value in (
             ("--model-prefix", "openai/"),
