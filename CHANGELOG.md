@@ -159,6 +159,11 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
   pull-based quick start, `make release-notes TAG=…` (the CHANGELOG section,
   every image digest and the commands that verify it; it refuses a missing
   digest) and `make record-demo` (a dry run unless `CONFIRM=1`).
+- **Launch tooling**: `make linkedin-post` prints the launch post from the measured run and the
+  recorded tape and exits 1 on any missing value; `make clip FILE=…` copies text to the Windows
+  clipboard from WSL without garbling it; `make compare-review` re-reads every comparison source
+  and prints each cell beside its source's own words; `make hygiene-check` (in `make check`) and
+  `make gitleaks-history` keep local paths, personal emails and keys out of the repository.
 - **Measurement tools**: `make gate-eval`, `make calibrate`, `make bench-lite`
   and `make bench-publish` (each paid run is a dry run with an estimate unless
   `CONFIRM=1`, and publishing refuses mock output), the Tier-0 benchmarks and k6
@@ -187,6 +192,9 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
 - **The HaluEval evaluation workflow (`eval.yml`) runs only when started by
   hand**: it no longer runs weekly, its actions are pinned to commit SHAs, and its
   badge left the README, because its live-model figures carried no label.
+- **Pages on a release tag** ships the recorded tape; the repository variable
+  `PAGES_TAG_DATASET` = `simulated` ships the simulated one instead, for a release that may not
+  publish recorded model output.
 - **Toolchains**: Go 1.25, Vite 8, TypeScript 6, React 19.3; the Makefile is
   split into `mk/*.mk` fragments.
 - `SubmitAudit` and `GetAuditResult` are deprecated in favour of `Evaluate`.
