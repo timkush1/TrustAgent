@@ -541,7 +541,7 @@ services:
   # ========== Profile: observability ==========
 
   prometheus:
-    image: prom/prometheus:v2.48.0
+    image: prom/prometheus:v3.15.0
     profiles: [observability]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:9090:9090"
