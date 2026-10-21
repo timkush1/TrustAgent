@@ -31,6 +31,14 @@
 // (a real model's verdicts may differ from the scripted ones); a request that fails or a trace that
 // does not settle still fails the run. --trace-ids-out writes the trace id of every answered
 // request, one per line in send order, so the export can be checked against the run.
+// --report-only gives --expect the same drift reporting, and --drift-out writes the outcome of
+// every scenario (ok, drift with its mismatches, unchecked or failed) as JSON for review (D208);
+// both print a drift table at the end.
+//
+// --model-prefix and --max-tokens change only the requests of generated scenarios that go to the
+// upstream (D208): the recording's upstream is OpenRouter, whose model ids carry the vendor
+// (gpt-4o-mini becomes openai/gpt-4o-mini), and max_tokens bounds each generated answer. Scripted
+// scenarios keep their test_response, so the gateway calls no upstream for them.
 //
 // --pack faults sends the vendor-fault scenarios of contracts/demo/faults.v1.json (D119) instead:
 // mock-upstream, the e2e stack's decision backend and LLM upstream, answers each with the fault its
@@ -42,6 +50,7 @@
 //	trafficgen --once --expect --scenarios e2e --upstream all
 //	trafficgen --once --expect --pack faults --scenarios faults --upstream all
 //	trafficgen --record --scenarios demo --exclude knowledge --upstream generated --trace-ids-out ids.txt
+//	trafficgen --record --scenarios demo --exclude knowledge --upstream generated --model-prefix openai/ --max-tokens 300 --drift-out drift.json
 //	trafficgen --seed-knowledge --admin-key-file admin.key
 //
 // --seed-knowledge sends no traffic: it uploads the knowledge documents of the selected scenarios
@@ -65,6 +74,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -107,6 +117,58 @@ type options struct {
 	auditTimeout  time.Duration
 	timeout       time.Duration
 	key           string
+	// modelPrefix and maxTokens rewrite generated scenarios sent to the upstream (D208).
+	modelPrefix string
+	maxTokens   int
+	// reportOnly reports --expect mismatches as drift; driftOut is where drift.json goes.
+	reportOnly bool
+	driftOut   string
+}
+
+// driftMode reports whether a mismatch is drift (printed, not failing): a recording run, or
+// --expect --report-only.
+func (o *options) driftMode() bool { return o.record || o.reportOnly }
+
+// maxGeneratedTokens bounds --max-tokens: a demo answer is a few sentences (D208 caps it at 300).
+const maxGeneratedTokens = 4096
+
+// modelPrefixPattern is a vendor prefix of an OpenRouter model id ("openai/").
+var modelPrefixPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*/$`)
+
+// rewriteGenerated applies --model-prefix and --max-tokens to the body of a generated scenario
+// sent to the upstream: the model gets the prefix (once), and max_tokens is set, or lowered to the
+// bound when the scenario asks for more.
+func (o *options) rewriteGenerated(body []byte) ([]byte, error) {
+	if o.modelPrefix == "" && o.maxTokens == 0 {
+		return body, nil
+	}
+	var req map[string]json.RawMessage
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, err
+	}
+	if o.modelPrefix != "" {
+		var model string
+		if err := json.Unmarshal(req["model"], &model); err != nil || model == "" {
+			return nil, errors.New("a generated scenario has no model to prefix")
+		}
+		if !strings.HasPrefix(model, o.modelPrefix) {
+			model = o.modelPrefix + model
+		}
+		b, err := json.Marshal(model)
+		if err != nil {
+			return nil, err
+		}
+		req["model"] = b
+	}
+	if o.maxTokens > 0 {
+		limit := o.maxTokens
+		var asked int
+		if raw, ok := req["max_tokens"]; ok && json.Unmarshal(raw, &asked) == nil && asked > 0 && asked < limit {
+			limit = asked
+		}
+		req["max_tokens"] = json.RawMessage(strconv.Itoa(limit))
+	}
+	return json.Marshal(req)
 }
 
 // --upstream values: which scenarios get their answer from the gateway's upstream instead of
@@ -144,8 +206,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.DurationVar(&o.interval, "interval", 20*time.Second, "pause between rounds with --loop")
 	fl.DurationVar(&o.auditTimeout, "audit-timeout", 90*time.Second, "how long --expect waits for a deep audit to settle")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one HTTP request")
+	fl.StringVar(&o.modelPrefix, "model-prefix", "", "prefix the model of generated scenarios sent to the upstream (openai/ for OpenRouter; D208)")
+	fl.IntVar(&o.maxTokens, "max-tokens", 0, "set max_tokens of generated scenarios sent to the upstream, at most this (1-4096; D208)")
+	fl.BoolVar(&o.reportOnly, "report-only", false, "with --expect, report mismatches as drift without failing")
+	fl.StringVar(&o.driftOut, "drift-out", "", "with --expect or --record, write every scenario's outcome (ok, drift, unchecked, failed) to this JSON file")
 	fl.Usage = func() {
-		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip] | --record] [--trace-ids-out FILE] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--base-url URL] [--pack main | --file pack.json]")
+		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip] [--report-only] | --record] [--trace-ids-out FILE] [--drift-out FILE] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--model-prefix openai/] [--max-tokens 300] [--base-url URL] [--pack main | --file pack.json]")
 		fmt.Fprintln(stderr, "       trafficgen --seed-knowledge --admin-key-file FILE [--scenarios knowledge] [--base-url URL]")
 		fmt.Fprintln(stderr, "The ingest key is read from "+keyEnv+"; the gateway must run with TRUTHTABLE_TEST_MODE=true.")
 		fl.PrintDefaults()
@@ -162,7 +228,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		(o.record && (o.loop || o.upstream == upstreamAll)) || (o.traceIDsOut != "" && o.loop) ||
 		// A seeding run sends no traffic, so nothing about traffic applies to it.
 		(o.seedKnowledge && (o.adminKeyFile == "" || o.loop || o.expect || o.record || o.traceIDsOut != "")) ||
-		(!o.seedKnowledge && o.adminKeyFile != "") {
+		(!o.seedKnowledge && o.adminKeyFile != "") ||
+		// The upstream rewrite applies only to answers the upstream writes; drift needs checks.
+		((o.modelPrefix != "" || o.maxTokens != 0) && (o.upstream == upstreamNone || o.seedKnowledge)) ||
+		(o.modelPrefix != "" && !modelPrefixPattern.MatchString(o.modelPrefix)) ||
+		o.maxTokens < 0 || o.maxTokens > maxGeneratedTokens ||
+		(o.reportOnly && !o.expect && !o.record) ||
+		(o.driftOut != "" && ((!o.expect && !o.record) || o.loop)) {
 		fl.Usage()
 		return exitUsage
 	}
@@ -227,6 +299,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		if o.traceIDsOut != "" {
 			if err := writeTraceIDs(o.traceIDsOut, results); err != nil {
 				fmt.Fprintln(stderr, "trafficgen: --trace-ids-out:", err)
+				return exitMismatch
+			}
+		}
+		if o.driftOut != "" {
+			if err := writeDrift(o.driftOut, results); err != nil {
+				fmt.Fprintln(stderr, "trafficgen: --drift-out:", err)
 				return exitMismatch
 			}
 		}
@@ -339,7 +417,7 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) (bool, []*s
 			for _, m := range r.fails {
 				fmt.Fprintf(g.out, "  %s\n", m)
 			}
-		case len(r.fails) > 0 && g.opts.record:
+		case len(r.fails) > 0 && g.opts.driftMode():
 			drift++
 			fmt.Fprintf(g.out, "drift %s (trace %s, %d ms)\n", r.s.ID, r.traceID, r.ms)
 			for _, m := range r.fails {
@@ -365,6 +443,13 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) (bool, []*s
 		}
 		fmt.Fprintf(g.out, "trafficgen: %d scenario(s) recorded: %s; %d drift from their expectations (reported, not failing)\n",
 			len(results), verdict, drift)
+	case g.opts.reportOnly:
+		verdict := "every trace settled"
+		if !ok {
+			verdict = "some requests failed or did not settle"
+		}
+		fmt.Fprintf(g.out, "trafficgen: %d scenario(s) checked: %s; %d drift from their expectations (reported, not failing)\n",
+			len(results), verdict, drift)
 	case g.opts.expect:
 		verdict := "all scenarios match their expectations"
 		if !ok {
@@ -372,7 +457,106 @@ func (g *generator) round(ctx context.Context, scenarios []scenario) (bool, []*s
 		}
 		fmt.Fprintf(g.out, "trafficgen: %d scenario(s): %s\n", len(results), verdict)
 	}
+	if g.opts.driftMode() {
+		printDriftTable(g.out, results)
+	}
 	return ok, results
+}
+
+// Drift outcomes (drift.json and the drift table).
+const (
+	outcomeOK        = "ok"
+	outcomeDrift     = "drift"
+	outcomeUnchecked = "unchecked"
+	outcomeFailed    = "failed"
+)
+
+// driftEntry is one scenario of drift.json.
+type driftEntry struct {
+	Scenario   string          `json:"scenario"`
+	TraceID    *string         `json:"trace_id"`
+	Outcome    string          `json:"outcome"`
+	Mismatches []driftMismatch `json:"mismatches"`
+	Error      *string         `json:"error"`
+}
+
+type driftMismatch struct {
+	Field string `json:"field"`
+	Want  string `json:"want"`
+	Got   string `json:"got"`
+}
+
+// driftReport is drift.json: what a recording's review reads (D208).
+type driftReport struct {
+	Scenarios []driftEntry   `json:"scenarios"`
+	Counts    map[string]int `json:"counts"`
+}
+
+func outcomeOf(r *sent) string {
+	switch {
+	case r.err != nil:
+		return outcomeFailed
+	case len(r.fails) > 0:
+		return outcomeDrift
+	case r.unchecked:
+		return outcomeUnchecked
+	}
+	return outcomeOK
+}
+
+func newDriftReport(results []*sent) driftReport {
+	rep := driftReport{Scenarios: []driftEntry{}, Counts: map[string]int{outcomeOK: 0, outcomeDrift: 0, outcomeUnchecked: 0, outcomeFailed: 0}}
+	for _, r := range results {
+		e := driftEntry{Scenario: r.s.ID, Outcome: outcomeOf(r), Mismatches: []driftMismatch{}}
+		if r.traceID != "" {
+			id := r.traceID
+			e.TraceID = &id
+		}
+		if r.err != nil {
+			msg := r.err.Error()
+			e.Error = &msg
+		}
+		for _, m := range r.fails {
+			e.Mismatches = append(e.Mismatches, driftMismatch{Field: m.field, Want: m.want, Got: m.got})
+		}
+		rep.Counts[e.Outcome]++
+		rep.Scenarios = append(rep.Scenarios, e)
+	}
+	return rep
+}
+
+// writeDrift writes drift.json, replacing the file whole.
+func writeDrift(path string, results []*sent) error {
+	b, err := json.MarshalIndent(newDriftReport(results), "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, append(b, '\n'))
+}
+
+// printDriftTable prints one row per scenario: its outcome and the fields that drifted.
+func printDriftTable(w io.Writer, results []*sent) {
+	rep := newDriftReport(results)
+	width := len("scenario")
+	for _, e := range rep.Scenarios {
+		width = max(width, len(e.Scenario))
+	}
+	fmt.Fprintf(w, "\n%-*s  %-9s  %s\n", width, "scenario", "outcome", "drifted fields")
+	for _, e := range rep.Scenarios {
+		fields := make([]string, 0, len(e.Mismatches))
+		for _, m := range e.Mismatches {
+			fields = append(fields, m.Field)
+		}
+		detail := strings.Join(fields, ", ")
+		if e.Error != nil {
+			detail = *e.Error
+		}
+		if detail == "" {
+			detail = "-"
+		}
+		fmt.Fprintf(w, "%-*s  %-9s  %s\n", width, e.Scenario, e.Outcome, detail)
+	}
+	fmt.Fprintf(w, "%d ok, %d drift, %d unchecked, %d failed\n", rep.Counts[outcomeOK], rep.Counts[outcomeDrift], rep.Counts[outcomeUnchecked], rep.Counts[outcomeFailed])
 }
 
 // writeTraceIDs writes the trace id of every answered request to path, one per line in send order,
@@ -384,6 +568,11 @@ func writeTraceIDs(path string, results []*sent) error {
 			b.WriteString(r.traceID + "\n")
 		}
 	}
+	return writeFileAtomic(path, []byte(b.String()))
+}
+
+// writeFileAtomic replaces path with data through a temporary file renamed into place.
+func writeFileAtomic(path string, data []byte) error {
 	dir, base := filepath.Split(path)
 	if dir == "" {
 		dir = "."
@@ -393,12 +582,12 @@ func writeTraceIDs(path string, results []*sent) error {
 		return err
 	}
 	tmp := f.Name()
-	_, werr := f.WriteString(b.String())
+	_, werr := f.Write(data)
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
 	if werr == nil {
-		werr = os.Chmod(tmp, 0o644) // #nosec G302 -- a list of trace ids, read by the recording tooling
+		werr = os.Chmod(tmp, 0o644) // #nosec G302 -- trace ids and drift outcomes, read by the recording tooling
 	}
 	if werr == nil {
 		werr = os.Rename(tmp, path)
@@ -419,6 +608,9 @@ func (g *generator) send(ctx context.Context, s *scenario) *sent {
 	}
 	upstream := g.opts.fromUpstream(s)
 	body, err := s.body(upstream)
+	if err == nil && upstream && s.AnswerSource == answerGenerated {
+		body, err = g.opts.rewriteGenerated(body)
+	}
 	if err != nil {
 		r.err = err
 		return r
