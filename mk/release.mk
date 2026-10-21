@@ -21,10 +21,15 @@ version-bump: ## Set a new version everywhere: make version-bump V=2.0.0 (DRY_RU
 check-version: ## Check that every version mirror agrees with VERSION (RELEASE_TAG=v2.0.0 also checks a release tag)
 	$(PYTHON) scripts/check_version.py $(if $(RELEASE_TAG),--tag $(RELEASE_TAG))
 
+# release-notes prints Markdown on stdout only (make release-notes TAG=v2.0.0 | make clip). It reads
+# each image's digest anonymously with docker buildx imagetools inspect, or canned output from
+# RELEASE_NOTES_INSPECT (a JSON file, as scripts/tests/fixtures/inspect.json; the R-4 rehearsal).
 TAG ?=
+RELEASE_NOTES_INSPECT ?=
 
-release-notes: ## Release notes for a tag: make release-notes TAG=v2.0.0 (CHANGELOG section, image digests, verify commands, measured labels; P6 S-1)
-	@echo "release-notes: not implemented (P6 S-1)"; exit 2
+release-notes: ## Release notes for a tag: make release-notes TAG=v2.0.0 (CHANGELOG section, image digests, verify commands, measured labels; refuses a missing digest)
+	@if [ -z "$(TAG)" ]; then echo "release-notes: set TAG, e.g. make release-notes TAG=v2.0.0" >&2; exit 2; fi
+	@$(PYTHON) scripts/release_notes.py --tag $(TAG) $(if $(RELEASE_NOTES_INSPECT),--inspect $(RELEASE_NOTES_INSPECT))
 
 # ---------- GitHub Pages site (D124, D110, D137) ----------
 # `make pages-build` runs, in the same order, the steps of the build job of
