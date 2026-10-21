@@ -103,21 +103,27 @@ jev-check: ## Check the decision model connection (cmd/jevcheck; in the running 
 # (the key check, a bogus key's 401, both decision paths, ZDR, a Haiku chat with usage.cost, a
 # 30k-token probe) into CAPTURE_DIR with OPENROUTER_API_KEY. A dry run (the plan and its estimate,
 # nothing sent) unless CONFIRM=1; hard cap USD 0.01, expected under USD 0.005. A real capture runs
-# the pinned gitleaks over CAPTURE_DIR afterwards. Fixtures from a host that is not a vendor
+# the pinned gitleaks over CAPTURE_DIR afterwards, whatever the capture's exit (a capture that
+# stopped half way has written fixtures too). Fixtures from a host that is not a vendor
 # (mock-upstream) say "simulated", never "captured".
 CAPTURE_DIR ?= contracts/fixtures/vendor/captured
 CAPTURE_MAX_COST_USD ?= 0.01
+# The key, the OpenRouter base URL and the model come from the shell or, as the services read
+# them, from .env (scripts/envfile.py; the values are expanded by the shell, never echoed).
+JEV_CAPTURE_ENV = $(foreach k,OPENROUTER_API_KEY TRUTHTABLE_OPENROUTER_BASE_URL TRUTHTABLE_JEV_MODEL,$(k)="$$($(PYTHON) scripts/envfile.py get $(k))")
+JEV_CAPTURE = $(JEV_CAPTURE_ENV) go -C backend-go run ./cmd/jevcheck --capture "$(abspath $(CAPTURE_DIR))" --max-cost-usd $(CAPTURE_MAX_COST_USD)
 
 jev-capture: ## Capture sanitized vendor fixtures with jevcheck --capture into CAPTURE_DIR (a dry run unless CONFIRM=1; cap USD 0.01; then gitleaks over it)
 ifeq ($(CONFIRM),1)
 	@$(MAKE) --no-print-directory gitleaks-install
-	go -C backend-go run ./cmd/jevcheck --capture "$(abspath $(CAPTURE_DIR))" --max-cost-usd $(CAPTURE_MAX_COST_USD)
-	@if [ -d "$(CAPTURE_DIR)" ]; then \
-		$(GITLEAKS) dir --config .gitleaks.toml --redact --no-banner --exit-code 1 "$(CAPTURE_DIR)" \
-		&& echo "✅ gitleaks: nothing found in $(CAPTURE_DIR)"; \
-	fi
+	@code=0; $(JEV_CAPTURE) || code=$$?; \
+	if [ -d "$(CAPTURE_DIR)" ]; then \
+		$(GITLEAKS) dir --config .gitleaks.toml --redact --no-banner --exit-code 1 "$(CAPTURE_DIR)" || exit 1; \
+		echo "✅ gitleaks: nothing found in $(CAPTURE_DIR)"; \
+	fi; \
+	exit $$code
 else
-	go -C backend-go run ./cmd/jevcheck --capture "$(abspath $(CAPTURE_DIR))" --max-cost-usd $(CAPTURE_MAX_COST_USD) --dry-run
+	@$(JEV_CAPTURE) --dry-run
 endif
 
 # Go benchmarks (D120): five counts of every benchmark, written to backend-go/bench/<sha>.txt
