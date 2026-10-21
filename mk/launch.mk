@@ -39,13 +39,14 @@ hero-gif: ## Record the README hero (npm run hero), then make the GIF (1200 px, 
 screenshots: ## Capture the dashboard pages in both themes into docs/images/v2/{page}-{light,dark}.png (the simulated tape is allowed and shows its Simulated label)
 	cd "$(LAUNCH_WEB)" && npm run screenshots
 
-test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py) and the list of launch specs (no browser, no build)
-	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_make_hero_gif.py
+test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py, launch_video.py) and the list of launch specs (no browser, no build)
+	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_make_hero_gif.py scripts/tests/test_launch_video.py
 	cd "$(LAUNCH_WEB)" && npx playwright test --list --project=launch
 
 # ---------- Launch post and video (D210, D213; seams the SHIP and VEND streams fill in) ----------
 CLIP ?=
 FILE ?=
+PAGES_ONLY ?=
 
 linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it; P6 S-9)
 	@echo "linkedin-post: not implemented (P6 S-9)"; exit 2
@@ -53,11 +54,13 @@ linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the 
 clip: ## Copy a file to the Windows clipboard as UTF-16LE (make clip FILE=...; stdout without clip.exe; P6 S-9)
 	@echo "clip: not implemented (P6 S-9)"; exit 2
 
-launch-video: ## The 60-second launch video: static beats from the recorded Pages build plus the stack beats, captions burned in (tmp/launch/*.mp4; P6 V-7)
-	@echo "launch-video: not implemented (P6 V-7)"; exit 2
+launch-video: ## The 60-second launch video (D210): the static beats from the recorded Pages build, then ffmpeg joins them with the stack beats and burned-in captions into tmp/launch/video-{16x9,4x5}.mp4 (PAGES_ONLY=1: the H-6 45 s take; VIDEO_ALLOW_MOCK=1: a rehearsal in tmp/launch/rehearsal/)
+	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" static
+	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" assemble $(if $(filter 1,$(PAGES_ONLY)),--pages-only)
 
-launch-video-stack: ## The launch video's stack beats on the record stack: make launch-video-stack ATTEMPT=<id> (run by record-demo ACCEPT=1 VIDEO=1; P6 V-7)
-	@echo "launch-video-stack: not implemented (P6 V-7)"; exit 2
+launch-video-stack: ## The launch video's stack beats on a reviewed attempt's record stack: make launch-video-stack ATTEMPT=<id> (make record-demo ACCEPT=1 VIDEO=1 runs it; its calls are in the record ledger)
+	@if [ -z "$(ATTEMPT)" ]; then echo "launch-video-stack: set ATTEMPT=<id> (make record-demo CONFIRM=1 printed it)"; exit 2; fi
+	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" stack --attempt "$(ATTEMPT)"
 
 # ---------- Aggregate hook (see the root Makefile; P5 I-2) ----------
 check: check-claims
