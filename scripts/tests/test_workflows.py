@@ -188,7 +188,9 @@ class PagesWorkflowTest(unittest.TestCase):
 
         def evaluate(ref: str, variable: str) -> str:
             py = (
-                expr.replace("startsWith(github.ref, 'refs/tags/v')", repr(ref.startswith("refs/tags/v")))
+                expr.replace(
+                    "startsWith(github.ref, 'refs/tags/v')", repr(ref.startswith("refs/tags/v"))
+                )
                 .replace("vars.PAGES_TAG_DATASET", repr(variable))
                 .replace("&&", " and ")
                 .replace("||", " or ")
