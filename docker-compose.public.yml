@@ -88,8 +88,9 @@ services:
     logging: *public-logging
 
   # The edge. Pinned 2026-10-10: caddy:2-alpine; the index digest after it is the
-  # pin (re-check it when you deploy). Root in the container, with only the
-  # capability to bind 80 and 443.
+  # pin (Caddy 2.11.7, the digest of caddy:2.11.7-alpine on 2026-10-21; re-check
+  # it when you deploy). Root in the container, with only the capability to bind
+  # 80 and 443.
   caddy:
     image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
     ports:

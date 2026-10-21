@@ -78,14 +78,14 @@ and the running stack after it.
 
 | Item | Price | Label |
 |---|---|---|
-| Hetzner Cloud CX23: 2 vCPU (x86), 4 GB RAM, 40 GB disk, 20 TB traffic in EU locations | from €5.99 a month excl. VAT, or €0.0096 an hour up to that cap | [vendor] Hetzner's price page, read 2026-10-21; re-check before you create the server |
+| Hetzner Cloud CX23: 2 vCPU (x86), 4 GB RAM, 40 GB disk, 20 TB traffic in EU locations, a public IPv4 address | from €5.99 a month excl. VAT, or €0.0096 an hour up to that cap | [vendor] Hetzner's price page ("Price incl. IPv4"), read 2026-10-21; re-check before you create the server |
 | The same, for a year | about €72 excl. VAT | [estimate] 12 × the monthly price |
 | The address | $0 with `<your-ip-with-dashes>.sslip.io`, or the domain you already own | |
 | Certificates (Let's Encrypt) | $0 | |
 | Vendor calls (Jev, the judge) | $0: the demo calls no vendor | |
 
-- **IPv4.** The demo needs a public IPv4 address. Hetzner's price page has a "Price incl. IPv4"
-  switch: read the price with it on.
+- **IPv4.** The demo needs a public IPv4 address. Hetzner's listed prices include one (the price
+  page says "Price incl. IPv4"): keep IPv4 on when you create the server (Step 1).
 - **Billing stops when the server is deleted**, not when it is switched off.
 - **Why Hetzner.** A small, steady x86 VM with a public IPv4 address, priced per hour with a
   monthly cap. Any provider with 2 vCPU, 4 GB, Ubuntu and a firewall works the same way.
