@@ -275,4 +275,3 @@ func TestGateEvalPolicyBuiltinIgnoresThePolicyFile(t *testing.T) {
 		t.Errorf("the defaults route does not assess groundedness: %s", b.String())
 	}
 }
-
