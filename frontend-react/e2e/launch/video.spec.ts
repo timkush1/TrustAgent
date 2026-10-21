@@ -79,6 +79,26 @@ async function recordBeat(
     storageState: options.storageState,
     recordVideo: { dir: raw, size: VIDEO_SIZE },
   });
+  // Keep the compositor producing frames: the screencast sends a frame only when the page
+  // repaints, and a still page (or a busy machine) leaves the video on a stale frame. A 1 px dot,
+  // never visible, moves every animation frame.
+  await context.addInitScript(() => {
+    const start = () => {
+      const dot = document.createElement('div');
+      dot.setAttribute('aria-hidden', 'true');
+      dot.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.004;pointer-events:none;z-index:2147483647';
+      document.documentElement.appendChild(dot);
+      let x = 0;
+      const tick = () => {
+        x = (x + 1) % 2;
+        dot.style.transform = `translateX(${x}px)`;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+    else start();
+  });
   const page = await context.newPage();
   const t0 = Date.now();
   let lead = -1;
