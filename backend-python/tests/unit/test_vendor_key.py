@@ -229,7 +229,19 @@ def _ledger_files(tmp_path: Path, *, bench_lite: float = 2.9) -> Dict[str, Path]
     )
     record = tmp_path / "record" / "ledger.jsonl"
     record.parent.mkdir()
-    record.write_text(json.dumps({"attempt": "a1", "usage_delta_usd": 1.2}) + "\n")
+    caps = {"decision_usd": 0.5, "llm_usd": 3.0}
+    events = [  # record_demo's event log: the review's reading, then the final one at ACCEPT
+        {"attempt": "a1", "event": "start", "usage_before_usd": 0.3, "caps": caps},
+        {"attempt": "a1", "event": "measure", "usage_usd": 1.4, "spent_usd": 1.1},
+        {
+            "attempt": "a1",
+            "event": "end",
+            "outcome": "accepted",
+            "usage_after_usd": 1.5,
+            "spent_usd": 1.2,
+        },
+    ]
+    record.write_text("".join(json.dumps(e) + "\n" for e in events))
     journal = tmp_path / "p6" / "results.log"
     journal.parent.mkdir()
     capture = vendor_key.result_line(
@@ -308,3 +320,53 @@ def test_an_empty_ledger_is_zero(tmp_path: Path) -> None:
     )
     assert ledger.total == 0 and all(not step.sources for step in ledger.steps)
     assert "nothing recorded" in p6_ledger.render(ledger)
+
+
+def test_the_record_ledger_counts_each_attempt_once_as_record_demo_does(tmp_path: Path) -> None:
+    caps = {"decision_usd": 0.5, "llm_usd": 3.0}
+    events = [
+        {"attempt": "a1", "event": "start", "usage_before_usd": 1.0, "caps": caps},
+        {"attempt": "a1", "event": "measure", "usage_usd": 1.6, "spent_usd": 0.6},
+        {
+            "attempt": "a1",
+            "event": "end",
+            "outcome": "discarded",
+            "usage_after_usd": 1.65,
+            "spent_usd": 0.65,
+        },
+        # a2's final reading failed: it counts at most the key's usage since its start (the next
+        # reading, a3's start), never at its review's $0.20.
+        {"attempt": "a2", "event": "start", "usage_before_usd": 1.65, "caps": caps},
+        {"attempt": "a2", "event": "measure", "usage_usd": 1.85, "spent_usd": 0.2},
+        {
+            "attempt": "a2",
+            "event": "end",
+            "outcome": "failed",
+            "usage_after_usd": None,
+            "spent_usd": 0.2,
+        },
+        {"attempt": "a3", "event": "start", "usage_before_usd": 2.15, "caps": caps},
+    ]
+    path = tmp_path / "ledger.jsonl"
+    path.write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    step = p6_ledger.record_step(path, current_usage=2.2)
+
+    # a1 at its final reading (not measure + end), a2 at 2.15 - 1.65, a3 open with no reading yet.
+    assert step.spent_usd == pytest.approx(0.65 + 0.5)
+    assert step.entries == 3 and step.sources == ["ledger.jsonl (3 attempts, 1 at an upper bound)"]
+
+
+def test_an_unreadable_record_ledger_prints_no_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    files = _ledger_files(tmp_path)
+    files["record_ledger"].write_text("{not json\n")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("TRUTHTABLE_ENV_FILE", "")
+    args = [f"--{name.replace('_', '-')}={path}" for name, path in files.items()]
+
+    assert p6_ledger.main(args) == 1
+
+    captured = capsys.readouterr()
+    assert "no total is printed" in captured.err and "total" not in captured.out

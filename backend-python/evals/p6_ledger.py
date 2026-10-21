@@ -9,7 +9,9 @@ It reads what the paid steps left behind and calls nothing but the free
   smoke-p6; bench-lite: lite-p6), every session of a run;
 - the calib-pass runs, evals/calibration/<run_id>/result.json (else the
   cost_usd of its gate.jsonl lines);
-- the record ledger, tmp/record-demo/ledger.jsonl (VEND, D208);
+- the record ledger, tmp/record-demo/ledger.jsonl (VEND, D208), read by
+  scripts/record_demo.py's own Ledger: each attempt counts once, at its final
+  reading of the key, or at an upper bound when that reading failed;
 - the result lines of the other steps (jev-capture, jev-check) from the
   journal tmp/p6/results.log, where the make targets append them.
 
@@ -21,6 +23,7 @@ unattributed. Exit 1 when a step went over its cap, else 0.
 """
 
 import argparse
+import importlib.util
 import json
 import sys
 from dataclasses import dataclass, field
@@ -132,13 +135,53 @@ def calib_step(calibration_dir: Path) -> Step:
     return step
 
 
-def record_step(path: Path) -> Step:
+class LedgerUnreadable(Exception):
+    """A spend file p6-ledger cannot read: no total is printed rather than one that is too low."""
+
+
+def _record_demo_module(root: Path) -> Any:
+    """scripts/record_demo.py, the record ledger's writer: its event log (start, measure, end per
+    attempt) is read by its own Ledger, so the two never count an attempt differently."""
+    script = root / "scripts" / "record_demo.py"
+    if not script.is_file():
+        raise LedgerUnreadable(f"{script} is missing: the record ledger cannot be read")
+    name = "_trustagent_record_demo"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, script)
+    if spec is None or spec.loader is None:
+        raise LedgerUnreadable(f"{script} cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses resolve their module while it executes
+    path = list(sys.path)  # it puts scripts/ first for its envfile import; nothing else sees it
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[name]
+        raise
+    finally:
+        sys.path[:] = path
+    return module
+
+
+def record_step(
+    path: Path, *, current_usage: Optional[float] = None, root: Optional[Path] = None
+) -> Step:
+    """record-demo: every attempt once (D208). An attempt whose final key reading failed counts at
+    the key's usage since its start, or at its caps, as record_demo itself counts it."""
     step = Step("record-demo", cap_usd=CAPS["record-demo"])
-    if path.is_file():
-        rows = list(_jsonl(path))
-        step.spent_usd = sum(_amount(row) for row in rows)
-        step.entries = len(rows)
-        step.sources.append(f"{path.name} ({len(rows)} attempts)")
+    if not path.is_file():
+        return step
+    module = _record_demo_module(root or repo_root() or Path.cwd())
+    try:
+        accounts = module.Ledger(path).accounts(current_usage)
+    except module.Refused as exc:
+        raise LedgerUnreadable(str(exc)) from exc
+    step.spent_usd = sum(float(a.counted) for a in accounts)
+    step.entries = len(accounts)
+    bounded = sum(1 for a in accounts if a.how != "reading")
+    note = f", {bounded} at an upper bound" if bounded else ""
+    step.sources.append(f"{path.name} ({len(accounts)} attempts{note})")
     return step
 
 
@@ -189,15 +232,16 @@ def collect(
     journal: Path,
     key: Optional[planning.KeyContext] = None,
 ) -> Ledger:
+    status = key.status if key is not None else None
+    problem = key.problem if key is not None else None
     capture, *checks = journal_steps(journal)
+    usage = status.usage_usd if status is not None else None
     steps = (
         [capture]
         + bench_steps(cache_dir)
-        + [calib_step(calibration_dir), record_step(record_ledger)]
+        + [calib_step(calibration_dir), record_step(record_ledger, current_usage=usage)]
         + checks
     )
-    status = key.status if key is not None else None
-    problem = key.problem if key is not None else None
     return Ledger(steps=steps, key=status, key_problem=problem)
 
 
@@ -255,13 +299,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--journal", default=str(root / "tmp" / "p6" / "results.log"))
     parser.add_argument("--json", action="store_true", help="Print one JSON object")
     args = parser.parse_args(argv)
-    ledger = collect(
-        cache_dir=Path(args.cache_dir),
-        calibration_dir=Path(args.calibration_dir),
-        record_ledger=Path(args.record_ledger),
-        journal=Path(args.journal),
-        key=planning.key_context(model=None, fetch=_key_fetch()),
-    )
+    try:
+        ledger = collect(
+            cache_dir=Path(args.cache_dir),
+            calibration_dir=Path(args.calibration_dir),
+            record_ledger=Path(args.record_ledger),
+            journal=Path(args.journal),
+            key=planning.key_context(model=None, fetch=_key_fetch()),
+        )
+    except LedgerUnreadable as exc:
+        print(f"p6-ledger: {exc}; no total is printed until it is fixed", file=sys.stderr)
+        return 1
     if args.json:
         print(
             json.dumps(
