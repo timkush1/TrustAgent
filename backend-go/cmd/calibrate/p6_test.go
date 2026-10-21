@@ -234,6 +234,17 @@ func TestCalibrateRefusesRisksFromAStandInHost(t *testing.T) {
 		t.Errorf("a stand-in calibration was written: %v", entries)
 	}
 
+	// A non-mock line that names no host (a gate-eval from before P6, or a host the stamp dropped)
+	// is no proof that a vendor answered: refused as well (D203).
+	hostless := calibLines(300, 11, "")
+	code, out, stderr = runCLI(t, hostless, testEnv(), "--evaluator", "groundedness@1", "--out", dir, "--write")
+	if code != exitFailed || !strings.Contains(stderr, "came from (no endpoint_host), not a vendor host") {
+		t.Errorf("no host: exit %d: %s%s", code, out, stderr)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("a calibration without a host was written: %v", entries)
+	}
+
 	// The mock backend has no host: its mock/* snapshot is written with quality mock, as before.
 	mock := strings.NewReplacer(`"endpoint_host":"127.0.0.1"`, `"endpoint_host":null`, `"backend":"openrouter-decisions"`, `"backend":"mock"`,
 		snapshot, "mock/jev-heuristic-v1").Replace(calibLines(300, 11, "127.0.0.1"))

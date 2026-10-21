@@ -144,7 +144,7 @@ func holdout(o *options, stdin io.Reader, stdout io.Writer) error {
 	sum := sha256.Sum256(raw)
 	rep.CalibrationSHA256 = hex.EncodeToString(sum[:])
 	rep.Holdout = holdoutData{File: o.holdout, N: len(in.samples), Datasets: nonNil(in.datasets), Sources: in.sources,
-		Hosts: sortedKeys(in.hosts), Skipped: in.skipped}
+		Hosts: namedHosts(in.hosts), Skipped: in.skipped}
 	before := make([]float64, len(in.samples))
 	after := make([]float64, len(in.samples))
 	for i, s := range in.samples {
@@ -253,7 +253,24 @@ func nonVendorHosts(hosts map[string]int, backend string) []string {
 	vendors := vendorHosts()
 	out := []string{}
 	for _, h := range sortedKeys(hosts) {
-		if h != "" && !slices.Contains(vendors, h) {
+		switch {
+		case h == "":
+			out = append(out, unknownHost)
+		case !slices.Contains(vendors, h):
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// unknownHost names, among the non-vendor hosts, the gate-eval lines that name no host.
+const unknownHost = "(no endpoint_host)"
+
+// namedHosts are the hosts the lines name, sorted (lines without one are left out).
+func namedHosts(hosts map[string]int) []string {
+	out := []string{}
+	for _, h := range sortedKeys(hosts) {
+		if h != "" {
 			out = append(out, h)
 		}
 	}
